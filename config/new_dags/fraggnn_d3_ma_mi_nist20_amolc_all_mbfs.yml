@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb32          # loss batch size 16
+- lb16          # loss batch size 16
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -33,7 +33,7 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
-- mbfs          # multi-cut bfs dags (vs. single-cut dfs)
+- boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
 # Data File Paths
@@ -41,7 +41,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_mbfs/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse_mbfs/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture
@@ -49,6 +49,7 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_mbfs/dags  # depth-3 DAGs, ±4 H-
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -60,6 +61,7 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
+    - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
@@ -102,7 +104,7 @@ mol_params:
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
 # All inserted at the mol encoder input ("mol" location)
 # ============================================================================
-ce_insert_type: embed         # learned CE embedding (vs. linear/bin)
+ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
 ce_insert_size: 32            # CE embedding dimension
@@ -123,13 +125,33 @@ train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0004
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
-lr_schedule: False
 debug_overfit: False
+
+# ============================================================================
+# Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
+# ============================================================================
+mol_dropout: 0.1    # from fragnnet_d3/s0.yml
+frag_dropout: 0.1   # from fragnnet_d3/s0.yml
+mlp_dropout: 0.3    # sweep: top runs favour 0.3
+weight_decay: 0.01
+
+# ============================================================================
+# LR Schedule — cosine warmup + decay
+# ~1300 steps/epoch × 300 epochs = ~390k total steps
+# warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
+# ============================================================================
+lr_schedule: False
+lr: 0.0004
+lr_schedule_type: cosine
+lr_warmup_steps: 5000
+lr_total_steps: 390000
+lr_min_ratio: 0.01    # floor at 1% of peak LR (4e-6)
+lr_decay_rate: 0.95   # unused for cosine but required by template
+lr_decay_steps: 5000  # unused for cosine but required by template
 
 # ============================================================================
 # Loss Configuration
@@ -147,13 +169,17 @@ mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
-frag_pool_type: mean
+frag_pool_type: max  # sweep: top 3 runs all use max
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
+  #- jss
+  #- true_spec_ne   # ground truth normalized entropy — reference target
+  #- pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
 eval_mz_bin_res:
   - 0.01
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -167,6 +193,8 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 200000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -182,10 +210,10 @@ simple_group_sampler_type: group
 # Miscellaneous
 # ============================================================================
 pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
-compile: True                    # torch.compile for speed
+compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-skip_extra_losses: True          # skip auxiliary losses (entropy, edge) to save time
-num_workers: 2                   # num DataLoader workers (0 for debugging, >0 for speed), use 2 to avoid too many processes on limited CPU cores and RAM usages
+          # skip auxiliary losses (entropy, edge) to save time

@@ -1,0 +1,147 @@
+wandb_name: debug_tiny_node_e
+wandb_tags:
+- cc_test_run
+
+# data stuff
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+frag_dp: data/frag/debug_tinyv4_d3h4/dags
+
+seed: 42
+
+subsample_params:
+  subsample_size: 40
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - boundary_pair   # computed on-the-fly from mol graph, no special DAG required
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: False
+  preprocess: False
+  include_cmf: False  # debug DAGs not built with CMF; omit cmf_h_formulae_idx
+spec_params:
+  merge: False
+  nce: True
+  ace: False
+  merge_keep_ces: False
+  preprocess: False
+  prec_type_str: False
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
+mol_params:
+  preprocess: False
+nb_iso: False
+
+# per-instrument-type tolerance
+inst_type_loss_tol:
+  FT:   {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}
+
+# model stuff
+frag_gnn_type: NodeMLP
+num_depth: 4
+num_hs: 4
+ce_insert_type: embed
+ce_insert_location: mol
+ce_insert_merge: True
+ce_insert_size: 32
+prec_insert_location: mol
+prec_insert_size: 32
+inst_insert_location: mol
+inst_insert_size: 32
+frag_mode_insert_location: mol
+frag_mode_insert_size: 32
+frag_mode_scale: True
+ce_scale: True
+ce_scaler_hidden_dim: 64
+mol_pool_type: mean
+frag_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 128
+mol_dropout: 0.2
+frag_hidden_size: 128
+frag_normalization: graph
+frag_embed_combine: avg
+frag_pool_combine: subtract
+frag_dropout: 0.1
+mlp_normalization: layer
+mlp_hidden_size: 64
+mlp_dropout: 0.2
+
+# loss stuff
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 16
+# only node_ne (and node_e) are computed — all other entropy weights are 0.0,
+# so _add_if_active in _setup_loss_names excludes them automatically
+node_normalized_entropy_weight: 0.005
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+
+# intensity transform
+ints_transform: sqrt
+eval_bin_sqrt: True
+
+# optimization stuff
+train_batch_size: 1
+eval_batch_size: 1
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0003033
+weight_decay: 0.01
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+upload_checkpoints: False
+delete_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+auxiliary_scores:
+  - cos_sim
+  - true_spec_ne
+  - pred_spec_ne
+eval_mz_bin_res:
+  - 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+dynamic_batch_sampler: False
+pl_enable_progress_bar: True
+compile: False
+num_workers: 0
+detect_anomaly: True
+log_adduct_inst_ce_metrics: True
+log_adduct_inst_ce_min_count: 1
+eval_test_split: True

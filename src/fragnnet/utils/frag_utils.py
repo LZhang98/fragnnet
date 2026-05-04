@@ -60,6 +60,12 @@ ELEMENT_TO_VE = {
     "I": 1,
     "Se": 2,  # up to 6, same as S
     "Si": 4,
+    "As": 3,  # up to 5
+    "B": 3,
+    # Tier 1 metals — covalent organometallics only (C–metal single bonds)
+    "Hg": 2,  # methylmercury, ethylmercury
+    "Sn": 4,  # organotin (tributyltin, trimethyltin)
+    "Pb": 4,  # organolead (tetraethyllead)
 }
 HEAVY_ELEMENTS = list(ELEMENT_TO_VE.keys())
 NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
@@ -100,11 +106,6 @@ NODE_FEAT_TO_IDX = {
     "h_counts": 4,
     "nb_iso_idx": 5,
     "cmf_h_formulae_idx": 6,
-    # prepass_rule_id: one-hot over FRAG_RULES (len(FRAG_RULES) dims).
-    # All zeros = BFS-generated fragment.  Bit k = 1 means the fragment was
-    # produced by FRAG_RULES[k] (e.g. k=0 → crf12_0, k=2 → crf13_2).
-    # All zeros when smarts_prepass=False.
-    "prepass_rule_id": 7,
 }
 
 EDGE_FEAT_TO_IDX = {"cc": 0, "base_formula": 1, "h_range": 2, "complement": 3}
@@ -237,7 +238,10 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     # GetValenceList
     # some checks
     charge = rdmolops.GetFormalCharge(mol)
-    assert charge == 0, charge
+    if charge not in {0, 1}:
+        raise ValueError(
+            f"unsupported molecular charge {charge}; only 0 (neutral) or +1 ([M]+ cations) supported"
+        )
     # enumerate atoms
     sbond_arr = []
     ve_arr = []
@@ -487,6 +491,13 @@ def compute_approximate_formula(
     # Restrict hydrogen range to allowed transfer window
     floor = max(floor, num_hs_prior - max_h_transfer)
     cap = min(cap, num_hs_prior + max_h_transfer, num_hs)
+    # Guard: the actual H count in the molecule is always a valid configuration.
+    # compute_cc_h_floor can overcount for fragments containing nitro groups because
+    # update_bonds treats all bonds as single bonds — the double bond O= in [N+](=O)[O-]
+    # appears to have 1 free valence slot (ve=2, sbond=1), but its only neighbor N+ has
+    # diff=0 (after formal-charge correction), so the floor can't be reduced and ends up
+    # > num_hs_prior, making delta_h=0 invalid and assigning "" to the node formula.
+    floor = min(floor, num_hs_prior)
 
     delta_h_to_formula = {}  # Maps delta H to formula string/array
     delta_h_to_h_count = {}  # Maps delta H to hydrogen count (or -1 if invalid)
@@ -952,7 +963,7 @@ def compute_dags(
     multi_cut_bfs: bool = False,
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
-    min_frag_atoms: int = 3,
+    min_frag_atoms: int = 0,
 ) -> dict:
     """_summary_
 
@@ -1001,8 +1012,7 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
-            # Pass 3-tuples directly; rule_idx tracking is done inside the BFS
-            # and returned via dag_frag_meta["prepass_node_rules"].
+            # Pass 3-tuples directly; the caller only needs the fragment masks.
             smarts_seed_pairs = smarts_seed_pairs_tagged
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             _compute_ccs_multi_cut_cy(
@@ -1021,11 +1031,7 @@ def compute_dags(
                 min_frag_atoms=min_frag_atoms,
             )
         )
-        prepass_mask_to_rules: dict[bytes, set[int]] = dag_frag_meta.get(
-            "prepass_node_rules", {}
-        )
     else:
-        prepass_mask_to_rules: dict[bytes, set[int]] = {}
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             compute_frags.compute_ccs(
                 num_nodes,
@@ -1054,13 +1060,6 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
-            for mask_a, mask_b, rule_idx in smarts_pairs_tagged:
-                if int(mask_a.sum()) >= min_frag_atoms:
-                    key_a = mask_a.tobytes()
-                    prepass_mask_to_rules.setdefault(key_a, set()).add(rule_idx)
-                if int(mask_b.sum()) >= min_frag_atoms:
-                    key_b = mask_b.tobytes()
-                    prepass_mask_to_rules.setdefault(key_b, set()).add(rule_idx)
             smarts_pairs = [(a, b) for a, b, _ in smarts_pairs_tagged]
             nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
                 _inject_smarts_pairs_into_dag(
@@ -1116,9 +1115,6 @@ def compute_dags(
     h_count_node_feat_size = formula_node_feat_size
     nb_iso_node_feat_size = 1 if nb_isomorphic else 0
     cmf_formula_node_feat_size = formula_node_feat_size  # 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-    prepass_rule_id_node_feat_size = len(
-        FRAG_RULES
-    )  # one-hot over FRAG_RULES; all-zero = BFS fragment
     # edge feature sizes
     cc_edge_feat_size = cc_node_feat_size
     base_formula_edge_feat_size = base_formula_node_feat_size
@@ -1131,7 +1127,6 @@ def compute_dags(
         h_count_node_feat_size,
         nb_iso_node_feat_size,
         cmf_formula_node_feat_size,
-        prepass_rule_id_node_feat_size,
     ]
     edge_feat_shapes = [cc_edge_feat_size, base_formula_edge_feat_size, h_range_edge_feat_size]
 
@@ -1235,22 +1230,21 @@ def compute_dags(
         node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0], 0), dtype=FRAG_INDEX_DTYPE)
         dag_num_nodes_nb = -1
 
-    # Build prepass_rule_id one-hot: shape (num_frags, len(FRAG_RULES)).
-    # Row is all-zero for BFS-generated fragments and the root.
-    # Bit k is set when FRAG_RULES[k] produced this fragment (multi-hot if
-    # multiple rules independently generate the same atom mask).
-    num_rules = len(FRAG_RULES)
-    node_prepass_rule_id = np.zeros((nodes_mask_matrix.shape[0], num_rules), dtype=np.int8)
-    for frag_idx, row in enumerate(nodes_mask_matrix):
-        rule_set = prepass_mask_to_rules.get(row.tobytes())
-        if rule_set:
-            for r in rule_set:
-                node_prepass_rule_id[frag_idx, r] = 1
-
     assert nodes_mask_matrix.shape[1] <= MASK_SIZE
     node_cc_mask = th.as_tensor(nodes_mask_matrix, dtype=th.bool)
     node_cc_mask = F.pad(node_cc_mask, (0, MASK_SIZE - node_cc_mask.shape[1]), "constant", 0)
     node_cc_long = th_mask_to_long(node_cc_mask).type(NODE_FEAT_DTYPE)
+    mol_edge_index = th.as_tensor(mol_d["bonds"].T, dtype=th.long)
+    if mol_edge_index.numel() > 0:
+        mol_edge_index = th.cat([mol_edge_index, mol_edge_index.flip(0)], dim=1)
+    boundary_pair_frag_idxs, boundary_pair_in_local, boundary_pair_out_local = (
+        compute_boundary_pair_idxs(
+            node_cc_mask,
+            mol_edge_index,
+            th.tensor([0, num_nodes], dtype=th.long),
+            th.tensor([0, node_cc_mask.shape[0]], dtype=th.long),
+        )
+    )
     # the order is important!
     pyg_node_feats = th.cat(
         [
@@ -1262,7 +1256,6 @@ def compute_dags(
             th.as_tensor(node_nb_iso_idx, dtype=NODE_FEAT_DTYPE),
             # cmf features bit, not set here, this should set in dataloader, use 0 for NULL forumla
             th.zeros((node_cc_mask.shape[0], cmf_formula_node_feat_size), dtype=NODE_FEAT_DTYPE),
-            th.as_tensor(node_prepass_rule_id, dtype=NODE_FEAT_DTYPE),
         ],
         dim=1,
     )
@@ -1388,6 +1381,9 @@ def compute_dags(
     pyg_cc_g.edge_feat_idxs = th.cumsum(
         th.tensor([0] + edge_feat_shapes, dtype=th.long), 0
     ).reshape(1, -1)
+    pyg_cc_g.boundary_pair_frag_idxs = boundary_pair_frag_idxs
+    pyg_cc_g.boundary_pair_in_local = boundary_pair_in_local
+    pyg_cc_g.boundary_pair_out_local = boundary_pair_out_local
 
     # convert to pyg
     frag_d = {}
@@ -1618,6 +1614,11 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
     )
     g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
     g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
+    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if hasattr(dag, name):
+            g.create_dataset(
+                name, data=getattr(dag, name).numpy(), compression="gzip", compression_opts=4
+            )
 
     h5_group.create_dataset(
         "formula_peak_mzs",
@@ -1696,6 +1697,9 @@ def load_dag_hdf5(h5_group) -> dict:
     )
     dag.node_feat_idxs = th.from_numpy(g["node_feat_idxs"][:])
     dag.edge_feat_idxs = th.from_numpy(g["edge_feat_idxs"][:])
+    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if name in g:
+            setattr(dag, name, th.from_numpy(g[name][:]))
 
     dag_d: dict = {
         "dag": dag,
@@ -1962,7 +1966,7 @@ def timed_get_dags(
     multi_cut_bfs: bool = False,
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
-    min_frag_atoms: int = 3,
+    min_frag_atoms: int = 0,
 ) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
@@ -2086,6 +2090,7 @@ def run_frag_gen_hdf5(
         dump_dag_hdf5(grp, dag_d)
 
     _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
+    return meta_info
 
 
 def compute_boundary_mask(

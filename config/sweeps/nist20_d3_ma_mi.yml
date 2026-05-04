@@ -1,7 +1,10 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_d3_ma_mi_sweep
+wandb_name: nist20_d3_ma_mi_sweep_template
+wandb_group: nist20_d3_ma_mi_sweep
+wandb_tags:
+- nist20_d3_ma_mi_sweep
 
 # ============================================================================
 # Data File Paths
@@ -94,8 +97,8 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 30
+max_epochs: 30
 debug_overfit: False
 
 # ============================================================================
@@ -174,8 +177,8 @@ simple_group_sampler_type: group
 # ============================================================================
 pl_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
-compile: True                    # torch.compile for speed
+compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-skip_extra_losses: True          # skip auxiliary losses (entropy, edge) to save time
+          # skip auxiliary losses (entropy, edge) to save time

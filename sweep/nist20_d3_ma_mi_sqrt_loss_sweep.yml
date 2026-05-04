@@ -1,0 +1,36 @@
+entity: frag-gnn
+project: frag-gnn
+program: ~/fragnnet/scripts/run_wandb_sweep.py
+method: random
+name: nist20_d3_ma_mi_sqrt_loss
+description: >
+  Sweep for sqrt-loss training (ints_transform=sqrt) to improve low-intensity peak prediction.
+  Architecture fixed to focused-sweep winners (mol_hidden=384, frag_pool=max).
+  Sweeps only lr/dropout/weight_decay since the loss landscape changes with sqrt targets.
+metric:
+  goal: maximize
+  name: val_cos_sim_0.01_best/mean
+  # Secondary tracking in W&B UI: val_pred_spec_ne_epoch/mean vs val_true_spec_ne_epoch/mean
+  # A narrowing gap indicates the model is predicting the correct number/spread of peaks.
+parameters:
+  lr:
+    distribution: log_uniform_values
+    min: 0.0002
+    max: 0.001
+
+  weight_decay:
+    values: [0.0, 0.001, 0.01]
+
+  mol_dropout:
+    values: [0.1, 0.2, 0.3]
+
+  frag_dropout:
+    values: [0.1, 0.2]
+
+  mlp_dropout:
+    values: [0.1, 0.3, 0.4]
+
+  # Entropy pressure: sqrt already upweights low-intensity peaks; test whether
+  # additional entropy regularization helps or competes.
+  node_normalized_entropy_weight:
+    values: [0.0, 0.01]

@@ -154,7 +154,7 @@ if __name__ == "__main__":
         "--min_intensity",
         type=float,
         default=1.0,
-        help="Minimum intensity threshold for peaks (filters out peaks below this value)",
+        help="Minimum intensity threshold for peaks on a 0-1000 scale (e.g. 1.0 = 0.1%% of base peak); filters out peaks at or below this value",
     )
 
     # Performance tuning

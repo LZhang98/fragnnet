@@ -56,10 +56,10 @@ containers/apptainer/
 # Specific ignored files
 /wheels/
 /scripts/debug/*.pkl
+/wandb_api_key
 
 # Others
 .github
-# Claude AI assistant configuration and cache
-
+# Claude configuration and cache
 .claude
 .codex

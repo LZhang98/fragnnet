@@ -341,5 +341,60 @@ class TestRandomizeSmiles:
         assert len(outputs) > 1
 
 
+class TestTautomerCanonicalization:
+    """Tests for the canonicalize_tautomers flag in rdkit_ml_standardize,
+    mol_from_smiles, and mol_from_inchi.
+
+    Uses the 2-hydroxypyridine / 2-pyridinone pair, a classic RDKit tautomer test case.
+    """
+
+    # Tautomeric pair: enol form vs keto/lactam form
+    ENOL = "Oc1ccccn1"  # 2-hydroxypyridine (aromatic enol)
+    KETO = "O=C1C=CC=CN1"  # 2(1H)-pyridinone (correct unsaturated keto form)
+
+    def _to_smi(self, mol) -> str:
+        return du.mol_to_smiles(mol)
+
+    def test_canonicalize_true_collapses_tautomers(self):
+        """Both tautomers should produce the same canonical SMILES when canonicalize_tautomers=True."""
+        mol_enol = du.mol_from_smiles(self.ENOL, canonicalize_tautomers=True)
+        mol_keto = du.mol_from_smiles(self.KETO, canonicalize_tautomers=True)
+        assert self._to_smi(mol_enol) == self._to_smi(mol_keto)
+
+    def test_canonicalize_false_preserves_distinct_forms(self):
+        """Without tautomer canonicalization the two forms must stay distinct."""
+        mol_enol = du.mol_from_smiles(self.ENOL, canonicalize_tautomers=False)
+        mol_keto = du.mol_from_smiles(self.KETO, canonicalize_tautomers=False)
+        assert self._to_smi(mol_enol) != self._to_smi(mol_keto)
+
+    def test_canonicalize_default_is_true(self):
+        """Default behaviour (no flag) must equal canonicalize_tautomers=True."""
+        mol_default = du.mol_from_smiles(self.ENOL)
+        mol_explicit = du.mol_from_smiles(self.ENOL, canonicalize_tautomers=True)
+        assert self._to_smi(mol_default) == self._to_smi(mol_explicit)
+
+    def test_rdkit_ml_standardize_flag(self):
+        """rdkit_ml_standardize itself must honour the flag."""
+        from rdkit import Chem
+
+        mol = Chem.MolFromSmiles(self.ENOL)
+        smi_canon = du.mol_to_smiles(du.rdkit_ml_standardize(mol, canonicalize_tautomers=True))
+        smi_raw = du.mol_to_smiles(du.rdkit_ml_standardize(mol, canonicalize_tautomers=False))
+        # With the flag off the enol form is preserved; with the flag on RDKit may
+        # pick a different canonical tautomer — at minimum the results must differ.
+        assert smi_canon != smi_raw
+
+    def test_mol_from_inchi_flag_passes_through(self):
+        """mol_from_inchi with canonicalize_tautomers=False must return a valid mol."""
+        inchi = "InChI=1S/C5H5NO/c7-5-3-1-2-4-6-5/h1-4H,(H,6,7)"  # 2-pyridinone
+        mol = du.mol_from_inchi(inchi, canonicalize_tautomers=False)
+        assert mol is not None and not (isinstance(mol, float) and np.isnan(mol))
+
+    def test_mol_from_inchi_flag_true_returns_valid_mol(self):
+        inchi = "InChI=1S/C5H5NO/c7-5-3-1-2-4-6-5/h1-4H,(H,6,7)"
+        mol = du.mol_from_inchi(inchi, canonicalize_tautomers=True)
+        assert mol is not None and not (isinstance(mol, float) and np.isnan(mol))
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -93,6 +93,59 @@ def ragged_to_batch(feat: th.Tensor, batch_idx: th.Tensor, pad_value=0):
     return out
 
 
+def primary_ce_to_batch(
+    spec_ce: th.Tensor, spec_ce_batch_idxs: th.Tensor | None, batch_size: int
+) -> th.Tensor:
+    """Extract one collision energy value per batch element.
+
+    Args:
+        spec_ce: Collision energy tensor. This is typically flattened by collation and has
+            shape (num_ce_values,) or (batch_size, num_ce_values_per_sample).
+        spec_ce_batch_idxs: Batch indices for flattened CE values of shape (num_ce_values,).
+        batch_size: Number of samples in the batch.
+
+    Returns:
+        Collision energy tensor of shape (batch_size,).
+    """
+    if spec_ce.ndim == 2:
+        if spec_ce.size(1) == 1:
+            # batch_func produced (total_ces, 1) — squeeze trailing dim and
+            # fall through to the sparse batch_idxs path below.
+            spec_ce = spec_ce.squeeze(-1)
+        elif spec_ce.size(0) == batch_size:
+            # Dense layout (batch_size, num_ces) — take first CE per sample.
+            return spec_ce[:, 0].detach().cpu()
+        else:
+            raise ValueError(
+                "Expected spec_ce to have batch_size rows when it is 2D, "
+                f"got shape {tuple(spec_ce.shape)} and batch_size={batch_size}"
+            )
+
+    flat_spec_ce = spec_ce.reshape(-1).detach().cpu()
+    if spec_ce_batch_idxs is None:
+        if flat_spec_ce.numel() != batch_size:
+            raise ValueError(
+                "spec_ce_batch_idxs is required when spec_ce is flattened and does not "
+                f"already have one value per batch item; got {flat_spec_ce.numel()} values "
+                f"for batch_size={batch_size}"
+            )
+        return flat_spec_ce
+
+    flat_batch_idxs = spec_ce_batch_idxs.reshape(-1).detach().cpu().long()
+    if flat_batch_idxs.numel() != flat_spec_ce.numel():
+        raise ValueError(
+            "spec_ce and spec_ce_batch_idxs must have the same number of elements; "
+            f"got {flat_spec_ce.numel()} and {flat_batch_idxs.numel()}"
+        )
+
+    ce_primary = th.full((batch_size,), float("nan"), dtype=flat_spec_ce.dtype)
+    for batch_idx in range(batch_size):
+        batch_mask = flat_batch_idxs == batch_idx
+        if batch_mask.any():
+            ce_primary[batch_idx] = flat_spec_ce[batch_mask][0]
+    return ce_primary
+
+
 class SpectrumPL(L.LightningModule):
     """
     Base PyTorch LightningModule for spectrum prediction.
@@ -164,6 +217,9 @@ class SpectrumPL(L.LightningModule):
         else:
             self.inst_tol_lookup = None
             self.inst_min_mz_lookup = None
+
+        # idx↔str maps are fetched lazily from the dataloader dataset via
+        # _get_dataset_maps() — the dataset is the canonical source of truth.
 
     def _setup_loss_fn(self):
         """
@@ -239,6 +295,9 @@ class SpectrumPL(L.LightningModule):
         compute_rounded_match_mzs = False
         compute_bin_specs = False
         compute_entropies = False
+        compute_pred_entropies = False
+        compute_inst_tol_match_mzs = False
+        self.batch_metric_args: set[str] = set()
 
         for metric_name in self.hparams.auxiliary_scores:
             if metric_name == "cos_sim":
@@ -297,6 +356,14 @@ class SpectrumPL(L.LightningModule):
                 self.metric_min_max["true_spec_ne"] = None
                 self.auxiliary_metric_names.add("true_spec_ne")
                 compute_entropies = True
+            elif metric_name == "pred_spec_e":
+                self.metric_min_max["pred_spec_e"] = None
+                self.auxiliary_metric_names.add("pred_spec_e")
+                compute_pred_entropies = True
+            elif metric_name == "pred_spec_ne":
+                self.metric_min_max["pred_spec_ne"] = None
+                self.auxiliary_metric_names.add("pred_spec_ne")
+                compute_pred_entropies = True
             elif metric_name == "cos_hun":
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:
@@ -384,6 +451,36 @@ class SpectrumPL(L.LightningModule):
                 self.extra_metric_args.extend(["pred_edge_batch_idxs"])
                 self.metric_min_max[fname] = None
                 self.auxiliary_metric_names.add(fname)
+            elif metric_name == "cos_hun_inst_tol":
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        fname_base = "cos_hun_inst_tol"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = fname_base
+                        self.metric_min_max[fname] = "max"
+                        self.metric_bests.append(fname)
+                        self.auxiliary_metric_names.add(fname)
+                compute_inst_tol_match_mzs = True
+                compute_rounded_match_mzs = True
+                self.batch_metric_args.add("spec_inst_type")
+            elif metric_name == "jss_hun_inst_tol":
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        fname_base = "jss_hun_inst_tol"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = fname_base
+                        self.metric_min_max[fname] = "max"
+                        self.metric_bests.append(fname)
+                        self.auxiliary_metric_names.add(fname)
+                compute_inst_tol_match_mzs = True
+                compute_rounded_match_mzs = True
+                self.batch_metric_args.add("spec_inst_type")
             else:
                 raise ValueError(f"metric_name {metric_name} not recognized")
 
@@ -458,6 +555,9 @@ class SpectrumPL(L.LightningModule):
                                 remove_prec_peaks=remove_prec_peak,
                                 prec_mzs=true_prec_mzs,
                             )
+                            # apply intensity transform (e.g. sqrt); helpers normalize internally
+                            true_bin_ints = ints_transform(true_bin_ints)
+                            pred_bin_ints = ints_transform(pred_bin_ints)
                             if "cos_sim" in self.hparams.auxiliary_scores:
                                 fname_base = "cos_sim"
                                 if sqrt:
@@ -510,14 +610,28 @@ class SpectrumPL(L.LightningModule):
                                 metric_d[fname] = jss
 
             if compute_entropies:
-                true_log_probs = safelog(
-                    scatter_l1normalize(true_ints, true_batch_idxs), eps=self.hparams.log_min
-                )
+                true_log_probs = kwargs.get("true_logprobs")
+                if true_log_probs is None:
+                    true_log_probs = safelog(
+                        scatter_l1normalize(true_ints, true_batch_idxs), eps=self.hparams.log_min
+                    )
                 true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs, true_batch_idxs)
                 if "true_spec_e" in self.hparams.auxiliary_scores:
                     metric_d["true_spec_e"] = true_spec_e
                 if "true_spec_ne" in self.hparams.auxiliary_scores:
                     metric_d["true_spec_ne"] = true_spec_ne
+
+            if compute_pred_entropies:
+                pred_log_probs = kwargs.get("pred_logprobs")
+                if pred_log_probs is None:
+                    pred_log_probs = safelog(
+                        scatter_l1normalize(pred_ints, pred_batch_idxs), eps=self.hparams.log_min
+                    )
+                pred_spec_e, pred_spec_ne = sparse_entropy_fn(pred_log_probs, pred_batch_idxs)
+                if "pred_spec_e" in self.hparams.auxiliary_scores:
+                    metric_d["pred_spec_e"] = pred_spec_e
+                if "pred_spec_ne" in self.hparams.auxiliary_scores:
+                    metric_d["pred_spec_ne"] = pred_spec_ne
 
             true_ion_num = th.bincount(true_batch_idxs)
             pred_ion_num = th.bincount(pred_batch_idxs)
@@ -668,6 +782,75 @@ class SpectrumPL(L.LightningModule):
                             fname_base += "_np"
                         fname = f"{fname_base}"
                         metric_d[fname] = batched_metric[fname]
+            if compute_inst_tol_match_mzs and (
+                "cos_hun_inst_tol" in self.hparams.auxiliary_scores
+                or "jss_hun_inst_tol" in self.hparams.auxiliary_scores
+            ):
+                spec_inst_type = kwargs.get("spec_inst_type")
+                if spec_inst_type is not None and self.inst_tol_lookup is not None:
+                    inst_idxs = spec_inst_type.reshape(-1).cpu()
+                    device = true_ints.device
+                    dtype = true_ints.dtype
+                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(device=device, dtype=dtype)
+                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(
+                        device=device, dtype=dtype
+                    )
+                    # Build per-peak effective absolute tolerance: (B, N_true).
+                    # tol_rel * clamp(mz, min=min_mz) converts relative ppm to absolute Da.
+                    safe_mzs = batch_true_mzs_r.clamp(max=self.hparams.mz_max)
+                    tol_per_peak = tol_per_sample[:, None] * th.maximum(
+                        safe_mzs, min_mz_per_sample[:, None]
+                    )
+                    batch_match_mask_it = calculate_match_mzs(
+                        batch_true_mzs_r,
+                        batch_pred_mzs_r,
+                        tolerance=0.0,
+                        relative=False,
+                        tol_per_true=tol_per_peak,
+                    )
+                    batch_true_match_mask_it = batch_match_mask_it.max(-1).values
+                    batch_pred_match_mask_it = batch_match_mask_it.max(-2).values
+                    if "cos_hun_inst_tol" in self.hparams.auxiliary_scores:
+                        for remove_prec_peak in hun_remove_prec_peak_flags:
+                            for sqrt in hun_sqrt_flags:
+                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
+                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
+                                fname_base = "cos_hun_inst_tol"
+                                if sqrt:
+                                    fname_base += "_sqrt"
+                                if remove_prec_peak:
+                                    fname_base += "_np"
+                                metric_d[fname_base] = batch_cos_hun_helper(
+                                    inp_true,
+                                    inp_pred,
+                                    batch_match_mask_it,
+                                    batch_true_match_mask_it,
+                                    batch_pred_match_mask_it,
+                                    remove_prec_peak,
+                                    batch_true_prec_mask_r,
+                                    batch_pred_prec_mask_r,
+                                )
+                    if "jss_hun_inst_tol" in self.hparams.auxiliary_scores:
+                        for remove_prec_peak in hun_remove_prec_peak_flags:
+                            for sqrt in hun_sqrt_flags:
+                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
+                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
+                                fname_base = "jss_hun_inst_tol"
+                                if sqrt:
+                                    fname_base += "_sqrt"
+                                if remove_prec_peak:
+                                    fname_base += "_np"
+                                metric_d[fname_base] = batch_jss_hun_helper(
+                                    inp_true,
+                                    inp_pred,
+                                    batch_match_mask_it,
+                                    batch_true_match_mask_it,
+                                    batch_pred_match_mask_it,
+                                    remove_prec_peak,
+                                    batch_true_prec_mask_r,
+                                    batch_pred_prec_mask_r,
+                                    log_min=self.hparams.log_min,
+                                )
             if (
                 "ndcg" in self.hparams.auxiliary_scores
                 or "true_oos_prob" in self.hparams.auxiliary_scores
@@ -834,30 +1017,34 @@ class SpectrumPL(L.LightningModule):
 
     def _setup_result_trackers(self):
         if self.hparams.spec_params["merge"]:
-            max_num_datapoints = 22000
+            self.max_num_datapoints = 22000
         else:
-            max_num_datapoints = 270000
+            self.max_num_datapoints = 270000
+        report_metric_std = getattr(self.hparams, "report_metric_std", False)
         for split in ["train", "val", "test"]:
             setattr(self, f"{split}_results", None)
             setattr(self, f"{split}_counter", 0)
+            setattr(self, f"{split}_metric_sum_w", {})
+            setattr(self, f"{split}_metric_sum_wx", {})
+            setattr(self, f"{split}_metric_sum_wx2", {} if report_metric_std else None)
             setattr(self, f"{split}_mean_metrics", {})
-            setattr(self, f"{split}_std_metrics", {})
+            setattr(self, f"{split}_std_metrics", {} if report_metric_std else None)
             if self.hparams.track_datapoint_metrics:
                 setattr(self, f"{split}_datapoint_metrics", {})
                 setattr(self, f"{split}_num_datapoints", -th.ones([1], dtype=th.int64))
             for name in self.metric_names:
                 _name = name.replace(".", "-")
                 mean_metrics = getattr(self, f"{split}_mean_metrics")
-                std_metrics = getattr(self, f"{split}_std_metrics")
                 if split != "test":
                     mean_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
-                    std_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
                 else:
                     mean_metrics[_name] = -th.ones([1], dtype=th.float32)
-                    std_metrics[_name] = -th.ones([1], dtype=th.float32)
-                if self.hparams.track_datapoint_metrics:
-                    datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
-                    datapoint_metrics[_name] = -th.ones([max_num_datapoints], dtype=th.float32)
+                if report_metric_std:
+                    std_metrics = getattr(self, f"{split}_std_metrics")
+                    if split != "test":
+                        std_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
+                    else:
+                        std_metrics[_name] = -th.ones([1], dtype=th.float32)
 
     def _setup_sampler(self):
         self._cur_batch_size = 0
@@ -1075,38 +1262,44 @@ class SpectrumPL(L.LightningModule):
             split=split,
         )
 
-        # prepare eval dict
-        # Note we need to compare spectra in normal space, so no log here
-        eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
-            true_mzs,
-            true_ints,
-            true_batch_idxs,
-            train=False,
-            pred=False,
-            log_in=False,
-            log_out=False,
-        )
-        eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
-        eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            train=False,
-            pred=True,
-            log_in=True,
-            log_out=False,
-        )
-        eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
-        both_d = {
-            "true_mzs": eval_true_mzs,
-            "true_logprobs": eval_true_logprobs,
-            "true_batch_idxs": eval_true_batch_idxs,
-            "true_prec_mzs": true_prec_mzs,
-            "pred_mzs": eval_pred_mzs,
-            "pred_logprobs": eval_pred_logprobs,
-            "pred_batch_idxs": eval_pred_batch_idxs,
-            **pred_d,
-        }
+        active_metric_names = self._get_active_metric_names(split)
+        need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
+        need_eval_tensors = self._needs_eval_tensors(split)
+        both_d = {}
+        if need_eval_tensors:
+            # Prepare eval tensors outside autograd: they are only used for metrics/logging.
+            with th.inference_mode():
+                # Note we need to compare spectra in normal space, so no log here.
+                eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
+                    true_mzs,
+                    true_ints,
+                    true_batch_idxs,
+                    train=False,
+                    pred=False,
+                    log_in=False,
+                    log_out=False,
+                )
+                eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
+                eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
+                    pred_mzs.detach(),
+                    pred_logprobs.detach(),
+                    pred_batch_idxs.detach(),
+                    train=False,
+                    pred=True,
+                    log_in=True,
+                    log_out=False,
+                )
+                eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
+                both_d = {
+                    "true_mzs": eval_true_mzs,
+                    "true_logprobs": eval_true_logprobs,
+                    "true_batch_idxs": eval_true_batch_idxs,
+                    "true_prec_mzs": true_prec_mzs,
+                    "pred_mzs": eval_pred_mzs,
+                    "pred_logprobs": eval_pred_logprobs,
+                    "pred_batch_idxs": eval_pred_batch_idxs,
+                    **pred_d,
+                }
         # just log loss
         if log:
             self.log(f"{split}_batch_loss", mean_loss, batch_size=batch_size, on_epoch=True)
@@ -1123,27 +1316,62 @@ class SpectrumPL(L.LightningModule):
             **loss_d,
         }
         # running inference and report metrics
-        assert true_mzs.shape[0] > 0, true_mzs.shape[0]
-        # this is not needed, but to be safe
-        with th.inference_mode():
-            metric_input_d = {
-                "true_mzs": eval_true_mzs,
-                "true_ints": eval_true_probs,
-                "true_batch_idxs": eval_true_batch_idxs,
-                "pred_mzs": eval_pred_mzs,
-                "pred_ints": eval_pred_probs,
-                "pred_batch_idxs": eval_pred_batch_idxs,
-                "true_prec_mzs": true_prec_mzs,
-                "split": split,
-            }
-            for arg in self.extra_metric_args:
-                metric_input_d[arg] = both_d[arg]
-            metric_output_d = self.metric_fn(**metric_input_d)
-            for k, v in metric_output_d.items():
-                assert k not in results, k
-                results[k] = v
-        for metric_name in self.metric_names:
+        if need_aux_metrics:
+            assert true_mzs.shape[0] > 0, true_mzs.shape[0]
+            with th.inference_mode():
+                metric_input_d = {
+                    "true_mzs": eval_true_mzs,
+                    "true_ints": eval_true_probs,
+                    "true_logprobs": eval_true_logprobs,
+                    "true_batch_idxs": eval_true_batch_idxs,
+                    "pred_mzs": eval_pred_mzs,
+                    "pred_ints": eval_pred_probs,
+                    "pred_logprobs": eval_pred_logprobs,
+                    "pred_batch_idxs": eval_pred_batch_idxs,
+                    "true_prec_mzs": true_prec_mzs,
+                    "split": split,
+                }
+                for arg in self.extra_metric_args:
+                    metric_input_d[arg] = both_d[arg]
+                for arg in self.batch_metric_args:
+                    if arg in batch:
+                        metric_input_d[arg] = batch[arg]
+                metric_output_d = self.metric_fn(**metric_input_d)
+                for k, v in metric_output_d.items():
+                    assert k not in results, k
+                    results[k] = v
+        for metric_name in active_metric_names:
             assert metric_name in results, metric_name
+        if self._should_store_ce_metadata(split):
+            idx_to_inst, idx_to_prec, _ = self._get_dataset_maps()
+            if "spec_inst_type" in batch and idx_to_inst:
+                inst_idxs = batch["spec_inst_type"].reshape(-1).tolist()
+                results["inst_type_str"] = [idx_to_inst.get(i, "unknown") for i in inst_idxs]
+            else:
+                results["inst_type_str"] = ["unknown"] * batch_size
+            if "spec_prec_type" in batch and idx_to_prec:
+                prec_idxs = batch["spec_prec_type"].reshape(-1).tolist()
+                results["prec_type_str"] = [idx_to_prec.get(i, "unknown") for i in prec_idxs]
+            else:
+                results["prec_type_str"] = ["unknown"] * batch_size
+            if "spec_ce" in batch:
+                results["ce_primary"] = primary_ce_to_batch(
+                    batch["spec_ce"], batch.get("spec_ce_batch_idxs"), batch_size
+                )
+            else:
+                results["ce_primary"] = th.full((batch_size,), float("nan"))
+            if "spec_nce" in batch:
+                results["ce_nce"] = primary_ce_to_batch(
+                    batch["spec_nce"], batch.get("spec_nce_batch_idxs"), batch_size
+                )
+            else:
+                results["ce_nce"] = th.full((batch_size,), float("nan"))
+            if "spec_ace" in batch:
+                results["ce_ace"] = primary_ce_to_batch(
+                    batch["spec_ace"], batch.get("spec_ace_batch_idxs"), batch_size
+                )
+            else:
+                results["ce_ace"] = th.full((batch_size,), float("nan"))
         return results
 
     def training_step(self, batch, batch_idx):
@@ -1255,11 +1483,185 @@ class SpectrumPL(L.LightningModule):
         """
         Helper to get the WandbLogger from the list of loggers.
         """
-        wandb_logger = None
         for logger in self.loggers:
             if isinstance(logger, WandbLogger):
-                wandb_logger = logger
-        return wandb_logger
+                return logger
+        return None
+
+    def _get_dataset_maps(self) -> tuple[dict[int, str], dict[int, str], dict[str, int]]:
+        """Return (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) from hparams.
+
+        Built deterministically from spec_params, matching BaseDataset logic.
+
+        Returns:
+            Tuple of (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) dicts.
+        """
+        if hasattr(self, "_cached_ds_maps"):
+            return self._cached_ds_maps
+        inst_types = sorted(self.hparams.spec_params.get("inst_types", []))
+        prec_types = sorted(self.hparams.spec_params.get("prec_types", []))
+        idx_to_inst = dict(enumerate(inst_types))
+        idx_to_prec = dict(enumerate(prec_types))
+        inst_to_idx = {t: idx for idx, t in enumerate(inst_types)}
+        object.__setattr__(self, "_cached_ds_maps", (idx_to_inst, idx_to_prec, inst_to_idx))
+        return self._cached_ds_maps
+
+    def _should_store_raw_epoch_results(self, split: str) -> bool:
+        """Return whether raw spectra/IDs must be retained for epoch-end logging."""
+        num_log_images = getattr(self.hparams, f"num_log_{split}_images", 0)
+        return num_log_images > 0
+
+    def _should_store_ce_metadata(self, split: str) -> bool:
+        """Return whether CE/adduct/instrument metadata must be retained."""
+        return bool(self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"))
+
+    def _should_store_metric_vectors(self, split: str) -> bool:
+        """Return whether per-example metric tensors must be retained for a split."""
+        return bool(
+            self._should_store_raw_epoch_results(split)
+            or self._should_store_ce_metadata(split)
+            or self.hparams.log_hist_metrics
+            or self.hparams.track_datapoint_metrics
+        )
+
+    def _should_report_metric_std(self) -> bool:
+        """Return whether epoch std metrics should be computed and logged."""
+        return bool(getattr(self.hparams, "report_metric_std", True))
+
+    def _needs_eval_tensors(self, split: str) -> bool:
+        """Return whether eval spectra must be materialized for this split."""
+        active_metric_names = self._get_active_metric_names(split)
+        need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
+        return bool(need_aux_metrics or self._should_store_raw_epoch_results(split))
+
+    def _get_active_metric_names(self, split: str) -> set[str]:
+        """Return the metric names that should be computed and reduced for a split."""
+        if split == "train":
+            return self.metric_names.difference(self.auxiliary_metric_names)
+        return self.metric_names
+
+    def _get_result_keys(self, split: str) -> list[str]:
+        """Return the minimal set of batch-result keys required for a split."""
+        keys = []
+        if self._should_store_raw_epoch_results(split):
+            keys.extend(
+                [
+                    "unique_ids",
+                    "smiles",
+                    "true_mzs",
+                    "true_logprobs",
+                    "true_unique_ids",
+                    "pred_mzs",
+                    "pred_logprobs",
+                    "pred_unique_ids",
+                ]
+            )
+        if self._should_store_ce_metadata(split):
+            keys.extend(
+                [
+                    "inst_type_str",
+                    "prec_type_str",
+                    "ce_primary",
+                    "ce_nce",
+                    "ce_ace",
+                ]
+            )
+        if self._should_store_metric_vectors(split):
+            keys.extend(list(self._get_active_metric_names(split)))
+        return keys
+
+    def _get_sample_weights(
+        self,
+        split: str,
+        spec_per_group: th.Tensor,
+        spec_per_mol: th.Tensor,
+        group_per_mol: th.Tensor,
+    ) -> th.Tensor:
+        """Return per-sample weights for the configured reduction mode."""
+        sample_weight = (
+            self.hparams.train_sample_weight
+            if split == "train"
+            else self.hparams.eval_sample_weight
+        )
+        if sample_weight == "none":
+            return th.ones_like(spec_per_group, dtype=th.float32)
+        if sample_weight == "group":
+            return 1.0 / spec_per_group
+        if sample_weight == "mol":
+            return 1.0 / spec_per_mol
+        assert sample_weight == "group_mol", sample_weight
+        return 1.0 / (spec_per_group * group_per_mol)
+
+    def _accumulate_running_metrics(self, batch_results: dict, split: str) -> None:
+        """Accumulate weighted metric moments for online epoch reduction."""
+        active_metric_names = self._get_active_metric_names(split)
+        report_metric_std = self._should_report_metric_std()
+        sample_weights = self._get_sample_weights(
+            split,
+            batch_results["spec_per_group"],
+            batch_results["spec_per_mol"],
+            batch_results["group_per_mol"],
+        )
+        sum_w_d = getattr(self, f"{split}_metric_sum_w")
+        sum_wx_d = getattr(self, f"{split}_metric_sum_wx")
+        sum_wx2_d = getattr(self, f"{split}_metric_sum_wx2")
+        for metric_name in active_metric_names:
+            metric = batch_results[metric_name]
+            weights = sample_weights.to(dtype=metric.dtype, device=metric.device)
+            metric_sum_w = weights.sum().detach()
+            metric_sum_wx = (weights * metric).sum().detach()
+            if metric_name in sum_w_d:
+                sum_w_d[metric_name] = sum_w_d[metric_name] + metric_sum_w
+                sum_wx_d[metric_name] = sum_wx_d[metric_name] + metric_sum_wx
+                if report_metric_std:
+                    metric_sum_wx2 = (weights * metric.square()).sum().detach()
+                    sum_wx2_d[metric_name] = sum_wx2_d[metric_name] + metric_sum_wx2
+            else:
+                sum_w_d[metric_name] = metric_sum_w
+                sum_wx_d[metric_name] = metric_sum_wx
+                if report_metric_std:
+                    metric_sum_wx2 = (weights * metric.square()).sum().detach()
+                    sum_wx2_d[metric_name] = metric_sum_wx2
+
+    def _reduce_running_metrics(
+        self, split: str
+    ) -> tuple[dict[str, th.Tensor], dict[str, th.Tensor]]:
+        """Reduce online metric moments into epoch mean/std."""
+        mean_metrics, std_metrics = {}, {}
+        report_metric_std = self._should_report_metric_std()
+        sum_w_d = getattr(self, f"{split}_metric_sum_w")
+        sum_wx_d = getattr(self, f"{split}_metric_sum_wx")
+        sum_wx2_d = getattr(self, f"{split}_metric_sum_wx2")
+        for metric_name in self._get_active_metric_names(split):
+            if metric_name not in sum_w_d:
+                continue
+            sum_w = sum_w_d[metric_name]
+            mean = sum_wx_d[metric_name] / sum_w
+            mean_metrics[metric_name] = mean
+            if report_metric_std:
+                var = sum_wx2_d[metric_name] / sum_w - mean.square()
+                std_metrics[metric_name] = th.sqrt(th.clamp(var, min=0.0))
+        return mean_metrics, std_metrics
+
+    def _reset_running_metrics(self, split: str) -> None:
+        """Reset online metric accumulators for a split."""
+        setattr(self, f"{split}_metric_sum_w", {})
+        setattr(self, f"{split}_metric_sum_wx", {})
+        setattr(
+            self,
+            f"{split}_metric_sum_wx2",
+            {} if self._should_report_metric_std() else None,
+        )
+
+    def _ensure_datapoint_metric_buffers(self, split: str, metric_names) -> None:
+        """Lazily allocate per-datapoint metric buffers for the requested metric names."""
+        if not self.hparams.track_datapoint_metrics:
+            return
+        datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
+        for name in metric_names:
+            key = name.replace(".", "-")
+            if key not in datapoint_metrics:
+                datapoint_metrics[key] = -th.ones([self.max_num_datapoints], dtype=th.float32)
 
     def _update_results(self, batch_results, split):
         """
@@ -1267,139 +1669,104 @@ class SpectrumPL(L.LightningModule):
         """
         results_attr = f"{split}_results"
         counter_attr = f"{split}_counter"
+        active_metric_names = self._get_active_metric_names(split)
+        self._accumulate_running_metrics(batch_results, split)
         # filter keys (filtering first to save time/memory)
-        keys = [
-            "unique_ids",
-            "smiles",
-            "true_mzs",
-            "true_logprobs",
-            "true_unique_ids",
-            "pred_mzs",
-            "pred_logprobs",
-            "pred_unique_ids",
-            "spec_per_group",
-            "spec_per_mol",
-            "group_per_mol",
-        ]
-        keys.extend(list(self.metric_names))
+        keys = self._get_result_keys(split)
         unique_ids = batch_results.pop("unique_id")
-        true_batch_idxs = batch_results.pop("true_batch_idxs")
-        pred_batch_idxs = batch_results.pop("pred_batch_idxs")
+        true_batch_idxs = batch_results.pop("true_batch_idxs", None)
+        pred_batch_idxs = batch_results.pop("pred_batch_idxs", None)
         batch_results = {k: v for k, v in batch_results.items() if k in keys}
-        # update unique_ids
-        true_unique_ids = unique_ids[true_batch_idxs]
-        pred_unique_ids = unique_ids[pred_batch_idxs]
-        batch_results["unique_ids"] = unique_ids
-        batch_results["true_unique_ids"] = true_unique_ids
-        batch_results["pred_unique_ids"] = pred_unique_ids
+        # update unique IDs only when raw spectra are retained for image logging
+        if (
+            self._should_store_raw_epoch_results(split)
+            and true_batch_idxs is not None
+            and pred_batch_idxs is not None
+        ):
+            true_unique_ids = unique_ids[true_batch_idxs]
+            pred_unique_ids = unique_ids[pred_batch_idxs]
+            batch_results["unique_ids"] = unique_ids
+            batch_results["true_unique_ids"] = true_unique_ids
+            batch_results["pred_unique_ids"] = pred_unique_ids
         # check all metrics
-        assert all([metric_name in batch_results for metric_name in self.metric_names])
-        # transfer to cpu
-        batch_results = to_cpu(batch_results, detach=True)
-        # setup results dict
-        if getattr(self, results_attr) is None:
-            setattr(self, results_attr, {k: list() for k in keys})
-        else:
-            assert set(keys) == set(getattr(self, results_attr).keys())
-        results_dict = getattr(self, results_attr)
-        # add to results dict
-        for k, v in batch_results.items():
-            results_dict[k].append(v)
+        if self._should_store_metric_vectors(split):
+            assert all([metric_name in batch_results for metric_name in active_metric_names])
+        if keys:
+            # transfer to cpu
+            batch_results = to_cpu(batch_results, detach=True)
+            # setup results dict
+            if getattr(self, results_attr) is None:
+                setattr(self, results_attr, {k: list() for k in keys})
+            else:
+                assert set(keys) == set(getattr(self, results_attr).keys())
+            results_dict = getattr(self, results_attr)
+            # add to results dict
+            for k, v in batch_results.items():
+                results_dict[k].append(v)
         # increment counter
         setattr(self, counter_attr, getattr(self, counter_attr) + unique_ids.shape[0])
-
-    def _reduce_metrics(self, results, split):
-        mean_metrics, std_metrics = {}, {}
-        for k, v in results.items():
-            if k in self.metric_names:
-                mean_metrics[k] = self.batch_metric_reduce_fn(
-                    b_metric=v,
-                    b_spec_per_group=results["spec_per_group"],
-                    b_spec_per_mol=results["spec_per_mol"],
-                    b_group_per_mol=results["group_per_mol"],
-                    reduce="w_mean",
-                    split=split,
-                )
-                std_metrics[k] = self.batch_metric_reduce_fn(
-                    b_metric=v,
-                    b_spec_per_group=results["spec_per_group"],
-                    b_spec_per_mol=results["spec_per_mol"],
-                    b_group_per_mol=results["group_per_mol"],
-                    reduce="w_std",
-                    split=split,
-                )
-        return mean_metrics, std_metrics
 
     def _consolidate_results(self, split):
         """
         Consolidate all batch results for a split, log metrics, and update best metrics.
         """
         results = getattr(self, f"{split}_results")
-        if results is None:
+        active_metric_names = self._get_active_metric_names(split)
+        mean_metrics, std_metrics = self._reduce_running_metrics(split)
+        if not mean_metrics:
             return
-        keys = results.keys()
-        for k in keys:
-            elems = results[k]
-            # If elements are tensors, make sure they're all at least 1-d before concat
-            if all(isinstance(x, th.Tensor) for x in elems):
-                norm = []
-                for x in elems:
-                    if x.dim() == 0:
-                        # convert scalar tensor to 1-d so it can be concatenated
-                        norm.append(x.unsqueeze(0))
-                    else:
-                        norm.append(x)
-                # concatenate along first dimension
-                results[k] = th.cat(norm, dim=0)
-            else:
-                # expected lists-of-lists for non-tensor entries
-                assert isinstance(elems[0], list)
-                results[k] = flatten_lol(elems)
+        if results is not None:
+            keys = results.keys()
+            for k in keys:
+                elems = results[k]
+                # If elements are tensors, make sure they're all at least 1-d before concat
+                if all(isinstance(x, th.Tensor) for x in elems):
+                    norm = []
+                    for x in elems:
+                        if x.dim() == 0:
+                            # convert scalar tensor to 1-d so it can be concatenated
+                            norm.append(x.unsqueeze(0))
+                        else:
+                            norm.append(x)
+                    # concatenate along first dimension
+                    results[k] = th.cat(norm, dim=0)
+                else:
+                    # expected lists-of-lists for non-tensor entries
+                    assert isinstance(elems[0], list)
+                    results[k] = flatten_lol(elems)
 
-        # log all the metrics
-        # sanity-check shapes before reducing metrics to get clearer errors
-        def _len(x):
-            if isinstance(x, th.Tensor):
-                return x.shape[0]
-            elif isinstance(x, list):
-                return len(x)
-            else:
-                return None
-
-        base_len = _len(results.get("spec_per_group"))
-        for k in self.metric_names:
-            mlen = _len(results.get(k))
-            if mlen is None or base_len is None:
-                continue
-            if mlen != base_len:
-                raise RuntimeError(
-                    f"Metric/weight length mismatch for key '{k}': metric len={mlen}, spec_per_group len={base_len}"
-                )
-
-        mean_metrics, std_metrics = self._reduce_metrics(results, split)
+        if (
+            self.hparams["log_adduct_inst_ce_metrics"]
+            and split in ("val", "test")
+            and results is not None
+        ):
+            self._log_adduct_inst_ce_table(results, split)
         for k in mean_metrics.keys():
             self.log(
                 f"{split}_{k}_epoch/mean",
                 mean_metrics[k],
             )
-            self.log(
-                f"{split}_{k}_epoch/std",
-                std_metrics[k],
-            )
+            if self._should_report_metric_std():
+                self.log(
+                    f"{split}_{k}_epoch/std",
+                    std_metrics[k],
+                )
         if split != "test":
             # update epoch stats
             mean_metrics_epochs = getattr(self, f"{split}_mean_metrics")
-            std_metrics_epochs = getattr(self, f"{split}_std_metrics")
             for k in mean_metrics.keys():
                 mean_metrics_epochs[k.replace(".", "-")][self.current_epoch] = mean_metrics[k]
-                std_metrics_epochs[k.replace(".", "-")][self.current_epoch] = std_metrics[k]
+            if self._should_report_metric_std():
+                std_metrics_epochs = getattr(self, f"{split}_std_metrics")
+                for k in mean_metrics.keys():
+                    std_metrics_epochs[k.replace(".", "-")][self.current_epoch] = std_metrics[k]
             # log histograms
-            if self.hparams.log_hist_metrics:
+            if self.hparams.log_hist_metrics and results is not None:
                 wandb_logger = self._get_wandb_logger()
                 import wandb
 
                 for k, v in results.items():
-                    if k in self.metric_names:
+                    if k in active_metric_names:
                         log_d = {
                             f"{split}_{k}_hist": wandb.Histogram(v.cpu()),
                             "epoch": self.current_epoch,
@@ -1416,11 +1783,9 @@ class SpectrumPL(L.LightningModule):
                 .removesuffix("_epoch")
             )
             for k in self.metric_bests:
-                assert k in self.metric_names, (k, self.metric_names)
+                if k not in active_metric_names:
+                    continue
                 mean_metric_epochs = mean_metrics_epochs[k.replace(".", "-")][
-                    : self.current_epoch + 1
-                ]
-                std_metric_epochs = std_metrics_epochs[k.replace(".", "-")][
                     : self.current_epoch + 1
                 ]
                 if self.metric_min_max[k] == "min":
@@ -1431,9 +1796,13 @@ class SpectrumPL(L.LightningModule):
                     assert self.metric_min_max[k] is None, self.metric_min_max[k]
                     continue
                 mean_metric_best = mean_metric_epochs[argbest_metric]
-                std_metric_best = std_metric_epochs[argbest_metric]
                 self.log(f"{split}_{k}_best/mean", mean_metric_best)
-                self.log(f"{split}_{k}_best/std", std_metric_best)
+                if self._should_report_metric_std():
+                    std_metric_epochs = std_metrics_epochs[k.replace(".", "-")][
+                        : self.current_epoch + 1
+                    ]
+                    std_metric_best = std_metric_epochs[argbest_metric]
+                    self.log(f"{split}_{k}_best/std", std_metric_best)
                 # if it's the best, update the datapoint metrics
                 if k == checkpoint_metric and argbest_metric == self.current_epoch:
                     update_datapoint_metrics = True
@@ -1443,9 +1812,14 @@ class SpectrumPL(L.LightningModule):
         else:
             update_datapoint_metrics = True
 
-        if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
+        if (
+            self.hparams.track_datapoint_metrics
+            and update_datapoint_metrics
+            and results is not None
+        ):
             datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
             num_datapoints_p = getattr(self, f"{split}_num_datapoints")
+            self._ensure_datapoint_metric_buffers(split, mean_metrics.keys())
             example_key = list(mean_metrics.keys())[0]
             num_datapoints = num_datapoints_p.item()
             if num_datapoints == -1:
@@ -1459,12 +1833,137 @@ class SpectrumPL(L.LightningModule):
                 assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
                 datapoint_metrics[k.replace(".", "-")][:num_datapoints] = results[k]
 
+    def _log_adduct_inst_ce_table(self, results: dict, split: str) -> None:
+        """Log per-(adduct×inst, CE-bin) median metrics to wandb.
+
+        Groups spectra by the cross-product of precursor type and instrument type,
+        then bins collision energy in steps of 10 (NCE % for FT/IT, ACE eV for
+        QTOF).  Each row reports the median, mean, std, 95% CI, min, and max of
+        every auxiliary metric together with the per-instrument m/z tolerance.
+
+        - ``val``: logs ``wandb.plot.bar`` — one panel per primary metric, updated
+          each epoch, no history accumulation.
+        - ``test``: logs a full ``wandb.Table`` for detailed inspection.
+
+        Silently returns if no WandbLogger is present, ``spec_inst_type`` is absent
+        from the batch, or CE values are not loaded (``nce``/``ace`` both False).
+
+        Args:
+            results: Consolidated results dict from ``_consolidate_results``.
+            split: One of ``"val"`` or ``"test"``.
+        """
+        import pandas as pd
+
+        wandb_logger = self._get_wandb_logger()
+        if wandb_logger is None:
+            return
+        import wandb
+
+        inst_types = results["inst_type_str"]  # list[str], length N
+        prec_types = results["prec_type_str"]  # list[str], length N
+
+        if all(it == "unknown" for it in inst_types):
+            return  # spec_inst_type not in batch — nothing to group on
+
+        # Use ACE for QTOF (native unit) and NCE for FT so CE bins reflect the values
+        # used in split_filters and match human-readable experiment conventions.
+        # Falls back to ce_primary when the per-instrument CE is unavailable (all NaN).
+        ce_nce = results["ce_nce"].numpy()
+        ce_ace = results["ce_ace"].numpy()
+        ce_primary = results["ce_primary"].numpy()
+        ce_vals = np.where(
+            np.array(inst_types) == "QTOF",
+            np.where(np.isnan(ce_ace), ce_primary, ce_ace),
+            np.where(np.isnan(ce_nce), ce_primary, ce_nce),
+        )
+
+        df = pd.DataFrame(
+            {
+                "inst_type": inst_types,
+                "prec_type": prec_types,
+                "ce_val": ce_vals,
+            }
+        )
+        for m in self.auxiliary_metric_names:
+            if m in results and isinstance(results[m], th.Tensor):
+                df[m] = results[m].numpy()
+
+        df = df.dropna(subset=["ce_val"])  # CE not loaded → skip
+        if df.empty:
+            return
+
+        df["ce_bin"] = (df["ce_val"] // 10 * 10).astype(int)
+        df["adduct_inst"] = df["prec_type"] + "_" + df["inst_type"]
+
+        metric_cols = [m for m in self.auxiliary_metric_names if m in df.columns]
+        _, _, inst_to_idx = self._get_dataset_maps()
+        min_count = self.hparams["log_adduct_inst_ce_min_count"]
+        rows = []
+        for (adduct_inst, ce_bin), grp in df.groupby(["adduct_inst", "ce_bin"], observed=True):
+            if len(grp) < min_count:
+                continue
+
+            inst_type = grp["inst_type"].iloc[0]
+            if self.inst_tol_lookup is not None and inst_type in inst_to_idx:
+                tol = self.inst_tol_lookup[inst_to_idx[inst_type]].item()
+            else:
+                tol = self.tolerance
+            tol_label = f"{tol * 1e6:.0f}ppm" if self.relative else f"{tol:.4f}Da"
+
+            row: dict = {
+                "adduct_inst": adduct_inst,
+                "ce_bin": f"{ce_bin}-{ce_bin + 10}",
+                "inst_tol": tol_label,
+                "count": len(grp),
+            }
+            for m in metric_cols:
+                col = grp[m]
+                n = len(col)
+                mean = col.mean()
+                std = col.std(ddof=1) if n > 1 else 0.0
+                ci95 = 1.96 * std / (n**0.5) if n > 1 else 0.0
+                row[f"{m}_median"] = round(float(col.median()), 4)
+                row[f"{m}_mean"] = round(float(mean), 4)
+                row[f"{m}_std"] = round(float(std), 4)
+                row[f"{m}_ci95"] = round(float(ci95), 4)
+                row[f"{m}_min"] = round(float(col.min()), 4)
+                row[f"{m}_max"] = round(float(col.max()), 4)
+            rows.append(row)
+
+        if not rows:
+            return
+
+        columns = list(rows[0].keys())
+        table = wandb.Table(columns=columns, data=[list(r.values()) for r in rows])
+
+        if split == "val":
+            # One bar-chart panel per metric, updated in-place each epoch.
+            # Uses the first metric that has a _median column as the primary view.
+            primary = f"{metric_cols[0]}_median" if metric_cols else None
+            if primary:
+                wandb_logger.experiment.log(
+                    {
+                        f"val_adduct_inst_ce/{metric_cols[0]}": wandb.plot.bar(
+                            table,
+                            label="adduct_inst",
+                            value=primary,
+                            title=f"val {metric_cols[0]} by adduct×inst×CE (ep {self.current_epoch})",
+                        ),
+                        "epoch": self.current_epoch,
+                    }
+                )
+        else:
+            # Full table at test time for detailed inspection.
+            wandb_logger.experiment.log({f"{split}_adduct_inst_ce_table": table})
+
     def _log_images(self, split):
         """
         Log example spectra as images to WandB for the given split.
         """
         results = getattr(self, f"{split}_results")
         num_log_images = getattr(self.hparams, f"num_log_{split}_images")
+        if num_log_images <= 0 or results is None:
+            return
         counter = getattr(self, f"{split}_counter")
         num_log_images = min(num_log_images, counter)
         wandb_logger = self._get_wandb_logger()
@@ -1530,6 +2029,7 @@ class SpectrumPL(L.LightningModule):
         self._log_images("train")
         # reset
         self.train_results = None
+        self._reset_running_metrics("train")
         self.train_counter = 0
         # seed dataloader
         # self._seed_dataloader(self.current_epoch+1)
@@ -1542,6 +2042,7 @@ class SpectrumPL(L.LightningModule):
             self._log_images("val")
         # reset
         self.val_results = None
+        self._reset_running_metrics("val")
         self.val_counter = 0
 
     def on_test_epoch_end(self):
@@ -1549,6 +2050,7 @@ class SpectrumPL(L.LightningModule):
         self._consolidate_results("test")
         # reset
         self.test_results = None
+        self._reset_running_metrics("test")
         self.test_counter = 0
 
     def _print_grad_norm(self, prefix=None, total_num_params=5):
@@ -1622,8 +2124,9 @@ class SpectrumPL(L.LightningModule):
         # metrics
         checkpoint["train_mean_metrics"] = self.train_mean_metrics
         checkpoint["val_mean_metrics"] = self.val_mean_metrics
-        checkpoint["train_std_metrics"] = self.train_std_metrics
-        checkpoint["val_std_metrics"] = self.val_std_metrics
+        if self._should_report_metric_std():
+            checkpoint["train_std_metrics"] = self.train_std_metrics
+            checkpoint["val_std_metrics"] = self.val_std_metrics
         if self.hparams.track_datapoint_metrics:
             checkpoint["train_num_datapoints"] = self.train_num_datapoints
             checkpoint["val_num_datapoints"] = self.val_num_datapoints
@@ -1642,8 +2145,9 @@ class SpectrumPL(L.LightningModule):
         # metrics
         self.train_mean_metrics = checkpoint["train_mean_metrics"]
         self.val_mean_metrics = checkpoint["val_mean_metrics"]
-        self.train_std_metrics = checkpoint["train_std_metrics"]
-        self.val_std_metrics = checkpoint["val_std_metrics"]
+        if self._should_report_metric_std():
+            self.train_std_metrics = checkpoint.get("train_std_metrics", self.train_std_metrics)
+            self.val_std_metrics = checkpoint.get("val_std_metrics", self.val_std_metrics)
         if self.hparams.track_datapoint_metrics:
             self.train_num_datapoints = checkpoint["train_num_datapoints"]
             self.val_num_datapoints = checkpoint["val_num_datapoints"]

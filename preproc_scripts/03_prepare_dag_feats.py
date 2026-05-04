@@ -110,6 +110,11 @@ def main(args):
         spec_type=spec_type,
     )
 
+    n_dup = mol_df["mol_id"].duplicated().sum()
+    if n_dup > 0:
+        print(f">> WARNING: mol_df has {n_dup} duplicate mol_ids — deduplicating")
+        mol_df = mol_df.drop_duplicates(subset=["mol_id"]).reset_index(drop=True)
+
     m_spec_df = merge_spec_df(spec_df)
 
     print(
@@ -673,7 +678,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_lmdb",
         type=booltype,
-        default=True,
+        default=False,
         help=(
             "Whether to use LMDB to store DAGs. If False, each DAG will be saved as an "
             "individual pickle file under <frag_dp>/dags/. Default True."
@@ -719,11 +724,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--min_frag_atoms",
         type=int,
-        default=3,
+        default=0,
         help=(
             "Minimum number of heavy atoms a child fragment must have to be registered "
             "in the DAG. Fragments smaller than this threshold are silently dropped. "
-            "0 disables the filter. Default 3 removes single- and two-atom shards."
+            "0 disables the filter."
         ),
     )
     args = parser.parse_args()

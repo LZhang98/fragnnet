@@ -6,7 +6,6 @@ using a trained FraGNNet checkpoint.
 
 import argparse
 import json
-import multiprocessing
 import os
 import time
 
@@ -14,7 +13,7 @@ import pandas as pd
 
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.runner import init_dataloader
-from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,
@@ -59,7 +58,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--wandb_run_id", type=str, default="wf1zkb7n")
     parser.add_argument("--custom_fp", type=str, required=False)
     parser.add_argument("--template_fp", type=str, default="./config/template.yml")
-    parser.add_argument("--num_workers", type=int, default=multiprocessing.cpu_count())
+    parser.add_argument("--num_workers", type=int, default=get_core_count())
     parser.add_argument(
         "--auxiliary_scores",
         type=str,

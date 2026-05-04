@@ -27,6 +27,9 @@ def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int) -> dict:
     dag = pyg.data.Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
     dag.node_feat_idxs = torch.tensor([[0, 3, 6, 10]], dtype=torch.long)
     dag.edge_feat_idxs = torch.tensor([[0, 2, 5, 8]], dtype=torch.long)
+    dag.boundary_pair_frag_idxs = torch.tensor([0, max(num_nodes - 1, 0)], dtype=torch.long)
+    dag.boundary_pair_in_local = torch.tensor([0, 1 if num_nodes > 1 else 0], dtype=torch.long)
+    dag.boundary_pair_out_local = torch.tensor([1 if num_nodes > 1 else 0, 0], dtype=torch.long)
 
     idx_to_formula = {i: f"C{i}H{i+2}" for i in range(num_formulae)}
     idx_to_formula[0] = ""  # root node has empty formula
@@ -76,6 +79,9 @@ def _assert_dag_d_equal(orig: dict, loaded: dict) -> None:
     assert torch.equal(orig["dag"].edge_attr, loaded["dag"].edge_attr)
     assert torch.equal(orig["dag"].node_feat_idxs, loaded["dag"].node_feat_idxs)
     assert torch.equal(orig["dag"].edge_feat_idxs, loaded["dag"].edge_feat_idxs)
+    assert torch.equal(orig["dag"].boundary_pair_frag_idxs, loaded["dag"].boundary_pair_frag_idxs)
+    assert torch.equal(orig["dag"].boundary_pair_in_local, loaded["dag"].boundary_pair_in_local)
+    assert torch.equal(orig["dag"].boundary_pair_out_local, loaded["dag"].boundary_pair_out_local)
 
     # Float tensors
     assert torch.allclose(orig["formula_peak_mzs"], loaded["formula_peak_mzs"])

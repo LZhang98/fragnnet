@@ -57,7 +57,7 @@ spec_params:
 mol_params:
   preprocess: True
 
-ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
+ce_insert_type: embed_clamped # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
@@ -115,6 +115,6 @@ compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+
 
 loss_type: jss_distance

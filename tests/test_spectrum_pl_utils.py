@@ -9,6 +9,7 @@ The import chain for spectrum_pl requires fragnnet.frag.multi_cut_bfs (a
 Cython extension that may not be compiled). We stub it at module level so
 the rest of the package can be imported normally.
 """
+
 import sys
 import types
 from unittest.mock import MagicMock
@@ -28,13 +29,14 @@ if "fragnnet.frag.multi_cut_bfs" not in sys.modules:
 from fragnnet.pl_model.spectrum_pl import (  # noqa: E402
     get_split_fn,
     list_to_batch_tensor,
+    primary_ce_to_batch,
     ragged_to_batch,
 )
-
 
 # ===========================================================================
 # get_split_fn
 # ===========================================================================
+
 
 class TestGetSplitFn:
     """get_split_fn(bs_idx) -> split_fn that splits tensors by batch counts."""
@@ -126,8 +128,33 @@ class TestGetSplitFn:
 
 
 # ===========================================================================
+# primary_ce_to_batch
+# ===========================================================================
+
+
+class TestPrimaryCeToBatch:
+    """primary_ce_to_batch(spec_ce, spec_ce_batch_idxs, batch_size) -> CE per sample."""
+
+    def test_flattened_ce_uses_first_value_per_sample(self):
+        spec_ce = torch.tensor([10.0, 20.0, 30.0, 31.0, 40.0])
+        spec_ce_batch_idxs = torch.tensor([0, 1, 2, 2, 3], dtype=torch.long)
+
+        out = primary_ce_to_batch(spec_ce, spec_ce_batch_idxs, batch_size=4)
+
+        torch.testing.assert_close(out, torch.tensor([10.0, 20.0, 30.0, 40.0]))
+
+    def test_2d_ce_uses_first_column(self):
+        spec_ce = torch.tensor([[11.0, 12.0], [21.0, 22.0], [31.0, 32.0]])
+
+        out = primary_ce_to_batch(spec_ce, None, batch_size=3)
+
+        torch.testing.assert_close(out, torch.tensor([11.0, 21.0, 31.0]))
+
+
+# ===========================================================================
 # list_to_batch_tensor
 # ===========================================================================
+
 
 class TestListToBatchTensor:
     """list_to_batch_tensor(inp, pad) pads a list of 1D tensors to a 2D batch."""
@@ -186,6 +213,7 @@ class TestListToBatchTensor:
 # ===========================================================================
 # ragged_to_batch
 # ===========================================================================
+
 
 class TestRaggedToBatch:
     """ragged_to_batch(feat, batch_idx, pad_value) → (B, max_len) tensor."""

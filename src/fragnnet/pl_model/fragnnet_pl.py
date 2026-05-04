@@ -56,6 +56,7 @@ class FraGNNetPL(SpectrumPL):
             mol_gnn_type=self.hparams.mol_gnn_type,
             mol_dropout=self.hparams.mol_dropout,
             mol_normalization=self.hparams.mol_normalization,
+            mol_num_heads=self.hparams["mol_num_heads"],
             mol_pool_type=self.hparams.mol_pool_type,
             frag_node_feats=self.hparams.frag_params["pyg_node_feats"],
             frag_edge_feats=self.hparams.frag_params["pyg_edge_feats"],
@@ -86,10 +87,14 @@ class FraGNNetPL(SpectrumPL):
             ce_insert_location=self.hparams.ce_insert_location,
             ce_insert_merge=self.hparams.ce_insert_merge,
             ce_insert_size=self.hparams.ce_insert_size,
-            ce_mean=self.hparams.ce_mean,
-            ce_std=self.hparams.ce_std,
-            ce_max=self.hparams.ce_max,
-            ce_insert_dual=self.hparams.ce_insert_dual,
+            nce_mean=self.hparams.nce_mean,
+            nce_std=self.hparams.nce_std,
+            nce_max=self.hparams.nce_max,
+            use_nce=self.hparams.use_nce,
+            use_ace=self.hparams.use_ace,
+            ace_max=self.hparams.ace_max,
+            ace_mean=self.hparams.ace_mean,
+            ace_std=self.hparams.ace_std,
             prec_insert_location=self.hparams.prec_insert_location,
             prec_insert_size=self.hparams.prec_insert_size,
             prec_types=self.hparams.spec_params["prec_types"],
@@ -103,6 +108,7 @@ class FraGNNetPL(SpectrumPL):
             ce_scale=self.hparams.ce_scale,
             ce_scaler_hidden_dim=self.hparams.ce_scaler_hidden_dim,
             output_formula_str=self.hparams.output_formula_str,
+            debug_validate_outputs=self.hparams.debug_validate_outputs,
         )
 
         self._check_ce_params()
@@ -258,13 +264,11 @@ class FraGNNetPL(SpectrumPL):
         logging.info(f"Froze {frozen_count} parameters (exact_match={exact_match})")
 
     def _setup_loss_names(self):
-        """
-        Setup the list of loss names to be tracked during training/validation.
-        This includes primary losses, entropy terms, and other auxiliary losses
-        depending on the configuration.
-        """
+        """Setup the list of loss names to be tracked during training/validation.
 
-        # flag losses for tracking
+        A term is included only when at least one of its associated weights is non-zero.
+        Zero-weight terms are excluded from ``loss_names`` and never computed.
+        """
         loss_names = [
             "loss",
             "primary_loss",
@@ -272,234 +276,97 @@ class FraGNNetPL(SpectrumPL):
             "oos_prob",
         ]
 
-        # Add cross-entropy specific losses if applicable
         if self.hparams.loss_type == "cross_entropy":
-            loss_names.extend(
-                [
-                    "spec_ce",
-                    "oos_ce",
-                    "ios_ce",
-                ]
+            loss_names.extend(["spec_ce", "oos_ce", "ios_ce"])
+
+        def _add_if_active(names: list[str], *weights: float) -> None:
+            """Add names only when at least one weight is non-zero."""
+            if any(w != 0.0 for w in weights):
+                loss_names.extend(names)
+
+        # Entropy terms
+        _add_if_active(
+            ["formula_e", "formula_ne"],
+            self.hparams.formula_entropy_weight,
+            self.hparams.formula_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["node_e", "node_ne"],
+            self.hparams.node_entropy_weight,
+            self.hparams.node_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["node_formula_e", "node_formula_ne"],
+            self.hparams.node_formula_entropy_weight,
+            self.hparams.node_formula_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["formula_node_e", "formula_node_ne"],
+            self.hparams.formula_node_entropy_weight,
+            self.hparams.formula_node_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["joint_e", "joint_ne"],
+            self.hparams.joint_entropy_weight,
+            self.hparams.joint_normalized_entropy_weight,
+        )
+
+        # Edge losses: only when edge computation is not globally disabled
+        if not self.hparams.skip_edge_loss:
+            _add_if_active(
+                ["edge_h_range_loss", "edge_h_transfer_loss"],
+                self.hparams.edge_h_range_loss_weight,
+                self.hparams.edge_h_transfer_loss_weight,
+            )
+            _add_if_active(
+                ["edge_e", "edge_ne"],
+                self.hparams.edge_entropy_weight,
+                self.hparams.edge_normalized_entropy_weight,
             )
 
-        # Add extra losses (entropy, mutual information, etc.) if not skipped
-        if not self.hparams.skip_extra_losses:
-            loss_names.extend(
-                [
-                    "spec_e",
-                    "spec_ne",
-                    "formula_e",
-                    "formula_ne",
-                    "node_e",
-                    "node_ne",
-                    "node_formula_e",
-                    "node_formula_ne",
-                    "formula_node_e",
-                    "formula_node_ne",
-                    "joint_e",
-                    "joint_ne",
-                    "node_formula_mi",
-                    "formula_node_mi",
-                    "h_mean",
-                    "h_e",
-                    "h_ne",
-                ]
+        # Neighbor isolation losses
+        if self.hparams.nb_iso:
+            _add_if_active(
+                ["nb_node_e", "nb_node_ne"],
+                self.hparams.nb_node_entropy_weight,
+                self.hparams.nb_node_normalized_entropy_weight,
             )
-            # Add edge losses if enabled
-            if not self.hparams.skip_edge_loss:
-                loss_names.extend(
-                    ["edge_h_range_loss", "edge_h_transfer_loss", "edge_e", "edge_ne"]
-                )
-            # Add neighbor isolation losses if enabled
-            if self.hparams.nb_iso:
-                loss_names.extend(
-                    [
-                        "nb_node_e",
-                        "nb_node_ne",
-                        "nb_node_formula_e",
-                        "nb_node_formula_ne",
-                        "nb_formula_node_e",
-                        "nb_formula_node_ne",
-                        "nb_joint_e",
-                        "nb_joint_ne",
-                        "nb_node_node_e",
-                        "nb_node_node_ne",
-                        "nb_node_formula_mi",
-                        "nb_formula_node_mi",
-                        "nb_node_node_mi",
-                    ]
-                )
-            # Add pairwise losses if weights are positive
-            if self.hparams.pairwise_cosine_loss_weight > 0:
-                loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_jss_loss_weight > 0:
-                loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
-                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
-        else:
-            # If extra losses are skipped, add specific ones if their weights are non-zero
-            if not (
-                self.hparams.formula_entropy_weight
-                == self.hparams.formula_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "formula_e",
-                        "formula_ne",
-                    ]
-                )
-            if not (
-                self.hparams.node_entropy_weight
-                == self.hparams.node_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "node_e",
-                        "node_ne",
-                    ]
-                )
-            if not (
-                self.hparams.node_formula_entropy_weight
-                == self.hparams.node_formula_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "node_formula_e",
-                        "node_formula_ne",
-                    ]
-                )
-            if not (
-                self.hparams.formula_node_entropy_weight
-                == self.hparams.formula_node_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "formula_node_e",
-                        "formula_node_ne",
-                    ]
-                )
-            if not (
-                self.hparams.joint_entropy_weight
-                == self.hparams.joint_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "joint_e",
-                        "joint_ne",
-                    ]
-                )
-            if self.hparams.skip_edge_loss:
-                if not (
-                    self.hparams.edge_h_range_loss_weight
-                    == self.hparams.edge_h_transfer_loss_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "edge_h_range_loss",
-                            "edge_h_transfer_loss",
-                        ]
-                    )
-                if not (
-                    self.hparams.edge_entropy_weight
-                    == self.hparams.edge_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "edge_e",
-                            "edge_ne",
-                        ]
-                    )
-            if self.hparams.nb_iso:
-                if not (
-                    self.hparams.nb_node_entropy_weight
-                    == self.hparams.nb_node_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_node_e",
-                            "nb_node_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_node_formula_entropy_weight
-                    == self.hparams.nb_node_formula_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_node_formula_e",
-                            "nb_node_formula_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_formula_node_entropy_weight
-                    == self.hparams.nb_formula_node_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_formula_node_e",
-                            "nb_formula_node_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_joint_entropy_weight
-                    == self.hparams.nb_joint_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_joint_e",
-                            "nb_joint_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_node_node_entropy_weight
-                    == self.hparams.nb_node_node_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_node_node_e",
-                            "nb_node_node_ne",
-                        ]
-                    )
+            _add_if_active(
+                ["nb_node_formula_e", "nb_node_formula_ne"],
+                self.hparams.nb_node_formula_entropy_weight,
+                self.hparams.nb_node_formula_normalized_entropy_weight,
+            )
+            _add_if_active(
+                ["nb_formula_node_e", "nb_formula_node_ne"],
+                self.hparams.nb_formula_node_entropy_weight,
+                self.hparams.nb_formula_node_normalized_entropy_weight,
+            )
+            _add_if_active(
+                ["nb_joint_e", "nb_joint_ne"],
+                self.hparams.nb_joint_entropy_weight,
+                self.hparams.nb_joint_normalized_entropy_weight,
+            )
+            _add_if_active(
+                ["nb_node_node_e", "nb_node_node_ne"],
+                self.hparams.nb_node_node_entropy_weight,
+                self.hparams.nb_node_node_normalized_entropy_weight,
+            )
 
-            if self.hparams.pairwise_cosine_loss_weight > 0:
-                loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_jss_loss_weight > 0:
-                loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
-                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
+        _add_if_active(
+            [f"pairwise_cossine_{self.hparams.mz_bin_res}"],
+            self.hparams.pairwise_cosine_loss_weight,
+        )
+        _add_if_active(
+            [f"pairwise_jss_{self.hparams.mz_bin_res}"],
+            self.hparams.pairwise_jss_loss_weight,
+        )
+        _add_if_active(
+            [f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"],
+            self.hparams.pairwise_cross_entropy_loss_weight,
+        )
+
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
-
-    def _setup_loss_fn(self):
-        # cross entropy
-        sparse_ce_fn = get_sparse_cross_entropy_fn(
-            dist=self.hparams.output_distribution,
-            vectorized=self.hparams.loss_vectorized,
-            tolerance=self.tolerance,
-            relative=self.relative,
-            tolerance_min_mz=self.tolerance_min_mz,
-            oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
-            gaussian_renormalize=self.hparams.gaussian_renormalize,
-            pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
-            loss_batch_size=self.hparams.loss_batch_size,
-        )
-        # edge loss
-        edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn, 4.0)
-        edge_h_transfer_loss_fn = get_edge_loss_fn(
-            self.hparams.edge_h_transfer_loss_fn, 4.0
-        )  # ,1.0)
 
     def _setup_loss_fn(self):
         # cross entropy
@@ -1037,15 +904,16 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise similarity MSE loss
             if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_cossim(
-                    true_mzs,
-                    true_logprobs,
-                    true_batch_idxs,
-                    batch_size,
-                    self.hparams.mz_max,
-                    self.hparams.mz_bin_res,
-                    chunk_size=self.hparams.loss_batch_size,
-                )
+                with th.no_grad():
+                    true_sim = get_pairwise_cossim(
+                        true_mzs,
+                        true_logprobs,
+                        true_batch_idxs,
+                        batch_size,
+                        self.hparams.mz_max,
+                        self.hparams.mz_bin_res,
+                        chunk_size=self.hparams.loss_batch_size,
+                    )
                 pred_sim = get_pairwise_cossim(
                     pred_mzs,
                     pred_logprobs,
@@ -1066,15 +934,16 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise JSS MSE loss
             if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_jss_sim(
-                    true_mzs,
-                    true_logprobs,
-                    true_batch_idxs,
-                    batch_size,
-                    self.hparams.mz_max,
-                    self.hparams.mz_bin_res,
-                    chunk_size=self.hparams.loss_batch_size,
-                )
+                with th.no_grad():
+                    true_sim = get_pairwise_jss_sim(
+                        true_mzs,
+                        true_logprobs,
+                        true_batch_idxs,
+                        batch_size,
+                        self.hparams.mz_max,
+                        self.hparams.mz_bin_res,
+                        chunk_size=self.hparams.loss_batch_size,
+                    )
                 pred_sim = get_pairwise_jss_sim(
                     pred_mzs,
                     pred_logprobs,
@@ -1095,15 +964,16 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise cross-entropy MSE loss
             if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_cross_entropy(
-                    true_mzs,
-                    true_logprobs,
-                    true_batch_idxs,
-                    batch_size,
-                    self.hparams.mz_max,
-                    self.hparams.mz_bin_res,
-                    chunk_size=self.hparams.loss_batch_size,
-                )
+                with th.no_grad():
+                    true_sim = get_pairwise_cross_entropy(
+                        true_mzs,
+                        true_logprobs,
+                        true_batch_idxs,
+                        batch_size,
+                        self.hparams.mz_max,
+                        self.hparams.mz_bin_res,
+                        chunk_size=self.hparams.loss_batch_size,
+                    )
                 pred_sim = get_pairwise_cross_entropy(
                     pred_mzs,
                     pred_logprobs,

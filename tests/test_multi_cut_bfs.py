@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from rdkit import Chem
-
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut
 from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
 
@@ -292,6 +290,17 @@ class TestOutputFormat:
         r = _run(self.SMILES, max_cut_size=2)
         assert r["nodes_depth"][0, 0] == 1  # root at depth 0
 
+    def test_no_all_zero_cc_rows(self):
+        """MBFS output must not contain empty connected-component masks."""
+        r = _run(
+            "COc1ccc2nccc(NC(=O)C3CCN(CCc4ccc(Cl)cc4)CC3)c2n1",
+            max_cut_size=2,
+            max_depth=3,
+        )
+        sums = r["nodes_mask"].sum(axis=1)
+        zero_rows = [i for i, s in enumerate(sums) if int(s) == 0]
+        assert zero_rows == [], f"Found all-zero CC rows at indices {zero_rows[:10]}"
+
 
 # ---------------------------------------------------------------------------
 # Test 6: ring_bond_mask in mol_d
@@ -529,8 +538,7 @@ class TestBridgeFindingCutOne:
         for smiles in ["C1CCCCC1", "c1ccccc1", "C1CCCCCCCC1"]:
             r = self._run1(smiles)
             assert len(r["nodes_mask"]) == 1, (
-                f"Ring {smiles} should have no bridges, got "
-                f"{len(r['nodes_mask']) - 1} fragment(s)"
+                f"Ring {smiles} should have no bridges, got {len(r['nodes_mask']) - 1} fragment(s)"
             )
 
     def test_linear_octane_all_bridges(self):
@@ -538,9 +546,7 @@ class TestBridgeFindingCutOne:
         r = self._run1("CCCCCCCC")
         counts = set(_atom_counts(r["nodes_mask"]))
         for expected in range(1, 8):
-            assert expected in counts, (
-                f"Expected size-{expected} fragment from C8 linear chain"
-            )
+            assert expected in counts, f"Expected size-{expected} fragment from C8 linear chain"
 
 
 # ---------------------------------------------------------------------------
@@ -559,8 +565,7 @@ class TestNoDuplicateFragments:
         nm = r["nodes_mask"]
         rows = [bytes(nm[i]) for i in range(len(nm))]
         assert len(rows) == len(set(rows)), (
-            f"Duplicate fragment masks in {smiles}: "
-            f"{len(rows)} total rows, {len(set(rows))} unique"
+            f"Duplicate fragment masks in {smiles}: {len(rows)} total rows, {len(set(rows))} unique"
         )
 
     def test_naphthalene_no_duplicates(self):
@@ -662,7 +667,7 @@ class TestPolycyclicCages:
     def test_adamantane_no_cut1_bridges(self):
         r = _run(self.ADAMANTANE, max_cut_size=1, max_depth=1)
         assert len(r["nodes_mask"]) == 1, (
-            f"Adamantane should have no bridges, got {len(r['nodes_mask'])-1} fragment(s)"
+            f"Adamantane should have no bridges, got {len(r['nodes_mask']) - 1} fragment(s)"
         )
 
     def test_adamantane_cut2_sizes(self):
@@ -722,9 +727,7 @@ class TestMacrocycle16:
         r = _run(self.SMILES, max_cut_size=2, max_depth=2)
         counts = set(_atom_counts(r["nodes_mask"]))
         for expected in range(1, 16):
-            assert expected in counts, (
-                f"Expected size-{expected} fragment from 16-membered ring"
-            )
+            assert expected in counts, f"Expected size-{expected} fragment from 16-membered ring"
 
     def test_fragment_pairs_sum_to_16(self):
         """Each non-root fragment must have a complement summing to 16."""
@@ -810,13 +813,13 @@ class TestDepthBitsConsistencyMultiMol:
     across a variety of molecule types and BFS depths."""
 
     MOLECULES = [
-        ("ethane",       "CC"),
-        ("isobutane",    "CC(C)C"),
+        ("ethane", "CC"),
+        ("isobutane", "CC(C)C"),
         ("methylcychex", "CC1CCCCC1"),
-        ("biphenyl",     "c1ccccc1-c1ccccc1"),
-        ("naphthalene",  "c1ccc2ccccc2c1"),
-        ("ibuprofen",    "CC(C)Cc1ccc(cc1)C(C)C(=O)O"),
-        ("norbornane",   "C1CC2CCC1C2"),
+        ("biphenyl", "c1ccccc1-c1ccccc1"),
+        ("naphthalene", "c1ccc2ccccc2c1"),
+        ("ibuprofen", "CC(C)Cc1ccc(cc1)C(C)C(=O)O"),
+        ("norbornane", "C1CC2CCC1C2"),
     ]
 
     def test_min_depth_consistent_with_matrix(self):

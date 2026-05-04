@@ -390,7 +390,7 @@ def compute_ccs_multi_cut(
     int max_cut_size = 2,
     smarts_seed_pairs = None,
     ring_bond_groups = None,
-    int min_frag_atoms = 3,
+    int min_frag_atoms = 0,
 ):
     """Multi-bond-cut BFS fragmentation (Cython).
 
@@ -427,8 +427,7 @@ def compute_ccs_multi_cut(
             have to be registered in the DAG.  Fragments smaller than this
             threshold are silently dropped (and their subtrees never explored,
             since all children would be even smaller).  ``0`` disables the
-            filter.  Default ``3`` removes single-atom and two-atom shards that
-            never appear as observable MS/MS peaks.
+            filter.  Default ``0`` disables the filter.
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
         dag_frag_meta)`` — same format as ``compute_frags.compute_ccs``.
@@ -544,11 +543,6 @@ def compute_ccs_multi_cut(
     cdef char[::1] seed_node_mv
     cdef char[::1] seed_edge_mv
     cdef int u_s, v_s
-
-    # Maps node_key (bytes) → set of rule indices from smarts_seed_pairs that
-    # produced this fragment.  Built only when smarts_seed_pairs is not None.
-    # Returned in dag_frag_meta["prepass_node_rules"] for the caller.
-    prepass_node_rules = {}
 
     force_stop = False
     reached_depth = 0
@@ -683,7 +677,7 @@ def compute_ccs_multi_cut(
                     for kk in range(n_live_nodes):
                         if cc_nodes_s[c, live_node_arr[kk]]:
                             child_n_atoms += 1
-                    if child_n_atoms < min_frag_atoms:
+                    if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
                         continue
                     child_node_key = PyBytes_FromStringAndSize(
                         &cc_nodes_s[c, 0], num_nodes)
@@ -759,7 +753,7 @@ def compute_ccs_multi_cut(
                                 for kk in range(n_live_nodes):
                                     if cc_nodes_s[c, live_node_arr[kk]]:
                                         child_n_atoms += 1
-                                if child_n_atoms < min_frag_atoms:
+                                if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
                                     continue
 
                                 child_node_key = PyBytes_FromStringAndSize(
@@ -834,7 +828,7 @@ def compute_ccs_multi_cut(
                                     for kk in range(n_live_nodes):
                                         if cc_nodes_s[c, live_node_arr[kk]]:
                                             child_n_atoms += 1
-                                    if child_n_atoms < min_frag_atoms:
+                                    if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
                                         continue
 
                                     child_node_key = PyBytes_FromStringAndSize(
@@ -868,7 +862,7 @@ def compute_ccs_multi_cut(
         # -------------------------------------------------------------------
         if current_depth == 0 and smarts_seed_pairs is not None:
             for pair in smarts_seed_pairs:
-                pair_mask_a, pair_mask_b, pair_rule_idx = pair
+                pair_mask_a, pair_mask_b, _pair_rule_idx = pair
                 for child_mask_np in (pair_mask_a, pair_mask_b):
                     if int(child_mask_np.sum()) < min_frag_atoms:
                         continue
@@ -900,14 +894,6 @@ def compute_ccs_multi_cut(
                     if child_queue_key not in queued_set:
                         depth_queue[1].append((child_node_key, child_edge_key))
                         queued_set.add(child_queue_key)
-
-                    # Record which prepass rule produced this fragment (multi-hot
-                    # when multiple rules independently generate the same mask).
-                    _prepass_rule_set = prepass_node_rules.get(child_node_key)
-                    if _prepass_rule_set is None:
-                        prepass_node_rules[child_node_key] = {pair_rule_idx}
-                    else:
-                        _prepass_rule_set.add(pair_rule_idx)
 
                     edge_pair = (css_to_id_dict[root_node_key],
                                  css_to_id_dict[child_node_key])
@@ -964,10 +950,5 @@ def compute_ccs_multi_cut(
         "edges_min_depth":    edges_min_depth,
         "nodes_min_depth":    nodes_min_depth,
         "force_stopped":      force_stop,
-        # node_key (bytes) → set[int] of FRAG_RULES indices.  Empty when no
-        # smarts_seed_pairs were passed.  Used by compute_dags to build
-        # the prepass_rule_id one-hot node feature without separate Python
-        # bookkeeping.
-        "prepass_node_rules": prepass_node_rules,
     }
     return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta

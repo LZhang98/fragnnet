@@ -101,7 +101,7 @@ mol_params:
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
 # All inserted at the mol encoder input ("mol" location)
 # ============================================================================
-ce_insert_type: embed         # learned CE embedding (vs. linear/bin)
+ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
 ce_insert_size: 32            # CE embedding dimension
@@ -183,9 +183,9 @@ eval_sample_weight: none
 # ============================================================================
 pl_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
-compile: True                    # torch.compile for speed
+compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-skip_extra_losses: True          # skip auxiliary losses (entropy, edge) to save time
+          # skip auxiliary losses (entropy, edge) to save time
 num_workers: 2

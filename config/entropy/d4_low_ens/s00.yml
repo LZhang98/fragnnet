@@ -62,7 +62,7 @@ gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: False
+
 group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
@@ -92,4 +92,4 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: True
 pl_enable_progress_bar: True
-compile: True
+compile: False

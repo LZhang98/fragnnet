@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import subprocess
 
 
@@ -118,6 +119,36 @@ GPU_PROFILE_ALIASES = {
 }
 
 
+def _resolve_wandb_api_key(explicit_key: str | None = None) -> str | None:
+    """Resolve W&B API key from multiple sources in priority order.
+
+    Args:
+        explicit_key: Key passed directly via CLI argument.
+
+    Returns:
+        API key string, or None if not found in any source.
+    """
+    if explicit_key:
+        return explicit_key
+    local_key_file = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "wandb_api_key")
+    )
+    if os.path.isfile(local_key_file):
+        with open(local_key_file) as f:
+            key = f.read().strip()
+        if key:
+            return key
+    import netrc as _netrc
+
+    try:
+        auth = _netrc.netrc().authenticators("api.wandb.ai")
+        if auth:
+            return auth[2]
+    except Exception:
+        pass
+    return os.environ.get("WANDB_API_KEY")
+
+
 def print_gpu_profiles() -> None:
     print("Available --gpu_profile presets:")
     for key in sorted(GPU_PROFILES.keys()):
@@ -149,13 +180,51 @@ def apply_gpu_profile(args) -> None:
         args.gpu = 1
 
 
+_SLURM_TIME_RE = re.compile(r"^(\d+-)?(\d+)(:\d{2})?(:\d{2})?$")
+
+
+def validate_slurm_time(time_str: str) -> None:
+    """Validate SLURM --time format: [D-]HH[:MM[:SS]], MM, or MM:SS.
+
+    Raises:
+        ValueError: If the format is invalid.
+    """
+    if not _SLURM_TIME_RE.match(time_str):
+        raise ValueError(
+            f"Invalid --time format: {time_str!r}. "
+            "Expected SLURM format: HH:MM:SS, D-HH:MM:SS, MM:SS, or MM."
+        )
+
+
 def validate_array_job_config(args) -> None:
     """Validate array job configuration."""
+    if getattr(args, "num_sweep_jobs", None) is not None:
+        if args.num_sweep_jobs <= 0:
+            raise ValueError("--num_sweep_jobs must be > 0")
+        if args.num_sweep_jobs > 1000:
+            raise ValueError("--num_sweep_jobs must be <= 1000")
     if getattr(args, "num_sweep_agents", None) is not None:
         if args.num_sweep_agents <= 0:
             raise ValueError("--num_sweep_agents must be > 0")
         if args.num_sweep_agents > 1000:
             raise ValueError("--num_sweep_agents must be <= 1000")
+        if getattr(args, "num_sweep_jobs", None) is None:
+            raise ValueError("--num_sweep_agents requires --num_sweep_jobs to be set")
+
+
+def validate_cv_config(args) -> None:
+    """Validate CV array job configuration."""
+    is_cv_mode = getattr(args, "cv_config_dp", None) is not None
+    if not is_cv_mode:
+        return
+    if getattr(args, "cv_end", None) is None:
+        raise ValueError("--cv_end is required when --cv_config_dp is set")
+    if args.cv_start > args.cv_end:
+        raise ValueError(f"--cv_start ({args.cv_start}) must be <= --cv_end ({args.cv_end})")
+    if getattr(args, "num_sweep_jobs", None) is not None:
+        raise ValueError("--cv_config_dp and --num_sweep_jobs are mutually exclusive")
+    if args.cv_end - args.cv_start >= 100:
+        raise ValueError(f"CV range too large (max 99 folds): {args.cv_start}-{args.cv_end}")
 
 
 def main(args):
@@ -164,7 +233,11 @@ def main(args):
         return
 
     apply_gpu_profile(args)
+    validate_slurm_time(args.time)
     validate_array_job_config(args)
+    validate_cv_config(args)
+    is_cv_mode = getattr(args, "cv_config_dp", None) is not None
+    cv_config_dp_rel = args.cv_config_dp.lstrip("./").rstrip("/") if is_cv_mode else None
 
     # create folders
     os.makedirs(f"{os.path.abspath(args.frag_gnn_dp)}/wandb", exist_ok=True)
@@ -181,16 +254,20 @@ def main(args):
             f"#SBATCH --job-name={args.job_name}",
             f"#SBATCH --mem={args.mem}G",
             f"#SBATCH --cpus-per-task={args.cpu}",
-            f"#SBATCH --time=0-{args.time}:00:00",
+            f"#SBATCH --time={args.time}",
             f"#SBATCH --mail-user={args.cc_email}",
             "#SBATCH --mail-type=ALL",
         ]
     )
-    # add array job directive if num_sweep_agents is specified
-    if getattr(args, "num_sweep_agents", None) is not None:
-        num_agents = args.num_sweep_agents
-        # SLURM array indices are 0-based
-        script_lines.append(f"#SBATCH --array=0-{num_agents - 1}")
+    # add array job directive if num_sweep_jobs is specified
+    if getattr(args, "num_sweep_jobs", None) is not None:
+        num_jobs = args.num_sweep_jobs
+        array_spec = f"0-{num_jobs - 1}"
+        if getattr(args, "num_sweep_agents", None) is not None:
+            array_spec += f"%{args.num_sweep_agents}"
+        script_lines.append(f"#SBATCH --array={array_spec}")
+    elif is_cv_mode:
+        script_lines.append(f"#SBATCH --array={args.cv_start}-{args.cv_end}")
 
     # add gpus
     if getattr(args, "gres_gpu", None):
@@ -208,7 +285,7 @@ def main(args):
     # config where to save job output and job error
     # append to existing onces
     # For array jobs, include task ID in output filename
-    if getattr(args, "num_sweep_agents", None) is not None:
+    if getattr(args, "num_sweep_jobs", None) is not None or is_cv_mode:
         job_output = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j_%a.out"
         job_error = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j_%a.err"
     else:
@@ -228,7 +305,7 @@ def main(args):
     )
 
     # handle array jobs for wandb sweep
-    if getattr(args, "num_sweep_agents", None) is not None:
+    if getattr(args, "num_sweep_jobs", None) is not None:
         script_lines.extend(
             [
                 "",
@@ -239,8 +316,17 @@ def main(args):
                 "    AGENT_ID=${SLURM_ARRAY_TASK_ID}",
                 "fi",
                 'echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}"',
-                'echo "Running as sweep agent ${AGENT_ID} of ${SLURM_ARRAY_TASK_MAX} agents (job ${SLURM_JOB_ID})"',
+                'echo "Running sweep job ${AGENT_ID} of ${SLURM_ARRAY_TASK_MAX} total jobs (job ${SLURM_JOB_ID})"',
                 "export AGENT_ID",
+            ]
+        )
+    elif is_cv_mode:
+        script_lines.extend(
+            [
+                "",
+                "# CV fold array job setup",
+                "CV_FOLD=${SLURM_ARRAY_TASK_ID}",
+                'echo "Running CV fold ${CV_FOLD} (job ${SLURM_JOB_ID})"',
             ]
         )
 
@@ -323,12 +409,13 @@ def main(args):
 
     # Check if running sweep script
     is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
+    is_inference_eval_script = "run_save_inference_eval.py" in args.python_script_fp
 
     # parse script kwargs
     script_kwargs_list = args.script_kwargs if args.script_kwargs else []
     for idx, kwarg in enumerate(script_kwargs_list):
         assert "=" in kwarg, kwarg
-        key, value = kwarg.split("=")
+        key, value = kwarg.split("=", 1)
         # this useful for inference setup where some config are overridden via command line
         config_d[key] = value
         if idx == 0:
@@ -348,11 +435,27 @@ def main(args):
         if key == "t" or key == "template_fp":
             config_template_fp = value
 
-    # For sweep scripts with array jobs, append --job_id
-    if is_sweep_script and getattr(args, "num_sweep_agents", None) is not None:
-        if len(script_kwargs_list) > 0:
-            python_line += " \\\n"
-        python_line += " -j ${AGENT_ID}"
+    # For inference eval scripts, inject --save_dp pointing inside WORKING_DIR unless already set
+    if is_inference_eval_script:
+        has_save_dp = any(kw.split("=")[0].lstrip("-") == "save_dp" for kw in script_kwargs_list)
+        if not has_save_dp:
+            python_line += " \\\n --save_dp output/inference_eval"
+
+    # CV mode: use reference fold config for data discovery; inject dynamic config into python cmd
+    if is_cv_mode:
+        has_custom_config_in_kwargs = any(
+            kw.split("=")[0].lstrip("-") in ("c", "custom_fp") for kw in script_kwargs_list
+        )
+        if has_custom_config_in_kwargs:
+            raise ValueError(
+                "Cannot use -c/--custom_fp in script_kwargs with --cv_config_dp. "
+                "The CV config is selected automatically per array task."
+            )
+        if custom_config_fp is None:
+            custom_config_fp = f"{cv_config_dp_rel}/cv{args.cv_start}.yml"
+            if not os.path.isfile(custom_config_fp):
+                raise FileNotFoundError(f"Reference CV config not found: {custom_config_fp}")
+        python_line += f" \\\n -c {cv_config_dp_rel}/cv${{CV_FOLD}}.yml"
 
     # parse configs    file
     config_keywords = [
@@ -426,8 +529,9 @@ def main(args):
             if args.python_script_fp.rsplit("/", 1)[-1] in [
                 "run_pl_model_fit.py",
                 "run_wandb_sweep.py",
+                "run_save_inference_eval.py",
             ]:
-                frag_dp = path_value.rsplit("/", 1)[0]  # this is for training setup
+                frag_dp = path_value.rsplit("/", 1)[0]  # strip /dags suffix to get parent dir
             else:
                 frag_dp = path_value
             # use tarball and then unpacks
@@ -456,6 +560,41 @@ def main(args):
                 raise FileNotFoundError(f"File not found: {frag_dp} or {frag_dp + ext}")
         elif not os.path.exists(path_value):
             raise FileNotFoundError(f"File not found: {path_value}")
+        elif is_cv_mode and name == "config":
+            # CV mode: copy entire cv config directory instead of just the reference file
+            print(f"> CV mode: copying cv config directory {cv_config_dp_rel}")
+            script_lines.extend(
+                [
+                    f"# copy CV config directory {cv_config_dp_rel} to slurm tmp dir",
+                    f"rsync -av --relative ${{FRAGNNET_DP}}/./{cv_config_dp_rel} ${{WORKING_DIR}}",
+                ]
+            )
+        elif is_cv_mode and name == "split_dp":
+            # CV mode: copy split dirs for all folds in the range
+            print(f"> CV mode: copying split dirs for folds {args.cv_start}-{args.cv_end}")
+            copied_split_dps: set[str] = set()
+            for fold_idx in range(args.cv_start, args.cv_end + 1):
+                fold_config_fp = f"{cv_config_dp_rel}/cv{fold_idx}.yml"
+                fold_split_dp = None
+                with open(fold_config_fp) as _f:
+                    for line in _f:
+                        if line.startswith("split_dp:"):
+                            fold_split_dp = line.split(":", 1)[1].split("#")[0].strip().lstrip("./")
+                            break
+                if fold_split_dp is None:
+                    raise ValueError(f"split_dp not found in {fold_config_fp}")
+                if fold_split_dp in copied_split_dps:
+                    continue
+                if not os.path.exists(fold_split_dp):
+                    raise FileNotFoundError(f"Split dir not found: {fold_split_dp}")
+                copied_split_dps.add(fold_split_dp)
+                print(f"> adding cmd to copy split dir {fold_split_dp} (fold {fold_idx})")
+                script_lines.extend(
+                    [
+                        f"# copy split_dp for CV fold {fold_idx}: {fold_split_dp}",
+                        f"rsync -av --relative ${{FRAGNNET_DP}}/./{fold_split_dp} ${{WORKING_DIR}}",
+                    ]
+                )
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(
@@ -479,8 +618,33 @@ def main(args):
         ]
     )
 
+    # for sweep scripts, append SLURM job/agent ID so wandb run names are unique
+    # job name is used for local sweep, since fir and vulcan now support wandb agent directly,
+    # job id is used for narval only, and it maybe broken.
+    if is_sweep_script:
+        if getattr(args, "num_sweep_jobs", None) is not None:
+            python_line += " \\\n -p ${SLURM_JOB_ID}_${AGENT_ID}"
+        else:
+            python_line += " \\\n -p ${SLURM_JOB_ID}"
+
+    wandb_api_key = _resolve_wandb_api_key(getattr(args, "wandb_api_key", None))
+    if wandb_api_key:
+        script_lines.extend(["# set wandb api key", f"export WANDB_API_KEY={wandb_api_key}", ""])
+
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
+
+    # copy predictions output back to project directory
+    if is_inference_eval_script:
+        dest_dp = os.path.abspath(args.inference_save_dp)
+        script_lines.extend(
+            [
+                "",
+                "# copy inference eval predictions back to local directory",
+                f"mkdir -p {dest_dp}",
+                f"rsync -av ${{WORKING_DIR}}/output/inference_eval/ {dest_dp}/",
+            ]
+        )
 
     script_lines.extend(
         ["", "# record ending", "echo `date`: Job ${SLURM_JOB_ID} finished running"]
@@ -520,6 +684,12 @@ if __name__ == "__main__":
     parser.add_argument("--script_dp", type=str, default="slurm_scripts")
     parser.add_argument("--job_dp", type=str, default="jobs")
     parser.add_argument(
+        "--inference_save_dp",
+        type=str,
+        default="output/inference_eval",
+        help="Local directory to rsync inference eval predictions into after the job completes",
+    )
+    parser.add_argument(
         "--python_script_fp", type=str, required=True, help="python script to run on cc"
     )
     parser.add_argument(
@@ -557,18 +727,54 @@ if __name__ == "__main__":
         default=None,
         help="Raw value for #SBATCH --gres (e.g. gpu:a100:1 or gpu:h100_1g.10gb:1)",
     )
-    parser.add_argument("--time", type=int, default=3)
+    parser.add_argument(
+        "--time",
+        type=str,
+        default="3:00:00",
+        help="Job wall-clock time limit in SLURM format: D-HH:MM:SS, HH:MM:SS, or H (hours)",
+    )
     parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
     parser.add_argument("--job_name", type=str, required=False, help="name of the job")
+    parser.add_argument(
+        "--num_sweep_jobs",
+        type=int,
+        default=None,
+        help=(
+            "Total number of array jobs for wandb sweep (creates SLURM array job). "
+            "Example: --num_sweep_jobs=20 creates --array=0-19"
+        ),
+    )
     parser.add_argument(
         "--num_sweep_agents",
         type=int,
         default=None,
         help=(
-            "Number of parallel agents for wandb sweep (creates SLURM array job). "
-            "Each agent will run the same sweep configuration independently. "
-            "Example: --num_sweep_agents=10 creates --array=0-9"
+            "Max number of concurrently running sweep jobs (throttle). "
+            "Requires --num_sweep_jobs. "
+            "Example: --num_sweep_jobs=20 --num_sweep_agents=4 creates --array=0-19%%4"
         ),
+    )
+    parser.add_argument(
+        "--cv_config_dp",
+        type=str,
+        default=None,
+        help=(
+            "Directory containing cv{n}.yml config files for cross-validation array jobs. "
+            "Creates a SLURM array job with one task per CV fold (--cv_start to --cv_end). "
+            "Example: --cv_config_dp config/spectraverse/neims --cv_start 0 --cv_end 9"
+        ),
+    )
+    parser.add_argument(
+        "--cv_start",
+        type=int,
+        default=0,
+        help="First CV fold index (inclusive). Used with --cv_config_dp.",
+    )
+    parser.add_argument(
+        "--cv_end",
+        type=int,
+        default=None,
+        help="Last CV fold index (inclusive). Required with --cv_config_dp.",
     )
     parser.add_argument(
         "--cc_account",
@@ -584,6 +790,15 @@ if __name__ == "__main__":
         default="2023.09.5",
         choices=["2022.03.5", "2023.09.5", "2024.03.5"],
         help="rdkit version",
+    )
+    parser.add_argument(
+        "--wandb_api_key",
+        type=str,
+        default=None,
+        help=(
+            "W&B API key to export in the job script. "
+            "Falls back to ~/.wandb_api_key (plain text file) then WANDB_API_KEY env var."
+        ),
     )
     parser.add_argument("--no_submit", type=bool, default=True)
     args = parser.parse_args()

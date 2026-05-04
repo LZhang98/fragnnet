@@ -31,10 +31,14 @@ class CEModel:
         ce_insert_type: str,
         ce_insert_merge: bool,
         ce_insert_size: int,
-        ce_mean: float,
-        ce_std: float,
-        ce_max: float,
-        ce_insert_dual: bool = False,
+        nce_mean: float,
+        nce_std: float,
+        nce_max: float,
+        use_nce: bool = True,
+        use_ace: bool = False,
+        ace_max: float = 100.0,
+        ace_mean: float = 20.0,
+        ace_std: float = 15.0,
     ) -> None:
         """
         Initialize CE embedding configuration and embedding layers.
@@ -45,146 +49,199 @@ class CEModel:
             ce_insert_type: Type of CE embedding ("id", "lin", "embed", "bin").
             ce_insert_merge: Whether to merge CE embeddings across batch.
             ce_insert_size: Output embedding size.
-            ce_mean: Mean for CE normalization.
-            ce_std: Std for CE normalization.
-            ce_max: Max value for CE binning/embedding.
-            ce_insert_dual: Embed both NCE and ACE independently. Not yet implemented.
+            nce_mean: Mean for NCE normalization.
+            nce_std: Std for NCE normalization.
+            nce_max: Max NCE value for binning/embedding.
+            use_nce: Embed NCE signal. Default True.
+            use_ace: Embed ACE signal. Default False. When both use_nce and use_ace
+                are True the two embeddings are concatenated, doubling the CE dim.
+            ace_max: Max ACE value (eV) for binning/embedding. Default 100.0.
+            ace_mean: Mean ACE value (eV) for normalization (lin/id types). Default 20.0.
+            ace_std: Std of ACE for normalization (lin/id types). Default 15.0.
         """
         assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin"]
         assert ce_insert_location in ["none", "mol", "frag", "mlp"]
-        if ce_insert_dual:
-            raise NotImplementedError("ce_insert_dual is not yet implemented")
+        if not use_nce and not use_ace:
+            raise ValueError("At least one of use_nce or use_ace must be True")
         self.ce_insert_type = ce_insert_type
         self.ce_insert_location = ce_insert_location
         self.ce_insert_merge = ce_insert_merge
         self.ce_insert_size = ce_insert_size
         self.int_embedder = int_embedder
-        self.ce_max = ce_max
-        self.ce_mean = ce_mean
-        self.ce_std = ce_std
-        self.ce_insert_dual = ce_insert_dual
+        self.nce_max = nce_max
+        self.nce_mean = nce_mean
+        self.nce_std = nce_std
+        self.use_nce = use_nce
+        self.use_ace = use_ace
+        self.ace_max = ace_max
+        self.ace_mean = ace_mean
+        self.ace_std = ace_std
         self._ce_location_check()
         self._setup_ce()
 
     def _ce_location_check(self) -> None:
         raise NotImplementedError("Subclasses must implement _ce_location_check")
 
-    def _setup_ce(self) -> None:
-        """Setup CE embedding and transformation logic based on type and location."""
-        # Setup embedding type
-        if self.ce_insert_type == "id":
-
-            def ce_transform(ce: th.Tensor) -> th.Tensor:
-                ce = transform_ce(ce, self.ce_mean, self.ce_std)
-                ce = ce.reshape(-1, 1)
-                ce = th.repeat_interleave(ce, self.ce_insert_size, dim=1)
-                return ce
-
-            ce_embedder = nn.Identity()
-            ce_input_dim = self.ce_insert_size
-        elif self.ce_insert_type == "lin":
-
-            def ce_transform(ce: th.Tensor) -> th.Tensor:
-                ce = transform_ce(ce, self.ce_mean, self.ce_std)
-                ce = ce.reshape(-1, 1)
-                return ce
-
-            ce_embedder = nn.Linear(1, self.ce_insert_size)
-            ce_input_dim = self.ce_insert_size
-        elif self.ce_insert_type == "embed":
-
-            def ce_transform(ce: th.Tensor) -> th.Tensor:
-                ce = th.clamp(ce, min=-1)
-                ce = th.round(ce, decimals=0).long()
-                ce = ce.reshape(-1, 1)
-                return ce
-
-            embedder = get_embedder(
-                self.int_embedder, max_count_int=int(self.ce_max) + 1
-            )  # +1 for the shifted range
-            ce_embedder = nn.Sequential(embedder, nn.Linear(embedder.num_dim, self.ce_insert_size))
-            ce_input_dim = self.ce_insert_size
-        elif self.ce_insert_type == "embed_clamped":
-
-            def ce_transform(ce: th.Tensor) -> th.Tensor:
-                ce = th.clamp(ce, min=-1, max=int(self.ce_max) - 1)
-                ce = th.round(ce, decimals=0).long()
-                ce = ce.reshape(-1, 1)
-                return ce
-
-            embedder = get_embedder(self.int_embedder, max_count_int=int(self.ce_max))
-            ce_embedder = nn.Sequential(embedder, nn.Linear(embedder.num_dim, self.ce_insert_size))
-            ce_input_dim = self.ce_insert_size
-        elif self.ce_insert_type == "bin":
-
-            def ce_transform(ce: th.Tensor) -> th.Tensor:
-                # Handle -1 (missing/unknown) by giving it its own bin (index 0)
-                # Other values are binned normally then shifted up by 1
-                ce = th.clamp(ce, min=-1, max=int(self.ce_max) - 10)
-                # Create mask for -1 values
-                missing_mask = ce == -1
-                # For non-missing values: bin them and shift up by 1
-                ce_binned = th.round(ce, decimals=-1).long() // 10
-                ce_binned = th.where(
-                    missing_mask,
-                    th.zeros_like(ce_binned),
-                    ce_binned + 1,
-                )
-                # One-hot encode with -1 getting bin 0, others getting bins 1+
-                ce = F.one_hot(
-                    ce_binned, num_classes=(int(self.ce_max) // 10) + 1
-                ).float()  # +1 for the -1 bin
-                return ce
-
-            ce_embedder = nn.Linear(
-                (int(self.ce_max) // 10) + 1, self.ce_insert_size
-            )  # +1 for the -1 bin
-            ce_input_dim = self.ce_insert_size
-
-        # Setup location
-        if self.ce_insert_location == "mol":
-            ce_mol_input_dim = ce_input_dim
-            ce_mlp_input_dim = 0
-        elif self.ce_insert_location == "mlp":
-            ce_mol_input_dim = 0
-            ce_mlp_input_dim = ce_input_dim
-        else:
-            assert self.ce_insert_location == "none"
-            ce_mol_input_dim = 0
-            ce_mlp_input_dim = 0
-        self.ce_transform = ce_transform
-        self.ce_embedder = ce_embedder
-        self.ce_mol_input_dim = ce_mol_input_dim
-        self.ce_mlp_input_dim = ce_mlp_input_dim
-
-    def embed_ce(
-        self, ce: th.Tensor, ce_batch_idxs: th.Tensor, batch_size: int
-    ) -> th.Tensor | None:
-        """
-        Embed the collision energy values.
+    def _build_ce_components(self, max_val: float, mean_val: float, std_val: float) -> tuple:
+        """Build transform function and embedder module for a given CE scale.
 
         Args:
-            ce: Tensor of collision energies.
-            ce_batch_idxs: Batch indices for each CE value.
-            batch_size: Total batch size.
+            max_val: Maximum CE value for clamping/binning.
+            mean_val: Mean for normalization (lin/id types).
+            std_val: Std for normalization (lin/id types).
 
         Returns:
-            Embedded CE tensor or None.
+            Tuple of (transform_fn, embedder_module, output_dim).
         """
-        ce_embed = None
-        if self.ce_insert_location != "none":
-            ce_embed = self.ce_transform(ce)
-            ce_embed = self.ce_embedder(ce_embed)
-            # possibly merge the embeddings
-            if self.ce_insert_merge:
-                ce_embed = scatter_reduce(
-                    src=ce_embed,
-                    index=ce_batch_idxs.unsqueeze(1).expand_as(ce_embed),
-                    reduce="mean",
-                    dim_size=batch_size,
-                    include_self=False,
-                )
+        insert_size = self.ce_insert_size
+        if self.ce_insert_type == "id":
+
+            def transform(ce: th.Tensor) -> th.Tensor:
+                ce = transform_ce(ce, mean_val, std_val)
+                ce = ce.reshape(-1, 1)
+                return th.repeat_interleave(ce, insert_size, dim=1)
+
+            embedder = nn.Identity()
+        elif self.ce_insert_type == "lin":
+
+            def transform(ce: th.Tensor) -> th.Tensor:
+                ce = transform_ce(ce, mean_val, std_val)
+                return ce.reshape(-1, 1)
+
+            embedder = nn.Linear(1, insert_size)
+        elif self.ce_insert_type == "embed":
+
+            def transform(ce: th.Tensor) -> th.Tensor:
+                ce = th.clamp(ce, min=-1, max=int(max_val))
+                ce = th.round(ce, decimals=0).long()
+                return ce.reshape(-1, 1)
+
+            raw_emb = get_embedder(self.int_embedder, max_count_int=int(max_val) + 1)
+            embedder = nn.Sequential(raw_emb, nn.Linear(raw_emb.num_dim, insert_size))
+        elif self.ce_insert_type == "embed_clamped":
+
+            def transform(ce: th.Tensor) -> th.Tensor:
+                ce = th.clamp(ce, min=-1, max=int(max_val) - 1)
+                ce = th.round(ce, decimals=0).long()
+                return ce.reshape(-1, 1)
+
+            raw_emb = get_embedder(self.int_embedder, max_count_int=int(max_val))
+            embedder = nn.Sequential(raw_emb, nn.Linear(raw_emb.num_dim, insert_size))
+        elif self.ce_insert_type == "bin":
+
+            def transform(ce: th.Tensor) -> th.Tensor:
+                ce = th.clamp(ce, min=-1, max=int(max_val) - 10)
+                missing_mask = ce == -1
+                ce_binned = th.round(ce, decimals=-1).long() // 10
+                ce_binned = th.where(missing_mask, th.zeros_like(ce_binned), ce_binned + 1)
+                return F.one_hot(ce_binned, num_classes=(int(max_val) // 10) + 1).float()
+
+            embedder = nn.Linear((int(max_val) // 10) + 1, insert_size)
+        return transform, embedder, insert_size
+
+    def _setup_ce(self) -> None:
+        """Setup CE embedding and transformation logic based on type and location."""
+        effective_dim = 0
+        if self.use_nce:
+            nce_transform, nce_embedder, ce_input_dim = self._build_ce_components(
+                self.nce_max, self.nce_mean, self.nce_std
+            )
+            self.ce_transform = nce_transform
+            self.ce_embedder = nce_embedder
+            effective_dim += ce_input_dim
+        if self.use_ace:
+            ace_transform, ace_embedder, ace_input_dim = self._build_ce_components(
+                self.ace_max, self.ace_mean, self.ace_std
+            )
+            self.ace_transform = ace_transform
+            self.ce_embedder_ace = ace_embedder
+            effective_dim += ace_input_dim
+
+        if self.ce_insert_location == "mol":
+            self.ce_mol_input_dim = effective_dim
+            self.ce_mlp_input_dim = 0
+        elif self.ce_insert_location == "mlp":
+            self.ce_mol_input_dim = 0
+            self.ce_mlp_input_dim = effective_dim
+        else:
+            assert self.ce_insert_location == "none"
+            self.ce_mol_input_dim = 0
+            self.ce_mlp_input_dim = 0
+
+    def _embed_single_ce(
+        self,
+        ce: th.Tensor,
+        ce_batch_idxs: th.Tensor,
+        batch_size: int,
+        transform,
+        embedder: nn.Module,
+    ) -> th.Tensor:
+        """Embed a single CE tensor using the given transform and embedder.
+
+        Args:
+            ce: CE values tensor.
+            ce_batch_idxs: Batch indices for each CE value.
+            batch_size: Total batch size.
+            transform: Transform function to apply before embedding.
+            embedder: Embedding module.
+
+        Returns:
+            Embedded CE tensor of shape (batch_size, ce_insert_size).
+        """
+        ce_embed = transform(ce)
+        ce_embed = embedder(ce_embed)
+        if self.ce_insert_merge:
+            ce_embed = scatter_reduce(
+                src=ce_embed,
+                index=ce_batch_idxs.unsqueeze(1).expand_as(ce_embed),
+                reduce="mean",
+                dim_size=batch_size,
+                include_self=False,
+            )
         return ce_embed
+
+    def embed_ce(
+        self,
+        ce: th.Tensor,
+        ce_batch_idxs: th.Tensor,
+        batch_size: int,
+        ace: th.Tensor | None = None,
+        ace_batch_idxs: th.Tensor | None = None,
+    ) -> th.Tensor | None:
+        """Embed the collision energy values.
+
+        Embeds each active CE signal (NCE, ACE) independently and concatenates them.
+        When both use_nce and use_ace are True the output dimension doubles.
+
+        Args:
+            ce: NCE tensor of collision energies. Required when use_nce is True.
+            ce_batch_idxs: Batch indices for each NCE value.
+            batch_size: Total batch size.
+            ace: ACE tensor (eV). Required when use_ace is True.
+            ace_batch_idxs: Batch indices for each ACE value. Required when use_ace is True.
+
+        Returns:
+            Embedded CE tensor or None if ce_insert_location is "none".
+        """
+        if self.ce_insert_location == "none":
+            return None
+        embeds = []
+        if self.use_nce:
+            embeds.append(
+                self._embed_single_ce(ce, ce_batch_idxs, batch_size, self.ce_transform, self.ce_embedder)
+            )
+        if self.use_ace:
+            assert ace is not None and ace_batch_idxs is not None, (
+                "ace and ace_batch_idxs required when use_ace is True"
+            )
+            embeds.append(
+                self._embed_single_ce(
+                    ace, ace_batch_idxs, batch_size, self.ace_transform, self.ce_embedder_ace
+                )
+            )
+        if len(embeds) == 1:
+            return embeds[0]
+        return th.cat(embeds, dim=1)
 
 
 class PrecModel:
@@ -370,36 +427,56 @@ class CEScaler(nn.Module):
     (e.g. Δ-2) while suppressing others, capturing the physics of CE-dependent
     fragment appearance / disappearance.
 
-    Initialized to zero so the layer starts as an identity transform.
+    Each active CE signal (NCE and/or ACE) contributes a ``(normalized_value, valid_bit)``
+    pair, concatenated into an ``(num_ces, 2*n_signals)`` vector before the MLP. The valid
+    bit lets the network distinguish a missing signal (e.g. ACE=-1 on FT spectra) from a
+    true CE of zero. Initialized to zero so the layer starts as an identity transform.
 
     Attributes:
-        ce_mean: Mean used for CE z-score normalization.
-        ce_std: Std used for CE z-score normalization.
+        use_nce: Whether NCE signal is active.
+        use_ace: Whether ACE signal is active.
         output_dim: Number of H-shift logit dimensions (2*num_hs+1, or doubled for CMF).
-        net: MLP mapping normalized CE scalar → (log_scale, bias) of shape (output_dim*2,).
+        net: MLP mapping normalized CE vector → (log_scale, bias) of shape (output_dim*2,).
     """
 
     def __init__(
         self,
-        ce_mean: float,
-        ce_std: float,
+        nce_mean: float,
+        nce_std: float,
         output_dim: int,
         hidden_dim: int = 64,
+        use_nce: bool = True,
+        use_ace: bool = False,
+        ace_mean: float = 20.0,
+        ace_std: float = 15.0,
     ) -> None:
         """Initialize CEScaler.
 
         Args:
-            ce_mean: Mean CE for z-score normalization.
-            ce_std: Std CE for z-score normalization.
+            nce_mean: Mean NCE for z-score normalization.
+            nce_std: Std NCE for z-score normalization.
             output_dim: Logit output dimension (mlp_output_dim).
             hidden_dim: Hidden dim of the CE→FiLM MLP. Defaults to 64.
+            use_nce: Whether to include NCE as a scaler input. Defaults to True.
+            use_ace: Whether to include ACE as a scaler input. Defaults to False.
+            ace_mean: Mean ACE (eV) for z-score normalization. Defaults to 20.0.
+            ace_std: Std ACE (eV) for z-score normalization. Defaults to 15.0.
         """
         super().__init__()
-        self.ce_mean = ce_mean
-        self.ce_std = ce_std
+        if not use_nce and not use_ace:
+            raise ValueError("At least one of use_nce or use_ace must be True")
+        self.use_nce = use_nce
+        self.use_ace = use_ace
+        self.nce_mean = nce_mean
+        self.nce_std = nce_std
+        self.ace_mean = ace_mean
+        self.ace_std = ace_std
         self.output_dim = output_dim
+        # Each active signal contributes (normalized_value, valid_bit), so 2 dims per signal.
+        # The valid bit lets the MLP distinguish "missing" from "CE=0".
+        input_dim = 2 * (int(use_nce) + int(use_ace))
         self.net = nn.Sequential(
-            nn.Linear(1, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, output_dim * 2),
         )
@@ -414,29 +491,46 @@ class CEScaler(nn.Module):
         ce_batch_idxs: th.Tensor,
         frag_node_batch_idxs: th.Tensor,
         batch_size: int,
+        ace: th.Tensor | None = None,
+        ace_batch_idxs: th.Tensor | None = None,
     ) -> th.Tensor:
         """Apply CE-conditioned affine scaling to intensity logits.
 
         Args:
             logits: Raw MLP logits of shape (num_nodes, output_dim).
-            ce: Per-CE values of shape (num_ces,); -1 means missing.
-            ce_batch_idxs: Batch index per CE of shape (num_ces,).
+            ce: NCE values of shape (num_ces,); -1 means missing.
+            ce_batch_idxs: Batch index per NCE value of shape (num_ces,).
             frag_node_batch_idxs: Batch index per node of shape (num_nodes,).
             batch_size: Number of samples in the batch.
+            ace: ACE values (eV) of shape (num_ces,). Required when use_ace is True.
+            ace_batch_idxs: Batch index per ACE value. Required when use_ace is True.
 
         Returns:
             Scaled logits of shape (num_nodes, output_dim).
         """
-        # Normalize CE; treat missing values (-1) as 0 so identity scaling is preserved
-        mask = ce >= 0
-        norm_ce = th.where(mask, (ce - self.ce_mean) / self.ce_std, th.zeros_like(ce))
-        norm_ce = norm_ce.reshape(-1, 1)
-        # MLP: (num_ces, 1) → (num_ces, output_dim * 2)
-        params = self.net(norm_ce)
+        inputs = []
+        # Each active signal contributes (normalized_value, valid_bit).
+        # The valid bit distinguishes "missing CE" (zeroed) from "CE = 0".
+        if self.use_nce:
+            nce_valid = ((ce >= 0) & th.isfinite(ce)).to(ce.dtype)
+            norm_nce = nce_valid * (ce - self.nce_mean) / self.nce_std
+            inputs.extend([norm_nce.reshape(-1, 1), nce_valid.reshape(-1, 1)])
+            scatter_idxs = ce_batch_idxs
+        if self.use_ace:
+            assert ace is not None and ace_batch_idxs is not None, (
+                "ace and ace_batch_idxs required when use_ace is True"
+            )
+            ace_valid = ((ace >= 0) & th.isfinite(ace)).to(ace.dtype)
+            norm_ace = ace_valid * (ace - self.ace_mean) / self.ace_std
+            inputs.extend([norm_ace.reshape(-1, 1), ace_valid.reshape(-1, 1)])
+            scatter_idxs = ace_batch_idxs
+        # (num_ces, 2*n_signals) → MLP → (num_ces, output_dim * 2)
+        ce_input = th.cat(inputs, dim=1)
+        params = self.net(ce_input)
         # Aggregate multiple CEs per sample via mean
         params_per_sample = scatter_reduce(
             src=params,
-            index=ce_batch_idxs.unsqueeze(1).expand_as(params),
+            index=scatter_idxs.unsqueeze(1).expand_as(params),
             reduce="mean",
             dim_size=batch_size,
             include_self=False,

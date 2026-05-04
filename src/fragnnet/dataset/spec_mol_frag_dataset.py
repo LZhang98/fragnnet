@@ -18,7 +18,13 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
-from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_dag_hdf5, load_frag_d
+from fragnnet.utils.frag_utils import (
+    NODE_FEAT_TO_IDX,
+    _legacy_frag_names,
+    get_frag_fp,
+    load_dag_hdf5,
+    load_frag_d,
+)
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 
 logger = logging.getLogger(__name__)
@@ -104,6 +110,19 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_pl_sd = {}
         if frag_pp_sd is None:
             frag_pp_sd = {}
+        self.debug_validate_outputs = bool(kwargs.get("debug_validate_outputs", False))
+
+        missing_mol_ids = self._find_missing_frag_mol_ids()
+        if missing_mol_ids:
+            logger.warning(
+                f"> dropping {len(missing_mol_ids)} mol_ids with no DAG file "
+                f"(frag gen failures): {sorted(missing_mol_ids)[:10]}"
+            )
+            self.spec_df = self.spec_df[
+                ~self.spec_df["mol_id"].isin(missing_mol_ids)
+            ].reset_index(drop=True)
+            self.mol_df = self.mol_df[~self.mol_df.index.isin(missing_mol_ids)]
+            self._compute_counts()
 
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)
@@ -163,6 +182,30 @@ class SpecMolFragDataset(SpecMolDataset):
                 - 'frag_pp_sd': Fragment Preprocessed Shared Dictionary
         """
         return ["spec_pp_sd", "mol_pp_sd", "frag_pl_sd", "frag_pp_sd"]
+
+    def _find_missing_frag_mol_ids(self) -> set[int]:
+        """Return mol_ids that have no DAG file on disk (folder backend only).
+
+        For lmdb and h5 backends all mol_ids are stored in a single file, so
+        this check is not needed there.
+
+        Returns:
+            Set of integer mol_ids for which no DAG file can be found.
+        """
+        if self.frag_backend != "folder":
+            return set()
+        compressed = self.frag_params.get("compressed", False)
+        missing: set[int] = set()
+        for mol_id in self.mol_df["mol_id"].values:
+            if os.path.isfile(get_frag_fp(mol_id, self.frag_dp, compressed)):
+                continue
+            if any(
+                os.path.isfile(os.path.join(self.frag_dp, name))
+                for name in _legacy_frag_names(mol_id, compressed)
+            ):
+                continue
+            missing.add(int(mol_id))
+        return missing
 
     def _preprocess_frag(self, frag_pl_sd: dict, frag_pp_sd: dict) -> None:
         """
@@ -462,18 +505,25 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_data["frag_formula_peak_mzs"] = crf_peaks
         return frag_data
 
-    @staticmethod
-    def get_collate_fn():
+    def get_collate_fn(self):
         """
         Get the collate function for batching dataset samples.
 
         Returns:
             Collate function to use with DataLoader.
         """
-        return SpecMolFragDataset.collate_fn
+        def _collate_fn(data_list: list[dict]) -> dict:
+            return SpecMolFragDataset.collate_fn(
+                data_list,
+                debug_validate_outputs=self.debug_validate_outputs,
+            )
+
+        return _collate_fn
 
     @staticmethod
-    def _special_collate(keys: list[str], collate_data: dict) -> None:
+    def _special_collate(
+        keys: list[str], collate_data: dict, debug_validate_outputs: bool = False
+    ) -> None:
         """
         Handle special collation for fragmentation graphs and molecular data.
 
@@ -494,6 +544,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 collate_data["frag_pyg"],
                 collate_data["frag_formula_peak_mzs"],
                 collate_data["frag_formula_peak_probs"],
+                debug_validate_outputs=debug_validate_outputs,
             )
             for k, v in batch_mol_frag_data.items():
                 collate_data[k] = v
@@ -505,7 +556,7 @@ class SpecMolFragDataset(SpecMolDataset):
         SpecMolDataset._special_collate(keys, collate_data)
 
     @staticmethod
-    def collate_fn(data_list: list[dict]) -> dict:
+    def collate_fn(data_list: list[dict], debug_validate_outputs: bool = False) -> dict:
         """
         Collate a list of spectrum-molecule-fragment data samples into a batched dictionary.
 
@@ -522,7 +573,9 @@ class SpecMolFragDataset(SpecMolDataset):
 
         batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
         # special handling
-        SpecMolFragDataset._special_collate(keys, collate_data)
+        SpecMolFragDataset._special_collate(
+            keys, collate_data, debug_validate_outputs=debug_validate_outputs
+        )
         SpecMolFragDataset._standard_collate(batch_size, keys, collate_data)
         return collate_data
 

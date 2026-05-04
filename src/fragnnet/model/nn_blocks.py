@@ -6,6 +6,7 @@ specialized layers for molecular and spectra.
 - ZerosAggregation: Dummy aggregation module that outputs zero tensors.
 - GNN: Generic wrapper for different types of Graph Neural Networks (e.g., GINE, MPNN, GAT, GGNN).
 - GINE: Graph Isomorphism Network with Edge Features.
+- GINE_EFA: GINE augmented with per-graph EFA linear global attention.
 - MPNN: Neural Message Passing for Quantum Chemistry.
 - GAT: Graph Attention Networks (v1 and v2).
 - GGNN: Gated Graph Neural Networks.
@@ -22,12 +23,52 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
+from torch.utils.checkpoint import checkpoint as th_checkpoint
 from torch_geometric.nn import aggr
 
 from fragnnet.utils.misc_utils import safelog
 from fragnnet.utils.nn_utils import get_clones
 
 logger = logging.getLogger(__name__)
+
+
+class PoolWithDimSizeAdapter(nn.Module):
+    """Normalize pooling modules to a common interface with optional ``dim_size``."""
+
+    def __init__(self, pool_module: nn.Module):
+        super().__init__()
+        self.pool_module = pool_module
+
+    def forward(
+        self,
+        x: th.Tensor,
+        index: th.Tensor | None = None,
+        ptr: th.Tensor | None = None,
+        dim_size: int | None = None,
+        dim: int = -2,
+        **kwargs,
+    ) -> th.Tensor:
+        try:
+            pooled = self.pool_module(
+                x,
+                index=index,
+                ptr=ptr,
+                dim_size=dim_size,
+                dim=dim,
+                **kwargs,
+            )
+        except TypeError as exc:
+            if "dim_size" not in str(exc):
+                raise
+            pooled = self.pool_module(x, index)
+
+        if dim_size is None or pooled.shape[0] == dim_size:
+            return pooled
+
+        out = x.new_zeros((dim_size, pooled.shape[1]))
+        if pooled.shape[0] > 0:
+            out[: pooled.shape[0]] = pooled
+        return out
 
 
 class ZerosAggregation(nn.Module):
@@ -45,19 +86,30 @@ class ZerosAggregation(nn.Module):
         super().__init__()
         self.dummy_agg = aggr.SumAggregation()
 
-    def forward(self, x, batch):
+    def forward(
+        self,
+        x: th.Tensor,
+        index: th.Tensor | None = None,
+        ptr: th.Tensor | None = None,
+        dim_size: int | None = None,
+        dim: int = -2,
+        **kwargs,
+    ) -> th.Tensor:
         """
         Forward pass for zero aggregation.
 
         Args:
             x (torch.Tensor): Input features.
-            batch (torch.Tensor): Batch indices for aggregation.
+            index (torch.Tensor | None): Group indices for aggregation.
+            ptr (torch.Tensor | None): CSR-style segment pointers.
+            dim_size (int | None): Explicit number of output groups.
+            dim (int): Aggregation dimension.
 
         Returns:
             torch.Tensor: Zero tensor with the same shape as the aggregated result.
         """
-        agg = self.dummy_agg(x, batch)
-        return 0.0 * agg
+        agg = self.dummy_agg(x, index=index, ptr=ptr, dim_size=dim_size, dim=dim, **kwargs)
+        return th.zeros_like(agg)
 
 
 class GNN(nn.Module):
@@ -108,6 +160,16 @@ class GNN(nn.Module):
                 num_layers=self.num_layers,
                 dropout=self.dropout,
                 normalization=self.normalization,
+            )
+        elif self.gnn_type == "GINE_EFA":
+            self.gnn = GINE_EFA(
+                hidden_size=self.hidden_size,
+                edge_feats_size=self.edge_feats_size,
+                node_feats_size=self.node_feats_size,
+                num_layers=self.num_layers,
+                dropout=self.dropout,
+                normalization=self.normalization,
+                **kwargs,
             )
         elif self.gnn_type == "NodeMLP":
             self.gnn = NodeMLP(
@@ -263,6 +325,154 @@ class GINE(nn.Module):
             layer_out = layer(x, edge_index, edge_attr)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
             x = F.relu(dropout(layer_out)) + x  # Residual connection
+        return x
+
+
+def _efa_linear_attn(Q: th.Tensor, K: th.Tensor, V: th.Tensor, batch_index: th.Tensor) -> th.Tensor:
+    """Per-graph EFA linear attention on flat PyG node tensors.
+
+    Uses the ELU+1 feature map, giving O(N·H·D²) complexity vs O(N²·H·D) for softmax.
+    Context is computed separately per graph via scatter_add so variable-size graphs
+    are handled correctly without padding.
+
+    Args:
+        Q: Queries of shape (N, num_heads, head_dim).
+        K: Keys of shape (N, num_heads, head_dim).
+        V: Values of shape (N, num_heads, head_dim).
+        batch_index: Graph assignments of shape (N,).
+
+    Returns:
+        Attended values of shape (N, num_heads, head_dim).
+    """
+    phi_Q = F.elu(Q) + 1  # (N, H, D)
+    phi_K = F.elu(K) + 1  # (N, H, D)
+    N, H, D = phi_Q.shape
+    num_graphs = int(batch_index.max().item()) + 1
+
+    # Accumulate outer-product KV context per graph: (G, H, D, D)
+    KV = Q.new_zeros(num_graphs, H, D, D)
+    KV_nodes = th.einsum("nhd,nhe->nhde", phi_K, V)  # (N, H, D, D)
+    KV.scatter_add_(0, batch_index.view(N, 1, 1, 1).expand_as(KV_nodes), KV_nodes)
+
+    # Accumulate key sums per graph for denominator: (G, H, D)
+    K_sum = Q.new_zeros(num_graphs, H, D)
+    K_sum.scatter_add_(0, batch_index.view(N, 1, 1).expand_as(phi_K), phi_K)
+
+    # Gather per-node context and compute normalized output
+    KV_node = KV[batch_index]  # (N, H, D, D)
+    K_sum_node = K_sum[batch_index]  # (N, H, D)
+    out = th.einsum("nhd,nhde->nhe", phi_Q, KV_node)  # (N, H, D)
+    Z = (phi_Q * K_sum_node).sum(dim=-1, keepdim=True).clamp(min=1e-6)  # (N, H, 1)
+    return out / Z
+
+
+class GINE_EFA(nn.Module):
+    """GINE augmented with per-graph EFA linear global attention.
+
+    After each GINEConv message-passing step, a graph-scoped linear attention pass
+    (Euclidean Fast Attention with ELU+1 feature map) mixes information across all
+    nodes in the same molecule, capturing long-range interactions that local MP misses.
+    Complexity is O(N·H·D²) instead of O(N²·H·D) for standard softmax attention.
+
+    Args:
+        hidden_size (int): Hidden layer size.
+        node_feats_size (int): Size of node features.
+        edge_feats_size (int): Size of edge features.
+        num_layers (int): Number of GNN + attention layers.
+        dropout (float): Dropout rate.
+        normalization (str): Normalization type ("batch", "layer", "graph", "none").
+        num_heads (int): Number of attention heads. Must divide hidden_size. Defaults to 4.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        node_feats_size: int,
+        edge_feats_size: int,
+        num_layers: int,
+        dropout: float,
+        normalization: str,
+        num_heads: int = 4,
+        **kwargs,
+    ):
+        super().__init__()
+        if hidden_size % num_heads != 0:
+            raise ValueError(
+                f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})"
+            )
+        assert edge_feats_size >= 0, edge_feats_size
+
+        self.num_heads = num_heads
+        self.head_dim = hidden_size // num_heads
+
+        self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
+
+        gine_layers = []
+        for _ in range(num_layers):
+            apply_fn = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size),
+            )
+            gine_layers.append(pyg.nn.conv.GINEConv(nn=apply_fn, eps=0.0, edge_dim=None))
+        self.layers = nn.ModuleList(gine_layers)
+
+        self.efa_q = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)])
+        self.efa_k = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)])
+        self.efa_v = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)])
+        self.efa_out = nn.ModuleList(
+            [nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)]
+        )
+
+        norm_mod, norm_fn = get_norm(normalization, hidden_size)
+        self.norm_fn = norm_fn
+        self.norms = get_clones(norm_mod, num_layers)
+        self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
+
+    def forward(
+        self,
+        x: th.Tensor,
+        batch_index: th.Tensor,
+        edge_index: th.Tensor,
+        edge_attr: th.Tensor,
+    ) -> th.Tensor:
+        """Forward pass: local GINEConv → global EFA → residual sum, repeated per layer.
+
+        Args:
+            x: Node features of shape (N, hidden_size).
+            batch_index: Graph assignments of shape (N,).
+            edge_index: Edge connectivity of shape (2, E).
+            edge_attr: Edge features of shape (E, edge_feats_size).
+
+        Returns:
+            Updated node features of shape (N, hidden_size).
+        """
+        edge_attr = self.edge_transform(edge_attr)
+        for dropout, layer, norm, q_proj, k_proj, v_proj, out_proj in zip(
+            self.dropouts,
+            self.layers,
+            self.norms,
+            self.efa_q,
+            self.efa_k,
+            self.efa_v,
+            self.efa_out,
+        ):
+            # Local message passing (same residual pattern as GINE)
+            local_out = layer(x, edge_index, edge_attr)
+            local_out = self.norm_fn(local_out, batch_index, norm)
+            local_out = F.relu(dropout(local_out)) + x
+
+            # Global linear attention within each graph
+            N, C = local_out.shape
+            Q = q_proj(local_out).view(N, self.num_heads, self.head_dim)
+            K = k_proj(local_out).view(N, self.num_heads, self.head_dim)
+            V = v_proj(local_out).view(N, self.num_heads, self.head_dim)
+            efa_out = th_checkpoint(
+                _efa_linear_attn, Q, K, V, batch_index, use_reentrant=False
+            ).reshape(N, C)
+            efa_out = dropout(out_proj(F.relu(efa_out)))
+
+            x = local_out + efa_out
         return x
 
 
@@ -864,12 +1074,12 @@ class SetTransformer(nn.Module):
 
             if self.return_nodes:
                 # Decoder: original inputs attend over encoded inducing points.
-                x_decoded, _ = self.decoder_attn(x_padded, h, h)  # (num_batches, max_size, input_dim)
+                x_decoded, _ = self.decoder_attn(
+                    x_padded, h, h
+                )  # (num_batches, max_size, input_dim)
                 x_decoded = self.decoder_fc(x_decoded)  # (num_batches, max_size, output_dim)
                 # Strip padding and concatenate back to (total_elements, output_dim).
-                return th.cat(
-                    [x_decoded[i, : set_sizes[i]] for i in range(num_batches)], dim=0
-                )
+                return th.cat([x_decoded[i, : set_sizes[i]] for i in range(num_batches)], dim=0)
             else:
                 x_agg = h.mean(dim=1)  # (num_batches, input_dim)
                 return self.fc(x_agg)
@@ -916,7 +1126,7 @@ def build_pool_module(pool_type: str, node_dim: int):
     """Method to build pooling layer for given pool_type and dim
         node dim is required for attention layer.
     Args:
-        pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','powermean','none']
+        pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','none']
         node_dim (int): node_dim, used for attention and set_transformer
     Returns:
         nn.Module: pooling module
@@ -955,8 +1165,6 @@ def build_pool_module(pool_type: str, node_dim: int):
         # )
     elif pool_type == "softmax":
         pool_module = aggr.SoftmaxAggregation(learn=True)
-    elif pool_type == "powermean":
-        pool_module = aggr.PowerMeanAggregation(learn=True)
     elif pool_type == "mean_max_sum":
         # raise NotImplementedError
         pool_module = aggr.MultiAggregation(["mean", "max", "sum"])
@@ -967,7 +1175,7 @@ def build_pool_module(pool_type: str, node_dim: int):
         assert pool_type == "none", pool_type
         # just return 0s
         pool_module = ZerosAggregation()
-    return pool_module
+    return PoolWithDimSizeAdapter(pool_module)
 
 
 def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):

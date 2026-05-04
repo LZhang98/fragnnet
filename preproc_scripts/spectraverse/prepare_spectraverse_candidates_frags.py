@@ -25,6 +25,7 @@ import argparse
 import json
 import logging
 import os
+from functools import partial
 
 import h5py
 import pandas as pd
@@ -70,8 +71,11 @@ def build_mol_df(smiles_series: pd.Series) -> pd.DataFrame:
 
     mol_df = pd.DataFrame({"smiles": unique_smiles, "mol_id": list(range(len(unique_smiles)))})
 
-    # Compute RDKit mol objects (with ml_standardize for mol_df)
-    mol_df["mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    # Compute RDKit mol objects (with ml_standardize for mol_df, no tautomer canonicalization)
+    mol_df["mol"] = par_apply_series(
+        mol_df["smiles"],
+        partial(data_utils.mol_from_smiles, canonicalize_tautomers=False),
+    )
     compute_mol_df_props(mol_df)
 
     # Drop molecules where RDKit failed

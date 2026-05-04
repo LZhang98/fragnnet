@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import math
+from types import SimpleNamespace
 
 import pytest
 import torch as th
@@ -20,6 +21,7 @@ from fragnnet.model.loss import (
     sparse_cross_entropy_vec,
     sparse_jensen_shannon_divergence_hungarian,
 )
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
 # ---------------------------------------------------------------------------
@@ -230,6 +232,32 @@ class TestSparseCrossEntropyVecPerSample:
         )
         # Wide: peak is IOS → IOS CE is a finite negative log-probability
         assert ios_wide.item() < 0.0, "Wide tolerance: peak is IOS, IOS log-prob should be < 0"
+
+
+class TestSpectrumPLEvalTensorGating:
+    """Tests for the validation eval-tensor gate in SpectrumPL."""
+
+    def _fake_pl(self, active_metric_names, auxiliary_metric_names, raw_epoch=False):
+        return SimpleNamespace(
+            auxiliary_metric_names=set(auxiliary_metric_names),
+            _get_active_metric_names=lambda split: set(active_metric_names),
+            _should_store_raw_epoch_results=lambda split: raw_epoch,
+        )
+
+    def test_ce_metadata_alone_does_not_require_eval_tensors(self):
+        """CE metadata logging should not trigger eval spectrum materialization by itself."""
+        fake = self._fake_pl(active_metric_names={"loss"}, auxiliary_metric_names=set())
+        assert not SpectrumPL._needs_eval_tensors(fake, "val")
+
+    def test_auxiliary_metrics_require_eval_tensors(self):
+        """Auxiliary validation metrics still require eval spectra."""
+        fake = self._fake_pl(active_metric_names={"loss", "cos_sim_0.01"}, auxiliary_metric_names={"cos_sim_0.01"})
+        assert SpectrumPL._needs_eval_tensors(fake, "val")
+
+    def test_raw_epoch_results_require_eval_tensors(self):
+        """Image/raw-spectrum logging still requires eval spectra."""
+        fake = self._fake_pl(active_metric_names={"loss"}, auxiliary_metric_names=set(), raw_epoch=True)
+        assert SpectrumPL._needs_eval_tensors(fake, "val")
 
 
 # ---------------------------------------------------------------------------

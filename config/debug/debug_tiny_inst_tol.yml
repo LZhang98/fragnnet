@@ -95,7 +95,7 @@ gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: False
+
 group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
@@ -129,3 +129,6 @@ pl_enable_progress_bar: True
 compile: False
 num_workers: 0
 detect_anomaly: True
+log_adduct_inst_ce_metrics: True
+log_adduct_inst_ce_min_count: 1
+eval_test_split: True

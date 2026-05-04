@@ -166,3 +166,75 @@ def test_n_oxide_nitrogen_ve_is_three():
     assert mol_d["ve_arr"][n_idx] == 3, (
         f"N-oxide [N+] ve must be 3, got {mol_d['ve_arr'][n_idx]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. [M]+ charged ions: net charge +1 molecules must featurize without error
+# ---------------------------------------------------------------------------
+
+
+_CATION_SMILES = [
+    ("C[N+](C)(C)C", "tetramethylammonium"),  # quaternary N+, charge=1, no H on N
+    ("C[N+](C)(C)CCO", "choline"),  # quaternary N+ with hydroxyl side-chain
+    ("CC[S+](CC)CC", "triethylsulfonium"),  # sulfonium S+
+]
+
+
+@pytest.mark.parametrize("smiles,name", _CATION_SMILES)
+def test_cation_featurizes_without_error(smiles, name):
+    """Molecules with net charge +1 must pass extract_mol_info for [M]+ support."""
+    mol = Chem.MolFromSmiles(smiles)
+    mol_d = extract_mol_info(mol)
+    assert mol_d is not None, f"featurization returned None for {name}"
+    assert len(mol_d["elems"]) > 0, f"empty element list for {name}"
+
+
+def test_cation_element_counts_correct():
+    """Tetramethylammonium: 1 N and 4 C, no unexpected atoms."""
+    mol = Chem.MolFromSmiles("C[N+](C)(C)C")
+    mol_d = extract_mol_info(mol)
+    assert mol_d["element_counts"]["N"] == 1
+    assert mol_d["element_counts"]["C"] == 4
+
+
+def test_cation_h_cap_is_nonnegative():
+    """H-cap for any fragment of a charge-1 molecule must be >= 0."""
+    from fragnnet.utils.frag_utils import compute_cc_h_cap
+
+    mol = Chem.MolFromSmiles("C[N+](C)(C)C")
+    mol_d = extract_mol_info(mol)
+    all_atoms = list(range(len(mol_d["elems"])))
+    import numpy as np
+
+    atom_ids = np.array(all_atoms, dtype=np.int32)
+    from fragnnet.frag.compute_frags import update_bonds
+
+    updated_sbond, _ = update_bonds(
+        atom_ids,
+        mol_d["sbond_arr"],
+        mol_d["bond_mask_arr"],
+        mol_d["bonds"],
+        mol_d["atoms_to_bonds"],
+    )
+    cap = compute_cc_h_cap(atom_ids, mol_d["ve_arr"], updated_sbond, 0)
+    assert cap >= 0, f"H-cap is negative ({cap}) for tetramethylammonium"
+
+
+def test_charge_2_raises():
+    """Molecules with net charge > +1 must raise ValueError."""
+    mol = Chem.MolFromSmiles("C[N+](C)(C)[N+](C)(C)C")
+    import rdkit.Chem.rdmolops as rdmolops
+
+    if rdmolops.GetFormalCharge(mol) > 1:
+        with pytest.raises(ValueError, match="unsupported molecular charge"):
+            extract_mol_info(mol)
+
+
+def test_negative_charge_raises():
+    """Molecules with net charge < 0 must raise ValueError."""
+    mol = Chem.MolFromSmiles("CC(=O)[O-]")  # acetate, charge=-1
+    import rdkit.Chem.rdmolops as rdmolops
+
+    if rdmolops.GetFormalCharge(mol) < 0:
+        with pytest.raises(ValueError, match="unsupported molecular charge"):
+            extract_mol_info(mol)

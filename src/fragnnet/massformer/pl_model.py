@@ -35,9 +35,9 @@ class MassFormerPL(BinnedPL):
             ce_insert_location=self.hparams.ce_insert_location,
             ce_insert_merge=self.hparams.ce_insert_merge,
             ce_insert_size=self.hparams.ce_insert_size,
-            ce_max=self.hparams.ce_max,
-            ce_mean=self.hparams.ce_mean,
-            ce_std=self.hparams.ce_std,
+            nce_max=self.hparams.nce_max,
+            nce_mean=self.hparams.nce_mean,
+            nce_std=self.hparams.nce_std,
             prec_insert_location=self.hparams.prec_insert_location,
             prec_insert_size=self.hparams.prec_insert_size,
             prec_types=self.hparams.spec_params["prec_types"],
@@ -63,8 +63,6 @@ class MassFormerPL(BinnedPL):
         self.mf_flag = self.hparams.mf_flag
         if self.mf_flag:
             raise NotImplementedError
-            assert self.hparams.precision == 32, self.hparams.precision
-            assert not self.hparams.automatic_optimization
 
     def configure_optimizers(self):
         if self.hparams.optimizer == "adam":

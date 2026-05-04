@@ -150,17 +150,34 @@ class BaseDataset(Dataset):
         mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
         assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 
+        # Resolve the per-split filter config.  In practice _setup_dfs is always called
+        # with a single split (one dataset per split in init_dataset), so we look up
+        # splits[0].  When called with multiple splits the per-split filter is skipped.
+        _split_filter: dict = {}
+        if len(splits) == 1:
+            _split_filter = spec_params.get("split_filters", {}).get(splits[0], {})
+
+        # Adduct filter: drop spectra whose prec_type is not in spec_params["prec_types"].
+        # Applied before CE filling so Phase 1 only operates on retained spectra.
+        if _split_filter.get("filter_prec_types", False):
+            allowed_adducts = set(spec_params["prec_types"])
+            orig_n = len(spec_df)
+            spec_df = spec_df[spec_df["prec_type"].isin(allowed_adducts)]
+            mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
+            print(
+                f">> split_filter [{splits[0]}] filter_prec_types "
+                f"{sorted(allowed_adducts)}: {orig_n} → {len(spec_df)} spectra"
+            )
+
         # Determine which CE columns to compute and which is primary.
-        # When both ace and nce are requested, nce is primary; ace is also computed
-        # so it exists in the dataframe (e.g. for future ce_insert_dual support).
-        if spec_params["nce"] and spec_params["ace"]:
+        # nce/ace flags select the primary CE type (ce_key) fed to the model as spec_ce.
+        # Both NCE and ACE are always computed when either flag is set so that spec_nce
+        # and spec_ace are available in every batch for display / dual-CE input.
+        if spec_params["nce"] and spec_params["ace"] or spec_params["nce"]:
             ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
             ce_key = "nce"
-        elif spec_params["nce"]:
-            ce_keys_to_compute = [("nce", fill_missing_nce)]
-            ce_key = "nce"
         elif spec_params["ace"]:
-            ce_keys_to_compute = [("ace", fill_missing_ace)]
+            ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
             ce_key = "ace"
         else:
             ce_keys_to_compute = []
@@ -215,11 +232,15 @@ class BaseDataset(Dataset):
                 if target_key.startswith("nce"):
                     # fill missing nce from ace: nce = ace * 500 / (prec_mz * charge_factor)
                     computed = (ace * 500.0) / (prec_mz * charge_factors)
-                    result = nce.fillna(computed)
+                    result = pd.to_numeric(nce, errors="coerce").fillna(
+                        pd.to_numeric(computed, errors="coerce")
+                    )
                 else:
                     # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
                     computed = (nce * prec_mz * charge_factors) / 500.0
-                    result = ace.fillna(computed)
+                    result = pd.to_numeric(ace, errors="coerce").fillna(
+                        pd.to_numeric(computed, errors="coerce")
+                    )
                 spec_df.loc[:, target_key] = result
 
             for key, _ in ce_keys_to_compute:
@@ -232,6 +253,90 @@ class BaseDataset(Dataset):
                             -1
                         )
 
+        # CE range filter by instrument type (after Phase 1 scalar fill, before Phase 2
+        # list conversion so we can compare plain floats rather than lists).
+        # Config shape (under spec_params.split_filters.<split>.filter_ce_by_inst):
+        #   FT:   {nce_min: 0, nce_max: 60}
+        #   QTOF: {ace_min: 0, ace_max: 40}
+        # Instruments absent from the dict are not filtered.
+        # Spectra of a listed instrument whose CE is missing/unfillable are dropped.
+        # For ramped/stepped CEs ALL scalar CE columns (primary + extra_1 + extra_2)
+        # must satisfy the range — e.g. a ramp [10–70] fails nce_max: 60.
+        # NOTE: ace filters read the raw ace column and do NOT require ace: true.
+        #   QTOF spectra always carry raw ace, so ace filters work with nce: true too.
+        #   nce filters use Phase-1-filled values; require nce: true for correct results.
+        _filter_ce_by_inst: dict = _split_filter.get("filter_ce_by_inst", {})
+        if _filter_ce_by_inst:
+
+            def _ce_range_valid(col_primary: str, col_e1: str, col_e2: str, lo, hi) -> pd.Series:
+                """Return boolean Series: True when ALL present CE scalars are in [lo, hi].
+
+                A CE column is considered present when it is neither NaN nor the -1
+                sentinel.  The extra columns (col_e1, col_e2) are optional; they are
+                only checked when present so that single-CE spectra are not penalised.
+                """
+                primary = spec_df[col_primary]
+                e1 = spec_df[col_e1]
+                e2 = spec_df[col_e2]
+
+                e1_present = e1.notna() & (e1 != -1)
+                e2_present = e2.notna() & (e2 != -1)
+
+                # Primary must be valid (not missing)
+                valid = primary.notna() & (primary != -1)
+                if lo is not None:
+                    valid &= primary >= lo
+                    valid &= ~e1_present | (e1 >= lo)
+                    valid &= ~e2_present | (e2 >= lo)
+                if hi is not None:
+                    valid &= primary <= hi
+                    valid &= ~e1_present | (e1 <= hi)
+                    valid &= ~e2_present | (e2 <= hi)
+                return valid
+
+            keep = pd.Series(True, index=spec_df.index)
+            for _inst, _ce_cfg in _filter_ce_by_inst.items():
+                _inst_mask = spec_df["inst_type"] == _inst
+                _nce_min = _ce_cfg.get("nce_min", None)
+                _nce_max = _ce_cfg.get("nce_max", None)
+                _ace_min = _ce_cfg.get("ace_min", None)
+                _ace_max = _ce_cfg.get("ace_max", None)
+                if _nce_min is not None or _nce_max is not None:
+                    _valid = _ce_range_valid(
+                        "nce", "nce_extra_1", "nce_extra_2", _nce_min, _nce_max
+                    )
+                    # Only enforce for spectra of this instrument type
+                    keep &= ~_inst_mask | _valid
+                if _ace_min is not None or _ace_max is not None:
+                    _valid = _ce_range_valid(
+                        "ace", "ace_extra_1", "ace_extra_2", _ace_min, _ace_max
+                    )
+                    keep &= ~_inst_mask | _valid
+            orig_n = len(spec_df)
+            spec_df = spec_df[keep]
+            mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
+            print(
+                f">> split_filter [{splits[0]}] filter_ce_by_inst "
+                f"{list(_filter_ce_by_inst)}: {orig_n} → {len(spec_df)} spectra"
+            )
+            # Print CE distribution per filtered instrument type.
+            for _inst, _ce_cfg in _filter_ce_by_inst.items():
+                _inst_rows = spec_df[spec_df["inst_type"] == _inst]
+                _ce_col = "ace" if ("ace_min" in _ce_cfg or "ace_max" in _ce_cfg) else "nce"
+                _ce_vals = _inst_rows[_ce_col]
+                _ce_vals = _ce_vals[_ce_vals.notna() & (_ce_vals != -1)]
+                if len(_ce_vals) == 0:
+                    print(f"   [{_inst}] {_ce_col}: no valid values after filter")
+                    continue
+                _q = _ce_vals.quantile([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
+                print(
+                    f"   [{_inst}] {_ce_col} distribution (n={len(_ce_vals)}): "
+                    f"min={_q[0.0]:.1f}  p10={_q[0.1]:.1f}  p25={_q[0.25]:.1f}  "
+                    f"p50={_q[0.5]:.1f}  p75={_q[0.75]:.1f}  p90={_q[0.9]:.1f}  "
+                    f"max={_q[1.0]:.1f}"
+                )
+
+        if ce_keys_to_compute:
             # Phase 2: convert scalar CE columns to lists (stepped / ramped / single).
             # _fill_ce_list does NaN checks + possibly np.arange over a small range —
             # microseconds per row. Process-based parallelism (joblib / pandarallel)
@@ -682,6 +787,15 @@ class BaseDataset(Dataset):
             # for unmerged spectra, it is list of ces available include both ramped/stepped ces
             assert isinstance(ce, list), type(ce)
             spec_data["spec_ce"] = th.tensor(ce, dtype=th.float)
+            # Always include both spec_nce and spec_ace so batches carry both CE types
+            # regardless of which is primary (ce_key). Used for per-instrument display and
+            # dual-CE input. Both are computed in _setup_dfs whenever either flag is set.
+            nce_val = spec_entry["nce"]
+            ace_val = spec_entry["ace"]
+            assert isinstance(nce_val, list), type(nce_val)
+            assert isinstance(ace_val, list), type(ace_val)
+            spec_data["spec_nce"] = th.tensor(nce_val, dtype=th.float)
+            spec_data["spec_ace"] = th.tensor(ace_val, dtype=th.float)
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
             prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
@@ -846,6 +960,15 @@ class BaseDataset(Dataset):
             collate_data["spec_ce_batch_idxs"] = batch_idxs
             # remove from list
             keys.remove("spec_ce")
+        for _ce_key in ("spec_nce", "spec_ace"):
+            if _ce_key in keys:
+                _ces, _, _batch_idxs = batch_func(
+                    collate_data[_ce_key],
+                    collate_data[_ce_key],
+                )
+                collate_data[_ce_key] = _ces
+                collate_data[f"{_ce_key}_batch_idxs"] = _batch_idxs
+                keys.remove(_ce_key)
 
     @staticmethod
     def _standard_collate(batch_size: int, keys: list[str], collate_data: dict) -> None:

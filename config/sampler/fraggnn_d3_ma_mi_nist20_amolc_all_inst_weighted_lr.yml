@@ -67,7 +67,7 @@ spec_params:
 mol_params:
   preprocess: True
 
-ce_insert_type: embed
+ce_insert_type: embed_clamped
 ce_insert_location: mol
 ce_insert_merge: True
 ce_insert_size: 32
@@ -134,4 +134,4 @@ pin_memory: True
 num_workers: 2
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+

@@ -4,6 +4,7 @@ from .base_dataset import BaseDataset
 from .data_sampler import (
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
+    GreedyInferenceBatchSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
@@ -24,6 +25,7 @@ __all__ = [
     "BaseDataset",
     "DualGroupDynamicBatchSampler",
     "FormulaPrecTypeGroupSampler",
+    "GreedyInferenceBatchSampler",
     "GroupSampler",
     "SpecMolFragDynamicBatchSampler",
     "get_group_sampler",

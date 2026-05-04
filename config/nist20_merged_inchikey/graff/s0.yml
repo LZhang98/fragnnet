@@ -54,7 +54,7 @@ loss_type: cross_entropy
 output_distribution: peak_marginal
 sparse_cosine_similarity: True
 oos_loss: False
-skip_extra_losses: True
+
 predict_oos: False
 oos_tolerance_multiple: 1
 gaussian_renormalize: True
@@ -85,4 +85,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-compile: True
+compile: False

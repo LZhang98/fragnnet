@@ -99,7 +99,9 @@ def list_replace(l, d):
     return [d[data] for data in l]
 
 
-def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
+def mol_from_inchi(
+    inchi: str, ml_standardize: bool = True, canonicalize_tautomers: bool = True
+) -> "Chem.rdchem.Mol":
     """return a rdkit mol from inchi str
 
     Args:
@@ -107,6 +109,9 @@ def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "Chem.rdchem.Mol"
             ml_standardize (bool, optional): Whether to apply ML-specific standardization
                     that includes cleanup, parent fragment extraction,
                     and tautomer canonicalization. Defaults to True.
+            canonicalize_tautomers (bool, optional): Whether to canonicalize tautomers
+                    during standardization. Only used when ml_standardize=True.
+                    Set to False to preserve the input tautomeric form. Defaults to True.
     Returns:
             rdkit.Chem.rdchem.Mol: rdkit mol object
     """
@@ -115,7 +120,7 @@ def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "Chem.rdchem.Mol"
     try:
         mol = Chem.MolFromInchi(inchi)
         if ml_standardize:
-            mol = rdkit_ml_standardize(mol)
+            mol = rdkit_ml_standardize(mol, canonicalize_tautomers=canonicalize_tautomers)
     except Exception:
         mol = np.nan
     if none_or_nan(mol):
@@ -123,18 +128,22 @@ def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "Chem.rdchem.Mol"
     return mol
 
 
-def rdkit_ml_standardize(mol: "Chem.rdchem.Mol") -> "Chem.rdchem.Mol":
+def rdkit_ml_standardize(
+    mol: "Chem.rdchem.Mol", canonicalize_tautomers: bool = True
+) -> "Chem.rdchem.Mol":
     """Standardize a molecule for consistent representation for spectra machine learning tasks.
     Do not directly copy this to other chemical machine leanring code base, check list of operations
     you want to perform first.
     This function performs several important standardization steps:
     1. Cleans up the molecule (removing Hs, disconnecting metals, etc.)
     2. Extracts the parent fragment (largest/most relevant piece)
-    3. Canonicalizes tautomers to a standard form
+    3. Canonicalizes tautomers to a standard form (if enabled)
     Adapted from https://bitsilla.com/blog/2021/06/standardizing-a-molecule-using-rdkit/
 
     Args:
             mol (rdkit.Chem.rdchem.Mol): Input molecule object
+            canonicalize_tautomers (bool, optional): Whether to canonicalize tautomers.
+                    Set to False to preserve the input tautomeric form. Defaults to True.
 
     Returns:
             rdkit.Chem.rdchem.Mol: Standardized molecule
@@ -145,12 +154,9 @@ def rdkit_ml_standardize(mol: "Chem.rdchem.Mol") -> "Chem.rdchem.Mol":
     )
     rdMolStandardize = modules[-1]
 
-    # Step 1: Clean up the molecule
-    # - Removes hydrogen atoms
-    # - Disconnects metal atoms
-    # - Normalizes functional groups to canonical forms
-    # - Reionizes certain groups to their preferred states
-    mol = rdMolStandardize.Cleanup(mol)
+    # Step 1: Normalize and reionize — skip MetalDisconnector (would strip covalent C–metal bonds)
+    mol = rdMolStandardize.Normalize(mol)
+    mol = rdMolStandardize.Reionize(mol)
 
     # Step 2: Get the parent fragment
     # - If the molecule contains multiple fragments (e.g., salt forms)
@@ -172,13 +178,16 @@ def rdkit_ml_standardize(mol: "Chem.rdchem.Mol") -> "Chem.rdchem.Mol":
     # - Converts between different tautomeric forms to ensure consistent representation
     # - Selects a single canonical tautomer when multiple forms are possible
     # - Critical for ensuring the same compound is always represented identically
-    te = rdMolStandardize.TautomerEnumerator()
-    mol = te.Canonicalize(mol)
+    if canonicalize_tautomers:
+        te = rdMolStandardize.TautomerEnumerator()
+        mol = te.Canonicalize(mol)
 
     return mol
 
 
-def mol_from_smiles(smiles, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
+def mol_from_smiles(
+    smiles: str, ml_standardize: bool = True, canonicalize_tautomers: bool = True
+) -> "Chem.rdchem.Mol":
     """Convert a SMILES string to an RDKit molecule object
 
     This function creates an RDKit molecule from a SMILES string and optionally
@@ -189,6 +198,9 @@ def mol_from_smiles(smiles, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
             ml_standardize (bool, optional): Whether to apply ML-specific standardization
                     that includes cleanup, parent fragment extraction, charge neutralization,
                     and tautomer canonicalization. Defaults to True.
+            canonicalize_tautomers (bool, optional): Whether to canonicalize tautomers
+                    during standardization. Only used when ml_standardize=True.
+                    Set to False to preserve the input tautomeric form. Defaults to True.
 
     Returns:
             rdkit.Chem.rdchem.Mol: RDKit molecule object, or np.nan if conversion fails
@@ -198,7 +210,7 @@ def mol_from_smiles(smiles, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
     try:
         mol = Chem.MolFromSmiles(smiles)
         if ml_standardize:
-            mol = rdkit_ml_standardize(mol)
+            mol = rdkit_ml_standardize(mol, canonicalize_tautomers=canonicalize_tautomers)
     except Exception:
         mol = np.nan
     if none_or_nan(mol):

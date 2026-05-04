@@ -105,7 +105,7 @@ compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+
 
 # pairwise losses
 pairwise_cosine_loss_weight: 0.0 

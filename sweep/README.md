@@ -1,17 +1,45 @@
 ## Weights and Biases Sweeps
 
-- [fragnnet_d3_sweep.yml](./fragnnet_d3_sweep.yml): sweep for FraGNNet-D3
-- [fragnnet_d4_sweep.yml](./fragnnet_d4_sweep.yml): sweep for FraGNNet-D4
-- [graff_sweep.yml](./graff_sweep.yml): sweep for GraFF
-- [iceberg_gen_sweep.yml](./iceberg_gen_sweep.yml): sweep for Iceberg Gen
-- [iceberg_inten_sweep.yml](./iceberg_inten_sweep.yml): sweep for Iceberg Inten
-- [iceberg_inten_opt_sweep.yml](./iceberg_inten_opt_sweep.yml): sweep for Iceberg Inten (+OPT)
-- [neims_sweep.yml](./neims_sweep.yml): sweep for NeIMS
-- [massformer_sweep.yml](./massformer_sweep.yml): sweep for massformer
+W&B sweep definitions live in this directory. The corresponding base training configs
+live under `config/sweeps/` and are passed to `scripts/run_wandb_sweep.py` with
+`--custom_fp`.
 
-Each wandb sweep used a budget of 100 samples and a random search strategy. The sweeps were initialized using the following command:
+| Sweep definition | Base training config | Purpose |
+|---|---|---|
+| [nist20_d3_ma_mi_sweep.yml](./nist20_d3_ma_mi_sweep.yml) | `config/sweeps/nist20_d3_ma_mi.yml` | Initial NIST20 D3 MA/MI random sweep |
+| [nist20_d3_ma_mi_sweep_2.yml](./nist20_d3_ma_mi_sweep_2.yml) | `config/sweeps/nist20_d3_ma_mi_2.yml` | Follow-up NIST20 D3 MA/MI sweep over hidden sizes, dropout, LR, weight decay, and node entropy |
+| [nist20_d3_ma_mi_sweep_sqrt.yml](./nist20_d3_ma_mi_sweep_sqrt.yml) | `config/sweeps/nist20_d3_ma_mi_sqrt.yml` | NIST20 D3 MA/MI sweep using sqrt-bin evaluation setup |
+| [nist20_d3_ma_mi_focused_sweep.yml](./nist20_d3_ma_mi_focused_sweep.yml) | `config/sweeps/nist20_d3_ma_mi_focused.yml` | Focused follow-up sweep for molecular encoder width (`256/384/512`) and safer architecture defaults |
+
+Older merged-data benchmark sweeps are under [merged/](./merged/).
+
+## Create A Sweep
+
+Use the W&B sweep definition file:
 
 ```bash
-wandb sweep --project fragnnet sweep/${MODEL}_sweep.yml
+wandb sweep --project fragnnet sweep/nist20_d3_ma_mi_focused_sweep.yml
 ```
 
+W&B prints a sweep id. Use that id to launch agents.
+
+## Run A Sweep Agent
+
+Run one local agent:
+
+```bash
+python scripts/run_wandb_sweep.py \
+  --custom_fp config/sweeps/nist20_d3_ma_mi_focused.yml \
+  --sweep_key <SWEEP_ID>
+```
+
+For SLURM, use the same custom config and sweep id with the existing sweep runner:
+
+```bash
+python scripts/setup_job_cc.py \
+  --python_script_fp scripts/run_wandb_sweep.py \
+  --custom_fp config/sweeps/nist20_d3_ma_mi_focused.yml \
+  --num_sweep_jobs 50 \
+  --num_sweep_agents 5 \
+  --sweep_key <SWEEP_ID>
+```

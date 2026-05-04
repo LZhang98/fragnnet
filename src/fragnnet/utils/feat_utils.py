@@ -552,6 +552,7 @@ def batch_mols_frags(
     frag_pyg_list: Sequence[pyg.data.Data],
     formula_peak_mzs_list: Sequence[th.Tensor],
     formula_peak_probs_list: Sequence[th.Tensor],
+    debug_validate_outputs: bool = False,
 ) -> dict[str, Any]:
     """Batch molecule/fragment graphs and sparse formula peak tensors."""
     # batch size
@@ -562,9 +563,9 @@ def batch_mols_frags(
 
     # Assert that the number of graphs in both molecule and fragment batches matches the batch size
     assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
-    # Assert that the node/edge feature indices are consistent — gated so they don't run every batch
-    # in production (Python's -O flag or PYTHONOPTIMIZE=1 disables __debug__ blocks).
-    if __debug__:
+    # Assert that the node/edge feature indices are consistent. This is useful for
+    # debugging data corruption, but expensive enough to keep off in normal training.
+    if debug_validate_outputs:
         assert all(
             th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i])
             for i in range(batch_size)
@@ -579,6 +580,21 @@ def batch_mols_frags(
     frag_num_nodes = [g.num_nodes for g in frag_pyg_list]
     mol_num_nodes = th.cumsum(th.tensor([0] + mol_num_nodes), dim=0)
     frag_num_nodes = th.cumsum(th.tensor([0] + frag_num_nodes), dim=0)
+
+    boundary_pair_frag_idxs = []
+    boundary_pair_in_idxs = []
+    boundary_pair_out_idxs = []
+    for mol_idx, (mol_pyg_item, frag_pyg_item) in enumerate(zip(mol_pyg_list, frag_pyg_list)):
+        if not hasattr(frag_pyg_item, "boundary_pair_frag_idxs"):
+            raise ValueError(
+                "frag_pyg is missing precomputed boundary_pair_* attributes; "
+                "regenerate DAGs before using the boundary_pair feature"
+            )
+        frag_offsets = frag_num_nodes[mol_idx]
+        mol_offsets = mol_num_nodes[mol_idx]
+        boundary_pair_frag_idxs.append(frag_pyg_item.boundary_pair_frag_idxs + frag_offsets)
+        boundary_pair_in_idxs.append(frag_pyg_item.boundary_pair_in_local + mol_offsets)
+        boundary_pair_out_idxs.append(frag_pyg_item.boundary_pair_out_local + mol_offsets)
 
     # Initialize lists
     frag_formula_peak_idxs = []  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
@@ -624,6 +640,9 @@ def batch_mols_frags(
         "frag_formula_cumsizes": frag_formula_cumsizes,  # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
         "frag_formula_peak_sizes": frag_formula_peak_sizes,  # Tensor containing the total number of peaks (isotopes) for each molecule
     }
+    batched_mol_frag["boundary_pair_frag_idxs"] = th.cat(boundary_pair_frag_idxs, dim=0)
+    batched_mol_frag["boundary_pair_in_idxs"] = th.cat(boundary_pair_in_idxs, dim=0)
+    batched_mol_frag["boundary_pair_out_idxs"] = th.cat(boundary_pair_out_idxs, dim=0)
     return batched_mol_frag
 
 
@@ -742,6 +761,7 @@ def get_frag_graph(
         ValueError: If dag_pyg.x (node features) is None.
     """
 
+    source_dag_pyg = dag_pyg
     device = dag_pyg.x.device
     # cast
     x = dag_pyg.x.long()
@@ -800,6 +820,9 @@ def get_frag_graph(
         node_feat_idxs=_node_feat_idxs,
         edge_feat_idxs=_edge_feat_idxs,
     )
+    for attr_name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if hasattr(source_dag_pyg, attr_name):
+            setattr(dag_pyg, attr_name, getattr(source_dag_pyg, attr_name))
     return dag_pyg
 
 

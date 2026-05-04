@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb32          # loss batch size 16
+- lb16          # loss batch size 16
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -41,7 +41,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes, with CMF
 
 # ============================================================================
 # Model Architecture
@@ -60,12 +60,12 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
-    - boundary_cc       # connected-component index within DAG of atoms at fragmentation boundary (i.e. cut bonds);
+    - boundary_pair       # connected-component index within DAG of atoms at fragmentation boundary (i.e. cut bonds);
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
-  preload: False       # load all DAGs into memory at startup for speed
-  preprocess: False    # apply preprocessing transforms at load time
+  preload: True       # load all DAGs into memory at startup for speed
+  preprocess: True    # apply preprocessing transforms at load time
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
@@ -133,6 +133,14 @@ lr_schedule: False
 debug_overfit: False
 
 # ============================================================================
+# Regularization
+# ============================================================================
+mol_dropout: 0.1
+frag_dropout: 0.1
+mlp_dropout: 0.1
+weight_decay: 0.01
+
+# ============================================================================
 # Loss Configuration
 # ============================================================================
 mask_null_formula: False   # include null-formula peaks in loss
@@ -155,6 +163,7 @@ auxiliary_scores:
   - cos_sim
 eval_mz_bin_res:
   - 0.01
+eval_bin_sqrt: False
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -167,7 +176,6 @@ inst_type_loss_tol:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
-dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 
 # ============================================================================
 # Pairwise losses
@@ -212,9 +220,9 @@ simple_group_sampler_type: group
 # ============================================================================
 pl_enable_progress_bar: True
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
-compile: True                    # torch.compile for speed
+compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-skip_extra_losses: True          # skip auxiliary losses (entropy, edge) to save time
+# skip auxiliary losses (entropy, edge) to save time
 num_workers: 2                   

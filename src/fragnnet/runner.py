@@ -10,9 +10,9 @@ import torch as th
 import yaml
 from lightning import seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.profilers import AdvancedProfiler, SimpleProfiler
 from pandarallel import pandarallel
-from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
@@ -542,6 +542,11 @@ def init_run(
         profiler = AdvancedProfiler(dirpath=profile_dp, filename="profile")
     elif config_d["profiler"] == "pytorch":
         th.profiler._utils._init_for_cuda_graphs()
+        profiler_wait = int(config_d["profiler_wait_steps"])
+        profiler_warmup = int(config_d["profiler_warmup_steps"])
+        profiler_active = int(config_d["profiler_active_steps"])
+        profiler_repeat = int(config_d["profiler_repeat"])
+        profiler_skip_first = int(config_d["profiler_skip_first_steps"])
         profiler = MyPyTorchProfiler(
             dirpath=profile_dp,
             filename="profile",
@@ -558,23 +563,25 @@ def init_run(
             export_to_chrome=False,
             export_to_flame_graph=True,
             experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
-            schedule=th.profiler.schedule(wait=1, warmup=1, active=6, repeat=0, skip_first=0),
+            schedule=th.profiler.schedule(
+                wait=profiler_wait,
+                warmup=profiler_warmup,
+                active=profiler_active,
+                repeat=profiler_repeat,
+                skip_first=profiler_skip_first,
+            ),
         )
     else:
         assert config_d["profiler"] == "none", config_d["profiler"]
         # no profiler
         profiler = None
 
-    # setup datasets
+    # setup datasets — test is intentionally excluded here and loaded after
+    # training to avoid holding the test set in memory throughout the run.
     logging.info("setup dataset")
-    splits = ["train", "val"]
-    if config_d["eval_test_split"]:
-        splits.append("test")
-    dses = init_dataset(config_d, splits=splits)
+    dses = init_dataset(config_d, splits=["train", "val"])
     train_ds = dses[0]
     val_ds = dses[1]
-    if config_d["eval_test_split"]:
-        test_ds = dses[2]
 
     # check config for sampler
     validate_sampler_config(config_d)
@@ -592,8 +599,6 @@ def init_run(
     logging.info("setup dataloader")
     train_dl = init_dataloader(train_ds, config_d)
     val_dl = init_dataloader(val_ds, config_d)
-    if config_d["eval_test_split"]:
-        test_dl = init_dataloader(test_ds, config_d)
 
     # setup trainer
     logging.info("setup trainer")
@@ -681,6 +686,9 @@ def init_run(
     logging.info("callback metrics")
 
     if not trainer.interrupted and config_d["eval_test_split"]:
+        logging.info("setup test dataset")
+        test_ds = init_dataset(config_d, splits=["test"])[0]
+        test_dl = init_dataloader(test_ds, config_d)
         logging.info("test model")
         trainer.test(
             model=model,

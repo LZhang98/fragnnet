@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from fragnnet.utils.misc_utils import get_core_count
 from fragnnet.utils.ms2c_utils import MolCandidateDB
 
 
@@ -189,7 +190,7 @@ if __name__ == "__main__":
     re_pattern = r'<a\shref="(.*).gz">'
     sdf_names = [f for f in re.findall(re_pattern, pubchem_sdf_html)]
 
-    num_process = os.cpu_count()
+    num_process = get_core_count()
     og_sigint_handler = signal.getsignal(signal.SIGINT)
     og_sigterm_handler = signal.getsignal(signal.SIGTERM)
     with multiprocessing.Pool(num_process) as mp_pool:
