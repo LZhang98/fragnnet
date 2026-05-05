@@ -441,8 +441,8 @@ class CEScaler(nn.Module):
 
     def __init__(
         self,
-        nce_mean: float,
-        nce_std: float,
+        ce_mean: float,
+        ce_std: float,
         output_dim: int,
         hidden_dim: int = 64,
         use_nce: bool = True,
@@ -453,8 +453,8 @@ class CEScaler(nn.Module):
         """Initialize CEScaler.
 
         Args:
-            nce_mean: Mean NCE for z-score normalization.
-            nce_std: Std NCE for z-score normalization.
+            ce_mean: Mean NCE (%) for z-score normalization.
+            ce_std: Std NCE (%) for z-score normalization.
             output_dim: Logit output dimension (mlp_output_dim).
             hidden_dim: Hidden dim of the CE→FiLM MLP. Defaults to 64.
             use_nce: Whether to include NCE as a scaler input. Defaults to True.
@@ -467,8 +467,8 @@ class CEScaler(nn.Module):
             raise ValueError("At least one of use_nce or use_ace must be True")
         self.use_nce = use_nce
         self.use_ace = use_ace
-        self.nce_mean = nce_mean
-        self.nce_std = nce_std
+        self.nce_mean = ce_mean
+        self.nce_std = ce_std
         self.ace_mean = ace_mean
         self.ace_std = ace_std
         self.output_dim = output_dim

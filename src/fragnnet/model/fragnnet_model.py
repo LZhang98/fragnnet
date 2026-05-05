@@ -318,8 +318,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.ce_scale = ce_scale
         if self.ce_scale:
             self.ce_scaler = CEScaler(
-                nce_mean=nce_mean,
-                nce_std=nce_std,
+                ce_mean=nce_mean,
+                ce_std=nce_std,
                 output_dim=self.mlp_output_dim,
                 hidden_dim=ce_scaler_hidden_dim,
                 use_nce=use_nce,
