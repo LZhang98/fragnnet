@@ -150,13 +150,30 @@ ann_params:
 # ============================================================================
 # Model Architecture
 # ============================================================================
-model_type: frag_gnn  # Model type: ["frag_gnn", "mces", "neims", "precursor", etc.]
+model_type: frag_gnn  # Model type: ["frag_gnn", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
 num_depth: 5  # Maximum fragmentation depth for DAG
 num_hs: 4  # Number of hydrogen transfer options
 num_elements: 17  # Number of elements including H (16 heavy: 13 base + As + B + Hg + Sn + Pb)
 int_embedder: abs-sines  # Integer embedder type: ["linear", "abs-sines", "sinusoidal"]
 int_embedder_tight: False  # Use tight integer range for embeddings
 output_formula_str: False  # Output formula as string (slower but useful for debugging)
+
+# ============================================================================
+# Spectrum-Molecule CLIP Pretraining
+# ============================================================================
+clip_temperature: 0.07
+clip_embed_dim: 256
+clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
+spectrum_encoder_params:
+  encoder_type: set_transformer
+  input_dim: 2
+  hidden_dim: 256
+  embed_dim: 256
+  num_layers: 2
+  num_heads: 4
+  num_inds: 32
+  dropout: 0.1
+  normalization: layer
 
 # ============================================================================
 # Molecular GNN Configuration
@@ -411,6 +428,8 @@ ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using 
 # Dataset CE flags live under spec_params.nce/ace. Model CE embedding is controlled by
 # use_nce/use_ace when constructing FraGNNetModel. When both model flags are True, the two
 # CE embeddings are concatenated, doubling the CE dim.
+use_nce: True
+use_ace: False
 # Rough approximations from NIST20 Orbitrap/FT MS
 nce_max: 200  # Maximum NCE value for normalization/binning
 nce_mean: 60  # Mean NCE for normalization (dataset-specific)

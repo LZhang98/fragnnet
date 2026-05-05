@@ -44,8 +44,9 @@ class SpectrumEncoder(nn.Module):
         self.spectrum_encoder_type = spectrum_encoder_type
 
         if spectrum_encoder_type == "set_transformer":
+            self.input_proj = nn.Linear(input_dim, hidden_dim)
             self.model = SetTransformer(
-                input_dim=input_dim,
+                input_dim=hidden_dim,
                 hidden_dim=hidden_dim,
                 output_dim=output_dim,
                 num_heads=num_heads,
@@ -102,6 +103,7 @@ class SpectrumEncoder(nn.Module):
             Tensor: Encoded spectrum of shape (batch_size, output_dim).
         """
         if self.spectrum_encoder_type == "set_transformer":
+            x = self.input_proj(x)
             return self.model(x, batch_idx=batch_idx)
         elif self.spectrum_encoder_type == "gnn":
             # For GNN, we need to handle batch_idx for pooling

@@ -19,6 +19,7 @@ from torch.utils.data.sampler import RandomSampler, SequentialSampler
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
+    FormulaPrecTypeGroupSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
