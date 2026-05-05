@@ -2087,16 +2087,8 @@ class SpectrumPL(L.LightningModule):
             assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params[
                 "merge_keep_ces"
             ]
-        elif self.hparams.spec_params["nce"]:
-            assert not self.hparams.spec_params["ace"]
-            assert self.hparams.spec_params["nce"] and (
-                not self.hparams.spec_params["merge_keep_ces"]
-            )
-        elif self.hparams.spec_params["ace"]:
-            assert not self.hparams.spec_params["nce"]
-            assert self.hparams.spec_params["ace"] and (
-                not self.hparams.spec_params["merge_keep_ces"]
-            )
+        elif self.hparams.spec_params["nce"] or self.hparams.spec_params["ace"]:
+            assert not self.hparams.spec_params["merge_keep_ces"]
 
     def _seed_dataloader(self, seed):
         generator = th.Generator()

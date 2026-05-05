@@ -81,8 +81,6 @@ ce_insert_type: lin
 ce_insert_location: mol
 ce_insert_merge: True
 ce_insert_size: 16        # 16 dims per signal → 32 total at mol input
-use_nce: True
-use_ace: True
 nce_max: 200
 nce_mean: 60
 nce_std: 40

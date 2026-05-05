@@ -408,8 +408,8 @@ ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
 ce_insert_location: none # Where CE is inserted: ["none","mol_input","frag_input","mlp_input"] or comma-separated
 ce_insert_merge: False # Whether to merge CE embeddings when inserted at multiple locations
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
-use_nce: True  # Embed NCE signal
-use_ace: False # Embed ACE signal; when both use_nce and use_ace are True, embeddings are concatenated (doubles CE dim)
+# spec_params.nce/ace also control model embedding (nce=True → embed NCE, ace=True → embed ACE)
+# When both are True the two CE embeddings are concatenated, doubling the CE dim.
 # Rough approximations from NIST20 Orbitrap/FT MS
 nce_max: 200  # Maximum NCE value for normalization/binning
 nce_mean: 60  # Mean NCE for normalization (dataset-specific)

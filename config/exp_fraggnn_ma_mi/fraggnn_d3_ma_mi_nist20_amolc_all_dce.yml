@@ -74,8 +74,8 @@ frag_params:
 # ============================================================================
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
-  nce: True             # use normalized collision energy (NCE) as input
-  ace: False            # do not use absolute collision energy (ACE)
+  nce: True             # use normalized collision energy (NCE) as input; also controls model NCE embedding
+  ace: True             # use absolute collision energy (ACE) as input; also controls model ACE embedding
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False  # encode precursor type as integer index, not string
@@ -107,9 +107,7 @@ mol_params:
 ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
-ce_insert_size: 32            # CE embedding dimension (per CE type; doubled when both use_nce and use_ace are True)
-use_nce: True                 # embed NCE signal
-use_ace: True                 # embed ACE signal; concatenated with NCE since use_nce is also True
+ce_insert_size: 32            # CE embedding dimension (per CE type; doubled when both spec_params.nce and ace are True)
 ace_max: 100                  # max ACE value (eV) for embed_clamped indexing
 ace_mean: 20                  # mean ACE value (eV) for normalization (lin/id types)
 ace_std: 15                   # std of ACE for normalization (lin/id types)
