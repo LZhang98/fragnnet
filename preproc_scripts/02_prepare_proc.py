@@ -103,11 +103,12 @@ def load_df(df_dp: str, dsets: list[str], num_entries: int) -> pd.DataFrame:
 def preprocess_spec(
     spec_df: pd.DataFrame,
     canonicalize_tautomers: bool = True,
+    skip_standardize: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
     # drop entries with the same dset_spec_id (this happens sometimes in MoNA)
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
     # convert smiles to mol and back (for standardization/stereochemistry)
-    if  args.skip_standardize:
+    if skip_standardize:
         spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
     else:
         spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], data_utils.mol_from_smiles)
@@ -235,7 +236,7 @@ def preprocess_spec(
     
     # convert smiles to mol
     # use skip_standardize flag to control whether to apply the same standardization as in the spec_df processing step, this is to save time when we want to keep the original mols without standardization
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=not args.skip_standardize, canonicalize_tautomers=canonicalize_tautomers))
+    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=not skip_standardize, canonicalize_tautomers=canonicalize_tautomers))
     
     compute_mol_df_props(mol_df)
     if (mol_df["smiles"] == "").any():
@@ -402,7 +403,9 @@ if __name__ == "__main__":
         all_df = load_df(args.df_dp, args.dsets, args.num_entries)
 
         spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(
-            all_df, canonicalize_tautomers=args.canonicalize_tautomers
+            all_df,
+            canonicalize_tautomers=args.canonicalize_tautomers,
+            skip_standardize=args.skip_standardize,
         )
 
         if args.na_str_for_missing:
