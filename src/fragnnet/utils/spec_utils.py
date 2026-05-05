@@ -169,26 +169,26 @@ def get_ints_untransform_func(ints_transform: str):
     return _func
 
 
-def transform_ce(ce: th.Tensor | float, mean_val: float, std_val: float) -> th.Tensor:
+def transform_ce(ce: th.Tensor | float, ce_mean: float, ce_std: float) -> th.Tensor:
     """Transform collision energy (CE) values via z-score normalization.
 
     Values below 0 are treated as missing/unknown and returned as-is.
 
     Args:
         ce: The CE values to transform.
-        mean_val: Mean CE value for normalization.
-        std_val: Standard deviation of CE values for normalization.
+        ce_mean: Mean CE value for normalization.
+        ce_std: Standard deviation of CE values for normalization.
 
     Returns:
         Transformed CE values of the same type as input.
     """
     if isinstance(ce, th.Tensor):
         mask = ce >= 0
-        transformed_ce = th.where(mask, (ce - mean_val) / std_val, ce)
+        transformed_ce = th.where(mask, (ce - ce_mean) / ce_std, ce)
         return transformed_ce
     else:
         if ce >= 0:
-            return th.tensor((ce - mean_val) / std_val)
+            return th.tensor((ce - ce_mean) / ce_std)
         else:
             return th.tensor(ce)
 
