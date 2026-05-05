@@ -427,6 +427,7 @@ class GINE_EFA(nn.Module):
         norm_mod, norm_fn = get_norm(normalization, hidden_size)
         self.norm_fn = norm_fn
         self.norms = get_clones(norm_mod, num_layers)
+        self.efa_norms = get_clones(norm_mod, num_layers)
         self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
     def forward(
@@ -448,10 +449,11 @@ class GINE_EFA(nn.Module):
             Updated node features of shape (N, hidden_size).
         """
         edge_attr = self.edge_transform(edge_attr)
-        for dropout, layer, norm, q_proj, k_proj, v_proj, out_proj in zip(
+        for dropout, layer, norm, efa_norm, q_proj, k_proj, v_proj, out_proj in zip(
             self.dropouts,
             self.layers,
             self.norms,
+            self.efa_norms,
             self.efa_q,
             self.efa_k,
             self.efa_v,
@@ -471,6 +473,7 @@ class GINE_EFA(nn.Module):
                 _efa_linear_attn, Q, K, V, batch_index, use_reentrant=False
             ).reshape(N, C)
             efa_out = dropout(out_proj(F.relu(efa_out)))
+            efa_out = self.norm_fn(efa_out, batch_index, efa_norm)
 
             x = local_out + efa_out
         return x
