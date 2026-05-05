@@ -58,10 +58,10 @@ The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **the
 | ACE → NCE conversion for QTOF | ✅ done | `fill_missing_nce()` via `ace_to_nce()` |
 | FT / QTOF / IT in inst\_types | ✅ included | `inst_types: [FT, QTOF, IT]` |
 | **Fragmentation mode conditioning** | ✅ **implemented** | `frag_mode: True`, `frag_mode_insert_location: mlp`, `frag_mode_scale: True` |
-| **Dual CE input (ACE + NCE)** | ❌ **not yet** | dataset ready; model stub `ce_insert_dual: False` |
+| **Dual CE input (ACE + NCE)** | ✅ **implemented** | `use_nce: True`, `use_ace: True`; independent embeddings are concatenated |
 
-The 0.762 median is with all currently-implemented conditioning active.  The two missing
-conditioning signals are architecture gaps that gate the FT/CID and QTOF improvements.
+The 0.762 median is with the implemented conditioning active. Remaining QTOF/CID work is now
+mostly an ablation/data-balance question, not a missing dual-CE architecture path.
 
 ---
 
@@ -78,7 +78,7 @@ conditioning signals are architecture gaps that gate the FT/CID and QTOF improve
 | 5b | **DAG mass filter (prune, not expand)** | Medium — SMARTS prepass/MBFS experiments show expansion hurts (−0.007 cos\_sim); mass filter recovers this at near-zero cost | Low (filter at dataset prep) |
 | 6 | **Explicit fragmentation rules for fused rings/steroids** | Medium — 3-bond cleavages not covered by one-shot pre-pass | Medium (SMARTS) |
 | 7 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
-| 8 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
+| 8 | Dual CE input (ACE + NCE, no conversion) ablation | Medium — tests whether avoiding ACE→NCE noise helps QTOF | Low (config + validation run) |
 | 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
 | 10 | **Model ensembling** | +4% cos\_hun, no arch change needed | Very low (multi-seed inference) |
 | 11 | OOS calibration per stratum | Confidence filter for downstream use | Very low (query) |
@@ -300,10 +300,15 @@ Either:
 `nce = ace * charge / (prec_mz / 500)`.  The ACE↔NCE correlation across all spectra is
 only **0.779** — the conversion is lossy and introduces m/z-dependent noise for QTOF.
 
-The dataset no longer enforces mutual exclusivity (old assert removed). When both
-`nce: True` and `ace: True` are set in `spec_params`, both CE columns are computed
-(for fallback conversion) but the model only receives `spec_ce` from `ce_key="nce"`.
-Full dual-CE model support requires `ce_insert_dual: True` (not yet implemented).
+The dataset no longer enforces mutual exclusivity (old assert removed). Whenever either
+`spec_params.nce` or `spec_params.ace` is enabled, both CE columns are computed and batched as
+`spec_nce` and `spec_ace`. `spec_ce` remains the primary CE tensor (`nce` when available,
+otherwise `ace`) for backward compatibility.
+
+Dual-CE model support is now implemented through the existing CE path: set `use_nce: True`
+and `use_ace: True`. `CEModel` embeds NCE and ACE with independent modules and concatenates
+the embeddings. `FraGNNetModel.forward()` passes `spec_ace` / `spec_ace_batch_idxs` into
+`embed_ce()` whenever `use_ace=True`.
 
 CE coverage in test set:
 
@@ -313,12 +318,13 @@ CE coverage in test set:
 | Only NCE | 15,865 | 18.5% |
 | Only ACE (QTOF-heavy) | 7,462 | 8.7% |
 
-### Proposed Approach: Feed Both, No Conversion
+### Current Approach: Feed Both, No Conversion
 
-Pass ACE and NCE as **two separate scalar inputs** with explicit validity masks.  The
-model embeds each independently and concatenates them.  When one is missing, a learned
-`[MISSING]` token is used instead.  This preserves full information and lets the model
-learn instrument-specific reliability of each CE type from data.
+Pass ACE and NCE as **two separate scalar inputs**. The model embeds each independently and
+concatenates them. Missing values use the existing `-1` sentinel handled by the CE transforms
+(`bin` maps it to the missing bucket; embedding-style CE inputs preserve it as the clamped
+missing sentinel). This preserves the two CE scales and lets the model learn
+instrument-specific reliability from data.
 
 | Spectrum | ace | nce | What model sees |
 |---|---|---|---|
@@ -331,24 +337,32 @@ learn instrument-specific reliability of each CE type from data.
 **1. Dataset** (`base_dataset.py`): ✅ **Done**
 - Old `assert not (ace and nce)` guard removed.
 - Both CE columns computed when either is requested (vectorised fill via `_fill_ce_scalar_vectorized`).
-- `ce_key="nce"` when both enabled; model always receives a single `spec_ce` tensor.
+- `ce_key="nce"` when both are available; model still receives `spec_ce` for compatibility.
+- Batches always include `spec_nce` / `spec_nce_batch_idxs` and `spec_ace` / `spec_ace_batch_idxs`
+  when CE is enabled.
 - `-1` sentinel for missing values handled in `fill_missing_ace` / `fill_missing_nce`.
 
-**2. Model** (`base_model.py`): ❌ **Not yet implemented**
-- Config stub `ce_insert_dual: False` added to `template.yml` and wired through `_ce_init` / `FraGNNetModel`.
-- Raises `NotImplementedError` if set to `True`.
-- When implemented: add a second `CEModel` instance for ACE (independent weights), concat embeddings, use learned missing tokens for absent CE.
+**2. Model** (`base_model.py`, `fragnnet_model.py`): ✅ **Done**
+- `CEModel._setup_ce()` builds independent NCE and ACE embedders when `use_nce` / `use_ace`
+  are enabled.
+- `CEModel.embed_ce()` concatenates active CE embeddings, so `ce_insert_size: 32` gives a
+  64-dim CE input when both NCE and ACE are active.
+- `FraGNNetModel.forward()` reads `spec_ace` and `spec_ace_batch_idxs` from the batch when
+  `use_ace=True` and passes them into both the CE embedding and CE FiLM scaler paths.
 
-**3. Config** (when implemented):
+**3. Config**:
 ```yaml
-# spec_params: both True so dataset computes both columns
-nce: True
-ace: True
-# model: embed both independently
-ce_insert_dual: True
+# dataset: enabling nce is enough to compute both columns; ace can be enabled too if desired
+spec_params:
+  nce: True
+  ace: True
+
+# model: embed both independently and concatenate
+use_nce: True
+use_ace: True
 ce_insert_size: 32      # per-CE; concat output = 64
 ce_insert_location: mlp
-ce_insert_type: embed
+ce_insert_type: embed_clamped
 ```
 
 ### Why No Conversion Is Better
