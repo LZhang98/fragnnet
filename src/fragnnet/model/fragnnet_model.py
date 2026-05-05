@@ -433,6 +433,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_node_feats_size += mol_pool_out_size
         if "base_formula" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_elements * self.formula_embedder.num_dim
+        if "neutral_loss_formula" in self.frag_node_feats:
+            self.frag_node_feats_size += self.num_elements * self.formula_embedder.num_dim
         if "depth" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_depth * self.depth_embedder.num_dim
         # edges
@@ -557,7 +559,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         else:
             ace = None
             ace_batch_idxs = None
-        ce_embed = self.embed_ce(spec_ce, spec_ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs)
+        ce_embed = self.embed_ce(
+            spec_ce, spec_ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs
+        )
         # get prec value
         prec_embed = self.embed_prec(spec_prec_type)
         # get inst value
@@ -755,12 +759,33 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_edata.append(frag_edge_mask_embed)
         # node formulae
         if "base_formula" in self.frag_node_feats:
-            frag_node_formula = self.formula_embedder(
-                get_node_feats(frag_x, frag_node_feat_idxs, "base_formula").reshape(
-                    batch_frag_num_nodes, -1
-                )
-            )
+            frag_base_formula_raw = get_node_feats(
+                frag_x, frag_node_feat_idxs, "base_formula"
+            ).reshape(batch_frag_num_nodes, -1)
+            frag_node_formula = self.formula_embedder(frag_base_formula_raw)
             frag_ndata.append(frag_node_formula)
+        # neutral loss formula: precursor_formula - fragment_formula
+        # precursor is the root node (depth bit 0 set); broadcast its base_formula to all nodes
+        if "neutral_loss_formula" in self.frag_node_feats:
+            assert "base_formula" in self.frag_node_feats, (
+                "neutral_loss_formula requires base_formula in frag_node_feats"
+            )
+            assert "depth" in self.frag_node_feats, (
+                "neutral_loss_formula requires depth in frag_node_feats"
+            )
+            depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(
+                batch_frag_num_nodes, -1
+            )
+            root_mask = depth_raw[:, 0].bool()
+            prec_formula_by_batch = th.zeros(
+                batch_size,
+                frag_base_formula_raw.shape[1],
+                dtype=frag_base_formula_raw.dtype,
+                device=device,
+            )
+            prec_formula_by_batch[frag_batch[root_mask]] = frag_base_formula_raw[root_mask]
+            neutral_loss_raw = prec_formula_by_batch[frag_batch] - frag_base_formula_raw
+            frag_ndata.append(self.formula_embedder(neutral_loss_raw))
         # edge formulae
         if "base_formula" in self.frag_edge_feats:
             frag_edge_formula = self.formula_embedder(
@@ -1022,8 +1047,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # apply CE-conditioned FiLM scaling if enabled
             if self.ce_scaler is not None:
                 frag_joint_logits = self.ce_scaler(
-                    frag_joint_logits, spec_ce, spec_ce_batch_idxs, frag_node_batch_idxs, batch_size,
-                    ace=ace, ace_batch_idxs=ace_batch_idxs,
+                    frag_joint_logits,
+                    spec_ce,
+                    spec_ce_batch_idxs,
+                    frag_node_batch_idxs,
+                    batch_size,
+                    ace=ace,
+                    ace_batch_idxs=ace_batch_idxs,
                 )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
