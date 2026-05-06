@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --job-name=msgym_mass_frag_gen_arr
 #SBATCH --mem=80G
-#SBATCH --cpus-per-task=40
+#SBATCH --cpus-per-task=64
 #SBATCH --time=0-3:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
