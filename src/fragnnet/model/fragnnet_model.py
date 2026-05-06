@@ -292,18 +292,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         )
 
         #  mlp for formula
-        _formula_hidden_size = (
-            formula_mlp_hidden_size if formula_mlp_hidden_size is not None else mlp_hidden_size
-        )
-        _formula_num_layers = (
-            formula_mlp_num_layers if formula_mlp_num_layers is not None else mlp_num_layers
-        )
         if self.mlp_output_format in ["formula", "node_formula"]:
             formula_mlp_kwargs = {
                 "input_size": mlp_input_dim,
                 "output_size": self.mlp_output_dim,
-                "hidden_size": _formula_hidden_size,
-                "num_layers": _formula_num_layers,
+                "hidden_size": mlp_hidden_size,
+                "num_layers": mlp_num_layers,
                 "dropout": mlp_dropout,
                 "use_residuals": mlp_use_residuals,
                 "normalization": mlp_normalization,
