@@ -335,6 +335,7 @@ def main(args):
         [
             "#load modules",
             "module load StdEnv/2023",
+            "module load cuda/12.2",  # this is needed for torch_linear_assignment
             f"module load python/{args.python_version}",
             f"module load rdkit/{args.rdkit_version}",
         ]
