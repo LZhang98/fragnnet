@@ -111,6 +111,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ace_max: float,
         ace_mean: float,
         ace_std: float,
+        cc_feature_dropout: float,
         debug_validate_outputs: bool = False,
     ):
         # nn.Module init
@@ -155,6 +156,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.num_hs = num_hs
         self.num_elements = num_elements
         self.debug_validate_outputs = debug_validate_outputs
+        if not 0.0 <= cc_feature_dropout <= 1.0:
+            raise ValueError(f"cc_feature_dropout must be in [0, 1], got {cc_feature_dropout}")
+        self.cc_feature_dropout = float(cc_feature_dropout)
 
         # calculate node/edge feats sizes
         self.mol_node_feats = mol_node_feats
@@ -390,6 +394,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if include_cmf:
             _h_counts = th.cat([_h_counts, _h_counts], dim=0)
         self.register_buffer("_h_counts_buf", _h_counts)
+
+    def _maybe_apply_cc_feature_dropout(self, frag_node_mask_embed: th.Tensor) -> th.Tensor:
+        """Drop the full-fragment cc feature group for a whole training batch."""
+        if not self.training or self.cc_feature_dropout <= 0.0 or "cc" not in self.frag_node_feats:
+            return frag_node_mask_embed
+        keep = th.rand((), device=frag_node_mask_embed.device) >= self.cc_feature_dropout
+        return frag_node_mask_embed * keep.to(dtype=frag_node_mask_embed.dtype)
 
     def _ce_location_check(self):
         assert self.ce_insert_location != "frag", "ce_insert_location=frag not supported"
@@ -681,6 +692,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 assert self.cc_interstage_type == "direct", self.cc_interstage_type
                 frag_node_mask_embed = frag_node_mask_embed
 
+            frag_node_mask_embed = self._maybe_apply_cc_feature_dropout(frag_node_mask_embed)
             frag_ndata.append(frag_node_mask_embed)
         if "boundary_cc" in self.frag_node_feats:
             num_frags_total = frag_x.shape[0]
