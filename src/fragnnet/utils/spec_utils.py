@@ -31,6 +31,7 @@ detect_isotope_peaks_for_training = isotope_utils.detect_isotope_peaks_for_train
 estimate_coisolation_fraction_from_precursor = (
     isotope_utils.estimate_coisolation_fraction_from_precursor
 )
+detect_cross_ce_orphan_peaks = isotope_utils.detect_cross_ce_orphan_peaks
 
 try:
     from torch_linear_assignment import (  # pyright: ignore[reportMissingImports]

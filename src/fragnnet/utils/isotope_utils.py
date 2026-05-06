@@ -1200,3 +1200,126 @@ def detect_isotope_peaks_for_training_cleanup(
         )
 
     return remove_mask
+
+
+# ---------------------------------------------------------------------------
+# Cross-CE orphan peak detection
+# ---------------------------------------------------------------------------
+
+# Per-instrument absolute m/z tolerance for cross-CE peak matching.
+# FT instruments have ~1–5 ppm accuracy so 0.02 Da covers up to m/z ~4000.
+# QTOF is typically 5–20 ppm / 20–50 mDa.
+# IT and unknown instruments have low mass accuracy; use 0.5 Da.
+_CROSS_CE_MZ_TOL: dict[str, float] = {
+    "FT": 0.02,
+    "QTOF": 0.05,
+}
+_CROSS_CE_MZ_TOL_DEFAULT = 0.5
+
+
+def detect_cross_ce_orphan_peaks(
+    peaks_list: list[tuple[np.ndarray, np.ndarray]],
+    inst_type: str = "",
+    mz_tol: float | None = None,
+    min_other_ces: int = 1,
+) -> list[np.ndarray]:
+    """Detect peaks in each CE spectrum that are absent from all other CE spectra.
+
+    Given a set of spectra acquired at different collision energies for the same
+    molecule / adduct / instrument (i.e. one ``group_id``), a peak is labelled
+    "orphan" if its m/z does not match any peak in at least ``min_other_ces``
+    of the remaining spectra within the instrument-appropriate m/z tolerance.
+
+    Real fragment ions tend to appear across multiple CE spectra; orphan peaks
+    are more likely to be noise, chimeric contamination, or co-isolation
+    artefacts that happen to fall inside the isolation window only at a
+    particular CE.
+
+    The function is intentionally conservative: it uses a wide tolerance
+    (relative to per-spectrum isotope detection) so that genuine fragments
+    that shift slightly with CE are not mis-labelled.
+
+    Args:
+        peaks_list: List of ``(mzs, ints)`` tuples, one per CE spectrum.
+            Each ``mzs`` and ``ints`` must be 1-D float arrays of the same
+            length.  Arrays need not be sorted.  The list must contain at
+            least one entry; groups with a single spectrum are returned
+            all-False (no information to compare against).
+        inst_type: Instrument type string (e.g. ``"FT"``, ``"QTOF"``,
+            ``"IT"``).  Used to select a default m/z tolerance when
+            ``mz_tol`` is ``None``.  Defaults to ``""`` (maps to 0.5 Da).
+        mz_tol: Absolute m/z tolerance in Da for matching peaks across
+            spectra.  Overrides the instrument-default when provided.
+        min_other_ces: Minimum number of *other* CE spectra in which a
+            matching peak must appear for the peak to be considered
+            consistent.  Defaults to 1.
+
+    Returns:
+        List of boolean arrays, one per input spectrum.  ``True`` means the
+        peak at that position is an orphan (absent from all other spectra).
+
+    Raises:
+        ValueError: If ``peaks_list`` is empty or any (mzs, ints) pair has
+            mismatched lengths or wrong dimensionality.
+
+    Example:
+        >>> import numpy as np
+        >>> # Three CE spectra for the same molecule
+        >>> spec_a = (np.array([100.0, 150.0, 200.0]), np.array([1000., 500., 200.]))
+        >>> spec_b = (np.array([100.0, 150.0, 999.0]), np.array([900., 450., 10.]))
+        >>> spec_c = (np.array([100.0, 150.0, 200.0]), np.array([800., 300., 150.]))
+        >>> masks = detect_cross_ce_orphan_peaks([spec_a, spec_b, spec_c], inst_type="FT")
+        >>> masks[1]  # peak at 999.0 Da only in spec_b → orphan
+        array([False, False,  True])
+    """
+    if not peaks_list:
+        raise ValueError("peaks_list must contain at least one spectrum")
+
+    validated: list[tuple[np.ndarray, np.ndarray]] = []
+    for i, (mzs, ints) in enumerate(peaks_list):
+        mzs = np.asarray(mzs, dtype=np.float64)
+        ints = np.asarray(ints, dtype=np.float64)
+        if mzs.ndim != 1 or ints.ndim != 1 or mzs.shape != ints.shape:
+            raise ValueError(
+                f"peaks_list[{i}]: mzs and ints must be 1-D arrays of equal length, "
+                f"got mzs.shape={mzs.shape}, ints.shape={ints.shape}"
+            )
+        validated.append((mzs, ints))
+
+    tol = mz_tol if mz_tol is not None else _CROSS_CE_MZ_TOL.get(inst_type, _CROSS_CE_MZ_TOL_DEFAULT)
+
+    # Pre-sort each spectrum's m/z array for binary search.
+    sorted_mzs: list[np.ndarray] = []
+    for mzs, _ in validated:
+        sorted_mzs.append(np.sort(mzs))
+
+    n_spec = len(validated)
+    result: list[np.ndarray] = []
+
+    for i, (mzs, _) in enumerate(validated):
+        n_peaks = len(mzs)
+        orphan = np.ones(n_peaks, dtype=bool)
+        if n_spec == 1:
+            # No other spectra to compare against → cannot label anything.
+            orphan[:] = False
+            result.append(orphan)
+            continue
+
+        for j, peak_mz in enumerate(mzs):
+            matches = 0
+            for k in range(n_spec):
+                if k == i:
+                    continue
+                smz = sorted_mzs[k]
+                lo = int(np.searchsorted(smz, peak_mz - tol, side="left"))
+                hi = int(np.searchsorted(smz, peak_mz + tol, side="right"))
+                if lo < hi:
+                    matches += 1
+                    if matches >= min_other_ces:
+                        break
+            if matches >= min_other_ces:
+                orphan[j] = False
+
+        result.append(orphan)
+
+    return result
