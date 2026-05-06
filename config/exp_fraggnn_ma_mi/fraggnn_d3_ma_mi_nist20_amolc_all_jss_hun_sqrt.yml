@@ -176,8 +176,9 @@ checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best che
 auxiliary_scores:
   - cos_sim
   - jss
-  - true_spec_ne   # ground truth normalized entropy — reference target
-  - pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
+  - cross_entropy
+  #- true_spec_ne   # ground truth normalized entropy — reference target
+  #- pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
 eval_mz_bin_res:
   - 0.01
 eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)

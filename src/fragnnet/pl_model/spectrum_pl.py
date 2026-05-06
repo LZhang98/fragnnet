@@ -481,6 +481,12 @@ class SpectrumPL(L.LightningModule):
                 compute_inst_tol_match_mzs = True
                 compute_rounded_match_mzs = True
                 self.batch_metric_args.add("spec_inst_type")
+            elif metric_name == "cross_entropy":
+                # tracks spec_ce (ios_ce + oos_ce) as an auxiliary metric;
+                # computed in loss_fn even when loss_type != "cross_entropy"
+                self.metric_min_max["spec_ce"] = "min"
+                self.metric_bests.append("spec_ce")
+                self.auxiliary_metric_names.add("spec_ce")
             else:
                 raise ValueError(f"metric_name {metric_name} not recognized")
 

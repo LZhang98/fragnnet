@@ -278,6 +278,8 @@ class FraGNNetPL(SpectrumPL):
 
         if self.hparams.loss_type == "cross_entropy":
             loss_names.extend(["spec_ce", "oos_ce", "ios_ce"])
+        elif "cross_entropy" in self.hparams.auxiliary_scores:
+            loss_names.append("spec_ce")
 
         def _add_if_active(names: list[str], *weights: float) -> None:
             """Add names only when at least one weight is non-zero."""
@@ -644,6 +646,20 @@ class FraGNNetPL(SpectrumPL):
 
             loss = self.hparams.primary_loss_weight * primary_loss
             loss_d["primary_loss"] = primary_loss
+
+            if self.hparams.loss_type != "cross_entropy" and "spec_ce" in self.loss_names:
+                ios_ce, oos_ce, _, _ = sparse_ce_fn(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    pred_oos_logprobs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
+                loss_d["spec_ce"] = ios_ce + oos_ce
 
             if self.hparams.null_loss:
                 assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
