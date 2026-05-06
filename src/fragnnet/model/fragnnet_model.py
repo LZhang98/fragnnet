@@ -106,11 +106,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ce_scale: bool,
         ce_scaler_hidden_dim: int,
         output_formula_str: bool,
-        use_nce: bool = True,
-        use_ace: bool = False,
-        ace_max: float = 100.0,
-        ace_mean: float = 20.0,
-        ace_std: float = 15.0,
+        use_nce: bool,
+        use_ace: bool,
+        ace_max: float,
+        ace_mean: float,
+        ace_std: float,
         debug_validate_outputs: bool = False,
     ):
         # nn.Module init
@@ -291,13 +291,19 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             + self.frag_mode_mlp_input_dim
         )
 
-        #  mlp for forumla
+        #  mlp for formula
+        _formula_hidden_size = (
+            formula_mlp_hidden_size if formula_mlp_hidden_size is not None else mlp_hidden_size
+        )
+        _formula_num_layers = (
+            formula_mlp_num_layers if formula_mlp_num_layers is not None else mlp_num_layers
+        )
         if self.mlp_output_format in ["formula", "node_formula"]:
             formula_mlp_kwargs = {
                 "input_size": mlp_input_dim,
                 "output_size": self.mlp_output_dim,
-                "hidden_size": mlp_hidden_size,
-                "num_layers": mlp_num_layers,
+                "hidden_size": _formula_hidden_size,
+                "num_layers": _formula_num_layers,
                 "dropout": mlp_dropout,
                 "use_residuals": mlp_use_residuals,
                 "normalization": mlp_normalization,
