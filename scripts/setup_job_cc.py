@@ -377,6 +377,9 @@ def main(args):
             "cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl",
             "pip install pyteomics-4.7.5-py3-none-any.whl",
             "",
+            "# install torch_linear_assignmnettorch_linear_assignment-0.0.6.tar.gz",
+            "cp ${FRAGNNET_DP}/wheels/torch_linear_assignment-0.0.6.tar.gz ${WORKING_DIR}/torch_linear_assignment-0.0.6.tar.gz",
+            "pip install --no-build-isolation torch_linear_assignment-0.0.6.tar.gz",
         ]
     )
 
