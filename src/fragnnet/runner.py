@@ -340,6 +340,27 @@ def validate_sampler_config(config_d: dict) -> None:
             )
 
 
+def log_cuda_info() -> None:
+    """Log PyTorch version and CUDA device information."""
+    logger = logging.getLogger(__name__)
+    logger.info("PyTorch version: %s", th.__version__)
+    if th.cuda.is_available():
+        logger.info("CUDA version: %s", th.version.cuda)
+        for i in range(th.cuda.device_count()):
+            props = th.cuda.get_device_properties(i)
+            total_gb = props.total_memory / 1024**3
+            logger.info(
+                "GPU %d: %s | %.1f GB | compute capability %d.%d",
+                i,
+                props.name,
+                total_gb,
+                props.major,
+                props.minor,
+            )
+    else:
+        logger.info("CUDA not available, running on CPU")
+
+
 def init_run(
     template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
 ) -> L.LightningModule:
@@ -361,6 +382,8 @@ def init_run(
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()],
     )
+
+    log_cuda_info()
 
     # load config
     config_d = load_config(template_fp, custom_fp, override)
