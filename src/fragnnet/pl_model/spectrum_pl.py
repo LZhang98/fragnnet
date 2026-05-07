@@ -1036,15 +1036,19 @@ class SpectrumPL(L.LightningModule):
                 _name = name.replace(".", "-")
                 mean_metrics = getattr(self, f"{split}_mean_metrics")
                 if split != "test":
-                    mean_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
+                    mean_metrics[_name] = th.full(
+                        [self.hparams.max_epochs], float("nan"), dtype=th.float32
+                    )
                 else:
-                    mean_metrics[_name] = -th.ones([1], dtype=th.float32)
+                    mean_metrics[_name] = th.full([1], float("nan"), dtype=th.float32)
                 if report_metric_std:
                     std_metrics = getattr(self, f"{split}_std_metrics")
                     if split != "test":
-                        std_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
+                        std_metrics[_name] = th.full(
+                            [self.hparams.max_epochs], float("nan"), dtype=th.float32
+                        )
                     else:
-                        std_metrics[_name] = -th.ones([1], dtype=th.float32)
+                        std_metrics[_name] = th.full([1], float("nan"), dtype=th.float32)
 
     def _setup_sampler(self):
         self._cur_batch_size = 0
@@ -1788,10 +1792,17 @@ class SpectrumPL(L.LightningModule):
                 mean_metric_epochs = mean_metrics_epochs[k.replace(".", "-")][
                     : self.current_epoch + 1
                 ]
+                valid_mask = ~th.isnan(mean_metric_epochs)
+                if not valid_mask.any():
+                    continue
                 if self.metric_min_max[k] == "min":
-                    argbest_metric = th.argmin(mean_metric_epochs)
+                    argbest_metric = th.argmin(
+                        mean_metric_epochs.masked_fill(~valid_mask, float("inf"))
+                    )
                 elif self.metric_min_max[k] == "max":
-                    argbest_metric = th.argmax(mean_metric_epochs)
+                    argbest_metric = th.argmax(
+                        mean_metric_epochs.masked_fill(~valid_mask, float("-inf"))
+                    )
                 else:
                     assert self.metric_min_max[k] is None, self.metric_min_max[k]
                     continue
