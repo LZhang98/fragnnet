@@ -19,6 +19,24 @@ from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
 
 
+def _ce_list_to_stats(t: th.Tensor) -> th.Tensor:
+    """Reduce one sample's CE list to (mean_raw, std_raw, valid) as shape (1, 3).
+
+    Args:
+        t: 1-D tensor of CE values for one sample; -1 means missing.
+
+    Returns:
+        Tensor of shape (1, 3): columns are (mean, std, valid_flag).
+        All zeros when no valid CE is present.
+    """
+    valid = t[t >= 0].float()
+    if len(valid) == 0:
+        return th.zeros(1, 3, dtype=th.float32)
+    mean = valid.mean()
+    std = (valid - mean).pow(2).mean().sqrt()
+    return th.stack([mean, std, th.ones(1, device=t.device)[0]], dim=0).unsqueeze(0)
+
+
 class BaseDataset(Dataset):
     def _base_init(
         self,
@@ -784,6 +802,12 @@ class BaseDataset(Dataset):
             keys.remove("spec_ce")
         for _ce_key in ("spec_nce", "spec_ace"):
             if _ce_key in keys:
+                # Pre-reduce to (mean, std, valid) stats for CEScaler — no scatter in model.
+                # Each sample contributes a (1, 3) tensor; _standard_collate cats to (B, 3).
+                stats_key = f"{_ce_key}_stats"
+                collate_data[stats_key] = [_ce_list_to_stats(t) for t in collate_data[_ce_key]]
+                keys.append(stats_key)
+                # Keep raw concat + batch_idxs for _embed_single_ce (averages embeddings).
                 _ces, _, _batch_idxs = batch_func(
                     collate_data[_ce_key],
                     collate_data[_ce_key],

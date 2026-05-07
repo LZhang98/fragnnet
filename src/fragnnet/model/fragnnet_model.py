@@ -322,14 +322,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.ce_scale = ce_scale
         if self.ce_scale:
             self.ce_scaler = CEScaler(
-                ce_mean=nce_mean,
-                ce_std=nce_std,
-                output_dim=self.mlp_output_dim,
-                hidden_dim=ce_scaler_hidden_dim,
+                nce_mean=nce_mean,
+                nce_std=nce_std,
                 use_nce=use_nce,
-                use_ace=use_ace,
                 ace_mean=ace_mean,
                 ace_std=ace_std,
+                use_ace=use_ace,
+                output_dim=self.mlp_output_dim,
+                hidden_dim=ce_scaler_hidden_dim,
             )
         else:
             self.ce_scaler = None
@@ -1060,12 +1060,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             if self.ce_scaler is not None:
                 frag_joint_logits = self.ce_scaler(
                     frag_joint_logits,
-                    spec_ce,
-                    spec_ce_batch_idxs,
                     frag_node_batch_idxs,
-                    batch_size,
-                    ace=ace,
-                    ace_batch_idxs=ace_batch_idxs,
+                    nce_stats=kwargs.get("spec_nce_stats"),
+                    ace_stats=kwargs.get("spec_ace_stats"),
                 )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
