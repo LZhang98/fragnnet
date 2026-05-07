@@ -2,6 +2,53 @@
 
 ---
 
+## 2026-05-07
+
+### `CEScaler` extended to (mean, std, valid) per signal; handles ramped/stepped CE
+
+**Problem:** `CEScaler` previously accepted a single CE value per sample and fed `(value, valid)` to
+its MLP. Ramped and stepped spectra carry *multiple* CE values per sample — the scaler needed to
+reduce those to a fixed-size feature. When `use_ace=True` was added, NCE and ACE produced different
+entry counts per batch item for ramped spectra (NCE steps in NCE%, ACE steps in eV), causing a
+shape mismatch crash in `scatter_reduce`.
+
+**CE encoding in `_fill_ce_list` (`base_dataset.py`):**
+
+| Spectrum type | NCE list | ACE list |
+|---|---|---|
+| Single | `[ce]` — 1 entry | `[ace]` — 1 entry |
+| Stepped | `[lo, mid, hi]` — 3 entries | `[lo_eV, mid_eV, hi_eV]` — 3 entries |
+| Ramped | `np.arange(lo, hi+0.1, 1.0)` in NCE% steps | `np.arange(lo, hi+0.1, 1.0)` in eV steps |
+| Missing | `[-1]` — sentinel | `[-1]` — sentinel |
+
+For a ramped spectrum NCE 10–40% the NCE list has 31 entries; the same spectrum's ACE list (e.g.
+ACE 20–40 eV) has 21 entries. Because collation concatenates each signal independently with its own
+`batch_idxs`, the entry counts differ — this was the root cause of the "72 vs 88" size mismatch.
+
+**Fix:** `CEScaler.forward` now scatters each signal independently via a nested `_scatter_signal`
+helper that uses `scatter_add_` (not `scatter_reduce_`, which has stricter dimension validation on
+GPU) with explicit `.view(-1)` flattening. Each signal is reduced to `(mean, std, valid)` per
+sample:
+
+- `std = 0` → single-CE spectrum — model sees a sharp CE point.
+- `std > 0` → ramped or stepped — model sees the spread, which distinguishes wide ramps from
+  narrow ones or 3-point stepped acquisitions.
+- `valid = 0` → CE missing — MLP input is all-zero for that signal.
+
+**`input_dim` change:** was `2 * n_signals` (mean, valid); now `3 * n_signals` (mean, std, valid).
+Checkpoint-incompatible change — existing checkpoints for any config that uses `ce_scale: true`
+must be retrained or the scaler weights re-initialised (the last linear layer is zero-initialised
+anyway, so warm-starting the rest is safe).
+
+**Other root causes fixed along the way:**
+
+- `batch_size = frag_batch[-1] + 1` in `fragnnet_model.py` is a 0-dim int64 tensor. When passed
+  to `scatter_reduce`'s `result_shape = src.shape[:dim] + (dim_size,) + ...` computation with a
+  2D `src`, it produced wrong shapes. Fixed by `batch_size = int(batch_size)` at the top of both
+  `CEScaler.forward` and `FraGNNetModel.forward`.
+
+---
+
 ## 2026-04-21
 
 ### `boundary_pair` moved into DAG generation/storage
