@@ -27,6 +27,7 @@ frag_gnn_type: NodeMLP
 mol_hidden_size: 384    # sweep: 4/5 top runs
 mol_num_layers: 4
 mol_gnn_type: GINE
+mol_num_heads: 4        # used by GINE_EFA; ignored by GINE
 mol_normalization: batch
 mol_pool_type: mean
 
@@ -171,10 +172,7 @@ delete_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
   - cos_sim
-  # - jss
-  #- true_spec_ne   # ground truth normalized entropy
-  #- pred_spec_ne   # predicted normalized entropy — tracks peak count prediction quality
-                   # gap (pred_spec_ne - true_spec_ne) shows under/over-prediction of peaks
+  - jss
 eval_mz_bin_res:
   - 0.01
 eval_bin_sqrt: True
