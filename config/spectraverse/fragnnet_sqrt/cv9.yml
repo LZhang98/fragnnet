@@ -13,8 +13,6 @@ wandb_tags:
 - b256          # batch size 256
 - vectorized_loss
 - lb16          # loss batch size 16
-- preload
-- preprocess
 - new_no_edges  # no edge features in fragment GNN
 - skip_extra_losses
 - binned_cosine_similarity
