@@ -5,8 +5,6 @@ wandb_name: spectraverse_fragnnet_sqrt_cv1
 wandb_group: spectraverse_fragnnet_sqrt
 wandb_tags:
 - retrieval
-- d4
-- wr00
 - fraggnn_d3
 - dynamic_sampler
 - nodemlp
@@ -31,6 +29,7 @@ wandb_tags:
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
+- sqrt           # eval_bin_sqrt
 
 # ============================================================================
 # Data File Paths
