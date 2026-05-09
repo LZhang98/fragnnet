@@ -1,24 +1,27 @@
-"""Upload local checkpoint file(s) to an existing wandb run.
+"""Upload local checkpoint file(s) to one or more existing wandb runs.
 
 Useful for crashed runs where checkpoints were saved locally but not synced.
-By default, searches the local `wandb/` directory for the run matching the
-given run ID, then uploads all checkpoints from its `ckpt/` subdirectory.
+By default, searches the local `wandb/` directory for each run matching the
+given run ID(s), then uploads all checkpoints from their `ckpt/` subdirectory.
 
 Usage:
-    # Auto-discover ckpts from the local wandb/ run dir
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1
+    # Single run — auto-discover ckpts from the local wandb/ run dir
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1
+
+    # Multiple runs at once
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 abc123de
 
     # Custom wandb directory (if not running from project root)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --wandb-dir /path/to/wandb
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 --wandb-dir /path/to/wandb
 
-    # Upload specific files instead
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --ckpt path/to/model-epoch=010.ckpt
+    # Upload specific files instead (single run only)
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 --ckpt path/to/model-epoch=010.ckpt
 
-    # Upload all .ckpt files from a specific directory
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --ckpt-dir path/to/ckpt/
+    # Upload all .ckpt files from a specific directory (single run only)
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 --ckpt-dir path/to/ckpt/
 
     # Specify entity/project (default: frag-gnn/frag-gnn)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --entity myorg --project myproj
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 abc123de --entity myorg --project myproj
 """
 
 import argparse
@@ -59,11 +62,18 @@ def find_local_run_dir(run_id: str, wandb_dir: Path) -> Path:
     return files_dir if files_dir.is_dir() else run_dir
 
 
-def collect_ckpt_files(args: argparse.Namespace) -> list[Path]:
-    """Collect checkpoint paths from the various input options.
+def collect_ckpt_files_for_run(
+    run_id: str,
+    args: argparse.Namespace,
+) -> list[Path]:
+    """Collect checkpoint paths for a single run.
+
+    When --ckpt or --ckpt-dir are given they take precedence over auto-discovery.
+    Auto-discovery is only used when neither override is provided.
 
     Args:
-        args: Parsed argument namespace with ckpt, ckpt_dir, run_id, and wandb_dir fields.
+        run_id: Short wandb run ID.
+        args: Parsed argument namespace.
 
     Returns:
         Deduplicated list of resolved checkpoint Paths.
@@ -95,7 +105,7 @@ def collect_ckpt_files(args: argparse.Namespace) -> list[Path]:
     if not args.ckpt and not args.ckpt_dir:
         # Auto-discover from local wandb run directory
         wandb_dir = Path(args.wandb_dir)
-        run_files_dir = find_local_run_dir(args.run_id, wandb_dir)
+        run_files_dir = find_local_run_dir(run_id, wandb_dir)
         ckpt_dir = run_files_dir / "ckpt"
         search_dir = ckpt_dir if ckpt_dir.is_dir() else run_files_dir
         found = sorted(search_dir.glob("*.ckpt"))
@@ -120,9 +130,11 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "--run-id",
+        "--run-ids",
+        nargs="+",
         required=True,
-        help="WandB run ID (short ID like 'omp634h1')",
+        metavar="RUN_ID",
+        help="One or more WandB run IDs (e.g. omp634h1 abc123de)",
     )
     parser.add_argument(
         "--entity", default="frag-gnn", help="WandB entity (default: frag-gnn)"
@@ -161,51 +173,57 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    try:
-        ckpt_files = collect_ckpt_files(args)
-    except (FileNotFoundError, NotADirectoryError) as exc:
-        log.error("%s", exc)
-        return 1
-
-    if not ckpt_files:
-        log.error("No checkpoint files resolved.")
-        return 1
-
-    log.info("Checkpoints to upload (%d):", len(ckpt_files))
-    for p in ckpt_files:
-        log.info("  %s  (%s)", p, _human_size(p.stat().st_size))
-
-    run_path = f"{args.entity}/{args.project}/{args.run_id}"
-    if args.dry_run:
-        log.info("[dry-run] Would upload to run: %s", run_path)
-        return 0
+    if (args.ckpt or args.ckpt_dir) and len(args.run_ids) > 1:
+        parser.error("--ckpt / --ckpt-dir can only be used with a single --run-ids entry")
 
     import wandb
 
     api = wandb.Api()
-    try:
-        run = api.run(run_path)
-    except Exception as exc:
-        log.error("Could not fetch run %s: %s", run_path, exc)
-        return 1
 
-    log.info("Uploading to run: %s (state: %s)", run.name, run.state)
+    total_ok = 0
+    total_fail = 0
 
-    n_ok = 0
-    n_fail = 0
-    for p in ckpt_files:
-        root = args.root if args.root is not None else str(p.parent)
-        log.info("  Uploading %s ...", p.name)
+    for run_id in args.run_ids:
+        log.info("=== Run %s ===", run_id)
+
         try:
-            run.upload_file(str(p), root=root)
-            log.info("    OK")
-            n_ok += 1
-        except Exception as exc:
-            log.error("    FAILED: %s", exc)
-            n_fail += 1
+            ckpt_files = collect_ckpt_files_for_run(run_id, args)
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            log.error("  %s", exc)
+            total_fail += 1
+            continue
 
-    log.info("Done: %d uploaded, %d failed", n_ok, n_fail)
-    return 0 if n_fail == 0 else 1
+        log.info("  Checkpoints to upload (%d):", len(ckpt_files))
+        for p in ckpt_files:
+            log.info("    %s  (%s)", p, _human_size(p.stat().st_size))
+
+        run_path = f"{args.entity}/{args.project}/{run_id}"
+        if args.dry_run:
+            log.info("  [dry-run] Would upload to run: %s", run_path)
+            continue
+
+        try:
+            run = api.run(run_path)
+        except Exception as exc:
+            log.error("  Could not fetch run %s: %s", run_path, exc)
+            total_fail += 1
+            continue
+
+        log.info("  Uploading to: %s (state: %s)", run.name, run.state)
+
+        for p in ckpt_files:
+            root = args.root if args.root is not None else str(p.parent)
+            log.info("    %s ...", p.name)
+            try:
+                run.upload_file(str(p), root=root)
+                log.info("      OK")
+                total_ok += 1
+            except Exception as exc:
+                log.error("      FAILED: %s", exc)
+                total_fail += 1
+
+    log.info("Done: %d uploaded, %d failed", total_ok, total_fail)
+    return 0 if total_fail == 0 else 1
 
 
 def _human_size(n_bytes: int) -> str:
