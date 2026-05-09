@@ -1,9 +1,9 @@
 """Create job_id files for resuming wandb runs that were started without --job_id.
 
 Usage:
-    python scripts/create_resume_job_ids.py <wandb_run_id> [<wandb_run_id> ...]
+    python scripts/create_resume_job_ids.py --run_ids <wandb_run_id> [<wandb_run_id> ...]
 
-    python scripts/create_resume_job_ids.py 5ka1k9uo ap2wmk7m
+    python scripts/create_resume_job_ids.py --run_ids 5ka1k9uo ap2wmk7m
 
 Each run ID gets a job_id file at job_id/<run_id>.id containing:
     <run_id>;<abs_path_to_wandb_files_dir>
@@ -40,7 +40,7 @@ def find_wandb_files_dir(wandb_root: str, run_id: str) -> str | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("run_ids", nargs="+", help="WandB run IDs to create job_id files for")
+    parser.add_argument("--run_ids", nargs="+", required=True, help="WandB run IDs to create job_id files for")
     parser.add_argument(
         "--wandb_root",
         default="wandb",
