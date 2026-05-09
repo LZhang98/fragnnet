@@ -1,19 +1,24 @@
 """Upload local checkpoint file(s) to an existing wandb run.
 
 Useful for crashed runs where checkpoints were saved locally but not synced.
+By default, searches the local `wandb/` directory for the run matching the
+given run ID, then uploads all checkpoints from its `ckpt/` subdirectory.
 
 Usage:
-    # Upload a single checkpoint file
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run <run_id> --ckpt path/to/model-epoch=010.ckpt
+    # Auto-discover ckpts from the local wandb/ run dir
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1
 
-    # Upload all .ckpt files in a directory
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run <run_id> --ckpt-dir path/to/ckpt/
+    # Custom wandb directory (if not running from project root)
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --wandb-dir /path/to/wandb
 
-    # Upload from the standard wandb run dir (auto-discovers ckpt/ subdirectory)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run <run_id> --wandb-run-dir wandb/run-20260421_120318-omp634h1/files
+    # Upload specific files instead
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --ckpt path/to/model-epoch=010.ckpt
 
-    # Specify entity/project explicitly (default: frag-gnn/frag-gnn)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run <run_id> --ckpt model.ckpt --entity myorg --project myproj
+    # Upload all .ckpt files from a specific directory
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --ckpt-dir path/to/ckpt/
+
+    # Specify entity/project (default: frag-gnn/frag-gnn)
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-id omp634h1 --entity myorg --project myproj
 """
 
 import argparse
@@ -24,8 +29,49 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
 
+def find_local_run_dir(run_id: str, wandb_dir: Path) -> Path:
+    """Find the local wandb run directory for a given run ID.
+
+    Args:
+        run_id: Short wandb run ID (e.g. 'omp634h1').
+        wandb_dir: Root local wandb directory to search under.
+
+    Returns:
+        Path to the run's files directory (e.g. wandb/run-<ts>-<id>/files).
+
+    Raises:
+        FileNotFoundError: If no matching run directory is found.
+    """
+    if not wandb_dir.is_dir():
+        raise FileNotFoundError(f"wandb directory not found: {wandb_dir}")
+
+    matches = [d for d in wandb_dir.iterdir() if d.is_dir() and d.name.endswith(f"-{run_id}")]
+    if not matches:
+        raise FileNotFoundError(
+            f"No local run directory found for run ID '{run_id}' under {wandb_dir}"
+        )
+    if len(matches) > 1:
+        log.warning("Multiple run dirs matched '%s': %s — using first", run_id, matches)
+
+    run_dir = matches[0]
+    # WandB stores run files under <run_dir>/files/
+    files_dir = run_dir / "files"
+    return files_dir if files_dir.is_dir() else run_dir
+
+
 def collect_ckpt_files(args: argparse.Namespace) -> list[Path]:
-    """Collect checkpoint paths from the various input options."""
+    """Collect checkpoint paths from the various input options.
+
+    Args:
+        args: Parsed argument namespace with ckpt, ckpt_dir, run_id, and wandb_dir fields.
+
+    Returns:
+        Deduplicated list of resolved checkpoint Paths.
+
+    Raises:
+        FileNotFoundError: If any specified path or directory does not exist.
+        NotADirectoryError: If ckpt_dir is not a directory.
+    """
     paths: list[Path] = []
 
     if args.ckpt:
@@ -33,7 +79,7 @@ def collect_ckpt_files(args: argparse.Namespace) -> list[Path]:
             p = Path(fp)
             if not p.exists():
                 raise FileNotFoundError(f"Checkpoint not found: {p}")
-            if not p.suffix == ".ckpt":
+            if p.suffix != ".ckpt":
                 log.warning("File does not have .ckpt extension: %s", p)
             paths.append(p)
 
@@ -46,17 +92,19 @@ def collect_ckpt_files(args: argparse.Namespace) -> list[Path]:
             raise FileNotFoundError(f"No .ckpt files found in: {d}")
         paths.extend(found)
 
-    if args.wandb_run_dir:
-        run_dir = Path(args.wandb_run_dir)
-        # Try <run_dir>/ckpt/ first, then <run_dir>/ directly
-        ckpt_subdir = run_dir / "ckpt"
-        search_dir = ckpt_subdir if ckpt_subdir.is_dir() else run_dir
+    if not args.ckpt and not args.ckpt_dir:
+        # Auto-discover from local wandb run directory
+        wandb_dir = Path(args.wandb_dir)
+        run_files_dir = find_local_run_dir(args.run_id, wandb_dir)
+        ckpt_dir = run_files_dir / "ckpt"
+        search_dir = ckpt_dir if ckpt_dir.is_dir() else run_files_dir
         found = sorted(search_dir.glob("*.ckpt"))
         if not found:
             raise FileNotFoundError(f"No .ckpt files found under: {search_dir}")
+        log.info("Auto-discovered ckpt dir: %s", search_dir)
         paths.extend(found)
 
-    # deduplicate while preserving order
+    # Deduplicate while preserving order
     seen: set[Path] = set()
     unique: list[Path] = []
     for p in paths:
@@ -71,30 +119,40 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--run", required=True, help="WandB run ID (short ID like 'abc123de')")
-    parser.add_argument("--entity", default="frag-gnn", help="WandB entity (default: frag-gnn)")
-    parser.add_argument("--project", default="frag-gnn", help="WandB project (default: frag-gnn)")
+    parser.add_argument(
+        "--run-id",
+        required=True,
+        help="WandB run ID (short ID like 'omp634h1')",
+    )
+    parser.add_argument(
+        "--entity", default="frag-gnn", help="WandB entity (default: frag-gnn)"
+    )
+    parser.add_argument(
+        "--project", default="frag-gnn", help="WandB project (default: frag-gnn)"
+    )
+    parser.add_argument(
+        "--wandb-dir",
+        default="wandb",
+        metavar="DIR",
+        help="Local wandb directory to search for the run (default: wandb/)",
+    )
     parser.add_argument(
         "--ckpt",
         action="append",
         metavar="FILE",
-        help="Path to a .ckpt file (repeatable)",
+        help="Specific .ckpt file to upload (repeatable); overrides auto-discovery",
     )
     parser.add_argument(
         "--ckpt-dir",
         metavar="DIR",
-        help="Directory containing .ckpt files to upload",
-    )
-    parser.add_argument(
-        "--wandb-run-dir",
-        metavar="DIR",
-        help="Local wandb run directory (e.g. wandb/run-<timestamp>-<id>/files); "
-        "the script looks for a ckpt/ subdirectory first",
+        help="Directory of .ckpt files to upload; overrides auto-discovery",
     )
     parser.add_argument(
         "--root",
-        default="ckpt",
-        help="Remote directory prefix inside the run (default: 'ckpt')",
+        default=None,
+        metavar="ROOT",
+        help="Strip this local path prefix when computing the remote filename "
+        "(default: parent of each ckpt file)",
     )
     parser.add_argument(
         "--dry-run",
@@ -102,9 +160,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Print what would be uploaded without actually uploading",
     )
     args = parser.parse_args(argv)
-
-    if not args.ckpt and not args.ckpt_dir and not args.wandb_run_dir:
-        parser.error("Provide at least one of --ckpt, --ckpt-dir, or --wandb-run-dir")
 
     try:
         ckpt_files = collect_ckpt_files(args)
@@ -120,10 +175,9 @@ def main(argv: list[str] | None = None) -> int:
     for p in ckpt_files:
         log.info("  %s  (%s)", p, _human_size(p.stat().st_size))
 
-    run_path = f"{args.entity}/{args.project}/{args.run}"
+    run_path = f"{args.entity}/{args.project}/{args.run_id}"
     if args.dry_run:
         log.info("[dry-run] Would upload to run: %s", run_path)
-        log.info("[dry-run] Remote root: %s", args.root)
         return 0
 
     import wandb
@@ -140,10 +194,10 @@ def main(argv: list[str] | None = None) -> int:
     n_ok = 0
     n_fail = 0
     for p in ckpt_files:
-        remote_path = f"{args.root}/{p.name}"
-        log.info("  Uploading %s -> %s ...", p.name, remote_path)
+        root = args.root if args.root is not None else str(p.parent)
+        log.info("  Uploading %s ...", p.name)
         try:
-            run.upload_file(str(p), root=str(p.parent))
+            run.upload_file(str(p), root=root)
             log.info("    OK")
             n_ok += 1
         except Exception as exc:
