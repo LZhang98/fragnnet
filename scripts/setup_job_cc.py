@@ -239,6 +239,17 @@ def main(args):
     is_cv_mode = getattr(args, "cv_config_dp", None) is not None
     cv_config_dp_rel = args.cv_config_dp.lstrip("./").rstrip("/") if is_cv_mode else None
 
+    if is_cv_mode and getattr(args, "cv_use_job_id", False):
+        job_id_dp = os.path.join(os.path.abspath(args.frag_gnn_dp), "job_id")
+        existing = [
+            fold
+            for fold in range(args.cv_start, args.cv_end + 1)
+            if os.path.isfile(os.path.join(job_id_dp, f"{args.job_name}_cv{fold}.id"))
+        ]
+        print(f"> CV job_id check: {len(existing)}/{args.cv_end - args.cv_start + 1} folds have existing .id files")
+        if existing:
+            print(f"  completed folds: {existing}")
+
     # create folders
     os.makedirs(f"{os.path.abspath(args.frag_gnn_dp)}/wandb", exist_ok=True)
     os.makedirs(f"{os.path.abspath(args.script_dp)}", exist_ok=True)
