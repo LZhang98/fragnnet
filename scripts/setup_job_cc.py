@@ -662,8 +662,12 @@ def main(args):
         script_lines.extend(
             [
                 "# symlink job_id folder for CV fold resume",
-                "mkdir -p ${FRAGNNET_DP}/job_id",
-                "ln -sfn ${FRAGNNET_DP}/job_id ${WORKING_DIR}/job_id",
+                "if [ ! -d ${FRAGNNET_DP}/job_id ]; then",
+                "    mkdir ${FRAGNNET_DP}/job_id",
+                "fi",
+                "if [ ! -e job_id ]; then",
+                "    ln -s ${FRAGNNET_DP}/job_id job_id",
+                "fi",
             ]
         )
 
