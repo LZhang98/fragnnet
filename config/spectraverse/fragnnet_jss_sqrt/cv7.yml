@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: spectraverse_fragnnet_cv7_jss_sqrt
+wandb_name: spectraverse_fragnnet_jss_sqrt_cv7
 wandb_group: spectraverse_fragnnet_jss_sqrt
 wandb_tags:
 - retrieval
