@@ -6,22 +6,22 @@ given run ID(s), then uploads all checkpoints from their `ckpt/` subdirectory.
 
 Usage:
     # Single run — auto-discover ckpts from the local wandb/ run dir
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run_ids omp634h1
 
     # Multiple runs at once
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 abc123de
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run_ids omp634h1 abc123de
 
     # Custom wandb directory (if not running from project root)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 --wandb-dir /path/to/wandb
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run_ids omp634h1 --wandb_dir /path/to/wandb
 
     # Upload specific files instead (single run only)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 --ckpt path/to/model-epoch=010.ckpt
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run_ids omp634h1 --ckpt path/to/model-epoch=010.ckpt
 
     # Upload all .ckpt files from a specific directory (single run only)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 --ckpt-dir path/to/ckpt/
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run_ids omp634h1 --ckpt_dir path/to/ckpt/
 
     # Specify entity/project (default: frag-gnn/frag-gnn)
-    python scripts/wandb_scripts/wandb_upload_ckpt.py --run-ids omp634h1 abc123de --entity myorg --project myproj
+    python scripts/wandb_scripts/wandb_upload_ckpt.py --run_ids omp634h1 abc123de --entity myorg --project myproj
 """
 
 import argparse
@@ -57,18 +57,14 @@ def find_local_run_dir(run_id: str, wandb_dir: Path) -> Path:
         log.warning("Multiple run dirs matched '%s': %s — using first", run_id, matches)
 
     run_dir = matches[0]
-    # WandB stores run files under <run_dir>/files/
     files_dir = run_dir / "files"
     return files_dir if files_dir.is_dir() else run_dir
 
 
-def collect_ckpt_files_for_run(
-    run_id: str,
-    args: argparse.Namespace,
-) -> list[Path]:
+def collect_ckpt_files_for_run(run_id: str, args: argparse.Namespace) -> list[Path]:
     """Collect checkpoint paths for a single run.
 
-    When --ckpt or --ckpt-dir are given they take precedence over auto-discovery.
+    When --ckpt or --ckpt_dir are given they take precedence over auto-discovery.
     Auto-discovery is only used when neither override is provided.
 
     Args:
@@ -103,7 +99,6 @@ def collect_ckpt_files_for_run(
         paths.extend(found)
 
     if not args.ckpt and not args.ckpt_dir:
-        # Auto-discover from local wandb run directory
         wandb_dir = Path(args.wandb_dir)
         run_files_dir = find_local_run_dir(run_id, wandb_dir)
         ckpt_dir = run_files_dir / "ckpt"
@@ -114,7 +109,6 @@ def collect_ckpt_files_for_run(
         log.info("Auto-discovered ckpt dir: %s", search_dir)
         paths.extend(found)
 
-    # Deduplicate while preserving order
     seen: set[Path] = set()
     unique: list[Path] = []
     for p in paths:
@@ -130,20 +124,16 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "--run-ids",
+        "--run_ids",
         nargs="+",
         required=True,
         metavar="RUN_ID",
         help="One or more WandB run IDs (e.g. omp634h1 abc123de)",
     )
+    parser.add_argument("--entity", default="frag-gnn", help="WandB entity (default: frag-gnn)")
+    parser.add_argument("--project", default="frag-gnn", help="WandB project (default: frag-gnn)")
     parser.add_argument(
-        "--entity", default="frag-gnn", help="WandB entity (default: frag-gnn)"
-    )
-    parser.add_argument(
-        "--project", default="frag-gnn", help="WandB project (default: frag-gnn)"
-    )
-    parser.add_argument(
-        "--wandb-dir",
+        "--wandb_dir",
         default="wandb",
         metavar="DIR",
         help="Local wandb directory to search for the run (default: wandb/)",
@@ -155,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Specific .ckpt file to upload (repeatable); overrides auto-discovery",
     )
     parser.add_argument(
-        "--ckpt-dir",
+        "--ckpt_dir",
         metavar="DIR",
         help="Directory of .ckpt files to upload; overrides auto-discovery",
     )
@@ -167,14 +157,14 @@ def main(argv: list[str] | None = None) -> int:
         "(default: parent of each ckpt file)",
     )
     parser.add_argument(
-        "--dry-run",
+        "--dry_run",
         action="store_true",
         help="Print what would be uploaded without actually uploading",
     )
     args = parser.parse_args(argv)
 
     if (args.ckpt or args.ckpt_dir) and len(args.run_ids) > 1:
-        parser.error("--ckpt / --ckpt-dir can only be used with a single --run-ids entry")
+        parser.error("--ckpt / --ckpt_dir can only be used with a single --run_ids entry")
 
     import wandb
 
