@@ -186,12 +186,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Export wandb run history and a small human-readable summary"
     )
-    parser.add_argument("--out-dir", default="./wandb", help="Output directory (default: ./wandb)")
+    parser.add_argument("--out_dir", default="./wandb", help="Output directory (default: ./wandb)")
     parser.add_argument(
         "--run", action="append", help="Specific run path(s) to export (owner/proj/run)"
     )
     parser.add_argument("--project", help="Project path to export all runs from (owner/proj)")
-    parser.add_argument("--spark-width", type=int, default=200, help="Sparkline width")
+    parser.add_argument("--spark_width", type=int, default=200, help="Sparkline width")
 
     args = parser.parse_args(argv)
 
