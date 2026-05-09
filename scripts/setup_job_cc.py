@@ -630,6 +630,8 @@ def main(args):
             python_line += " \\\n -p ${SLURM_JOB_ID}_${AGENT_ID}"
         else:
             python_line += " \\\n -p ${SLURM_JOB_ID}"
+    elif is_cv_mode and getattr(args, "cv_use_job_id", False):
+        python_line += f" \\\n -j {args.job_name}_cv${{CV_FOLD}}"
 
     wandb_api_key = _resolve_wandb_api_key(getattr(args, "wandb_api_key", None))
     if wandb_api_key:
@@ -779,6 +781,13 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Last CV fold index (inclusive). Required with --cv_config_dp.",
+    )
+    parser.add_argument(
+        "--cv_use_job_id",
+        type=bool,
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Pass -j {job_name}_cv${CV_FOLD} to the python script for per-fold checkpoint IDs.",
     )
     parser.add_argument(
         "--cc_account",
