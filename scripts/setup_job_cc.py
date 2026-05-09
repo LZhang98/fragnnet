@@ -633,6 +633,26 @@ def main(args):
         ]
     )
 
+    # resolve job_id: dynamic per-fold (cv_use_job_id) or static from script_kwargs
+    cv_use_job_id = is_cv_mode and getattr(args, "cv_use_job_id", False)
+    static_job_id = next(
+        (kw.split("=", 1)[1] for kw in script_kwargs_list if kw.split("=")[0].lstrip("-") in ("j", "job_id")),
+        None,
+    )
+    job_id_name = f"{args.job_name}_cv${{CV_FOLD}}" if cv_use_job_id else static_job_id
+
+    # symlink job_id file into SLURM temp so the runner can resume the wandb run
+    if is_cv_mode and job_id_name:
+        script_lines.extend(
+            [
+                "# symlink job_id file for CV fold resume",
+                "mkdir -p ${WORKING_DIR}/job_id",
+                f"if [ -f ${{FRAGNNET_DP}}/job_id/{job_id_name}.id ]; then",
+                f"    ln -s ${{FRAGNNET_DP}}/job_id/{job_id_name}.id ${{WORKING_DIR}}/job_id/{job_id_name}.id",
+                "fi",
+            ]
+        )
+
     # for sweep scripts, append SLURM job/agent ID so wandb run names are unique
     # job name is used for local sweep, since fir and vulcan now support wandb agent directly,
     # job id is used for narval only, and it maybe broken.
@@ -641,7 +661,7 @@ def main(args):
             python_line += " \\\n -p ${SLURM_JOB_ID}_${AGENT_ID}"
         else:
             python_line += " \\\n -p ${SLURM_JOB_ID}"
-    elif is_cv_mode and getattr(args, "cv_use_job_id", False):
+    elif cv_use_job_id:
         python_line += f" \\\n -j {args.job_name}_cv${{CV_FOLD}}"
 
     wandb_api_key = _resolve_wandb_api_key(getattr(args, "wandb_api_key", None))
