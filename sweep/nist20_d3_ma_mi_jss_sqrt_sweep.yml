@@ -10,7 +10,7 @@ description: >
   change the effective gradient scale relative to cosine-distance training.
 metric:
   goal: minimize
-  name: val_batch_loss_epoch/mean
+  name: val_loss_epoch/mean
   # Secondary tracking in W&B UI: val_cos_sim_0.01_best/mean for cross-sweep comparison;
   # val_pred_spec_ne_epoch/mean vs val_true_spec_ne_epoch/mean for peak-count quality.
 parameters:

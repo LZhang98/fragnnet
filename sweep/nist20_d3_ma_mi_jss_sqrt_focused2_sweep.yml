@@ -1,0 +1,42 @@
+entity: frag-gnn
+project: frag-gnn
+program: ~/fragnnet/scripts/run_wandb_sweep.py
+method: random
+name: nist20_d3_ma_mi_jss_sqrt_focused2
+description: >
+  Focused follow-up to jss_sqrt sweep (160 runs). Key findings: mol_dropout=0.1 dominated
+  top-10 (9/10 runs), lr winners clustered 4e-4–9e-4, weight_decay=0.01 and entropy_weight
+  never appeared in top-10. This sweep fixes mol_dropout, narrows lr, and drops weak params.
+  Best prior val_loss: 0.31997 (GINE, 512, lr=5.3e-4, frag_d=0.1, mlp_d=0.1, wd=1e-3).
+metric:
+  goal: minimize
+  name: val_loss_epoch/mean
+
+parameters:
+  mol_gnn_type:
+    values: [GINE, GINE_EFA]
+
+  mol_hidden_size:
+    values: [384, 512]
+
+  lr:
+    distribution: log_uniform_values
+    min: 0.0004
+    max: 0.001
+
+  weight_decay:
+    values: [0.0, 0.001]
+
+  # Fixed to 0.1 — appeared in 9/10 best runs from prior sweep.
+  mol_dropout:
+    value: 0.1
+
+  frag_dropout:
+    values: [0.1, 0.2]
+
+  mlp_dropout:
+    values: [0.1, 0.3, 0.4]
+
+  # Entropy reg was 0 in 8/10 top runs — fix to 0.
+  node_normalized_entropy_weight:
+    value: 0.0
