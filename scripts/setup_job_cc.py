@@ -658,6 +658,9 @@ def main(args):
     job_id_name = f"{args.job_name}_cv${{CV_FOLD}}" if cv_use_job_id else static_job_id
 
     # symlink job_id folder into SLURM temp so the runner can resume the wandb run
+    # Since ${FRAGNNET_DP}/job_id may not exist yet (first run, no completed folds), ln -s will
+    # create a dangling symlink — that's fine: the runner calls os.makedirs("job_id", exist_ok=True)
+    # which resolves through the symlink and creates the real directory on the home filesystem.
     if is_cv_mode and job_id_name:
         script_lines.extend(
             [
