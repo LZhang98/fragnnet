@@ -585,9 +585,9 @@ def main(args):
                 ]
             )
         elif is_cv_mode and name == "split_dp":
-            # CV mode: copy split dirs for all folds in the range
+            # CV mode: validate all fold split dirs exist, then emit one dynamic rsync
             print(f"> CV mode: copying split dirs for folds {args.cv_start}-{args.cv_end}")
-            copied_split_dps: set[str] = set()
+            fold_split_dps: dict[int, str] = {}
             for fold_idx in range(args.cv_start, args.cv_end + 1):
                 fold_config_fp = f"{cv_config_dp_rel}/cv{fold_idx}.yml"
                 fold_split_dp = None
@@ -598,18 +598,34 @@ def main(args):
                             break
                 if fold_split_dp is None:
                     raise ValueError(f"split_dp not found in {fold_config_fp}")
-                if fold_split_dp in copied_split_dps:
-                    continue
                 if not os.path.exists(fold_split_dp):
                     raise FileNotFoundError(f"Split dir not found: {fold_split_dp}")
-                copied_split_dps.add(fold_split_dp)
-                print(f"> adding cmd to copy split dir {fold_split_dp} (fold {fold_idx})")
+                fold_split_dps[fold_idx] = fold_split_dp
+            # detect consistent pattern by replacing cv{fold_idx} with cv${CV_FOLD}
+            patterns = {
+                fold_idx: path.replace(f"cv{fold_idx}", "cv${CV_FOLD}")
+                for fold_idx, path in fold_split_dps.items()
+            }
+            unique_patterns = set(patterns.values())
+            if len(unique_patterns) == 1:
+                dynamic_path = unique_patterns.pop()
+                print(f"> adding cmd to copy split dir {dynamic_path} (dynamic CV fold)")
                 script_lines.extend(
                     [
-                        f"# copy split_dp for CV fold {fold_idx}: {fold_split_dp}",
-                        f"rsync -av --relative ${{FRAGNNET_DP}}/./{fold_split_dp} ${{WORKING_DIR}}",
+                        f"# copy split_dp for CV fold ${{CV_FOLD}}: {dynamic_path}",
+                        f"rsync -av --relative ${{FRAGNNET_DP}}/./{dynamic_path} ${{WORKING_DIR}}",
                     ]
                 )
+            else:
+                # paths don't share a common cv{n} pattern — copy all unique dirs statically
+                for fold_idx, fold_split_dp in fold_split_dps.items():
+                    print(f"> adding cmd to copy split dir {fold_split_dp} (fold {fold_idx})")
+                    script_lines.extend(
+                        [
+                            f"# copy split_dp for CV fold {fold_idx}: {fold_split_dp}",
+                            f"rsync -av --relative ${{FRAGNNET_DP}}/./{fold_split_dp} ${{WORKING_DIR}}",
+                        ]
+                    )
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(
@@ -641,15 +657,13 @@ def main(args):
     )
     job_id_name = f"{args.job_name}_cv${{CV_FOLD}}" if cv_use_job_id else static_job_id
 
-    # symlink job_id file into SLURM temp so the runner can resume the wandb run
+    # symlink job_id folder into SLURM temp so the runner can resume the wandb run
     if is_cv_mode and job_id_name:
         script_lines.extend(
             [
-                "# symlink job_id file for CV fold resume",
-                "mkdir -p ${WORKING_DIR}/job_id",
-                f"if [ -f ${{FRAGNNET_DP}}/job_id/{job_id_name}.id ]; then",
-                f"    ln -s ${{FRAGNNET_DP}}/job_id/{job_id_name}.id ${{WORKING_DIR}}/job_id/{job_id_name}.id",
-                "fi",
+                "# symlink job_id folder for CV fold resume",
+                "mkdir -p ${FRAGNNET_DP}/job_id",
+                "ln -sfn ${FRAGNNET_DP}/job_id ${WORKING_DIR}/job_id",
             ]
         )
 
