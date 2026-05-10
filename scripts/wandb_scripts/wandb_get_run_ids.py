@@ -13,11 +13,16 @@ Usage:
     # Print only IDs (one per line, useful for piping)
     python scripts/wandb_scripts/wandb_get_run_ids.py --group my-group --ids_only
 
+    # Output JSON for wandb_download_ckpts.py
+    python scripts/wandb_scripts/wandb_get_run_ids.py --group my-group --json out.json
+
 Outputs a table of matching runs (id, name, group, state) by default,
-or just the run IDs when --ids_only is set.
+or just the run IDs when --ids_only is set,
+or a JSON file compatible with wandb_download_ckpts.py when --json is set.
 """
 
 import argparse
+import json
 import sys
 
 
@@ -39,6 +44,23 @@ def main() -> None:
         "--ids_only",
         action="store_true",
         help="Print only run IDs, one per line (useful for scripting)",
+    )
+    parser.add_argument(
+        "--json",
+        default=None,
+        metavar="OUTPUT_FILE",
+        help="Write JSON compatible with wandb_download_ckpts.py to this file",
+    )
+    parser.add_argument(
+        "--best_only",
+        action="store_true",
+        default=True,
+        help="Set best_only=true in JSON output (default: true)",
+    )
+    parser.add_argument(
+        "--all_ckpts",
+        action="store_true",
+        help="Set best_only=false in JSON output (download all checkpoints)",
     )
     args = parser.parse_args()
 
@@ -66,6 +88,17 @@ def main() -> None:
     if not matched:
         print("No runs matched.", file=sys.stderr)
         sys.exit(1)
+
+    if args.json is not None:
+        best_only = not args.all_ckpts
+        records = [
+            {"run_id": run.id, "description": run.name, "best_only": best_only}
+            for run in matched
+        ]
+        with open(args.json, "w") as f:
+            json.dump(records, f, indent=2)
+        print(f"> Wrote {len(records)} run(s) to {args.json}")
+        return
 
     if args.ids_only:
         for run in matched:
