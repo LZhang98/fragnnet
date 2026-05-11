@@ -6,7 +6,7 @@ wandb_project: frag-gnn # TODO: change to your wandb project
 wandb_name: template
 wandb_group:
 wandb_tags:
-wandb_root_dir: checkpoint
+wandb_root_dir: wandb
 
 # ============================================================================
 # Data File Paths

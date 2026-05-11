@@ -434,7 +434,7 @@ def init_run(
             wandb_d["config"] = wandb_config
             if config_d["wandb_root_dir"] is not None:
                 wandb_dir = os.path.join(config_d["wandb_root_dir"], str(job_id))
-                os.makedirs(wandb_dir)
+                os.makedirs(wandb_dir, exist_ok=True)
                 if os.path.isdir(wandb_dir):
                     wandb_d["dir"] = wandb_dir
                 else:
@@ -450,7 +450,7 @@ def init_run(
         if job_id_fp:
             os.makedirs("job_id", exist_ok=True)
             with open(job_id_fp, "w+") as job_id_file:
-                text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
+                text = f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}"
                 job_id_file.write(text)
         # update config results (primarily for wandb)
         # configs can be nested up to 2 levels
@@ -504,7 +504,7 @@ def init_run(
     # setup callbacks
     callbacks = []
     if wandb_mode != "disabled":
-        ckpt_dp = os.path.join(wandb.run.dir, "ckpt")
+        ckpt_dp = os.path.realpath(os.path.join(wandb.run.dir, "ckpt"))
     else:
         ckpt_dp = "tmp_ckpt"
     os.makedirs(ckpt_dp, exist_ok=True)
@@ -531,11 +531,11 @@ def init_run(
             for k in ckpt_keys:
                 if k in ckpt_callback_data:
                     ckpt_callback_data[k] = ckpt_callback_data[k].replace(
-                        os.path.abspath(old_wandb_dp), os.path.abspath(wandb.run.dir)
+                        os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
                     )
             if "best_k_models" in ckpt_callback_data:
                 for k in list(ckpt_callback_data["best_k_models"].keys()):
-                    new_k = k.replace(os.path.abspath(old_wandb_dp), os.path.abspath(wandb.run.dir))
+                    new_k = k.replace(os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir))
                     ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data[
                         "best_k_models"
                     ].pop(k)
