@@ -43,7 +43,7 @@ frag_dp: data/frag/spectraverse_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
-mol_hidden_size: 512    # sweep: GINE+512 took 9/10 top runs in focused2 sweep
+mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -138,7 +138,7 @@ debug_overfit: False
 mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
 mlp_dropout: 0.3    # sweep: top runs favour 0.3
-weight_decay: 0.001
+weight_decay: 0.01
 
 # ============================================================================
 # LR Schedule — cosine warmup + decay
@@ -146,7 +146,7 @@ weight_decay: 0.001
 # warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
 # ============================================================================
 lr_schedule: False
-lr: 0.00085
+lr: 0.0004
 lr_schedule_type: cosine
 lr_warmup_steps: 5000
 lr_total_steps: 390000
