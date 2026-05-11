@@ -64,7 +64,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_file",
         type=str,
-        default="/data/wandb_downloads/deepmet_runs.json",
         help="Path to JSON file containing run IDs",
     )
     parser.add_argument(
