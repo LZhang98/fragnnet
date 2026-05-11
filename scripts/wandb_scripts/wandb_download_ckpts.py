@@ -5,6 +5,8 @@ import os
 import shutil
 import tempfile
 
+from wandb.errors import CommError as WandbCommError
+
 import wandb
 
 
@@ -52,9 +54,14 @@ def get_ckpt_from_wandb(
             continue
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # if not os.path.exists(ckpt_fp):
             print(f"> Downloading ckpt {ckpt_file}")
-            run.file(ckpt_file).download(root=tmp_dir, replace=False)
+            try:
+                run.file(ckpt_file).download(root=tmp_dir, replace=False)
+            except WandbCommError as exc:
+                if "400" in str(exc):
+                    print(f"> SKIP {ckpt_file}: 400 Bad Request ({exc})")
+                    continue
+                raise
             print(f"> Save ckpt {ckpt_fp}")
             shutil.copy(f"{tmp_dir}/{ckpt_file}", ckpt_fp)
 
