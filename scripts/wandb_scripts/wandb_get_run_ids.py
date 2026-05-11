@@ -16,7 +16,7 @@ Usage:
     # Output JSON for wandb_download_ckpts.py
     python scripts/wandb_scripts/wandb_get_run_ids.py --group my-group --json out.json
 
-Outputs a table of matching runs (id, name, group, state) by default,
+Outputs a table of matching runs (id, name, group, state, link) by default,
 or just the run IDs when --ids_only is set,
 or a JSON file compatible with wandb_download_ckpts.py when --json is set.
 """
@@ -37,8 +37,9 @@ def main() -> None:
     parser.add_argument(
         "--state",
         default=None,
+        nargs="+",
         choices=["running", "finished", "crashed", "failed"],
-        help="Filter by run state",
+        help="Filter by run state (one or more values, e.g. --state running finished)",
     )
     parser.add_argument(
         "--ids_only",
@@ -75,7 +76,10 @@ def main() -> None:
     if args.group is not None:
         filters["group"] = args.group
     if args.state is not None:
-        filters["state"] = args.state
+        if len(args.state) == 1:
+            filters["state"] = args.state[0]
+        else:
+            filters["state"] = {"$in": args.state}
 
     runs = api.runs(f"{args.entity}/{args.project}", filters=filters or None)
 
@@ -98,6 +102,11 @@ def main() -> None:
         with open(args.json, "w") as f:
             json.dump(records, f, indent=2)
         print(f"> Wrote {len(records)} run(s) to {args.json}")
+        state_counts: dict[str, int] = {}
+        for run in matched:
+            state_counts[run.state] = state_counts.get(run.state, 0) + 1
+        for state, count in sorted(state_counts.items()):
+            print(f"  {state}: {count}")
         return
 
     if args.ids_only:
@@ -105,17 +114,25 @@ def main() -> None:
             print(run.id)
         return
 
-    col_widths = (12, 30, 30, 10)
-    header = f"{'ID':<{col_widths[0]}}  {'Name':<{col_widths[1]}}  {'Group':<{col_widths[2]}}  {'State':<{col_widths[3]}}"
+    w_id = 12
+    w_name = max(len("Name"), max(len(run.name) for run in matched))
+    w_group = max(len("Group"), max(len(run.group or "") for run in matched))
+    w_state = 10
+    header = (
+        f"{'ID':<{w_id}}  {'Name':<{w_name}}  "
+        f"{'Group':<{w_group}}  {'State':<{w_state}}  Link"
+    )
     print(header)
     print("-" * len(header))
     for run in matched:
         group = run.group or ""
+        link = f"https://wandb.ai/{args.entity}/{args.project}/runs/{run.id}"
         print(
-            f"{run.id:<{col_widths[0]}}  "
-            f"{run.name[:col_widths[1]]:<{col_widths[1]}}  "
-            f"{group[:col_widths[2]]:<{col_widths[2]}}  "
-            f"{run.state:<{col_widths[3]}}"
+            f"{run.id:<{w_id}}  "
+            f"{run.name:<{w_name}}  "
+            f"{group:<{w_group}}  "
+            f"{run.state:<{w_state}}  "
+            f"{link}"
         )
     print(f"\n{len(matched)} run(s) matched.")
 
