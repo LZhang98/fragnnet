@@ -25,7 +25,9 @@ Usage:
 """
 
 import argparse
+import datetime
 import logging
+import os
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -161,6 +163,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print what would be uploaded without actually uploading",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Upload even if the remote file is newer than the local file",
+    )
     args = parser.parse_args(argv)
 
     if (args.ckpt or args.ckpt_dir) and len(args.run_ids) > 1:
@@ -189,7 +196,11 @@ def main(argv: list[str] | None = None) -> int:
 
         run_path = f"{args.entity}/{args.project}/{run_id}"
         if args.dry_run:
-            log.info("  [dry-run] Would upload to run: %s", run_path)
+            log.info(
+                "  [dry-run] Would upload to run: %s%s",
+                run_path,
+                " (--force: skip timestamp check)" if args.force else " (skipping if remote is newer)",
+            )
             continue
 
         try:
@@ -201,8 +212,24 @@ def main(argv: list[str] | None = None) -> int:
 
         log.info("  Uploading to: %s (state: %s)", run.name, run.state)
 
+        remote_mtimes = _remote_file_mtimes(run)
+
         for p in ckpt_files:
             root = args.root if args.root is not None else str(p.parent)
+            remote_name = os.path.relpath(str(p), root)
+
+            if not args.force and remote_name in remote_mtimes:
+                local_mtime = _local_mtime_utc(p)
+                remote_mtime = remote_mtimes[remote_name]
+                if local_mtime <= remote_mtime:
+                    log.info(
+                        "    SKIP %s (local %s <= remote %s)",
+                        p.name,
+                        local_mtime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        remote_mtime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    )
+                    continue
+
             log.info("    %s ...", p.name)
             try:
                 run.upload_file(str(p), root=root)
@@ -214,6 +241,26 @@ def main(argv: list[str] | None = None) -> int:
 
     log.info("Done: %d uploaded, %d failed", total_ok, total_fail)
     return 0 if total_fail == 0 else 1
+
+
+def _remote_file_mtimes(run) -> dict[str, datetime.datetime]:
+    """Return a mapping of remote filename -> updatedAt (UTC-aware) for all files in a run.
+
+    Args:
+        run: A wandb Run object returned by api.run().
+
+    Returns:
+        Dict mapping each remote file's path (as stored in W&B) to its last-updated datetime.
+    """
+    result: dict[str, datetime.datetime] = {}
+    for f in run.files():
+        raw = f.updatedAt.replace("Z", "+00:00")
+        result[f.name] = datetime.datetime.fromisoformat(raw)
+    return result
+
+
+def _local_mtime_utc(p: Path) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(p.stat().st_mtime, tz=datetime.UTC)
 
 
 def _human_size(n_bytes: int) -> str:
