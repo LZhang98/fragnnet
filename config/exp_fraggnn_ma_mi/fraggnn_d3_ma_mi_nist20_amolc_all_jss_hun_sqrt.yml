@@ -46,10 +46,34 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±
 
 # ============================================================================
 # Model Architecture
+# Best values from nist20_d3_ma_mi_focused sweep + nist20_d3_ma_mi_jss_sqrt sweep.
 # ============================================================================
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+
+mol_hidden_size: 512    # jss_sqrt sweep: 512 > 384
+mol_num_layers: 4
+mol_gnn_type: GINE      # jss_sqrt sweep: GINE wins over GINE_EFA
+mol_num_heads: 4        # used by GINE_EFA; ignored by GINE
+mol_normalization: batch
+mol_pool_type: mean
+
+cc_interstage_type: direct
+cc_interstage_use_rest: False
+
+frag_hidden_size: 256
+frag_num_layers: 4
+frag_normalization: graph
+frag_pool_type: max     # focused sweep: top 3 runs all use max
+frag_embed_combine: cat
+frag_pool_combine: none
+
+mlp_output_format: formula
+mlp_hidden_size: 256
+mlp_normalization: none
+mlp_num_layers: 2
+mlp_use_residuals: True
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -136,7 +160,7 @@ debug_overfit: False
 # ============================================================================
 mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.3    # jss_sqrt sweep: top runs favour 0.3
 weight_decay: 0.01
 
 # ============================================================================
@@ -162,6 +186,7 @@ oos_tolerance_multiple: 1  # tolerance multiplier for OOS peak matching
 oos_loss: True             # train with OOS auxiliary loss
 gaussian_renormalize: True # renormalize output with Gaussian smoothing before loss
 loss_type: jss_distance_hungarian  # m/z-matched JSS; uses inst_type_loss_tol
+node_normalized_entropy_weight: 0.01  # entropy regularization on formula node predictions
 
 # ============================================================================
 # Spectrum Binning & Evaluation
@@ -169,8 +194,6 @@ loss_type: jss_distance_hungarian  # m/z-matched JSS; uses inst_type_loss_tol
 mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
-mol_pool_type: mean
-frag_pool_type: mean
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
@@ -195,7 +218,6 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
-dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 200000
 
@@ -219,4 +241,3 @@ compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
