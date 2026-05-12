@@ -1411,17 +1411,106 @@ class SpectrumPL(L.LightningModule):
         self._update_results(batch_results, "test")
         return mean_loss
 
-    def inference_with_ground_truth_step(self, batch, split):
-        """
-        Custom inference step for evaluation outside of Lightning's test/val loop.
-        This will assume that the model is in eval mode, but will not switch modes.
-        This will assume that the batch contains ground truth spectra.
+    def inference_with_ground_truth_step(self, batch, split="test"):
+        """Run inference and compute evaluation metrics against ground truth without loss.
+
+        Performs a forward pass and computes auxiliary metrics (e.g. cos_sim, cos_hun)
+        against the ground-truth spectrum. Loss functions are never called, making this
+        cheaper than ``_common_step`` for pure inference evaluation.
+
+        Args:
+            batch: Input batch dict containing ground-truth spectrum fields
+                (``spec_mzs``, ``spec_ints``, ``spec_batch_idxs``, etc.).
+            split: Metric split name used to select which auxiliary metrics to compute.
+
+        Returns:
+            Dict with predicted spectrum tensors (``pred_mzs``, ``pred_logprobs``,
+            ``pred_batch_idxs``), ``oos_prob`` if available, and all auxiliary metric
+            values (e.g. ``cos_sim``, ``cos_hun``).
         """
         if self.training:
             warnings.warn("Model is in training mode")
-        batch_results = self._common_step(batch, split=split, log=False)
 
-        return batch_results
+        true_mzs = batch["spec_mzs"]
+        true_ints = batch["spec_ints"]
+        true_batch_idxs = batch["spec_batch_idxs"]
+        true_prec_mzs = batch["spec_prec_mz"]
+        spec_per_group = batch["spec_per_group"]
+        spec_per_mol = batch["spec_per_mol"]
+        group_per_mol = batch["group_per_mol"]
+
+        pred_d = self.forward(**batch)
+        pred_mzs = pred_d.pop("pred_mzs")
+        pred_logprobs = pred_d.pop("pred_logprobs")
+        pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
+
+        with th.inference_mode():
+            eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
+                true_mzs,
+                true_ints,
+                true_batch_idxs,
+                train=False,
+                pred=False,
+                log_in=False,
+                log_out=False,
+            )
+            eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
+            eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
+                pred_mzs.detach(),
+                pred_logprobs.detach(),
+                pred_batch_idxs.detach(),
+                train=False,
+                pred=True,
+                log_in=True,
+                log_out=False,
+            )
+            eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
+
+        results = {
+            "unique_id": batch["spec_unique_id"],
+            "smiles": batch["mol_smiles"],
+            "spec_per_group": spec_per_group,
+            "spec_per_mol": spec_per_mol,
+            "group_per_mol": group_per_mol,
+            "true_mzs": eval_true_mzs,
+            "true_logprobs": eval_true_logprobs,
+            "true_batch_idxs": eval_true_batch_idxs,
+            "true_prec_mzs": true_prec_mzs,
+            "pred_mzs": eval_pred_mzs,
+            "pred_logprobs": eval_pred_logprobs,
+            "pred_batch_idxs": eval_pred_batch_idxs,
+            **pred_d,
+        }
+        if pred_oos_logprobs is not None:
+            results["oos_prob"] = th.exp(pred_oos_logprobs)
+
+        active_metric_names = self._get_active_metric_names(split)
+        need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
+        if need_aux_metrics:
+            with th.inference_mode():
+                metric_input_d = {
+                    "true_mzs": eval_true_mzs,
+                    "true_ints": eval_true_probs,
+                    "true_logprobs": eval_true_logprobs,
+                    "true_batch_idxs": eval_true_batch_idxs,
+                    "pred_mzs": eval_pred_mzs,
+                    "pred_ints": eval_pred_probs,
+                    "pred_logprobs": eval_pred_logprobs,
+                    "pred_batch_idxs": eval_pred_batch_idxs,
+                    "true_prec_mzs": true_prec_mzs,
+                    "split": split,
+                }
+                for arg in self.extra_metric_args:
+                    metric_input_d[arg] = results[arg]
+                for arg in self.batch_metric_args:
+                    if arg in batch:
+                        metric_input_d[arg] = batch[arg]
+                metric_output_d = self.metric_fn(**metric_input_d)
+            for k, v in metric_output_d.items():
+                results[k] = v
+
+        return results
 
     def inference_step(self, batch):
         """
