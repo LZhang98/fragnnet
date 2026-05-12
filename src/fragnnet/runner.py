@@ -448,7 +448,7 @@ def init_run(
         wandb_d["offline"] = wandb_mode == "offline"
         wandb_logger = WandbLogger(**wandb_d)
         if job_id_fp:
-            os.makedirs("job_id", exist_ok=True)
+            os.makedirs(os.path.dirname(job_id_fp), exist_ok=True)
             with open(job_id_fp, "w+") as job_id_file:
                 text = f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}"
                 job_id_file.write(text)
