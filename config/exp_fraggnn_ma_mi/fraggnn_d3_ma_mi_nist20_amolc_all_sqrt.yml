@@ -74,7 +74,7 @@ frag_params:
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
   nce: True             # use normalized collision energy (NCE) as input
-  ace: False            # do not use absolute collision energy (ACE)
+  ace: True            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False  # encode precursor type as integer index, not string
