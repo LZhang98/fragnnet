@@ -586,22 +586,24 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # redundant th.unique scans over mol_batch when multiple embeddings insert at "mol").
         mol_batch_counts = mol_num_nodes[1:] - mol_num_nodes[:-1]
 
+        _mol_extras = []
         if self.ce_insert_location == "mol":
             assert ce_embed is not None, "ce_embed must not be None"
-            mol_ce_embed = th.repeat_interleave(ce_embed, mol_batch_counts, dim=0)
-            mol_x = th.cat([mol_x, mol_ce_embed], dim=1)
+            _mol_extras.append(ce_embed)
         if self.prec_insert_location == "mol":
             assert prec_embed is not None, "prec_embed must not be None"
-            mol_prec_embed = th.repeat_interleave(prec_embed, mol_batch_counts, dim=0)
-            mol_x = th.cat([mol_x, mol_prec_embed], dim=1)
+            _mol_extras.append(prec_embed)
         if self.inst_insert_location == "mol":
             assert inst_embed is not None, "inst_embed must not be None"
-            mol_inst_embed = th.repeat_interleave(inst_embed, mol_batch_counts, dim=0)
-            mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
+            _mol_extras.append(inst_embed)
         if self.frag_mode_insert_location == "mol":
             assert frag_mode_embed is not None, "frag_mode_embed must not be None"
-            mol_frag_mode_embed = th.repeat_interleave(frag_mode_embed, mol_batch_counts, dim=0)
-            mol_x = th.cat([mol_x, mol_frag_mode_embed], dim=1)
+            _mol_extras.append(frag_mode_embed)
+        if _mol_extras:
+            mol_x = th.cat(
+                [mol_x, th.repeat_interleave(th.cat(_mol_extras, dim=1), mol_batch_counts, dim=0)],
+                dim=1,
+            )
 
         # get per-atom embeddings
         mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
@@ -870,7 +872,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # This allows loading h4 DAGs while training/inferring with num_hs=3 (or lower).
         # Layout: [Δ0, Δ-1, Δ+1, Δ-2, Δ+2, ..., Δ-num_hs, Δ+num_hs] — trimming from
         # the end removes the largest-magnitude shifts first.
-        frag_formula_idxs_pretrim = th.unique(frag_joint_formula_idxs)  # all h4 formula indices
         frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes, -1)
         h_width = frag_joint_formula_idxs.shape[1] // (2 if include_cmf else 1)
         num_hs_diff = (h_width - 1) // 2 - self.num_hs
@@ -884,6 +885,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 "Regenerate DAGs with max_h_transfer matching num_hs."
             )
         if num_hs_diff > 0:
+            # th.unique deferred here — only needed when DAG max_h_transfer > model num_hs
+            frag_formula_idxs_pretrim = th.unique(frag_joint_formula_idxs)
             # Remove last 2*num_hs_diff columns (drops Δ±(num_hs+1) … Δ±dag_max_h)
             frag_joint_formula_idxs = frag_joint_formula_idxs[:, : -2 * num_hs_diff].flatten()
 
@@ -1034,43 +1037,28 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # frag_num_nodes is a cumulative prefix sum → diff gives per-sample node counts,
             # equivalent to th.unique(frag_node_batch_idxs, return_counts=True)[1] but O(batch)
             unique_batch_counts = frag_num_nodes[1:] - frag_num_nodes[:-1]
+            _mlp_extras = []
             if self.ce_insert_location == "mlp":
-                mlp_ce_embed = th.repeat_interleave(ce_embed, unique_batch_counts, dim=0)
-                frag_embed_parts.append(mlp_ce_embed)
+                _mlp_extras.append(ce_embed)
             if self.prec_insert_location == "mlp":
-                mlp_prec_embed = th.repeat_interleave(prec_embed, unique_batch_counts, dim=0)
-                frag_embed_parts.append(mlp_prec_embed)
+                _mlp_extras.append(prec_embed)
             if self.inst_insert_location == "mlp":
-                mlp_inst_embed = th.repeat_interleave(inst_embed, unique_batch_counts, dim=0)
-                frag_embed_parts.append(mlp_inst_embed)
+                _mlp_extras.append(inst_embed)
             if self.frag_mode_insert_location == "mlp":
-                mlp_frag_mode_embed = th.repeat_interleave(
-                    frag_mode_embed, unique_batch_counts, dim=0
-                )
-                frag_embed_parts.append(mlp_frag_mode_embed)
+                _mlp_extras.append(frag_mode_embed)
+            frag_embed_parts.append(
+                th.repeat_interleave(th.cat(_mlp_extras, dim=1), unique_batch_counts, dim=0)
+            )
 
         frag_embed = th.cat(frag_embed_parts, dim=1)
         frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
-        # create mask for null formula — the null formula for batch sample b is always at global
-        # index frag_formula_cumsizes[b].  Expand per-node then tile across mlp_output_dim columns
-        # for an O(num_nodes * mlp_output_dim) element-wise comparison instead of th.isin set-search.
-        null_per_node = frag_formula_cumsizes[:-1][frag_node_batch_idxs]  # (num_nodes,)
-        null_tiled = null_per_node.repeat_interleave(
-            self.mlp_output_dim
-        )  # (num_nodes * mlp_output_dim,)
-        frag_joint_mask = (frag_joint_formula_idxs != null_tiled).float()
-        # h counts — use pre-computed buffer (registered in __init__) to avoid rebuilding each step
-        frag_joint_h_counts = self._h_counts_buf.repeat(frag_node_batch_idxs.shape[0])
-        if include_cmf:
-            h_width = 2 * self.num_hs + 1
-            frag_joint_h_offsets = th.cat(
-                [
-                    th.zeros(h_width, dtype=frag_joint_h_counts.dtype, device=device),
-                    th.full((h_width,), h_width, dtype=frag_joint_h_counts.dtype, device=device),
-                ]
-            ).repeat(frag_node_batch_idxs.shape[0])
-        else:
-            frag_joint_h_offsets = th.zeros_like(frag_joint_h_counts)
+        # Broadcast comparison via reshape — reuses frag_node_offsets (already equals
+        # frag_formula_cumsizes[frag_node_batch_idxs], the null-formula index per node) and
+        # avoids materializing a full (N×H) null_tiled tensor.
+        frag_joint_mask = (
+            frag_joint_formula_idxs.reshape(batch_frag_num_nodes, self.mlp_output_dim)
+            != frag_node_offsets.unsqueeze(1)
+        ).float().flatten()
 
         if self.mlp_output_format == "formula":
             #  predicts joint logits for each (node, formula) pair:
@@ -1271,18 +1259,26 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_edge_h_logprobs = None
             frag_edge_batch_idxs = None
 
-        frag_joint_node_idxs = th.repeat_interleave(
-            th.arange(frag_joint_mask.shape[0] // (self.mlp_output_dim), device=device),
-            self.mlp_output_dim,
-        )
         # select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
         _real_mask = frag_joint_mask.bool()
+        # Compute real positions once; derive node/h-slot indices via integer div/mod to avoid
+        # materializing three separate (N×H) long tensors (node_idxs, h_counts, h_offsets).
+        real_pos = th.nonzero(_real_mask, as_tuple=False).squeeze(1)  # (J,)
+        H = self.mlp_output_dim
         frag_real_joint_logits = frag_joint_logits[_real_mask]
-        frag_real_joint_h_counts = frag_joint_h_counts[_real_mask]
-        frag_real_joint_h_offsets = frag_joint_h_offsets[_real_mask]
-        frag_real_joint_node_idxs = frag_joint_node_idxs[_real_mask]
+        frag_real_joint_node_idxs = real_pos // H
+        _real_h_pos = real_pos % H
+        frag_real_joint_h_counts = self._h_counts_buf[_real_h_pos]
+        if include_cmf:
+            _h_offset_buf = th.cat([
+                th.zeros(H, dtype=th.long, device=device),
+                th.full((H,), H, dtype=th.long, device=device),
+            ])
+            frag_real_joint_h_offsets = _h_offset_buf[_real_h_pos]
+        else:
+            frag_real_joint_h_offsets = th.zeros_like(frag_real_joint_h_counts)
         frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
-        frag_real_joint_batch_idxs = frag_joint_batch_idxs[_real_mask]
+        frag_real_joint_batch_idxs = frag_node_batch_idxs[frag_real_joint_node_idxs]
         # P(f,n)
         frag_real_joint_logprobs = scatter_logsoftmax(
             frag_real_joint_logits, frag_real_joint_batch_idxs
