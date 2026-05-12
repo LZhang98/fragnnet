@@ -980,12 +980,38 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_x_embed, frag_node_batch_idxs, frag_edge_index, frag_edge_attr_embed
         )
         frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
-        frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn, frag_batch)
-        frag_embed_node_pool = self.frag_pool(frag_embed_node, frag_batch)
+        _need_gnn_pool = self.frag_pool_combine != "none" or self.predict_oos
+        # For sum/mean, precompute CSR ptr and call frag_pool with index=None so PyG routes
+        # through segment_csr instead of scatter. segment_csr requires index=None (or
+        # _deterministic=True) to activate; passing both index and ptr keeps scatter active.
+        # Benefits: contiguous memory reads, ptr is (B+1,) vs scatter index (N,); mean also
+        # saves ~50% peak memory (no internal count buffer). frag_batch is sorted in PyG
+        # batches so ptr is always valid.
+        # NOTE: "max" is intentionally excluded — segment_csr for max allocates ~3× the peak
+        # memory of scatter_max (temporary workspace for backward), which outweighs the 8–9×
+        # speed gain when memory is the primary constraint.
+        if self.frag_pool_type in ("sum", "mean") and _need_gnn_pool:
+            _frag_counts = th.bincount(frag_batch, minlength=batch_size)
+            frag_ptr = th.cat([_frag_counts.new_zeros(1), _frag_counts.cumsum(0)])
+        else:
+            frag_ptr = None
+        # _pool_idx: pass None when using ptr (segment_csr path), frag_batch otherwise.
+        _pool_idx = None if frag_ptr is not None else frag_batch
+        frag_embed_gnn_pool = (
+            self.frag_pool(frag_embed_gnn, _pool_idx, ptr=frag_ptr, dim_size=batch_size)
+            if _need_gnn_pool
+            else None
+        )
         if self.frag_pool_combine == "subtract":
+            frag_embed_node_pool = self.frag_pool(
+                frag_embed_node, _pool_idx, ptr=frag_ptr, dim_size=batch_size
+            )
             frag_embed_gnn = frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
             frag_embed_node = frag_embed_node - frag_embed_node_pool[frag_batch]
         elif self.frag_pool_combine == "add":
+            frag_embed_node_pool = self.frag_pool(
+                frag_embed_node, _pool_idx, ptr=frag_ptr, dim_size=batch_size
+            )
             frag_embed_gnn = frag_embed_gnn + frag_embed_gnn_pool[frag_batch]
             frag_embed_node = frag_embed_node + frag_embed_node_pool[frag_batch]
         else:
@@ -1227,17 +1253,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_edge_h_diffs < frag_edge_h_ranges[:, 0].unsqueeze(-1),
                 frag_edge_h_diffs > frag_edge_h_ranges[:, 1].unsqueeze(-1),
             )
-            frag_edge_h_logprobs = (frag_node_formula_logprobs[frag_edge_index[0]]).unsqueeze(1) + (
-                frag_node_formula_logprobs[frag_edge_index[1]]
-            ).unsqueeze(2)
-            frag_edge_h_logprobs = frag_edge_h_logprobs.reshape(frag_edge_h_logprobs.shape[0], -1)
-            # Memory Opt #3: Use einsum to compute logprobs without full Cartesian product expansion
             src_formula_logprobs = frag_node_formula_logprobs[
                 frag_edge_index[0]
             ]  # (num_edges, mlp_output_dim)
             dst_formula_logprobs = frag_node_formula_logprobs[
                 frag_edge_index[1]
             ]  # (num_edges, mlp_output_dim)
+            # Outer product of per-node formula log-probs across each edge: (E, H*H)
             frag_edge_h_logprobs = th.einsum(
                 "ni,nj->nij", src_formula_logprobs, dst_formula_logprobs
             ).reshape(len(src_formula_logprobs), -1)
