@@ -1416,7 +1416,7 @@ def get_pairwise_cross_entropy(
 
     batch_size = int(batch_size)
     if mzs.numel() == 0:
-        return th.zeros((batch_size, batch_size), device=mzs.device)
+        return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
     # Binning
     bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
@@ -1424,7 +1424,6 @@ def get_pairwise_cross_entropy(
     )
 
     # Normalize to get probabilities (L1 normalization)
-    # log_softmax to get log probabilities properly normalized
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
@@ -1435,119 +1434,49 @@ def get_pairwise_cross_entropy(
     num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     intra_bin_idxs = bin_idxs % num_bins
 
-    # Optimization: only use bins that are actually present in data
     unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
-
-    # Create a mapping from old bin indices to new compact indices
     bin_idx_map = th.full(
         (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
     )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-
-    # Remap indices to compact space
     compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
-    indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+    effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    # Create sparse tensor for Probs
-    P = th.sparse_coo_tensor(indices, probs, (batch_size, num_unique_bins), device=mzs.device)
+    sort_idx = th.argsort(bin_batch_idxs)
+    sorted_batch_idxs = bin_batch_idxs[sort_idx]
+    sorted_bin_idxs = compact_bin_idxs[sort_idx]
+    sorted_probs = probs[sort_idx]
+    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
+    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
+    row_ptr[1:] = th.cumsum(counts, dim=0)
+    row_ptr_cpu = row_ptr.detach().cpu()
 
-    # We also need LogProbs for the Q part: log(Q)
-    # We use a small epsilon for stability when Q is 0, effective log(Q+eps)
-    # But since we use sparse representation, 0s are implicit.
-    # For CE = - sum P_i * log Q_i
-    # If Q_i is 0 (missing peak), log Q_i is -inf (or small number).
-    # P_i * log Q_i will be large if P_i > 0.
-    # This simple matrix multiplication approach usually assumes 0 * anything = 0,
-    # but here we specifically want P_i * log(0) to be penalized.
-    #
-    # Strategy:
-    # 1. Convert P to dense.
-    # 2. Convert Q's logprobs to dense, filling missing values with a very small log-prob (e.g. log(epsilon)).
-    #    However, batched_bin_func returns only present bins.
-    #    If we just densify P, we get 0s for missing bins.
-    #    P_dense corresponds to the probabilities.
-    #    Calculated CE(i, j) = - sum_k P_ik * log(Q_jk)
+    CE = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
 
-    if chunk_size is None or chunk_size >= batch_size:
-        P_dense = P.to_dense()  # (B, D)
-
-        # Q_dense needs to be log probabilities.
-        # Note: P.to_dense() fills missing values with 0.
-        # For Log Probabilities, missing values should be LOG_ZERO or log(eps).
-        # We can reconstruct Q_log_dense from the same indices but using log_probs values.
-        Q_log_sparse = th.sparse_coo_tensor(
-            indices, log_probs, (batch_size, num_unique_bins), device=mzs.device
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        P_i = _build_dense_chunk(
+            sorted_batch_idxs, sorted_bin_idxs, sorted_probs,
+            row_ptr_cpu, i, i_end, num_unique_bins, mzs.device,
         )
-        Q_log_dense = Q_log_sparse.to_dense()
-
-        # Now, the zeros in Q_log_dense are actually "missing" values which should be LOG_ZERO.
-        # But wait, sparse_coo_tensor.to_dense() fills with 0. 0 in log-space is prob=1, which is WRONG.
-        # We need to initialize with a very small value (LOG_ZERO) and then fill in the values.
-        # Or, simpler: convert, then mask where P (probs) was 0? No, we need where Q was 0.
-
-        # Better approach for Q:
-        # 1. Start with full matrix of LOG_ZERO/log(eps).
-        # 2. Add the sparse values.
-        # However, `to_dense()` doesn't support "fill value".
-
-        # Workaround:
-        # Q_log_dense = Q_log_sparse.to_dense() gives 0s where there are no entries.
-        # We know matching entries are in indices.
-        # Alternatively: P_dense is easy (0 probs is fine).
-        # For Q, we want `log(Q + eps)`.
-        # So we can just take P_dense (which is Q_dense probs), add eps, and log.
-        # Q_log_dense = th.log(P_dense + EPS)
-
-        Q_log_dense = th.log(P_dense + EPS)
-
-        # CE = - P @ Q_log.T
-        CE = -th.mm(P_dense, Q_log_dense.t())
-
-    else:
-        CE = th.zeros((batch_size, batch_size), device=mzs.device, dtype=mzs.dtype)
-
-        sort_idx = th.argsort(bin_batch_idxs)
-        sorted_batch_idxs = bin_batch_idxs[sort_idx]
-        sorted_bin_idxs = compact_bin_idxs[sort_idx]
-        sorted_probs = probs[sort_idx]
-        counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
-        row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
-        row_ptr[1:] = th.cumsum(counts, dim=0)
-        row_ptr_cpu = row_ptr.detach().cpu()
-
-        for i in range(0, batch_size, chunk_size):
-            i_end = min(i + chunk_size, batch_size)
-            P_i = _build_dense_chunk(
-                sorted_batch_idxs,
-                sorted_bin_idxs,
-                sorted_probs,
-                row_ptr_cpu,
-                i,
-                i_end,
-                num_unique_bins,
-                mzs.device,
-            )
-
-            for j in range(0, batch_size, chunk_size):
-                j_end = min(j + chunk_size, batch_size)
-                P_j = _build_dense_chunk(
-                    sorted_batch_idxs,
-                    sorted_bin_idxs,
-                    sorted_probs,
-                    row_ptr_cpu,
-                    j,
-                    j_end,
-                    num_unique_bins,
-                    mzs.device,
+        log_P_i = th.log(P_i + EPS)
+        for j in range(0, batch_size, effective_chunk):
+            j_end = min(j + effective_chunk, batch_size)
+            # Reuse log_P_i for diagonal blocks (j == i) to avoid rebuilding the same chunk.
+            log_Q_j = (
+                log_P_i
+                if i == j
+                else th.log(
+                    _build_dense_chunk(
+                        sorted_batch_idxs, sorted_bin_idxs, sorted_probs,
+                        row_ptr_cpu, j, j_end, num_unique_bins, mzs.device,
+                    )
+                    + EPS
                 )
-
-                # Q_j_log
-                Q_j_log = th.log(P_j + EPS)
-
-                # CE[i, j] = - sum P_i * log Q_j
-                CE[i:i_end, j:j_end] = -th.mm(P_i, Q_j_log.t())
+            )
+            CE[i:i_end, j:j_end] = -th.mm(P_i, log_Q_j.t())
 
     return CE
 
