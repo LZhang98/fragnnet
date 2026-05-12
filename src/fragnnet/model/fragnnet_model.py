@@ -609,7 +609,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
 
         # pool mol embeddings
-        mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
+        # For sum/mean, use segment_csr (ptr-only path) — same logic as frag_pool below.
+        # mol_num_nodes is already the CSR ptr (cumulative atom counts, shape [B+1]).
+        # Max is excluded: segment_csr max allocates ~3× peak memory vs scatter_max.
+        if self.mol_pool_type in ("sum", "mean"):
+            mol_embed_gnn_pool = self.mol_pool(
+                mol_embed_gnn, index=None, ptr=mol_num_nodes, dim_size=batch_size
+            )
+        else:
+            mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
 
         # process dag
         # create interstage
