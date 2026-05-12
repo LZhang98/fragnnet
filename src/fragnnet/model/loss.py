@@ -1331,13 +1331,15 @@ def get_pairwise_jss_sim(
     row_ptr[1:] = th.cumsum(counts, dim=0)
     row_ptr_cpu = row_ptr.detach().cpu()
 
-    # H(P) for each spectrum. Reuse P_i from the H(M) loop to avoid rebuilding chunks.
     H_P = th.zeros(batch_size, device=mzs.device, dtype=probs.dtype)
 
-    # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i)
+    # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i).
+    # Computed row-by-row per chunk pair to avoid a [ci, cj, bins] 3D intermediate;
+    # peak memory is O(cj * bins) per block instead of O(ci * cj * bins).
     H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
     for i in range(0, batch_size, effective_chunk):
         i_end = min(i + effective_chunk, batch_size)
+        ci = i_end - i
         P_i = _build_dense_chunk(
             sorted_batch_idxs,
             sorted_bin_idxs,
@@ -1348,15 +1350,14 @@ def get_pairwise_jss_sim(
             num_unique_bins,
             mzs.device,
         )
-        H_P[i:i_end] = -th.sum(P_i * th.log(P_i + EPS), dim=1)
+        H_P[i:i_end] = -(P_i * th.log(P_i + EPS)).sum(dim=1)
         for j in range(i, batch_size, effective_chunk):
             j_end = min(j + effective_chunk, batch_size)
-            if i == j:
-                M_ij = 0.5 * (P_i.unsqueeze(1) + P_i.unsqueeze(0))
-                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
-                H_M[i:i_end, i:i_end] = block
-            else:
-                P_j = _build_dense_chunk(
+            cj = j_end - j
+            P_j = (
+                P_i
+                if i == j
+                else _build_dense_chunk(
                     sorted_batch_idxs,
                     sorted_bin_idxs,
                     sorted_probs,
@@ -1366,9 +1367,13 @@ def get_pairwise_jss_sim(
                     num_unique_bins,
                     mzs.device,
                 )
-                M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
-                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
-                H_M[i:i_end, j:j_end] = block
+            )
+            block = th.empty(ci, cj, device=mzs.device, dtype=probs.dtype)
+            for ii in range(ci):
+                s = 0.5 * (P_i[ii : ii + 1] + P_j)  # [cj, bins]
+                block[ii] = -(s * th.log(s + EPS)).sum(dim=1)
+            H_M[i:i_end, j:j_end] = block
+            if i != j:
                 H_M[j:j_end, i:i_end] = block.t()
 
     JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
