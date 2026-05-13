@@ -211,12 +211,15 @@ class SpectrumPL(L.LightningModule):
                 else:
                     tols.append(self.tolerance)
                     min_mzs.append(global_min_mz)
-            # CPU tensors — moved to device in _common_step via .to()
-            self.inst_tol_lookup: th.Tensor = th.tensor(tols, dtype=th.float32)
-            self.inst_min_mz_lookup: th.Tensor = th.tensor(min_mzs, dtype=th.float32)
+            self.register_buffer(
+                "inst_tol_lookup", th.tensor(tols, dtype=th.float32), persistent=False
+            )
+            self.register_buffer(
+                "inst_min_mz_lookup", th.tensor(min_mzs, dtype=th.float32), persistent=False
+            )
         else:
-            self.inst_tol_lookup = None
-            self.inst_min_mz_lookup = None
+            self.register_buffer("inst_tol_lookup", None, persistent=False)
+            self.register_buffer("inst_min_mz_lookup", None, persistent=False)
 
         # idx↔str maps are fetched lazily from the dataloader dataset via
         # _get_dataset_maps() — the dataset is the canonical source of truth.
@@ -788,13 +791,11 @@ class SpectrumPL(L.LightningModule):
             ):
                 spec_inst_type = kwargs.get("spec_inst_type")
                 if spec_inst_type is not None and self.inst_tol_lookup is not None:
-                    inst_idxs = spec_inst_type.reshape(-1).cpu()
+                    inst_idxs = spec_inst_type.reshape(-1)
                     device = true_ints.device
                     dtype = true_ints.dtype
-                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(device=device, dtype=dtype)
-                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(
-                        device=device, dtype=dtype
-                    )
+                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=dtype)
+                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(dtype=dtype)
                     # Build per-peak effective absolute tolerance: (B, N_true).
                     # tol_rel * clamp(mz, min=min_mz) converts relative ppm to absolute Da.
                     safe_mzs = batch_true_mzs_r.clamp(max=self.hparams.mz_max)
@@ -1223,12 +1224,8 @@ class SpectrumPL(L.LightningModule):
             inst_type_idxs = batch["spec_inst_type"].reshape(-1)  # [batch_size]
             dtype, device = train_true_logprobs.dtype, train_true_logprobs.device
             # Tensor indexing (no Python loop) — lookup tensors built once in _setup_tolerance
-            tol_per_sample = self.inst_tol_lookup[inst_type_idxs.cpu()].to(
-                dtype=dtype, device=device
-            )
-            min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs.cpu()].to(
-                dtype=dtype, device=device
-            )
+            tol_per_sample = self.inst_tol_lookup[inst_type_idxs].to(dtype=dtype)
+            min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs].to(dtype=dtype)
 
         # prepare training dict and compute loss
         train_d = {

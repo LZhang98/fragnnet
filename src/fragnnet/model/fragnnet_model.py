@@ -380,7 +380,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.cc_interstage_use_rest = cc_interstage_use_rest
 
         if self.bin_output:
-            self.mz_bins = th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res)
+            self.register_buffer("mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res))
 
         # this is required
         assert "h_formulae_idx" in self.frag_node_feats
@@ -1204,11 +1204,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             oos_logprobs = F.logsigmoid(oos_logits)
             not_oos_logprobs = F.logsigmoid(-oos_logits)
         else:
-            # set them to 0
-            oos_logprobs = LOG_ZERO(frag_formula_logprobs.dtype) * th.ones(
-                [batch_size], device=device
+            oos_logprobs = th.full(
+                [batch_size],
+                LOG_ZERO(frag_formula_logprobs.dtype),
+                device=device,
+                dtype=frag_formula_logprobs.dtype,
             )
-            not_oos_logprobs = th.zeros([batch_size], device=device)
+            not_oos_logprobs = th.zeros([batch_size], device=device, dtype=frag_formula_logprobs.dtype)
 
         # adjust frag_formula_logprobs
         frag_formula_oos_logprobs = frag_formula_logprobs + th.repeat_interleave(
@@ -1277,14 +1279,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_real_joint_node_idxs = real_pos // H
         _real_h_pos = real_pos % H
         frag_real_joint_h_counts = self._h_counts_buf[_real_h_pos]
-        if include_cmf:
-            _h_offset_buf = th.cat([
-                th.zeros(H, dtype=th.long, device=device),
-                th.full((H,), H, dtype=th.long, device=device),
-            ])
-            frag_real_joint_h_offsets = _h_offset_buf[_real_h_pos]
-        else:
-            frag_real_joint_h_offsets = th.zeros_like(frag_real_joint_h_counts)
+        frag_real_joint_h_offsets = th.zeros_like(frag_real_joint_h_counts)
         frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
         frag_real_joint_batch_idxs = frag_node_batch_idxs[frag_real_joint_node_idxs]
         # P(f,n)

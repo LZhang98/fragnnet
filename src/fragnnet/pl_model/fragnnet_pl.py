@@ -1033,10 +1033,8 @@ class FraGNNetPL(SpectrumPL):
 
         if self.hparams.dynamic_batch_sampler:
             scale = self._max_batch_size / self._cur_batch_weight
-            for pg in opt.param_groups:
-                for p in pg["params"]:
-                    if p.grad is not None:
-                        p.grad.mul_(scale)
+            grads = [p.grad for pg in opt.param_groups for p in pg["params"] if p.grad is not None]
+            th._foreach_mul_(grads, scale)
 
         self.on_before_optimizer_step(opt)
         self.clip_gradients(
