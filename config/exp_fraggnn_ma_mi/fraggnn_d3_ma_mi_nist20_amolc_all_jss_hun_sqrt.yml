@@ -52,7 +52,7 @@ num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 level
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 
-mol_hidden_size: 384    # jss_sqrt sweep: 512 > 384
+mol_hidden_size: 384    # jss_sqrt sweep winner is 512; using 384 for memory test
 mol_num_layers: 4
 mol_gnn_type: GINE      # jss_sqrt sweep: GINE wins over GINE_EFA
 mol_num_heads: 4        # used by GINE_EFA; ignored by GINE
