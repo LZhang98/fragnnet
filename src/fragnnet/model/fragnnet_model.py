@@ -394,6 +394,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if include_cmf:
             _h_counts = th.cat([_h_counts, _h_counts], dim=0)
         self.register_buffer("_h_counts_buf", _h_counts)
+        _h_counts_range = th.arange(-num_hs, num_hs + 1, dtype=th.long)
+        if include_cmf:
+            _h_counts_range = th.cat([_h_counts_range, _h_counts_range])
+        self.register_buffer("_h_counts_range_buf", _h_counts_range)
 
     def _maybe_apply_cc_feature_dropout(self, frag_node_mask_embed: th.Tensor) -> th.Tensor:
         """Drop the full-fragment cc feature group for a whole training batch."""
@@ -1145,6 +1149,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_node_logits = self.node_module(frag_embed).squeeze(1)
             frag_node_logprobs = scatter_logsoftmax(frag_node_logits, frag_node_batch_idxs)
 
+            # joint logits = formula_logits + node_logits (broadcast); exposed for post-branch
+            # scatter_logsoftmax over real positions (mirrors formula path's frag_joint_logits)
+            frag_joint_logits = (frag_node_formula_logits + frag_node_logits.unsqueeze(-1)).flatten()
+
             # log p(f,n) = log p(f|n) + log p(n)
             frag_joint_logprobs = frag_node_formula_logprobs + frag_node_logprobs.unsqueeze(-1)
             frag_joint_logprobs = frag_joint_logprobs.flatten()
@@ -1331,10 +1339,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         )
 
         frag_real_h_logprobs = th.clamp(frag_real_h_logprobs, max=0.0)
-        frag_real_h_counts = th.arange(-self.num_hs, self.num_hs + 1, device=device)
-        if include_cmf:
-            frag_real_h_counts = th.cat([frag_real_h_counts, frag_real_h_counts])
-        frag_real_h_counts = frag_real_h_counts.repeat(batch_size)
+        frag_real_h_counts = self._h_counts_range_buf.repeat(batch_size)
         frag_real_h_batch_idxs = th.repeat_interleave(
             th.arange(batch_size, device=device), self.mlp_output_dim
         )
