@@ -652,10 +652,27 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_node_mask_idxs = frag_node_mask_idxs[valid_frag_mask]
 
             # Aggregate CC atom embeddings per fragment using pooling
-            frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
-            frag_node_mask_embed = self.mol_pool(
-                frag_node_embed, frag_node_mask_idxs[:, 0], dim_size=batch_frag_num_nodes
-            )
+            if frag_node_mask_idxs.shape[0] == 0:
+                frag_node_mask_embed = th.zeros(
+                    batch_frag_num_nodes, mol_embed_gnn.shape[1], device=device, dtype=float_dtype
+                )
+            elif self.mol_pool_type in ("sum", "mean"):
+                M_cc = th.sparse_coo_tensor(
+                    th.stack([frag_node_mask_idxs[:, 0], frag_node_mask_idxs[:, 1]]),
+                    th.ones(frag_node_mask_idxs.shape[0], device=device, dtype=float_dtype),
+                    (batch_frag_num_nodes, mol_embed_gnn.shape[0]),
+                )
+                frag_node_mask_embed = th.sparse.mm(M_cc, mol_embed_gnn)
+                if self.mol_pool_type == "mean":
+                    degree = th.bincount(
+                        frag_node_mask_idxs[:, 0], minlength=batch_frag_num_nodes
+                    ).to(float_dtype).clamp(min=1).unsqueeze(1)
+                    frag_node_mask_embed = frag_node_mask_embed / degree
+            else:
+                frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
+                frag_node_mask_embed = self.mol_pool(
+                    frag_node_embed, frag_node_mask_idxs[:, 0], dim_size=batch_frag_num_nodes
+                )
 
             # frag_node_mask_embed can be one of following:
             # 1. add/sub: Simple arithmetic operations
@@ -721,10 +738,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 boundary_idxs[:, 1] = boundary_idxs[:, 1] + boundary_offsets
                 valid = boundary_idxs[:, 1] < mol_embed_gnn.shape[0]
                 boundary_idxs = boundary_idxs[valid]
-                boundary_embed = th.index_select(mol_embed_gnn, 0, boundary_idxs[:, 1])
-                boundary_embed = self.mol_pool(
-                    boundary_embed, boundary_idxs[:, 0], dim_size=num_frags_total
-                )
+                if self.mol_pool_type in ("sum", "mean"):
+                    M_bcc = th.sparse_coo_tensor(
+                        th.stack([boundary_idxs[:, 0], boundary_idxs[:, 1]]),
+                        th.ones(boundary_idxs.shape[0], device=device, dtype=float_dtype),
+                        (num_frags_total, mol_embed_gnn.shape[0]),
+                    )
+                    boundary_embed = th.sparse.mm(M_bcc, mol_embed_gnn)
+                    if self.mol_pool_type == "mean":
+                        degree = th.bincount(
+                            boundary_idxs[:, 0], minlength=num_frags_total
+                        ).to(float_dtype).clamp(min=1).unsqueeze(1)
+                        boundary_embed = boundary_embed / degree
+                else:
+                    boundary_embed = th.index_select(mol_embed_gnn, 0, boundary_idxs[:, 1])
+                    boundary_embed = self.mol_pool(
+                        boundary_embed, boundary_idxs[:, 0], dim_size=num_frags_total
+                    )
             else:
                 boundary_embed = th.zeros(
                     num_frags_total,
@@ -774,14 +804,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 th.bucketize(frag_edge_node_idxs, frag_num_nodes, right=True) - 1
             ]
             frag_edge_mask_idxs[:, 1] = frag_edge_mask_idxs[:, 1] + frag_edge_offsets
-            # Use index_select for memory efficiency instead of direct indexing
-            frag_edge_embed = th.index_select(mol_embed_gnn, 0, frag_edge_mask_idxs[:, 1])
-            frag_edge_mask_embed = scatter_reduce(
-                src=frag_edge_embed,
-                index=frag_edge_mask_idxs[:, 0:1].expand(-1, mol_embed_gnn.shape[1]),
-                reduce="sum",
-                dim_size=batch_frag_num_edges,
-            )
+            if frag_edge_mask_idxs.shape[0] == 0:
+                frag_edge_mask_embed = th.zeros(
+                    batch_frag_num_edges, mol_embed_gnn.shape[1], device=device, dtype=float_dtype
+                )
+            else:
+                M_ecc = th.sparse_coo_tensor(
+                    th.stack([frag_edge_mask_idxs[:, 0], frag_edge_mask_idxs[:, 1]]),
+                    th.ones(frag_edge_mask_idxs.shape[0], device=device, dtype=float_dtype),
+                    (batch_frag_num_edges, mol_embed_gnn.shape[0]),
+                )
+                frag_edge_mask_embed = th.sparse.mm(M_ecc, mol_embed_gnn)
             frag_edata.append(frag_edge_mask_embed)
         # node formulae
         if "base_formula" in self.frag_node_feats:
