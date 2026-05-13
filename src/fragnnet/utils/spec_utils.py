@@ -1330,8 +1330,8 @@ def jss_helper(
     )
     # jss
     jsd_e = 0.5 * (kl1 + kl2)
-    # (ln(2) - jsd_e) / ln(2)
-    jss = 1.0 - jsd_e / np.log(2.0)
+    # (ln(2) - jsd_e) / ln(2); clamp to [0,1] to guard against FP drift in union mixture
+    jss = th.clamp(1.0 - jsd_e / np.log(2.0), min=0.0, max=1.0)
     return jss
 
 

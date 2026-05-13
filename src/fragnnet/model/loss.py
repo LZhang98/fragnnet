@@ -328,12 +328,14 @@ def sparse_cross_entropy_vec(
     # Calculate number of loss batches for memory efficiency
     loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
 
-    # Compute cumulative sum of counts for batch slicing
-    true_batch_cumsum = th.cumsum(
-        F.pad(th.unique(true_batch_idxs, return_counts=True)[1], (1, 0), "constant", 0), dim=0
+    # Compute cumulative sum of counts for batch slicing.
+    # th.bincount is O(N) vs th.unique's O(N log N) sort; minlength also correctly handles
+    # batch elements with zero peaks (th.unique silently drops them, giving wrong shape).
+    true_batch_cumsum = th.cat(
+        [true_batch_idxs.new_zeros(1), th.bincount(true_batch_idxs, minlength=batch_size).cumsum(0)]
     )
-    pred_batch_cumsum = th.cumsum(
-        F.pad(th.unique(pred_batch_idxs, return_counts=True)[1], (1, 0), "constant", 0), dim=0
+    pred_batch_cumsum = th.cat(
+        [pred_batch_idxs.new_zeros(1), th.bincount(pred_batch_idxs, minlength=batch_size).cumsum(0)]
     )
 
     # Initialize output tensors
@@ -910,26 +912,29 @@ def sparse_jensen_shannon_divergence_hungarian(
     # Get number of batches
     batch_size = int(th.max(true_batch_idxs).item() + 1)
     jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
+    LOG2 = math.log(2.0)  # precompute: avoids th.log(th.tensor(2.0)) inside the loop
+
+    # Split peaks by batch element once (O(N)) instead of masking per element (O(B×N)).
+    true_counts = th.bincount(true_batch_idxs, minlength=batch_size).tolist()
+    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size).tolist()
+    true_mzs_list = th.split(true_mzs, true_counts)
+    true_logprobs_list = th.split(true_logprobs, true_counts)
+    pred_mzs_list = th.split(pred_mzs, pred_counts)
+    pred_logprobs_list = th.split(pred_logprobs, pred_counts)
 
     for batch_idx in range(batch_size):
-        # Select peaks for current batch
-        b_true_mask = true_batch_idxs == batch_idx
-        b_pred_mask = pred_batch_idxs == batch_idx
-        b_true_mzs = true_mzs[b_true_mask]
-        b_pred_mzs = pred_mzs[b_pred_mask]
-        b_true_logprobs = true_logprobs[b_true_mask]
-        b_pred_logprobs = pred_logprobs[b_pred_mask]
+        b_true_mzs = true_mzs_list[batch_idx]
+        b_pred_mzs = pred_mzs_list[batch_idx]
+        b_true_logprobs = true_logprobs_list[batch_idx]
+        b_pred_logprobs = pred_logprobs_list[batch_idx]
 
-        # Normalize probabilities (sum to 1)
+        # Normalize probabilities (sum to 1) without GPU sync.
+        # clamp(min=EPS) avoids division-by-zero; when all probs are ~0, sum≈0/EPS=0 anyway.
         b_true_probs = th.exp(b_true_logprobs)
-        b_true_sum = th.sum(b_true_probs)
-        if b_true_sum > 0:
-            b_true_probs = b_true_probs / b_true_sum
+        b_true_probs = b_true_probs / b_true_probs.sum().clamp(min=EPS)
 
         b_pred_probs = th.exp(b_pred_logprobs)
-        b_pred_sum = th.sum(b_pred_probs)
-        if b_pred_sum > 0:
-            b_pred_probs = b_pred_probs / b_pred_sum
+        b_pred_probs = b_pred_probs / b_pred_probs.sum().clamp(min=EPS)
 
         # per-sample tolerance (falls back to global scalars when not provided)
         b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
@@ -1000,7 +1005,6 @@ def sparse_jensen_shannon_divergence_hungarian(
                 total_gain = b_score.sum() * 0.0
 
         # Normalized JSD = 1 - Total Gain / log 2
-        LOG2 = th.log(th.tensor(2.0, device=total_gain.device, dtype=total_gain.dtype))
         b_jsd = 1.0 - total_gain / LOG2
         b_jsd = th.clamp(b_jsd, min=0.0, max=1.0)
         jsd_hun[batch_idx] = b_jsd
