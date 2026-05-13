@@ -329,14 +329,23 @@ def sparse_cross_entropy_vec(
     loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
 
     # Compute cumulative sum of counts for batch slicing.
-    # th.bincount is O(N) vs th.unique's O(N log N) sort; minlength also correctly handles
-    # batch elements with zero peaks (th.unique silently drops them, giving wrong shape).
-    true_batch_cumsum = th.cat(
+    # .tolist() transfers batch_size+1 ints once, turning loop-body indexing into Python-int
+    # slicing (no GPU→CPU sync per iteration). th.bincount is O(N) vs th.unique's O(N log N).
+    true_batch_cumsum: list[int] = th.cat(
         [true_batch_idxs.new_zeros(1), th.bincount(true_batch_idxs, minlength=batch_size).cumsum(0)]
-    )
-    pred_batch_cumsum = th.cat(
+    ).tolist()
+    pred_batch_cumsum: list[int] = th.cat(
         [pred_batch_idxs.new_zeros(1), th.bincount(pred_batch_idxs, minlength=batch_size).cumsum(0)]
-    )
+    ).tolist()
+
+    # Precompute loop-invariant constants as Python scalars (avoids per-iteration tensor creation).
+    _LOG_2PI = math.log(2 * math.pi)
+    if gaussian_renormalize:
+        if oos_tolerance_multiple <= 0:
+            raise ValueError(f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}")
+        _log_trunc_factor: float = math.log(math.erf(oos_tolerance_multiple / math.sqrt(2)))
+    else:
+        _log_trunc_factor = 0.0
 
     # Initialize output tensors
     ios_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
@@ -357,7 +366,7 @@ def sparse_cross_entropy_vec(
 
     # Loop over loss batches for memory efficiency
     for bl in range(loss_num_batches):
-        # Compute batch slice indices
+        # Compute batch slice indices (Python ints from .tolist() — no GPU sync)
         bl_lower = bl * loss_batch_size
         bl_upper = min((bl + 1) * loss_batch_size, batch_size)
         bl_true_lower = true_batch_cumsum[bl_lower]
@@ -419,7 +428,7 @@ def sparse_cross_entropy_vec(
         # Mask for true peaks that have any matching prediction
         bl_true_both_mask = th.any(bl_both_mask, dim=1)
 
-        # Compute Gaussian stds and log truncation factors for predictions
+        # Compute Gaussian stds for predictions
         if relative:
             if bl_tol_per_pred is not None:
                 bl_stds = th.maximum(bl_pred_mzs, bl_min_mz_per_pred) * bl_tol_per_pred
@@ -428,61 +437,40 @@ def sparse_cross_entropy_vec(
         else:
             bl_stds = tolerance * th.ones_like(bl_pred_mzs)
         bl_vars = bl_stds**2
-        if gaussian_renormalize:
-            if oos_tolerance_multiple <= 0:
-                raise ValueError(
-                    f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}"
-                )
-            sigma = math.sqrt(2)
-            bl_trunc_factor = math.erf(oos_tolerance_multiple / sigma)
-            bl_log_trunc_factors = th.log(
-                th.tensor(bl_trunc_factor, device=device) * th.ones_like(bl_pred_mzs)
-            )
-        else:
-            bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
 
-        # Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture)
-        bl_ios_log_probs = -0.5 * (
-            bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)
-        ) ** 2 / bl_vars.reshape(1, -1) - 0.5 * th.log(2 * th.pi * bl_vars.reshape(1, -1))
+        # Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture).
+        # _LOG_2PI and _log_trunc_factor are Python scalars — no tensor allocation per iteration.
         bl_ios_log_probs = (
-            bl_ios_log_probs + bl_pred_logprobs.reshape(1, -1) - bl_log_trunc_factors.reshape(1, -1)
+            -0.5 * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
+            / bl_vars.reshape(1, -1)
+            - 0.5 * (_LOG_2PI + th.log(bl_vars.reshape(1, -1)))
+            + bl_pred_logprobs.reshape(1, -1)
+            - _log_trunc_factor
         )
         # Mask out non-matching pairs with mask_value (large negative)
         bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).to(float_dtype) * mask_value
         # Log-sum-exp over predictions for each true peak
         bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=1)
 
-        # Compute in-sample cross-entropy for this batch
-        if not th.any(bl_true_both_mask):
-            # If no matches, fill with LOG_ZERO
-            bl_ios_ce = th.full(
-                (bl_batch_size,), LOG_ZERO(float_dtype), dtype=float_dtype, device=device
-            )
-        else:
-            # Sum over matched true peaks, reduce by batch index
-            bl_ios_ce = scatter_reduce(
-                (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
-                bl_true_batch_idxs[bl_true_both_mask],
-                "sum",
-                dim=0,
-                dim_size=bl_batch_size,
-                default=0.0,
-            )
-            ios_ce[bl_lower:bl_upper] = bl_ios_ce
+        # In-sample CE: scatter_reduce handles empty mask → zeros (no GPU sync needed).
+        bl_ios_ce = scatter_reduce(
+            (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
+            bl_true_batch_idxs[bl_true_both_mask],
+            "sum",
+            dim=0,
+            dim_size=bl_batch_size,
+            default=0.0,
+        )
+        ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
-        # Compute out-of-sample logprobs for true peaks with no match
-        if not th.all(bl_true_both_mask):
-            bl_true_oos_logprobs = scatter_logsumexp(
-                bl_true_logprobs[~bl_true_both_mask],
-                bl_true_batch_idxs[~bl_true_both_mask],
-                dim_size=bl_batch_size,
-            )
-        else:
-            # If all matched, fill with LOG_ZERO
-            bl_true_oos_logprobs = th.full(
-                (bl_batch_size,), LOG_ZERO(float_dtype), dtype=float_dtype, device=device
-            )
+        # OOS logprobs for unmatched true peaks. scatter_logsumexp is empty-safe → LOG_ZERO.
+        # No GPU sync needed — the th.all() conditional has been removed.
+        bl_unmatched_mask = ~bl_true_both_mask
+        bl_true_oos_logprobs = scatter_logsumexp(
+            bl_true_logprobs[bl_unmatched_mask],
+            bl_true_batch_idxs[bl_unmatched_mask],
+            dim_size=bl_batch_size,
+        )
         # Compute out-of-sample cross-entropy
         bl_oos_ce = -th.exp(bl_true_oos_logprobs) * bl_pred_oos_logprobs
         oos_ce[bl_lower:bl_upper] = bl_oos_ce
