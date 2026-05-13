@@ -1326,62 +1326,33 @@ def get_pairwise_jss_sim(
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    sort_idx = th.argsort(bin_batch_idxs)
-    sorted_batch_idxs = bin_batch_idxs[sort_idx]
-    sorted_bin_idxs = compact_bin_idxs[sort_idx]
-    sorted_probs = probs[sort_idx]
-    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
-    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
-    row_ptr[1:] = th.cumsum(counts, dim=0)
-    row_ptr_cpu = row_ptr.detach().cpu()
+    # Build full [batch_size, num_unique_bins] probability matrix.
+    # batched_bin_func + scatter_logsoftmax guarantee unique (batch, bin) pairs,
+    # so plain index assignment is safe (no duplicate scatter).
+    P = th.zeros((batch_size, num_unique_bins), device=mzs.device, dtype=probs.dtype)
+    P[bin_batch_idxs, compact_bin_idxs] = probs
 
-    H_P = th.zeros(batch_size, device=mzs.device, dtype=probs.dtype)
+    H_P = -(P * th.log(P + EPS)).sum(dim=1)  # [batch_size]
 
-    # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i).
-    # Computed row-by-row per chunk pair to avoid a [ci, cj, bins] 3D intermediate;
-    # peak memory is O(cj * bins) per block instead of O(ci * cj * bins).
+    # H(M) where M = 0.5*(P_i + P_j): exploit upper-triangle symmetry.
+    # Each block is materialized as [ci, cj, K] and reduced along K in one
+    # CUDA kernel — no inner Python loop, no row_ptr scaffolding.
     H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
     for i in range(0, batch_size, effective_chunk):
         i_end = min(i + effective_chunk, batch_size)
-        ci = i_end - i
-        P_i = _build_dense_chunk(
-            sorted_batch_idxs,
-            sorted_bin_idxs,
-            sorted_probs,
-            row_ptr_cpu,
-            i,
-            i_end,
-            num_unique_bins,
-            mzs.device,
-        )
-        H_P[i:i_end] = -(P_i * th.log(P_i + EPS)).sum(dim=1)
+        P_i = P[i:i_end]  # [ci, K]
         for j in range(i, batch_size, effective_chunk):
             j_end = min(j + effective_chunk, batch_size)
-            cj = j_end - j
-            P_j = (
-                P_i
-                if i == j
-                else _build_dense_chunk(
-                    sorted_batch_idxs,
-                    sorted_bin_idxs,
-                    sorted_probs,
-                    row_ptr_cpu,
-                    j,
-                    j_end,
-                    num_unique_bins,
-                    mzs.device,
-                )
-            )
-            block = th.empty(ci, cj, device=mzs.device, dtype=probs.dtype)
-            for ii in range(ci):
-                s = 0.5 * (P_i[ii : ii + 1] + P_j)  # [cj, bins]
-                block[ii] = -(s * th.log(s + EPS)).sum(dim=1)
+            P_j = P[j:j_end]  # [cj, K]
+            M = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))  # [ci, cj, K]
+            block = -(M * th.log(M + EPS)).sum(dim=2)  # [ci, cj]
             H_M[i:i_end, j:j_end] = block
             if i != j:
                 H_M[j:j_end, i:i_end] = block.t()
 
     JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
-    JSS = 1.0 - JSD / math.log(2.0)
+    # Clamp guards against tiny negative JSD (EPS perturbation in log) giving JSS > 1.
+    JSS = th.clamp(1.0 - JSD / math.log(2.0), min=0.0, max=1.0)
 
     return JSS
 
