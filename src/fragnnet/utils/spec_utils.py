@@ -27,6 +27,7 @@ try:
     )
 
     _torch_linear_assignment = True
+    logging.getLogger(__name__).info("torch_linear_assignment found; using GPU-accelerated batch linear assignment")
 except ImportError:
     _torch_linear_assignment = False
 
