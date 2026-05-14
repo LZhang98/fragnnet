@@ -30,6 +30,7 @@ from fragnnet.utils.misc_utils import (
     validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
+    batch_jss_hun_helper,
     batched_bin_func,
     calculate_match_mzs,
     jss_helper,
@@ -539,6 +540,156 @@ def get_sparse_cross_entropy_fn(
             )
 
     return sce_fn
+
+
+def _pad_flat_by_batch(
+    values: th.Tensor,
+    batch_idxs: th.Tensor,
+    batch_size: int,
+    pad_value: float,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Convert flat ragged values plus batch indices into a padded [B, N] tensor."""
+    counts = th.bincount(batch_idxs, minlength=batch_size)
+    max_count = int(counts.max().item()) if counts.numel() > 0 else 0
+    padded = values.new_full((batch_size, max_count), pad_value)
+    valid = th.arange(max_count, device=values.device).unsqueeze(0) < counts.unsqueeze(1)
+    if values.numel() == 0 or max_count == 0:
+        return padded, valid
+
+    sort_idx = th.argsort(batch_idxs)
+    sorted_batch_idxs = batch_idxs[sort_idx]
+    sorted_values = values[sort_idx]
+    row_starts = th.cumsum(counts, dim=0) - counts
+    positions = th.arange(values.numel(), device=values.device) - th.repeat_interleave(
+        row_starts, counts
+    )
+    padded[sorted_batch_idxs, positions] = sorted_values
+    return padded, valid
+
+
+def sparse_jensen_shannon_divergence_hungarian_vec(
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_logprobs: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    tolerance: float = 1e-5,
+    relative: bool = True,
+    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
+    log_min: float = EPS,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+    loss_batch_size: int = 32,
+) -> th.Tensor:
+    """Batched Jensen-Shannon distance with Hungarian peak matching."""
+    true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
+        true_mzs, true_logprobs, true_batch_idxs, agg="lse"
+    )
+    pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
+        pred_mzs, pred_logprobs, pred_batch_idxs, agg="lse"
+    )
+    true_sort_idx = th.argsort(true_batch_idxs)
+    true_mzs = true_mzs[true_sort_idx]
+    true_logprobs = true_logprobs[true_sort_idx]
+    true_batch_idxs = true_batch_idxs[true_sort_idx]
+    pred_sort_idx = th.argsort(pred_batch_idxs)
+    pred_mzs = pred_mzs[pred_sort_idx]
+    pred_logprobs = pred_logprobs[pred_sort_idx]
+    pred_batch_idxs = pred_batch_idxs[pred_sort_idx]
+
+    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    if loss_batch_size is None or loss_batch_size <= 0:
+        loss_batch_size = batch_size
+    loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
+
+    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
+    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    true_cumsum = th.cat([true_batch_idxs.new_zeros(1), true_counts.cumsum(0)]).tolist()
+    pred_cumsum = th.cat([pred_batch_idxs.new_zeros(1), pred_counts.cumsum(0)]).tolist()
+
+    jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
+    log2 = math.log(2.0)
+
+    for bl in range(loss_num_batches):
+        bl_lower = bl * loss_batch_size
+        bl_upper = min((bl + 1) * loss_batch_size, batch_size)
+        bl_true_lower = true_cumsum[bl_lower]
+        bl_true_upper = true_cumsum[bl_upper]
+        bl_pred_lower = pred_cumsum[bl_lower]
+        bl_pred_upper = pred_cumsum[bl_upper]
+        bl_batch_size = bl_upper - bl_lower
+
+        bl_true_batch_idxs = true_batch_idxs[bl_true_lower:bl_true_upper] - bl_lower
+        bl_pred_batch_idxs = pred_batch_idxs[bl_pred_lower:bl_pred_upper] - bl_lower
+        bl_true_mzs = true_mzs[bl_true_lower:bl_true_upper]
+        bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
+        bl_true_ints = th.exp(true_logprobs[bl_true_lower:bl_true_upper])
+        bl_pred_ints = th.exp(pred_logprobs[bl_pred_lower:bl_pred_upper])
+
+        batch_true_mzs, true_valid = _pad_flat_by_batch(
+            bl_true_mzs, bl_true_batch_idxs, bl_batch_size, 0.0
+        )
+        batch_pred_mzs, pred_valid = _pad_flat_by_batch(
+            bl_pred_mzs, bl_pred_batch_idxs, bl_batch_size, 0.0
+        )
+        batch_true_ints, _ = _pad_flat_by_batch(
+            bl_true_ints, bl_true_batch_idxs, bl_batch_size, 0.0
+        )
+        batch_pred_ints, _ = _pad_flat_by_batch(
+            bl_pred_ints, bl_pred_batch_idxs, bl_batch_size, 0.0
+        )
+
+        if batch_true_mzs.shape[1] == 0 or batch_pred_mzs.shape[1] == 0:
+            graph_zero = bl_pred_ints.sum() * 0.0
+            jsd_hun[bl_lower:bl_upper] = 1.0 + graph_zero
+            continue
+
+        if tol_per_sample is not None:
+            bl_tol_per_true = tol_per_sample[bl_lower:bl_upper].to(batch_true_mzs.dtype)
+            bl_min_mz_per_true = min_mz_per_sample[bl_lower:bl_upper].to(batch_true_mzs.dtype)
+            tol_per_true = bl_tol_per_true[:, None].expand_as(batch_true_mzs)
+            min_mz_per_true = bl_min_mz_per_true[:, None].expand_as(batch_true_mzs)
+        else:
+            tol_per_true = None
+            min_mz_per_true = None
+
+        batch_match_mask = calculate_match_mzs(
+            batch_true_mzs,
+            batch_pred_mzs,
+            tolerance=tolerance,
+            relative=relative,
+            tolerance_min_mz=tolerance_min_mz,
+            tol_per_true=tol_per_true,
+            min_mz_per_true=min_mz_per_true,
+        )
+        batch_match_mask = th.as_tensor(batch_match_mask, device=true_logprobs.device)
+        batch_match_mask = batch_match_mask & true_valid[:, :, None] & pred_valid[:, None, :]
+
+        if not bool(batch_match_mask.any().item()):
+            graph_zero = bl_pred_ints.sum() * 0.0
+            jsd_hun[bl_lower:bl_upper] = 1.0 + graph_zero
+            continue
+
+        batch_true_match_mask = batch_match_mask.any(dim=2)
+        batch_pred_match_mask = batch_match_mask.any(dim=1)
+        batch_true_prec_mask = th.zeros_like(batch_true_ints, dtype=th.bool)
+        batch_pred_prec_mask = th.zeros_like(batch_pred_ints, dtype=th.bool)
+
+        jss_hun = batch_jss_hun_helper(
+            batch_true_ints,
+            batch_pred_ints,
+            batch_match_mask,
+            batch_true_match_mask,
+            batch_pred_match_mask,
+            False,
+            batch_true_prec_mask,
+            batch_pred_prec_mask,
+            log_min,
+        )
+        jsd_hun[bl_lower:bl_upper] = th.clamp(1.0 - jss_hun / log2, min=0.0, max=1.0)
+
+    return jsd_hun
 
 
 def sparse_entropy_fn(

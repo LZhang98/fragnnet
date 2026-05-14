@@ -26,6 +26,7 @@ from fragnnet.model.loss import (
     sparse_entropy_fn,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
+    sparse_jensen_shannon_divergence_hungarian_vec,
 )
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
@@ -384,12 +385,6 @@ class FraGNNetPL(SpectrumPL):
             pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
             loss_batch_size=self.hparams.loss_batch_size,
         )
-        # edge loss
-        edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn, 4.0)
-        edge_h_transfer_loss_fn = get_edge_loss_fn(
-            self.hparams.edge_h_transfer_loss_fn, 4.0
-        )  # ,1.0)
-
         # binned cosine distance
         def cos_dist_fn(
             true_mzs,
@@ -465,6 +460,25 @@ class FraGNNetPL(SpectrumPL):
             tol_per_sample=None,
             min_mz_per_sample=None,
         ):
+            kwargs = {
+                "tolerance": self.tolerance,
+                "relative": self.relative,
+                "tol_per_sample": tol_per_sample,
+                "min_mz_per_sample": min_mz_per_sample,
+            }
+            if self.tolerance_min_mz is not None:
+                kwargs["tolerance_min_mz"] = self.tolerance_min_mz
+            if self.hparams.loss_vectorized:
+                kwargs["loss_batch_size"] = self.hparams.loss_batch_size
+                return sparse_jensen_shannon_divergence_hungarian_vec(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    **kwargs,
+                )
             return sparse_jensen_shannon_divergence_hungarian(
                 true_mzs,
                 true_logprobs,
@@ -472,10 +486,7 @@ class FraGNNetPL(SpectrumPL):
                 pred_mzs,
                 pred_logprobs,
                 pred_batch_idxs,
-                tolerance=self.tolerance,
-                relative=self.relative,
-                tol_per_sample=tol_per_sample,
-                min_mz_per_sample=min_mz_per_sample,
+                **kwargs,
             )
 
         assert self.hparams.sparse_cosine_similarity
@@ -500,37 +511,41 @@ class FraGNNetPL(SpectrumPL):
         else:
             assert not self.hparams.bin_output, "cannot train binned model with unbinned loss"
 
-        def edge_loss(
-            pred_edge_logprobs,
-            pred_edge_h_diffs,
-            pred_edge_h_range_masks,
-            pred_edge_h_logprobs,
-            pred_edge_batch_idxs,
-        ):
-            edge_h_range_costs = edge_h_range_loss_fn(
-                pred_edge_h_diffs * pred_edge_h_range_masks.float()
-            )
-            edge_h_range_costs = edge_h_range_costs.reshape(edge_h_range_costs.shape[0], -1)
-            edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
-            edge_h_transfer_costs = edge_h_transfer_costs.reshape(
-                edge_h_transfer_costs.shape[0], -1
-            )
-            edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0], -1)
-            edge_h_range_avg_cost = th.logsumexp(
-                edge_h_logprobs + safelog(edge_h_range_costs, eps=self.hparams.log_min),
-                dim=1,
-            )
-            edge_h_transfer_avg_cost = th.logsumexp(
-                edge_h_logprobs + safelog(edge_h_transfer_costs, eps=self.hparams.log_min),
-                dim=1,
-            )
-            h_range_loss = scatter_logsumexp(
-                pred_edge_logprobs + edge_h_range_avg_cost, pred_edge_batch_idxs
-            )
-            h_transfer_loss = scatter_logsumexp(
-                pred_edge_logprobs + edge_h_transfer_avg_cost, pred_edge_batch_idxs
-            )
-            return h_range_loss, h_transfer_loss
+        if not self.hparams.skip_edge_loss:
+            edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn, 4.0)
+            edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn, 4.0)
+
+            def edge_loss(
+                pred_edge_logprobs,
+                pred_edge_h_diffs,
+                pred_edge_h_range_masks,
+                pred_edge_h_logprobs,
+                pred_edge_batch_idxs,
+            ):
+                edge_h_range_costs = edge_h_range_loss_fn(
+                    pred_edge_h_diffs * pred_edge_h_range_masks.float()
+                )
+                edge_h_range_costs = edge_h_range_costs.reshape(edge_h_range_costs.shape[0], -1)
+                edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
+                edge_h_transfer_costs = edge_h_transfer_costs.reshape(
+                    edge_h_transfer_costs.shape[0], -1
+                )
+                edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0], -1)
+                edge_h_range_avg_cost = th.logsumexp(
+                    edge_h_logprobs + safelog(edge_h_range_costs, eps=self.hparams.log_min),
+                    dim=1,
+                )
+                edge_h_transfer_avg_cost = th.logsumexp(
+                    edge_h_logprobs + safelog(edge_h_transfer_costs, eps=self.hparams.log_min),
+                    dim=1,
+                )
+                h_range_loss = scatter_logsumexp(
+                    pred_edge_logprobs + edge_h_range_avg_cost, pred_edge_batch_idxs
+                )
+                h_transfer_loss = scatter_logsumexp(
+                    pred_edge_logprobs + edge_h_transfer_avg_cost, pred_edge_batch_idxs
+                )
+                return h_range_loss, h_transfer_loss
 
         self._setup_loss_names()
 
