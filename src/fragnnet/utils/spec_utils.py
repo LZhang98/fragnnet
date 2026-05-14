@@ -684,18 +684,15 @@ def round_aggregate_peaks(
     return round_mzs, round_ints, round_batch_idxs
 
 
-def scipy_linear_sum_assignment(matrix, maximize=False):
-    """
-    Solve the linear sum assignment problem using Scipy's implementation (Hungarian algorithm).
-    This is a wrapper to handle PyTorch tensors,
-    It is caller's response to to detaching from the graph.
+def scipy_linear_sum_assignment(matrix: th.Tensor, maximize: bool = False) -> tuple[th.Tensor, th.Tensor]:
+    """Solve linear assignment via scipy (CPU fallback).
 
     Args:
-        matrix (th.Tensor): The cost matrix (or score matrix if maximize=True).
-        maximize (bool, optional): Calculates a maximum weight matching if true. Defaults to False.
+        matrix: Cost (or score) matrix of shape (N, M). Caller must detach from graph.
+        maximize: If True, maximize total score instead of minimizing cost.
 
     Returns:
-        Tuple[th.Tensor, th.Tensor]: Row indices and column indices of the optimal assignment.
+        Tuple of (row_ind, col_ind) long tensors on the original device.
     """
     try:
         from scipy.optimize import linear_sum_assignment
@@ -703,9 +700,34 @@ def scipy_linear_sum_assignment(matrix, maximize=False):
         raise ImportError("scipy is required for scipy_linear_sum_assignment") from exc
 
     device = matrix.device
-    matrix = matrix.cpu().numpy()
-    x_idx, y_idx = linear_sum_assignment(matrix, maximize=maximize)
+    np_matrix = matrix.cpu().numpy()
+    x_idx, y_idx = linear_sum_assignment(np_matrix, maximize=maximize)
     return th.tensor(x_idx, device=device).long(), th.tensor(y_idx, device=device).long()
+
+
+def linear_sum_assignment(matrix: th.Tensor, maximize: bool = False) -> tuple[th.Tensor, th.Tensor]:
+    """Solve linear assignment, using GPU via torch_linear_assignment when available.
+
+    Uses ``batch_linear_assignment`` (GPU) when ``torch_linear_assignment`` is installed and
+    the matrix is on a CUDA device.  Falls back to scipy otherwise.
+
+    Caller is responsible for detaching ``matrix`` from the autograd graph before calling.
+
+    Args:
+        matrix: Cost (or score) matrix of shape (N, M).
+        maximize: If True, maximize total score instead of minimizing cost.
+
+    Returns:
+        Tuple of (row_ind, col_ind) long tensors on the same device as ``matrix``.
+    """
+    if _torch_linear_assignment and matrix.is_cuda:
+        cost = -matrix if maximize else matrix
+        # batch_linear_assignment expects (B, N, M) and minimises; returns (B, N) col-index per row
+        assignment = batch_linear_assignment(cost.unsqueeze(0)).squeeze(0)  # (N,)
+        row_ind = th.where(assignment >= 0)[0]
+        col_ind = assignment[row_ind]
+        return row_ind, col_ind
+    return scipy_linear_sum_assignment(matrix, maximize=maximize)
 
 
 ### helpers

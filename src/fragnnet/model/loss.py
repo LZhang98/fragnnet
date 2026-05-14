@@ -33,8 +33,8 @@ from fragnnet.utils.spec_utils import (
     batched_bin_func,
     calculate_match_mzs,
     jss_helper,
+    linear_sum_assignment,
     round_aggregate_peaks,
-    scipy_linear_sum_assignment,
 )
 
 logger = logging.getLogger(__name__)
@@ -441,7 +441,8 @@ def sparse_cross_entropy_vec(
         # Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture).
         # _LOG_2PI and _log_trunc_factor are Python scalars — no tensor allocation per iteration.
         bl_ios_log_probs = (
-            -0.5 * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
+            -0.5
+            * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
             / bl_vars.reshape(1, -1)
             - 0.5 * (_LOG_2PI + th.log(bl_vars.reshape(1, -1)))
             + bl_pred_logprobs.reshape(1, -1)
@@ -841,7 +842,7 @@ def sparse_cosine_distance_hungarian(
         # Mask out unmatched pairs with LOG_ZERO
         b_score[~b_match_mzs[b_true_match_mzs][:, b_pred_match_mzs]] = LOG_ZERO(b_score.dtype)
         # Hungarian algorithm for optimal matching (maximizing score)
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+        b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score, maximize=True)
         # Compute log-cosine similarity for matched pairs
         b_log_cos_hun = th.logsumexp(
             b_true_logprobs[b_true_match_mzs][b_true_idxs]
@@ -981,7 +982,7 @@ def sparse_jensen_shannon_divergence_hungarian(
             # We detach b_score for the assignment step because the Hungarian algorithm
             # is non-differentiable (calculates indices).
             # Gradients will flow through the values selected from the original b_score below.
-            b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
+            b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score.detach(), maximize=True)
 
             # Filter invalid matches (where score is -1e9)
             matched_gains = b_score[b_true_idxs, b_pred_idxs]
@@ -1421,8 +1422,14 @@ def get_pairwise_cross_entropy(
     for i in range(0, batch_size, effective_chunk):
         i_end = min(i + effective_chunk, batch_size)
         P_i = _build_dense_chunk(
-            sorted_batch_idxs, sorted_bin_idxs, sorted_probs,
-            row_ptr_cpu, i, i_end, num_unique_bins, mzs.device,
+            sorted_batch_idxs,
+            sorted_bin_idxs,
+            sorted_probs,
+            row_ptr_cpu,
+            i,
+            i_end,
+            num_unique_bins,
+            mzs.device,
         )
         log_P_i = th.log(P_i + EPS)
         for j in range(0, batch_size, effective_chunk):
@@ -1433,8 +1440,14 @@ def get_pairwise_cross_entropy(
                 if i == j
                 else th.log(
                     _build_dense_chunk(
-                        sorted_batch_idxs, sorted_bin_idxs, sorted_probs,
-                        row_ptr_cpu, j, j_end, num_unique_bins, mzs.device,
+                        sorted_batch_idxs,
+                        sorted_bin_idxs,
+                        sorted_probs,
+                        row_ptr_cpu,
+                        j,
+                        j_end,
+                        num_unique_bins,
+                        mzs.device,
                     )
                     + EPS
                 )
@@ -1513,7 +1526,7 @@ def _compute_pair_jss_hun(
         else:
             total_gain = th.tensor(0.0, device=b_score.device, dtype=b_score.dtype)
     else:
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
+        b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score.detach(), maximize=True)
         matched_gains = b_score[b_true_idxs, b_pred_idxs]
         valid_mask = matched_gains > -1e8
         if th.any(valid_mask):
@@ -1726,7 +1739,7 @@ def _compute_pair_ce_hun(
     if gain_matrix.numel() == 0:
         total_gain = th.tensor(0.0, device=gain_matrix.device, dtype=gain_matrix.dtype)
     else:
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(gain_matrix.detach(), maximize=True)
+        b_true_idxs, b_pred_idxs = linear_sum_assignment(gain_matrix.detach(), maximize=True)
 
         matched_gains = gain_matrix[b_true_idxs, b_pred_idxs]
         valid_mask = matched_gains > -1e8
