@@ -502,6 +502,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         spec_inst_type: th.Tensor | None = None,
         spec_frag_mode: th.Tensor | None = None,
         spec_prec_type_str: np.ndarray | None = None,
+        return_explainability_tensors: bool = False,
         **kwargs,
     ):
         """forward methods for joint predictor
@@ -664,9 +665,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
                 frag_node_mask_embed = th.sparse.mm(M_cc, mol_embed_gnn)
                 if self.mol_pool_type == "mean":
-                    degree = th.bincount(
-                        frag_node_mask_idxs[:, 0], minlength=batch_frag_num_nodes
-                    ).to(float_dtype).clamp(min=1).unsqueeze(1)
+                    degree = (
+                        th.bincount(frag_node_mask_idxs[:, 0], minlength=batch_frag_num_nodes)
+                        .to(float_dtype)
+                        .clamp(min=1)
+                        .unsqueeze(1)
+                    )
                     frag_node_mask_embed = frag_node_mask_embed / degree
             else:
                 frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
@@ -746,9 +750,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     )
                     boundary_embed = th.sparse.mm(M_bcc, mol_embed_gnn)
                     if self.mol_pool_type == "mean":
-                        degree = th.bincount(
-                            boundary_idxs[:, 0], minlength=num_frags_total
-                        ).to(float_dtype).clamp(min=1).unsqueeze(1)
+                        degree = (
+                            th.bincount(boundary_idxs[:, 0], minlength=num_frags_total)
+                            .to(float_dtype)
+                            .clamp(min=1)
+                            .unsqueeze(1)
+                        )
                         boundary_embed = boundary_embed / degree
                 else:
                     boundary_embed = th.index_select(mol_embed_gnn, 0, boundary_idxs[:, 1])
@@ -1101,9 +1108,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # frag_formula_cumsizes[frag_node_batch_idxs], the null-formula index per node) and
         # avoids materializing a full (N×H) null_tiled tensor.
         frag_joint_mask = (
-            frag_joint_formula_idxs.reshape(batch_frag_num_nodes, self.mlp_output_dim)
-            != frag_node_offsets.unsqueeze(1)
-        ).float().flatten()
+            (
+                frag_joint_formula_idxs.reshape(batch_frag_num_nodes, self.mlp_output_dim)
+                != frag_node_offsets.unsqueeze(1)
+            )
+            .float()
+            .flatten()
+        )
 
         if self.mlp_output_format == "formula":
             #  predicts joint logits for each (node, formula) pair:
@@ -1184,7 +1195,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
             # joint logits = formula_logits + node_logits (broadcast); exposed for post-branch
             # scatter_logsoftmax over real positions (mirrors formula path's frag_joint_logits)
-            frag_joint_logits = (frag_node_formula_logits + frag_node_logits.unsqueeze(-1)).flatten()
+            frag_joint_logits = (
+                frag_node_formula_logits + frag_node_logits.unsqueeze(-1)
+            ).flatten()
 
             # log p(f,n) = log p(f|n) + log p(n)
             frag_joint_logprobs = frag_node_formula_logprobs + frag_node_logprobs.unsqueeze(-1)
@@ -1251,7 +1264,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 device=device,
                 dtype=frag_formula_logprobs.dtype,
             )
-            not_oos_logprobs = th.zeros([batch_size], device=device, dtype=frag_formula_logprobs.dtype)
+            not_oos_logprobs = th.zeros(
+                [batch_size], device=device, dtype=frag_formula_logprobs.dtype
+            )
 
         # adjust frag_formula_logprobs
         frag_formula_oos_logprobs = frag_formula_logprobs + th.repeat_interleave(
@@ -1328,7 +1343,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_real_joint_logits, frag_real_joint_batch_idxs
         )
         # P(n) - sum, renormalize, but keep all-NULL nodes (as zeros)
-        frag_real_node_node_idxs = th.arange(batch_frag_num_nodes, device=device)
+        _need_expl_idxs = return_explainability_tensors or self.debug_validate_outputs
+        frag_real_node_node_idxs = (
+            th.arange(batch_frag_num_nodes, device=device) if _need_expl_idxs else None
+        )
         frag_real_node_logprobs = scatter_logsumexp(
             frag_real_joint_logprobs,
             frag_real_joint_node_idxs,
@@ -1345,7 +1363,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_real_formula_logprobs,
             frag_formula_batch_idxs,
         )
-        frag_real_formula_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
+        frag_real_formula_formula_idxs = (
+            th.arange(batch_frag_num_formulae, device=device) if _need_expl_idxs else None
+        )
         # P(f|n) - remove all NULLs from conditionals
         frag_real_node_formula_logprobs = (
             frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
@@ -1502,10 +1522,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "pred_logprobs": spec_logprobs,  # Predicted log probabilities (intensities) for the spectrum peaks [P]
             "pred_batch_idxs": spec_batch_idxs,  # Batch indices mapping each peak to a spectrum in the batch [P]
             "pred_formula_logprobs": frag_real_formula_logprobs,  # Log probabilities of formulas P(f) [F]
-            "pred_formula_formula_idxs": frag_real_formula_formula_idxs,  # Indices of the formulas corresponding to pred_formula_logprobs [F]
             "pred_formula_batch_idxs": frag_formula_batch_idxs,  # Batch indices for the formulas [F]
             "pred_node_logprobs": frag_real_node_logprobs,  # Log probabilities of nodes (fragments) P(n) [N]
-            "pred_node_node_idxs": frag_real_node_node_idxs,  # Indices of the nodes corresponding to pred_node_logprobs [N]
             "pred_node_batch_idxs": frag_node_batch_idxs,  # Batch indices for the nodes [N]
             "pred_node_formula_logprobs": frag_real_node_formula_logprobs,  # Conditional log probabilities P(f|n) [J]
             "pred_formula_node_logprobs": frag_real_formula_node_logprobs,  # Conditional log probabilities P(n|f) [J]
@@ -1513,8 +1531,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "pred_joint_node_idxs": frag_real_joint_node_idxs,  # Node indices for the joint distribution entries [J]
             "pred_joint_formula_idxs": frag_real_joint_formula_idxs,  # Formula indices for the joint distribution entries [J]
             "pred_joint_batch_idxs": frag_real_joint_batch_idxs,  # Batch indices for the joint distribution entries [J]
-            "pred_joint_h_counts": frag_real_joint_h_counts,  # Hydrogen counts for the joint distribution entries [J]
-            "pred_joint_h_idxs": frag_real_joint_h_idxs,  # Indices for hydrogen counts in joint distribution [J]
             "pred_null_formula_logprob": frag_null_formula_logprob,  # Log probability of the NULL formula (unexplained intensity) [B]
             "pred_edge_logprobs": frag_edge_logprobs,  # Log probabilities for edges (if edge loss is used) [E]
             "pred_edge_h_diffs": frag_edge_h_diffs,  # Hydrogen count differences across edges [E, H*H]
@@ -1538,6 +1554,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs,  # (Isomorphism) Node indices for node-node mapping [N]
             "pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs,  # (Isomorphism) Batch indices for node-node mapping [N]
         }
+        if return_explainability_tensors:
+            out_d["pred_formula_formula_idxs"] = frag_real_formula_formula_idxs  # [F]
+            out_d["pred_node_node_idxs"] = frag_real_node_node_idxs  # [N]
+            out_d["pred_joint_h_counts"] = frag_real_joint_h_counts  # [J]
+            out_d["pred_joint_h_idxs"] = frag_real_joint_h_idxs  # [J]
 
         if self.output_formula_str:
             assert frag_formula_str is not None, (

@@ -896,6 +896,14 @@ def run_inference_pkl(
             # Move batch to device
             batch_input = to_device(batch_input, device, non_blocking=False)
 
+            # Enable explainability tensors only when formula/node idx vars are needed
+            _need_expl = bool(
+                {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
+                or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
+            )
+            if _need_expl and is_fragnnet_model:
+                batch_input["return_explainability_tensors"] = True
+
             # Run inference (choose method based on mode)
             if evaluate:
                 # Use ground truth evaluation method
@@ -1346,6 +1354,12 @@ def process_batch_to_tabular_row(
     )
 
     batch_input = to_device(batch_input, device)
+    _need_expl = bool(
+        {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
+        or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
+    )
+    if _need_expl and isinstance(model, FraGNNetPL):
+        batch_input["return_explainability_tensors"] = True
     with th.inference_mode():
         if evaluate:
             batch_result = model.inference_with_ground_truth_step(batch_input, split="test")

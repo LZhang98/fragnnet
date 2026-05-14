@@ -542,10 +542,8 @@ class FraGNNetPL(SpectrumPL):
             pred_logprobs,
             pred_batch_idxs,
             pred_formula_logprobs,
-            pred_formula_formula_idxs,
             pred_formula_batch_idxs,
             pred_node_logprobs,
-            pred_node_node_idxs,
             pred_node_batch_idxs,
             pred_node_formula_logprobs,
             pred_formula_node_logprobs,
@@ -575,6 +573,8 @@ class FraGNNetPL(SpectrumPL):
             pred_nb_joint_batch_idxs,
             pred_nb_node_node_node_idxs,
             pred_nb_node_node_batch_idxs,
+            pred_formula_formula_idxs=None,
+            pred_node_node_idxs=None,
             **kwargs,
         ):
             loss_d = {}
