@@ -376,6 +376,10 @@ def init_run(
                     model: The trained model (LightningModule).
     """
 
+    # Must be set before the CUDA allocator initialises (first tensor.cuda() call).
+    # setdefault lets a SLURM-level export override this if needed.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     # setup logger
     logging.basicConfig(
         level=logging.INFO,
