@@ -1032,8 +1032,10 @@ class FraGNNetPL(SpectrumPL):
         opt = self.optimizers()
 
         if self.hparams.dynamic_batch_sampler:
-            scale = self._max_batch_size / self._cur_batch_weight
             grads = [p.grad for pg in opt.param_groups for p in pg["params"] if p.grad is not None]
+            if not grads:
+                return
+            scale = self._max_batch_size / self._cur_batch_weight
             th._foreach_mul_(grads, scale)
 
         self.on_before_optimizer_step(opt)
@@ -1043,6 +1045,9 @@ class FraGNNetPL(SpectrumPL):
             gradient_clip_algorithm=self.hparams.gradient_clip_algorithm,
         )
         opt.step()
+        # on_after_optimizer_step is not called in manual opt mode, so reset here
+        self._cur_batch_size = 0
+        self._cur_batch_weight = 0.0
 
         if self.hparams.lr_schedule:
             sch = self.lr_schedulers()
