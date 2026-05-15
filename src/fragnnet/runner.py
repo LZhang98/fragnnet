@@ -406,6 +406,7 @@ def init_run(
                 run_id = None
                 old_wandb_dp = None
             wandb_d["id"] = run_id
+            wandb_d["resume"] = "must" if run_id is not None else "allow"
             wandb_d["config"] = config_d
         else:
             is_resume = False
@@ -480,6 +481,8 @@ def init_run(
         assert not config_d["disable_checkpoints"]
         # copy the checkpoint files
         old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
+        if not old_ckpt_fps:
+            logging.warning(f"Resume requested but no checkpoints found in {old_wandb_dp}/ckpt/, starting from scratch")
         for old_ckpt_fp in old_ckpt_fps:
             new_ckpt_fp = os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp))
             # modify checkpoint metadata (hacky)
