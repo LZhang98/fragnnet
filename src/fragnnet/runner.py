@@ -676,6 +676,7 @@ def init_run(
             if os.path.isfile(ckpt_fp):
                 logging.info(f"resuming from checkpoint: {ckpt_fp}")
             else:
+                logging.warning(f"Resume requested but last.ckpt not found in {ckpt_dp}, starting from epoch 0")
                 ckpt_fp = None
         else:
             ckpt_fp = None
