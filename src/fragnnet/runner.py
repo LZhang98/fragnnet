@@ -74,30 +74,6 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
     return config_d
 
 
-def load_wandb_config(wandb_config_dp) -> dict:
-    """Load wandb config file if exists, else return empty dict
-
-    Args:
-                    wandb_config_dp (str): Path to the wandb config directory.
-
-    Returns:
-                    dict: wandb config
-    """
-    wandb_config_dp = os.path.join(wandb_config_dp, "config.yaml")
-
-    if os.path.isfile(wandb_config_dp):
-        with open(wandb_config_dp) as wandb_config_file:
-            _config_d = yaml.load(wandb_config_file, Loader=yaml.FullLoader)
-        del _config_d["wandb_version"]
-        del _config_d["_wandb"]
-        config_d = {}
-        for k in _config_d.keys():
-            config_d[k] = _config_d[k]["value"]
-    else:
-        config_d = {}
-    return config_d
-
-
 def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
     """
     Instantiate dataset objects for the requested data splits using the configured model.
@@ -422,30 +398,19 @@ def init_run(
             if os.path.isfile(job_id_fp):
                 is_resume = True
                 with open(job_id_fp) as job_id_file:
-                    text = job_id_file.read().strip()
-                run_id, old_wandb_dp = text.split(";")
-                wandb_config = load_wandb_config(old_wandb_dp)
-
-                # for offline mode, if there is no configure file, just skip it
-                # wandb config only exists after wandb sync
-                if len(wandb_config) == 0:
-                    wandb_config = config_d
+                    parts = job_id_file.read().strip().split(";", 1)
+                run_id = parts[0]
+                old_wandb_dp = parts[1] if len(parts) > 1 else None
             else:
                 is_resume = False
-                run_id = old_wandb_dp = None
-                wandb_config = config_d
+                run_id = None
+                old_wandb_dp = None
             wandb_d["id"] = run_id
-            wandb_d["config"] = wandb_config
-            if config_d["wandb_root_dir"] is not None:
-                wandb_dir = os.path.join(config_d["wandb_root_dir"], str(job_id))
-                os.makedirs(wandb_dir, exist_ok=True)
-                if os.path.isdir(wandb_dir):
-                    wandb_d["dir"] = wandb_dir
-                else:
-                    print(f"> wandb dir does not exist: {wandb_dir}, using default instead")
+            wandb_d["config"] = config_d
         else:
             is_resume = False
             job_id_fp = None
+            old_wandb_dp = None
             wandb_d["config"] = config_d
         wandb.init(**wandb_d)
         assert wandb.run is not None, wandb.run
@@ -454,8 +419,7 @@ def init_run(
         if job_id_fp:
             os.makedirs(os.path.dirname(job_id_fp), exist_ok=True)
             with open(job_id_fp, "w+") as job_id_file:
-                text = f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}"
-                job_id_file.write(text)
+                job_id_file.write(f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}")
         # update config results (primarily for wandb)
         # configs can be nested up to 2 levels
         for k in list(config_d.keys()):
@@ -512,7 +476,7 @@ def init_run(
     else:
         ckpt_dp = "tmp_ckpt"
     os.makedirs(ckpt_dp, exist_ok=True)
-    if is_resume:
+    if is_resume and old_wandb_dp is not None:
         assert not config_d["disable_checkpoints"]
         # copy the checkpoint files
         old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
@@ -539,7 +503,9 @@ def init_run(
                     )
             if "best_k_models" in ckpt_callback_data:
                 for k in list(ckpt_callback_data["best_k_models"].keys()):
-                    new_k = k.replace(os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir))
+                    new_k = k.replace(
+                        os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
+                    )
                     ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data[
                         "best_k_models"
                     ].pop(k)
