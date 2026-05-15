@@ -38,6 +38,15 @@ MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
 
+_assignment_device_logged = False
+
+
+def _log_assignment_device_once(device) -> None:
+    global _assignment_device_logged
+    if not _assignment_device_logged:
+        print(f"torch_linear_assignment running on device: {device}")
+        _assignment_device_logged = True
+
 
 def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
     """Solve a batched linear assignment problem, maximizing total score.
@@ -51,6 +60,7 @@ def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tenso
     """
     if _torch_linear_assignment:
         assignment = batch_linear_assignment(-batch_score)
+        _log_assignment_device_once(batch_score.device)
         return assignment_to_indices(assignment)
 
     device = batch_score.device
