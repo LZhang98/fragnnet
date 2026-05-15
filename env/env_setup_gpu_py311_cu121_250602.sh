@@ -23,8 +23,8 @@ pip install \
  scipy \
  joblib==1.3.2 \
  matplotlib \
- pip install dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html 
- #pip install dgl==1.1.3+cu121 -f https://data.dgl.ai/wheels/cu121/repo.html \
+ #pip install dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html 
+ pip install dgl==1.1.3+cu121 -f https://data.dgl.ai/wheels/cu121/repo.html \
  omegaconf \
  cython==3.0.12 \
  pyteomics \
