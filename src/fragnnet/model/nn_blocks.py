@@ -895,8 +895,8 @@ class SpecFFN(nn.Module):
         mz_bins = th.arange(
             self.mz_bin_res, self.mz_max + self.mz_bin_res, self.mz_bin_res, dtype=th.float32
         )
-        self.register_buffer("mz_bins", mz_bins)
-        self.register_buffer("mzs", mz_bins - 0.5 * self.mz_bin_res)
+        self.register_buffer("mz_bins", mz_bins, persistent=False)
+        self.register_buffer("mzs", mz_bins - 0.5 * self.mz_bin_res, persistent=False)
         self.output_size = mz_bins.shape[0]
 
     def _prec_mz_to_idx(self, prec_mz):

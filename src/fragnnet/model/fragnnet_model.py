@@ -380,7 +380,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.cc_interstage_use_rest = cc_interstage_use_rest
 
         if self.bin_output:
-            self.register_buffer("mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res))
+            self.register_buffer("mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res), persistent=False)
 
         # this is required
         assert "h_formulae_idx" in self.frag_node_feats
@@ -393,11 +393,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         include_cmf = "cmf_h_formulae_idx" in frag_node_feats
         if include_cmf:
             _h_counts = th.cat([_h_counts, _h_counts], dim=0)
-        self.register_buffer("_h_counts_buf", _h_counts)
+        self.register_buffer("_h_counts_buf", _h_counts, persistent=False)
         _h_counts_range = th.arange(-num_hs, num_hs + 1, dtype=th.long)
         if include_cmf:
             _h_counts_range = th.cat([_h_counts_range, _h_counts_range])
-        self.register_buffer("_h_counts_range_buf", _h_counts_range)
+        self.register_buffer("_h_counts_range_buf", _h_counts_range, persistent=False)
 
     def _maybe_apply_cc_feature_dropout(self, frag_node_mask_embed: th.Tensor) -> th.Tensor:
         """Drop the full-fragment cc feature group for a whole training batch."""
