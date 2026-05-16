@@ -896,6 +896,14 @@ def run_inference_pkl(
             # Move batch to device
             batch_input = to_device(batch_input, device, non_blocking=False)
 
+            # Enable explainability tensors only when formula/node idx vars are needed
+            _need_expl = bool(
+                {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
+                or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
+            )
+            if _need_expl and is_fragnnet_model:
+                batch_input["return_explainability_tensors"] = True
+
             # Run inference (choose method based on mode)
             if evaluate:
                 # Use ground truth evaluation method
@@ -1346,11 +1354,17 @@ def process_batch_to_tabular_row(
     )
 
     batch_input = to_device(batch_input, device)
-    # use existing evaluate to compute cos sim and etc
-    if evaluate:
-        batch_result = model._common_step(batch_input, split="test", log=False)
-    else:
-        batch_result = model.predict_step(**batch_input)
+    _need_expl = bool(
+        {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
+        or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
+    )
+    if _need_expl and isinstance(model, FraGNNetPL):
+        batch_input["return_explainability_tensors"] = True
+    with th.inference_mode():
+        if evaluate:
+            batch_result = model.inference_with_ground_truth_step(batch_input, split="test")
+        else:
+            batch_result = model.predict_step(**batch_input)
 
     # batch_input['batch_size'] is a tensor -> convert to Python int
     batch_size = int(batch_input["batch_size"].detach().cpu().item())

@@ -211,12 +211,15 @@ class SpectrumPL(L.LightningModule):
                 else:
                     tols.append(self.tolerance)
                     min_mzs.append(global_min_mz)
-            # CPU tensors — moved to device in _common_step via .to()
-            self.inst_tol_lookup: th.Tensor = th.tensor(tols, dtype=th.float32)
-            self.inst_min_mz_lookup: th.Tensor = th.tensor(min_mzs, dtype=th.float32)
+            self.register_buffer(
+                "inst_tol_lookup", th.tensor(tols, dtype=th.float32), persistent=False
+            )
+            self.register_buffer(
+                "inst_min_mz_lookup", th.tensor(min_mzs, dtype=th.float32), persistent=False
+            )
         else:
-            self.inst_tol_lookup = None
-            self.inst_min_mz_lookup = None
+            self.register_buffer("inst_tol_lookup", None, persistent=False)
+            self.register_buffer("inst_min_mz_lookup", None, persistent=False)
 
         # idx↔str maps are fetched lazily from the dataloader dataset via
         # _get_dataset_maps() — the dataset is the canonical source of truth.
@@ -788,13 +791,11 @@ class SpectrumPL(L.LightningModule):
             ):
                 spec_inst_type = kwargs.get("spec_inst_type")
                 if spec_inst_type is not None and self.inst_tol_lookup is not None:
-                    inst_idxs = spec_inst_type.reshape(-1).cpu()
+                    inst_idxs = spec_inst_type.reshape(-1)
                     device = true_ints.device
                     dtype = true_ints.dtype
-                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(device=device, dtype=dtype)
-                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(
-                        device=device, dtype=dtype
-                    )
+                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=dtype)
+                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(dtype=dtype)
                     # Build per-peak effective absolute tolerance: (B, N_true).
                     # tol_rel * clamp(mz, min=min_mz) converts relative ppm to absolute Da.
                     safe_mzs = batch_true_mzs_r.clamp(max=self.hparams.mz_max)
@@ -1036,15 +1037,19 @@ class SpectrumPL(L.LightningModule):
                 _name = name.replace(".", "-")
                 mean_metrics = getattr(self, f"{split}_mean_metrics")
                 if split != "test":
-                    mean_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
+                    mean_metrics[_name] = th.full(
+                        [self.hparams.max_epochs], float("nan"), dtype=th.float32
+                    )
                 else:
-                    mean_metrics[_name] = -th.ones([1], dtype=th.float32)
+                    mean_metrics[_name] = th.full([1], float("nan"), dtype=th.float32)
                 if report_metric_std:
                     std_metrics = getattr(self, f"{split}_std_metrics")
                     if split != "test":
-                        std_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
+                        std_metrics[_name] = th.full(
+                            [self.hparams.max_epochs], float("nan"), dtype=th.float32
+                        )
                     else:
-                        std_metrics[_name] = -th.ones([1], dtype=th.float32)
+                        std_metrics[_name] = th.full([1], float("nan"), dtype=th.float32)
 
     def _setup_sampler(self):
         self._cur_batch_size = 0
@@ -1219,12 +1224,8 @@ class SpectrumPL(L.LightningModule):
             inst_type_idxs = batch["spec_inst_type"].reshape(-1)  # [batch_size]
             dtype, device = train_true_logprobs.dtype, train_true_logprobs.device
             # Tensor indexing (no Python loop) — lookup tensors built once in _setup_tolerance
-            tol_per_sample = self.inst_tol_lookup[inst_type_idxs.cpu()].to(
-                dtype=dtype, device=device
-            )
-            min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs.cpu()].to(
-                dtype=dtype, device=device
-            )
+            tol_per_sample = self.inst_tol_lookup[inst_type_idxs].to(dtype=dtype)
+            min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs].to(dtype=dtype)
 
         # prepare training dict and compute loss
         train_d = {
@@ -1407,17 +1408,106 @@ class SpectrumPL(L.LightningModule):
         self._update_results(batch_results, "test")
         return mean_loss
 
-    def inference_with_ground_truth_step(self, batch, split):
-        """
-        Custom inference step for evaluation outside of Lightning's test/val loop.
-        This will assume that the model is in eval mode, but will not switch modes.
-        This will assume that the batch contains ground truth spectra.
+    def inference_with_ground_truth_step(self, batch, split="test"):
+        """Run inference and compute evaluation metrics against ground truth without loss.
+
+        Performs a forward pass and computes auxiliary metrics (e.g. cos_sim, cos_hun)
+        against the ground-truth spectrum. Loss functions are never called, making this
+        cheaper than ``_common_step`` for pure inference evaluation.
+
+        Args:
+            batch: Input batch dict containing ground-truth spectrum fields
+                (``spec_mzs``, ``spec_ints``, ``spec_batch_idxs``, etc.).
+            split: Metric split name used to select which auxiliary metrics to compute.
+
+        Returns:
+            Dict with predicted spectrum tensors (``pred_mzs``, ``pred_logprobs``,
+            ``pred_batch_idxs``), ``oos_prob`` if available, and all auxiliary metric
+            values (e.g. ``cos_sim``, ``cos_hun``).
         """
         if self.training:
             warnings.warn("Model is in training mode")
-        batch_results = self._common_step(batch, split=split, log=False)
 
-        return batch_results
+        true_mzs = batch["spec_mzs"]
+        true_ints = batch["spec_ints"]
+        true_batch_idxs = batch["spec_batch_idxs"]
+        true_prec_mzs = batch["spec_prec_mz"]
+        spec_per_group = batch["spec_per_group"]
+        spec_per_mol = batch["spec_per_mol"]
+        group_per_mol = batch["group_per_mol"]
+
+        pred_d = self.forward(**batch)
+        pred_mzs = pred_d.pop("pred_mzs")
+        pred_logprobs = pred_d.pop("pred_logprobs")
+        pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
+
+        with th.inference_mode():
+            eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
+                true_mzs,
+                true_ints,
+                true_batch_idxs,
+                train=False,
+                pred=False,
+                log_in=False,
+                log_out=False,
+            )
+            eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
+            eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
+                pred_mzs.detach(),
+                pred_logprobs.detach(),
+                pred_batch_idxs.detach(),
+                train=False,
+                pred=True,
+                log_in=True,
+                log_out=False,
+            )
+            eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
+
+        results = {
+            "unique_id": batch["spec_unique_id"],
+            "smiles": batch["mol_smiles"],
+            "spec_per_group": spec_per_group,
+            "spec_per_mol": spec_per_mol,
+            "group_per_mol": group_per_mol,
+            "true_mzs": eval_true_mzs,
+            "true_logprobs": eval_true_logprobs,
+            "true_batch_idxs": eval_true_batch_idxs,
+            "true_prec_mzs": true_prec_mzs,
+            "pred_mzs": eval_pred_mzs,
+            "pred_logprobs": eval_pred_logprobs,
+            "pred_batch_idxs": eval_pred_batch_idxs,
+            **pred_d,
+        }
+        if pred_oos_logprobs is not None:
+            results["oos_prob"] = th.exp(pred_oos_logprobs)
+
+        active_metric_names = self._get_active_metric_names(split)
+        need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
+        if need_aux_metrics:
+            with th.inference_mode():
+                metric_input_d = {
+                    "true_mzs": eval_true_mzs,
+                    "true_ints": eval_true_probs,
+                    "true_logprobs": eval_true_logprobs,
+                    "true_batch_idxs": eval_true_batch_idxs,
+                    "pred_mzs": eval_pred_mzs,
+                    "pred_ints": eval_pred_probs,
+                    "pred_logprobs": eval_pred_logprobs,
+                    "pred_batch_idxs": eval_pred_batch_idxs,
+                    "true_prec_mzs": true_prec_mzs,
+                    "split": split,
+                }
+                for arg in self.extra_metric_args:
+                    metric_input_d[arg] = results[arg]
+                for arg in self.batch_metric_args:
+                    if arg in batch:
+                        metric_input_d[arg] = batch[arg]
+                metric_output_d = self.metric_fn(**metric_input_d)
+            for k, v in metric_output_d.items():
+                results[k] = v
+
+        return results
 
     def inference_step(self, batch):
         """
@@ -1788,10 +1878,17 @@ class SpectrumPL(L.LightningModule):
                 mean_metric_epochs = mean_metrics_epochs[k.replace(".", "-")][
                     : self.current_epoch + 1
                 ]
+                valid_mask = ~th.isnan(mean_metric_epochs)
+                if not valid_mask.any():
+                    continue
                 if self.metric_min_max[k] == "min":
-                    argbest_metric = th.argmin(mean_metric_epochs)
+                    argbest_metric = th.argmin(
+                        mean_metric_epochs.masked_fill(~valid_mask, float("inf"))
+                    )
                 elif self.metric_min_max[k] == "max":
-                    argbest_metric = th.argmax(mean_metric_epochs)
+                    argbest_metric = th.argmax(
+                        mean_metric_epochs.masked_fill(~valid_mask, float("-inf"))
+                    )
                 else:
                     assert self.metric_min_max[k] is None, self.metric_min_max[k]
                     continue
@@ -2087,16 +2184,8 @@ class SpectrumPL(L.LightningModule):
             assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params[
                 "merge_keep_ces"
             ]
-        elif self.hparams.spec_params["nce"]:
-            assert not self.hparams.spec_params["ace"]
-            assert self.hparams.spec_params["nce"] and (
-                not self.hparams.spec_params["merge_keep_ces"]
-            )
-        elif self.hparams.spec_params["ace"]:
-            assert not self.hparams.spec_params["nce"]
-            assert self.hparams.spec_params["ace"] and (
-                not self.hparams.spec_params["merge_keep_ces"]
-            )
+        elif self.hparams.spec_params["nce"] or self.hparams.spec_params["ace"]:
+            assert not self.hparams.spec_params["merge_keep_ces"]
 
     def _seed_dataloader(self, seed):
         generator = th.Generator()

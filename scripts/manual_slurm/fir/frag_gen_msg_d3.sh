@@ -11,7 +11,7 @@
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_msg_d3_%j.err
 #SBATCH --open-mode=append
 
-DATASET_NAME=msg
+DATASET_NAME=ms_gym_benchmark
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 MAX_TIME=-1
@@ -20,7 +20,7 @@ ISO_FLAG=False
 SMARTS_PREPASS=False
 USE_LMDB=False
 SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_smp${SMARTS_PREPASS}
-DSETS='msg'
+DSETS='ms_gym'
 PREC='[M+H]+'
 INST='FT QTOF IT'
 FRAG_MODE='CID HCD'

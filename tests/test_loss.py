@@ -19,6 +19,8 @@ from fragnnet.model.loss import (
     get_pairwise_jss_sim,
     get_pairwise_jss_sim_hun,
     sparse_jensen_shannon_divergence,
+    sparse_jensen_shannon_divergence_hungarian,
+    sparse_jensen_shannon_divergence_hungarian_vec,
 )
 
 
@@ -500,6 +502,63 @@ class TestHungarianJSS:
         assert th.allclose(S[1, 1], th.tensor(1.0))
         assert th.allclose(S[0, 1], th.tensor(0.0), atol=1e-6)
         assert th.allclose(S[1, 0], th.tensor(0.0), atol=1e-6)
+
+    def test_sparse_jss_hun_vec_matches_sequential(self):
+        """Vectorized training JSS-Hungarian should match the sequential loss."""
+        true_mzs = th.tensor([100.0, 200.0, 100.0, 300.0])
+        pred_mzs = th.tensor([100.0, 250.0, 100.0, 305.0])
+        true_logprobs = th.log(th.tensor([0.6, 0.4, 0.7, 0.3]))
+        pred_logprobs = th.log(th.tensor([0.5, 0.5, 0.8, 0.2]))
+        batch_idxs = th.tensor([0, 0, 1, 1], dtype=th.long)
+
+        seq = sparse_jensen_shannon_divergence_hungarian(
+            true_mzs,
+            true_logprobs,
+            batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            batch_idxs,
+            tolerance=0.01,
+            relative=False,
+        )
+        vec = sparse_jensen_shannon_divergence_hungarian_vec(
+            true_mzs,
+            true_logprobs,
+            batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            batch_idxs,
+            tolerance=0.01,
+            relative=False,
+            loss_batch_size=2,
+        )
+
+        assert th.allclose(vec, seq, atol=1e-6), f"vec={vec.tolist()} seq={seq.tolist()}"
+
+    def test_sparse_jss_hun_vec_per_sample_tolerance(self):
+        """Vectorized JSS-Hungarian should honor per-sample tolerance overrides."""
+        true_mzs = th.tensor([500.000, 500.000])
+        pred_mzs = th.tensor([500.007, 500.007])
+        logprobs = th.tensor([0.0, 0.0])
+        batch_idxs = th.tensor([0, 1], dtype=th.long)
+
+        vec = sparse_jensen_shannon_divergence_hungarian_vec(
+            true_mzs,
+            logprobs,
+            batch_idxs,
+            pred_mzs,
+            logprobs,
+            batch_idxs,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
+            tol_per_sample=th.tensor([1e-5, 2e-5]),
+            min_mz_per_sample=th.tensor([200.0, 750.0]),
+            loss_batch_size=2,
+        )
+
+        assert vec[0].item() > vec[1].item()
+        assert vec[1].item() == pytest.approx(0.0, abs=1e-5)
 
 
 class TestHungarianCE:

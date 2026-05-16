@@ -1,38 +1,45 @@
 from typing import Any
 
+import lightning as L
 import torch as th
-import torch.nn as nn
 import torch.nn.functional as F
 
-from fragnnet.model import GNNModel, SpectrumEncoder
+from fragnnet.model import MolEncoder, SpectrumEncoder
 from fragnnet.model.loss import clip_loss
-from fragnnet.pl_model import SpectrumPL
+from fragnnet.utils.misc_utils import scatter_reduce
+from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 
 
-class SpectrumMolClipPL(SpectrumPL):
-    """
-    PyTorch Lightning module for a clip loss model on ms/ms spectra and molecular graphs.
-    """
+class SpectrumMolClipPL(L.LightningModule):
+    """CLIP-style spectrum-molecule contrastive pretraining module."""
+
+    hparams: Any
 
     def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         self.save_hyperparameters()
-
-        # setup loss function
-        self.loss_fn = self.clip_loss_fn
-
-        self.lr = self.hparams.lr
-        self.weight_decay = self.hparams.weight_decay
-        self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
-
-        # Define CLIP loss
-        self.loss_fn = nn.CosineEmbeddingLoss()
+        self.clip_temperature = float(self.hparams.get("clip_temperature", 0.07))
+        self.clip_embed_dim = int(self.hparams.get("clip_embed_dim", 256))
+        self.clip_intensity_transform = self.hparams.get("clip_intensity_transform", "sqrt")
+        self._setup_model()
 
     def _setup_model(self) -> None:
-        """Initialize molecule and spectrum encoders used for CLIP-style training."""
-        # TODO: initialize model based on params. finalize params
-        self.mol_encoder = GNNModel(
-            mol_node_feats=self.hparams.mol_params["pyg_node_feats"],  # mol feats
+        spec_encoder_params = self.hparams.get("spectrum_encoder_params", {})
+        spec_input_dim = int(spec_encoder_params.get("input_dim", 2))
+        spec_hidden_dim = int(spec_encoder_params.get("hidden_dim", self.hparams.mlp_hidden_size))
+        spec_num_heads = int(spec_encoder_params.get("num_heads", 4))
+        if spec_hidden_dim % spec_num_heads != 0:
+            raise ValueError(
+                "spectrum_encoder_params.hidden_dim must be divisible by "
+                f"num_heads ({spec_hidden_dim} vs {spec_num_heads})"
+            )
+
+        # Keep the molecule encoder under `model.*` so CLIP checkpoints can be
+        # loaded by FraGNNetPL's existing finetune path. FraGNNetPL strips the
+        # top-level `model.` prefix and then matches shared component names such
+        # as `mol_embedder` and `mol_pool`.
+        self.model = MolEncoder(
+            mol_node_feats=self.hparams.mol_params["pyg_node_feats"],
             mol_edge_feats=self.hparams.mol_params["pyg_edge_feats"],
             mol_pe_embed_k=self.hparams.mol_params["pyg_pe_embed_k"],
             mol_hidden_size=self.hparams.mol_hidden_size,
@@ -41,17 +48,12 @@ class SpectrumMolClipPL(SpectrumPL):
             mol_normalization=self.hparams.mol_normalization,
             mol_dropout=self.hparams.mol_dropout,
             mol_pool_type=self.hparams.mol_pool_type,
-            mlp_hidden_size=self.hparams.mlp_hidden_size,  # FFN
+            output_dim=self.clip_embed_dim,
+            mlp_hidden_size=self.hparams.mlp_hidden_size,
             mlp_dropout=self.hparams.mlp_dropout,
             mlp_num_layers=self.hparams.mlp_num_layers,
             mlp_use_residuals=self.hparams.mlp_use_residuals,
-            mz_max=self.hparams.mz_max,
-            mz_bin_res=self.hparams.mz_bin_res,
-            ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
-            ff_bidirectional=self.hparams.ff_bidirectional,
-            ff_output_map_size=self.hparams.ff_output_map_size,
-            ff_output_activation=self.hparams.ff_output_activation,
-            int_embedder=self.hparams.int_embedder,  # cross entropy
+            int_embedder=self.hparams.int_embedder,
             ce_insert_type=self.hparams.ce_insert_type,
             ce_insert_location=self.hparams.ce_insert_location,
             ce_insert_merge=self.hparams.ce_insert_merge,
@@ -59,107 +61,161 @@ class SpectrumMolClipPL(SpectrumPL):
             nce_mean=self.hparams.nce_mean,
             nce_std=self.hparams.nce_std,
             nce_max=self.hparams.nce_max,
-            prec_insert_location=self.hparams.prec_insert_location,  # precursor
+            prec_insert_location=self.hparams.prec_insert_location,
             prec_insert_size=self.hparams.prec_insert_size,
             prec_types=self.hparams.spec_params["prec_types"],
-            inst_insert_location=self.hparams.inst_insert_location,  # instrument
+            inst_insert_location=self.hparams.inst_insert_location,
             inst_insert_size=self.hparams.inst_insert_size,
             inst_types=self.hparams.spec_params["inst_types"],
-            log_min=self.hparams.log_min,
+            frag_mode_insert_location=self.hparams.frag_mode_insert_location,
+            frag_mode_insert_size=self.hparams.frag_mode_insert_size,
+            frag_modes=self.hparams.spec_params["frag_modes"],
+            mol_num_heads=self.hparams.get("mol_num_heads", 4),
+            use_nce=self.hparams.get("use_nce", self.hparams.spec_params.get("nce", False)),
+            use_ace=self.hparams.get("use_ace", self.hparams.spec_params.get("ace", False)),
+            ace_max=self.hparams.get("ace_max", 100.0),
+            ace_mean=self.hparams.get("ace_mean", 20.0),
+            ace_std=self.hparams.get("ace_std", 15.0),
         )
 
         self.spec_encoder = SpectrumEncoder(
-            spectrum_encoder_type=self.hparams.spec_params.get("encoder_type", "set_transformer"),
-            input_dim=self.hparams.spec_params["input_dim"],
-            hidden_dim=self.hparams.spec_params["mlp_hidden_dim"],
-            output_dim=self.hparams.spec_params["embed_dim"],
-            num_heads=self.hparams.spec_params.get("num_heads", 4),
-            num_inds=self.hparams.spec_params.get("num_inds", 32),
-            num_blocks=self.hparams.spec_params["num_layers"],
-            dropout=self.hparams.spec_params["dropout"],
-            normalization=self.hparams.spec_params.get("normalization", "batch"),
+            spectrum_encoder_type=spec_encoder_params.get("encoder_type", "set_transformer"),
+            input_dim=spec_input_dim,
+            hidden_dim=spec_hidden_dim,
+            output_dim=self.clip_embed_dim,
+            num_heads=spec_num_heads,
+            num_inds=int(spec_encoder_params.get("num_inds", 32)),
+            num_blocks=int(spec_encoder_params.get("num_layers", 2)),
+            dropout=float(spec_encoder_params.get("dropout", self.hparams.mlp_dropout)),
+            normalization=spec_encoder_params.get("normalization", "layer"),
         )
 
-        # compile
         if self.hparams.compile:
-            # th_dynamo.reset()
-            # self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-            self.mol_encoder = th.compile(self.mol_encoder, backend=self.dynamo_prof, dynamic=True)
-            self.spec_encoder = th.compile(
-                self.spec_encoder, backend=self.dynamo_prof, dynamic=True
-            )
+            self.model = th.compile(self.model, dynamic=True)
+            self.spec_encoder = th.compile(self.spec_encoder, dynamic=True)
+
+    def _build_peak_features(self, batch: dict[str, Any]) -> th.Tensor:
+        mzs = batch["spec_mzs"].float()
+        ints = batch["spec_ints"].float().clamp_min(0.0)
+        batch_idxs = batch["spec_batch_idxs"].long()
+        batch_size = int(batch["batch_size"].item())
+
+        if self.clip_intensity_transform == "sqrt":
+            ints = th.sqrt(ints)
+        elif self.clip_intensity_transform == "log1p":
+            ints = th.log1p(ints)
+        elif self.clip_intensity_transform == "none":
+            pass
+        else:
+            raise ValueError(f"Unknown clip_intensity_transform={self.clip_intensity_transform!r}")
+
+        max_ints = scatter_reduce(
+            ints,
+            batch_idxs,
+            reduce="amax",
+            dim_size=batch_size,
+            default=0.0,
+            include_self=True,
+        )
+        ints = ints / max_ints[batch_idxs].clamp_min(1e-12)
+        mzs = mzs / float(self.hparams.mz_max)
+        return th.stack([mzs, ints], dim=-1)
 
     def forward(self, batch: dict[str, Any]) -> tuple[th.Tensor, th.Tensor]:
-        """Forward pass through both encoders."""
-        # Extract mol and spectrum data from batch
-        mol_pyg = batch["mol_pyg"]
-        spec_ints = batch["spec_ints"]
-        spec_batch_idxs = batch["spec_batch_idxs"]
-
-        # Get CE, Prec, Inst if available
         ce = batch.get("spec_ce")
-        prec_type = batch.get("spec_prec_type")
-        inst_type = batch.get("spec_inst_type")
+        ce_batch_idxs = batch.get("spec_ce_batch_idxs")
+        if self.hparams.get("use_nce", self.hparams.spec_params.get("nce", False)):
+            ce = batch.get("spec_nce", ce)
+            ce_batch_idxs = batch.get("spec_nce_batch_idxs", ce_batch_idxs)
 
-        # Encode molecule
-        mol_embed = self.mol_encoder(
-            mol_pyg,
+        mol_embed = self.model(
+            batch["mol_pyg"],
             ce=ce,
-            ce_batch_idxs=spec_batch_idxs if ce is not None else None,
-            prec_type=prec_type,
-            inst_type=inst_type,
+            ce_batch_idxs=ce_batch_idxs,
+            ace=batch.get("spec_ace"),
+            ace_batch_idxs=batch.get("spec_ace_batch_idxs"),
+            prec_type=batch.get("spec_prec_type"),
+            inst_type=batch.get("spec_inst_type"),
+            frag_mode=batch.get("spec_frag_mode"),
         )
 
-        # Encode spectrum (assuming spectrum is represented as mz/int pairs)
-        # You may need to preprocess this into the right format for your encoder
-        spec_embed = self.spec_encoder(
-            x=spec_ints.unsqueeze(-1),  # or combine mzs and ints
-            batch_idx=spec_batch_idxs,
-            ce=ce,
-            ce_batch_idxs=spec_batch_idxs if ce is not None else None,
-            prec_type=prec_type,
-            inst_type=inst_type,
-        )
+        peak_x = self._build_peak_features(batch)
+        spec_embed = self.spec_encoder(peak_x, batch_idx=batch["spec_batch_idxs"])
 
-        return mol_embed, spec_embed
+        return F.normalize(mol_embed, dim=-1), F.normalize(spec_embed, dim=-1)
 
-    def _common_step(
-        self, batch: dict[str, Any], split: str = "train"
-    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
-        """Common logic for train/val/test/inference steps."""
-        # Forward pass to get embeddings
+    @staticmethod
+    def _retrieval_metrics(
+        query_embed: th.Tensor, target_embed: th.Tensor, prefix: str, top_k: int = 5
+    ) -> dict[str, th.Tensor]:
+        sim = query_embed @ target_embed.T
+        batch_size = sim.shape[0]
+        labels = th.arange(batch_size, device=sim.device)
+        order = th.argsort(sim, dim=1, descending=True)
+        ranks = (order == labels[:, None]).nonzero(as_tuple=False)[:, 1] + 1
+        k = min(top_k, batch_size)
+        return {
+            f"{prefix}_top1": (ranks == 1).float().mean(),
+            f"{prefix}_top{k}": (ranks <= k).float().mean(),
+            f"{prefix}_mrr": (1.0 / ranks.float()).mean(),
+        }
+
+    def _common_step(self, batch: dict[str, Any], split: str) -> th.Tensor:
         mol_embed, spec_embed = self.forward(batch)
-
-        # Normalize embeddings (important for contrastive learning)
-        mol_embed = F.normalize(mol_embed, dim=-1)
-        spec_embed = F.normalize(spec_embed, dim=-1)
-
-        # Compute CLIP loss
-        loss = clip_loss(mol_embed, spec_embed)
-
-        # Log metrics
+        loss = clip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+        batch_size = int(batch["batch_size"].item())
         self.log(
             f"{split}_loss",
             loss,
             on_step=(split == "train"),
             on_epoch=True,
             prog_bar=True,
-            batch_size=batch["batch_size"],
+            batch_size=batch_size,
         )
 
-        return mol_embed, spec_embed, loss
+        with th.no_grad():
+            metrics = {}
+            metrics.update(self._retrieval_metrics(spec_embed, mol_embed, "s2m"))
+            metrics.update(self._retrieval_metrics(mol_embed, spec_embed, "m2s"))
+            for name, value in metrics.items():
+                self.log(
+                    f"{split}_{name}",
+                    value,
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=(split != "train" and name in {"s2m_top1", "s2m_mrr"}),
+                    batch_size=batch_size,
+                )
+        return loss
 
     def training_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
-        """Training step."""
-        _, _, loss = self._common_step(batch, split="train")
-        return loss
+        return self._common_step(batch, "train")
 
     def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
-        """Validation step."""
-        _, _, loss = self._common_step(batch, split="val")
-        return loss
+        return self._common_step(batch, "val")
 
     def test_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
-        """Test step."""
-        _, _, loss = self._common_step(batch, split="test")
-        return loss
+        return self._common_step(batch, "test")
+
+    def configure_optimizers(self):
+        optimizer_cls = get_optimizer_class(self.hparams.optimizer)
+        optimizer = optimizer_cls(
+            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
+        )
+        ret = {"optimizer": optimizer}
+        if self.hparams.lr_schedule:
+            scheduler = build_lr_scheduler(
+                optimizer=optimizer,
+                decay_rate=self.hparams.lr_decay_rate,
+                warmup_steps=self.hparams.lr_warmup_steps,
+                decay_steps=self.hparams.lr_decay_steps,
+                schedule_type=self.hparams.get("lr_schedule_type", "exponential"),
+                total_steps=self.hparams.get("lr_total_steps"),
+                min_lr_ratio=self.hparams.get("lr_min_ratio", 0.0),
+            )
+            ret["lr_scheduler"] = {
+                "scheduler": scheduler,
+                "frequency": 1,
+                "interval": "step",
+            }
+        return ret

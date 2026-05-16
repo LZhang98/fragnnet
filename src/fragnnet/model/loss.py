@@ -30,11 +30,12 @@ from fragnnet.utils.misc_utils import (
     validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
+    batch_jss_hun_helper,
     batched_bin_func,
     calculate_match_mzs,
     jss_helper,
+    linear_sum_assignment,
     round_aggregate_peaks,
-    scipy_linear_sum_assignment,
 )
 
 logger = logging.getLogger(__name__)
@@ -328,13 +329,24 @@ def sparse_cross_entropy_vec(
     # Calculate number of loss batches for memory efficiency
     loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
 
-    # Compute cumulative sum of counts for batch slicing
-    true_batch_cumsum = th.cumsum(
-        F.pad(th.unique(true_batch_idxs, return_counts=True)[1], (1, 0), "constant", 0), dim=0
-    )
-    pred_batch_cumsum = th.cumsum(
-        F.pad(th.unique(pred_batch_idxs, return_counts=True)[1], (1, 0), "constant", 0), dim=0
-    )
+    # Compute cumulative sum of counts for batch slicing.
+    # .tolist() transfers batch_size+1 ints once, turning loop-body indexing into Python-int
+    # slicing (no GPU→CPU sync per iteration). th.bincount is O(N) vs th.unique's O(N log N).
+    true_batch_cumsum: list[int] = th.cat(
+        [true_batch_idxs.new_zeros(1), th.bincount(true_batch_idxs, minlength=batch_size).cumsum(0)]
+    ).tolist()
+    pred_batch_cumsum: list[int] = th.cat(
+        [pred_batch_idxs.new_zeros(1), th.bincount(pred_batch_idxs, minlength=batch_size).cumsum(0)]
+    ).tolist()
+
+    # Precompute loop-invariant constants as Python scalars (avoids per-iteration tensor creation).
+    _LOG_2PI = math.log(2 * math.pi)
+    if gaussian_renormalize:
+        if oos_tolerance_multiple <= 0:
+            raise ValueError(f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}")
+        _log_trunc_factor: float = math.log(math.erf(oos_tolerance_multiple / math.sqrt(2)))
+    else:
+        _log_trunc_factor = 0.0
 
     # Initialize output tensors
     ios_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
@@ -355,7 +367,7 @@ def sparse_cross_entropy_vec(
 
     # Loop over loss batches for memory efficiency
     for bl in range(loss_num_batches):
-        # Compute batch slice indices
+        # Compute batch slice indices (Python ints from .tolist() — no GPU sync)
         bl_lower = bl * loss_batch_size
         bl_upper = min((bl + 1) * loss_batch_size, batch_size)
         bl_true_lower = true_batch_cumsum[bl_lower]
@@ -417,7 +429,7 @@ def sparse_cross_entropy_vec(
         # Mask for true peaks that have any matching prediction
         bl_true_both_mask = th.any(bl_both_mask, dim=1)
 
-        # Compute Gaussian stds and log truncation factors for predictions
+        # Compute Gaussian stds for predictions
         if relative:
             if bl_tol_per_pred is not None:
                 bl_stds = th.maximum(bl_pred_mzs, bl_min_mz_per_pred) * bl_tol_per_pred
@@ -426,61 +438,41 @@ def sparse_cross_entropy_vec(
         else:
             bl_stds = tolerance * th.ones_like(bl_pred_mzs)
         bl_vars = bl_stds**2
-        if gaussian_renormalize:
-            if oos_tolerance_multiple <= 0:
-                raise ValueError(
-                    f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}"
-                )
-            sigma = math.sqrt(2)
-            bl_trunc_factor = math.erf(oos_tolerance_multiple / sigma)
-            bl_log_trunc_factors = th.log(
-                th.tensor(bl_trunc_factor, device=device) * th.ones_like(bl_pred_mzs)
-            )
-        else:
-            bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
 
-        # Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture)
-        bl_ios_log_probs = -0.5 * (
-            bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)
-        ) ** 2 / bl_vars.reshape(1, -1) - 0.5 * th.log(2 * th.pi * bl_vars.reshape(1, -1))
+        # Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture).
+        # _LOG_2PI and _log_trunc_factor are Python scalars — no tensor allocation per iteration.
         bl_ios_log_probs = (
-            bl_ios_log_probs + bl_pred_logprobs.reshape(1, -1) - bl_log_trunc_factors.reshape(1, -1)
+            -0.5
+            * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
+            / bl_vars.reshape(1, -1)
+            - 0.5 * (_LOG_2PI + th.log(bl_vars.reshape(1, -1)))
+            + bl_pred_logprobs.reshape(1, -1)
+            - _log_trunc_factor
         )
         # Mask out non-matching pairs with mask_value (large negative)
         bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).to(float_dtype) * mask_value
         # Log-sum-exp over predictions for each true peak
         bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=1)
 
-        # Compute in-sample cross-entropy for this batch
-        if not th.any(bl_true_both_mask):
-            # If no matches, fill with LOG_ZERO
-            bl_ios_ce = th.full(
-                (bl_batch_size,), LOG_ZERO(float_dtype), dtype=float_dtype, device=device
-            )
-        else:
-            # Sum over matched true peaks, reduce by batch index
-            bl_ios_ce = scatter_reduce(
-                (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
-                bl_true_batch_idxs[bl_true_both_mask],
-                "sum",
-                dim=0,
-                dim_size=bl_batch_size,
-                default=0.0,
-            )
-            ios_ce[bl_lower:bl_upper] = bl_ios_ce
+        # In-sample CE: scatter_reduce handles empty mask → zeros (no GPU sync needed).
+        bl_ios_ce = scatter_reduce(
+            (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
+            bl_true_batch_idxs[bl_true_both_mask],
+            "sum",
+            dim=0,
+            dim_size=bl_batch_size,
+            default=0.0,
+        )
+        ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
-        # Compute out-of-sample logprobs for true peaks with no match
-        if not th.all(bl_true_both_mask):
-            bl_true_oos_logprobs = scatter_logsumexp(
-                bl_true_logprobs[~bl_true_both_mask],
-                bl_true_batch_idxs[~bl_true_both_mask],
-                dim_size=bl_batch_size,
-            )
-        else:
-            # If all matched, fill with LOG_ZERO
-            bl_true_oos_logprobs = th.full(
-                (bl_batch_size,), LOG_ZERO(float_dtype), dtype=float_dtype, device=device
-            )
+        # OOS logprobs for unmatched true peaks. scatter_logsumexp is empty-safe → LOG_ZERO.
+        # No GPU sync needed — the th.all() conditional has been removed.
+        bl_unmatched_mask = ~bl_true_both_mask
+        bl_true_oos_logprobs = scatter_logsumexp(
+            bl_true_logprobs[bl_unmatched_mask],
+            bl_true_batch_idxs[bl_unmatched_mask],
+            dim_size=bl_batch_size,
+        )
         # Compute out-of-sample cross-entropy
         bl_oos_ce = -th.exp(bl_true_oos_logprobs) * bl_pred_oos_logprobs
         oos_ce[bl_lower:bl_upper] = bl_oos_ce
@@ -548,6 +540,156 @@ def get_sparse_cross_entropy_fn(
             )
 
     return sce_fn
+
+
+def _pad_flat_by_batch(
+    values: th.Tensor,
+    batch_idxs: th.Tensor,
+    batch_size: int,
+    pad_value: float,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Convert flat ragged values plus batch indices into a padded [B, N] tensor."""
+    counts = th.bincount(batch_idxs, minlength=batch_size)
+    max_count = int(counts.max().item()) if counts.numel() > 0 else 0
+    padded = values.new_full((batch_size, max_count), pad_value)
+    valid = th.arange(max_count, device=values.device).unsqueeze(0) < counts.unsqueeze(1)
+    if values.numel() == 0 or max_count == 0:
+        return padded, valid
+
+    sort_idx = th.argsort(batch_idxs)
+    sorted_batch_idxs = batch_idxs[sort_idx]
+    sorted_values = values[sort_idx]
+    row_starts = th.cumsum(counts, dim=0) - counts
+    positions = th.arange(values.numel(), device=values.device) - th.repeat_interleave(
+        row_starts, counts
+    )
+    padded[sorted_batch_idxs, positions] = sorted_values
+    return padded, valid
+
+
+def sparse_jensen_shannon_divergence_hungarian_vec(
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_logprobs: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    tolerance: float = 1e-5,
+    relative: bool = True,
+    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
+    log_min: float = EPS,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+    loss_batch_size: int = 32,
+) -> th.Tensor:
+    """Batched Jensen-Shannon distance with Hungarian peak matching."""
+    true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
+        true_mzs, true_logprobs, true_batch_idxs, agg="lse"
+    )
+    pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
+        pred_mzs, pred_logprobs, pred_batch_idxs, agg="lse"
+    )
+    true_sort_idx = th.argsort(true_batch_idxs)
+    true_mzs = true_mzs[true_sort_idx]
+    true_logprobs = true_logprobs[true_sort_idx]
+    true_batch_idxs = true_batch_idxs[true_sort_idx]
+    pred_sort_idx = th.argsort(pred_batch_idxs)
+    pred_mzs = pred_mzs[pred_sort_idx]
+    pred_logprobs = pred_logprobs[pred_sort_idx]
+    pred_batch_idxs = pred_batch_idxs[pred_sort_idx]
+
+    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    if loss_batch_size is None or loss_batch_size <= 0:
+        loss_batch_size = batch_size
+    loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
+
+    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
+    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    true_cumsum = th.cat([true_batch_idxs.new_zeros(1), true_counts.cumsum(0)]).tolist()
+    pred_cumsum = th.cat([pred_batch_idxs.new_zeros(1), pred_counts.cumsum(0)]).tolist()
+
+    jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
+    log2 = math.log(2.0)
+
+    for bl in range(loss_num_batches):
+        bl_lower = bl * loss_batch_size
+        bl_upper = min((bl + 1) * loss_batch_size, batch_size)
+        bl_true_lower = true_cumsum[bl_lower]
+        bl_true_upper = true_cumsum[bl_upper]
+        bl_pred_lower = pred_cumsum[bl_lower]
+        bl_pred_upper = pred_cumsum[bl_upper]
+        bl_batch_size = bl_upper - bl_lower
+
+        bl_true_batch_idxs = true_batch_idxs[bl_true_lower:bl_true_upper] - bl_lower
+        bl_pred_batch_idxs = pred_batch_idxs[bl_pred_lower:bl_pred_upper] - bl_lower
+        bl_true_mzs = true_mzs[bl_true_lower:bl_true_upper]
+        bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
+        bl_true_ints = th.exp(true_logprobs[bl_true_lower:bl_true_upper])
+        bl_pred_ints = th.exp(pred_logprobs[bl_pred_lower:bl_pred_upper])
+
+        batch_true_mzs, true_valid = _pad_flat_by_batch(
+            bl_true_mzs, bl_true_batch_idxs, bl_batch_size, 0.0
+        )
+        batch_pred_mzs, pred_valid = _pad_flat_by_batch(
+            bl_pred_mzs, bl_pred_batch_idxs, bl_batch_size, 0.0
+        )
+        batch_true_ints, _ = _pad_flat_by_batch(
+            bl_true_ints, bl_true_batch_idxs, bl_batch_size, 0.0
+        )
+        batch_pred_ints, _ = _pad_flat_by_batch(
+            bl_pred_ints, bl_pred_batch_idxs, bl_batch_size, 0.0
+        )
+
+        if batch_true_mzs.shape[1] == 0 or batch_pred_mzs.shape[1] == 0:
+            graph_zero = bl_pred_ints.sum() * 0.0
+            jsd_hun[bl_lower:bl_upper] = 1.0 + graph_zero
+            continue
+
+        if tol_per_sample is not None:
+            bl_tol_per_true = tol_per_sample[bl_lower:bl_upper].to(batch_true_mzs.dtype)
+            bl_min_mz_per_true = min_mz_per_sample[bl_lower:bl_upper].to(batch_true_mzs.dtype)
+            tol_per_true = bl_tol_per_true[:, None].expand_as(batch_true_mzs)
+            min_mz_per_true = bl_min_mz_per_true[:, None].expand_as(batch_true_mzs)
+        else:
+            tol_per_true = None
+            min_mz_per_true = None
+
+        batch_match_mask = calculate_match_mzs(
+            batch_true_mzs,
+            batch_pred_mzs,
+            tolerance=tolerance,
+            relative=relative,
+            tolerance_min_mz=tolerance_min_mz,
+            tol_per_true=tol_per_true,
+            min_mz_per_true=min_mz_per_true,
+        )
+        batch_match_mask = th.as_tensor(batch_match_mask, device=true_logprobs.device)
+        batch_match_mask = batch_match_mask & true_valid[:, :, None] & pred_valid[:, None, :]
+
+        if not bool(batch_match_mask.any().item()):
+            graph_zero = bl_pred_ints.sum() * 0.0
+            jsd_hun[bl_lower:bl_upper] = 1.0 + graph_zero
+            continue
+
+        batch_true_match_mask = batch_match_mask.any(dim=2)
+        batch_pred_match_mask = batch_match_mask.any(dim=1)
+        batch_true_prec_mask = th.zeros_like(batch_true_ints, dtype=th.bool)
+        batch_pred_prec_mask = th.zeros_like(batch_pred_ints, dtype=th.bool)
+
+        jss_hun = batch_jss_hun_helper(
+            batch_true_ints,
+            batch_pred_ints,
+            batch_match_mask,
+            batch_true_match_mask,
+            batch_pred_match_mask,
+            False,
+            batch_true_prec_mask,
+            batch_pred_prec_mask,
+            log_min,
+        )
+        jsd_hun[bl_lower:bl_upper] = th.clamp(1.0 - jss_hun / log2, min=0.0, max=1.0)
+
+    return jsd_hun
 
 
 def sparse_entropy_fn(
@@ -851,7 +993,7 @@ def sparse_cosine_distance_hungarian(
         # Mask out unmatched pairs with LOG_ZERO
         b_score[~b_match_mzs[b_true_match_mzs][:, b_pred_match_mzs]] = LOG_ZERO(b_score.dtype)
         # Hungarian algorithm for optimal matching (maximizing score)
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+        b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score, maximize=True)
         # Compute log-cosine similarity for matched pairs
         b_log_cos_hun = th.logsumexp(
             b_true_logprobs[b_true_match_mzs][b_true_idxs]
@@ -910,26 +1052,29 @@ def sparse_jensen_shannon_divergence_hungarian(
     # Get number of batches
     batch_size = int(th.max(true_batch_idxs).item() + 1)
     jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
+    LOG2 = math.log(2.0)  # precompute: avoids th.log(th.tensor(2.0)) inside the loop
+
+    # Split peaks by batch element once (O(N)) instead of masking per element (O(B×N)).
+    true_counts = th.bincount(true_batch_idxs, minlength=batch_size).tolist()
+    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size).tolist()
+    true_mzs_list = th.split(true_mzs, true_counts)
+    true_logprobs_list = th.split(true_logprobs, true_counts)
+    pred_mzs_list = th.split(pred_mzs, pred_counts)
+    pred_logprobs_list = th.split(pred_logprobs, pred_counts)
 
     for batch_idx in range(batch_size):
-        # Select peaks for current batch
-        b_true_mask = true_batch_idxs == batch_idx
-        b_pred_mask = pred_batch_idxs == batch_idx
-        b_true_mzs = true_mzs[b_true_mask]
-        b_pred_mzs = pred_mzs[b_pred_mask]
-        b_true_logprobs = true_logprobs[b_true_mask]
-        b_pred_logprobs = pred_logprobs[b_pred_mask]
+        b_true_mzs = true_mzs_list[batch_idx]
+        b_pred_mzs = pred_mzs_list[batch_idx]
+        b_true_logprobs = true_logprobs_list[batch_idx]
+        b_pred_logprobs = pred_logprobs_list[batch_idx]
 
-        # Normalize probabilities (sum to 1)
+        # Normalize probabilities (sum to 1) without GPU sync.
+        # clamp(min=EPS) avoids division-by-zero; when all probs are ~0, sum≈0/EPS=0 anyway.
         b_true_probs = th.exp(b_true_logprobs)
-        b_true_sum = th.sum(b_true_probs)
-        if b_true_sum > 0:
-            b_true_probs = b_true_probs / b_true_sum
+        b_true_probs = b_true_probs / b_true_probs.sum().clamp(min=EPS)
 
         b_pred_probs = th.exp(b_pred_logprobs)
-        b_pred_sum = th.sum(b_pred_probs)
-        if b_pred_sum > 0:
-            b_pred_probs = b_pred_probs / b_pred_sum
+        b_pred_probs = b_pred_probs / b_pred_probs.sum().clamp(min=EPS)
 
         # per-sample tolerance (falls back to global scalars when not provided)
         b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
@@ -988,7 +1133,7 @@ def sparse_jensen_shannon_divergence_hungarian(
             # We detach b_score for the assignment step because the Hungarian algorithm
             # is non-differentiable (calculates indices).
             # Gradients will flow through the values selected from the original b_score below.
-            b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
+            b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score.detach(), maximize=True)
 
             # Filter invalid matches (where score is -1e9)
             matched_gains = b_score[b_true_idxs, b_pred_idxs]
@@ -1000,7 +1145,6 @@ def sparse_jensen_shannon_divergence_hungarian(
                 total_gain = b_score.sum() * 0.0
 
         # Normalized JSD = 1 - Total Gain / log 2
-        LOG2 = th.log(th.tensor(2.0, device=total_gain.device, dtype=total_gain.dtype))
         b_jsd = 1.0 - total_gain / LOG2
         b_jsd = th.clamp(b_jsd, min=0.0, max=1.0)
         jsd_hun[batch_idx] = b_jsd
@@ -1322,57 +1466,33 @@ def get_pairwise_jss_sim(
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    sort_idx = th.argsort(bin_batch_idxs)
-    sorted_batch_idxs = bin_batch_idxs[sort_idx]
-    sorted_bin_idxs = compact_bin_idxs[sort_idx]
-    sorted_probs = probs[sort_idx]
-    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
-    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
-    row_ptr[1:] = th.cumsum(counts, dim=0)
-    row_ptr_cpu = row_ptr.detach().cpu()
+    # Build full [batch_size, num_unique_bins] probability matrix.
+    # batched_bin_func + scatter_logsoftmax guarantee unique (batch, bin) pairs,
+    # so plain index assignment is safe (no duplicate scatter).
+    P = th.zeros((batch_size, num_unique_bins), device=mzs.device, dtype=probs.dtype)
+    P[bin_batch_idxs, compact_bin_idxs] = probs
 
-    # H(P) for each spectrum. Reuse P_i from the H(M) loop to avoid rebuilding chunks.
-    H_P = th.zeros(batch_size, device=mzs.device, dtype=probs.dtype)
+    H_P = -(P * th.log(P + EPS)).sum(dim=1)  # [batch_size]
 
-    # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i)
+    # H(M) where M = 0.5*(P_i + P_j): exploit upper-triangle symmetry.
+    # Each block is materialized as [ci, cj, K] and reduced along K in one
+    # CUDA kernel — no inner Python loop, no row_ptr scaffolding.
     H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
     for i in range(0, batch_size, effective_chunk):
         i_end = min(i + effective_chunk, batch_size)
-        P_i = _build_dense_chunk(
-            sorted_batch_idxs,
-            sorted_bin_idxs,
-            sorted_probs,
-            row_ptr_cpu,
-            i,
-            i_end,
-            num_unique_bins,
-            mzs.device,
-        )
-        H_P[i:i_end] = -th.sum(P_i * th.log(P_i + EPS), dim=1)
+        P_i = P[i:i_end]  # [ci, K]
         for j in range(i, batch_size, effective_chunk):
             j_end = min(j + effective_chunk, batch_size)
-            if i == j:
-                M_ij = 0.5 * (P_i.unsqueeze(1) + P_i.unsqueeze(0))
-                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
-                H_M[i:i_end, i:i_end] = block
-            else:
-                P_j = _build_dense_chunk(
-                    sorted_batch_idxs,
-                    sorted_bin_idxs,
-                    sorted_probs,
-                    row_ptr_cpu,
-                    j,
-                    j_end,
-                    num_unique_bins,
-                    mzs.device,
-                )
-                M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
-                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
-                H_M[i:i_end, j:j_end] = block
+            P_j = P[j:j_end]  # [cj, K]
+            M = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))  # [ci, cj, K]
+            block = -(M * th.log(M + EPS)).sum(dim=2)  # [ci, cj]
+            H_M[i:i_end, j:j_end] = block
+            if i != j:
                 H_M[j:j_end, i:i_end] = block.t()
 
     JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
-    JSS = 1.0 - JSD / math.log(2.0)
+    # Clamp guards against tiny negative JSD (EPS perturbation in log) giving JSS > 1.
+    JSS = th.clamp(1.0 - JSD / math.log(2.0), min=0.0, max=1.0)
 
     return JSS
 
@@ -1411,7 +1531,7 @@ def get_pairwise_cross_entropy(
 
     batch_size = int(batch_size)
     if mzs.numel() == 0:
-        return th.zeros((batch_size, batch_size), device=mzs.device)
+        return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
     # Binning
     bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
@@ -1419,7 +1539,6 @@ def get_pairwise_cross_entropy(
     )
 
     # Normalize to get probabilities (L1 normalization)
-    # log_softmax to get log probabilities properly normalized
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
@@ -1430,119 +1549,61 @@ def get_pairwise_cross_entropy(
     num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     intra_bin_idxs = bin_idxs % num_bins
 
-    # Optimization: only use bins that are actually present in data
     unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
-
-    # Create a mapping from old bin indices to new compact indices
     bin_idx_map = th.full(
         (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
     )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-
-    # Remap indices to compact space
     compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
-    indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+    effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    # Create sparse tensor for Probs
-    P = th.sparse_coo_tensor(indices, probs, (batch_size, num_unique_bins), device=mzs.device)
+    sort_idx = th.argsort(bin_batch_idxs)
+    sorted_batch_idxs = bin_batch_idxs[sort_idx]
+    sorted_bin_idxs = compact_bin_idxs[sort_idx]
+    sorted_probs = probs[sort_idx]
+    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
+    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
+    row_ptr[1:] = th.cumsum(counts, dim=0)
+    row_ptr_cpu = row_ptr.detach().cpu()
 
-    # We also need LogProbs for the Q part: log(Q)
-    # We use a small epsilon for stability when Q is 0, effective log(Q+eps)
-    # But since we use sparse representation, 0s are implicit.
-    # For CE = - sum P_i * log Q_i
-    # If Q_i is 0 (missing peak), log Q_i is -inf (or small number).
-    # P_i * log Q_i will be large if P_i > 0.
-    # This simple matrix multiplication approach usually assumes 0 * anything = 0,
-    # but here we specifically want P_i * log(0) to be penalized.
-    #
-    # Strategy:
-    # 1. Convert P to dense.
-    # 2. Convert Q's logprobs to dense, filling missing values with a very small log-prob (e.g. log(epsilon)).
-    #    However, batched_bin_func returns only present bins.
-    #    If we just densify P, we get 0s for missing bins.
-    #    P_dense corresponds to the probabilities.
-    #    Calculated CE(i, j) = - sum_k P_ik * log(Q_jk)
+    CE = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
 
-    if chunk_size is None or chunk_size >= batch_size:
-        P_dense = P.to_dense()  # (B, D)
-
-        # Q_dense needs to be log probabilities.
-        # Note: P.to_dense() fills missing values with 0.
-        # For Log Probabilities, missing values should be LOG_ZERO or log(eps).
-        # We can reconstruct Q_log_dense from the same indices but using log_probs values.
-        Q_log_sparse = th.sparse_coo_tensor(
-            indices, log_probs, (batch_size, num_unique_bins), device=mzs.device
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        P_i = _build_dense_chunk(
+            sorted_batch_idxs,
+            sorted_bin_idxs,
+            sorted_probs,
+            row_ptr_cpu,
+            i,
+            i_end,
+            num_unique_bins,
+            mzs.device,
         )
-        Q_log_dense = Q_log_sparse.to_dense()
-
-        # Now, the zeros in Q_log_dense are actually "missing" values which should be LOG_ZERO.
-        # But wait, sparse_coo_tensor.to_dense() fills with 0. 0 in log-space is prob=1, which is WRONG.
-        # We need to initialize with a very small value (LOG_ZERO) and then fill in the values.
-        # Or, simpler: convert, then mask where P (probs) was 0? No, we need where Q was 0.
-
-        # Better approach for Q:
-        # 1. Start with full matrix of LOG_ZERO/log(eps).
-        # 2. Add the sparse values.
-        # However, `to_dense()` doesn't support "fill value".
-
-        # Workaround:
-        # Q_log_dense = Q_log_sparse.to_dense() gives 0s where there are no entries.
-        # We know matching entries are in indices.
-        # Alternatively: P_dense is easy (0 probs is fine).
-        # For Q, we want `log(Q + eps)`.
-        # So we can just take P_dense (which is Q_dense probs), add eps, and log.
-        # Q_log_dense = th.log(P_dense + EPS)
-
-        Q_log_dense = th.log(P_dense + EPS)
-
-        # CE = - P @ Q_log.T
-        CE = -th.mm(P_dense, Q_log_dense.t())
-
-    else:
-        CE = th.zeros((batch_size, batch_size), device=mzs.device, dtype=mzs.dtype)
-
-        sort_idx = th.argsort(bin_batch_idxs)
-        sorted_batch_idxs = bin_batch_idxs[sort_idx]
-        sorted_bin_idxs = compact_bin_idxs[sort_idx]
-        sorted_probs = probs[sort_idx]
-        counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
-        row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
-        row_ptr[1:] = th.cumsum(counts, dim=0)
-        row_ptr_cpu = row_ptr.detach().cpu()
-
-        for i in range(0, batch_size, chunk_size):
-            i_end = min(i + chunk_size, batch_size)
-            P_i = _build_dense_chunk(
-                sorted_batch_idxs,
-                sorted_bin_idxs,
-                sorted_probs,
-                row_ptr_cpu,
-                i,
-                i_end,
-                num_unique_bins,
-                mzs.device,
-            )
-
-            for j in range(0, batch_size, chunk_size):
-                j_end = min(j + chunk_size, batch_size)
-                P_j = _build_dense_chunk(
-                    sorted_batch_idxs,
-                    sorted_bin_idxs,
-                    sorted_probs,
-                    row_ptr_cpu,
-                    j,
-                    j_end,
-                    num_unique_bins,
-                    mzs.device,
+        log_P_i = th.log(P_i + EPS)
+        for j in range(0, batch_size, effective_chunk):
+            j_end = min(j + effective_chunk, batch_size)
+            # Reuse log_P_i for diagonal blocks (j == i) to avoid rebuilding the same chunk.
+            log_Q_j = (
+                log_P_i
+                if i == j
+                else th.log(
+                    _build_dense_chunk(
+                        sorted_batch_idxs,
+                        sorted_bin_idxs,
+                        sorted_probs,
+                        row_ptr_cpu,
+                        j,
+                        j_end,
+                        num_unique_bins,
+                        mzs.device,
+                    )
+                    + EPS
                 )
-
-                # Q_j_log
-                Q_j_log = th.log(P_j + EPS)
-
-                # CE[i, j] = - sum P_i * log Q_j
-                CE[i:i_end, j:j_end] = -th.mm(P_i, Q_j_log.t())
+            )
+            CE[i:i_end, j:j_end] = -th.mm(P_i, log_Q_j.t())
 
     return CE
 
@@ -1616,7 +1677,7 @@ def _compute_pair_jss_hun(
         else:
             total_gain = th.tensor(0.0, device=b_score.device, dtype=b_score.dtype)
     else:
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
+        b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score.detach(), maximize=True)
         matched_gains = b_score[b_true_idxs, b_pred_idxs]
         valid_mask = matched_gains > -1e8
         if th.any(valid_mask):
@@ -1829,7 +1890,7 @@ def _compute_pair_ce_hun(
     if gain_matrix.numel() == 0:
         total_gain = th.tensor(0.0, device=gain_matrix.device, dtype=gain_matrix.dtype)
     else:
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(gain_matrix.detach(), maximize=True)
+        b_true_idxs, b_pred_idxs = linear_sum_assignment(gain_matrix.detach(), maximize=True)
 
         matched_gains = gain_matrix[b_true_idxs, b_pred_idxs]
         valid_mask = matched_gains > -1e8

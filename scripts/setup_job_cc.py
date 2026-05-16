@@ -239,6 +239,17 @@ def main(args):
     is_cv_mode = getattr(args, "cv_config_dp", None) is not None
     cv_config_dp_rel = args.cv_config_dp.lstrip("./").rstrip("/") if is_cv_mode else None
 
+    if is_cv_mode and getattr(args, "cv_use_job_id", False):
+        job_id_dp = os.path.join(os.path.abspath(args.frag_gnn_dp), "job_id")
+        existing = [
+            fold
+            for fold in range(args.cv_start, args.cv_end + 1)
+            if os.path.isfile(os.path.join(job_id_dp, f"{args.job_name}_cv{fold}.id"))
+        ]
+        print(f"> CV job_id check: {len(existing)}/{args.cv_end - args.cv_start + 1} folds have existing .id files")
+        if existing:
+            print(f"  completed folds: {existing}")
+
     # create folders
     os.makedirs(f"{os.path.abspath(args.frag_gnn_dp)}/wandb", exist_ok=True)
     os.makedirs(f"{os.path.abspath(args.script_dp)}", exist_ok=True)
@@ -335,6 +346,7 @@ def main(args):
         [
             "#load modules",
             "module load StdEnv/2023",
+            "module load cuda/12.2",  # this is needed for torch_linear_assignment
             f"module load python/{args.python_version}",
             f"module load rdkit/{args.rdkit_version}",
         ]
@@ -377,6 +389,9 @@ def main(args):
             "cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl",
             "pip install pyteomics-4.7.5-py3-none-any.whl",
             "",
+            "# install torch_linear_assignmnettorch_linear_assignment-0.0.6.tar.gz",
+            "cp ${FRAGNNET_DP}/wheels/torch_linear_assignment-0.0.6.tar.gz ${WORKING_DIR}/torch_linear_assignment-0.0.6.tar.gz",
+            "pip install --no-build-isolation torch_linear_assignment-0.0.6.tar.gz",
         ]
     )
 
@@ -570,9 +585,9 @@ def main(args):
                 ]
             )
         elif is_cv_mode and name == "split_dp":
-            # CV mode: copy split dirs for all folds in the range
+            # CV mode: validate all fold split dirs exist, then emit one dynamic rsync
             print(f"> CV mode: copying split dirs for folds {args.cv_start}-{args.cv_end}")
-            copied_split_dps: set[str] = set()
+            fold_split_dps: dict[int, str] = {}
             for fold_idx in range(args.cv_start, args.cv_end + 1):
                 fold_config_fp = f"{cv_config_dp_rel}/cv{fold_idx}.yml"
                 fold_split_dp = None
@@ -583,18 +598,34 @@ def main(args):
                             break
                 if fold_split_dp is None:
                     raise ValueError(f"split_dp not found in {fold_config_fp}")
-                if fold_split_dp in copied_split_dps:
-                    continue
                 if not os.path.exists(fold_split_dp):
                     raise FileNotFoundError(f"Split dir not found: {fold_split_dp}")
-                copied_split_dps.add(fold_split_dp)
-                print(f"> adding cmd to copy split dir {fold_split_dp} (fold {fold_idx})")
+                fold_split_dps[fold_idx] = fold_split_dp
+            # detect consistent pattern by replacing cv{fold_idx} with cv${CV_FOLD}
+            patterns = {
+                fold_idx: path.replace(f"cv{fold_idx}", "cv${CV_FOLD}")
+                for fold_idx, path in fold_split_dps.items()
+            }
+            unique_patterns = set(patterns.values())
+            if len(unique_patterns) == 1:
+                dynamic_path = unique_patterns.pop()
+                print(f"> adding cmd to copy split dir {dynamic_path} (dynamic CV fold)")
                 script_lines.extend(
                     [
-                        f"# copy split_dp for CV fold {fold_idx}: {fold_split_dp}",
-                        f"rsync -av --relative ${{FRAGNNET_DP}}/./{fold_split_dp} ${{WORKING_DIR}}",
+                        f"# copy split_dp for CV fold ${{CV_FOLD}}: {dynamic_path}",
+                        f"rsync -av --relative ${{FRAGNNET_DP}}/./{dynamic_path} ${{WORKING_DIR}}",
                     ]
                 )
+            else:
+                # paths don't share a common cv{n} pattern — copy all unique dirs statically
+                for fold_idx, fold_split_dp in fold_split_dps.items():
+                    print(f"> adding cmd to copy split dir {fold_split_dp} (fold {fold_idx})")
+                    script_lines.extend(
+                        [
+                            f"# copy split_dp for CV fold {fold_idx}: {fold_split_dp}",
+                            f"rsync -av --relative ${{FRAGNNET_DP}}/./{fold_split_dp} ${{WORKING_DIR}}",
+                        ]
+                    )
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(
@@ -618,6 +649,28 @@ def main(args):
         ]
     )
 
+    # resolve job_id: dynamic per-fold (cv_use_job_id) or static from script_kwargs
+    cv_use_job_id = is_cv_mode and getattr(args, "cv_use_job_id", False)
+    static_job_id = next(
+        (kw.split("=", 1)[1] for kw in script_kwargs_list if kw.split("=")[0].lstrip("-") in ("j", "job_id")),
+        None,
+    )
+    job_id_name = f"{args.job_name}_cv${{CV_FOLD}}" if cv_use_job_id else static_job_id
+
+    if job_id_name:
+        script_lines.extend(
+            [
+                "# create job_id directory if not exists",
+                "if [ ! -d ${FRAGNNET_DP}/job_id ]; then",
+                "    mkdir ${FRAGNNET_DP}/job_id",
+                "fi",
+                "# symlink job_id folder for CV fold resume",
+                "if [ ! -e job_id ]; then",
+                "    ln -s ${FRAGNNET_DP}/job_id job_id",
+                "fi",
+            ]
+        )
+
     # for sweep scripts, append SLURM job/agent ID so wandb run names are unique
     # job name is used for local sweep, since fir and vulcan now support wandb agent directly,
     # job id is used for narval only, and it maybe broken.
@@ -626,6 +679,8 @@ def main(args):
             python_line += " \\\n -p ${SLURM_JOB_ID}_${AGENT_ID}"
         else:
             python_line += " \\\n -p ${SLURM_JOB_ID}"
+    elif cv_use_job_id:
+        python_line += f" \\\n -j {args.job_name}_cv${{CV_FOLD}}"
 
     wandb_api_key = _resolve_wandb_api_key(getattr(args, "wandb_api_key", None))
     if wandb_api_key:
@@ -775,6 +830,13 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Last CV fold index (inclusive). Required with --cv_config_dp.",
+    )
+    parser.add_argument(
+        "--cv_use_job_id",
+        type=bool,
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Pass -j {job_name}_cv${CV_FOLD} to the python script for per-fold checkpoint IDs.",
     )
     parser.add_argument(
         "--cc_account",

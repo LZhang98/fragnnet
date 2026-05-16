@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_sqrt2
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_efa_cc_dropout_01_sweeped_jss
 wandb_tags:
 - retrieval
 - nist20
@@ -34,6 +34,12 @@ wandb_tags:
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
+- efa
+- cc_feature_dropout
+- cc_dropout_01
+- sweeped       # hyperparams from nist20_inchikey_fraggnn_d3_ma_mi_efa sweep (2026-05-04)
+- jss_hun       # Hungarian JSS loss with per-instrument tolerance
+- jss_hun_sqrt  # sqrt intensity transform for eval
 
 # ============================================================================
 # Data File Paths
@@ -45,73 +51,58 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±
 
 # ============================================================================
 # Model Architecture
-# Fixed to best values from nist20_d3_ma_mi_sqrt sweep.
 # ============================================================================
-num_depth: 4
-num_hs: 4
-frag_gnn_type: NodeMLP
-mol_hidden_size: 384    # top-4/5 runs in sqrt sweep
+num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
+num_hs: 4       # number of H-transfer options per fragment (0..4)
+frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_gnn_type: GINE_EFA  # GINE + per-graph EFA linear global attention
+mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 mol_num_layers: 4
-mol_gnn_type: GINE
 mol_normalization: batch
 mol_pool_type: mean
-
-cc_interstage_type: direct
-cc_interstage_use_rest: False
-
-frag_hidden_size: 256
-frag_num_layers: 4
-frag_normalization: graph
-frag_pool_type: max     # top-3 runs in sqrt sweep
-frag_embed_combine: cat
-frag_pool_combine: none
-
-mlp_output_format: formula
-mlp_hidden_size: 256
-mlp_normalization: none
-mlp_num_layers: 2
-mlp_use_residuals: True
+mol_num_heads: 1        # swept 1/2/4/8; top-1 run used 1 head (0.6865)
+cc_feature_dropout: 0.1 # regularize EFA full-fragment cc shortcut during training
 
 # ============================================================================
 # Fragment DAG Parameters
 # ============================================================================
 frag_params:
   pyg_node_feats:
-    - cc
-    - base_formula
-    - depth
-    - h_formulae_idx
-    - cmf_h_formulae_idx
-    - boundary_pair
-  pyg_edge_feats: []
-  pyg_edges: False
+    - cc            # connected-component index within DAG
+    - base_formula  # molecular formula of fragment (no H)
+    - depth         # depth of fragment node in the DAG
+    - h_formulae_idx     # index into H-transfer formula table
+    - cmf_h_formulae_idx # same as above but for charge-migration fragments
+    - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
+  pyg_edge_feats: []   # no edge features (new_no_edges variant)
+  pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
-  preload: True
-  preprocess: True
-  include_cmf: True
+  preload: True        # load all DAGs into memory at startup for speed
+  preprocess: True     # apply preprocessing transforms at load time
+  include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
 # Spectrum Parameters
 # ============================================================================
 spec_params:
-  merge: False
-  nce: True
-  ace: False
+  merge: False          # keep per-CE spectra separate (not merged)
+  nce: True             # use normalized collision energy (NCE) as input
+  ace: False            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
   preprocess: True
-  prec_type_str: False
-  prec_types:
+  prec_type_str: False  # encode precursor type as integer index, not string
+  prec_types:           # adduct types to include
     - "[M+H]+"
     - "[M-H]-"
     - "[M+Na]+"
     - "[M+Cl]-"
-  inst_type: True
-  inst_types:
+  inst_type: True       # condition on instrument type
+  inst_types:           # instrument types to include
     - "FT"
     - "QTOF"
     - "IT"
-  frag_mode: True
-  frag_modes:
+  frag_mode: True       # condition on fragmentation mode
+  frag_modes:           # known modes; unknown falls back to index num_frag_modes
     - "HCD"
     - "CID"
 
@@ -153,18 +144,19 @@ max_epochs: 100
 debug_overfit: False
 
 # ============================================================================
-# Regularization — mol_dropout fixed from sqrt sweep; others swept
+# Regularization — from sweep (top-3 consensus)
+# frag_dropout=0.1 (3/5 top runs), mlp_dropout=0.4 (3/5), mol_dropout=0.1 (3/5)
 # ============================================================================
-mol_dropout: 0.1     # clear winner in sqrt sweep (all top-5 runs)
-frag_dropout: 0.2
-mlp_dropout: 0.3
+mol_dropout: 0.1
+frag_dropout: 0.1
+mlp_dropout: 0.4
 weight_decay: 0.001
 
 # ============================================================================
-# Optimization
+# LR Schedule — cosine warmup + decay
 # ============================================================================
 lr_schedule: False
-lr: 0.0007           # center of top-performing range in sqrt sweep (0.0006–0.001)
+lr: 0.0005
 lr_schedule_type: cosine
 lr_warmup_steps: 5000
 lr_total_steps: 390000
@@ -173,15 +165,35 @@ lr_decay_rate: 0.95
 lr_decay_steps: 5000
 
 # ============================================================================
+# MLP/Output Configuration
+# ============================================================================
+mlp_output_format: formula
+mlp_hidden_size: 256
+mlp_normalization: none
+mlp_num_layers: 2
+mlp_use_residuals: True
+
+# ============================================================================
+# Fragment GNN Configuration
+# ============================================================================
+cc_interstage_type: direct
+cc_interstage_use_rest: False
+frag_hidden_size: 256
+frag_num_layers: 4
+frag_normalization: graph
+frag_pool_type: max
+frag_embed_combine: cat
+frag_pool_combine: none
+
+# ============================================================================
 # Loss Configuration
 # ============================================================================
-ints_transform: sqrt
 mask_null_formula: False
 predict_oos: True
 oos_tolerance_multiple: 1
 oos_loss: True
 gaussian_renormalize: True
-node_normalized_entropy_weight: 0.01
+loss_type: jss_distance_hungarian  # m/z-matched JSS; uses inst_type_loss_tol
 
 # ============================================================================
 # Spectrum Binning & Evaluation
@@ -196,12 +208,12 @@ checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
   - cos_sim
   - jss
-  - true_spec_ne
-  - pred_spec_ne
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True
+eval_bin_sqrt: True       # sqrt m/z bins for evaluation
+ints_transform: sqrt      # sqrt intensity transform for eval metrics
 
+# Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
   FT:   {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
@@ -217,7 +229,7 @@ dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 200000
 
 # ============================================================================
-# Group Sampler
+# Group Sampler (same-molecule multi-CE batching)
 # ============================================================================
 group_sampler: False
 group_sampler_type: group

@@ -75,7 +75,7 @@ frag_params:
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
   nce: True             # use normalized collision energy (NCE) as input
-  ace: False            # do not use absolute collision energy (ACE)
+  ace: True            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False  # encode precursor type as integer index, not string
@@ -194,7 +194,7 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 200000
+dynamic_batch_sampler_max: 400000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -215,5 +215,4 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
+loss_batch_size: 32              # sub-batch size for vectorized loss

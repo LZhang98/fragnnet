@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Callable
 from typing import cast
 
@@ -40,10 +39,10 @@ try:
     )
 
     _torch_linear_assignment = True
+    print("torch_linear_assignment found; using GPU-accelerated batch linear assignment")
 except ImportError:
     _torch_linear_assignment = False
-
-    logging.getLogger(__name__).warning(
+    print(
         "torch_linear_assignment not found; falling back to scipy.optimize.linear_sum_assignment (slower, CPU-only)"
     )
 
@@ -51,6 +50,15 @@ except ImportError:
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
+
+_assignment_device_logged = False
+
+
+def _log_assignment_device_once(device) -> None:
+    global _assignment_device_logged
+    if not _assignment_device_logged:
+        print(f"torch_linear_assignment running on device: {device}")
+        _assignment_device_logged = True
 
 
 def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
@@ -65,6 +73,7 @@ def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tenso
     """
     if _torch_linear_assignment:
         assignment = batch_linear_assignment(-batch_score)
+        _log_assignment_device_once(batch_score.device)
         return assignment_to_indices(assignment)
 
     device = batch_score.device
@@ -182,26 +191,26 @@ def get_ints_untransform_func(ints_transform: str):
     return _func
 
 
-def transform_ce(ce: th.Tensor | float, mean_val: float, std_val: float) -> th.Tensor:
+def transform_ce(ce: th.Tensor | float, ce_mean: float, ce_std: float) -> th.Tensor:
     """Transform collision energy (CE) values via z-score normalization.
 
     Values below 0 are treated as missing/unknown and returned as-is.
 
     Args:
         ce: The CE values to transform.
-        mean_val: Mean CE value for normalization.
-        std_val: Standard deviation of CE values for normalization.
+        ce_mean: Mean CE value for normalization.
+        ce_std: Standard deviation of CE values for normalization.
 
     Returns:
         Transformed CE values of the same type as input.
     """
     if isinstance(ce, th.Tensor):
         mask = ce >= 0
-        transformed_ce = th.where(mask, (ce - mean_val) / std_val, ce)
+        transformed_ce = th.where(mask, (ce - ce_mean) / ce_std, ce)
         return transformed_ce
     else:
         if ce >= 0:
-            return th.tensor((ce - mean_val) / std_val)
+            return th.tensor((ce - ce_mean) / ce_std)
         else:
             return th.tensor(ce)
 
@@ -696,18 +705,15 @@ def round_aggregate_peaks(
     return round_mzs, round_ints, round_batch_idxs
 
 
-def scipy_linear_sum_assignment(matrix, maximize=False):
-    """
-    Solve the linear sum assignment problem using Scipy's implementation (Hungarian algorithm).
-    This is a wrapper to handle PyTorch tensors,
-    It is caller's response to to detaching from the graph.
+def scipy_linear_sum_assignment(matrix: th.Tensor, maximize: bool = False) -> tuple[th.Tensor, th.Tensor]:
+    """Solve linear assignment via scipy (CPU fallback).
 
     Args:
-        matrix (th.Tensor): The cost matrix (or score matrix if maximize=True).
-        maximize (bool, optional): Calculates a maximum weight matching if true. Defaults to False.
+        matrix: Cost (or score) matrix of shape (N, M). Caller must detach from graph.
+        maximize: If True, maximize total score instead of minimizing cost.
 
     Returns:
-        Tuple[th.Tensor, th.Tensor]: Row indices and column indices of the optimal assignment.
+        Tuple of (row_ind, col_ind) long tensors on the original device.
     """
     try:
         from scipy.optimize import linear_sum_assignment
@@ -715,9 +721,34 @@ def scipy_linear_sum_assignment(matrix, maximize=False):
         raise ImportError("scipy is required for scipy_linear_sum_assignment") from exc
 
     device = matrix.device
-    matrix = matrix.cpu().numpy()
-    x_idx, y_idx = linear_sum_assignment(matrix, maximize=maximize)
+    np_matrix = matrix.cpu().numpy()
+    x_idx, y_idx = linear_sum_assignment(np_matrix, maximize=maximize)
     return th.tensor(x_idx, device=device).long(), th.tensor(y_idx, device=device).long()
+
+
+def linear_sum_assignment(matrix: th.Tensor, maximize: bool = False) -> tuple[th.Tensor, th.Tensor]:
+    """Solve linear assignment, using GPU via torch_linear_assignment when available.
+
+    Uses ``batch_linear_assignment`` (GPU) when ``torch_linear_assignment`` is installed and
+    the matrix is on a CUDA device.  Falls back to scipy otherwise.
+
+    Caller is responsible for detaching ``matrix`` from the autograd graph before calling.
+
+    Args:
+        matrix: Cost (or score) matrix of shape (N, M).
+        maximize: If True, maximize total score instead of minimizing cost.
+
+    Returns:
+        Tuple of (row_ind, col_ind) long tensors on the same device as ``matrix``.
+    """
+    if _torch_linear_assignment and matrix.is_cuda:
+        cost = -matrix if maximize else matrix
+        # batch_linear_assignment expects (B, N, M) and minimises; returns (B, N) col-index per row
+        assignment = batch_linear_assignment(cost.unsqueeze(0)).squeeze(0)  # (N,)
+        row_ind = th.where(assignment >= 0)[0]
+        col_ind = assignment[row_ind]
+        return row_ind, col_ind
+    return scipy_linear_sum_assignment(matrix, maximize=maximize)
 
 
 ### helpers
@@ -1343,6 +1374,6 @@ def jss_helper(
     )
     # jss
     jsd_e = 0.5 * (kl1 + kl2)
-    # (ln(2) - jsd_e) / ln(2)
-    jss = 1.0 - jsd_e / np.log(2.0)
+    # (ln(2) - jsd_e) / ln(2); clamp to [0,1] to guard against FP drift in union mixture
+    jss = th.clamp(1.0 - jsd_e / np.log(2.0), min=0.0, max=1.0)
     return jss

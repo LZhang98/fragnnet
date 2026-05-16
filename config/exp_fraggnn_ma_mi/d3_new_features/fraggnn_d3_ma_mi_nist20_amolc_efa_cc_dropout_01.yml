@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_dce
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_efa_cc_dropout_01
 wandb_tags:
 - retrieval
 - nist20
@@ -34,6 +34,9 @@ wandb_tags:
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
+- efa
+- cc_feature_dropout
+- cc_dropout_01
 
 # ============================================================================
 # Data File Paths
@@ -49,7 +52,9 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_gnn_type: GINE_EFA  # GINE + per-graph EFA linear global attention; num_heads=4 (default)
 mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
+cc_feature_dropout: 0.1 # regularize EFA full-fragment cc shortcut during training
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -107,12 +112,7 @@ mol_params:
 ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
-ce_insert_size: 32            # CE embedding dimension (per CE type; doubled when both use_nce and use_ace are True)
-use_nce: True                 # embed NCE signal
-use_ace: True                 # embed ACE signal; concatenated with NCE since use_nce is also True
-ace_max: 100                  # max ACE value (eV) for embed_clamped indexing
-ace_mean: 20                  # mean ACE value (eV) for normalization (lin/id types)
-ace_std: 15                   # std of ACE for normalization (lin/id types)
+ce_insert_size: 32            # CE embedding dimension
 prec_insert_location: mol     # inject precursor-type embedding into molecule encoder
 prec_insert_size: 32
 inst_insert_location: mol     # inject instrument-type embedding into molecule encoder
@@ -175,7 +175,7 @@ mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
 frag_pool_type: max  # sweep: top 3 runs all use max
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim

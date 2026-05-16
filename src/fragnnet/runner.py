@@ -19,6 +19,7 @@ from torch.utils.data.sampler import RandomSampler, SequentialSampler
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
+    FormulaPrecTypeGroupSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
@@ -70,30 +71,6 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
             # here is not safe way to load, but I'll skip this issue now
             cur[keys[-1]] = yaml.safe_load(value)
 
-    return config_d
-
-
-def load_wandb_config(wandb_config_dp) -> dict:
-    """Load wandb config file if exists, else return empty dict
-
-    Args:
-                    wandb_config_dp (str): Path to the wandb config directory.
-
-    Returns:
-                    dict: wandb config
-    """
-    wandb_config_dp = os.path.join(wandb_config_dp, "config.yaml")
-
-    if os.path.isfile(wandb_config_dp):
-        with open(wandb_config_dp) as wandb_config_file:
-            _config_d = yaml.load(wandb_config_file, Loader=yaml.FullLoader)
-        del _config_d["wandb_version"]
-        del _config_d["_wandb"]
-        config_d = {}
-        for k in _config_d.keys():
-            config_d[k] = _config_d[k]["value"]
-    else:
-        config_d = {}
     return config_d
 
 
@@ -339,6 +316,27 @@ def validate_sampler_config(config_d: dict) -> None:
             )
 
 
+def log_cuda_info() -> None:
+    """Log PyTorch version and CUDA device information."""
+    logger = logging.getLogger(__name__)
+    logger.info("PyTorch version: %s", th.__version__)
+    if th.cuda.is_available():
+        logger.info("CUDA version: %s", th.version.cuda)
+        for i in range(th.cuda.device_count()):
+            props = th.cuda.get_device_properties(i)
+            total_gb = props.total_memory / 1024**3
+            logger.info(
+                "GPU %d: %s | %.1f GB | compute capability %d.%d",
+                i,
+                props.name,
+                total_gb,
+                props.major,
+                props.minor,
+            )
+    else:
+        logger.info("CUDA not available, running on CPU")
+
+
 def init_run(
     template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
 ) -> L.LightningModule:
@@ -354,12 +352,18 @@ def init_run(
                     model: The trained model (LightningModule).
     """
 
+    # Must be set before the CUDA allocator initialises (first tensor.cuda() call).
+    # setdefault lets a SLURM-level export override this if needed.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     # setup logger
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()],
     )
+
+    log_cuda_info()
 
     # load config
     config_d = load_config(template_fp, custom_fp, override)
@@ -394,40 +398,29 @@ def init_run(
             if os.path.isfile(job_id_fp):
                 is_resume = True
                 with open(job_id_fp) as job_id_file:
-                    text = job_id_file.read().strip()
-                run_id, old_wandb_dp = text.split(";")
-                wandb_config = load_wandb_config(old_wandb_dp)
-
-                # for offline mode, if there is no configure file, just skip it
-                # wandb config only exists after wandb sync
-                if len(wandb_config) == 0:
-                    wandb_config = config_d
+                    parts = job_id_file.read().strip().split(";", 1)
+                run_id = parts[0]
+                old_wandb_dp = parts[1] if len(parts) > 1 else None
             else:
                 is_resume = False
-                run_id = old_wandb_dp = None
-                wandb_config = config_d
+                run_id = None
+                old_wandb_dp = None
             wandb_d["id"] = run_id
-            wandb_d["config"] = wandb_config
-            if config_d["wandb_root_dir"] is not None:
-                wandb_dir = os.path.join(config_d["wandb_root_dir"], str(job_id))
-                os.makedirs(wandb_dir)
-                if os.path.isdir(wandb_dir):
-                    wandb_d["dir"] = wandb_dir
-                else:
-                    print(f"> wandb dir does not exist: {wandb_dir}, using default instead")
+            wandb_d["resume"] = "must" if run_id is not None else "allow"
+            wandb_d["config"] = config_d
         else:
             is_resume = False
             job_id_fp = None
+            old_wandb_dp = None
             wandb_d["config"] = config_d
         wandb.init(**wandb_d)
         assert wandb.run is not None, wandb.run
         wandb_d["offline"] = wandb_mode == "offline"
         wandb_logger = WandbLogger(**wandb_d)
         if job_id_fp:
-            os.makedirs("job_id", exist_ok=True)
+            os.makedirs(os.path.dirname(job_id_fp), exist_ok=True)
             with open(job_id_fp, "w+") as job_id_file:
-                text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
-                job_id_file.write(text)
+                job_id_file.write(f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}")
         # update config results (primarily for wandb)
         # configs can be nested up to 2 levels
         for k in list(config_d.keys()):
@@ -480,14 +473,16 @@ def init_run(
     # setup callbacks
     callbacks = []
     if wandb_mode != "disabled":
-        ckpt_dp = os.path.join(wandb.run.dir, "ckpt")
+        ckpt_dp = os.path.realpath(os.path.join(wandb.run.dir, "ckpt"))
     else:
         ckpt_dp = "tmp_ckpt"
     os.makedirs(ckpt_dp, exist_ok=True)
-    if is_resume:
+    if is_resume and old_wandb_dp is not None:
         assert not config_d["disable_checkpoints"]
         # copy the checkpoint files
         old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
+        if not old_ckpt_fps:
+            logging.warning(f"Resume requested but no checkpoints found in {old_wandb_dp}/ckpt/, starting from scratch")
         for old_ckpt_fp in old_ckpt_fps:
             new_ckpt_fp = os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp))
             # modify checkpoint metadata (hacky)
@@ -507,11 +502,13 @@ def init_run(
             for k in ckpt_keys:
                 if k in ckpt_callback_data:
                     ckpt_callback_data[k] = ckpt_callback_data[k].replace(
-                        os.path.abspath(old_wandb_dp), os.path.abspath(wandb.run.dir)
+                        os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
                     )
             if "best_k_models" in ckpt_callback_data:
                 for k in list(ckpt_callback_data["best_k_models"].keys()):
-                    new_k = k.replace(os.path.abspath(old_wandb_dp), os.path.abspath(wandb.run.dir))
+                    new_k = k.replace(
+                        os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
+                    )
                     ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data[
                         "best_k_models"
                     ].pop(k)
@@ -679,6 +676,7 @@ def init_run(
             if os.path.isfile(ckpt_fp):
                 logging.info(f"resuming from checkpoint: {ckpt_fp}")
             else:
+                logging.warning(f"Resume requested but last.ckpt not found in {ckpt_dp}, starting from epoch 0")
                 ckpt_fp = None
         else:
             ckpt_fp = None

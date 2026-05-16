@@ -74,7 +74,7 @@ frag_params:
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
   nce: True             # use normalized collision energy (NCE) as input
-  ace: False            # do not use absolute collision energy (ACE)
+  ace: True            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False  # encode precursor type as integer index, not string
@@ -173,12 +173,12 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
-  - jss
-  - true_spec_ne   # ground truth normalized entropy — reference target
-  - pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
+  # - jss
+  #- true_spec_ne   # ground truth normalized entropy — reference target
+  #- pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
 ints_transform: sqrt  # intensity transform for evaluation metrics (sqrt or log)
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -194,7 +194,7 @@ automatic_optimization: False  # manual optimization (custom grad-step logic in 
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 200000
+dynamic_batch_sampler_max:400000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -215,5 +215,4 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
+loss_batch_size: 32              # sub-batch size for vectorized loss

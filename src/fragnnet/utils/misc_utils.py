@@ -370,6 +370,11 @@ def scatter_logsumexp(
 ) -> th.Tensor:
     """Numerically stable logsumexp grouped by ``subset_idxs``."""
 
+    # numel() is metadata — no GPU sync. Return LOG_ZERO for every group when input is empty.
+    if logits.numel() == 0:
+        k = dim_size if dim_size is not None else 0
+        return th.full((k,), LOG_ZERO(logits.dtype), device=logits.device, dtype=logits.dtype)
+
     if dim_size is None:
         k = th.max(subset_idxs) + 1
     else:

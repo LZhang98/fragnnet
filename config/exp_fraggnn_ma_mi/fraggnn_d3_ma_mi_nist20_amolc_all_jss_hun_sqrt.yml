@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_sqrt_long
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_jss_hun_sqrt
 wandb_tags:
 - retrieval
 - nist20
@@ -33,6 +33,7 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
+- jss_hun       # Hungarian JSS loss with per-instrument tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
@@ -45,10 +46,34 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±
 
 # ============================================================================
 # Model Architecture
+# Best values from nist20_d3_ma_mi_focused sweep + nist20_d3_ma_mi_jss_sqrt sweep.
 # ============================================================================
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+
+mol_hidden_size: 384    # jss_sqrt sweep winner is 512; using 384 for memory test
+mol_num_layers: 4
+mol_gnn_type: GINE      # jss_sqrt sweep: GINE wins over GINE_EFA
+mol_num_heads: 4        # used by GINE_EFA; ignored by GINE
+mol_normalization: batch
+mol_pool_type: mean
+
+cc_interstage_type: direct
+cc_interstage_use_rest: False
+
+frag_hidden_size: 256
+frag_num_layers: 4
+frag_normalization: graph
+frag_pool_type: max     # focused sweep: top 3 runs all use max
+frag_embed_combine: cat
+frag_pool_combine: none
+
+mlp_output_format: formula
+mlp_hidden_size: 256
+mlp_normalization: none
+mlp_num_layers: 2
+mlp_use_residuals: True
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -126,8 +151,8 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1
-min_epochs: 300
-max_epochs: 300
+min_epochs: 100
+max_epochs: 100
 debug_overfit: False
 
 # ============================================================================
@@ -135,7 +160,7 @@ debug_overfit: False
 # ============================================================================
 mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.3    # jss_sqrt sweep: top runs favour 0.3
 weight_decay: 0.01
 
 # ============================================================================
@@ -160,6 +185,8 @@ predict_oos: True          # predict out-of-structure (OOS) probability
 oos_tolerance_multiple: 1  # tolerance multiplier for OOS peak matching
 oos_loss: True             # train with OOS auxiliary loss
 gaussian_renormalize: True # renormalize output with Gaussian smoothing before loss
+loss_type: jss_distance_hungarian  # m/z-matched JSS; uses inst_type_loss_tol
+node_normalized_entropy_weight: 0.01  # entropy regularization on formula node predictions
 
 # ============================================================================
 # Spectrum Binning & Evaluation
@@ -167,18 +194,17 @@ gaussian_renormalize: True # renormalize output with Gaussian smoothing before l
 mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
-mol_pool_type: mean
-frag_pool_type: mean
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
-  - jss
-  - true_spec_ne   # ground truth normalized entropy — reference target
-  - pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
+  # - jss
+  # - cross_entropy
+  #- true_spec_ne   # ground truth normalized entropy — reference target
+  #- pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
 ints_transform: sqrt  # intensity transform for evaluation metrics (sqrt or log)
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -192,9 +218,8 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
-dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 200000
+dynamic_batch_sampler_max: 400000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -215,5 +240,4 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
+loss_batch_size: 32              # sub-batch size for vectorized loss

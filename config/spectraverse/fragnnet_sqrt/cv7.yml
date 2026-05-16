@@ -1,12 +1,10 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: spectraverse_fragnnet_cv7_sqrt
+wandb_name: spectraverse_fragnnet_sqrt_cv7
 wandb_group: spectraverse_fragnnet_sqrt
 wandb_tags:
 - retrieval
-- d4
-- wr00
 - fraggnn_d3
 - dynamic_sampler
 - nodemlp
@@ -15,8 +13,6 @@ wandb_tags:
 - b256          # batch size 256
 - vectorized_loss
 - lb16          # loss batch size 16
-- preload
-- preprocess
 - new_no_edges  # no edge features in fragment GNN
 - skip_extra_losses
 - binned_cosine_similarity
@@ -31,6 +27,7 @@ wandb_tags:
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
+- sqrt           # eval_bin_sqrt
 
 # ============================================================================
 # Data File Paths
@@ -72,7 +69,7 @@ frag_params:
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
   nce: True             # use normalized collision energy (NCE) as input
-  ace: False            # do not use absolute collision energy (ACE)
+  ace: True            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
   preprocess: False
   prec_type_str: False  # encode precursor type as integer index, not string
@@ -198,7 +195,7 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 150000
+dynamic_batch_sampler_max: 300000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)

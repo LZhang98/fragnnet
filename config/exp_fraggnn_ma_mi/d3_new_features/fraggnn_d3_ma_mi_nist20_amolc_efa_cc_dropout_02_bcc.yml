@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_efa
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_efa_cc_dropout_02_bcc
 wandb_tags:
 - retrieval
 - nist20
@@ -34,6 +34,10 @@ wandb_tags:
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
+- boundary_cc
+- efa
+- cc_feature_dropout
+- cc_dropout_02
 
 # ============================================================================
 # Data File Paths
@@ -51,6 +55,7 @@ num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 mol_gnn_type: GINE_EFA  # GINE + per-graph EFA linear global attention; num_heads=4 (default)
 mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
+cc_feature_dropout: 0.2 # regularize EFA full-fragment cc shortcut during training
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -63,6 +68,7 @@ frag_params:
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
     - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
+    - boundary_cc       # atoms at cut bonds; computed on-the-fly from mol graph
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
