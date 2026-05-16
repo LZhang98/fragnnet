@@ -195,7 +195,7 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 150000
+dynamic_batch_sampler_max: 300000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
