@@ -83,13 +83,14 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.path.is_dir():
-        ckpt_files = sorted(args.path.glob("*.ckpt"))
+        ckpt_files = sorted(args.path.rglob("*.ckpt"))
         if not ckpt_files:
             raise FileNotFoundError(f"No *.ckpt files found in {args.path}")
         out_dir = args.out or args.path
         out_dir.mkdir(parents=True, exist_ok=True)
         for src in ckpt_files:
-            dst = out_dir / src.name
+            dst = out_dir / src.relative_to(args.path)
+            dst.parent.mkdir(parents=True, exist_ok=True)
             _run(src, dst, args.dry_run)
     else:
         if not args.path.exists():
