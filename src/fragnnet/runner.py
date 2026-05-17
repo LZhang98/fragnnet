@@ -320,8 +320,10 @@ def log_cuda_info() -> None:
     """Log PyTorch version and CUDA device information."""
     logger = logging.getLogger(__name__)
     logger.info("PyTorch version: %s", th.__version__)
+    logger.info("CUDA_VISIBLE_DEVICES: %s", os.environ.get("CUDA_VISIBLE_DEVICES", "(not set)"))
     if th.cuda.is_available():
         logger.info("CUDA version: %s", th.version.cuda)
+        logger.info("device_count: %d", th.cuda.device_count())
         for i in range(th.cuda.device_count()):
             props = th.cuda.get_device_properties(i)
             total_gb = props.total_memory / 1024**3
