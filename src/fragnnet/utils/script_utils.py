@@ -219,12 +219,12 @@ def setup_device(
             Configured torch device
     """
     if device is None:
-        th_device = (
-            th.device("cuda:0") if config_d.get("accelerator") == "gpu" else th.device("cpu")
-        )
+        if config_d.get("accelerator") == "gpu" and th.cuda.is_available():
+            th_device = th.device("cuda")
+        else:
+            th_device = th.device("cpu")
     elif not th.cuda.is_available() and device != "cpu":
-        print("Warning: CUDA not available, falling back to CPU")
-        th_device = th.device("cpu")
+        raise RuntimeError(f"Requested device '{device}' but CUDA is not available.")
     else:
         th_device = th.device(device)
 
