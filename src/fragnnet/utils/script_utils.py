@@ -220,6 +220,12 @@ def setup_device(
     """
     if device is None:
         if config_d.get("accelerator") == "gpu" and th.cuda.is_available():
+            n_devices = th.cuda.device_count()
+            if n_devices != 1:
+                print(
+                    f"Warning: {n_devices} CUDA devices visible; using cuda. "
+                    "Set CUDA_VISIBLE_DEVICES to a single GPU or MIG UUID to be explicit."
+                )
             th_device = th.device("cuda")
         else:
             th_device = th.device("cpu")
@@ -1947,7 +1953,9 @@ def batch_filter_by_peak_intensity(
 
         if filter_stats is not None:
             n_peaks_after = int(valid_peak_mask.sum().item())
-            batch_size_local = int(pred_batch_idxs.max().item()) + 1 if len(pred_batch_idxs) > 0 else 0
+            batch_size_local = (
+                int(pred_batch_idxs.max().item()) + 1 if len(pred_batch_idxs) > 0 else 0
+            )
             before_counts = th.bincount(pred_batch_idxs, minlength=batch_size_local)
             after_counts = th.bincount(valid_pred_batch_idx, minlength=batch_size_local)
             filter_stats["n_peaks_before"] = filter_stats.get("n_peaks_before", 0) + n_peaks_before
