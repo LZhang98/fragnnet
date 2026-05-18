@@ -687,6 +687,15 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         # Keep groups as plain Python lists — no tensor conversion needed since we
         # access them by iteration, not by fancy indexing.
 
+        # Convert group candidate lists to numpy arrays so callers/tests can
+        # call `.tolist()` and iteration yields integer indices usable as
+        # numpy array indices. Numpy arrays keep iteration semantics while
+        # avoiding PyTorch-tensor indexing issues with numpy masks.
+        for k in list(self._group1.keys()):
+            self._group1[k] = np.array(self._group1[k], dtype=np.int64)
+        for k in list(self._group2.keys()):
+            self._group2[k] = np.array(self._group2[k], dtype=np.int64)
+
         # Convert metadata to numpy array for vectorised column reads
         self._data_meta = np.array(self._data_meta, dtype=np.int32)
 
