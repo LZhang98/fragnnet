@@ -360,6 +360,75 @@ class TestBatchedFilterFunc:
         )
         assert th.equal(out_batch, th.tensor([0, 1]))
 
+    def test_top_k_peaks_applies_per_batch_item(self):
+        """top_k_peaks keeps the strongest peaks independently for each spectrum."""
+        mzs = th.tensor([100.0, 200.0, 300.0, 400.0, 500.0])
+        ints = th.tensor([1.0, 4.0, 2.0, 10.0, 3.0])
+        batch_idxs = th.tensor([0, 0, 0, 1, 1])
+        out_mzs, out_ints, out_batch = batched_filter_func(
+            mzs,
+            ints,
+            batch_idxs,
+            ints_thresh=0.0,
+            mz_max=0.0,
+            top_k_peaks=2,
+        )
+        assert th.equal(out_mzs, th.tensor([200.0, 300.0, 400.0, 500.0]))
+        assert th.equal(out_ints, th.tensor([4.0, 2.0, 10.0, 3.0]))
+        assert th.equal(out_batch, th.tensor([0, 0, 1, 1]))
+
+    def test_negative_top_k_peaks_disables_top_k_filter(self):
+        """top_k_peaks=-1 is the config default and leaves peak counts unchanged."""
+        mzs = th.tensor([100.0, 200.0, 300.0])
+        ints = th.tensor([1.0, 4.0, 2.0])
+        batch_idxs = th.tensor([0, 0, 0])
+        out_mzs, out_ints, out_batch = batched_filter_func(
+            mzs,
+            ints,
+            batch_idxs,
+            ints_thresh=0.0,
+            mz_max=0.0,
+            top_k_peaks=-1,
+        )
+        assert th.equal(out_mzs, mzs)
+        assert th.equal(out_ints, ints)
+        assert th.equal(out_batch, batch_idxs)
+
+    def test_drop_min_int_peak_applies_per_batch_item(self):
+        """drop_min_int_peak removes one weakest peak from each non-singleton spectrum."""
+        mzs = th.tensor([100.0, 200.0, 300.0, 400.0, 500.0])
+        ints = th.tensor([1.0, 4.0, 2.0, 10.0, 3.0])
+        batch_idxs = th.tensor([0, 0, 0, 1, 1])
+        out_mzs, out_ints, out_batch = batched_filter_func(
+            mzs,
+            ints,
+            batch_idxs,
+            ints_thresh=0.0,
+            mz_max=0.0,
+            drop_min_int_peak=True,
+        )
+        assert th.equal(out_mzs, th.tensor([200.0, 300.0, 400.0]))
+        assert th.equal(out_ints, th.tensor([4.0, 2.0, 10.0]))
+        assert th.equal(out_batch, th.tensor([0, 0, 1]))
+
+    def test_rank_filters_run_after_threshold_filter(self):
+        """Threshold filtering happens before weakest-peak and top-k filtering."""
+        mzs = th.tensor([100.0, 200.0, 300.0, 400.0])
+        ints = th.tensor([0.5, 2.0, 5.0, 7.0])
+        batch_idxs = th.tensor([0, 0, 0, 0])
+        out_mzs, out_ints, out_batch = batched_filter_func(
+            mzs,
+            ints,
+            batch_idxs,
+            ints_thresh=1.0,
+            mz_max=0.0,
+            drop_min_int_peak=True,
+            top_k_peaks=1,
+        )
+        assert th.equal(out_mzs, th.tensor([400.0]))
+        assert th.equal(out_ints, th.tensor([7.0]))
+        assert th.equal(out_batch, th.tensor([0]))
+
 
 class TestBatchedBinFunc:
     """Tests for batched_bin_func — batched histogram binning.

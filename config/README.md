@@ -153,6 +153,41 @@ ff_output_map_size: 256  # Low-rank approximation
 ff_output_activation: relu
 ```
 
+### Target Spectrum Filtering
+
+These options are top-level model hyperparameters handled in `SpectrumPL.preproc_spec()`.
+They affect true/target spectra during loss and metric preprocessing; they do not rewrite
+the dataset pickle and they do not filter predicted spectra.
+
+| Name | Default | Scope | Description |
+|------|---------|-------|-------------|
+| `target_ints_thresh` | `0.0` | train true + eval true | Removes target peaks with intensity `<= target_ints_thresh`. This is the clearer replacement for legacy `ints_thresh`. |
+| `ints_thresh` | `0.0` | fallback only | Legacy name used when `target_ints_thresh` is absent. Prefer `target_ints_thresh` in new configs. |
+| `train_target_top_k_peaks` | `-1` | train true | If positive, keeps only the top-k highest-intensity target peaks per spectrum. `-1` disables it. |
+| `train_target_drop_min_int_peak` | `False` | train true | Drops exactly one weakest target peak per spectrum when more than one peak remains. |
+| `eval_target_apply_train_rank_filters` | `False` | eval true | When `True`, eval true spectra also apply `train_target_top_k_peaks` and `train_target_drop_min_int_peak`. `target_ints_thresh` already applies to eval true spectra. |
+| `mz_max` | model-specific | train true + eval true | Removes target peaks with `m/z >= mz_max` and also controls bin/loss geometry. |
+
+Filtering order for true spectra is:
+
+```text
+target_ints_thresh / mz_max -> train rank filters -> bin/transform/normalize
+```
+
+Example:
+
+```yaml
+target_ints_thresh: 0.0
+train_target_top_k_peaks: 20
+train_target_drop_min_int_peak: False
+eval_target_apply_train_rank_filters: False
+```
+
+With the example above, training loss sees only the top 20 target peaks after the standard
+threshold and m/z filters. Evaluation metrics still compare against the normal thresholded
+target spectra. Set `eval_target_apply_train_rank_filters: True` only when you want metrics
+computed against the same rank-filtered target definition.
+
 ### Evaluation Metrics (`auxiliary_scores`)
 
 Controls which similarity/quality metrics are computed during evaluation.

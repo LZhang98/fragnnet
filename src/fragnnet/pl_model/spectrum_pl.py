@@ -237,10 +237,23 @@ class SpectrumPL(L.LightningModule):
 
         def _filter_func(mzs, ints, batch_idxs):
             return batched_filter_func(
-                mzs, ints, batch_idxs, self.hparams.ints_thresh, self.hparams.mz_max
+                mzs, ints, batch_idxs, self.hparams["target_ints_thresh"], self.hparams.mz_max
             )
 
         self.filter_func = _filter_func
+
+        def _target_rank_filter_func(mzs, ints, batch_idxs):
+            return batched_filter_func(
+                mzs,
+                ints,
+                batch_idxs,
+                ints_thresh=-float("inf"),
+                mz_max=0.0,
+                top_k_peaks=self.hparams["train_target_top_k_peaks"],
+                drop_min_int_peak=self.hparams["train_target_drop_min_int_peak"],
+            )
+
+        self.target_rank_filter_func = _target_rank_filter_func
 
         def _bin_func(mzs, ints, batch_idxs):
             agg = "sum" if self.hparams.sum_ints else "amax"
@@ -1068,6 +1081,7 @@ class SpectrumPL(L.LightningModule):
         spec_ints,
         spec_batch_idxs,
         filter_spec=False,
+        target_rank_filter_spec=False,
         bin_spec=False,
         transform_spec=False,
         normalize_spec=False,
@@ -1081,6 +1095,10 @@ class SpectrumPL(L.LightningModule):
         if filter_spec:
             # filter
             spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
+                spec_mzs, spec_ints, spec_batch_idxs
+            )
+        if target_rank_filter_spec:
+            spec_mzs, spec_ints, spec_batch_idxs = self.target_rank_filter_func(
                 spec_mzs, spec_ints, spec_batch_idxs
             )
         if bin_spec:
@@ -1130,6 +1148,7 @@ class SpectrumPL(L.LightningModule):
                 spec_ints,
                 spec_batch_idxs,
                 filter_spec=True,
+                target_rank_filter_spec=True,
                 bin_spec=self.binned_loss,
                 transform_spec=True,
                 normalize_spec=True,
@@ -1145,6 +1164,10 @@ class SpectrumPL(L.LightningModule):
                 spec_ints,
                 spec_batch_idxs,
                 filter_spec=True,
+                target_rank_filter_spec=self.hparams.get(
+                    "eval_target_apply_train_rank_filters",
+                    self.hparams.get("eval_target_apply_train_peak_filters", False),
+                ),
                 bin_spec=False,
                 transform_spec=False,
                 normalize_spec=True,

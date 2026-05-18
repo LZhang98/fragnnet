@@ -344,6 +344,8 @@ def batched_filter_func(
     batch_idxs: th.Tensor,
     ints_thresh: float,
     mz_max: float,
+    top_k_peaks: int | None = None,
+    drop_min_int_peak: bool = False,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
     """bacthed filter func for filter spectra
 
@@ -353,6 +355,9 @@ def batched_filter_func(
         batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.
         ints_thresh (float): intesnity thresh hold
         mz_max (float): max m/z, if mz_max <= 0, mz_max filter will be ignored
+        top_k_peaks: If positive, keep only the k highest-intensity peaks per spectrum.
+            None or a negative value disables top-k filtering.
+        drop_min_int_peak: If True, drop the weakest peak per spectrum when more than one peak remains.
 
     Returns:
         Tuple[th.Tensor,th.Tensor,th.Tensor]: mz tensoer, intensity tensor, batch_idxs tensor
@@ -367,6 +372,36 @@ def batched_filter_func(
     mzs = mzs[both_mask]
     ints = ints[both_mask]
     batch_idxs = batch_idxs[both_mask]
+
+    if top_k_peaks is not None and top_k_peaks == 0:
+        raise ValueError(f"top_k_peaks must be positive or None, got {top_k_peaks}")
+    if top_k_peaks is not None and top_k_peaks < 0:
+        top_k_peaks = None
+
+    if (top_k_peaks is not None or drop_min_int_peak) and ints.numel() > 0:
+        keep_mask = th.ones(ints.shape[0], dtype=th.bool, device=ints.device)
+        for batch_idx in th.unique(batch_idxs, sorted=True):
+            idxs = th.nonzero(batch_idxs == batch_idx, as_tuple=False).flatten()
+            if idxs.numel() == 0:
+                continue
+
+            local_keep = th.ones(idxs.shape[0], dtype=th.bool, device=ints.device)
+            if drop_min_int_peak and idxs.numel() > 1:
+                local_keep[th.argmin(ints[idxs])] = False
+
+            kept_local = th.nonzero(local_keep, as_tuple=False).flatten()
+            if top_k_peaks is not None and kept_local.numel() > top_k_peaks:
+                local_ints = ints[idxs[kept_local]]
+                _, top_local = th.topk(local_ints, k=top_k_peaks)
+                top_keep = th.zeros_like(local_keep)
+                top_keep[kept_local[top_local]] = True
+                local_keep = top_keep
+
+            keep_mask[idxs] = local_keep
+
+        mzs = mzs[keep_mask]
+        ints = ints[keep_mask]
+        batch_idxs = batch_idxs[keep_mask]
     return mzs, ints, batch_idxs
 
 

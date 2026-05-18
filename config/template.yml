@@ -334,7 +334,13 @@ auxiliary_scores:
   - jss_hun
   - true_oos_prob
   - true_oos_e
-ints_thresh: 0.0
+# Target/true-spectrum filtering during SpectrumPL preprocessing.
+# target_ints_thresh applies to true spectra for both training and evaluation.
+# ints_thresh is the legacy name and is still supported as a fallback.
+target_ints_thresh: 0.0
+train_target_top_k_peaks: -1
+train_target_drop_min_int_peak: False
+eval_target_apply_train_rank_filters: False
 mz_max: 1500.0  # this is also used for bin-specific seondary loss
 mz_bin_res: 0.01 # this is also used for bin-specific seondary loss
 eval_mz_bin_res:
