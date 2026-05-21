@@ -2,6 +2,7 @@ from typing import Any
 
 import lightning as L
 import torch as th
+import torch.nn as nn
 import torch.nn.functional as F
 
 from fragnnet.model import MolEncoder, SpectrumEncoder
@@ -33,6 +34,29 @@ class SpectrumMolClipPL(L.LightningModule):
                 "spectrum_encoder_params.hidden_dim must be divisible by "
                 f"num_heads ({spec_hidden_dim} vs {spec_num_heads})"
             )
+
+        # --- Spectrum-side conditioning embedders ---
+        # These mirror the mol encoder's metadata conditioning so both modalities
+        # see the same experimental context (CE, instrument, frag mode).
+        # Sizes default to 0 (disabled) for backward compatibility.
+        spec_ce_embed_size = int(spec_encoder_params.get("spec_ce_embed_size", 0))
+        spec_inst_embed_size = int(spec_encoder_params.get("spec_inst_embed_size", 0))
+        spec_frag_mode_embed_size = int(spec_encoder_params.get("spec_frag_mode_embed_size", 0))
+        self._spec_ce_embed_size = spec_ce_embed_size
+        self._spec_inst_embed_size = spec_inst_embed_size
+        self._spec_frag_mode_embed_size = spec_frag_mode_embed_size
+
+        if spec_ce_embed_size > 0:
+            self.spec_ce_linear = nn.Linear(1, spec_ce_embed_size)
+        if spec_inst_embed_size > 0:
+            num_inst = len(self.hparams.spec_params["inst_types"])
+            self.spec_inst_embed = nn.Embedding(num_inst + 1, spec_inst_embed_size)
+        if spec_frag_mode_embed_size > 0:
+            num_frag = len(self.hparams.spec_params["frag_modes"])
+            self.spec_frag_mode_embed = nn.Embedding(num_frag + 1, spec_frag_mode_embed_size)
+
+        spec_cond_dim = spec_ce_embed_size + spec_inst_embed_size + spec_frag_mode_embed_size
+        augmented_input_dim = spec_input_dim + spec_cond_dim
 
         # Keep the molecule encoder under `model.*` so CLIP checkpoints can be
         # loaded by FraGNNetPL's existing finetune path. FraGNNetPL strips the
@@ -80,7 +104,7 @@ class SpectrumMolClipPL(L.LightningModule):
 
         self.spec_encoder = SpectrumEncoder(
             spectrum_encoder_type=spec_encoder_params.get("encoder_type", "set_transformer"),
-            input_dim=spec_input_dim,
+            input_dim=augmented_input_dim,
             hidden_dim=spec_hidden_dim,
             output_dim=self.clip_embed_dim,
             num_heads=spec_num_heads,
@@ -99,6 +123,7 @@ class SpectrumMolClipPL(L.LightningModule):
         ints = batch["spec_ints"].float().clamp_min(0.0)
         batch_idxs = batch["spec_batch_idxs"].long()
         batch_size = int(batch["batch_size"].item())
+        mz_max = float(self.hparams.mz_max)
 
         if self.clip_intensity_transform == "sqrt":
             ints = th.sqrt(ints)
@@ -118,8 +143,68 @@ class SpectrumMolClipPL(L.LightningModule):
             include_self=True,
         )
         ints = ints / max_ints[batch_idxs].clamp_min(1e-12)
-        mzs = mzs / float(self.hparams.mz_max)
-        return th.stack([mzs, ints], dim=-1)
+        mzs_norm = mzs / mz_max
+
+        # Precursor-relative features: broadcast spectrum-level prec_mz to each peak.
+        # neutral_loss_norm encodes how far below the precursor each peak sits (signed,
+        # so peaks above precursor get a negative value — rare but informative).
+        # prec_norm gives the absolute scale of the molecule, shared across all peaks.
+        prec_mz_per_spec = batch["spec_prec_mz"].float().squeeze(-1)  # (batch_size,)
+        prec_mz_per_peak = prec_mz_per_spec[batch_idxs]  # (total_peaks,)
+        prec_norm = prec_mz_per_peak / mz_max
+        neutral_loss_norm = (prec_mz_per_peak - mzs) / mz_max
+
+        return th.stack([mzs_norm, ints, neutral_loss_norm, prec_norm], dim=-1)
+
+    def _build_conditioned_peak_features(self, batch: dict[str, Any]) -> th.Tensor:
+        """Build per-peak feature tensor with optional CE/inst/frag-mode conditioning.
+
+        Each conditioning vector is spectrum-level (one per spectrum) and is broadcast
+        to every peak in that spectrum, then concatenated with (mz, intensity).
+
+        Args:
+            batch: Batch dictionary from the dataloader.
+
+        Returns:
+            Peak features of shape (total_peaks, 2 + cond_dim).
+        """
+        peak_x = self._build_peak_features(batch)  # (total_peaks, 2)
+        batch_idxs = batch["spec_batch_idxs"].long()
+        batch_size = int(batch["batch_size"].item())
+
+        parts = [peak_x]
+
+        if self._spec_ce_embed_size > 0:
+            use_nce = self.hparams.get("use_nce", self.hparams.spec_params.get("nce", False))
+            ce = batch.get("spec_nce") if use_nce else None
+            ce = ce if ce is not None else batch.get("spec_ce")
+            ce_batch_idxs = batch.get("spec_nce_batch_idxs") if use_nce else None
+            ce_batch_idxs = (
+                ce_batch_idxs if ce_batch_idxs is not None else batch.get("spec_ce_batch_idxs")
+            )
+            nce_mean = float(self.hparams.nce_mean)
+            nce_std = float(self.hparams.nce_std)
+            ce_f = ce.float()
+            missing = ce_f < 0
+            ce_norm = ((ce_f - nce_mean) / nce_std).masked_fill(missing, 0.0).unsqueeze(-1)
+            ce_embed = self.spec_ce_linear(ce_norm)  # (n_ce_vals, spec_ce_embed_size)
+            ce_embed = ce_embed.masked_fill(missing.unsqueeze(-1), 0.0)
+            # Reduce multiple CE values per spectrum to one via mean
+            idx_2d = ce_batch_idxs.unsqueeze(1).expand_as(ce_embed)
+            ce_per_spec = scatter_reduce(
+                ce_embed, idx_2d, reduce="mean", dim_size=batch_size, include_self=False
+            )
+            parts.append(ce_per_spec[batch_idxs])
+
+        if self._spec_inst_embed_size > 0:
+            inst_type = batch["spec_inst_type"]
+            parts.append(self.spec_inst_embed(inst_type)[batch_idxs])
+
+        if self._spec_frag_mode_embed_size > 0:
+            frag_mode = batch["spec_frag_mode"]
+            parts.append(self.spec_frag_mode_embed(frag_mode)[batch_idxs])
+
+        return th.cat(parts, dim=-1) if len(parts) > 1 else parts[0]
 
     def forward(self, batch: dict[str, Any]) -> tuple[th.Tensor, th.Tensor]:
         ce = batch.get("spec_ce")
@@ -139,7 +224,7 @@ class SpectrumMolClipPL(L.LightningModule):
             frag_mode=batch.get("spec_frag_mode"),
         )
 
-        peak_x = self._build_peak_features(batch)
+        peak_x = self._build_conditioned_peak_features(batch)
         spec_embed = self.spec_encoder(peak_x, batch_idx=batch["spec_batch_idxs"])
 
         return F.normalize(mol_embed, dim=-1), F.normalize(spec_embed, dim=-1)

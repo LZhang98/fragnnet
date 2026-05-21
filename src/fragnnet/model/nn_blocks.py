@@ -948,19 +948,176 @@ class SpecFFN(nn.Module):
         return pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs
 
 
-class SetTransformer(nn.Module):
-    """
-    Set Transformer implementation for processing sets of elements.
-
+def _pack_variable_length(
+    x: th.Tensor, batch_idx: th.Tensor
+) -> tuple[th.Tensor, th.Tensor]:
+    """Pack flat (total, dim) into padded (batch, max_len, dim) with boolean mask.
 
     Args:
-        input_dim (int): Dimension of the input features.
-        hidden_dim (int): Dimension of the hidden layers.
-        output_dim (int): Dimension of the output embedding.
-        num_heads (int): Number of attention heads.
-        num_inds (int): Number of inducing points.
-        num_blocks (int): Number of Set Transformer blocks.
-        dropout (float): Dropout rate for regularization.
+        x: Flat feature tensor of shape (total_elements, dim).
+        batch_idx: Batch index per element of shape (total_elements,).
+
+    Returns:
+        x_padded: Padded tensor of shape (batch_size, max_len, dim).
+        mask: Boolean mask of shape (batch_size, max_len), True = padding position.
+    """
+    batch_size = int(batch_idx.max().item()) + 1
+    set_sizes = batch_idx.bincount(minlength=batch_size)  # (batch_size,)
+    max_size = int(set_sizes.max().item())
+
+    cum_starts = th.cat(
+        [th.zeros(1, dtype=th.long, device=x.device), set_sizes.cumsum(0)[:-1]]
+    )
+    local_pos = th.arange(x.shape[0], device=x.device) - cum_starts[batch_idx]
+
+    x_padded = x.new_zeros(batch_size, max_size, x.shape[-1])
+    x_padded[batch_idx, local_pos] = x
+
+    arange = th.arange(max_size, device=x.device).unsqueeze(0)
+    mask = arange >= set_sizes.unsqueeze(1)  # True = padding
+    return x_padded, mask
+
+
+def _unpack_variable_length(x_padded: th.Tensor, batch_idx: th.Tensor) -> th.Tensor:
+    """Inverse of _pack_variable_length: strips padding, returns (total, dim).
+
+    Args:
+        x_padded: Padded tensor of shape (batch_size, max_len, dim).
+        batch_idx: Original batch indices of shape (total_elements,).
+
+    Returns:
+        Flat tensor of shape (total_elements, dim).
+    """
+    batch_size = x_padded.shape[0]
+    set_sizes = batch_idx.bincount(minlength=batch_size)
+    return th.cat([x_padded[i, : int(set_sizes[i].item())] for i in range(batch_size)], dim=0)
+
+
+class _MAB(nn.Module):
+    """Multi-head Attention Block: Q attends to KV with residual + LayerNorm + FFN.
+
+    Args:
+        dim: Feature dimension (Q, K, V all share the same dim).
+        num_heads: Number of attention heads.
+        dropout: Dropout applied inside attention and after the attention sublayer.
+    """
+
+    def __init__(self, dim: int, num_heads: int, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.attn = nn.MultiheadAttention(dim, num_heads, dropout=dropout, batch_first=True)
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim * 2, dim),
+        )
+        self.drop = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        Q: th.Tensor,
+        KV: th.Tensor,
+        kv_padding_mask: th.Tensor | None = None,
+    ) -> th.Tensor:
+        """Args:
+            Q: Query tensor of shape (B, Nq, dim).
+            KV: Key/value tensor of shape (B, Nkv, dim).
+            kv_padding_mask: Boolean mask (B, Nkv), True = padding (ignored).
+
+        Returns:
+            Updated query tensor of shape (B, Nq, dim).
+        """
+        H, _ = self.attn(Q, KV, KV, key_padding_mask=kv_padding_mask)
+        Q = self.norm1(Q + self.drop(H))
+        Q = self.norm2(Q + self.ffn(Q))
+        return Q
+
+
+class _ISAB(nn.Module):
+    """Induced Set Attention Block (ISAB) from the Set Transformer paper.
+
+    Each block runs two MABs:
+      H = MAB(I, X)     — inducing points compress the input set
+      out = MAB(X, H)   — input reads back from the compressed representation
+
+    Args:
+        dim: Feature dimension.
+        num_heads: Number of attention heads.
+        num_inds: Number of learnable inducing points.
+        dropout: Dropout rate.
+    """
+
+    def __init__(self, dim: int, num_heads: int, num_inds: int, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.inducing_points = nn.Parameter(th.randn(1, num_inds, dim))
+        self.mab_i = _MAB(dim, num_heads, dropout)  # I <- X
+        self.mab_x = _MAB(dim, num_heads, dropout)  # X <- H
+
+    def forward(
+        self, X: th.Tensor, x_padding_mask: th.Tensor | None = None
+    ) -> th.Tensor:
+        """Args:
+            X: Input of shape (B, N, dim).
+            x_padding_mask: Boolean mask (B, N), True = padding.
+
+        Returns:
+            Updated X of shape (B, N, dim).
+        """
+        B = X.shape[0]
+        I = self.inducing_points.expand(B, -1, -1)
+        H = self.mab_i(I, X, kv_padding_mask=x_padding_mask)  # (B, num_inds, dim)
+        return self.mab_x(X, H)  # (B, N, dim) — H has no padding
+
+
+class _PMA(nn.Module):
+    """Pooling by Multi-head Attention (PMA) with k learned seed vectors.
+
+    Args:
+        dim: Feature dimension.
+        num_heads: Number of attention heads.
+        num_seeds: Number of output vectors (1 produces a single set embedding).
+        dropout: Dropout rate.
+    """
+
+    def __init__(
+        self, dim: int, num_heads: int, num_seeds: int = 1, dropout: float = 0.1
+    ) -> None:
+        super().__init__()
+        self.seeds = nn.Parameter(th.randn(1, num_seeds, dim))
+        self.mab = _MAB(dim, num_heads, dropout)
+
+    def forward(self, X: th.Tensor) -> th.Tensor:
+        """Args:
+            X: Input of shape (B, N, dim).
+
+        Returns:
+            Pooled representation of shape (B, num_seeds, dim).
+        """
+        return self.mab(self.seeds.expand(X.shape[0], -1, -1), X)
+
+
+class SetTransformer(nn.Module):
+    """Set Transformer with ISAB encoder blocks and PMA pooling.
+
+    Implements the architecture from "Set Transformer: A Framework for
+    Attention-based Permutation-Invariant Neural Networks" (Lee et al., 2019).
+    Each ISAB block runs two cross-attention MABs and achieves O(N·m) complexity
+    where m = num_inds. Final pooling uses PMA (learned seed vectors) instead of
+    mean pooling.
+
+    Args:
+        input_dim: Feature dimension entering the ISAB blocks (after any external
+            input projection).
+        hidden_dim: Hidden dimension used in the output MLP projector.
+        output_dim: Dimension of the output embedding.
+        num_heads: Number of attention heads (must divide input_dim).
+        num_inds: Number of inducing points per ISAB block.
+        num_blocks: Number of ISAB blocks.
+        dropout: Dropout rate applied inside attention and FFN sublayers.
+        return_nodes: If True, return per-element outputs of shape
+            (total_elements, output_dim); if False, return per-set embeddings.
     """
 
     def __init__(
@@ -972,120 +1129,52 @@ class SetTransformer(nn.Module):
         num_inds: int = 32,
         num_blocks: int = 2,
         dropout: float = 0.1,
-        return_nodes: bool = False,  # If True, return per-node outputs; if False, return per-set outputs
+        return_nodes: bool = False,
     ) -> None:
         super().__init__()
-
         self.return_nodes = return_nodes
-        self.inducing_points = nn.Parameter(th.randn(num_inds, input_dim))
-        self.attention_blocks = nn.ModuleList(
-            [
-                nn.MultiheadAttention(
-                    embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True
-                )
-                for _ in range(num_blocks)
-            ]
+        self.isab_blocks = nn.ModuleList(
+            [_ISAB(input_dim, num_heads, num_inds, dropout) for _ in range(num_blocks)]
         )
-
-        # Decoder: maps inducing points back to nodes (only used if return_nodes=True)
         if return_nodes:
-            self.decoder_attn = nn.MultiheadAttention(
-                embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True
-            )
-            self.decoder_fc = nn.Sequential(
-                nn.Linear(input_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(hidden_dim, output_dim),
-            )
+            self.out_proj = nn.Linear(input_dim, output_dim)
         else:
-            self.fc = nn.Sequential(
+            self.pma = _PMA(input_dim, num_heads, num_seeds=1, dropout=dropout)
+            self.out_proj = nn.Sequential(
                 nn.Linear(input_dim, hidden_dim),
-                nn.ReLU(),
+                nn.GELU(),
                 nn.Dropout(dropout),
                 nn.Linear(hidden_dim, output_dim),
             )
 
-    def forward(self, x, batch_idx=None):
-        """
-        Forward pass for the Set Transformer.
+    def forward(self, x: th.Tensor, batch_idx: th.Tensor | None = None) -> th.Tensor:
+        """Forward pass for the Set Transformer.
+
         Args:
-            x (Tensor): Input tensor.
-                - If batch_idx is None: shape (batch_size, set_size, input_dim) - fixed size sets
-                - If batch_idx is provided: shape (total_elements, input_dim) - variable size sets
-            # Input: (total_elements=85, input_dim=128)
-            # batch_idx: [0,0,0,...,1,1,1,...,2,2,...,3,3,3,...]  (85 elements total)
-            # Set 0: 25 elements, Set 1: 20 elements, Set 2: 15 elements, Set 3: 25 elementss
-            batch_idx (Tensor, optional): Batch indices for variable-sized sets, shape (total_elements,).
-                Each element indicates which set/graph the element belongs to.
+            x: Input tensor.
+                - Fixed-size path (batch_idx is None): shape (B, N, input_dim).
+                - Variable-size path (batch_idx provided): shape (total, input_dim).
+            batch_idx: Batch index per element of shape (total,). Required for
+                variable-size sets; omit for uniformly-sized batches.
 
         Returns:
-            Tensor: Encoded set representation of shape (batch_size, output_dim).
+            - return_nodes=False: set embeddings of shape (B, output_dim).
+            - return_nodes=True: per-element outputs of shape (total, output_dim).
         """
         if batch_idx is None:
-            # Fixed-size sets: (batch_size, set_size, input_dim)
-            batch_size, set_size, _ = x.size()
-            inducing_points = self.inducing_points.unsqueeze(0).expand(
-                batch_size, -1, -1
-            )  # (B, num_inds, input_dim)
-
-            # SetTransformer architecture:
-            # 1. Encoder: inputs attend to inducing points
-            h, _ = self.attention_blocks[0](inducing_points, x, x)  # (B, num_inds, input_dim)
-
-            # 2. Additional layers: inducing points attend to themselves
-            for i in range(1, len(self.attention_blocks)):
-                h, _ = self.attention_blocks[i](h, h, h)
-
+            for isab in self.isab_blocks:
+                x = isab(x)
             if self.return_nodes:
-                # 3. Decoder: map inducing points back to per-node outputs
-                x_decoded, _ = self.decoder_attn(x, h, h)  # (B, set_size, input_dim)
-                x_out = self.decoder_fc(x_decoded)  # (B, set_size, output_dim)
-                return x_out
-            else:
-                # 3. Aggregate: mean over inducing points for set-level output
-                x = h.mean(dim=1)  # (B, input_dim)
-                return self.fc(x)
-        else:
-            # Variable-size sets: (total_elements, input_dim) with batch_idx
-            # Pad to fixed size and use key_padding_mask for a single batched attention call.
-            num_batches = int(batch_idx.max().item()) + 1
-            set_sizes = [int((batch_idx == i).sum().item()) for i in range(num_batches)]
-            max_size = max(set_sizes)
-            input_dim = x.shape[-1]
+                return self.out_proj(x)
+            return self.out_proj(self.pma(x).squeeze(1))
 
-            # Build padded input (num_batches, max_size, input_dim) and padding mask.
-            # key_padding_mask: True = position is padding (ignored by attention).
-            x_padded = x.new_zeros(num_batches, max_size, input_dim)
-            key_padding_mask = th.ones(num_batches, max_size, dtype=th.bool, device=x.device)
-            for i in range(num_batches):
-                idx_i = (batch_idx == i).nonzero(as_tuple=True)[0]
-                x_padded[i, : set_sizes[i]] = x[idx_i]
-                key_padding_mask[i, : set_sizes[i]] = False
+        x_padded, mask = _pack_variable_length(x, batch_idx)
+        for isab in self.isab_blocks:
+            x_padded = isab(x_padded, x_padding_mask=mask)
 
-            inducing_points = self.inducing_points.unsqueeze(0).expand(
-                num_batches, -1, -1
-            )  # (num_batches, num_inds, input_dim)
-
-            # Encoder: inducing points attend over inputs (masked padding ignored).
-            h, _ = self.attention_blocks[0](
-                inducing_points, x_padded, x_padded, key_padding_mask=key_padding_mask
-            )  # (num_batches, num_inds, input_dim)
-
-            for i in range(1, len(self.attention_blocks)):
-                h, _ = self.attention_blocks[i](h, h, h)
-
-            if self.return_nodes:
-                # Decoder: original inputs attend over encoded inducing points.
-                x_decoded, _ = self.decoder_attn(
-                    x_padded, h, h
-                )  # (num_batches, max_size, input_dim)
-                x_decoded = self.decoder_fc(x_decoded)  # (num_batches, max_size, output_dim)
-                # Strip padding and concatenate back to (total_elements, output_dim).
-                return th.cat([x_decoded[i, : set_sizes[i]] for i in range(num_batches)], dim=0)
-            else:
-                x_agg = h.mean(dim=1)  # (num_batches, input_dim)
-                return self.fc(x_agg)
+        if self.return_nodes:
+            return _unpack_variable_length(self.out_proj(x_padded), batch_idx)
+        return self.out_proj(self.pma(x_padded).squeeze(1))
 
 
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):

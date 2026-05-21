@@ -1229,34 +1229,24 @@ def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
     """
     Compute the CLIP contrastive loss between spectrum and molecule embeddings.
 
+    Embeddings must be L2-normalized before calling this function (e.g. via
+    F.normalize). The dot product then equals cosine similarity.
+
     Args:
-        spectrum_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
-        mol_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
-        temperature: scalar, temsperature parameter for scaling logits
+        spectrum_embeddings: torch.Tensor of shape [batch_size, embedding_dim], L2-normalized.
+        mol_embeddings: torch.Tensor of shape [batch_size, embedding_dim], L2-normalized.
+        temperature: scalar temperature parameter for scaling logits.
 
     Returns:
         loss: scalar, the symmetric contrastive loss
     """
+    logits_per_spectrum = spectrum_embeddings @ mol_embeddings.t() / temperature
+    logits_per_mol = logits_per_spectrum.t()
 
-    # Normalize embeddings to unit length
-    spectrum_embeddings = spectrum_embeddings / spectrum_embeddings.norm(dim=1, keepdim=True)
-    mol_embeddings = mol_embeddings / mol_embeddings.norm(dim=1, keepdim=True)
-
-    # Compute cosine similarity matrix (logits)
-    # this is equivalent to computing the cosine similarity for each pair.
-    logits_per_specturm = (
-        spectrum_embeddings @ mol_embeddings.t() / temperature
-    )  # [batch_size, batch_size]
-    logits_per_mol = logits_per_specturm.t()  # [batch_size, batch_size]
-
-    # Target labels are the indices of the diagonal
     batch_size = spectrum_embeddings.size(0)
-    labels = th.arange(batch_size).to(spectrum_embeddings.device)
+    labels = th.arange(batch_size, device=spectrum_embeddings.device)
 
-    # Compute cross-entropy loss in both directions
-    loss_i2t = F.cross_entropy(logits_per_specturm, labels)
-    loss_t2i = F.cross_entropy(logits_per_mol, labels)
-    loss = (loss_i2t + loss_t2i) / 2
+    loss = (F.cross_entropy(logits_per_spectrum, labels) + F.cross_entropy(logits_per_mol, labels)) / 2
     return loss
 
 

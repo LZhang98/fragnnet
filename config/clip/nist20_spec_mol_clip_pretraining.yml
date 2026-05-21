@@ -70,6 +70,19 @@ spec_params:
 mol_params:
   smiles: False
   pyg: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+  pyg_pe_embed_k: 0
+  pyg_bigraph: True
   preprocess: True
 
 # ============================================================================
@@ -80,14 +93,20 @@ clip_embed_dim: 256
 clip_intensity_transform: sqrt
 spectrum_encoder_params:
   encoder_type: set_transformer
-  input_dim: 2
+  input_dim: 4          # (mz, intensity, neutral_loss, prec_scale) — conditioning dims added automatically
   hidden_dim: 256
   embed_dim: 256
-  num_layers: 2
+  num_layers: 4         # increased from 2
   num_heads: 4
-  num_inds: 32
+  num_inds: 64          # increased from 32
   dropout: 0.1
   normalization: layer
+  # Spectrum-side conditioning (mirrors mol encoder metadata).
+  # The spectrum encoder sees the same experimental context as the mol encoder,
+  # eliminating the asymmetry where mol embeds CE/inst/frag_mode but spec does not.
+  spec_ce_embed_size: 16
+  spec_inst_embed_size: 16
+  spec_frag_mode_embed_size: 16
 
 # ============================================================================
 # Molecule GNN Base
@@ -124,12 +143,25 @@ inst_insert_size: 32
 frag_mode_insert_location: mol
 frag_mode_insert_size: 32
 
+# CE normalization params (required by MolEncoder and spec CE embedder)
+int_embedder: abs-sines
+nce_max: 200
+nce_mean: 60
+nce_std: 40
+ace_max: 100.0
+ace_mean: 20.0
+ace_std: 15.0
+
+# Inference / misc
+mz_max: 1500.0
+optimizer: adam
+
 # ============================================================================
 # Optimization
 # ============================================================================
 seed: 42
-train_batch_size: 256
-eval_batch_size: 256
+train_batch_size: 1024
+eval_batch_size: 1024
 accumulate_grad_batches: 1
 lr: 0.0004
 lr_schedule: False
