@@ -1,0 +1,189 @@
+# ============================================================================
+# W&B Logging
+# ============================================================================
+wandb_name: debug_nist20_clip
+wandb_tags:
+  - clip
+  - debug
+  - nist20
+
+# ============================================================================
+# Data File Paths
+# ============================================================================
+model_type: spec_mol_clip_pretraining
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+
+# ============================================================================
+# Dataset Parameters
+# ============================================================================
+subsample_params:
+  subsample_size: 40
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+spec_params:
+  merge: False
+  merge_keep_ces: False
+  sparse: True
+  prec_type: True
+  prec_type_str: False
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+    - "[M+Cl]-"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
+  prec_mz: True
+  prec_mass_diff: True
+  nce: True
+  ace: False
+  preprocess: False
+  unique_id: True
+  counts: True
+  test_ces:
+  split_filters:
+    train:
+      filter_prec_types: True
+    val:
+      filter_prec_types: True
+    test:
+      filter_prec_types: True
+
+mol_params:
+  smiles: False
+  pyg: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+  pyg_pe_embed_k: 0
+  pyg_bigraph: True
+  preprocess: False
+
+# ============================================================================
+# Spectrum-Molecule CLIP
+# ============================================================================
+clip_temperature: 0.07
+clip_embed_dim: 64
+clip_intensity_transform: sqrt
+spectrum_encoder_params:
+  encoder_type: set_transformer
+  input_dim: 4          # (mz, intensity, neutral_loss, prec_scale)
+  hidden_dim: 64
+  embed_dim: 64
+  num_layers: 2
+  num_heads: 4
+  num_inds: 16
+  dropout: 0.1
+  normalization: layer
+  spec_ce_embed_size: 8
+  spec_inst_embed_size: 8
+  spec_frag_mode_embed_size: 8
+
+# ============================================================================
+# Molecule GNN
+# ============================================================================
+mol_hidden_size: 64
+mol_num_layers: 2
+mol_gnn_type: GINE
+mol_dropout: 0.1
+mol_normalization: batch
+mol_pool_type: mean
+mol_num_heads: 4
+
+mlp_hidden_size: 64
+mlp_dropout: 0.1
+mlp_num_layers: 2
+mlp_use_residuals: True
+
+# ============================================================================
+# Metadata Conditioning
+# ============================================================================
+ce_insert_type: embed_clamped
+ce_insert_location: mol
+ce_insert_merge: True
+ce_insert_size: 16
+use_nce: True
+use_ace: False
+
+prec_insert_location: mol
+prec_insert_size: 16
+inst_insert_location: mol
+inst_insert_size: 16
+frag_mode_insert_location: mol
+frag_mode_insert_size: 16
+
+int_embedder: abs-sines
+nce_max: 200
+nce_mean: 60
+nce_std: 40
+ace_max: 100.0
+ace_mean: 20.0
+ace_std: 15.0
+
+mz_max: 1500.0
+optimizer: adam
+
+# ============================================================================
+# Optimization
+# ============================================================================
+seed: 42
+train_batch_size: 16
+eval_batch_size: 16
+accumulate_grad_batches: 1
+lr: 0.0004
+lr_schedule: False
+weight_decay: 0.01
+accelerator: cpu
+devices: 1
+min_epochs: 1
+max_epochs: 3
+precision: 32
+use_tensor_float32: False
+automatic_optimization: True
+gradient_clip_val: 5.0
+
+dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler: False
+group_sampler: False
+simple_group_sampler: True
+simple_group_sampler_type: mol
+simple_group_sampler_avg_per_group: 1
+formula_prec_type_group_sampler: False
+drop_last: False
+
+# ============================================================================
+# Checkpointing / Runtime
+# ============================================================================
+checkpoint_metric: val_s2m_top1
+checkpoint_metric_mode: max
+checkpoint_save_last: True
+checkpoint_save_top_k: 1
+upload_checkpoints: False
+delete_checkpoints: True
+pl_enable_progress_bar: True
+pandarallel_enable_progress_bar: False
+compile: False
+num_workers: 0
+pin_memory: False
+detect_anomaly: True
