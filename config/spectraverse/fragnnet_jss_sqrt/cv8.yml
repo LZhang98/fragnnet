@@ -175,6 +175,7 @@ mol_pool_type: mean
 frag_pool_type: max  # sweep: top 3 runs all use max
 upload_checkpoints: True
 checkpoint_metric: val_loss_epoch/mean  # metric used to select best checkpoint
+checkpoint_metric_mode: min             # loss should be minimized
 auxiliary_scores:
   - cos_sim
   - jss
