@@ -193,7 +193,7 @@ checkpoint_metric: val_s2m_top1
 checkpoint_metric_mode: max
 checkpoint_save_last: True
 checkpoint_save_top_k: 1
-upload_checkpoints: False
+upload_checkpoints: True
 delete_checkpoints: False
 pl_enable_progress_bar: False
 pandarallel_enable_progress_bar: False
