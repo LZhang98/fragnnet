@@ -149,7 +149,7 @@ class SpectrumMolClipPL(L.LightningModule):
         # neutral_loss_norm encodes how far below the precursor each peak sits (signed,
         # so peaks above precursor get a negative value — rare but informative).
         # prec_norm gives the absolute scale of the molecule, shared across all peaks.
-        prec_mz_per_spec = batch["spec_prec_mz"].float().squeeze(-1)  # (batch_size,)
+        prec_mz_per_spec = batch["spec_prec_mz"].float().reshape(-1)  # (batch_size,)
         prec_mz_per_peak = prec_mz_per_spec[batch_idxs]  # (total_peaks,)
         prec_norm = prec_mz_per_peak / mz_max
         neutral_loss_norm = (prec_mz_per_peak - mzs) / mz_max
