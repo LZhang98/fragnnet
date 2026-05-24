@@ -403,8 +403,8 @@ def main(args):
             'rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/scripts ${WORKING_DIR}',
             "# copy src code - this is needed to avoid issues with multiple install read the same src code",
             'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}',
-            "cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/",
-            "cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/",
+            "[ -f ${FRAGNNET_DP}/setup.cfg ] && cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/",
+            "[ -f ${FRAGNNET_DP}/setup.py ] && cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/",
             "cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/",
             "# install with out dependencies, assume all dependencies are installed manually",
             "pip install -I --no-deps ${WORKING_DIR}",
@@ -529,11 +529,15 @@ def main(args):
     # copy data files
     script_lines.extend(["#copy files"])
 
+    frag_gnn_dp_abs = os.path.abspath(args.frag_gnn_dp).rstrip("/") + "/"
     for name in data_keyword:
         path_value = config_d[name]
 
         if path_value.startswith("./"):
             path_value = path_value[2:]
+        # Strip frag_gnn_dp prefix so absolute paths don't double up in rsync --relative.
+        if os.path.isabs(path_value) and path_value.startswith(frag_gnn_dp_abs):
+            path_value = path_value[len(frag_gnn_dp_abs):]
         if name not in config_d:
             raise ValueError(f"missing {name} in config file")
 
