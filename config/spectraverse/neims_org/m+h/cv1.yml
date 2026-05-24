@@ -79,7 +79,7 @@ weight_decay: 0.0000001
 accelerator: gpu
 devices: 1
 min_epochs: 1
-max_epochs: 10
+max_epochs: 30
 lr_schedule: True
 lr_decay_rate: 0.7224
 lr_warmup_steps: 1000
