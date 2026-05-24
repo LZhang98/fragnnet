@@ -23,7 +23,7 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/spectraverse/spec_df.pkl
 mol_fp: data/proc/spectraverse/mol_df.pkl
-split_dp: data/split/spectraverse_benchmark_neims_adduct/m+h+/cv1
+split_dp: data/split/spectraverse_benchmark_neims_adduct/m+h+/cv0
 spec_params:
   merge: True
   nce: False
