@@ -1,0 +1,79 @@
+wandb_name: debug_neims_org
+wandb_tags:
+- debug
+
+subsample_params:
+  subsample_size: 4
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+
+spec_fp: data/proc/spectraverse/spec_df.pkl
+mol_fp: data/proc/spectraverse/mol_df.pkl
+split_dp: data/split/spectraverse_benchmark_neims_adduct/m+h+/cv0
+spec_params:
+  merge: True
+  nce: False
+  merge_keep_ces: False
+  preprocess: True
+  prec_type_str: False
+  prec_types:
+    - '[M+H]+'
+  inst_type: False
+mol_params:
+  fingerprint_morgan: True
+  fingerprint_rdkit: False
+  fingerprint_maccs: False
+  fingerprint: True
+  morgan_radius: 2
+  morgan_nbits: 4096
+  pyg: False
+  preprocess: True
+frag_params:
+  pyg: False
+
+model_type: neims
+mlp_hidden_size: 1024
+mlp_dropout: 0.1
+mlp_num_layers: 4
+mlp_use_residuals: True
+neims_bottleneck_factor: 0.5
+ff_prec_mz_offset: 50
+ff_bidirectional: True
+ff_output_map_size: -1
+ff_output_activation: relu
+ce_insert_type: embed
+ce_insert_location: none
+mz_max: 1500.0
+mz_bin_res: 1.0
+sum_ints: True
+
+loss_type: cosine_distance
+sparse_cosine_similarity: True
+ints_transform: sqrt
+
+train_batch_size: 4
+eval_batch_size: 4
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0004006
+weight_decay: 0.0000001
+accelerator: gpu
+devices: 1
+min_epochs: 1
+max_epochs: 3
+lr_schedule: False
+debug_overfit: False
+upload_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+compile: False
+num_workers: 0

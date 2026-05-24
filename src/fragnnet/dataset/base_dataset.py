@@ -164,8 +164,8 @@ class BaseDataset(Dataset):
 
         # select spectra
         spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
-        # select molecules
-        mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
+        # select molecules that actually have spectra in this split
+        mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
         assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 
         # Resolve the per-split filter config.  In practice _setup_dfs is always called
