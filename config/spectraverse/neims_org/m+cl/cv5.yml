@@ -90,7 +90,7 @@ checkpoint_metric_mode: max
 auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
-- 0.01
+- 1.0
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
