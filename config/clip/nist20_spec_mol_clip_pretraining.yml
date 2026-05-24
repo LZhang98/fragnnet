@@ -61,11 +61,11 @@ spec_params:
   test_ces:
   split_filters:
     train:
-      filter_prec_types: True
+      filter_prec_types: False
     val:
-      filter_prec_types: True
+      filter_prec_types: False
     test:
-      filter_prec_types: True
+      filter_prec_types: False
 
 mol_params:
   smiles: False
