@@ -61,7 +61,7 @@ class CEModel:
         """
         assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin"]
         assert ce_insert_location in ["none", "mol", "frag", "mlp"]
-        if not use_nce and not use_ace:
+        if ce_insert_location != "none" and not use_nce and not use_ace:
             raise ValueError("At least one of use_nce or use_ace must be True")
         self.ce_insert_type = ce_insert_type
         self.ce_insert_location = ce_insert_location
