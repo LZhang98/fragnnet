@@ -35,9 +35,14 @@ class MassFormerPL(BinnedPL):
             ce_insert_location=self.hparams.ce_insert_location,
             ce_insert_merge=self.hparams.ce_insert_merge,
             ce_insert_size=self.hparams.ce_insert_size,
+            use_nce=self.hparams.spec_params["nce"],
             nce_max=self.hparams.nce_max,
             nce_mean=self.hparams.nce_mean,
             nce_std=self.hparams.nce_std,
+            use_ace=self.hparams.spec_params["ace"],
+            ace_max=self.hparams.ace_max,
+            ace_mean=self.hparams.ace_mean,
+            ace_std=self.hparams.ace_std,
             prec_insert_location=self.hparams.prec_insert_location,
             prec_insert_size=self.hparams.prec_insert_size,
             prec_types=self.hparams.spec_params["prec_types"],
@@ -47,7 +52,8 @@ class MassFormerPL(BinnedPL):
             log_min=self.hparams.log_min,
         )
 
-        assert self.hparams.automatic_optimization
+        if not self.hparams.automatic_optimization:
+            raise ValueError("MassFormerPL requires automatic_optimization=True")
 
         self._check_ce_params()
 
@@ -72,7 +78,7 @@ class MassFormerPL(BinnedPL):
         elif self.hparams.optimizer == "sgd":
             optimizer_cls = th.optim.SGD
         else:
-            raise ValueError(f"Unknown optimizer {self.optimizer}")
+            raise ValueError(f"Unknown optimizer {self.hparams.optimizer}")
         nopt_params, pt_params = self.model.get_split_params()
         optimizer = optimizer_cls(
             [
@@ -84,7 +90,8 @@ class MassFormerPL(BinnedPL):
         ret = {
             "optimizer": optimizer,
         }
-        assert not (self.hparams.lr_schedule and self.hparams.mf_lr_schedule)
+        if self.hparams.lr_schedule and self.hparams.mf_lr_schedule:
+            raise ValueError("lr_schedule and mf_lr_schedule are mutually exclusive")
         if self.hparams.lr_schedule:
             scheduler = build_lr_scheduler(
                 optimizer=optimizer,
