@@ -1353,11 +1353,8 @@ def process_batch_to_tabular_row(
     # Extract string/graph data before moving to device (if they are not tensors)
     frag_formula_str = batch_input.get("frag_formula_str")
     frag_pyg = batch_input.get("frag_pyg")
-    batch_input[
-        "mol_pyg"
-    ].mol_ids = (
-        mol_ids  # bugfix: use dict key access, not .get(), so mol_ids is actually written back
-    )
+    if "mol_pyg" in batch_input:
+        batch_input["mol_pyg"].mol_ids = mol_ids
 
     batch_input = to_device(batch_input, device)
     _need_expl = bool(
@@ -1399,8 +1396,8 @@ def process_batch_to_tabular_row(
             eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
 
     # joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
-    frag_formula_cumsizes = batch_input["frag_formula_cumsizes"]
-    frag_num_nodes = batch_input["frag_num_nodes"]
+    frag_formula_cumsizes = batch_input.get("frag_formula_cumsizes")
+    frag_num_nodes = batch_input.get("frag_num_nodes")
     joint_batch_idxs = (
         batch_result["pred_joint_batch_idxs"].detach().cpu()
         if "pred_joint_batch_idxs" in BATCH_IDX_VARS
