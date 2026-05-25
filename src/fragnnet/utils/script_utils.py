@@ -1210,7 +1210,7 @@ def run_inference_hdf5(
             f"    Peaks before: {n_before:,}  after: {n_after:,}  removed: {n_before - n_after:,} ({pct_peaks:.1f}%)\n"
             f"    Instances filtered: {n_inst_filt:,} / {n_inst_total:,} ({pct_inst:.1f}%)"
         )
-    return num_pred
+    return start_point
 
 
 def run_inference_tabular_iter(
