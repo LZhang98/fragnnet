@@ -1396,6 +1396,7 @@ def process_batch_to_tabular_row(
             eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
 
     # joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
+    # which are always None for NEIMS since it doesn't output formula/node predictions.
     frag_formula_cumsizes = batch_input.get("frag_formula_cumsizes")
     frag_num_nodes = batch_input.get("frag_num_nodes")
     joint_batch_idxs = (
