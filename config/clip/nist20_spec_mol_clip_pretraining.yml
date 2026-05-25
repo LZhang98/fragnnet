@@ -163,14 +163,14 @@ seed: 42
 train_batch_size: 512
 eval_batch_size: 512
 accumulate_grad_batches: 2
-lr: 0.0004
+lr: 0.0002
 lr_schedule: True
 lr_schedule_type: cosine
-lr_warmup_steps: 1000
+lr_warmup_steps: 500
 lr_decay_rate: 0.9
 lr_decay_steps: 1000
 lr_total_steps: 20000
-lr_min_ratio: 0.05
+lr_min_ratio: 0.01
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
