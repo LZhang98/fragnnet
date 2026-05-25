@@ -204,6 +204,16 @@ def get_args():
         default=[],
         help="Override config values, e.g. model.lr=1e-4 train.batch_size=64",
     )
+    parser.add_argument(
+        "--force_unmerged",
+        type=booltype,
+        default=False,
+        help=(
+            "Force unmerged inference: sets spec_params.merge=False so each CE spectrum "
+            "is evaluated individually. Use when applying a checkpoint trained on merged "
+            "spectra to unmerged data."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -248,6 +258,11 @@ if __name__ == "__main__":
         eval_batch_size=args.eval_batch_size,
         dynamic_batch_sampler=args.use_dynamic_sampler,
     )
+    if args.force_unmerged:
+        config_d["spec_params"]["merge"] = False
+        config_d["spec_params"]["merge_keep_ces"] = False
+        print("> --unmerged: forcing spec_params.merge=False, merge_keep_ces=False")
+
     config_d["eval_hun_sqrt"] = args.eval_sqrt
     if args.dynamic_sampler_max is not None:
         config_d["dynamic_batch_sampler_max"] = args.dynamic_sampler_max
