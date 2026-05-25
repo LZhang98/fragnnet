@@ -179,7 +179,7 @@ max_epochs: 100
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-gradient_clip_val: 5.0
+gradient_clip_val: 1.0
 
 # CLIP treats other examples in a batch as negatives, so do not use the pairwise
 # or dynamic samplers that intentionally place same-molecule spectra together.

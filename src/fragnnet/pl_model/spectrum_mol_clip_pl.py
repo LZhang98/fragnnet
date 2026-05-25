@@ -23,6 +23,8 @@ class SpectrumMolClipPL(L.LightningModule):
         self.clip_embed_dim = int(self.hparams.get("clip_embed_dim", 256))
         self.clip_intensity_transform = self.hparams.get("clip_intensity_transform", "sqrt")
         self._setup_model()
+        self._val_mol_embeds: list[th.Tensor] = []
+        self._val_spec_embeds: list[th.Tensor] = []
 
     def _setup_model(self) -> None:
         spec_encoder_params = self.hparams.get("spectrum_encoder_params", {})
@@ -277,7 +279,31 @@ class SpectrumMolClipPL(L.LightningModule):
         return self._common_step(batch, "train")
 
     def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
-        return self._common_step(batch, "val")
+        with th.no_grad():
+            mol_embed, spec_embed = self.forward(batch)
+        loss = clip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+        batch_size = int(batch["batch_size"].item())
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        self._val_mol_embeds.append(mol_embed.detach())
+        self._val_spec_embeds.append(spec_embed.detach())
+        return loss
+
+    def on_validation_epoch_end(self) -> None:
+        if not self._val_mol_embeds:
+            return
+        mol_embed = th.cat(self._val_mol_embeds, dim=0)
+        spec_embed = th.cat(self._val_spec_embeds, dim=0)
+        self._val_mol_embeds.clear()
+        self._val_spec_embeds.clear()
+        metrics = {}
+        metrics.update(self._retrieval_metrics(spec_embed, mol_embed, "s2m"))
+        metrics.update(self._retrieval_metrics(mol_embed, spec_embed, "m2s"))
+        for name, value in metrics.items():
+            self.log(
+                f"val_{name}",
+                value,
+                prog_bar=(name in {"s2m_top1", "s2m_mrr"}),
+            )
 
     def test_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         return self._common_step(batch, "test")
