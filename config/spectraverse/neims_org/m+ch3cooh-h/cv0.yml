@@ -85,7 +85,7 @@ lr_warmup_steps: 1000
 lr_decay_steps: 5000
 debug_overfit: False
 upload_checkpoints: False
-checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric: val_cos_sim_1_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
 - cos_sim
