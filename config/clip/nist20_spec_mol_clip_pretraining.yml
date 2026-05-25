@@ -98,7 +98,7 @@ spectrum_encoder_params:
   embed_dim: 256
   num_layers: 4         # increased from 2
   num_heads: 4
-  num_inds: 64          # increased from 32
+  num_inds: 32
   dropout: 0.1
   normalization: layer
   # Spectrum-side conditioning (mirrors mol encoder metadata).
@@ -160,9 +160,9 @@ optimizer: adam
 # Optimization
 # ============================================================================
 seed: 42
-train_batch_size: 1024
-eval_batch_size: 1024
-accumulate_grad_batches: 1
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 2
 lr: 0.0004
 lr_schedule: False
 weight_decay: 0.01
