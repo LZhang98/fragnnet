@@ -58,30 +58,9 @@ def find_local_run_dir(run_id: str, wandb_dir: Path) -> Path | None:
     return files_dir if files_dir.is_dir() else run_dir
 
 
-def get_run_name(files_dir: Path, run_id: str) -> str:
-    """Read the run name from local wandb-metadata.json.
-
-    Args:
-        files_dir: Path to the run's files/ directory.
-        run_id: Short run ID used as fallback when metadata is missing.
-
-    Returns:
-        Run name string.
-    """
-    metadata_fp = files_dir / "wandb-metadata.json"
-    if metadata_fp.exists():
-        with open(metadata_fp) as f:
-            meta = json.load(f)
-        name = meta.get("name")
-        if name:
-            return name
-
-    log.warning("  wandb-metadata.json not found or has no name field; using run_id as name")
-    return run_id
-
-
 def copy_ckpt_for_run(
     run_id: str,
+    description: str,
     save_dir: Path,
     wandb_dir: Path,
     best_only: bool = True,
@@ -89,12 +68,13 @@ def copy_ckpt_for_run(
 ) -> None:
     """Copy checkpoint(s) for one run into save_dir with the standard naming convention.
 
-    Naming convention (mirrors wandb_download_ckpts.py):
-      - best_only=True  → {run_name}_{run_id}.ckpt
-      - best_only=False → {run_name}_{run_id}_epoch={N}.ckpt  (one file per epoch)
+    Naming convention:
+      - best_only=True  → {description}_{run_id}.ckpt
+      - best_only=False → {description}_{run_id}_epoch={N}.ckpt  (one file per epoch)
 
     Args:
         run_id: Short wandb run ID.
+        description: Human-readable label from the JSON entry (used as filename prefix).
         save_dir: Destination directory for renamed checkpoints.
         wandb_dir: Root local wandb directory to search.
         best_only: If True, copy only the highest-epoch checkpoint.
@@ -105,8 +85,7 @@ def copy_ckpt_for_run(
         log.warning("> SKIP %s: no local run directory found under %s", run_id, wandb_dir)
         return
 
-    run_name = get_run_name(files_dir, run_id)
-    model_tag = f"{run_name}_{run_id}"
+    model_tag = f"{description}_{run_id}"
 
     ckpt_subdir = files_dir / "ckpt"
     search_dir = ckpt_subdir if ckpt_subdir.is_dir() else files_dir
@@ -191,6 +170,7 @@ def main() -> None:
         log.info("> Processing %s (%s)", run_id, description)
         copy_ckpt_for_run(
             run_id,
+            description,
             save_dir,
             wandb_dir,
             best_only=best_only,
