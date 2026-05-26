@@ -137,7 +137,7 @@ if __name__ == "__main__":
     )
 
     # Set fragmentation directory (only for DAG-based models)
-    if config_d["model_type"] in ("frag_gnn", "fragnnet"):
+    if config_d["model_type"] in ("frag_gnn", "fraggnet"):
         config_d["frag_dp"] = args.frag_dp
 
     # Auto-detect sqrt options based on _sqrt suffix in auxiliary_scores

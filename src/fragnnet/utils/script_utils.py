@@ -1301,10 +1301,26 @@ def run_inference_tabular_iter(
             yield batch_rows
 
 
-def get_split_fn(bs_idx):
+def get_split_fn(bs_idx, batch_size: int | None = None):
+    """Build a splitter for tensors grouped by sorted batch indices.
+
+    Args:
+        bs_idx: Sorted batch index tensor aligned with the tensor to split.
+        batch_size: Expected number of batch entries. When provided, empty groups
+            are preserved with zero-length splits, which keeps per-spectrum outputs
+            aligned after filtering removes all entries for some batch indices.
+
+    Returns:
+        A function that splits any tensor aligned with ``bs_idx`` into per-batch
+        chunks.
+    """
     # check the validity of bs idx
-    assert (bs_idx[1:] - bs_idx[:-1]).min() >= 0
-    _, batch_counts = th.unique(bs_idx, return_counts=True)
+    if len(bs_idx) > 1:
+        assert (bs_idx[1:] - bs_idx[:-1]).min() >= 0
+    if batch_size is None:
+        _, batch_counts = th.unique(bs_idx, return_counts=True)
+    else:
+        batch_counts = th.bincount(bs_idx.long(), minlength=batch_size)
     batch_counts = batch_counts.detach().cpu().tolist()
 
     def split_fn(inp_tensor):
@@ -1473,7 +1489,7 @@ def process_batch_to_tabular_row(
 
     # split based on cleaned results
     if joint_batch_idxs is not None:
-        joint_split_fn = get_split_fn(joint_batch_idxs)
+        joint_split_fn = get_split_fn(joint_batch_idxs, batch_size=batch_size)
         joint_split_values = [
             None if _ is None else joint_split_fn(_)
             for _ in [
@@ -1486,7 +1502,7 @@ def process_batch_to_tabular_row(
 
     # formula prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
     if pred_formula_batch_idxs is not None:
-        formula_split_fn = get_split_fn(pred_formula_batch_idxs)
+        formula_split_fn = get_split_fn(pred_formula_batch_idxs, batch_size=batch_size)
         formula_split_values = [
             None if _ is None else formula_split_fn(_)
             for _ in [pred_formula_formula_idxs, pred_formula_probs]
@@ -1494,12 +1510,12 @@ def process_batch_to_tabular_row(
 
     # node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
     if pred_node_batch_idxs is not None:
-        node_split_fn = get_split_fn(pred_node_batch_idxs)
+        node_split_fn = get_split_fn(pred_node_batch_idxs, batch_size=batch_size)
         node_split_values = [
             None if _ is None else node_split_fn(_) for _ in [pred_node_probs, pred_node_node_idxs]
         ]
     # specs
-    batch_split_fn = get_split_fn(pred_batch_idx)
+    batch_split_fn = get_split_fn(pred_batch_idx, batch_size=batch_size)
     pred_mzs_split = batch_split_fn(spec_mzs)
     pred_ints_split = batch_split_fn(spec_ints)
     frag_formula_peak_idxs_split = (
