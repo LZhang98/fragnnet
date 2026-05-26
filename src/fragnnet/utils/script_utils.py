@@ -1045,8 +1045,8 @@ def run_inference_tabular(
         model.hparams, return_formula_str, return_cc_hash, output_subset=output_set
     )
 
-    # Accumulate all batch results
-    preds_l = []
+    # Accumulate all batch results into a column-keyed dict
+    preds_l: dict[str, list] = {}
     for batch_rows in run_inference_tabular_iter(
         model=model,
         dataloader=dataloader,
@@ -1060,9 +1060,10 @@ def run_inference_tabular(
         return_cc_hash=return_cc_hash,
         rebase_indices=rebase_indices,
     ):
-        preds_l.extend(batch_rows)
+        for k, v in zip(columns_name, batch_rows):
+            preds_l.setdefault(k, []).extend(v)
 
-    pred_df = pd.DataFrame(preds_l, columns=columns_name)
+    pred_df = pd.DataFrame(preds_l)
     return pred_df
 
 
@@ -1513,8 +1514,8 @@ def process_batch_to_tabular_row(
         b_pred_oos_prob = numpy_pred_oos_probs[b_idx] if pred_oos_probs is not None else np.nan
         b_spec_id = spec_ids[b_idx]
         b_mol_id = mol_ids[b_idx]
-        b_spec_mzs = pred_mzs_split[b_idx]  # pred_mzs[b_peak_mask]
-        b_spec_ints = pred_ints_split[b_idx]  # pred_ints[b_peak_mask]
+        b_spec_mzs = pred_mzs_split[b_idx].detach().cpu()
+        b_spec_ints = pred_ints_split[b_idx].detach().cpu()
         b_frag_formula_peak_idxs = (
             frag_formula_peak_idxs_split[b_idx]
             if frag_formula_peak_idxs_split is not None
