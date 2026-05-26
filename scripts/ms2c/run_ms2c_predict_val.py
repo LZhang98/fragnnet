@@ -11,7 +11,6 @@ import time
 
 import pandas as pd
 
-from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.runner import init_dataloader
 from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.script_utils import (
@@ -22,6 +21,7 @@ from fragnnet.utils.script_utils import (
     run_inference_tabular,
     setup_device,
 )
+from fragnnet.utils.setup_utils import get_dataset_cls
 
 
 def get_args() -> argparse.Namespace:
@@ -99,8 +99,15 @@ if __name__ == "__main__":
 
     # Load datasets
     print(f"> Loading datasets from {args.proc_dp}")
-    mol_fp = os.path.join(args.proc_dp, "mol_df.pkl.gz")
-    spec_fp = os.path.join(args.proc_dp, "spec_df.pkl.gz")
+    def _find_pkl(dp, stem):
+        for ext in ("pkl", "pkl.gz"):
+            fp = os.path.join(dp, f"{stem}.{ext}")
+            if os.path.isfile(fp):
+                return fp
+        raise FileNotFoundError(f"{stem}.pkl / .pkl.gz not found in {dp}")
+
+    mol_fp = _find_pkl(args.proc_dp, "mol_df")
+    spec_fp = _find_pkl(args.proc_dp, "spec_df")
 
     print("> Preloading mol_df")
     mol_df = pd.read_pickle(mol_fp)
@@ -129,8 +136,9 @@ if __name__ == "__main__":
         spec_src=spec_df,
     )
 
-    # Set fragmentation directory
-    config_d["frag_dp"] = args.frag_dp
+    # Set fragmentation directory (only for DAG-based models)
+    if config_d["model_type"] in ("frag_gnn", "fragnnet"):
+        config_d["frag_dp"] = args.frag_dp
 
     # Auto-detect sqrt options based on _sqrt suffix in auxiliary_scores
     # e.g., cos_sim_sqrt triggers eval_bin_sqrt, cos_hun_sqrt triggers eval_hun_sqrt
@@ -152,7 +160,8 @@ if __name__ == "__main__":
 
     # Create dataset and dataloader
     print("> Creating dataset")
-    ds = SpecMolFragDataset(split="test", **config_d)
+    ds_cls = get_dataset_cls(config_d["model_type"])
+    ds = ds_cls(split="test", **config_d)
     dl = init_dataloader(ds, config_d)
 
     # Run inference

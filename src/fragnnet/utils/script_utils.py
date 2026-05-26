@@ -364,7 +364,7 @@ def get_config_from_ckpt(
     # Load and merge template and custom config
     if template_fp is not None and custom_fp is not None:
         print(f">> Loading custom config from {custom_fp}")
-        config_d_2 = load_config(template_fp, custom_fp)
+        config_d_2 = load_config(template_fp, custom_fp, override=None)
         for k, v in config_d_2.items():
             if k in config_d and v != config_d[k]:
                 print(f"  - Overwriting: {k} = {v} (was {config_d[k]})")
@@ -1911,6 +1911,10 @@ def batch_filter_by_peak_intensity(
     """
     if min_peak_int <= 0:
         return (
+            pred_batch_idxs,
+            pred_joint_batch_idxs,
+            pred_formula_batch_idxs,
+            pred_node_batch_idxs,
             pred_ints,
             pred_mzs,
             frag_formula_peak_mzs,
