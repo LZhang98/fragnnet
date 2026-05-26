@@ -52,8 +52,8 @@ def get_args():
     parser.add_argument(
         "--wandb_run_id",
         type=str,
-        required=True,
-        help="Weights & Biases run ID for model retrieval",
+        default=None,
+        help="Weights & Biases run ID for model retrieval (optional when --model_ckpt is given)",
     )
     parser.add_argument(
         "--model_save_dp",
@@ -152,11 +152,24 @@ def get_args():
     parser.add_argument(
         "--return_formula_str",
         type=booltype,
-        default=True,
-        help="Whether to return formula strings",
+        default=False,
+        help="Whether to return formula strings (FraGNNet only)",
     )
     parser.add_argument(
-        "--return_cc_hash", type=booltype, default=True, help="Whether to return node CC hashes"
+        "--return_cc_hash",
+        type=booltype,
+        default=False,
+        help="Whether to return node CC hashes (FraGNNet only)",
+    )
+    parser.add_argument(
+        "--eval_mz_bin_res",
+        type=float,
+        nargs="+",
+        default=None,
+        help=(
+            "M/z bin resolutions for binned metrics (e.g. 0.01 for FraGNNet, 1.0 for NEIMS). "
+            "Defaults to value in config if not specified."
+        ),
     )
 
     # Batch size arguments
@@ -231,6 +244,9 @@ if __name__ == "__main__":
 
     args = get_args()
 
+    if args.wandb_run_id is None and args.model_ckpt is None:
+        raise ValueError("Either --wandb_run_id or --model_ckpt must be provided")
+
     # Get checkpoint path (download from W&B or use local)
     ckpt_fp = get_ckpt_path(
         wandb_run_id=args.wandb_run_id,
@@ -257,6 +273,7 @@ if __name__ == "__main__":
         train_batch_size=args.train_batch_size,
         eval_batch_size=args.eval_batch_size,
         dynamic_batch_sampler=args.use_dynamic_sampler,
+        eval_mz_bin_res=args.eval_mz_bin_res,
     )
     if args.force_unmerged:
         config_d["spec_params"]["merge"] = False
@@ -300,7 +317,8 @@ if __name__ == "__main__":
             print(f"  Formula indices: {req_formula}")
 
     print(f">>> Output set: {output_set}")
-    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
+    run_label = args.wandb_run_id or os.path.splitext(os.path.basename(args.model_ckpt))[0]
+    output_save_dp = os.path.join(save_dp, run_label)
     os.makedirs(output_save_dp, exist_ok=True)
     if args.output_format == "hdf5":
         num_predict = run_inference_hdf5(

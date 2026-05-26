@@ -1188,6 +1188,8 @@ def run_inference_hdf5(
                 for k in sequential_name:
                     if k not in preds_l:
                         continue  # key absent when model doesn't output this field; skip safely
+                    if not preds_l[k] or not isinstance(preds_l[k][0], th.Tensor):
+                        continue  # all-nan / None (e.g. formula peaks absent for NEIMS); skip
                     save_v = th.cat(preds_l[k], 0).detach().cpu().numpy()
                     if save_length is None:
                         save_length = len(save_v)
@@ -1996,6 +1998,10 @@ def batch_filter_by_peak_intensity(
     # If no filtering was applied (valid_f_idxs is None), return original tensors
     if valid_f_idxs is None:
         return (
+            pred_batch_idxs,
+            pred_joint_batch_idxs,
+            pred_formula_batch_idxs,
+            pred_node_batch_idxs,
             pred_ints,
             pred_mzs,
             frag_formula_peak_mzs,
