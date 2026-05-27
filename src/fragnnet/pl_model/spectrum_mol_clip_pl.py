@@ -295,6 +295,8 @@ class SpectrumMolClipPL(L.LightningModule):
         spec_embed = th.cat(self._val_spec_embeds, dim=0)
         self._val_mol_embeds.clear()
         self._val_spec_embeds.clear()
+        mol_embed = mol_embed.cpu()
+        spec_embed = spec_embed.cpu()
         metrics = {}
         metrics.update(self._retrieval_metrics(spec_embed, mol_embed, "s2m"))
         metrics.update(self._retrieval_metrics(mol_embed, spec_embed, "m2s"))
