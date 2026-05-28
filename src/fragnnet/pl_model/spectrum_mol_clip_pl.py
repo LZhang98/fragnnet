@@ -242,11 +242,17 @@ class SpectrumMolClipPL(L.LightningModule):
         n = query_embed.shape[0]
         # similarity of each query to its own true-match target (diagonal)
         diag_sim = (query_embed * target_embed).sum(dim=-1)  # (n,)
-        # rank = 1 + number of targets that score strictly higher than the true match
+        # rank = 1 + number of targets that score strictly higher than the true match.
+        # The true-match element is explicitly masked out per chunk to avoid FP ties
+        # between diag_sim (element-wise) and sim_chunk (matmul) giving a wrong increment.
         ranks = th.ones(n, dtype=th.long, device=query_embed.device)
         for i in range(0, n, chunk_size):
-            sim_chunk = query_embed @ target_embed[i : i + chunk_size].T  # (n, c)
-            ranks += (sim_chunk > diag_sim[:, None]).sum(dim=1)
+            j_end = min(i + chunk_size, n)
+            sim_chunk = query_embed @ target_embed[i:j_end].T  # (n, c)
+            better = sim_chunk > diag_sim[:, None]
+            q_in_chunk = th.arange(i, j_end, device=query_embed.device)
+            better[q_in_chunk, q_in_chunk - i] = False  # exclude self-comparison
+            ranks += better.sum(dim=1)
         k = min(top_k, n)
         return {
             f"{prefix}_top1": (ranks == 1).float().mean(),
