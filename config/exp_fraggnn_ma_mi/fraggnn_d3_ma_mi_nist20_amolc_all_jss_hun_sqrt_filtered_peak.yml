@@ -192,10 +192,7 @@ node_normalized_entropy_weight: 0.01  # entropy regularization on formula node p
 # ============================================================================
 # Target Spectrum Filtering
 # ============================================================================
-target_ints_thresh: 0.01          # drop target peaks below 1% relative intensity
-train_target_top_k_peaks: -1      # no top-k limit
-train_target_drop_min_int_peak: False  # keep the minimum-intensity peak even after rank filter
-eval_target_apply_train_rank_filters: False  # apply train filters at eval time too
+target_ints_thresh: 0.01  # drop target peaks below 1% relative intensity
 
 # ============================================================================
 # Spectrum Binning & Evaluation
