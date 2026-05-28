@@ -233,14 +233,21 @@ class SpectrumMolClipPL(L.LightningModule):
 
     @staticmethod
     def _retrieval_metrics(
-        query_embed: th.Tensor, target_embed: th.Tensor, prefix: str, top_k: int = 5
+        query_embed: th.Tensor,
+        target_embed: th.Tensor,
+        prefix: str,
+        top_k: int = 5,
+        chunk_size: int = 4096,
     ) -> dict[str, th.Tensor]:
-        sim = query_embed @ target_embed.T
-        batch_size = sim.shape[0]
-        labels = th.arange(batch_size, device=sim.device)
-        order = th.argsort(sim, dim=1, descending=True)
-        ranks = (order == labels[:, None]).nonzero(as_tuple=False)[:, 1] + 1
-        k = min(top_k, batch_size)
+        n = query_embed.shape[0]
+        # similarity of each query to its own true-match target (diagonal)
+        diag_sim = (query_embed * target_embed).sum(dim=-1)  # (n,)
+        # rank = 1 + number of targets that score strictly higher than the true match
+        ranks = th.ones(n, dtype=th.long, device=query_embed.device)
+        for i in range(0, n, chunk_size):
+            sim_chunk = query_embed @ target_embed[i : i + chunk_size].T  # (n, c)
+            ranks += (sim_chunk > diag_sim[:, None]).sum(dim=1)
+        k = min(top_k, n)
         return {
             f"{prefix}_top1": (ranks == 1).float().mean(),
             f"{prefix}_top{k}": (ranks <= k).float().mean(),
