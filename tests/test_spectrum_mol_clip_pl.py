@@ -75,20 +75,25 @@ def test_build_peak_features_normalizes_mz_and_intensity() -> None:
         clip_intensity_transform="sqrt",
         hparams=SimpleNamespace(mz_max=1000.0),
     )
+    # spec 0: prec_mz=300, peaks at mz=[100,200]; spec 1: prec_mz=100, peak at mz=[50]
     batch = {
         "spec_mzs": th.tensor([100.0, 200.0, 50.0]),
         "spec_ints": th.tensor([1.0, 4.0, 9.0]),
         "spec_batch_idxs": th.tensor([0, 0, 1]),
         "batch_size": th.tensor(2),
+        "spec_prec_mz": th.tensor([300.0, 100.0]),
     }
 
     features = SpectrumMolClipPL._build_peak_features(module, batch)
 
+    # columns: [mzs_norm, ints_norm, neutral_loss_norm, prec_norm]
+    # mzs_norm = mz / 1000; ints_norm = sqrt(int) / max_sqrt_int per spec
+    # neutral_loss_norm = (prec_mz - mz) / 1000; prec_norm = prec_mz / 1000
     expected = th.tensor(
         [
-            [0.10, 0.5],
-            [0.20, 1.0],
-            [0.05, 1.0],
+            [0.10, 0.5, 0.20, 0.30],
+            [0.20, 1.0, 0.10, 0.30],
+            [0.05, 1.0, 0.05, 0.10],
         ]
     )
     assert th.allclose(features, expected, atol=1e-6)

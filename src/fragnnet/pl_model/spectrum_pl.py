@@ -36,6 +36,7 @@ from fragnnet.utils.spec_utils import (
     batched_filter_func,
     batched_l1_normalize,
     batched_mf1000_normalize,
+    batched_rel_filter_func,
     calculate_match_mzs,
     cos_sim_helper,
     get_ints_transform_func,
@@ -235,12 +236,16 @@ class SpectrumPL(L.LightningModule):
         Setup spectrum preprocessing functions: filtering, binning, intensity transforms, and normalization.
         """
 
-        def _filter_func(mzs, ints, batch_idxs):
-            return batched_filter_func(
-                mzs, ints, batch_idxs, self.hparams["target_ints_thresh"], self.hparams.mz_max
+        def _rel_filter_func(mzs, ints, batch_idxs):
+            return batched_rel_filter_func(
+                mzs,
+                ints,
+                batch_idxs,
+                rel_thresh=self.hparams["target_rel_ints_thresh"],
+                mz_max=self.hparams["mz_max"],
             )
 
-        self.filter_func = _filter_func
+        self.rel_filter_func = _rel_filter_func
 
         def _target_rank_filter_func(mzs, ints, batch_idxs):
             return batched_filter_func(
@@ -1080,7 +1085,7 @@ class SpectrumPL(L.LightningModule):
         spec_mzs,
         spec_ints,
         spec_batch_idxs,
-        filter_spec=False,
+        rel_filter_spec=False,
         target_rank_filter_spec=False,
         bin_spec=False,
         transform_spec=False,
@@ -1092,9 +1097,8 @@ class SpectrumPL(L.LightningModule):
         # assumes spec_ints are not logged, or transformed in any way
         # does not assume any particular kind of normalization
 
-        if filter_spec:
-            # filter
-            spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
+        if rel_filter_spec:
+            spec_mzs, spec_ints, spec_batch_idxs = self.rel_filter_func(
                 spec_mzs, spec_ints, spec_batch_idxs
             )
         if target_rank_filter_spec:
@@ -1137,7 +1141,6 @@ class SpectrumPL(L.LightningModule):
                 spec_mzs,
                 spec_ints,
                 spec_batch_idxs,
-                filter_spec=False,
                 bin_spec=self.binned_loss,
                 transform_spec=False,
                 normalize_spec=False,
@@ -1147,7 +1150,7 @@ class SpectrumPL(L.LightningModule):
                 spec_mzs,
                 spec_ints,
                 spec_batch_idxs,
-                filter_spec=True,
+                rel_filter_spec=True,
                 target_rank_filter_spec=True,
                 bin_spec=self.binned_loss,
                 transform_spec=True,
@@ -1163,7 +1166,7 @@ class SpectrumPL(L.LightningModule):
                 spec_mzs,
                 spec_ints,
                 spec_batch_idxs,
-                filter_spec=True,
+                rel_filter_spec=True,
                 target_rank_filter_spec=self.hparams.get(
                     "eval_target_apply_train_rank_filters",
                     self.hparams.get("eval_target_apply_train_peak_filters", False),

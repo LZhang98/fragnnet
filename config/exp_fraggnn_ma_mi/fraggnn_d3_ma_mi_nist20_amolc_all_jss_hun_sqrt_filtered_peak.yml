@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb16          # loss batch size 16
+- lb32          # loss batch size 32
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -192,7 +192,7 @@ node_normalized_entropy_weight: 0.01  # entropy regularization on formula node p
 # ============================================================================
 # Target Spectrum Filtering
 # ============================================================================
-target_ints_thresh: 0.01  # drop target peaks below 1% relative intensity
+target_rel_ints_thresh: 0.01  # drop target peaks below 1% of per-spectrum max intensity
 
 # ============================================================================
 # Spectrum Binning & Evaluation

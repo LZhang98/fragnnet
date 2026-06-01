@@ -335,9 +335,9 @@ auxiliary_scores:
   - true_oos_prob
   - true_oos_e
 # Target/true-spectrum filtering during SpectrumPL preprocessing.
-# target_ints_thresh applies to true spectra for both training and evaluation.
-# ints_thresh is the legacy name and is still supported as a fallback.
-target_ints_thresh: 0.0
+# target_rel_ints_thresh: per-spectrum relative threshold (0.0-1.0); e.g. 0.01 drops peaks
+#   below 1% of that spectrum's maximum intensity.
+target_rel_ints_thresh: 0.0
 train_target_top_k_peaks: -1
 train_target_drop_min_int_peak: False
 eval_target_apply_train_rank_filters: False
