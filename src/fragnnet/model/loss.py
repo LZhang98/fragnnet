@@ -1308,6 +1308,14 @@ def soft_clip_loss(
     union = norms[:, None] + norms[None, :] - dots
     mol_sim = dots / union.clamp_min(1.0)  # (N, N) in [0, 1]
 
+    # Subtract row minimum to spread the dynamic range before normalizing.
+    # Raw Tanimoto similarities in a random batch cluster near 0, making the
+    # row-normalized targets nearly uniform and the loss degenerate (stuck at
+    # log N regardless of model output). Subtracting the row min shifts each
+    # row so that the least-similar entry becomes 0, amplifying relative
+    # differences between columns.
+    mol_sim = (mol_sim - mol_sim.min(dim=1, keepdim=True).values).clamp_min(0.0)
+
     # Row-normalize to probability distribution
     targets = mol_sim / mol_sim.sum(dim=1, keepdim=True).clamp_min(1e-8)
 
