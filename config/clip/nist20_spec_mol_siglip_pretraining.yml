@@ -87,7 +87,7 @@ mol_params:
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining
 # ============================================================================
-clip_temperature: 0.07
+clip_temperature: 0.1
 clip_embed_dim: 256
 clip_intensity_transform: sqrt
 clip_loss_type: siglip
