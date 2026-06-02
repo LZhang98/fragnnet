@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fragnnet.model import MolEncoder, SpectrumEncoder
-from fragnnet.model.loss import clip_loss
+from fragnnet.model.loss import clip_loss, siglip_loss, soft_clip_loss
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 
@@ -22,6 +22,7 @@ class SpectrumMolClipPL(L.LightningModule):
         self.clip_temperature = float(self.hparams.get("clip_temperature", 0.07))
         self.clip_embed_dim = int(self.hparams.get("clip_embed_dim", 256))
         self.clip_intensity_transform = self.hparams.get("clip_intensity_transform", "sqrt")
+        self.clip_loss_type = str(self.hparams.get("clip_loss_type", "clip"))
         self._setup_model()
         self._val_mol_embeds: list[th.Tensor] = []
         self._val_spec_embeds: list[th.Tensor] = []
@@ -260,9 +261,50 @@ class SpectrumMolClipPL(L.LightningModule):
             f"{prefix}_mrr": (1.0 / ranks.float()).mean(),
         }
 
+    def _get_mol_fps(self, batch: dict[str, Any]) -> th.Tensor:
+        """Extract and reshape mol fingerprints from batch for soft_clip loss.
+
+        Args:
+            batch: Collated batch dict. Must contain 'mol_fingerprint' (requires
+                mol_params.fingerprint=True in config).
+
+        Returns:
+            Float tensor of shape (N, fp_dim).
+
+        Raises:
+            ValueError: If mol_fingerprint is not present in the batch.
+        """
+        if "mol_fingerprint" not in batch:
+            raise ValueError(
+                "clip_loss_type='soft_clip' requires mol_params.fingerprint=True in config"
+            )
+        batch_size = int(batch["batch_size"].item())
+        fp = batch["mol_fingerprint"].float()
+        fp_dim = fp.shape[0] // batch_size
+        return fp.reshape(batch_size, fp_dim)
+
+    def _compute_loss(self, spec_embed: th.Tensor, mol_embed: th.Tensor, batch: dict[str, Any]) -> th.Tensor:
+        """Dispatch to the configured CLIP loss variant.
+
+        Args:
+            spec_embed: L2-normalized spectrum embeddings, shape (N, D).
+            mol_embed: L2-normalized molecule embeddings, shape (N, D).
+            batch: Collated batch dict (needed for soft_clip fingerprints).
+
+        Returns:
+            Scalar loss tensor.
+        """
+        if self.clip_loss_type == "siglip":
+            return siglip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+        elif self.clip_loss_type == "soft_clip":
+            mol_fps = self._get_mol_fps(batch)
+            return soft_clip_loss(spec_embed, mol_embed, mol_fps, temperature=self.clip_temperature)
+        else:
+            return clip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+
     def _common_step(self, batch: dict[str, Any], split: str) -> th.Tensor:
         mol_embed, spec_embed = self.forward(batch)
-        loss = clip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+        loss = self._compute_loss(spec_embed, mol_embed, batch)
         batch_size = int(batch["batch_size"].item())
         self.log(
             f"{split}_loss",
@@ -294,7 +336,7 @@ class SpectrumMolClipPL(L.LightningModule):
     def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         with th.no_grad():
             mol_embed, spec_embed = self.forward(batch)
-        loss = clip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+        loss = self._compute_loss(spec_embed, mol_embed, batch)
         batch_size = int(batch["batch_size"].item())
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch_size)
         self._val_mol_embeds.append(mol_embed.detach())

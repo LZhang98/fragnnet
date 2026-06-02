@@ -48,7 +48,7 @@ clip_embed_dim: 64
 clip_intensity_transform: sqrt
 spectrum_encoder_params:
   encoder_type: set_transformer
-  input_dim: 2
+  input_dim: 4  # (mz_norm, intensity, neutral_loss_norm, prec_norm)
   hidden_dim: 64
   embed_dim: 64
   num_layers: 2

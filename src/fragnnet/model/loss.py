@@ -1250,6 +1250,74 @@ def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
     return loss
 
 
+def siglip_loss(
+    spectrum_embeddings: th.Tensor,
+    mol_embeddings: th.Tensor,
+    temperature: float = 0.07,
+) -> th.Tensor:
+    """Compute the SigLIP contrastive loss between spectrum and molecule embeddings.
+
+    Uses per-pair sigmoid instead of row-wise softmax, so each pair's gradient is
+    independent of batch size. Positive pairs (diagonal) are pushed toward +1,
+    all other pairs toward 0.
+
+    Embeddings must be L2-normalized before calling this function.
+
+    Args:
+        spectrum_embeddings: Shape (N, D), L2-normalized.
+        mol_embeddings: Shape (N, D), L2-normalized.
+        temperature: Logit scaling factor.
+
+    Returns:
+        Scalar loss.
+    """
+    logits = spectrum_embeddings @ mol_embeddings.t() / temperature  # (N, N)
+    n = logits.shape[0]
+    # +1 on diagonal (positive pairs), -1 off-diagonal (negative pairs)
+    labels = 2.0 * th.eye(n, device=logits.device, dtype=logits.dtype) - 1.0
+    return -F.logsigmoid(labels * logits).mean()
+
+
+def soft_clip_loss(
+    spectrum_embeddings: th.Tensor,
+    mol_embeddings: th.Tensor,
+    mol_fps: th.Tensor,
+    temperature: float = 0.07,
+) -> th.Tensor:
+    """Compute CLIP loss with soft Tanimoto similarity targets.
+
+    Instead of one-hot positives, uses row-normalized pairwise Tanimoto similarity
+    between molecular fingerprints as the target distribution. Structurally similar
+    molecules get non-zero target probability, avoiding incorrect penalization of
+    near-duplicate negatives.
+
+    Embeddings must be L2-normalized before calling this function.
+
+    Args:
+        spectrum_embeddings: Shape (N, D), L2-normalized.
+        mol_embeddings: Shape (N, D), L2-normalized.
+        mol_fps: Shape (N, fp_dim), binary (0/1) float fingerprints.
+        temperature: Logit scaling factor.
+
+    Returns:
+        Scalar loss.
+    """
+    # Tanimoto similarity matrix: intersection / union for binary fps
+    dots = mol_fps @ mol_fps.t()  # (N, N) intersection counts
+    norms = mol_fps.sum(dim=1)  # (N,) set-bit counts
+    union = norms[:, None] + norms[None, :] - dots
+    mol_sim = dots / union.clamp_min(1.0)  # (N, N) in [0, 1]
+
+    # Row-normalize to probability distribution
+    targets = mol_sim / mol_sim.sum(dim=1, keepdim=True).clamp_min(1e-8)
+
+    logits_per_spec = spectrum_embeddings @ mol_embeddings.t() / temperature
+    logits_per_mol = logits_per_spec.t()
+    loss_s2m = -(targets * F.log_softmax(logits_per_spec, dim=1)).sum(dim=1).mean()
+    loss_m2s = -(targets * F.log_softmax(logits_per_mol, dim=1)).sum(dim=1).mean()
+    return (loss_s2m + loss_m2s) / 2.0
+
+
 ###########################################
 # Pairwise loss functions
 ###########################################

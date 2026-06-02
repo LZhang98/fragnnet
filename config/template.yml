@@ -191,6 +191,7 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 clip_temperature: 0.07
 clip_embed_dim: 256
 clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
+clip_loss_type: clip  # ["clip", "siglip", "soft_clip"]; soft_clip requires mol_params.fingerprint=True
 spectrum_encoder_params:
   encoder_type: set_transformer
   input_dim: 2
