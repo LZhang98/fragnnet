@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 import lightning as L
@@ -19,10 +20,11 @@ class SpectrumMolClipPL(L.LightningModule):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__()
         self.save_hyperparameters()
-        self.clip_temperature = float(self.hparams.get("clip_temperature", 0.07))
         self.clip_embed_dim = int(self.hparams.get("clip_embed_dim", 256))
         self.clip_intensity_transform = self.hparams.get("clip_intensity_transform", "sqrt")
         self.clip_loss_type = str(self.hparams.get("clip_loss_type", "clip"))
+        init_temp = float(self.hparams["clip_temperature"])
+        self.log_temperature = nn.Parameter(th.tensor(math.log(init_temp)))
         self._setup_model()
         self._val_mol_embeds: list[th.Tensor] = []
         self._val_spec_embeds: list[th.Tensor] = []
@@ -294,13 +296,14 @@ class SpectrumMolClipPL(L.LightningModule):
         Returns:
             Scalar loss tensor.
         """
+        temperature = self.log_temperature.exp().clamp(min=0.01, max=0.5)
         if self.clip_loss_type == "siglip":
-            return siglip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+            return siglip_loss(spec_embed, mol_embed, temperature=temperature)
         elif self.clip_loss_type == "soft_clip":
             mol_fps = self._get_mol_fps(batch)
-            return soft_clip_loss(spec_embed, mol_embed, mol_fps, temperature=self.clip_temperature)
+            return soft_clip_loss(spec_embed, mol_embed, mol_fps, temperature=temperature)
         else:
-            return clip_loss(spec_embed, mol_embed, temperature=self.clip_temperature)
+            return clip_loss(spec_embed, mol_embed, temperature=temperature)
 
     def _common_step(self, batch: dict[str, Any], split: str) -> th.Tensor:
         mol_embed, spec_embed = self.forward(batch)
@@ -313,6 +316,13 @@ class SpectrumMolClipPL(L.LightningModule):
             on_epoch=True,
             prog_bar=True,
             batch_size=batch_size,
+        )
+        self.log(
+            "temperature",
+            self.log_temperature.exp(),
+            on_step=(split == "train"),
+            on_epoch=False,
+            prog_bar=False,
         )
 
         with th.no_grad():
