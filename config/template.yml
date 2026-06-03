@@ -51,9 +51,9 @@ spec_params:
   # observed spectra before they become training/evaluation targets; isotope
   # envelopes can then be added back as a post-process.
   remove_isotope_peaks: False
-  remove_regular_isotope_peaks: True
-  remove_coisolation_peaks: True
-  remove_isotope_use_group_f: True
+  remove_regular_isotope_peaks: False
+  remove_coisolation_peaks: False
+  remove_isotope_use_group_f: False
   remove_isotope_max_isotope: 2
   remove_isotope_min_coiso_fraction: 0.05
   remove_isotope_max_leak_factor: 1.5
@@ -61,9 +61,9 @@ spec_params:
   remove_isotope_precursor_envelope_hi: 5.0
   remove_isotope_group_min_count: 1
   remove_isotope_group_max_cv: 1.0
-  remove_isotope_use_dag_formula: True
+  remove_isotope_use_dag_formula: False
   remove_isotope_dag_dp:
-  remove_isotope_dag_compressed: True
+  remove_isotope_dag_compressed: False
   remove_isotope_dag_mz_tol: 0.015
   remove_isotope_protect_dag_mono: False
   remove_isotope_regular_mz_tol:

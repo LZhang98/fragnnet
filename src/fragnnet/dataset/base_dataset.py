@@ -419,9 +419,9 @@ class BaseDataset(Dataset):
         """Precompute group-level co-isolation fractions for isotope cleanup."""
         self.group_coiso_fraction_by_k: dict[int, dict[int, float]] = {}
         self._isotope_dag_formula_cache: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
-        if not self.spec_params.get("remove_isotope_peaks", False):
+        if not self.spec_params["remove_isotope_peaks"]:
             return
-        if not self.spec_params.get("remove_isotope_use_group_f", True):
+        if not self.spec_params["remove_isotope_use_group_f"]:
             return
         if self.um_spec_df.empty:
             return
@@ -429,13 +429,13 @@ class BaseDataset(Dataset):
         if not required_cols.issubset(self.um_spec_df.columns):
             return
 
-        max_isotope = self.spec_params.get("remove_isotope_max_isotope", 2)
-        min_coiso_fraction = self.spec_params.get("remove_isotope_min_coiso_fraction", 0.05)
-        max_leak_factor = self.spec_params.get("remove_isotope_max_leak_factor", 1.5)
-        precursor_envelope_lo = self.spec_params.get("remove_isotope_precursor_envelope_lo", 0.2)
-        precursor_envelope_hi = self.spec_params.get("remove_isotope_precursor_envelope_hi", 5.0)
-        min_group_count = self.spec_params.get("remove_isotope_group_min_count", 1)
-        max_group_cv = self.spec_params.get("remove_isotope_group_max_cv", 1.0)
+        max_isotope = self.spec_params["remove_isotope_max_isotope"]
+        min_coiso_fraction = self.spec_params["remove_isotope_min_coiso_fraction"]
+        max_leak_factor = self.spec_params["remove_isotope_max_leak_factor"]
+        precursor_envelope_lo = self.spec_params["remove_isotope_precursor_envelope_lo"]
+        precursor_envelope_hi = self.spec_params["remove_isotope_precursor_envelope_hi"]
+        min_group_count = self.spec_params["remove_isotope_group_min_count"]
+        max_group_cv = self.spec_params["remove_isotope_group_max_cv"]
 
         vals_by_group_k: dict[tuple[int, int], list[float]] = collections.defaultdict(list)
         for _, spec_entry in self.um_spec_df.iterrows():
@@ -480,10 +480,10 @@ class BaseDataset(Dataset):
         mol_id: int,
     ) -> tuple[np.ndarray, np.ndarray] | None:
         """Return DAG M+0 m/z and formula arrays for isotope cleanup if configured."""
-        if not self.spec_params.get("remove_isotope_use_dag_formula", True):
+        if not self.spec_params["remove_isotope_use_dag_formula"]:
             return None
 
-        dag_dp = self.spec_params.get("remove_isotope_dag_dp")
+        dag_dp = self.spec_params["remove_isotope_dag_dp"]
         if not dag_dp:
             return None
 
@@ -495,7 +495,7 @@ class BaseDataset(Dataset):
             frag_entry = load_frag_d(
                 mol_id,
                 str(dag_dp),
-                is_compressed=self.spec_params.get("remove_isotope_dag_compressed", True),
+                is_compressed=self.spec_params["remove_isotope_dag_compressed"],
             )
         except Exception:
             self._isotope_dag_formula_cache[mol_id] = None
@@ -763,7 +763,7 @@ class BaseDataset(Dataset):
         spec_data = {}
         # peak data
         mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
-        if self.spec_params.get("remove_isotope_peaks", False):
+        if self.spec_params["remove_isotope_peaks"]:
             mzs, ints = self._remove_isotope_peaks_from_spec(spec_entry, mzs, ints)
         if self.spec_params["sparse"]:
             # get sparse spectrum
@@ -861,23 +861,19 @@ class BaseDataset(Dataset):
             inst_type=str(spec_entry["inst_type"]),
             formula=formula,
             prec_type=str(spec_entry["prec_type"]),
-            max_isotope=self.spec_params.get("remove_isotope_max_isotope", 2),
-            remove_regular_isotopes=self.spec_params.get("remove_regular_isotope_peaks", True),
-            remove_coisolation=self.spec_params.get("remove_coisolation_peaks", True),
-            regular_mz_tol=self.spec_params.get("remove_isotope_regular_mz_tol"),
+            max_isotope=self.spec_params["remove_isotope_max_isotope"],
+            remove_regular_isotopes=self.spec_params["remove_regular_isotope_peaks"],
+            remove_coisolation=self.spec_params["remove_coisolation_peaks"],
+            regular_mz_tol=self.spec_params["remove_isotope_regular_mz_tol"],
             coiso_fraction_by_k=group_f,
-            min_coiso_fraction=self.spec_params.get("remove_isotope_min_coiso_fraction", 0.05),
-            max_leak_factor=self.spec_params.get("remove_isotope_max_leak_factor", 1.5),
-            precursor_envelope_lo=self.spec_params.get(
-                "remove_isotope_precursor_envelope_lo", 0.2
-            ),
-            precursor_envelope_hi=self.spec_params.get(
-                "remove_isotope_precursor_envelope_hi", 5.0
-            ),
+            min_coiso_fraction=self.spec_params["remove_isotope_min_coiso_fraction"],
+            max_leak_factor=self.spec_params["remove_isotope_max_leak_factor"],
+            precursor_envelope_lo=self.spec_params["remove_isotope_precursor_envelope_lo"],
+            precursor_envelope_hi=self.spec_params["remove_isotope_precursor_envelope_hi"],
             dag_formula_mzs=dag_formula_mzs,
             dag_formula_strs=dag_formula_strs,
-            dag_mz_tol=self.spec_params.get("remove_isotope_dag_mz_tol", 0.015),
-            protect_dag_mono=self.spec_params.get("remove_isotope_protect_dag_mono", False),
+            dag_mz_tol=self.spec_params["remove_isotope_dag_mz_tol"],
+            protect_dag_mono=self.spec_params["remove_isotope_protect_dag_mono"],
         )
         if not remove_mask_np.any():
             return mzs, ints
