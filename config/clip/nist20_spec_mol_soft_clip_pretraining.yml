@@ -155,6 +155,7 @@ ace_std: 15.0
 
 # Inference / misc
 mz_max: 1500.0
+retrieval_eval_size: 2000
 optimizer: adam
 
 # ============================================================================

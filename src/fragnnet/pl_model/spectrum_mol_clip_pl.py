@@ -352,6 +352,11 @@ class SpectrumMolClipPL(L.LightningModule):
         self._val_spec_embeds.clear()
         mol_embed = mol_embed.cpu()
         spec_embed = spec_embed.cpu()
+        max_eval = int(self.hparams["retrieval_eval_size"])
+        if mol_embed.shape[0] > max_eval:
+            idx = th.randperm(mol_embed.shape[0])[:max_eval]
+            mol_embed = mol_embed[idx]
+            spec_embed = spec_embed[idx]
         metrics = {}
         metrics.update(self._retrieval_metrics(spec_embed, mol_embed, "s2m"))
         metrics.update(self._retrieval_metrics(mol_embed, spec_embed, "m2s"))
