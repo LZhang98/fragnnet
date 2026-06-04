@@ -76,7 +76,7 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 | 3b | **Categorical stratum FiLM** (`inst_type`, `frag_mode`, adduct) | Medium–High — extends adduct FiLM to full acquisition strata beyond CE FiLM | Low |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
 | 4a | **Peak-rank weighted loss** | Improves top-peak fidelity for perceived quality and retrieval | Low |
-| 4b | **Neutral-loss auxiliary loss** | Teaches chemically meaningful losses like H₂O, CO₂, NH₃, SO₂ | Medium |
+| 4b | ~~**Neutral-loss auxiliary loss**~~ | ~~Teaches chemically meaningful losses like H₂O, CO₂, NH₃, SO₂~~ — **REJECTED**: NL class is trivially derivable from input formula features; head trains nothing new | — |
 | 4c | **Formula-recall-aware weighting** | Separates model failures from DAG coverage failures | Low–Medium |
 | 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
 | 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1, fixes low `wrecall` for steroids/coumarins/indoles | Medium (Cython, ~190 checks/mol) |
@@ -220,55 +220,6 @@ Log the following groups separately to W&B per validation epoch:
 These ideas change the training signal rather than the architecture.  They should be
 validated after the basic stratum/adduct imbalance fixes, because they can change what
 the model optimizes even when aggregate cosine looks similar.
-
-### Neutral-Loss Auxiliary Loss
-
-Many MS/MS patterns are better described by neutral losses than by final fragment formula
-alone: H₂O, NH₃, CO, CO₂, CH₃, C₂H₄, SO₂, H₂S, etc.  The DAG may contain candidate
-fragments, but the model can still underuse chemically favored loss paths.
-
-Target construction:
-
-```text
-neutral_loss_formula = parent_formula - child_formula
-```
-
-Map common neutral losses to class ids:
-
-| Neutral loss | Example source |
-|---|---|
-| H₂O | alcohols, acids |
-| NH₃ | amines |
-| CO / CO₂ | carbonyls, acids |
-| SO₂ / H₂S | organosulfur |
-| CH₃ / C₂H₄ | alkyl losses |
-| other | fallback class |
-
-Model target:
-
-- edge-level classifier on parent→child fragment edges, or
-- path-level classifier for whether a high-probability predicted fragment uses a known
-  neutral-loss class.
-
-First implementation should be edge-level because parent-child DAG edges already encode
-one fragmentation step:
-
-```python
-neutral_loss_logits = neutral_loss_head(edge_embed)
-neutral_loss_loss = cross_entropy(neutral_loss_logits, neutral_loss_class)
-loss += neutral_loss_weight * neutral_loss_loss
-```
-
-Use this as an auxiliary objective only.  It should improve chemistry-sensitive classes
-without replacing the spectrum loss.
-
-Suggested config:
-
-```yaml
-neutral_loss_aux: false
-neutral_loss_weight: 0.05
-neutral_loss_classes: [H2O, NH3, CO, CO2, SO2, H2S, CH3, C2H4, other]
-```
 
 ### Formula-Recall-Aware Loss Weighting
 
