@@ -503,6 +503,13 @@ frag_mode_scale: False           # Enable mode-conditioned affine output scaling
 ce_scale: False              # Enable CE-conditioned FiLM scaler on logits before softmax
 ce_scaler_hidden_dim: 64     # Hidden dim of the CE→FiLM MLP
 
+# Categorical FiLM output scaling (adduct type and acquisition stratum)
+adduct_scale: False           # §3a: Enable adduct-type FiLM output scaling (prec_type token)
+stratum_scale: False          # §3b: Enable combined inst/frag_mode/adduct FiLM output scaling
+stratum_scaler_embed_dim: 16  # Embedding dim for each categorical axis in StratumScaler
+# Note: adduct_scale and stratum_scale are independent ablation toggles.
+# stratum_scale subsumes adduct_scale — do not enable both simultaneously.
+
 # ============================================================================
 # MCES Pre-training Configuration
 # ============================================================================

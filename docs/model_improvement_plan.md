@@ -72,7 +72,12 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 | 1 | `force_stopped` + formula-recall (AR) diagnostic per class | Unblocks §4 and §5 decisions | Very low (query) |
 | 2 | **Frag-mode conditioning** (HCD/CID token) | High — FT/CID gap 0.785→0.497, model blind to it | Low (arch, same pattern as inst\_type) |
 | 3 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
+| 3a | **Adduct-type FiLM** (`prec_type`) | Medium — cheap output-level correction for `[M+Na]+`, `[M+Cl]-`, `[M-H]-` | Low |
+| 3b | **Categorical stratum FiLM** (`inst_type`, `frag_mode`, adduct) | Medium–High — extends adduct FiLM to full acquisition strata beyond CE FiLM | Low |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
+| 4a | **Peak-rank weighted loss** | Improves top-peak fidelity for perceived quality and retrieval | Low |
+| 4b | **Neutral-loss auxiliary loss** | Teaches chemically meaningful losses like H₂O, CO₂, NH₃, SO₂ | Medium |
+| 4c | **Formula-recall-aware weighting** | Separates model failures from DAG coverage failures | Low–Medium |
 | 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
 | 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1, fixes low `wrecall` for steroids/coumarins/indoles | Medium (Cython, ~190 checks/mol) |
 | 5b | **DAG mass filter (prune, not expand)** | Medium — SMARTS prepass/MBFS experiments show expansion hurts (−0.007 cos\_sim); mass filter recovers this at near-zero cost | Low (filter at dataset prep) |
@@ -81,7 +86,9 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 | 8 | Dual CE input (ACE + NCE, no conversion) ablation | Medium — tests whether avoiding ACE→NCE noise helps QTOF | Low (config + validation run) |
 | 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
 | 10 | **Model ensembling** | +4% cos\_hun, no arch change needed | Very low (multi-seed inference) |
+| 10a | **Ensemble distillation student** | Recover part of ensemble gain at single-model inference cost | Medium |
 | 11 | OOS calibration per stratum | Confidence filter for downstream use | Very low (query) |
+| 11a | **Prediction-quality calibration head** | Confidence score for filtering/reranking downstream retrieval | Low–Medium |
 
 ---
 
@@ -205,6 +212,149 @@ Log the following groups separately to W&B per validation epoch:
 - `val/cos_sim_ion_pos`, `val/cos_sim_ion_neg`
 - `val/cos_sim_oos_low` (pred\_oos\_prob ≤ 0.05), `val/cos_sim_oos_high` (pred\_oos\_prob > 0.2)
 - Per-class median for the 9 focal-weight target classes above
+
+---
+
+## 1b. Loss and DAG-Aware Training Objectives
+
+These ideas change the training signal rather than the architecture.  They should be
+validated after the basic stratum/adduct imbalance fixes, because they can change what
+the model optimizes even when aggregate cosine looks similar.
+
+### Peak-Rank Weighted Loss
+
+Current sparse CE/JSS losses use intensity mass, but they do not explicitly say that the
+top-ranked experimental peaks are more important than the long tail.  For library search
+and visual spectrum quality, missing the base peak or top 5 peaks is usually much worse
+than missing a tiny peak.
+
+Proposed weighting:
+
+```python
+rank_weight = {
+    "top_5": 2.0,
+    "top_20": 1.0,
+    "tail": 0.5,
+}
+```
+
+Implementation options:
+
+1. Modify true peak log-probabilities before sparse CE/JSS:
+
+```python
+weighted_true_logprobs = true_logprobs + log(peak_rank_weight)
+weighted_true_logprobs = scatter_logsoftmax(weighted_true_logprobs, true_batch_idxs)
+```
+
+2. Or multiply per-true-peak loss contributions before reducing to per-spectrum loss.
+
+Start with rank weights only for the primary supervised spectrum loss, not entropy or
+pairwise auxiliary losses.  Track top-k peak recall separately:
+
+- top-1/base-peak matched within tolerance
+- top-5 intensity coverage
+- top-20 intensity coverage
+
+### Neutral-Loss Auxiliary Loss
+
+Many MS/MS patterns are better described by neutral losses than by final fragment formula
+alone: H₂O, NH₃, CO, CO₂, CH₃, C₂H₄, SO₂, H₂S, etc.  The DAG may contain candidate
+fragments, but the model can still underuse chemically favored loss paths.
+
+Target construction:
+
+```text
+neutral_loss_formula = parent_formula - child_formula
+```
+
+Map common neutral losses to class ids:
+
+| Neutral loss | Example source |
+|---|---|
+| H₂O | alcohols, acids |
+| NH₃ | amines |
+| CO / CO₂ | carbonyls, acids |
+| SO₂ / H₂S | organosulfur |
+| CH₃ / C₂H₄ | alkyl losses |
+| other | fallback class |
+
+Model target:
+
+- edge-level classifier on parent→child fragment edges, or
+- path-level classifier for whether a high-probability predicted fragment uses a known
+  neutral-loss class.
+
+First implementation should be edge-level because parent-child DAG edges already encode
+one fragmentation step:
+
+```python
+neutral_loss_logits = neutral_loss_head(edge_embed)
+neutral_loss_loss = cross_entropy(neutral_loss_logits, neutral_loss_class)
+loss += neutral_loss_weight * neutral_loss_loss
+```
+
+Use this as an auxiliary objective only.  It should improve chemistry-sensitive classes
+without replacing the spectrum loss.
+
+Suggested config:
+
+```yaml
+neutral_loss_aux: false
+neutral_loss_weight: 0.05
+neutral_loss_classes: [H2O, NH3, CO, CO2, SO2, H2S, CH3, C2H4, other]
+```
+
+### Formula-Recall-Aware Loss Weighting
+
+If the true annotated formula is absent from the DAG, the neural model cannot assign
+probability to it.  Penalizing that case as a normal model error confounds two different
+failures:
+
+| Failure mode | Meaning | Fix |
+|---|---|---|
+| High DAG recall, low spectrum quality | Candidate exists but model scores it poorly | model/loss fix |
+| Low DAG recall, low spectrum quality | Candidate missing from DAG | fragmentation/DAG fix |
+
+Use formula recall and weighted formula recall as either diagnostics or sample weights:
+
+```text
+wrecall = intensity fraction of annotated true peaks represented by DAG formulas
+```
+
+Recommended first step is diagnostic-only:
+
+```python
+df.groupby(pd.cut(df.wrecall_h1, [0, .5, .8, .95, 1.0]))["cos_hun"].median()
+```
+
+Training-weight options:
+
+1. Downweight impossible examples:
+
+```python
+loss_weight = clamp(wrecall, min=0.2, max=1.0)
+loss = loss_weight * loss
+```
+
+2. Upweight learnable failures:
+
+```python
+if wrecall > 0.9 and cos_hun is low:
+    increase sample/class weight
+```
+
+Use option 1 cautiously: too much downweighting can hide hard chemistry classes that need
+DAG work.  The most useful output may be a routing decision: low-recall classes should go
+to DAG generation improvements, high-recall classes should go to model/loss improvements.
+
+Suggested config:
+
+```yaml
+formula_recall_weighting: false
+formula_recall_weight_key: wrecall_0.01_h1
+formula_recall_min_weight: 0.2
+```
 
 ---
 
@@ -468,6 +618,107 @@ concatenation — motivating `ce_scale` over relying solely on `ce_insert_locati
 - `src/fragnnet/pl_model/fragnnet_pl.py` — hparam passthrough
 - `config/template.yml` — default `ce_scale: false`, `ce_scaler_hidden_dim: 64`
 - `tests/test_ce_scaler.py` — unit tests (identity init, FiLM scaling, missing CE, multi-CE aggregation)
+
+---
+
+## 3b. Adduct-Type FiLM and Categorical Stratum FiLM
+
+### Motivation
+
+The implemented `CEScaler` handles continuous collision-energy effects: how spectrum
+severity changes as CE changes.  It does **not** directly model categorical acquisition
+and ionization differences:
+
+- `inst_type`: FT / QTOF / IT
+- `frag_mode`: HCD / CID / unknown
+- `prec_type`: `[M+H]+`, `[M+Na]+`, `[M+Cl]-`, `[M-H]-`, etc.
+
+These strata have systematic output-distribution differences that are not just CE effects.
+For example, QTOF/CID and rare adducts can have different fragment-intensity priors even
+at similar CE.  Current embedding concatenation gives the MLP a token, but the same output
+head must still serve all strata.  A small categorical FiLM module would let each stratum
+apply output-level corrections while preserving the shared FraGNNet backbone.
+
+### Adduct-Type FiLM: First Experiment
+
+Start with adduct-only FiLM because it is cheap and directly targets known weak groups
+(`[M+Na]+`, `[M+Cl]-`, and underperforming negative mode):
+
+```
+Adduct FiLM:    prec_type token -> H-shift logit scale/bias
+```
+
+Apply after `formula_module` and after existing `frag_mode_scaler` / `ce_scaler`, before
+`scatter_logsoftmax`:
+
+```python
+gamma, beta = self.adduct_scaler(prec_embed).chunk(2, dim=-1)
+frag_joint_logits = frag_joint_logits * (1 + gamma[frag_batch]) + beta[frag_batch]
+```
+
+Recommended config knobs:
+
+```yaml
+adduct_scale: true
+adduct_scaler_hidden_dim: 32
+```
+
+Implementation should mirror `CEScaler` identity initialization: final projection weights
+and biases start at zero, so enabling the module initially preserves the current model.
+
+### Combined Stratum FiLM: Follow-Up
+
+Keep this separate from CE FiLM for clean ablation:
+
+```
+CE FiLM:          continuous CE -> H-shift logit scale/bias
+Adduct FiLM:      prec_type token -> H-shift logit scale/bias
+Stratum FiLM:     inst/frag/adduct tokens -> H-shift logit scale/bias
+```
+
+Apply after `formula_module` and after `frag_mode_scaler` / `ce_scaler`, before
+`scatter_logsoftmax`:
+
+```python
+stratum_embed = inst_embed + frag_mode_embed + prec_embed
+gamma, beta = self.stratum_scaler(stratum_embed).chunk(2, dim=-1)
+frag_joint_logits = frag_joint_logits * (1 + gamma[frag_batch]) + beta[frag_batch]
+```
+
+Recommended first version:
+
+| Aspect | Detail |
+|---|---|
+| Inputs | `spec_inst_type`, `spec_frag_mode`, `spec_prec_type` |
+| Apply location | Formula/H-shift logits, not graph embeddings |
+| Output dim | `mlp_output_dim` (`2 * num_hs + 1`, doubled when CMF is active) |
+| Architecture | Tiny MLP or embedding tables + linear projection |
+| Init | Identity: final weights/biases zero so training starts from current model |
+| Ablation | CE FiLM only vs adduct FiLM only vs stratum FiLM vs combinations |
+
+### Why This Is Different From Existing Frag-Mode Conditioning
+
+`frag_mode_insert_location: mlp` is representation conditioning: it gives the MLP a
+categorical input feature.  Categorical FiLM is output-distribution conditioning: it
+directly changes the relative preference for H-shift columns and formula logits per
+stratum.  This mirrors the rationale for CE FiLM, but uses categorical acquisition
+metadata instead of continuous CE.
+
+### Evaluation
+
+Track aggregate metrics and the strata this module is meant to help:
+
+- `val/cos_sim_Mplus_Na`
+- `val/cos_sim_Mplus_Cl`
+- `val/cos_sim_Mminus_H`
+- `val/cos_sim_QTOF_CID`
+- `val/cos_sim_FT_CID`
+- negative-ion vs positive-ion buckets
+
+If adduct FiLM improves rare adducts while leaving `[M+H]+` flat, keep it.  If combined
+stratum FiLM then further improves QTOF/CID or FT/CID without hurting dominant FT/HCD,
+it is worth the extra categorical conditioning.  If either module only improves aggregate
+metrics by exploiting dominant strata, prefer sampler/loss reweighting first.
 
 ---
 
@@ -1189,6 +1440,118 @@ strata (e.g., QTOF/CID may have higher OOS scores than warranted):
 df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()
 ```
 
+## 8b. Prediction-Quality Calibration Head
+
+### Motivation
+
+`pred_oos_prob` is already a useful confidence signal, but it is indirect: it estimates how
+much probability mass lies outside the predicted fragment support.  Downstream library
+search and retrieval would benefit from a direct estimate of prediction quality:
+
+```
+quality_hat ≈ E[cos_hun(predicted spectrum, true spectrum) | model outputs, metadata, DAG]
+```
+
+This score should not be treated as a new spectrum-quality metric.  It is a calibrated
+reliability estimate used for:
+
+- filtering low-confidence predictions before library export,
+- reranking retrieval hits with predicted reliability,
+- selecting cases for manual inspection,
+- diagnosing strata where the model is accurate but underconfident, or inaccurate but
+  overconfident.
+
+### Phase 1: Posthoc Calibration (Recommended First)
+
+Train a separate calibrator on saved validation/train predictions before adding a model
+head.  This avoids disturbing FraGNNet training and tells us whether the signal is there.
+
+Candidate inputs:
+
+| Feature group | Examples |
+|---|---|
+| Existing confidence | `pred_oos_prob`, `null_formula_prob` |
+| Distribution shape | formula entropy / normalized entropy, top-k mass, predicted peak count |
+| DAG complexity | number of DAG nodes, number of formulae, depth reached, `force_stopped`, wrecall bucket if available for analysis |
+| Metadata | `inst_type`, `frag_mode`, `prec_type`, CE / ACE / NCE, precursor m/z |
+| Data source / chemistry | dataset source, ClassyFire superclass/class when available |
+
+Target:
+
+```python
+quality_target = cos_hun  # or cos_sim_0.01 / JSS, depending on downstream use
+```
+
+Fit a small model first:
+
+- isotonic regression on `pred_oos_prob` as the baseline,
+- then LightGBM / random forest / small MLP over the feature table.
+
+Evaluate calibration, not only correlation:
+
+```python
+df.groupby(pd.cut(df.quality_hat, [0, .2, .4, .6, .8, 1.0]))["cos_hun"].mean()
+```
+
+Keep it only if predicted-quality buckets are monotonic and each bucket's mean actual
+quality is close to the predicted score.
+
+### Phase 2: Integrated Auxiliary Head
+
+If posthoc calibration works, add an optional head to `FraGNNetModel` that predicts one
+per-spectrum scalar:
+
+```python
+pred_quality = sigmoid(quality_module(quality_features))
+```
+
+Good first input is a pooled representation, not per-fragment logits:
+
+```
+quality_features =
+    concat(mol_embed_gnn_pool,
+           pooled frag embedding,
+           CE / ACE / NCE embedding,
+           prec_type embedding,
+           inst_type embedding,
+           frag_mode embedding)
+```
+
+Training target should be detached from the eval metric path:
+
+```python
+quality_target = metric_output_d["cos_hun"].detach().clamp(0, 1)
+quality_loss = mse(pred_quality, quality_target)
+loss = loss + quality_loss_weight * quality_loss
+```
+
+Important implementation detail: keep `quality_loss` as a per-sample vector, then let the
+existing batch reduction handle sample weighting.  This matches how `loss_d["loss"]` is
+reduced later in `SpectrumPL._common_step`.
+
+Suggested config:
+
+```yaml
+predict_quality: false
+quality_target_metric: cos_hun
+quality_loss_weight: 0.01   # sweep 0.01, 0.03, 0.05
+quality_head_hidden_dim: 64
+quality_loss_type: mse
+```
+
+### Evaluation
+
+Report:
+
+- Pearson/Spearman correlation between `pred_quality` and actual `cos_hun`
+- MAE / calibration error by predicted-quality bucket
+- aggregate and per-stratum calibration curves
+- retrieval performance after filtering by `pred_quality > threshold`
+- coverage/quality tradeoff: retained fraction vs median `cos_hun`
+
+The head is useful even if it does not improve spectrum prediction itself, as long as it
+reliably identifies predictions that should not be trusted downstream.
+
 ---
 
 ## 9. Model Ensembling
@@ -1235,6 +1598,63 @@ Baseline for 2-model ensembles; add Low/High seeds for 4-model ensembles.
 
 Add to Priority Order table as **Priority 9** between §6 (CID data) and §7 (Dual CE):
 ensemble is zero-architecture-cost and should be validated before any structural changes.
+
+### Follow-Up: Distill Ensemble Into a Student
+
+The ensemble improves accuracy but multiplies inference cost.  A student model can be
+trained to match the averaged ensemble distribution and recover part of the ensemble gain
+while keeping single-checkpoint inference.
+
+Teacher generation:
+
+1. Train 3–5 teacher checkpoints using the best config seeds / loss variants.
+2. Run inference over the training split and save teacher spectra per `spec_id`.
+3. Average teacher predictions after normalizing each predicted sparse spectrum.
+4. Store the distilled target as sparse `(mz, intensity)` arrays, preferably after the
+   same binning/tolerance aggregation used by evaluation.
+
+Student objective:
+
+```python
+loss = supervised_loss(student, true_spectrum)
+loss += distill_weight * spectrum_loss(student, teacher_ensemble_spectrum)
+```
+
+Start with a conservative distillation weight:
+
+```yaml
+distill_from_ensemble: false
+distill_target_fp: null
+distill_weight: 0.2      # sweep 0.1, 0.2, 0.5
+distill_loss_type: jss_distance_hungarian
+```
+
+Use the same sparse spectral loss family already used for training (`jss_distance_hungarian`
+or `cosine_distance_hungarian`) so the student learns peak positions and intensities in the
+same geometry as evaluation.  If teacher targets are binned, use the binned cosine/JSS path
+consistently rather than mixing sparse and binned targets.
+
+Why this may help:
+
+- the ensemble target is less noisy than one teacher,
+- it contains softer intensity mass over plausible fragments,
+- it can improve rare peak coverage without requiring ensemble inference.
+
+Risks / checks:
+
+- Do not let the student ignore true labels; sweep `distill_weight`.
+- Keep a validation set with no teacher leakage from test folds.
+- Compare student vs best single teacher vs full ensemble on the same split.
+- Track formula entropy: a student that copies only high-confidence peaks may lose the
+  ensemble's diversity gain.
+
+Success criterion:
+
+| Model | Desired result |
+|---|---|
+| Best single teacher | baseline |
+| Full ensemble | upper bound |
+| Distilled student | closes 30–70% of the single→ensemble gap at 1× inference cost |
 
 ---
 

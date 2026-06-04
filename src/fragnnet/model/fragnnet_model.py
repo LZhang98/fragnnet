@@ -11,12 +11,14 @@ import torch.nn.functional as F
 import torch_geometric as pyg
 
 from fragnnet.model.base_model import (
+    AdductScaler,
     CEModel,
     CEScaler,
     FragModeModel,
     FragModeScaler,
     InstModel,
     PrecModel,
+    StratumScaler,
 )
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
@@ -105,6 +107,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_mode_scale: bool,
         ce_scale: bool,
         ce_scaler_hidden_dim: int,
+        adduct_scale: bool,
+        stratum_scale: bool,
+        stratum_scaler_embed_dim: int,
         output_formula_str: bool,
         use_nce: bool,
         use_ace: bool,
@@ -333,6 +338,29 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
         else:
             self.ce_scaler = None
+
+        # adduct-type FiLM output scaling (applied after ce_scaler)
+        self.adduct_scale = adduct_scale
+        if self.adduct_scale:
+            self.adduct_scaler = AdductScaler(
+                num_adduct_types=len(prec_types),
+                output_dim=self.mlp_output_dim,
+            )
+        else:
+            self.adduct_scaler = None
+
+        # combined stratum FiLM output scaling (applied after adduct_scaler)
+        self.stratum_scale = stratum_scale
+        if self.stratum_scale:
+            self.stratum_scaler = StratumScaler(
+                num_inst_types=len(inst_types),
+                num_frag_modes=len(frag_modes),
+                num_adduct_types=len(prec_types),
+                embed_dim=stratum_scaler_embed_dim,
+                output_dim=self.mlp_output_dim,
+            )
+        else:
+            self.stratum_scaler = None
 
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
@@ -1134,6 +1162,24 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     nce_stats=kwargs.get("spec_nce_stats"),
                     ace_stats=kwargs.get("spec_ace_stats"),
                 )
+            # apply adduct-type FiLM scaling if enabled
+            if self.adduct_scaler is not None:
+                assert spec_prec_type is not None, "spec_prec_type required for adduct_scaler"
+                frag_joint_logits = self.adduct_scaler(
+                    frag_joint_logits, spec_prec_type, frag_node_batch_idxs
+                )
+            # apply combined stratum FiLM scaling if enabled
+            if self.stratum_scaler is not None:
+                assert spec_inst_type is not None, "spec_inst_type required for stratum_scaler"
+                assert spec_frag_mode is not None, "spec_frag_mode required for stratum_scaler"
+                assert spec_prec_type is not None, "spec_prec_type required for stratum_scaler"
+                frag_joint_logits = self.stratum_scaler(
+                    frag_joint_logits,
+                    spec_inst_type,
+                    spec_frag_mode,
+                    spec_prec_type,
+                    frag_node_batch_idxs,
+                )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (
@@ -1182,6 +1228,24 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
                 frag_node_formula_logits = self.frag_mode_scaler(
                     frag_node_formula_logits, spec_frag_mode, frag_node_batch_idxs
+                )
+            # apply adduct-type FiLM scaling if enabled
+            if self.adduct_scaler is not None:
+                assert spec_prec_type is not None, "spec_prec_type required for adduct_scaler"
+                frag_node_formula_logits = self.adduct_scaler(
+                    frag_node_formula_logits, spec_prec_type, frag_node_batch_idxs
+                )
+            # apply combined stratum FiLM scaling if enabled
+            if self.stratum_scaler is not None:
+                assert spec_inst_type is not None, "spec_inst_type required for stratum_scaler"
+                assert spec_frag_mode is not None, "spec_frag_mode required for stratum_scaler"
+                assert spec_prec_type is not None, "spec_prec_type required for stratum_scaler"
+                frag_node_formula_logits = self.stratum_scaler(
+                    frag_node_formula_logits,
+                    spec_inst_type,
+                    spec_frag_mode,
+                    spec_prec_type,
+                    frag_node_batch_idxs,
                 )
             assert frag_node_formula_logits.shape[1] == self.mlp_output_dim, (
                 frag_node_formula_logits.shape[1],
