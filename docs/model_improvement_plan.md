@@ -221,41 +221,6 @@ These ideas change the training signal rather than the architecture.  They shoul
 validated after the basic stratum/adduct imbalance fixes, because they can change what
 the model optimizes even when aggregate cosine looks similar.
 
-### Peak-Rank Weighted Loss
-
-Current sparse CE/JSS losses use intensity mass, but they do not explicitly say that the
-top-ranked experimental peaks are more important than the long tail.  For library search
-and visual spectrum quality, missing the base peak or top 5 peaks is usually much worse
-than missing a tiny peak.
-
-Proposed weighting:
-
-```python
-rank_weight = {
-    "top_5": 2.0,
-    "top_20": 1.0,
-    "tail": 0.5,
-}
-```
-
-Implementation options:
-
-1. Modify true peak log-probabilities before sparse CE/JSS:
-
-```python
-weighted_true_logprobs = true_logprobs + log(peak_rank_weight)
-weighted_true_logprobs = scatter_logsoftmax(weighted_true_logprobs, true_batch_idxs)
-```
-
-2. Or multiply per-true-peak loss contributions before reducing to per-spectrum loss.
-
-Start with rank weights only for the primary supervised spectrum loss, not entropy or
-pairwise auxiliary losses.  Track top-k peak recall separately:
-
-- top-1/base-peak matched within tolerance
-- top-5 intensity coverage
-- top-20 intensity coverage
-
 ### Neutral-Loss Auxiliary Loss
 
 Many MS/MS patterns are better described by neutral losses than by final fragment formula
