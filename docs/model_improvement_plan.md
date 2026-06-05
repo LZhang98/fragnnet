@@ -59,6 +59,9 @@ The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **the
 | FT / QTOF / IT in inst\_types | ✅ included | `inst_types: [FT, QTOF, IT]` |
 | **Fragmentation mode conditioning** | ✅ **implemented** | `frag_mode: True`, `frag_mode_insert_location: mlp`, `frag_mode_scale: True` |
 | **Dual CE input (ACE + NCE)** | ✅ **implemented** | `use_nce: True`, `use_ace: True`; independent embeddings are concatenated |
+| QTOF/CID sampler upweighting | ❌ **tried, no gain** | Conditioning problem not data quantity |
+| DAG mass filter (5b) | ❌ **tried, no gain** | Noise spread across mass range; pruning ineffective |
+| NL auxiliary loss | ❌ **rejected** | NL class trivially derivable from input formula features |
 
 The 0.762 median is with the implemented conditioning active. Remaining QTOF/CID work is now
 mostly an ablation/data-balance question, not a missing dual-CE architecture path.
@@ -67,28 +70,31 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 
 ## Priority Order
 
-| Priority | Area | Expected Impact | Effort |
-|---|---|---|---|
-| 1 | `force_stopped` + formula-recall (AR) diagnostic per class | Unblocks §4 and §5 decisions | Very low (query) |
-| 2 | **Frag-mode conditioning** (HCD/CID token) | High — FT/CID gap 0.785→0.497, model blind to it | Low (arch, same pattern as inst\_type) |
-| 3 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
-| 3a | **Adduct-type FiLM** (`prec_type`) | Medium — cheap output-level correction for `[M+Na]+`, `[M+Cl]-`, `[M-H]-` | Low |
-| 3b | **Categorical stratum FiLM** (`inst_type`, `frag_mode`, adduct) | Medium–High — extends adduct FiLM to full acquisition strata beyond CE FiLM | Low |
-| 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
-| 4a | **Peak-rank weighted loss** | Improves top-peak fidelity for perceived quality and retrieval | Low |
-| 4b | ~~**Neutral-loss auxiliary loss**~~ | ~~Teaches chemically meaningful losses like H₂O, CO₂, NH₃, SO₂~~ — **REJECTED**: NL class is trivially derivable from input formula features; head trains nothing new | — |
-| 4c | **Formula-recall-aware weighting** | Separates model failures from DAG coverage failures | Low–Medium |
-| 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
-| 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1, fixes low `wrecall` for steroids/coumarins/indoles | Medium (Cython, ~190 checks/mol) |
-| 5b | **DAG mass filter (prune, not expand)** | Medium — SMARTS prepass/MBFS experiments show expansion hurts (−0.007 cos\_sim); mass filter recovers this at near-zero cost | Low (filter at dataset prep) |
-| 6 | **Explicit fragmentation rules for fused rings/steroids** | Medium — 3-bond cleavages not covered by one-shot pre-pass | Medium (SMARTS) |
-| 7 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
-| 8 | Dual CE input (ACE + NCE, no conversion) ablation | Medium — tests whether avoiding ACE→NCE noise helps QTOF | Low (config + validation run) |
-| 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
-| 10 | **Model ensembling** | +4% cos\_hun, no arch change needed | Very low (multi-seed inference) |
-| 10a | **Ensemble distillation student** | Recover part of ensemble gain at single-model inference cost | Medium |
-| 11 | OOS calibration per stratum | Confidence filter for downstream use | Very low (query) |
-| 11a | **Prediction-quality calibration head** | Confidence score for filtering/reranking downstream retrieval | Low–Medium |
+**Goal: high AR (≥0.90) AND high AP (≥0.98). Current: AR=0.808, AP=0.984. GrAFF reaches AR=0.95 but AP=0.61 — not acceptable.**
+
+| Priority | Area | Expected Impact | Effort | Status |
+|---|---|---|---|---|
+| 1 | `force_stopped` + formula-recall (AR) diagnostic per class | Unblocks §4 and §5 decisions | Very low (query) | — |
+| 2 | **Frag-mode conditioning** (HCD/CID token) | High — FT/CID gap 0.785→0.497 | Low | ✅ DONE |
+| 3 | QTOF/CID upweighting in sampler | High — conditioning problem, not data quantity | Low | ❌ TRIED — no measurable improvement |
+| 3a | **Adduct-type FiLM** (`prec_type`) | Medium — cheap output-level correction for `[M+Na]+`, `[M+Cl]-`, `[M-H]-` | Low | — |
+| 3b | **Categorical stratum FiLM** (`inst_type`, `frag_mode`, adduct) | Medium–High — extends adduct FiLM to full strata | Low | — |
+| 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium | — |
+| 4a | ~~**Peak-rank weighted loss**~~ | ~~Improves top-peak fidelity~~ — **REJECTED**: top peaks already dominate cosine/Hungarian loss implicitly; amplifying further hurts AR | — | ❌ REJECTED |
+| 4b | ~~**Neutral-loss auxiliary loss**~~ | **REJECTED**: NL class trivially derivable from input formula features | — | ❌ REJECTED |
+| 4c | ~~**Formula-recall-aware weighting**~~ | **NOT WORTH IT**: downweights hard compounds (steroids, polycyclics) that need more signal, not less; useful as diagnostic only | — | ❌ SKIP |
+| 4d | ~~**Sibling intensity ranking head**~~ | **NOT WORTH IT**: supervision density too sparse — pairs require both siblings in true spectrum, missing for low-CE/polycyclic compounds where it matters most | — | ❌ SKIP |
+| 5 | **Prioritized BFS for polycyclic DAG truncation** | High — anthracenes AR=0.276, polycyclics cut off at depth limit | Medium (Cython) | — |
+| 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1; steroids/coumarins/indoles | Medium (Cython) | — |
+| 5b | ~~**DAG mass filter**~~ | ~~Medium — prune false candidates~~ | Low | ❌ TRIED — no improvement |
+| 6 | **Explicit fragmentation rules for fused rings/steroids** | Medium — 3-bond cleavages not in one-shot pre-pass | Medium (SMARTS) | — |
+| 7 | CID training data sourcing | High — FT/CID median 0.497, ~8% of data | Low (data work) | — |
+| 8 | Dual CE input (ACE + NCE) | Medium | Low | ✅ DONE |
+| 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low | — |
+| 10 | **Model ensembling** | +4% cos\_hun validated, no arch change | Very low | — |
+| 10a | **Ensemble distillation student** | Recover ensemble gain at single-model cost | Medium | — |
+| 11 | OOS calibration per stratum | Confidence filter for downstream use | Very low | — |
+| 11a | **Prediction-quality calibration head** | Confidence score for filtering/reranking | Low–Medium | — |
 
 ---
 
@@ -220,6 +226,43 @@ Log the following groups separately to W&B per validation epoch:
 These ideas change the training signal rather than the architecture.  They should be
 validated after the basic stratum/adduct imbalance fixes, because they can change what
 the model optimizes even when aggregate cosine looks similar.
+
+### Sibling Intensity Ranking Head (4d)
+
+For each DAG parent node p, its children (siblings) compete for intensity. Training an
+auxiliary ranking head teaches the model relative fragment stability — the same signal
+CFM-ID's transition probabilities encode. This is NOT derivable from formula features alone:
+it requires the GNN to learn structural context (bond type, substituent pattern) that
+determines which sibling is more stable as an ion.
+
+**Design:**
+
+```
+frag_embed[i]  →  sibling_rank_head  →  score[i]   (scalar)
+frag_embed[j]  →  sibling_rank_head  →  score[j]
+
+logit = score[i] - score[j]
+label = (true_intensity[i] > true_intensity[j])   ← from matched true peaks
+loss  = BCE(logit, label)
+```
+
+Only pairs where BOTH siblings appear in the true spectrum contribute (label is well-defined).
+
+**Head input:** `frag_embed` (with GNN) — structural context determines relative stability.
+
+**Finding siblings:** `frag_edge_index[0]` gives parent per edge; group children by parent.
+
+**Label source:** In `_loss_fn`, matched node intensities from `frag_real_node_logprobs` and
+true peak matching give per-node true intensity. Pairs are restricted to non-root nodes
+with valid true matches.
+
+**Class imbalance:** Not applicable — BCE on balanced pairs (one wins, one loses).
+
+**Config:**
+```yaml
+sibling_rank_aux: False
+sibling_rank_aux_weight: 0.05
+```
 
 ### Formula-Recall-Aware Loss Weighting
 
