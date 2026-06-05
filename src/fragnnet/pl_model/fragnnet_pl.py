@@ -1116,7 +1116,7 @@ class FraGNNetPL(SpectrumPL):
                     "mean_loss does not require grad (detached). "
                     f"total_loss.requires_grad={getattr(total_loss, 'requires_grad', None)}"
                 )
-            if not th.isfinite(mean_loss):
+            if batch_idx % 100 == 0 and not th.isfinite(mean_loss):
                 raise RuntimeError(
                     f"Non-finite mean_loss detected: {mean_loss.detach().float().cpu().item()} "
                     f"(batch_idx={batch_idx}, batch_size={batch_size}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"

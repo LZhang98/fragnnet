@@ -243,7 +243,7 @@ simple_group_sampler_type: group
 pl_enable_progress_bar: False
 pandarallel_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
-compile: False                    # torch.compile for speed
+compile: True                     # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 32              # sub-batch size for vectorized loss
+loss_batch_size: 64              # sub-batch size for vectorized loss (was 32, halves loop iterations)
