@@ -1,4 +1,4 @@
-# DAG-Guided Molecular Generation from Mass Spectra
+# Molecular Generation from Mass Spectra
 
 ## 1. FRIGID
 
