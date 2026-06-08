@@ -41,35 +41,9 @@ P(M | S) ∝ p(S | M) × p(M) is never computed.
 
 ---
 
-## 3. FraGNNet as a Stronger Oracle
 
-Formula-level metrics (NIST23 scaffold split, merged spectra, `formula_ann_exp.ipynb`):
 
-| Model | AR (recall) | AP (precision) | AWP |
-|---|---|---|---|
-| FraGNNet-D4 | **0.809** | 0.984 | **0.9991** |
-| ICEBERG | 0.656 | **0.993** | — |
-| GrAFF | 0.951 | 0.611 | 0.802 |
-
-Key advantages over ICEBERG:
-
-- **Calibrated intensities**: trained with Gaussian mixture CE = −log p(S | M); predicted
-  probabilities are the model's calibrated fragment likelihood, not heuristic scores
-- **Intensity-weighted scoring**: replace binary `+1/−γ` with `±pred_intensity[i]`; AWP=0.9991
-  means high-intensity predictions are reliable enough to use as strong signals
-- **OOS probability**: `pred_oos_prob` is a per-candidate confidence gate — low OOS means
-  the candidate's BFS coverage is high and prediction is concentrated on real peaks
-- **Explicit DAG**: enables top-down remasking that respects parent-child hierarchy
-
-**Note on AR improvement via BFS expansion.** At depth 3–4, generated fragment formulas
-coincidentally match observed peaks without being real pathways. CE cannot distinguish
-formula-coincidental matches from true matches — both get IOS reward. The noise floor
-limits AR improvement via DAG expansion. The discrimination margin between correct and
-wrong candidates matters more than absolute AR for oracle use.
-
----
-
-## 4. Spectrum-to-Molecule Posterior Architecture
+## 3. Spectrum-to-Molecule Posterior Architecture
 
 **Goal:** one MS/MS spectrum → calibrated distribution over generated molecules.
 
@@ -107,7 +81,7 @@ flowchart TD
 
 *Figure 1. Branch A generates candidates; Branch B scores each; softmax yields the posterior.*
 
-### 4.1 Branch A — Molecule Generator
+### 3.1 Branch A — Molecule Generator
 
 Branch A learns P(M | S): one spectrum → 100–1000 candidate molecules.
 
@@ -118,7 +92,15 @@ Branch A learns P(M | S): one spectrum → 100–1000 candidate molecules.
 | **Fine-tuning** | Conditional generation on paired (spectrum, molecule) data |
 | **Inference** | Sample candidates; filter invalids and duplicates |
 
-### 4.2 Branch B — Fragment-Aware Scorer
+### 3.2 Branch A Options
+
+| Option | When to use |
+|---|---|
+| **Database retrieval** | Known chemical space; Branch B alone gives the posterior |
+| **Frozen generator** (FRIGID-style, trained independently) | De novo, inference-time composition |
+| **Joint ELBO** (generator maximises E[log p(S\|M)] − KL) | Maximum performance; needs reparameterisable generation |
+
+### 3.3 Branch B — Fragment-Aware Scorer
 
 `f(S, M)` approximates `log p(S | M)` on a **comparable scale** across all candidates.
 Inputs: observed peak m/z and intensities; candidate fragment masses and formulae;
@@ -159,7 +141,7 @@ flowchart LR
 
 *Figure 2. Precomputed GNN embeddings make softmax over database-scale candidate sets tractable.*
 
-### 4.3 Training
+### 3.4 Training
 
 | Stage | Objective |
 |---|---|
@@ -168,23 +150,16 @@ flowchart LR
 | **3 — Scorer training** | InfoNCE with hard negatives: same-formula, same-mass, same-class, random decoys |
 | **4 — Joint fine-tuning** | L_generation + λ₁ L_scoring + λ₂ L_fragment_consistency + λ₃ L_calibration |
 
-### 4.4 Branch A Options
-
-| Option | When to use |
-|---|---|
-| **Database retrieval** | Known chemical space; Branch B alone gives the posterior |
-| **Frozen generator** (FRIGID-style, trained independently) | De novo, inference-time composition |
-| **Joint ELBO** (generator maximises E[log p(S\|M)] − KL) | Maximum performance; needs reparameterisable generation |
 
 ---
 
-## 5. Spectrum-to-DAG Generation
+## 4. Spectrum-to-DAG Generation
 
 The observed spectrum is a partially-observed DAG: peak m/z values are node labels;
 which molecular subgraphs produce those masses is the inference target. The precursor is
 the DAG root.
 
-### 5.1 DAG Branch Regeneration
+### 4.1 DAG Branch Regeneration
 
 ```
 1.  DAG = BFS(M)
@@ -210,7 +185,7 @@ the DAG root.
 CE. Effective only for genuinely depth-limited fragments; discrimination margin between
 correct and wrong candidates matters more than absolute AR.
 
-### 5.2 Native DAG Diffusion
+### 4.2 Native DAG Diffusion
 
 Diffuse directly on the molecular graph; recompute DAG(M) = BFS(M) at each denoising
 step; use Branch B as the score function ∇ log p(M | S). Molecule and DAG are the same
