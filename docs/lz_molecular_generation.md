@@ -145,7 +145,135 @@ least-wrong candidate, not the correct one. The unbiased posterior requires:
 P(Mᵢ | S) ∝ p(S | Mᵢ) × p(Mᵢ) / q(Mᵢ | S)
 ```
 
-## 4. Spectrum-to-DAG Generation
+## Critical Training Constraint: Do Not Train on the MassSpecGym Candidate Distribution
+
+**Important:** the official MassSpecGym candidate sets should not be used as the primary training candidate distribution for the **Scorer**.
+
+The goal of the Scorer is to learn a general spectrum–molecule compatibility function:
+
+```text
+fθ(S, M)
+```
+
+where:
+
+```text
+S = observed MS/MS spectrum
+M = candidate or generated molecule
+```
+
+The Scorer should learn:
+
+```text
+this molecule explains the observed spectrum
+```
+
+not:
+
+```text
+this molecule looks like an official MassSpecGym candidate or decoy
+```
+
+If the Scorer is trained directly on the MassSpecGym candidate distribution, the task may become artificially easier. The model may exploit benchmark-specific candidate-set artifacts instead of learning true spectral compatibility. This could inflate MassSpecGym performance without demonstrating real generalization.
+
+Therefore:
+
+```text
+MassSpecGym candidate sets should be used for evaluation, not as the main training candidate distribution.
+```
+
+---
+
+### Training Candidate Distribution
+
+During Scorer training, candidate molecules should be sampled dynamically from multiple independent sources rather than from the fixed MassSpecGym candidate files.
+
+Useful training candidates include:
+
+```text
+true molecule
+same-formula decoys
+same-mass-window decoys
+same-class decoys
+same-scaffold or scaffold-neighbor decoys
+generated decoys from the Molecule Generator
+random molecules from external databases
+spectrally plausible analogs from forward simulation
+```
+
+The candidate set should be resampled across epochs so that the Scorer cannot memorize a fixed candidate-support structure.
+
+The objective is to train:
+
+```text
+fθ(S, M)
+```
+
+as a support-independent compatibility function.
+
+---
+
+### Use of MassSpecGym Candidate Sets
+
+MassSpecGym candidate sets remain useful for benchmarking, but they should be reserved for evaluation and stress testing.
+
+Recommended use:
+
+```text
+train the Scorer on dynamically sampled non-official candidate distributions
+evaluate on MassSpecGym formula candidates
+evaluate on MassSpecGym mass candidates
+evaluate on generated candidates
+evaluate on external database candidates
+```
+
+This separates model learning from benchmark-specific candidate bias.
+
+---
+
+### Desired Property: Support-Invariant Scoring
+
+The Scorer should be support-invariant.
+
+That means the raw score:
+
+```text
+fθ(S, M)
+```
+
+should depend only on the spectrum `S` and molecule `M`, not on which candidate set `M` came from.
+
+The posterior is computed only at inference time:
+
+```text
+P(Mᵢ | S, C) = softmaxᵢ[ fθ(S, Mᵢ) + log p(Mᵢ) ]
+```
+
+where:
+
+```text
+C = candidate support
+```
+
+The candidate support `C` may contain generated molecules, database-retrieved molecules, MassSpecGym candidates, or external candidates.
+
+---
+
+### Bias-Control Experiments
+
+To show that the Scorer is not exploiting candidate-set bias, include the following controls:
+
+| Experiment                                                     | Purpose                                                                  |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Train on dynamic negatives, evaluate on MassSpecGym candidates | Tests benchmark transfer                                                 |
+| Train on one negative distribution, evaluate on another        | Tests support invariance                                                 |
+| Evaluate on generated candidates only                          | Tests de novo posterior scoring                                          |
+| Evaluate on external database candidates                       | Tests out-of-benchmark generalization                                    |
+| Formula-only baseline                                          | Measures formula shortcut strength                                       |
+| Mass-only baseline                                             | Measures precursor-mass shortcut strength                                |
+| Candidate-source ablation                                      | Tests whether official candidate pools make the task artificially easier |
+
+## 4. More Advanced Idea, Spectrum-to-DAG Generation
 
 The observed spectrum is a partially-observed DAG: peak m/z values are node labels;
 which molecular subgraphs produce those masses is the inference target. The precursor is
