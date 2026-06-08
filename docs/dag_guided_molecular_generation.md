@@ -1,10 +1,8 @@
 # DAG-Guided Molecular Generation from Mass Spectra
 
+## 1. FRIGID
+
 Reference: FRIGID (Bohde et al., 2026) — https://arxiv.org/abs/2604.16648
-
----
-
-## 1. FRIGID — Mechanics
 
 Diffusion LM over SAFE sequences conditioned on spectrum. At inference, uses ICEBERG as
 a forward oracle to iteratively remask tokens:
@@ -13,37 +11,79 @@ a forward oracle to iteratively remask tokens:
 - Matched fragment atoms: `+1`; hallucinated fragment atoms: `−γ`
 - Aggregate to SAFE token level via **min** over constituent atoms → remask → re-denoise
 
----
 
-## 2. Problems with FRIGID
+### Problems with FRIGID
 
-**1. `min` aggregation penalises correct deep matches.**
-A matched child F2 whose atoms are a subset of a hallucinated parent F1 gets
-`min(+1, −γ) = −γ`. Correct evidence at depth 2 is erased by the hallucination at depth 1.
+**1. ICEBERG's flat fragment list breaks scoring and remasking.**
+
+**Background — fragmentation DAG.** When a molecule fragments in the mass spectrometer,
+it does so stepwise: the precursor loses one substructure to produce a depth-1 fragment;
+that fragment loses another to produce a depth-2 fragment; and so on. This hierarchy is a
+DAG rooted at the precursor. A key consequence: every fragment at depth d+1 is a
+structural sub-part of its parent, so its atoms are a strict subset:
+
+```
+atoms(F2) ⊂ atoms(F1)
+```
+
+**Root cause.** ICEBERG returns fragments as a flat list with no parent-child
+relationships. FRIGID therefore has no access to this hierarchy, which causes two failures
+in sequence: wrong atom scoring, then wrong remasking decisions.
+
+**Concrete example.** A five-atom chain A–B–C–D–E, three fragments:
 
 ```mermaid
 flowchart TD
-    P["Precursor"]
-    F1["F1  m/z 300\nhallucinated → −γ"]
-    F2["F2  m/z 150\nmatched (atoms ⊂ F1) → min = −γ"]
-    P --> F1 --> F2
+    M["Precursor: A–B–C–D–E  ·  m/z 500"]
+    F1["F1: B–C–D–E  ·  m/z 400\n✗ hallucinated  atoms {B C D E}"]
+    F2["F2: C–D–E  ·  m/z 300\n✓ matched  atoms {C D E}"]
+    F3["F3: D–E  ·  m/z 200\n✗ hallucinated  atoms {D E}"]
+    M -->|"break A–B"| F1
+    F1 -->|"break B–C"| F2
+    F2 -->|"break C–D"| F3
     style F1 fill:#ffdddd,stroke:#cc4444
-    style F2 fill:#ffeecc,stroke:#cc8844
+    style F2 fill:#ddffdd,stroke:#44aa44
+    style F3 fill:#ffdddd,stroke:#cc4444
 ```
 
-**2. Remasking is DAG-blind.**
-Top-down order is required: find the shallowest hallucination, protect matched children,
-then remask the parent. ICEBERG's flat fragment list makes this impossible.
+What ICEBERG gives FRIGID — depth and parentage are hidden:
 
-**3. No proper posterior.**
+| Fragment | m/z | Match | Depth (hidden) | Parent (hidden) |
+|---|---|---|---|---|
+| F1 | 400 | ✗ | 1 | precursor |
+| F2 | 300 | ✓ | 2 | F1 |
+| F3 | 200 | ✗ | 3 | F2 |
+
+**Failure 1 — wrong atom scores.** FRIGID scores each atom by every fragment it belongs
+to, then takes `min`. Atoms {C,D,E} belong to both F1 (hallucinated) and F2 (matched):
+
+| Atom | Score via F1 | Score via F2 | min → final |
+|---|---|---|---|
+| C, D, E | −γ | +1 | **−γ** |
+| B | −γ | — | **−γ** |
+
+F2 is correct evidence — but `min(+1, −γ) = −γ` erases it.
+
+**Failure 2 — wrong remasking order.** Without the DAG, FRIGID cannot distinguish F1
+(hallucinated at depth 1) from F3 (hallucinated at depth 3 whose parent F2 is matched).
+The correct repair is top-down:
+
+```
+1. Find shallowest hallucination: F1 (depth 1)
+2. F1's child F2 is matched → protect atoms {C, D, E}
+3. Remask only atom B (F1-unique)
+4. Next: F3 (depth 3), no matched children → remask atoms {D, E}
+```
+
+Instead, all of {B,C,D,E} are scored −γ and the entire right half of the molecule is
+remasked at once — destroying F2 even though it was correct evidence.
+
+**2. No proper posterior.**
 Iterative remasking is not an approximation to any well-defined distribution;
 P(M | S) ∝ p(S | M) × p(M) is never computed.
 
----
 
-
-
-## 3. Spectrum-to-Molecule Posterior Architecture
+## 3. Proposed plan
 
 **Goal:** one MS/MS spectrum → calibrated distribution over generated molecules.
 
