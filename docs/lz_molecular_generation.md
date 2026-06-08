@@ -30,7 +30,7 @@ atoms(F2) ⊂ atoms(F1)
 relationships. FRIGID therefore has no access to this hierarchy, which causes two failures
 in sequence: wrong atom scoring, then wrong remasking decisions.
 
-**Concrete example.** A five-atom chain A–B–C–D–E, three fragments:
+**An example.** A five-atom chain A–B–C–D–E, three fragments:
 
 ```mermaid
 flowchart TD
@@ -81,7 +81,6 @@ remasked at once - destroying F2 even though it was correct evidence.
 **2. No proper posterior.**
 Iterative remasking is not an approximation to any well-defined distribution;
 P(M | S) ∝ p(S | M) × p(M) is never computed.
-
 
 ## 3. Proposed plan
 
@@ -145,9 +144,9 @@ least-wrong candidate, not the correct one. The unbiased posterior requires:
 P(Mᵢ | S) ∝ p(S | Mᵢ) × p(Mᵢ) / q(Mᵢ | S)
 ```
 
-### 3.3 Scorer Training: Avoiding Benchmark Leakage
+#### Avoiding Benchmark Leakage
 
-**The Scorer must not be trained on the MassSpecGym candidate distribution.**
+**The Scorer must NOT be trained on the MassSpecGym candidate distribution, or any other pre-defined candidate distribution**
 
 The goal is a support-independent compatibility function `fθ(S, M)` that captures true spectral evidence — *this molecule explains this spectrum* — rather than benchmark-specific candidate-set artifacts. Training directly on MassSpecGym candidates risks inflating retrieval numbers without demonstrating real generalization: the model may learn to distinguish MassSpecGym decoys rather than to score spectral compatibility.
 
@@ -172,64 +171,3 @@ P(Mᵢ | S, C) = softmaxᵢ[ fθ(S, Mᵢ) + log p(Mᵢ) ]
 ```
 
 where `C` may be generated molecules, database hits, MassSpecGym candidates, or any mix.
-
-**Bias-control experiments.**
-
-| Experiment | Purpose |
-|---|---|
-| Train on dynamic negatives → eval on MassSpecGym | Benchmark transfer |
-| Train on one distribution → eval on another | Support invariance |
-| Eval on generated candidates only | De novo posterior scoring |
-| Eval on external database candidates | Out-of-benchmark generalization |
-| Formula-only baseline | Formula shortcut strength |
-| Mass-only baseline | Precursor-mass shortcut strength |
-| Candidate-source ablation | Measures how much official pools inflate results |
-
-## 4. More Advanced Idea, Spectrum-to-DAG Generation
-
-The observed spectrum is a partially-observed DAG: peak m/z values are node labels;
-which molecular subgraphs produce those masses is the inference target. The precursor is
-the DAG root.
-
-### 4.1 DAG Branch Regeneration
-
-```
-1.  DAG = BFS(M)
-2.  matched, unmatched = match_peaks(DAG, S)
-3.  for peak p in unmatched (high intensity first):
-        F_p = formula_from_mass(p.mz, precursor_formula)
-        if subgraph_search(M, F_p):
-            add branch to DAG              # Case 1 - free, M unchanged
-        else:
-            queue_edit(M, F_p, protected=atoms_in_matched_fragments)
-4.  apply minimal edits (Case 2)
-5.  rebuild DAG, score with Branch B → iterate
-```
-
-| | Case 1 | Case 2 |
-|---|---|---|
-| Trigger | F_p reachable from M's atoms; BFS depth-limited | F_p cannot be any atom subset of M |
-| Operation | Add DAG branch; M unchanged | Edit M to introduce subgraph with formula F_p |
-| Generation needed | No | Yes - scaffold decoration at specific attachment points |
-| Matched fragments | Preserved | Protected atoms fixed |
-
-**Noise limitation.** Formula-coincidental matches at depth 3–4 receive IOS reward under
-CE. Effective only for genuinely depth-limited fragments; discrimination margin between
-correct and wrong candidates matters more than absolute AR.
-
-### 4.2 Native DAG Diffusion
-
-Diffuse directly on the molecular graph; recompute DAG(M) = BFS(M) at each denoising
-step; use Branch B as the score function ∇ log p(M | S). Molecule and DAG are the same
-object - no rebuild inconsistency.
-
-| Challenge | Description |
-|---|---|
-| Variable-size DAGs | Fragment count varies widely across molecules |
-| Discrete topology | Which bonds break is discrete; standard diffusion is continuous |
-| Root recovery | Root node uniquely determines the entire DAG - must be consistent top-down and bottom-up |
-| Shared substructures | Same formula fragment can appear under multiple parents |
-
-Related work: Junction Tree VAE (tree of substructures, VAE, no spectrum conditioning);
-DiGress (graph diffusion, no DAG, no spectrum); FRIGID (SAFE string diffusion, DAG is
-external).
