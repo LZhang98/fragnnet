@@ -17,32 +17,27 @@ a forward oracle to iteratively remask tokens:
 
 ## 2. Problems with FRIGID
 
-**Problem 1 — `min` aggregation penalises correct deep matches.**
-
+**1. `min` aggregation penalises correct deep matches.**
 A matched child F2 whose atoms are a subset of a hallucinated parent F1 gets
-`min(+1, −γ) = −γ`. Correct evidence at depth 2 is penalised by the hallucination at
-depth 1.
+`min(+1, −γ) = −γ`. Correct evidence at depth 2 is erased by the hallucination at depth 1.
 
 ```mermaid
 flowchart TD
     P["Precursor"]
-    F1["F1  m/z 300\nhallucinated → atoms scored −γ"]
-    F2["F2  m/z 150\nmatched  (atoms ⊂ F1) → min scores −γ"]
+    F1["F1  m/z 300\nhallucinated → −γ"]
+    F2["F2  m/z 150\nmatched (atoms ⊂ F1) → min = −γ"]
     P --> F1 --> F2
     style F1 fill:#ffdddd,stroke:#cc4444
     style F2 fill:#ffeecc,stroke:#cc8844
 ```
 
-**Problem 2 — remasking is DAG-blind.**
+**2. Remasking is DAG-blind.**
+Top-down order is required: find the shallowest hallucination, protect matched children,
+then remask the parent. ICEBERG's flat fragment list makes this impossible.
 
-Correct remasking order must be top-down: identify the shallowest hallucinated fragment,
-check whether its children are matched, protect matched-child atoms before remasking the
-parent. ICEBERG's flat fragment list makes this impossible.
-
-**Problem 3 — no proper posterior.**
-
-Iterative remasking is not an approximation to any well-defined distribution. The softmax
-posterior P(M | S) ∝ p(S | M) × p(M) is never computed.
+**3. No proper posterior.**
+Iterative remasking is not an approximation to any well-defined distribution;
+P(M | S) ∝ p(S | M) × p(M) is never computed.
 
 ---
 
