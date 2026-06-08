@@ -15,6 +15,7 @@ import os
 
 from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import (
+    get_cross_jss_contrastive,
     get_edge_loss_fn,
     get_pairwise_cossim,
     get_pairwise_cross_entropy,
@@ -370,6 +371,10 @@ class FraGNNetPL(SpectrumPL):
         _add_if_active(
             [f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"],
             self.hparams.pairwise_cross_entropy_loss_weight,
+        )
+        _add_if_active(
+            [f"cross_jss_contrastive_{self.hparams.mz_bin_res}"],
+            self.hparams.cross_jss_contrastive_loss_weight,
         )
 
         self.loss_names = loss_names
@@ -1028,6 +1033,26 @@ class FraGNNetPL(SpectrumPL):
                         [batch_size], device=pairwise_ce_mse.device, dtype=pairwise_ce_mse.dtype
                     )
                 )
+            # Cross-matrix JSS contrastive loss
+            if f"cross_jss_contrastive_{self.hparams.mz_bin_res}" in self.loss_names:
+                batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
+                cross_jss_loss = get_cross_jss_contrastive(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    batch_size=batch_size,
+                    mz_max=self.hparams.mz_max,
+                    mz_bin_res=self.hparams.mz_bin_res,
+                    temperature=self.hparams.cross_jss_contrastive_temperature,
+                    sqrt_transform=self.hparams.cross_jss_contrastive_sqrt,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
+                loss = loss + self.hparams.cross_jss_contrastive_loss_weight * cross_jss_loss
+                loss_d[f"cross_jss_contrastive_{self.hparams.mz_bin_res}"] = cross_jss_loss
+
             # finally, update the loss
             loss_d["loss"] = loss
 

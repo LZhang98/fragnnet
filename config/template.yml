@@ -407,6 +407,10 @@ joint_normalized_entropy_weight: 0.0
 pairwise_cosine_loss_weight: 0.0 
 pairwise_jss_loss_weight: 0.0
 pairwise_cross_entropy_loss_weight: 0.0
+# cross-matrix JSS contrastive: JSS-sqrt(real_i, pred_j), InfoNCE row-wise
+cross_jss_contrastive_loss_weight: 0.0
+cross_jss_contrastive_temperature: 0.07
+cross_jss_contrastive_sqrt: true
 # nb stuff, set all to 0 to disable
 nb_iso: False
 nb_node_entropy_weight: 0.0
