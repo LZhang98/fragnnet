@@ -128,7 +128,7 @@ frag_params:
     # - nb_iso_idx          # isotope index; requires nb_iso=True
     # - prepass_rule_id     # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
     # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
-    # - boundary_pair       # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts; requires cc
+    # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; does not expose full-fragment cc
   pyg_edge_feats:
     - cc
     - base_formula

@@ -28,6 +28,7 @@ class SpectrumMolClipPL(L.LightningModule):
         self._setup_model()
         self._val_mol_embeds: list[th.Tensor] = []
         self._val_spec_embeds: list[th.Tensor] = []
+        self._val_mol_ids: list[list] = []
 
     def _setup_model(self) -> None:
         spec_encoder_params = self.hparams.get("spectrum_encoder_params", {})
@@ -351,6 +352,7 @@ class SpectrumMolClipPL(L.LightningModule):
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch_size)
         self._val_mol_embeds.append(mol_embed.detach())
         self._val_spec_embeds.append(spec_embed.detach())
+        self._val_mol_ids.append(batch["mol_id"])
         return loss
 
     def on_validation_epoch_end(self) -> None:
@@ -358,10 +360,28 @@ class SpectrumMolClipPL(L.LightningModule):
             return
         mol_embed = th.cat(self._val_mol_embeds, dim=0)
         spec_embed = th.cat(self._val_spec_embeds, dim=0)
+        # mol_id is a Python list per batch (see base_dataset collate), so flatten
+        mol_ids: list = [mid for batch_ids in self._val_mol_ids for mid in batch_ids]
         self._val_mol_embeds.clear()
         self._val_spec_embeds.clear()
+        self._val_mol_ids.clear()
         mol_embed = mol_embed.cpu()
         spec_embed = spec_embed.cpu()
+
+        # Deduplicate: keep one (spec, mol) pair per unique molecule so that
+        # near-duplicate spectra of the same molecule (different CE/instrument)
+        # do not pollute the retrieval pool. Without this, ~18 spectra per
+        # molecule appear in the pool and all rank above the true pair, giving
+        # below-random retrieval even for a well-trained model.
+        unique_mask = th.zeros(len(mol_ids), dtype=th.bool)
+        seen: set = set()
+        for i, mid in enumerate(mol_ids):
+            if mid not in seen:
+                seen.add(mid)
+                unique_mask[i] = True
+        mol_embed = mol_embed[unique_mask]
+        spec_embed = spec_embed[unique_mask]
+
         max_eval = int(self.hparams["retrieval_eval_size"])
         if mol_embed.shape[0] > max_eval:
             idx = th.randperm(mol_embed.shape[0])[:max_eval]
