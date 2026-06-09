@@ -194,9 +194,7 @@ def filter_spec_mol(
     # fragment formulas, producing wrong m/z values.
     charged_mol_ids = set(mol_df[mol_df["charge"] == 1]["mol_id"].tolist())
     if charged_mol_ids:
-        bad_adduct_mask = spec_df["mol_id"].isin(charged_mol_ids) & (
-            spec_df["prec_type"] != "[M]+"
-        )
+        bad_adduct_mask = spec_df["mol_id"].isin(charged_mol_ids) & (spec_df["prec_type"] != "[M]+")
         n_bad = int(bad_adduct_mask.sum())
         if n_bad > 0:
             print(
@@ -254,9 +252,9 @@ def filter_spec_mol(
 
 def merge_spec_df(spec_df, renormalize=False, sum_ints=True, keep_ces=False):
     # merge the peaks (they are not normalized here)
-    m_peaks_func = lambda peakses: merge_sparse_specs(
-        *peakses, renormalize=renormalize, sum_ints=sum_ints
-    )
+    def m_peaks_func(peakses):
+        return merge_sparse_specs(*peakses, renormalize=renormalize, sum_ints=sum_ints)
+
     m_spec_peaks_df = (
         spec_df[["group_id", "peaks"]]
         .groupby("group_id")
@@ -266,10 +264,16 @@ def merge_spec_df(spec_df, renormalize=False, sum_ints=True, keep_ces=False):
     m_spec_meta_df = spec_df.drop(columns=["peaks", "spec_id"]).drop_duplicates(subset=["group_id"])
     m_spec_df = m_spec_peaks_df.merge(m_spec_meta_df, on=["group_id"], how="inner")
     if keep_ces:
+        # Each nce/ace cell is already a list (from _fill_ce_list Phase 2), so
+        # plain `list` aggregation produces a list-of-lists. Flatten to 1-D so
+        # th.tensor() can create a uniform 1-D tensor per spectrum.
+        def _flatten(x):
+            return [v for lst in x for v in lst]
+
         m_spec_ce_df = (
             spec_df[["group_id", "nce", "ace"]]
             .groupby("group_id")
-            .agg({"nce": list, "ace": list})
+            .agg({"nce": _flatten, "ace": _flatten})
             .reset_index()
         )
         m_spec_df = m_spec_df.drop(columns=["nce", "ace"])
