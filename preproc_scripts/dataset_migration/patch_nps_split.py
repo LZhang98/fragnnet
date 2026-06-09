@@ -34,6 +34,7 @@ import pandas as pd
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
 def load_split_csv(path: str) -> pd.DataFrame:
     """Load a split CSV, dropping the spurious index column if present.
 
@@ -61,11 +62,11 @@ def write_split_csv(df: pd.DataFrame, path: str) -> None:
 
 
 def patch_splits(
-    new_spec_df: pd.DataFrame,
+    spec_df: pd.DataFrame,
     old_split_dp: str,
     output_split_dp: str,
     cv_dirs: list[str],
-    extra_dsets: list[str],
+    dsets_order: list[str],
     dry_run: bool = False,
 ) -> None:
     """Inject new dataset entries into existing CV split files.
@@ -82,66 +83,31 @@ def patch_splits(
         extra_dsets: Dataset names to inject (e.g. ['pcdl', 'spectraverse']).
         dry_run: If True, log intended writes without writing any files.
     """
-    extra_df = new_spec_df[new_spec_df["dset"].isin(extra_dsets)]
-    mol_to_extra: dict[int, list[dict]] = {}
-    for _, row in extra_df.iterrows():
-        mol_to_extra.setdefault(int(row["mol_id"]), []).append(
-            {
-                "mol_id": int(row["mol_id"]),
-                "spec_id": int(row["spec_id"]),
-                "group_id": int(row["group_id"]),
-            }
-        )
-
+    # filter by dset first
+    logger.info(f"  Dsets: {spec_df['dset'].unique()}")
+    spec_df = spec_df[spec_df["dset"].isin(dsets_order)]
+    logger.info(f"  After filtering by dset,  {len(spec_df)} spectra remain.")
+    logger.info(f"  After filtering, dsets: {spec_df['dset'].unique()}")
     for cv in cv_dirs:
         cv_in = os.path.join(old_split_dp, cv)
-        cv_out = os.path.join(output_split_dp, cv)
+        cv_stats = {
+            "train": {"mol": 0, "spec": 0, "mol_new": 0, "spec_new": 0},
+            "val": {"mol": 0, "spec": 0, "mol_new": 0, "spec_new": 0},
+            "test": {"mol": 0, "spec": 0, "mol_new": 0, "spec_new": 0},
+        }
+        for split in ["train", "val", "test"]:
+            # cv_out = os.path.join(output_split_dp, cv)
+            cv_split_df = pd.read_csv(os.path.join(cv_in, f"{split}_ids.csv"))
+            cv_stats[split]["mol"] = len(cv_split_df["mol_id"].unique())
+            cv_stats[split]["spec"] = len(cv_split_df["spec_id"].unique())
 
-        translated: dict[str, list[dict]] = {}
-        mol_to_partition: dict[int, str] = {}
-
-        for partition in ("train", "val", "test"):
-            fp = os.path.join(cv_in, f"{partition}_ids.csv")
-            if not os.path.exists(fp):
-                logger.warning("  Missing %s — skipping", fp)
-                translated[partition] = []
-                continue
-
-            old_split = load_split_csv(fp)
-            rows = old_split[["mol_id", "spec_id", "group_id"]].to_dict("records")
-            mol_to_partition.update({int(r["mol_id"]): partition for r in rows})
-            translated[partition] = rows
-
-        # Step b: inject extra entries (pcdl/spectraverse)
-        new_mol_ids = set(mol_to_extra.keys())
-        assigned_mol_ids: set[int] = set()
-        for partition in ("train", "val", "test"):
-            partition_mols = {r["mol_id"] for r in translated[partition]}
-            for mol_id in new_mol_ids & partition_mols:
-                translated[partition].extend(mol_to_extra[mol_id])
-                assigned_mol_ids.add(mol_id)
-
-        # Molecules new to all partitions → train
-        unassigned = new_mol_ids - assigned_mol_ids
-        for mol_id in unassigned:
-            translated["train"].extend(mol_to_extra[mol_id])
-
-        # Write patched splits
-        for partition in ("train", "val", "test"):
-            out_path = os.path.join(cv_out, f"{partition}_ids.csv")
-            df = pd.DataFrame(translated[partition], columns=["mol_id", "spec_id", "group_id"])
-            if dry_run:
-                logger.info("  [dry-run] would write %s (%d rows)", out_path, len(df))
-            else:
-                write_split_csv(df, out_path)
+            # remove any rows with spec_ids not in the new spec_df (e.g. from old dsets)
+            cv_split_df = cv_split_df[cv_split_df["spec_id"].isin(spec_df["spec_id"])]
+            cv_stats[split]["mol_new"] = len(cv_split_df["mol_id"].unique())
+            cv_stats[split]["spec_new"] = len(cv_split_df["spec_id"].unique())
 
         logger.info(
-            "  %s: train=%d  val=%d  test=%d  (%d new-mol → train)",
-            cv,
-            len(translated["train"]),
-            len(translated["val"]),
-            len(translated["test"]),
-            len(unassigned),
+            f"  {cv}: train:{cv_stats['train']['mol']} ->{cv_stats['train']['mol_new']} val:{cv_stats['val']['mol']}->{cv_stats['val']['mol_new']}  test:{cv_stats['test']['mol']}->{cv_stats['test']['mol_new']}  ",
         )
 
 
@@ -149,24 +115,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--proc_dp",
-        default="data/proc/nps_pcdl_spectraverse",
+        default="data/proc/nist23_pcdl_spectraverse",
         help="New proc directory (spec_df.pkl with final spec_ids).",
     )
     parser.add_argument(
         "--old_split_dp",
-        default="data/split/nps_nist23",
+        default="data/split/ccx_nist23_pcdl_spectraverse",
         help="Root directory of CV splits to patch.",
     )
     parser.add_argument(
         "--output_split_dp",
-        default="data/split/nps_pcdl_spectraverse",
+        default="data/split/ccx_nist23_pcdl_spectraverse",
         help="Output directory for patched split files.",
     )
     parser.add_argument(
-        "--extra_dsets",
+        "--dsets_order",
         nargs="+",
-        default=["pcdl", "spectraverse"],
-        help="Dataset names to inject into splits (not present in old splits).",
+        default=["pcdl", "nist23_hr1", "nist23_hr2", "spectraverse"],
+        help="Order of datasets to inject into splits (not present in old splits).",
     )
     parser.add_argument(
         "--cv_pattern",
@@ -194,15 +160,15 @@ def main() -> None:
             f"No CV directories matching '{args.cv_pattern}*' in {args.old_split_dp}"
         )
     logger.info("Found %d CV folds: %s", len(cv_dirs), cv_dirs)
-    logger.info("Datasets to inject: %s", args.extra_dsets)
+    logger.info("Datasets to inject: %s", args.dsets_order)
 
     logger.info("Patching splits → %s", args.output_split_dp)
     patch_splits(
-        new_spec_df=spec_df,
+        spec_df=spec_df,
         old_split_dp=args.old_split_dp,
         output_split_dp=args.output_split_dp,
         cv_dirs=cv_dirs,
-        extra_dsets=args.extra_dsets,
+        dsets_order=args.dsets_order,
         dry_run=args.dry_run,
     )
 
