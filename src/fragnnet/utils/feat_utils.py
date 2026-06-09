@@ -830,12 +830,27 @@ def get_frag_graph(
     node_feat_idxs = dag_pyg.node_feat_idxs.long()
     edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
     # select node features
+    # TODO: out_degree / in_degree / num_heavy_atoms are computed on-the-fly here for now
+    # (avoids DAG regeneration during testing). Once validated, move the computation into
+    # compute_dags in frag_utils.py and store them in dag.x like other features.
     _x = []
     _node_feat_idxs = [0]
     _node_feat_size = 0
+    num_nodes = x.shape[0]
     for feat, _ in NODE_FEAT_TO_IDX.items():
         if feat in frag_node_feats:
-            _x_cur = get_node_feats(x, node_feat_idxs[0], feat)
+            if feat == "out_degree":  # on-the-fly: count outgoing edges per node
+                _x_cur = th.zeros(num_nodes, 1, device=device, dtype=th.int64)
+                if edge_index.shape[1] > 0:
+                    _x_cur.scatter_add_(0, edge_index[0].unsqueeze(1), th.ones_like(edge_index[0].unsqueeze(1)))
+            elif feat == "in_degree":  # on-the-fly: count incoming edges per node
+                _x_cur = th.zeros(num_nodes, 1, device=device, dtype=th.int64)
+                if edge_index.shape[1] > 0:
+                    _x_cur.scatter_add_(0, edge_index[1].unsqueeze(1), th.ones_like(edge_index[1].unsqueeze(1)))
+            elif feat == "num_heavy_atoms":  # on-the-fly: sum base_formula (H col is already 0)
+                _x_cur = get_node_feats(x, node_feat_idxs[0], "base_formula").sum(dim=1, keepdim=True)
+            else:
+                _x_cur = get_node_feats(x, node_feat_idxs[0], feat)
             _x.append(_x_cur)
             _node_feat_size += _x_cur.shape[1]
             # print(feat,feat_idx,_node_feat_size)

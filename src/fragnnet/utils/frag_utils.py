@@ -106,6 +106,9 @@ NODE_FEAT_TO_IDX = {
     "h_counts": 4,
     "nb_iso_idx": 5,
     "cmf_h_formulae_idx": 6,
+    "out_degree": 7,
+    "in_degree": 8,
+    "num_heavy_atoms": 9,
 }
 
 EDGE_FEAT_TO_IDX = {"cc": 0, "base_formula": 1, "h_range": 2, "complement": 3}

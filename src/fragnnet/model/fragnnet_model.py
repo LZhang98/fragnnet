@@ -202,11 +202,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             formula_d = {"max_count_int": 255}
             depth_d = {"max_count_int": num_depth + 1}
             complement_d = {"max_count_int": 2}
+            dag_degree_d = {"max_count_int": 64}
+            num_heavy_atoms_d = {"max_count_int": 128}
         else:
-            formula_d = depth_d = complement_d = {}
+            formula_d = depth_d = complement_d = dag_degree_d = num_heavy_atoms_d = {}
         self.formula_embedder = get_embedder(int_embedder, **formula_d)
         self.depth_embedder = get_embedder(int_embedder, **depth_d)
         self.complement_embedder = get_embedder(int_embedder, **complement_d)
+        self.out_degree_embedder = get_embedder(int_embedder, **dag_degree_d)
+        self.in_degree_embedder = get_embedder(int_embedder, **dag_degree_d)
+        self.num_heavy_atoms_embedder = get_embedder(int_embedder, **num_heavy_atoms_d)
         self.frag_node_feats = frag_node_feats
         self.frag_edge_feats = frag_edge_feats
         self._compute_frag_feats_sizes()
@@ -480,6 +485,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_node_feats_size += self.num_elements * self.formula_embedder.num_dim
         if "depth" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_depth * self.depth_embedder.num_dim
+        if "out_degree" in self.frag_node_feats:
+            self.frag_node_feats_size += self.out_degree_embedder.num_dim
+        if "in_degree" in self.frag_node_feats:
+            self.frag_node_feats_size += self.in_degree_embedder.num_dim
+        if "num_heavy_atoms" in self.frag_node_feats:
+            self.frag_node_feats_size += self.num_heavy_atoms_embedder.num_dim
         # edges
         self.frag_edge_feats_size = 0
         if "cc" in self.frag_edge_feats:
@@ -501,6 +512,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.formula_embedder = th.compile(self.formula_embedder, **kwargs)
         self.depth_embedder = th.compile(self.depth_embedder, **kwargs)
         self.complement_embedder = th.compile(self.complement_embedder, **kwargs)
+        self.out_degree_embedder = th.compile(self.out_degree_embedder, **kwargs)
+        self.in_degree_embedder = th.compile(self.in_degree_embedder, **kwargs)
+        self.num_heavy_atoms_embedder = th.compile(self.num_heavy_atoms_embedder, **kwargs)
         if hasattr(self, "ce_embedder"):
             self.ce_embedder = th.compile(self.ce_embedder, **kwargs)
         if hasattr(self, "m_ce_embedder"):
@@ -896,6 +910,31 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
             )
             frag_ndata.append(frag_depth)
+        # DAG structural scalars: out_degree, in_degree, num_heavy_atoms
+        if "out_degree" in self.frag_node_feats:
+            frag_ndata.append(
+                self.out_degree_embedder(
+                    get_node_feats(frag_x, frag_node_feat_idxs, "out_degree").reshape(
+                        batch_frag_num_nodes, -1
+                    )
+                )
+            )
+        if "in_degree" in self.frag_node_feats:
+            frag_ndata.append(
+                self.in_degree_embedder(
+                    get_node_feats(frag_x, frag_node_feat_idxs, "in_degree").reshape(
+                        batch_frag_num_nodes, -1
+                    )
+                )
+            )
+        if "num_heavy_atoms" in self.frag_node_feats:
+            frag_ndata.append(
+                self.num_heavy_atoms_embedder(
+                    get_node_feats(frag_x, frag_node_feat_idxs, "num_heavy_atoms").reshape(
+                        batch_frag_num_nodes, -1
+                    )
+                )
+            )
         # edge complement
         if "complement" in self.frag_edge_feats:
             frag_edge_complement = self.complement_embedder(
