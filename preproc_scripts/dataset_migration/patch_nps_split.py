@@ -35,32 +35,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def load_split_csv(path: str) -> pd.DataFrame:
-    """Load a split CSV, dropping the spurious index column if present.
-
-    Args:
-        path: Path to the split CSV file.
-
-    Returns:
-        DataFrame with columns mol_id, spec_id, group_id.
-    """
-    df = pd.read_csv(path)
-    if "Unnamed: 0" in df.columns:
-        df = df.drop(columns=["Unnamed: 0"])
-    return df
-
-
-def write_split_csv(df: pd.DataFrame, path: str) -> None:
-    """Write a split dataframe to CSV without an index column.
-
-    Args:
-        df: Split dataframe with mol_id, spec_id, group_id columns.
-        path: Output file path.
-    """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    df[["mol_id", "spec_id", "group_id"]].to_csv(path, index=False)
-
-
 def patch_splits(
     spec_df: pd.DataFrame,
     old_split_dp: str,
@@ -136,6 +110,7 @@ def patch_splits(
 
     for cv in cv_dirs:
         cv_in = os.path.join(old_split_dp, cv)
+        cv_out = os.path.join(output_split_dp, cv)
         cv_stats = {
             "train": {"mol": 0, "spec": 0, "mol_new": 0, "spec_new": 0},
             "val": {"mol": 0, "spec": 0, "mol_new": 0, "spec_new": 0},
@@ -143,7 +118,8 @@ def patch_splits(
         }
         for split in ["train", "val", "test"]:
             # cv_out = os.path.join(output_split_dp, cv)
-            cv_split_df = pd.read_csv(os.path.join(cv_in, f"{split}_ids.csv"))
+            cv_in_fp = os.path.join(cv_in, f"{split}_ids.csv")
+            cv_split_df = pd.read_csv(cv_in_fp)
             cv_stats[split]["mol"] = len(cv_split_df["mol_id"].unique())
             cv_stats[split]["spec"] = len(cv_split_df["spec_id"].unique())
 
@@ -153,6 +129,18 @@ def patch_splits(
             cv_split_df = cv_split_df[cv_split_df["spec_id"].isin(kept_spec_ids)]
             cv_stats[split]["mol_new"] = len(cv_split_df["mol_id"].unique())
             cv_stats[split]["spec_new"] = len(cv_split_df["spec_id"].unique())
+
+            if not dry_run:
+                cv_out_fp = os.path.join(cv_out, f"{split}_ids.csv")
+                if cv_in_fp == cv_out_fp:
+                    os.rename(cv_in_fp, cv_in_fp.replace(".csv", "_old.csv"))
+                    logger.info(f"  Renamed {cv_in_fp} → {cv_in_fp.replace('.csv', '_old.csv')}")
+
+                os.makedirs(cv_out, exist_ok=True)
+                cv_split_df.to_csv(cv_out_fp, index=False)
+                logger.info(
+                    f"  Wrote {len(cv_split_df)} rows to {cv_out_fp}",
+                )
 
         logger.info(
             f"  {cv}: train:{cv_stats['train']['mol']} ->{cv_stats['train']['mol_new']} val:{cv_stats['val']['mol']}->{cv_stats['val']['mol_new']}  test:{cv_stats['test']['mol']}->{cv_stats['test']['mol_new']}  ",
@@ -173,7 +161,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output_split_dp",
-        default="data/split/ccx_nist23_pcdl_spectraverse",
+        default="data/split/ccx_nist23_pcdl_spectraverse_patched",
         help="Output directory for patched split files.",
     )
     parser.add_argument(
