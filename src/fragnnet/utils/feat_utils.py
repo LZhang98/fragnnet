@@ -5,6 +5,7 @@ and bonds. Inspired by the dgllife library.
 
 """
 
+import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -14,6 +15,7 @@ import scipy
 import torch as th
 import torch_geometric as pyg
 from rdkit import Chem
+from rdkit.Chem import AllChem
 from torch_geometric.data import Data
 
 from fragnnet.utils.data_utils import (
@@ -104,6 +106,7 @@ class MolGraph:
             self.b_featurizers.append(feat_obj["fn"])
 
         self.num_atom_feats += self.pe_embed_k
+        self.needs_gasteiger = "a_charge" in self.atom_feats
 
     def get_mol_graph(
         self,
@@ -120,6 +123,8 @@ class MolGraph:
             Mapping containing atom features (|N| x d_n), bond features (|E| x d_e),
             and bond index tuples (|E| x 2).
         """
+        if self.needs_gasteiger:
+            AllChem.ComputeGasteigerCharges(mol)
         all_atoms = mol.GetAtoms()
         all_bonds = mol.GetBonds()
         bond_feats = []
@@ -428,6 +433,61 @@ class AtomMass(FeatBase):
             List containing normalized atomic mass value.
         """
         return [x.GetMass() * cls.coef]
+
+
+@register_atom_feat
+class AtomRingSize(FeatBase):
+    """Ring size membership features for atoms.
+
+    Five binary bits: IsInRingOfSize(3), IsInRingOfSize(4), IsInRingOfSize(5),
+    IsInRingOfSize(6), and any ring of size ≥7. All zero for non-ring atoms.
+    Complements a_ring (which only encodes is_in_ring and is_aromatic).
+    """
+
+    name = "a_ring_size"
+    feat_size = 5
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """Encode atom ring size membership.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            Binary list of length 5: [in3, in4, in5, in6, inGe7].
+        """
+        ring_info = x.GetOwningMol().GetRingInfo()
+        idx = x.GetIdx()
+        in_small = [ring_info.IsAtomInRingOfSize(idx, s) for s in (3, 4, 5, 6)]
+        in_ge7 = x.IsInRing() and not any(in_small)
+        return [int(v) for v in in_small] + [int(in_ge7)]
+
+
+@register_atom_feat
+class AtomCharge(FeatBase):
+    """Gasteiger partial charge (continuous scalar).
+
+    Requires AllChem.ComputeGasteigerCharges to have been called on the molecule
+    before featurization. MolGraph handles this automatically when 'a_charge' is
+    in the atom feature list.
+    """
+
+    name = "a_charge"
+    feat_size = 1
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[float]:
+        """Return Gasteiger partial charge of the atom.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            List containing the Gasteiger partial charge value, or 0.0 on failure.
+        """
+        v = x.GetDoubleProp("_GasteigerCharge")
+        return [0.0 if math.isnan(v) or math.isinf(v) else v]
 
 
 @register_bond_feat

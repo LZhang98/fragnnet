@@ -38,6 +38,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -569,6 +570,367 @@ def plot_peak_stats(
 
 
 # ---------------------------------------------------------------------------
+# Intensity threshold sweep
+# ---------------------------------------------------------------------------
+
+# Per-instrument-type tolerance: (tol_rel, tol_min_mz).
+# tol_rel is a fraction (not ppm): 1e-5 = 10 ppm.
+# tol_min_mz is the minimum m/z used as divisor floor (effective abs tolerance = tol_rel * tol_min_mz).
+# Matches the defaults from config/template.yml (inst_type_loss_tol section).
+_INST_TOL_MAP: dict[str, tuple[float, float]] = {
+    "FT": (1e-5, 200.0),   # 10 ppm, 0.002 Da floor
+    "QTOF": (2e-5, 750.0), # 20 ppm, 0.015 Da floor
+    "IT": (1e-5, 200.0),   # fallback: same as FT
+}
+_INST_TOL_DEFAULT: tuple[float, float] = (1e-5, 200.0)  # global default (10 ppm)
+
+
+def _cos_sim_binned(
+    pred_mzs: np.ndarray,
+    pred_ints: np.ndarray,
+    gt_mzs: np.ndarray,
+    gt_ints: np.ndarray,
+    bin_res: float = 0.01,
+    mz_max: float = 1500.0,
+) -> float:
+    """Binned cosine similarity — exact match of the model's cos_sim_0.01 metric.
+
+    Bins both spectra at bin_res Da resolution (same searchsorted logic as bin_func
+    in spec_utils), L2-normalises each binned vector, and returns their dot product.
+    Equivalent to cos_sim_helper() used during inference.
+
+    Args:
+        pred_mzs: Predicted m/z values.
+        pred_ints: Predicted intensities (any scale).
+        gt_mzs: Ground-truth m/z values.
+        gt_ints: Ground-truth intensities.
+        bin_res: Bin resolution in Da. Defaults to 0.01.
+        mz_max: Upper m/z bound matching model config. Defaults to 1500.0.
+
+    Returns:
+        Cosine similarity in [0, 1].
+    """
+    if len(pred_ints) == 0 or len(gt_ints) == 0:
+        return 0.0
+
+    bins = np.arange(bin_res, mz_max + bin_res, bin_res)
+    pred_idx = np.searchsorted(bins, pred_mzs.clip(0, mz_max - 1e-6), side="right")
+    gt_idx = np.searchsorted(bins, gt_mzs.clip(0, mz_max - 1e-6), side="right")
+
+    # Aggregate intensities within each bin (sum), stored sparsely
+    pred_d: dict[int, float] = {}
+    for k, v in zip(pred_idx.tolist(), pred_ints.tolist()):
+        pred_d[k] = pred_d.get(k, 0.0) + v
+
+    gt_d: dict[int, float] = {}
+    for k, v in zip(gt_idx.tolist(), gt_ints.tolist()):
+        gt_d[k] = gt_d.get(k, 0.0) + v
+
+    pred_norm = float(np.sqrt(sum(v * v for v in pred_d.values())))
+    gt_norm = float(np.sqrt(sum(v * v for v in gt_d.values())))
+    if pred_norm == 0.0 or gt_norm == 0.0:
+        return 0.0
+
+    dot = sum(pred_d[k] * gt_d[k] for k in pred_d if k in gt_d)
+    return float(dot / (pred_norm * gt_norm))
+
+
+def _cos_hun_inst_tol(
+    pred_mzs: np.ndarray,
+    pred_ints: np.ndarray,
+    gt_mzs: np.ndarray,
+    gt_ints: np.ndarray,
+    tol_rel: float,
+    tol_min_mz: float,
+) -> float:
+    """Hungarian-matching cosine similarity with instrument-specific m/z tolerance.
+
+    Exact numpy/scipy equivalent of cos_hun_helper() + calculate_match_mzs() from
+    spec_utils, replicating the cos_hun_inst_tol metric stored in the HDF5.
+
+    The per-peak absolute tolerance is ``tol_rel * max(gt_mz, tol_min_mz)``,
+    which converts a relative (ppm-like) tolerance to absolute Da with a floor.
+
+    Args:
+        pred_mzs: Predicted m/z values of shape (N_pred,).
+        pred_ints: Predicted intensities of shape (N_pred,).
+        gt_mzs: Ground-truth m/z values of shape (N_gt,).
+        gt_ints: Ground-truth intensities of shape (N_gt,).
+        tol_rel: Relative tolerance fraction (e.g. 1e-5 for 10 ppm).
+        tol_min_mz: Minimum m/z divisor floor in Da (e.g. 200.0 for FT).
+
+    Returns:
+        Cosine-Hungarian similarity in [0, 1].
+    """
+    if len(pred_ints) == 0 or len(gt_ints) == 0:
+        return 0.0
+
+    # Per-peak absolute tolerance: tol_rel * max(gt_mz, tol_min_mz)
+    tol_abs = tol_rel * np.maximum(gt_mzs, tol_min_mz)  # (N_gt,)
+    diff = np.abs(gt_mzs[:, None] - pred_mzs[None, :])   # (N_gt, N_pred)
+    match_mask = diff < tol_abs[:, None]                  # (N_gt, N_pred)
+
+    true_match = match_mask.any(axis=1)
+    pred_match = match_mask.any(axis=0)
+    if not true_match.any() or not pred_match.any():
+        return 0.0
+
+    # L2-normalise full intensity vectors
+    gt_norm = np.linalg.norm(gt_ints)
+    pred_norm = np.linalg.norm(pred_ints)
+    if gt_norm == 0.0 or pred_norm == 0.0:
+        return 0.0
+    gt_n = gt_ints / gt_norm
+    pred_n = pred_ints / pred_norm
+
+    # Score matrix restricted to matchable peaks: S_uv = mask_uv * gt_u * pred_v
+    sub_mask = match_mask[true_match][:, pred_match]
+    score_matrix = sub_mask * (gt_n[true_match, None] * pred_n[None, pred_match])
+
+    row_ind, col_ind = linear_sum_assignment(score_matrix, maximize=True)
+    return float(score_matrix[row_ind, col_ind].sum())
+
+
+def plot_threshold_sweep(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    save_dp: str,
+    spec_df: pd.DataFrame | None = None,
+    thresholds: list[float] | None = None,
+) -> None:
+    """Plot peak count and cosine similarity vs post-hoc intensity threshold.
+
+    Sweeps inference-time intensity cutoffs to show the tradeoff between
+    peak count reduction and cosine similarity degradation. Peak count stats
+    are computed on all spectra; cosine similarity is recomputed on a random
+    subsample of up to _SWEEP_MAX_SPECTRA_COS spectra (requires spec_df).
+
+    Args:
+        meta: DataFrame from load_hdf5_meta (must have start_points, end_points).
+        pred_fp: Path to predictions HDF5.
+        save_dp: Output directory.
+        spec_df: Optional ground-truth spec_df with columns [spec_id, peaks].
+            When provided, a third panel shows median cos_sim_0.01 per threshold.
+        thresholds: Intensity thresholds to sweep on the 0–1000 scale.
+            Defaults to [0, 5, 10, 20, 50, 100] (i.e. 0–10% of max intensity).
+    """
+    if "start_points" not in meta.columns or "end_points" not in meta.columns:
+        logger.warning("start_points/end_points not in meta — skipping threshold sweep.")
+        return
+
+    os.makedirs(save_dp, exist_ok=True)
+    thresholds = thresholds or _SWEEP_THRESHOLDS
+
+    starts = meta["start_points"].to_numpy()
+    ends = meta["end_points"].to_numpy()
+
+    with h5py.File(pred_fp, "r") as f:
+        pred_mzs_all = f["pred_mzs"][:]
+        pred_ints_all = f["pred_ints"][:]
+
+    # Peak count stats (all spectra) ----------------------------------------
+    count_stats: list[dict] = []
+    for thresh in thresholds:
+        counts = np.array(
+            [int(np.sum(pred_ints_all[s:e] > thresh)) for s, e in zip(starts, ends)]
+        )
+        count_stats.append(
+            {
+                "threshold": thresh,
+                "median": float(np.median(counts)),
+                "p25": float(np.percentile(counts, 25)),
+                "p75": float(np.percentile(counts, 75)),
+                "pct_zero": float(np.mean(counts == 0) * 100),
+            }
+        )
+
+    # Cosine similarity stats (subsampled) -----------------------------------
+    cos_stats: list[dict] | None = None
+    n_sample = 0
+    if spec_df is not None and "spec_id" in meta.columns:
+        gt_lookup: dict[int, np.ndarray] = {}
+        inst_type_lookup: dict[int, str] = {}
+        has_inst_col = "inst_type" in spec_df.columns
+        for _, row in spec_df.iterrows():
+            sid = int(row["spec_id"])
+            peaks = row["peaks"]
+            if peaks is None or (isinstance(peaks, float) and np.isnan(peaks)):
+                continue
+            if isinstance(peaks, (list, np.ndarray)) and len(peaks) > 0:
+                gt_lookup[sid] = np.array(peaks)
+            elif isinstance(peaks, str) and peaks.strip():
+                rows_list = []
+                for line in peaks.strip().split("\n"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            rows_list.append([float(parts[0]), float(parts[1])])
+                        except ValueError:
+                            pass
+                if rows_list:
+                    gt_lookup[sid] = np.array(rows_list)
+            if has_inst_col and sid in gt_lookup:
+                inst_type_lookup[sid] = str(row["inst_type"])
+
+        has_gt = np.array([int(sid) in gt_lookup for sid in meta["spec_id"]])
+        valid_indices = np.where(has_gt)[0]
+        if len(valid_indices) == 0:
+            logger.warning(
+                "No spec_ids in meta matched spec_df — cosine sim panel will be skipped. "
+                "Check that --spec_df_fp contains the same spectra as --pred_fp."
+            )
+        else:
+            rng = np.random.default_rng(42)
+            sample_indices = (
+                rng.choice(valid_indices, size=_SWEEP_MAX_SPECTRA_COS, replace=False)
+                if len(valid_indices) > _SWEEP_MAX_SPECTRA_COS
+                else valid_indices
+            )
+            n_sample = len(sample_indices)
+            logger.info("Computing cos_sim sweep on %d spectra...", n_sample)
+
+            cos_stats = []
+            for thresh in thresholds:
+                scores = []
+                for idx in tqdm(sample_indices, desc=f"cos_sim thresh={thresh:.0f}", leave=False):
+                    s, e = int(starts[idx]), int(ends[idx])
+                    pmzs = pred_mzs_all[s:e]
+                    pints = pred_ints_all[s:e]
+                    keep = pints > thresh
+                    pmzs, pints = pmzs[keep], pints[keep]
+                    sid = int(meta["spec_id"].iloc[idx])
+                    gt = gt_lookup.get(sid)
+                    if gt is None:
+                        continue
+                    inst = inst_type_lookup.get(sid, "FT")
+                    tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
+                    scores.append(_cos_hun_inst_tol(pmzs, pints, gt[:, 0], gt[:, 1], tol_rel, tol_min_mz))
+
+                arr = np.array(scores)
+                if len(arr) == 0:
+                    logger.warning(
+                        "No cos_sim scores collected for threshold=%.0f — skipping.", thresh
+                    )
+                    cos_stats.append(
+                        {
+                            "threshold": thresh,
+                            "median": float("nan"),
+                            "p25": float("nan"),
+                            "p75": float("nan"),
+                        }
+                    )
+                else:
+                    cos_stats.append(
+                        {
+                            "threshold": thresh,
+                            "median": float(np.median(arr)),
+                            "p25": float(np.percentile(arr, 25)),
+                            "p75": float(np.percentile(arr, 75)),
+                        }
+                    )
+
+    # Plot -------------------------------------------------------------------
+    has_cos_data = cos_stats is not None and any(not np.isnan(s["median"]) for s in cos_stats)
+    n_panels = 4 if has_cos_data else 2
+    fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
+    fig.subplots_adjust(wspace=0.35)
+
+    xs = [s["threshold"] for s in count_stats]
+    x_labels = [str(int(t)) for t in xs]
+
+    # Panel 0: median predicted peak count vs threshold
+    ax0 = axes[0]
+    medians = [s["median"] for s in count_stats]
+    p25s = [s["p25"] for s in count_stats]
+    p75s = [s["p75"] for s in count_stats]
+    ax0.fill_between(xs, p25s, p75s, alpha=0.25, color="#4878CF", label="IQR (25–75)")
+    ax0.plot(xs, medians, "o-", color="#4878CF", lw=2, label="Median")
+    for x_val, med in zip(xs, medians):
+        ax0.text(x_val, med + 0.5, f"{med:.0f}", ha="center", va="bottom", fontsize=8)
+    ax0.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+    ax0.set_ylabel("Predicted peak count", fontsize=11)
+    ax0.set_title("Peak count vs threshold", fontsize=13)
+    ax0.set_xticks(xs)
+    ax0.set_xticklabels(x_labels)
+    ax0.legend(fontsize=10)
+    ax0.spines["top"].set_visible(False)
+    ax0.spines["right"].set_visible(False)
+    ax0.grid(axis="y", alpha=0.3)
+
+    # Panel 1: % spectra with 0 surviving peaks vs threshold
+    ax1 = axes[1]
+    pct_zeros = [s["pct_zero"] for s in count_stats]
+    ax1.plot(xs, pct_zeros, "s-", color="#D65F5F", lw=2)
+    for x_val, pct in zip(xs, pct_zeros):
+        ax1.text(x_val, pct + 0.2, f"{pct:.1f}%", ha="center", va="bottom", fontsize=8)
+    ax1.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+    ax1.set_ylabel("% spectra with 0 predicted peaks", fontsize=11)
+    ax1.set_title("Spectra blanked by threshold", fontsize=13)
+    ax1.set_xticks(xs)
+    ax1.set_xticklabels(x_labels)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.grid(axis="y", alpha=0.3)
+
+    # Panels 2 & 3 (optional): absolute cos_sim and delta vs threshold=0
+    if has_cos_data:
+        cos_meds = [s["median"] for s in cos_stats]
+        cos_p25 = [s["p25"] for s in cos_stats]
+        cos_p75 = [s["p75"] for s in cos_stats]
+        baseline = cos_meds[0] if not np.isnan(cos_meds[0]) else 0.0
+        cos_deltas = [m - baseline for m in cos_meds]
+        delta_p25 = [p - baseline for p in cos_p25]
+        delta_p75 = [p - baseline for p in cos_p75]
+
+        # Panel 2: absolute cos_sim
+        ax2 = axes[2]
+        ax2.fill_between(xs, cos_p25, cos_p75, alpha=0.25, color="#6ACC65", label="IQR (25–75)")
+        ax2.plot(xs, cos_meds, "o-", color="#6ACC65", lw=2, label="Median")
+        for x_val, med in zip(xs, cos_meds):
+            if not np.isnan(med):
+                ax2.text(x_val, med + 0.005, f"{med:.3f}", ha="center", va="bottom", fontsize=8)
+        ax2.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+        ax2.set_ylabel("cos_hun_inst_tol", fontsize=11)
+        ax2.set_title(
+            f"Cosine similarity vs threshold\n(n={n_sample:,} spectra, cos_hun_inst_tol)",
+            fontsize=13,
+        )
+        ax2.set_xticks(xs)
+        ax2.set_xticklabels(x_labels)
+        ax2.set_ylim(0, 1)
+        ax2.legend(fontsize=10)
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+        ax2.grid(axis="y", alpha=0.3)
+
+        # Panel 3: delta vs baseline (threshold=0)
+        ax3 = axes[3]
+        ax3.fill_between(xs, delta_p25, delta_p75, alpha=0.25, color="#E8A83C", label="IQR (25–75)")
+        ax3.plot(xs, cos_deltas, "o-", color="#E8A83C", lw=2, label="Median delta")
+        ax3.axhline(0, color="grey", lw=1, ls="--")
+        for x_val, d in zip(xs, cos_deltas):
+            if not np.isnan(d):
+                offset = 0.001 if d >= 0 else -0.003
+                ax3.text(x_val, d + offset, f"{d:+.3f}", ha="center", va="bottom", fontsize=8)
+        ax3.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+        ax3.set_ylabel("Δ cos_hun_inst_tol vs threshold=0", fontsize=11)
+        ax3.set_title("Cosine similarity change vs no threshold", fontsize=13)
+        ax3.set_xticks(xs)
+        ax3.set_xticklabels(x_labels)
+        ax3.legend(fontsize=10)
+        ax3.spines["top"].set_visible(False)
+        ax3.spines["right"].set_visible(False)
+        ax3.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Inference Intensity Threshold Sweep", fontsize=15, y=1.02)
+    out_fp = os.path.join(save_dp, "threshold_sweep.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved threshold sweep plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+# ---------------------------------------------------------------------------
 # Mirror spectrum plot
 # ---------------------------------------------------------------------------
 
@@ -675,8 +1037,8 @@ def plot_spectra(
         peaks = row["peaks"]
         if peaks is None or (isinstance(peaks, float) and np.isnan(peaks)):
             continue
-        if isinstance(peaks, np.ndarray) and peaks.ndim == 2:
-            gt_lookup[sid] = peaks  # shape (N, 2): [[mz, int], ...]
+        if isinstance(peaks, (list, np.ndarray)) and len(peaks) > 0:
+            gt_lookup[sid] = np.array(peaks)
         elif isinstance(peaks, str) and peaks.strip():
             rows = []
             for line in peaks.strip().split("\n"):
@@ -723,6 +1085,8 @@ def plot_spectra(
 # ---------------------------------------------------------------------------
 
 _MIN_BIN_N = 30  # drop bins with fewer spectra than this
+_SWEEP_THRESHOLDS = [0, 5, 10, 20, 50, 100]  # raw intensity units (0–1000 scale)
+_SWEEP_MAX_SPECTRA_COS = 10_000  # max spectra sampled for cosine sim recomputation
 
 
 def _make_ce_bins(
@@ -1862,9 +2226,24 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["summary", "ce", "ce_bar", "spectra", "all", "plot_all", "peak_stats"],
+        choices=[
+            "summary", "ce", "ce_bar", "spectra", "all", "plot_all",
+            "peak_stats", "threshold_sweep",
+        ],
         default="summary",
-        help="What to plot (ce/ce_bar/spectra/all require --spec_df_fp; ce=violin, ce_bar=bar+95CI; plot_all=all stats; peak_stats=peak count+intensity)",
+        help=(
+            "What to plot. ce/ce_bar/spectra/all require --spec_df_fp; "
+            "threshold_sweep optionally uses --spec_df_fp for cosine sim panel."
+        ),
+    )
+    parser.add_argument(
+        "--thresholds",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated intensity thresholds for threshold_sweep mode "
+            "(0–1000 scale). Defaults to '0,5,10,20,50,100'."
+        ),
     )
     parser.add_argument(
         "--select",
@@ -1909,6 +2288,20 @@ def main() -> None:
 
     if args.mode == "peak_stats":
         plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
+
+    if args.mode == "threshold_sweep":
+        sweep_thresholds = (
+            [float(t) for t in args.thresholds.split(",")]
+            if args.thresholds is not None
+            else None
+        )
+        spec_df_sweep = None
+        if args.spec_df_fp is not None:
+            logger.info("Loading spec_df from %s", args.spec_df_fp)
+            spec_df_sweep = pd.read_pickle(args.spec_df_fp)
+        plot_threshold_sweep(
+            meta, args.pred_fp, save_dp, spec_df=spec_df_sweep, thresholds=sweep_thresholds
+        )
 
     if args.mode == "plot_all":
         # Load spec_df for peak stats and CE breakdown

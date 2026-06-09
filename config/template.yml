@@ -109,8 +109,12 @@ mol_params:
     - a_ring
     - a_mass
     - a_chiral
+    # - a_ring_size # ring size membership: [in3, in4, in5, in6, inGe7]; no DAG recomputation needed
+    # - a_charge    # Gasteiger partial charge (continuous); computed on-the-fly, no DAG recomputation needed
   pyg_edge_feats:
     - b_degree
+    # - b_ring      # bond ring membership (2 bits); no DAG recomputation needed
+    # - b_conj      # bond conjugation (2 bits); no DAG recomputation needed
   pyg_pe_embed_k: 0
   pyg_bigraph: True
   mf: False

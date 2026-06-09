@@ -10,6 +10,7 @@ from rdkit import Chem
 from torch_geometric.data import Data
 
 from fragnnet.utils.feat_utils import (
+    AtomCharge,
     AtomChiral,
     AtomDegree,
     AtomFormal,
@@ -18,6 +19,7 @@ from fragnnet.utils.feat_utils import (
     AtomOneHot,
     AtomRadical,
     AtomRing,
+    AtomRingSize,
     BondConj,
     BondDegree,
     BondRing,
@@ -180,6 +182,80 @@ class TestAtomFeaturizers:
         assert feat[0] > 0
         # Carbon mass ~12 * 0.01 = 0.12
         assert 0.1 < feat[0] < 0.15
+
+    def test_atom_ring_size_non_ring(self, ethanol_mol):
+        """Non-ring atoms should have all-zero ring size features."""
+        atom = ethanol_mol.GetAtomWithIdx(0)
+        feat = AtomRingSize.featurize(atom)
+        assert len(feat) == AtomRingSize.feat_size
+        assert feat == [0, 0, 0, 0, 0]
+
+    def test_atom_ring_size_benzene(self, benzene_mol):
+        """Benzene atoms are in a 6-membered ring only."""
+        atom = benzene_mol.GetAtomWithIdx(0)
+        feat = AtomRingSize.featurize(atom)
+        assert len(feat) == AtomRingSize.feat_size
+        assert feat == [0, 0, 0, 1, 0]  # in6=1, rest=0
+
+    def test_atom_ring_size_cyclopropane(self):
+        """Cyclopropane atoms are in a 3-membered ring."""
+        mol = Chem.MolFromSmiles("C1CC1")
+        atom = mol.GetAtomWithIdx(0)
+        feat = AtomRingSize.featurize(atom)
+        assert feat == [1, 0, 0, 0, 0]  # in3=1
+
+    def test_atom_ring_size_cyclobutane(self):
+        """Cyclobutane atoms are in a 4-membered ring."""
+        mol = Chem.MolFromSmiles("C1CCC1")
+        atom = mol.GetAtomWithIdx(0)
+        feat = AtomRingSize.featurize(atom)
+        assert feat == [0, 1, 0, 0, 0]  # in4=1
+
+    def test_atom_ring_size_cyclopentane(self):
+        """Cyclopentane atoms are in a 5-membered ring."""
+        mol = Chem.MolFromSmiles("C1CCCC1")
+        atom = mol.GetAtomWithIdx(0)
+        feat = AtomRingSize.featurize(atom)
+        assert feat == [0, 0, 1, 0, 0]  # in5=1
+
+    def test_atom_ring_size_large_ring(self):
+        """Atoms in rings ≥7 set the inGe7 bit."""
+        mol = Chem.MolFromSmiles("C1CCCCCC1")  # cycloheptane
+        atom = mol.GetAtomWithIdx(0)
+        feat = AtomRingSize.featurize(atom)
+        assert feat == [0, 0, 0, 0, 1]  # inGe7=1
+
+    def test_atom_charge_size(self):
+        """Test AtomCharge returns a single float."""
+        from rdkit.Chem import AllChem
+
+        mol = Chem.MolFromSmiles("CC(=O)O")  # acetic acid
+        AllChem.ComputeGasteigerCharges(mol)
+        atom = mol.GetAtomWithIdx(0)  # methyl carbon
+        feat = AtomCharge.featurize(atom)
+        assert len(feat) == AtomCharge.feat_size
+        assert len(feat) == 1
+        assert isinstance(feat[0], float)
+
+    def test_atom_charge_carbonyl_positive(self):
+        """Carbonyl carbon (electron-poor) should have positive Gasteiger charge."""
+        from rdkit.Chem import AllChem
+
+        mol = Chem.MolFromSmiles("CC(=O)O")  # acetic acid; atom 1 is the carbonyl C
+        AllChem.ComputeGasteigerCharges(mol)
+        carbonyl_c = mol.GetAtomWithIdx(1)
+        feat = AtomCharge.featurize(carbonyl_c)
+        assert feat[0] > 0, f"Expected positive charge on carbonyl C, got {feat[0]}"
+
+    def test_atom_charge_oxygen_negative(self):
+        """Oxygen atoms should have negative Gasteiger charges."""
+        from rdkit.Chem import AllChem
+
+        mol = Chem.MolFromSmiles("CCO")  # ethanol; atom 2 is O
+        AllChem.ComputeGasteigerCharges(mol)
+        oxygen = mol.GetAtomWithIdx(2)
+        feat = AtomCharge.featurize(oxygen)
+        assert feat[0] < 0, f"Expected negative charge on O, got {feat[0]}"
 
 
 class TestBondFeaturizers:
@@ -370,6 +446,37 @@ class TestMolGraph:
 
         assert g.num_atom_feats == AtomOneHot.feat_size
         assert g.num_bond_feats == BondDegree.feat_size
+
+    def test_a_charge_sets_needs_gasteiger_flag(self):
+        """MolGraph with a_charge should set needs_gasteiger=True."""
+        mg_with = MolGraph(atom_feats=["a_onehot", "a_charge"], bond_feats=[])
+        mg_without = MolGraph(atom_feats=["a_onehot"], bond_feats=[])
+        assert mg_with.needs_gasteiger is True
+        assert mg_without.needs_gasteiger is False
+
+    def test_a_charge_in_molgraph_output(self):
+        """MolGraph with a_charge produces one extra float dimension vs without."""
+        mol = Chem.MolFromSmiles("CC(=O)O")
+        mg_base = MolGraph(atom_feats=["a_onehot"], bond_feats=[])
+        mg_charge = MolGraph(atom_feats=["a_onehot", "a_charge"], bond_feats=[])
+        g_base = mg_base.get_pyg_graph(mol)
+        g_charge = mg_charge.get_pyg_graph(mol)
+        assert g_charge.x.shape[1] == g_base.x.shape[1] + 1
+        # Carbonyl C (atom 1) should have positive charge in last column
+        assert g_charge.x[1, -1].item() > 0
+
+    def test_b_ring_in_molgraph_output(self):
+        """MolGraph with b_ring: ring bonds encode [0,1], chain bonds encode [1,0]."""
+        mol = Chem.MolFromSmiles("C1CCCCC1CC")  # cyclohexane + ethyl chain
+        mg = MolGraph(atom_feats=["a_onehot"], bond_feats=["b_degree", "b_ring"])
+        g = mg.get_pyg_graph(mol, bigraph=False)
+        # b_degree has 5 dims, b_ring has 2 → total 7
+        assert g.edge_attr.shape[1] == BondDegree.feat_size + BondRing.feat_size
+        # Last 2 dims are b_ring; ring bonds should have feat[-1] == 1
+        ring_bits = g.edge_attr[:, -2:]
+        # At least some bonds should be ring bonds and some chain
+        assert (ring_bits[:, 1] == 1).any(), "Expected some ring bonds"
+        assert (ring_bits[:, 0] == 1).any(), "Expected some chain bonds"
 
     def test_get_networkx_graph(self):
         """Test NetworkX graph creation."""
