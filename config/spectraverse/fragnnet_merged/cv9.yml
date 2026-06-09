@@ -12,7 +12,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb16          # loss batch size 16
+- lb4           # loss batch size 4 (merged spectra: 10-50x more peaks/sample than per-CE)
 - new_no_edges  # no edge features in fragment GNN
 - skip_extra_losses
 - binned_cosine_similarity
@@ -215,5 +215,5 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized loss
+loss_batch_size: 4               # sub-batch size for vectorized; merged spectra have 10-50x more peaks/sample → was OOMing at 16
 num_workers: 6
