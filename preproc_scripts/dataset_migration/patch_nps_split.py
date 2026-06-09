@@ -88,6 +88,52 @@ def patch_splits(
     spec_df = spec_df[spec_df["dset"].isin(dsets_order)]
     logger.info(f"  After filtering by dset,  {len(spec_df)} spectra remain.")
     logger.info(f"  After filtering, dsets: {spec_df['dset'].unique()}")
+
+    dset_order_idx = {dset: idx for idx, dset in enumerate(dsets_order)}
+    dedup_cols = [
+        "mol_id",
+        "prec_type",
+        "inst_type",
+        "ace",
+        "ace_extra_1",
+        "ace_extra_2",
+        "nce",
+        "nce_extra_1",
+        "nce_extra_2",
+    ]
+    kept_spec_ids = set(
+        spec_df.assign(_dset_order_idx=spec_df["dset"].map(dset_order_idx))
+        .sort_values("_dset_order_idx", kind="mergesort")
+        .drop_duplicates(dedup_cols, keep="first")["spec_id"]
+    )
+    duplicate_mask = spec_df.duplicated(dedup_cols, keep=False)
+    kept_mask = spec_df["spec_id"].isin(kept_spec_ids)
+    before_by_dset = spec_df["dset"].value_counts()
+    duplicate_by_dset = spec_df.loc[duplicate_mask, "dset"].value_counts()
+    kept_by_dset = spec_df.loc[kept_mask, "dset"].value_counts()
+    logger.info("  Dedup dset priority order: %s (idx 0 wins).", dsets_order)
+    logger.info(
+        "  Dedup: %d -> %d spectra (%d removed across %d duplicate groups).",
+        len(spec_df),
+        len(kept_spec_ids),
+        len(spec_df) - len(kept_spec_ids),
+        spec_df.loc[duplicate_mask, dedup_cols].drop_duplicates().shape[0],
+    )
+    logger.info("  Dedup by dset:")
+    logger.info("    %-18s %12s %12s %12s %12s", "dset", "before", "dups", "kept", "removed")
+    for dset in dsets_order:
+        before = int(before_by_dset.get(dset, 0))
+        duplicate = int(duplicate_by_dset.get(dset, 0))
+        kept = int(kept_by_dset.get(dset, 0))
+        logger.info(
+            "    %-18s %12d %12d %12d %12d",
+            dset,
+            before,
+            duplicate,
+            kept,
+            before - kept,
+        )
+
     for cv in cv_dirs:
         cv_in = os.path.join(old_split_dp, cv)
         cv_stats = {
@@ -103,6 +149,8 @@ def patch_splits(
 
             # remove any rows with spec_ids not in the new spec_df (e.g. from old dsets)
             cv_split_df = cv_split_df[cv_split_df["spec_id"].isin(spec_df["spec_id"])]
+
+            cv_split_df = cv_split_df[cv_split_df["spec_id"].isin(kept_spec_ids)]
             cv_stats[split]["mol_new"] = len(cv_split_df["mol_id"].unique())
             cv_stats[split]["spec_new"] = len(cv_split_df["spec_id"].unique())
 
