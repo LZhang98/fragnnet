@@ -168,10 +168,10 @@ accumulate_grad_batches: 2
 lr: 0.0002
 lr_schedule: True
 lr_schedule_type: cosine
-lr_warmup_steps: 500
+lr_warmup_steps: 200
 lr_decay_rate: 0.9
 lr_decay_steps: 1000
-lr_total_steps: 20000
+lr_total_steps: 9000
 lr_min_ratio: 0.01
 weight_decay: 0.01
 accelerator: gpu
@@ -188,7 +188,7 @@ dual_group_dynamic_batch_sampler: False
 group_sampler: False
 simple_group_sampler: True
 simple_group_sampler_type: mol
-simple_group_sampler_avg_per_group: 1
+simple_group_sampler_avg_per_group: 3
 formula_prec_type_group_sampler: False
 drop_last: True
 
