@@ -355,6 +355,7 @@ sum_ints: True
 ints_transform: none # none, sqrt, log10, log10t3, loge
 train_batch_size: 16
 eval_batch_size: 16
+retrieval_eval_size:  # max spectra for retrieval eval; null = disabled (CLIP models only)
 accelerator: cpu
 devices: auto
 logging:
