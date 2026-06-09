@@ -1,27 +1,18 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist23_pcdl_inchikey_fraggnn_d3_ma_mi_all_sqrt_cv8
-wandb_group: nist23_pcdl_fraggnn_d3_sqrt
+wandb_name: pcdl_nist23_spectraverse_cv1
+wandb_group: pcdl_nist23_spectraverse
 wandb_tags:
 - retrieval
-- nist23
-- pcdl
-- d4
-- wr00
-- inchikey
-- new_proc
 - fraggnn_d3
 - dynamic_sampler
-- new_metrics
 - nodemlp
 - oos_multiple_1
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
 - lb16          # loss batch size 16
-- preload
-- preprocess
 - new_no_edges  # no edge features in fragment GNN
 - skip_extra_losses
 - binned_cosine_similarity
@@ -40,10 +31,10 @@ wandb_tags:
 # ============================================================================
 # Data File Paths
 # ============================================================================
-spec_fp: data/proc/nist23_pcdl/spec_df.pkl
-mol_fp: data/proc/nist23_pcdl/mol_df.pkl
-split_dp: data/split/ccx_nist23_pcdl/cv8   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+spec_fp: data/proc/spectraverse/spec_df.pkl
+mol_fp: data/proc/spectraverse/mol_df.pkl
+split_dp: data/split/ccx_nist23_pcdl_spectraverse/cv1  # cross-validation split for spectraverse benchmark
+frag_dp: data/frag/spectraverse_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture
@@ -67,8 +58,8 @@ frag_params:
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
-  preload: True        # load all DAGs into memory at startup for speed
-  preprocess: True     # apply preprocessing transforms at load time
+  preload: False      # load all DAGs into memory at startup for speed
+  preprocess: False   # apply preprocessing transforms at load time
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
@@ -77,22 +68,27 @@ frag_params:
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
   nce: True             # use normalized collision energy (NCE) as input
-  ace: False            # do not use absolute collision energy (ACE)
+  ace: True            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
-  preprocess: True
+  preprocess: False
   prec_type_str: False  # encode precursor type as integer index, not string
-  prec_types:           # adduct types to include
-    - "[M+H]+"
-    - "[M-H]-"
-    - "[M+Na]+"
-    - "[M+Cl]-"
-    - "[M]+"
+  prec_types:
+    - '[M-H]-' 
+    - '[M+H]+' 
+    - '[M+HCOOH-H]-' 
+    - '[M]+' 
+    - '[M+Na]+' 
+    - '[M+K]+' 
+    - '[M+NH4]+'
     - '[M+CH3COOH-H]-'
-  inst_type: True       # condition on instrument type
-  inst_types:           # instrument types to include
+    - '[M+Cl]-'
+  inst_type: True
+  inst_types:
     - "FT"
     - "QTOF"
-    - "IT"
+    - 'IT'
+    - "Other"
+    - "NA"
   frag_mode: True       # condition on fragmentation mode
   frag_modes:           # known modes; unknown falls back to index num_frag_modes
     - "HCD"
@@ -102,7 +98,7 @@ spec_params:
 # Molecule Parameters
 # ============================================================================
 mol_params:
-  preprocess: True
+  preprocess: False
 
 # ============================================================================
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
@@ -149,7 +145,7 @@ weight_decay: 0.01
 # warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
 # ============================================================================
 lr_schedule: False
-lr: 0.0007
+lr: 0.0004
 lr_schedule_type: cosine
 lr_warmup_steps: 5000
 lr_total_steps: 390000
@@ -178,15 +174,17 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
+
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
-ints_transform: sqrt  # intensity transform for evaluation metrics (sqrt or log)
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
-  FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
-  QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
+  FT:    {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm
+  QTOF:  {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm
+  Other: {rel: 2.0e-5, min_mz: 500.0}   # 20 ppm, unknown/other instruments
+  NA:    {rel: 2.0e-5, min_mz: 500.0}   # 20 ppm, unknown instruments
 
 # ============================================================================
 # PyTorch / Lightning Options
@@ -196,7 +194,7 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 200000
+dynamic_batch_sampler_max: 150000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -218,6 +216,4 @@ compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
-log_adduct_inst_ce_metrics: False  # log separate CE histogram metrics for each adduct and instrument type
-num_workers: 2                   # num DataLoader workers (0 for debugging, >0 for speed), use 2 to avoid too many processes on limited CPU cores and RAM usages
+num_workers: 6
