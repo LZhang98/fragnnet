@@ -697,7 +697,7 @@ def main(args):
             "# wait for GPU to be available (MIG instances can be briefly busy at job start)",
             "MAX_WAIT=120",
             "WAITED=0",
-            'while ! python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; do',
+            "while ! python -c \"import torch; torch.zeros(1, device='cuda')\" 2>/dev/null; do",
             "    if [ ${WAITED} -ge ${MAX_WAIT} ]; then",
             '        echo "ERROR: GPU not available after ${MAX_WAIT}s, giving up"',
             "        exit 1",
