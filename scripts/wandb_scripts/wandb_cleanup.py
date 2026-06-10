@@ -43,10 +43,10 @@ def should_delete_all_ckpts(run):
     has_target = any(keyword in run_name_lower for keyword in target_keywords)
 
     # Keep all checkpoints for protected benchmark datasets.
-    exclude_keywords = ["massspecgym", "nist20v3"]
-    has_exclude = any(keyword in run_name_lower for keyword in exclude_keywords)
+    # exclude_keywords = ["massspecgym", "nist20v3"]
+    # has_exclude = any(keyword in run_name_lower for keyword in exclude_keywords)
 
-    return has_target and not has_exclude
+    return has_target  # and not has_exclude
 
 
 def is_file_recent(file, days=30):
