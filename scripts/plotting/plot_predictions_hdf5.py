@@ -730,10 +730,12 @@ def plot_threshold_sweep(
 
     # Peak count stats (all spectra) ----------------------------------------
     count_stats: list[dict] = []
+    pred_counts_all: list[np.ndarray] = []
     for thresh in thresholds:
         counts = np.array(
             [int(np.sum(pred_ints_all[s:e] > thresh)) for s, e in zip(starts, ends)]
         )
+        pred_counts_all.append(counts)
         count_stats.append(
             {
                 "threshold": thresh,
@@ -746,6 +748,7 @@ def plot_threshold_sweep(
 
     # Cosine similarity stats (subsampled) -----------------------------------
     cos_stats: list[dict] | None = None
+    gt_counts: np.ndarray | None = None
     n_sample = 0
     if spec_df is not None and "spec_id" in meta.columns:
         gt_lookup: dict[int, np.ndarray] = {}
@@ -772,6 +775,7 @@ def plot_threshold_sweep(
             if has_inst_col and sid in gt_lookup:
                 inst_type_lookup[sid] = str(row["inst_type"])
 
+        gt_counts = np.array([len(v) for v in gt_lookup.values()])
         has_gt = np.array([int(sid) in gt_lookup for sid in meta["spec_id"]])
         valid_indices = np.where(has_gt)[0]
         if len(valid_indices) == 0:
@@ -833,9 +837,11 @@ def plot_threshold_sweep(
 
     # Plot -------------------------------------------------------------------
     has_cos_data = cos_stats is not None and any(not np.isnan(s["median"]) for s in cos_stats)
-    n_panels = 4 if has_cos_data else 2
+    has_gt_counts = gt_counts is not None and len(gt_counts) > 0
+    n_panels = 2 + (1 if has_gt_counts else 0) + (2 if has_cos_data else 0)
     fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
     fig.subplots_adjust(wspace=0.35)
+    axes = list(axes) if n_panels > 1 else [axes]
 
     xs = [s["threshold"] for s in count_stats]
     x_labels = [str(int(t)) for t in xs]
@@ -845,36 +851,67 @@ def plot_threshold_sweep(
     medians = [s["median"] for s in count_stats]
     p25s = [s["p25"] for s in count_stats]
     p75s = [s["p75"] for s in count_stats]
-    ax0.fill_between(xs, p25s, p75s, alpha=0.25, color="#4878CF", label="IQR (25–75)")
-    ax0.plot(xs, medians, "o-", color="#4878CF", lw=2, label="Median")
+    ax0.fill_between(xs, p25s, p75s, alpha=0.25, color="#4878CF", label="Pred IQR (25–75)")
+    ax0.plot(xs, medians, "o-", color="#4878CF", lw=2, label="Pred median")
     for x_val, med in zip(xs, medians):
         ax0.text(x_val, med + 0.5, f"{med:.0f}", ha="center", va="bottom", fontsize=8)
+    if has_gt_counts:
+        gt_med = float(np.median(gt_counts))
+        gt_p25 = float(np.percentile(gt_counts, 25))
+        gt_p75 = float(np.percentile(gt_counts, 75))
+        ax0.axhline(gt_med, color="orange", lw=1.5, ls="--", label=f"GT median ({gt_med:.0f})")
+        ax0.axhspan(gt_p25, gt_p75, alpha=0.12, color="orange", label="GT IQR (25–75)")
     ax0.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
     ax0.set_ylabel("Predicted peak count", fontsize=11)
     ax0.set_title("Peak count vs threshold", fontsize=13)
     ax0.set_xticks(xs)
     ax0.set_xticklabels(x_labels)
-    ax0.legend(fontsize=10)
+    ax0.legend(fontsize=9)
     ax0.spines["top"].set_visible(False)
     ax0.spines["right"].set_visible(False)
     ax0.grid(axis="y", alpha=0.3)
 
-    # Panel 1: % spectra with 0 surviving peaks vs threshold
-    ax1 = axes[1]
-    pct_zeros = [s["pct_zero"] for s in count_stats]
-    ax1.plot(xs, pct_zeros, "s-", color="#D65F5F", lw=2)
-    for x_val, pct in zip(xs, pct_zeros):
-        ax1.text(x_val, pct + 0.2, f"{pct:.1f}%", ha="center", va="bottom", fontsize=8)
-    ax1.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
-    ax1.set_ylabel("% spectra with 0 predicted peaks", fontsize=11)
-    ax1.set_title("Spectra blanked by threshold", fontsize=13)
-    ax1.set_xticks(xs)
-    ax1.set_xticklabels(x_labels)
-    ax1.spines["top"].set_visible(False)
-    ax1.spines["right"].set_visible(False)
-    ax1.grid(axis="y", alpha=0.3)
+    # Panel 1 (optional): GT vs predicted peak count distribution per threshold
+    panel_idx = 1
+    if has_gt_counts:
+        ax_hist = axes[panel_idx]
+        panel_idx += 1
+        pred0 = pred_counts_all[0] if pred_counts_all else np.array([])
+        x_max = int(np.percentile(np.concatenate([gt_counts, pred0]), 95)) + 5
+        bins = np.arange(0, x_max + 2)
+        cmap = plt.cm.Blues
+        n_thresh = len(thresholds)
+        for ti, (thresh, cnts) in enumerate(zip(thresholds, pred_counts_all)):
+            color = cmap(0.35 + 0.55 * ti / max(n_thresh - 1, 1))
+            label = f"Pred thresh={int(thresh)}"
+            ax_hist.hist(cnts, bins=bins, histtype="step", lw=1.5, color=color, label=label, density=True)
+        ax_hist.hist(gt_counts, bins=bins, alpha=0.4, color="orange", label="Ground truth", density=True)
+        ax_hist.set_xlabel("Peak count", fontsize=11)
+        ax_hist.set_ylabel("Density", fontsize=11)
+        ax_hist.set_title("Peak count distribution per threshold\n(step = predicted, fill = GT)", fontsize=13)
+        ax_hist.set_xlim(0, x_max)
+        ax_hist.legend(fontsize=8, ncol=2)
+        ax_hist.spines["top"].set_visible(False)
+        ax_hist.spines["right"].set_visible(False)
+        ax_hist.grid(axis="y", alpha=0.3)
 
-    # Panels 2 & 3 (optional): absolute cos_sim and delta vs threshold=0
+    # Next panel: % spectra with 0 surviving peaks vs threshold
+    ax_blank = axes[panel_idx]
+    panel_idx += 1
+    pct_zeros = [s["pct_zero"] for s in count_stats]
+    ax_blank.plot(xs, pct_zeros, "s-", color="#D65F5F", lw=2)
+    for x_val, pct in zip(xs, pct_zeros):
+        ax_blank.text(x_val, pct + 0.2, f"{pct:.1f}%", ha="center", va="bottom", fontsize=8)
+    ax_blank.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+    ax_blank.set_ylabel("% spectra with 0 predicted peaks", fontsize=11)
+    ax_blank.set_title("Spectra blanked by threshold", fontsize=13)
+    ax_blank.set_xticks(xs)
+    ax_blank.set_xticklabels(x_labels)
+    ax_blank.spines["top"].set_visible(False)
+    ax_blank.spines["right"].set_visible(False)
+    ax_blank.grid(axis="y", alpha=0.3)
+
+    # Next panels (optional): absolute cos_sim and delta vs threshold=0
     if has_cos_data:
         cos_meds = [s["median"] for s in cos_stats]
         cos_p25 = [s["p25"] for s in cos_stats]
@@ -884,8 +921,8 @@ def plot_threshold_sweep(
         delta_p25 = [p - baseline for p in cos_p25]
         delta_p75 = [p - baseline for p in cos_p75]
 
-        # Panel 2: absolute cos_sim
-        ax2 = axes[2]
+        ax2 = axes[panel_idx]
+        panel_idx += 1
         ax2.fill_between(xs, cos_p25, cos_p75, alpha=0.25, color="#6ACC65", label="IQR (25–75)")
         ax2.plot(xs, cos_meds, "o-", color="#6ACC65", lw=2, label="Median")
         for x_val, med in zip(xs, cos_meds):
@@ -905,8 +942,8 @@ def plot_threshold_sweep(
         ax2.spines["right"].set_visible(False)
         ax2.grid(axis="y", alpha=0.3)
 
-        # Panel 3: delta vs baseline (threshold=0)
-        ax3 = axes[3]
+        ax3 = axes[panel_idx]
+        panel_idx += 1  # noqa: F841
         ax3.fill_between(xs, delta_p25, delta_p75, alpha=0.25, color="#E8A83C", label="IQR (25–75)")
         ax3.plot(xs, cos_deltas, "o-", color="#E8A83C", lw=2, label="Median delta")
         ax3.axhline(0, color="grey", lw=1, ls="--")

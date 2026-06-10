@@ -490,6 +490,32 @@ class AtomCharge(FeatBase):
         return [0.0 if math.isnan(v) or math.isinf(v) else v]
 
 
+@register_atom_feat
+class AtomNumHs(FeatBase):
+    """Total hydrogen count (implicit + explicit) per atom, one-hot encoded.
+
+    Encodes the mobile proton pool at each atom site, directly relevant to
+    H-rearrangement fragmentation pathways (McLafferty, retro-Diels-Alder).
+    Complements a_degree which only captures heavy-atom connectivity.
+    """
+
+    name = "a_num_hs"
+    allowable_set = [0, 1, 2, 3]
+    feat_size = len(allowable_set) + 1
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode total hydrogen count on the atom.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot encoded H count vector of length 5: [0, 1, 2, 3, ≥4].
+        """
+        return one_hot_encoding(x.GetTotalNumHs(), cls.allowable_set, True)
+
+
 @register_bond_feat
 class BondDegree(FeatBase):
     """Bond degree/type features are one-hot encoded."""
