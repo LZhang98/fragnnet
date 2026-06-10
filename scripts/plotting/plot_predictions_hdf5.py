@@ -814,6 +814,7 @@ def plot_threshold_sweep(
                     cos_stats.append(
                         {
                             "threshold": thresh,
+                            "mean": float("nan"),
                             "median": float("nan"),
                             "p25": float("nan"),
                             "p75": float("nan"),
@@ -823,6 +824,7 @@ def plot_threshold_sweep(
                     cos_stats.append(
                         {
                             "threshold": thresh,
+                            "mean": float(np.mean(arr)),
                             "median": float(np.median(arr)),
                             "p25": float(np.percentile(arr, 25)),
                             "p75": float(np.percentile(arr, 75)),
@@ -926,6 +928,89 @@ def plot_threshold_sweep(
     out_fp = os.path.join(save_dp, "threshold_sweep.png")
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+    # --- Summary table saved separately ---
+    rows = []
+    for i, thresh in enumerate(thresholds):
+        cs = count_stats[i]
+        row: dict = {
+            "threshold_%": thresh / 10,
+            "peaks_median": int(round(cs["median"])),
+            "peaks_p25": int(round(cs["p25"])),
+            "peaks_p75": int(round(cs["p75"])),
+        }
+        if has_cos_data and cos_stats is not None:
+            c = cos_stats[i]
+            row["cos_hun_mean"] = c["mean"]
+            row["cos_hun_median"] = c["median"]
+            row["cos_hun_p25"] = c["p25"]
+            row["cos_hun_p75"] = c["p75"]
+            baseline_med = cos_stats[0]["median"] if not np.isnan(cos_stats[0]["median"]) else 0.0
+            baseline_mean = cos_stats[0]["mean"] if not np.isnan(cos_stats[0]["mean"]) else 0.0
+            row["cos_hun_delta_median"] = c["median"] - baseline_med
+            row["cos_hun_delta_mean"] = c["mean"] - baseline_mean
+        rows.append(row)
+
+    table_df = pd.DataFrame(rows)
+
+    # Render as a matplotlib table figure
+    col_labels = list(table_df.columns)
+    float_cols = [c for c in col_labels if c != "threshold_%"]
+    cell_text = []
+    for _, r in table_df.iterrows():
+        cell_row = [f"{r['threshold_%']:.1f}%"]
+        for c in float_cols:
+            v = r[c]
+            if "delta" in c:
+                cell_row.append(f"{v:+.4f}")
+            elif "cos" in c:
+                cell_row.append(f"{v:.3f}")
+            elif "peaks" in c:
+                cell_row.append(str(v))
+            else:
+                cell_row.append(f"{v:.1f}")
+        cell_text.append(cell_row)
+
+    fig_t, ax_t = plt.subplots(figsize=(max(10, len(col_labels) * 1.6), 0.45 * (len(rows) + 2)))
+    ax_t.axis("off")
+    tbl = ax_t.table(
+        cellText=cell_text,
+        colLabels=col_labels,
+        loc="center",
+        cellLoc="center",
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    tbl.scale(1, 1.5)
+
+    # Colour header row
+    for j in range(len(col_labels)):
+        tbl[0, j].set_facecolor("#2c3e50")
+        tbl[0, j].set_text_props(color="white", fontweight="bold")
+
+    # Highlight delta columns red/green if present
+    if has_cos_data:
+        for delta_col in ("cos_hun_delta_median", "cos_hun_delta_mean"):
+            if delta_col not in col_labels:
+                continue
+            delta_col_idx = col_labels.index(delta_col)
+            for i, r in enumerate(rows):
+                delta = r.get(delta_col, float("nan"))
+                if np.isnan(delta):
+                    continue
+                color = "#d5f5e3" if delta >= 0 else "#fadbd8"
+                tbl[i + 1, delta_col_idx].set_facecolor(color)
+
+    fig_t.suptitle("Threshold Sweep Summary", fontsize=13, y=0.98)
+    tbl_fp = os.path.join(save_dp, "threshold_sweep_table.png")
+    fig_t.savefig(tbl_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig_t)
+    print(f"Saved: {tbl_fp}")
+
+    # Also print to stdout
+    with pd.option_context("display.float_format", "{:.3f}".format, "display.max_columns", 20):
+        print("\nThreshold sweep summary:")
+        print(table_df.to_string(index=False))
     logger.info("Saved threshold sweep plot: %s", out_fp)
     print(f"Saved: {out_fp}")
 
