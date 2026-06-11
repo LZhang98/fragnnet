@@ -264,11 +264,17 @@ def merge_spec_df(spec_df, renormalize=False, sum_ints=True, keep_ces=False):
     m_spec_meta_df = spec_df.drop(columns=["peaks", "spec_id"]).drop_duplicates(subset=["group_id"])
     m_spec_df = m_spec_peaks_df.merge(m_spec_meta_df, on=["group_id"], how="inner")
     if keep_ces:
-        # Each nce/ace cell is already a list (from _fill_ce_list Phase 2), so
-        # plain `list` aggregation produces a list-of-lists. Flatten to 1-D so
-        # th.tensor() can create a uniform 1-D tensor per spectrum.
+        # After _fill_ce_list (Phase 2 in base_dataset), each cell is a list.
+        # When called directly (e.g. tests) cells may still be scalars.
+        # Flatten either way so th.tensor() gets a uniform 1-D list.
         def _flatten(x):
-            return [v for lst in x for v in lst]
+            result = []
+            for item in x:
+                if isinstance(item, list):
+                    result.extend(item)
+                else:
+                    result.append(item)
+            return result
 
         m_spec_ce_df = (
             spec_df[["group_id", "nce", "ace"]]
