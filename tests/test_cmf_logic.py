@@ -2,7 +2,11 @@ import pytest
 import torch as th
 
 from fragnnet.dataset.spec_mol_frag_dataset import SpecMolFragDataset
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.formula_utils import (
+    ELECTRON_MASS,
+    PREC_TYPE_TO_CMF_MASS_DIFF,
+    PREC_TYPE_TO_MASS_DIFF,
+)
 
 
 class _FakePyG:
@@ -13,17 +17,52 @@ class _FakePyG:
         self.node_feat_idxs = [node_feat_idxs]
 
 
-def test_cmf_excluded_precursor_crf_only():
+def _make_obj(include_cmf: bool = True, with_cmf_feat: bool = True):
     obj = object.__new__(SpecMolFragDataset)
-    obj.frag_params = {"include_cmf": True, "pyg_node_feats": []}
+    feats = ["cmf_h_formulae_idx"] if with_cmf_feat else []
+    obj.frag_params = {
+        "include_cmf": include_cmf,
+        "pyg_node_feats": feats,
+        "formula_peak_mzs": True,
+        "formula_peak_probs": False,
+    }
+    return obj
 
-    neutral = th.tensor([[10.0, 11.0], [20.0, 21.0]])
-    node_feat_idxs = th.tensor([0, 1, 2, 5, 7, 8, 11, 13])
+
+def _make_pyg(num_nodes: int, crf_values: th.Tensor):
+    """Build a _FakePyG with crf_values in the h_formulae_idx slice (NODE_FEAT_TO_IDX=3)
+    and zeros in cmf_h_formulae_idx (NODE_FEAT_TO_IDX=6).
+    In production both CRF and CMF features have the same width (formula_node_feat_size).
+    """
+    crf_width = crf_values.shape[1]
+    cmf_width = crf_width  # always equal to crf_width in production DAGs
+    # idxs: depth=1, cc=3, base=3, crf=crf_width, h_counts=crf_width, nb=1, cmf=cmf_width
+    node_feat_idxs = th.tensor(
+        [
+            0,
+            1,
+            4,
+            7,
+            7 + crf_width,
+            7 + 2 * crf_width,
+            7 + 2 * crf_width + 1,
+            7 + 2 * crf_width + 1 + cmf_width,
+        ]
+    )
     total_width = int(node_feat_idxs[-1].item())
-    x = th.zeros((1, total_width), dtype=th.int64)
-    fake_pyg = _FakePyG(x, node_feat_idxs)
+    x = th.zeros((num_nodes, total_width), dtype=th.int64)
+    crf_start = int(node_feat_idxs[3].item())
+    x[:, crf_start : crf_start + crf_width] = crf_values
+    return _FakePyG(x, node_feat_idxs)
+
+
+def test_cmf_excluded_precursor_crf_only():
+    """[M]+ is still excluded; result should be CRF peaks only."""
+    obj = _make_obj(include_cmf=True, with_cmf_feat=False)
+    neutral = th.tensor([[10.0, 11.0], [20.0, 21.0]])
+    prec = "[M]+"
+    fake_pyg = _make_pyg(1, th.zeros((1, 2), dtype=th.int64))
     frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
-    prec = "[M-H]-"
 
     res = SpecMolFragDataset._apply_fragment_mz_change(
         obj, frag_data, prec, neutral, clone_pyg=False
@@ -35,98 +74,199 @@ def test_cmf_excluded_precursor_crf_only():
 
 
 def test_cmf_applied_updates_peaks_and_pyg():
-    obj = object.__new__(SpecMolFragDataset)
-    # enable CMF and include cmf node feat name
-    obj.frag_params = {
-        "include_cmf": True,
-        "pyg_node_feats": ["cmf_h_formulae_idx"],
-        "formula_peak_mzs": True,
-        "formula_peak_probs": True,
-    }
-
-    # neutral peaks: 3 formulas x 2 isotopes
+    """[M+Na]+ (non-H adduct): CMF appends peaks with H mass_diff and fills all CRF cols."""
+    obj = _make_obj()
     neutral = th.tensor([[10.0, 11.0], [20.0, 21.0], [30.0, 31.0]])
     num_formulae = neutral.shape[0]
-
-    # simple probs (normalized rows)
     probs = th.tensor([[0.5, 0.5], [0.6, 0.4], [0.4, 0.6]], dtype=th.float32)
 
-    # build fake frag_pyg
-    # construct node_feat_idxs such that h_formulae_idx at idx=3 has width 2 and cmf at idx=6 has width 2
-    node_feat_idxs = th.tensor([0, 1, 2, 5, 7, 8, 11, 13])
-    total_width = int(node_feat_idxs[-1].item())
-    num_nodes = 2
-    x = th.zeros((num_nodes, total_width), dtype=th.int64)
-
-    # place crf formula matrix in the crf slice (node_feat_idxs[3]:node_feat_idxs[4]) width=2
-    crf_start = int(node_feat_idxs[3].item())
-    crf_end = int(node_feat_idxs[4].item())
-    crf_width = crf_end - crf_start
-    # set some non-zero indices to indicate possible formula matches
-    x[:, crf_start:crf_end] = th.tensor([[0, 1], [2, 0]], dtype=th.int64)
-
-    fake_pyg = _FakePyG(x, node_feat_idxs)
+    crf_values = th.tensor([[0, 1], [2, 0]], dtype=th.int64)
+    fake_pyg = _make_pyg(2, crf_values)
+    node_feat_idxs = fake_pyg.node_feat_idxs[0]
 
     frag_data = {
         "frag_formula_peak_mzs": neutral.clone(),
         "frag_formula_peak_probs": probs.clone(),
         "frag_pyg": fake_pyg,
     }
-
-    prec = "[M+Na]+"  # this precursor should allow CMF (not in exclusion list)
+    prec = "[M+Na]+"
 
     res = SpecMolFragDataset._apply_fragment_mz_change(
         obj, frag_data, prec, neutral, clone_pyg=False
     )
 
-    # Check peaks: first block == neutral + CRF mass diff
     crf_expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
     assert th.allclose(res["frag_formula_peak_mzs"][:num_formulae], crf_expected)
 
-    # Check CMF peaks appended: neutral[1:] + CMF mass diff
     cmf_expected = neutral[1:] + PREC_TYPE_TO_CMF_MASS_DIFF[prec]
     assert th.allclose(res["frag_formula_peak_mzs"][num_formulae:], cmf_expected)
 
-    # Check frag_pyg.x cmf slice updated as per logic
+    # For [M+Na]+ all CMF columns should be filled (full H-shift range)
     cmf_start = int(node_feat_idxs[6].item())
     cmf_end = int(node_feat_idxs[7].item())
-    crf_matrix = fake_pyg.x[:, crf_start:crf_end]
     cmf_matrix = res["frag_pyg"].x[:, cmf_start:cmf_end]
-
-    # expected: where crf != 0 -> crf + num_formulae - 1, else crf
-    expected_cmf = th.where(crf_matrix != 0, crf_matrix + num_formulae - 1, crf_matrix)
-    assert th.equal(cmf_matrix, expected_cmf)
+    expected_cmf = th.where(crf_values != 0, crf_values + num_formulae - 1, crf_values)
+    assert th.equal(cmf_matrix[:, : crf_values.shape[1]], expected_cmf)
 
 
 class _FakePyGClone(_FakePyG):
     def clone(self):
-        # return a shallow-wrapper copy with cloned tensor for x
-        # pass the raw tensor for node_feat_idxs (constructor will wrap it in a list)
         return _FakePyGClone(self.x.clone(), self.node_feat_idxs[0])
 
 
-def test_cmf_exclusion_protonated_precursor_no_cmf():
-    obj = object.__new__(SpecMolFragDataset)
-    obj.frag_params = {"include_cmf": True, "pyg_node_feats": []}
+def test_cmf_mplus_h_direct_cation_peaks():
+    """[M+H]+: CMF applies with mass_diff = -ELECTRON_MASS (direct cation mode)."""
+    obj = _make_obj()
+    neutral = th.tensor([[10.0, 11.0], [20.0, 21.0], [30.0, 31.0]])
+    num_formulae = neutral.shape[0]
 
-    neutral = th.tensor([[5.0, 6.0], [15.0, 16.0]])
-    frag_data = {"frag_formula_peak_mzs": neutral.clone()}
+    crf_values = th.tensor([[1, 0], [2, 1]], dtype=th.int64)
+    fake_pyg = _make_pyg(2, crf_values)
+
+    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
     prec = "[M+H]+"
 
     res = SpecMolFragDataset._apply_fragment_mz_change(
         obj, frag_data, prec, neutral, clone_pyg=False
     )
-    expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
-    assert th.allclose(res["frag_formula_peak_mzs"], expected)
+
+    crf_expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
+    assert th.allclose(res["frag_formula_peak_mzs"][:num_formulae], crf_expected)
+
+    # CMF peaks: neutral[1:] + (-ELECTRON_MASS)  ≈ neutral mass directly
+    cmf_expected = neutral[1:] + PREC_TYPE_TO_CMF_MASS_DIFF[prec]
+    assert th.allclose(res["frag_formula_peak_mzs"][num_formulae:], cmf_expected)
+    # CRF peak at delta_h=0: neutral[i] + H_MASS; CMF peak: neutral[i] - ELECTRON_MASS
+    # They differ by ~1.008 Da, confirming no duplication.
+    assert not th.allclose(
+        res["frag_formula_peak_mzs"][:num_formulae],
+        res["frag_formula_peak_mzs"][:num_formulae] * 0
+        + res["frag_formula_peak_mzs"][num_formulae : num_formulae + 1].expand(num_formulae, -1),
+    )
+
+
+def test_cmf_mplus_h_col0_only():
+    """[M+H]+: only column 0 of cmf_h_formulae_idx is filled; columns 1+ stay 0."""
+    obj = _make_obj()
+    neutral = th.tensor([[10.0], [20.0], [30.0]])
+    num_formulae = neutral.shape[0]
+
+    # crf col 0 = 2 (non-zero), col 1 = 1 (non-zero)
+    crf_values = th.tensor([[2, 1]], dtype=th.int64)
+    fake_pyg = _make_pyg(1, crf_values)
+    node_feat_idxs = fake_pyg.node_feat_idxs[0]
+
+    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
+    res = SpecMolFragDataset._apply_fragment_mz_change(
+        obj, frag_data, "[M+H]+", neutral, clone_pyg=False
+    )
+
+    cmf_start = int(node_feat_idxs[6].item())
+    cmf_end = int(node_feat_idxs[7].item())
+    cmf_matrix = res["frag_pyg"].x[:, cmf_start:cmf_end]
+
+    # col 0: crf_col0=2 → cmf_col0 = 2 + num_formulae - 1 = 4
+    assert cmf_matrix[0, 0].item() == 2 + num_formulae - 1
+    # cols 1+: must be 0 regardless of crf col 1
+    assert th.equal(cmf_matrix[:, 1:], th.zeros_like(cmf_matrix[:, 1:]))
+
+
+def test_cmf_mminus_h_direct_anion_peaks():
+    """[M-H]-: CMF applies with mass_diff = +ELECTRON_MASS (direct anion mode)."""
+    obj = _make_obj()
+    neutral = th.tensor([[10.0, 11.0], [20.0, 21.0], [30.0, 31.0]])
+    num_formulae = neutral.shape[0]
+
+    crf_values = th.tensor([[1, 0], [2, 1]], dtype=th.int64)
+    fake_pyg = _make_pyg(2, crf_values)
+
+    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
+    prec = "[M-H]-"
+
+    res = SpecMolFragDataset._apply_fragment_mz_change(
+        obj, frag_data, prec, neutral, clone_pyg=False
+    )
+
+    crf_expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
+    assert th.allclose(res["frag_formula_peak_mzs"][:num_formulae], crf_expected)
+
+    cmf_expected = neutral[1:] + PREC_TYPE_TO_CMF_MASS_DIFF[prec]
+    assert th.allclose(res["frag_formula_peak_mzs"][num_formulae:], cmf_expected)
+    # CMF mass diff for [M-H]- is +ELECTRON_MASS ≈ +0.00055
+    assert abs(PREC_TYPE_TO_CMF_MASS_DIFF[prec] - ELECTRON_MASS) < 1e-6
+
+
+def test_cmf_mminus_h_col0_only():
+    """[M-H]-: only column 0 of cmf_h_formulae_idx is filled; columns 1+ stay 0."""
+    obj = _make_obj()
+    neutral = th.tensor([[10.0], [20.0], [30.0]])
+    num_formulae = neutral.shape[0]
+
+    crf_values = th.tensor([[2, 1]], dtype=th.int64)
+    fake_pyg = _make_pyg(1, crf_values)
+    node_feat_idxs = fake_pyg.node_feat_idxs[0]
+
+    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
+    res = SpecMolFragDataset._apply_fragment_mz_change(
+        obj, frag_data, "[M-H]-", neutral, clone_pyg=False
+    )
+
+    cmf_start = int(node_feat_idxs[6].item())
+    cmf_end = int(node_feat_idxs[7].item())
+    cmf_matrix = res["frag_pyg"].x[:, cmf_start:cmf_end]
+
+    assert cmf_matrix[0, 0].item() == 2 + num_formulae - 1
+    assert th.equal(cmf_matrix[:, 1:], th.zeros_like(cmf_matrix[:, 1:]))
+
+
+@pytest.mark.parametrize(
+    "prec, expect_col0_only",
+    [
+        ("[M+H]+", True),
+        ("[M-H]-", True),
+        ("[M+Na]+", False),
+        ("[M+NH4]+", False),
+        ("[M+K]+", False),
+        ("[M+Cl]-", False),
+    ],
+)
+def test_cmf_fill_strategy_by_adduct(prec, expect_col0_only):
+    """[M+H]+ and [M-H]- fill only column 0 (direct-charge); all other CMF adducts fill all columns."""
+    obj = _make_obj()
+    neutral = th.tensor([[10.0], [20.0], [30.0], [40.0]])
+    num_formulae = neutral.shape[0]
+
+    # set every CRF column to a non-zero index so we can detect which columns get written
+    crf_width = 3
+    crf_values = th.tensor([[1, 2, 3]], dtype=th.int64)  # all non-zero
+    fake_pyg = _make_pyg(1, crf_values)
+    node_feat_idxs = fake_pyg.node_feat_idxs[0]
+
+    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
+    SpecMolFragDataset._apply_fragment_mz_change(obj, frag_data, prec, neutral, clone_pyg=False)
+
+    cmf_start = int(node_feat_idxs[6].item())
+    cmf_end = int(node_feat_idxs[7].item())
+    cmf_matrix = frag_data["frag_pyg"].x[:, cmf_start:cmf_end]
+
+    if expect_col0_only:
+        # column 0 written, columns 1+ must be 0
+        assert cmf_matrix[0, 0].item() == 1 + num_formulae - 1, prec
+        assert th.equal(cmf_matrix[:, 1:], th.zeros_like(cmf_matrix[:, 1:])), prec
+    else:
+        # all columns written
+        expected = crf_values + num_formulae - 1  # all non-zero → all shifted
+        assert th.equal(cmf_matrix, expected), prec
+
+
+def test_cmf_mass_diffs_direct_charge():
+    """[M+H]+ and [M-H]- CMF mass diffs are ±ELECTRON_MASS (direct charge, no H transfer)."""
+    assert abs(PREC_TYPE_TO_CMF_MASS_DIFF["[M+H]+"] - (-ELECTRON_MASS)) < 1e-9
+    assert abs(PREC_TYPE_TO_CMF_MASS_DIFF["[M-H]-"] - ELECTRON_MASS) < 1e-9
 
 
 def test_unknown_precursor_raises_keyerror():
-    obj = object.__new__(SpecMolFragDataset)
-    obj.frag_params = {
-        "include_cmf": True,
-        "pyg_node_feats": ["cmf_h_formulae_idx"],
-        "formula_peak_probs": False,
-    }
+    obj = _make_obj()
     neutral = th.tensor([[1.0, 2.0]])
     frag_data = {"frag_formula_peak_mzs": neutral.clone()}
     with pytest.raises(KeyError):
@@ -136,24 +276,16 @@ def test_unknown_precursor_raises_keyerror():
 
 
 def test_crf_matrix_zero_results_in_zero_cmf_slice():
-    obj = object.__new__(SpecMolFragDataset)
-    obj.frag_params = {
-        "include_cmf": True,
-        "pyg_node_feats": ["cmf_h_formulae_idx"],
-        "formula_peak_mzs": True,
-        "formula_peak_probs": False,
-    }
+    obj = _make_obj()
     neutral = th.tensor([[10.0, 11.0], [20.0, 21.0], [30.0, 31.0]])
 
-    node_feat_idxs = th.tensor([0, 1, 2, 5, 7, 8, 11, 13])
-    total_width = int(node_feat_idxs[-1].item())
-    x = th.zeros((1, total_width), dtype=th.int64)
-    fake_pyg = _FakePyG(x, node_feat_idxs)
+    crf_values = th.zeros((1, 2), dtype=th.int64)
+    fake_pyg = _make_pyg(1, crf_values)
+    node_feat_idxs = fake_pyg.node_feat_idxs[0]
 
     frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
-    prec = "[M+Na]+"
     res = SpecMolFragDataset._apply_fragment_mz_change(
-        obj, frag_data, prec, neutral, clone_pyg=False
+        obj, frag_data, "[M+Na]+", neutral, clone_pyg=False
     )
 
     cmf_start = int(node_feat_idxs[6].item())
@@ -163,115 +295,67 @@ def test_crf_matrix_zero_results_in_zero_cmf_slice():
 
 
 def test_clone_pyg_returns_new_object_and_original_unchanged():
-    obj = object.__new__(SpecMolFragDataset)
-    obj.frag_params = {
-        "include_cmf": True,
-        "pyg_node_feats": ["cmf_h_formulae_idx"],
-        "formula_peak_mzs": True,
-        "formula_peak_probs": False,
-    }
+    obj = _make_obj()
     neutral = th.tensor([[10.0, 11.0], [20.0, 21.0]])
 
-    node_feat_idxs = th.tensor([0, 1, 2, 5, 7, 8, 11, 13])
-    total_width = int(node_feat_idxs[-1].item())
-    x = th.zeros((1, total_width), dtype=th.int64)
-    # place a non-zero in crf slice so the cmf logic will modify the clone
-    crf_start = int(node_feat_idxs[3].item())
-    crf_end = int(node_feat_idxs[4].item())
-    x[:, crf_start:crf_end] = th.tensor([[1, 0]], dtype=th.int64)
-
-    fake_pyg = _FakePyGClone(x, node_feat_idxs)
-    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
-    prec = "[M+Na]+"
-
+    crf_values = th.tensor([[1, 0]], dtype=th.int64)
+    fake_pyg = _FakePyGClone(
+        _make_pyg(1, crf_values).x,
+        _make_pyg(1, crf_values).node_feat_idxs[0],
+    )
     original_x_before = fake_pyg.x.clone()
+    frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
+
     res = SpecMolFragDataset._apply_fragment_mz_change(
-        obj, frag_data, prec, neutral, clone_pyg=True
+        obj, frag_data, "[M+Na]+", neutral, clone_pyg=True
     )
 
-    # Ensure returned pyg is not the same object as original
     assert res["frag_pyg"].x is not fake_pyg.x
-    # original unchanged
     assert th.equal(fake_pyg.x, original_x_before)
 
 
 def test_single_formula_no_cmf_appended():
-    obj = object.__new__(SpecMolFragDataset)
-    obj.frag_params = {
-        "include_cmf": True,
-        "pyg_node_feats": ["cmf_h_formulae_idx"],
-        "formula_peak_mzs": True,
-        "formula_peak_probs": False,
-    }
+    obj = _make_obj()
     neutral = th.tensor([[42.0, 43.0]])
-    node_feat_idxs = th.tensor([0, 1, 2, 5, 7, 8, 11, 13])
-    total_width = int(node_feat_idxs[-1].item())
-    x = th.zeros((1, total_width), dtype=th.int64)
-    fake_pyg = _FakePyG(x, node_feat_idxs)
+    fake_pyg = _make_pyg(1, th.zeros((1, 2), dtype=th.int64))
     frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
     prec = "[M+Na]+"
 
     res = SpecMolFragDataset._apply_fragment_mz_change(
         obj, frag_data, prec, neutral, clone_pyg=False
     )
-    # With a single formula, CMF peaks are neutral[1:] -> empty, so result should equal CRF only
+    # neutral[1:] is empty, so CMF appends nothing
     expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
     assert th.allclose(res["frag_formula_peak_mzs"], expected)
 
 
 def test_multiple_precursors_shapes():
-    # test several precursor types and a multi-isotope/multi-formula neutral matrix
     precs = ["[M+H]+", "[M+Na]+", "[M+K]+", "[M-H]-", "[M+Cl]-", "[M]+"]
-    # 4 formulas, 3 isotopes
     neutral = th.tensor(
         [[10.0, 10.1, 10.2], [20.0, 20.1, 20.2], [30.0, 30.1, 30.2], [40.0, 40.1, 40.2]]
     )
     num_formulae = neutral.shape[0]
 
-    # common fake pyg layout
-    # ensure CRF and CMF feature slices have the same width
-    node_feat_idxs = th.tensor([0, 1, 2, 5, 7, 8, 10, 12])
-    total_width = int(node_feat_idxs[-1].item())
-    num_nodes = 3
-    x = th.zeros((num_nodes, total_width), dtype=th.int64)
-
-    # set some non-zero entries in the CRF slice (node_feat_idxs[3]:node_feat_idxs[4])
-    crf_start = int(node_feat_idxs[3].item())
-    crf_end = int(node_feat_idxs[4].item())
-    # set some non-zero entries in CRF slice (width = crf_end-crf_start)
-    width = crf_end - crf_start
-    pattern = th.tensor([[0, 1], [1, 0], [2, 2]], dtype=th.int64)
-    x[:, crf_start:crf_end] = pattern[:, :width]
-
-    fake_pyg = _FakePyG(x, node_feat_idxs)
-
     for prec in precs:
-        obj = object.__new__(SpecMolFragDataset)
-        obj.frag_params = {
-            "include_cmf": True,
-            "pyg_node_feats": ["cmf_h_formulae_idx"],
-            "formula_peak_mzs": True,
-            "formula_peak_probs": False,
-        }
+        obj = _make_obj()
+        crf_values = th.tensor([[0, 1], [1, 0], [2, 2]], dtype=th.int64)
+        fake_pyg = _make_pyg(3, crf_values)
         frag_data = {"frag_formula_peak_mzs": neutral.clone(), "frag_pyg": fake_pyg}
 
         res = SpecMolFragDataset._apply_fragment_mz_change(
             obj, frag_data, prec, neutral, clone_pyg=False
         )
 
-        # determine if CMF should be applied according to code exclusion list
-        excluded = prec in ["[M+H]+", "[M-H]-", "[M]+", "[M-]"]
+        excluded = prec in ["[M]+", "[M-]"]
 
         if excluded:
-            # CRF only
             expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
-            assert th.allclose(res["frag_formula_peak_mzs"], expected)
-            assert res["frag_formula_peak_mzs"].shape == neutral.shape
+            assert th.allclose(res["frag_formula_peak_mzs"], expected), prec
+            assert res["frag_formula_peak_mzs"].shape == neutral.shape, prec
         else:
-            # CMF appended
             crf_expected = neutral + PREC_TYPE_TO_MASS_DIFF[prec]
             cmf_expected = neutral[1:] + PREC_TYPE_TO_CMF_MASS_DIFF[prec]
             out = res["frag_formula_peak_mzs"]
-            assert out.shape[0] == num_formulae + (num_formulae - 1)
-            assert th.allclose(out[:num_formulae], crf_expected)
-            assert th.allclose(out[num_formulae:], cmf_expected)
+            assert out.shape[0] == num_formulae + (num_formulae - 1), prec
+            assert th.allclose(out[:num_formulae], crf_expected), prec
+            assert th.allclose(out[num_formulae:], cmf_expected), prec

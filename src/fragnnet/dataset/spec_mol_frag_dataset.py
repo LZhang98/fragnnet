@@ -448,8 +448,6 @@ class SpecMolFragDataset(SpecMolDataset):
 
         # Charge Migration Fragmentation stuff
         if self.frag_params["include_cmf"] and prec_type not in [
-            "[M+H]+",
-            "[M-H]-",
             "[M]+",
             "[M-]",
         ]:
@@ -491,15 +489,24 @@ class SpecMolFragDataset(SpecMolDataset):
                 frag_node_feat_idxs[crf_node_feat_idx] : frag_node_feat_idxs[crf_node_feat_idx + 1],
             ]
 
-            # update cmf formula matrix if crf_formula_matrix value is not zero
-            # if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should be zero
-            # cmf formula matrix is shifted by num_formulae-1, as forumlea[0] is null formula
-            frag_pyg.x[
-                :,
-                frag_node_feat_idxs[cmf_node_feat_idx] : frag_node_feat_idxs[cmf_node_feat_idx + 1],
-            ] = th.where(
-                crf_formula_matrix != 0, crf_formula_matrix + num_formulae - 1, crf_formula_matrix
-            )
+            # For [M+H]+/[M-H]- the CMF mode is direct-charge (proton departs with neutral):
+            # only delta_h=0 produces a unique peak; all other delta_h values duplicate CRF
+            # peaks shifted by ±1H, so only column 0 is written. Remaining CMF columns stay
+            # 0 (NULL from DAG initialisation) and are masked out by frag_joint_mask.
+            # For all other adducts the full H-shift range is valid (charge migrates to H+).
+            if prec_type in ("[M+H]+", "[M-H]-"):
+                crf_col0 = crf_formula_matrix[:, 0:1]
+                frag_pyg.x[
+                    :,
+                    frag_node_feat_idxs[cmf_node_feat_idx] : frag_node_feat_idxs[cmf_node_feat_idx] + 1,
+                ] = th.where(crf_col0 != 0, crf_col0 + num_formulae - 1, crf_col0)
+            else:
+                frag_pyg.x[
+                    :,
+                    frag_node_feat_idxs[cmf_node_feat_idx] : frag_node_feat_idxs[cmf_node_feat_idx + 1],
+                ] = th.where(
+                    crf_formula_matrix != 0, crf_formula_matrix + num_formulae - 1, crf_formula_matrix
+                )
             frag_data["frag_pyg"] = frag_pyg
         else:
             frag_data["frag_formula_peak_mzs"] = crf_peaks
