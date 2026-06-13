@@ -107,8 +107,8 @@ class TestCyclohexane:
 
     Standard BFS (max_cut_size=1) can never disconnect it at any depth
     (single bond break → num_ccs=1 always).
-    Multi-cut BFS (max_cut_size=2) finds the 2-bond cuts at depth 2
-    (cut=2 consumes 2 depth units, so children land at depth 0+2=2).
+    Multi-cut BFS (max_cut_size=2) finds the 2-bond cuts at depth 1
+    (cut=2 consumes 1 depth unit, so children land at depth 0+1=1).
     """
 
     SMILES = "C1CCCCC1"  # cyclohexane, 6C ring
@@ -122,21 +122,21 @@ class TestCyclohexane:
             f"Expected only root node, got {len(r['nodes_mask'])} nodes"
         )
 
-    def test_multi_cut_finds_ring_fragments_at_depth2(self):
-        """max_cut_size=2 finds ring-opening fragments at depth 2.
+    def test_multi_cut_finds_ring_fragments_at_depth1(self):
+        """max_cut_size=2 finds ring-opening fragments at depth 1.
 
-        Cut=2 consumes 2 depth units, so max_depth must be >= 2 for
-        ring-pair cuts to produce any fragments.
+        Cut=2 consumes 1 depth unit, so max_depth=1 is sufficient for
+        ring-pair cuts to produce fragments.
         """
-        r = _run(self.SMILES, max_cut_size=2, max_depth=2)
-        # Should have more than just the root node
-        assert len(r["nodes_mask"]) > 1, "Multi-cut BFS should find ring fragments"
-
-    def test_multi_cut_blocked_when_max_depth_1(self):
-        """With max_depth=1, cut=2 is blocked (would need depth 2 > max_depth=1)."""
         r = _run(self.SMILES, max_cut_size=2, max_depth=1)
-        assert len(r["nodes_mask"]) == 1, (
-            "Cut=2 should be blocked when max_depth=1 (needs 2 depth units)"
+        # Should have more than just the root node
+        assert len(r["nodes_mask"]) > 1, "Multi-cut BFS should find ring fragments at depth 1"
+
+    def test_multi_cut_works_at_max_depth_1(self):
+        """With max_depth=1, cut=2 produces ring fragments (costs 1 depth unit)."""
+        r = _run(self.SMILES, max_cut_size=2, max_depth=1)
+        assert len(r["nodes_mask"]) > 1, (
+            "Cut=2 should find fragments at max_depth=1 (costs 1 depth unit)"
         )
 
     def test_ring_cut_fragment_sizes(self):
@@ -148,9 +148,9 @@ class TestCyclohexane:
 
         Each cut produces 2 fragments summing to 6 atoms.
         All sizes 1..5 should appear in the non-root node set.
-        Requires max_depth=2 so cut=2 from root (depth 0+2=2) can fire.
+        Cut=2 from root lands at depth 1, so max_depth=1 is sufficient.
         """
-        r = _run(self.SMILES, max_cut_size=2, max_depth=2)
+        r = _run(self.SMILES, max_cut_size=2, max_depth=1)
         counts = _atom_counts(r["nodes_mask"])
         for expected_size in [1, 2, 3, 4, 5]:
             assert expected_size in counts, (
@@ -162,12 +162,12 @@ class TestCyclohexane:
         mol_d = extract_mol_info(self.SMILES)
         assert mol_d["ring_bond_mask"].sum() == 6  # all 6 bonds are ring bonds
 
-    def test_depth2_nodes_exist_in_multi_cut(self):
-        """Cut=2 from root produces depth-2 nodes (depth consumed = cut size)."""
-        r = _run(self.SMILES, max_cut_size=2, max_depth=2)
+    def test_depth1_nodes_exist_in_multi_cut(self):
+        """Cut=2 from root produces depth-1 nodes (1 depth unit per ring cut)."""
+        r = _run(self.SMILES, max_cut_size=2, max_depth=1)
         depths = _node_depths(r["nodes_mask"], r["nodes_depth"])
-        # Cyclohexane has no bridges → no depth-1 nodes; cut=2 fragments at depth 2
-        assert 2 in depths.values(), "No depth-2 fragments found for cyclohexane"
+        # Cyclohexane has no bridges → no cut=1 fragments; cut=2 lands at depth 1
+        assert 1 in depths.values(), "No depth-1 fragments found for cyclohexane with cut=2"
 
 
 # ---------------------------------------------------------------------------
@@ -198,30 +198,31 @@ class TestNaphthalene:
         assert mol_d["ring_bond_mask"].sum() == 11
 
     def test_achievable_fragment_sizes(self):
-        """Verify the fragment sizes that are actually achievable with 2-bond cuts.
+        """Verify the fragment sizes achievable from a single cut=2 step.
 
         Naphthalene min-edge-cut = 3 (bridgehead atoms have degree 3), so a
-        5+5 split requires 3 bonds — NOT achievable with max_cut_size=2.
+        5+5 split requires 3 bonds — NOT achievable in a single cut=2 step.
 
-        Valid 2-bond cuts:
+        Valid single cut=2 steps:
           1+9: cut both bonds around any of the 8 non-bridgehead (degree-2) atoms
           2+8: cut both external bonds of any adjacent pair of non-bridgehead atoms
           3+7: three consecutive non-bridgehead atoms (each ring has 2 such triples)
           4+6: four consecutive non-bridgehead atoms (one chain per ring: C4 subpath)
+
+        max_depth=1 so only the root-level cut=2 fires (no sequential ring cuts).
         """
-        # max_depth=2 required so cut=2 (depth consumed=2) can fire from root
-        r = _run(self.SMILES, max_cut_size=2, max_depth=2)
+        r = _run(self.SMILES, max_cut_size=2, max_depth=1)
         counts = set(_atom_counts(r["nodes_mask"]))
-        # All of these splits must be achievable
+        # All of these splits must be achievable from a single cut=2
         for expected in [1, 2, 3, 4, 6, 7, 8, 9]:
             assert expected in counts, (
                 f"Expected fragment of size {expected} from naphthalene 2-bond cuts, "
                 f"got sizes: {sorted(counts)}"
             )
-        # 5-atom split requires a 3-bond cut — must NOT appear with max_cut_size=2
+        # 5-atom split requires a 3-bond cut — not achievable in a single cut=2 step
         assert 5 not in counts, (
             "5-atom split of naphthalene should require 3-bond cut, "
-            "but appeared with max_cut_size=2"
+            "but appeared with a single cut=2 step"
         )
 
 
@@ -671,19 +672,24 @@ class TestPolycyclicCages:
         )
 
     def test_adamantane_cut2_sizes(self):
-        """Cut=2 on adamantane only isolates single CH2 groups → size 1 and 9."""
-        r = _run(self.ADAMANTANE, max_cut_size=2, max_depth=2)
+        """Cut=2 on adamantane only isolates single CH2 groups → size 1 and 9.
+
+        max_depth=1 so only one ring cut fires (depth 0→1), preventing sequential
+        cuts from reaching additional fragment sizes.
+        """
+        r = _run(self.ADAMANTANE, max_cut_size=2, max_depth=1)
         counts = set(_atom_counts(r["nodes_mask"]))
         assert counts == {1, 9}, f"Expected only 1+9 splits, got {sorted(counts)}"
         # 6 CH2 groups × 2 children = 12 unique non-root fragments
         assert len(r["nodes_mask"]) - 1 == 12
 
-    def test_adamantane_cut3_finds_more(self):
+    def test_adamantane_cut3_same_as_cut2_at_depth1(self):
         """Cut=3 on adamantane with SSSR grouping: within-ring triples cannot
-        disconnect the cage (bridge bonds outside the ring keep it connected),
-        so cut=3 produces the same fragments as cut=2 for adamantane."""
-        r2 = _run(self.ADAMANTANE, max_cut_size=2, max_depth=3)
-        r3 = _run(self.ADAMANTANE, max_cut_size=3, max_depth=3)
+        disconnect the cage (bridge bonds outside the SSSR ring keep it connected).
+        At max_depth=1 (one multi-cut step), cut=3 produces the same fragments as cut=2.
+        """
+        r2 = _run(self.ADAMANTANE, max_cut_size=2, max_depth=1)
+        r3 = _run(self.ADAMANTANE, max_cut_size=3, max_depth=1)
         assert len(r3["nodes_mask"]) == len(r2["nodes_mask"])
 
     def test_norbornane_no_cut1_bridges(self):
@@ -854,9 +860,13 @@ class TestCut3TripleBonds:
         """Adamantane with SSSR grouping: within-ring triple cuts cannot
         disconnect the cage because bridge bonds outside the SSSR ring keep
         it connected. cut=3 produces the same sizes as cut=2 ({1, 9}).
-        Cross-ring triples (old ring-system behaviour) are no longer tried."""
-        r2 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=2, max_depth=3)
-        r3 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=3, max_depth=3)
+        Cross-ring triples (old ring-system behaviour) are no longer tried.
+
+        max_depth=1 so only one multi-cut step fires — sequential cuts at deeper
+        depths would unlock additional fragment sizes via chained ring openings.
+        """
+        r2 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=2, max_depth=1)
+        r3 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=3, max_depth=1)
         counts2 = set(_atom_counts(r2["nodes_mask"]))
         counts3 = set(_atom_counts(r3["nodes_mask"]))
         assert counts3 == counts2, (
@@ -943,3 +953,5 @@ class TestMinFragAtoms:
             assert expected in counts, (
                 f"Expected {expected}-atom fragment to survive min_frag_atoms=3 filter"
             )
+
+
