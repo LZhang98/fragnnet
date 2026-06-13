@@ -1,0 +1,1723 @@
+# Retro-Diels-Alder (RDA) Fragmentation: Empirical Findings
+
+Analysis of `dag_missing_by_class_m+h.txt` (FT, [M+H]+, min_intensity=0.05,
+min_spectra=20). Source script: `scripts/eval/find_missing_peaks.py --frag_dp
+data/frag/nist23_ma_mi_d3_h4_isoFalse.tar`.
+
+---
+
+## Key Case: Phenanthrenes and Derivatives (morphine alkaloids)
+
+**Report:** n=330, DAG miss rate=78.3%
+
+**What ClassyFire calls "phenanthrenes":** Mostly morphine-family alkaloids
+(morphine, codeine, oxymorphone, naltrexone, etc.). ClassyFire assigns them to
+this subclass because the morphinan skeleton contains a phenanthrene-like
+tricyclic aromatic core.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spectra | mean intensity |
+|---------|-----------|----------------|
+| 155.1   | 73        | 0.163          |
+| 181.1   | 67        | 0.183          |
+| 153.1   | 63        | 0.251          |
+| 184.1   | 61        | 0.140          |
+| 169.1   | 60        | 0.142          |
+| 165.1   | 58        | 0.249          |
+| 141.1   | 57        | 0.208          |
+| 129.1   | 55        | 0.202          |
+
+### Fragment identities
+
+These are protonated PAH ions produced by retro-Diels-Alder of the bridged
+morphinan ring system:
+
+| obs m/z | neutral formula | identity |
+|---------|----------------|----------|
+| 115.054 | C₉H₆           | protonated indene / isoindene |
+| 128.062 | C₁₀H₇          | protonated naphthalene-related |
+| 152.062 | C₁₂H₇          | protonated acenaphthylene |
+| 168.081 | C₁₂H₉N         | N-containing aromatic ring |
+| 181.088 | C₁₃H₁₀N        | N-containing PAH fragment |
+
+### CE dependence (codeine, mol_id=28912)
+
+DAG coverage collapses completely at high NCE:
+
+| NCE  | sig. peaks | in-DAG | coverage |
+|------|-----------|--------|----------|
+| ≤45  | 1–4       | 100%   | fine     |
+| 60   | 17        | 8      | 47%      |
+| 75   | 34        | 12     | 35%      |
+| 90   | 71        | 15     | 21%      |
+| 110  | 91        | 9      | 10%      |
+| 130  | 71        | 7      | 10%      |
+| 160  | 42        | 3      | 7%       |
+
+At low CE (≤45 NCE), BFS covers everything. The problem is purely high-energy.
+
+### Mechanism
+
+The morphinan skeleton (fused 5-ring bridged system) undergoes cascade
+fragmentation at high CE via sequential retro-Diels-Alder steps:
+
+```
+C₁₈H₂₁NO₄⁺  →  C₁₅H₁₅NO₂⁺  →  C₁₄H₁₄N⁺  →  C₁₃H₁₀N⁺  →  C₁₂H₈⁺  →  C₉H₇⁺
+    316              241             212             181             152         115
+```
+
+Each arrow is one fragmentation event of an intermediate ion. BFS models
+sequential bond cuts up to max_depth=3 from the parent ion. Steps 4–6 in the
+cascade above are unreachable at depth=3 regardless of h_transfer.
+
+Additionally, at each step the fragment **aromatizes** (sp³ CH₂ → sp² CH as the
+ring contracts), shedding 2–4 H as part of the structural rearrangement rather
+than as inter-fragment H-transfer. BFS models H-transfer at the moment of bond
+cutting, not intra-fragment post-cleavage rearrangement.
+
+### Why h=7 doesn't fix it
+
+Increasing `max_h_transfer` from 4 → 7:
+
+- **Helps:** intermediate fragments like C₁₃H₁₁N⁺ (181.088) that are 1–2 cuts
+  from the parent and need ±5–6 H adjustment at a single cut.
+- **Doesn't help:** the deepest cascade fragments (115.054, 128.062) that require
+  5–6 sequential fragmentation events from the parent — beyond depth=3 regardless
+  of h.
+- **Cost:** 15 H-variants per node instead of 9 (~67% more DAG nodes globally,
+  across all 52k molecules, most of which don't need it).
+
+The binding constraint for the worst-missing fragments is **depth**, not **h**.
+
+### Possible fixes
+
+1. **SMARTS prepass for morphinan RDA:** Targeted rule cutting both bonds of the
+   dihydrofuran bridge in one step, injecting the aromatic ring fragment directly
+   as a depth-1 leaf. Would cover 181.088 and 168.081 at minimum.
+2. **Increase max_depth to 4–5:** Very expensive; combinatorial explosion.
+3. **Accept the gap:** The affected spectra are all high-NCE (≥60). At the NCE
+   range most useful for library search (20–50), BFS covers everything. The
+   model's performance on these molecules at low/medium CE is fine.
+
+---
+
+## False Alarms: Data Quality Issues
+
+### Quinolizidinones (n=33, DAG miss rate=100%)
+
+**Root cause:** Only 1 unique molecule (mol_id=1968, `C=CCC1NCC2CC1CN1C(=O)CCCC21`)
+in this subclass, and it is **absent from the precomputed DAG tar archive**. When
+`DagLoader.get()` returns `None`, the script (before the fix) classified all
+peaks as absent from DAG.
+
+Running BFS directly on the SMILES generates m/z 193.1335 (Δ=0.5 mDa from the
+observed base peak 193.134). BFS coverage is fine — the molecule just fell
+through precomputation. The `find_missing_peaks.py` script now skips spectra
+whose mol_id is missing from the tar (`continue` on `dag_mzs is None`).
+
+**Not an RDA issue.**
+
+### Furan Lignans (n=21, DAG miss rate=82.6%)
+
+**Root cause:** 3 of 6 spectra for mol_id=52196 (spec_ids 1788996–1788998,
+CE=nan) are contaminated — no matching [M+H]⁺ at 355.118, base peak m/z 91.058
+(C₇H₇⁺), and an aliphatic hydrocarbon ion series (57, 69, 71, 81, 95 Da). These
+are lipid/wax co-elution or mislabeled spectra in NIST23. The genuine CE=10/15/20
+spectra fragment cleanly and are fully BFS-covered.
+
+**Not an RDA issue. Data quality problem in NIST23.**
+
+---
+
+## Other BFS Limitation Cases
+
+### Organic Metalloid Salts (n=100, DAG miss rate=76.1%)
+
+**Molecules:** 7 cyclic siloxanes (D3–D7) + trimethylsilylmethylamine + methylarsenic acid.
+All FT [M+H]+ spectra (n=79 in spec_df) come from these 7 mols; 6 of 7 are in the tar.
+
+**Partial artifact:** mol_id=30196 (methylarsenic acid, `C[As](=O)(O)O`) is absent from the
+tar → 10 spectra skipped after the `continue on dag_mzs is None` fix.
+
+**Real BFS gap — silyl cation formation:** Cyclic siloxanes (D3–D7) produce a well-known
+fragment series by sequential Si-O cleavage with methyl migration:
+
+| obs m/z | identity | formula | in DAG? |
+|---------|----------|---------|---------|
+| 73.047  | TMS⁺ = (CH₃)₃Si⁺ | C₃H₉Si⁺ | **NO** (37 mDa from DAG's 73.010) |
+| 91.0    | (CH₃)₂Si-OH₂⁺ or rearranged | Si₂Cx Hy | NO |
+| 147.07  | [TMS-O-SiMe₂]⁺ | C₅H₁₃Si₂O⁺ | NO |
+| 221.09  | [TMS-(O-SiMe₂)₂]⁺ | C₇H₁₉Si₃O₂⁺ | NO |
+| 345.14  | [TMS-(O-SiMe₂)₄]⁺ | C₁₁H₃₁Si₅O₄⁺ | NO |
+
+BFS does generate a methylsiloxyl ion at 73.010 = [CH₃SiO + H]⁺ (C₂H₄OSi, neutral 72.003 Da),
+but this differs by 37 mDa from the observed TMS⁺ (73.047). At the 20 mDa matching tolerance
+used in the analysis, TMS⁺ is correctly classified as absent from the DAG.
+
+The root cause: TMS⁺ = (CH₃)₃Si⁺ requires a **methyl migration** — one Si transfers a methyl
+to the adjacent Si before the Si-O bond breaks. This is an intra-molecular rearrangement
+that BFS's bond-cutting model cannot represent. The larger series (m/z 147, 221, 295, 345)
+extends the same pattern for D4-D7.
+
+**Silyl cation rearrangement.**
+
+---
+
+### Benzyl Halides (n=97, DAG miss rate=76.0%)
+
+**Molecules:** 8 cyanobenzyl halides and benzyloxy bromides (all 8 active FT [M+H]+ mols
+are in the tar — **zero artifact contribution**). The 76% miss rate is entirely genuine.
+
+**Missing peaks (category A, genuine):**
+
+| obs m/z bin | likely identity | why BFS misses it |
+|-------------|-----------------|-------------------|
+| 92.9  | CH₂⁷⁹Br⁺ = 92.934 | Direct halide-retaining cation |
+| 151.1 | Cl/Br-containing fragment or rearrangement | Direct cation, not [neutral+H]⁺ |
+| 152.1 | Related halide fragment | Direct cation, not [neutral+H]⁺ |
+| 118.1 | Halide loss with rearrangement | — |
+
+The root cause: BFS models MS/MS fragments as **[neutral_formula + H]⁺**. Benzyl halide
+fragmentation proceeds by heterolytic C-X bond cleavage producing **direct cations** that
+carry the halogen:
+
+```
+ArCH₂Br → ArCH₂⁺  +  Br⁻     (Br leaves as anion — BFS handles this fine)
+ArCH₂Br → Ar       +  CH₂Br⁺  (Br stays in the cation — BFS cannot model this)
+```
+
+CH₂Br⁺ at m/z 92.934 (⁷⁹Br) is the clearest example: it is a direct carbocation retaining
+Br, not a protonated neutral. It appears consistently across the benzyl bromide spectra (high
+CE) as CE increases. BFS has no mechanism to assign the charge to the halide-containing
+fragment while the organic portion departs as neutral.
+
+**Not an RDA issue. Heterolytic C-X cleavage producing halide-retaining cations.**
+
+---
+
+### Lignan Glycosides (n=115, DAG miss rate=75.8%)
+
+**Molecules:** 19 FT [M+H]+ mols, 15 in tar. 4 mols absent from tar (12 artifact spectra
+with fractional m/z values in category A — e.g. 60.7, 53.6, 56.4 — consistent with
+misclassified spectra, likely contaminants).
+
+**Main finding is category B, not category A:** for 15 in-tar mols, the phenylpropanoid
+aglycone fragment series is **in the DAG but the model predicts ~0 intensity**:
+
+| m/z bin | n_spectra | mean_true_int | mean_pred_int |
+|---------|-----------|---------------|---------------|
+| 173.1   | 38        | 0.505         | 0.000         |
+| 145.1   | 32        | 0.591         | 0.008         |
+| 131.0   | 36        | 0.168         | 0.000         |
+| 115.1   | 29        | 0.479         | 0.007         |
+| 91.1    | 35        | 0.282         | 0.006         |
+
+These are the classic lignin/phenylpropanoid fragment series (m/z 91, 105, 115, 117, 131,
+145, 173, 189) from the lignan aglycone after sugar moiety loss.
+
+The root cause is a **model weakness, not a DAG gap**: the DAG contains these fragments,
+but the model has not learned to predict them with high probability. The most likely reason:
+for glycosylated lignans (MW 400–700+), the training signal for aglycone fragments is diluted
+across many glycoside variants, and the model may not have learned the "glycan loss →
+aglycone fragmentation" cascade at high CE. This is a training data / model generalization
+issue rather than a BFS structural limitation.
+
+---
+
+---
+
+## Morphinans (direct_parent='morphinans') (n=341, DAG miss rate=70.3%)
+
+**Molecules:** 34 FT [M+H]+ molecules (385 spectra). Includes morphine, codeine, levorphanol, and
+opioid analogs. Both oxygenated (with dihydrofuran ring D: morphine C₁₇H₁₉NO₃) and
+non-oxygenated (levorphanol C₁₇H₂₃NO, no ring D bridge) types.
+
+**Distinct from the "Phenanthrenes" analysis above:** The phenanthrenes group (n=330, 78.3%) covers
+oxycodone/oxymorphone-type alkaloids (C₁₈, 4–5 oxygens) whose cascade retains N (C₁₃H₁₀N⁺ at
+181.088). The morphinans group (n=341, 70.3%) covers morphine/codeine/levorphanol (C₁₇, 2–3
+oxygens) whose cascade expels N first, producing an entirely **N-free** fragment series.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | exact m/z | neutral formula | identity | n_spectra | mean intensity |
+|---------|-----------|-----------------|----------|-----------|----------------|
+| 155.1   | 155.086   | C₁₂H₁₀         | biphenyl-type | 166 | 0.196 |
+| 157.1   | 157.065   | C₁₁H₈O         | methylbenzofuran-type | 126 | 0.422 |
+| 141.1   | 141.070   | C₁₁H₈          | — | 122 | 0.169 |
+| 128.1   | 128.062   | C₁₀H₆          | azulene/pentalene-type | 110 | 0.469 |
+| 153.1   | 153.070   | C₁₂H₈          | acenaphthylene | 103 | 0.397 |
+| 181.1   | 181.065   | C₁₃H₈O         | fluorenone | 103 | 0.374 |
+| 165.1   | 165.070   | C₁₃H₈          | fluorene-type | 102 | 0.471 |
+| 152.1   | 152.062   | C₁₂H₈          | acenaphthylene (−H) | 102 | 0.480 |
+| 129.1   | 129.070   | C₁₀H₈          | naphthalene | 96  | 0.147 |
+| 183.1   | 183.080   | C₁₃H₁₀O        | fluorenol-type | 92 | 0.213 |
+
+m/z 155.1 (biphenyl C₁₂H₁₀) appears in **30 of 34 molecules**, both oxygenated and non-oxygenated
+types. The fragment series is entirely N-free: **all 10 missing peaks have no nitrogen**.
+
+### Cascade mechanism
+
+Measured fragment intensities for morphine (mol_id=21671, C₁₇H₁₉NO₃, [M+H]⁺=286.144) across NCE:
+
+```
+NCE:         35    60    75    90   110   130   160
+286 (prec)  0.01  0.40  0.34  0.01  0.00  0.00  0.00
+229 (DAG)   0.24  0.05  0.04  0.01  0.00  0.00  0.00   ← C14H12O3, ring E opened
+201 (DAG)   0.40  0.03  0.03  0.01  0.01  0.00  0.00   ← C13H12O2, -CO
+183 (MISS)  0.08  0.06  0.36  0.08  0.04  0.00  0.00   ← C13H10O, fluorenol, -H2O
+181 (MISS)  0.01  0.04  0.55  0.32  0.44  0.13  0.03   ← C13H8O, fluorenone, -H2
+165 (MISS)  0.02  0.04  0.52  0.35  0.79  0.41  0.23   ← C13H8, -H2O from fluorenol
+153 (MISS)  0.00  0.02  0.43  0.40  0.85  0.29  0.11   ← C12H8, acenaphthylene, -CO
+155 (MISS)  0.03  0.03  0.39  0.19  0.16  0.02  0.00   ← C12H10, biphenyl-type
+128 (MISS)  0.00  0.00  0.04  0.09  0.69  0.68  0.61   ← C10H6, -C2H2 from C12H8
+```
+
+Full cascade:
+
+```
+C17H19NO3+H  [M+H]+ = 286.144
+    │ cut ring E (2 N–C bonds, -C3H7N = 57 Da)
+    ▼
+C14H12O3+H = 229.086   [BFS depth ≤3, IN DAG ✓]
+    │ -CO (28 Da)
+    ▼
+C13H12O2+H = 201.091   [BFS depth ≤3, IN DAG ✓]
+    │ -H2O (18 Da)
+    ▼
+C13H10O+H  = 183.080   [depth 4 → MISSING]   fluorenol-type
+    ├─ -H2  → C13H8O+H = 181.065  fluorenone
+    │             │ -CO  → C12H8+H = 153.070  acenaphthylene
+    │             │           │ -C2H2 → C10H6+H = 128.062
+    │             │           └──────────────────────────────
+    └─ -H2O → C13H8+H  = 165.070
+                  │ -C  / ring contract
+                  └── C11H8+H = 141.070
+C13H10O (-H2O)  ← also gives C11H8O+H = 157.065 (side branch)
+Multiple paths  → C12H10+H = 155.086  (biphenyl-type, from ring-open 157 or 165)
+                → C10H8+H  = 129.070  (naphthalene, from 153 -C2H2+2H)
+```
+
+### Why BFS stops at step 3
+
+DAG confirmation for morphine (depth=3):
+- C₁₄H₁₂O₃ (229.086): **IN DAG** (Δ=0.5 mDa)
+- C₁₃H₁₂O₂ (201.091): **IN DAG** (Δ=12 mDa)
+- C₁₃H₁₀O  (183.080): **ABSENT** (nearest DAG fragment 45 mDa off)
+- All 10 missing peaks: **ABSENT**
+
+To reach C₁₃H₁₀O directly from morphine in 3 cuts requires isolating exactly C₄H₉NO₂ as the
+neutral — impossible given the ring topology (ring E requires ≥2 cuts, ring D oxygen bridge
+requires 2 more cuts; 4 cuts minimum). The BFS finds 229 and 201 via alternative 3-cut paths,
+but no 3-cut path from morphine reaches C₁₃H₁₀O.
+
+### Fix options
+
+1. **SMARTS prepass — morphinan ring-E+D cleavage:** Detect the morphinan tricyclic+piperidine
+   scaffold, inject C₁₃H₈O (fluorenone, 181.065) as a depth-1 leaf. From there, BFS at depth+3
+   can reach 153.070 (−CO) and 128.062 (−C₂H₂); 165.070 and 141.070 via further aromatization.
+   Covers 103+ spectra per fragment.
+2. **Inject the full N-free series:** Rules for morphinan → [C₁₃H₈O, C₁₃H₈, C₁₂H₈, C₁₂H₁₀,
+   C₁₁H₈O, C₁₁H₈, C₁₀H₆, C₁₀H₈] directly.
+3. **Accept the gap:** These are high-CE fragments (NCE ≥ 75). At NCE ≤ 60, BFS covers the
+   dominant peaks (229, 201). The morphinan gap is moderate-CE (75–90) rather than extreme-CE.
+
+---
+
+## Organic Phosphoric Acids and Derivatives (n=58, DAG miss rate=75.0%)
+
+**Molecules:** 58 spectra, diverse organophosphate structures.
+
+### Missing peaks
+
+**Category A (absent from DAG):**
+
+| m/z bin | n_spectra | mean intensity | likely identity |
+|---------|-----------|----------------|-----------------|
+| 69.1    | 28        | 0.730          | C₅H₉⁺ or C₄H₅O⁺ — aliphatic chain fragment |
+| 83.0    | 18        | 0.433          | C₆H₁₁⁺ or C₅H₇O⁺ |
+| 55.1    | 14        | 0.299          | C₄H₇⁺ — aliphatic |
+| 53.0    | 10        | 0.082          | C₄H₅⁺ |
+
+**Category B (in DAG, under-predicted):**
+
+| m/z bin | n_spectra | mean true intensity | mean pred intensity |
+|---------|-----------|---------------------|---------------------|
+| 99.0    | 22        | 0.570               | 0.006               |
+
+m/z 99.0 is the **[M+H−H₃PO₄]⁺** product ion class (loss of 98 Da = H₃PO₄), a well-known
+diagnostic neutral loss for organophosphates. BFS generates this fragment but the model
+badly under-predicts it.
+
+**Finding:** Two separate problems:
+1. **Model weakness (B):** Neutral loss of H₃PO₄ (98 Da) is in the DAG but the model has not
+   learned to assign it high weight. This is likely due to underrepresentation of organophosphates
+   in training.
+2. **DAG gap (A):** m/z 69.1/83.0/55.1 are aliphatic chain fragments from the ester side-chain —
+   likely the organic tail of the phosphate ester producing standard alkyl carbocations (e.g.,
+   C₅H₉⁺ = 69.071) that BFS does not generate. Low sample size (n=58) limits confidence.
+
+---
+
+## Pyrimidine Deoxyribonucleotides (n=24, DAG miss rate=75.0%)
+
+n=24 spectra from very few molecules; all absent/under-predicted peaks have n_spectra=1.
+**No actionable finding** — sample size too small to distinguish real DAG gap from noise.
+
+---
+
+## 1-Benzylquinolines (n=25, DAG miss rate=71.4%)
+
+**Category A:** m/z 306.2, n=5 spectra, mean intensity 0.125. Likely a [M+H−benzyl]⁺ or
+ring-retaining rearrangement product. Small n (5 of 25 spectra) indicates this is not a
+systematic gap.
+
+**Category B:** m/z 226.1 (n=1, intensity 0.059) and 213.1 (n=1, intensity 0.060) — in DAG
+but not predicted. Effectively noise given n=1.
+
+**No actionable finding** at this sample size.
+
+---
+
+## Organic Metalloid Salts (n=100, DAG miss rate=76.1%)
+
+**Molecules:** 7 mols with FT [M+H]+ spectra: cyclic siloxanes D3–D7
+(`C[Si]1(C)O[Si]...`), trimethylsilylmethylamine, and methylarsenic acid. All 6
+siloxane mols are in the tar; mol_id=30196 (methylarsenic acid, `C[As](=O)(O)O`)
+is absent → 10 spectra skipped after the `continue on dag_mzs is None` fix.
+
+**Real BFS gap — silyl cation formation:** Cyclic siloxanes produce a well-known
+fragment series by sequential Si-O cleavage with methyl migration:
+
+| obs m/z | identity | formula | in DAG? |
+|---------|----------|---------|---------|
+| 73.047  | TMS⁺ = (CH₃)₃Si⁺ | C₃H₉Si⁺ | **NO** — 37 mDa from DAG's 73.010 |
+| 91.0    | rearranged siloxyl | Si₂CₓHᵧ | NO |
+| 147.07  | [TMS-O-SiMe₂]⁺ | C₅H₁₃Si₂O⁺ | NO |
+| 221.09  | [TMS-(O-SiMe₂)₂]⁺ | C₇H₁₉Si₃O₂⁺ | NO |
+| 345.14  | [TMS-(O-SiMe₂)₄]⁺ | C₁₁H₃₁Si₅O₄⁺ | NO |
+
+BFS does generate a methylsiloxyl ion [CH₃SiO+H]⁺ (C₂H₄OSi, 73.010), but this
+differs by 37 mDa from the observed TMS⁺ (73.047). At the 20 mDa matching
+tolerance, TMS⁺ is correctly classified as absent.
+
+The root cause: TMS⁺ = (CH₃)₃Si⁺ requires **methyl migration** before Si-O
+cleavage — an intra-molecular rearrangement BFS cannot represent. The larger
+series (m/z 147, 221, 295, 345) is the same mechanism extended for D4–D7.
+
+**Silyl cation rearrangement. Not RDA.**
+
+---
+
+## Benzyl Halides (n=97, DAG miss rate=76.0%)
+
+**Molecules:** 8 cyanobenzyl halides and benzyloxy bromides. All 8 active FT
+[M+H]+ mols are in the tar — **zero artifact contribution**. The 76% miss rate
+is entirely genuine.
+
+**Missing peaks (category A):**
+
+| obs m/z bin | likely identity | why BFS misses it |
+|-------------|-----------------|-------------------|
+| 92.9  | CH₂⁷⁹Br⁺ = 92.934 | Direct halide-retaining cation |
+| 151.1 | Cl/Br-containing or rearrangement fragment | Direct cation, not [neutral+H]⁺ |
+| 152.1 | Related halide fragment | Direct cation, not [neutral+H]⁺ |
+| 118.1 | Halide-loss rearrangement | — |
+
+Root cause: BFS models all fragments as **[neutral_formula + H]⁺**. Benzyl
+halide fragmentation proceeds by heterolytic C-X cleavage producing **direct
+cations that carry the halogen**:
+
+```
+ArCH₂Br → ArCH₂⁺  +  Br⁻     (Br leaves as anion — BFS handles this)
+ArCH₂Br → Ar       +  CH₂Br⁺  (Br stays in cation — BFS cannot model)
+```
+
+CH₂Br⁺ at m/z 92.934 (⁷⁹Br) is the clearest case: a direct carbocation retaining
+Br, not a protonated neutral. It appears consistently across benzyl bromide spectra
+and grows with CE. BFS has no mechanism to route the charge to the
+halide-containing fragment while the aromatic ring departs as neutral.
+
+**Heterolytic C-X cleavage producing halide-retaining cations. Not RDA.**
+
+---
+
+## Lignan Glycosides (n=115, DAG miss rate=75.8%)
+
+**Molecules:** 19 FT [M+H]+ mols, 15 in tar. 4 mols absent from tar → 12
+artifact spectra (contributes fractional m/z bins like 60.7, 53.6, 56.4 in
+category A — likely low-level noise misclassified by the pre-fix bug).
+
+**Main finding is category B, not category A:** for the 15 in-tar mols, the
+phenylpropanoid aglycone fragment series is **in the DAG but the model predicts
+~0 intensity**:
+
+| m/z bin | n_spectra | mean true int | mean pred int |
+|---------|-----------|---------------|---------------|
+| 173.1   | 38        | 0.505         | 0.000         |
+| 145.1   | 32        | 0.591         | 0.008         |
+| 131.0   | 36        | 0.168         | 0.000         |
+| 115.1   | 29        | 0.479         | 0.007         |
+| 91.1    | 35        | 0.282         | 0.006         |
+
+These are the standard lignin/phenylpropanoid aglycone series (m/z 91, 105, 115,
+117, 131, 145, 173, 189) produced after the glycan moiety is lost at high CE.
+
+Root cause: **model weakness, not a DAG gap**. The DAG contains these fragments,
+but the model has not learned to assign them high probability. Most likely cause:
+lignan glycosides are large (MW 400–700+) with structurally diverse sugar moieties;
+training signal for the aglycone fragments is diluted and the "glycan loss →
+aglycone fragmentation" cascade at high CE is not generalized.
+
+**Model training/generalization issue. Not RDA.**
+
+---
+
+## Triazolopyrazines (n=38, DAG miss rate=63.3%)
+
+**Molecules:** 5 mols (all in tar). Mix of unsubstituted triazolopyrazine, CF₃-substituted
+(sitagliptin-like), and Br-substituted variants:
+- mol_id=275: `Brc1cn2ncnc2c(Br)n1` — 3,5-dibromotriazolopyrazine (2 Br atoms)
+- mol_id=5039: `CC(C)(C)OC(=O)N1CCn2c(Br)nnc2C1` — mono-Br Boc-protected
+- mol_id=42172: sitagliptin intermediate (CF₃, no Br)
+- mol_id=35852: CF₃-triazolopyrazine (no Br)
+- mol_id=52783: parent ring (no substituents)
+
+**Category A — all .9 decimal m/z bins:**
+
+| obs m/z bin | actual m/z | assignment | why BFS misses |
+|-------------|------------|------------|----------------|
+| 90.9  | 90.918 | C⁷⁹Br⁺ (aromatic C–Br cation) | Direct Br-retaining cation |
+| 142.9 | ~142.93 | C₃N₃⁷⁹Br⁺ or C₂HN₄⁷⁹Br⁺ | Direct Br-retaining cation |
+| 160.9 | ~160.92 | C₄HN₃⁷⁹Br⁺ | Direct Br-retaining cation |
+| 169.9 | ~169.94 | C₄H₂N₄⁷⁹Br⁺ or similar | Direct Br-retaining cation |
+| 129.9 | ~129.93 | C₂N₃⁷⁹Br⁺ | Direct Br-retaining cation |
+
+All category A m/z bins end in .9 — the mass defect of ⁷⁹Br (78.918) means any fragment
+retaining one Br atom has a mass offset of ~0.92 from integer. Confirmed by observing m/z
+90.918 growing with CE in mol_id=275 spectra.
+
+Root cause: same as benzyl halides — **heterolytic aromatic C-Br cleavage produces direct
+Br-retaining cations** that BFS cannot model as [neutral+H]⁺. The CF₃ mols show different
+missing peaks (integer bins, CF₃-containing fragments) mixed into the combined subclass stats.
+
+---
+
+## Thienothiophenes (n=104, DAG miss rate=63.1%)
+
+**Molecules:** 6 mols (all in tar). Fused S-heterocycle carboxylic acids and nitriles, including
+one with a thioether bridge (`O=C(O)c1cc2c(s1)CSC2`) and one with 3 sulfur atoms
+(`c1cc2sc3ccsc3c2s1`). All have MW < 250.
+
+**Pattern: mixed category A and B, both large.**
+
+Category A (absent from DAG): m/z 69.0 (49 spectra, 0.53), 51.0 (29 spectra, 0.21),
+121.0 (27 spectra, 0.16), 109.0 (24 spectra, 0.42), 93.0/95.0/65.0 (~20 spectra each)
+
+Category B (in DAG, ~0 predicted): m/z 71.0 (29), 95.0 (21), 131.0 (20), 111.0 (10), 140.0 (9)
+
+m/z 51.0 = C₄H₃⁺ (51.023) and similar small ring fragments appear in aromatic compound
+fragmentation at high CE. For thienothiophenes, reaching these small (4-carbon) fragments from
+a 6-carbon fused bicyclic system requires multiple sequential bond cuts beyond depth=3. This
+is the same cascade depth problem as morphinans, manifesting in the thiophene ring series
+instead of the PAH series.
+
+The category B (in DAG but underpredicted) peaks at 71/95/131/140 suggest the model has
+partially learned the cascade but can't assign them proper intensity.
+
+**Cascade depth problem. Similar to morphinans for fused heterocyclic systems.**
+
+---
+
+## Pyrazolopyrazoles (n=28, DAG miss rate=63.0%)
+
+**Molecules:** 3 mols (all in tar).
+- mol_id=30481: `Cc1[nH]nc2cn[nH]c12` — unsubstituted methylpyrazolopyrazole (no halogen)
+- mol_id=30601: `Cc1c(C)n2c(CBr)c(C)c(=O)n2c1=O` — mono-CH₂Br
+- mol_id=30612: `Cc1c(CBr)n2c(CBr)c(C)c(=O)n2c1=O` — di-CH₂Br (two bromomethyl groups)
+
+The two CH₂Br-containing mols are the dominant source of category A gaps. The pattern is
+identical to the benzyl halides case: CH₂Br⁺ and CH₂Br-containing ring cations are produced
+by heterolytic C-Br cleavage but cannot be generated as [neutral+H]⁺ by BFS.
+
+Category B: m/z 348.9 (n=6, intensity 0.687) with a .9 decimal confirms a large Br-containing
+fragment retained in DAG but underpredicted by the model.
+
+mol_id=30481 (no Br) contributes genuine missing peaks from smaller aromatic ring fragments
+produced at high CE (depth cascade problem like thienothiophenes).
+
+**Mixed: halide-retaining cations (for CH₂Br mols) + cascade depth (for the non-halide mol).**
+
+---
+
+## Phenoxazines (n=112, DAG miss rate=62.8%)
+
+**Molecules:** 8 mols (all in tar). Dibenzo[1,4]oxazine compounds including N-acetyl
+hydroxyphenoxazine (mol_id=2952), chlorophenoxazine with aminoalkyl chain (mol_id=17835),
+and several oxidized/nitrated variants.
+
+**Category A top peaks:**
+
+| m/z bin | n_spectra | mean int | note |
+|---------|-----------|----------|------|
+| 115.1   | 39        | 0.772    | Very high intensity |
+| 170.1   | 42        | 0.369    | — |
+| 146.1   | 39        | 0.326    | — |
+| 117.1   | 36        | 0.420    | — |
+| 91.1    | 36        | 0.238    | — |
+
+m/z 115.054 = [C₉H₆ + H]⁺ (same indene/isoindene cation seen in phenanthrene RDA case).
+DAG check: m/z 115.054 is absent from mol_id=2952 DAG, present in mol_id=17835 (within 20 mDa)
+→ inconsistent coverage depending on substituents.
+
+The missing series (91.1, 115.1, 117.1, 130.1, 146.1, 170.1) is consistent with cascade ring
+opening of the phenoxazine tricyclic system at high CE, producing progressively smaller aromatic
+ions. The phenoxazine bridge (O between two arene rings) cleaves first, then the ring system
+further fragments through 3+ steps beyond what depth=3 BFS can reach.
+
+**Cascade depth problem + partial DAG coverage depending on substitution pattern.**
+
+---
+
+## Protoberberine Alkaloids and Derivatives (n=105, DAG miss rate=62.1%)
+
+**Molecules:** 7 mols; 5 in tar, **2 absent**:
+- mol_id=28968: `COc1ccc2cc3[n+](cc2c1OC)CCc1cc2c(cc1-3)OCO2` — **berberine** (permanent [n+] quaternary ammonium cation, 3 spectra)
+- mol_id=28900: `COc1ccc2c(c1OC)CN1CCc3cc4c(cc3C1C2)OCO4` — neutral tetrahydroisoquinoline (1 spectrum)
+
+Berberine is a **permanently charged quaternary N⁺ salt** — its precursor ion is [M]⁺ not [M+H]⁺.
+BFS is designed for neutral molecules that are protonated; it likely cannot handle the berberine
+scaffold where N is already positively charged before fragmentation. This explains why BFS was
+never run on it (absent from tar).
+
+The 5 in-tar mols (tetrahydroberberines and epiberberine-type) are neutral molecules with
+genuine fragmentation data. Their missing peaks (91.1, 131.1, 105.1, 103.1, 148.1) are small
+aromatic ions (C₇H₇⁺, C₁₀H₇⁺, C₈H₉⁺) produced by deep cascade of the tetracyclic ring
+system at high CE — depth cascade problem, not a structural BFS limitation.
+
+**Mixed: artifact (berberine absent from tar — unsupported permanent cation) + cascade depth
+gap for the neutral tetrahydroprotoberberines.**
+
+---
+
+## Cephalotaxus Alkaloids (n=46, DAG miss rate=60.5%)
+
+**Molecules:** 3 mols; 2 in tar, 1 absent (mol_id=23186, homoharringtonine with a complex
+diterpenoid ester side chain, 21 spectra → artifact for those).
+
+**Mol_id=23185** (cephalotaxine, 14 spectra) and **mol_id=24265** (homodaphniphyllate-type,
+13 spectra) are in the tar.
+
+**Missing peaks match the morphinan/N-free aromatic cascade:**
+
+| m/z bin | n_spectra | mean int | overlap with morphinans? |
+|---------|-----------|----------|--------------------------|
+| 172.1   | 18        | 0.140    | Close to morphinan 181.1 |
+| 141.1   | 14        | 0.154    | **Yes** — same bin as morphinans |
+| 157.1   | 10        | 0.085    | **Yes** — same bin as morphinans |
+| 155.1   | 12        | 0.128    | **Yes** — same bin as morphinans |
+| 115.1   | 10        | 0.689    | Common aromatic series |
+| 170.1   | 12        | 0.249    | Close to morphinan 165.1 |
+
+The cephalotaxane skeleton is an ABCDE pentacyclic ring system (benzazulene-like) that undergoes
+cascade fragmentation analogous to morphinans, producing overlapping aromatic ion series
+(141.1, 155.1, 157.1 match morphinan cascade exactly). The missing mol (homoharringtonine)
+has an additional diterpenoid side chain that would produce even more cascade fragments.
+
+**Cascade depth problem. Same mechanism as morphinans but with cephalotaxane core.**
+
+---
+
+## Organic Phosphoramides (n=80, DAG miss rate=59.7%)
+
+**5 mols; all in tar.** Includes organofluorophosphates (nerve agent analogs: CC(C)NP(=O)(F)NC(C)C,
+CN(C)P(=O)(F)N(C)C) and a cyclic phosphoramide with Br/Cl substituents (mol_id=48686:
+O=P1(NCCBr)OCCCN1CCCl).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity |
+|---------|--------|-----------|
+| 128.0   | 18     | 0.628     |
+| 73.1    | 16     | 0.372     |
+| 60.0    | 14     | 0.605     |
+| 63.0    | 14     | 0.152     |
+| 135.1   | 12     | 0.253     |
+| 76.0    | 12     | 0.712     |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **135.1** | **36** | **0.866** |
+| 92.0    | 16     | 0.470     |
+| 110.0   | 12     | 0.108     |
+| 99.0    | 6      | 0.428     |
+
+### Root cause
+
+**Model weakness dominant, with genuine BFS gaps for small P-containing ions.**
+
+The dominant signal is **category B: m/z 135.1 in 36 spectra at 0.866 intensity** — one of the strongest
+model failures seen across all subclasses. Verified to be m/z 135.069 in actual spectra. Two routes
+coincidentally hit the same bin:
+- Fluorophosphoramides (mols 7133, 21145): **[M+H−HF]⁺** (loss of HF, 20.006 Da from the P−F bond)
+- Tris-amide mol 21146 (CN(C)P(=O)(N(C)C)N(C)C): **[(NMe₂)₂P=O]⁺** from loss of dimethylenimine
+  (CH₂=NMe, 43.042 Da); C₄H₁₂N₂OP⁺ = 135.069 ✓
+
+Both generate m/z 135.07 which IS in DAG (correctly fragmented by BFS) but model predicts ≈0.
+Model has not learned phosphoramide fragmentation chemistry.
+
+Category A small ions (73.1, 60.0, 128.0): P-containing cascade fragments or P−F cleavage products;
+BFS cannot model P−F heterolysis to give PF-retaining ionic fragments.
+
+---
+
+## Phenyl Sulfoxides (n=162, DAG miss rate=59.0%)
+
+**12 mols total; 11 in tar.** Missing: mol_id=52128 (diphenyl sulfoxide PhS(O)Ph, 1 spectrum).
+All 11 in-tar molecules are **halogenated phenyl sulfoxides** (Br and/or Cl substituents on phenyl rings).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note        |
+|---------|--------|-----------|-------------|
+| 69.0    | 33     | 0.340     | no halogen  |
+| 82.0    | 23     | 0.201     | no halogen  |
+| 183.0   | 18     | 0.163     | no halogen  |
+| 95.0    | 16     | 0.198     | no halogen  |
+| **254.9** | **15** | **0.614** | **Cl/Br mass defect** |
+| 192.0   | 12     | 0.686     | no halogen  |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | Note             |
+|---------|--------|----------------|------------------|
+| **186.9** | **13** | **0.660** | **Br mass defect** |
+| 105.0   | 13     | 0.373     |                  |
+| **370.9** | **12** | **0.668** | **Br mass defect** |
+| 57.1    | 10     | 0.333     |                  |
+| 96.0    | 9      | 0.673     |                  |
+| **225.9** | 9      | 0.100     | **Br/Cl mass defect** |
+
+### Root cause
+
+**Real gap (halide-retaining direct cations) + model weakness.**
+
+The .9 m/z bins — both in A (254.9) and B (186.9, 370.9, 225.9) — reflect ³⁵Cl (offset +0.969) and
+⁷⁹Br (offset +0.918) mass defects: **halide-retaining direct cations** from heterolytic C−X cleavage,
+which BFS cannot generate (produces only [neutral+H]⁺). Confirmed: mol_id=52125
+([O-][S+](c1cc(Cl)cc(Cl)c1O)c1cc(Cl)cc(Cl)c1O, a tetrachlorodiphenyl sulfoxide) contributes
+m/z 254.9 peaks in 5/14 spectra.
+
+Category A integer-bin peaks (69.0, 82.0, 95.0, 192.0) are a separate gap: aliphatic and ring fragments
+likely from sulfoxide bridge cascade fragmentation requiring >3 sequential cuts.
+
+---
+
+## Pyranopyridines (n=108, DAG miss rate=58.8%)
+
+**9 mols; 8 in tar.** Missing: mol_id=9141 (Br-containing fused ring compound, 1 spectrum).
+Complex fused heterocyclic structures (pyranothiazolopyridines, morpholine-containing variants).
+
+### Missing peaks (category A — absent from DAG)
+
+Top 5: 189.0 (25 spectra, 0.224), 203.1 (22, 0.102), 118.1 (21, 0.153), 169.1 (21, 0.126),
+155.1 (18, 0.408).
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **131.1** | **24** | **0.588** |
+| 77.0    | 19     | 0.389     |
+| 114.0   | 19     | 0.211     |
+| 182.1   | 17     | 0.294     |
+| **89.0**  | **16** | **0.411** |
+| **216.1** | **14** | **0.595** |
+| **105.0** | **14** | **0.467** |
+
+### Root cause
+
+**Model weakness dominant.** Category B contains the highest-intensity fragments (131.1 at 0.588,
+216.1 at 0.595, 89.0 at 0.411), all in DAG but model predicts ≈0. Category A fragments (189.0,
+155.1) are genuine BFS gaps from complex heterocyclic ring-opening sequences.
+
+---
+
+## Sulfur Mustard Compounds (n=28, DAG miss rate=58.3%)
+
+**2 mols; 1 in tar.** Only mol_id=48686 (O=S(=O)(CCBr)CCBr = bis(2-bromoethyl)sulfone) contributes.
+Despite classification, this is a **sulfone** (not the classic bis(2-chloroethyl)sulfide mustard). 1 mol
+missing from tar (artifact: ~3 spectra).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity |
+|---------|--------|-----------|
+| 278.0   | 16     | 0.092     |
+| 169.1   | 4      | 0.069     |
+| 126.9   | 4      | 0.092     |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | Assignment |
+|---------|--------|----------------|------------|
+| **278.9** | **10** | **0.693** | [M+H]⁺ (⁷⁹Br₂, 278.870 → 278.9 bin) |
+| **154.9** | **10** | **0.226** | [M+H−CH₂CH₂Br]⁺ (Br-retaining) |
+
+### Root cause
+
+**Model weakness (Br-containing fragments in DAG, underpredicted) + minor real gap.**
+
+m/z 278.9 is the **[M+H]⁺ precursor itself** (⁷⁹Br₂: C₄H₈Br₂O₂S + H = 278.870 → 278.9 bin).
+It IS in the DAG as the root node, but model predicts ≈0 intensity — model does not retain the
+precursor ion at any CE. m/z 154.9 = [M+H−CH₂CH₂Br]⁺ (loss of 2-bromoethyl, 123.9 Da),
+also Br-retaining, also in DAG but underpredicted.
+
+Category A m/z 278.0 (16 spectra, low 0.092 intensity) is likely the ¹²C₄H₈⁷⁹Br⁸¹BrO₂S isotope
+contribution or an unrelated neutral loss product.
+
+---
+
+## Pyranodioxins (n=45, DAG miss rate=58.0%)
+
+**2 mols; 1 in tar.** Only mol_id=24496 (COC1OC2COC(c3ccccc3)OC2C(O)C1O — a benzylidene acetal
+of a hexose sugar) contributes. The "pyranodioxin" ClassyFire label reflects the bicyclic 1,3-dioxane +
+pyranose ring fusion of acetalized hexoses.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| **69.0** | **36** | **0.615** | C₄H₅O⁺ furanyl cation (69.034) |
+| **81.0** | **36** | **0.599** | C₅H₅O⁺ methylenefuranyl (81.034) |
+| **109.0** | **36** | **0.279** | C₇H₉⁺ or C₆H₅O₂⁺ |
+| **99.0** | **33** | **0.185** | C₅H₇O⁺ (99.044) |
+| 71.0    | 18     | 0.104     | C₄H₇O⁺    |
+| 97.0    | 18     | 0.107     | C₅H₅O⁺ dehydrated |
+
+### Root cause
+
+**Cascade depth from pyranose ring fragmentation.** The category A fragments appear in 33–36 of 45
+spectra at high intensity (0.60 and 0.28) — extremely consistent for a single compound. These are
+**furanyl/furfuryl cations** (C₄H₅O⁺ at 69.034, C₅H₅O⁺ at 81.034) produced by pyranose ring opening
+followed by multiple sequential dehydration steps. Pyranose→furanose ring contraction plus 2–3
+dehydrations requires 4+ sequential steps from the molecular ion — beyond BFS depth=3. Category B
+fragments (121.1, 127.0, 145.0 in DAG) are larger glycan-related fragments modestly underpredicted.
+
+---
+
+## Imidazopyrazines (n=209, DAG miss rate=58.0%)
+
+**13 mols; 12 in tar.** Missing: mol_id=47557 (a thienobenzazepine misclassified here). Nearly all
+12 in-tar mols are **heavily halogenated**: Br+I (mol_id=274, 351), Cl+I (34969), Cl+Br (35000,
+35078, 35079), di-Br+ester (19457, 33753), or mono-Br+amino (41243, 41397).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| **64.0**  | **68** | **0.453** | unexplained (not .9 bin) |
+| 52.0    | 47     | 0.233     | unexplained |
+| **141.9** | **45** | **0.599** | Br/I mass defect |
+| 90.0    | 45     | 0.336     | ring fragment (no halogen) |
+| **129.9** | **42** | **0.231** | Br mass defect: [C₄H₃⁷⁹Br]⁺ = 129.942 |
+| 136.1   | 32     | 0.331     | ring fragment |
+| 63.0    | 29     | 0.434     | small ring fragment |
+| **189.9** | **24** | **0.460** | Br/I mass defect |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | Note |
+|---------|--------|----------------|------|
+| **289.9** | **21** | **0.790** | Br-retaining large fragment |
+| **319.9** | **18** | **0.652** | Br-retaining large fragment |
+| 65.0    | 38     | 0.185     |      |
+| 91.0    | 28     | 0.310     |      |
+| **142.9** | **20** | **0.111** | Br mass defect |
+
+### Root cause
+
+**Mixed: halide-retaining direct cations (absent from DAG) + model weakness on large Br-containing
+fragments (in DAG, underpredicted).**
+
+- **Category A .9 bins** (141.9, 129.9, 189.9): Br and I mass-defect direct cations from ring cleavage.
+  m/z 129.9 = [C₄H₃⁷⁹Br]⁺ = 129.942. m/z 141.9 ≈ [H₂N¹²⁷I]⁺ = 141.915 (iodamine ring-opening
+  cation). Same mechanism as benzyl halides and triazolopyrazines, extended to Br+I combinations.
+- **Category B .9 bins** (289.9 at 0.790, 319.9 at 0.652): large Br-retaining fragments ARE in DAG
+  but severely underpredicted — model weakness on multi-halogen compounds. m/z 289.9 tentatively
+  = [M+H−EtOH]⁺ from dibromo ester mol_id=19457 ([M+H]⁺ = 335.9, loss of EtOH = 46.042 Da).
+- **m/z 64.0 and 52.0** (68 and 47 spectra, not .9 bins): unexplained. Same anomalous 64.0 peak
+  appears in imidazo[4,5-c]pyridine ribonucleosides (67.6% miss rate), suggesting a shared imidazo-
+  ring origin. Possibly SO₂⁺ from DMSO solvent contamination (63.962 → 64.0 bin).
+
+---
+
+## Aminoxides (n=51, DAG miss rate=57.7%)
+
+**Brief.** Only one significant category A bin: m/z 62.1 (15 spectra, 0.091 intensity). Category B is
+minimal (m/z 57.1 at 5 spectra, 0.069). No clear structural pattern from the dominant peaks alone.
+
+**Root cause: minor model weakness.** Too few absent peaks and too low intensity to identify a structural
+mechanism. Not a significant BFS gap.
+
+---
+
+## Alpha-Keto Acids and Derivatives (n=32, DAG miss rate=57.6%)
+
+**5 mols; all in tar.** One mol has a Br substituent: mol_id=22647 (COC(=O)C(=O)CBr = methyl
+bromopyruvate). The other 4 are unsubstituted alpha-keto acids (pyruvate, cyclohexyl pyruvate,
+mercaptopyruvate, sulfopyruvate).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| **92.9** | **28** | **0.753** | [CH₂⁷⁹Br]⁺ = 92.926 → 92.9 bin |
+| 90.9    | 4      | 0.109     | [C⁷⁹Br]⁺ = 90.918 → 90.9 bin  |
+| 91.9    | 2      | 0.057     | [CH⁷⁹Br]⁺ = 91.926 → 91.9 bin |
+
+### Root cause
+
+**Real gap — Br-retaining direct cations.** Confirmed: m/z 92.9335 observed in mol_id=22647
+spectra (actual [CH₂⁷⁹Br]⁺ = 92.9268, within ~7 mDa). All three category A bins (.9 offset) are
+the C⁷⁹Br⁺ family — same mechanism as benzyl halides and triazolopyrazines.
+
+The miss rate is driven entirely by the single brominated mol (22647) despite only 5 total mols.
+Category B (148.9 at 0.356, 119.9 at 0.063) are larger Br-containing fragments in DAG but
+underpredicted. Non-Br mols (pyruvate, etc.) contribute little to the miss rate.
+
+---
+
+## Lactones (n=57, DAG miss rate=57.6%)
+
+**12 mols; 7 in tar.** 5 mols not in tar (10242, 10338, 14113, 24387, 47370) contribute 8.2% of
+FT [M+H]+ spectra — minor artifact contribution. Remaining mols include macrocyclic lactones
+(C12–C14 rings), terpenoid lactones (sesquiterpene-like multi-ring systems), and acyclic hydroxy
+lactones.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 191.1   | 33     | 0.644     | C₁₄H₁₁⁺ aromatic cation |
+| 119.1   | 30     | 0.422     | C₉H₇⁺ indanyl cation |
+| 209.1   | 27     | 0.492     | C₁₄H₁₃O⁺ or C₁₅H₁₃⁺ |
+| 139.1   | 24     | 0.347     | C₁₀H₁₁⁺ |
+| 95.0    | 21     | 0.204     | C₅H₅O⁺ furanyl cation |
+| 69.0    | 15     | 0.096     | C₄H₅O⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **91.1** | **27** | **0.737** |
+| 111.1   | 27     | 0.334     |
+| 105.1   | 27     | 0.357     |
+| 77.0    | 21     | 0.336     |
+| 115.1   | 17     | 0.175     |
+| 175.1   | 15     | 0.178     |
+
+### Root cause
+
+**Mixed: cascade depth for terpenoid ring fragments + model weakness for aromatic ions.**
+
+Category A fragments (191.1 = C₁₄H₁₁⁺, 119.1 = C₉H₇⁺, 209.1 = C₁₄H₁₃O⁺) are consistent with
+cascade aromatization of the terpenoid/sesquiterpene lactone ring system — same mechanism as
+androstane steroids and morphinans. The 191.1 and 209.1 series suggests 4+ bond cuts from the
+multi-ring lactone precursor.
+
+Category B: **m/z 91.1 = tropylium [C₇H₇]⁺ (27 spectra, 0.737 intensity) IS in DAG but model
+predicts ≈0** — likely from benzyl-containing lactone mols where BFS generates the tropylium
+fragment but model has not learned to assign high probability to it.
+
+---
+
+## Auronols (n=21, DAG miss rate=56.4%)
+
+**1 mol; in tar.** Only mol_id=47941 (O=C1c2c(O)cc(O)cc2OC1(O)Cc1ccc(O)cc1 =
+3-hydroxy-5,7-dihydroxy-4'-hydroxybenzyl chromenone, a flavanone-3-ol/auronol). No halogen
+substituents — the .9 bin peaks in category A (229.9, 222.9, 240.9) suggest additional molecules
+classified here via ClassyFire alternative_parents that were not captured in the subklass query.
+
+### Key peaks
+
+Category A: **215.1** (11 spectra, 0.514), 148.0 (3, 0.261), 106.1 (3, 0.307), 88.1 (3, 0.271),
+  240.9 (3, 0.682), 222.9 (3, 0.412) — .9 bins suggest Br-containing mols in this group.
+
+Category B: **149.0** (13 spectra, 0.529!), **115.1** (5, 0.508!), 105.0 (4, 0.378).
+
+### Root cause
+
+**Model weakness dominant** (category B at high intensity) **+ possible halide direct cations** for
+.9-bin category A entries from Br-containing compounds in the broader auronol group.
+
+m/z 149.0 (13 spectra, 0.529) = C₈H₅O₃⁺ (149.025, auronol B-ring retaining ion or phthalic
+anhydride-type acylium) — IS in DAG but model predicts ≈0. m/z 215.1 (11 spectra, 0.514) absent
+from DAG: cascade fragmentation of the chromone ring.
+
+---
+
+## Androstane Steroids (n=919, DAG miss rate=56.3%)
+
+**112 mols; 86 in tar.** 26 mols not in tar contribute only 2.2% of FT [M+H]+ spectra — minor
+artifact. Largest class analyzed to date (n=919 spectra). Includes testosterone, DHT,
+androstenedione, and related C19 steroidal androgens.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| **129.1** | **274** | **0.160** | [C₁₀H₉]⁺ = 129.070 — azulene/naphthalenyl cation |
+| 67.1    | 259    | 0.245     | [C₅H₇]⁺ cyclopentadienyl |
+| **128.1** | **241** | **0.289** | [C₁₀H₈]⁺ naphthalene-type |
+| **115.1** | **202** | **0.303** | [C₉H₇]⁺ indanyl |
+| 141.1   | 186    | 0.175     | [C₁₁H₉]⁺ or [C₁₀H₉O]⁺ |
+| 117.1   | 185    | 0.166     | [C₉H₉]⁺ |
+| 65.0    | 165    | 0.250     | [C₅H₅]⁺ cyclopentadienyl |
+| 157.1   | 152    | 0.194     | [C₁₂H₉]⁺ |
+| 77.0    | 147    | 0.341     | [C₆H₅]⁺ phenyl |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **105.0** | **184** | **0.387** |
+| 95.1    | 103    | 0.106     |
+| **159.1** | **101** | **0.255** |
+| 161.1   | 97     | 0.091     |
+| 107.0   | 93     | 0.152     |
+| 145.1   | 89     | 0.118     |
+
+### Root cause
+
+**Cascade depth — aromatic cascade of the androstane ring system.**
+
+Confirmed: m/z 129.1 measured at exactly 129.0697–129.0698 in actual spectra = **[C₁₀H₉]⁺ =
+129.070** (azulene or naphthalenyl cation). This is the classic indicator of steroidal ring
+aromatization in high-CE CID: the A/B-ring system of androstane undergoes Djerassi-type cascade
+fragmentation (retro-Diels-Alder + dehydrogenation), producing C₅–C₁₀ aromatic/partially-aromatic
+cations (65.0 = C₅H₅⁺, 67.1 = C₅H₇⁺, 77.0 = C₆H₅⁺, 91.1, 115.1, 128.1, 129.1, 141.1). These
+require 4+ sequential bond cuts + H-transfers from the [M+H]⁺ — beyond BFS depth=3.
+
+Category B: m/z 105.0 (184 spectra, 0.387) = [C₇H₅O]⁺ from aromatized steroid ring — IS in DAG
+but severely underpredicted. Model has not learned steroid ring aromatization fragment intensities.
+
+This class has the largest sample size of any subclass analyzed (n=919) and represents a systemic
+failure: cascade aromatization is a universal, high-intensity pathway for androstane-type steroids
+that BFS depth=3 cannot reach.
+
+---
+
+## Lycorine-Type Amaryllidaceae Alkaloids (n=96, DAG miss rate=55.4%)
+
+**4 mols; 1 in tar** (mol_id=50701 = lycorine itself, OC1C=C2CCN3Cc4cc5c(cc4C(C1O)C23)OCO5).
+3 mols (3711, 3764, 50712) are not in tar; however, those 3 mols have 0 FT [M+H]+ spectra in the
+dataset — the n=96 count discrepancy suggests the analysis includes additional molecules classified
+as lycorine-type via alternative ClassyFire parents not captured in the subklass field.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| **119.0** | **66** | **0.659** | C₈H₇O⁺ = 119.049 — benzofuranyl/aromatic O cation |
+| 95.0    | 39     | 0.082     | C₆H₇O⁺ or C₅H₅O⁺ dehydrated ring |
+| **91.1** | **39** | **0.507** | [C₇H₇]⁺ tropylium |
+| 115.1   | 6      | 0.065     | [C₉H₇]⁺ |
+
+### Root cause
+
+**Cascade depth — aromatic ring cascade from lycorine's methylenedioxy-benzene ring.**
+
+Lycorine has a ABCD tetracyclic ring system with a methylenedioxy bridge (OCH₂O) on the benzene
+ring. m/z 119.0 = [C₈H₇O]⁺ = 119.049 (benzofuranyl cation or dihydrobenzofuranyl) — produced by
+ring opening of the methylenedioxy-phenanthridine core after 4+ sequential cuts. m/z 91.1 =
+tropylium [C₇H₇]⁺ — ring contraction product, also cascade-dependent.
+
+Category B: m/z 65.0 (14 spectra, 0.423) IS in DAG but underpredicted — model weakness component
+for the smaller aromatic cations.
+
+---
+
+## Gamma-Keto Acids and Derivatives (n=115, DAG miss rate=55.0%)
+
+**16 mols; 14 in tar.** 2 missing mols (2774 = levulinic acid CC(=O)CCC(=O)O; 18847 = diethyl
+levulinate) have 0 FT [M+H]+ spectra — no artifact contribution. Mols include phenyl-substituted
+gamma-keto acids, furanyl-keto acids, and various levulinate esters.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| 213.1   | 14     | 0.113     | large terpenoid/aliphatic cation |
+| 109.1   | 12     | 0.224     | [C₈H₉]⁺ or [C₇H₅O]⁺ |
+| 79.1    | 11     | 0.469     | [C₆H₇]⁺ cyclohexadienyl |
+| 65.0    | 10     | 0.303     | [C₅H₅]⁺ cyclopentadienyl |
+| 95.0    | 10     | 0.438     | [C₆H₇O]⁺ or C₇H₇⁺ |
+| **91.1** | **10** | **0.744** | [C₇H₇]⁺ tropylium |
+| 67.1    | 10     | 0.201     | [C₅H₇]⁺ |
+| 93.1    | 9      | 0.383     | [C₇H₉]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 150.1   | 13     | 0.328     |
+| **107.1** | **8** | **0.488** |
+| 167.1   | 8      | 0.332     |
+| 105.0   | 9      | 0.314     |
+
+### Root cause
+
+**Cascade depth for aromatic cations + model weakness.**
+
+m/z 91.1 (10 spectra, **0.744 intensity** — very high!) absent from DAG = tropylium [C₇H₇]⁺ from
+phenyl-containing gamma-keto acids (e.g., phenyl-gamma-keto acid → [M+H−CO₂−CO−H₂O]⁺ → [Ph-CH=CH₂]⁺
+→ [C₇H₇]⁺). This cascade requires 3+ sequential neutral losses from the acid; may be reachable at
+depth 3 but dependent on specific BFS path choices.
+
+The aliphatic cation series (67.1, 79.1, 93.1) resembles the androstane steroid cascade — small
+aromatic/polyunsaturated fragments from multiple ring-opening and dehydration steps. Category B
+(107.1 at 0.488) is a model weakness component.
+
+---
+
+## 1,3-Dioxanes (n=25, DAG miss rate=54.8%)
+
+**10 mols; 6 in tar.** 4 mols not in tar: mol 528 (complex bis-dioxane, 4 FT [M+H]+ spectra) is
+a minor artifact source; mols 9131, 9367, 11244 have 0 FT spectra — negligible artifact.
+Key in-tar mols: 2-aryl-1,3-dioxanes (CC1(c2ccccc2)CCOCO1 type), neopentyl glycol acetals.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| 77.0    | 8      | 0.228     | [C₆H₅]⁺ phenyl cation |
+| 95.0    | 8      | 0.246     | [C₆H₇O]⁺ = 95.049, dihydropyranyl |
+| 105.0   | 8      | 0.156     | [C₇H₅O]⁺ = 105.034 |
+| 115.1   | 5      | 0.094     | [C₉H₇]⁺ indanyl |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **83.1** | **9** | **0.632** |
+| 69.1    | 7      | 0.264     |
+| 129.1   | 4      | 0.170     |
+
+### Root cause
+
+**Model weakness dominant + minor cascade depth.**
+
+m/z 83.1 (9 spectra, **0.632 intensity**) = [C₅H₇O]⁺ = 83.049 (methylenetetrahydropyranyl or
+dihydropyranyl cation from 1,3-dioxane ring opening) — IS in DAG but model predicts ≈0. This is
+the acetal ring-opening fragment that BFS correctly generates but the model consistently underpredicts.
+
+Category A integer-bin peaks (77.0 = phenyl, 95.0 = dihydropyranyl, 105.0 = benzoyl-type) suggest
+additional cascade fragmentation: 1,3-dioxane → furanyl → small aromatic ions, requiring multiple
+ring-opening and dehydration steps from the acetal parent.
+
+---
+
+## Dibenzoxazepines (n=126, DAG miss rate=54.5%)
+
+**7 mols; all in tar.** All are clozapine-type antipsychotics: dibenz[b,f][1,4]oxazepine core +
+N-methylpiperazine/piperidine + Cl substituent on one benzene ring. Includes clozapine (mol_id=21770),
+methoxy variant (28815), N-oxide (30271), norclozapine (34833), hydroxy variant (51705).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity |
+|---------|--------|-----------|
+| 164.0   | 18     | 0.396     |
+| **153.1** | **17** | **0.428** |
+| 200.0   | 16     | 0.099     |
+| 152.0   | 15     | 0.277     |
+| **229.1** | **13** | **0.655** |
+| 138.0   | 13     | 0.205     |
+| **140.0** | **11** | **0.487** |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 180.0   | 20     | 0.271     |
+| 125.0   | 14     | 0.304     |
+| **126.0** | **13** | **0.598** |
+| 70.1    | 12     | 0.183     |
+| 127.0   | 11     | 0.214     |
+| 257.0   | 10     | 0.177     |
+
+### Root cause
+
+**Mixed: cascade depth + model weakness.**
+
+m/z 229.1 (13 spectra, 0.655) absent from DAG: confirmed in mol_id=28815 (methoxy clozapine) in
+11/24 spectra. For these [M+H]+ ≈ 362 molecules, 229.1 corresponds to a neutral loss of ~133 Da —
+consistent with simultaneous ejection of N-methylpiperazine + a CO-equivalent from the tricyclic
+oxazepine ring. Requires opening the oxazepine ring AND the piperazine linkage → cascade depth.
+
+Category B: m/z 126.0 (13 spectra, 0.598) IS in DAG but model predicts ≈0 — likely the
+[piperazine + CO]⁺ ring fragment or a N-methylpiperazinyl cation from the side chain; model weakness
+for these psychopharmaceutical ring systems.
+
+---
+
+## Estrane Steroids (n=739, DAG miss rate=53.7%)
+
+**57 mols; 49 in tar.** 8 mols not in tar contribute 0 FT [M+H]+ spectra — no artifact. C18 estrogens
+(estradiol, ethinylestradiol, synthetic progestins) with an **aromatic phenol A-ring** — unlike
+androstane steroids (keto A-ring).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| 115.1   | 235    | 0.321     | [C₉H₇]⁺ = 115.054 |
+| **128.1** | **205** | **0.303** | [C₁₀H₈]⁺ naphthalenyl |
+| 141.1   | 173    | 0.133     | [C₁₁H₉]⁺ |
+| 155.1   | 171    | 0.115     | [C₁₂H₁₁]⁺ |
+| **129.1** | **170** | **0.195** | [C₁₀H₉]⁺ = 129.070 — azulene/naphthalenyl |
+| 165.1   | 137    | 0.159     | [C₁₃H₉]⁺ |
+| **91.1** | **130** | **0.620** | [C₇H₇]⁺ tropylium |
+| 153.1   | 117    | 0.098     | [C₁₂H₉]⁺ |
+| 181.1   | 110    | 0.134     | [C₁₄H₉]⁺ or [C₁₃H₉O]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **105.0** | **143** | **0.322** |
+| 133.1   | 116    | 0.144     |
+| 109.1   | 103    | 0.154     |
+| 147.1   | 100    | 0.100     |
+| 185.1   | 90     | 0.121     |
+| 159.1   | 84     | 0.151     |
+
+### Root cause
+
+**Cascade depth — same aromatic cascade as androstane steroids, extended by the phenol A-ring.**
+
+The same C₅–C₁₃ aromatic ion series (115.1, 128.1, 129.1, 141.1) mirrors androstane steroids
+exactly, arising from retro-Diels-Alder + dehydrogenation of the B/C/D ring system (4+ steps).
+Distinct addition: **m/z 91.1 = tropylium [C₇H₇]⁺ absent in 130 spectra at 0.620 intensity**.
+Estrogens have a phenol A-ring (C₆H₄OH-) that provides a direct route to tropylium via ring
+contraction; this pathway does not appear as prominently in androstane steroids.
+
+Category B: 105.0 (143 spectra, 0.322) IS in DAG (aromatized A-ring [C₇H₅O]⁺ from phenol) but
+model predicts ≈0 — second largest model weakness after androstane steroids (184 spectra). Together
+the two steroid classes represent the most widespread model failure in the dataset.
+
+---
+
+## Hydrolyzable Tannins (n=354, DAG miss rate=53.6%)
+
+**68 mols; 41 in tar.** 3 spectra from missing-tar mols (negligible, <1% artifact). Gallotannins
+and ellagitannins — polyester macromolecules with gallic acid or hexahydroxydiphenic acid (HHDP)
+esterified to a glucose core. Large polyphenolic structures (MW 500–3000).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Assignment |
+|---------|--------|-----------|------------|
+| **65.0** | **57** | **0.574** | [C₅H₅]⁺ cyclopentadienyl |
+| 81.1    | 52     | 0.123     | [C₅H₅O]⁺ or [C₆H₉]⁺ |
+| 213.1   | 48     | 0.332     | galloyl cascade fragment |
+| 67.1    | 44     | 0.153     | [C₅H₇]⁺ |
+| 95.0    | 38     | 0.330     | [C₆H₇O]⁺ |
+| 255.1   | 38     | 0.190     | ellagyl/galloyl fragment |
+| 241.0   | 37     | 0.317     | ellagyl fragment |
+| 183.0   | 36     | 0.212     | gallic acid-derived |
+| 155.0   | 35     | 0.307     | galloyl fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **91.1** | **97** | **0.370** |
+| **115.1** | **44** | **0.617** |
+| 119.0   | 65     | 0.143     |
+| 69.0    | 51     | 0.151     |
+| 103.1   | 45     | 0.207     |
+| **128.1** | **45** | **0.461** |
+| 105.0   | 44     | 0.163     |
+
+### Root cause
+
+**Cascade depth from ester hydrolysis cascade + model weakness for aromatic cations.**
+
+BFS cuts ester bonds (depth 1) to release galloyl/HHDP fragments, then further fragments the
+aromatic ring (depth 2–3) to give phenol/catechol cations. But reaching the small aromatic cations
+(65.0 = C₅H₅⁺, 67.1, 81.1) requires 4+ steps from the tannin [M+H]⁺ — cascade depth.
+
+Category B: **115.1 (44 spectra, 0.617!), 128.1 (45 spectra, 0.461), 91.1 (97 spectra, 0.370)** —
+all in DAG (galloyl/phenyl ring fragments correctly generated by BFS) but model predicts ≈0.
+The tannin dataset amplifies model weakness because all mols share the same polyphenolic chemistry.
+
+---
+
+## Aryl Iodides (n=315, DAG miss rate=53.2%)
+
+**30 mols; 29 in tar.** Missing: mol_id=52605 (diphenylene iodonium salt, permanent I⁺ cation —
+same unsupported charge model as berberine). The 29 in-tar mols are predominantly **iodo-azoles**:
+iodoimidazoles (CC(C)Cn1cc(I)cn1 type), iodopyrazoles, iodotriazoles; plus a few iodoxybenzene
+(PhI=O) and hypervalent iodine derivatives.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| **136.0** | **27** | **0.607** | heteroaryl ring cation (I-free) |
+| **328.9** | **24** | **0.256** | I mass defect |
+| 69.0    | 23     | 0.113     | furanyl cation |
+| 105.0   | 20     | 0.371     | ring fragment |
+| **94.0** | **20** | **0.431** | ring fragment |
+| 55.0    | 20     | 0.240     | |
+| **262.9** | **18** | **0.270** | I mass defect |
+| **290.9** | **15** | **0.156** | I mass defect |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | Note |
+|---------|--------|----------------|------|
+| 81.0    | 29     | 0.139     |      |
+| **230.9** | **14** | **0.457** | I mass defect — in DAG |
+| **105.0** | **18** | **0.340** |      |
+| 144.0   | 13     | 0.308     |      |
+| 90.0    | 10     | 0.243     |      |
+
+### Root cause
+
+**Real gap (I-retaining direct cations) + cascade depth for heteroaryl ring fragments.**
+
+The .9 m/z bins in category A (328.9, 262.9, 290.9) reflect ¹²⁷I mass defect (+0.904) from
+**iodine-retaining direct cations** after C-I heterolytic cleavage — same mechanism as benzyl
+halides and triazolopyrazines, extended to iodine. Category B also has an I-retaining fragment
+(230.9 at 0.457) IS in DAG but underpredicted.
+
+m/z 136.0 (27 spectra, 0.607): a high-intensity heteroaryl ring cation (I-free) across many
+different iodo-azole mols. Assignment uncertain given the structural diversity of 30 mols, but
+consistent with the imidazolyl or pyrazolyl ring cation produced after I ejection + alkyl-chain
+rearrangement from N-alkyl iodoimidazoles.
+
+Missing mol_id=52605: diphenyleneiodonium [I⁺(Ph)₂], a permanent cation — BFS cannot model
+preformed ionic species (same limitation as berberine).
+
+---
+
+## Strychnos Alkaloids (n=117, DAG miss rate=51.8%)
+
+**33 mols; 4 in tar.** 29 mols not in tar; those 29 mols contribute **33/107 = 30.8%** of FT [M+H]+
+spectra. However, after the BFS bug fix, those 33 spectra are **skipped** (dag_mzs is None →
+continue) — they do NOT inflate the A/B miss rate. The 51.8% miss rate is computed from the 4
+in-tar mols (strychnine, brucine, and 2 structural analogs).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity |
+|---------|--------|-----------|
+| 156.1   | 40     | 0.364     |
+| 220.1   | 35     | 0.142     |
+| 154.1   | 31     | 0.228     |
+| 155.1   | 29     | 0.105     |
+| **184.1** | **23** | **0.604** |
+| 204.1   | 25     | 0.227     |
+| 192.1   | 25     | 0.115     |
+| 234.1   | 23     | 0.241     |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **180.1** | **18** | **0.550** |
+| **222.1** | **18** | **0.354** |
+| 206.1   | 18     | 0.185     |
+| 194.1   | 16     | 0.178     |
+| 91.1    | 32     | 0.195     |
+
+### Root cause
+
+**Cascade depth — heptacyclic strychnane ring system.**
+
+Strychnine and brucine have ABCDEFG heptacyclic ring systems (indole fused to the
+azatricyclo[3.3.3.0]decane cage). The category A fragments (154–234 Da range across 23–40 spectra)
+are mid-size ring-opened products requiring 4+ sequential bond cuts from the heptacyclic cage.
+m/z 184.1 (23 spectra, **0.604**) is a particularly prominent absent fragment — reported in
+strychnine MS literature as a characteristic B/C-ring fragment.
+
+Category B: m/z 180.1 (18 spectra, 0.550) IS in DAG but severely underpredicted — model weakness
+component. The 4 in-tar mols all share the same scaffold so both cascade depth and model failure
+appear consistently.
+
+---
+
+## Oxepanes (n=353, DAG miss rate=50.4%)
+
+**51 mols; 34 in tar.** 17 mols not in tar contribute ~5.4% of FT [M+H]+ spectra — minor artifact.
+7-membered oxygen-containing rings: sesquiterpene oxepanes, monoterpene oxides, bicyclic ether
+terpenoids. High spectral count (n=353 FT [M+H]+).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity |
+|---------|--------|-----------|
+| 105.1   | 98     | 0.314     |
+| 117.1   | 94     | 0.176     |
+| 65.0    | 91     | 0.294     |
+| 119.1   | 89     | 0.206     |
+| **115.1** | **86** | **0.419** |
+| 93.1    | 82     | 0.227     |
+| 77.0    | 79     | 0.374     |
+| **91.1** | **74** | **0.577** |
+| 79.1    | 67     | 0.252     |
+| 105.0   | 65     | 0.231     |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 155.1   | 114    | 0.115     |
+| 145.1   | 98     | 0.196     |
+| 143.1   | 87     | 0.195     |
+| 141.1   | 74     | 0.225     |
+| 157.1   | 60     | 0.180     |
+| 165.1   | 60     | 0.204     |
+| 129.1   | 51     | 0.137     |
+
+### Root cause
+
+**Cascade depth — same aromatic cation series as androstane and estrane steroids.**
+
+The category A fragment list (65.0, 77.0, 79.1, 91.1, 93.1, 105.1, 115.1, 117.1, 119.1) is the
+**complete C₅–C₉ aromatic/polyunsaturated cation series** seen across multiple steroid and terpenoid
+classes. The oxepane ring opening produces allylic cations that then cascade into these small
+aromatic ions via dehydration and aromatization — all requiring 4+ steps.
+
+Category B is dominated by the **C₁₀–C₁₂ range** (141.1–165.1 in DAG at 0.11–0.20 intensity) —
+model underpredicts the intermediate cascade products. The contrast between large B and small A
+fragmentation is consistent with the model learning BFS-depth-2 fragments but not depth-3 ones that
+then fragment further to the depth-4+ species in category A.
+
+---
+
+## Medium-Chain Keto Acids and Derivatives (n=51, DAG miss rate=50.0%)
+
+**18 mols; 15 in tar.** 3 missing mols have 0 FT [M+H]+ spectra — no artifact. Class includes
+2-oxogluconic acid (mol_id=43884), levulinate variants, and acetoacetate-related structures.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 194.2   | 6      | 0.113     | satellite to 196.2 |
+| **196.2** | **6** | **1.000** | **base peak** — spurious (see below) |
+| 197.2   | 6      | 0.054     | satellite |
+| 153.0   | 4      | 0.073     | |
+| 154.0   | 4      | 0.140     | |
+| 167.0   | 4      | 0.244     | |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **99.0** | **12** | **0.689** |
+| **142.1** | **8** | **0.334** |
+| **141.1** | **5** | **0.419** |
+| 274.1   | 5      | 0.309     |
+
+### Root cause
+
+**Model weakness dominant + data quality issue.**
+
+**m/z 196.2 anomaly**: confirmed in mol_id=43884 (2-oxogluconic acid, [M+H]⁺ = 195.050). The base
+peak at 196.170 Da in the product spectrum exceeds the precursor m/z — it cannot be a true CID
+fragment. Actual m/z measured as 196.1695 (consistent across 6 spectra) suggests a **co-isolated
+compound** ([C₁₂H₂₂NO]⁺ = 196.174 is the nearest formula match) contaminating the MS2 isolation
+window. A data quality artifact from the NIST23 acquisition.
+
+**Category B: m/z 99.0 (12 spectra, 0.689)** = [C₅H₇O₂]⁺ = 99.044 (levulinyl/β-keto ester cation)
+— IS in DAG but model predicts ≈0. m/z 142.1 and 141.1 are also in DAG but underpredicted.
+Model has not learned the keto-acid fragment pattern (loss of CO₂ then further dehydration).
+
+---
+
+## Phenylphosphines and Derivatives (n=495, DAG miss rate=49.1%)
+
+**57 mols; 37 in tar.** 20 mols missing from tar — ALL are phosphonium salts ([P+] in SMILES:
+butyltriphenylphosphonium, methyltriphenylphosphonium, tetraphenylphosphonium, etc.) with
+**zero FT [M+H]⁺ spectra** (recorded as [M]⁺ direct cations in ESI, not [M+H]⁺). No
+artifact contribution. In-tar mols are neutral phosphines, phosphine oxides, ylides, and
+iminophosphoranes — all with the Ph-P bond framework.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| **95.0** | **131** | **0.269** | C₅H₄P⁺ = 95.005 confirmed — phosphacyclopentadienyl cation |
+| 115.1   | 84     | 0.241     | C₉H₇⁺ — aromatic cascade (indanyl/naphthalenyl) |
+| 152.1   | 80     | 0.318     | C₁₂H₈⁺ or C₁₁H₉⁺ — also in category B |
+| 105.0   | 62     | 0.194     | C₈H₉⁺/[C₇H₅O]⁺ — aromatic cascade |
+| 133.0   | 52     | 0.119     | also in category B — structural heterogeneity |
+| 128.1   | 52     | 0.158     | C₁₀H₈⁺ — aromatic cascade |
+| 139.1   | 44     | 0.265     | also in category B |
+| 91.1    | 43     | 0.290     | tropylium [C₇H₇]⁺ — aromatic cascade |
+| 165.1   | 36     | 0.360     | C₁₃H₉⁺ — also in category B |
+| 219.1   | 35     | 0.483     | C₁₂H₁₂O₂P⁺ = 219.058 — phosphine oxide fragment; also in B |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 152.1   | 65     | 0.310     |
+| **165.1** | **57** | **0.530** |
+| 184.0   | 47     | 0.099     |
+| **219.1** | **38** | **0.377** |
+| 133.0   | 36     | 0.271     |
+| 78.0    | 35     | 0.125     |
+| 183.0   | 34     | 0.277     |
+| 139.1   | 31     | 0.157     |
+| 185.1   | 30     | 0.227     |
+
+### Root cause
+
+**Mixed — phosphorus rearrangement (C₅H₄P⁺) + cascade depth + model weakness for P-containing ions.**
+
+**m/z 95.0 = C₅H₄P⁺ = 95.005 (confirmed)**: the phosphacyclopentadienyl cation — the
+phosphorus analog of the cyclopentadienyl cation. Present in spectra of 8+ structurally
+distinct mol types (phosphine oxides, neutral phosphines, ylides). Root cause: **rearrangement**
+— the phenyl ring contracts and P migrates into a 5-membered ring before departure. BFS cannot
+model bond FORMATION, only bond breaking.
+
+**m/z 183.0 = C₁₂H₈P⁺ = 183.037 (confirmed)** = [Ph₂P]⁺ (diphenylphosphinyl cation) and
+**m/z 184.0 = C₁₂H₉P⁺ = 184.044** ARE in DAG (direct Ph-P bond cut from triarylphosphines)
+but the model predicts ≈0 intensity. Similarly **78.0 = C₆H₆⁺ = 78.047** (benzene cation) is
+in DAG but underpredicted. Model weakness for all P-containing and phenyl-derived secondary
+fragments.
+
+**Structural heterogeneity in BFS coverage**: m/z 152.1, 165.1, 133.0, 139.1, 219.1 appear in
+BOTH category A (absent from DAG in complex phosphines) and category B (in DAG but underpredicted
+in simpler phosphines) — for simpler phosphines BFS reaches these fragments at depth ≤3;
+for complex polyphenyl phosphines they require depth >3 cascade aromatization.
+
+---
+
+## Flavonoids (n=161, DAG miss rate=49.8%)
+
+**27 mols; 23 in tar.** Unsubstituted and lightly-substituted flavones (flavone, methylflavones,
+naphthoflavones, and ester-substituted flavones). 4 mols missing from tar: 4194 (pentaacetyl
+quercetin), 4203 (triacetyl apigenin), 33168 (6-Br-4'-methylflavone), 50287 (2'-hydroxyflavone).
+The sole Br-mol (33168) is missing from tar → its spectra skipped → no .9-bin Br direct-cation
+peaks appear in category A.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| **165.1** | **52** | **0.171** | C₁₃H₉⁺ = 165.070 confirmed (mean 165.064 ± 0.019) |
+| 178.1   | 22     | 0.169     | C₁₄H₁₀⁺ = 178.078 — PAH fragment from naphtho-fused flavones |
+| 152.1   | 17     | 0.156     | C₁₂H₈⁺ = 152.063 — same aromatic cascade |
+| 202.1   | 14     | 0.125     | C₁₆H₁₀⁺ = 202.078 — pyrene/fluoranthene cation |
+| 167.1   | 12     | 0.113     | C₁₃H₁₁⁺ = 167.086 — pre-aromatization intermediate |
+| 62.0    | 9      | 0.424     | Unassigned; exact m/z ≈ 62.011–62.019 |
+| 151.0   | 10     | 0.218     | C₈H₇O₃⁺ = 151.040 — A-ring fragment (trihydroxy) |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| **105.0** | **49** | **0.226** |
+| 95.0    | 26     | 0.197     |
+| 69.0    | 26     | 0.079     |
+| **123.0** | **20** | **0.428** |
+| 103.1   | 16     | 0.194     |
+| **113.0** | **11** | **0.386** |
+
+### Root cause
+
+**Mixed — cascade depth for 165.1/178.1/152.1 aromatic series + model weakness for 105.0/123.0.**
+
+The 165.1 peak (C₁₃H₉⁺ = 165.070 confirmed by FT exact mass) appears in **150/249 spectra** (67%)
+across all flavone types, not just the naphtho-fused ones. Mechanism: two sequential CO losses from
+the chromone C-ring (BFS depth=2 → C₁₃H₁₁⁺ = 167.086) followed by ring closure + H₂ neutral loss
+(dehydrogenation to give aromatic C₁₃H₉⁺). The H₂ neutral loss from an already-fragmented ion is
+the same BFS gap as in steroid ring aromatization. The broader PAH series (152.1, 178.1, 202.1)
+comes primarily from the naphtho/benzo-fused flavones (50265, 50276, 50281, 50285) which have a
+pre-formed tricyclic system requiring fewer cascade steps.
+
+Category B: **m/z 105.0 (49 spectra, 0.226) = [C₇H₅O]⁺ benzoyl cation** from B-ring RDA IS in DAG
+but model predicts only 0.020. This is the canonical flavone B-ring fragment — the model's failure to
+predict it at high intensity is a significant training gap. Similarly, 123.0 at 0.428 (in DAG, pred=
+0.005) is the highest-intensity category B fragment seen in this subclass. **The B category
+(model weakness) likely contributes more to the overall miss rate than cascade depth.**
+
+---
+
+## Cyclohexylphenols (n=86, DAG miss rate=49.0%)
+
+**17 mols; 14 in tar** (3 missing: mol 14796 contributes 9 skipped FT [M+H]⁺ spectra). Cyclohexylphenols are phenols bearing a cyclohexyl group; the phenyl + cyclohexyl ring system is prone to aromatization cascade upon CID.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1 | 24 | 0.516 | [C₇H₇]⁺ tropylium (91.0543) — 9/14 mols; 6→7-membered ring expansion |
+| 103.1 | 20 | 0.310 | [C₈H₇]⁺ (103.054) — 7/14 mols; indenyl/phenylacetylene cation |
+| 65.0 | 19 | 0.296 | [C₅H₅]⁺ cyclopentadienyl (65.039) — 8/14 mols; phenyl ring contraction |
+| 128.1 | 14 | 0.613 | [C₁₀H₈]⁺ naphthalene/azulene cation (128.062) — 6/14 mols; ring fusion |
+| 53.0 | 12 | 0.133 | [C₄H₅]⁺ (53.039) — deep aromatic cascade |
+| 127.1 | 12 | 0.114 | [C₁₀H₇]⁺ — deep cascade |
+| 102.0 | 12 | 0.251 | [C₈H₆]⁺ — deep cascade |
+| 129.1 | 12 | 0.222 | [C₁₀H₉]⁺ (129.070) — deep cascade |
+| 50.0 | 10 | 0.171 | [C₄H₂]⁺ — deep cascade |
+| 139.1 | 9 | 0.071 | [C₁₁H₇]⁺ — deep cascade |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 105.0 | 34 | 0.290 |
+| 105.1 | 15 | 0.156 |
+| 79.1 | 11 | 0.375 |
+| 117.1 | 11 | 0.215 |
+| 131.0 | 10 | 0.235 |
+| 95.0 | 10 | 0.300 |
+| 81.1 | 10 | 0.131 |
+| 116.1 | 10 | 0.063 |
+
+### Root cause
+
+**Rearrangement + cascade depth.**
+
+Category A is dominated by aromatic rearrangement products that require bond-making steps BFS cannot perform: tropylium [C₇H₇]⁺ (91.054, 9/14 mols) requires 6→7-membered ring expansion from benzyl carbocation; cyclopentadienyl [C₅H₅]⁺ (65.039, 8/14 mols) requires phenyl ring contraction (6→5); naphthalene/azulene cation [C₁₀H₈]⁺ (128.062, 6/14 mols) requires ring fusion of the phenyl and cyclohexyl rings via dehydrogenation. All three are confirmed by FT exact masses (±2 mDa). The pattern is nearly subclass-universal: 9 of 14 in-tar mols show 91.1, across both simple cyclohexylphenols (mol 51573, 31309) and functionalized variants (nitro, carboxylic acid, amine). Secondary: model weakness on 105.0 (n=34, true=0.290, pred=0.004) — the largest category B hit in this subclass.
+
+---
+
+## Furofurans (n=93, DAG miss rate=48.6%)
+
+**17 mols; 12 in tar** (5 missing: mol 24208 contributes 5 and mol 25416 contributes 2 skipped spectra). Furofurans here are predominantly sesquiterpene- and diterpene-lactone natural products bearing a fused bicyclic furan core (MW 130–533), alongside a few small saturated bicyclic furofuranols.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 95.1 | 38 | 0.497 | [C₇H₁₁]⁺ 95.086 (9/10 mols) AND [C₆H₇O]⁺ 95.049 (9/10 mols) — two co-binned species |
+| 105.1 | 35 | 0.298 | [C₈H₉]⁺ (105.070) — 9/10 mols |
+| 91.1 | 32 | 0.515 | [C₇H₇]⁺ tropylium (91.054) — **10/10 mols** |
+| 107.1 | 32 | 0.417 | [C₈H₁₁]⁺ 107.086 AND [C₇H₇O]⁺ 107.049 — two co-binned species |
+| 81.1 | 32 | 0.152 | [C₆H₉]⁺ (81.070) — 8/10 mols |
+| 79.1 | 29 | 0.375 | [C₆H₇]⁺ (79.055) — 8/10 mols |
+| 93.1 | 23 | 0.156 | [C₇H₉]⁺ (93.070) — 9/10 mols |
+| 67.1 | 22 | 0.487 | [C₅H₇]⁺ (67.054) — 9/10 mols |
+| 65.0 | 20 | 0.359 | [C₅H₅]⁺ cyclopentadienyl (65.039) — 8/10 mols |
+| 145.1 | 15 | 0.220 | [C₁₁H₁₃]⁺ 145.101 AND [C₁₀H₉O]⁺ 145.065 — 6–7/10 mols |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 169.1 | 22 | 0.162 |
+| 141.1 | 20 | 0.185 |
+| 125.1 | 19 | 0.133 |
+| 155.1 | 18 | 0.129 |
+| 129.1 | 18 | 0.195 |
+| 165.1 | 18 | 0.175 |
+| 167.1 | 17 | 0.157 |
+| 143.1 | 16 | 0.172 |
+| 103.1 | 16 | 0.100 |
+| 128.1 | 15 | 0.440 |
+
+### Root cause
+
+**Cascade depth + rearrangement, with secondary model weakness.**
+
+Category A is dominated by a complete C₅–C₁₁ aliphatic/aromatic cation series absent from the BFS DAG — and it is nearly universal: [C₇H₇]⁺ tropylium (91.054) appears in **all 10 in-tar mols**, and 8–9/10 mols show each of [C₅H₅]⁺, [C₅H₇]⁺, [C₆H₇]⁺, [C₆H₉]⁺, [C₇H₉]⁺, [C₇H₁₁]⁺, [C₈H₉]⁺, [C₆H₇O]⁺ (confirmed by FT exact masses ±2 mDa). Two mechanisms co-operate: (1) **Cascade depth** — large sesqui/diterpene precursors (MW 309–533, e.g. mol 9915) require 5+ bond cuts to reach m/z 65–145; (2) **Rearrangement** — the cyclic hydrocarbon cations (tropylium via ring expansion, cyclopentadienyl via ring contraction, [C₇H₁₁]⁺ via ring closure from open chain) require bond-forming steps BFS cannot model, and appear even in the smallest mols (e.g. 9377, MW 196). Category B shows additional **model weakness**: [C₁₀H₈]⁺ at 128.1 (n=15, true=0.440) is in the DAG but the model predicts exactly 0.000 — the starkest model-weakness signal in this subclass.
+
+---
+
+## Quinolizines (n=38, DAG miss rate=48.5%)
+
+**14 mols; 7 in tar** (7 missing, of which only mol 26936 — a permanent [n+] cation — contributes 3 skipped spectra). In-tar mols include Br-substituted (mol 77), N-oxide (mols 26903, 28813), aldehyde-bearing (mols 48295, 48296), and alkyl-substituted (mols 26880, 26881) variants of the quinolizidine/dihydroquinolizine ring system.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 117.1 | 24 | 0.234 | [C₈H₇N]⁺ 117.058 AND [C₉H₉]⁺ 117.070 — two co-binned species; **7/7 mols** |
+| 115.1 | 14 | 0.486 | [C₉H₇]⁺ (115.054) — 7/7 mols |
+| 103.1 | 13 | 0.237 | [C₈H₇]⁺ (103.054) — 7/7 mols |
+| 116.1 | 9 | 0.115 | [C₉H₈]⁺ or [C₈H₆N]⁺ — 7/7 mols |
+| 105.1 | 7 | 0.328 | [C₈H₉]⁺ (105.070) |
+| 91.1 | 7 | 0.631 | [C₇H₇]⁺ tropylium (91.054) — also in Category B for other spectra |
+| 89.0 | 7 | 0.203 | [C₇H₅]⁺ (89.039) |
+| 130.1 | 6 | 0.104 | [C₁₀H₁₀]⁺ or [C₉H₈N]⁺ |
+| 131.1 | 6 | 0.127 | [C₁₀H₁₁]⁺ |
+| 102.0 | 6 | 0.141 | [C₈H₆]⁺ (102.047) |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 172.1 | 9 | 0.368 |
+| 146.1 | 9 | 0.107 |
+| 91.1 | 7 | 0.732 |
+| 147.1 | 7 | 0.148 |
+| 145.1 | 6 | 0.485 |
+| 118.1 | 6 | 0.235 |
+| 191.1 | 5 | 0.299 |
+
+### Root cause
+
+**Cascade depth, with secondary model weakness.**
+
+The quinolizine/dihydroquinolizine ring system uniformly produces a deep C₇–C₉ aromatic cascade series — [C₇H₅]⁺ (89.0), [C₇H₇]⁺ tropylium (91.1), [C₈H₇]⁺ (103.1), [C₉H₇]⁺ (115.1), [C₈H₇N]⁺ and [C₉H₉]⁺ (co-binned at 117.1) — absent from the DAG in all 7/7 in-tar mols (confirmed by FT exact masses ±2 mDa). Even the smallest precursor (mol 48295, [M+H]⁺=202) must lose ≥111 Da to reach m/z 91, requiring 3–4 sequential bond cuts plus ring-rearrangement (tropylium formation, C₉H₇⁺ via ring contraction). Notably, [C₇H₇]⁺ appears in BOTH category A (absent in 7 spectra from simpler mols) and category B (in DAG but predicted at 0.012 for 7 spectra from larger mols) — the same fragment is either absent or severely underpredicted depending on precursor size. Category B shows additional model weakness: 91.1 true intensity=0.732 (highest in either category), 145.1 true=0.485, and 172.1 true=0.368, all predicted at ≤0.015.
+
+---
+
+## Summary
+
+| Subclass | n | DAG miss | Root cause |
+|----------|---|----------|------------|
+| Phenanthrenes & deriv. | 330 | 78.3% | **Cascade gap** — high-CE RDA of oxycodone/naltrexone-type alkaloids; N-CONTAINING cascade (C₁₃H₁₀N⁺) beyond BFS depth=3 |
+| Quinolizidinones | 33 | 100% | **Artifact** — mol missing from tar; BFS actually works |
+| Furan lignans | 21 | 82.6% | **Artifact** — contaminated CE=nan spectra in NIST23 |
+| Organic metalloid salts | 100 | 76.1% | **Real gap** — TMS⁺ methyl-migration (silyl cation, 37 mDa off DAG fragment); 10 artifact spectra from methylarsenic acid not in tar |
+| Benzyl halides | 97 | 76.0% | **Real gap** — halide-retaining cations (CH₂Br⁺ etc.) from heterolytic C-X cleavage; BFS only models [neutral+H]⁺ |
+| Lignan glycosides | 115 | 75.8% | **Model weakness** — aglycone fragments ARE in DAG; model predicts ~0; glycan-loss cascade not learned |
+| Organic phosphoric acids | 58 | 75.0% | **Mixed** — m/z 99 (H₃PO₄ loss) in DAG but under-predicted; m/z 69/83/55 aliphatic chain absent from DAG |
+| Pyrimidine deoxyribonucleotides | 24 | 75.0% | **Insufficient data** — n=1 per missing peak |
+| 1-Benzylquinolines | 25 | 71.4% | **Insufficient data** — m/z 306.2 in only 5 spectra |
+| Morphinans | 341 | 70.3% | **Cascade gap** — high-CE cascade of morphine/codeine/levorphanol-type; N-FREE cascade (fluorenone C₁₃H₈O, acenaphthylene C₁₂H₈) beyond BFS depth=3; distinct pathway from Phenanthrenes group |
+| imidazo[4,5-c]pyridine ribonucleosides | 93 | 67.6% | Needs deeper investigation — 136.1 present in DAG, 64.0 anomalous; may involve multiply-charged or phosphate-specific fragments |
+| Triazolopyrazines | 38 | 63.3% | **Real gap** — Br-retaining aromatic cations (C⁷⁹Br⁺ at 90.918, etc.); all .9 m/z bins = Br mass defect; same mechanism as benzyl halides |
+| Thienothiophenes | 104 | 63.1% | **Cascade depth** — small thiophene ring fragments (51.0=C₄H₃⁺, 69.0, 93.0) require >3 sequential bond cuts from fused bicyclic S-heterocycle |
+| Pyrazolopyrazoles | 28 | 63.0% | **Mixed** — CH₂Br mols: halide-retaining cations (same as benzyl halides); non-halide mol: cascade depth |
+| Phenoxazines | 112 | 62.8% | **Cascade depth** — ring-opening of phenoxazine O-bridge → aromatic ions (115.1=C₉H₇⁺, 170.1, 146.1) beyond depth=3; partial DAG coverage depending on substituents |
+| Protoberberines | 105 | 62.1% | **Mixed** — berberine (permanent N⁺ cation, unsupported by BFS) absent from tar; neutral mols have cascade depth gap (91.1, 131.1, 105.1) |
+| Cephalotaxus alkaloids | 46 | 60.5% | **Cascade depth** — same aromatic ion series as morphinans (141.1, 155.1, 157.1); 1 mol missing from tar (21 artifact spectra) |
+| Organic phosphoramides | 80 | 59.7% | **Model weakness** — m/z 135.1 (0.866 intensity!) in 36 spectra, in DAG but predicted ≈0; HF loss [M+H−HF]⁺ and P−N cleavage [(NMe₂)₂P=O]⁺ both hit 135.07; real gap for small P-containing fragment ions |
+| Phenyl sulfoxides | 162 | 59.0% | **Mixed** — .9 m/z bins (254.9/186.9/370.9): Br/Cl halide-retaining direct cations absent from BFS; integer bins (69.0, 192.0): cascade depth from sulfoxide bridge fragmentation |
+| Pyranopyridines | 108 | 58.8% | **Model weakness dominant** — 131.1/216.1/89.0 (0.41–0.60 intensity) all in DAG but predicted ≈0; some cascade gaps in category A |
+| Sulfur mustard compounds | 28 | 58.3% | **Model weakness** — 278.9 (0.693) and 154.9 (0.226) are Br-retaining fragments IN DAG but predicted ≈0; [M+H]⁺ itself at 278.9 not retained by model |
+| Pyranodioxins | 45 | 58.0% | **Cascade depth** — furanyl cations (69.0/81.0/109.0 at 0.60 intensity in 36/45 spectra) from pyranose ring-opening + sequential dehydration; requires >3 steps |
+| Imidazopyrazines | 209 | 58.0% | **Mixed** — Br/I direct cations absent from DAG (.9 bins: 141.9, 129.9, 189.9); large Br fragments in DAG severely underpredicted (289.9 at 0.790, 319.9 at 0.652); m/z 64.0/52.0 unexplained |
+| Aminoxides | 51 | 57.7% | **Minor model weakness** — only m/z 62.1 missing (15 spectra, 0.091 intensity); insufficient for mechanistic conclusion |
+| Alpha-keto acids | 32 | 57.6% | **Real gap** — Br-retaining direct cations: [CH₂⁷⁹Br]⁺ = 92.926 dominates 28/32 spectra at 0.753; 1 brominated mol (methyl bromopyruvate) drives the entire miss rate |
+| Lactones | 57 | 57.6% | **Mixed** — cascade depth for terpenoid ring aromatization (191.1=C₁₄H₁₁⁺, 209.1) + model weakness (tropylium 91.1 at 0.737 in DAG, predicted ≈0); 5 mols not in tar (~8% artifact) |
+| Auronols | 21 | 56.4% | **Model weakness dominant** — 149.0 (0.529) and 115.1 (0.508) in DAG, predicted ≈0; .9-bin category A (240.9, 222.9) suggest Br-containing mols via alternative_parents |
+| Androstane steroids | 919 | 56.3% | **Cascade depth** — Djerassi cascade aromatization of C19 ring: C₅–C₁₀ aromatic ions (129.1=[C₁₀H₉]⁺ confirmed, 128.1, 115.1); 274 spectra missing 129.1 — largest absolute gap in dataset |
+| Lycorine-type alkaloids | 96 | 55.4% | **Cascade depth** — methylenedioxy-phenanthridine ring produces 119.0=[C₈H₇O]⁺ and 91.1=[C₇H₇]⁺ after 4+ cuts; model weakness component (65.0 at 0.423) |
+| Gamma-keto acids | 115 | 55.0% | **Cascade depth + model weakness** — tropylium 91.1 ABSENT at 0.744 intensity (very high!); aliphatic cation series (67.1, 79.1, 93.1) from multi-step ring opening; model weak on 107.1 |
+| 1,3-Dioxanes | 25 | 54.8% | **Model weakness dominant** — 83.1=[C₅H₇O]⁺ (acetal ring-opening, 0.632) in DAG predicted ≈0; cascade depth for phenyl/furanyl cations (77.0, 95.0) |
+| Dibenzoxazepines | 126 | 54.5% | **Mixed** — cascade depth (229.1 at 0.655, ring-opening of tricyclic clozapine framework) + model weakness (126.0 at 0.598 in DAG); all 7 mols clozapine-type antipsychotics |
+| Estrane steroids | 739 | 53.7% | **Cascade depth** — same aromatic series as androstane (128.1, 129.1, 115.1) + tropylium 91.1 at 0.620 (130 spectra!) from phenol A-ring; model weakness 105.0 (143 spectra) |
+| Hydrolyzable tannins | 354 | 53.6% | **Cascade depth + model weakness** — galloyl ester hydrolysis then ring aromatization (65.0=C₅H₅⁺ at 0.574); model fails on 115.1 (0.617), 128.1 (0.461), 91.1 (0.370) all in DAG |
+| Aryl iodides | 315 | 53.2% | **Real gap (I direct cations: .9 bins 328.9/262.9/290.9) + cascade depth** (136.0 at 0.607 from iodo-azole ring fragmentation); 1 missing mol = permanent I⁺ cation (unsupported) |
+| Strychnos alkaloids | 117 | 51.8% | **Cascade depth** — heptacyclic strychnane ring (184.1 at 0.604 absent); 29/33 mols not in tar but skipped (30.8% spectra) — does NOT inflate miss rate |
+| Oxepanes | 353 | 50.4% | **Cascade depth** — complete C₅–C₉ aromatic cation series (91.1 at 0.577, 65.0, 77.0, 115.1) mirrors androstane pattern; model weak on C₁₀–C₁₂ intermediates in DAG |
+| Medium-chain keto acids | 51 | 50.0% | **Model weakness** — 99.0=[C₅H₇O₂]⁺ (0.689) in DAG predicted ≈0; 196.2 base peak = data quality artifact (co-isolated compound in MS2 window) |
+| Phenylphosphines & deriv. | 495 | 49.1% | **Mixed** — **rearrangement**: C₅H₄P⁺ = 95.005 (phosphacyclopentadienyl, 131 spectra) absent (BFS can't model bond formation); **cascade depth**: C₉–C₁₃ aromatic series; **model weakness**: [Ph₂P]⁺ = 183.0, 165.1 (0.530!), 219.1 (0.377) all in DAG but predicted ≈0 |
+| Flavonoids | 161 | 49.8% | **Mixed** — cascade depth: C₁₃H₉⁺ = 165.070 (150/249 spectra) via 2×CO loss + dehydrogenation; PAH series from naphtho-fused variants; model weakness: 105.0=[C₇H₅O]⁺ benzoyl cation (49 spec, 0.226) + 123.0 (0.428!) both in DAG predicted ≈0 |
+| Cyclohexylphenols | 86 | 49.0% | **Rearrangement** — tropylium [C₇H₇]⁺ (9/14 mols, ring expansion), cyclopentadienyl [C₅H₅]⁺ (8/14 mols, ring contraction), naphthalene [C₁₀H₈]⁺ (6/14 mols, ring fusion) all absent from BFS; model weak on 105.0 (n=34, pred≈0) |
+| Furofurans | 93 | 48.6% | **Cascade depth + rearrangement** — complete C₅–C₁₁ cyclic cation series absent in 8–10/10 mols; tropylium [C₇H₇]⁺ universal (10/10); [C₇H₁₁]⁺ + [C₆H₇O]⁺ co-bin at 95.1; model weak on 128.1=[C₁₀H₈]⁺ (pred=0.000, true=0.440, 15 spec) |
+| Quinolizines | 38 | 48.5% | **Cascade depth** — C₇–C₉ aromatic cascade ([C₈H₇N]⁺/[C₉H₉]⁺ at 117.1, [C₉H₇]⁺ at 115.1) absent in 7/7 mols; tropylium appears in both cat A (absent) and cat B (pred≈0, true=0.732); model weak on 145.1 (true=0.485, pred=0.001) |
