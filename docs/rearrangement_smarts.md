@@ -248,3 +248,35 @@ SMIRKS entirely.
 | Claisen | **Correct, mislabeled** | Correct SMARTS, but labeled "Oxa-Cope" — rename to Claisen |
 | Tropylium | Correct chemistry, wrong SMIRKS | 7-membered aromatic ring not representable via SMIRKS ring expansion |
 | Favorskii | Wrong context | Requires nucleophile; remove |
+
+---
+
+## Coverage vs. Current BFS (Integration Decision)
+
+Analysis of whether each validated rule adds coverage beyond the current multi-cut BFS
+(`multi_cut_bfs.pyx`) with H-transfer (`max_h_transfer=4`).
+
+| Rule | Gap? | Reason |
+|---|---|---|
+| McLafferty carbonyl | No | BFS cut=1 (Tarjan bridge) cuts the β-bond; same heavy-atom partition. H-transfer covers ±1H on each fragment. |
+| McLafferty nitrile | No | Same: bridge cut on the acyclic β-C bond; H-transfer adjusts the formula. |
+| RDA all-carbon (fused ring) | No | BFS cut=2 with fused `ring_bond_groups` already covers 2-bond cuts within SSSR rings shared with another ring. |
+| RDA heteroatom (fused ring) | No | Same: fused heteroatom rings are included in `ring_bond_groups`. |
+| RDA all-carbon (isolated ring) | **Yes** | Isolated rings (not fused) are filtered out of `ring_bond_groups` in `frag_utils.py` to reduce noise. A cyclohexene or dihydropyranone that is not fused to another ring will not get cut=2. |
+| RDA heteroatom (isolated ring) | **Yes** | Same gap as above. |
+| Retro-ene carbonyl | No | Acyclic: bridge cut on the β-C bond gives the same heavy-atom partition; H-transfer handles the H redistribution. |
+| Cope [3,3] | Not feasible | Isomerization — no fragment ion produced directly. Would require feeding the isomer back into BFS as a new root; current prepass infrastructure does not support this. |
+| Claisen | Not feasible | Same: isomerization only, no direct fragment ion produced. |
+
+**Summary:** The only genuine coverage gap is **RDA on isolated (non-fused) rings**. All other
+rules are already covered by BFS cut=1/cut=2 + H-transfer, or are isomerizations that the
+current prepass cannot model.
+
+**Recommendation:** Do not add these rules to `FRAG_RULES` at this time.
+- Global wrecall improvement from the SMARTS prepass is already small / at diminishing returns
+  (confirmed after initial integration).
+- RDA on isolated rings is a narrow class; whether it is a high-miss class requires a targeted
+  wrecall analysis (filter NIST23 to isolated-cyclohexene-containing compounds, compare wrecall
+  vs. predicted).
+- Cope/Claisen would require a new "isomer prepass" layer before BFS — significant
+  infrastructure change for a rare reaction class in ESI-CID.
