@@ -121,6 +121,9 @@ fi
 if [ -n "${MIN_FRAG_ATOMS+x}" ]; then
     PREPARE_ARGS+=(--min_frag_atoms ${MIN_FRAG_ATOMS})
 fi
+if [ -n "${MAX_RING_CUT_STEPS+x}" ]; then
+    PREPARE_ARGS+=(--max_ring_cut_steps ${MAX_RING_CUT_STEPS})
+fi
 
 cd ${WORKING_DIR}
 python preproc_scripts/03_prepare_dag_feats.py "${PREPARE_ARGS[@]}"

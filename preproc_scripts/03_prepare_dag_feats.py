@@ -214,6 +214,7 @@ def main(args):
             args.max_cut_size,
             args.smarts_prepass,
             args.min_frag_atoms,
+            args.max_ring_cut_steps,
         ]
         for _, row in mol_df.iterrows()
     )
@@ -240,6 +241,7 @@ def main(args):
                 max_cut_size=args.max_cut_size,
                 smarts_prepass=args.smarts_prepass,
                 min_frag_atoms=args.min_frag_atoms,
+                max_ring_cut_steps=args.max_ring_cut_steps,
                 disable_tqdm=args.disable_tqdm,
             )
         with open(meta_info_fp, "w") as f:
@@ -729,6 +731,16 @@ if __name__ == "__main__":
             "Minimum number of heavy atoms a child fragment must have to be registered "
             "in the DAG. Fragments smaller than this threshold are silently dropped. "
             "0 disables the filter."
+        ),
+    )
+    parser.add_argument(
+        "--max_ring_cut_steps",
+        type=int,
+        default=2,
+        help=(
+            "Maximum number of BFS depth steps per root-to-leaf path that may use "
+            "ring-breaking cuts (cut_size >= 2). Limits chemically implausible "
+            "sequential ring openings. -1 disables the limit. Default: 2."
         ),
     )
     args = parser.parse_args()

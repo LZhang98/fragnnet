@@ -967,6 +967,7 @@ def compute_dags(
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
+    max_ring_cut_steps: int = 2,
 ) -> dict:
     """_summary_
 
@@ -1039,6 +1040,7 @@ def compute_dags(
                 smarts_seed_pairs=smarts_seed_pairs,
                 ring_bond_groups=ring_bond_groups,
                 min_frag_atoms=min_frag_atoms,
+                max_ring_cut_steps=max_ring_cut_steps,
             )
         )
     else:
@@ -1977,6 +1979,7 @@ def timed_get_dags(
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
+    max_ring_cut_steps: int = 2,
 ) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
@@ -1995,6 +1998,7 @@ def timed_get_dags(
             max_cut_size=max_cut_size,
             smarts_prepass=smarts_prepass,
             min_frag_atoms=min_frag_atoms,
+            max_ring_cut_steps=max_ring_cut_steps,
         )
         return mol_id, dag_d
     except KeyboardInterrupt as e:
@@ -2023,6 +2027,7 @@ def run_frag_gen_hdf5(
     max_cut_size: int,
     smarts_prepass: bool,
     min_frag_atoms: int,
+    max_ring_cut_steps: int = 2,
     disable_tqdm: bool = False,
 ) -> dict[str, list[int]]:
     """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
@@ -2068,6 +2073,7 @@ def run_frag_gen_hdf5(
             max_cut_size,
             smarts_prepass,
             min_frag_atoms,
+            max_ring_cut_steps,
         ]
         for _, row in mol_df.iterrows()
     )

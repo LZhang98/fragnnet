@@ -21,7 +21,13 @@ from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
 # ---------------------------------------------------------------------------
 
 
-def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3, min_frag_atoms: int = 0) -> dict:
+def _run(
+    smiles: str,
+    max_cut_size: int = 2,
+    max_depth: int = 3,
+    min_frag_atoms: int = 0,
+    max_ring_cut_steps: int = 2,
+) -> dict:
     """Run multi-cut BFS on a SMILES and return result components."""
     mol_d = extract_mol_info(smiles)
     ring_mask = mol_d["ring_bond_mask"]
@@ -39,6 +45,7 @@ def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3, min_frag_atoms:
         max_cut_size=max_cut_size,
         ring_bond_groups=ring_bond_groups,
         min_frag_atoms=min_frag_atoms,
+        max_ring_cut_steps=max_ring_cut_steps,
     )
     return {
         "nodes_mask": nodes_mask,
@@ -955,3 +962,60 @@ class TestMinFragAtoms:
             )
 
 
+# ---------------------------------------------------------------------------
+# TestRingCutBudget: max_ring_cut_steps limits sequential ring-breaking cuts
+# ---------------------------------------------------------------------------
+
+
+class TestRingCutBudget:
+    """max_ring_cut_steps caps how many BFS depth steps along any root-to-leaf
+    path may use ring-breaking cuts (cut_size >= 2).
+
+    budget=0: no ring cuts at all (only bridges).
+    budget=1: one ring-opening step per path.
+    budget=2: two ring-opening steps per path (default).
+    budget=999: effectively unlimited (same as no limit).
+    """
+
+    def test_budget_0_no_ring_cuts(self):
+        """max_ring_cut_steps=0 means no ring cuts → cyclohexane yields only root."""
+        r = _run("C1CCCCC1", max_cut_size=2, max_depth=3, max_ring_cut_steps=0)
+        assert len(r["nodes_mask"]) == 1, (
+            f"With budget=0 on cyclohexane, expected only root; got {len(r['nodes_mask'])} nodes"
+        )
+
+    def test_budget_1_fewer_fragments_than_budget_2(self):
+        """Naphthalene: budget=1 yields fewer fragments than budget=2."""
+        NAPHTHALENE = "c1ccc2ccccc2c1"
+        r1 = _run(NAPHTHALENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=1)
+        r2 = _run(NAPHTHALENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
+        assert len(r1["nodes_mask"]) < len(r2["nodes_mask"]), (
+            f"budget=1 ({len(r1['nodes_mask'])}) should produce fewer fragments "
+            f"than budget=2 ({len(r2['nodes_mask'])})"
+        )
+
+    def test_budget_large_equals_unlimited(self):
+        """budget >= max_depth gives the same result as budget=999 (no real limit)."""
+        PHENANTHRENE = "c1ccc2ccc3ccccc3c2c1"
+        r_depth = _run(PHENANTHRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=3)
+        r_large = _run(PHENANTHRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=999)
+        assert len(r_depth["nodes_mask"]) == len(r_large["nodes_mask"]), (
+            "budget=max_depth and budget=999 should produce identical fragment counts"
+        )
+
+    def test_cut1_always_allowed_at_budget_0(self):
+        """Bridge cuts (cut=1) are never counted against the ring cut budget."""
+        # methylcyclohexane: exocyclic C-C is a bridge; ring itself needs cut=2
+        # With budget=0 and max_cut_size=2: only the bridge fires → 2 fragments
+        r = _run("CC1CCCCC1", max_cut_size=2, max_depth=1, max_ring_cut_steps=0)
+        n_frags = len(r["nodes_mask"])
+        assert n_frags > 1, (
+            f"Bridge on methylcyclohexane should fire even with budget=0; got {n_frags} nodes"
+        )
+
+    def test_default_budget_2_matches_explicit(self):
+        """Calling with max_ring_cut_steps=2 (default) matches omitting the arg."""
+        IBUPROFEN = "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
+        r_default = _run(IBUPROFEN, max_cut_size=2, max_depth=3)
+        r_explicit = _run(IBUPROFEN, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
+        assert len(r_default["nodes_mask"]) == len(r_explicit["nodes_mask"])
