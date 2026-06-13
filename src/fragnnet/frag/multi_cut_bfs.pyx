@@ -517,6 +517,8 @@ def compute_ccs_multi_cut(
     cdef int n_live, n_ring, n_live_nodes
     cdef int n_ccs
     cdef int c
+    cdef int n_sys, child_id
+    cdef int live_ring_c[512]
 
     # Bridge-finding loop variables
     cdef int n_bridges, bi_b, bridge_e, child_v, ev, xv, node_k, edge_k
@@ -676,7 +678,9 @@ def compute_ccs_multi_cut(
                     child_edge_key = PyBytes_FromStringAndSize(
                         &cc_edges_s[c, 0], num_edges)
 
-                    if child_node_key not in css_to_id_dict:
+                    child_id = css_to_id_dict.get(child_node_key, -1)
+                    if child_id < 0:
+                        child_id = n_css_unique
                         css_to_id_dict[child_node_key] = n_css_unique
                         n_css_unique += 1
 
@@ -692,8 +696,7 @@ def compute_ccs_multi_cut(
                         queued_set.add(child_queue_key)
 
                     if cur_node_key != child_node_key:
-                        edge_pair = (cur_node_id,
-                                     css_to_id_dict[child_node_key])
+                        edge_pair = (cur_node_id, child_id)
                         if edge_pair not in dag_edge_dict:
                             dag_edge_dict[edge_pair] = current_depth + 1
 
@@ -712,17 +715,17 @@ def compute_ccs_multi_cut(
                 for ring_bonds in ring_bond_groups:
                     # Collect bonds from this SSSR ring that are live and
                     # not already identified as bridges (cut=1 candidates).
-                    live_ring = []
+                    n_sys = 0
                     for i in ring_bonds:
                         if cur_edge_mask_mv[i] == 1 and not disconnected_mv[i]:
-                            live_ring.append(i)
-                    n_sys = len(live_ring)
+                            live_ring_c[n_sys] = i
+                            n_sys += 1
                     if n_sys < 2:
                         continue
                     for ii in range(n_sys):
-                        i = live_ring[ii]
+                        i = live_ring_c[ii]
                         for jj in range(ii + 1, n_sys):
-                            j = live_ring[jj]
+                            j = live_ring_c[jj]
 
                             cur_edge_mask_mv[i] = 0
                             cur_edge_mask_mv[j] = 0
@@ -754,7 +757,9 @@ def compute_ccs_multi_cut(
                                 child_edge_key = PyBytes_FromStringAndSize(
                                     &cc_edges_s[c, 0], num_edges)
 
-                                if child_node_key not in css_to_id_dict:
+                                child_id = css_to_id_dict.get(child_node_key, -1)
+                                if child_id < 0:
+                                    child_id = n_css_unique
                                     css_to_id_dict[child_node_key] = n_css_unique
                                     n_css_unique += 1
 
@@ -770,8 +775,7 @@ def compute_ccs_multi_cut(
                                     queued_set.add(child_queue_key)
 
                                 if cur_node_key != child_node_key:
-                                    edge_pair = (cur_node_id,
-                                                 css_to_id_dict[child_node_key])
+                                    edge_pair = (cur_node_id, child_id)
                                     if edge_pair not in dag_edge_dict:
                                         dag_edge_dict[edge_pair] = current_depth + 1
 
@@ -782,19 +786,19 @@ def compute_ccs_multi_cut(
             if max_cut_size >= 3 and ring_bond_groups is not None and n_ring >= 3 and current_depth + 1 <= max_depth:
                 child_depth_bit = 1 << (current_depth + 1)
                 for ring_bonds in ring_bond_groups:
-                    live_ring = []
+                    n_sys = 0
                     for i in ring_bonds:
                         if cur_edge_mask_mv[i] == 1 and not disconnected_mv[i]:
-                            live_ring.append(i)
-                    n_sys = len(live_ring)
+                            live_ring_c[n_sys] = i
+                            n_sys += 1
                     if n_sys < 3:
                         continue
                     for ii in range(n_sys):
-                        i = live_ring[ii]
+                        i = live_ring_c[ii]
                         for jj in range(ii + 1, n_sys):
-                            j = live_ring[jj]
+                            j = live_ring_c[jj]
                             for kk in range(jj + 1, n_sys):
-                                k = live_ring[kk]
+                                k = live_ring_c[kk]
 
                                 cur_edge_mask_mv[i] = 0
                                 cur_edge_mask_mv[j] = 0
@@ -828,7 +832,9 @@ def compute_ccs_multi_cut(
                                     child_edge_key = PyBytes_FromStringAndSize(
                                         &cc_edges_s[c, 0], num_edges)
 
-                                    if child_node_key not in css_to_id_dict:
+                                    child_id = css_to_id_dict.get(child_node_key, -1)
+                                    if child_id < 0:
+                                        child_id = n_css_unique
                                         css_to_id_dict[child_node_key] = n_css_unique
                                         n_css_unique += 1
 
@@ -844,8 +850,7 @@ def compute_ccs_multi_cut(
                                         queued_set.add(child_queue_key)
 
                                     if cur_node_key != child_node_key:
-                                        edge_pair = (cur_node_id,
-                                                     css_to_id_dict[child_node_key])
+                                        edge_pair = (cur_node_id, child_id)
                                         if edge_pair not in dag_edge_dict:
                                             dag_edge_dict[edge_pair] = current_depth + 1
 
