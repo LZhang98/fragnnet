@@ -212,6 +212,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.out_degree_embedder = get_embedder(int_embedder, **dag_degree_d)
         self.in_degree_embedder = get_embedder(int_embedder, **dag_degree_d)
         self.num_heavy_atoms_embedder = get_embedder(int_embedder, **num_heavy_atoms_d)
+        if "frag_q" in frag_node_feats:
+            self.frag_q_proj = nn.Linear(1, self.out_degree_embedder.num_dim)
         self.frag_node_feats = frag_node_feats
         self.frag_edge_feats = frag_edge_feats
         self._compute_frag_feats_sizes()
@@ -491,6 +493,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_node_feats_size += self.in_degree_embedder.num_dim
         if "num_heavy_atoms" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_heavy_atoms_embedder.num_dim
+        if "frag_q" in self.frag_node_feats:
+            self.frag_node_feats_size += self.out_degree_embedder.num_dim
         # edges
         self.frag_edge_feats_size = 0
         if "cc" in self.frag_edge_feats:
@@ -521,6 +525,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.m_ce_embedder = th.compile(self.m_ce_embedder, **kwargs)
         if hasattr(self, "boundary_pair_proj"):
             self.boundary_pair_proj = th.compile(self.boundary_pair_proj, **kwargs)
+        if hasattr(self, "frag_q_proj"):
+            self.frag_q_proj = th.compile(self.frag_q_proj, **kwargs)
         if check_pyg_compile():
             self.mol_embedder = pyg.compile(self.mol_embedder, **kwargs)  # type: ignore[assignment]
             self.frag_embedder = pyg.compile(self.frag_embedder, **kwargs)  # type: ignore[assignment]
@@ -934,6 +940,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                         batch_frag_num_nodes, -1
                     )
                 )
+            )
+        if "frag_q" in self.frag_node_feats:
+            frag_ndata.append(
+                self.frag_q_proj(frag_pyg.frag_q.to(device=device, dtype=float_dtype))
             )
         # edge complement
         if "complement" in self.frag_edge_feats:

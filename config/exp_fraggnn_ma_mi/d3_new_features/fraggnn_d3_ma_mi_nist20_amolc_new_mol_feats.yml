@@ -38,6 +38,7 @@ wandb_tags:
 - a_charge       # new: Gasteiger partial charge (continuous)
 - b_ring         # new: bond ring membership
 - b_conj         # new: bond conjugation
+- frag_q         # new: per-fragment Gasteiger charge sum (charge-routing prior)
 
 # ============================================================================
 # Data File Paths
@@ -87,6 +88,7 @@ frag_params:
     - h_formulae_idx
     - cmf_h_formulae_idx
     - boundary_pair
+    - frag_q         # per-fragment Gasteiger charge sum; computed on-the-fly, no DAG recomputation
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False

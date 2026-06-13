@@ -29,6 +29,7 @@ from fragnnet.utils.frag_utils import (
     NODE_FEAT_TO_IDX,
     get_edge_feats,
     get_node_feats,
+    th_long_to_mask,
 )
 
 # TODO: remove this registry
@@ -830,6 +831,7 @@ def get_frag_graph(
     frag_edge_feats: Sequence[str],
     edges: bool,
     bigraph: bool,
+    gasteiger_arr: np.ndarray | None = None,
 ) -> Data:
     """Subselect DAG features and optionally symmetrize edges for fragments.
 
@@ -839,6 +841,8 @@ def get_frag_graph(
         frag_edge_feats: Sequence of edge feature names to include.
         edges: Whether to include edges in the output graph.
         bigraph: Whether to symmetrize edges by adding reverse directions.
+        gasteiger_arr: Per-atom Gasteiger partial charges of shape (num_atoms,).
+            Required when "frag_q" is in frag_node_feats; zeros used if None.
 
     Returns:
         PyTorch Geometric Data object with selected features and optionally symmetrized edges.
@@ -881,7 +885,10 @@ def get_frag_graph(
             _node_feat_size += _x_cur.shape[1]
             # print(feat,feat_idx,_node_feat_size)
         _node_feat_idxs.append(_node_feat_size)
-    _x = th.cat(_x, dim=1)
+    if len(_x) == 0:
+        _x = th.zeros(num_nodes, 0, device=device, dtype=th.int64)
+    else:
+        _x = th.cat(_x, dim=1)
     _node_feat_idxs = th.tensor(_node_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
     # select edge features
     _edge_index = edge_index.clone()
@@ -924,6 +931,15 @@ def get_frag_graph(
     for attr_name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
         if hasattr(source_dag_pyg, attr_name):
             setattr(dag_pyg, attr_name, getattr(source_dag_pyg, attr_name))
+    if "frag_q" in frag_node_feats:
+        if gasteiger_arr is None:
+            frag_q = th.zeros(num_nodes, 1, dtype=th.float32, device=device)
+        else:
+            cc_long = get_node_feats(x, node_feat_idxs[0], "cc").long()
+            cc_binary = th_long_to_mask(cc_long)[:, : len(gasteiger_arr)].float()
+            g_arr = th.as_tensor(gasteiger_arr, dtype=th.float32, device=device)
+            frag_q = (cc_binary @ g_arr).unsqueeze(1)
+        dag_pyg.frag_q = frag_q
     return dag_pyg
 
 
