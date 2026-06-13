@@ -9,6 +9,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 import torch_geometric as pyg
+from rdkit.Chem import AllChem
 from torch_geometric.data import Batch
 from tqdm import tqdm
 
@@ -263,7 +264,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 total=len(self.frag_entries),
                 disable=not self.enable_progress_bar,
             ):
-                frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
+                frag_data = self._process_neutral_frag(self.frag_entries.pop(k), mol=self.mol_df.loc[k]["mol"])
                 total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
                 self.frag_data[k] = frag_data
             logger.info(f"> total_frag_data_size: {total_frag_data_size / 1e6:.2f} MB")
@@ -315,7 +316,7 @@ class SpecMolFragDataset(SpecMolDataset):
         elif self.frag_params["preload"]:
             frag_entry = self.frag_entries[mol_id]
             # frag_entry['frag_pyg'] = frag_entry['frag_pyg'].clone() # clone to avoid modifying the original one
-            frag_data = self._process_neutral_frag(frag_entry)
+            frag_data = self._process_neutral_frag(frag_entry, mol=mol_entry["mol"])
             frag_data = self._apply_fragment_mz_change(
                 frag_data,
                 spec_entry["prec_type"],
@@ -324,7 +325,7 @@ class SpecMolFragDataset(SpecMolDataset):
             )
         else:
             frag_entry = self._load_frag_entry(mol_id)
-            frag_data = self._process_neutral_frag(frag_entry)
+            frag_data = self._process_neutral_frag(frag_entry, mol=mol_entry["mol"])
             frag_data = self._apply_fragment_mz_change(
                 frag_data,
                 spec_entry["prec_type"],
@@ -374,7 +375,7 @@ class SpecMolFragDataset(SpecMolDataset):
         else:
             return load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
 
-    def _process_neutral_frag(self, frag_entry: dict) -> dict:
+    def _process_neutral_frag(self, frag_entry: dict, mol=None) -> dict:
         """
         Process the fragmentation dictionary to generate neutral fragment data.
 
@@ -382,6 +383,8 @@ class SpecMolFragDataset(SpecMolDataset):
         such as formula peak probabilities, formula strings, and m/z values.
         Args:
             frag_entry (dict): Fragmentation entry containing the DAG and related data.
+            mol: RDKit Mol object for the molecule. Required when "frag_q" is in
+                pyg_node_feats to compute per-fragment Gasteiger charge sums.
 
         Returns:
             dict: A dictionary containing processed fragmentation data, including:
@@ -394,12 +397,21 @@ class SpecMolFragDataset(SpecMolDataset):
         # case use frag dags as second gnn
         if self.frag_params["pyg"]:
             frag_pyg = frag_entry["dag"]
+            gasteiger_arr = None
+            if mol is not None and "frag_q" in self.frag_params["pyg_node_feats"]:
+                AllChem.ComputeGasteigerCharges(mol)
+                charges = np.array(
+                    [a.GetDoubleProp("_GasteigerCharge") for a in mol.GetAtoms()],
+                    dtype=np.float32,
+                )
+                gasteiger_arr = np.where(np.isfinite(charges), charges, 0.0).astype(np.float32)
             frag_pyg = get_frag_graph(
                 frag_pyg,
                 self.frag_params["pyg_node_feats"],
                 self.frag_params["pyg_edge_feats"],
                 self.frag_params["pyg_edges"],
                 self.frag_params["pyg_bigraph"],
+                gasteiger_arr=gasteiger_arr,
             )
             frag_data["frag_pyg"] = frag_pyg
 
