@@ -133,17 +133,16 @@ if __name__ == "__main__":
         smiles = args.compound_smiles
 
     # import pdb; pdb.set_trace()
-    frag_kw_d = dict(
-        max_depth=args.max_depth,
-        h_prior=args.h_prior,
-        max_h_transfer=args.max_h_transfer,
-        max_time=args.max_time,
-        isotopes=args.isotopes,
-        nb_isomorphic=args.nb_isomorphic,
-        wl_max_iterations=args.wl_max_iterations,
-        multi_cut_bfs=args.multi_cut_bfs,
-        max_cut_size=args.max_cut_size,
-        smarts_prepass=args.smarts_prepass,
-    )
+    frag_kw_d = {}
+    frag_kw_d["max_depth"] = args.max_depth
+    frag_kw_d["h_prior"] = args.h_prior
+    frag_kw_d["max_h_transfer"] = args.max_h_transfer
+    frag_kw_d["max_time"] = args.max_time
+    frag_kw_d["isotopes"] = args.isotopes
+    frag_kw_d["nb_isomorphic"] = args.nb_isomorphic
+    frag_kw_d["wl_max_iterations"] = args.wl_max_iterations
+    frag_kw_d["multi_cut_bfs"] = args.multi_cut_bfs
+    frag_kw_d["max_cut_size"] = args.max_cut_size
+    frag_kw_d["smarts_prepass"] = args.smarts_prepass
 
     dag_d = run_frag(smiles, **frag_kw_d)
