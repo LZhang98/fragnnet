@@ -25,7 +25,7 @@ def run_frag(smiles, **kwargs):
         max_time=kwargs.get("max_time"),
         isotopes=kwargs.get("isotopes", False),
         nb_isomorphic=kwargs.get("nb_isomorphic", False),
-        wl_max_iterations=kwargs.get("wl_max_iterations", 3),
+        wl_max_iterations=kwargs.get("wl_max_iterations", 0),
         multi_cut_bfs=kwargs.get("multi_cut_bfs", False),
         max_cut_size=kwargs.get("max_cut_size", 2),
         smarts_prepass=kwargs.get("smarts_prepass", False),
