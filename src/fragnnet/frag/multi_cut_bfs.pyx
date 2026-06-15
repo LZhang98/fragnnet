@@ -23,8 +23,9 @@ Key implementation improvements over the Python version
   ``malloc``/``free`` and dict storage of mask arrays.
 - ``PyBytes_FromStringAndSize`` for child key creation — direct C API, no buffer
   protocol overhead from ``bytes(memoryview_slice)``.
-- ``queued_set`` prevents duplicate BFS queue entries: each ``(node_key, edge_key)``
-  pair is enqueued at most once, eliminating O(r²) duplicates for fused ring systems.
+- ``min_rc_for_key`` maps each ``(node_key, edge_key)`` to the minimum ring_cuts seen
+  across all paths, ensuring each fragment state is enqueued and processed exactly once
+  (with the lowest ring-cut count, which allows the most future ring cuts).
 - ``cur_node_id`` cached once per BFS node (avoids repeated dict lookup).
 - ``n_css_unique`` C-int counter replaces ``len(css_to_id_dict)`` in the hot path.
 - Cut=1 replaced by Tarjan's bridge-finding algorithm: O(V+E) DFS identifies all
@@ -410,8 +411,7 @@ def compute_ccs_multi_cut(
             no limit.
         ring_edge_mask: Shape ``(num_edges,)`` uint8 — 1 for ring bonds.
             If ``None``, behaves like single-bond BFS.
-        max_cut_size: Max simultaneous bond breaks per step (1, 2, or 3).
-            Cut=3 is restricted to depth 0 to prevent O(R³) blowup.
+        max_cut_size: Max simultaneous bond breaks per step (1 or 2).
         smarts_seed_pairs: Optional list of ``(node_mask_a, node_mask_b)``
             uint8 numpy array pairs pre-computed by ``_apply_smarts_prepass``
             in Python.  Each pair is injected as a depth-1 DAG child pair
@@ -496,25 +496,23 @@ def compute_ccs_multi_cut(
     css_to_id_dict  = {root_node_key: 0}
     ccs_depth_bits  = {root_node_key: 1}   # bit 0 = depth 0 for root
     ccs_min_depth   = {root_node_key: 0}
-    # queued_set tracks every (node_key, edge_key) pair ever appended to the
-    # BFS queue.  Each unique pair is enqueued at most once, eliminating the
-    # O(r²) duplicate entries that fused ring systems previously produced.
-    queued_set      = {(root_node_key, root_edge_key, 0)}
-    # Per-cut-size ring-cut counters: (node_key, edge_key) → min steps of that
-    # cut size used to reach the state.  Only allocated when the corresponding
-    # limit is active; bridge cuts never increment either counter.
+    # min_rc_for_key: (node_key, edge_key) → minimum ring_cuts value seen across all
+    # paths that reach this fragment state.  Only the first (minimum) ring_cuts path
+    # adds the state to depth_queue; later paths with equal/higher ring_cuts are
+    # skipped entirely, so each state is processed exactly once.
+    min_rc_for_key  = {(root_node_key, root_edge_key): 0}
     dag_edge_dict   = {}
 
     # depth_queue[d] = list of (node_key, edge_key) pairs to process at depth d.
     # A cut=k bond break at depth d places children at depth d+k (cut weight = depth
     # consumed), preventing compounding multi-cuts across depths.
-    depth_queue = [[(root_node_key, root_edge_key, 0)]] + [[] for _ in range(max_depth)]
+    depth_queue = [[(root_node_key, root_edge_key)]] + [[] for _ in range(max_depth)]
 
     # -----------------------------------------------------------------------
     # C-level loop variables
     # -----------------------------------------------------------------------
     cdef int current_depth
-    cdef int i, j, k, ii, jj, kk
+    cdef int i, j, ii, jj, kk
     cdef int n_live, n_ring, n_live_nodes
     cdef int n_ccs
     cdef int c
@@ -559,7 +557,8 @@ def compute_ccs_multi_cut(
     # -----------------------------------------------------------------------
     for current_depth in range(max_depth):
 
-        for cur_node_key, cur_edge_key, cur_ring_cuts in depth_queue[current_depth]:
+        for cur_node_key, cur_edge_key in depth_queue[current_depth]:
+            cur_ring_cuts = min_rc_for_key[(cur_node_key, cur_edge_key)]
             cur_time = _get_time()
             if time_limit > 0 and cur_time - start_time > time_limit:
                 force_stop = True
@@ -692,10 +691,11 @@ def compute_ccs_multi_cut(
                     else:
                         ccs_depth_bits[child_node_key] |= child_depth_bit
 
-                    child_queue_key = (child_node_key, child_edge_key, cur_ring_cuts)
-                    if child_queue_key not in queued_set:
-                        depth_queue[current_depth + 1].append((child_node_key, child_edge_key, cur_ring_cuts))
-                        queued_set.add(child_queue_key)
+                    child_queue_key = (child_node_key, child_edge_key)
+                    if cur_ring_cuts < min_rc_for_key.get(child_queue_key, 999):
+                        if child_queue_key not in min_rc_for_key:
+                            depth_queue[current_depth + 1].append(child_queue_key)
+                        min_rc_for_key[child_queue_key] = cur_ring_cuts
 
                     if cur_node_key != child_node_key:
                         edge_pair = (cur_node_id, child_id)
@@ -771,90 +771,18 @@ def compute_ccs_multi_cut(
                                 else:
                                     ccs_depth_bits[child_node_key] |= child_depth_bit
 
-                                child_queue_key = (child_node_key, child_edge_key, cur_ring_cuts + 1)
-                                if child_queue_key not in queued_set:
-                                    depth_queue[current_depth + 1].append((child_node_key, child_edge_key, cur_ring_cuts + 1))
-                                    queued_set.add(child_queue_key)
+                                child_queue_key = (child_node_key, child_edge_key)
+                                child_rc = cur_ring_cuts + 1
+                                if child_rc < min_rc_for_key.get(child_queue_key, 999):
+                                    if child_queue_key not in min_rc_for_key:
+                                        depth_queue[current_depth + 1].append(child_queue_key)
+                                    min_rc_for_key[child_queue_key] = child_rc
 
                                 if cur_node_key != child_node_key:
                                     edge_pair = (cur_node_id, child_id)
                                     if edge_pair not in dag_edge_dict:
                                         dag_edge_dict[edge_pair] = current_depth + 1
 
-            # -----------------------------------------------------------
-            # Cut = 3: triples of ring bonds within the same SSSR ring.
-            # Cut=3 consumes 1 depth unit: children land at current_depth+1.
-            # -----------------------------------------------------------
-            if max_cut_size >= 3 and ring_bond_groups is not None and n_ring >= 3 and current_depth + 1 <= max_depth and cur_ring_cuts < max_ring_cut_steps:
-                child_depth_bit = 1 << (current_depth + 1)
-                for ring_bonds in ring_bond_groups:
-                    n_sys = 0
-                    for i in ring_bonds:
-                        if cur_edge_mask_mv[i] == 1 and not disconnected_mv[i]:
-                            live_ring_c[n_sys] = i
-                            n_sys += 1
-                    if n_sys < 3:
-                        continue
-                    for ii in range(n_sys):
-                        i = live_ring_c[ii]
-                        for jj in range(ii + 1, n_sys):
-                            j = live_ring_c[jj]
-                            for kk in range(jj + 1, n_sys):
-                                k = live_ring_c[kk]
-
-                                cur_edge_mask_mv[i] = 0
-                                cur_edge_mask_mv[j] = 0
-                                cur_edge_mask_mv[k] = 0
-                                _zero_scratch_live(
-                                    n_live_nodes, n_live, live_node_arr, live_arr,
-                                    cc_nodes_s, cc_edges_s,
-                                )
-                                n_ccs = _cc_uf(
-                                    num_nodes, num_edges,
-                                    cur_node_mask_mv, edges_mv, cur_edge_mask_mv,
-                                    cc_nodes_s, cc_edges_s,
-                                )
-                                cur_edge_mask_mv[i] = 1
-                                cur_edge_mask_mv[j] = 1
-                                cur_edge_mask_mv[k] = 1
-
-                                if n_ccs != 2:
-                                    continue
-
-                                for c in range(2):
-                                    child_n_atoms = 0
-                                    for kk in range(n_live_nodes):
-                                        if cc_nodes_s[c, live_node_arr[kk]]:
-                                            child_n_atoms += 1
-                                    if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
-                                        continue
-
-                                    child_node_key = PyBytes_FromStringAndSize(
-                                        &cc_nodes_s[c, 0], num_nodes)
-                                    child_edge_key = PyBytes_FromStringAndSize(
-                                        &cc_edges_s[c, 0], num_edges)
-
-                                    child_id = css_to_id_dict.get(child_node_key, -1)
-                                    if child_id < 0:
-                                        child_id = n_css_unique
-                                        css_to_id_dict[child_node_key] = n_css_unique
-                                        n_css_unique += 1
-
-                                    if child_node_key not in ccs_min_depth:
-                                        ccs_min_depth[child_node_key] = current_depth + 1
-                                        ccs_depth_bits[child_node_key] = child_depth_bit
-                                    else:
-                                        ccs_depth_bits[child_node_key] |= child_depth_bit
-
-                                    child_queue_key = (child_node_key, child_edge_key, cur_ring_cuts + 1)
-                                    if child_queue_key not in queued_set:
-                                        depth_queue[current_depth + 1].append((child_node_key, child_edge_key, cur_ring_cuts + 1))
-                                        queued_set.add(child_queue_key)
-
-                                    if cur_node_key != child_node_key:
-                                        edge_pair = (cur_node_id, child_id)
-                                        if edge_pair not in dag_edge_dict:
-                                            dag_edge_dict[edge_pair] = current_depth + 1
 
         # -------------------------------------------------------------------
         # SMARTS prepass injection (depth 0 only).
@@ -889,10 +817,11 @@ def compute_ccs_multi_cut(
                     else:
                         ccs_depth_bits[child_node_key] |= (1 << 1)
 
-                    child_queue_key = (child_node_key, child_edge_key, 0)
-                    if child_queue_key not in queued_set:
-                        depth_queue[1].append((child_node_key, child_edge_key, 0))
-                        queued_set.add(child_queue_key)
+                    child_queue_key = (child_node_key, child_edge_key)
+                    if 0 < min_rc_for_key.get(child_queue_key, 999):
+                        if child_queue_key not in min_rc_for_key:
+                            depth_queue[1].append(child_queue_key)
+                        min_rc_for_key[child_queue_key] = 0
 
                     edge_pair = (css_to_id_dict[root_node_key],
                                  css_to_id_dict[child_node_key])

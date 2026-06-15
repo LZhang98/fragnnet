@@ -662,7 +662,6 @@ class TestPolycyclicCages:
     Adamantane (C10, 12 bonds) is 3-edge-connected:
       - cut=1 finds 0 bridges.
       - cut=2 finds only 1+9 splits (isolating one CH2 group at a time).
-      - cut=3 finds many more fragments.
 
     Norbornane (C7, 8 bonds, bicyclo[2.2.1]heptane) is 2-edge-connected:
       - cut=1 finds 0 bridges.
@@ -690,15 +689,6 @@ class TestPolycyclicCages:
         # 6 CH2 groups × 2 children = 12 unique non-root fragments
         assert len(r["nodes_mask"]) - 1 == 12
 
-    def test_adamantane_cut3_same_as_cut2_at_depth1(self):
-        """Cut=3 on adamantane with SSSR grouping: within-ring triples cannot
-        disconnect the cage (bridge bonds outside the SSSR ring keep it connected).
-        At max_depth=1 (one multi-cut step), cut=3 produces the same fragments as cut=2.
-        """
-        r2 = _run(self.ADAMANTANE, max_cut_size=2, max_depth=1)
-        r3 = _run(self.ADAMANTANE, max_cut_size=3, max_depth=1)
-        assert len(r3["nodes_mask"]) == len(r2["nodes_mask"])
-
     def test_norbornane_no_cut1_bridges(self):
         r = _run(self.NORBORNANE, max_cut_size=1, max_depth=1)
         assert len(r["nodes_mask"]) == 1
@@ -712,7 +702,7 @@ class TestPolycyclicCages:
             )
 
     def test_norbornane_no_duplicates(self):
-        r = _run(self.NORBORNANE, max_cut_size=3, max_depth=1)
+        r = _run(self.NORBORNANE, max_cut_size=2, max_depth=2)
         nm = r["nodes_mask"]
         rows = [bytes(nm[i]) for i in range(len(nm))]
         assert len(rows) == len(set(rows))
@@ -856,52 +846,7 @@ class TestDepthBitsConsistencyMultiMol:
 
 
 # ---------------------------------------------------------------------------
-# Test 17: cut=3 triple-bond cuts
-# ---------------------------------------------------------------------------
-
-
-class TestCut3TripleBonds:
-    """max_cut_size=3 unlocks triple simultaneous ring-bond cuts at depth 0."""
-
-    def test_adamantane_cut3_unlocks_new_sizes(self):
-        """Adamantane with SSSR grouping: within-ring triple cuts cannot
-        disconnect the cage because bridge bonds outside the SSSR ring keep
-        it connected. cut=3 produces the same sizes as cut=2 ({1, 9}).
-        Cross-ring triples (old ring-system behaviour) are no longer tried.
-
-        max_depth=1 so only one multi-cut step fires — sequential cuts at deeper
-        depths would unlock additional fragment sizes via chained ring openings.
-        """
-        r2 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=2, max_depth=1)
-        r3 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=3, max_depth=1)
-        counts2 = set(_atom_counts(r2["nodes_mask"]))
-        counts3 = set(_atom_counts(r3["nodes_mask"]))
-        assert counts3 == counts2, (
-            f"Expected same sizes for cut=2 and cut=3 on adamantane, "
-            f"got cut2={sorted(counts2)} cut3={sorted(counts3)}"
-        )
-
-    def test_cut3_no_duplicates(self):
-        r = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=3, max_depth=1)
-        nm = r["nodes_mask"]
-        rows = [bytes(nm[i]) for i in range(len(nm))]
-        assert len(rows) == len(set(rows))
-
-    def test_cut3_all_fragments_valid_size(self):
-        r = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=3, max_depth=1)
-        total = r["num_nodes"]
-        for i in range(1, len(r["nodes_mask"])):
-            c = int(r["nodes_mask"][i].sum())
-            assert 0 < c < total
-
-    def test_norbornane_cut3_more_than_cut2(self):
-        r2 = _run("C1CC2CCC1C2", max_cut_size=2, max_depth=1)
-        r3 = _run("C1CC2CCC1C2", max_cut_size=3, max_depth=1)
-        assert len(r3["nodes_mask"]) >= len(r2["nodes_mask"])
-
-
-# ---------------------------------------------------------------------------
-# Test 18: min_frag_atoms filter
+# Test 17: min_frag_atoms filter
 # ---------------------------------------------------------------------------
 
 
@@ -1019,3 +964,91 @@ class TestRingCutBudget:
         r_default = _run(IBUPROFEN, max_cut_size=2, max_depth=3)
         r_explicit = _run(IBUPROFEN, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
         assert len(r_default["nodes_mask"]) == len(r_explicit["nodes_mask"])
+
+
+# ---------------------------------------------------------------------------
+# Test 19: min_rc_for_key dedup — each (node_key, edge_key) processed once
+# ---------------------------------------------------------------------------
+
+
+class TestMinRcDedup:
+    """Regression and performance tests for the min_rc_for_key dedup fix.
+
+    The old queued_set used 3-tuples (node_key, edge_key, ring_cuts), so the
+    same fragment reachable via paths with different ring_cuts values was enqueued
+    and fully processed multiple times (up to max_ring_cut_steps+1 = 3x overhead).
+
+    The fix: min_rc_for_key maps (node_key, edge_key) → minimum ring_cuts seen.
+    A fragment is enqueued exactly once and processed with its lowest ring_cuts,
+    which is optimal (allows the most future ring cuts) and correct (superset of
+    what any higher ring_cuts value would generate).
+    """
+
+    # Regression anchors — fragment counts measured after the fix; must stay stable.
+    REGRESSION = [
+        ("c1ccc2ccccc2c1", 3, 536),               # naphthalene
+        ("c1ccc2cc3ccccc3cc2c1", 3, 1205),         # anthracene
+        ("c1cc2ccc3cccc4ccc(c1)c2c34", 3, 605),    # pyrene
+        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 3, 3500), # androstane (4 fused rings)
+    ]
+
+    def test_regression_fragment_counts(self):
+        """Fragment counts are stable across refactors of the BFS queue."""
+        for smiles, max_depth, expected in self.REGRESSION:
+            r = _run(smiles, max_cut_size=2, max_depth=max_depth, max_ring_cut_steps=2)
+            n = len(r["nodes_mask"])
+            assert n == expected, f"{smiles!r}: expected {expected} nodes, got {n}"
+
+    def test_no_duplicates_large_fused_systems(self):
+        """No duplicate fragment masks in large polycyclic systems."""
+        for smiles, max_depth, _ in self.REGRESSION:
+            r = _run(smiles, max_cut_size=2, max_depth=max_depth, max_ring_cut_steps=2)
+            nm = r["nodes_mask"]
+            rows = [bytes(nm[i]) for i in range(len(nm))]
+            assert len(rows) == len(set(rows)), f"Duplicate fragment masks in {smiles!r}"
+
+    def test_deep_bfs_completes_fast(self):
+        """Deep BFS on anthracene must finish in < 5 s.
+
+        The 3-tuple dedup bug caused fragments to be processed up to
+        max_ring_cut_steps+1 = 3 times, each time re-running Tarjan bridge-finding
+        and the O(k²) cut=2 ring-pair enumeration.  With the fix each fragment
+        is processed exactly once.
+        """
+        import time
+
+        smiles = "c1ccc2cc3ccccc3cc2c1"  # anthracene, 3 fused rings
+        start = time.perf_counter()
+        r = _run(smiles, max_cut_size=2, max_depth=6, max_ring_cut_steps=2)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 5.0, (
+            f"Deep BFS on anthracene took {elapsed:.2f}s — possible dedup regression "
+            f"(queued_set reverted to 3-tuple?). Got {len(r['nodes_mask'])} frags."
+        )
+        assert len(r["nodes_mask"]) == 7142
+
+    def test_budget_monotonicity_on_fused_rings(self):
+        """Higher ring_cut budget always produces >= fragment count.
+
+        This verifies that the min_rc semantics apply correctly: each fragment
+        is processed with its minimum ring_cuts, giving the most permissive
+        budget for its descendants.
+        """
+        for smiles, max_depth, _ in self.REGRESSION:
+            r0 = _run(smiles, max_cut_size=2, max_depth=max_depth, max_ring_cut_steps=0)
+            r1 = _run(smiles, max_cut_size=2, max_depth=max_depth, max_ring_cut_steps=1)
+            r2 = _run(smiles, max_cut_size=2, max_depth=max_depth, max_ring_cut_steps=2)
+            n0, n1, n2 = len(r0["nodes_mask"]), len(r1["nodes_mask"]), len(r2["nodes_mask"])
+            assert n0 <= n1 <= n2, (
+                f"{smiles!r}: non-monotone fragment counts across budgets: "
+                f"rc=0→{n0}, rc=1→{n1}, rc=2→{n2}"
+            )
+
+    def test_fragment_count_deterministic(self):
+        """Running BFS twice on the same molecule returns the same fragment count."""
+        PYRENE = "c1cc2ccc3cccc4ccc(c1)c2c34"
+        r1 = _run(PYRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
+        r2 = _run(PYRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
+        assert len(r1["nodes_mask"]) == len(r2["nodes_mask"]), (
+            "Fragment count is non-deterministic — dict ordering issue?"
+        )

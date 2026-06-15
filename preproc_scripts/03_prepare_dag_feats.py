@@ -8,7 +8,6 @@ from typing import cast
 import lmdb
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
@@ -278,57 +277,85 @@ def main(args):
     frag_results_iter = cast("list[tuple[str, dict]]", frag_results_gen)
     frag_results = []
     meta_info = {}
-    for fr in progress_wrapper(
-        frag_results_iter,
-        total=mol_df.shape[0],
-        desc="Compute Frags",
-        disable_tqdm=args.disable_tqdm,
+    oom_mol_ids = []
+    n_total = mol_df.shape[0]
+    _STATS_KEYS = {
+        "max_depth",
+        "formula_peak_mzs",
+        "formula_peak_probs",
+        "idx_to_formula",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_sparsity",
+        "dag_num_nodes_nb",
+        "formula_redundancy",
+        "idx_by_h_delta",
+    }
+    meta_info_checkpoint_fp = os.path.join(args.frag_dp, "meta_info_checkpoint.json")
+    for i, fr in enumerate(
+        progress_wrapper(
+            frag_results_iter,
+            total=n_total,
+            desc="Compute Frags",
+            disable_tqdm=True,  # Always disable tqdm for this loop to avoid issues with parallel processing
+        )
     ):
         mol_id, dag_d = fr
 
+        # Log before any processing so the last entry in the log identifies the OOM culprit.
+        logging.debug(f"Processing mol_id={mol_id} ({i + 1}/{n_total})")
+
+        if (i + 1) % 50 == 0 or (i + 1) == n_total:
+            logging.info(f"Processed {i + 1}/{n_total} molecules")
+
+        stats_row: dict = {}
         if len(dag_d) == 0:
-            print("error in ", mol_id)
+            logging.warning(f"Fragmentation failed for mol_id={mol_id}")
         else:
             meta_info[mol_id] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
-            if args.use_lmdb:
-                if txn is None or env is None:
-                    raise RuntimeError("LMDB environment was not initialized")
-                txn.put(
-                    f"{int(mol_id)}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
-                )
-                if (int(mol_id) + 1) % 200 == 0:
-                    txn.commit()
-                    txn = env.begin(write=True)
-            elif args.use_hdf5:
-                if h5_file is None:
-                    raise RuntimeError("HDF5 file was not initialized")
-                grp = h5_file.create_group(f"{int(mol_id)}")
-                frag_utils.dump_dag_hdf5(grp, dag_d)
-            else:
-                # Write one artifact per molecule when LMDB storage is disabled.
-                fp = frag_utils.get_dag_output_path(
-                    dag_dp=dag_dp,
-                    mol_id=mol_id,
-                    compress_dags=args.compress_dags,
-                    compress_format=args.compress_format,
-                )
-                frag_utils.dump_dag_pickle(fp, dag_d)
+            if not args.skip_stats:
+                stats_row = {k: dag_d[k] for k in _STATS_KEYS if k in dag_d}
+            try:
+                if args.use_lmdb:
+                    if txn is None or env is None:
+                        raise RuntimeError("LMDB environment was not initialized")
+                    txn.put(
+                        f"{int(mol_id)}".encode(),
+                        pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL),
+                    )
+                    if (int(mol_id) + 1) % 200 == 0:
+                        txn.commit()
+                        txn = env.begin(write=True)
+                elif args.use_hdf5:
+                    if h5_file is None:
+                        raise RuntimeError("HDF5 file was not initialized")
+                    grp = h5_file.create_group(f"{int(mol_id)}")
+                    frag_utils.dump_dag_hdf5(grp, dag_d)
+                else:
+                    # Write one artifact per molecule when LMDB storage is disabled.
+                    fp = frag_utils.get_dag_output_path(
+                        dag_dp=dag_dp,
+                        mol_id=mol_id,
+                        compress_dags=args.compress_dags,
+                        compress_format=args.compress_format,
+                    )
+                    frag_utils.dump_dag_pickle(fp, dag_d)
+            except MemoryError:
+                logging.error(f"OOM (MemoryError) writing DAG for mol_id={mol_id} — skipping")
+                oom_mol_ids.append(mol_id)
+                stats_row = {}
+            finally:
+                # Release the large DAG dict immediately — do not hold it for the rest of
+                # the loop iteration, as this is the dominant per-molecule memory consumer.
+                del dag_d
+
         if not args.skip_stats:
-            # Only retain the lightweight stats keys — the DGL graph (dag_d["dag"])
-            # is already serialised to disk above and must not be held in memory.
-            _STATS_KEYS = {
-                "max_depth",
-                "formula_peak_mzs",
-                "formula_peak_probs",
-                "idx_to_formula",
-                "dag_num_edges",
-                "dag_num_nodes",
-                "dag_sparsity",
-                "dag_num_nodes_nb",
-                "formula_redundancy",
-                "idx_by_h_delta",
-            }
-            frag_results.append({k: dag_d[k] for k in _STATS_KEYS if k in dag_d})
+            frag_results.append(stats_row)
+
+        # Periodic checkpoint so we know how far we got if the process is OOM-killed.
+        if (i + 1) % 500 == 0:
+            with open(meta_info_checkpoint_fp, "w") as _f:
+                json.dump(meta_info, _f)
 
     if args.use_lmdb:
         if txn is None or env is None:
@@ -342,10 +369,18 @@ def main(args):
         h5_file.close()
     with open(meta_info_fp, "w") as f:
         f.write(json.dumps(meta_info))
+
+    if oom_mol_ids:
+        logging.warning(f"OOM occurred for {len(oom_mol_ids)} molecules: {oom_mol_ids}")
+        oom_fp = os.path.join(args.frag_dp, "oom_mol_ids.json")
+        with open(oom_fp, "w") as f:
+            json.dump(oom_mol_ids, f)
+        logging.warning(f"OOM mol_ids saved to {oom_fp}")
+
     if args.skip_stats:
         return
 
-    print("> Fragments Computed")
+    logging.info("Fragments Computed")
     # all the following code are not debuged
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
 
@@ -479,15 +514,8 @@ def main(args):
                 ]
             )
 
-        if args.disable_tqdm:
-            stats_iter = spectra_input_rows
-            logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
-        else:
-            stats_iter = tqdm(
-                spectra_input_rows,
-                desc="Computing spectra stats",
-                total=len(spectra_input_rows),
-            )
+        logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
+        stats_iter = spectra_input_rows
         # run stats
         stats_results = data_utils.par_apply(stats_iter, compute_spectra_stats, True)
         # Loky and joblib should keep ordering
@@ -701,13 +729,12 @@ if __name__ == "__main__":
         "--max_cut_size",
         type=int,
         default=2,
-        choices=[1, 2, 3],
+        choices=[1, 2],
         help=(
             "Maximum number of bonds cut simultaneously per BFS step "
             "(only used when --multi_cut_bfs True). "
             "1 = single-bond only (same as standard BFS on rings), "
-            "2 = up to 2 ring bonds (recommended), "
-            "3 = up to 3 ring bonds (depth-0 only, high cost)."
+            "2 = up to 2 ring bonds (recommended)."
         ),
     )
     parser.add_argument(
@@ -748,8 +775,5 @@ if __name__ == "__main__":
     # Check if wandb_mode is enabled but run_name is missing
     if args.wandb_mode != "disabled" and not args.wandb_run_name:
         parser.error("--wandb_run_name is required when --wandb_mode is not 'disabled'")
-
-    if not args.disable_tqdm:
-        tqdm.pandas()
 
     main(args)

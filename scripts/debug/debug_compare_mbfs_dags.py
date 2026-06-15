@@ -360,7 +360,7 @@ def main() -> None:
     parser.add_argument("--isotopes", type=booltype, default=False)
     parser.add_argument("--nb_isomorphic", type=booltype, default=False)
     parser.add_argument("--wl_max_iterations", type=int, default=3)
-    parser.add_argument("--max_cut_size", type=int, default=2, choices=[1, 2, 3])
+    parser.add_argument("--max_cut_size", type=int, default=2, choices=[1, 2])
     parser.add_argument("--smarts_prepass", type=booltype, default=False)
     parser.add_argument("--min_frag_atoms", type=int, default=0)
     parser.add_argument("--compress_dags", type=booltype, default=False)
