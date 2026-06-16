@@ -1,7 +1,7 @@
 """Patch CV split files to inject new datasets into existing splits.
 
 The proc directory is unchanged; only the splits are updated.
-Existing split rows are preserved as-is. New entries from extra_dsets
+Existing split rows are preserved as-is. New entries from dsets_order
 are injected into whichever partition already contains the molecule;
 molecules not yet in any split go to train.
 
@@ -11,18 +11,18 @@ Outputs:
 Usage:
     # Dry run (no files written):
     python preproc_scripts/dataset_migration/patch_nps_split.py \\
-        --proc_dp data/proc/nps_pcdl_spectraverse \\
+        --proc_dp data/proc/nps_pcdl \\
         --old_split_dp data/split/nps_nist23 \\
-        --output_split_dp data/split/nps_pcdl_spectraverse \\
-        --extra_dsets pcdl spectraverse \\
+        --output_split_dp data/split/nps_pcdl \\
+        --dsets_order pcdl \\
         --dry-run
 
     # Full run:
     python preproc_scripts/dataset_migration/patch_nps_split.py \\
-        --proc_dp data/proc/nps_pcdl_spectraverse \\
+        --proc_dp data/proc/nps_pcdl \\
         --old_split_dp data/split/nps_nist23 \\
-        --output_split_dp data/split/nps_pcdl_spectraverse \\
-        --extra_dsets pcdl spectraverse
+        --output_split_dp data/split/nps_pcdl \\
+        --dsets_order pcdl
 """
 
 import argparse
@@ -45,7 +45,7 @@ def patch_splits(
 ) -> None:
     """Inject new dataset entries into existing CV split files.
 
-    Existing rows are preserved unchanged. Entries from extra_dsets are
+    Existing rows are preserved unchanged. Entries from dsets_order are
     injected into whichever partition already contains the molecule; truly
     new molecules go to train.
 
@@ -54,7 +54,7 @@ def patch_splits(
         old_split_dp: Root directory of the existing CV splits.
         output_split_dp: Root directory for output splits.
         cv_dirs: Sorted list of CV subdirectory names (e.g. ['cv0', ..., 'cv9']).
-        extra_dsets: Dataset names to inject (e.g. ['pcdl', 'spectraverse']).
+        dsets_order: Dataset names to inject (e.g. ['pcdl', 'spectraverse']).
         dry_run: If True, log intended writes without writing any files.
     """
     # filter by dset first
@@ -151,17 +151,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--proc_dp",
-        default="data/proc/nist23_pcdl_spectraverse",
+        default="data/proc/nist23_pcdl",
         help="New proc directory (spec_df.pkl with final spec_ids).",
     )
     parser.add_argument(
         "--old_split_dp",
-        default="data/split/ccx_nist23_pcdl_spectraverse",
+        default="data/split/ccx_nist23_pcdl",
         help="Root directory of CV splits to patch.",
     )
     parser.add_argument(
         "--output_split_dp",
-        default="data/split/ccx_nist23_pcdl_spectraverse_patched",
+        default="data/split/ccx_nist23_pcdl_patched",
         help="Output directory for patched split files.",
     )
     parser.add_argument(

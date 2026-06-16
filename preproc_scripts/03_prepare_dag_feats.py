@@ -114,8 +114,6 @@ def main(args):
         print(f">> WARNING: mol_df has {n_dup} duplicate mol_ids — deduplicating")
         mol_df = mol_df.drop_duplicates(subset=["mol_id"]).reset_index(drop=True)
 
-    m_spec_df = merge_spec_df(spec_df)
-
     print(
         f">> {len(spec_df)} spectra, {len(mol_df)} molecules"
     )  # , {len(m_spec_df)} merged spectra")
@@ -381,6 +379,7 @@ def main(args):
         return
 
     logging.info("Fragments Computed")
+    m_spec_df = merge_spec_df(spec_df)
     # all the following code are not debuged
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
 
@@ -515,11 +514,10 @@ def main(args):
             )
 
         logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
-        stats_iter = spectra_input_rows
-        # run stats
-        stats_results = data_utils.par_apply(stats_iter, compute_spectra_stats, True)
-        # Loky and joblib should keep ordering
+        stats_results = data_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
+        del spectra_input_rows
         stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
+        del stats_results
         metric_keys = list(stats_results_df.columns)
 
         # add peak stats
