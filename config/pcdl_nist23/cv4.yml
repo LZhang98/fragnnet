@@ -1,8 +1,8 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: pcdl_nist23_spectraverse_cv4
-wandb_group: pcdl_nist23_spectraverse
+wandb_name: pcdl_nist23_cv4
+wandb_group: pcdl_nist23
 wandb_tags:
 - retrieval
 - fraggnn_d3
@@ -33,8 +33,8 @@ wandb_tags:
 # ============================================================================
 spec_fp: data/proc/spectraverse/spec_df.pkl
 mol_fp: data/proc/spectraverse/mol_df.pkl
-split_dp: data/split/ccx_nist23_pcdl_spectraverse/cv4  # cross-validation split for spectraverse benchmark
-frag_dp: data/frag/spectraverse_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+split_dp: data/split/ccx_nist23_pcdl/cv4  # cross-validation split for spectraverse benchmark
+frag_dp: data/frag/nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture

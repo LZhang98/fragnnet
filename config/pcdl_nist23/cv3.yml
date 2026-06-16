@@ -1,8 +1,8 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: pcdl_nist23_spectraverse_cv0
-wandb_group: pcdl_nist23_spectraverse
+wandb_name: pcdl_nist23_cv3
+wandb_group: pcdl_nist23
 wandb_tags:
 - retrieval
 - fraggnn_d3
@@ -33,8 +33,8 @@ wandb_tags:
 # ============================================================================
 spec_fp: data/proc/spectraverse/spec_df.pkl
 mol_fp: data/proc/spectraverse/mol_df.pkl
-split_dp: data/split/ccx_nist23_pcdl_spectraverse/cv0  # cross-validation split for spectraverse benchmark
-frag_dp: data/frag/spectraverse_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+split_dp: data/split/ccx_nist23_pcdl/cv3  # cross-validation split for spectraverse benchmark
+frag_dp: data/frag/nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture
@@ -68,7 +68,7 @@ frag_params:
 spec_params:
   merge: False          # keep per-CE spectra separate (not merged)
   nce: True             # use normalized collision energy (NCE) as input
-  ace: True             # use absolute collision energy (ACE)
+  ace: True            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
   preprocess: False
   prec_type_str: False  # encode precursor type as integer index, not string
@@ -194,7 +194,7 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 120000
+dynamic_batch_sampler_max: 150000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -215,5 +215,5 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized 
+loss_batch_size: 16              # sub-batch size for vectorized loss
 num_workers: 6
