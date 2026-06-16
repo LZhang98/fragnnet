@@ -161,7 +161,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output_split_dp",
-        default="data/split/ccx_nist23_pcdl_patched",
+        default="data/split/ccx_nist23_pcdl",
         help="Output directory for patched split files.",
     )
     parser.add_argument(
