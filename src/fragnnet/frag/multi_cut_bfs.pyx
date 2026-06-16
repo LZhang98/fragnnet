@@ -600,6 +600,12 @@ def compute_ccs_multi_cut(
             for i in range(n_live):
                 disconnected_mv[live_arr[i]] = 0
 
+            # Full zero of cc_nodes_s / cc_edges_s before this BFS node's cuts.
+            # _zero_scratch_live only resets live positions; dead atoms retain
+            # stale values from previous BFS nodes, which would corrupt child
+            # node keys (phantom atoms in non-live positions).
+            _zero_scratch_full(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
+
             # -----------------------------------------------------------
             # Cut = 1: Tarjan bridge-finding (O(V+E)) replaces O(m) CC tests.
             #
@@ -701,6 +707,47 @@ def compute_ccs_multi_cut(
                         edge_pair = (cur_node_id, child_id)
                         if edge_pair not in dag_edge_dict:
                             dag_edge_dict[edge_pair] = current_depth + 1
+
+            # -----------------------------------------------------------
+            # Cut = 1 (ring opening, n_ccs == 1): non-bridge live bonds.
+            #
+            # Non-bridge bonds are part of cycles; cutting one opens the
+            # ring to a chain without splitting the fragment.  The resulting
+            # state shares the same node_key (same atoms) but has one fewer
+            # live edge.  It is enqueued so the next depth level can find
+            # new bridge bonds that were hidden inside the ring.  This
+            # restores parity with compute_frags.compute_ccs, which tries
+            # every live bond and handles the n_ccs==1 case.
+            #
+            # Gated on max_ring_cut_steps > 0: when budget=0 no ring bonds
+            # are cut at all (neither cleavages nor opens), matching the
+            # interpretation "this BFS only does chain fragmentation."
+            # Ring-open steps do NOT increment cur_ring_cuts; that counter
+            # tracks cut=2 ring-cleavage steps only.
+            # -----------------------------------------------------------
+            if max_ring_cut_steps > 0 and current_depth + 1 <= max_depth:
+                for bi_b in range(n_live):
+                    i = live_arr[bi_b]
+                    if disconnected_mv[i]:
+                        continue  # bridge: already handled above
+                    # Non-bridge bond: cutting it opens a ring (n_ccs==1).
+                    # Build the ring-opened edge key by temporarily zeroing bond i.
+                    cur_edge_mask_mv[i] = 0
+                    child_edge_key = PyBytes_FromStringAndSize(
+                        &cur_edge_mask_mv[0], num_edges
+                    )
+                    cur_edge_mask_mv[i] = 1
+                    child_node_key = cur_node_key  # same atoms
+                    child_queue_key = (child_node_key, child_edge_key)
+                    if cur_ring_cuts < min_rc_for_key.get(child_queue_key, 999):
+                        if child_queue_key not in min_rc_for_key:
+                            depth_queue[current_depth + 1].append(child_queue_key)
+                        min_rc_for_key[child_queue_key] = cur_ring_cuts
+                    # No DAG edge and no depth-bit update: child_node_key ==
+                    # cur_node_key, so the atom subset is already registered at
+                    # its original depth.  The ring-opened state is a BFS
+                    # intermediate only — it enables finding new bridges but
+                    # does not itself constitute a new DAG node.
 
             # -----------------------------------------------------------
             # Cut = 2: pairs of ring bonds within the same SSSR ring.

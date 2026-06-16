@@ -929,14 +929,19 @@ class TestRingCutBudget:
             f"With budget=0 on cyclohexane, expected only root; got {len(r['nodes_mask'])} nodes"
         )
 
-    def test_budget_1_fewer_fragments_than_budget_2(self):
-        """Naphthalene: budget=1 yields fewer fragments than budget=2."""
+    def test_budget_0_vs_budget_1(self):
+        """Naphthalene: budget=0 (no ring cuts) yields far fewer fragments than budget=1.
+
+        With ring-open exploration enabled for budget>=1, both budget=1 and budget=2
+        saturate at the same fragment count (ring-opens fill the gap).  The meaningful
+        boundary is budget=0 (no ring bonds cut at all) vs budget>=1.
+        """
         NAPHTHALENE = "c1ccc2ccccc2c1"
+        r0 = _run(NAPHTHALENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=0)
         r1 = _run(NAPHTHALENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=1)
-        r2 = _run(NAPHTHALENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
-        assert len(r1["nodes_mask"]) < len(r2["nodes_mask"]), (
-            f"budget=1 ({len(r1['nodes_mask'])}) should produce fewer fragments "
-            f"than budget=2 ({len(r2['nodes_mask'])})"
+        assert len(r0["nodes_mask"]) < len(r1["nodes_mask"]), (
+            f"budget=0 ({len(r0['nodes_mask'])}) should produce fewer fragments "
+            f"than budget=1 ({len(r1['nodes_mask'])})"
         )
 
     def test_budget_large_equals_unlimited(self):
@@ -984,12 +989,13 @@ class TestMinRcDedup:
     what any higher ring_cuts value would generate).
     """
 
-    # Regression anchors — fragment counts measured after the fix; must stay stable.
+    # Regression anchors — fragment counts measured after both the min_rc_for_key
+    # dedup fix and the stale-cc_nodes_s + ring-open fix; must stay stable.
     REGRESSION = [
-        ("c1ccc2ccccc2c1", 3, 536),               # naphthalene
-        ("c1ccc2cc3ccccc3cc2c1", 3, 1205),         # anthracene
-        ("c1cc2ccc3cccc4ccc(c1)c2c34", 3, 605),    # pyrene
-        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 3, 3500), # androstane (4 fused rings)
+        ("c1ccc2ccccc2c1", 3, 191),               # naphthalene
+        ("c1ccc2cc3ccccc3cc2c1", 3, 1003),         # anthracene
+        ("c1cc2ccc3cccc4ccc(c1)c2c34", 3, 1370),   # pyrene
+        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 3, 4831), # androstane (4 fused rings)
     ]
 
     def test_regression_fragment_counts(self):
@@ -1025,7 +1031,7 @@ class TestMinRcDedup:
             f"Deep BFS on anthracene took {elapsed:.2f}s — possible dedup regression "
             f"(queued_set reverted to 3-tuple?). Got {len(r['nodes_mask'])} frags."
         )
-        assert len(r["nodes_mask"]) == 7142
+        assert len(r["nodes_mask"]) == 1003
 
     def test_budget_monotonicity_on_fused_rings(self):
         """Higher ring_cut budget always produces >= fragment count.
