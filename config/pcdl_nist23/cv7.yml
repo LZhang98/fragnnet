@@ -24,9 +24,15 @@ wandb_tags:
 - frag_mode_scale  # mode-conditioned affine output scaling
 - ce_scale      # CE-conditioned FiLM scaler
 - nce
+- ace
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - boundary_pair   # boundary_pair node feature in fragment GNN
+- a_ring_size    # new: per-atom ring size membership [in3,in4,in5,in6,inGe7]
+- a_charge       # new: Gasteiger partial charge (continuous)
+- b_ring         # new: bond ring membership
+- b_conj         # new: bond conjugation
+- frag_q         # new: per-fragment Gasteiger charge sum (charge-routing prior)
 
 # ============================================================================
 # Data File Paths
@@ -55,11 +61,12 @@ frag_params:
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
     - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
+    - frag_q         # per-fragment Gasteiger charge sum; computed on-the-fly, no DAG recomputation
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
   preload: False      # load all DAGs into memory at startup for speed
-  preprocess: False   # apply preprocessing transforms at load time
+  preprocess: True    # apply preprocessing transforms at load time
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
@@ -98,7 +105,22 @@ spec_params:
 # Molecule Parameters
 # ============================================================================
 mol_params:
-  preprocess: False
+  preprocess: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_mass
+    - a_chiral
+    - a_ring_size  # ring size membership: [in3, in4, in5, in6, inGe7]
+    - a_charge     # Gasteiger partial charge; computed on-the-fly
+  pyg_edge_feats:
+    - b_degree
+    - b_ring       # bond ring membership (2 bits)
+    - b_conj       # bond conjugation (2 bits)
 
 # ============================================================================
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
