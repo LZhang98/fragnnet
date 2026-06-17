@@ -66,7 +66,7 @@ frag_params:
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
   preload: False      # load all DAGs into memory at startup for speed
-  preprocess: True    # apply preprocessing transforms at load time
+  preprocess: False   # apply preprocessing transforms at load time
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
