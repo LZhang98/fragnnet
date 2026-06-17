@@ -12,7 +12,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb16          # loss batch size 16
+- lb32          # loss batch size 32
 - new_no_edges  # no edge features in fragment GNN
 - skip_extra_losses
 - binned_cosine_similarity
@@ -216,7 +216,7 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 150000
+dynamic_batch_sampler_max: 400000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -237,5 +237,5 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized 
+loss_batch_size: 32              # sub-batch size for vectorized loss
 num_workers: 6
