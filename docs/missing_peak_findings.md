@@ -1674,6 +1674,216 @@ The quinolizine/dihydroquinolizine ring system uniformly produces a deep C₇–
 
 ---
 
+## Quinone and Hydroquinone Lipids (n=412, DAG miss rate=19.2%)
+
+**21 mols in tar (15 missing, all with 0 FT [M+H]+ spectra — no artifact).** Tocopherols,
+tocotrienols, plastoquinones, and ubiquinones: a benzoquinone or chromanol ring fused to a
+long polyisoprenyl (C15–C50) side chain.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 77.0    | 31     | 0.322     | [C₆H₅]⁺ phenyl cation — aromatic cascade |
+| 79.1    | 30     | 0.431     | [C₆H₇]⁺ |
+| 103.1   | 29     | 0.340     | [C₈H₇]⁺ |
+| 105.1   | 21     | 0.096     | [C₈H₉]⁺ |
+| 89.0    | 19     | 0.138     | [C₇H₅]⁺ |
+| 128.1   | 19     | 0.090     | [C₁₀H₈]⁺ |
+| 183.0   | 18     | 0.137     | [C₁₂H₈P]⁺ or aromatic cascade |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 83.0    | 73     | 0.240          |
+| 115.1   | 69     | 0.307          |
+| 107.0   | 58     | 0.233          |
+| 109.1   | 55     | 0.188          |
+| 161.1   | 49     | 0.337          |
+| 128.1   | 48     | 0.259          |
+| 121.1   | 46     | 0.147          |
+| 105.0   | 45     | 0.230          |
+
+### Root cause
+
+**Model weakness dominant.**
+
+Category B has ~2× the spectra count of category A and higher intensities. The category B
+series (83.0, 107.0, 109.1, 121.1, 128.1, 161.1) are isoprenoid side-chain fragments
+([C₅H₇O]⁺, [C₇H₇O]⁺, [C₈H₉O]⁺) produced by BFS cuts of the polyisoprenyl chain — these
+are correctly in the DAG but the model assigns ~0 probability. Category A (77.0, 79.1,
+103.1) are small aromatic cation cascade fragments from the chromanol/quinone ring system
+(minor cascade depth component, n=19–31).
+
+---
+
+## Saccharolipids (n=466, DAG miss rate=17.3%)
+
+**95 mols in tar (43 missing).** Terpenoid glycosides and flavonoid glycolipids — an
+aglycone (terpenoid, flavonoid, or phenylpropanoid) esterified or O-glycosylated to a sugar
+moiety (glucose, maltose, trehalose).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 109.0   | 39     | 0.193     | [C₇H₅O]⁺ or [C₈H₉]⁺ |
+| 65.0    | 26     | 0.168     | [C₅H₅]⁺ cyclopentadienyl |
+| 109.1   | 21     | 0.219     | [C₈H₉]⁺ |
+| 53.0    | 18     | 0.242     | [C₄H₅]⁺ |
+| 95.1    | 13     | 0.452     | [C₇H₁₁]⁺ or [C₆H₇O]⁺ |
+| 285.0   | 13     | 0.149     | aglycone fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 91.1    | 87     | 0.310          |
+| 97.0    | 63     | 0.173          |
+| 93.1    | 59     | 0.322          |
+| 69.0    | 57     | 0.121          |
+| 107.1   | 55     | 0.271          |
+| 121.1   | 55     | 0.268          |
+| 79.1    | 48     | 0.406          |
+| 135.1   | 46     | 0.276          |
+
+### Root cause
+
+**Model weakness dominant.**
+
+Category B dominates heavily (87 vs 39 max spectra in A). The category B series (79.1,
+91.1, 93.1, 97.0, 107.1, 121.1, 135.1) are isoprenoid/aliphatic chain cations from the
+terpenoid aglycone, all in DAG but predicted ≈0. The model has not learned to assign high
+probability to aliphatic chain fragments from terpenoid-glycoside aglycones, likely because
+these mols appear across diverse glycoside structural contexts (different sugars, different
+linkages) diluting the training signal. Category A (65.0, 95.1) is a minor cascade depth
+component.
+
+---
+
+## Phosphosphingolipids (n=144, DAG miss rate=15.7%)
+
+**11 mols in tar (35 missing).** Sphingomyelins and ceramide phosphates — a sphingoid base
+backbone (C18 long-chain amino alcohol) with a phosphocholine or phosphoethanolamine head
+group. Most in-tar mols contain a quaternary [N+](C)(C)C choline group (zwitterion in
+neutral form, protonated head in [M+H]⁺).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 77.0    | 14     | 0.203     | [C₆H₅]⁺ — deep aromatic cascade |
+| 50.0    | 8      | 0.204     | small ring fragment |
+| 79.1    | 6      | 0.066     | [C₆H₇]⁺ |
+| 633.5   | 2      | 0.342     | **doubly-charged fragment ion** [M+2H]²⁺ type |
+| 651.5   | 2      | 0.054     | **doubly-charged fragment ion** |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 74.1    | 14     | 0.072          |
+| 91.1    | 12     | 0.173          |
+| 81.0    | 11     | 0.152          |
+| 60.1    | 11     | 0.114          |
+| 60.0    | 9      | 0.506          |
+| 247.2   | 6      | 0.125          |
+
+### Root cause
+
+**Artifact (dominant) + minor model weakness + doubly-charged fragment ions.**
+
+35/46 mols missing from tar accounts for the majority of the miss rate. For the 11 in-tar
+mols, m/z 60.0 (9 spectra, 0.506) = [N(CH₃)₃+H]⁺ = trimethylammonium (60.058), the
+choline head fragment — IS in DAG but model predicts ≈0.022. The .5-fractional category A
+bins (633.5, 651.5) are doubly-charged fragment ions from the large sphingolipid backbone
+(see glycosphingolipids for detailed confirmation). Low overall n (n=144) limits confidence.
+
+---
+
+## Glycosphingolipids (n=32, DAG miss rate=14.3%)
+
+**27 mols in tar (9 missing).** Gangliosides and cerebrosides — ceramide backbone with one
+to several sugar units (glucose, galactose, sialic acid/NeuAc). MW ranges from ~700 (simple
+cerebrosides) to ~1800+ (polysialogangliosides). Confirmed examples: GM3/GM1-type
+gangliosides (mol_id=15728, [M+H]⁺=991.7), sulfatide (mol_id=15729, [M+H]⁺=864.6).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 864.5   | 6      | 0.162     | **doubly-charged fragment ion** |
+| 625.4   | 5      | 0.398     | **doubly-charged fragment ion** |
+| 626.4   | 4      | 0.089     | **doubly-charged fragment ion** |
+| 785.7   | 4      | 0.274     | **doubly-charged fragment ion** |
+| 865.6   | 3      | 0.253     | **doubly-charged fragment ion** |
+| 311.2   | 3      | 0.140     | singly-charged aglycone fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 265.3   | 13     | 0.114          |
+| 283.3   | 9      | 0.230          |
+| 252.3   | 9      | 0.123          |
+| 766.7   | 6      | **0.747**      |
+| 784.7   | 5      | **0.595**      |
+| 97.0    | 7      | 0.318          |
+| 91.0    | 7      | 0.125          |
+
+### Root cause
+
+**Doubly-charged fragment ions (category A) + model weakness for large fragment ions (category B).**
+
+Confirmed by direct spectrum inspection: mol_id=15728 ([M+H]⁺=991.7 Da, GM3-type
+ganglioside) produces abundant fragment ions at 490.5, 502.5, 519.5–522.5, 538.5,
+682.6–683.6, 700.6 — all with .5–.6 fractional parts indicating [frag+2H]²⁺. These are
+singly-charged glycan-chain fragments (~980–1040 Da) that carry 2 protons from the
+multi-basic sphingolipid backbone. BFS generates all fragments as singly-charged; it cannot
+output [frag+2H]²⁺ species. Category B bins 766.7 and 784.7 (true intensity 0.75 and 0.60)
+are large singly-charged ceramide-related fragments in DAG but severely underpredicted.
+
+---
+
+## Other Glycerolipids (n=66, DAG miss rate=11.1%)
+
+**3 mols in tar (9 missing).** Glycerophospholipids and ether lipids with long unsaturated
+acyl chains (C18:1, C18:2). One mol (mol_id=14740) contains a quaternary [N+](C)(C)C.
+Very small in-tar sample limits conclusions.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 77.0    | 15     | 0.164     | [C₆H₅]⁺ phenyl cascade |
+| 622.5   | 12     | 0.171     | **doubly-charged fragment ion** |
+| 50.0    | 6      | 0.067     | small ring fragment |
+| 529.5   | 3      | 0.089     | **doubly-charged fragment ion** |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity |
+|---------|--------|----------------|
+| 91.1    | 24     | 0.343          |
+| 340.3   | 21     | 0.167          |
+| 105.1   | 21     | 0.097          |
+| 111.1   | 19     | 0.092          |
+| 604.5   | 12     | 0.143          |
+
+### Root cause
+
+**Artifact dominant (9/12 mols missing from tar) + doubly-charged fragment ions + model
+weakness.**
+
+The .5-fractional category A bins (622.5, 529.5) and category B bin (604.5) are
+doubly-charged fragment ions from large glycerolipid precursors — same mechanism as
+glycosphingolipids. The 91.1 (24 spectra, 0.343 = tropylium) and 105.1 are in DAG but
+model predicts 0.000. With only 3 mols in tar the sample is too small for definitive
+conclusions beyond these two patterns.
+
+---
+
 ## Summary
 
 | Subclass | n | DAG miss | Root cause |
@@ -1721,3 +1931,8 @@ The quinolizine/dihydroquinolizine ring system uniformly produces a deep C₇–
 | Cyclohexylphenols | 86 | 49.0% | **Rearrangement** — tropylium [C₇H₇]⁺ (9/14 mols, ring expansion), cyclopentadienyl [C₅H₅]⁺ (8/14 mols, ring contraction), naphthalene [C₁₀H₈]⁺ (6/14 mols, ring fusion) all absent from BFS; model weak on 105.0 (n=34, pred≈0) |
 | Furofurans | 93 | 48.6% | **Cascade depth + rearrangement** — complete C₅–C₁₁ cyclic cation series absent in 8–10/10 mols; tropylium [C₇H₇]⁺ universal (10/10); [C₇H₁₁]⁺ + [C₆H₇O]⁺ co-bin at 95.1; model weak on 128.1=[C₁₀H₈]⁺ (pred=0.000, true=0.440, 15 spec) |
 | Quinolizines | 38 | 48.5% | **Cascade depth** — C₇–C₉ aromatic cascade ([C₈H₇N]⁺/[C₉H₉]⁺ at 117.1, [C₉H₇]⁺ at 115.1) absent in 7/7 mols; tropylium appears in both cat A (absent) and cat B (pred≈0, true=0.732); model weak on 145.1 (true=0.485, pred=0.001) |
+| Quinone & hydroquinone lipids | 412 | 19.2% | **Model weakness** — isoprenoid side-chain fragments (83.0, 107.0, 109.1, 161.1) in DAG predicted ≈0; minor cascade depth for small aromatic cations (cat A n≤31) |
+| Saccharolipids | 466 | 17.3% | **Model weakness** — terpenoid/aliphatic chain fragments (91.1 n=87, 93.1, 79.1, 107.1) in DAG predicted ≈0; model has not learned aglycone chain fragmentation across diverse glycoside scaffolds |
+| Phosphosphingolipids | 144 | 15.7% | **Artifact dominant** (35/46 mols missing from tar) + doubly-charged fragment ions (.5 bins 633.5, 651.5) + model weakness (60.0=[N(CH₃)₃+H]⁺ at 0.506 predicted ≈0) |
+| Glycosphingolipids | 32 | 14.3% | **Doubly-charged fragment ions** — large gangliosides ([M+H]⁺ ~992 Da) produce [frag+2H]²⁺ at .4–.7 fractional m/z bins (625.4, 785.7, 864.5); confirmed by FT exact masses; BFS generates only singly-charged fragments; model weakness for large singly-charged ceramide fragments (766.7 at 0.747, 784.7 at 0.595) |
+| Other glycerolipids | 66 | 11.1% | **Artifact dominant** (9/12 mols missing from tar) + doubly-charged fragment ions (622.5, 529.5) + model weakness (91.1 tropylium pred=0.000) |
