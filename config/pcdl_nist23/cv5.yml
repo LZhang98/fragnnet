@@ -37,9 +37,9 @@ wandb_tags:
 # ============================================================================
 # Data File Paths
 # ============================================================================
-spec_fp: data/proc/spectraverse/spec_df.pkl
-mol_fp: data/proc/spectraverse/mol_df.pkl
-split_dp: data/split/ccx_nist23_pcdl/cv5  # cross-validation split for spectraverse benchmark
+spec_fp: data/proc/nist23_pcdl/spec_df.pkl
+mol_fp: data/proc/nist23_pcdl/mol_df.pkl
+split_dp: data/split/ccx_nist23_pcdl/cv5  # cross-validation split for pcdl_nist23
 frag_dp: data/frag/nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
