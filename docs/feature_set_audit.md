@@ -16,7 +16,7 @@ and spectrum-level conditioning inputs.
 | `a_hybrid` | `GetHybridization()` | one-hot SP/SP2/SP3/SP3D/SP3D2 | |
 | `a_formal` | `GetFormalCharge()` | one-hot [−2..2] | |
 | `a_radical` | `GetNumRadicalElectrons()` | one-hot 0–4 | |
-| `a_ring` | `IsInRing()`, `GetIsAromatic()` | 2 binary bits | **only is_in_ring + is_aromatic; no ring size** |
+| `a_ring` | `IsInRing()`, `GetIsAromatic()` | 2 binary bits | **only is_in_ring + is_aromatic; no ring size. When used with `a_ring_size`, the is_in_ring bits are redundant — consider splitting into `a_aromatic` + dropping `a_ring`** |
 | `a_mass` | `GetMass()` | continuous × 0.01 | |
 | `a_chiral` | `GetChiralTag()` | one-hot CW/CCW/OTHER/UNSPECIFIED | |
 

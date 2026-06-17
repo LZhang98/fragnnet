@@ -39,6 +39,7 @@ wandb_tags:
 - b_ring         # new: bond ring membership
 - b_conj         # new: bond conjugation
 - frag_q         # new: per-fragment Gasteiger charge sum (charge-routing prior)
+- rwpe_k16       # new: random-walk positional encoding, k=16 steps
 
 # ============================================================================
 # Data File Paths
@@ -76,6 +77,7 @@ mol_params:
     - b_degree
     - b_ring       # bond ring membership (2 bits)
     - b_conj       # bond conjugation (2 bits)
+  pyg_pe_embed_k: 16  # random-walk PE: breaks 1-WL repeating-chain symmetry
 
 # ============================================================================
 # Fragment DAG Parameters

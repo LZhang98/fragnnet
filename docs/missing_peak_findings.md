@@ -1707,7 +1707,7 @@ long polyisoprenyl (C15–C50) side chain.
 
 ### Root cause
 
-**Model weakness dominant.**
+**Model weakness dominant — GNN failure on repetitive isoprenyl chains.**
 
 Category B has ~2× the spectra count of category A and higher intensities. The category B
 series (83.0, 107.0, 109.1, 121.1, 128.1, 161.1) are isoprenoid side-chain fragments
@@ -1715,6 +1715,27 @@ series (83.0, 107.0, 109.1, 121.1, 128.1, 161.1) are isoprenoid side-chain fragm
 are correctly in the DAG but the model assigns ~0 probability. Category A (77.0, 79.1,
 103.1) are small aromatic cation cascade fragments from the chromanol/quinone ring system
 (minor cascade depth component, n=19–31).
+
+Two GNN-specific mechanisms explain the model failure:
+
+1. **Repetitive chain → indistinguishable node embeddings.** For a polyisoprenyl chain
+   (ubiquinone-10 has a C50 side chain: 10× isoprene units), every internal isoprene unit
+   has an identical k-hop neighborhood. A GNN with depth k cannot distinguish the 3rd from
+   the 7th isoprenyl unit — they produce the same embedding. The model has no signal to
+   assign different fragmentation probabilities to different chain positions; supervision
+   from different positions cancels during training and the result is ≈0 for all.
+
+2. **Generic aliphatic embeddings lack discriminative signal.** Isoprenyl fragments like
+   C₅H₇O⁺ (83 Da) or C₆H₉⁺ (81 Da) appear as fragments in hundreds of molecular contexts
+   (terpenes, fatty acids, steroids), most of which don't produce them at high intensity.
+   The model learns an average ≈0 across contexts. Aromatic fragments (C₇H₇⁺, C₉H₇⁺)
+   have highly distinctive ring structures that produce discriminative GNN embeddings —
+   aliphatic chain fragments do not.
+
+Fix: **position encoding on chain atoms** (encode distance from ring system into atom
+features) so the GNN can distinguish chain position; and/or **isoprenyl-repeat fragment
+features** that count the number of isoprene subunits in a fragment. Both are atom/fragment
+feature additions, not architectural changes.
 
 ---
 
@@ -1750,15 +1771,19 @@ moiety (glucose, maltose, trehalose).
 
 ### Root cause
 
-**Model weakness dominant.**
+**Model weakness dominant — same GNN failure as quinone lipids, compounded by structural
+diversity.**
 
 Category B dominates heavily (87 vs 39 max spectra in A). The category B series (79.1,
 91.1, 93.1, 97.0, 107.1, 121.1, 135.1) are isoprenoid/aliphatic chain cations from the
-terpenoid aglycone, all in DAG but predicted ≈0. The model has not learned to assign high
-probability to aliphatic chain fragments from terpenoid-glycoside aglycones, likely because
-these mols appear across diverse glycoside structural contexts (different sugars, different
-linkages) diluting the training signal. Category A (65.0, 95.1) is a minor cascade depth
-component.
+terpenoid aglycone, all in DAG but predicted ≈0. The same two GNN mechanisms apply as in
+quinone/hydroquinone lipids: repetitive chain units produce indistinguishable node
+embeddings, and generic aliphatic fragments accumulate ≈0 supervision across diverse
+molecular contexts. Here the problem is compounded further: saccharolipids have both a
+repetitive terpenoid/aliphatic aglycone AND a variable sugar moiety (glucose, maltose,
+trehalose, etc.) — the sugar context changes across mols while the chain fragment is the
+same, making it even harder for the model to generalize. Category A (65.0, 95.1) is a
+minor cascade depth component.
 
 ---
 
@@ -1884,6 +1909,638 @@ conclusions beyond these two patterns.
 
 ---
 
+## Phenanthrolines (n=68, DAG miss rate=48.5%)
+
+**68 spectra; ~20 mols missing from tar.** Fused tricyclic N-heterocycles (1,10-phenanthroline and substituted derivatives) used as metal chelators and in pharmaceuticals.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 170.1   | 25     | 0.125     | Aromatic N-heterocycle ring fragment [C₁₂H₈N]⁺ |
+| 99.0    | 14     | 0.332     | Small ring fragment |
+| 146.1   | 9      | 0.343     | [C₁₀H₈N]⁺? phenanthridine fragment |
+| 115.1   | 10     | 0.277     | [C₉H₇]⁺ or [C₈H₅N]⁺ aromatic cascade |
+| 155.1   | 8      | 0.228     | Aromatic amine ring fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 139.1   | 8      | 0.668          | 0.019          |
+| 125.0   | 10     | 0.356          | 0.007          |
+| 75.0    | 11     | 0.294          | 0.015          |
+| 77.0    | 14     | 0.194          | 0.016          |
+| 143.0   | 13     | 0.078          | 0.005          |
+
+### Root cause
+
+**Cascade depth + model weakness.**
+
+The category A aromatic series (115.1, 146.1, 170.1) requires sequential ring-opening of the fused tricyclic phenanthroline scaffold beyond depth=3. The 170.1 peak (25 spectra) is likely a direct ring-opening product requiring 4+ cuts from larger substituted precursors. Category B dominance (139.1 at 0.668 intensity, predicted 0.019) points to GNN model weakness on N-heterocycle fragments that appear across many scaffolds — the phenanthroline ring fragment embeddings are non-discriminative. High tar-miss rate (~20 mols) inflates category A counts.
+
+---
+
+## Furanoquinolines (n=58, DAG miss rate=48.1%)
+
+**58 spectra; low tar coverage.** Fused furan-quinoline N-heterocycles — common in plant alkaloids (rutaecarpine-type). [M+H]⁺ typically 200–260 Da.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 104.0   | 8      | 0.731     | Highest intensity absent peak; [C₇H₄O]⁺ or furanyl cation |
+| 77.0    | 9      | 0.417     | [C₆H₅]⁺ phenyl cation — cascade from quinoline ring |
+| 156.0   | 10     | 0.254     | [C₁₀H₈NO]⁺ quinoline ring fragment |
+| 128.1   | 5      | 0.541     | [C₁₀H₈]⁺ naphthalene/azanaphthalene |
+| 51.0    | 5      | 0.352     | [C₄H₃]⁺ small aromatic |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 227.1   | 10     | 0.554          | 0.001          |
+| 199.1   | 6      | 0.425          | 0.037          |
+| 216.1   | 12     | 0.400          | 0.015          |
+| 105.0   | 10     | 0.200          | 0.019          |
+| 79.0    | 6      | 0.305          | 0.000          |
+
+### Root cause
+
+**Mixed: cascade depth + model weakness (dominant).**
+
+The cascade series (51.0, 77.0, 128.1) absent from DAG reflects the furan ring-opening pathway at >3 sequential cuts — same mechanism as thienothiophenes but with O instead of S. However, category B is more severe: 227.1 (0.554, pred 0.001) and 216.1 (0.400, pred 0.015) are mid-size quinoline-type fragments correctly generated by BFS but assigned near-zero probability. The extremely high absent intensity at 104.0 (0.731) suggests a direct ring-contraction or rearrangement product that BFS cannot generate.
+
+---
+
+## Acetophenones (n=20, DAG miss rate=48.0%)
+
+**20 spectra; very small sample (n=20 → caution on conclusions).** Aryl methyl ketones — benzoylmethane-type compounds with substituted phenyl ring.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1    | 5      | 0.446     | Tropylium [C₇H₇]⁺ — ring-expansion rearrangement |
+| 115.1   | 3      | 0.177     | [C₉H₇]⁺ aromatic cascade |
+| 93.1    | 3      | 0.059     | Allylic/cyclic cation |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 105.0   | 3      | 0.529          | 0.032          |
+| 123.0   | 4      | 0.178          | 0.018          |
+| 59.0    | 2      | 0.054          | 0.034          |
+
+### Root cause
+
+**Rearrangement + model weakness; n=20 too small for firm conclusions.**
+
+Tropylium 91.1 (5 spectra at 0.446) is a ring-expansion rearrangement of the phenyl ring to the 7-membered tropylium cation — BFS cannot model bond formation. The 105.0=[C₇H₅O]⁺ benzoyl cation (0.529 intensity in DAG, predicted 0.032) represents model weakness for a chemically sensible fragment. The entire miss rate is driven by ≤5 spectra per bin, so these numbers are not statistically robust.
+
+---
+
+## Organic Sulfuric Acids and Derivatives (n=36, DAG miss rate=47.8%)
+
+**36 spectra; ~4 mols with halogens.** Sulfate esters (ArOSO₃H) and sulfonic acids — common in drug metabolites, detergents, and environmental samples.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 94.9    | 9      | 0.507     | .9 bin → [C₂H₂³⁵Cl₂]⁺ organochloride direct cation |
+| 130.9   | 10     | 0.433     | .9 bin → [C₂H₂³⁵Cl₃]⁺ trichloroethyl cation |
+| 60.0    | 4      | 0.645     | [C₂H₄S]⁺ or SO₂⁺ sulfonate fragment |
+| 106.0   | 5      | 0.251     | Aromatic sulfonate fragment |
+| 96.0    | 4      | 0.178     | [SO₃+H₂O]⁺ / aliphatic fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 141.0   | 6      | 0.802          | 0.022          |
+| 80.0    | 12     | 0.628          | 0.011          |
+| 151.0   | 5      | 0.607          | 0.020          |
+| 61.0    | 6      | 0.169          | 0.017          |
+| 98.0    | 4      | 0.310          | 0.025          |
+
+### Root cause
+
+**Mixed: halide direct cations (.9 bins) + model weakness dominant (integer bins).**
+
+Category A .9 bins (94.9, 130.9) are organochloride direct cations ([C₂H₂Cl₂]⁺, [C₂H₂Cl₃]⁺) from Cl₃-substituted sulfate ester mols — BFS cannot generate these halide-retaining fragments. However, the integer category B bins are the bigger problem: 80.0 (SO₃⁺ from sulfonate loss) and 141.0 (0.802 intensity!) are correctly in the DAG but predicted ≈0. The model fails to learn the SO₃ loss pathway despite its consistent appearance across sulfonate mols.
+
+---
+
+## Benzofuranones (n=500, DAG miss rate=47.4%)
+
+**500 spectra; large, diverse class.** Benzofuran-2(3H)-one and related lactone variants — abundant in natural products (coumarins, chromenes) and pharmaceutical compounds.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 115.1   | 57     | 0.390     | [C₉H₇]⁺ — aromatic cascade |
+| 152.1   | 36     | 0.338     | Benzofuranyl fragment |
+| 165.1   | 50     | 0.346     | [C₁₃H₉]⁺ or [C₁₁H₉O]⁺ |
+| 91.1    | 35     | 0.313     | Tropylium [C₇H₇]⁺ |
+| 226.1   | 38     | 0.475     | Large aromatic fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 152.1   | 51     | 0.571          | 0.001          |
+| 239.1   | 24     | 0.469          | 0.003          |
+| 269.1   | 25     | 0.373          | 0.002          |
+| 105.0   | 57     | 0.259          | 0.025          |
+| 165.1   | 24     | 0.258          | 0.004          |
+
+### Root cause
+
+**Mixed: cascade depth + model weakness (dual-mode for 152.1 and 165.1).**
+
+The 152.1 peak appears in both category A (36 spectra, absent) and category B (51 spectra, 0.571, pred 0.001) — it is at the coverage boundary where some mols generate it in BFS and others don't. Aromatic cation series (91.1, 115.1, 128.1) absent from DAG reflect the benzofuranone ring-opening cascade requiring >3 sequential cuts. The 105.0=[C₇H₅O]⁺ benzoyl cation (57 spectra in DAG, predicted 0.025) is a persistent model weakness across O-containing aromatic classes. With n=500, this class has high statistical power — the gaps are genuine.
+
+---
+
+## Azacyclic Compounds (n=36, DAG miss rate=47.4%)
+
+**36 spectra; catch-all N-heterocycle class dominated by piperazine/piperidine-type.** Saturated or partially saturated N-containing rings with diverse substituents.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 60.0    | 9      | 0.720     | Very high intensity! [C₂H₆NO]⁺ or [C₃H₆N]⁺ azacyclic fragment |
+| 88.0    | 9      | 0.219     | [C₃H₆NO₂]⁺ or N-formyl fragment |
+| 61.0    | 6      | 0.101     | Small N-containing fragment |
+| 74.0    | 6      | 0.076     | [C₃H₈NO]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 202.1   | 9      | 0.387          | 0.024          |
+| 146.1   | 9      | 0.399          | 0.013          |
+| 118.1   | 12     | 0.295          | 0.006          |
+| 72.1    | 2      | 0.354          | 0.043          |
+| 85.1    | 6      | 0.127          | 0.002          |
+
+### Root cause
+
+**DAG gap for small N-containing fragments + model weakness.**
+
+The 60.0 peak at 0.720 intensity absent from DAG (9/36 spectra) is a small azacyclic fragment — likely [C₂H₆NO]⁺ or [C₃H₆N]⁺ from piperazine ring-opening requiring sequential N−C bond cleavages. BFS generates these in principle but may miss the specific protonation site on the N atom leading to the correct mass. Category B shows large mid-size fragments (202.1, 146.1) in DAG but severely underpredicted. The broad catch-all taxonomy means these 36 spectra span many different ring systems, so each mechanism has few examples.
+
+---
+
+## Pyranocoumarins (n=248, DAG miss rate=47.4%)
+
+**248 spectra; 18 mols confirmed in tar.** Fused pyran-coumarin ring systems (angular and linear) — common in umbelliferae plant secondary metabolites (xanthyletin, decursin, etc.).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1    | 66     | 0.485     | Tropylium — 66/248 spectra affected! |
+| 128.1   | 37     | 0.533     | [C₁₀H₈]⁺ — high intensity naphthalene cation |
+| 115.1   | 37     | 0.489     | [C₉H₇]⁺ aromatic cascade |
+| 105.0   | 58     | 0.258     | Benzoyl/aromatic cation |
+| 65.0    | 43     | 0.307     | [C₅H₅]⁺ cyclopentadienyl |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 165.1   | 34     | 0.384          | 0.000          |
+| 128.1   | 30     | 0.350          | 0.000          |
+| 257.1   | 32     | 0.269          | 0.025          |
+| 215.1   | 32     | 0.131          | 0.016          |
+| 107.0   | 31     | 0.131          | 0.014          |
+
+### Root cause
+
+**Cascade depth dominant — pyranochromone aromatization cascade.**
+
+The complete C₅–C₁₀ aromatic cation series (65.0, 77.0, 91.1, 105.0, 115.1, 128.1) is absent from 37–66 spectra each. The cascade pathway: pyran O-ring opens → chromene → chromone → benzopyrilium → phenyl → cyclopentadienyl, each step requiring bond cleavage + hydrogen transfer. With n=248, the absolute gap (91.1 absent in 66 spectra at 0.485 intensity) rivals the androstane steroid gap. The 128.1 peak appears in both cat A (37 spec, absent) and cat B (30 spec, 0.350, pred 0.000) — same dual-mode pattern as benzofuranones. A single SMARTS prepass injecting the dihydrocoumarin pivot would allow BFS to reach the aromatic ion series.
+
+---
+
+## Protopine Alkaloids (n=123, DAG miss rate=47.1%)
+
+**123 spectra; 4 mols in tar.** Pentacyclic N-benzyltetrahydroisoquinoline alkaloids (protopine, allocryptopine, cryptopine) — common in Papaveraceae.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1    | 57     | 0.417     | Tropylium — cascade from the benzylic C |
+| 247.1   | 54     | 0.152     | Large ring fragment [M+H−164]⁺ type |
+| 275.1   | 48     | 0.166     | Pentacyclic ring fragment |
+| 131.1   | 41     | 0.206     | [C₉H₇N]⁺ or isoquinoline fragment |
+| 130.1   | 37     | 0.313     | [C₉H₈N]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 189.1   | 36     | 0.485          | 0.030          |
+| 165.1   | 69     | 0.183          | 0.008          |
+| 178.1   | 32     | 0.261          | 0.023          |
+| 179.1   | 50     | 0.137          | 0.008          |
+| 205.1   | 39     | 0.128          | 0.006          |
+
+### Root cause
+
+**Cascade depth — pentacyclic ring requires >3 sequential cuts.**
+
+Protopine has a pentacyclic scaffold (ABCDE ring system): reaching the benzylic 91.1 (tropylium) requires opening 3 rings sequentially before the methylene bridge can rearrange. The large mid-size fragments at 247.1 and 275.1 (absent in 54/48 spectra) are likely B/C-ring retaining fragments that require loss of one or two complete rings. The 189.1 (0.485, pred 0.030) and 165.1 (0.183, pred 0.008) in category B are model weakness on isoquinoline-type fragments — same pattern as protoberberines. Only 4 mols in tar limits statistical power.
+
+---
+
+## Flavans (n=441, DAG miss rate=47.0%)
+
+**441 spectra; 15+ mols in tar.** Flavan (2-phenylchroman) and flavanone-type compounds — polyphenols from fruit and bark extracts, including catechin-related scaffolds.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 95.0    | 18     | 0.389     | Chromene ring-opening fragment |
+| 65.0    | 37     | 0.347     | [C₅H₅]⁺ cyclopentadienyl |
+| 153.0   | 36     | 0.149     | [C₁₀H₉O]⁺ flavanyl ring fragment |
+| 151.0   | 32     | 0.180     | [C₁₀H₇O]⁺ |
+| 119.0   | 31     | 0.129     | [C₉H₇]⁺ or [C₇H₇O]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 147.0   | 86     | 0.152          | 0.021          |
+| 105.0   | 62     | 0.309          | 0.021          |
+| 79.0    | 27     | 0.384          | 0.015          |
+| 123.0   | 26     | 0.316          | 0.019          |
+| 165.1   | 61     | 0.124          | 0.012          |
+
+### Root cause
+
+**Model weakness dominant.**
+
+Category B is larger than category A: 147.0=[C₉H₇O₂]⁺ (86 spectra, 0.152, pred 0.021) is a flavanyl ring-opening fragment correctly in the DAG but systematically underpredicted. The 105.0 benzoyl cation (62 spectra) and 123.0 (26 spectra, 0.316) follow the same pattern seen in benzofuranones, flavonoids, and phenoxy compounds — the model fails to learn the C-ring retro-Diels-Alder fragmentation intensity at low CE. Category A integer bins (65.0, 153.0) reflect residual cascade depth gaps at high CE, but with 441 spectra the category B dominance is conclusive.
+
+---
+
+## Butyrophenones (n=582, DAG miss rate=46.8%)
+
+**582 spectra; 15+ mols.** Aryl butyrate esters and butyrophenone drugs (haloperidol-type) — large pharmaceutical class with aryl-C(=O)-alkyl scaffold.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 65.0    | 79     | 0.670     | [C₅H₅]⁺ — very high intensity cascade fragment! |
+| 117.1   | 73     | 0.385     | [C₉H₉]⁺ aromatic cascade |
+| 91.1    | 107    | 0.174     | Tropylium [C₇H₇]⁺ |
+| 131.1   | 58     | 0.338     | Aromatic fragment |
+| 89.0    | 43     | 0.430     | [C₇H₅]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 105.0   | 53     | 0.148          | 0.025          |
+| 176.1   | 28     | 0.237          | 0.026          |
+| 156.1   | 38     | 0.072          | 0.002          |
+| 146.1   | 33     | 0.154          | 0.008          |
+| 72.1    | 39     | 0.083          | 0.024          |
+
+### Root cause
+
+**Mixed: cascade depth (dominant) + rearrangement.**
+
+Butyrophenones have a phenyl ring connected via a 4-carbon chain to a carbonyl, and haloperidol-type compounds have an additional piperidyl fluorobenzene. The 65.0 (0.670, 79 spectra) and 117.1 (0.385, 73 spectra) absent from DAG are C₅–C₉ aromatic cascade ions from the fluorophenyl/chlorophenyl ring after sequential loss of the chain and Cl/F. The 91.1 (tropylium, 107 spectra) is rearrangement-driven. Category B shows 105.0 and 176.1 in DAG but underpredicted — haloperidol-type fragments where the model fails on the CF₃/Cl-ring retaining larger fragments.
+
+---
+
+## Organobromides (n=62, DAG miss rate=46.7%)
+
+**62 spectra; all mols contain Br.** Aromatic or aliphatic organobromine compounds — pharmaceuticals, agrochemicals, and natural products with C-Br bonds.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 92.9    | 12     | 0.620     | .9 bin → [CH₂⁷⁹Br]⁺ or [C₂H₂⁷⁹Br]⁺ Br-retaining direct cation |
+| 90.9    | 6      | 0.109     | .9 bin → [⁷⁹BrC₂H₂]⁺ direct cation |
+| 53.0    | 10     | 0.112     | [C₄H₅]⁺ — aromatic cascade |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 124.0   | 10     | 0.640          | 0.013          |
+| 106.9   | 11     | 0.283          | 0.013          |
+| 53.0    | 7      | 0.139          | 0.020          |
+| 135.0   | 2      | 0.290          | 0.016          |
+
+### Root cause
+
+**Halide direct cations (.9 bins) + model weakness (124.0).**
+
+The .9 fractional bins 92.9 and 90.9 are Br-retaining direct cations ([C₂H₂⁷⁹Br]⁺ and [⁷⁹Br+allyl]⁺) — BFS cannot generate these without modeling direct C-Br heterolytic cleavage. The 124.0 bin (0.640 intensity, pred 0.013) is a large model weakness: a Br-containing fragment correctly in DAG (BFS generates [C₂H₄Br + H]⁺ or similar) but the model assigns near-zero probability. The class is small (n=62) but the Br mass defect fingerprint makes the mechanism unambiguous.
+
+---
+
+## Thienopyrroles (n=87, DAG miss rate=46.3%)
+
+**87 spectra; ~8 mols in tar.** Fused thiophene-pyrrole bicyclic heterocycles — found in pharmaceuticals and natural alkaloids; some members have Br/Cl substituents.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 172.9   | 12     | 0.572     | .9 bin → Br-retaining aromatic direct cation |
+| 51.0    | 5      | 0.702     | [C₄H₃]⁺ — highest intensity; small thiophene cascade |
+| 93.0    | 7      | 0.555     | [C₄H₃S]⁺ thienyl cation |
+| 94.0    | 11     | 0.408     | [C₄H₄S]⁺ or [C₅H₄N]⁺ |
+| 122.9   | 8      | 0.169     | .9 bin → Br-containing fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 80.0    | 5      | 0.474          | 0.001          |
+| 53.0    | 6      | 0.398          | 0.000          |
+| 70.0    | 12     | 0.307          | 0.000          |
+| 150.0   | 7      | 0.195          | 0.037          |
+| 96.0    | 6      | 0.248          | 0.026          |
+
+### Root cause
+
+**Cascade depth (S-heterocycle cleavage) + halide direct cations.**
+
+The .9 bins (172.9, 122.9) are Br-retaining direct cations from brominated thienopyrrole mols — same mechanism as triazolopyrazines and organobromides. The cascade depth pattern (51.0 at 0.702, 93.0 at 0.555) mirrors thienothiophenes: sequential ring-opening of the fused S-heterocycle requires [C₄H₃]⁺ and [C₄H₃S]⁺ to be produced after 4+ cuts. Category B shows 80.0 (0.474) and 53.0 (0.398) — these thienyl ring fragments are in DAG but the model assigns 0.000, likely because thienopyrrole scaffolds are underrepresented in training.
+
+---
+
+## Triterpenoids (n=1017, DAG miss rate=46.0%)
+
+**1017 spectra; 88/199 mols missing from tar (~113 spectra skipped).** Pentacyclic triterpenes (oleanolic acid, ursolic acid, betulinic acid, lupeol-type) — ubiquitous plant secondary metabolites with C30 pentacyclic skeleton.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1    | 286    | 0.620     | Tropylium — 286/1017 spectra; LARGEST ABSOLUTE GAP |
+| 145.1   | 283    | 0.194     | [C₁₁H₉]⁺ aromatic cascade |
+| 147.1   | 266    | 0.239     | [C₁₁H₁₁]⁺ isoprenyl cation |
+| 161.1   | 263    | 0.205     | [C₁₂H₁₃]⁺ terpenoid cation |
+| 79.1    | 244    | 0.362     | [C₆H₇]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 119.1   | 201    | 0.410          | 0.003          |
+| 105.1   | 192    | 0.416          | 0.004          |
+| 159.1   | 150    | 0.239          | 0.002          |
+| 187.1   | 135    | 0.227          | 0.006          |
+| 131.1   | 132    | 0.231          | 0.001          |
+
+### Root cause
+
+**Cascade depth dominant — complete C₅–C₁₄ terpenoid cation series; largest absolute miss in dataset.**
+
+Triterpenoids have a pentacyclic C30 skeleton. Reaching the terpenoid aromatic cation series (91.1, 145.1, 147.1, 161.1 = C₅–C₁₂ cations formed by sequential methylenic cleavage + aromatization) requires 5+ sequential bond cuts from the intact C30 precursor. This is the same cascade depth mechanism as androstane/estrane steroids but for a larger ring system. Category B is equally severe: 119.1 (201 spectra, 0.410, pred 0.003) and 105.1 (192 spectra, 0.416, pred 0.004) are smaller terpenoid cations in DAG but model assigns near-zero probability — GNN repetitive-chain embedding failure (same as quinone lipids, saccharolipids). With 286 spectra missing tropylium, triterpenoids have the largest absolute category A gap in the dataset.
+
+---
+
+## Matrine Alkaloids (n=64, DAG miss rate=45.8%)
+
+**64 spectra; ~8 mols in tar.** Tetracyclic quinolizidine alkaloids (matrine, oxymatrine, sophocarpine) — from Sophora plants; all-saturated or partially unsaturated bicyclic/tetracyclic N-ring systems.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 120.1   | 37     | 0.590     | High intensity! [C₈H₁₀N]⁺ quinolizidine ring fragment |
+| 91.1    | 32     | 0.538     | Tropylium — rearrangement or cascade |
+| 106.1   | 29     | 0.494     | [C₇H₈N]⁺ dihydropyridinium |
+| 132.1   | 27     | 0.312     | [C₉H₁₀N]⁺ matrinyl fragment |
+| 118.1   | 25     | 0.300     | [C₈H₈N]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 79.1    | 31     | 0.448          | 0.007          |
+| 93.1    | 50     | 0.220          | 0.004          |
+| 176.1   | 33     | 0.143          | 0.005          |
+| 98.1    | 37     | 0.167          | 0.025          |
+| 70.1    | 28     | 0.242          | 0.006          |
+
+### Root cause
+
+**Cascade depth — tetracyclic quinolizidine ring requires >3 sequential cuts to reach small N-fragments.**
+
+Matrine has a tetracyclic skeleton (quinolizidine fused twice: ABCD ring). To reach 120.1=[C₈H₁₀N]⁺ (the D ring dihydropyridinyl fragment) or 91.1 (tropylium), 4+ ring-opening events are needed sequentially. The 106.1=[C₇H₈N]⁺ dihydropyridinium (29 spectra, 0.494) is a classic quinolizidine ring fragmentation product absent because BFS can only reach 2–3 rings deep. Category B (79.1 at 0.448, 93.1 at 0.220) shows model weakness for alicyclic N-containing fragments that appear across many alkaloid classes — the same GNN embedding problem as morphinans. A SMARTS prepass for the matrine bicyclo[2.2.2]octane core would inject pivot intermediates and resolve the cascade depth.
+
+---
+
+## Lignan Lactones (n=80, DAG miss rate=45.5%)
+
+**80 spectra; ~8 mols in tar.** Lactone-containing lignans (podophyllotoxin, deoxypodophyllotoxin) — aryl-substituted cyclohexane lactones with methylenedioxy groups.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 145.1   | 35     | 0.605     | [C₉H₉O₂]⁺ trimethoxybenzyl or arylmethyl cation |
+| 173.1   | 29     | 0.495     | [C₁₁H₉O₂]⁺ methylenedioxy-phenyl fragment |
+| 131.0   | 20     | 0.333     | [C₉H₇O]⁺ |
+| 175.1   | 8      | 0.264     | Aromatic fragment |
+| 77.0    | 7      | 0.223     | [C₆H₅]⁺ phenyl |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 115.1   | 19     | 0.640          | 0.000          |
+| 219.1   | 11     | 0.640          | 0.011          |
+| 129.1   | 14     | 0.454          | 0.000          |
+| 91.1    | 13     | 0.453          | 0.000          |
+| 128.1   | 16     | 0.372          | 0.000          |
+
+### Root cause
+
+**Model weakness dominant — same failure mode as lignan glycosides.**
+
+Category B completely dominates: 115.1 (0.640, pred 0.000), 219.1 (0.640, pred 0.011), 129.1 (0.454, pred 0.000), 91.1 (0.453, pred 0.000), and 128.1 (0.372, pred 0.000) are all correctly in the DAG but the model assigns zero probability. These are the aglycone aromatic fragments of the podophyllotoxin/deoxypodophyllotoxin scaffold — the cyclohexane lactone ring opens to produce arylmethyl and methylenedioxy-phenyl cations, and the DAG correctly generates these. The GNN fails because the dense aryl-cyclohexane-lactone embedding is non-discriminative across the many diverse scaffolds that produce the same small aromatic fragments. This is identical to the lignan glycoside failure; combining both subclasses would strengthen the signal for targeted retraining.
+
+---
+
+## Organonitrogen Compounds (n=733, DAG miss rate=45.2%)
+
+**733 spectra; broad catch-all class.** Generic N-containing organic molecules not assigned to more specific ClassyFire subclasses — structurally highly diverse.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1    | 54     | 0.520     | Tropylium — rearrangement across diverse N-scaffolds |
+| 77.0    | 43     | 0.504     | [C₆H₅]⁺ phenyl — cascade |
+| 95.0    | 50     | 0.345     | [C₇H₇]⁺ or [C₆H₅N]⁺ |
+| 65.0    | 44     | 0.239     | [C₅H₅]⁺ cyclopentadienyl |
+| 51.0    | 26     | 0.354     | [C₄H₃]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 67.1    | 56     | 0.278          | 0.004          |
+| 55.1    | 27     | 0.123          | 0.032          |
+| 83.1    | 23     | 0.244          | 0.015          |
+| 95.1    | 32     | 0.178          | 0.023          |
+| 55.0    | 21     | 0.293          | 0.010          |
+
+### Root cause
+
+**Cascade depth dominant (aromatic cation series) + model weakness on aliphatic fragments.**
+
+The full C₄–C₇ aromatic cation series (51.0, 65.0, 77.0, 91.1, 95.0) is absent from DAG in 26–54 spectra each — the same cascade depth mechanism seen across multiple aromatic-containing classes. As a catch-all class, molecules range from simple anilines to complex polycyclic N-alkaloids, so cascade depth affects only the subset with ring systems. The 71.9 bin (27 spectra, 0.163) is a .9 fractional bin suggesting some Br/Cl-retaining compounds in the class. Category B aliphatic fragments (67.1, 55.1) reflect model weakness on small unsaturated chains.
+
+---
+
+## Oxanes (n=234, DAG miss rate=44.3%)
+
+**234 spectra; ~12 mols in tar.** Six-membered oxygen-containing rings (tetrahydropyrans, oxacyclohexanes) — sugars, O-glycoside aglycones, and O-substituted ring compounds.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1    | 22     | 0.676     | Tropylium — highest intensity; cascade from pendant aryl |
+| 51.0    | 19     | 0.633     | [C₄H₃]⁺ — small aromatic cascade |
+| 80.0    | 19     | 0.545     | [C₅H₄O]⁺ or [C₄H₄S]⁺ |
+| 79.1    | 43     | 0.435     | [C₆H₇]⁺ cyclohexenyl or allylic |
+| 65.0    | 46     | 0.188     | [C₅H₅]⁺ cyclopentadienyl |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 95.0    | 39     | 0.423          | 0.007          |
+| 67.1    | 27     | 0.363          | 0.014          |
+| 81.1    | 19     | 0.208          | 0.010          |
+| 57.1    | 21     | 0.223          | 0.022          |
+| 57.0    | 24     | 0.077          | 0.018          |
+
+### Root cause
+
+**Cascade depth — same aromatic cation series as oxepanes; 6-membered O-ring.**
+
+Oxanes follow the exact same fragmentation cascade as oxepanes (50.4% miss): the O-ring opens, the resulting allylic carbocation undergoes sequential dehydration + aromatization, producing the C₅–C₉ aromatic cation series (51.0, 65.0, 79.1, 91.1). Category A shows 65.0 (46 spectra), 79.1 (43 spectra), and 91.1 (22 spectra at 0.676) all absent — 3+ sequential cuts required from the 6-membered ring. Category B (95.0 at 0.423, 67.1 at 0.363) shows model weakness on intermediate ring-opening products correctly in DAG. A shared SMARTS prepass for 5/6/7-membered O-ring scaffolds would address all three subclasses (1,3-dioxanes, oxanes, oxepanes) simultaneously.
+
+---
+
+## Phenoxy Compounds (n=396, DAG miss rate=44.1%)
+
+**396 spectra; 20+ mols in tar.** Aryl ether compounds (Ph-O-R) — herbicides (2,4-D type), drug metabolites, and natural O-aryl ethers.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 105.0   | 72     | 0.352     | Benzoyl/phenoxy fragment [C₇H₅O]⁺ — 72 spectra affected! |
+| 109.0   | 15     | 0.603     | Highest intensity in cat A; [C₈H₉]⁺ or [C₆H₅F]⁺ |
+| 50.0    | 52     | 0.183     | [C₄H₂]⁺ — small aromatic |
+| 152.1   | 35     | 0.321     | Larger phenoxy fragment |
+| 153.1   | 27     | 0.194     | [C₁₀H₉O]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 97.0    | 32     | 0.684          | 0.005          |
+| 127.0   | 30     | 0.661          | 0.000          |
+| 134.0   | 25     | 0.590          | 0.000          |
+| 219.1   | 27     | 0.516          | 0.000          |
+| 77.0    | 28     | 0.546          | 0.012          |
+
+### Root cause
+
+**Model weakness dominant — high-intensity category B peaks across diverse phenoxy scaffolds.**
+
+Category B shows four peaks at ≥0.516 intensity predicted at 0.000–0.005: 97.0 (0.684), 127.0 (0.661), 77.0 (0.546), and 219.1 (0.516). These are correctly generated by BFS (O-ether cleavage products and ring-retaining fragments) but the model cannot assign meaningful probability across the diverse set of phenoxy substituents. The 105.0=[C₇H₅O]⁺ benzoyl/phenoxy cation absent in 72 spectra is a genuine cascade depth gap — the ether oxygen prevents direct retro-fragmentation. With n=396 spectra and consistent high-intensity failures, phenoxy compounds are a strong target for focused model retraining.
+
+---
+
+## Hexahydrobenzophenanthridine Alkaloids (n=94, DAG miss rate=43.4%)
+
+**94 spectra; ~6 mols in tar.** Hexahydrobenzophenanthridine-type alkaloids (chelerythrine, sanguinarine reduced forms) — tetracyclic benzylisoquinoline derivatives from Papaveraceae.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 289.1   | 30     | 0.613     | Large ring-retaining fragment [M+H−58]⁺ type |
+| 275.1   | 32     | 0.608     | Tetracyclic ring fragment |
+| 247.1   | 27     | 0.409     | [M+H−86]⁺ type after multiple ring losses |
+| 117.1   | 16     | 0.110     | [C₉H₉]⁺ aromatic cascade |
+| 103.1   | 16     | 0.176     | [C₈H₇]⁺ |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 188.1   | 19     | 0.518          | 0.020          |
+| 261.1   | 24     | 0.441          | 0.000          |
+| 189.1   | 18     | 0.363          | 0.019          |
+| 217.1   | 18     | 0.304          | 0.001          |
+| 190.1   | 37     | 0.156          | 0.017          |
+
+### Root cause
+
+**Cascade depth — tetracyclic benzophenanthridine ring requires >3 sequential cuts for large fragments.**
+
+The large absent fragments (275.1, 289.1 at 0.608–0.613 intensity) result from sequential losses of the C and D rings from the intact [M+H]⁺ — each ring loss requires a bond cut, so losing 2 rings takes 2 cuts, leaving only 1 cut for further fragmentation at depth=3. For fully substituted hexahydrobenzophenanthridines ([M+H]⁺ ~350 Da), reaching 247.1 from [M+H]⁺ requires 3+ cuts just to lose the outer rings. Category B (188.1 at 0.518, 261.1 at 0.441) shows model weakness on isoquinoline-type fragments — same pattern as protoberberines and protopine alkaloids in this Papaveraceae alkaloid cluster.
+
+---
+
+## Metallotetrapyrroles (n=227, DAG miss rate=43.4%)
+
+**227 spectra; 17/27 mols in tar.** Despite the subclass name, this group in NIST23 is dominated by free-base porphyrins and bilins (linear tetrapyrroles) — the ClassyFire label includes metal-free tetrapyrrole macrocycles (porphyrin, chlorin, bilin scaffolds).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 167.1   | 123    | 0.314     | Largest cat A; pyrrole ring fragment |
+| 230.1   | 111    | 0.158     | Dipyrrole-type fragment |
+| 244.1   | 102    | 0.120     | Dipyrrole+CH₂CH₂ |
+| 243.1   | 101    | 0.222     | Dipyrrole variant |
+| 256.1   | 101    | 0.164     | Tripyrrole fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 115.1   | 78     | 0.475          | 0.001          |
+| 192.1   | 87     | 0.244          | 0.009          |
+| 317.1   | 87     | 0.226          | 0.004          |
+| 305.1   | 112    | 0.179          | 0.006          |
+| 179.1   | 78     | 0.264          | 0.010          |
+
+### Root cause
+
+**Cascade depth (pyrrole macrocycle sequential cleavage) + model weakness.**
+
+Free-base porphyrins ([M+H]⁺ ≈ 400–900 Da) fragment by sequential loss of peripheral substituents (propionic acid chains, vinyl groups) then ring cleavage to produce pyrrole and dipyrrole cations. The 167.1 peak (123 spectra, 0.314) is absent from DAG — a pyrrole ring fragment that requires 4+ cuts from the large macrocycle: lose 2–3 peripheral chains, then cleave 1–2 pyrrole units. The series 230.1, 243.1, 244.1, 256.1 (dipyrrole fragments, ~100 spectra each) reflect progressive loss of pyrrole units from the tetrapyrrole macrocycle. Category B shows 115.1 (78 spectra, 0.475, pred 0.001) — the model fails on this common aromatic fragment across the diverse porphyrin scaffold. With 10 mols missing from tar, some category A elevation is artifactual.
+
+---
+
 ## Summary
 
 | Subclass | n | DAG miss | Root cause |
@@ -1931,8 +2588,28 @@ conclusions beyond these two patterns.
 | Cyclohexylphenols | 86 | 49.0% | **Rearrangement** — tropylium [C₇H₇]⁺ (9/14 mols, ring expansion), cyclopentadienyl [C₅H₅]⁺ (8/14 mols, ring contraction), naphthalene [C₁₀H₈]⁺ (6/14 mols, ring fusion) all absent from BFS; model weak on 105.0 (n=34, pred≈0) |
 | Furofurans | 93 | 48.6% | **Cascade depth + rearrangement** — complete C₅–C₁₁ cyclic cation series absent in 8–10/10 mols; tropylium [C₇H₇]⁺ universal (10/10); [C₇H₁₁]⁺ + [C₆H₇O]⁺ co-bin at 95.1; model weak on 128.1=[C₁₀H₈]⁺ (pred=0.000, true=0.440, 15 spec) |
 | Quinolizines | 38 | 48.5% | **Cascade depth** — C₇–C₉ aromatic cascade ([C₈H₇N]⁺/[C₉H₉]⁺ at 117.1, [C₉H₇]⁺ at 115.1) absent in 7/7 mols; tropylium appears in both cat A (absent) and cat B (pred≈0, true=0.732); model weak on 145.1 (true=0.485, pred=0.001) |
-| Quinone & hydroquinone lipids | 412 | 19.2% | **Model weakness** — isoprenoid side-chain fragments (83.0, 107.0, 109.1, 161.1) in DAG predicted ≈0; minor cascade depth for small aromatic cations (cat A n≤31) |
-| Saccharolipids | 466 | 17.3% | **Model weakness** — terpenoid/aliphatic chain fragments (91.1 n=87, 93.1, 79.1, 107.1) in DAG predicted ≈0; model has not learned aglycone chain fragmentation across diverse glycoside scaffolds |
+| Quinone & hydroquinone lipids | 412 | 19.2% | **Model weakness (GNN)** — isoprenoid chain fragments (83.0, 107.0, 109.1, 161.1) in DAG predicted ≈0; GNN cannot distinguish positions in repetitive polyisoprenyl chain (identical k-hop neighborhoods); generic aliphatic embeddings lack discriminative signal |
+| Saccharolipids | 466 | 17.3% | **Model weakness (GNN)** — terpenoid/aliphatic chain fragments (91.1 n=87, 93.1, 79.1, 107.1) in DAG predicted ≈0; same GNN repetitive-chain failure as quinone lipids, compounded by variable sugar moiety context across mols |
 | Phosphosphingolipids | 144 | 15.7% | **Artifact dominant** (35/46 mols missing from tar) + doubly-charged fragment ions (.5 bins 633.5, 651.5) + model weakness (60.0=[N(CH₃)₃+H]⁺ at 0.506 predicted ≈0) |
 | Glycosphingolipids | 32 | 14.3% | **Doubly-charged fragment ions** — large gangliosides ([M+H]⁺ ~992 Da) produce [frag+2H]²⁺ at .4–.7 fractional m/z bins (625.4, 785.7, 864.5); confirmed by FT exact masses; BFS generates only singly-charged fragments; model weakness for large singly-charged ceramide fragments (766.7 at 0.747, 784.7 at 0.595) |
+| Phenanthrolines | 68 | 48.5% | **Mixed: cascade depth + model weakness** — aromatic N-heterocycle cascade (115.1, 146.1, 170.1) beyond depth=3; 139.1 (0.668!) in DAG predicted 0.019; high tar-miss rate inflates cat A |
+| Furanoquinolines | 58 | 48.1% | **Mixed: cascade depth + model weakness dominant** — 77.0/51.0/128.1 aromatic cascade absent; 227.1 (0.554) and 216.1 (0.400) in DAG predicted ≈0; 104.0 (0.731) absent suggests rearrangement product |
+| Acetophenones | 20 | 48.0% | **Rearrangement + model weakness; n=20 too small** — tropylium 91.1 (5 spec, ring expansion) absent; 105.0 benzoyl (0.529, pred 0.032) in DAG; insufficient statistics |
+| Organic sulfuric acids | 36 | 47.8% | **Mixed: halide direct cations (.9 bins) + model weakness** — 94.9/130.9 = [C₂H₂Cl₂/Cl₃]⁺ from Cl₃-substituted mols; 80.0 (SO₃⁺, 0.628) and 141.0 (0.802) in DAG predicted ≈0 |
+| Benzofuranones | 500 | 47.4% | **Mixed: cascade depth + model weakness** — aromatic cascade (91.1, 115.1, 165.1) absent; 152.1 and 165.1 dual-mode (both cat A and cat B); 105.0 benzoyl (57 spec, 0.259) model failure |
+| Azacyclic compounds | 36 | 47.4% | **DAG gap for small N-fragments + model weakness** — 60.0 (0.720!) absent = [C₂H₆NO]⁺ azacyclic fragment; 202.1/146.1 severely underpredicted; catch-all class limits conclusions |
+| Pyranocoumarins | 248 | 47.4% | **Cascade depth dominant** — C₅–C₁₀ aromatic cascade (91.1=66 spec at 0.485!, 128.1=37 spec at 0.533!); pyranochromone aromatization cascade; 165.1/128.1 dual-mode; SMARTS prepass pivot would fix |
+| Protopine alkaloids | 123 | 47.1% | **Cascade depth** — pentacyclic ring; tropylium (57 spec) + large fragments 247.1/275.1 absent; 189.1 (0.485) model weakness on isoquinoline fragments; only 4 mols in tar |
+| Flavans | 441 | 47.0% | **Model weakness dominant** — 147.0=[C₉H₇O₂]⁺ (86 spec, 0.152) and 105.0 (62 spec, 0.309) in DAG predicted ≈0; retro-DA fragmentation intensity not learned; cascade depth residual at high CE |
+| Butyrophenones | 582 | 46.8% | **Mixed: cascade depth (dominant) + rearrangement** — 65.0 (79 spec, 0.670!) and 117.1 (73 spec, 0.385) C₅–C₉ cascade absent; tropylium 91.1 (107 spec) rearrangement absent; 105.0/176.1 model weakness |
+| Organobromides | 62 | 46.7% | **Halide direct cations (.9 bins) + model weakness** — 92.9/90.9 = Br-retaining [C₂H₂⁷⁹Br]⁺ absent from DAG; 124.0 (0.640, pred 0.013) Br-fragment in DAG severely underpredicted |
+| Thienopyrroles | 87 | 46.3% | **Cascade depth (S-heterocycle) + halide direct cations** — 172.9/122.9 Br .9 bins; 51.0 (0.702!) and 93.0 (0.555!) small thienyl cascade; 80.0/53.0/70.0 in DAG predicted 0.000 |
+| Triterpenoids | 1017 | 46.0% | **Cascade depth dominant — LARGEST ABSOLUTE GAP** — C₅–C₁₄ terpenoid cation series; 91.1 in 286 spectra at 0.620; cat B 119.1 (201 spec, 0.410, pred 0.003) GNN repetitive-chain failure; 88/199 mols missing from tar |
+| Matrine alkaloids | 64 | 45.8% | **Cascade depth** — tetracyclic quinolizidine; 120.1 (37 spec, 0.590!) and 106.1 (29 spec, 0.494!) dihydropyridinium fragments absent; SMARTS prepass for matrine bicyclo core would fix |
+| Lignan lactones | 80 | 45.5% | **Model weakness dominant** — 115.1 (0.640), 219.1 (0.640), 129.1 (0.454), 91.1 (0.453), 128.1 (0.372) ALL predicted 0.000; same aglycone GNN failure as lignan glycosides |
+| Organonitrogen compounds | 733 | 45.2% | **Cascade depth (aromatic cation series) + model weakness on aliphatic fragments** — C₄–C₇ cascade (51.0, 65.0, 77.0, 91.1) absent in 26–54 spectra; 71.9 Br .9 bin; catch-all class |
+| Oxanes | 234 | 44.3% | **Cascade depth** — same O-ring cascade as oxepanes; 91.1 (22 spec, 0.676!), 51.0 (19 spec, 0.633!), 79.1 (43 spec) absent; shared SMARTS prepass for 5/6/7-membered O-rings would fix all three subclasses |
+| Phenoxy compounds | 396 | 44.1% | **Model weakness dominant** — 97.0 (0.684!), 127.0 (0.661!), 134.0 (0.590!), 219.1 (0.516!) all in DAG predicted 0.000; 105.0 absent in 72 spectra = cascade depth; strong retraining target |
+| Hexahydrobenzophenanthridines | 94 | 43.4% | **Cascade depth** — tetracyclic benzophenanthridine; 289.1 (30 spec, 0.613!) and 275.1 (32 spec, 0.608!) absent; 188.1 (0.518) and 261.1 (0.441) model weakness; Papaveraceae alkaloid cluster |
+| Metallotetrapyrroles | 227 | 43.4% | **Cascade depth + model weakness** — 167.1 (123 spec, 0.314) pyrrole macrocycle fragment absent; dipyrrole series 230.1–256.1 (~100 spec each) absent; 115.1 (78 spec, 0.475, pred 0.001) model failure |
 | Other glycerolipids | 66 | 11.1% | **Artifact dominant** (9/12 mols missing from tar) + doubly-charged fragment ions (622.5, 529.5) + model weakness (91.1 tropylium pred=0.000) |

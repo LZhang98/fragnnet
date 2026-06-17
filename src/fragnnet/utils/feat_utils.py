@@ -367,7 +367,13 @@ class AtomRadical(FeatBase):
 
 @register_atom_feat
 class AtomRing(FeatBase):
-    """Atom Ring and Atom Aromatic features are one-hot encoded."""
+    """Atom Ring and Atom Aromatic features are one-hot encoded.
+
+    TODO: when used together with a_ring_size, the is_in_ring bits here are
+    redundant (a_ring_size all-zero ↔ not in ring). The is_aromatic bits are
+    NOT redundant (ring size does not imply aromaticity). Consider splitting into
+    a standalone a_aromatic feature and dropping a_ring to eliminate the overlap.
+    """
 
     name = "a_ring"
     allowable_set = [True, False]

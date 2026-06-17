@@ -33,7 +33,7 @@ frag_params:
     - out_degree
     - in_degree
     - frag_q
-
+  pyg_pe_embed_k: 16
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
