@@ -185,6 +185,8 @@ def main() -> None:
     logger.info("Loading spec_df from %s", args.proc_dp)
     spec_df = pd.read_pickle(os.path.join(args.proc_dp, "spec_df.pkl"))
     logger.info("  Loaded %d spectra.", len(spec_df))
+    spec_df = spec_df[spec_df["prec_mz"] <= 1500.00]
+    logger.info("  After prec_mz <= 1500.00 filter: %d spectra.", len(spec_df))
 
     cv_dirs = sorted(
         d
