@@ -132,20 +132,20 @@ class FraGNNetPL(SpectrumPL):
         # Load pre-trained weights if specified for finetuning
         if self.hparams.finetune:
             self._load_pretrained_weights(
-                self.hparams.finetune["pretrained_ckpt"],
-                strict=self.hparams.finetune["strict_load"],
-                shared_components=self.hparams.finetune["finetune_shared_components"]
-                if not self.hparams.finetune["shared_all"]
+                self.hparams.finetune_pretrained_ckpt,
+                strict=self.hparams.finetune_strict_load,
+                shared_components=self.hparams.finetune_shared_components
+                if not self.hparams.finetune_shared_all
                 else None,
             )
 
             # Handle freezing
-            if self.hparams.finetune["freeze_all_shared"]:
+            if self.hparams.finetune_freeze_all_shared:
                 # If freeze_all_shared is True, we freeze whatever we loaded
                 if self.pretrained_param_names:
                     self._freeze_components(self.pretrained_param_names, exact_match=True)
-            elif self.hparams.finetune["freeze_components"]:
-                freeze_components = self.hparams.finetune["freeze_components"]
+            elif self.hparams.finetune_freeze_components:
+                freeze_components = self.hparams.finetune_freeze_components
                 # Otherwise freeze specific components by prefix
                 self._freeze_components(freeze_components, exact_match=False)
 
@@ -1192,10 +1192,7 @@ class FraGNNetPL(SpectrumPL):
         Configure optimizers with different learning rates for pre-trained and other parameters.
         """
         # Get LR ratio from finetune config
-        if self.hparams.finetune:
-            lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
-        else:
-            lr_ratio = self.hparams.finetune_weights_lr_ratio
+        lr_ratio = self.hparams.finetune_weights_lr_ratio
 
         # Separate parameters into pre-trained and others
         pretrained_params = [
