@@ -19,15 +19,23 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
-from fragnnet.utils.frag_utils import compute_frag_peak_stats
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.frag_utils import PREC_TYPE_TO_CMF_MASS_DIFF
 
 DAG_DP = "/home/feiw/gitRepos/frag-gnn/data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags"
 SPEC_DF_FP = "/home/feiw/gitRepos/frag-gnn/data/proc/nist20/spec_df.pkl"
 OUT_DIR = "/home/feiw/gitRepos/frag-gnn/data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse"
 
 MAX_DEPTH = 3
-TOLERANCE = 0.01   # Da
-H_TRANSFER = 2     # production default
+H_TRANSFER = 4     # h_delta = 0, ±1, ±2, ±3, ±4
+
+# Per-instrument-type tolerance: rel (ppm as fraction) + min_mz floor
+# tol(mz) = rel * max(mz, min_mz)
+INST_TOL: dict[str, dict] = {
+    "FT":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
+    "QTOF": {"rel": 2e-5, "min_mz": 750.0},   # 20 ppm, floor 0.015 Da
+    "IT":   {"rel": 1e-5, "min_mz": 200.0},   # same as FT
+}
 
 PREC_TYPES = {"[M+H]+", "[M-H]-", "[M+Na]+", "[M+K]+", "[M+NH4]+", "[M+Cl]-"}
 INST_TYPES  = {"FT", "QTOF", "IT"}
@@ -61,10 +69,73 @@ def formula_depth_map(dag_d: dict) -> dict[int, int]:
     return f_depth
 
 
-def filtered_idx_by_h_delta(
-    idx_by_h_delta: list[set], allowed: set[int]
-) -> list[set]:
-    return [s & allowed for s in idx_by_h_delta]
+H_DELTA_IDXS = list(range(1 + 2 * H_TRANSFER))  # [0..8] for H_TRANSFER=4
+
+
+def inst_tolerances(true_mzs: np.ndarray, inst_type: str) -> np.ndarray:
+    """Return per-peak tolerance array (ppm-based with absolute floor).
+
+    Args:
+        true_mzs: Observed m/z values of shape (n_peaks,).
+        inst_type: Instrument type string.
+
+    Returns:
+        Per-peak tolerance array of shape (n_peaks,).
+    """
+    cfg = INST_TOL[inst_type]
+    return cfg["rel"] * np.maximum(true_mzs, cfg["min_mz"])
+
+
+def ibd_allowed(idx_by_h_delta: list[set], allowed: set[int]) -> set[int]:
+    """Return union of formula indices across all h_delta positions, filtered to allowed."""
+    out: set[int] = set()
+    for i in H_DELTA_IDXS:
+        out |= (idx_by_h_delta[i] & allowed)
+    return out
+
+
+def vectorized_recall(
+    peaks: list,
+    formula_peak_mzs_np: np.ndarray,
+    formula_peak_probs_np: np.ndarray,
+    allowed_idxs: set[int],
+    prec_type: str,
+    inst_type: str,
+) -> tuple[float, float]:
+    """Fast vectorized recall / wrecall using per-instrument ppm tolerance and CMF."""
+    if not peaks or not allowed_idxs:
+        return 0.0, 0.0
+
+    true_mzs  = np.array([p[0] for p in peaks], dtype=np.float64)
+    true_ints = np.array([p[1] for p in peaks], dtype=np.float64)
+    total_int = true_ints.sum()
+    if total_int == 0:
+        return 0.0, 0.0
+
+    idx_list  = list(allowed_idxs)
+    theo_raw  = formula_peak_mzs_np[idx_list, 0].astype(np.float64)
+    prob_raw  = formula_peak_probs_np[idx_list, 0]
+    theo_mono = theo_raw[prob_raw > 0.0]
+
+    if len(theo_mono) == 0:
+        return 0.0, 0.0
+
+    std_diff = PREC_TYPE_TO_MASS_DIFF.get(prec_type, 0.0)
+    cmf_diff = PREC_TYPE_TO_CMF_MASS_DIFF.get(prec_type, std_diff)
+
+    theo_std = theo_mono + std_diff
+    theo_cmf = theo_mono + cmf_diff
+    theo_all = theo_std if std_diff == cmf_diff else np.unique(
+        np.concatenate([theo_std, theo_cmf])
+    )
+
+    tols    = inst_tolerances(true_mzs, inst_type)
+    diffs   = np.abs(true_mzs[:, None] - theo_all[None, :])
+    matched = np.any(diffs < tols[:, None], axis=1)
+
+    recall  = matched.mean()
+    wrecall = (true_ints * matched).sum() / total_int
+    return float(recall), float(wrecall)
 
 
 # ── Pass 1: fast node/formula counts from ALL molecules ────────────────────────
@@ -113,41 +184,34 @@ def recall_pass_mol(
         return []
     dag_d = load_dag(fp)
 
-    f_depth = formula_depth_map(dag_d)
+    f_depth        = formula_depth_map(dag_d)
+    idx_by_h_delta = dag_d["idx_by_h_delta"]
+    fpm            = dag_d["formula_peak_mzs"].numpy()   # (n_formulas, 5)
+    fpp            = dag_d["formula_peak_probs"].numpy()  # (n_formulas, 5)
+
     depth_allowed: dict[int, set[int]] = {
-        dep: {f for f, fd in f_depth.items() if fd <= dep}
+        dep: ibd_allowed(idx_by_h_delta, {f for f, fd in f_depth.items() if fd <= dep})
         for dep in range(MAX_DEPTH + 1)
     }
-
-    formula_peak_mzs   = dag_d["formula_peak_mzs"]
-    formula_peak_probs = dag_d["formula_peak_probs"]
-    idx_by_h_delta     = dag_d["idx_by_h_delta"]
 
     out = []
     for sr in spec_rows:
         peaks = sr["peaks"]
         if len(peaks) == 0:
             continue
+        inst = sr["inst_type"]
         for dep in range(MAX_DEPTH + 1):
-            ibd   = filtered_idx_by_h_delta(idx_by_h_delta, depth_allowed[dep])
-            stats = compute_frag_peak_stats(
-                peaks,
-                formula_peak_mzs,
-                formula_peak_probs,
-                ibd,
-                sr["prec_mz"],
-                H_TRANSFER,
-                TOLERANCE,
-                sr["prec_type"],
-            )
+            r, w = vectorized_recall(peaks, fpm, fpp, depth_allowed[dep],
+                                     sr["prec_type"], inst)
             out.append({
-                "mol_id":      mol_id,
-                "spec_id":     sr["spec_id"],
-                "inst_type":   sr["inst_type"],
-                "frag_mode":   sr["frag_mode"],
+                "mol_id":       mol_id,
+                "spec_id":      sr["spec_id"],
+                "inst_type":    inst,
+                "frag_mode":    sr["frag_mode"],
+                "prec_type":    sr["prec_type"],
                 "depth_thresh": dep,
-                "recall":  float(stats.iloc[0]),
-                "wrecall": float(stats.iloc[1]),
+                "recall":  r,
+                "wrecall": w,
             })
     return out
 
@@ -212,7 +276,9 @@ def main() -> None:
     # ── Print summary ──────────────────────────────────────────────────────────
     print(f"\n{'='*72}")
     print(f"NIST20 D3 — per-depth DAG contribution  (node stats n={len(node_df):,})")
-    print(f"Peak recall on {SAMPLE_N}-mol random sample; tol={TOLERANCE} Da, h≤{H_TRANSFER}")
+    print(f"Peak recall on {SAMPLE_N}-mol random sample; "
+          f"inst_tol (FT=10ppm/0.002Da, QTOF=20ppm/0.015Da, IT=10ppm/0.002Da), "
+          f"h≤{H_TRANSFER}, CMF+std matching")
     print(f"{'='*72}")
 
     print("\n--- reached_depth distribution ---")
@@ -270,6 +336,12 @@ def main() -> None:
         for inst, grp in full.groupby("inst_type"):
             print(f"  {inst:6s}  recall={grp['recall'].mean():.4f}  "
                   f"wrecall={grp['wrecall'].mean():.4f}  n={len(grp):,}")
+
+        print("\n--- Per-depth wrecall by inst_type ---")
+        print(f"  {'inst':>5}  {'d0':>7}  {'d1':>7}  {'d2':>7}  {'d3':>7}")
+        for inst, grp in spec_df_out.groupby("inst_type"):
+            vals = [grp[grp["depth_thresh"] == d]["wrecall"].mean() for d in range(MAX_DEPTH + 1)]
+            print(f"  {inst:>5}  " + "  ".join(f"{v:>7.4f}" for v in vals))
 
 
 if __name__ == "__main__":
