@@ -239,3 +239,15 @@ pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 32              # sub-batch size for vectorized loss
 num_workers: 6
+
+# ============================================================================
+# Fine-tuning
+# ============================================================================
+finetune: True
+finetune_pretrained_ckpt: saved_ckpts/pcdl_nist23/pcdl_nist23_cv9_gvthgz9q.ckpt
+finetune_strict_load: True
+finetune_freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
+finetune_freeze_components: ["mol_embedder", "mol_pool"] # Optional
+finetune_shared_all: False  # Whether to share all components, if False, specify below
+finetune_shared_components: ['mol_embedder', 'mol_pool'] # Optional
+finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
