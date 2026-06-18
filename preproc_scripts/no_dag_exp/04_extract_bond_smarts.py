@@ -21,7 +21,9 @@ Usage:
 """
 
 import argparse
+import logging
 import os
+import time
 from collections import Counter
 
 import pandas as pd
@@ -265,7 +267,22 @@ def get_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    log = logging.getLogger(__name__)
+
     args = get_args()
+    log.info(
+        "Starting bond SMARTS extraction: splits=%s  env_radius=%d  batch_size=%d  n_jobs=%d",
+        args.split_names,
+        args.env_radius,
+        args.batch_size,
+        args.n_jobs,
+    )
+    log.info("Output directory: %s", args.output_dp)
 
     config_d = load_config(args.template_fp, args.custom_fp, None)
     config_d["train_batch_size"] = args.batch_size
@@ -284,11 +301,13 @@ if __name__ == "__main__":
     for split_name, dset in zip(args.split_names, dses):
         idx_to_inst_type: dict[int, str] = dset.idx_to_inst_type
         dl = init_dataloader(dset, config_d)
+        log.info("[%s] %d batches (%d spectra)", split_name, len(dl), len(dset))
 
         all_bonds: Counter = Counter()
         broken_bonds: Counter = Counter()
+        t0 = time.monotonic()
 
-        for batch_idx, data in tqdm(enumerate(dl), total=len(dl), desc=f"{split_name}"):
+        for batch_idx, data in tqdm(enumerate(dl), total=len(dl), desc=split_name):
             results = Parallel(n_jobs=args.n_jobs)(
                 delayed(process_b_idx)(
                     b_idx,
@@ -306,6 +325,28 @@ if __name__ == "__main__":
                 all_bonds.update(ab)
                 broken_bonds.update(bb)
 
+            if (batch_idx + 1) % 100 == 0:
+                log.info(
+                    "[%s] batch %d/%d — %d unique all-bond types, %d unique broken-bond types",
+                    split_name,
+                    batch_idx + 1,
+                    len(dl),
+                    len(all_bonds),
+                    len(broken_bonds),
+                )
+
+        elapsed = time.monotonic() - t0
+        log.info(
+            "[%s] done in %.1fs — %d unique all-bond types (%s total), "
+            "%d unique broken-bond types (%s total)",
+            split_name,
+            elapsed,
+            len(all_bonds),
+            f"{sum(all_bonds.values()):,}",
+            len(broken_bonds),
+            f"{sum(broken_bonds.values()):,}",
+        )
+
         for fname, counter in [
             (f"all_bond_smarts_{split_name}.csv", all_bonds),
             (f"broken_bond_smarts_{split_name}.csv", broken_bonds),
@@ -316,4 +357,4 @@ if __name__ == "__main__":
                 .reset_index(drop=True)
             )
             df.to_csv(os.path.join(args.output_dp, fname), index=False)
-            print(f"  {fname}: {len(df)} unique bond SMARTS, {df['count'].sum():,} total")
+            log.info("  Wrote %s: %d unique bond SMARTS, %s total", fname, len(df), f"{df['count'].sum():,}")
