@@ -634,7 +634,7 @@ def main(args):
                         ]
                     )
         elif is_cv_mode and name == "finetune_pretrained_ckpt":
-            # CV mode: validate all fold ckpts exist, then emit per-fold rsync
+            # CV mode: validate all fold ckpts exist, then emit bash array + single rsync
             print(f"> CV mode: copying pretrained ckpts for folds {args.cv_start}-{args.cv_end}")
             fold_ckpt_fps: dict[int, str] = {}
             for fold_idx in range(args.cv_start, args.cv_end + 1):
@@ -650,19 +650,16 @@ def main(args):
                 if not os.path.exists(fold_ckpt_fp):
                     raise FileNotFoundError(f"Pretrained ckpt not found: {fold_ckpt_fp}")
                 fold_ckpt_fps[fold_idx] = fold_ckpt_fp
-
-                print("> adding bash array + single rsync for per-fold pretrained ckpts")
-                array_lines = [
-                    "# copy pretrained ckpt for current CV fold (array-indexed by CV_FOLD)"
-                ]
-                array_lines.append("declare -A CV_PRETRAINED_CKPT")
-                for fold_idx, fold_ckpt_fp in fold_ckpt_fps.items():
-                    array_lines.append(f'CV_PRETRAINED_CKPT[{fold_idx}]="{fold_ckpt_fp}"')
-                array_lines.append(
-                    "rsync -av --relative ${FRAGNNET_DP}/./${CV_PRETRAINED_CKPT[${CV_FOLD}]}"
-                    " ${WORKING_DIR}"
-                )
-                script_lines.extend(array_lines)
+            print("> adding bash array + single rsync for per-fold pretrained ckpts")
+            array_lines = ["# copy pretrained ckpt for current CV fold (array-indexed by CV_FOLD)"]
+            array_lines.append("declare -A CV_PRETRAINED_CKPT")
+            for fold_idx, fold_ckpt_fp in fold_ckpt_fps.items():
+                array_lines.append(f'CV_PRETRAINED_CKPT[{fold_idx}]="{fold_ckpt_fp}"')
+            array_lines.append(
+                "rsync -av --relative ${FRAGNNET_DP}/./${CV_PRETRAINED_CKPT[${CV_FOLD}]}"
+                " ${WORKING_DIR}"
+            )
+            script_lines.extend(array_lines)
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(
