@@ -2541,10 +2541,37 @@ Free-base porphyrins ([M+H]⁺ ≈ 400–900 Da) fragment by sequential loss of 
 
 ---
 
+## Organic Pyrophosphates (n=32, DAG miss rate=83.3%)
+
+**6 mols; 3 in tar; 0 spectra from non-tar mols.** All spectra derive from a single molecule: tetraethyl pyrophosphate [(EtO)₂P(=O)−O−P(=O)(OEt)₂, mol_id=19750, [M+H]⁺=291.075].
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 178.9 | 10 | 0.656 | Exact m/z=178.9501 — same physical peak as 179.0 bin |
+| 179.0 | 8 | 0.856 | Same peak at 178.9501, binned differently at boundary |
+| 63.0 | 2 | 0.070 | [PO₂]⁺ at 62.964 — terminal phosphorus fragment |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 207.0 | 4 | 0.362 | 0.025 |
+
+### Root cause
+
+**Rearrangement — β-elimination of ethylene from ethyl phosphate ester groups (McLafferty-type).**
+
+Tetraethyl pyrophosphate fragments by successive loss of C₂H₄ (28.031 Da) via β-elimination: the β-hydrogen on each ethyl group migrates to the phosphate oxygen, expelling ethylene. This produces the series 291.075 → 263.044 → 235.013 → 206.982 → 178.950, each step a McLafferty rearrangement. The 178.9/179.0 bins are the same physical peak at 178.9501 straddling the bin boundary (4 ethylene losses from [M+H]⁺). The 207.0 category B entry (206.982 = 3 ethylene losses) is reachable via direct P−O bond cuts within depth=3 but severely underpredicted. The 63.0 bin ([PO₂]⁺ = 62.964) requires full dephosphorylation beyond depth=3. BFS cannot model H-migration prerequisites of β-elimination at any depth.
+
+---
+
 ## Summary
 
 | Subclass | n | DAG miss | Root cause |
 |----------|---|----------|------------|
+| Organic pyrophosphates | 32 | 83.3% | **Rearrangement** — β-elimination of ethylene (McLafferty) from tetraethyl pyrophosphate; series 291→263→235→207→179 (28 Da steps); single molecule drives entire class |
 | Phenanthrenes & deriv. | 330 | 78.3% | **Cascade gap** — high-CE RDA of oxycodone/naltrexone-type alkaloids; N-CONTAINING cascade (C₁₃H₁₀N⁺) beyond BFS depth=3 |
 | Quinolizidinones | 33 | 100% | **Artifact** — mol missing from tar; BFS actually works |
 | Furan lignans | 21 | 82.6% | **Artifact** — contaminated CE=nan spectra in NIST23 |
