@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nps_nps_pcdl_nist23_cv1
+wandb_name: nps_pcdl_nist23_cv1
 wandb_group: nps_pcdl_nist23
 wandb_tags:
 - retrieval
