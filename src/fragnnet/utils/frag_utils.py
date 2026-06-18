@@ -1009,8 +1009,41 @@ def compute_dags(
         for _r in _all_sssr:
             for _b in _r:
                 _bond_ring_count[_b] = _bond_ring_count.get(_b, 0) + 1
-        _fused = [list(r) for r in _all_sssr if any(_bond_ring_count[b] > 1 for b in r)]
-        ring_bond_groups = _fused if _fused else None
+        # Build ring_bond_groups with adaptive per-ring granularity:
+        # - Isolated rings (no shared bonds): excluded (cut=2 is redundant with
+        #   sequential bridge cuts at the same depth budget).
+        # - Terminal rings in a fused system (exactly 1 shared bond): keep ALL
+        #   bonds so cut=2 explores the full ring (simple bicyclic behaviour).
+        # - Internal rings in a larger fused system (≥2 shared bonds): restrict to
+        #   shared-bond pairs only, avoiding the O(ring_size²) cascade while
+        #   retaining the chemically meaningful junction cuts.
+        _ring_bond_groups_list: list[list[int]] = []
+        for _r in _all_sssr:
+            _ring_bonds = list(_r)
+            _ring_shared = [_b for _b in _ring_bonds if _bond_ring_count.get(_b, 0) > 1]
+            if not _ring_shared:
+                continue  # isolated ring: skip
+            if len(_ring_shared) == 2:
+                # Ring flanked by exactly 2 other rings (linear/angular fusion):
+                # restrict cut=2 to the 2 junction bonds, suppressing the
+                # O(ring_size²) pair explosion while keeping junction cuts.
+                _ring_bond_groups_list.append(_ring_shared)
+            else:
+                # Terminal ring (1 shared bond) or peri-fused ring (≥3 shared bonds):
+                # keep all bonds so cut=2 explores the full ring.
+                _ring_bond_groups_list.append(_ring_bonds)
+        ring_bond_groups = _ring_bond_groups_list if _ring_bond_groups_list else None
+        # Restrict ring-open to shared (inter-ring) bonds only: bonds that belong
+        # to 2+ SSSR rings.  Opening a shared bond disconnects the fused ring
+        # system, enabling new cut=2 pairs at the next BFS depth.  Opening
+        # non-shared bonds adds O(n_ring_bonds) redundant BFS intermediates that
+        # produce fragments already reachable via direct cut=2 paths.
+        ring_open_mask = np.zeros(num_edges, dtype=MASK_DTYPE)
+        for _b, _c in _bond_ring_count.items():
+            if _c > 1:
+                ring_open_mask[_b] = 1
+        if not ring_open_mask.any():
+            ring_open_mask = None
         # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
         # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
         smarts_seed_pairs = None
@@ -1041,6 +1074,7 @@ def compute_dags(
                 ring_bond_groups=ring_bond_groups,
                 min_frag_atoms=min_frag_atoms,
                 max_ring_cut_steps=max_ring_cut_steps,
+                ring_open_mask=ring_open_mask,
             )
         )
     else:

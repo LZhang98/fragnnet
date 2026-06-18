@@ -393,6 +393,7 @@ def compute_ccs_multi_cut(
     ring_bond_groups = None,
     int min_frag_atoms = 0,
     int max_ring_cut_steps = 2,
+    cnp.ndarray ring_open_mask = None,
 ):
     """Multi-bond-cut BFS fragmentation (Cython).
 
@@ -429,6 +430,12 @@ def compute_ccs_multi_cut(
             threshold are silently dropped (and their subtrees never explored,
             since all children would be even smaller).  ``0`` disables the
             filter.  Default ``0`` disables the filter.
+        ring_open_mask: Shape ``(num_edges,)`` uint8 — 1 for bonds that are
+            allowed to be ring-opened (non-bridge ring cuts that keep n_ccs=1).
+            ``None`` (default) allows all non-bridge bonds to be ring-opened,
+            matching the original behaviour.  Set to inter-ring (shared) bonds
+            only to suppress the O(n_ring_bonds) cascade that arises in dense
+            fused-ring systems while retaining ring-junction fragmentation.
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
         dag_frag_meta)`` — same format as ``compute_frags.compute_ccs``.
@@ -448,11 +455,15 @@ def compute_ccs_multi_cut(
 
     # -----------------------------------------------------------------------
     # Ring-edge mask memoryview (used to count live ring bonds per BFS node).
+    # Ring-open mask memoryview (restricts which bonds may be ring-opened).
     # -----------------------------------------------------------------------
     cdef char[::1] ring_edge_mask_mv
+    cdef char[::1] ring_open_mask_mv
 
     if ring_edge_mask is not None:
         ring_edge_mask_mv = np.asarray(ring_edge_mask, dtype=MASK_DTYPE)
+    if ring_open_mask is not None:
+        ring_open_mask_mv = np.asarray(ring_open_mask, dtype=MASK_DTYPE)
 
     # -----------------------------------------------------------------------
     # Pre-allocated scratch arrays for CC computation (reused every cut attempt)
@@ -730,6 +741,8 @@ def compute_ccs_multi_cut(
                     i = live_arr[bi_b]
                     if disconnected_mv[i]:
                         continue  # bridge: already handled above
+                    if ring_open_mask is not None and ring_open_mask_mv[i] == 0:
+                        continue  # not an allowed ring-open bond
                     # Non-bridge bond: cutting it opens a ring (n_ccs==1).
                     # Build the ring-opened edge key by temporarily zeroing bond i.
                     cur_edge_mask_mv[i] = 0

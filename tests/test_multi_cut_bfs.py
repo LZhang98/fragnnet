@@ -1058,3 +1058,213 @@ class TestMinRcDedup:
         assert len(r1["nodes_mask"]) == len(r2["nodes_mask"]), (
             "Fragment count is non-deterministic — dict ordering issue?"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 20: ring_open_mask — restrict which bonds may be ring-opened
+# ---------------------------------------------------------------------------
+
+
+def _shared_bond_mask(smiles: str, num_edges: int) -> np.ndarray:
+    """Return a uint8 mask marking only inter-ring (shared) bonds."""
+    from rdkit import Chem
+
+    mol = Chem.MolFromSmiles(smiles)
+    bond_ring_count: dict[int, int] = {}
+    for ring in mol.GetRingInfo().BondRings():
+        for b in ring:
+            bond_ring_count[b] = bond_ring_count.get(b, 0) + 1
+    mask = np.zeros(num_edges, dtype=np.uint8)
+    for b, c in bond_ring_count.items():
+        if c > 1:
+            mask[b] = 1
+    return mask
+
+
+def _run_with_rom(
+    smiles: str,
+    ring_open_mask: np.ndarray | None,
+    max_depth: int = 3,
+) -> dict:
+    """Run multi-cut BFS with an explicit ring_open_mask."""
+    mol_d = extract_mol_info(smiles)
+    ring_bond_groups = [list(r) for r in mol_d["mol"].GetRingInfo().BondRings()]
+    ring_mask = mol_d["ring_bond_mask"]
+    num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
+    nodes_mask, nodes_depth, dag_edges, meta = compute_ccs_multi_cut(
+        num_nodes,
+        num_edges,
+        node_mask,
+        edges,
+        edge_mask,
+        n2e,
+        max_depth=max_depth,
+        ring_edge_mask=ring_mask,
+        max_cut_size=2,
+        ring_bond_groups=ring_bond_groups,
+        ring_open_mask=ring_open_mask,
+    )
+    return {
+        "nodes_mask": nodes_mask,
+        "nodes_depth": nodes_depth,
+        "dag_edges": dag_edges,
+        "meta": meta,
+        "num_nodes": num_nodes,
+        "num_edges": num_edges,
+    }
+
+
+class TestRingOpenMask:
+    """ring_open_mask gates which non-bridge bonds may be ring-opened.
+
+    ring_open_mask=None  — all non-bridge bonds allowed (original behaviour).
+    ring_open_mask=zeros — no ring-opens at all (only bridge cuts and cut=2 from root).
+    ring_open_mask=shared — only inter-ring bonds (bonds in ≥2 SSSR rings).
+    """
+
+    # ---------------------------------------------------------------------------
+    # Backward-compatibility: None mask must equal the unconstrained run
+    # ---------------------------------------------------------------------------
+
+    def test_none_mask_matches_unconstrained(self):
+        """ring_open_mask=None gives identical fragment counts to the default call."""
+        for smiles in [
+            "c1ccc2ccccc2c1",          # naphthalene
+            "CC(C)Cc1ccc(cc1)C(C)C(=O)O",  # ibuprofen
+            "C1CCC2CCCC3CCCC4CCCCC4C3C2C1",  # androstane
+        ]:
+            r_default = _run(smiles, max_cut_size=2, max_depth=3)
+            mol_d = extract_mol_info(smiles)
+            _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+            r_none = _run_with_rom(smiles, ring_open_mask=None, max_depth=3)
+            assert len(r_default["nodes_mask"]) == len(r_none["nodes_mask"]), (
+                f"{smiles}: ring_open_mask=None changed fragment count "
+                f"({len(r_default['nodes_mask'])} vs {len(r_none['nodes_mask'])})"
+            )
+
+    # ---------------------------------------------------------------------------
+    # All-zeros mask: blocks every ring-open → same as no ring-open support
+    # ---------------------------------------------------------------------------
+
+    def test_all_zeros_mask_reduces_nodes_vs_none(self):
+        """All-zeros ring_open_mask must produce <= node count vs None for a fused ring."""
+        smiles = "c1ccc2ccccc2c1"  # naphthalene
+        mol_d = extract_mol_info(smiles)
+        _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+        zeros = np.zeros(num_edges, dtype=np.uint8)
+        r_none = _run_with_rom(smiles, ring_open_mask=None, max_depth=3)
+        r_zero = _run_with_rom(smiles, ring_open_mask=zeros, max_depth=3)
+        assert len(r_zero["nodes_mask"]) < len(r_none["nodes_mask"]), (
+            f"All-zeros mask should reduce nodes: got {len(r_zero['nodes_mask'])} "
+            f"vs None={len(r_none['nodes_mask'])}"
+        )
+
+    def test_all_zeros_mask_still_finds_direct_cut2(self):
+        """Even with ring_open_mask=zeros, cut=2 from the root still fires."""
+        smiles = "C1CCCCC1"  # cyclohexane — no bridges; cut=2 from root finds all splits
+        mol_d = extract_mol_info(smiles)
+        _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+        zeros = np.zeros(num_edges, dtype=np.uint8)
+        r = _run_with_rom(smiles, ring_open_mask=zeros, max_depth=3)
+        counts = set(int(r["nodes_mask"][i].sum()) for i in range(1, len(r["nodes_mask"])))
+        # Direct cut=2 from root on cyclohexane gives sizes 1..5
+        for expected in [1, 2, 3, 4, 5]:
+            assert expected in counts, (
+                f"zeros mask should not block direct root cut=2; "
+                f"missing size-{expected}, got {sorted(counts)}"
+            )
+
+    # ---------------------------------------------------------------------------
+    # Shared-bond mask: targets the inter-ring junction bonds only
+    # ---------------------------------------------------------------------------
+
+    def test_shared_mask_reduces_nodes_for_polycyclic(self):
+        """Shared-bond mask must produce strictly fewer nodes than None for androstane.
+
+        Androstane has 4 fused rings; the full ring-open cascade generates
+        thousands of redundant BFS intermediates.  Restricting ring-open to the
+        3 shared bonds breaks the cascade without removing real fragments.
+        """
+        smiles = "C1CCC2CCCC3CCCC4CCCCC4C3C2C1"  # androstane
+        mol_d = extract_mol_info(smiles)
+        _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+        shared = _shared_bond_mask(smiles, num_edges)
+        r_none = _run_with_rom(smiles, ring_open_mask=None, max_depth=3)
+        r_shared = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
+        assert len(r_shared["nodes_mask"]) < len(r_none["nodes_mask"]), (
+            f"Shared mask should reduce polycyclic node count: "
+            f"got {len(r_shared['nodes_mask'])} vs None={len(r_none['nodes_mask'])}"
+        )
+        # Reduction must be substantial (≥ 50%) — not just noise
+        ratio = len(r_shared["nodes_mask"]) / len(r_none["nodes_mask"])
+        assert ratio < 0.5, (
+            f"Expected ≥50% reduction; got {ratio:.1%} "
+            f"({len(r_shared['nodes_mask'])} vs {len(r_none['nodes_mask'])})"
+        )
+
+    def test_shared_mask_retains_ring_junction_fragments(self):
+        """Shared-bond mask on naphthalene still finds the 5+5 ring-junction cut.
+
+        Naphthalene has 1 shared bond (the C4a-C8a junction).  Ring-opening it
+        allows cut=2 on the two sides to produce a 5+5 split (each benzo ring).
+        With max_depth=3 this path is depth-0(open) → depth-1(open) → depth-2(cut2).
+        """
+        smiles = "c1ccc2ccccc2c1"  # naphthalene, 10 C
+        mol_d = extract_mol_info(smiles)
+        _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+        shared = _shared_bond_mask(smiles, num_edges)
+        r = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
+        counts = set(int(r["nodes_mask"][i].sum()) for i in range(1, len(r["nodes_mask"])))
+        assert 5 in counts, (
+            f"Shared-mask naphthalene should find 5-atom ring-half fragment; "
+            f"got sizes {sorted(counts)}"
+        )
+
+    def test_shared_mask_no_effect_on_acyclic(self):
+        """Shared-bond mask on an acyclic molecule leaves node count unchanged."""
+        smiles = "CCCCCCC"  # heptane — no rings, so ring_open_mask is all zeros
+        mol_d = extract_mol_info(smiles)
+        _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+        shared = _shared_bond_mask(smiles, num_edges)
+        r_none = _run_with_rom(smiles, ring_open_mask=None, max_depth=3)
+        r_shared = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
+        assert len(r_none["nodes_mask"]) == len(r_shared["nodes_mask"]), (
+            "Acyclic molecule: shared-bond mask should not change fragment count"
+        )
+
+    def test_shared_mask_no_effect_on_simple_ring(self):
+        """Shared-bond mask on a simple (non-fused) ring leaves fragment count unchanged.
+
+        A simple ring has no shared bonds; the mask is all zeros.  But ring-open
+        on a simple ring is fully redundant with direct cut=2 from root — the same
+        atom-mask fragments appear via both paths (ring-open + bridge vs direct cut=2).
+        So node count must be identical.
+        """
+        smiles = "C1CCCCC1"  # cyclohexane — one ring, no shared bonds
+        mol_d = extract_mol_info(smiles)
+        _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+        shared = _shared_bond_mask(smiles, num_edges)
+        assert shared.sum() == 0  # no inter-ring bonds
+        r_none = _run_with_rom(smiles, ring_open_mask=None, max_depth=3)
+        r_shared = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
+        assert len(r_none["nodes_mask"]) == len(r_shared["nodes_mask"]), (
+            "Cyclohexane: shared-bond mask (all zeros) should not reduce node count "
+            "because ring-open on a simple ring is already redundant with cut=2"
+        )
+
+    def test_no_duplicates_with_shared_mask(self):
+        """No duplicate fragment masks with shared-bond ring_open_mask."""
+        for smiles in [
+            "c1ccc2ccccc2c1",           # naphthalene
+            "c1ccc2cc3ccccc3cc2c1",     # anthracene
+            "C1CCC2CCCC3CCCC4CCCCC4C3C2C1",  # androstane
+        ]:
+            mol_d = extract_mol_info(smiles)
+            _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
+            shared = _shared_bond_mask(smiles, num_edges)
+            r = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
+            nm = r["nodes_mask"]
+            rows = [bytes(nm[i]) for i in range(len(nm))]
+            assert len(rows) == len(set(rows)), (
+                f"Duplicate fragment masks with shared-bond ring_open_mask on {smiles!r}"
+            )
