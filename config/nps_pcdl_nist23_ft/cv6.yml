@@ -39,7 +39,7 @@ wandb_tags:
 # ============================================================================
 spec_fp: data/proc/nps_nist23_pcdl/spec_df.pkl
 mol_fp: data/proc/nps_nist23_pcdl/mol_df.pkl
-split_dp: data/split/ccx_nps_nist23_pcdl/cv6  # cross-validation split for nps_pcdl_nist23
+split_dp: data/split/nps_nist23_pcdl/cv6  # cross-validation split for nps_pcdl_nist23
 frag_dp: data/frag/nps_nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
