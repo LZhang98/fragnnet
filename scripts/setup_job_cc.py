@@ -246,7 +246,9 @@ def main(args):
             for fold in range(args.cv_start, args.cv_end + 1)
             if os.path.isfile(os.path.join(job_id_dp, f"{args.job_name}_cv{fold}.id"))
         ]
-        print(f"> CV job_id check: {len(existing)}/{args.cv_end - args.cv_start + 1} folds have existing .id files")
+        print(
+            f"> CV job_id check: {len(existing)}/{args.cv_end - args.cv_start + 1} folds have existing .id files"
+        )
         if existing:
             print(f"  completed folds: {existing}")
 
@@ -519,8 +521,8 @@ def main(args):
         data_keyword.append("mces_fp")
     # copy fp if pretraining
 
-    if config_d["finetune"] == "true":
-        data_keyword.append(config_d["finetune_pretrained_ckpt"])
+    if config_d["finetune"].lower() == "true":
+        data_keyword.append("finetune_pretrained_ckpt")
 
     if is_sweep_script:
         print(f"> running wandb sweep script with model_type: {config_d['model_type']}")
@@ -538,7 +540,7 @@ def main(args):
             path_value = path_value[2:]
         # Strip frag_gnn_dp prefix so absolute paths don't double up in rsync --relative.
         if os.path.isabs(path_value) and path_value.startswith(frag_gnn_dp_abs):
-            path_value = path_value[len(frag_gnn_dp_abs):]
+            path_value = path_value[len(frag_gnn_dp_abs) :]
         if name not in config_d:
             raise ValueError(f"missing {name} in config file")
 
@@ -631,6 +633,36 @@ def main(args):
                             f"rsync -av --relative ${{FRAGNNET_DP}}/./{fold_split_dp} ${{WORKING_DIR}}",
                         ]
                     )
+        elif is_cv_mode and name == "finetune_pretrained_ckpt":
+            # CV mode: validate all fold ckpts exist, then emit per-fold rsync
+            print(f"> CV mode: copying pretrained ckpts for folds {args.cv_start}-{args.cv_end}")
+            fold_ckpt_fps: dict[int, str] = {}
+            for fold_idx in range(args.cv_start, args.cv_end + 1):
+                fold_config_fp = f"{cv_config_dp_rel}/cv{fold_idx}.yml"
+                fold_ckpt_fp = None
+                with open(fold_config_fp) as _f:
+                    for line in _f:
+                        if line.startswith("finetune_pretrained_ckpt:"):
+                            fold_ckpt_fp = line.split(":", 1)[1].split("#")[0].strip().lstrip("./")
+                            break
+                if fold_ckpt_fp is None:
+                    raise ValueError(f"finetune_pretrained_ckpt not found in {fold_config_fp}")
+                if not os.path.exists(fold_ckpt_fp):
+                    raise FileNotFoundError(f"Pretrained ckpt not found: {fold_ckpt_fp}")
+                fold_ckpt_fps[fold_idx] = fold_ckpt_fp
+
+                print("> adding bash array + single rsync for per-fold pretrained ckpts")
+                array_lines = [
+                    "# copy pretrained ckpt for current CV fold (array-indexed by CV_FOLD)"
+                ]
+                array_lines.append("declare -A CV_PRETRAINED_CKPT")
+                for fold_idx, fold_ckpt_fp in fold_ckpt_fps.items():
+                    array_lines.append(f'CV_PRETRAINED_CKPT[{fold_idx}]="{fold_ckpt_fp}"')
+                array_lines.append(
+                    "rsync -av --relative ${FRAGNNET_DP}/./${CV_PRETRAINED_CKPT[${CV_FOLD}]}"
+                    " ${WORKING_DIR}"
+                )
+                script_lines.extend(array_lines)
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(
@@ -657,7 +689,11 @@ def main(args):
     # resolve job_id: dynamic per-fold (cv_use_job_id) or static from script_kwargs
     cv_use_job_id = is_cv_mode and getattr(args, "cv_use_job_id", False)
     static_job_id = next(
-        (kw.split("=", 1)[1] for kw in script_kwargs_list if kw.split("=")[0].lstrip("-") in ("j", "job_id")),
+        (
+            kw.split("=", 1)[1]
+            for kw in script_kwargs_list
+            if kw.split("=")[0].lstrip("-") in ("j", "job_id")
+        ),
         None,
     )
     job_id_name = f"{args.job_name}_cv${{CV_FOLD}}" if cv_use_job_id else static_job_id
