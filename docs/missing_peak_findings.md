@@ -2565,6 +2565,116 @@ Free-base porphyrins ([M+H]⁺ ≈ 400–900 Da) fragment by sequential loss of 
 
 Tetraethyl pyrophosphate fragments by successive loss of C₂H₄ (28.031 Da) via β-elimination: the β-hydrogen on each ethyl group migrates to the phosphate oxygen, expelling ethylene. This produces the series 291.075 → 263.044 → 235.013 → 206.982 → 178.950, each step a McLafferty rearrangement. The 178.9/179.0 bins are the same physical peak at 178.9501 straddling the bin boundary (4 ethylene losses from [M+H]⁺). The 207.0 category B entry (206.982 = 3 ethylene losses) is reachable via direct P−O bond cuts within depth=3 but severely underpredicted. The 63.0 bin ([PO₂]⁺ = 62.964) requires full dephosphorylation beyond depth=3. BFS cannot model H-migration prerequisites of β-elimination at any depth.
 
+## Imidazo[4,5-c]pyridine Ribonucleosides and Ribonucleotides (n=93, DAG miss rate=67.6%)
+
+**3 mols; 3 in tar; 39 FT [M+H]⁺ spectra.** All 2-amino-1H-imidazo[4,5-c]pyridine N-glycosides: 6-chloro riboside (41441, [M+H]⁺=301.07), riboside (41680, 267.11), deoxyriboside (41679, 251.11).
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 136.1 | 20 | 0.234 | Exact 136.051 = [C₆H₆N₃O]⁺ — base+O rearrangement (ribose O incorporated during glycosidic cleavage) |
+| 64.0 | 18 | 0.710 | Exact 64.018 = [C₄H₂N]⁺ — deep ring fragment, cascade depth |
+| 98.0 | 6 | 0.204 | Exact 97.979 — Cl-retaining fragment from 6-chloro mol_id=41441 at high NCE (90–160%) |
+| 52.0 | 3 | 0.122 | Deep ring fragment, cascade depth |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 133.1 | 5 | 0.297 | 0.021 |
+| 106.0 | 3 | 0.153 | 0.019 |
+
+### Root cause
+
+**Cascade depth (64.0) + rearrangement (136.1) + Cl direct cation (98.0).**
+
+The highest-intensity missing peak, 64.018 Da = [C₄H₂N]⁺, is a small ring fragment from deep sequential ring-opening of the 9-atom bicyclic base — BFS depth=3 cannot reach it from the full riboside. The 136.1 peak at exact 136.051 = [C₆H₆N₃O]⁺ is the base ion with an oxygen incorporated from the ribose during glycosidic bond cleavage (rearrangement; normal [base+H]⁺ = 135.067); it appears in 20 spectra across both non-Cl mols. The 98.0 bin (97.979) is a Cl-retaining fragment from the 6-chloro derivative only, growing with NCE from 90–160% (Cl direct cation). Category B weakness on 133.1 ([base+H−HCl]⁺, pred=0.021) is minor.
+
+## Lycorine-Type Amaryllidaceae Alkaloids (n=96, DAG miss rate=55.4%)
+
+**4 mols; 1 in tar (50701=lycorine, 32 spectra).** Mols 3711/3764 (lycorine diacetates) and 50712 absent from tar with 0 FT [M+H]⁺ spectra. All are tetracyclic Amaryllidaceae alkaloids with a methylenedioxyphenyl ring and a fused pyrroline system.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 119.0 | 66 | 0.659 | Exact 119.049 = [C₈H₇O]⁺ — base peak; methylenedioxy aromatic rearrangement |
+| 91.1 | 39 | 0.507 | Exact 91.054 = [C₇H₇]⁺ — tropylium, ring expansion rearrangement |
+| 95.0 | 39 | 0.082 | Exact 95.049 = [C₆H₇O]⁺ — methylenedioxy fragment via rearrangement |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 65.0 | 14 | 0.423 | 0.012 |
+| 147.0 | 11 | 0.321 | 0.028 |
+| 177.1 | 12 | 0.230 | 0.024 |
+
+### Root cause
+
+**Rearrangement dominant — methylenedioxy ring fragmentation + tropylium.**
+
+The base peak at 119.049 = [C₈H₇O]⁺ is absent from the DAG in 66 of 96 spectra at 0.659 intensity. For lycorine's methylenedioxyphenyl ring, this fragment requires ring contraction or bond formation during fragmentation (BFS can only cut bonds, not form them). Tropylium at 91.054 (39 spectra, 0.507) is the canonical rearrangement product from ring expansion. Both are structurally impossible for BFS to generate. Category B shows significant model weakness on 65.0 = [C₅H₅]⁺ (cyclopentadienyl, 0.423 true vs 0.012 predicted) and 147.0 (0.321 vs 0.028) — fragments that ARE in the DAG but severely underpredicted, suggesting a secondary model weakness component.
+
+## Gamma-Keto Acids and Derivatives (n=115, DAG miss rate=55.0%)
+
+**16 mols; 14 in tar.** Aliphatic γ-keto acids (levulinic acid type), plus furanyl and thienyl variants with aromatic rings (mols 8483, 18285). Predominantly aliphatic chain structures with keto and ester groups.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 91.1 | 10 | 0.744 | Exact 91.054 = [C₇H₇]⁺ tropylium — rearrangement from furanyl/thienyl mols |
+| 95.0 | 10 | 0.438 | Exact 95.049 = [C₆H₇O]⁺ — methylenedioxy/furanyl cation rearrangement |
+| 79.1 | 11 | 0.469 | [C₆H₇]⁺ / [C₅H₅N]⁺ mixed — ring cation from aromatic cascade |
+| 93.1 | 9 | 0.383 | [C₇H₉]⁺ — aliphatic ring closure rearrangement |
+| 67.1 | 10 | 0.201 | [C₅H₇]⁺ — aliphatic cation series |
+| 81.1 | 9 | 0.244 | [C₅H₅O]⁺ / [C₆H₉]⁺ — aliphatic + furanyl cascade |
+| 213.1 | 14 | 0.113 | Larger fragment, cascade depth |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 107.1 | 8 | 0.488 | 0.000 |
+| 105.0 | 9 | 0.314 | 0.001 |
+| 150.1 | 13 | 0.328 | 0.025 |
+| 167.1 | 8 | 0.332 | 0.019 |
+
+### Root cause
+
+**Rearrangement dominant (aromatic mols) + cascade depth (aliphatic mols) + model weakness.**
+
+Tropylium at 91.054 (highest intensity at 0.744, 10 spectra) dominates the missing peaks — this arises from furanyl (mol 8483) and thienyl (mol 18285) ring-containing mols via ring expansion rearrangement (5→7 membered ring). The aliphatic cation series (67.1, 79.1, 81.1, 93.1, 95.0) requires multi-step ring closure and H-migration from the open-chain keto acid backbone — also rearrangement-based. Category B shows 107.1 (0.488 true, pred=0.000) and 105.0 (0.314, pred=0.001) severely underpredicted despite being in DAG — model weakness on benzoyl/phenyl-type fragments present in the aromatic-ring mols.
+
+## 1,3-Dioxanes (n=25, DAG miss rate=54.8%)
+
+**10 mols; 6 in tar; 70 spectra; nce=nan=0%.** Cyclic acetal structures: neopentyl glycol acetals of cyclohexanones/benzaldehydes (mols 9131/9132/9367) plus complex bicyclic acetals (mol 528). Clean data.
+
+### Missing peaks (category A — absent from DAG)
+
+| m/z bin | n_spec | intensity | Note |
+|---------|--------|-----------|------|
+| 77.0 | 8 | 0.228 | Exact 77.038 = [C₆H₅]⁺ — phenyl cation (mol 9367 with phenyl); cascade depth |
+| 95.0 | 8 | 0.246 | Exact 95.013 = [C₅H₃O₂]⁺ — dioxane ring fragment |
+| 105.0 | 8 | 0.156 | Exact 105.044 = [C₈H₅]⁺/[C₇H₅O]⁺ — aromatic cascade |
+| 115.1 | 5 | 0.094 | Aromatic cation cascade |
+
+### In DAG but model underpredicts (category B)
+
+| m/z bin | n_spec | true_intensity | pred_intensity |
+|---------|--------|----------------|----------------|
+| 83.1 | 9 | 0.632 | 0.009 |
+| 69.1 | 7 | 0.264 | 0.024 |
+| 129.1 | 4 | 0.170 | 0.000 |
+
+### Root cause
+
+**Model weakness dominant + cascade depth (phenyl mols).**
+
+83.1 = [C₅H₇O]⁺ at 83.049 (confirmed by exact mass) is the acetal ring-opening fragment — the cyclic acetal C-O bond cleaves to give a cyclic oxocarbenium ion. It appears in 9 of 70 spectra at 0.632 intensity and is in the DAG, but the model predicts only 0.009. This is the primary actionable gap. Category A peaks 77.0 and 105.0 arise from the phenyl group in mol 9367 (1-phenyl-1,3-dioxane) via aromatic cascade (phenyl cation series, depth >3). 4 mols missing from tar limit the class size.
+
 ---
 
 ## Summary
@@ -2582,7 +2692,7 @@ Tetraethyl pyrophosphate fragments by successive loss of C₂H₄ (28.031 Da) vi
 | Pyrimidine deoxyribonucleotides | 24 | 75.0% | **Insufficient data** — n=1 per missing peak |
 | 1-Benzylquinolines | 25 | 71.4% | **Insufficient data** — m/z 306.2 in only 5 spectra |
 | Morphinans | 341 | 70.3% | **Cascade gap** — high-CE cascade of morphine/codeine/levorphanol-type; N-FREE cascade (fluorenone C₁₃H₈O, acenaphthylene C₁₂H₈) beyond BFS depth=3; distinct pathway from Phenanthrenes group |
-| imidazo[4,5-c]pyridine ribonucleosides | 93 | 67.6% | Needs deeper investigation — 136.1 present in DAG, 64.0 anomalous; may involve multiply-charged or phosphate-specific fragments |
+| imidazo[4,5-c]pyridine ribonucleosides | 93 | 67.6% | **Mixed** — cascade depth ([C₄H₂N]⁺ at 64.0, 0.710!) + rearrangement ([C₆H₆N₃O]⁺ at 136.1, O from ribose incorporated) + Cl direct cation (97.979, 6-chloro mol) |
 | Triazolopyrazines | 38 | 63.3% | **Real gap** — Br-retaining aromatic cations (C⁷⁹Br⁺ at 90.918, etc.); all .9 m/z bins = Br mass defect; same mechanism as benzyl halides |
 | Thienothiophenes | 104 | 63.1% | **Cascade depth** — small thiophene ring fragments (51.0=C₄H₃⁺, 69.0, 93.0) require >3 sequential bond cuts from fused bicyclic S-heterocycle |
 | Pyrazolopyrazoles | 28 | 63.0% | **Mixed** — CH₂Br mols: halide-retaining cations (same as benzyl halides); non-halide mol: cascade depth |
@@ -2600,8 +2710,8 @@ Tetraethyl pyrophosphate fragments by successive loss of C₂H₄ (28.031 Da) vi
 | Lactones | 57 | 57.6% | **Mixed** — cascade depth for terpenoid ring aromatization (191.1=C₁₄H₁₁⁺, 209.1) + model weakness (tropylium 91.1 at 0.737 in DAG, predicted ≈0); 5 mols not in tar (~8% artifact) |
 | Auronols | 21 | 56.4% | **Model weakness dominant** — 149.0 (0.529) and 115.1 (0.508) in DAG, predicted ≈0; .9-bin category A (240.9, 222.9) suggest Br-containing mols via alternative_parents |
 | Androstane steroids | 919 | 56.3% | **Cascade depth** — Djerassi cascade aromatization of C19 ring: C₅–C₁₀ aromatic ions (129.1=[C₁₀H₉]⁺ confirmed, 128.1, 115.1); 274 spectra missing 129.1 — largest absolute gap in dataset |
-| Lycorine-type alkaloids | 96 | 55.4% | **Cascade depth** — methylenedioxy-phenanthridine ring produces 119.0=[C₈H₇O]⁺ and 91.1=[C₇H₇]⁺ after 4+ cuts; model weakness component (65.0 at 0.423) |
-| Gamma-keto acids | 115 | 55.0% | **Cascade depth + model weakness** — tropylium 91.1 ABSENT at 0.744 intensity (very high!); aliphatic cation series (67.1, 79.1, 93.1) from multi-step ring opening; model weak on 107.1 |
+| Lycorine-type alkaloids | 96 | 55.4% | **Rearrangement dominant** — methylenedioxy ring → [C₈H₇O]⁺ 119.049 (66 spec, 0.659, base peak) via ring contraction; tropylium 91.054 ring expansion; model weakness 65.0 (0.423→0.012) |
+| Gamma-keto acids | 115 | 55.0% | **Rearrangement dominant** — tropylium 91.054 (0.744!) from furanyl/thienyl ring-containing mols; cascade depth for aliphatic cation series (67.1, 79.1, 81.1, 93.1, 95.0); model weakness: 107.1 (0.488→0.000), 105.0 (0.313→0.001) |
 | 1,3-Dioxanes | 25 | 54.8% | **Model weakness dominant** — 83.1=[C₅H₇O]⁺ (acetal ring-opening, 0.632) in DAG predicted ≈0; cascade depth for phenyl/furanyl cations (77.0, 95.0) |
 | Dibenzoxazepines | 126 | 54.5% | **Mixed** — cascade depth (229.1 at 0.655, ring-opening of tricyclic clozapine framework) + model weakness (126.0 at 0.598 in DAG); all 7 mols clozapine-type antipsychotics |
 | Estrane steroids | 739 | 53.7% | **Cascade depth** — same aromatic series as androstane (128.1, 129.1, 115.1) + tropylium 91.1 at 0.620 (130 spectra!) from phenol A-ring; model weakness 105.0 (143 spectra) |
