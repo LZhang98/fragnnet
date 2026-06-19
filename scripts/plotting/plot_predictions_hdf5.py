@@ -988,7 +988,8 @@ def plot_threshold_sweep(
 # Mirror spectrum plot
 # ---------------------------------------------------------------------------
 
-_UNMATCHED_COLORS = ("lightsteelblue", "lightcoral")
+_MATCHED_COLOR = "steelblue"
+_UNMATCHED_COLORS = ("salmon", "darkorange")
 
 _MOL_INFO_COLS: list[tuple[str, list[str]]] = [
     ("Name", ["name", "compound_name", "mol_name"]),
@@ -1080,7 +1081,7 @@ def _mirror_ax(
                 ax.add_collection(
                     mc.LineCollection(
                         _lines(true_mzs[m], true_ints[m], +1),
-                        colors=colors[0],
+                        colors=_MATCHED_COLOR,
                         linewidths=bar_width,
                     )
                 )
@@ -1106,7 +1107,7 @@ def _mirror_ax(
                 ax.add_collection(
                     mc.LineCollection(
                         _lines(pred_mzs[m], pred_ints[m], -1),
-                        colors=colors[1],
+                        colors=_MATCHED_COLOR,
                         linewidths=bar_width,
                     )
                 )
@@ -1135,9 +1136,8 @@ def _mirror_ax(
 
     if use_matching:
         handles = [
-            mpatches.Patch(color=colors[0], label="GT matched"),
+            mpatches.Patch(color=_MATCHED_COLOR, label="Matched"),
             mpatches.Patch(color=_UNMATCHED_COLORS[0], label="GT unmatched"),
-            mpatches.Patch(color=colors[1], label="Pred matched"),
             mpatches.Patch(color=_UNMATCHED_COLORS[1], label="Pred unmatched"),
         ]
     else:
@@ -1157,6 +1157,7 @@ def plot_spectra(
     score_col: str,
     save_dp: str,
     mol_df: pd.DataFrame | None = None,
+    output_dp: str | None = None,
 ) -> None:
     """Plot mirror spectra for selected predictions.
 
@@ -1167,10 +1168,12 @@ def plot_spectra(
         select: Selection strategy – 'top', 'worst', or 'random'.
         n: Number of spectra to plot.
         score_col: Metric column to rank by.
-        save_dp: Directory to save figures.
+        save_dp: Base directory; plots go to ``{save_dp}/spectra/{select}/``.
         mol_df: Optional molecule DataFrame with columns [mol_id, smiles]. When
             provided and RDKit is available, a molecule structure image is drawn
             alongside the mirror spectrum.
+        output_dp: If set, overrides the default ``{save_dp}/spectra/{select}/``
+            path and saves directly into this directory.
     """
     if score_col not in meta.columns:
         raise ValueError(f"Score column '{score_col}' not found. Available: {list(meta.columns)}")
@@ -1225,6 +1228,10 @@ def plot_spectra(
                         break
         mol_info_lookup[sid] = "   ".join(info_parts)
         meta_parts = []
+        if "prec_type" in spec_df_cols:
+            val = row["prec_type"]
+            if pd.notna(val) and str(val).strip():
+                meta_parts.append(f"adduct={val}")
         if has_inst_col:
             inst = str(row["inst_type"])
             meta_parts.append(f"inst={inst}")
@@ -1266,7 +1273,7 @@ def plot_spectra(
             "mol_df provided but RDKit is not installed — molecule images will be skipped."
         )
 
-    spectra_dp = os.path.join(save_dp, "spectra", select)
+    spectra_dp = output_dp if output_dp is not None else os.path.join(save_dp, "spectra", select)
     os.makedirs(spectra_dp, exist_ok=True)
 
     with h5py.File(pred_fp, "r") as f:
@@ -1322,7 +1329,7 @@ def plot_spectra(
             )
             title = f"spec_id={sid}  mol_id={mid}  {score_col}={score:.3f}  n_pred={len(pred_mzs)}"
             if spec_meta:
-                title = f"{title}  {spec_meta}"
+                title = f"{title}\n{spec_meta}"
             if mol_info:
                 title = f"{title}\n{mol_info}"
             ax.set_title(title, fontsize=11)
@@ -1965,6 +1972,73 @@ def _bar_ax(
     )
 
 
+def plot_spectra_by_ce_bin(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    spec_df: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+    n: int = 20,
+    mol_df: pd.DataFrame | None = None,
+) -> None:
+    """Plot worst N mirror spectra for each CE bin, split by instrument type.
+
+    QTOF spectra are binned by ACE (10 eV bins up to 50 eV); FT spectra are
+    binned by NCE (10% bins up to 70%). Each bin's worst N spectra by score_col
+    are saved to ``{save_dp}/spectra/by_ce/{inst_type}/{bin_label}/worst/``.
+
+    Args:
+        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
+        pred_fp: Path to HDF5 predictions file.
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, ace, nce].
+        score_col: Score column to rank spectra by.
+        save_dp: Base output directory.
+        n: Number of worst spectra to plot per bin.
+        mol_df: Optional molecule DataFrame passed through to plot_spectra.
+    """
+    if score_col not in meta.columns:
+        raise ValueError(f"Score column '{score_col}' not in meta.")
+
+    joined = meta[["spec_id", score_col]].merge(
+        spec_df[["spec_id", "inst_type", "ace", "nce"]],
+        on="spec_id",
+        how="left",
+    )
+
+    for inst_type, ce_col, ce_cap in [("QTOF", "ace", 50), ("FT", "nce", 70)]:
+        inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()].copy()
+        if ce_col == "ace":
+            inst_df = inst_df[inst_df[ce_col] > 0]
+        inst_df = inst_df[inst_df[ce_col] < ce_cap]
+
+        if len(inst_df) == 0:
+            continue
+
+        ce_max = inst_df[ce_col].max() + 10
+        for lo in range(0, int(ce_max), 10):
+            hi = lo + 10
+            mask = (inst_df[ce_col] >= lo) & (inst_df[ce_col] < hi)
+            bin_ids = set(inst_df.loc[mask, "spec_id"].tolist())
+            if len(bin_ids) < _MIN_BIN_N:
+                continue
+
+            bin_meta = meta[meta["spec_id"].isin(bin_ids)]
+            bin_label = f"{lo}-{hi}"
+            ce_unit = "eV" if ce_col == "ace" else "NCE"
+            print(f"  [{inst_type} {bin_label}{ce_unit}] plotting {min(n, len(bin_meta))} worst...")
+            plot_spectra(
+                meta=bin_meta,
+                pred_fp=pred_fp,
+                spec_df=spec_df,
+                select="worst",
+                n=n,
+                score_col=score_col,
+                save_dp=save_dp,
+                mol_df=mol_df,
+                output_dp=os.path.join(save_dp, "by_ce", inst_type, "worst", bin_label),
+            )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -2103,18 +2177,27 @@ def main() -> None:
             plot_ce_breakdown(
                 meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
             )
-            for select in ("top", "worst", "random"):
-                print(f"[spectra/{select}] Plotting mirror spectra...")
-                plot_spectra(
-                    meta=meta,
-                    pred_fp=args.pred_fp,
-                    spec_df=spec_df_all,
-                    select=select,
-                    n=args.n,
-                    score_col=args.score_col,
-                    save_dp=save_dp,
-                    mol_df=mol_df,
-                )
+            print("[spectra/worst] Plotting worst mirror spectra...")
+            plot_spectra(
+                meta=meta,
+                pred_fp=args.pred_fp,
+                spec_df=spec_df_all,
+                select="worst",
+                n=args.n,
+                score_col=args.score_col,
+                save_dp=save_dp,
+                mol_df=mol_df,
+            )
+            print("[spectra/by_ce] Plotting worst spectra per CE bin...")
+            plot_spectra_by_ce_bin(
+                meta=meta,
+                pred_fp=args.pred_fp,
+                spec_df=spec_df_all,
+                score_col=args.score_col,
+                save_dp=save_dp,
+                n=args.n,
+                mol_df=mol_df,
+            )
 
     if args.mode in ("ce", "spectra", "all"):
         if args.spec_df_fp is None:
