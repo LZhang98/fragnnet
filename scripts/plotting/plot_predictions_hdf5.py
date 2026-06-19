@@ -1,26 +1,26 @@
 """Plot predictions from an inference HDF5 file.
 
 Modes:
-  1. summary   — cos_sim / cos_hun histograms + CDF.
-  2. ce        — violin plots of cos_hun_inst_tol by CE bin, split by instrument type
-                 (QTOF: ACE 10 eV bins; FT: NCE 10% bins).  Requires --spec_df_fp.
-  3. spectra   — mirror spectra for top/worst/random N predictions. Requires --spec_df_fp.
-  4. all       — all of the above.
+  1. stats            — score distributions, all-metrics overview, peak stats, CE breakdown.
+                        Requires --spec_df_fp for the CE breakdown panel.
+  2. spectra          — mirror spectra for top/worst/random N predictions. Requires --spec_df_fp.
+  3. threshold_sweep  — peak count and cosine sim vs post-hoc intensity threshold.
+                        Requires --spec_df_fp for the cosine sim panel.
 
 Usage:
   python scripts/plotting/plot_predictions_hdf5.py \
       --pred_fp output/inference_eval/4ews8j6f/predictions_test.hdf5 \
-      --mode summary
+      --mode stats
 
   python scripts/plotting/plot_predictions_hdf5.py \
       --pred_fp output/inference_eval/4ews8j6f/predictions_test.hdf5 \
       --spec_df_fp data/proc/nist20/spec_df.pkl \
-      --mode ce
+      --mode spectra
 
   python scripts/plotting/plot_predictions_hdf5.py \
       --pred_fp output/inference_eval/4ews8j6f/predictions_test.hdf5 \
       --spec_df_fp data/proc/nist20/spec_df.pkl \
-      --mode all
+      --mode threshold_sweep
 """
 
 from __future__ import annotations
@@ -2068,19 +2068,13 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=[
-            "summary",
-            "ce",
-            "spectra",
-            "all",
-            "plot_all",
-            "peak_stats",
-            "threshold_sweep",
-        ],
-        default="summary",
+        choices=["stats", "spectra", "threshold_sweep"],
+        default="stats",
         help=(
-            "What to plot. ce/spectra/all require --spec_df_fp; "
-            "threshold_sweep optionally uses --spec_df_fp for cosine sim panel."
+            "What to plot. 'stats' runs score distributions, all-metrics overview, peak stats, "
+            "and CE breakdown (--spec_df_fp required for CE panel). "
+            "'spectra' plots mirror spectra (requires --spec_df_fp). "
+            "'threshold_sweep' sweeps intensity thresholds (--spec_df_fp optional for cosine sim panel)."
         ),
     )
     parser.add_argument(
@@ -2131,14 +2125,6 @@ def main() -> None:
     meta = load_hdf5_meta(args.pred_fp)
     logger.info("Loaded %d spectra", len(meta))
 
-    if args.mode in ("summary", "all"):
-        print("[summary] Plotting score distributions...")
-        plot_summary(meta, save_dp)
-
-    if args.mode == "peak_stats":
-        print("[peak_stats] Plotting peak count & intensity stats...")
-        plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
-
     if args.mode == "threshold_sweep":
         sweep_thresholds = (
             [float(t) for t in args.thresholds.split(",")] if args.thresholds is not None else None
@@ -2157,7 +2143,7 @@ def main() -> None:
         logger.info("Loading mol_df from %s", args.mol_df_fp)
         mol_df = pd.read_pickle(args.mol_df_fp)
 
-    if args.mode == "plot_all":
+    if args.mode == "stats":
         spec_df_all = None
         if args.spec_df_fp is not None:
             logger.info("Loading spec_df from %s", args.spec_df_fp)
@@ -2177,55 +2163,23 @@ def main() -> None:
             plot_ce_breakdown(
                 meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
             )
-            print("[spectra/worst] Plotting worst mirror spectra...")
-            plot_spectra(
-                meta=meta,
-                pred_fp=args.pred_fp,
-                spec_df=spec_df_all,
-                select="worst",
-                n=args.n,
-                score_col=args.score_col,
-                save_dp=save_dp,
-                mol_df=mol_df,
-            )
-            print("[spectra/by_ce] Plotting worst spectra per CE bin...")
-            plot_spectra_by_ce_bin(
-                meta=meta,
-                pred_fp=args.pred_fp,
-                spec_df=spec_df_all,
-                score_col=args.score_col,
-                save_dp=save_dp,
-                n=args.n,
-                mol_df=mol_df,
-            )
 
-    if args.mode in ("ce", "spectra", "all"):
+    if args.mode == "spectra":
         if args.spec_df_fp is None:
-            raise ValueError("--spec_df_fp is required for 'ce', 'spectra', or 'all' mode")
+            raise ValueError("--spec_df_fp is required for 'spectra' mode")
         logger.info("Loading spec_df from %s", args.spec_df_fp)
         spec_df = pd.read_pickle(args.spec_df_fp)
-
-        if args.mode in ("ce", "all"):
-            print("[ce] Plotting CE breakdown...")
-            plot_ce_breakdown(
-                meta=meta,
-                spec_df=spec_df,
-                score_col=args.score_col,
-                save_dp=save_dp,
-            )
-
-        if args.mode in ("spectra", "all"):
-            print(f"[spectra/{args.select}] Plotting mirror spectra...")
-            plot_spectra(
-                meta=meta,
-                pred_fp=args.pred_fp,
-                spec_df=spec_df,
-                select=args.select,
-                n=args.n,
-                score_col=args.score_col,
-                save_dp=save_dp,
-                mol_df=mol_df,
-            )
+        print(f"[spectra/{args.select}] Plotting mirror spectra...")
+        plot_spectra(
+            meta=meta,
+            pred_fp=args.pred_fp,
+            spec_df=spec_df,
+            select=args.select,
+            n=args.n,
+            score_col=args.score_col,
+            save_dp=save_dp,
+            mol_df=mol_df,
+        )
 
 
 if __name__ == "__main__":
