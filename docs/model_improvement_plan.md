@@ -146,7 +146,7 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 | 3b | **Categorical stratum FiLM** (`inst_type`, `frag_mode`, adduct) | Medium–High — extends adduct FiLM to full strata | Low | — |
 | 3c | **CE × Depth Prior** (depth-CE bias) | Medium — targets high-NCE collapse; depth × CE interaction not representable anywhere in current architecture | Low | ✅ DONE |
 | ~~3d~~ | ~~CE-weighted entropy regularization~~ | ❌ **REJECTED** — over-prediction is a threshold artifact, not a loss problem; depth-CE bias + posthoc threshold cover this more precisely without risk of false concentration | — | ❌ REJECTED |
-| 3d | **Posthoc intensity threshold sweep** | High for downstream — 93% of bad-case peaks are below 10% intensity; threshold at inference cuts noise with minimal recall loss | Very low | — |
+| 3d-ii | **Posthoc intensity threshold sweep** | High for downstream — 93% of bad-case peaks are below 10% intensity; threshold at inference cuts noise with minimal recall loss | Very low | — |
 | 3e | **Posthoc OOS recalibration** with `n_pred_peaks` | High for downstream — 68% of failures are silent; `n_pred_peaks` is 5× signal that pred\_oos\_prob misses | Very low | — |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium | — |
 | 4a | ~~**Peak-rank weighted loss**~~ | ~~Improves top-peak fidelity~~ — **REJECTED**: top peaks already dominate cosine/Hungarian loss implicitly; amplifying further hurts AR | — | ❌ REJECTED |
