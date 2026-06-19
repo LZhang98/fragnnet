@@ -33,6 +33,7 @@ from typing import Literal
 
 import h5py
 import matplotlib.collections as mc
+import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,6 +41,14 @@ import pandas as pd
 from scipy import stats
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
+
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    _RDKIT_AVAILABLE = True
+except ImportError:
+    _RDKIT_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -1062,7 +1071,7 @@ def plot_threshold_sweep(
 # Mirror spectrum plot
 # ---------------------------------------------------------------------------
 
-_UNMATCHED_ALPHA = 0.25
+_UNMATCHED_COLORS = ("lightsteelblue", "lightcoral")
 
 _MOL_INFO_COLS: list[tuple[str, list[str]]] = [
     ("Name", ["name", "compound_name", "mol_name"]),
@@ -1162,9 +1171,8 @@ def _mirror_ax(
                 ax.add_collection(
                     mc.LineCollection(
                         _lines(true_mzs[~m], true_ints[~m], +1),
-                        colors=colors[0],
+                        colors=_UNMATCHED_COLORS[0],
                         linewidths=bar_width,
-                        alpha=_UNMATCHED_ALPHA,
                     )
                 )
         else:
@@ -1189,9 +1197,8 @@ def _mirror_ax(
                 ax.add_collection(
                     mc.LineCollection(
                         _lines(pred_mzs[~m], pred_ints[~m], -1),
-                        colors=colors[1],
+                        colors=_UNMATCHED_COLORS[1],
                         linewidths=bar_width,
-                        alpha=_UNMATCHED_ALPHA,
                     )
                 )
         else:
@@ -1212,9 +1219,9 @@ def _mirror_ax(
     if use_matching:
         handles = [
             mpatches.Patch(color=colors[0], label="GT matched"),
-            mpatches.Patch(color=colors[0], alpha=_UNMATCHED_ALPHA, label="GT unmatched"),
+            mpatches.Patch(color=_UNMATCHED_COLORS[0], label="GT unmatched"),
             mpatches.Patch(color=colors[1], label="Pred matched"),
-            mpatches.Patch(color=colors[1], alpha=_UNMATCHED_ALPHA, label="Pred unmatched"),
+            mpatches.Patch(color=_UNMATCHED_COLORS[1], label="Pred unmatched"),
         ]
     else:
         handles = [
@@ -1232,6 +1239,7 @@ def plot_spectra(
     n: int,
     score_col: str,
     save_dp: str,
+    mol_df: pd.DataFrame | None = None,
 ) -> None:
     """Plot mirror spectra for selected predictions.
 
@@ -1243,6 +1251,9 @@ def plot_spectra(
         n: Number of spectra to plot.
         score_col: Metric column to rank by.
         save_dp: Directory to save figures.
+        mol_df: Optional molecule DataFrame with columns [mol_id, smiles]. When
+            provided and RDKit is available, a molecule structure image is drawn
+            alongside the mirror spectrum.
     """
     if score_col not in meta.columns:
         raise ValueError(f"Score column '{score_col}' not found. Available: {list(meta.columns)}")
@@ -1311,11 +1322,23 @@ def plot_spectra(
                     break
         spec_meta_lookup[sid] = "  ".join(meta_parts)
 
+    # Build SMILES lookup keyed by mol_id
+    smiles_lookup: dict[int, str] = {}
+    if mol_df is not None and _RDKIT_AVAILABLE:
+        for _, mrow in mol_df.iterrows():
+            mid = int(mrow["mol_id"])
+            smi = str(mrow["smiles"]) if pd.notna(mrow["smiles"]) else ""
+            if smi:
+                smiles_lookup[mid] = smi
+    elif mol_df is not None and not _RDKIT_AVAILABLE:
+        logger.warning("mol_df provided but RDKit is not installed — molecule images will be skipped.")
+
     os.makedirs(save_dp, exist_ok=True)
 
     with h5py.File(pred_fp, "r") as f:
         for _, row in tqdm(subset.iterrows(), total=len(subset), desc="Plotting spectra"):
             sid = int(row["spec_id"])
+            mid = int(row["mol_id"])
             pred_mzs, pred_ints = get_pred_spectrum(f, row)
 
             gt = gt_lookup.get(sid)
@@ -1335,7 +1358,25 @@ def plot_spectra(
             score = row[score_col]
             mol_info = mol_info_lookup.get(sid, "")
             spec_meta = spec_meta_lookup.get(sid, "")
-            fig, ax = plt.subplots(figsize=(12, 5))
+
+            # Render molecule image if SMILES is available
+            smiles = smiles_lookup.get(mid)
+            mol_img = None
+            if smiles and _RDKIT_AVAILABLE:
+                mol = Chem.MolFromSmiles(smiles)
+                if mol is not None:
+                    mol_img = Draw.MolToImage(mol, size=(300, 300))
+
+            if mol_img is not None:
+                fig = plt.figure(figsize=(15, 5))
+                gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1], figure=fig)
+                ax = fig.add_subplot(gs[0])
+                ax_mol = fig.add_subplot(gs[1])
+                ax_mol.imshow(mol_img)
+                ax_mol.axis("off")
+            else:
+                fig, ax = plt.subplots(figsize=(12, 5))
+
             _mirror_ax(
                 ax,
                 true_mzs,
@@ -1346,7 +1387,7 @@ def plot_spectra(
                 pred_matched=pred_matched,
             )
             title = (
-                f"spec_id={sid}  mol_id={int(row['mol_id'])}  "
+                f"spec_id={sid}  mol_id={mid}  "
                 f"{score_col}={score:.3f}  n_pred={len(pred_mzs)}"
             )
             if spec_meta:
@@ -1993,154 +2034,6 @@ def _bar_ax(
     )
 
 
-def plot_all_metrics_ce_summary_bar(
-    meta: pd.DataFrame,
-    spec_df: pd.DataFrame,
-    save_dp: str,
-) -> None:
-    """Plot summary bar charts with all metrics grouped by CE bins and instrument type.
-
-    Creates one figure with two subplots (QTOF and FT), each showing bars for all
-    available metrics grouped by CE bins. Error bars show 95% CI around the mean.
-
-    Args:
-        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
-        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
-        save_dp: Directory to save figures.
-    """
-    available_metrics = [k for k, _ in _METRICS if k in meta.columns]
-    metric_labels = [label for k, label in _METRICS if k in meta.columns]
-    if not available_metrics:
-        logger.warning("No score metrics found in HDF5.")
-        return
-
-    os.makedirs(save_dp, exist_ok=True)
-
-    joined = meta[["spec_id"] + available_metrics].merge(
-        spec_df[["spec_id", "inst_type", "ace", "nce"]],
-        on="spec_id",
-        how="left",
-    )
-
-    fig, axes = plt.subplots(2, 1, figsize=(max(12, len(available_metrics) * 2), 12), squeeze=False)
-
-    for row_idx, (inst_type, ce_col, ce_label, ce_max, ce_cap) in enumerate(
-        [
-            ("QTOF", "ace", "ACE (eV)", 50, 50),
-            ("FT", "nce", "NCE (%)", 70, 70),
-        ]
-    ):
-        ax = axes[row_idx, 0]
-        inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()].copy()
-        if ce_col == "ace":
-            inst_df = inst_df[inst_df[ce_col] > 0]
-        inst_df = inst_df[inst_df[ce_col] < ce_cap]
-
-        if len(inst_df) == 0:
-            logger.warning(f"No data for {inst_type}")
-            ax.text(
-                0.5,
-                0.5,
-                f"No data for {inst_type}",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                fontsize=12,
-            )
-            continue
-
-        # Define CE bins
-        bin_edges = list(range(0, int(ce_max) + 10, 10))
-        bin_labels = [f"{lo}-{hi}" for lo, hi in zip(bin_edges[:-1], bin_edges[1:])]
-        inst_df["ce_bin"] = pd.cut(inst_df[ce_col], bins=bin_edges, labels=bin_labels, right=False)
-
-        # Prepare data: for each metric, for each CE bin, compute mean and CI
-        n_metrics = len(available_metrics)
-        n_bins = len(bin_labels)
-        bar_width = 0.8 / n_bins
-
-        colors_ce = plt.cm.Blues(np.linspace(0.4, 0.9, n_bins))
-
-        x_pos = np.arange(n_metrics)
-        for bin_idx, (bin_label, ce_color) in enumerate(zip(bin_labels, colors_ce)):
-            bin_data = inst_df[inst_df["ce_bin"] == bin_label]
-            if len(bin_data) == 0:
-                continue
-
-            means = []
-            medians = []
-            lower_cis = []
-            upper_cis = []
-            for metric_col in available_metrics:
-                vals = bin_data[metric_col].dropna().to_numpy()
-                if len(vals) < 2:
-                    means.append(0)
-                    medians.append(0)
-                    lower_cis.append(0)
-                    upper_cis.append(0)
-                else:
-                    mean = np.mean(vals)
-                    med = np.median(vals)
-                    lo, hi = _ci_95(vals)
-                    means.append(mean)
-                    medians.append(med)
-                    lower_cis.append(mean - lo)
-                    upper_cis.append(hi - mean)
-
-            errors = [lower_cis, upper_cis]
-            offset = (bin_idx - n_bins / 2 + 0.5) * bar_width
-            ax.bar(
-                x_pos + offset,
-                means,
-                bar_width,
-                label=bin_label,
-                color=[ce_color] * n_metrics,
-                alpha=0.75,
-                edgecolor=_METRIC_COLORS,
-                linewidth=2.0,
-            )
-            ax.errorbar(
-                x_pos + offset,
-                means,
-                yerr=errors,
-                fmt="none",
-                ecolor="black",
-                capsize=2,
-                linewidth=0.8,
-                alpha=0.7,
-            )
-            # Overlay median points
-            ax.scatter(
-                x_pos + offset,
-                medians,
-                color="white",
-                s=30,
-                zorder=5,
-                edgecolors="black",
-                linewidths=1.0,
-                marker="D",
-            )
-
-        ax.set_xlabel("Metric", fontsize=12)
-        ax.set_ylabel("Score", fontsize=12)
-        ax.set_title(f"{inst_type} by {ce_label}", fontsize=14, pad=10)
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(metric_labels, rotation=45, ha="right", fontsize=10)
-        ax.set_ylim(0, 1.1)
-        ax.legend(fontsize=9, loc="upper right", ncol=2, title="CE Bin")
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.grid(axis="y", alpha=0.3, linestyle="--")
-
-    fig.suptitle("All Metrics by Collision Energy", fontsize=16, y=1.00)
-    fig.tight_layout()
-    out_fp = os.path.join(save_dp, "all_metrics_ce_summary.png")
-    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    logger.info(f"Saved CE summary bar plot: {out_fp}")
-    print(f"Saved: {out_fp}")
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -2213,6 +2106,12 @@ def get_args() -> argparse.Namespace:
         default="index_rebased",
         help="Boolean column in HDF5 to split peak stats plots by (used in plot_all / peak_stats modes)",
     )
+    parser.add_argument(
+        "--mol_df_fp",
+        type=str,
+        default=None,
+        help="Path to mol_df.pkl with columns [mol_id, smiles]. When provided, molecule structure images are added to mirror spectrum plots.",
+    )
     return parser.parse_args()
 
 
@@ -2244,6 +2143,11 @@ def main() -> None:
             meta, args.pred_fp, save_dp, spec_df=spec_df_sweep, thresholds=sweep_thresholds
         )
 
+    mol_df = None
+    if args.mol_df_fp is not None:
+        logger.info("Loading mol_df from %s", args.mol_df_fp)
+        mol_df = pd.read_pickle(args.mol_df_fp)
+
     if args.mode == "plot_all":
         spec_df_all = None
         if args.spec_df_fp is not None:
@@ -2257,18 +2161,10 @@ def main() -> None:
             meta, args.pred_fp, save_dp, filter_col=args.filter_col, spec_df=spec_df_all
         )
 
-        sweep_thresholds = (
-            [float(t) for t in args.thresholds.split(",")] if args.thresholds is not None else None
-        )
-        plot_threshold_sweep(
-            meta, args.pred_fp, save_dp, spec_df=spec_df_all, thresholds=sweep_thresholds
-        )
-
         if spec_df_all is not None:
             plot_ce_breakdown(
                 meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
             )
-            plot_all_metrics_ce_summary_bar(meta=meta, spec_df=spec_df_all, save_dp=save_dp)
             for select in ("top", "worst", "random"):
                 plot_spectra(
                     meta=meta,
@@ -2278,6 +2174,7 @@ def main() -> None:
                     n=args.n,
                     score_col=args.score_col,
                     save_dp=save_dp,
+                    mol_df=mol_df,
                 )
 
     if args.mode in ("ce", "spectra", "all"):
@@ -2303,6 +2200,7 @@ def main() -> None:
                 n=args.n,
                 score_col=args.score_col,
                 save_dp=save_dp,
+                mol_df=mol_df,
             )
 
 
