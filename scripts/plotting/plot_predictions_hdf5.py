@@ -1554,12 +1554,7 @@ def _plot_ce_breakdown_grid(
             sub = sub[sub[ce_col] < ce_cap]
 
             if len(sub) < _MIN_BIN_N:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                ax.set_xlim(0, 160)
-                ax.set_ylim(0, 1.05)
-                ax.set_title(f"{adduct}", fontsize=12)
-                ax.spines["top"].set_visible(False)
-                ax.spines["right"].set_visible(False)
+                fig.delaxes(ax)
                 continue
 
             ce_max = sub[ce_col].max() + 10
@@ -1583,10 +1578,7 @@ def _plot_ce_breakdown_grid(
                     bin_centers.append((lo + hi) / 2)
 
             if len(means) == 0:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                ax.set_xlim(0, 160)
-                ax.set_ylim(0, 1.05)
-                ax.set_title(f"{adduct}", fontsize=12)
+                fig.delaxes(ax)
                 continue
 
             # Ensure errors are non-negative
@@ -1723,9 +1715,7 @@ def _plot_ce_breakdown_grid_violin(
 
         if len(inst_full) == 0:
             for col_idx in range(n_adducts):
-                ax = axes[row_idx, col_idx]
-                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                ax.axis("off")
+                fig.delaxes(axes[row_idx, col_idx])
             continue
 
         ce_max = inst_full[ce_col].max() + 10
@@ -1741,12 +1731,7 @@ def _plot_ce_breakdown_grid_violin(
             sub = sub[sub[ce_col] < ce_cap]
 
             if len(sub) < _MIN_BIN_N:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                ax.set_xlim(0.5, len(global_labels) + 0.5)
-                ax.set_ylim(0, 1.05)
-                ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
-                ax.spines["top"].set_visible(False)
-                ax.spines["right"].set_visible(False)
+                fig.delaxes(ax)
                 continue
 
             # Align per-adduct arrays to global positions
@@ -1756,6 +1741,10 @@ def _plot_ce_breakdown_grid_violin(
                 mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
                 vals = sub.loc[mask, score_col].dropna().to_numpy()
                 arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
+            if all(a is None for a in arrays_aligned):
+                fig.delaxes(ax)
+                continue
 
             ce_unit = "eV" if inst_type == "QTOF" else "NCE"
             _violin_ax(
@@ -2068,13 +2057,14 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["stats", "spectra", "threshold_sweep"],
+        choices=["stats", "spectra", "threshold_sweep", "plot_spectra_by_ce_bin"],
         default="stats",
         help=(
             "What to plot. 'stats' runs score distributions, all-metrics overview, peak stats, "
             "and CE breakdown (--spec_df_fp required for CE panel). "
             "'spectra' plots mirror spectra (requires --spec_df_fp). "
-            "'threshold_sweep' sweeps intensity thresholds (--spec_df_fp optional for cosine sim panel)."
+            "'threshold_sweep' sweeps intensity thresholds (--spec_df_fp optional for cosine sim panel). "
+            "'plot_spectra_by_ce_bin' plots worst N mirror spectra per CE bin (requires --spec_df_fp)."
         ),
     )
     parser.add_argument(
@@ -2163,6 +2153,22 @@ def main() -> None:
             plot_ce_breakdown(
                 meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
             )
+
+    if args.mode == "plot_spectra_by_ce_bin":
+        if args.spec_df_fp is None:
+            raise ValueError("--spec_df_fp is required for 'plot_spectra_by_ce_bin' mode")
+        logger.info("Loading spec_df from %s", args.spec_df_fp)
+        spec_df = pd.read_pickle(args.spec_df_fp)
+        print("[plot_spectra_by_ce_bin] Plotting worst mirror spectra per CE bin...")
+        plot_spectra_by_ce_bin(
+            meta=meta,
+            pred_fp=args.pred_fp,
+            spec_df=spec_df,
+            score_col=args.score_col,
+            save_dp=save_dp,
+            n=args.n,
+            mol_df=mol_df,
+        )
 
     if args.mode == "spectra":
         if args.spec_df_fp is None:
