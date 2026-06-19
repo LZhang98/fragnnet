@@ -258,89 +258,6 @@ def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def plot_metrics_ci(meta: pd.DataFrame, save_dp: str) -> None:
-    """Plot bar chart with IQR for each metric.
-
-    Shows median (bar) with IQR (25th-75th percentile) as error bars.
-
-    Args:
-        meta: DataFrame from load_hdf5_meta.
-        save_dp: Directory to save figures.
-    """
-    os.makedirs(save_dp, exist_ok=True)
-    available_metrics = [(k, label) for k, label in _METRICS if k in meta.columns]
-    if not available_metrics:
-        logger.warning("No score metrics found in HDF5.")
-        return
-
-    n = len(available_metrics)
-    fig, ax = plt.subplots(figsize=(max(8, n * 1.5), 6))
-
-    x_pos = np.arange(n)
-    medians = []
-    lower_iqr = []
-    upper_iqr = []
-    means = []
-    labels = []
-
-    for (key, label), color in zip(available_metrics, _METRIC_COLORS):
-        vals = meta[key].dropna().to_numpy()
-        med = np.median(vals)
-        q25 = np.percentile(vals, 25)
-        q75 = np.percentile(vals, 75)
-        mn = np.mean(vals)
-        medians.append(med)
-        lower_iqr.append(med - q25)
-        upper_iqr.append(q75 - med)
-        means.append(mn)
-        labels.append(label)
-
-    errors = [lower_iqr, upper_iqr]
-    bars = ax.bar(
-        x_pos, medians, color=_METRIC_COLORS, alpha=0.75, edgecolor="black", linewidth=0.8
-    )
-    ax.errorbar(
-        x_pos,
-        medians,
-        yerr=errors,
-        fmt="none",
-        ecolor="black",
-        capsize=5,
-        capthick=1.5,
-        linewidth=1.5,
-    )
-    ax.scatter(
-        x_pos,
-        means,
-        color="white",
-        s=80,
-        zorder=5,
-        edgecolors="black",
-        linewidths=1.5,
-        marker="o",
-        label="Mean",
-    )
-
-    ax.set_xlabel("Metric", fontsize=13)
-    ax.set_ylabel("Score", fontsize=13)
-    ax.set_title("Metrics: Median ± IQR (with Mean)", fontsize=16, pad=15)
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=11)
-    ax.set_ylim(0, 1.1)
-    ax.axhline(0, color="black", linewidth=0.5)
-    ax.legend(fontsize=11, loc="upper right")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.3, linestyle="--")
-
-    fig.tight_layout()
-    out_fp = os.path.join(save_dp, "metrics_ci_bar.png")
-    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("Saved metrics CI bar plot: %s", out_fp)
-    print(f"Saved: {out_fp}")
-
-
 def _hist_ax(
     ax: plt.Axes,
     vals: np.ndarray,
@@ -1309,16 +1226,30 @@ def plot_spectra(
         mol_info_lookup[sid] = "   ".join(info_parts)
         meta_parts = []
         if has_inst_col:
-            meta_parts.append(f"inst={row['inst_type']}")
-        if "ace" in spec_df_cols and pd.notna(row["ace"]) and float(row["ace"]) > 0:
-            meta_parts.append(f"ace={float(row['ace']):.1f}eV")
-        elif "nce" in spec_df_cols and pd.notna(row["nce"]):
-            meta_parts.append(f"nce={float(row['nce']):.1f}%")
-        for dset_col in ("dset_id", "dataset_id"):
+            inst = str(row["inst_type"])
+            meta_parts.append(f"inst={inst}")
+            if inst == "QTOF":
+                if "ace" in spec_df_cols and pd.notna(row["ace"]) and float(row["ace"]) > 0:
+                    meta_parts.append(f"ace={float(row['ace']):.1f}eV")
+            else:
+                if "nce" in spec_df_cols and pd.notna(row["nce"]):
+                    meta_parts.append(f"nce={float(row['nce']):.1f}%")
+        else:
+            if "ace" in spec_df_cols and pd.notna(row["ace"]) and float(row["ace"]) > 0:
+                meta_parts.append(f"ace={float(row['ace']):.1f}eV")
+            elif "nce" in spec_df_cols and pd.notna(row["nce"]):
+                meta_parts.append(f"nce={float(row['nce']):.1f}%")
+        for dset_col in ("dset_name", "dataset_name", "dset"):
             if dset_col in spec_df_cols:
                 val = row[dset_col]
                 if pd.notna(val) and str(val).strip():
                     meta_parts.append(f"dset={val}")
+                    break
+        for dset_id_col in ("dset_id", "dataset_id"):
+            if dset_id_col in spec_df_cols:
+                val = row[dset_id_col]
+                if pd.notna(val) and str(val).strip():
+                    meta_parts.append(f"dset_id={val}")
                     break
         spec_meta_lookup[sid] = "  ".join(meta_parts)
 
@@ -1331,9 +1262,12 @@ def plot_spectra(
             if smi:
                 smiles_lookup[mid] = smi
     elif mol_df is not None and not _RDKIT_AVAILABLE:
-        logger.warning("mol_df provided but RDKit is not installed — molecule images will be skipped.")
+        logger.warning(
+            "mol_df provided but RDKit is not installed — molecule images will be skipped."
+        )
 
-    os.makedirs(save_dp, exist_ok=True)
+    spectra_dp = os.path.join(save_dp, "spectra", select)
+    os.makedirs(spectra_dp, exist_ok=True)
 
     with h5py.File(pred_fp, "r") as f:
         for _, row in tqdm(subset.iterrows(), total=len(subset), desc="Plotting spectra"):
@@ -1386,21 +1320,18 @@ def plot_spectra(
                 gt_matched=gt_matched,
                 pred_matched=pred_matched,
             )
-            title = (
-                f"spec_id={sid}  mol_id={mid}  "
-                f"{score_col}={score:.3f}  n_pred={len(pred_mzs)}"
-            )
+            title = f"spec_id={sid}  mol_id={mid}  {score_col}={score:.3f}  n_pred={len(pred_mzs)}"
             if spec_meta:
                 title = f"{title}  {spec_meta}"
             if mol_info:
                 title = f"{title}\n{mol_info}"
             ax.set_title(title, fontsize=11)
             fig.tight_layout()
-            out_fp = os.path.join(save_dp, f"spectrum_{sid}_{select}.png")
+            out_fp = os.path.join(spectra_dp, f"spectrum_{sid}.png")
             fig.savefig(out_fp, dpi=120, bbox_inches="tight")
             plt.close(fig)
 
-    print(f"Saved {len(subset)} spectra plots to {save_dp}/")
+    print(f"Saved {len(subset)} spectra plots to {spectra_dp}/")
 
 
 # ---------------------------------------------------------------------------
@@ -2049,6 +1980,12 @@ def get_args() -> argparse.Namespace:
         help="Path to ground-truth spec_df.pkl (required for spectra mode)",
     )
     parser.add_argument(
+        "--mol_df_fp",
+        type=str,
+        default=None,
+        help="Path to mol_df.pkl with columns [mol_id, smiles]. When provided, molecule structure images are added to mirror spectrum plots.",
+    )
+    parser.add_argument(
         "--save_dp",
         type=str,
         default=None,
@@ -2106,12 +2043,7 @@ def get_args() -> argparse.Namespace:
         default="index_rebased",
         help="Boolean column in HDF5 to split peak stats plots by (used in plot_all / peak_stats modes)",
     )
-    parser.add_argument(
-        "--mol_df_fp",
-        type=str,
-        default=None,
-        help="Path to mol_df.pkl with columns [mol_id, smiles]. When provided, molecule structure images are added to mirror spectrum plots.",
-    )
+
     return parser.parse_args()
 
 
@@ -2126,9 +2058,11 @@ def main() -> None:
     logger.info("Loaded %d spectra", len(meta))
 
     if args.mode in ("summary", "all"):
+        print("[summary] Plotting score distributions...")
         plot_summary(meta, save_dp)
 
     if args.mode == "peak_stats":
+        print("[peak_stats] Plotting peak count & intensity stats...")
         plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
 
     if args.mode == "threshold_sweep":
@@ -2139,6 +2073,7 @@ def main() -> None:
         if args.spec_df_fp is not None:
             logger.info("Loading spec_df from %s", args.spec_df_fp)
             spec_df_sweep = pd.read_pickle(args.spec_df_fp)
+        print("[threshold_sweep] Sweeping intensity thresholds...")
         plot_threshold_sweep(
             meta, args.pred_fp, save_dp, spec_df=spec_df_sweep, thresholds=sweep_thresholds
         )
@@ -2154,18 +2089,22 @@ def main() -> None:
             logger.info("Loading spec_df from %s", args.spec_df_fp)
             spec_df_all = pd.read_pickle(args.spec_df_fp)
 
+        print("[1/4] Plotting score distributions...")
         plot_summary(meta, save_dp)
+        print("[2/4] Plotting all-metrics overview...")
         plot_all_metrics(meta, save_dp)
-        plot_metrics_ci(meta, save_dp)
+        print("[3/4] Plotting peak stats...")
         plot_peak_stats(
             meta, args.pred_fp, save_dp, filter_col=args.filter_col, spec_df=spec_df_all
         )
 
         if spec_df_all is not None:
+            print("[4/4] Plotting CE breakdown...")
             plot_ce_breakdown(
                 meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
             )
             for select in ("top", "worst", "random"):
+                print(f"[spectra/{select}] Plotting mirror spectra...")
                 plot_spectra(
                     meta=meta,
                     pred_fp=args.pred_fp,
@@ -2184,6 +2123,7 @@ def main() -> None:
         spec_df = pd.read_pickle(args.spec_df_fp)
 
         if args.mode in ("ce", "all"):
+            print("[ce] Plotting CE breakdown...")
             plot_ce_breakdown(
                 meta=meta,
                 spec_df=spec_df,
@@ -2192,6 +2132,7 @@ def main() -> None:
             )
 
         if args.mode in ("spectra", "all"):
+            print(f"[spectra/{args.select}] Plotting mirror spectra...")
             plot_spectra(
                 meta=meta,
                 pred_fp=args.pred_fp,
