@@ -578,9 +578,9 @@ def plot_peak_stats(
 # tol_min_mz is the minimum m/z used as divisor floor (effective abs tolerance = tol_rel * tol_min_mz).
 # Matches the defaults from config/template.yml (inst_type_loss_tol section).
 _INST_TOL_MAP: dict[str, tuple[float, float]] = {
-    "FT": (1e-5, 200.0),   # 10 ppm, 0.002 Da floor
-    "QTOF": (2e-5, 750.0), # 20 ppm, 0.015 Da floor
-    "IT": (1e-5, 200.0),   # fallback: same as FT
+    "FT": (1e-5, 200.0),  # 10 ppm, 0.002 Da floor
+    "QTOF": (2e-5, 750.0),  # 20 ppm, 0.015 Da floor
+    "IT": (1e-5, 200.0),  # fallback: same as FT
 }
 _INST_TOL_DEFAULT: tuple[float, float] = (1e-5, 200.0)  # global default (10 ppm)
 
@@ -667,8 +667,8 @@ def _cos_hun_inst_tol(
 
     # Per-peak absolute tolerance: tol_rel * max(gt_mz, tol_min_mz)
     tol_abs = tol_rel * np.maximum(gt_mzs, tol_min_mz)  # (N_gt,)
-    diff = np.abs(gt_mzs[:, None] - pred_mzs[None, :])   # (N_gt, N_pred)
-    match_mask = diff < tol_abs[:, None]                  # (N_gt, N_pred)
+    diff = np.abs(gt_mzs[:, None] - pred_mzs[None, :])  # (N_gt, N_pred)
+    match_mask = diff < tol_abs[:, None]  # (N_gt, N_pred)
 
     true_match = match_mask.any(axis=1)
     pred_match = match_mask.any(axis=0)
@@ -732,9 +732,7 @@ def plot_threshold_sweep(
     count_stats: list[dict] = []
     pred_counts_all: list[np.ndarray] = []
     for thresh in thresholds:
-        counts = np.array(
-            [int(np.sum(pred_ints_all[s:e] > thresh)) for s, e in zip(starts, ends)]
-        )
+        counts = np.array([int(np.sum(pred_ints_all[s:e] > thresh)) for s, e in zip(starts, ends)])
         pred_counts_all.append(counts)
         count_stats.append(
             {
@@ -808,7 +806,9 @@ def plot_threshold_sweep(
                         continue
                     inst = inst_type_lookup.get(sid, "FT")
                     tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
-                    scores.append(_cos_hun_inst_tol(pmzs, pints, gt[:, 0], gt[:, 1], tol_rel, tol_min_mz))
+                    scores.append(
+                        _cos_hun_inst_tol(pmzs, pints, gt[:, 0], gt[:, 1], tol_rel, tol_min_mz)
+                    )
 
                 arr = np.array(scores)
                 if len(arr) == 0:
@@ -884,11 +884,17 @@ def plot_threshold_sweep(
         for ti, (thresh, cnts) in enumerate(zip(thresholds, pred_counts_all)):
             color = cmap(0.35 + 0.55 * ti / max(n_thresh - 1, 1))
             label = f"Pred thresh={int(thresh)}"
-            ax_hist.hist(cnts, bins=bins, histtype="step", lw=1.5, color=color, label=label, density=True)
-        ax_hist.hist(gt_counts, bins=bins, alpha=0.4, color="orange", label="Ground truth", density=True)
+            ax_hist.hist(
+                cnts, bins=bins, histtype="step", lw=1.5, color=color, label=label, density=True
+            )
+        ax_hist.hist(
+            gt_counts, bins=bins, alpha=0.4, color="orange", label="Ground truth", density=True
+        )
         ax_hist.set_xlabel("Peak count", fontsize=11)
         ax_hist.set_ylabel("Density", fontsize=11)
-        ax_hist.set_title("Peak count distribution per threshold\n(step = predicted, fill = GT)", fontsize=13)
+        ax_hist.set_title(
+            "Peak count distribution per threshold\n(step = predicted, fill = GT)", fontsize=13
+        )
         ax_hist.set_xlim(0, x_max)
         ax_hist.legend(fontsize=8, ncol=2)
         ax_hist.spines["top"].set_visible(False)
@@ -1056,6 +1062,43 @@ def plot_threshold_sweep(
 # Mirror spectrum plot
 # ---------------------------------------------------------------------------
 
+_UNMATCHED_ALPHA = 0.25
+
+_MOL_INFO_COLS: list[tuple[str, list[str]]] = [
+    ("Name", ["name", "compound_name", "mol_name"]),
+    ("Formula", ["formula", "mol_formula"]),
+    ("SMILES", ["smiles", "mol_smiles"]),
+]
+
+
+def _compute_peak_matches(
+    gt_mzs: np.ndarray,
+    pred_mzs: np.ndarray,
+    tol_rel: float = 1e-5,
+    tol_min_mz: float = 200.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return boolean masks indicating which GT and predicted peaks are matched.
+
+    Uses the same per-peak absolute tolerance as cos_hun_inst_tol:
+    ``tol_rel * max(gt_mz, tol_min_mz)``. A peak is "matched" if any peak on
+    the other side falls within tolerance.
+
+    Args:
+        gt_mzs: Ground-truth m/z values of shape (N_gt,).
+        pred_mzs: Predicted m/z values of shape (N_pred,).
+        tol_rel: Relative tolerance fraction (e.g. 1e-5 for 10 ppm).
+        tol_min_mz: Minimum m/z floor for absolute tolerance in Da.
+
+    Returns:
+        Tuple of (gt_matched, pred_matched) boolean arrays of shape (N_gt,) and (N_pred,).
+    """
+    if len(gt_mzs) == 0 or len(pred_mzs) == 0:
+        return np.zeros(len(gt_mzs), dtype=bool), np.zeros(len(pred_mzs), dtype=bool)
+    tol_abs = tol_rel * np.maximum(gt_mzs, tol_min_mz)
+    diff = np.abs(gt_mzs[:, None] - pred_mzs[None, :])
+    match_mask = diff < tol_abs[:, None]
+    return match_mask.any(axis=1), match_mask.any(axis=0)
+
 
 def _mirror_ax(
     ax: plt.Axes,
@@ -1065,8 +1108,14 @@ def _mirror_ax(
     pred_ints: np.ndarray,
     colors: tuple[str, str] = ("steelblue", "crimson"),
     bar_width: float = 1.0,
+    gt_matched: np.ndarray | None = None,
+    pred_matched: np.ndarray | None = None,
 ) -> None:
     """Draw a mirror (head-to-tail) spectrum comparison on ax.
+
+    Matched peaks are drawn at full opacity; unmatched peaks are faded.
+    Pass gt_matched / pred_matched boolean masks (from _compute_peak_matches)
+    to enable per-peak highlighting.
 
     Args:
         ax: Matplotlib axes to draw on.
@@ -1076,6 +1125,8 @@ def _mirror_ax(
         pred_ints: Predicted intensities.
         colors: (true_color, pred_color).
         bar_width: Line width for peaks.
+        gt_matched: Boolean mask of shape (N_gt,); True = matched. If None, no highlighting.
+        pred_matched: Boolean mask of shape (N_pred,); True = matched. If None, no highlighting.
     """
     if len(true_ints) > 0:
         scale = np.max(true_ints)
@@ -1094,17 +1145,61 @@ def _mirror_ax(
     def _lines(mzs, ints, sign):
         return [((m, 0), (m, sign * i)) for m, i in zip(mzs, ints)]
 
+    use_matching = gt_matched is not None and pred_matched is not None
+
     if len(true_mzs):
-        lc_top = mc.LineCollection(
-            _lines(true_mzs, true_ints, +1), colors=colors[0], linewidths=bar_width
-        )
-        ax.add_collection(lc_top)
+        if use_matching:
+            m = gt_matched.astype(bool)
+            if m.any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(true_mzs[m], true_ints[m], +1),
+                        colors=colors[0],
+                        linewidths=bar_width,
+                    )
+                )
+            if (~m).any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(true_mzs[~m], true_ints[~m], +1),
+                        colors=colors[0],
+                        linewidths=bar_width,
+                        alpha=_UNMATCHED_ALPHA,
+                    )
+                )
+        else:
+            ax.add_collection(
+                mc.LineCollection(
+                    _lines(true_mzs, true_ints, +1), colors=colors[0], linewidths=bar_width
+                )
+            )
 
     if len(pred_mzs):
-        lc_bot = mc.LineCollection(
-            _lines(pred_mzs, pred_ints, -1), colors=colors[1], linewidths=bar_width
-        )
-        ax.add_collection(lc_bot)
+        if use_matching:
+            m = pred_matched.astype(bool)
+            if m.any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(pred_mzs[m], pred_ints[m], -1),
+                        colors=colors[1],
+                        linewidths=bar_width,
+                    )
+                )
+            if (~m).any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(pred_mzs[~m], pred_ints[~m], -1),
+                        colors=colors[1],
+                        linewidths=bar_width,
+                        alpha=_UNMATCHED_ALPHA,
+                    )
+                )
+        else:
+            ax.add_collection(
+                mc.LineCollection(
+                    _lines(pred_mzs, pred_ints, -1), colors=colors[1], linewidths=bar_width
+                )
+            )
 
     ax.axhline(0, color="black", lw=0.5)
     ax.spines["top"].set_visible(False)
@@ -1114,10 +1209,18 @@ def _mirror_ax(
     ax.set_ylabel("Intensity", fontsize=10)
     ax.grid(axis="x", color="grey", lw=0.2, alpha=0.4)
 
-    handles = [
-        mpatches.Patch(color=colors[0], label="Ground Truth"),
-        mpatches.Patch(color=colors[1], label="Predicted"),
-    ]
+    if use_matching:
+        handles = [
+            mpatches.Patch(color=colors[0], label="GT matched"),
+            mpatches.Patch(color=colors[0], alpha=_UNMATCHED_ALPHA, label="GT unmatched"),
+            mpatches.Patch(color=colors[1], label="Pred matched"),
+            mpatches.Patch(color=colors[1], alpha=_UNMATCHED_ALPHA, label="Pred unmatched"),
+        ]
+    else:
+        handles = [
+            mpatches.Patch(color=colors[0], label="Ground Truth"),
+            mpatches.Patch(color=colors[1], label="Predicted"),
+        ]
     ax.legend(handles=handles, fontsize=9, loc="upper left")
 
 
@@ -1152,8 +1255,13 @@ def plot_spectra(
     else:
         subset = ranked.sample(n=min(n, len(ranked)), random_state=42)
 
-    # Build fast lookup for ground truth peaks
+    # Build fast lookups for ground truth peaks, molecule info, and instrument type
     gt_lookup: dict[int, np.ndarray] = {}
+    mol_info_lookup: dict[int, str] = {}
+    inst_type_lookup: dict[int, str] = {}
+    spec_meta_lookup: dict[int, str] = {}
+    spec_df_cols = set(spec_df.columns)
+    has_inst_col = "inst_type" in spec_df_cols
     for _, row in spec_df.iterrows():
         sid = int(row["spec_id"])
         peaks = row["peaks"]
@@ -1172,6 +1280,36 @@ def plot_spectra(
                         pass
             if rows:
                 gt_lookup[sid] = np.array(rows)
+        if sid not in gt_lookup:
+            continue
+        if has_inst_col:
+            inst_type_lookup[sid] = str(row["inst_type"])
+        info_parts = []
+        for label, candidates in _MOL_INFO_COLS:
+            for col in candidates:
+                if col in spec_df_cols:
+                    val = row[col]
+                    if pd.notna(val) and str(val).strip():
+                        v = str(val)
+                        if label == "SMILES" and len(v) > 60:
+                            v = v[:57] + "..."
+                        info_parts.append(f"{label}: {v}")
+                        break
+        mol_info_lookup[sid] = "   ".join(info_parts)
+        meta_parts = []
+        if has_inst_col:
+            meta_parts.append(f"inst={row['inst_type']}")
+        if "ace" in spec_df_cols and pd.notna(row["ace"]) and float(row["ace"]) > 0:
+            meta_parts.append(f"ace={float(row['ace']):.1f}eV")
+        elif "nce" in spec_df_cols and pd.notna(row["nce"]):
+            meta_parts.append(f"nce={float(row['nce']):.1f}%")
+        for dset_col in ("dset_id", "dataset_id"):
+            if dset_col in spec_df_cols:
+                val = row[dset_col]
+                if pd.notna(val) and str(val).strip():
+                    meta_parts.append(f"dset={val}")
+                    break
+        spec_meta_lookup[sid] = "  ".join(meta_parts)
 
     os.makedirs(save_dp, exist_ok=True)
 
@@ -1186,14 +1324,36 @@ def plot_spectra(
             else:
                 true_mzs, true_ints = np.array([]), np.array([])
 
+            gt_matched = pred_matched = None
+            if len(true_mzs) > 0 and len(pred_mzs) > 0:
+                inst = inst_type_lookup.get(sid, "FT")
+                tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
+                gt_matched, pred_matched = _compute_peak_matches(
+                    true_mzs, pred_mzs, tol_rel, tol_min_mz
+                )
+
             score = row[score_col]
+            mol_info = mol_info_lookup.get(sid, "")
+            spec_meta = spec_meta_lookup.get(sid, "")
             fig, ax = plt.subplots(figsize=(12, 5))
-            _mirror_ax(ax, true_mzs, true_ints, pred_mzs, pred_ints)
-            ax.set_title(
-                f"spec_id={sid}  mol_id={int(row['mol_id'])}  "
-                f"{score_col}={score:.3f}  n_pred={len(pred_mzs)}",
-                fontsize=11,
+            _mirror_ax(
+                ax,
+                true_mzs,
+                true_ints,
+                pred_mzs,
+                pred_ints,
+                gt_matched=gt_matched,
+                pred_matched=pred_matched,
             )
+            title = (
+                f"spec_id={sid}  mol_id={int(row['mol_id'])}  "
+                f"{score_col}={score:.3f}  n_pred={len(pred_mzs)}"
+            )
+            if spec_meta:
+                title = f"{title}  {spec_meta}"
+            if mol_info:
+                title = f"{title}\n{mol_info}"
+            ax.set_title(title, fontsize=11)
             fig.tight_layout()
             out_fp = os.path.join(save_dp, f"spectrum_{sid}_{select}.png")
             fig.savefig(out_fp, dpi=120, bbox_inches="tight")
@@ -1508,105 +1668,6 @@ def _plot_ce_breakdown_grid(
     print(f"Saved: {out_fp}")
 
 
-def _plot_ce_breakdown_violin_inst(
-    df: pd.DataFrame,
-    inst_type: str,
-    ce_col: str,
-    ce_cap: float,
-    color: str,
-    adducts_all: list[str],
-    score_col: str,
-    save_dp: str,
-) -> None:
-    """Plot CE breakdown violins for one instrument type (QTOF or FT) with adducts as columns.
-
-    Args:
-        df: DataFrame with score_col, inst_type, prec_type, ce_col.
-        inst_type: Instrument type ('QTOF' or 'FT').
-        ce_col: CE column to bin by ('ace' or 'nce').
-        ce_cap: Upper limit for CE values.
-        color: Violin fill colour.
-        adducts_all: List of adduct types to plot as columns.
-        score_col: Score column to plot.
-        save_dp: Output directory.
-    """
-    # Compute global CE bins for this instrument type
-    inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
-    if ce_col == "ace":
-        inst_full = inst_full[inst_full[ce_col] > 0]
-    inst_full = inst_full[inst_full[ce_col] < ce_cap]
-
-    if len(inst_full) == 0:
-        logger.warning(f"No data for {inst_type}")
-        return
-
-    ce_max = inst_full[ce_col].max() + 10
-    global_labels, _ = _make_ce_bins(inst_full, ce_col, 10, ce_max, score_col)
-    global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
-    n_bins = len(global_labels)
-
-    n_cols = len(adducts_all)
-    fig_w = max(36, n_bins * 4.5 + 4)
-    fig_h = 7
-
-    fig, axes = plt.subplots(1, n_cols, figsize=(fig_w / n_cols * n_cols, fig_h), squeeze=False)
-    fig.patch.set_facecolor("white")
-
-    for col_idx, adduct in enumerate(adducts_all):
-        ax = axes[0, col_idx]
-
-        sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
-        if ce_col == "ace":
-            sub = sub[sub[ce_col] > 0]
-        sub = sub[sub[ce_col] < ce_cap]
-
-        if len(sub) < _MIN_BIN_N:
-            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-            ax.set_xlim(0.5, len(global_labels) + 0.5)
-            ax.set_ylim(0, 1.05)
-            ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            continue
-
-        # Align per-adduct arrays to global positions
-        arrays_aligned: list[np.ndarray | None] = []
-        for lo in global_lo:
-            hi = lo + 10
-            mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
-            vals = sub.loc[mask, score_col].dropna().to_numpy()
-            arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
-
-        ce_unit = "eV" if inst_type == "QTOF" else "NCE"
-        _violin_ax(
-            ax,
-            global_labels,
-            arrays_aligned,
-            title=f"{adduct}  [n={len(sub):,}]",
-            xlabel=f"Collision Energy ({ce_unit})",
-            color=color,
-            score_col=score_col,
-            show_xticklabels=True,
-            show_xlabel=True,
-        )
-
-    ce_unit = "eV" if inst_type == "QTOF" else "NCE"
-    fig.suptitle(
-        f"{score_col} — {inst_type} Collision Energy Breakdown (Violin, {ce_unit})",
-        fontsize=16,
-        fontweight="bold",
-        y=1.005,
-    )
-    fig.subplots_adjust(hspace=0.35, wspace=0.3)
-
-    fname = f"ce_breakdown_violin_{inst_type.lower()}.png"
-    out_fp = os.path.join(save_dp, fname)
-    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    logger.info(f"Saved CE breakdown violin plot for {inst_type}: {out_fp}")
-    print(f"Saved: {out_fp}")
-
-
 def _plot_ce_breakdown_grid_violin(
     joined: pd.DataFrame,
     score_col: str,
@@ -1743,99 +1804,6 @@ def _plot_ce_breakdown_grid_violin(
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
     plt.close(fig)
     logger.info(f"Saved CE breakdown violin grid: {out_fp}")
-    print(f"Saved: {out_fp}")
-
-
-def _plot_inst_adduct_grid(
-    joined: pd.DataFrame,
-    inst_type: str,
-    ce_col: str,
-    ce_label: str,
-    color: str,
-    score_col: str,
-    save_dp: str,
-    ce_cap: float | None = None,
-) -> None:
-    """Produce one figure for a given instrument type, one row per adduct.
-
-    Args:
-        joined: Merged DataFrame with spec metadata and scores.
-        inst_type: Instrument type string (e.g. 'FT', 'QTOF').
-        ce_col: CE column to bin by ('ace' or 'nce').
-        ce_label: Human-readable CE axis label.
-        color: Violin fill colour.
-        score_col: Score column to plot.
-        save_dp: Output directory.
-        ce_cap: If set, discard spectra with ce_col >= ce_cap before binning.
-    """
-    inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()]
-    if ce_col == "ace":
-        inst_df = inst_df[inst_df[ce_col] > 0]
-    if ce_cap is not None:
-        inst_df = inst_df[inst_df[ce_col] < ce_cap]
-
-    adducts = (
-        inst_df.groupby("prec_type")["spec_id"]
-        .count()
-        .loc[lambda s: s >= _MIN_BIN_N]
-        .sort_values(ascending=False)
-        .index.tolist()
-    )
-    if not adducts:
-        logger.warning("No adducts with enough data for %s", inst_type)
-        return
-
-    ce_max = inst_df[ce_col].max() + 10
-    n_rows = len(adducts)
-
-    # Global bin labels from the full inst_df (same for every adduct row)
-    global_labels, _ = _make_ce_bins(inst_df, ce_col, 10, ce_max, score_col)
-    n_bins = len(global_labels)
-    # Build lo edges for global bins so we can align per-adduct data
-    global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
-
-    fig_w = max(36, n_bins * 4.5 + 4)
-    fig_h = max(n_rows * 7.5, 8)
-
-    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False, sharex=True)
-    fig.patch.set_facecolor("white")
-
-    for row_idx, adduct in enumerate(adducts):
-        sub = inst_df[inst_df["prec_type"] == adduct]
-        # Align per-adduct arrays to global positions (None where bin is empty)
-        arrays_aligned: list[np.ndarray | None] = []
-        for lo in global_lo:
-            hi = lo + 10
-            mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
-            vals = sub.loc[mask, score_col].dropna().to_numpy()
-            arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
-
-        ax = axes[row_idx, 0]
-        is_bottom = row_idx == n_rows - 1
-        _violin_ax(
-            ax,
-            global_labels,
-            arrays_aligned,
-            title=f"{inst_type} · {adduct}  [n={len(sub):,}]",
-            xlabel=ce_label,
-            color=color,
-            score_col=score_col,
-            show_xticklabels=is_bottom,
-            show_xlabel=is_bottom,
-        )
-
-    fig.suptitle(
-        f"{score_col} — {inst_type} by Adduct & {ce_label}",
-        fontsize=20,
-        fontweight="bold",
-        y=1.005,
-    )
-    fig.subplots_adjust(hspace=0.45)
-    fname = f"ce_breakdown_{inst_type.lower()}_violin.png"
-    out_fp = os.path.join(save_dp, fname)
-    fig.savefig(out_fp, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("Saved: %s", out_fp)
     print(f"Saved: {out_fp}")
 
 
@@ -2025,134 +1993,6 @@ def _bar_ax(
     )
 
 
-def _plot_inst_adduct_grid_bar(
-    joined: pd.DataFrame,
-    inst_type: str,
-    ce_col: str,
-    ce_label: str,
-    color: str,
-    score_col: str,
-    save_dp: str,
-    ce_cap: float | None = None,
-) -> None:
-    """Produce one bar plot figure for a given instrument type, one row per adduct.
-
-    Args:
-        joined: Merged DataFrame with spec metadata and scores.
-        inst_type: Instrument type string (e.g. 'FT', 'QTOF').
-        ce_col: CE column to bin by ('ace' or 'nce').
-        ce_label: Human-readable CE axis label.
-        color: Bar fill colour.
-        score_col: Score column to plot.
-        save_dp: Output directory.
-        ce_cap: If set, discard spectra with ce_col >= ce_cap before binning.
-    """
-    inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()]
-    if ce_col == "ace":
-        inst_df = inst_df[inst_df[ce_col] > 0]
-    if ce_cap is not None:
-        inst_df = inst_df[inst_df[ce_col] < ce_cap]
-
-    adducts = (
-        inst_df.groupby("prec_type")["spec_id"]
-        .count()
-        .loc[lambda s: s >= _MIN_BIN_N]
-        .sort_values(ascending=False)
-        .index.tolist()
-    )
-    if not adducts:
-        logger.warning("No adducts with enough data for %s", inst_type)
-        return
-
-    ce_max = inst_df[ce_col].max() + 10
-    n_rows = len(adducts)
-
-    # Global bin labels from the full inst_df (same for every adduct row)
-    global_labels, _ = _make_ce_bins(inst_df, ce_col, 10, ce_max, score_col)
-    n_bins = len(global_labels)
-    # Build lo edges for global bins so we can align per-adduct data
-    global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
-
-    fig_w = max(32, n_bins * 4.0 + 3)
-    fig_h = n_rows * 6.5
-
-    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False, sharex=True)
-
-    for row_idx, adduct in enumerate(adducts):
-        sub = inst_df[inst_df["prec_type"] == adduct]
-        # Align per-adduct arrays to global positions (None where bin is empty)
-        arrays_aligned: list[np.ndarray | None] = []
-        for lo in global_lo:
-            hi = lo + 10
-            mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
-            vals = sub.loc[mask, score_col].dropna().to_numpy()
-            arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
-
-        ax = axes[row_idx, 0]
-        is_bottom = row_idx == n_rows - 1
-        _bar_ax(
-            ax,
-            global_labels,
-            arrays_aligned,
-            title=f"{inst_type} · {adduct}  [n={len(sub):,}]",
-            xlabel=ce_label,
-            color=color,
-            score_col=score_col,
-            show_xticklabels=is_bottom,
-            show_xlabel=is_bottom,
-        )
-
-    fig.suptitle(
-        f"{score_col} — {inst_type} by adduct + {ce_label} (Mean ± 95% CI)",
-        fontsize=18,
-        y=1.005,
-    )
-    fig.subplots_adjust(hspace=0.45)
-    fname = f"ce_breakdown_{inst_type.lower()}_bar_ci.png"
-    out_fp = os.path.join(save_dp, fname)
-    fig.savefig(out_fp, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("Saved: %s", out_fp)
-    print(f"Saved: {out_fp}")
-
-
-def plot_ce_breakdown_bar(
-    meta: pd.DataFrame,
-    spec_df: pd.DataFrame,
-    score_col: str,
-    save_dp: str,
-) -> None:
-    """Plot bar graphs with 95% CI for metrics, binned by CE, grouped by adduct + inst type.
-
-    Produces two figures: one for QTOF (ACE 10 eV bins) and one for FT (NCE 10% bins).
-    Each figure has one row per adduct type. Error bars show 95% confidence intervals
-    of the mean.
-
-    Args:
-        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
-        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
-        score_col: Score column to plot (must be in meta).
-        save_dp: Directory to save figures.
-    """
-    if score_col not in meta.columns:
-        raise ValueError(f"Score column '{score_col}' not in meta. Available: {list(meta.columns)}")
-
-    os.makedirs(save_dp, exist_ok=True)
-
-    joined = meta[["spec_id", score_col]].merge(
-        spec_df[["spec_id", "inst_type", "prec_type", "ace", "nce"]],
-        on="spec_id",
-        how="left",
-    )
-
-    _plot_inst_adduct_grid_bar(
-        joined, "QTOF", "ace", "ACE (eV)", "#4878CF", score_col, save_dp, ce_cap=50
-    )
-    _plot_inst_adduct_grid_bar(
-        joined, "FT", "nce", "NCE (%)", "#6ACC65", score_col, save_dp, ce_cap=70
-    )
-
-
 def plot_all_metrics_ce_summary_bar(
     meta: pd.DataFrame,
     spec_df: pd.DataFrame,
@@ -2301,30 +2141,6 @@ def plot_all_metrics_ce_summary_bar(
     print(f"Saved: {out_fp}")
 
 
-def plot_all_metrics_ce_breakdown_bar(
-    meta: pd.DataFrame,
-    spec_df: pd.DataFrame,
-    save_dp: str,
-) -> None:
-    """Plot CE breakdown bar charts with median ± IQR for all available metrics.
-
-    For each metric, generates bar charts binned by CE (QTOF/FT).
-
-    Args:
-        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
-        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
-        save_dp: Directory to save figures.
-    """
-    available_metrics = [k for k, _ in _METRICS if k in meta.columns]
-    if not available_metrics:
-        logger.warning("No score metrics found in HDF5.")
-        return
-
-    for score_col in available_metrics:
-        logger.info(f"Plotting CE breakdown for {score_col}...")
-        plot_ce_breakdown_bar(meta, spec_df, score_col, save_dp)
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -2349,12 +2165,17 @@ def get_args() -> argparse.Namespace:
         "--mode",
         type=str,
         choices=[
-            "summary", "ce", "ce_bar", "spectra", "all", "plot_all",
-            "peak_stats", "threshold_sweep",
+            "summary",
+            "ce",
+            "spectra",
+            "all",
+            "plot_all",
+            "peak_stats",
+            "threshold_sweep",
         ],
         default="summary",
         help=(
-            "What to plot. ce/ce_bar/spectra/all require --spec_df_fp; "
+            "What to plot. ce/spectra/all require --spec_df_fp; "
             "threshold_sweep optionally uses --spec_df_fp for cosine sim panel."
         ),
     )
@@ -2413,9 +2234,7 @@ def main() -> None:
 
     if args.mode == "threshold_sweep":
         sweep_thresholds = (
-            [float(t) for t in args.thresholds.split(",")]
-            if args.thresholds is not None
-            else None
+            [float(t) for t in args.thresholds.split(",")] if args.thresholds is not None else None
         )
         spec_df_sweep = None
         if args.spec_df_fp is not None:
@@ -2426,24 +2245,40 @@ def main() -> None:
         )
 
     if args.mode == "plot_all":
-        # Load spec_df for peak stats and CE breakdown
-        spec_df_for_peaks = None
+        spec_df_all = None
         if args.spec_df_fp is not None:
             logger.info("Loading spec_df from %s", args.spec_df_fp)
-            spec_df_for_peaks = pd.read_pickle(args.spec_df_fp)
+            spec_df_all = pd.read_pickle(args.spec_df_fp)
 
-        # Plot peak stats with ground truth comparison
-        plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col, spec_df=spec_df_for_peaks)
+        plot_summary(meta, save_dp)
+        plot_all_metrics(meta, save_dp)
+        plot_metrics_ci(meta, save_dp)
+        plot_peak_stats(
+            meta, args.pred_fp, save_dp, filter_col=args.filter_col, spec_df=spec_df_all
+        )
 
-        # Plot CE breakdown if spec_df available
-        if spec_df_for_peaks is not None:
+        sweep_thresholds = (
+            [float(t) for t in args.thresholds.split(",")] if args.thresholds is not None else None
+        )
+        plot_threshold_sweep(
+            meta, args.pred_fp, save_dp, spec_df=spec_df_all, thresholds=sweep_thresholds
+        )
+
+        if spec_df_all is not None:
             plot_ce_breakdown(
-                meta=meta,
-                spec_df=spec_df_for_peaks,
-                score_col=args.score_col,
-                save_dp=save_dp,
+                meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
             )
-
+            plot_all_metrics_ce_summary_bar(meta=meta, spec_df=spec_df_all, save_dp=save_dp)
+            for select in ("top", "worst", "random"):
+                plot_spectra(
+                    meta=meta,
+                    pred_fp=args.pred_fp,
+                    spec_df=spec_df_all,
+                    select=select,
+                    n=args.n,
+                    score_col=args.score_col,
+                    save_dp=save_dp,
+                )
 
     if args.mode in ("ce", "spectra", "all"):
         if args.spec_df_fp is None:
@@ -2469,18 +2304,6 @@ def main() -> None:
                 score_col=args.score_col,
                 save_dp=save_dp,
             )
-
-    if args.mode == "ce_bar":
-        if args.spec_df_fp is None:
-            raise ValueError("--spec_df_fp is required for 'ce_bar' mode")
-        logger.info("Loading spec_df from %s", args.spec_df_fp)
-        spec_df = pd.read_pickle(args.spec_df_fp)
-        plot_ce_breakdown_bar(
-            meta=meta,
-            spec_df=spec_df,
-            score_col=args.score_col,
-            save_dp=save_dp,
-        )
 
 
 if __name__ == "__main__":
