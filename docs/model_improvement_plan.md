@@ -13,6 +13,61 @@ Merged spectra yield systematically higher metrics (low-CE + high-CE fragments a
 
 ---
 
+## NIST20 Test Set Analysis (run `pqx7ywc9`, 96,128 spectra)
+
+Evaluated on NIST20 test set using config `fraggnn_d3_ma_mi_nist20_amolc_new_mol_feats_numhs.yml`.
+**Note:** this config uses `ce_insert_location: mol` (not `mlp`), so CE-conditioning is weaker
+than in the NIST23 production model.
+
+### Failure mode breakdown (cos\_hun\_inst\_tol < 0.3, n=7,963 bad cases, 8.3% of test set)
+
+| Mode | Description | Count | % |
+|---|---|---|---|
+| A | Total miss — model assigns near-zero probability to all GT fragments | 164 | 2% |
+| B | Low precision — correct formulas present but 4–5× too many predicted peaks | 5,140 | 65% |
+| C | Low recall — nearly no GT formulas in DAG | 3 | <1% |
+| D | Partial match — some GT formulas missing, coverage <50% | 2,656 | 33% |
+
+**Mode B (over-prediction) is the dominant failure.** Bad cases: median 152 predicted peaks vs
+32 GT (4.1× ratio); good cases: 31 vs 10 (2.6× ratio). 93% of predicted peaks in bad cases
+are below 10% intensity — the model distributes probability mass across the full DAG
+instead of concentrating it on true fragments.
+
+### Silent failure problem
+
+| pred\_oos\_prob threshold | Fraction of cos\_hun < 0.3 caught |
+|---|---|
+| > 0.3 | 31.8% |
+| ≤ 0.3 | **68.2% — silent failures** |
+
+The OOS head misses 68% of bad predictions. `n_pred_peaks` is a stronger complementary signal:
+bad cases have 5× more predicted peaks than good cases.
+
+### High-CE degradation (FT, NCE — with CE scaler active)
+
+| NCE range | Median cos\_sim | N spectra |
+|---|---|---|
+| 0–20% | 0.956 | ~11k |
+| 30–40% | ~0.71 | — |
+| 80–120% | ~0.68 | — |
+| 120–200% | 0.672 | — |
+
+At NCE ≥ 80, 98% of GT peaks are below m/z 200. The CE scaler modulates H-shift columns
+but cannot redistribute probability mass from large-mass DAG nodes to small-mass nodes —
+that requires either `ce_insert_location: mlp` (direct per-fragment CE conditioning) or an
+explicit depth–CE interaction (§3c).
+
+### Low-NCE structural archetypes (cos\_hun < 0.3 even at NCE 0–20)
+
+| Archetype | Failure mode |
+|---|---|
+| Disulfide / thiosulfate rearrangement | SO₂/H₂S/S losses not in DAG |
+| Glycoconjugates | Sugar ring openings (lactol cleavage) missing |
+| Zwitterions / N-oxides | Charge migration confounds fragment assignment |
+| Azo compounds / diazonium | N₂ loss not represented in neutral loss list |
+
+---
+
 ## Current State
 
 **Overall (764,637 spectra, 28,256 unique molecules — NIST23 9-fold CV, per-CE spectra)**
@@ -59,9 +114,18 @@ The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **the
 | FT / QTOF / IT in inst\_types | ✅ included | `inst_types: [FT, QTOF, IT]` |
 | **Fragmentation mode conditioning** | ✅ **implemented** | `frag_mode: True`, `frag_mode_insert_location: mlp`, `frag_mode_scale: True` |
 | **Dual CE input (ACE + NCE)** | ✅ **implemented** | `use_nce: True`, `use_ace: True`; independent embeddings are concatenated |
+| New atom/bond features | ✅ **implemented** | `a_ring_size`, `a_charge` (Gasteiger), `a_num_hs`, `b_ring`, `b_conj` |
+| **CE insert location** | ✅ **changed mol → mlp** | `ce_insert_location: mlp` — CE now reaches per-fragment scoring MLP directly |
+| **CE × Depth Prior** | ✅ **implemented** | `depth_ce_bias: True` — `nn.Linear(ce_embed_dim, num_depth+1)`, zero-init; applied after all scalers before softmax |
+| ~~CE-weighted entropy regularization~~ | ❌ **rejected** | Over-prediction is a threshold artifact; entropy reg is blind to topology; depth-CE bias + posthoc threshold address the same problem more precisely |
 | QTOF/CID sampler upweighting | ❌ **tried, no gain** | Conditioning problem not data quantity |
 | DAG mass filter (5b) | ❌ **tried, no gain** | Noise spread across mass range; pruning ineffective |
 | NL auxiliary loss | ❌ **rejected** | NL class trivially derivable from input formula features |
+
+**Warning:** the NIST20 test model (`pqx7ywc9`) uses `ce_insert_location: mol` instead of
+`mlp`. Before attributing its high-NCE degradation to fundamental model limitations, verify
+whether the production NIST23 model (with `mlp`) shows better high-NCE performance on the
+same NIST20 set.
 
 The 0.762 median is with the implemented conditioning active. Remaining QTOF/CID work is now
 mostly an ablation/data-balance question, not a missing dual-CE architecture path.
@@ -74,11 +138,16 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 
 | Priority | Area | Expected Impact | Effort | Status |
 |---|---|---|---|---|
+| 0 | Benchmark production NIST23 model on NIST20 (with `mlp` CE + depth-CE bias) | Validates §3c impact on high-NCE curve | Very low | — |
 | 1 | `force_stopped` + formula-recall (AR) diagnostic per class | Unblocks §4 and §5 decisions | Very low (query) | — |
 | 2 | **Frag-mode conditioning** (HCD/CID token) | High — FT/CID gap 0.785→0.497 | Low | ✅ DONE |
 | 3 | QTOF/CID upweighting in sampler | High — conditioning problem, not data quantity | Low | ❌ TRIED — no measurable improvement |
 | 3a | **Adduct-type FiLM** (`prec_type`) | Medium — cheap output-level correction for `[M+Na]+`, `[M+Cl]-`, `[M-H]-` | Low | — |
 | 3b | **Categorical stratum FiLM** (`inst_type`, `frag_mode`, adduct) | Medium–High — extends adduct FiLM to full strata | Low | — |
+| 3c | **CE × Depth Prior** (depth-CE bias) | Medium — targets high-NCE collapse; depth × CE interaction not representable anywhere in current architecture | Low | ✅ DONE |
+| ~~3d~~ | ~~CE-weighted entropy regularization~~ | ❌ **REJECTED** — over-prediction is a threshold artifact, not a loss problem; depth-CE bias + posthoc threshold cover this more precisely without risk of false concentration | — | ❌ REJECTED |
+| 3d | **Posthoc intensity threshold sweep** | High for downstream — 93% of bad-case peaks are below 10% intensity; threshold at inference cuts noise with minimal recall loss | Very low | — |
+| 3e | **Posthoc OOS recalibration** with `n_pred_peaks` | High for downstream — 68% of failures are silent; `n_pred_peaks` is 5× signal that pred\_oos\_prob misses | Very low | — |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium | — |
 | 4a | ~~**Peak-rank weighted loss**~~ | ~~Improves top-peak fidelity~~ — **REJECTED**: top peaks already dominate cosine/Hungarian loss implicitly; amplifying further hurts AR | — | ❌ REJECTED |
 | 4b | ~~**Neutral-loss auxiliary loss**~~ | **REJECTED**: NL class trivially derivable from input formula features | — | ❌ REJECTED |
@@ -678,6 +747,198 @@ If adduct FiLM improves rare adducts while leaving `[M+H]+` flat, keep it.  If c
 stratum FiLM then further improves QTOF/CID or FT/CID without hurting dominant FT/HCD,
 it is worth the extra categorical conditioning.  If either module only improves aggregate
 metrics by exploiting dominant strata, prefer sampler/loss reweighting first.
+
+---
+
+## 3c. CE × Depth Prior
+
+### Motivation
+
+At high NCE, real spectra collapse to small-mass fragments (at NCE ≥ 80, 98% of GT peaks
+are below m/z 200).  Deep DAG nodes — requiring many sequential bond breaks to form — are
+large-mass fragments and should receive very low probability at high CE.  At low NCE, deep
+nodes are fine.
+
+The current architecture has no mechanism to learn this depth × CE interaction:
+
+- `depth` feature is in the fragment node feature set
+- CE arrives via `ce_insert_location: mol` or `mlp`
+- But the interaction `depth × CE → per-node logit penalty` is not representable —
+  depth is consumed by the GNN before CE conditioning, and the CE scaler modulates
+  H-shift columns rather than individual nodes
+
+**Option A — Learned depth prior (try first):**
+
+A single linear layer maps CE embedding → per-depth logit bias.  The model learns
+"at NCE=150, depth-3 nodes get logit −3; at NCE=10, depth-3 nodes get +0.5":
+
+```python
+# __init__
+self.depth_ce_bias = nn.Linear(ce_embed_dim, num_depth + 1)
+nn.init.zeros_(self.depth_ce_bias.weight)
+nn.init.zeros_(self.depth_ce_bias.bias)   # identity init
+
+# forward, after ce_scaler:
+depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(n_nodes, -1)
+depth_idx = depth_raw.argmax(dim=1)                                   # (n_nodes,) int in [0, num_depth]
+bias_per_depth = self.depth_ce_bias(ce_embed)                         # (batch, num_depth+1)
+per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]       # (n_nodes,)
+frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)   # broadcast over H-shift dim
+```
+
+`ce_embed` is already in scope at the ce_scaler application site (line ~1208 in
+`fragnnet_model.py`).  The depth feature is extracted upstream and the raw one-hot
+is available for `argmax`.  Identity init ensures training starts from the current model.
+
+Config:
+```yaml
+depth_ce_bias: true
+```
+
+**Option B — Parent logit offset (one scatter_add):**
+
+Cheaper cascade signal — each child's logit is offset by its parent's raw logit times a
+learned scalar:
+
+```python
+cascade_alpha = nn.Parameter(torch.zeros(1))  # start at zero
+parent_contrib = cascade_alpha * frag_joint_logits[parent_idx]
+cascaded = scatter(parent_contrib, child_idx, dim=0, dim_size=n_nodes, reduce="mean")
+frag_joint_logits = frag_joint_logits + cascaded
+```
+
+**Risk:** raw logit ≠ probability — structurally stable fragments have high raw logit
+regardless of whether their parent survives.  Skip unless Option A shows cascade signal
+helps.
+
+**Option C — Stopped-gradient two-pass:**
+
+First pass computes parent log-probabilities (no gradient); second pass adds max parent
+log-prob as input to each child's score.  More principled than B (uses actual probability,
+not raw logit), but two scatter operations and a second forward pass.  Add only if A proves
+that cascade information is load-bearing.
+
+### Status: ✅ DONE (2026-06-19)
+
+Option A implemented in `src/fragnnet/model/fragnnet_model.py`:
+- `depth_ce_bias_layer = nn.Linear(ce_embed_dim, num_depth + 1)`, zero-init
+- Applied in `forward` after all scalers, before `scatter_logsoftmax`
+- Config: `depth_ce_bias: True` in `fraggnn_d3_ma_mi_nist20_amolc_new_mol_feats_numhs.yml`
+- Tests: `tests/test_depth_ce_bias.py` (13 tests)
+
+Options B and C remain available if A proves insufficient but are not planned until ablation results are in.
+
+---
+
+## 3d. ~~CE-Weighted Entropy Regularization~~ — REJECTED
+
+**Rejected.** The over-prediction problem (Mode B, 65% of bad cases) is a threshold artifact,
+not a training objective problem.
+
+Three reasons:
+
+1. **The loss already penalizes wrong peaks.** The model assigns 93% of predicted peaks below
+   10% intensity in bad cases — they are already low-probability. The existing Hungarian/cosine
+   loss is already discouraging them. Entropy reg adds pressure to concentrate further, but
+   concentration on the wrong fragments reduces recall without improving precision.
+
+2. **Entropy reg is topology-blind.** At high NCE the correct fix is "suppress deep/large-mass
+   nodes, let shallow/small-mass nodes survive." Entropy reg penalizes diffuseness globally —
+   it would push down shallow-node probability equally with deep-node probability, which is wrong
+   when those shallow nodes are the correct high-NCE fragments. The depth-CE bias (§3c) applies
+   exactly the right structural prior instead.
+
+3. **The fix is a posthoc threshold, not a training objective.** Peak count inflation is best
+   controlled at inference by sweeping an intensity threshold on the validation set. This directly
+   controls the precision/recall tradeoff with no retraining and no risk of training instability.
+
+**Replacement: posthoc intensity threshold (§3d below).**
+
+---
+
+## 3d-ii. Posthoc Intensity Threshold
+
+### Motivation
+
+93% of predicted peaks in bad cases (cos\_hun < 0.3) are below 10% relative intensity
+(vs 88% in good cases).  The model is already assigning low probability to them — they are
+noise.  A scalar intensity threshold at inference directly controls peak count without
+retraining.
+
+### Design
+
+Sweep a threshold `τ` on the validation set and pick the value that maximises cos\_hun:
+
+```python
+# pred_ints are already normalized to sum 1 (or max 1) per spectrum
+for tau in [0.01, 0.02, 0.05, 0.10, 0.20]:
+    mask = pred_ints >= tau
+    filtered_ints = pred_ints * mask
+    filtered_ints /= filtered_ints.sum(dim=-1, keepdim=True).clamp(min=1e-8)
+    score = cos_hun(filtered_ints, gt_ints)
+    print(f"tau={tau}: median cos_hun={score.median():.4f}, median n_peaks={mask.sum(-1).float().median():.1f}")
+```
+
+Expected: `τ ≈ 0.02–0.05` should cut bad-case peak count from ~150 to ~30–50 while
+preserving the true high-intensity peaks that drive cos\_hun.
+
+### When to apply
+
+Immediately — run the threshold sweep on the NIST20 predictions from run `pqx7ywc9`.
+No model changes needed.  Export the chosen `τ` as a config parameter for inference.
+
+```yaml
+inference_intensity_threshold: 0.02   # set after sweep; 0.0 = disabled
+```
+
+---
+
+## 3e. Posthoc OOS Recalibration
+
+### Motivation
+
+68% of cos\_hun < 0.3 failures in NIST20 are silent (`pred_oos_prob ≤ 0.3`).  The OOS
+head has reasonable rank-ordering power but poor calibration for bad-case detection.
+`n_pred_peaks` is a strong complementary signal: bad cases have 5× more predicted peaks.
+
+### Design
+
+Fit a small posthoc calibrator on held-out validation predictions.  No retraining required.
+
+```python
+import numpy as np
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.preprocessing import LabelEncoder
+
+# Features: all available at inference time (no GT)
+X = np.column_stack([
+    pred_df['pred_oos_prob'],
+    np.log1p(pred_df['n_peaks_pred']),          # key new signal
+    pred_df['nce'].fillna(-1) / 200,
+    pred_df['ace'].fillna(-1) / 100,
+    (pred_df['inst_type'] == 'FT').astype(float),
+    (pred_df['prec_type'] == '[M+Na]+').astype(float),
+    (pred_df['prec_type'] == '[M+Cl]-').astype(float),
+])
+
+y = pred_df['cos_hun_inst_tol']   # target on val split only
+
+calibrator = GradientBoostingRegressor(n_estimators=100, max_depth=3, random_state=42)
+calibrator.fit(X_train, y_train)
+```
+
+Export alongside the model checkpoint as `calibrator.pkl`.  At inference, replace raw
+`pred_oos_prob` with `1 - calibrator.predict(X)` as the reliability signal.
+
+Validate calibration monotonicity:
+```python
+df.groupby(pd.cut(df.pred_quality, [0,.2,.4,.6,.8,1.0]))['cos_hun'].mean()
+```
+
+### When to add
+
+Immediately — this is a posthoc fix requiring no retraining.  Run it on the NIST20
+predictions from run `pqx7ywc9` as a proof-of-concept, then port to the production model.
 
 ---
 
@@ -1368,10 +1629,10 @@ increased fragmentation diversity at high CE).  The correct fix is frag-mode con
 
 ## 8. OOS Probability as Confidence Signal
 
-### Finding
+### Finding (NIST23 9-fold CV)
 
-`pred_oos_prob` (predicted out-of-spectrum probability) is a **strong calibrated confidence
-indicator**:
+`pred_oos_prob` (predicted out-of-spectrum probability) is a **monotonically calibrated
+confidence indicator** on NIST23:
 
 | pred\_oos\_prob bin | Median cos\_sim | n |
 |---|---|---|
@@ -1381,13 +1642,29 @@ indicator**:
 | 0.20–0.50 | 0.558 | 14,327 |
 | > 0.50 | **0.261** | 6,498 |
 
-The OOS head is well-calibrated — its score monotonically tracks actual prediction quality
-across nearly a 3.5× range in median cosine sim.
+### NIST20 Calibration Problem
+
+**On NIST20 (run `pqx7ywc9`), 68% of failures are silent:**
+
+| pred\_oos\_prob | Fraction of cos\_hun < 0.3 caught |
+|---|---|
+| > 0.3 | 31.8% |
+| ≤ 0.3 | **68.2% — silent failures** |
+
+The OOS head ranks predictions reasonably but does not threshold well for bad-case
+detection.  The root cause: OOS estimates how much probability is outside the predicted
+support — but Mode B failures (65% of bad cases) are over-prediction failures where *too
+much* support is predicted, not out-of-spectrum cases.  OOS cannot detect "I predicted
+150 peaks but only 32 are real" because it looks at coverage in the other direction.
+
+**`n_pred_peaks` is a much stronger signal for Mode B failures** (bad: median 152 peaks
+vs good: 31 peaks).  See §3e for the posthoc recalibrator that uses this.
 
 ### Uses
 
 **1. Downstream reliability filter** — Flag predictions with `pred_oos_prob > 0.2` as
-low-confidence in inference outputs.  Useful for library search applications.
+low-confidence in inference outputs.  Combine with `n_pred_peaks > 80` for better coverage
+of silent failures until the §3e calibrator is deployed.
 
 **2. Training signal** — If OOS prediction quality degrades after model changes (e.g., CID
 conditioning), check `val/cos_sim_oos_low` vs `val/cos_sim_oos_high` to catch regressions

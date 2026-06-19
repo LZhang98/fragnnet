@@ -117,6 +117,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ace_mean: float,
         ace_std: float,
         cc_feature_dropout: float,
+        depth_ce_bias: bool = False,
         debug_validate_outputs: bool = False,
     ):
         # nn.Module init
@@ -368,6 +369,19 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
         else:
             self.stratum_scaler = None
+
+        # CE × Depth Prior: per-depth logit bias conditioned on CE (§3c)
+        self.depth_ce_bias = depth_ce_bias
+        if depth_ce_bias:
+            if self.ce_embed_dim == 0:
+                raise ValueError("depth_ce_bias requires CE to be enabled (use_nce or use_ace)")
+            if "depth" not in frag_node_feats:
+                raise ValueError("depth_ce_bias requires 'depth' in frag_params.pyg_node_feats")
+            self.depth_ce_bias_layer = nn.Linear(self.ce_embed_dim, num_depth + 1)
+            nn.init.zeros_(self.depth_ce_bias_layer.weight)
+            nn.init.zeros_(self.depth_ce_bias_layer.bias)
+        else:
+            self.depth_ce_bias_layer = None
 
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
@@ -1229,6 +1243,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     spec_prec_type,
                     frag_node_batch_idxs,
                 )
+            # apply CE × depth prior if enabled (§3c)
+            if self.depth_ce_bias_layer is not None:
+                assert ce_embed is not None, "depth_ce_bias requires CE embedding"
+                depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(
+                    batch_frag_num_nodes, -1
+                )
+                depth_idx = depth_raw.argmax(dim=1).clamp(0, self.num_depth)  # (n_nodes,)
+                bias_per_depth = self.depth_ce_bias_layer(ce_embed)            # (batch, num_depth+1)
+                per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
+                frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (

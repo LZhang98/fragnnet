@@ -109,6 +109,7 @@ class FraGNNetPL(SpectrumPL):
             frag_mode_scale=self.hparams.frag_mode_scale,
             ce_scale=self.hparams.ce_scale,
             ce_scaler_hidden_dim=self.hparams.ce_scaler_hidden_dim,
+            depth_ce_bias=self.hparams.depth_ce_bias,
             adduct_scale=self.hparams.adduct_scale,
             stratum_scale=self.hparams.stratum_scale,
             stratum_scaler_embed_dim=self.hparams.stratum_scaler_embed_dim,

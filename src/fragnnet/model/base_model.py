@@ -157,6 +157,8 @@ class CEModel:
             self.ce_embedder_ace = ace_embedder
             effective_dim += ace_input_dim
 
+        self.ce_embed_dim = effective_dim
+
         if self.ce_insert_location == "mol":
             self.ce_mol_input_dim = effective_dim
             self.ce_mlp_input_dim = 0

@@ -511,6 +511,7 @@ frag_mode_scale: False           # Enable mode-conditioned affine output scaling
 # CE-conditioned FiLM output scaling (temperature-style)
 ce_scale: False              # Enable CE-conditioned FiLM scaler on logits before softmax
 ce_scaler_hidden_dim: 64     # Hidden dim of the CE→FiLM MLP
+depth_ce_bias: False         # §3c: CE×depth prior — per-depth logit bias conditioned on CE
 
 # Categorical FiLM output scaling (adduct type and acquisition stratum)
 adduct_scale: False           # §3a: Enable adduct-type FiLM output scaling (prec_type token)
