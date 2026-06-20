@@ -157,7 +157,7 @@ mostly an ablation/data-balance question, not a missing dual-CE architecture pat
 | 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1; steroids/coumarins/indoles | Medium (Cython) | — |
 | 5b | ~~**DAG mass filter**~~ | ~~Medium — prune false candidates~~ | Low | ❌ TRIED — no improvement |
 | 6 | **Explicit fragmentation rules for fused rings/steroids** | Medium — 3-bond cleavages not in one-shot pre-pass | Medium (SMARTS) | — |
-| 7 | CID training data sourcing | High — FT/CID median 0.497, ~8% of data | Low (data work) | — |
+| ~~7~~ | ~~CID training data sourcing~~ | ❌ **NOT PLANNED** — no additional data will be acquired; CID gap is a hard ceiling with existing NIST23/MoNA23 data; only architectural levers (frag-mode conditioning ✅, stratum FiLM) remain | — | ❌ NOT PLANNED |
 | 8 | Dual CE input (ACE + NCE) | Medium | Low | ✅ DONE |
 | 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low | — |
 | 10 | **Model ensembling** | +4% cos\_hun validated, no arch change | Very low | — |
@@ -223,12 +223,17 @@ QTOF/CID spectra are not upweighted — **Priority 3 confirmed needed.**
 
 Keep this sampler as-is.  The QTOF/CID weighting is a multiplicative addition on top.
 
-#### Step 2 — Add QTOF/CID upweighting to sampler
+#### ~~Step 2 — Add QTOF/CID upweighting to sampler~~ — TRIED, NO GAIN (2026-05-04)
 
-The existing `get_group_sampler()` only weights by CE count.  Add a stratum multiplier
+The existing `get_group_sampler()` only weights by CE count.  A stratum multiplier based on
+`(inst_type, frag_mode)` was tried: no measurable improvement on val metrics.  Root cause is
+conditioning (model can't tell HCD from CID), not data quantity.  Frag-mode conditioning token
+(§2 Step 2, ✅ DONE) is the correct fix.  This step is closed.
+
+~~The existing `get_group_sampler()` only weights by CE count.  Add a stratum multiplier
 based on `(inst_type, frag_mode)` using inverse-sqrt frequency dampening, applied on top
 of the existing `1/spec_per_group` weights.  This is a `data_sampler.py` change only —
-no model or config changes required beyond a new config key:
+no model or config changes required beyond a new config key:~~
 
 ```python
 # Multiply existing weight by stratum factor
@@ -417,13 +422,18 @@ complete bond cleavages compared to HCD's beam-type dissociation.
 - CID peak distributions are broader, more low-m/z intense, and less reproducible than HCD.
 - IT/CID completely absent from NIST23 training; all 35 test samples are from MoNA23.
 
+### Constraint
+
+**No additional training data will be acquired.** The CID performance gap (0.547 vs 0.781 for
+HCD) is a hard ceiling given the current NIST23/MoNA23 corpus.  The only available levers are
+architectural: frag-mode conditioning (✅ DONE), sampler reweighting (❌ TRIED — no gain),
+and CID-specific intensity scaling (Step 2 below).
+
 ### Plan
 
-#### Step 1 — Source additional CID data
+#### ~~Step 1 — Source additional CID data~~ — NOT PLANNED
 
-- Download GNPS public datasets filtered to `frag_mode=CID` with high-resolution instruments.
-- Include MoNA spectra beyond the current MoNA23 split, specifically IT/CID entries.
-- Target: 2× current CID training count minimum.
+Data sourcing is deprioritized. Architecture-only approach going forward.
 
 #### Step 2 — Frag-mode conditioning token
 
@@ -1357,7 +1367,7 @@ Run the `force_stopped` audit (§4 Step 1) first, then apply:
 | High (>30%) | Low | Low | Any | DAG truncation | Prioritized BFS (§4 Step 2), one-shot ring cleavage (§4 Step 3), ring-contraction (§4 Step 4) |
 | Low | Low | Low | Fused rings, steroids | Missing 2-bond ring cleavages (RDA etc.) | One-shot pre-pass (§4 Step 3) + explicit SMARTS rules |
 | Low | High | Low | RDA / ring-strain | Intensity misprediction | Focal loss (§1 Step 3), bond-priority BFS |
-| Low | High | Low | No special chemistry | Data imbalance | Focal loss + more training data |
+| Low | High | Low | No special chemistry | Data imbalance | Focal loss (no new data planned) |
 
 ### Classes and Their Expected Root Cause
 

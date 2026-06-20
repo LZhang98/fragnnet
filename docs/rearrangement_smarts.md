@@ -280,3 +280,109 @@ current prepass cannot model.
   vs. predicted).
 - Cope/Claisen would require a new "isomer prepass" layer before BFS — significant
   infrastructure change for a rare reaction class in ESI-CID.
+
+---
+
+## Case Study: o-Nitrothioether Cyclization (Confirmed, 2026-06-19)
+
+### Compound and Spectrum
+
+- **Molecule**: (4-chloro-2-nitrophenylthio)acetic acid, SMILES: `O=C(O)CSc1ccc(Cl)cc1[N+](=O)[O-]`
+- **Formula**: C8H6ClNO4S, [M-H]⁻ = 245.963 Da
+- **Spectrum**: spec_id=941868, mol_id=30126, FT, NCE=9%, nist20_hr
+- **cos_hun_inst_tol = 0.029** (model essentially blind — all predictions unmatched)
+
+### Observed Fragmentation
+
+All major GT peaks confirmed to ≤1 mDa (FT mass accuracy):
+
+| m/z (obs) | Formula | Δ mDa | Assignment |
+|---|---|---|---|
+| 171.9634 | C6H4ClNOS | 1.0 | Base peak — cyclic rearrangement product |
+| 154.9606 | C6H3ClNS  | 1.0 | Base − OH (17.003 Da) |
+| 135.9866 | C6H3NOS   | 0.9 | Base − HCl (35.977 Da) |
+
+Neutral loss to base peak: **74.000 Da = C2H2O3** (confirmed: 2×12 + 2×1.00783 + 3×15.99491 = 74.000 Da).
+
+### Mechanism
+
+The ortho-NO2 group acts as an internal electrophile, cyclizing with the adjacent S atom to
+form a new N–S bond (benzisothiazole N-oxide type 5-membered ring). Simultaneously the
+–CH2COO⁻ portion is expelled, incorporating one oxygen from NO2, yielding a C2H2O3 neutral
+loss (equivalent to CO2 + CH2O = 44.000 + 30.011 = 74.011 Da, or glyoxylic acid 74.000 Da).
+
+```
+[M-H]⁻ (245.963, C8H6ClNO4S)
+  ─C2H2O3 (74.000)──▶  C6H4ClNOS⁻ (171.963)  [benzisothiazole N-oxide, base peak]
+                              │
+                        ─OH (17.003)──▶  C6H3ClNS⁻ (154.961)
+                              │
+                        ─HCl (35.977)──▶  C6H3NOS⁻ (135.987)
+```
+
+The base peak (5 DBE: 4 aromatic + 1 ring C=N or C=S) is consistent with a cyclic
+thiadiazole or benzisothiazole N-oxide structure. The 13C M+1 peak of the base (172.967,
+intensity 50.85 = 5.1% of 999, consistent with ~4–5 carbons visible in the monoisotopic
+ion after NIST's 37Cl isotope filtering).
+
+### Why the Model Fails
+
+The BFS DAG only models bond-breaking (cleavage). This fragmentation requires **bond
+formation** (a new intramolecular N–S bond). The rearranged cyclic product C6H4ClNOS and
+all its secondary fragments are structurally unreachable from the precursor via any sequence
+of bond cleavages. The model instead predicts conventional cleavage products:
+
+- [M-H-CO2]⁻ ≈ 202 Da — large orange (pred unmatched)
+- Arylthiolate [Ar-S]⁻ ≈ 188 Da — large orange (pred unmatched)
+
+Neither appears in the actual spectrum.
+
+### SMARTS Pattern for Detection
+
+Detect the o-nitrothioether substructure:
+
+```python
+O_NITROTHIOETHER = "[S:1]-[c:2]1[c:3][N+:4](=[O:5])[O-:6][c:7]"
+```
+
+The reaction would need to be implemented as a custom Python function (not SMIRKS), because:
+1. It forms a new ring (N–S bond), which SMIRKS cannot represent as a ring-size change
+2. The neutral C2H2O3 requires tracking one O from NO2 joining the –CH2COO– fragment
+
+### Fixability and Priority
+
+| Dimension | Assessment |
+|---|---|
+| SMARTS-coverable | **No** — requires custom Python (new ring formed, same problem as Tropylium) |
+| Compound class prevalence | Unknown — requires NIST23 substructure count for `[S]-c1c[N+](=O)[O-]` |
+| Global wrecall impact | Likely small — o-nitrothioethers are a narrow functional group class |
+| Fix complexity | Medium — custom fragmentation function + prepass integration |
+
+**Recommendation**: Do not implement now. First check how many NIST23 [M-H]⁻ spectra contain
+the o-nitrothioether substructure. If >500 spectra, the wrecall gap warrants a custom rule.
+Otherwise, accept as out-of-scope (same decision as Cope/Claisen).
+
+### Finding o-Nitrothioether Compounds in the Dataset
+
+```python
+import pandas as pd
+from rdkit import Chem
+
+SMARTS = "[S]-[c]1[c][N+](=[O])[O-]"  # o-nitrothioether: S adjacent to o-NO2 on aromatic ring
+pat = Chem.MolFromSmarts(SMARTS)
+
+mol_df = pd.read_pickle("data/proc/nist23/mol_df.pkl")   # or nist20
+spec_df = pd.read_pickle("data/proc/nist23/spec_df.pkl")
+
+hits = mol_df["smiles"].apply(
+    lambda s: (m := Chem.MolFromSmiles(s)) is not None and m.HasSubstructMatch(pat)
+)
+hit_mol_ids = set(mol_df.loc[hits, "mol_id"])
+
+hit_specs = spec_df[
+    spec_df["mol_id"].isin(hit_mol_ids) & (spec_df["ion_mode"] == "negative")
+]
+print(f"Molecules with o-nitrothioether: {hits.sum()}")
+print(f"[M-H]- spectra: {len(hit_specs)}")
+print(hit_specs.groupby("inst_type").size())
+```
