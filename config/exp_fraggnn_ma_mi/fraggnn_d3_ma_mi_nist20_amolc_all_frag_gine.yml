@@ -17,10 +17,9 @@ wandb_tags:
 - gaussian_renormalize
 - b256
 - vectorized_loss
-- lb16
+- lb32
 - preload
 - preprocess
-- skip_extra_losses
 - binned_cosine_similarity
 - m+h
 - m-h
@@ -33,6 +32,8 @@ wandb_tags:
 - cmf
 - inst_tol
 - boundary_pair
+- bigraph
+- edge_base_formula
 
 # ============================================================================
 # Data File Paths
@@ -44,16 +45,40 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags
 
 # ============================================================================
 # Model Architecture
-# Same as fraggnn_d3_ma_mi_nist20_amolc_all except frag_gnn_type: GINE.
+# Baseline: fraggnn_d3_ma_mi_nist20_amolc_all (CE loss).
+# Change: frag_gnn_type NodeMLP → GINE with base_formula edge features + bigraph.
 # ============================================================================
 num_depth: 4
 num_hs: 4
-frag_gnn_type: GINE
+
 mol_hidden_size: 384
+mol_num_layers: 4
+mol_gnn_type: GINE
+mol_num_heads: 4
+mol_normalization: batch
+mol_pool_type: mean
+
+cc_interstage_type: direct
+cc_interstage_use_rest: False
+
+frag_gnn_type: GINE
+frag_hidden_size: 256
+frag_num_layers: 4
+frag_normalization: graph
+frag_pool_type: max
+frag_embed_combine: cat
+frag_pool_combine: none
+
+mlp_output_format: formula
+mlp_hidden_size: 256
+mlp_normalization: none
+mlp_num_layers: 2
+mlp_use_residuals: True
 
 # ============================================================================
 # Fragment DAG Parameters
-# pyg_edges: True required for GINE to message-pass between fragments in DAG.
+# pyg_edges: True + pyg_bigraph: True enables bidirectional GINE message-passing.
+# base_formula edge feature = neutral loss formula (parent - child heavy atoms).
 # ============================================================================
 frag_params:
   pyg_node_feats:
@@ -63,9 +88,10 @@ frag_params:
     - h_formulae_idx
     - cmf_h_formulae_idx
     - boundary_pair
-  pyg_edge_feats: []
+  pyg_edge_feats:
+    - base_formula
   pyg_edges: True
-  pyg_bigraph: False
+  pyg_bigraph: True
   preload: True
   preprocess: True
   include_cmf: True
@@ -166,8 +192,6 @@ gaussian_renormalize: True
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True
-mol_pool_type: mean
-frag_pool_type: max
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
