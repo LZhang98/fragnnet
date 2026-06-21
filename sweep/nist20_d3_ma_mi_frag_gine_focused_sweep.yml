@@ -1,0 +1,39 @@
+entity: frag-gnn
+project: frag-gnn
+program: ~/fragnnet/scripts/run_wandb_sweep.py
+method: random
+name: nist20_d3_ma_mi_frag_gine_focused
+description: >
+  Focused sweep for frag_gnn_type=GINE based on prior 59-run sweep results.
+  mlp_dropout fixed at 0.1 (strong signal from prior sweep). frag_num_layers
+  capped at 3 (avg loss degrades with more layers). lr range tightened to
+  [4e-4, 9e-4]. frag_hidden_size extended to 512 to probe scaling.
+metric:
+  goal: minimize
+  name: val_loss_epoch/mean
+parameters:
+  lr:
+    distribution: log_uniform_values
+    min: 0.0004
+    max: 0.0009
+
+  weight_decay:
+    values: [0.0, 0.001, 0.01]
+
+  mol_dropout:
+    values: [0.1, 0.2, 0.3]
+
+  frag_dropout:
+    values: [0.1, 0.2]
+
+  frag_hidden_size:
+    values: [256, 384, 512]
+
+  frag_num_layers:
+    values: [2, 3]
+
+  mlp_hidden_size:
+    values: [128, 256, 384]
+
+  mlp_num_layers:
+    values: [1, 2, 3]
