@@ -6,7 +6,8 @@ name: nist20_d3_ma_mi_frag_gine
 description: >
   Sweep for frag_gnn_type=GINE with CE loss. Architecture: bidirectional DAG
   message-passing with base_formula (neutral loss) edge features. mol_gnn_type
-  and mol_hidden_size fixed; sweeps lr/dropout/wd and frag_hidden_size.
+  and mol_hidden_size fixed; sweeps lr/dropout/wd, frag_hidden_size,
+  frag_num_layers, and mlp_hidden_size.
 metric:
   goal: minimize
   name: val_loss_epoch/mean
@@ -30,3 +31,12 @@ parameters:
 
   frag_hidden_size:
     values: [256, 384]
+
+  frag_num_layers:
+    values: [2, 3, 4]
+
+  mlp_hidden_size:
+    values: [128, 256, 384]
+
+  mlp_num_layers:
+    values: [1, 2, 3]
