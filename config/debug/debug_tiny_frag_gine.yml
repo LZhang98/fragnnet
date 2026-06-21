@@ -28,7 +28,7 @@ frag_params:
   pyg_edge_feats:
     - base_formula
   pyg_edges: True
-  pyg_bigraph: True
+  pyg_bigraph: False
   preload: False
   preprocess: False
   include_cmf: False

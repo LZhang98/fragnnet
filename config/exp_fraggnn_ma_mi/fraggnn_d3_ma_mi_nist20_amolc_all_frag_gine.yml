@@ -77,7 +77,7 @@ mlp_use_residuals: True
 
 # ============================================================================
 # Fragment DAG Parameters
-# pyg_edges: True + pyg_bigraph: True enables bidirectional GINE message-passing.
+# pyg_edges: True, pyg_bigraph: False — directional parent→child message-passing.
 # base_formula edge feature = neutral loss formula (parent - child heavy atoms).
 # ============================================================================
 frag_params:
@@ -91,7 +91,7 @@ frag_params:
   pyg_edge_feats:
     - base_formula
   pyg_edges: True
-  pyg_bigraph: True
+  pyg_bigraph: False
   preload: True
   preprocess: True
   include_cmf: True
