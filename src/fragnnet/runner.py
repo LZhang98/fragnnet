@@ -477,14 +477,22 @@ def init_run(
     if wandb_mode != "disabled":
         ckpt_dp = os.path.realpath(os.path.join(wandb.run.dir, "ckpt"))
     else:
-        ckpt_dp = "tmp_ckpt"
+        run_name = job_id if job_id else config_d.get("wandb_name", "run")
+        logging.info(
+            "wandb is disabled; checkpoints will be saved to "
+            f"ckpts/{run_name} — concurrent runs with the same name will collide."
+            "use unique job_id or enable wandb to avoid this issue."
+        )
+        ckpt_dp = os.path.join("ckpts", run_name)
     os.makedirs(ckpt_dp, exist_ok=True)
     if is_resume and old_wandb_dp is not None:
         assert not config_d["disable_checkpoints"]
         # copy the checkpoint files
         old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
         if not old_ckpt_fps:
-            logging.warning(f"Resume requested but no checkpoints found in {old_wandb_dp}/ckpt/, starting from scratch")
+            logging.warning(
+                f"Resume requested but no checkpoints found in {old_wandb_dp}/ckpt/, starting from scratch"
+            )
         for old_ckpt_fp in old_ckpt_fps:
             new_ckpt_fp = os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp))
             # modify checkpoint metadata (hacky)
@@ -533,7 +541,7 @@ def init_run(
     if wandb_mode != "disabled":
         profile_dp = os.path.join(wandb.run.dir, "profile")
     else:
-        profile_dp = "tmp_profile"
+        profile_dp = os.path.join("tmp_profile", run_name)
     os.makedirs(profile_dp, exist_ok=True)
     if config_d["profiler"] == "simple":
         profiler = SimpleProfiler(dirpath=profile_dp, filename="profile")
@@ -678,7 +686,9 @@ def init_run(
             if os.path.isfile(ckpt_fp):
                 logging.info(f"resuming from checkpoint: {ckpt_fp}")
             else:
-                logging.warning(f"Resume requested but last.ckpt not found in {ckpt_dp}, starting from epoch 0")
+                logging.warning(
+                    f"Resume requested but last.ckpt not found in {ckpt_dp}, starting from epoch 0"
+                )
                 ckpt_fp = None
         else:
             ckpt_fp = None
