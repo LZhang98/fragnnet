@@ -37,8 +37,8 @@ cc_interstage_type: direct
 cc_interstage_use_rest: False
 
 frag_gnn_type: GINE
-frag_hidden_size: 256
-frag_num_layers: 4
+frag_hidden_size: 384
+frag_num_layers: 3
 frag_normalization: graph
 frag_pool_type: max
 frag_embed_combine: cat
@@ -64,7 +64,7 @@ frag_params:
   pyg_edge_feats:
     - base_formula
   pyg_edges: True
-  pyg_bigraph: True
+  pyg_bigraph: False
   preload: True
   preprocess: True
   include_cmf: True
