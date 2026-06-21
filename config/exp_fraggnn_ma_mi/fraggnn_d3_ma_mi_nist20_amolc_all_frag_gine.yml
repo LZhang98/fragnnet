@@ -63,9 +63,9 @@ cc_interstage_use_rest: False
 
 frag_gnn_type: GINE
 frag_hidden_size: 256
-frag_num_layers: 4
+frag_num_layers: 2
 frag_normalization: graph
-frag_pool_type: max
+frag_pool_type: mean
 frag_embed_combine: cat
 frag_pool_combine: none
 
@@ -211,7 +211,7 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: True
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 300000
+dynamic_batch_sampler_max: 200000
 
 # ============================================================================
 # Group Sampler
