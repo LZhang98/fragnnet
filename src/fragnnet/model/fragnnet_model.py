@@ -1253,8 +1253,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 bias_per_depth = self.depth_ce_bias_layer(ce_embed)            # (batch, num_depth+1)
                 per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
                 frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)
-            # if include_cmf:
-            #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
+            if include_cmf:
+                # CMF Δh≠0 channels (columns crf_width+1..) that map to NULL should not
+                # consume probability mass before softmax.  This is always the case for
+                # [M+H]+/[M-H]- (direct-charge: only Δh=0 is a real CMF peak) and also
+                # applies per-node for any adduct where a Δh≠0 shift was not generated.
+                crf_width = 2 * self.num_hs + 1
+                formula_idxs_2d = frag_joint_formula_idxs.reshape(
+                    batch_frag_num_nodes, self.mlp_output_dim
+                )
+                cmf_dhn0_null = (
+                    formula_idxs_2d[:, crf_width + 1 :] == frag_node_offsets.unsqueeze(1)
+                )
+                if cmf_dhn0_null.any():
+                    null_mask = F.pad(cmf_dhn0_null, (crf_width + 1, 0))
+                    frag_joint_logits = frag_joint_logits.masked_fill(
+                        null_mask, LOG_ZERO(frag_joint_logits.dtype)
+                    )
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (
                 frag_joint_logits.shape[1],
                 2 * self.num_hs + 1,
@@ -1450,6 +1465,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             dst_formula_logprobs = frag_node_formula_logprobs[
                 frag_edge_index[1]
             ]  # (num_edges, mlp_output_dim)
+            # When CMF is active, only CRF columns represent bond-cleavage H-transfers;
+            # CMF columns encode charge-migration which has no edge-H-diff semantics.
+            if include_cmf:
+                _crf_w = 2 * self.num_hs + 1
+                src_formula_logprobs = src_formula_logprobs[:, :_crf_w]
+                dst_formula_logprobs = dst_formula_logprobs[:, :_crf_w]
             # Outer product of per-node formula log-probs across each edge: (E, H*H)
             frag_edge_h_logprobs = th.einsum(
                 "ni,nj->nij", src_formula_logprobs, dst_formula_logprobs
