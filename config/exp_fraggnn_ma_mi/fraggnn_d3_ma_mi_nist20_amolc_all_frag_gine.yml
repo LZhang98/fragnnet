@@ -62,8 +62,8 @@ cc_interstage_type: direct
 cc_interstage_use_rest: False
 
 frag_gnn_type: GINE
-frag_hidden_size: 256
-frag_num_layers: 2
+frag_hidden_size: 384
+frag_num_layers: 3
 frag_normalization: graph
 frag_pool_type: mean
 frag_embed_combine: cat
