@@ -70,9 +70,9 @@ frag_embed_combine: cat
 frag_pool_combine: none
 
 mlp_output_format: formula
-mlp_hidden_size: 256
+mlp_hidden_size: 384
 mlp_normalization: none
-mlp_num_layers: 2
+mlp_num_layers: 3
 mlp_use_residuals: True
 
 # ============================================================================
@@ -160,16 +160,16 @@ debug_overfit: False
 # ============================================================================
 # Regularization
 # ============================================================================
-mol_dropout: 0.1
-frag_dropout: 0.1
-mlp_dropout: 0.3
+mol_dropout: 0.2
+frag_dropout: 0.2
+mlp_dropout: 0.1
 weight_decay: 0.01
 
 # ============================================================================
 # LR Schedule
 # ============================================================================
 lr_schedule: False
-lr: 0.0004
+lr: 0.0006
 lr_schedule_type: cosine
 lr_warmup_steps: 5000
 lr_total_steps: 390000
