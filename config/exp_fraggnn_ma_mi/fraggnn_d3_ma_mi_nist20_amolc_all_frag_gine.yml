@@ -90,6 +90,8 @@ frag_params:
     - boundary_pair
   pyg_edge_feats:
     - base_formula
+    - h_range
+    - complement
   pyg_edges: True
   pyg_bigraph: True
   preload: True
