@@ -44,6 +44,16 @@ Optional positional encoding: `pyg_pe_embed_k` for random-walk PE (disabled by d
 
 Commented-out (implemented, rarely used): `h_counts`, `nb_iso_idx`, `prepass_rule_id`, `boundary_cc`.
 
+#### `frag_q` — Gasteiger partial charge sum
+
+`frag_q` is the sum of Gasteiger partial charges over all atoms in a fragment (shape `(num_nodes, 1)`).
+
+**Storage:** unlike all other fragment node features, `frag_q` is **not packed into `x`** and is not registered in `node_feat_idxs`. It lives as a separate `dag_pyg.frag_q` attribute on the PyG Data object. This is because `x` is built around integer-encoded categorical features; inserting a continuous float column would require dtype changes throughout `get_node_feats`.
+
+**Model use:** accessed directly as `frag_pyg.frag_q` in `FraGNNetModel.forward`, projected through `nn.Linear(1, embed_dim)` (`frag_q_proj`), and concatenated with other fragment node embeddings.
+
+**When to refactor:** if a second continuous fragment node feature is added, introduce a `frag_x_cont` float tensor to unify them rather than adding another one-off attribute.
+
 ### Fragment edge features (default template)
 
 | Name | Notes |
