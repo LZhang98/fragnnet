@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 import torch as th
 
+from fragnnet.utils.feat_utils import get_frag_graph
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_IDX,
     NODE_FEAT_TO_IDX,
@@ -25,8 +26,6 @@ from fragnnet.utils.frag_utils import (
     extract_mol_info,
     get_node_feats,
 )
-from fragnnet.utils.feat_utils import get_frag_graph
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -126,9 +125,7 @@ def test_leaves_have_zero_out_degree() -> None:
     nodes_with_children = set()
     if edge_index.shape[1] > 0:
         nodes_with_children = set(edge_index[0].tolist())
-    leaf_mask = th.tensor(
-        [i not in nodes_with_children for i in range(num_nodes)], dtype=th.bool
-    )
+    leaf_mask = th.tensor([i not in nodes_with_children for i in range(num_nodes)], dtype=th.bool)
     assert th.all(out_feat[leaf_mask] == 0), "All leaf nodes must have out_degree == 0"
 
 
@@ -241,7 +238,15 @@ def minimal_model():
         mol_dropout=0.0,
         mol_num_heads=1,
         mol_pool_type="mean",
-        frag_node_feats=["cc", "base_formula", "depth", "h_formulae_idx", "out_degree", "in_degree", "num_heavy_atoms"],
+        frag_node_feats=[
+            "cc",
+            "base_formula",
+            "depth",
+            "h_formulae_idx",
+            "out_degree",
+            "in_degree",
+            "num_heavy_atoms",
+        ],
         frag_edge_feats=[],
         frag_hidden_size=32,
         frag_num_layers=2,
@@ -318,7 +323,15 @@ def test_model_forward_with_new_frag_feats(minimal_model) -> None:
     dag_d = _run_dag(smiles)
     frag_pyg = get_frag_graph(
         dag_d["dag"],
-        frag_node_feats=["cc", "base_formula", "depth", "h_formulae_idx", "out_degree", "in_degree", "num_heavy_atoms"],
+        frag_node_feats=[
+            "cc",
+            "base_formula",
+            "depth",
+            "h_formulae_idx",
+            "out_degree",
+            "in_degree",
+            "num_heavy_atoms",
+        ],
         frag_edge_feats=[],
         edges=False,
         bigraph=False,
