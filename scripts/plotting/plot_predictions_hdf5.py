@@ -1,0 +1,2192 @@
+"""Plot predictions from an inference HDF5 file.
+
+Modes:
+  1. stats            — score distributions, all-metrics overview, peak stats, CE breakdown.
+                        Requires --spec_df_fp for the CE breakdown panel.
+  2. spectra          — mirror spectra for top/worst/random N predictions. Requires --spec_df_fp.
+  3. threshold_sweep  — peak count and cosine sim vs post-hoc intensity threshold.
+                        Requires --spec_df_fp for the cosine sim panel.
+
+Usage:
+  python scripts/plotting/plot_predictions_hdf5.py \
+      --pred_fp output/inference_eval/4ews8j6f/predictions_test.hdf5 \
+      --mode stats
+
+  python scripts/plotting/plot_predictions_hdf5.py \
+      --pred_fp output/inference_eval/4ews8j6f/predictions_test.hdf5 \
+      --spec_df_fp data/proc/nist20/spec_df.pkl \
+      --mode spectra
+
+  python scripts/plotting/plot_predictions_hdf5.py \
+      --pred_fp output/inference_eval/4ews8j6f/predictions_test.hdf5 \
+      --spec_df_fp data/proc/nist20/spec_df.pkl \
+      --mode threshold_sweep
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+from pathlib import Path
+from typing import Literal
+
+import h5py
+import matplotlib.collections as mc
+import matplotlib.gridspec as gridspec
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy import stats
+from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
+
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    _RDKIT_AVAILABLE = True
+except ImportError:
+    _RDKIT_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# HDF5 helpers
+# ---------------------------------------------------------------------------
+
+
+def load_hdf5_meta(pred_fp: str) -> pd.DataFrame:
+    """Load per-spectrum metadata from the prediction HDF5 into a DataFrame.
+
+    Args:
+        pred_fp: Path to the predictions HDF5 file.
+
+    Returns:
+        DataFrame with one row per spectrum and scalar columns from HDF5.
+    """
+    scalar_keys = [
+        "spec_id",
+        "mol_id",
+        "cos_sim_0.01",
+        "cos_hun_inst_tol",
+        "cos_hun_inst_tol_sqrt",
+        "jss_hun_inst_tol",
+        "jss_hun_inst_tol_sqrt",
+        "cos_sim_sqrt_0.01",
+        "pred_oos_prob",
+        "start_points",
+        "end_points",
+        "index_rebased",
+    ]
+    with h5py.File(pred_fp, "r") as f:
+        available = {k for k in scalar_keys if k in f}
+        data = {k: f[k][:] for k in available}
+    return pd.DataFrame(data)
+
+
+def get_pred_spectrum(f: h5py.File, row: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+    """Extract predicted (mz, intensity) arrays for one spectrum.
+
+    Args:
+        f: Open HDF5 file handle.
+        row: One row from the metadata DataFrame (must have start_points, end_points).
+
+    Returns:
+        Tuple of (pred_mzs, pred_ints) as float32 arrays.
+    """
+    s, e = int(row["start_points"]), int(row["end_points"])
+    return f["pred_mzs"][s:e], f["pred_ints"][s:e]
+
+
+# ---------------------------------------------------------------------------
+# Summary distribution plots
+# ---------------------------------------------------------------------------
+
+_METRICS = [
+    ("cos_sim_0.01", "Cosine Similarity (tol=0.01 Da)"),
+    ("cos_hun_inst_tol", "Cosine (instrument tol)"),
+    ("cos_hun_inst_tol_sqrt", "Cosine Sqrt (instrument tol)"),
+    ("jss_hun_inst_tol", "JSS (instrument tol)"),
+    ("jss_hun_inst_tol_sqrt", "JSS Sqrt (instrument tol)"),
+]
+
+
+def plot_summary(meta: pd.DataFrame, save_dp: str) -> None:
+    """Plot histogram + CDF for each available score metric.
+
+    Args:
+        meta: DataFrame from load_hdf5_meta.
+        save_dp: Directory to save figures.
+    """
+    os.makedirs(save_dp, exist_ok=True)
+    available_metrics = [(k, label) for k, label in _METRICS if k in meta.columns]
+    if not available_metrics:
+        logger.warning("No score metrics found in HDF5.")
+        return
+
+    fig, axes = plt.subplots(len(available_metrics), 2, figsize=(12, 4 * len(available_metrics)))
+    if len(available_metrics) == 1:
+        axes = [axes]
+
+    for row_axes, (key, label) in zip(axes, available_metrics):
+        vals = meta[key].dropna().to_numpy()
+        ax_hist, ax_cdf = row_axes
+
+        # Histogram
+        ax_hist.hist(vals, bins=100, color="steelblue", edgecolor="none", alpha=0.85)
+        ax_hist.axvline(
+            np.median(vals), color="crimson", lw=1.5, label=f"median={np.median(vals):.3f}"
+        )
+        ax_hist.set_xlabel(label, fontsize=11)
+        ax_hist.set_ylabel("Count", fontsize=11)
+        ax_hist.set_title(f"Distribution of {label}", fontsize=12)
+        ax_hist.legend(fontsize=10)
+
+        # CDF
+        sorted_vals = np.sort(vals)
+        cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+        ax_cdf.plot(sorted_vals, cdf, color="steelblue", lw=1.5)
+        for thresh in (0.5, 0.7, 0.9):
+            frac = np.mean(vals >= thresh)
+            ax_cdf.axvline(thresh, color="grey", lw=0.8, ls="--")
+            ax_cdf.text(
+                thresh + 0.005, 0.05, f"≥{thresh:.1f}: {frac:.1%}", fontsize=8, color="grey"
+            )
+        ax_cdf.set_xlabel(label, fontsize=11)
+        ax_cdf.set_ylabel("CDF", fontsize=11)
+        ax_cdf.set_title(f"CDF of {label}", fontsize=12)
+        ax_cdf.set_xlim(0, 1)
+        ax_cdf.set_ylim(0, 1)
+
+    fig.tight_layout()
+    out_fp = os.path.join(save_dp, "summary_distributions.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved summary plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+_METRIC_COLORS = ["#4878CF", "#e05c1a", "#6ACC65", "#8B6BB1", "#D65F5F"]
+
+
+def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
+    """Create a single overview figure with all available metrics.
+
+    Layout: 2 metric pairs per row. Each metric shows histogram + CDF side by side.
+    For N metrics: ceil(N/2) rows × 4 cols.
+
+    Args:
+        meta: DataFrame from load_hdf5_meta.
+        save_dp: Directory to save figures.
+    """
+    os.makedirs(save_dp, exist_ok=True)
+    available_metrics = [(k, label) for k, label in _METRICS if k in meta.columns]
+    if not available_metrics:
+        logger.warning("No score metrics found in HDF5.")
+        return
+
+    n = len(available_metrics)
+    n_cols = 4  # 2 metrics per row: [hist0] [cdf0] [hist1] [cdf1]
+    n_rows = (n + 1) // 2  # ceil(n/2)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(6 * n_cols, 5 * n_rows),
+        squeeze=False,
+    )
+    fig.subplots_adjust(hspace=0.40, wspace=0.35)
+
+    for idx, ((key, label), color) in enumerate(zip(available_metrics, _METRIC_COLORS)):
+        row = idx // 2
+        col_pair = 2 * (idx % 2)  # 0 or 2
+        col_hist = col_pair
+        col_cdf = col_pair + 1
+
+        vals = meta[key].dropna().to_numpy()
+        med = np.median(vals)
+        mn = np.mean(vals)
+        sorted_vals = np.sort(vals)
+        cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+
+        # Histogram
+        ax_hist = axes[row, col_hist]
+        ax_hist.hist(vals, bins=80, color=color, edgecolor="none", alpha=0.75)
+        ax_hist.axvline(med, color="black", lw=1.5, label=f"med={med:.3f}")
+        ax_hist.axvline(mn, color="#FF6B35", lw=1.5, ls="--", label=f"mean={mn:.3f}")
+        ax_hist.set_xlabel("Score", fontsize=11)
+        ax_hist.set_ylabel("Count", fontsize=11)
+        ax_hist.set_title(f"{label} — histogram", fontsize=12, pad=6)
+        ax_hist.legend(fontsize=9)
+        ax_hist.spines["top"].set_visible(False)
+        ax_hist.spines["right"].set_visible(False)
+
+        # CDF
+        ax_cdf = axes[row, col_cdf]
+        ax_cdf.plot(sorted_vals, cdf, color=color, lw=2.0)
+        for thresh in (0.5, 0.7, 0.9):
+            frac = np.mean(vals >= thresh)
+            ax_cdf.axvline(thresh, color="grey", lw=0.8, ls="--", alpha=0.6)
+            ax_cdf.text(thresh + 0.004, 0.04, f"≥{thresh:.1f}:{frac:.1%}", fontsize=8, color="grey")
+        ax_cdf.set_xlim(0, 1)
+        ax_cdf.set_ylim(0, 1)
+        ax_cdf.set_xlabel("Score", fontsize=11)
+        ax_cdf.set_ylabel("CDF", fontsize=11)
+        ax_cdf.set_title(f"{label} — CDF", fontsize=12, pad=6)
+        ax_cdf.spines["top"].set_visible(False)
+        ax_cdf.spines["right"].set_visible(False)
+
+    # Hide unused cells
+    for idx in range(n, n_rows * 2):
+        row = idx // 2
+        col_pair = 2 * (idx % 2)
+        axes[row, col_pair].set_visible(False)
+        axes[row, col_pair + 1].set_visible(False)
+
+    fig.suptitle("All Metrics Overview (Histogram + CDF)", fontsize=20, y=1.01)
+    out_fp = os.path.join(save_dp, "all_metrics_overview.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved all-metrics plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+# ---------------------------------------------------------------------------
+# Peak count & intensity stats
+# ---------------------------------------------------------------------------
+
+
+def _hist_ax(
+    ax: plt.Axes,
+    vals: np.ndarray,
+    title: str,
+    xlabel: str,
+    color: str,
+    bins: int = 80,
+    log_scale: bool = False,
+) -> None:
+    """Draw annotated histogram with median/mean lines."""
+    med = np.median(vals)
+    mn = np.mean(vals)
+    ax.hist(vals, bins=bins, color=color, edgecolor="none", alpha=0.75, log=log_scale)
+    ax.axvline(med, color="black", lw=1.5, label=f"med={med:.2f}")
+    ax.axvline(mn, color="#FF6B35", lw=1.5, ls="--", label=f"mean={mn:.2f}")
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel("Count", fontsize=11)
+    ax.set_title(title, fontsize=13, pad=6)
+    ax.legend(fontsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def _cdf_ax(
+    ax: plt.Axes,
+    vals: np.ndarray,
+    title: str,
+    xlabel: str,
+    color: str,
+) -> None:
+    """Draw CDF with percentile annotations."""
+    sorted_vals = np.sort(vals)
+    cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+    ax.plot(sorted_vals, cdf, color=color, lw=2.0)
+    p50, p90, p99 = np.percentile(vals, [50, 90, 99])
+    for pct, val, ls in [(50, p50, "--"), (90, p90, ":"), (99, p99, "-.")]:
+        ax.axvline(val, color="grey", lw=0.8, ls=ls)
+        ax.text(val, 0.05, f"p{pct}={val:.1f}", fontsize=8, color="grey", rotation=90, va="bottom")
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel("CDF", fontsize=11)
+    ax.set_title(title, fontsize=13, pad=6)
+    ax.set_ylim(0, 1)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def plot_peak_stats(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    save_dp: str,
+    filter_col: str = "index_rebased",
+    spec_df: pd.DataFrame | None = None,
+) -> None:
+    """Plot per-spectrum peak count and per-peak intensity distributions.
+
+    Shows overall histograms and CDFs. If filter_col exists in meta, adds
+    split panels for filter=True and filter=False groups.
+    If spec_df is provided, also shows predicted vs ground-truth peak count comparison.
+
+    Args:
+        meta: DataFrame from load_hdf5_meta (must have start_points, end_points, spec_id).
+        pred_fp: Path to predictions HDF5 (for pred_ints).
+        save_dp: Output directory.
+        filter_col: Optional boolean column in meta to split plots by.
+        spec_df: Optional ground-truth spec_df (must have spec_id, "mz", "intensity" columns).
+    """
+    if "start_points" not in meta.columns or "end_points" not in meta.columns:
+        logger.warning("start_points/end_points not in meta — skipping peak stats.")
+        return
+
+    os.makedirs(save_dp, exist_ok=True)
+
+    n_peaks_pred = (meta["end_points"] - meta["start_points"]).to_numpy()
+
+    with h5py.File(pred_fp, "r") as f:
+        all_ints = f["pred_ints"][:]
+
+    has_filter = filter_col in meta.columns
+    has_gt = spec_df is not None
+
+    if has_filter:
+        mask_true = meta[filter_col].to_numpy().astype(bool)
+        mask_false = ~mask_true
+
+        # Per-spectrum peak counts for each group
+        n_peaks_pred_true = n_peaks_pred[mask_true]
+        n_peaks_pred_false = n_peaks_pred[mask_false]
+
+        # Per-peak intensities mapped back through spectrum index
+        starts = meta["start_points"].to_numpy()
+        ends = meta["end_points"].to_numpy()
+        peak_filter = np.zeros(len(all_ints), dtype=bool)
+        for i in np.where(mask_true)[0]:
+            peak_filter[starts[i] : ends[i]] = True
+        ints_true = all_ints[peak_filter]
+        ints_false = all_ints[~peak_filter]
+
+    # Get ground truth peak counts if spec_df provided
+    n_peaks_gt = None
+    peak_delta = None
+    over_pred = None
+    under_pred = None
+    exact_match = None
+
+    if has_gt:
+        if "spec_id" not in meta.columns:
+            logger.warning("spec_id not in meta — cannot compare with ground truth")
+        else:
+            # Build a dict for fast lookup instead of iterating + pandas lookup
+            spec_peaks_dict = {}
+            for _, row in spec_df.iterrows():
+                spec_id = int(row["spec_id"])
+                peaks = row["peaks"]
+                if peaks is not None and not (isinstance(peaks, float) and np.isnan(peaks)):
+                    if isinstance(peaks, (list, np.ndarray)):
+                        spec_peaks_dict[spec_id] = len(peaks)
+                    elif isinstance(peaks, str) and peaks.strip():
+                        spec_peaks_dict[spec_id] = len(peaks.strip().split("\n"))
+
+            n_peaks_gt = np.zeros(len(meta), dtype=int)
+            for idx, spec_id in meta["spec_id"].items():
+                n_peaks_gt[idx] = spec_peaks_dict.get(int(spec_id), 0)
+
+            peak_delta = n_peaks_pred - n_peaks_gt
+            over_pred = (peak_delta > 0).sum()
+            under_pred = (peak_delta < 0).sum()
+            exact_match = (peak_delta == 0).sum()
+
+    n_cols = 4 if has_gt else (3 if has_filter else 2)
+    colors_all = ["#4878CF", "#4878CF"]
+    colors_true = ["#6ACC65", "#6ACC65"]
+    colors_false = ["#D65F5F", "#D65F5F"]
+    colors_gt = ["#E8A83C", "#E8A83C"]
+
+    fig, axes = plt.subplots(2, n_cols, figsize=(6 * n_cols, 10), squeeze=False)
+    fig.subplots_adjust(hspace=0.45, wspace=0.35)
+
+    # --- Row 0: peak count ---
+    _hist_ax(axes[0, 0], n_peaks_pred, "Peak count — Predicted", "# peaks", colors_all[0])
+    _cdf_ax(axes[0, 1], n_peaks_pred, "Peak count CDF — Predicted", "# peaks", colors_all[0])
+
+    if has_gt:
+        # Ground truth peak count
+        _hist_ax(axes[0, 2], n_peaks_gt, "Peak count — Ground Truth", "# peaks", colors_gt[0])
+        # Over/Under prediction delta
+        ax = axes[0, 3]
+        ax.hist(peak_delta, bins=80, color="#7030A0", edgecolor="none", alpha=0.7)
+        ax.axvline(0, color="red", linestyle="--", linewidth=2, label="Perfect prediction")
+        ax.set_xlabel("Predicted - Ground Truth (# peaks)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Frequency", fontsize=11, fontweight="bold")
+        stats_text = (
+            f"Over-predicted: {over_pred} ({over_pred / len(meta) * 100:.1f}%)\n"
+            f"Under-predicted: {under_pred} ({under_pred / len(meta) * 100:.1f}%)\n"
+            f"Exact match: {exact_match} ({exact_match / len(meta) * 100:.1f}%)\n"
+            f"Mean delta: {peak_delta.mean():.2f}"
+        )
+        ax.text(
+            0.98,
+            0.97,
+            stats_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+        )
+        ax.set_title("Prediction Error Distribution", fontsize=12, fontweight="bold")
+        ax.legend(loc="upper left")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.2)
+
+    elif has_filter:
+        _hist_ax(
+            axes[0, 2],
+            n_peaks_pred_true if mask_true.sum() > 0 else np.array([0]),
+            f"Peak count  {filter_col}=T ({mask_true.sum():,})\nvs =F ({mask_false.sum():,})",
+            "# peaks",
+            colors_true[0],
+        )
+        axes[0, 2].hist(
+            n_peaks_pred_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55
+        )
+
+    # --- Row 1: intensity ---
+    _hist_ax(
+        axes[1, 0], all_ints, "Intensity — all peaks", "Intensity", colors_all[1], log_scale=True
+    )
+    _cdf_ax(axes[1, 1], all_ints, "Intensity CDF — all peaks", "Intensity", colors_all[1])
+
+    if has_filter and not has_gt:
+        _hist_ax(
+            axes[1, 2],
+            ints_true if len(ints_true) > 0 else np.array([0]),
+            f"Intensity  {filter_col}=T vs =F\n(log scale)",
+            "Intensity",
+            colors_true[1],
+            log_scale=True,
+        )
+        axes[1, 2].hist(
+            ints_false, bins=80, color=colors_false[1], edgecolor="none", alpha=0.55, log=True
+        )
+    elif has_gt:
+        # Show predicted vs GT peak count comparison scatter
+        ax = axes[1, 2]
+        ax.scatter(n_peaks_gt, n_peaks_pred, alpha=0.5, s=20, color="#1f77b4")
+        # Add perfect prediction line
+        max_peaks = max(n_peaks_gt.max(), n_peaks_pred.max())
+        ax.plot([0, max_peaks], [0, max_peaks], "r--", linewidth=2, label="Perfect prediction")
+        ax.set_xlabel("Ground Truth Peak Count", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Predicted Peak Count", fontsize=11, fontweight="bold")
+        ax.set_title("Predicted vs Ground Truth", fontsize=12, fontweight="bold")
+        ax.legend()
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(alpha=0.2)
+
+        # Show intensity distribution for second row
+        _hist_ax(
+            axes[1, 3],
+            all_ints,
+            "Intensity — Predicted peaks\n(log scale)",
+            "Intensity",
+            colors_all[1],
+            log_scale=True,
+        )
+
+    filter_note = f" (split by {filter_col})" if has_filter else ""
+    gt_note = " + Ground Truth Comparison" if has_gt else ""
+    fig.suptitle(f"Peak Count & Intensity Stats{filter_note}{gt_note}", fontsize=16, y=1.01)
+    out_fp = os.path.join(save_dp, "peak_stats.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved peak stats plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+# ---------------------------------------------------------------------------
+# Intensity threshold sweep
+# ---------------------------------------------------------------------------
+
+# Per-instrument-type tolerance: (tol_rel, tol_min_mz).
+# tol_rel is a fraction (not ppm): 1e-5 = 10 ppm.
+# tol_min_mz is the minimum m/z used as divisor floor (effective abs tolerance = tol_rel * tol_min_mz).
+# Matches the defaults from config/template.yml (inst_type_loss_tol section).
+_INST_TOL_MAP: dict[str, tuple[float, float]] = {
+    "FT": (1e-5, 200.0),  # 10 ppm, 0.002 Da floor
+    "QTOF": (2e-5, 750.0),  # 20 ppm, 0.015 Da floor
+    "IT": (1e-5, 200.0),  # fallback: same as FT
+}
+_INST_TOL_DEFAULT: tuple[float, float] = (1e-5, 200.0)  # global default (10 ppm)
+
+
+def _cos_sim_binned(
+    pred_mzs: np.ndarray,
+    pred_ints: np.ndarray,
+    gt_mzs: np.ndarray,
+    gt_ints: np.ndarray,
+    bin_res: float = 0.01,
+    mz_max: float = 1500.0,
+) -> float:
+    """Binned cosine similarity — exact match of the model's cos_sim_0.01 metric.
+
+    Bins both spectra at bin_res Da resolution (same searchsorted logic as bin_func
+    in spec_utils), L2-normalises each binned vector, and returns their dot product.
+    Equivalent to cos_sim_helper() used during inference.
+
+    Args:
+        pred_mzs: Predicted m/z values.
+        pred_ints: Predicted intensities (any scale).
+        gt_mzs: Ground-truth m/z values.
+        gt_ints: Ground-truth intensities.
+        bin_res: Bin resolution in Da. Defaults to 0.01.
+        mz_max: Upper m/z bound matching model config. Defaults to 1500.0.
+
+    Returns:
+        Cosine similarity in [0, 1].
+    """
+    if len(pred_ints) == 0 or len(gt_ints) == 0:
+        return 0.0
+
+    bins = np.arange(bin_res, mz_max + bin_res, bin_res)
+    pred_idx = np.searchsorted(bins, pred_mzs.clip(0, mz_max - 1e-6), side="right")
+    gt_idx = np.searchsorted(bins, gt_mzs.clip(0, mz_max - 1e-6), side="right")
+
+    # Aggregate intensities within each bin (sum), stored sparsely
+    pred_d: dict[int, float] = {}
+    for k, v in zip(pred_idx.tolist(), pred_ints.tolist()):
+        pred_d[k] = pred_d.get(k, 0.0) + v
+
+    gt_d: dict[int, float] = {}
+    for k, v in zip(gt_idx.tolist(), gt_ints.tolist()):
+        gt_d[k] = gt_d.get(k, 0.0) + v
+
+    pred_norm = float(np.sqrt(sum(v * v for v in pred_d.values())))
+    gt_norm = float(np.sqrt(sum(v * v for v in gt_d.values())))
+    if pred_norm == 0.0 or gt_norm == 0.0:
+        return 0.0
+
+    dot = sum(pred_d[k] * gt_d[k] for k in pred_d if k in gt_d)
+    return float(dot / (pred_norm * gt_norm))
+
+
+def _cos_hun_inst_tol(
+    pred_mzs: np.ndarray,
+    pred_ints: np.ndarray,
+    gt_mzs: np.ndarray,
+    gt_ints: np.ndarray,
+    tol_rel: float,
+    tol_min_mz: float,
+) -> float:
+    """Hungarian-matching cosine similarity with instrument-specific m/z tolerance.
+
+    Exact numpy/scipy equivalent of cos_hun_helper() + calculate_match_mzs() from
+    spec_utils, replicating the cos_hun_inst_tol metric stored in the HDF5.
+
+    The per-peak absolute tolerance is ``tol_rel * max(gt_mz, tol_min_mz)``,
+    which converts a relative (ppm-like) tolerance to absolute Da with a floor.
+
+    Args:
+        pred_mzs: Predicted m/z values of shape (N_pred,).
+        pred_ints: Predicted intensities of shape (N_pred,).
+        gt_mzs: Ground-truth m/z values of shape (N_gt,).
+        gt_ints: Ground-truth intensities of shape (N_gt,).
+        tol_rel: Relative tolerance fraction (e.g. 1e-5 for 10 ppm).
+        tol_min_mz: Minimum m/z divisor floor in Da (e.g. 200.0 for FT).
+
+    Returns:
+        Cosine-Hungarian similarity in [0, 1].
+    """
+    if len(pred_ints) == 0 or len(gt_ints) == 0:
+        return 0.0
+
+    # Per-peak absolute tolerance: tol_rel * max(gt_mz, tol_min_mz)
+    tol_abs = tol_rel * np.maximum(gt_mzs, tol_min_mz)  # (N_gt,)
+    diff = np.abs(gt_mzs[:, None] - pred_mzs[None, :])  # (N_gt, N_pred)
+    match_mask = diff < tol_abs[:, None]  # (N_gt, N_pred)
+
+    true_match = match_mask.any(axis=1)
+    pred_match = match_mask.any(axis=0)
+    if not true_match.any() or not pred_match.any():
+        return 0.0
+
+    # L2-normalise full intensity vectors
+    gt_norm = np.linalg.norm(gt_ints)
+    pred_norm = np.linalg.norm(pred_ints)
+    if gt_norm == 0.0 or pred_norm == 0.0:
+        return 0.0
+    gt_n = gt_ints / gt_norm
+    pred_n = pred_ints / pred_norm
+
+    # Score matrix restricted to matchable peaks: S_uv = mask_uv * gt_u * pred_v
+    sub_mask = match_mask[true_match][:, pred_match]
+    score_matrix = sub_mask * (gt_n[true_match, None] * pred_n[None, pred_match])
+
+    row_ind, col_ind = linear_sum_assignment(score_matrix, maximize=True)
+    return float(score_matrix[row_ind, col_ind].sum())
+
+
+def plot_threshold_sweep(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    save_dp: str,
+    spec_df: pd.DataFrame | None = None,
+    thresholds: list[float] | None = None,
+) -> None:
+    """Plot peak count and cosine similarity vs post-hoc intensity threshold.
+
+    Sweeps inference-time intensity cutoffs to show the tradeoff between
+    peak count reduction and cosine similarity degradation. Peak count stats
+    are computed on all spectra; cosine similarity is recomputed on a random
+    subsample of up to _SWEEP_MAX_SPECTRA_COS spectra (requires spec_df).
+
+    Args:
+        meta: DataFrame from load_hdf5_meta (must have start_points, end_points).
+        pred_fp: Path to predictions HDF5.
+        save_dp: Output directory.
+        spec_df: Optional ground-truth spec_df with columns [spec_id, peaks].
+            When provided, a third panel shows median cos_sim_0.01 per threshold.
+        thresholds: Intensity thresholds to sweep on the 0–1000 scale.
+            Defaults to [0, 5, 10, 20, 50, 100] (i.e. 0–10% of max intensity).
+    """
+    if "start_points" not in meta.columns or "end_points" not in meta.columns:
+        logger.warning("start_points/end_points not in meta — skipping threshold sweep.")
+        return
+
+    os.makedirs(save_dp, exist_ok=True)
+    thresholds = thresholds or _SWEEP_THRESHOLDS
+
+    starts = meta["start_points"].to_numpy()
+    ends = meta["end_points"].to_numpy()
+
+    with h5py.File(pred_fp, "r") as f:
+        pred_mzs_all = f["pred_mzs"][:]
+        pred_ints_all = f["pred_ints"][:]
+
+    # Peak count stats (all spectra) ----------------------------------------
+    count_stats: list[dict] = []
+    pred_counts_all: list[np.ndarray] = []
+    for thresh in thresholds:
+        counts = np.array([int(np.sum(pred_ints_all[s:e] > thresh)) for s, e in zip(starts, ends)])
+        pred_counts_all.append(counts)
+        count_stats.append(
+            {
+                "threshold": thresh,
+                "median": float(np.median(counts)),
+                "p25": float(np.percentile(counts, 25)),
+                "p75": float(np.percentile(counts, 75)),
+                "pct_zero": float(np.mean(counts == 0) * 100),
+            }
+        )
+
+    # Cosine similarity stats (subsampled) -----------------------------------
+    cos_stats: list[dict] | None = None
+    gt_counts: np.ndarray | None = None
+    n_sample = 0
+    if spec_df is not None and "spec_id" in meta.columns:
+        gt_lookup: dict[int, np.ndarray] = {}
+        inst_type_lookup: dict[int, str] = {}
+        has_inst_col = "inst_type" in spec_df.columns
+        for _, row in spec_df.iterrows():
+            sid = int(row["spec_id"])
+            peaks = row["peaks"]
+            if peaks is None or (isinstance(peaks, float) and np.isnan(peaks)):
+                continue
+            if isinstance(peaks, (list, np.ndarray)) and len(peaks) > 0:
+                gt_lookup[sid] = np.array(peaks)
+            elif isinstance(peaks, str) and peaks.strip():
+                rows_list = []
+                for line in peaks.strip().split("\n"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            rows_list.append([float(parts[0]), float(parts[1])])
+                        except ValueError:
+                            pass
+                if rows_list:
+                    gt_lookup[sid] = np.array(rows_list)
+            if has_inst_col and sid in gt_lookup:
+                inst_type_lookup[sid] = str(row["inst_type"])
+
+        gt_counts = np.array([len(v) for v in gt_lookup.values()])
+        has_gt = np.array([int(sid) in gt_lookup for sid in meta["spec_id"]])
+        valid_indices = np.where(has_gt)[0]
+        if len(valid_indices) == 0:
+            logger.warning(
+                "No spec_ids in meta matched spec_df — cosine sim panel will be skipped. "
+                "Check that --spec_df_fp contains the same spectra as --pred_fp."
+            )
+        else:
+            rng = np.random.default_rng(42)
+            sample_indices = (
+                rng.choice(valid_indices, size=_SWEEP_MAX_SPECTRA_COS, replace=False)
+                if len(valid_indices) > _SWEEP_MAX_SPECTRA_COS
+                else valid_indices
+            )
+            n_sample = len(sample_indices)
+            logger.info("Computing cos_sim sweep on %d spectra...", n_sample)
+
+            cos_stats = []
+            for thresh in thresholds:
+                scores = []
+                for idx in tqdm(sample_indices, desc=f"cos_sim thresh={thresh:.0f}", leave=False):
+                    s, e = int(starts[idx]), int(ends[idx])
+                    pmzs = pred_mzs_all[s:e]
+                    pints = pred_ints_all[s:e]
+                    keep = pints > thresh
+                    pmzs, pints = pmzs[keep], pints[keep]
+                    sid = int(meta["spec_id"].iloc[idx])
+                    gt = gt_lookup.get(sid)
+                    if gt is None:
+                        continue
+                    inst = inst_type_lookup.get(sid, "FT")
+                    tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
+                    scores.append(
+                        _cos_hun_inst_tol(pmzs, pints, gt[:, 0], gt[:, 1], tol_rel, tol_min_mz)
+                    )
+
+                arr = np.array(scores)
+                if len(arr) == 0:
+                    logger.warning(
+                        "No cos_sim scores collected for threshold=%.0f — skipping.", thresh
+                    )
+                    cos_stats.append(
+                        {
+                            "threshold": thresh,
+                            "mean": float("nan"),
+                            "median": float("nan"),
+                            "p25": float("nan"),
+                            "p75": float("nan"),
+                        }
+                    )
+                else:
+                    cos_stats.append(
+                        {
+                            "threshold": thresh,
+                            "mean": float(np.mean(arr)),
+                            "median": float(np.median(arr)),
+                            "p25": float(np.percentile(arr, 25)),
+                            "p75": float(np.percentile(arr, 75)),
+                        }
+                    )
+
+    # Plot -------------------------------------------------------------------
+    has_cos_data = cos_stats is not None and any(not np.isnan(s["median"]) for s in cos_stats)
+    has_gt_counts = gt_counts is not None and len(gt_counts) > 0
+    n_panels = 2 + (1 if has_gt_counts else 0) + (2 if has_cos_data else 0)
+    fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
+    fig.subplots_adjust(wspace=0.35)
+    axes = list(axes) if n_panels > 1 else [axes]
+
+    xs = [s["threshold"] for s in count_stats]
+    x_labels = [str(int(t)) for t in xs]
+
+    # Panel 0: median predicted peak count vs threshold
+    ax0 = axes[0]
+    medians = [s["median"] for s in count_stats]
+    p25s = [s["p25"] for s in count_stats]
+    p75s = [s["p75"] for s in count_stats]
+    ax0.fill_between(xs, p25s, p75s, alpha=0.25, color="#4878CF", label="Pred IQR (25–75)")
+    ax0.plot(xs, medians, "o-", color="#4878CF", lw=2, label="Pred median")
+    for x_val, med in zip(xs, medians):
+        ax0.text(x_val, med + 0.5, f"{med:.0f}", ha="center", va="bottom", fontsize=8)
+    if has_gt_counts:
+        gt_med = float(np.median(gt_counts))
+        gt_p25 = float(np.percentile(gt_counts, 25))
+        gt_p75 = float(np.percentile(gt_counts, 75))
+        ax0.axhline(gt_med, color="orange", lw=1.5, ls="--", label=f"GT median ({gt_med:.0f})")
+        ax0.axhspan(gt_p25, gt_p75, alpha=0.12, color="orange", label="GT IQR (25–75)")
+    ax0.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+    ax0.set_ylabel("Predicted peak count", fontsize=11)
+    ax0.set_title("Peak count vs threshold", fontsize=13)
+    ax0.set_xticks(xs)
+    ax0.set_xticklabels(x_labels)
+    ax0.legend(fontsize=9)
+    ax0.spines["top"].set_visible(False)
+    ax0.spines["right"].set_visible(False)
+    ax0.grid(axis="y", alpha=0.3)
+
+    # Panel 1 (optional): GT vs predicted peak count distribution per threshold
+    panel_idx = 1
+    if has_gt_counts:
+        ax_hist = axes[panel_idx]
+        panel_idx += 1
+        pred0 = pred_counts_all[0] if pred_counts_all else np.array([])
+        x_max = int(np.percentile(np.concatenate([gt_counts, pred0]), 95)) + 5
+        bins = np.arange(0, x_max + 2)
+        cmap = plt.cm.Blues
+        n_thresh = len(thresholds)
+        for ti, (thresh, cnts) in enumerate(zip(thresholds, pred_counts_all)):
+            color = cmap(0.35 + 0.55 * ti / max(n_thresh - 1, 1))
+            label = f"Pred thresh={int(thresh)}"
+            ax_hist.hist(
+                cnts, bins=bins, histtype="step", lw=1.5, color=color, label=label, density=True
+            )
+        ax_hist.hist(
+            gt_counts, bins=bins, alpha=0.4, color="orange", label="Ground truth", density=True
+        )
+        ax_hist.set_xlabel("Peak count", fontsize=11)
+        ax_hist.set_ylabel("Density", fontsize=11)
+        ax_hist.set_title(
+            "Peak count distribution per threshold\n(step = predicted, fill = GT)", fontsize=13
+        )
+        ax_hist.set_xlim(0, x_max)
+        ax_hist.legend(fontsize=8, ncol=2)
+        ax_hist.spines["top"].set_visible(False)
+        ax_hist.spines["right"].set_visible(False)
+        ax_hist.grid(axis="y", alpha=0.3)
+
+    # Next panel: % spectra with 0 surviving peaks vs threshold
+    ax_blank = axes[panel_idx]
+    panel_idx += 1
+    pct_zeros = [s["pct_zero"] for s in count_stats]
+    ax_blank.plot(xs, pct_zeros, "s-", color="#D65F5F", lw=2)
+    for x_val, pct in zip(xs, pct_zeros):
+        ax_blank.text(x_val, pct + 0.2, f"{pct:.1f}%", ha="center", va="bottom", fontsize=8)
+    ax_blank.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+    ax_blank.set_ylabel("% spectra with 0 predicted peaks", fontsize=11)
+    ax_blank.set_title("Spectra blanked by threshold", fontsize=13)
+    ax_blank.set_xticks(xs)
+    ax_blank.set_xticklabels(x_labels)
+    ax_blank.spines["top"].set_visible(False)
+    ax_blank.spines["right"].set_visible(False)
+    ax_blank.grid(axis="y", alpha=0.3)
+
+    # Next panels (optional): absolute cos_sim and delta vs threshold=0
+    if has_cos_data:
+        cos_meds = [s["median"] for s in cos_stats]
+        cos_p25 = [s["p25"] for s in cos_stats]
+        cos_p75 = [s["p75"] for s in cos_stats]
+        baseline = cos_meds[0] if not np.isnan(cos_meds[0]) else 0.0
+        cos_deltas = [m - baseline for m in cos_meds]
+        delta_p25 = [p - baseline for p in cos_p25]
+        delta_p75 = [p - baseline for p in cos_p75]
+
+        ax2 = axes[panel_idx]
+        panel_idx += 1
+        ax2.fill_between(xs, cos_p25, cos_p75, alpha=0.25, color="#6ACC65", label="IQR (25–75)")
+        ax2.plot(xs, cos_meds, "o-", color="#6ACC65", lw=2, label="Median")
+        for x_val, med in zip(xs, cos_meds):
+            if not np.isnan(med):
+                ax2.text(x_val, med + 0.005, f"{med:.3f}", ha="center", va="bottom", fontsize=8)
+        ax2.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+        ax2.set_ylabel("cos_hun_inst_tol", fontsize=11)
+        ax2.set_title(
+            f"Cosine similarity vs threshold\n(n={n_sample:,} spectra, cos_hun_inst_tol)",
+            fontsize=13,
+        )
+        ax2.set_xticks(xs)
+        ax2.set_xticklabels(x_labels)
+        ax2.set_ylim(0, 1)
+        ax2.legend(fontsize=10)
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+        ax2.grid(axis="y", alpha=0.3)
+
+        ax3 = axes[panel_idx]
+        panel_idx += 1  # noqa: F841
+        ax3.fill_between(xs, delta_p25, delta_p75, alpha=0.25, color="#E8A83C", label="IQR (25–75)")
+        ax3.plot(xs, cos_deltas, "o-", color="#E8A83C", lw=2, label="Median delta")
+        ax3.axhline(0, color="grey", lw=1, ls="--")
+        for x_val, d in zip(xs, cos_deltas):
+            if not np.isnan(d):
+                offset = 0.001 if d >= 0 else -0.003
+                ax3.text(x_val, d + offset, f"{d:+.3f}", ha="center", va="bottom", fontsize=8)
+        ax3.set_xlabel("Intensity threshold (0–1000 scale)", fontsize=11)
+        ax3.set_ylabel("Δ cos_hun_inst_tol vs threshold=0", fontsize=11)
+        ax3.set_title("Cosine similarity change vs no threshold", fontsize=13)
+        ax3.set_xticks(xs)
+        ax3.set_xticklabels(x_labels)
+        ax3.legend(fontsize=10)
+        ax3.spines["top"].set_visible(False)
+        ax3.spines["right"].set_visible(False)
+        ax3.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Inference Intensity Threshold Sweep", fontsize=15, y=1.02)
+    out_fp = os.path.join(save_dp, "threshold_sweep.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # --- Summary table saved separately ---
+    rows = []
+    for i, thresh in enumerate(thresholds):
+        cs = count_stats[i]
+        row: dict = {
+            "threshold_%": thresh / 10,
+            "peaks_median": int(round(cs["median"])),
+            "peaks_p25": int(round(cs["p25"])),
+            "peaks_p75": int(round(cs["p75"])),
+        }
+        if has_cos_data and cos_stats is not None:
+            c = cos_stats[i]
+            row["cos_hun_mean"] = c["mean"]
+            row["cos_hun_median"] = c["median"]
+            row["cos_hun_p25"] = c["p25"]
+            row["cos_hun_p75"] = c["p75"]
+            baseline_med = cos_stats[0]["median"] if not np.isnan(cos_stats[0]["median"]) else 0.0
+            baseline_mean = cos_stats[0]["mean"] if not np.isnan(cos_stats[0]["mean"]) else 0.0
+            row["cos_hun_delta_median"] = c["median"] - baseline_med
+            row["cos_hun_delta_mean"] = c["mean"] - baseline_mean
+        rows.append(row)
+
+    table_df = pd.DataFrame(rows)
+
+    # Render as a matplotlib table figure
+    col_labels = list(table_df.columns)
+    float_cols = [c for c in col_labels if c != "threshold_%"]
+    cell_text = []
+    for _, r in table_df.iterrows():
+        cell_row = [f"{r['threshold_%']:.1f}%"]
+        for c in float_cols:
+            v = r[c]
+            if "delta" in c:
+                cell_row.append(f"{v:+.4f}")
+            elif "cos" in c:
+                cell_row.append(f"{v:.3f}")
+            elif "peaks" in c:
+                cell_row.append(str(v))
+            else:
+                cell_row.append(f"{v:.1f}")
+        cell_text.append(cell_row)
+
+    fig_t, ax_t = plt.subplots(figsize=(max(10, len(col_labels) * 1.6), 0.45 * (len(rows) + 2)))
+    ax_t.axis("off")
+    tbl = ax_t.table(
+        cellText=cell_text,
+        colLabels=col_labels,
+        loc="center",
+        cellLoc="center",
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    tbl.scale(1, 1.5)
+
+    # Colour header row
+    for j in range(len(col_labels)):
+        tbl[0, j].set_facecolor("#2c3e50")
+        tbl[0, j].set_text_props(color="white", fontweight="bold")
+
+    # Highlight delta columns red/green if present
+    if has_cos_data:
+        for delta_col in ("cos_hun_delta_median", "cos_hun_delta_mean"):
+            if delta_col not in col_labels:
+                continue
+            delta_col_idx = col_labels.index(delta_col)
+            for i, r in enumerate(rows):
+                delta = r.get(delta_col, float("nan"))
+                if np.isnan(delta):
+                    continue
+                color = "#d5f5e3" if delta >= 0 else "#fadbd8"
+                tbl[i + 1, delta_col_idx].set_facecolor(color)
+
+    fig_t.suptitle("Threshold Sweep Summary", fontsize=13, y=0.98)
+    tbl_fp = os.path.join(save_dp, "threshold_sweep_table.png")
+    fig_t.savefig(tbl_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig_t)
+    print(f"Saved: {tbl_fp}")
+
+    # Also print to stdout
+    with pd.option_context("display.float_format", "{:.3f}".format, "display.max_columns", 20):
+        print("\nThreshold sweep summary:")
+        print(table_df.to_string(index=False))
+    logger.info("Saved threshold sweep plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+# ---------------------------------------------------------------------------
+# Mirror spectrum plot
+# ---------------------------------------------------------------------------
+
+_MATCHED_COLOR = "steelblue"
+_UNMATCHED_COLORS = ("salmon", "darkorange")
+
+_MOL_INFO_COLS: list[tuple[str, list[str]]] = [
+    ("Name", ["name", "compound_name", "mol_name"]),
+    ("Formula", ["formula", "mol_formula"]),
+    ("SMILES", ["smiles", "mol_smiles"]),
+]
+
+
+def _compute_peak_matches(
+    gt_mzs: np.ndarray,
+    pred_mzs: np.ndarray,
+    tol_rel: float = 1e-5,
+    tol_min_mz: float = 200.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return boolean masks indicating which GT and predicted peaks are matched.
+
+    Uses the same per-peak absolute tolerance as cos_hun_inst_tol:
+    ``tol_rel * max(gt_mz, tol_min_mz)``. A peak is "matched" if any peak on
+    the other side falls within tolerance.
+
+    Args:
+        gt_mzs: Ground-truth m/z values of shape (N_gt,).
+        pred_mzs: Predicted m/z values of shape (N_pred,).
+        tol_rel: Relative tolerance fraction (e.g. 1e-5 for 10 ppm).
+        tol_min_mz: Minimum m/z floor for absolute tolerance in Da.
+
+    Returns:
+        Tuple of (gt_matched, pred_matched) boolean arrays of shape (N_gt,) and (N_pred,).
+    """
+    if len(gt_mzs) == 0 or len(pred_mzs) == 0:
+        return np.zeros(len(gt_mzs), dtype=bool), np.zeros(len(pred_mzs), dtype=bool)
+    tol_abs = tol_rel * np.maximum(gt_mzs, tol_min_mz)
+    diff = np.abs(gt_mzs[:, None] - pred_mzs[None, :])
+    match_mask = diff < tol_abs[:, None]
+    return match_mask.any(axis=1), match_mask.any(axis=0)
+
+
+def _mirror_ax(
+    ax: plt.Axes,
+    true_mzs: np.ndarray,
+    true_ints: np.ndarray,
+    pred_mzs: np.ndarray,
+    pred_ints: np.ndarray,
+    colors: tuple[str, str] = ("steelblue", "crimson"),
+    bar_width: float = 1.0,
+    gt_matched: np.ndarray | None = None,
+    pred_matched: np.ndarray | None = None,
+) -> None:
+    """Draw a mirror (head-to-tail) spectrum comparison on ax.
+
+    Matched peaks are drawn at full opacity; unmatched peaks are faded.
+    Pass gt_matched / pred_matched boolean masks (from _compute_peak_matches)
+    to enable per-peak highlighting.
+
+    Args:
+        ax: Matplotlib axes to draw on.
+        true_mzs: Ground-truth m/z values.
+        true_ints: Ground-truth intensities (0–999.99 scale).
+        pred_mzs: Predicted m/z values.
+        pred_ints: Predicted intensities.
+        colors: (true_color, pred_color).
+        bar_width: Line width for peaks.
+        gt_matched: Boolean mask of shape (N_gt,); True = matched. If None, no highlighting.
+        pred_matched: Boolean mask of shape (N_pred,); True = matched. If None, no highlighting.
+    """
+    if len(true_ints) > 0:
+        scale = np.max(true_ints)
+    elif len(pred_ints) > 0:
+        scale = np.max(pred_ints)
+    else:
+        return
+
+    all_mzs = np.concatenate([true_mzs, pred_mzs]) if len(true_mzs) else pred_mzs
+    x_max = int(np.ceil(np.max(all_mzs) * 1.05))
+    y_max = scale * 1.1
+
+    ax.set_xlim(0, x_max)
+    ax.set_ylim(-y_max, y_max)
+
+    def _lines(mzs, ints, sign):
+        return [((m, 0), (m, sign * i)) for m, i in zip(mzs, ints)]
+
+    use_matching = gt_matched is not None and pred_matched is not None
+
+    if len(true_mzs):
+        if use_matching:
+            m = gt_matched.astype(bool)
+            if m.any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(true_mzs[m], true_ints[m], +1),
+                        colors=_MATCHED_COLOR,
+                        linewidths=bar_width,
+                    )
+                )
+            if (~m).any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(true_mzs[~m], true_ints[~m], +1),
+                        colors=_UNMATCHED_COLORS[0],
+                        linewidths=bar_width,
+                    )
+                )
+        else:
+            ax.add_collection(
+                mc.LineCollection(
+                    _lines(true_mzs, true_ints, +1), colors=colors[0], linewidths=bar_width
+                )
+            )
+
+    if len(pred_mzs):
+        if use_matching:
+            m = pred_matched.astype(bool)
+            if m.any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(pred_mzs[m], pred_ints[m], -1),
+                        colors=_MATCHED_COLOR,
+                        linewidths=bar_width,
+                    )
+                )
+            if (~m).any():
+                ax.add_collection(
+                    mc.LineCollection(
+                        _lines(pred_mzs[~m], pred_ints[~m], -1),
+                        colors=_UNMATCHED_COLORS[1],
+                        linewidths=bar_width,
+                    )
+                )
+        else:
+            ax.add_collection(
+                mc.LineCollection(
+                    _lines(pred_mzs, pred_ints, -1), colors=colors[1], linewidths=bar_width
+                )
+            )
+
+    ax.axhline(0, color="black", lw=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["bottom"].set_position("zero")
+    ax.set_xlabel("m/z", fontsize=10)
+    ax.set_ylabel("Intensity", fontsize=10)
+    ax.grid(axis="x", color="grey", lw=0.2, alpha=0.4)
+
+    if use_matching:
+        handles = [
+            mpatches.Patch(color=_MATCHED_COLOR, label="Matched"),
+            mpatches.Patch(color=_UNMATCHED_COLORS[0], label="GT unmatched"),
+            mpatches.Patch(color=_UNMATCHED_COLORS[1], label="Pred unmatched"),
+        ]
+    else:
+        handles = [
+            mpatches.Patch(color=colors[0], label="Ground Truth"),
+            mpatches.Patch(color=colors[1], label="Predicted"),
+        ]
+    ax.legend(handles=handles, fontsize=9, loc="upper left")
+
+
+def plot_spectra(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    spec_df: pd.DataFrame,
+    select: Literal["top", "worst", "random"],
+    n: int,
+    score_col: str,
+    save_dp: str,
+    mol_df: pd.DataFrame | None = None,
+    output_dp: str | None = None,
+) -> None:
+    """Plot mirror spectra for selected predictions.
+
+    Args:
+        meta: Per-spectrum metadata DataFrame.
+        pred_fp: Path to HDF5 predictions file.
+        spec_df: Ground-truth spectrum DataFrame with columns [spec_id, peaks].
+        select: Selection strategy – 'top', 'worst', or 'random'.
+        n: Number of spectra to plot.
+        score_col: Metric column to rank by.
+        save_dp: Base directory; plots go to ``{save_dp}/spectra/{select}/``.
+        mol_df: Optional molecule DataFrame with columns [mol_id, smiles]. When
+            provided and RDKit is available, a molecule structure image is drawn
+            alongside the mirror spectrum.
+        output_dp: If set, overrides the default ``{save_dp}/spectra/{select}/``
+            path and saves directly into this directory.
+    """
+    if score_col not in meta.columns:
+        raise ValueError(f"Score column '{score_col}' not found. Available: {list(meta.columns)}")
+
+    ranked = meta.dropna(subset=[score_col])
+    if select == "top":
+        subset = ranked.nlargest(n, score_col)
+    elif select == "worst":
+        subset = ranked.nsmallest(n, score_col)
+    else:
+        subset = ranked.sample(n=min(n, len(ranked)), random_state=42)
+
+    # Build fast lookups for ground truth peaks, molecule info, and instrument type
+    gt_lookup: dict[int, np.ndarray] = {}
+    mol_info_lookup: dict[int, str] = {}
+    inst_type_lookup: dict[int, str] = {}
+    spec_meta_lookup: dict[int, str] = {}
+    spec_df_cols = set(spec_df.columns)
+    has_inst_col = "inst_type" in spec_df_cols
+    for _, row in spec_df.iterrows():
+        sid = int(row["spec_id"])
+        peaks = row["peaks"]
+        if peaks is None or (isinstance(peaks, float) and np.isnan(peaks)):
+            continue
+        if isinstance(peaks, (list, np.ndarray)) and len(peaks) > 0:
+            gt_lookup[sid] = np.array(peaks)
+        elif isinstance(peaks, str) and peaks.strip():
+            rows = []
+            for line in peaks.strip().split("\n"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        rows.append([float(parts[0]), float(parts[1])])
+                    except ValueError:
+                        pass
+            if rows:
+                gt_lookup[sid] = np.array(rows)
+        if sid not in gt_lookup:
+            continue
+        if has_inst_col:
+            inst_type_lookup[sid] = str(row["inst_type"])
+        info_parts = []
+        for label, candidates in _MOL_INFO_COLS:
+            for col in candidates:
+                if col in spec_df_cols:
+                    val = row[col]
+                    if pd.notna(val) and str(val).strip():
+                        v = str(val)
+                        if label == "SMILES" and len(v) > 60:
+                            v = v[:57] + "..."
+                        info_parts.append(f"{label}: {v}")
+                        break
+        mol_info_lookup[sid] = "   ".join(info_parts)
+        meta_parts = []
+        if "prec_type" in spec_df_cols:
+            val = row["prec_type"]
+            if pd.notna(val) and str(val).strip():
+                meta_parts.append(f"adduct={val}")
+        if has_inst_col:
+            inst = str(row["inst_type"])
+            meta_parts.append(f"inst={inst}")
+            if inst == "QTOF":
+                if "ace" in spec_df_cols and pd.notna(row["ace"]) and float(row["ace"]) > 0:
+                    meta_parts.append(f"ace={float(row['ace']):.1f}eV")
+            else:
+                if "nce" in spec_df_cols and pd.notna(row["nce"]):
+                    meta_parts.append(f"nce={float(row['nce']):.1f}%")
+        else:
+            if "ace" in spec_df_cols and pd.notna(row["ace"]) and float(row["ace"]) > 0:
+                meta_parts.append(f"ace={float(row['ace']):.1f}eV")
+            elif "nce" in spec_df_cols and pd.notna(row["nce"]):
+                meta_parts.append(f"nce={float(row['nce']):.1f}%")
+        for dset_col in ("dset_name", "dataset_name", "dset"):
+            if dset_col in spec_df_cols:
+                val = row[dset_col]
+                if pd.notna(val) and str(val).strip():
+                    meta_parts.append(f"dset={val}")
+                    break
+        for dset_id_col in ("dset_id", "dataset_id"):
+            if dset_id_col in spec_df_cols:
+                val = row[dset_id_col]
+                if pd.notna(val) and str(val).strip():
+                    meta_parts.append(f"dset_id={val}")
+                    break
+        spec_meta_lookup[sid] = "  ".join(meta_parts)
+
+    # Build SMILES lookup keyed by mol_id
+    smiles_lookup: dict[int, str] = {}
+    if mol_df is not None and _RDKIT_AVAILABLE:
+        for _, mrow in mol_df.iterrows():
+            mid = int(mrow["mol_id"])
+            smi = str(mrow["smiles"]) if pd.notna(mrow["smiles"]) else ""
+            if smi:
+                smiles_lookup[mid] = smi
+    elif mol_df is not None and not _RDKIT_AVAILABLE:
+        logger.warning(
+            "mol_df provided but RDKit is not installed — molecule images will be skipped."
+        )
+
+    spectra_dp = output_dp if output_dp is not None else os.path.join(save_dp, "spectra", select)
+    os.makedirs(spectra_dp, exist_ok=True)
+
+    with h5py.File(pred_fp, "r") as f:
+        for _, row in tqdm(subset.iterrows(), total=len(subset), desc="Plotting spectra"):
+            sid = int(row["spec_id"])
+            mid = int(row["mol_id"])
+            pred_mzs, pred_ints = get_pred_spectrum(f, row)
+
+            gt = gt_lookup.get(sid)
+            if gt is not None:
+                true_mzs, true_ints = gt[:, 0], gt[:, 1]
+            else:
+                true_mzs, true_ints = np.array([]), np.array([])
+
+            gt_matched = pred_matched = None
+            if len(true_mzs) > 0 and len(pred_mzs) > 0:
+                inst = inst_type_lookup.get(sid, "FT")
+                tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
+                gt_matched, pred_matched = _compute_peak_matches(
+                    true_mzs, pred_mzs, tol_rel, tol_min_mz
+                )
+
+            score = row[score_col]
+            mol_info = mol_info_lookup.get(sid, "")
+            spec_meta = spec_meta_lookup.get(sid, "")
+
+            # Render molecule image if SMILES is available
+            smiles = smiles_lookup.get(mid)
+            mol_img = None
+            if smiles and _RDKIT_AVAILABLE:
+                mol = Chem.MolFromSmiles(smiles)
+                if mol is not None:
+                    mol_img = Draw.MolToImage(mol, size=(300, 300))
+
+            if mol_img is not None:
+                fig = plt.figure(figsize=(15, 5))
+                gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1], figure=fig)
+                ax = fig.add_subplot(gs[0])
+                ax_mol = fig.add_subplot(gs[1])
+                ax_mol.imshow(mol_img)
+                ax_mol.axis("off")
+            else:
+                fig, ax = plt.subplots(figsize=(12, 5))
+
+            _mirror_ax(
+                ax,
+                true_mzs,
+                true_ints,
+                pred_mzs,
+                pred_ints,
+                gt_matched=gt_matched,
+                pred_matched=pred_matched,
+            )
+            title = f"spec_id={sid}  mol_id={mid}  {score_col}={score:.3f}  n_pred={len(pred_mzs)}"
+            if spec_meta:
+                title = f"{title}\n{spec_meta}"
+            if mol_info:
+                title = f"{title}\n{mol_info}"
+            ax.set_title(title, fontsize=11)
+            fig.tight_layout()
+            out_fp = os.path.join(spectra_dp, f"spectrum_{sid}.png")
+            fig.savefig(out_fp, dpi=120, bbox_inches="tight")
+            plt.close(fig)
+
+    print(f"Saved {len(subset)} spectra plots to {spectra_dp}/")
+
+
+# ---------------------------------------------------------------------------
+# CE breakdown violin plots
+# ---------------------------------------------------------------------------
+
+_MIN_BIN_N = 30  # drop bins with fewer spectra than this
+_SWEEP_THRESHOLDS = [0, 5, 10, 20, 50, 100]  # raw intensity units (0–1000 scale)
+_SWEEP_MAX_SPECTRA_COS = 10_000  # max spectra sampled for cosine sim recomputation
+
+
+def _make_ce_bins(
+    df: pd.DataFrame,
+    ce_col: str,
+    bin_size: int,
+    ce_max: float,
+    score_col: str,
+) -> tuple[list[str], list[np.ndarray]]:
+    """Bin df by CE column and return (labels, score_arrays) for non-empty bins.
+
+    Args:
+        df: DataFrame with ce_col and score_col.
+        ce_col: Column name for collision energy values.
+        bin_size: Width of each bin.
+        ce_max: Upper bound (exclusive) for binning.
+        score_col: Score column to collect per bin.
+
+    Returns:
+        Tuple of (bin_labels, list_of_score_arrays), only for bins with >= _MIN_BIN_N spectra.
+    """
+    labels, arrays = [], []
+    for lo in range(0, int(ce_max), bin_size):
+        hi = lo + bin_size
+        mask = (df[ce_col] >= lo) & (df[ce_col] < hi)
+        vals = df.loc[mask, score_col].dropna().to_numpy()
+        if len(vals) >= _MIN_BIN_N:
+            labels.append(f"{lo}–{hi}")
+            arrays.append(vals)
+    return labels, arrays
+
+
+def _violin_ax(
+    ax: plt.Axes,
+    global_labels: list[str],
+    arrays_aligned: list[np.ndarray | None],
+    title: str,
+    xlabel: str,
+    color: str,
+    score_col: str,
+    show_xticklabels: bool = True,
+    show_xlabel: bool = True,
+) -> None:
+    """Draw violin + IQR bar (tol range) + median/mean dots on ax.
+
+    Accepts a globally-aligned arrays list (None for bins with insufficient data)
+    so x-axis positions are consistent across all subplots sharing the same axis.
+
+    Args:
+        ax: Axes to draw on.
+        global_labels: Bin label strings for every position (including empty bins).
+        arrays_aligned: Score array per bin, or None for bins with < _MIN_BIN_N spectra.
+        title: Axes title.
+        xlabel: X-axis label (shown only when show_xlabel=True).
+        color: Violin fill colour.
+        score_col: Score column name (for y-axis label).
+        show_xticklabels: Whether to draw x-tick labels (False for non-bottom rows).
+        show_xlabel: Whether to draw the x-axis label (False for non-bottom rows).
+    """
+    all_positions = list(range(1, len(global_labels) + 1))
+    n_total = len(global_labels)
+
+    _MED_COLOR = "#1a1a2e"
+    _MEAN_COLOR = "#e05c1a"
+
+    # Collect per-bin counts for x-tick labels
+    bin_counts: dict[int, int] = {}
+
+    for pos, arr in zip(all_positions, arrays_aligned):
+        if arr is None or len(arr) < _MIN_BIN_N:
+            continue
+
+        parts = ax.violinplot([arr], positions=[pos], showmedians=False, showextrema=False)
+        for pc in parts["bodies"]:
+            pc.set_facecolor(color)
+            pc.set_alpha(0.6)
+            pc.set_edgecolor("grey")
+            pc.set_linewidth(0.5)
+
+        med = np.median(arr)
+        mn = np.mean(arr)
+        q1 = np.percentile(arr, 25)
+        q3 = np.percentile(arr, 75)
+        n = len(arr)
+        bin_counts[pos] = n
+
+        ax.vlines([pos], [q1], [q3], color=_MED_COLOR, linewidth=2, zorder=4)
+        ax.scatter(
+            [pos], [med], color="white", s=35, zorder=6, edgecolors=_MED_COLOR, linewidths=1.5
+        )
+        ax.scatter(
+            [pos],
+            [mn],
+            color=_MEAN_COLOR,
+            s=30,
+            zorder=6,
+            marker="D",
+            edgecolors="white",
+            linewidths=0.6,
+        )
+
+    # Legend proxy handles
+    ax.vlines([], [], [], color=_MED_COLOR, linewidth=2, label="IQR (tol range)")
+    ax.scatter([], [], color="white", s=35, edgecolors=_MED_COLOR, linewidths=1.5, label="Median")
+    ax.scatter(
+        [],
+        [],
+        color=_MEAN_COLOR,
+        s=30,
+        marker="D",
+        edgecolors="white",
+        linewidths=0.6,
+        label="Mean",
+    )
+
+    ax.set_xticks(all_positions)
+    if show_xticklabels:
+        tick_labels = [
+            f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
+            for p, lbl in zip(all_positions, global_labels)
+        ]
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=9)
+    else:
+        # Show n= as small text inside the plot top for non-bottom rows
+        for pos, arr in zip(all_positions, arrays_aligned):
+            if arr is None or len(arr) < _MIN_BIN_N:
+                continue
+            ax.text(
+                pos,
+                1.02,
+                f"n={len(arr):,}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                color="grey",
+                transform=ax.get_xaxis_transform(),
+            )
+        ax.set_xticklabels([])
+    ax.set_xlim(0.5, n_total + 0.5)
+    ax.set_ylim(-0.05, 1.12)
+    ax.set_ylabel(score_col, fontsize=10)
+    if show_xlabel:
+        ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_title(title, fontsize=12, pad=12)
+    for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
+        ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=8, color="grey")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(0.8)
+    ax.spines["bottom"].set_linewidth(0.8)
+    ax.grid(axis="y", alpha=0.2, linestyle="-", linewidth=0.5)
+    ax.legend(fontsize=8, loc="lower left", ncol=3, framealpha=0.95, edgecolor="grey")
+
+
+def _plot_ce_breakdown_grid(
+    joined: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown bars as grid: QTOF (ACE) in row 0, FT (NCE) in row 1.
+
+    Creates a single figure with 2 rows (QTOF and FT) and columns for each adduct.
+    Both rows show x-axis with their respective units.
+
+    Args:
+        joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+    """
+    df = joined[[score_col, "inst_type", "prec_type", "ace", "nce"]].copy()
+
+    # Get adducts across all inst types
+    adducts_all = (
+        df.groupby("prec_type")[score_col]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts_all:
+        logger.warning("No adducts with enough data")
+        return
+
+    n_adducts = len(adducts_all)
+    n_rows = 2  # QTOF and FT
+
+    fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
+    fig.patch.set_facecolor("white")
+
+    # Row 0: QTOF (ACE), Row 1: FT (NCE)
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(
+        [
+            ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
+            ("FT", "nce", 70, "#70AD47"),  # Green
+        ]
+    ):
+        for col_idx, adduct in enumerate(adducts_all):
+            ax = axes[row_idx, col_idx]
+
+            sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
+            if ce_col == "ace":
+                sub = sub[sub[ce_col] > 0]
+            sub = sub[sub[ce_col] < ce_cap]
+
+            if len(sub) < _MIN_BIN_N:
+                fig.delaxes(ax)
+                continue
+
+            ce_max = sub[ce_col].max() + 10
+            bin_edges = list(range(0, int(ce_max), 10))
+
+            means = []
+            lows = []
+            highs = []
+            bin_centers = []
+
+            for lo in bin_edges[:-1]:
+                hi = lo + 10
+                mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+                vals = sub.loc[mask, score_col].dropna().to_numpy()
+                if len(vals) >= _MIN_BIN_N:
+                    mean = np.mean(vals)
+                    lo_ci, hi_ci = _ci_95(vals)
+                    means.append(mean)
+                    lows.append(lo_ci)
+                    highs.append(hi_ci)
+                    bin_centers.append((lo + hi) / 2)
+
+            if len(means) == 0:
+                fig.delaxes(ax)
+                continue
+
+            # Ensure errors are non-negative
+            errors = [
+                np.maximum(np.array(means) - np.array(lows), 0),
+                np.maximum(np.array(highs) - np.array(means), 0),
+            ]
+
+            # Plot bars and error bars
+            bin_width = 8
+            ax.bar(
+                bin_centers,
+                means,
+                width=bin_width,
+                color=color,
+                alpha=0.7,
+                edgecolor="black",
+                linewidth=0.8,
+            )
+            ax.errorbar(
+                bin_centers,
+                means,
+                yerr=errors,
+                fmt="none",
+                ecolor="black",
+                capsize=4,
+                linewidth=1.5,
+            )
+            ax.scatter(
+                bin_centers, means, color="red", s=50, zorder=5, edgecolors="darkred", linewidths=1
+            )
+
+            ax.set_xlim(-5, 165)
+            ax.set_ylim(0, 1.05)
+            ax.set_ylabel("Score", fontsize=10)
+            ax.set_title(f"{adduct}", fontsize=12)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.grid(axis="y", alpha=0.2, linestyle="-")
+
+            # Show x-axis on both rows
+            ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+            ax.set_xlabel(f"Collision Energy ({ce_unit})", fontsize=10)
+
+    # Add row labels on the left
+    fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
+    fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
+
+    fig.suptitle(
+        f"{score_col} — Collision Energy Breakdown (95% CI)", fontsize=13, fontweight="bold"
+    )
+    fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
+
+    out_fp = os.path.join(save_dp, "ce_breakdown_bar_all.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE breakdown grid: {out_fp}")
+    print(f"Saved: {out_fp}")
+
+
+def _plot_ce_breakdown_grid_violin(
+    joined: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown violins as grid: QTOF (ACE) in row 0, FT (NCE) in row 1.
+
+    Creates a single figure with 2 rows (QTOF and FT) and columns for each adduct.
+    Both rows show x-axis with their respective units.
+
+    Args:
+        joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+    """
+    df = joined[[score_col, "inst_type", "prec_type", "ace", "nce"]].copy()
+
+    # Get adducts across all inst types
+    adducts_all = (
+        df.groupby("prec_type")[score_col]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts_all:
+        logger.warning("No adducts with enough data")
+        return
+
+    n_adducts = len(adducts_all)
+    n_rows = 2  # QTOF and FT
+
+    # Compute max bins to determine figure width
+    inst_full_qtof = df[(df["inst_type"] == "QTOF") & df["ace"].notna()]
+    inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] > 0]
+    inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] < 50]
+    qtof_ce_max = inst_full_qtof["ace"].max() + 10 if len(inst_full_qtof) > 0 else 50
+    qtof_labels, _ = (
+        _make_ce_bins(inst_full_qtof, "ace", 10, qtof_ce_max, score_col)
+        if len(inst_full_qtof) > 0
+        else ([], [])
+    )
+    qtof_n_bins = len(qtof_labels)
+
+    inst_full_ft = df[(df["inst_type"] == "FT") & df["nce"].notna()]
+    inst_full_ft = inst_full_ft[inst_full_ft["nce"] < 70]
+    ft_ce_max = inst_full_ft["nce"].max() + 10 if len(inst_full_ft) > 0 else 70
+    ft_labels, _ = (
+        _make_ce_bins(inst_full_ft, "nce", 10, ft_ce_max, score_col)
+        if len(inst_full_ft) > 0
+        else ([], [])
+    )
+    ft_n_bins = len(ft_labels)
+
+    n_bins = max(qtof_n_bins, ft_n_bins)
+    fig_w = max(36, n_bins * 4.5 + 4)
+    fig_h = 7 * n_rows
+
+    fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
+    fig.patch.set_facecolor("white")
+
+    # Row 0: QTOF (ACE), Row 1: FT (NCE)
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(
+        [
+            ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
+            ("FT", "nce", 70, "#70AD47"),  # Green
+        ]
+    ):
+        # Compute global CE bins for this instrument type
+        inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
+        if ce_col == "ace":
+            inst_full = inst_full[inst_full[ce_col] > 0]
+        inst_full = inst_full[inst_full[ce_col] < ce_cap]
+
+        if len(inst_full) == 0:
+            for col_idx in range(n_adducts):
+                fig.delaxes(axes[row_idx, col_idx])
+            continue
+
+        ce_max = inst_full[ce_col].max() + 10
+        global_labels, _ = _make_ce_bins(inst_full, ce_col, 10, ce_max, score_col)
+        global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
+
+        for col_idx, adduct in enumerate(adducts_all):
+            ax = axes[row_idx, col_idx]
+
+            sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
+            if ce_col == "ace":
+                sub = sub[sub[ce_col] > 0]
+            sub = sub[sub[ce_col] < ce_cap]
+
+            if len(sub) < _MIN_BIN_N:
+                fig.delaxes(ax)
+                continue
+
+            # Align per-adduct arrays to global positions
+            arrays_aligned: list[np.ndarray | None] = []
+            for lo in global_lo:
+                hi = lo + 10
+                mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+                vals = sub.loc[mask, score_col].dropna().to_numpy()
+                arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
+            if all(a is None for a in arrays_aligned):
+                fig.delaxes(ax)
+                continue
+
+            ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+            _violin_ax(
+                ax,
+                global_labels,
+                arrays_aligned,
+                title=f"{adduct}",
+                xlabel=f"Collision Energy ({ce_unit})",
+                color=color,
+                score_col=score_col,
+                show_xticklabels=True,
+                show_xlabel=True,
+            )
+
+    # Add row labels on the left
+    fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
+    fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
+
+    fig.suptitle(
+        f"{score_col} — Collision Energy Breakdown (Violin)", fontsize=13, fontweight="bold"
+    )
+    fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
+
+    out_fp = os.path.join(save_dp, "ce_breakdown_violin_all.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE breakdown violin grid: {out_fp}")
+    print(f"Saved: {out_fp}")
+
+
+def plot_ce_breakdown(
+    meta: pd.DataFrame,
+    spec_df: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown bar charts with 95% CI, merging QTOF (ACE) and FT (NCE).
+
+    Creates a single figure showing bars for each CE bin with 95% confidence interval
+    error bars and mean points, organized in a grid by adduct type.
+    QTOF bars are blue, FT bars are green.
+
+    Args:
+        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
+        score_col: Score column to plot (must be in meta).
+        save_dp: Directory to save figures.
+    """
+    if score_col not in meta.columns:
+        raise ValueError(f"Score column '{score_col}' not in meta. Available: {list(meta.columns)}")
+
+    os.makedirs(save_dp, exist_ok=True)
+
+    joined = meta[["spec_id", score_col]].merge(
+        spec_df[["spec_id", "inst_type", "prec_type", "ace", "nce"]],
+        on="spec_id",
+        how="left",
+    )
+
+    _plot_ce_breakdown_grid(joined, score_col, save_dp)
+    _plot_ce_breakdown_grid_violin(joined, score_col, save_dp)
+
+
+# ---------------------------------------------------------------------------
+# Bar plots with 95% confidence intervals
+# ---------------------------------------------------------------------------
+
+
+def _ci_95(arr: np.ndarray) -> tuple[float, float]:
+    """Compute 95% confidence interval for the mean.
+
+    Args:
+        arr: Array of values.
+
+    Returns:
+        Tuple of (lower_bound, upper_bound) for the 95% CI.
+    """
+    if len(arr) < 2:
+        return 0.0, 0.0
+    mean = np.mean(arr)
+    se = stats.sem(arr)
+    margin = se * stats.t.ppf((1 + 0.95) / 2, len(arr) - 1)
+    return mean - margin, mean + margin
+
+
+def _bar_ax(
+    ax: plt.Axes,
+    global_labels: list[str],
+    arrays_aligned: list[np.ndarray | None],
+    title: str,
+    xlabel: str,
+    color: str,
+    score_col: str,
+    show_xticklabels: bool = True,
+    show_xlabel: bool = True,
+) -> None:
+    """Draw bar plot with 95% CI error bars.
+
+    Args:
+        ax: Axes to draw on.
+        global_labels: Bin label strings for every position (including empty bins).
+        arrays_aligned: Score array per bin, or None for bins with < _MIN_BIN_N spectra.
+        title: Axes title.
+        xlabel: X-axis label (shown only when show_xlabel=True).
+        color: Bar fill colour.
+        score_col: Score column name (for y-axis label).
+        show_xticklabels: Whether to draw x-tick labels (False for non-bottom rows).
+        show_xlabel: Whether to draw the x-axis label (False for non-bottom rows).
+    """
+    all_positions = list(range(1, len(global_labels) + 1))
+    n_total = len(global_labels)
+
+    means = []
+    lower_cis = []
+    upper_cis = []
+    bin_counts: dict[int, int] = {}
+
+    for pos, arr in zip(all_positions, arrays_aligned):
+        if arr is None or len(arr) < _MIN_BIN_N:
+            means.append(0)
+            lower_cis.append(0)
+            upper_cis.append(0)
+            continue
+
+        mean = np.mean(arr)
+        lo, hi = _ci_95(arr)
+        error_lower = mean - lo
+        error_upper = hi - mean
+
+        means.append(mean)
+        lower_cis.append(error_lower)
+        upper_cis.append(error_upper)
+        bin_counts[pos] = len(arr)
+
+    # Plot bars only for non-empty bins
+    valid_positions = [
+        pos
+        for pos, arr in zip(all_positions, arrays_aligned)
+        if arr is not None and len(arr) >= _MIN_BIN_N
+    ]
+    valid_means = [means[pos - 1] for pos in valid_positions]
+    valid_lower = [lower_cis[pos - 1] for pos in valid_positions]
+    valid_upper = [upper_cis[pos - 1] for pos in valid_positions]
+
+    if valid_positions:
+        ax.bar(
+            valid_positions,
+            valid_means,
+            yerr=[valid_lower, valid_upper],
+            capsize=5,
+            color=color,
+            alpha=0.75,
+            edgecolor="black",
+            linewidth=1.2,
+            error_kw={"elinewidth": 2, "capthick": 2, "ecolor": "black"},
+        )
+
+        # Add value labels on bars
+        for pos, mean in zip(valid_positions, valid_means):
+            ax.text(
+                pos,
+                mean + 0.03,
+                f"{mean:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=11,
+                fontweight="bold",
+            )
+
+    ax.set_xticks(all_positions)
+    if show_xticklabels:
+        tick_labels = [
+            f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
+            for p, lbl in zip(all_positions, global_labels)
+        ]
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=12)
+    else:
+        ax.set_xticklabels([])
+        # Show n= as small text inside the plot top for non-bottom rows
+        for pos in valid_positions:
+            if pos in bin_counts:
+                ax.text(
+                    pos,
+                    1.02,
+                    f"n={bin_counts[pos]:,}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
+                    color="grey",
+                    transform=ax.get_xaxis_transform(),
+                )
+
+    ax.set_xlim(0.5, n_total + 0.5)
+    ax.set_ylim(-0.05, 1.12)
+    ax.set_ylabel(score_col, fontsize=13)
+    if show_xlabel:
+        ax.set_xlabel(xlabel, fontsize=13)
+    ax.set_title(title, fontsize=17, pad=12)
+
+    # Add threshold reference lines
+    for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
+        ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=10, color="grey")
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    # Legend
+    ax.legend(
+        [mpatches.Patch(facecolor=color, edgecolor="black", label="Mean ± 95% CI")],
+        ["Mean ± 95% CI"],
+        fontsize=11,
+        loc="upper left",
+    )
+
+
+def plot_spectra_by_ce_bin(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    spec_df: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+    n: int = 20,
+    mol_df: pd.DataFrame | None = None,
+) -> None:
+    """Plot worst N mirror spectra for each CE bin, split by instrument type.
+
+    QTOF spectra are binned by ACE (10 eV bins up to 50 eV); FT spectra are
+    binned by NCE (10% bins up to 70%). Each bin's worst N spectra by score_col
+    are saved to ``{save_dp}/spectra/by_ce/{inst_type}/{bin_label}/worst/``.
+
+    Args:
+        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
+        pred_fp: Path to HDF5 predictions file.
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, ace, nce].
+        score_col: Score column to rank spectra by.
+        save_dp: Base output directory.
+        n: Number of worst spectra to plot per bin.
+        mol_df: Optional molecule DataFrame passed through to plot_spectra.
+    """
+    if score_col not in meta.columns:
+        raise ValueError(f"Score column '{score_col}' not in meta.")
+
+    joined = meta[["spec_id", score_col]].merge(
+        spec_df[["spec_id", "inst_type", "ace", "nce"]],
+        on="spec_id",
+        how="left",
+    )
+
+    for inst_type, ce_col, ce_cap in [("QTOF", "ace", 50), ("FT", "nce", 70)]:
+        inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()].copy()
+        if ce_col == "ace":
+            inst_df = inst_df[inst_df[ce_col] > 0]
+        inst_df = inst_df[inst_df[ce_col] < ce_cap]
+
+        if len(inst_df) == 0:
+            continue
+
+        ce_max = inst_df[ce_col].max() + 10
+        for lo in range(0, int(ce_max), 10):
+            hi = lo + 10
+            mask = (inst_df[ce_col] >= lo) & (inst_df[ce_col] < hi)
+            bin_ids = set(inst_df.loc[mask, "spec_id"].tolist())
+            if len(bin_ids) < _MIN_BIN_N:
+                continue
+
+            bin_meta = meta[meta["spec_id"].isin(bin_ids)]
+            bin_label = f"{lo}-{hi}"
+            ce_unit = "eV" if ce_col == "ace" else "NCE"
+            print(f"  [{inst_type} {bin_label}{ce_unit}] plotting {min(n, len(bin_meta))} worst...")
+            plot_spectra(
+                meta=bin_meta,
+                pred_fp=pred_fp,
+                spec_df=spec_df,
+                select="worst",
+                n=n,
+                score_col=score_col,
+                save_dp=save_dp,
+                mol_df=mol_df,
+                output_dp=os.path.join(save_dp, "by_ce", inst_type, "worst", bin_label),
+            )
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def get_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Plot predictions from inference HDF5")
+    parser.add_argument("--pred_fp", type=str, required=True, help="Path to predictions HDF5")
+    parser.add_argument(
+        "--spec_df_fp",
+        type=str,
+        default=None,
+        help="Path to ground-truth spec_df.pkl (required for spectra mode)",
+    )
+    parser.add_argument(
+        "--mol_df_fp",
+        type=str,
+        default=None,
+        help="Path to mol_df.pkl with columns [mol_id, smiles]. When provided, molecule structure images are added to mirror spectrum plots.",
+    )
+    parser.add_argument(
+        "--save_dp",
+        type=str,
+        default=None,
+        help="Output directory (default: same dir as pred_fp)",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["stats", "spectra", "threshold_sweep", "plot_spectra_by_ce_bin"],
+        default="stats",
+        help=(
+            "What to plot. 'stats' runs score distributions, all-metrics overview, peak stats, "
+            "and CE breakdown (--spec_df_fp required for CE panel). "
+            "'spectra' plots mirror spectra (requires --spec_df_fp). "
+            "'threshold_sweep' sweeps intensity thresholds (--spec_df_fp optional for cosine sim panel). "
+            "'plot_spectra_by_ce_bin' plots worst N mirror spectra per CE bin (requires --spec_df_fp)."
+        ),
+    )
+    parser.add_argument(
+        "--thresholds",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated intensity thresholds for threshold_sweep mode "
+            "(0–1000 scale). Defaults to '0,5,10,20,50,100'."
+        ),
+    )
+    parser.add_argument(
+        "--select",
+        type=str,
+        choices=["top", "worst", "random"],
+        default="top",
+        help="Which spectra to plot in spectra mode",
+    )
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=20,
+        help="Number of spectra to plot",
+    )
+    parser.add_argument(
+        "--score_col",
+        type=str,
+        default="cos_hun_inst_tol",
+        help="Score column to rank spectra by",
+    )
+    parser.add_argument(
+        "--filter_col",
+        type=str,
+        default="index_rebased",
+        help="Boolean column in HDF5 to split peak stats plots by (used in plot_all / peak_stats modes)",
+    )
+
+    return parser.parse_args()
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    args = get_args()
+
+    save_dp = args.save_dp or str(Path(args.pred_fp).parent / "plots")
+
+    logger.info("Loading HDF5 metadata from %s", args.pred_fp)
+    meta = load_hdf5_meta(args.pred_fp)
+    logger.info("Loaded %d spectra", len(meta))
+
+    if args.mode == "threshold_sweep":
+        sweep_thresholds = (
+            [float(t) for t in args.thresholds.split(",")] if args.thresholds is not None else None
+        )
+        spec_df_sweep = None
+        if args.spec_df_fp is not None:
+            logger.info("Loading spec_df from %s", args.spec_df_fp)
+            spec_df_sweep = pd.read_pickle(args.spec_df_fp)
+        print("[threshold_sweep] Sweeping intensity thresholds...")
+        plot_threshold_sweep(
+            meta, args.pred_fp, save_dp, spec_df=spec_df_sweep, thresholds=sweep_thresholds
+        )
+
+    mol_df = None
+    if args.mol_df_fp is not None:
+        logger.info("Loading mol_df from %s", args.mol_df_fp)
+        mol_df = pd.read_pickle(args.mol_df_fp)
+
+    if args.mode == "stats":
+        spec_df_all = None
+        if args.spec_df_fp is not None:
+            logger.info("Loading spec_df from %s", args.spec_df_fp)
+            spec_df_all = pd.read_pickle(args.spec_df_fp)
+
+        print("[1/4] Plotting score distributions...")
+        plot_summary(meta, save_dp)
+        print("[2/4] Plotting all-metrics overview...")
+        plot_all_metrics(meta, save_dp)
+        print("[3/4] Plotting peak stats...")
+        plot_peak_stats(
+            meta, args.pred_fp, save_dp, filter_col=args.filter_col, spec_df=spec_df_all
+        )
+
+        if spec_df_all is not None:
+            print("[4/4] Plotting CE breakdown...")
+            plot_ce_breakdown(
+                meta=meta, spec_df=spec_df_all, score_col=args.score_col, save_dp=save_dp
+            )
+
+    if args.mode == "plot_spectra_by_ce_bin":
+        if args.spec_df_fp is None:
+            raise ValueError("--spec_df_fp is required for 'plot_spectra_by_ce_bin' mode")
+        logger.info("Loading spec_df from %s", args.spec_df_fp)
+        spec_df = pd.read_pickle(args.spec_df_fp)
+        print("[plot_spectra_by_ce_bin] Plotting worst mirror spectra per CE bin...")
+        plot_spectra_by_ce_bin(
+            meta=meta,
+            pred_fp=args.pred_fp,
+            spec_df=spec_df,
+            score_col=args.score_col,
+            save_dp=save_dp,
+            n=args.n,
+            mol_df=mol_df,
+        )
+
+    if args.mode == "spectra":
+        if args.spec_df_fp is None:
+            raise ValueError("--spec_df_fp is required for 'spectra' mode")
+        logger.info("Loading spec_df from %s", args.spec_df_fp)
+        spec_df = pd.read_pickle(args.spec_df_fp)
+        print(f"[spectra/{args.select}] Plotting mirror spectra...")
+        plot_spectra(
+            meta=meta,
+            pred_fp=args.pred_fp,
+            spec_df=spec_df,
+            select=args.select,
+            n=args.n,
+            score_col=args.score_col,
+            save_dp=save_dp,
+            mol_df=mol_df,
+        )
+
+
+if __name__ == "__main__":
+    main()

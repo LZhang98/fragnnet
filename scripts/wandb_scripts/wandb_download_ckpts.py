@@ -1,0 +1,100 @@
+import argparse
+import glob
+import json
+import os
+import shutil
+import tempfile
+
+from wandb.errors import CommError as WandbCommError
+
+import wandb
+
+
+def get_ckpt_from_wandb(
+    saved_dp, run_id, entity="frag-gnn", project="frag-gnn", use_cached=False, best_only=True
+):
+    # return ckpt
+    cached_ckpts = glob.glob(os.path.join(saved_dp, f"*_{run_id}.ckpt"))
+    if use_cached and len(cached_ckpts) == 1:
+        print(f"> found cached ckpt {cached_ckpts[0]} for {run_id}")
+        return cached_ckpts[0]
+
+    api = wandb.Api()
+    run = api.run(f"{entity}/{project}/{run_id}")
+    # print(run.id, run.name, run.tags)
+    print(f"> Processing model files for run {run.id} {run.name}")
+    model_tag = f"{run.name}_{run_id}"
+    # model_save_dp = f"{saved_dp}/{model_tag}"
+    os.makedirs(saved_dp, exist_ok=True)
+    best_ckpt_file, best_ckpt_epoch_num = None, 0
+    ckpt_files = []
+    saved_filenames = []
+    for file in run.files():
+        if file.name.startswith("ckpt/model-epoch="):
+            ckpt_files.append(file.name)
+            epoch_num = int(file.name.removeprefix("ckpt/model-epoch=").removesuffix(".ckpt"))
+            saved_filenames.append(f"{model_tag}_epoch={epoch_num}.ckpt")
+            # print(epoch_num)
+            if best_ckpt_file is None or epoch_num > best_ckpt_epoch_num:
+                best_ckpt_file = file.name
+                best_ckpt_epoch_num = epoch_num
+
+    if best_only:
+        ckpt_files = [best_ckpt_file]
+        saved_filenames = [f"{model_tag}.ckpt"]
+
+    if len(ckpt_files) == 0:
+        print("> Skip, no ckpt files found")
+        return
+
+    for ckpt_file, saved_filename in zip(ckpt_files, saved_filenames):
+        ckpt_fp = f"{saved_dp}/{saved_filename}"
+        if os.path.isfile(ckpt_fp) and use_cached:
+            print(f"> found cached ckpt {ckpt_fp}, skip downloading")
+            continue
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            print(f"> Downloading ckpt {ckpt_file}")
+            try:
+                run.file(ckpt_file).download(root=tmp_dir, replace=False)
+            except WandbCommError as exc:
+                if "400" in str(exc):
+                    print(f"> SKIP {ckpt_file}: 400 Bad Request ({exc})")
+                    continue
+                raise
+            print(f"> Save ckpt {ckpt_fp}")
+            shutil.copy(f"{tmp_dir}/{ckpt_file}", ckpt_fp)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Download checkpoints from WandB")
+    parser.add_argument(
+        "--input_file",
+        type=str,
+        help="Path to JSON file containing run IDs",
+    )
+    parser.add_argument(
+        "--save_dir", type=str, default="./saved_ckpts/", help="Directory to save checkpoints"
+    )
+    parser.add_argument(
+        "--use_cached", action="store_true", help="Use cached checkpoints if available"
+    )
+    args = parser.parse_args()
+
+    save_dp = args.save_dir
+    os.makedirs(save_dp, exist_ok=True)
+
+    if os.path.exists(args.input_file):
+        print(f"> Reading run IDs from {args.input_file}")
+        with open(args.input_file) as f:
+            runs = json.load(f)
+            for row in runs:
+                run_id = row["run_id"]
+                description = row.get("description", "")
+                best_only = row.get("best_only", True)
+                print(f"> Processing {run_id} ({description})")
+                get_ckpt_from_wandb(
+                    save_dp, run_id, best_only=best_only, use_cached=args.use_cached
+                )
+    else:
+        print(f"> Input file {args.input_file} not found.")
