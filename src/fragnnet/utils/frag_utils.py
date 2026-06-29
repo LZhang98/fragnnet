@@ -968,6 +968,7 @@ def compute_dags(
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
     max_ring_cut_steps: int = 2,
+    restrict_ring_open: bool = True,
 ) -> dict:
     """_summary_
 
@@ -1038,11 +1039,14 @@ def compute_dags(
         # system, enabling new cut=2 pairs at the next BFS depth.  Opening
         # non-shared bonds adds O(n_ring_bonds) redundant BFS intermediates that
         # produce fragments already reachable via direct cut=2 paths.
-        ring_open_mask = np.zeros(num_edges, dtype=MASK_DTYPE)
-        for _b, _c in _bond_ring_count.items():
-            if _c > 1:
-                ring_open_mask[_b] = 1
-        if not ring_open_mask.any():
+        if restrict_ring_open:
+            ring_open_mask = np.zeros(num_edges, dtype=MASK_DTYPE)
+            for _b, _c in _bond_ring_count.items():
+                if _c > 1:
+                    ring_open_mask[_b] = 1
+            if not ring_open_mask.any():
+                ring_open_mask = None
+        else:
             ring_open_mask = None
         # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
         # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
@@ -2014,6 +2018,7 @@ def timed_get_dags(
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
     max_ring_cut_steps: int = 2,
+    restrict_ring_open: bool = True,
 ) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
@@ -2033,6 +2038,7 @@ def timed_get_dags(
             smarts_prepass=smarts_prepass,
             min_frag_atoms=min_frag_atoms,
             max_ring_cut_steps=max_ring_cut_steps,
+            restrict_ring_open=restrict_ring_open,
         )
         return mol_id, dag_d
     except KeyboardInterrupt as e:
@@ -2062,6 +2068,7 @@ def run_frag_gen_hdf5(
     smarts_prepass: bool,
     min_frag_atoms: int,
     max_ring_cut_steps: int = 2,
+    restrict_ring_open: bool = True,
     disable_tqdm: bool = False,
 ) -> dict[str, list[int]]:
     """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
@@ -2108,6 +2115,7 @@ def run_frag_gen_hdf5(
             smarts_prepass,
             min_frag_atoms,
             max_ring_cut_steps,
+            restrict_ring_open,
         ]
         for _, row in mol_df.iterrows()
     )

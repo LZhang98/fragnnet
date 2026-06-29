@@ -124,6 +124,9 @@ fi
 if [ -n "${MAX_RING_CUT_STEPS+x}" ]; then
     PREPARE_ARGS+=(--max_ring_cut_steps ${MAX_RING_CUT_STEPS})
 fi
+if [ -n "${RESTRICT_RING_OPEN+x}" ]; then
+    PREPARE_ARGS+=(--restrict_ring_open ${RESTRICT_RING_OPEN})
+fi
 
 cd ${WORKING_DIR}
 python preproc_scripts/03_prepare_dag_feats.py "${PREPARE_ARGS[@]}"
