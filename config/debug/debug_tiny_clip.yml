@@ -1,0 +1,108 @@
+wandb_name: debug_tiny_clip
+wandb_tags:
+- clip
+- debug
+
+model_type: spec_mol_clip_pretraining
+
+# data stuff
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+
+seed: 42
+subsample_params:
+  subsample_size: 40
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+spec_params:
+  merge: True
+  merge_keep_ces: True
+  sparse: True
+  nce: True
+  ace: False
+  preprocess: False
+  prec_type: True
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+  inst_type: False
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - "IT"
+  prec_mz: True
+
+mol_params:
+  pyg: True
+  preprocess: False
+
+# contrastive model
+clip_temperature: 0.07
+clip_embed_dim: 64
+clip_intensity_transform: sqrt
+spectrum_encoder_params:
+  encoder_type: set_transformer
+  input_dim: 4  # (mz_norm, intensity, neutral_loss_norm, prec_norm)
+  hidden_dim: 64
+  embed_dim: 64
+  num_layers: 2
+  num_heads: 4
+  num_inds: 16
+  dropout: 0.1
+  normalization: layer
+
+mol_hidden_size: 64
+mol_num_layers: 2
+mol_gnn_type: GINE
+mol_normalization: batch
+mol_dropout: 0.1
+mol_pool_type: mean
+mol_num_heads: 4
+
+mlp_hidden_size: 64
+mlp_dropout: 0.1
+mlp_num_layers: 2
+mlp_use_residuals: True
+
+ce_insert_type: embed_clamped
+ce_insert_location: mlp
+ce_insert_merge: True
+ce_insert_size: 16
+use_nce: True
+use_ace: False
+prec_insert_location: mlp
+prec_insert_size: 16
+inst_insert_location: none
+
+# optimization
+train_batch_size: 8
+eval_batch_size: 8
+accumulate_grad_batches: 1
+lr: 0.0004
+weight_decay: 0.01
+accelerator: cpu
+devices: 1
+min_epochs: 1
+max_epochs: 3
+lr_schedule: False
+automatic_optimization: True
+dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler: False
+group_sampler: False
+simple_group_sampler: False
+formula_prec_type_group_sampler: False
+
+checkpoint_metric: val_s2m_top1
+checkpoint_metric_mode: max
+upload_checkpoints: False
+delete_checkpoints: True
+pl_enable_progress_bar: True
+compile: False
+num_workers: 0
+detect_anomaly: True

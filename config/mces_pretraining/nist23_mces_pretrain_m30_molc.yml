@@ -1,0 +1,103 @@
+wandb_name: mces_nist23_ma_mi_inchikey_m30_molc
+wandb_tags:
+- pretraining
+- mse
+- mces30
+
+# data stuff
+mces_fp: data/proc/mces/mces_pairs.pkl
+mol_fp: data/proc/mces/mol_df.pkl
+split_dp: data/split/mces_nist23_ma_mi_inchikey_m30
+
+subsample_params:
+  subsample_size: 10000
+  subsample_seed: 42
+  train: False
+  val: False
+  test: False
+  secondary: False
+mol_params:
+  smiles: True
+  fingerprint: False
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  pyg: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+  pyg_pe_embed_k: 0
+  pyg_bigraph: True
+  mf: False
+  graff: False
+  preprocess: True
+
+# model stuff
+model_type: mces_pretraining
+ce_insert_type: embed_clamped # ce insert type ["id","lin","embed","bin"]
+ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_merge: False # merge ce embedding
+ce_insert_size: 32
+prec_insert_location: mol
+prec_insert_size: 32
+inst_insert_location: mol
+inst_insert_size: 32
+mol_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 256
+mol_dropout: 0.1
+mlp_normalization: layer
+mlp_hidden_size: 256
+mlp_dropout: 0.1
+
+# mces stuff
+mces_min: 1
+mces_max: 30
+mces_mean: 20
+mces_std: 5
+mces_normalization: zscore  # options: none, zscore, minmax
+
+# loss stuff
+loss_type: mse
+train_sample_weight: none
+eval_sample_weight: none
+
+# optimization stuff
+# optimization stuff
+train_batch_size: 10240
+eval_batch_size: 10240
+accumulate_grad_batches: 1
+lr: 0.00005
+weight_decay: 0.01
+accelerator: gpu
+devices: 1
+min_epochs: 1
+max_epochs: 50
+lr_schedule: False
+debug_overfit: False
+upload_checkpoints: False
+delete_checkpoints: False
+checkpoint_metric: val_loss
+checkpoint_metric_mode: min
+checkpoint_every_n_epochs: 5
+checkpoint_save_top_k: -1
+auxiliary_scores:
+- mse
+- mae
+# eval_mz_bin_res:
+# - 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+pl_enable_progress_bar: True
+compile: False
+num_workers: 0
+detect_anomaly: True
