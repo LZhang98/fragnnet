@@ -77,9 +77,13 @@ Two n=nan-CE spectra of flavone itself (mol_id=50278) have peaks at 63.96, 79.96
 fragment — accounting for the 64.0/79.0 category A entries (8 spectra). A peak at
 223.028 appears above the [M-H]⁻=221.060 precursor (confirmed from actual spectra),
 indicating co-isolated compound contamination. These n=nan spectra appear to have
-been acquired under sulfate-buffered or contaminated conditions. The .9 fractional
-bins (143.9, 158.9, 174.9, 175.9) are Br-retaining direct anion fragments from
-6-bromoflavone (50271), inaccessible to BFS. Category B: 93.0 = phenolate
+been acquired under sulfate-buffered or contaminated conditions. The .9 fractional bins (143.9, 158.9, 174.9, 175.9) are Br-retaining
+fragments from 6-bromoflavone (50271). The most likely pathway is retro-Diels-Alder
+(RDA) on the chromone C ring (concerted, even-electron), which retains Br on the
+A-ring fragment. BFS supports 2-bond ring cuts but misses this pathway because both
+RDA cut bonds (C2–C3 and C4–C4a) are in the same ring of the fused A+C bicyclic
+system — BFS does not correctly enumerate this bond pair for fused bicyclics where
+the shared C4a–C8a bond must remain intact. Category B: 93.0 = phenolate
 [C₆H₅O]⁻ is in the DAG but model predicts 0 (model weakness).
 
 ---
@@ -1034,7 +1038,7 @@ with an oxepane ring embedded in complex polycyclic skeletons; prec_mz 161–837
 
 | m/z bin | n_spec | intensity | Note |
 |---------|--------|-----------|------|
-| 247.1   | 18     | 0.784     | 247.061=C₁₃H₁₁O₅⁻; 5 mols, nan=2/41 in probe → genuine |
+| 247.1   | 18     | 0.784     | 247.097=[M-2H]²⁻ from mol 11626 (C₂₈H₃₂O₈, M=496.209); 17/18 spectra from 1 mol; BFS cannot generate doubly-charged ions |
 | 137.0   | 18     | 0.281     | 137.024/137.023 — two series; nan=2/55 |
 | 151.0   | 22     | 0.233     | 151.039/151.040; nan=2/38 |
 | 203.1   | 16     | 0.096     | minor |
@@ -1057,15 +1061,15 @@ with an oxepane ring embedded in complex polycyclic skeletons; prec_mz 161–837
 
 ### Root cause
 
-**Cascade depth dominant; model weakness secondary.**
+**Doubly-charged [M-2H]²⁻ dominant (large glycoside); cascade depth + model weakness secondary.**
 
-The highest-priority cat A peak, 247.061 (C₁₃H₁₁O₅⁻, n=18, intensity 0.784), spans 5 diverse
-oxepane mols (prec range 250–837 Da) with only 2/41 nce=nan — confirming a genuine structural
-gap. Producing C₁₃H₁₁O₅⁻ from a >400 Da terpenoid oxepane requires 3+ cuts after ring-opening
-of the 7-membered lactone, exceeding BFS depth. 137.0 (n=18) and 95.0 (n=15) follow the same
-pattern: terpenoid ring fragments accessible only after deep cascade. Only 4/102 spectra are
-nce=nan (minimal contamination). Category B: 136.1 (0.525, nan=1/33 → genuine) and 117.0 (0.395)
-are in DAG at meaningful intensity but model predicts ≈0.
+The highest-intensity cat A peak at 247.097 is not a fragment but the [M-2H]²⁻ doubly-charged
+precursor ion from mol 11626 (C₂₈H₃₂O₈, MW=496.209, [M-H]⁻=495.201; [M-2H]²⁻ = 247.097 Da).
+17 of 18 contributing spectra come from this single mol. BFS generates only singly-charged
+fragment ions and cannot produce doubly-charged species. The remaining cat A peaks (137.0/95.0/
+151.0) are genuine terpenoid ring fragments requiring 3+ sequential cuts after 7-membered lactone
+ring-opening, inaccessible to BFS. Only 4/102 spectra are nce=nan (minimal contamination).
+Category B: 136.1 (0.525, nan=1/33 → genuine) and 117.0 (0.395) are in DAG but model predicts ≈0.
 
 ---
 
@@ -1163,104 +1167,6 @@ the model systematically assigns near-zero probability. Category A: 151.0 (nan=0
 For mellitic acid (mol 50616, benzenehexacarboxylic acid), sequential CO₂ losses require
 >3 bond cuts to reach 151.0 and 123.0 — cascade depth locks those fragments out.
 
-## Phenol Esters (n=72, DAG miss rate=48.6%)
-
-**50 mols; 46 in tar.** Phenolic acid esters (acetates, acrylates, isobutyrates, benzoates) of substituted phenols and phenylpropanols. Missing 4 mols are simple hydroxy-phenyl acetates (4217, 4237) and methoxy cinnamate esters (26020, 26022), all with 0 FT [M-H]⁻ spectra.
-
-### Missing peaks (category A — absent from DAG)
-
-| m/z bin | n_spec | intensity | Note |
-|---------|--------|-----------|------|
-| 97.0 | 6 | 0.642 | Exact 96.959 = [HSO₄]⁻ — sulfate mobile-phase contamination |
-| 80.0 | 5 | 0.294 | Exact 79.956 = [SO₃]⁻• — sulfate contamination |
-| 195.0 | 5 | 0.144 | Genuine fragment — phenol ester decarboxylation product |
-| 99.9 | 4 | 0.206 | Exact 99.924 — known background ion (nce=nan) |
-| 115.9 | 4 | 0.084 | Exact 115.919 — known background ion (nce=nan) |
-| 230.9 | 3 | 0.239 | Sulfate cluster (nce=nan contamination) |
-
-### In DAG but model underpredicts (category B)
-
-| m/z bin | n_spec | true_intensity | pred_intensity |
-|---------|--------|----------------|----------------|
-| 118.0 | 5 | 0.853 | 0.014 |
-| 59.0 | 4 | 0.532 | 0.018 |
-| 135.0 | 8 | 0.121 | 0.028 |
-
-### Root cause
-
-**Data quality (nce=nan contamination) dominant + model weakness on genuine ester fragments.**
-
-25% of FT [M-H]⁻ spectra have nce=nan, producing the well-characterized sulfate/phosphate buffer ion series: [HSO₄]⁻ at 96.959 (bins to 97.0), [SO₃]⁻• at 79.956 (80.0), and background ions at 99.924/115.919. These inflate category A significantly. The category B entry at 59.0 (exact 59.013 = [CH₃COO]⁻, acetate) is a genuine fragment from phenol acetates that the model underestimates (0.532 true vs 0.018 predicted). The 118.0 bin (exact 117.918, .9 fractional part) may also be a contamination-related ion coincidentally matched to a DAG entry.
-
----
-
-## Anthraquinones (n=818, DAG miss rate=48.5%)
-
-**214 mols; 173 in tar; 41 missing.** Hydroxy-, methoxy-, and glycoside-substituted anthraquinones (anthracene-9,10-diones). Low nce=nan fraction (7%), so data quality is not the dominant factor. Large class with 890 FT [M-H]⁻ spectra.
-
-### Missing peaks (category A — absent from DAG)
-
-| m/z bin | n_spec | intensity | Note |
-|---------|--------|-----------|------|
-| 182.0 | 81 | 0.292 | [C₁₂H₆O₂]⁻ — 3+ sequential CO/CO₂ losses from substituted anthraquinone |
-| 210.0 | 69 | 0.230 | CO-loss cascade product from hydroxy-anthraquinone aglycone |
-| 154.0 | 69 | 0.167 | Deep ring fragment (4+ losses) |
-| 183.0 | 68 | 0.378 | Dual A/B — also appears in category B |
-| 169.0 | 66 | 0.423 | Sequential CO/CO₂ loss cascade |
-| 141.0 | 66 | 0.353 | Deep cascade fragment |
-| 253.1 | 63 | 0.414 | CO₂ loss from larger substituted anthraquinone |
-| 195.0 | 58 | 0.463 | Dual A/B — CO₂ loss product (−44 Da); also in cat B |
-| 211.0 | 57 | 0.466 | Sequential CO loss from 239-Da anthraquinone |
-
-### In DAG but model underpredicts (category B)
-
-| m/z bin | n_spec | true_intensity | pred_intensity |
-|---------|--------|----------------|----------------|
-| 195.0 | 53 | 0.400 | 0.004 |
-| 183.0 | 45 | 0.323 | 0.010 |
-| 113.0 | 44 | 0.286 | 0.002 |
-| 224.0 | 43 | 0.192 | 0.010 |
-| 227.0 | 40 | 0.377 | 0.010 |
-
-### Root cause
-
-**Cascade depth + model weakness.**
-
-Anthraquinones fragment by sequential CO and CO₂ neutral losses from the two carbonyl groups and hydroxyl substituents. Each loss is depth-1, so a 3-loss cascade (e.g., 239→195→167→141) reaches depth-3 at the boundary; fragments at depth 4+ are absent from the DAG. Category A fragments (182.0, 154.0, 141.0) require 4+ sequential losses from the parent. Critically, 195.0 (CO₂ loss, 53 spectra, 0.400 intensity) and 183.0 (45 spectra, 0.323) ARE in the DAG at depth 1–2 but are severely underpredicted (pred=0.004/0.010) — strong model weakness. 41 mols missing from tar provide minor artifact inflation to category A.
-
----
-
-## Oxepanes (n=101, DAG miss rate=47.6%)
-
-**51 mols; 34 in tar; 17 missing.** Terpenoid 7-membered ring ethers, predominantly monoterpene and sesquiterpene epoxide-related structures plus large terpenoid glycosides (mol 11626, [M-H]⁻=495.2).
-
-### Missing peaks (category A — absent from DAG)
-
-| m/z bin | n_spec | intensity | Note |
-|---------|--------|-----------|------|
-| 247.1 | 18 | 0.784 | **Exact 247.097 = [M-2H]²⁻ doubly-charged precursor** — large glycoside (M~496) forms [M-2H]²⁻; BFS only generates singly-charged fragments |
-| 151.0 | 22 | 0.233 | Terpenoid aglycone fragment — cascade depth |
-| 137.0 | 18 | 0.281 | Terpenoid fragment — cascade depth |
-| 95.0 | 15 | 0.464 | Terpenoid ring fragment — cascade depth / rearrangement |
-| 97.0 | 14 | 0.193 | Terpenoid ring fragment — cascade depth |
-
-### In DAG but model underpredicts (category B)
-
-| m/z bin | n_spec | true_intensity | pred_intensity |
-|---------|--------|----------------|----------------|
-| 136.1 | 14 | 0.525 | 0.015 |
-| 117.0 | 17 | 0.395 | 0.015 |
-| 111.0 | 15 | 0.207 | 0.006 |
-| 57.0 | 25 | 0.127 | 0.023 |
-
-### Root cause
-
-**Doubly-charged fragment ions (dominant for large glycosides) + cascade depth + model weakness.**
-
-The highest-intensity missing peak, 247.097, is [M-2H]²⁻ from large sesquiterpene glycosides (M~496 Da) — confirmed by exact mass matching half of [M-H]⁻=495.2 within <0.001 Da. BFS generates only singly-charged fragments and cannot produce doubly-charged ions. The cascade depth pattern (95.0, 97.0, 151.0, 137.0) mirrors the oxepane M+H analysis. Category B shows 136.1 (0.525, pred=0.015) and 117.0 (0.395, pred=0.015) as significant model weaknesses on terpenoid aglycone fragments. 17 mols missing from tar contribute some artifact inflation to category A.
-
----
-
 ## Summary
 
 | Subclass | n | miss% | Root cause summary |
@@ -1285,12 +1191,9 @@ The highest-intensity missing peak, 247.097, is [M-2H]²⁻ from large sesquiter
 | Perylenequinones | 24 | 51.7% | **Cascade depth** (pentacyclic pericyclic quinone; precursor dominates even at nce=40; 271.1 n=14 intensity 0.774 absent from DAG) + **model weakness** (cat B: 256.0 at 0.594, 227.0 at 0.508, 204.1 at 0.472 — model predicts ≈0) |
 | Phenanthrenes and derivatives | 68 | 50.9% | **Rearrangement** (SO₂ loss from sulfonated phenanthrenes → C₁₄H₉O⁻=193.066; same mechanism as pyrene sulfonates) + **model weakness** (200.1 n=13 at 0.608 in DAG model 0.001; 253.1 at 0.478) + **cascade depth** (catechol-diterpene mols) |
 | Pyranoflavonoids | 40 | 50.4% | **Data quality** dominant (nce=nan: 97.0/62.0/80.0/59.0/115.9/99.9 all 100% nce=nan contamination; 18/46 spectra nan) + **model weakness** (297.1 n=9 at 0.750 in DAG, model 0.015; 147.0 at 0.470) |
-| Oxepanes | 101 | 47.6% | **Doubly-charged [M-2H]²⁻** (large glycosides, 247.097, 0.784!) + cascade depth (terpenoid fragments) + model weakness (136.1 0.525→0.015) |
-| Anthraquinones | 818 | 48.5% | **Cascade depth + model weakness** — sequential CO/CO₂ losses; 195.0 (53 spec, 0.400) in DAG pred=0.004; 183.0 (45 spec, 0.323) pred=0.010; 4+ loss cascade absent from DAG |
-| Phenol esters | 72 | 48.6% | **Data quality** (nce=nan, 25% contaminated; [HSO₄]⁻/[SO₃]⁻• dominate cat A) + **model weakness** ([acetate]⁻ 59.013 at 0.532→0.018) |
 | Oxocins | 50 | 48.9% | **Cascade depth + rearrangement** (8-membered ring opening; 181.1=C₉H₉O₄⁻ at low nce=2 confirming ring-rearrangement product; 135.0 intensity 0.769 absent from DAG) + **model weakness** (333.2 at 0.599, 257.1 at 0.412) |
 | Phenol esters | 72 | 48.6% | **Data quality** dominant (cat A: ALL peaks 100% nce=nan; H₂PO₄⁻/SO₃⁻•/NO₃⁻/PO₃⁻/.9-bins) + **model weakness** (118.0 at 0.853 and phenolate 93.034 in DAG, model ≈0) |
 | Anthraquinones | 818 | 48.5% | **Cascade depth** identical to anthracenes (169.0/141.0 in both; same ring system; CO₂ loss cascade 443→399→355 in sample) + **model weakness** (cat B: 195.0 n=53 at 0.400, 227.0 n=40 at 0.377 in DAG, model 0.004-0.010) |
-| Oxepanes | 101 | 47.6% | **Cascade depth** (247.1=C₁₃H₁₁O₅⁻ n=18 intensity 0.784 absent from DAG, nan=2/41 → genuine; 137.0 n=18 and 95.0 n=15 also genuine) + **model weakness** (136.1 at 0.525 in DAG, nan=1/33, model 0.015) |
+| Oxepanes | 101 | 47.6% | **Doubly-charged [M-2H]²⁻** (mol 11626, C₂₈H₃₂O₈, M=496; 247.097=17/18 spectra; BFS generates only singly-charged ions) + **cascade depth** (95.0/137.0/151.0) + **model weakness** (136.1 at 0.525→0.015) |
 | Pyranocoumarins | 92 | 47.4% | **Data quality** dominant (40% nce=nan spectra; 62.0/80.0/97.0 pure contamination; nan=33/42-53) + **model weakness** (289.1/305.1/291.1/265.1 at 0.14-0.32 in DAG, model 0.005-0.017) + genuine fragment 261.1 (23 non-nan spectra) |
 | P-quinodimethanes | 30 | 46.7% | **Model weakness** dominant (cat B: 111.0=0.667/81.0=0.576/99.0=0.535/71.0=0.451 all nan=0, in DAG, model predicts 0.000-0.016) + **cascade depth** (151.0/123.1 nan=0 absent from DAG; mellitic acid needs >3 CO₂ losses) |
