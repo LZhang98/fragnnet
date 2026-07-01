@@ -389,6 +389,23 @@ NL_RULES: list[NeutralLossRule] = [
         nl_mass=26.0157,
         min_num_atoms=8,
     ),
+    # Diaryl ketone CO extrusion (negative mode).
+    # Ar–C(=O)–Ar' → [Ar–Ar']⁻ + CO  (NL = 27.995 Da).
+    # The keto carbon (:2) and its oxygen (:3) leave as CO; a new Ar–Ar' bond forms
+    # in the product.  Cutting both Ar–CO bonds would give 3 CCs (BFS-invalid), so the
+    # merged {Ar+Ar'} atom mask is outside BFS coverage.  H-cap adds +1H at each free
+    # Ar valence; correct biaryl formula at H_delta=-2.
+    # `!R` on :2 excludes ring ketones (chromone, fluorenone) where a 2-CC BFS cut
+    # already covers the product; `[c:1]` and `[c:4]` restrict to diaryl ketones
+    # (excludes acetophenone, chalcone, aldehyde, carboxylic acid).
+    # min_num_atoms=12: minimum is two 5-membered aromatic rings + keto CO (5+5+2).
+    NeutralLossRule(
+        name="diaryl_ketone_co_loss",
+        reactant_smarts="[c:1]-[CX3;!R:2](=[O:3])-[c:4]",
+        nl_map_nums=[2, 3],
+        nl_mass=27.9949,
+        min_num_atoms=12,
+    ),
 ]
 
 # Pre-compiled SMARTS patterns (keyed by rule name) — avoid recompiling per molecule.

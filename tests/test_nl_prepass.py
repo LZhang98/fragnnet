@@ -1,4 +1,4 @@
-"""Tests for NeutralLossRule prepass (SO₂ extrusion, SO₃ loss, N₂O extrusion).
+"""Tests for NeutralLossRule prepass (SO₂ extrusion, SO₃ loss, N₂O extrusion, CO loss).
 
 Verifies that:
 - NL SMARTS patterns compile and match expected molecules.
@@ -393,3 +393,114 @@ class TestSulfoxideSoLoss:
         dag_base = _run_dag(smi, smarts_prepass=False)
         dag_nl = _run_dag(smi, smarts_prepass=True)
         assert dag_nl["dag_num_nodes"] > dag_base["dag_num_nodes"]
+
+
+# ---------------------------------------------------------------------------
+# 5. Diaryl ketone CO loss rule
+# ---------------------------------------------------------------------------
+
+
+class TestDiarylKetoneCOLoss:
+    # Benzophenone: Ph-CO-Ph (canonical diaryl ketone, 14 heavy atoms)
+    BENZOPHENONE = "O=C(c1ccccc1)c1ccccc1"
+    # Heteroaromatic: phenyl 2-furyl ketone (c1 and c4 are aromatic, keto not in ring)
+    FURYL_PHENYL_KETONE = "O=C(c1ccccc1)c1ccco1"
+    # Negative: chromone (keto C in lactone ring → !R excludes it)
+    CHROMONE = "O=c1ccoc2ccccc12"
+    # Negative: fluorenone (keto C in 5-membered ring fused to two benzene rings)
+    FLUORENONE = "O=C1c2ccccc2-c2ccccc21"
+    # Negative: acetophenone (only one aryl group; methyl C is not [c])
+    ACETOPHENONE = "CC(=O)c1ccccc1"
+    # Negative: chalcone (vinyl bridge between aryl and keto; keto not between two [c])
+    CHALCONE = "O=C(C=Cc1ccccc1)c1ccccc1"
+
+    def test_rule_exists_in_nl_rules(self):
+        assert any(r.name == "diaryl_ketone_co_loss" for r in NL_RULES)
+
+    def test_smarts_compiles(self):
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        assert Chem.MolFromSmarts(rule.reactant_smarts) is not None
+
+    def test_matches_benzophenone(self):
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BENZOPHENONE)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_furyl_phenyl_ketone(self):
+        """Heteroaromatic diaryl ketone must match (furan ring counts as [c])."""
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.FURYL_PHENYL_KETONE)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_no_match_chromone(self):
+        """Chromone keto C is in a lactone ring; !R guard must exclude it."""
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.CHROMONE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_fluorenone(self):
+        """Fluorenone keto C is in a ring; !R guard must exclude it."""
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.FLUORENONE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_acetophenone(self):
+        """Acetophenone has only one aryl group; [c:4] cannot match the methyl C."""
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.ACETOPHENONE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_product_mask_loses_c_and_o(self):
+        """CO extrusion removes exactly 1 C + 1 O (2 atoms) from benzophenone (14→12)."""
+        mol = Chem.MolFromSmiles(self.BENZOPHENONE)
+        n_total = mol.GetNumAtoms()  # 14
+        results = _apply_nl_prepass(NL_RULES, mol, n_total)
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"]
+        assert len(rule_results) == 1
+        prod_mask, _ = rule_results[0]
+        assert int(prod_mask.sum()) == n_total - 2  # lose C + O
+
+    def test_lost_atoms_are_carbon_and_oxygen(self):
+        """The 2 atoms removed from benzophenone must be C (keto) and O."""
+        mol = Chem.MolFromSmiles(self.BENZOPHENONE)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"]
+        assert rule_results
+        prod_mask, _ = rule_results[0]
+        lost_syms = sorted(mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v)
+        assert lost_syms == ["C", "O"]
+
+    def test_nl_mass_is_co(self):
+        """Rule nl_mass must equal exact monoisotopic mass of CO (27.9949 Da)."""
+        rule = next(r for r in NL_RULES if r.name == "diaryl_ketone_co_loss")
+        assert abs(rule.nl_mass - 27.9949) < 1e-4
+
+    def test_dag_adds_nodes_for_benzophenone(self):
+        """Benzophenone DAG must gain at least 1 new node from CO loss prepass."""
+        dag_base = _run_dag(self.BENZOPHENONE, smarts_prepass=False)
+        dag_nl = _run_dag(self.BENZOPHENONE, smarts_prepass=True)
+        assert dag_nl["dag_num_nodes"] > dag_base["dag_num_nodes"]
+
+    def test_product_mask_not_in_bfs(self):
+        """The CO loss product atom mask must be absent from raw BFS (3-CC path blocked)."""
+        from fragnnet.frag import compute_frags
+
+        mol_d = extract_mol_info(self.BENZOPHENONE)
+        mol = Chem.MolFromSmiles(self.BENZOPHENONE)
+        num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
+        bfs_masks, _, _, _ = compute_frags.compute_ccs(
+            num_nodes, num_edges, node_mask, edges, edge_mask, n2e, 3, int(1e6)
+        )
+        bfs_keys = {bfs_masks[i].tobytes() for i in range(len(bfs_masks))}
+
+        # Apply CO loss rule to find the product mask
+        results = _apply_nl_prepass(NL_RULES, mol, num_nodes)
+        co_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"]
+        assert co_results, "diaryl_ketone_co_loss produced no results for benzophenone"
+        prod_mask, _ = co_results[0]
+        assert prod_mask.tobytes() not in bfs_keys
