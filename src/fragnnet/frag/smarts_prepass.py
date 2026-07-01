@@ -360,6 +360,35 @@ NL_RULES: list[NeutralLossRule] = [
         nl_mass=44.0010,
         min_num_atoms=5,
     ),
+    # Sulfoxide SO loss.
+    # R–S(=O)–R' → [R–R'] + SO  (NL = 47.967 Da).
+    # The C–S bonds break and a new C–C bond forms in the product; retained atoms
+    # may be disconnected in the original graph (+2H excess; correct formula at H_delta=-2).
+    # SX3 matches only sulfoxides (3-connected S), excluding sulfones (SX4) and thioethers.
+    NeutralLossRule(
+        name="sulfoxide_so_loss",
+        reactant_smarts="[#6:1]-[SX3:2](=[O:3])-[#6:4]",
+        nl_map_nums=[2, 3],
+        nl_mass=47.9669,
+        min_num_atoms=3,
+    ),
+    # Diarylethylene (stilbene-type) C₂H₂ extrusion.
+    # Ar–CH=CH–Ar' → [Ar–Ar'] + HC≡CH  (NL = 26.016 Da).
+    # The two vinyl CH atoms (:2, :3), each bearing one H, leave as acetylene (C₂H₂).
+    # A new Ar–Ar' bond forms in the product (not present in the precursor), making
+    # this a rearrangement outside BFS DAG coverage. Product atoms are disconnected
+    # in the original graph; H-cap adds +1H at each free Ar valence, so the correct
+    # biaryl formula lands at H_delta=-2 (two excess H from the two cut free valences).
+    # `!R` on :2/:3 excludes bridged vinyl units in fused rings (indene, acenaphthylene)
+    # where the vinyl CH=CH is part of a ring and BFS already covers the 2-bond cut.
+    # min_num_atoms=8: minimum diarylethylene is two 5-membered aromatics + 2 vinyl C.
+    NeutralLossRule(
+        name="diarylvinyl_c2h2_loss",
+        reactant_smarts="[c:1]-[CH;!R:2]=[CH;!R:3]-[c:4]",
+        nl_map_nums=[2, 3],
+        nl_mass=26.0157,
+        min_num_atoms=8,
+    ),
 ]
 
 # Pre-compiled SMARTS patterns (keyed by rule name) — avoid recompiling per molecule.

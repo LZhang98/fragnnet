@@ -195,3 +195,201 @@ class TestInjectNLMasks:
             nl_masks, root_mask, depth_matrix, dag_edges, dag_meta, num_nodes, 1
         )
         assert all(d == 2 for d in out_meta["nodes_min_depth"][1:])
+
+
+# ---------------------------------------------------------------------------
+# 4. Diarylethylene C₂H₂ extrusion (diarylvinyl_c2h2_loss)
+# ---------------------------------------------------------------------------
+
+
+class TestDiarylvinylC2H2Loss:
+    # trans-stilbene: C6H5-CH=CH-C6H5 (14 heavy atoms; loses 2 vinyl C → 12 remain)
+    TARGET_STILBENE = "C(=C/c1ccccc1)\\c1ccccc1"
+    # resveratrol: hydroxylated stilbene derivative
+    TARGET_RESVERATROL = "Oc1ccc(C=Cc2cc(O)cc(O)c2)cc1"
+    # pyridyl-vinyl-phenyl: heteroaromatic variant
+    TARGET_PYRIDYL = "c1ccnc(c1)/C=C/c1ccccc1"
+    # Negative: indene (vinyl CH=CH in a ring → excluded by !R)
+    NEG_INDENE = "C1=Cc2ccccc21"
+    # Negative: chalcone (vinyl bridge not between two aromatic C)
+    NEG_CHALCONE = "O=C(C=Cc1ccccc1)c1ccccc1"
+    # Negative: styrene (terminal vinyl, one CH₂ end)
+    NEG_STYRENE = "C(=C)c1ccccc1"
+
+    def test_rule_exists_in_nl_rules(self):
+        assert any(r.name == "diarylvinyl_c2h2_loss" for r in NL_RULES)
+
+    def test_smarts_compiles(self):
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        assert Chem.MolFromSmarts(rule.reactant_smarts) is not None
+
+    def test_matches_stilbene(self):
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.TARGET_STILBENE)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_resveratrol(self):
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.TARGET_RESVERATROL)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_pyridyl_variant(self):
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.TARGET_PYRIDYL)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_no_match_indene(self):
+        """Vinyl in a fused ring (indene) must not match due to !R guard."""
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_INDENE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_chalcone(self):
+        """Chalcone vinyl (bonded to C=O, not aryl, on one side) must not match."""
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_CHALCONE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_styrene(self):
+        """Terminal vinyl (=CH₂, two H) must not match [CH;!R] (exactly one H)."""
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_STYRENE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_product_mask_loses_two_vinyl_carbons(self):
+        """C₂H₂ extrusion removes exactly 2 vinyl C atoms from stilbene (14→12)."""
+        mol = Chem.MolFromSmiles(self.TARGET_STILBENE)
+        n_total = mol.GetNumAtoms()  # 14
+        results = _apply_nl_prepass(NL_RULES, mol, n_total)
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diarylvinyl_c2h2_loss"]
+        assert len(rule_results) == 1
+        prod_mask, _ = rule_results[0]
+        assert int(prod_mask.sum()) == n_total - 2  # lose 2 vinyl C atoms
+
+    def test_lost_atoms_are_carbon(self):
+        """Both atoms removed from stilbene are carbon (the vinyl CH=CH bridge)."""
+        mol = Chem.MolFromSmiles(self.TARGET_STILBENE)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diarylvinyl_c2h2_loss"]
+        assert rule_results
+        prod_mask, _ = rule_results[0]
+        lost_syms = [mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v]
+        assert lost_syms == ["C", "C"]
+
+    def test_deduplication_on_symmetric_stilbene(self):
+        """Both SMARTS embeddings (forward and reverse) must deduplicate to 1 result."""
+        mol = Chem.MolFromSmiles(self.TARGET_STILBENE)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        names = [NL_RULES[ri].name for _, ri in results]
+        assert names.count("diarylvinyl_c2h2_loss") == 1
+
+    def test_nl_mass_is_c2h2(self):
+        """Rule nl_mass must equal exact monoisotopic mass of C₂H₂ (26.0157 Da)."""
+        rule = next(r for r in NL_RULES if r.name == "diarylvinyl_c2h2_loss")
+        assert abs(rule.nl_mass - 26.0157) < 1e-4
+
+    def test_dag_adds_nodes_for_stilbene(self):
+        """DAG with smarts_prepass=True must have more nodes than without for stilbene."""
+        dag_base = _run_dag(self.TARGET_STILBENE, smarts_prepass=False)
+        dag_nl = _run_dag(self.TARGET_STILBENE, smarts_prepass=True)
+        assert dag_nl["dag_num_nodes"] > dag_base["dag_num_nodes"]
+
+
+# ---------------------------------------------------------------------------
+# 4. Sulfoxide SO loss rule
+# ---------------------------------------------------------------------------
+
+
+class TestSulfoxideSoLoss:
+    DMSO = "CS(=O)C"
+    METHYL_PHENYL_SULFOXIDE = "c1ccccc1S(=O)C"
+    DIPHENYL_SULFOXIDE = "c1ccccc1S(=O)c1ccccc1"
+    NEG_SULFONE = "CS(=O)(=O)C"
+    NEG_THIOETHER = "CSC"
+    NEG_SULFONAMIDE = "CS(=O)(=O)NC"
+
+    def test_rule_exists_in_nl_rules(self):
+        assert any(r.name == "sulfoxide_so_loss" for r in NL_RULES)
+
+    def test_smarts_compiles(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        assert Chem.MolFromSmarts(rule.reactant_smarts) is not None
+
+    def test_matches_dmso(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.DMSO)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_methyl_phenyl_sulfoxide(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.METHYL_PHENYL_SULFOXIDE)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_diphenyl_sulfoxide(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.DIPHENYL_SULFOXIDE)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_no_match_sulfone(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_SULFONE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_thioether(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_THIOETHER)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_sulfonamide(self):
+        rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_SULFONAMIDE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_product_mask_loses_s_and_o(self):
+        mol = Chem.MolFromSmiles(self.DMSO)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "sulfoxide_so_loss"]
+        assert len(rule_results) >= 1
+        prod_mask, _ = rule_results[0]
+        # DMSO: 4 atoms total (C, S, O, C); SO loss removes 2 → 2 retained
+        assert int(prod_mask.sum()) == mol.GetNumAtoms() - 2
+
+    def test_product_retains_only_carbons_for_dmso(self):
+        mol = Chem.MolFromSmiles(self.DMSO)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "sulfoxide_so_loss"]
+        prod_mask, _ = rule_results[0]
+        retained = [mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if v]
+        lost = [mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v]
+        assert sorted(retained) == ["C", "C"]
+        assert sorted(lost) == ["O", "S"]
+
+    def test_product_mask_diphenyl_sulfoxide(self):
+        mol = Chem.MolFromSmiles(self.DIPHENYL_SULFOXIDE)
+        n_total = mol.GetNumAtoms()  # 13: 12 C + 1 S + 1 O = 14 heavy atoms
+        results = _apply_nl_prepass(NL_RULES, mol, n_total)
+        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "sulfoxide_so_loss"]
+        assert len(rule_results) >= 1
+        prod_mask, _ = rule_results[0]
+        # 14 atoms - 2 (S+O) = 12 retained (both phenyl rings)
+        assert int(prod_mask.sum()) == n_total - 2
+
+    def test_dag_adds_nodes_for_sulfinyl_amide(self):
+        # CS(=O)CCNC(=O)c1ccccc1: the C-methyl and C-CCNC flanking groups combine
+        # into a 12-atom fragment not reachable by BFS; SO-loss injects it as new.
+        smi = "CS(=O)CCNC(=O)c1ccccc1"
+        dag_base = _run_dag(smi, smarts_prepass=False)
+        dag_nl = _run_dag(smi, smarts_prepass=True)
+        assert dag_nl["dag_num_nodes"] > dag_base["dag_num_nodes"]
