@@ -156,7 +156,134 @@ FRAG_RULES: list[SmartsFragRule] = [
         merge_outer_map_nums=[1, 10, 4],
         min_num_atoms=16,
     ),
+    # xanthone_ring_cleavage: dibenzo-γ-pyranone (xanthone / xanthen-9-one) scaffold.
+    # Two benzene rings fused on either side of a central ring containing both a
+    # carbonyl (=O on :1) and a bridge ether O. Releases both flanking benzene C4
+    # units simultaneously with 4 ring-bond cuts: (2,3) and (6,7) bracket the left
+    # benzene's non-fusion atoms; (9,10) and (13,14) bracket the right benzene's
+    # non-fusion atoms. Produces 3 CCs: left C4H4 outer, right C4H4 outer, and the
+    # central pyranone ring (C5O2) as the inner kept fragment.
+    # Baseline BFS cannot reach this within max_depth=3: releasing one benzene costs
+    # 2 sequential cuts (depth +2), both take 4 → depth 4, one over budget. This
+    # rule injects it as a single depth-2 prepass leaf.
+    # merge_outer_map_nums=[3, 10]: one atom from each outer C4 piece.
+    # min_num_atoms=15 (bare xanthone C13H8O2 has 15 heavy atoms).
+    SmartsFragRule(
+        name="xanthone_ring_cleavage",
+        reactant_smarts=(
+            "[O+0]=[c+0:1]1[c+0:2]2[c+0:3][c+0][c+0][c+0:6][c+0:7]2"
+            "[o+0][c+0:9]3[c+0:10][c+0][c+0][c+0:13][c+0:14]31"
+        ),
+        cut_bond_map_pairs=[(2, 3), (6, 7), (9, 10), (13, 14)],
+        merge_outer_map_nums=[3, 10],
+        min_num_atoms=15,
+    ),
+    # phenoxazine_ring_cleavage: dibenz[b,e][1,4]oxazine (phenoxazine) scaffold.
+    # Two benzene rings fused on either side of a central 6-membered ring containing
+    # one N and one O bridge. Releases both flanking benzene C4 units simultaneously
+    # with 4 ring-bond cuts: (2,3) and (6,7) bracket the right benzene's non-fusion
+    # atoms; (9,10) and (13,14) bracket the left benzene's non-fusion atoms.
+    # Produces 3 CCs: right C4 outer, left C4 outer, and the central C4NO ring as
+    # the inner kept fragment.
+    # Baseline BFS cannot reach this within max_depth=3: releasing one benzene costs
+    # 2 sequential cuts (depth +2), both take 4 → depth 4, one over budget. This
+    # rule injects it as a single depth-2 prepass leaf.
+    # merge_outer_map_nums=[3, 10]: one atom from each outer C4 piece.
+    # min_num_atoms=13 (bare phenoxazine C12H9NO has 13 heavy atoms).
+    # Note: [N+0:1] matches both NH (phenoxazine) and N-alkyl (e.g. N-phenylphenoxazine)
+    # since the N charge constraint (+0) excludes N+ quaternary but allows both variants.
+    # [O+0] (not [o+0]) is required because the bridge O in phenoxazine is non-aromatic.
+    SmartsFragRule(
+        name="phenoxazine_ring_cleavage",
+        reactant_smarts=(
+            "[N+0:1]1[c+0:2]2[c+0:3][c+0][c+0][c+0:6][c+0:7]2[O+0][c+0:9]3"
+            "[c+0:10][c+0][c+0][c+0:13][c+0:14]31"
+        ),
+        cut_bond_map_pairs=[(2, 3), (6, 7), (9, 10), (13, 14)],
+        merge_outer_map_nums=[3, 10],
+        min_num_atoms=13,
+    ),
+    # furanocoumarin_ring_cleavage: furan–benzene–pyranone (psoralen/linear furanocoumarin)
+    # scaffold. The three fused rings share two fusion bonds: benzene∩furan (atoms :5–:3
+    # shared edge) and benzene∩pyranone (atoms :8–:1 shared edge). This rule cuts 4
+    # non-fusion ring bonds that bracket the central benzene's furan-facing atoms: (5,6)
+    # and (3,4) release the furan's non-fusion atoms {furan CH, CH, O} as one outer CC,
+    # while (1,2) and (7,8) release the entire pyranone ring as the other outer CC. The
+    # inner kept fragment is the 4-atom open chain {benzene C's flanking the furan fusion
+    # bond} plus any substituents on those atoms.
+    # Baseline BFS cannot reach this within max_depth=3: releasing the furan non-fusion
+    # atoms + pyranone simultaneously requires 4 sequential depth steps (two ring
+    # openings × 2 each), one over budget. This rule injects it as a single depth-2
+    # prepass leaf.
+    # merge_outer_map_nums=[4, 8]: atom :4 is in the furan outer CC {7,8,9}; atom :8 is
+    # in the pyranone outer CC {0,1,2,3,4,12,13} (psoralen numbering).
+    # min_num_atoms=14 (bare psoralen C11H6O3 has 14 heavy atoms).
+    SmartsFragRule(
+        name="furanocoumarin_ring_cleavage",
+        reactant_smarts=(
+            "[O+0]=[c+0]1[c+0][c+0][c+0:8]2[c+0:7][c+0:5]3[c+0:6][c+0][o+0:4][c+0:3]3"
+            "[c+0:2][c+0:1]2[o+0]1"
+        ),
+        cut_bond_map_pairs=[(1, 2), (3, 4), (5, 6), (7, 8)],
+        merge_outer_map_nums=[4, 8],
+        min_num_atoms=14,
+    ),
+    # morphinan_ring_cleavage: 5-ring morphinan alkaloid scaffold (morphine/codeine class).
+    # Piperidine ring (ring 0) fused to a benzene ring (ring 1) via a dihydrofuran bridge ring
+    # (ring 2, 5-membered, ether O) and a cyclohexene ring (ring 3), with a 6-membered bridge
+    # ring (ring 4) spanning the whole system. 4 cuts simultaneously: N-C (piperidine, maps 1-2),
+    # C-C (cyclohexene C15-C16, maps 3-4), C(bridgehead)-C (C6-C20, maps 5-6), c-C (C8-C22
+    # aromatic-bridge, maps 7-8). Produces n_ccs=2: inner kept fragment is the benzene+dihydrofuran
+    # bicyclic C10HxO2 piece (atoms from piperidine CH2-CH2-bridgehead + benzene + ether O chain);
+    # outer is the large N-containing piece (allyl-N + ring 3 + ring 4 remainder).
+    # GT-confirmed formula C10H8O2 in 20+ NIST20 morphinan molecules; base BFS misses it because
+    # 4 cuts from root exceed max_cut_size=2 × max_depth=3 within the normal sequential budget.
+    # min_num_atoms=18 (the ring system alone has 18 heavy atoms: 1N + 1O + 16C).
+    # Note: ~ bonds in ring 3 allow single (naloxone) or double (morphine) C-C bond variants.
+    SmartsFragRule(
+        name="morphinan_ring_cleavage",
+        reactant_smarts=(
+            "[N+0:1]1[C:2][C][C:5]23[c]4[c:7]5[c][c][c][c]4O[C:3]2[C:4]~[C;r]~[C][C:6]3C1[C:8]5"
+        ),
+        cut_bond_map_pairs=[(1, 2), (3, 4), (5, 6), (7, 8)],
+        merge_outer_map_nums=[],
+        min_num_atoms=18,
+    ),
+    # benzopyranone_ring_cleavage: benzene fused to a γ-lactone (pyranone) ring,
+    # i.e. the coumarin / chromen-2-one scaffold (and its substituted variants).
+    # Requires 4 simultaneous bond cuts: two adjacent benzene C-C bonds on either
+    # side of one ring carbon (:1) isolate that carbon from the benzene, while the
+    # two pyranone bonds C8a-O (:4-:5) and C2-C3 (:6-:7) open the lactone ring.
+    # Produces 3 CCs: {atom :1 + any exo-substituents} (small outer piece),
+    # {atoms :5 + :6 + exo=O} (the O=C-O lactone fragment), and the remaining
+    # large carbocyclic fragment. Outer CCs (containing :1 and :5) are merged into
+    # one byproduct mask; the large carbon fragment is kept as the inner result.
+    #
+    # Baseline BFS cannot reach this fragment within max_depth=3: the two ring
+    # openings (benzene + pyranone) each cost 2 sequential depth steps → 4 total,
+    # one over budget. This rule injects the 4-bond compound cut directly as a
+    # single depth-2 prepass leaf, matching the dominant mbfs-confirmed fragment
+    # family for 3-aryl-7-methoxycoumarin scaffolds (empirically, 52 improved
+    # molecules in NIST20 with wrecall_h4 gap > 0.01).
+    #
+    # Atom map:
+    #   Benzene ring: :1-:2-:3-:4-:9-:10 (ring1; :1 is the isolated C)
+    #   Pyranone ring: :4-:5-:6-:7-:8-:9 (ring2; :4/:9 are ring-fusion atoms)
+    #   Exo =O on :6 is unmapped (included in match tuple but not in map dict).
+    # Cuts: (1,2) and (10,1) to bracket :1; (4,5) for C8a-O; (6,7) for C2-C3.
+    # NOTE: [OC] (used in an earlier draft) is invalid SMARTS — it means "atom that
+    # is simultaneously O and C" (impossible), so always returns 0 matches.
+    SmartsFragRule(
+        name="benzopyranone_ring_cleavage",
+        reactant_smarts=(
+            "[c+0:1]1[c+0:2][c+0:3][c+0:4]2[o+0:5][c+0:6](=O)[c+0:7][c+0:8][c+0:9]2[c+0:10]1"
+        ),
+        cut_bond_map_pairs=[(1, 2), (10, 1), (4, 5), (6, 7)],
+        merge_outer_map_nums=[1, 5],
+        min_num_atoms=11,
+    ),
 ]
+
 
 @dataclass
 class NeutralLossRule:
@@ -419,9 +546,7 @@ def _apply_smarts_prepass(
 
             # Fix 2: _union_find_ccs_all now uses Python list for parent array
             # (avoids numpy element-wise indexing overhead in the union-find loop).
-            cc_masks = _union_find_ccs_all(
-                num_nodes, root_node_mask, edges, work_mask, num_edges
-            )
+            cc_masks = _union_find_ccs_all(num_nodes, root_node_mask, edges, work_mask, num_edges)
             n_ccs = len(cc_masks)
 
             if n_ccs == 2:
