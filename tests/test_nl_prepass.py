@@ -267,7 +267,9 @@ class TestDiarylvinylC2H2Loss:
         mol = Chem.MolFromSmiles(self.TARGET_STILBENE)
         n_total = mol.GetNumAtoms()  # 14
         results = _apply_nl_prepass(NL_RULES, mol, n_total)
-        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diarylvinyl_c2h2_loss"]
+        rule_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "diarylvinyl_c2h2_loss"
+        ]
         assert len(rule_results) == 1
         prod_mask, _ = rule_results[0]
         assert int(prod_mask.sum()) == n_total - 2  # lose 2 vinyl C atoms
@@ -276,7 +278,9 @@ class TestDiarylvinylC2H2Loss:
         """Both atoms removed from stilbene are carbon (the vinyl CH=CH bridge)."""
         mol = Chem.MolFromSmiles(self.TARGET_STILBENE)
         results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
-        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diarylvinyl_c2h2_loss"]
+        rule_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "diarylvinyl_c2h2_loss"
+        ]
         assert rule_results
         prod_mask, _ = rule_results[0]
         lost_syms = [mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v]
@@ -460,7 +464,9 @@ class TestDiarylKetoneCOLoss:
         mol = Chem.MolFromSmiles(self.BENZOPHENONE)
         n_total = mol.GetNumAtoms()  # 14
         results = _apply_nl_prepass(NL_RULES, mol, n_total)
-        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"]
+        rule_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"
+        ]
         assert len(rule_results) == 1
         prod_mask, _ = rule_results[0]
         assert int(prod_mask.sum()) == n_total - 2  # lose C + O
@@ -469,10 +475,14 @@ class TestDiarylKetoneCOLoss:
         """The 2 atoms removed from benzophenone must be C (keto) and O."""
         mol = Chem.MolFromSmiles(self.BENZOPHENONE)
         results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
-        rule_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"]
+        rule_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"
+        ]
         assert rule_results
         prod_mask, _ = rule_results[0]
-        lost_syms = sorted(mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v)
+        lost_syms = sorted(
+            mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v
+        )
         assert lost_syms == ["C", "O"]
 
     def test_nl_mass_is_co(self):
@@ -503,4 +513,135 @@ class TestDiarylKetoneCOLoss:
         co_results = [(m, ri) for m, ri in results if NL_RULES[ri].name == "diaryl_ketone_co_loss"]
         assert co_results, "diaryl_ketone_co_loss produced no results for benzophenone"
         prod_mask, _ = co_results[0]
+        assert prod_mask.tobytes() not in bfs_keys
+
+
+class TestAminobenzothiazoleHcnLoss:
+    # 6-chlorobenzothiazol-2-amine (NIST20 mol_id 27791; NL=27.0113 Da confirmed)
+    TARGET_1 = "Nc1nc2ccc(Cl)cc2s1"
+    # 4-bromo-6-fluorobenzothiazol-2-amine (NIST20 mol_id 27768; two halogens)
+    TARGET_2 = "Nc1nc2c(Br)cc(F)cc2s1"
+    # Unsubstituted benzothiazol-2-amine (NIST20 mol_id 27800; bare scaffold)
+    BARE_SCAFFOLD = "Nc1nc2ccccc2s1"
+    # Negative: N-acetylated amine, no free NH2 (should not match)
+    NEG_N_ACYL = "CC(=O)Nc1nc2ccccc2s1"
+    # Negative: 2-aminobenzimidazole, ring N instead of ring S (should not match)
+    NEG_BENZIMIDAZOLE = "Nc1nc2ccccc2[nH]1"
+    # Negative: 2-aminothiazole, non-fused (no benzo ring; should not match)
+    NEG_NONFUSED_THIAZOLE = "Nc1nccs1"
+    # Negative: plain benzene
+    NEG_BENZENE = "c1ccccc1"
+
+    def test_rule_exists_in_nl_rules(self):
+        assert any(r.name == "aminobenzothiazole_hcn_loss" for r in NL_RULES)
+
+    def test_smarts_compiles(self):
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        assert Chem.MolFromSmarts(rule.reactant_smarts) is not None
+
+    def test_matches_target_1(self):
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.TARGET_1)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_target_2_dihalogen(self):
+        """Different substituent positions/halogens must still match."""
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.TARGET_2)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_matches_bare_scaffold(self):
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BARE_SCAFFOLD)
+        assert mol.HasSubstructMatch(patt)
+
+    def test_no_match_n_acyl(self):
+        """N-acylated amine has no free NH2; SMARTS [NX3H2] must exclude it."""
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_N_ACYL)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_benzimidazole(self):
+        """Ring S is required; benzimidazole's ring N must not satisfy 's1'."""
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_BENZIMIDAZOLE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_nonfused_thiazole(self):
+        """Benzo-fusion is required; a bare thiazole ring must not match."""
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_NONFUSED_THIAZOLE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_no_match_benzene(self):
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NEG_BENZENE)
+        assert not mol.HasSubstructMatch(patt)
+
+    def test_product_mask_loses_c_and_n(self):
+        """HCN extrusion removes exactly 1 C + 1 N (2 atoms)."""
+        mol = Chem.MolFromSmiles(self.TARGET_1)
+        n_total = mol.GetNumAtoms()
+        results = _apply_nl_prepass(NL_RULES, mol, n_total)
+        rule_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "aminobenzothiazole_hcn_loss"
+        ]
+        assert len(rule_results) == 1
+        prod_mask, _ = rule_results[0]
+        assert int(prod_mask.sum()) == n_total - 2
+
+    def test_lost_atoms_are_ring_c_and_ring_n(self):
+        """The 2 removed atoms must be the ring C2 and ring N3 (not S1 or exocyclic N)."""
+        mol = Chem.MolFromSmiles(self.TARGET_1)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        rule_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "aminobenzothiazole_hcn_loss"
+        ]
+        assert rule_results
+        prod_mask, _ = rule_results[0]
+        lost_syms = sorted(
+            mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if not v
+        )
+        assert lost_syms == ["C", "N"]
+        # exocyclic amine N and ring S1 must both survive in the product
+        retained_syms = [mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(prod_mask) if v]
+        assert retained_syms.count("N") == 1  # only the exocyclic amine N remains
+        assert retained_syms.count("S") == 1  # ring S1 remains
+
+    def test_nl_mass_is_hcn(self):
+        """Rule nl_mass must equal exact monoisotopic mass of HCN (27.0109 Da)."""
+        rule = _nl_rules_by_name()["aminobenzothiazole_hcn_loss"]
+        assert abs(rule.nl_mass - 27.0109) < 1e-4
+
+    def test_dag_adds_nodes_for_target(self):
+        """DAG for the target molecule must gain at least 1 new node from HCN loss prepass."""
+        dag_base = _run_dag(self.TARGET_1, smarts_prepass=False)
+        dag_nl = _run_dag(self.TARGET_1, smarts_prepass=True)
+        assert dag_nl["dag_num_nodes"] > dag_base["dag_num_nodes"]
+
+    def test_product_mask_not_in_bfs(self):
+        """The HCN loss product atom mask must be absent from raw BFS (3-CC path blocked)."""
+        from fragnnet.frag import compute_frags
+
+        mol_d = extract_mol_info(self.TARGET_1)
+        mol = Chem.MolFromSmiles(self.TARGET_1)
+        num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
+        bfs_masks, _, _, _ = compute_frags.compute_ccs(
+            num_nodes, num_edges, node_mask, edges, edge_mask, n2e, 3, int(1e6)
+        )
+        bfs_keys = {bfs_masks[i].tobytes() for i in range(len(bfs_masks))}
+
+        results = _apply_nl_prepass(NL_RULES, mol, num_nodes)
+        hcn_results = [
+            (m, ri) for m, ri in results if NL_RULES[ri].name == "aminobenzothiazole_hcn_loss"
+        ]
+        assert hcn_results, "aminobenzothiazole_hcn_loss produced no results for target"
+        prod_mask, _ = hcn_results[0]
         assert prod_mask.tobytes() not in bfs_keys

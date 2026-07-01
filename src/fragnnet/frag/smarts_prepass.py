@@ -282,6 +282,36 @@ FRAG_RULES: list[SmartsFragRule] = [
         merge_outer_map_nums=[1, 5],
         min_num_atoms=11,
     ),
+    # halogenated_quinoline_ring_cleavage: quinoline (benzo ring fused to a pyridine
+    # ring) bearing at least one halogen substituent anywhere in the molecule.
+    # Direct-cation ring fragmentation excises the pyridine N (both its ring bonds,
+    # maps 1-2 and 1-10) AND one benzo-ring non-fusion carbon (maps 6-7 and 7-8)
+    # simultaneously, producing 3 CCs: {N} singleton, {benzo C} singleton, and the
+    # remaining fused-ring skeleton (still one piece via the other ring path) as the
+    # inner kept fragment. The 2 singleton CCs merge into one outer byproduct.
+    # This generalizes the classic aza-arene HCN-loss pathway (already reachable by
+    # base BFS as a single-ring 2-bond cut) by compounding it with a second,
+    # independent ring-carbon loss from the OTHER (benzo) ring in one step -- base
+    # BFS reaches each loss individually but not both together within max_depth=3
+    # (4 total ring-bond cuts spanning both rings exceeds the sequential budget).
+    # The kept fragment retains any halogens not on the excised atoms, matching the
+    # halide-retaining "direct cation" fragments observed for halogenated quinolines.
+    # GetSubstructMatches returns both mirror embeddings (benzo C6 vs C7 excised).
+    # Atom map: 1=N1, 2=C2, 3=C3, 4=C4, 5=C4a (fusion), 6=C5, 7=C6 (excised),
+    # 8=C7, 9=C8, 10=C8a (fusion). ".[F,Cl,Br,I]" is a disconnected component
+    # requiring a halogen present somewhere in the molecule (guards against firing
+    # on plain quinolines).
+    # min_num_atoms=11 (bare quinoline C9H7N has 10 heavy atoms + >=1 halogen).
+    SmartsFragRule(
+        name="halogenated_quinoline_ring_cleavage",
+        reactant_smarts=(
+            "[n+0:1]1[c+0:2][c+0:3][c+0:4][c+0:5]2[c+0:6][c+0:7][c+0:8][c+0:9][c+0:10]12"
+            ".[F,Cl,Br,I]"
+        ),
+        cut_bond_map_pairs=[(1, 2), (1, 10), (6, 7), (7, 8)],
+        merge_outer_map_nums=[1, 7],
+        min_num_atoms=11,
+    ),
 ]
 
 
@@ -405,6 +435,24 @@ NL_RULES: list[NeutralLossRule] = [
         nl_map_nums=[2, 3],
         nl_mass=27.9949,
         min_num_atoms=12,
+    ),
+    # 2-Aminobenzothiazole HCN extrusion (direct-cation ring fragmentation).
+    # The thiazole ring's C2=N3 unit expels HCN (using one H from the exocyclic
+    # amine), and the remaining fragment retains ring S1 and the exocyclic amine
+    # attached to the benzo ring (aminothiophenol-type cation).  A new Ar–NH2 bond
+    # forms, so the product atoms are disconnected in the original graph; H-cap
+    # adds excess H at C3a (broken N3 bond), S1 (thiol H), and the amine (lost its
+    # only bond) — correct formula lands at a negative H-shift (max_h_transfer).
+    # NL confirmed empirically: mol_id 27770 (spec) shows NL=27.0113 Da at
+    # intensity 217/999 (2nd-most-intense peak); consistent NL≈27.011 across
+    # 13/14 halogenated NIST20 2-aminobenzothiazoles checked.
+    # min_num_atoms=10: bare 2-aminobenzothiazole (C7H6N2S) has 10 heavy atoms.
+    NeutralLossRule(
+        name="aminobenzothiazole_hcn_loss",
+        reactant_smarts="[NX3H2]-[c:1]1[n:2]c2ccccc2s1",
+        nl_map_nums=[1, 2],
+        nl_mass=27.0109,
+        min_num_atoms=10,
     ),
 ]
 

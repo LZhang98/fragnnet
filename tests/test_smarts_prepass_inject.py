@@ -1356,3 +1356,261 @@ class TestMorphinanRingCleavage:
         assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"], (
             "morphinan_ring_cleavage rule should not fire on naphthalene"
         )
+
+
+# ---------------------------------------------------------------------------
+# halogenated_quinoline_ring_cleavage rule
+# ---------------------------------------------------------------------------
+
+
+class TestHalogenatedQuinolineRingCleavage:
+    """Tests for the halogenated_quinoline_ring_cleavage SMARTS fragmentation rule.
+
+    The rule targets quinoline (benzo ring fused to a pyridine ring) bearing at
+    least one halogen substituent anywhere in the molecule. It cuts 4 bonds
+    simultaneously -- the pyridine N's two ring bonds (maps 1-2, 1-10) and one
+    benzo-ring non-fusion carbon's two ring bonds (maps 6-7, 7-8) -- producing
+    3 CCs (N singleton, benzo-C singleton, remaining fused-ring skeleton) that
+    merge to 2 fragment masks via merge_outer_map_nums=[1, 7]. The inner kept
+    fragment retains any halogens not on the excised atoms.
+    """
+
+    # Dibromoquinoline (NIST20 mol_id=83): Br on both the pyridine and benzo rings
+    DIBROMOQUINOLINE = "Brc1ccc2nc(Br)ccc2c1"
+    # Fluoroquinoline: F on the benzo ring only, pyridine ring unsubstituted
+    MONOFLUORO_BENZO = "Fc1ccc2ncccc2c1"
+    # Chloroquinoline: Cl on the pyridine ring (C2) only, benzo ring unsubstituted
+    MONOCHLORO_PYRIDINE = "Clc1ccc2ccccc2n1"
+    # Plain quinoline: no halogen -- should NOT match
+    PLAIN_QUINOLINE = "c1ccc2ncccc2c1"
+    # Naphthalene: no N -- should NOT match
+    NAPHTHALENE = "c1ccc2ccccc2c1"
+    # Benzene -- should NOT match
+    BENZENE = "c1ccccc1"
+    # Chlorobenzene: halogen present but no fused bicyclic ring -- should NOT match
+    CHLOROBENZENE = "Clc1ccccc1"
+    # Chloroisoquinoline: halogen + fused N-heterocycle, but N is not adjacent to
+    # the ring-fusion carbon (wrong regiochemistry) -- should NOT match
+    CHLOROISOQUINOLINE = "Clc1cc2ccccc2cn1"
+
+    def _get_rule(self):
+        """Return the halogenated_quinoline_ring_cleavage rule from FRAG_RULES."""
+        for rule in FRAG_RULES:
+            if rule.name == "halogenated_quinoline_ring_cleavage":
+                return rule
+        raise AssertionError("halogenated_quinoline_ring_cleavage rule not found in FRAG_RULES")
+
+    def test_rule_exists_in_frag_rules(self):
+        """The rule is registered in the FRAG_RULES list."""
+        names = [r.name for r in FRAG_RULES]
+        assert "halogenated_quinoline_ring_cleavage" in names
+
+    def test_smarts_compiles(self):
+        """The SMARTS pattern compiles to a valid RDKit query molecule."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        assert patt is not None, f"Invalid SMARTS: {rule.reactant_smarts}"
+
+    def test_matches_dibromoquinoline(self):
+        """Matches dibromoquinoline (halogens on both rings)."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.DIBROMOQUINOLINE)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_matches_monofluoro_benzo(self):
+        """Exactly 1 match when F sits on the (otherwise unsubstituted) benzo ring."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MONOFLUORO_BENZO)
+        assert len(mol.GetSubstructMatches(patt)) == 1
+
+    def test_matches_monochloro_pyridine(self):
+        """Exactly 1 match when Cl sits on the (otherwise unsubstituted) pyridine ring."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MONOCHLORO_PYRIDINE)
+        assert len(mol.GetSubstructMatches(patt)) == 1
+
+    def test_no_match_plain_quinoline(self):
+        """Plain quinoline (no halogen) does not match."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.PLAIN_QUINOLINE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_naphthalene(self):
+        """Naphthalene (no N) does not match."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NAPHTHALENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_benzene(self):
+        """Benzene (single ring) does not match."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BENZENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_chlorobenzene(self):
+        """Chlorobenzene (halogen present, but no fused bicyclic ring) does not match."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.CHLOROBENZENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_chloroisoquinoline(self):
+        """Chloroisoquinoline (N not adjacent to ring fusion) does not match."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.CHLOROISOQUINOLINE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_cut_bonds_are_ring_bonds(self):
+        """All 4 cut bonds in the monofluoro-benzo case are ring bonds."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MONOFLUORO_BENZO)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            bond = mol.GetBondBetweenAtoms(map_to_mol[map_a], map_to_mol[map_b])
+            assert bond is not None, (
+                f"No bond between map:{map_a}(atom {map_to_mol[map_a]}) "
+                f"and map:{map_b}(atom {map_to_mol[map_b]})"
+            )
+            assert bond.IsInRing(), f"Cut bond ({map_a},{map_b}) is not a ring bond"
+
+    def test_cuts_produce_three_fragments(self):
+        """Applying all 4 cuts to the monofluoro-benzo case yields exactly 3 CCs."""
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MONOFLUORO_BENZO)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        em = Chem.RWMol(mol)
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+        frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+        assert len(frags) == 3, f"Expected 3 fragments after cuts, got {len(frags)}"
+
+    def test_inner_fragment_composition_monofluoro(self):
+        """Inner (non-N, non-F) fragment for the monofluoro case has 8 C, 0 N, 0 F."""
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MONOFLUORO_BENZO)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        outer_atoms = {map_to_mol[1], map_to_mol[7]}
+        em = Chem.RWMol(mol)
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+        frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+        inner_frag = [f for f in frags if not any(a in outer_atoms for a in f)]
+        assert len(inner_frag) == 1, "Expected exactly one inner (non-outer) fragment"
+        inner_atoms = inner_frag[0]
+        c_count = sum(1 for a in inner_atoms if mol.GetAtomWithIdx(a).GetSymbol() == "C")
+        n_count = sum(1 for a in inner_atoms if mol.GetAtomWithIdx(a).GetSymbol() == "N")
+        f_count = sum(1 for a in inner_atoms if mol.GetAtomWithIdx(a).GetSymbol() == "F")
+        assert c_count == 8, f"Inner fragment must have 8 C, got {c_count}"
+        assert n_count == 0, f"Inner fragment must have 0 N, got {n_count}"
+        assert f_count == 0, f"Inner fragment must have 0 F, got {f_count}"
+
+    def test_at_least_one_embedding_retains_halogen(self):
+        """For dibromoquinoline, at least one match embedding keeps a Br in the
+
+        inner (kept) fragment -- confirming the rule can produce the
+        halide-retaining "direct cation" fragment the rule is named for.
+        """
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.DIBROMOQUINOLINE)
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        found_retained_br = False
+        for match in mol.GetSubstructMatches(patt):
+            map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+            outer_atoms = {map_to_mol[1], map_to_mol[7]}
+            em = Chem.RWMol(mol)
+            for map_a, map_b in rule.cut_bond_map_pairs:
+                em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+            frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+            inner_frag = next(f for f in frags if not any(a in outer_atoms for a in f))
+            if any(mol.GetAtomWithIdx(a).GetSymbol() == "Br" for a in inner_frag):
+                found_retained_br = True
+        assert found_retained_br, (
+            "Expected at least one embedding to retain a Br in the inner fragment"
+        )
+
+    def test_prepass_adds_fragments_to_dag_dibromoquinoline(self):
+        """smarts_prepass=True adds nodes for dibromoquinoline."""
+        dag_no = _run_compute_dags(self.DIBROMOQUINOLINE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.DIBROMOQUINOLINE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected halogenated_quinoline_ring_cleavage rule to add at least one new node"
+        )
+
+    def test_prepass_adds_fragments_to_dag_monofluoro(self):
+        """smarts_prepass=True adds nodes for the monofluoro-benzo case."""
+        dag_no = _run_compute_dags(self.MONOFLUORO_BENZO, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.MONOFLUORO_BENZO, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected halogenated_quinoline_ring_cleavage rule to add at least one "
+            "new node for the monofluoro-benzo case"
+        )
+
+    def test_prepass_no_change_plain_quinoline(self):
+        """smarts_prepass=True does not add nodes for plain quinoline (no halogen)."""
+        dag_no = _run_compute_dags(self.PLAIN_QUINOLINE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.PLAIN_QUINOLINE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"], (
+            "halogenated_quinoline_ring_cleavage rule should not fire on plain quinoline"
+        )
