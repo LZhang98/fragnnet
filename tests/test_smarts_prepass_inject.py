@@ -1614,3 +1614,572 @@ class TestHalogenatedQuinolineRingCleavage:
         assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"], (
             "halogenated_quinoline_ring_cleavage rule should not fire on plain quinoline"
         )
+
+
+# ---------------------------------------------------------------------------
+# benzopyranone_bis_ch_loss rule
+# ---------------------------------------------------------------------------
+
+
+class TestBenzopyranoneBisChLoss:
+    """Tests for the benzopyranone_bis_ch_loss SMARTS fragmentation rule.
+
+    Second compound-cut on the coumarin scaffold (same reactant_smarts as
+    benzopyranone_ring_cleavage): keeps the lactone intact and excises one lone
+    CH from each ring (pyranone C3 alpha to the carbonyl, benzo C8 ortho to the
+    ether-bridge fusion).
+    """
+
+    COUMARIN = "O=c1ccc2ccccc2o1"
+    ACETYL_METHOXY_COUMARIN = "COc1ccc2ccc(=O)oc2c1C(C)=O"
+    HERNIARIN = "COc1ccc2ccc(=O)oc2c1"
+    NAPHTHALENE = "c1ccc2ccccc2c1"
+    BENZENE = "c1ccccc1"
+
+    def _get_rule(self):
+        for rule in FRAG_RULES:
+            if rule.name == "benzopyranone_bis_ch_loss":
+                return rule
+        raise AssertionError("benzopyranone_bis_ch_loss rule not found in FRAG_RULES")
+
+    def test_rule_exists_in_frag_rules(self):
+        names = [r.name for r in FRAG_RULES]
+        assert "benzopyranone_bis_ch_loss" in names
+
+    def test_smarts_compiles(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        assert patt is not None, f"Invalid SMARTS: {rule.reactant_smarts}"
+
+    def test_matches_coumarin(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.COUMARIN)
+        assert len(mol.GetSubstructMatches(patt)) == 1
+
+    def test_matches_acetyl_methoxy_coumarin(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.ACETYL_METHOXY_COUMARIN)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_matches_herniarin(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.HERNIARIN)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_no_match_naphthalene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NAPHTHALENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_benzene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BENZENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_cut_bonds_are_ring_bonds_coumarin(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.COUMARIN)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            bond = mol.GetBondBetweenAtoms(map_to_mol[map_a], map_to_mol[map_b])
+            assert bond is not None
+            assert bond.IsInRing(), f"Cut bond ({map_a},{map_b}) is not a ring bond"
+
+    def test_cuts_produce_three_ccs_lactone_intact(self):
+        """Applying the 4 cuts yields 3 CCs; the largest retains the intact lactone."""
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.COUMARIN)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        em = Chem.RWMol(mol)
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+        frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+        assert len(frags) == 3, f"Expected 3 CCs, got {len(frags)}"
+        largest = max(frags, key=len)
+        o_count = sum(1 for a in largest if mol.GetAtomWithIdx(a).GetSymbol() == "O")
+        assert o_count == 2, f"Largest (lactone-retaining) fragment must have 2 O, got {o_count}"
+
+    def test_prepass_adds_fragments_to_dag_coumarin(self):
+        dag_no = _run_compute_dags(self.COUMARIN, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.COUMARIN, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected benzopyranone_bis_ch_loss rule to add at least one new node"
+        )
+
+    def test_prepass_adds_fragments_to_dag_acetyl_methoxy_coumarin(self):
+        dag_no = _run_compute_dags(self.ACETYL_METHOXY_COUMARIN, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.ACETYL_METHOXY_COUMARIN, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected benzopyranone_bis_ch_loss rule to add at least one new node "
+            "for the acetyl-methoxy coumarin case"
+        )
+
+    def test_prepass_no_change_naphthalene(self):
+        dag_no = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"]
+
+
+# ---------------------------------------------------------------------------
+# anthraquinone_ring_c4_plus_ch_loss rule
+# ---------------------------------------------------------------------------
+
+
+class TestAnthraquinoneRingC4PlusChLoss:
+    """Tests for the anthraquinone_ring_c4_plus_ch_loss SMARTS fragmentation rule.
+
+    Second compound-cut on the anthraquinone scaffold (same reactant_smarts as
+    anthraquinone_bis_co_loss): keeps BOTH carbonyls intact, releases one flanking
+    ring entirely plus one lone CH from the other flanking ring.
+    """
+
+    ANTHRAQUINONE = "O=C1c2ccccc2C(=O)c2ccccc21"
+    METHYLANTHRAQUINONE = "Cc1ccc2c(c1)C(=O)c1ccccc1C2=O"
+    NAPHTHALENE = "c1ccc2ccccc2c1"
+    BENZENE = "c1ccccc1"
+
+    def _get_rule(self):
+        for rule in FRAG_RULES:
+            if rule.name == "anthraquinone_ring_c4_plus_ch_loss":
+                return rule
+        raise AssertionError("anthraquinone_ring_c4_plus_ch_loss rule not found in FRAG_RULES")
+
+    def test_rule_exists_in_frag_rules(self):
+        names = [r.name for r in FRAG_RULES]
+        assert "anthraquinone_ring_c4_plus_ch_loss" in names
+
+    def test_smarts_compiles(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        assert patt is not None, f"Invalid SMARTS: {rule.reactant_smarts}"
+
+    def test_matches_anthraquinone(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.ANTHRAQUINONE)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_matches_methylanthraquinone(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.METHYLANTHRAQUINONE)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_no_match_naphthalene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NAPHTHALENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_benzene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BENZENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_cut_bonds_are_ring_bonds_methylanthraquinone(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.METHYLANTHRAQUINONE)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            bond = mol.GetBondBetweenAtoms(map_to_mol[map_a], map_to_mol[map_b])
+            assert bond is not None
+            assert bond.IsInRing(), f"Cut bond ({map_a},{map_b}) is not a ring bond"
+
+    def test_kept_fragment_retains_both_carbonyls(self):
+        """The largest CC after cutting retains both C=O groups (4 heavy atoms: 2C+2O)."""
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.METHYLANTHRAQUINONE)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        em = Chem.RWMol(mol)
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+        frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+        largest = max(frags, key=len)
+        o_count = sum(1 for a in largest if mol.GetAtomWithIdx(a).GetSymbol() == "O")
+        assert o_count == 2, f"Kept fragment must retain both carbonyl O's, got {o_count}"
+
+    def test_prepass_adds_fragments_to_dag_anthraquinone(self):
+        dag_no = _run_compute_dags(self.ANTHRAQUINONE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.ANTHRAQUINONE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected anthraquinone_ring_c4_plus_ch_loss rule to add at least one new node"
+        )
+
+    def test_prepass_adds_fragments_to_dag_methylanthraquinone(self):
+        dag_no = _run_compute_dags(self.METHYLANTHRAQUINONE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.METHYLANTHRAQUINONE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected anthraquinone_ring_c4_plus_ch_loss rule to add at least one "
+            "new node for the methyl-substituted case"
+        )
+
+    def test_prepass_no_change_naphthalene(self):
+        dag_no = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"]
+
+
+# ---------------------------------------------------------------------------
+# morphinan_amine_arm_loss rule
+# ---------------------------------------------------------------------------
+
+
+class TestMorphinanAmineArmLoss:
+    """Tests for the morphinan_amine_arm_loss SMARTS fragmentation rule.
+
+    Second compound-cut on the oxide-bridged morphinan scaffold (same base ring
+    skeleton as morphinan_ring_cleavage, adds map numbers to 5 previously-unmapped
+    atoms): releases the N-alkyl-piperidine amine arm plus one lone benzo CH,
+    keeping the bridge-O ring + cyclohexene ring + rest of the benzo ring intact.
+    """
+
+    MORPHINE = "C=CCN1CCC23c4c5ccc(O)c4OC2C(O)C=CC3C1C5"
+    CODEINE = "COc1ccc2c3c1OC1C(O)C=CC4C(C2)N(C)CCC341"
+    NALOXONE = "C=CCN1CC[C@]23c4c5ccc(O)c4O[C@H]2C(=O)CC[C@H]3[C@H]1C5"
+    NAPHTHALENE = "c1ccc2ccccc2c1"
+    BENZENE = "c1ccccc1"
+    PIPERIDINE = "C1CCNCC1"
+
+    def _get_rule(self):
+        for rule in FRAG_RULES:
+            if rule.name == "morphinan_amine_arm_loss":
+                return rule
+        raise AssertionError("morphinan_amine_arm_loss rule not found in FRAG_RULES")
+
+    def test_rule_exists_in_frag_rules(self):
+        names = [r.name for r in FRAG_RULES]
+        assert "morphinan_amine_arm_loss" in names
+
+    def test_smarts_compiles(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        assert patt is not None, f"Invalid SMARTS: {rule.reactant_smarts}"
+
+    def test_matches_morphine(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MORPHINE)
+        assert len(mol.GetSubstructMatches(patt)) == 1
+
+    def test_matches_codeine(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.CODEINE)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_matches_naloxone(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NALOXONE)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_no_match_naphthalene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NAPHTHALENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_benzene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BENZENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_piperidine(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.PIPERIDINE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_cut_bonds_are_valid_morphine(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MORPHINE)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            bond = mol.GetBondBetweenAtoms(map_to_mol[map_a], map_to_mol[map_b])
+            assert bond is not None, f"No bond between map:{map_a} and map:{map_b}"
+
+    def test_cuts_produce_three_ccs_morphine(self):
+        """Applying the 4 cuts yields 3 CCs (amine arm, lone benzo CH, kept core)."""
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MORPHINE)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        em = Chem.RWMol(mol)
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+        frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+        assert len(frags) == 3, f"Expected 3 CCs, got {len(frags)}"
+
+    def test_prepass_adds_fragments_to_dag_morphine(self):
+        dag_no = _run_compute_dags(self.MORPHINE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.MORPHINE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected morphinan_amine_arm_loss rule to add at least one new node"
+        )
+
+    def test_prepass_adds_fragments_to_dag_codeine(self):
+        dag_no = _run_compute_dags(self.CODEINE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.CODEINE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected morphinan_amine_arm_loss rule to add at least one new node for codeine"
+        )
+
+    def test_prepass_no_change_naphthalene(self):
+        dag_no = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"]
+
+
+# ---------------------------------------------------------------------------
+# desoxymorphinan_ring_cleavage rule
+# ---------------------------------------------------------------------------
+
+
+class TestDesoxymorphinanRingCleavage:
+    """Tests for the desoxymorphinan_ring_cleavage SMARTS fragmentation rule.
+
+    Analog of morphinan_ring_cleavage for morphinan alkaloids lacking the 4,5-epoxy
+    (dihydrofuran) bridge -- levorphanol/dextromethorphan/levallorphan-class, where
+    the bridge ring is a plain tetracyclic carbocycle instead of the 5-ring
+    oxide-bridged system. morphinan_ring_cleavage requires the bridge O and never
+    matches this family.
+    """
+
+    LEVALLORPHAN = "C=CCN1CCC23CCCCC2C1Cc1ccc(O)cc13"
+    DEXTROMETHORPHAN_LIKE = "COc1ccc2c(c1)C13CCCCC1C(C2)N(C)CC3"
+    LEVORPHANOL = "Oc1ccc2c(c1)C13CCCCC1C(C2)NCC3"
+    MORPHINE = "C=CCN1CCC23c4c5ccc(O)c4OC2C(O)C=CC3C1C5"
+    NAPHTHALENE = "c1ccc2ccccc2c1"
+    BENZENE = "c1ccccc1"
+    PIPERIDINE = "C1CCNCC1"
+
+    def _get_rule(self):
+        for rule in FRAG_RULES:
+            if rule.name == "desoxymorphinan_ring_cleavage":
+                return rule
+        raise AssertionError("desoxymorphinan_ring_cleavage rule not found in FRAG_RULES")
+
+    def test_rule_exists_in_frag_rules(self):
+        names = [r.name for r in FRAG_RULES]
+        assert "desoxymorphinan_ring_cleavage" in names
+
+    def test_smarts_compiles(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        assert patt is not None, f"Invalid SMARTS: {rule.reactant_smarts}"
+
+    def test_matches_levallorphan(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.LEVALLORPHAN)
+        assert len(mol.GetSubstructMatches(patt)) == 1
+
+    def test_matches_dextromethorphan_like(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.DEXTROMETHORPHAN_LIKE)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_matches_levorphanol(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.LEVORPHANOL)
+        assert len(mol.GetSubstructMatches(patt)) >= 1
+
+    def test_no_match_morphine(self):
+        """Oxide-bridged morphine must NOT match the des-oxide rule."""
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.MORPHINE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_naphthalene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.NAPHTHALENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_benzene(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.BENZENE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_no_match_piperidine(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.PIPERIDINE)
+        assert len(mol.GetSubstructMatches(patt)) == 0
+
+    def test_cut_bonds_are_valid_levallorphan(self):
+        from rdkit import Chem
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.LEVALLORPHAN)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            bond = mol.GetBondBetweenAtoms(map_to_mol[map_a], map_to_mol[map_b])
+            assert bond is not None, f"No bond between map:{map_a} and map:{map_b}"
+
+    def test_cuts_produce_three_ccs_levallorphan(self):
+        """Applying the 4 cuts yields 3 CCs (amine arm, aromatic+CH2, kept core)."""
+        from rdkit import Chem
+        from rdkit.Chem import rdmolops
+
+        rule = self._get_rule()
+        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        mol = Chem.MolFromSmiles(self.LEVALLORPHAN)
+        match = mol.GetSubstructMatches(patt)[0]
+        q_idx_to_map = {
+            q: patt.GetAtomWithIdx(q).GetAtomMapNum()
+            for q in range(patt.GetNumAtoms())
+            if patt.GetAtomWithIdx(q).GetAtomMapNum() != 0
+        }
+        map_to_mol = {m: match[q] for q, m in q_idx_to_map.items()}
+        em = Chem.RWMol(mol)
+        for map_a, map_b in rule.cut_bond_map_pairs:
+            em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
+        frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
+        assert len(frags) == 3, f"Expected 3 CCs, got {len(frags)}"
+
+    def test_prepass_adds_fragments_to_dag_levallorphan(self):
+        dag_no = _run_compute_dags(self.LEVALLORPHAN, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.LEVALLORPHAN, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected desoxymorphinan_ring_cleavage rule to add at least one new node"
+        )
+
+    def test_prepass_adds_fragments_to_dag_levorphanol(self):
+        dag_no = _run_compute_dags(self.LEVORPHANOL, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.LEVORPHANOL, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Expected desoxymorphinan_ring_cleavage rule to add at least one new "
+            "node for levorphanol"
+        )
+
+    def test_prepass_no_change_naphthalene(self):
+        dag_no = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=False)
+        dag_yes = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=True)
+        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"]

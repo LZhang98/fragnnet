@@ -312,6 +312,112 @@ FRAG_RULES: list[SmartsFragRule] = [
         merge_outer_map_nums=[1, 7],
         min_num_atoms=11,
     ),
+    # benzopyranone_bis_ch_loss: SECOND compound-cut on the same coumarin scaffold as
+    # benzopyranone_ring_cleavage. Instead of expelling the lactone O-C(=O) unit, this
+    # one keeps the lactone fully intact and instead excises a single lone CH from
+    # EACH ring: the pyranone alkene carbon alpha to the carbonyl (map 7, C3 in coumarin
+    # numbering) and the benzo carbon ortho to the ether-bridge fusion (map 3, C8).
+    # Reuses the identical reactant_smarts as benzopyranone_ring_cleavage (same ring
+    # skeleton) with a different cut_bond_map_pairs/merge_outer_map_nums.
+    # Cuts: (2,3)+(3,4) isolate map3 (C8); (6,7)+(7,8) isolate map7 (C3).
+    # Empirically confirmed: this exact 4-ring-cut mask is mbfs-only (absent from
+    # baseline+benzopyranone_ring_cleavage) across all 61 NIST20 "coumarins and
+    # derivatives" molecules with the largest residual wrecall_h4 gap after the
+    # original rule (mean gap ~0.20); baseline cannot reach it within max_depth=3
+    # because releasing both lone CH's requires 4 sequential depth steps.
+    # min_num_atoms=11 (bare coumarin C9H6O2 has 11 heavy atoms).
+    SmartsFragRule(
+        name="benzopyranone_bis_ch_loss",
+        reactant_smarts=(
+            "[c+0:1]1[c+0:2][c+0:3][c+0:4]2[o+0:5][c+0:6](=O)[c+0:7][c+0:8][c+0:9]2[c+0:10]1"
+        ),
+        cut_bond_map_pairs=[(2, 3), (3, 4), (6, 7), (7, 8)],
+        merge_outer_map_nums=[3, 7],
+        min_num_atoms=11,
+    ),
+    # anthraquinone_ring_c4_plus_ch_loss: SECOND compound-cut on the same anthraquinone
+    # scaffold as anthraquinone_bis_co_loss. Instead of losing both carbonyl oxygens
+    # plus one flanking ring's C4 unit, this one keeps BOTH carbonyls (both C=O groups)
+    # fully intact and instead loses one flanking ring ENTIRELY (all 6 atoms, maps
+    # 11-16) plus one additional lone CH from the OTHER flanking ring (map 4, adjacent
+    # to fusion map 3).
+    # Cuts: (9,11)+(16,2) release ring B (maps 11-16) entirely; (3,4)+(4,5) isolate
+    # map4 alone from ring A. For substituted (asymmetric) anthraquinones, RDKit's
+    # default match uniquification keeps only one of the two ring-A/ring-B
+    # embeddings (same pre-existing behavior as anthraquinone_bis_co_loss); for
+    # bare/symmetric anthraquinone both directions are structurally equivalent.
+    # Empirically confirmed: this exact 4-ring-cut mask is mbfs-only across all 35
+    # NIST20 "anthraquinones" molecules with the largest residual wrecall_h4 gap
+    # after the original rule (mean gap ~0.26); unreachable by baseline within
+    # max_depth=3 (a single full-ring release already costs 2 depth steps per the
+    # linear_tricyclic_bis_c4_loss docstring; compounding it with one more lone-CH
+    # loss needs 4 total, one over budget).
+    # min_num_atoms=16 (bare anthraquinone C14H8O2 has 16 heavy atoms).
+    SmartsFragRule(
+        name="anthraquinone_ring_c4_plus_ch_loss",
+        reactant_smarts=(
+            "[O+0:1]=[C+0:2]1[c+0:3]2[c+0:4][c+0:5][c+0:6][c+0:7][c+0:8]2"
+            "[C+0:9](=[O+0:10])[c+0:11]3[c+0:12][c+0:13][c+0:14][c+0:15][c+0:16]31"
+        ),
+        cut_bond_map_pairs=[(9, 11), (16, 2), (3, 4), (4, 5)],
+        merge_outer_map_nums=[11, 4],
+        min_num_atoms=16,
+    ),
+    # morphinan_amine_arm_loss: SECOND compound-cut on the same 5-ring oxide-bridged
+    # morphinan scaffold as morphinan_ring_cleavage. Reuses the identical ring
+    # skeleton (adds map numbers to 5 previously-unmapped atoms: the piperidine
+    # CH2 adjacent to the bridgehead, the ring-closing CH2 back to N, and 3 benzo
+    # ring atoms) and cuts a DIFFERENT pair of bonds: instead of releasing the
+    # benzene+dihydrofuran C10HxO2 piece, this one releases the N-alkyl-piperidine
+    # "amine arm" (N + its methyl/allyl substituent + 2 CH2's, maps 1/2/9) and a
+    # single lone benzo CH (map 11) simultaneously, keeping the bridge-O ring +
+    # cyclohexene ring + rest of the benzo ring intact as one connected piece.
+    # Cuts: (9,5) + (13,1) release the amine arm; (10,11) + (11,12) isolate the
+    # lone benzo CH.
+    # Empirically confirmed: this exact mask is mbfs-only (absent from
+    # baseline+morphinan_ring_cleavage) for all 14 NIST20 "morphinans" molecules
+    # where morphinan_ring_cleavage already fires but still has the largest
+    # residual wrecall_h4 gap (mean gap ~0.41); the amine-arm loss alone (2 cuts)
+    # is already reachable by baseline, but compounding it with the benzo CH loss
+    # needs 4 total cuts, one over the max_depth=3 budget.
+    # min_num_atoms=18 (same bare scaffold as morphinan_ring_cleavage).
+    SmartsFragRule(
+        name="morphinan_amine_arm_loss",
+        reactant_smarts=(
+            "[N+0:1]1[C:2][C:9][C:5]23[c]4[c:7]5[c:10][c:11][c:12][c]4O[C:3]2"
+            "[C:4]~[C;r]~[C][C:6]3[C:13]1[C:8]5"
+        ),
+        cut_bond_map_pairs=[(9, 5), (10, 11), (11, 12), (13, 1)],
+        merge_outer_map_nums=[9, 11],
+        min_num_atoms=18,
+    ),
+    # desoxymorphinan_ring_cleavage: analog of morphinan_ring_cleavage for morphinan
+    # alkaloids that lack the 4,5-epoxy (dihydrofuran) bridge entirely -- levorphanol/
+    # dextromethorphan/levallorphan-class morphinans, where the bridge ring is a plain
+    # tetracyclic carbocycle (no ring oxygen) rather than the 5-ring oxide-bridged
+    # system. morphinan_ring_cleavage's SMARTS requires the bridge "O" atom and never
+    # matches this family at all (confirmed: 0/4 matches in NIST20).
+    # Ring system: piperidine (maps 1,2,3,4 + bridgehead 4/5) fused to a plain
+    # cyclohexane (bridgeheads maps 4,5) fused to a 6-membered ring (maps 5,6,7,8,9)
+    # bridging to the aromatic ring (maps 8,9 fusion atoms).
+    # Cuts: (3,4)+(6,1) release the N-alkylamine arm (N + substituent + 2 CH2's,
+    # maps 1/2/3/6); (7,8)+(9,4) release the aromatic ring + its benzylic CH2
+    # entirely (map 7 + aromatic maps 8/9). Kept/inner = the plain bicyclic aliphatic
+    # core (cyclohexane fused to the piperidine ring minus its amine arm).
+    # Empirically confirmed: this exact mask is mbfs-only (absent from baseline) for
+    # all 4 NIST20 non-oxide morphinans with data (1412, 15421, 20146, 34342; mean
+    # wrecall_h4 gap ~0.56, i.e. essentially unexplained by baseline).
+    # min_num_atoms=17 (bare des-oxide morphinan ring skeleton: 1 N + 16 C).
+    SmartsFragRule(
+        name="desoxymorphinan_ring_cleavage",
+        reactant_smarts=(
+            "[N+0:1]1[C+0:2][C+0:3][C+0:4]23[C+0][C+0][C+0][C+0][C+0:5]2"
+            "[C+0:6]1[C+0:7][c+0:8]4[c+0][c+0][c+0][c+0][c+0:9]34"
+        ),
+        cut_bond_map_pairs=[(3, 4), (6, 1), (7, 8), (9, 4)],
+        merge_outer_map_nums=[3, 8],
+        min_num_atoms=17,
+    ),
 ]
 
 
