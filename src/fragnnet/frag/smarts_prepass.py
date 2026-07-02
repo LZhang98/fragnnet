@@ -418,6 +418,35 @@ FRAG_RULES: list[SmartsFragRule] = [
         merge_outer_map_nums=[3, 8],
         min_num_atoms=17,
     ),
+    # desoxymorphinan_aromatic_core_release: SECOND compound-cut on the same
+    # non-oxide morphinan scaffold as desoxymorphinan_ring_cleavage. Reuses the
+    # identical ring skeleton (adds map numbers to 3 previously-unmapped atoms in
+    # the plain cyclohexane ring) and cuts a DIFFERENT pair of bonds: instead of
+    # releasing the aromatic ring, this one releases only the N-alkylamine arm
+    # (maps 1/2/3/6, same as desoxymorphinan_ring_cleavage) plus a single lone
+    # cyclohexane CH2 (map 11, excised via 2 cuts to its ring neighbors maps
+    # 10/12), keeping the aromatic ring + phenol + bridge ring + one cyclohexane
+    # CH2 intact as one connected piece. This targets the N-free aromatic-core
+    # cascade (fluorenone/fluorenol-type, formula C13HxO after H-shift) documented
+    # in docs/missing_peak_findings.md as the dominant morphinan miss category --
+    # distinct from desoxymorphinan_ring_cleavage's small aliphatic-core product.
+    # Cuts: (3,4)+(6,1) release the amine arm; (10,11)+(11,12) excise the lone
+    # cyclohexane CH2.
+    # Empirically confirmed: mbfs-only mask for all 4 NIST20 non-oxide morphinans
+    # (1412, 15421, 20146, 34342), formula C13O1 (bare scaffold) to C14O1
+    # (methoxy-substituted variant), matching within h4 the fluorenone (181.065)
+    # and fluorenol (183.080) missing-peak formulas.
+    # min_num_atoms=17 (same bare scaffold as desoxymorphinan_ring_cleavage).
+    SmartsFragRule(
+        name="desoxymorphinan_aromatic_core_release",
+        reactant_smarts=(
+            "[N+0:1]1[C+0:2][C+0:3][C+0:4]23[C+0:10][C+0:11][C+0:12][C+0][C+0:5]2"
+            "[C+0:6]1[C+0:7][c+0:8]4[c+0][c+0][c+0][c+0][c+0:9]34"
+        ),
+        cut_bond_map_pairs=[(3, 4), (6, 1), (10, 11), (11, 12)],
+        merge_outer_map_nums=[3, 11],
+        min_num_atoms=17,
+    ),
 ]
 
 
