@@ -21,21 +21,18 @@ import numpy as np
 import torch
 
 sys.path.insert(0, "src")
-from fragnnet.utils.frag_utils import (
-    CANONICAL_ELEMENT_ORDER,
-    get_edge_feats,
-    get_node_feats,
-)
-
-# Indices of heteroatoms in CANONICAL_ELEMENT_ORDER (everything except C and H)
-_HETEROATOM_IDXS = [
-    i for i, el in enumerate(CANONICAL_ELEMENT_ORDER) if el not in ("C", "H")
-]
+from fragnnet.utils.frag_utils import get_edge_feats, get_node_feats
 
 
 def is_cc_cut(complement_vec: list[float]) -> bool:
-    """Returns True if the complement fragment contains no heteroatoms (pure C-C cut)."""
-    return all(complement_vec[i] == 0 for i in _HETEROATOM_IDXS)
+    """Returns True if the complement fragment contains no heteroatoms (pure C-C cut).
+
+    The base_formula element layout is always [C, ...heavy elements..., H]
+    (C at index 0, H at the last index), regardless of how many heavy
+    elements the schema had at the time the DAG was generated. So heteroatoms
+    are everything strictly between index 0 and the last index.
+    """
+    return all(v == 0 for v in complement_vec[1:-1])
 
 
 def analyze_dag(dag: dict) -> tuple[dict, int] | None:
@@ -200,6 +197,12 @@ def main() -> None:
     )
     parser.add_argument("--n_sample", type=int, default=500, help="Number of molecules to sample")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max_nodes",
+        type=int,
+        default=50000,
+        help="Skip DAGs with more nodes than this (combinatorial-blowup outliers)",
+    )
     args = parser.parse_args()
 
     print(f"Scanning {args.tar} ...")
@@ -216,16 +219,20 @@ def main() -> None:
     agg: dict[int, dict] = defaultdict(lambda: {"n_formulas": 0, "cc_only": 0, "hetero": 0})
     total_matched = 0
     n_analyzed = 0
+    n_skipped_large = 0
 
     with tarfile.open(args.tar, "r") as tf:
         for i, member in enumerate(sample):
-            if i % 100 == 0:
-                print(f"  {i}/{len(sample)} ...")
+            if i % 20 == 0:
+                print(f"  {i}/{len(sample)} ...", flush=True)
             f = tf.extractfile(member)
             if f is None:
                 continue
             dag = pickle.loads(bz2.decompress(f.read()))
             if dag["reached_depth"] < 1:
+                continue
+            if dag["dag"].x.shape[0] > args.max_nodes:
+                n_skipped_large += 1
                 continue
             result = analyze_dag(dag)
             if result is None:
@@ -237,6 +244,8 @@ def main() -> None:
                 agg[d]["hetero"] += s["hetero"]
             total_matched += n_matched
             n_analyzed += 1
+
+    print(f"  Skipped {n_skipped_large:,} molecules with > {args.max_nodes:,} nodes (combinatorial-blowup outliers)")
 
     if total_matched == 0:
         print("No matched formulas found.")
