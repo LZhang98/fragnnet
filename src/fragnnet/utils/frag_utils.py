@@ -728,6 +728,8 @@ def compute_frag_peak_stats(
     tolerance=0.01,
     prec_type="[M+H]+",
     is_ppm=False,
+    inst_type=None,
+    inst_type_tol=None,
 ):
     """_summary_
 
@@ -739,10 +741,23 @@ def compute_frag_peak_stats(
         allowed_h_transfer (_type_): _description_
         tolerance (float, optional): _description_. Defaults to 0.01.
         is_ppm (bool, optional): _description_. Defaults to False.
+        inst_type (str, optional): Instrument type for this spectrum (e.g. "FT", "QTOF").
+            Used to look up a per-instrument tolerance in ``inst_type_tol``. Ignored if
+            ``inst_type_tol`` is None or does not contain this key. Defaults to None.
+        inst_type_tol (dict, optional): Per-instrument tolerance overrides, same convention
+            as the ``inst_type_loss_tol`` training config (e.g.
+            ``{"FT": {"rel": 1.0e-5, "min_mz": 200.0}, "QTOF": {"rel": 2.0e-5, "min_mz": 750.0}}``).
+            When ``inst_type`` is present in this dict, the effective m/z tolerance for each
+            peak is ``rel * max(peak_mz, min_mz)``, overriding ``tolerance``/``is_ppm`` for
+            that spectrum. Defaults to None (falls back to the global ``tolerance``/``is_ppm``
+            behavior, unchanged from before this parameter existed).
 
     Returns:
         _type_: _description_
     """
+    inst_tol_cfg = None
+    if inst_type_tol is not None and inst_type in inst_type_tol:
+        inst_tol_cfg = inst_type_tol[inst_type]
     true_mzs, true_ints = list(zip(*peaks))
     theoretical_mzs = formula_peak_mzs
     theoretical_probs = formula_peak_probs
@@ -775,7 +790,11 @@ def compute_frag_peak_stats(
 
     # check true_mzs against union of CMF and standard theoretical peaks
     for true_idx, true_mz in enumerate(true_mzs):
-        if not is_ppm:
+        if inst_tol_cfg is not None:
+            eff_tol = inst_tol_cfg["rel"] * max(true_mz, inst_tol_cfg["min_mz"])
+            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < eff_tol
+            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < eff_tol
+        elif not is_ppm:
             mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < tolerance
             mz_close_std = th.abs(theoretical_mzs_std - true_mz) < tolerance
         else:
@@ -809,7 +828,10 @@ def compute_frag_peak_stats(
     prec_recalls = []
     for comp_mzs in [theoretical_mzs_std, th.tensor(true_mzs)]:
         prec_mz_diffs = th.abs(comp_mzs - prec_mz)
-        if not is_ppm:
+        if inst_tol_cfg is not None:
+            eff_tol = inst_tol_cfg["rel"] * max(prec_mz, inst_tol_cfg["min_mz"])
+            prec_mz_close = prec_mz_diffs < eff_tol
+        elif not is_ppm:
             prec_mz_close = prec_mz_diffs < tolerance
         else:
             prec_mz_close = prec_mz_diffs < (prec_mz * tolerance * PPM)
