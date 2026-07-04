@@ -69,8 +69,14 @@ def get_ckpt_from_wandb(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download checkpoints from WandB")
     parser.add_argument(
+        "--run_ids",
+        nargs="*",
+        help="Run IDs to download checkpoints for",
+    )
+    parser.add_argument(
         "--input_file",
         type=str,
+        default=None,
         help="Path to JSON file containing run IDs",
     )
     parser.add_argument(
@@ -81,20 +87,25 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    if not args.run_ids and not args.input_file:
+        raise ValueError("Must provide run IDs as positional args or via --input_file")
+
     save_dp = args.save_dir
     os.makedirs(save_dp, exist_ok=True)
 
-    if os.path.exists(args.input_file):
+    if args.input_file:
+        if not os.path.exists(args.input_file):
+            raise FileNotFoundError(f"Input file {args.input_file} not found.")
         print(f"> Reading run IDs from {args.input_file}")
         with open(args.input_file) as f:
             runs = json.load(f)
-            for row in runs:
-                run_id = row["run_id"]
-                description = row.get("description", "")
-                best_only = row.get("best_only", True)
-                print(f"> Processing {run_id} ({description})")
-                get_ckpt_from_wandb(
-                    save_dp, run_id, best_only=best_only, use_cached=args.use_cached
-                )
-    else:
-        print(f"> Input file {args.input_file} not found.")
+        for row in runs:
+            run_id = row["run_id"]
+            description = row.get("description", "")
+            best_only = row.get("best_only", True)
+            print(f"> Processing {run_id} ({description})")
+            get_ckpt_from_wandb(save_dp, run_id, best_only=best_only, use_cached=args.use_cached)
+
+    for run_id in args.run_ids:
+        print(f"> Processing {run_id}")
+        get_ckpt_from_wandb(save_dp, run_id, best_only=True, use_cached=args.use_cached)
