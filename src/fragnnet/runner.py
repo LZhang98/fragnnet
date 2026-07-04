@@ -278,7 +278,7 @@ def validate_sampler_config(config_d: dict) -> None:
         )
 
     if config_d["dynamic_batch_sampler"]:
-        if config_d["model_type"] != "frag_gnn":
+        if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
             raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
         if config_d["automatic_optimization"]:
             raise ValueError(
@@ -294,7 +294,7 @@ def validate_sampler_config(config_d: dict) -> None:
             raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
 
     if config_d["dual_group_dynamic_batch_sampler"]:
-        if config_d["model_type"] != "frag_gnn":
+        if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
             raise ValueError(
                 "Dual-group dynamic batch sampler can only be used with frag_gnn model"
             )
