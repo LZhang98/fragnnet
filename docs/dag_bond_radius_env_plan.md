@@ -89,23 +89,41 @@ scorer: not "we lack data" but "a human can't own a 2,000-row lookup
 table, while a model conditioned on the same environment features can
 absorb it directly without anyone enumerating rows."
 
-## Decision so far
+## Step 1b — Scale check (2026-07-04, 2,868 molecules, seed=42)
 
-Green light to move toward a learned scorer using radius-1/2 environment
-tuples as input features, in place of extending
-`docs/dag_fanout_cap_plan.md`'s hand-mined `BUCKET_LOSS_RANK` table to
-finer granularity. Two things not yet done:
+Reran `debug_dag_bond_radius_env_stats.py` at `--radii 1,2` on the full
+production-scale corpus (`--n_sample 2900`, matching the fan-out-cap/bond-mask
+plans' sample size, vs. 191 molecules previously), on
+`nist20_ma_mi_d4_h4_isoFalse_smpFalse.tar` (32 molecules skipped for
+>50,000 nodes; **979,169 formulas first-matched at depth 4**):
 
-1. **Scale check**: Step 1 ran on 191 molecules (vs. 2,903–2,967 in the
-   fan-out cap / bond-mask plans' step 1 runs). Confirm support numbers
-   hold at that larger scale before fully discarding the hand-mining path
-   (~35-40 min background run given the ~2.5 min / 191-molecule runtime
-   observed here).
-2. **Learned scorer prototype**: design not yet started. Must stay cheap
-   enough to run per-candidate-cut during DAG *generation*
-   (`multi_cut_bfs.pyx`), not at train/inference time alongside nodeMLP —
-   a small linear/shallow model over hashed/embedded environment features,
-   not a GNN.
+| Radius | Distinct buckets | Singletons | Median support | Mean support | Max single-bucket loss |
+|---|---|---|---|---|---|
+| 1 | 2,174 | 9 (0.41%) | 816 | 12,607 | 0.34% |
+| 2 | 14,839 | 66 (0.44%) | 317 | 1,881 | 0.06% |
+
+**Confirms the 191-molecule finding at full scale.** Cardinality grows even
+faster than the small-sample run suggested (2,042 → 14,839 buckets at radius
+2 alone), but support does not collapse — median support and singleton rate
+are essentially unchanged (0.34%→0.44% singletons), and max single-bucket
+loss actually *shrinks* further (0.13%→0.06%), meaning individual buckets are
+if anything less load-bearing at scale, not more fragile. Sparsity is
+decisively not the blocker; a ~15,000-row table is decisively not
+hand-curatable. Scale check complete — no need to re-run at higher `n_sample`
+before proceeding.
+
+## Decision
+
+**Confirmed**: move to a learned scorer using radius-1/2 environment tuples
+as input features, replacing `docs/dag_fanout_cap_plan.md`'s hand-mined
+`BUCKET_LOSS_RANK` table. See
+`docs/dag_full_recall_tractability_plan.md` for the scorer prototype
+(Step 2) and remaining integration steps (3-5) — first prototype results
+(2026-07-04, 400-molecule sample, logistic regression over hashed
+radius-1/2 features): held-out AUC 0.884, ~8x precision lift over base rate
+in the top 5% of scored bonds, top-ranked bonds are ring C-C bonds
+(consistent with `bond_breakability_mask_plan.md`'s finding that ring-CC was
+the single highest-loss hand-mined bucket).
 
 ## Related docs
 

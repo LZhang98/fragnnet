@@ -135,6 +135,34 @@ is needed.
    D4 diagnostic (checking high-CE/morphine specifically), then ship.
 ```
 
+## Superseded (2026-07-04) — priority ranking underperforms random tie-break
+
+A from-scratch simulation (`scripts/debug/debug_fanout_cap_recall_eval.py`,
+built because the `debug_dag_fanout_cap_node_reduction.py` script cited above
+does not exist anywhere in this repo or its git history — the K=8 numbers in
+this doc's Step 1 Results could not be reproduced or verified) tested this
+plan's core mechanism against two rankings: the hand-mined
+`BUCKET_LOSS_RANK`-style bucket priority, and a learned bond-priority scorer.
+**Both lost to plain random tie-break at every K tested (2,3,4,6,8), on 90
+held-out molecules.** E.g. at K=8: hand-mined 95.00% recall retained, learned
+93.56%, naive random 96.21%.
+
+Working hypothesis (see `docs/dag_full_recall_tractability_plan.md` for full
+writeup): depth-4 nodes are reached via ~3 redundant parent routes on
+average. A *deterministic* per-bond priority ranks the same bond type the
+same way at every parent, so it correlatedly drops the same route-type
+everywhere — if a formula's only surviving route needs exactly that type,
+it dies at every parent simultaneously. Independent random selection
+decorrelates survival across a node's redundant routes, so it benefits from
+the very redundancy a systematic ranking works against.
+
+**This plan's per-parent-independent-static-priority mechanism is
+superseded.** See `docs/dag_full_recall_tractability_plan.md`'s "ICEBERG
+precedent" section for the new leading candidate: a global (not per-parent)
+cumulative-probability cutoff with max-over-redundant-routes, modeled on
+`src/fragnnet/iceberg/pl_model.py`'s already-implemented and evaluated
+autoregressive generation mechanism.
+
 ## Related docs
 
 - `docs/bond_breakability_mask_plan.md` — bond-level bucket mining (input
