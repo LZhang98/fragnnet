@@ -187,6 +187,8 @@ def process_tar(input_tar: str, output_tar: str) -> None:
     output_base = os.path.basename(output_tar).replace(".tar", "")
 
     def rewrite_name(name: str) -> str:
+        if name == input_base:
+            return output_base
         if name.startswith(input_base + "/"):
             return output_base + name[len(input_base):]
         return name
