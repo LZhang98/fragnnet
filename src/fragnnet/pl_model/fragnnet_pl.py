@@ -395,7 +395,6 @@ class FraGNNetPL(SpectrumPL):
             loss_batch_size=self.hparams.loss_batch_size,
             hard_peak_temperature=self.hparams.hard_peak_temperature,
         )
-
         # binned cosine distance
         def cos_dist_fn(
             true_mzs,
@@ -618,7 +617,6 @@ class FraGNNetPL(SpectrumPL):
                     pred_oos_logprobs,
                     tol_per_sample=tol_per_sample,
                     min_mz_per_sample=min_mz_per_sample,
-                    apply_hard_peak_weighting=self.training,
                 )
                 spec_ce = ios_ce + oos_ce
                 if self.hparams.oos_loss:
@@ -686,7 +684,6 @@ class FraGNNetPL(SpectrumPL):
                     pred_oos_logprobs,
                     tol_per_sample=tol_per_sample,
                     min_mz_per_sample=min_mz_per_sample,
-                    apply_hard_peak_weighting=self.training,
                 )
                 loss_d["spec_ce"] = ios_ce + oos_ce
 
