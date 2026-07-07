@@ -444,6 +444,15 @@ oos_loss: False
 null_loss: False
 null_loss_weight: 1.0
 # ============================================================================
+# Hard-Example Mining (continuous per-spectrum error-magnitude weighting)
+# ============================================================================
+# null disables (default). When set, matched true peaks within each spectrum are
+# reweighted by a softmax over each peak's own CE / hard_peak_temperature, scaled
+# so weights sum to the spectrum's peak count (redistributes loss mass toward
+# harder peaks, doesn't change its overall scale). Lower temperature concentrates
+# weight on the single hardest peak; higher temperature approaches uniform (no-op).
+hard_peak_temperature: null
+# ============================================================================
 # PyTorch Lightning Configuration
 # ============================================================================
 seed: 42
