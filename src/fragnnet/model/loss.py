@@ -28,6 +28,7 @@ from fragnnet.utils.misc_utils import (
     scatter_logsumexp,
     scatter_reduce,
     scatter_softmax,
+    scatter_var,
     validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
@@ -316,12 +317,19 @@ def sparse_cross_entropy_vec(
         gaussian_renormalize: Whether to renormalize Gaussian.
         loss_batch_size: Batch size for loss computation.
         hard_peak_temperature: If set, upweight matched true peaks within each
-            spectrum in proportion to their (detached) cross-entropy contribution,
-            via a per-spectrum softmax over peak CE / hard_peak_temperature, scaled
-            so the weights sum to the peak count (total loss mass per spectrum is
-            conserved, only redistributed toward harder peaks). Lower temperature
-            concentrates weight on the single hardest peak; higher temperature
-            approaches uniform (no reweighting). None disables (default).
+            spectrum in proportion to their (detached) cross-entropy contribution.
+            CE is first z-scored within each spectrum (subtract per-spectrum mean,
+            divide by per-spectrum std) before the softmax, so the reweighting's
+            concentration behavior stays consistent as training progresses — raw
+            (non-normalized) CE grows in scale as the model improves, which would
+            otherwise make a fixed temperature collapse to ~one-hot weighting on
+            whichever peak is currently hardest once the model is moderately well
+            trained, starving every other peak in the spectrum of gradient. The
+            resulting softmax is scaled so weights sum to the peak count (total
+            loss mass per spectrum is conserved, only redistributed toward harder
+            peaks). Lower temperature concentrates weight more on the hardest peaks
+            (in std units); higher temperature approaches uniform (no reweighting).
+            None disables (default).
 
     Returns:
         ios_ce: In-sample cross-entropy per batch.
@@ -329,9 +337,7 @@ def sparse_cross_entropy_vec(
         0., 1.: Placeholders for compatibility.
     """
     if hard_peak_temperature is not None and hard_peak_temperature <= 0:
-        raise ValueError(
-            f"hard_peak_temperature must be > 0 or None, got {hard_peak_temperature}"
-        )
+        raise ValueError(f"hard_peak_temperature must be > 0 or None, got {hard_peak_temperature}")
 
     # Set up types and constants
     float_dtype = true_logprobs.dtype
@@ -476,6 +482,15 @@ def sparse_cross_entropy_vec(
         # softmax. Multiplying by each spectrum's matched-peak count rescales the
         # softmax (which sums to 1 per group) back up to sum to that count, so total
         # loss mass per spectrum is conserved — only redistributed toward harder peaks.
+        #
+        # CE is z-scored per spectrum before the softmax (not used raw). Raw CE grows
+        # in scale as the model improves during training (well-fit peaks' CE trends
+        # toward large negative values), which would make a fixed temperature collapse
+        # to ~one-hot weighting on whichever peak is currently hardest partway through
+        # training, zeroing out gradient for every other peak in the spectrum.
+        # Z-scoring expresses each peak's CE in units of that spectrum's own CE spread,
+        # so the softmax's concentration behavior stays stable regardless of the
+        # absolute CE scale reached during training.
         if hard_peak_temperature is not None and bl_matched_ce.numel() > 0:
             bl_counts = scatter_reduce(
                 th.ones_like(bl_matched_ce),
@@ -484,9 +499,23 @@ def sparse_cross_entropy_vec(
                 dim_size=bl_batch_size,
                 default=0.0,
             )
-            bl_softmax_weight = scatter_softmax(
-                bl_matched_ce.detach() / hard_peak_temperature, bl_matched_batch_idxs
+            bl_matched_ce_detached = bl_matched_ce.detach()
+            bl_mean = scatter_reduce(
+                bl_matched_ce_detached,
+                bl_matched_batch_idxs,
+                "mean",
+                dim_size=bl_batch_size,
+                default=0.0,
+                include_self=False,
             )
+            bl_std = scatter_var(
+                bl_matched_ce_detached, bl_matched_batch_idxs, dim_size=bl_batch_size, sqrt=True
+            )
+            bl_std = th.clamp(bl_std, min=EPS)
+            bl_z = (bl_matched_ce_detached - bl_mean[bl_matched_batch_idxs]) / bl_std[
+                bl_matched_batch_idxs
+            ]
+            bl_softmax_weight = scatter_softmax(bl_z / hard_peak_temperature, bl_matched_batch_idxs)
             bl_weight = bl_softmax_weight * bl_counts[bl_matched_batch_idxs]
             bl_matched_ce = bl_matched_ce * bl_weight
 
@@ -544,7 +573,9 @@ def get_sparse_cross_entropy_fn(
             msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
             raise NotImplementedError(msg)
 
-        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
+        def sce_fn(
+            *args, tol_per_sample=None, min_mz_per_sample=None, apply_hard_peak_weighting=True
+        ):
             return sparse_cross_entropy_vec(
                 *args,
                 tolerance=tolerance,
@@ -555,7 +586,7 @@ def get_sparse_cross_entropy_fn(
                 loss_batch_size=loss_batch_size,
                 tol_per_sample=tol_per_sample,
                 min_mz_per_sample=min_mz_per_sample,
-                hard_peak_temperature=hard_peak_temperature,
+                hard_peak_temperature=hard_peak_temperature if apply_hard_peak_weighting else None,
             )
     else:
         if hard_peak_temperature is not None:
@@ -570,7 +601,10 @@ def get_sparse_cross_entropy_fn(
         else:
             tolerance_multiple = pm_tolerance_multiple
 
-        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
+        def sce_fn(
+            *args, tol_per_sample=None, min_mz_per_sample=None, apply_hard_peak_weighting=True
+        ):
+            del apply_hard_peak_weighting  # no-op: this path never has hard_peak_temperature set
             return sparse_cross_entropy_seq(
                 *args,
                 ce_fn=ce_fn,
@@ -1290,7 +1324,9 @@ def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
     batch_size = spectrum_embeddings.size(0)
     labels = th.arange(batch_size, device=spectrum_embeddings.device)
 
-    loss = (F.cross_entropy(logits_per_spectrum, labels) + F.cross_entropy(logits_per_mol, labels)) / 2
+    loss = (
+        F.cross_entropy(logits_per_spectrum, labels) + F.cross_entropy(logits_per_mol, labels)
+    ) / 2
     return loss
 
 
@@ -2073,12 +2109,22 @@ def get_cross_jss_contrastive(
 
     # Bin both spectra into sparse COO representation
     true_bin_idxs, true_bin_lp, true_bin_bidxs = batched_bin_func(
-        true_mzs, true_logprobs, true_batch_idxs,
-        mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True,
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        mz_max=mz_max,
+        mz_bin_res=mz_bin_res,
+        agg="lse",
+        sparse=True,
     )
     pred_bin_idxs, pred_bin_lp, pred_bin_bidxs = batched_bin_func(
-        pred_mzs, pred_logprobs, pred_batch_idxs,
-        mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+        mz_max=mz_max,
+        mz_bin_res=mz_bin_res,
+        agg="lse",
+        sparse=True,
     )
 
     # L1-normalise
@@ -2103,9 +2149,7 @@ def get_cross_jss_contrastive(
     all_intra = th.cat([true_intra, pred_intra])
     unique_bins = th.unique(all_intra)
     K = unique_bins.numel()
-    bin_idx_map = th.full(
-        (int(all_intra.max().item()) + 1,), -1, device=device, dtype=th.long
-    )
+    bin_idx_map = th.full((int(all_intra.max().item()) + 1,), -1, device=device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(K, device=device, dtype=th.long)
     true_compact = bin_idx_map[true_intra]
     pred_compact = bin_idx_map[pred_intra]

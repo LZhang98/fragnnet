@@ -11,17 +11,15 @@ Edge cases exercised:
 - Mixed (normal training case)
 """
 
-import math
-
 import pytest
 import torch as th
 import torch.nn.functional as F
 
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_cross_entropy_vec
-from fragnnet.utils.misc_utils import LOG_ZERO, scatter_logsumexp
-
+from fragnnet.utils.misc_utils import EPS, LOG_ZERO, scatter_logsumexp
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_batch_idxs(peaks_per_spec: list[int], device: th.device) -> th.Tensor:
     batch_size = len(peaks_per_spec)
@@ -46,14 +44,27 @@ def _default_ce_fn():
 
 
 def _reference_sparse_ce_vec(
-    true_mzs, true_logprobs, true_batch_idxs,
-    pred_mzs, pred_logprobs, pred_batch_idxs, pred_oos_logprobs,
-    tolerance, relative, tol_min_mz, oos_tol, gaussian_renorm, loss_batch_size, batch_size,
+    true_mzs,
+    true_logprobs,
+    true_batch_idxs,
+    pred_mzs,
+    pred_logprobs,
+    pred_batch_idxs,
+    pred_oos_logprobs,
+    tolerance,
+    relative,
+    tol_min_mz,
+    oos_tol,
+    gaussian_renorm,
+    loss_batch_size,
+    batch_size,
 ):
     """Old implementation with th.any / th.all branches — used as correctness reference."""
     import math as _math
-    from fragnnet.utils.misc_utils import LOG_ZERO as _LZ, scatter_logsumexp as _sle
+
     from fragnnet.model.loss import scatter_reduce as _sr
+    from fragnnet.utils.misc_utils import LOG_ZERO as _LZ
+    from fragnnet.utils.misc_utils import scatter_logsumexp as _sle
     from fragnnet.utils.spec_utils import calculate_match_mzs as _cmm
 
     float_dtype = true_logprobs.dtype
@@ -94,15 +105,20 @@ def _reference_sparse_ce_vec(
         bl_poos = pred_oos_logprobs[bl_lower:bl_upper]
 
         batch_mask = bl_ti.reshape(-1, 1) == bl_pi.reshape(1, -1)
-        match_mask = _cmm(bl_tmz, bl_pmz, tolerance=oos_tol * tolerance, relative=relative,
-                          tolerance_min_mz=tol_min_mz)
+        match_mask = _cmm(
+            bl_tmz,
+            bl_pmz,
+            tolerance=oos_tol * tolerance,
+            relative=relative,
+            tolerance_min_mz=tol_min_mz,
+        )
         match_mask = th.as_tensor(match_mask, device=device)
         both_mask = batch_mask & match_mask
         del batch_mask, match_mask
         true_both = th.any(both_mask, dim=1)
 
         stds = th.clamp(bl_pmz, min=tol_min_mz) * tolerance
-        vs = stds ** 2
+        vs = stds**2
         log_trunc_vec = log_trunc * th.ones_like(bl_pmz)
 
         ios_lp = (
@@ -120,7 +136,10 @@ def _reference_sparse_ce_vec(
             bl_ios = _sr(
                 (-th.exp(bl_tlp) * ios_lp)[true_both],
                 bl_ti[true_both],
-                "sum", dim=0, dim_size=bl_batch_size, default=0.0,
+                "sum",
+                dim=0,
+                dim_size=bl_batch_size,
+                default=0.0,
             )
             ios_ce[bl_lower:bl_upper] = bl_ios
 
@@ -136,12 +155,19 @@ def _reference_sparse_ce_vec(
 
 # ── 1. scatter_logsumexp empty-input guard ────────────────────────────────────
 
+
 class TestScatterLogsumexpEmptyInput:
     """scatter_logsumexp must return LOG_ZERO fill (not crash) when input is empty."""
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_empty_with_dim_size(self, device_str):
         device = th.device(device_str)
         logits = th.empty(0, dtype=th.float32, device=device)
@@ -167,9 +193,15 @@ class TestScatterLogsumexpEmptyInput:
         oos_ce = -th.exp(oos_lp) * pred_oos
         assert th.allclose(oos_ce, th.zeros(3), atol=1e-6), f"expected zeros, got {oos_ce}"
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_nonempty_unchanged(self, device_str):
         """Non-empty path must produce the same result as before the guard."""
         device = th.device(device_str)
@@ -178,23 +210,27 @@ class TestScatterLogsumexpEmptyInput:
         idxs = th.tensor([0, 0, 1, 1, 2, 2], device=device)
         result = scatter_logsumexp(logits, idxs, dim_size=3)
         # Manual reference
-        expected = th.stack([
-            th.logsumexp(logits[idxs == i], dim=0) for i in range(3)
-        ])
+        expected = th.stack([th.logsumexp(logits[idxs == i], dim=0) for i in range(3)])
         assert th.allclose(result, expected, atol=1e-5), f"mismatch: {result} vs {expected}"
 
 
 # ── 2. sparse_cross_entropy_vec edge cases ────────────────────────────────────
 
-class TestSparseCEEdgeCases:
 
+class TestSparseCEEdgeCases:
     @pytest.fixture
     def ce_fn(self):
         return _default_ce_fn()
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_all_peaks_match_oos_ce_near_zero(self, ce_fn, device_str):
         """When every true peak matches a predicted peak, OOS loss must be ≈ 0."""
         device = th.device(device_str)
@@ -217,9 +253,15 @@ class TestSparseCEEdgeCases:
         # ios_ce can be negative when Gaussian log-prob at zero distance > 0 (small σ)
         assert th.all(th.isfinite(ios_ce)), f"IOS CE must be finite, got {ios_ce}"
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_no_peaks_match_ios_ce_is_zero(self, ce_fn, device_str):
         """When no true peak matches any predicted peak, IOS CE must be 0."""
         device = th.device(device_str)
@@ -235,7 +277,9 @@ class TestSparseCEEdgeCases:
         pred_lp = th.cat([th.log_softmax(th.randn(n, device=device), dim=0) for n in peaks])
         pred_oos = th.full((batch_size,), -2.0, device=device)
 
-        ios_ce, oos_ce, _, _ = ce_fn(true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos)
+        ios_ce, oos_ce, _, _ = ce_fn(
+            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos
+        )
         assert ios_ce.shape == (batch_size,)
         assert th.allclose(ios_ce, th.zeros(batch_size, device=device), atol=1e-6), (
             f"IOS CE should be 0 when no peaks match, got {ios_ce}"
@@ -247,16 +291,21 @@ class TestSparseCEEdgeCases:
         """Trivial single-peak case: IOS CE = -log(pred_prob), OOS CE = 0."""
         device = th.device("cpu")
         mz = th.tensor([300.0])
-        true_lp = th.tensor([0.0])     # log-prob = 0 → prob = 1
-        pred_lp = th.tensor([-0.5])    # log-prob = -0.5
+        true_lp = th.tensor([0.0])  # log-prob = 0 → prob = 1
+        pred_lp = th.tensor([-0.5])  # log-prob = -0.5
         pred_oos = th.tensor([-10.0])  # effectively 0
         bidxs = th.tensor([0])
 
         ce_fn = get_sparse_cross_entropy_fn(
-            dist="gaussian", vectorized=True, tolerance=0.1,
-            relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=False,
-            pm_tolerance_multiple=1, loss_batch_size=4,
+            dist="gaussian",
+            vectorized=True,
+            tolerance=0.1,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=False,
+            pm_tolerance_multiple=1,
+            loss_batch_size=4,
         )
         ios_ce, oos_ce, _, _ = ce_fn(mz, true_lp, bidxs, mz, pred_lp, bidxs, pred_oos)
         assert oos_ce.shape == (1,)
@@ -268,6 +317,7 @@ class TestSparseCEEdgeCases:
 
 # ── 3. Correctness vs reference implementation ────────────────────────────────
 
+
 @pytest.fixture
 def batch_data():
     th.manual_seed(42)
@@ -277,34 +327,57 @@ def batch_data():
     true_bidxs = _make_batch_idxs(peaks_true, th.device("cpu"))
     pred_bidxs = _make_batch_idxs(peaks_pred, th.device("cpu"))
     # m/z values with partial overlap
-    true_mzs = th.cat([th.linspace(100.0 + i * 5, 200.0 + i * 5, n)
-                       for i, n in enumerate(peaks_true)])
-    pred_mzs = th.cat([th.linspace(95.0 + i * 5, 195.0 + i * 5, n)
-                       for i, n in enumerate(peaks_pred)])
+    true_mzs = th.cat(
+        [th.linspace(100.0 + i * 5, 200.0 + i * 5, n) for i, n in enumerate(peaks_true)]
+    )
+    pred_mzs = th.cat(
+        [th.linspace(95.0 + i * 5, 195.0 + i * 5, n) for i, n in enumerate(peaks_pred)]
+    )
     true_lp = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_true])
     pred_lp = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_pred])
     pred_oos = th.full((batch_size,), -2.0)
-    return (batch_size, true_mzs, true_lp, true_bidxs,
-            pred_mzs, pred_lp, pred_bidxs, pred_oos)
+    return (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos)
 
 
 class TestSparseCEMatchesReference:
     """New implementation must match the old th.any/th.all reference for normal inputs."""
 
     def test_ios_ce_matches_reference(self, batch_data):
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
+            batch_data
+        )
 
         tol, rel, tol_min, oos_tol, renorm, lbs = 1e-5, True, 200.0, 1, True, 4
 
         ref_ios, ref_oos, _ = _reference_sparse_ce_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            tol, rel, tol_min, oos_tol, renorm, lbs, batch_size,
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            tol,
+            rel,
+            tol_min,
+            oos_tol,
+            renorm,
+            lbs,
+            batch_size,
         )
         new_ios, new_oos, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            tolerance=tol, relative=rel, tolerance_min_mz=tol_min,
-            oos_tolerance_multiple=oos_tol, gaussian_renormalize=renorm,
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            tolerance=tol,
+            relative=rel,
+            tolerance_min_mz=tol_min,
+            oos_tolerance_multiple=oos_tol,
+            gaussian_renormalize=renorm,
             loss_batch_size=lbs,
         )
 
@@ -315,46 +388,91 @@ class TestSparseCEMatchesReference:
             f"OOS CE mismatch:\n  new={new_oos}\n  ref={ref_oos}"
         )
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_ce_fn_wrapper_matches_reference(self, batch_data, device_str):
         """get_sparse_cross_entropy_fn wrapper produces the same result."""
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
+            batch_data
+        )
         device = th.device(device_str)
-        true_mzs, true_lp, true_bidxs = true_mzs.to(device), true_lp.to(device), true_bidxs.to(device)
-        pred_mzs, pred_lp, pred_bidxs = pred_mzs.to(device), pred_lp.to(device), pred_bidxs.to(device)
+        true_mzs, true_lp, true_bidxs = (
+            true_mzs.to(device),
+            true_lp.to(device),
+            true_bidxs.to(device),
+        )
+        pred_mzs, pred_lp, pred_bidxs = (
+            pred_mzs.to(device),
+            pred_lp.to(device),
+            pred_bidxs.to(device),
+        )
         pred_oos = pred_oos.to(device)
 
         tol, rel, tol_min, oos_tol, renorm, lbs = 1e-5, True, 200.0, 1, True, 4
 
         ref_ios, ref_oos, _ = _reference_sparse_ce_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            tol, rel, tol_min, oos_tol, renorm, lbs, batch_size,
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            tol,
+            rel,
+            tol_min,
+            oos_tol,
+            renorm,
+            lbs,
+            batch_size,
         )
         ce_fn = get_sparse_cross_entropy_fn(
-            dist="gaussian", vectorized=True, tolerance=tol, relative=rel,
-            tolerance_min_mz=tol_min, oos_tolerance_multiple=oos_tol,
-            gaussian_renormalize=renorm, pm_tolerance_multiple=1, loss_batch_size=lbs,
+            dist="gaussian",
+            vectorized=True,
+            tolerance=tol,
+            relative=rel,
+            tolerance_min_mz=tol_min,
+            oos_tolerance_multiple=oos_tol,
+            gaussian_renormalize=renorm,
+            pm_tolerance_multiple=1,
+            loss_batch_size=lbs,
         )
-        new_ios, new_oos, _, _ = ce_fn(true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos)
+        new_ios, new_oos, _, _ = ce_fn(
+            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos
+        )
 
         assert th.allclose(new_ios.cpu(), ref_ios.cpu(), atol=1e-5)
         assert th.allclose(new_oos.cpu(), ref_oos.cpu(), atol=1e-5)
 
     def test_loss_batch_size_invariant(self, batch_data):
         """Result must be identical regardless of loss_batch_size (it's a memory tradeoff)."""
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
+            batch_data
+        )
 
         tol, rel, tol_min, oos_tol, renorm = 1e-5, True, 200.0, 1, True
 
         def run(lbs):
             ios, oos, _, _ = sparse_cross_entropy_vec(
-                true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-                tolerance=tol, relative=rel, tolerance_min_mz=tol_min,
-                oos_tolerance_multiple=oos_tol, gaussian_renormalize=renorm,
+                true_mzs,
+                true_lp,
+                true_bidxs,
+                pred_mzs,
+                pred_lp,
+                pred_bidxs,
+                pred_oos,
+                tolerance=tol,
+                relative=rel,
+                tolerance_min_mz=tol_min,
+                oos_tolerance_multiple=oos_tol,
+                gaussian_renormalize=renorm,
                 loss_batch_size=lbs,
             )
             return ios, oos
@@ -368,6 +486,7 @@ class TestSparseCEMatchesReference:
 
 # ── 4. hard_peak_temperature hard-example-mining weighting ───────────────────
 
+
 class TestHardPeakTemperatureWeighting:
     """hard_peak_temperature continuously upweights matched true peaks within each
     spectrum in proportion to their own CE, via a per-spectrum softmax that
@@ -375,18 +494,30 @@ class TestHardPeakTemperatureWeighting:
 
     def test_disabled_matches_no_kwarg_baseline(self, batch_data):
         """hard_peak_temperature=None (explicit) must match not passing it at all."""
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
+            batch_data
+        )
         common = dict(
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
         ios_default, oos_default, _, _ = sparse_cross_entropy_vec(
             true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos, **common
         )
         ios_explicit, oos_explicit, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            hard_peak_temperature=None, **common
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            hard_peak_temperature=None,
+            **common,
         )
         assert th.allclose(ios_explicit, ios_default)
         assert th.allclose(oos_explicit, oos_default)
@@ -401,8 +532,12 @@ class TestHardPeakTemperatureWeighting:
         bidxs = th.zeros(3, dtype=th.long)
         pred_oos = th.full((1,), -2.0)
         common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-4,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
         baseline, _, _, _ = sparse_cross_entropy_vec(
             mzs, true_lp, bidxs, mzs, pred_lp, bidxs, pred_oos, **common
@@ -412,8 +547,15 @@ class TestHardPeakTemperatureWeighting:
         # it's numerical noise, not a correctness property; 1.0/100.0 stay stable.
         for temperature in (1.0, 100.0):
             weighted, _, _, _ = sparse_cross_entropy_vec(
-                mzs, true_lp, bidxs, mzs, pred_lp, bidxs, pred_oos,
-                hard_peak_temperature=temperature, **common
+                mzs,
+                true_lp,
+                bidxs,
+                mzs,
+                pred_lp,
+                bidxs,
+                pred_oos,
+                hard_peak_temperature=temperature,
+                **common,
             )
             assert th.allclose(weighted, baseline, atol=1e-5), (
                 f"temperature={temperature}: expected {baseline}, got {weighted}"
@@ -422,18 +564,30 @@ class TestHardPeakTemperatureWeighting:
     def test_high_temperature_approaches_uniform_weighting(self, batch_data):
         """As temperature -> large, softmax approaches uniform, so weighted result
         must approach (but need not exactly equal) the unweighted baseline."""
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
+            batch_data
+        )
         common = dict(
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
         baseline, _, _, _ = sparse_cross_entropy_vec(
             true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos, **common
         )
         weighted, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            hard_peak_temperature=1e6, **common
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            hard_peak_temperature=1e6,
+            **common,
         )
         assert th.allclose(weighted, baseline, atol=1e-3), (
             f"high-temperature weighted CE should ~match baseline:\n"
@@ -449,8 +603,12 @@ class TestHardPeakTemperatureWeighting:
         pred_lp = th.tensor([-3.0, -0.1, -2.0, -0.5])
         temperature = 1.0
         common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-4,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
 
         # Obtain each peak's individual CE contribution by putting each in its own
@@ -465,11 +623,19 @@ class TestHardPeakTemperatureWeighting:
         combined_bidxs = th.zeros(4, dtype=th.long)
         pred_oos_1 = th.full((1,), -2.0)
         combined_ce, _, _, _ = sparse_cross_entropy_vec(
-            mzs, true_lp, combined_bidxs, mzs, pred_lp, combined_bidxs, pred_oos_1,
-            hard_peak_temperature=temperature, **common
+            mzs,
+            true_lp,
+            combined_bidxs,
+            mzs,
+            pred_lp,
+            combined_bidxs,
+            pred_oos_1,
+            hard_peak_temperature=temperature,
+            **common,
         )
 
-        expected_weight = th.softmax(individual_ce / temperature, dim=0) * 4
+        z = (individual_ce - individual_ce.mean()) / th.clamp(individual_ce.std(), min=EPS)
+        expected_weight = th.softmax(z / temperature, dim=0) * 4
         expected = th.sum(expected_weight * individual_ce)
         assert th.allclose(combined_ce[0], expected, atol=1e-5), (
             f"expected {expected}, got {combined_ce[0]}"
@@ -484,15 +650,18 @@ class TestHardPeakTemperatureWeighting:
         pred_oos = th.tensor([-2.0])
         bidxs = th.tensor([0])
         common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-4,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
         baseline, _, _, _ = sparse_cross_entropy_vec(
             mz, true_lp, bidxs, mz, pred_lp, bidxs, pred_oos, **common
         )
         weighted, _, _, _ = sparse_cross_entropy_vec(
-            mz, true_lp, bidxs, mz, pred_lp, bidxs, pred_oos,
-            hard_peak_temperature=0.1, **common
+            mz, true_lp, bidxs, mz, pred_lp, bidxs, pred_oos, hard_peak_temperature=0.1, **common
         )
         assert th.allclose(weighted, baseline, atol=1e-5)
 
@@ -510,12 +679,23 @@ class TestHardPeakTemperatureWeighting:
         pred_oos = th.tensor([-2.0, -2.0])
         temperature = 1.0
         common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-4,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
         weighted, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            hard_peak_temperature=temperature, **common
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            hard_peak_temperature=temperature,
+            **common,
         )
         # Spectrum 1 (all OOS, no matched peaks) must be untouched.
         assert th.allclose(weighted[1], th.zeros(1), atol=1e-6)
@@ -525,34 +705,160 @@ class TestHardPeakTemperatureWeighting:
         per_peak_bidxs = th.tensor([0, 1])
         pred_oos_2 = th.full((2,), -2.0)
         individual_ce, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs[:2], true_lp[:2], per_peak_bidxs,
-            pred_mzs[:2], pred_lp[:2], per_peak_bidxs, pred_oos_2, **common
+            true_mzs[:2],
+            true_lp[:2],
+            per_peak_bidxs,
+            pred_mzs[:2],
+            pred_lp[:2],
+            per_peak_bidxs,
+            pred_oos_2,
+            **common,
         )
-        expected_weight = th.softmax(individual_ce / temperature, dim=0) * 2
+        z = (individual_ce - individual_ce.mean()) / th.clamp(individual_ce.std(), min=EPS)
+        expected_weight = th.softmax(z / temperature, dim=0) * 2
         expected_spec0 = th.sum(expected_weight * individual_ce)
         assert th.allclose(weighted[0], expected_spec0, atol=1e-5), (
             f"expected {expected_spec0}, got {weighted[0]}"
         )
 
     def test_invalid_temperature_raises(self, batch_data):
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
+            batch_data
+        )
         common = dict(
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
         )
         for bad_temperature in (0.0, -1.0):
             with pytest.raises(ValueError):
                 sparse_cross_entropy_vec(
-                    true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-                    hard_peak_temperature=bad_temperature, **common
+                    true_mzs,
+                    true_lp,
+                    true_bidxs,
+                    pred_mzs,
+                    pred_lp,
+                    pred_bidxs,
+                    pred_oos,
+                    hard_peak_temperature=bad_temperature,
+                    **common,
                 )
 
     def test_non_vectorized_with_temperature_raises(self):
         """hard_peak_temperature is only supported by the vectorized loss path."""
         with pytest.raises(NotImplementedError):
             get_sparse_cross_entropy_fn(
-                dist="gaussian", vectorized=False, tolerance=1e-5, relative=True,
-                tolerance_min_mz=200.0, oos_tolerance_multiple=1, gaussian_renormalize=True,
-                pm_tolerance_multiple=1, loss_batch_size=4, hard_peak_temperature=1.0,
+                dist="gaussian",
+                vectorized=False,
+                tolerance=1e-5,
+                relative=True,
+                tolerance_min_mz=200.0,
+                oos_tolerance_multiple=1,
+                gaussian_renormalize=True,
+                pm_tolerance_multiple=1,
+                loss_batch_size=4,
+                hard_peak_temperature=1.0,
             )
+
+    def test_apply_hard_peak_weighting_false_disables_reweighting(self):
+        """The get_sparse_cross_entropy_fn wrapper must fall back to the unweighted
+        baseline when apply_hard_peak_weighting=False, regardless of the configured
+        hard_peak_temperature — this is what PL modules pass during eval/val/test
+        (apply_hard_peak_weighting=self.training) so hard-example mining only ever
+        affects the training gradient, never the reported validation/test loss."""
+        # Same hand-constructed scenario as test_upweights_the_hardest_peak_in_a_spectrum:
+        # guaranteed exact matches (same mz) with distinguishable per-peak CE.
+        mzs = th.tensor([100.0, 200.0, 300.0, 400.0])
+        true_lp = th.zeros(4)
+        pred_lp = th.tensor([-3.0, -0.1, -2.0, -0.5])
+        bidxs = th.zeros(4, dtype=th.long)
+        pred_oos = th.full((1,), -2.0)
+        common = dict(
+            dist="gaussian",
+            vectorized=True,
+            tolerance=1e-4,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            pm_tolerance_multiple=1,
+            loss_batch_size=4,
+        )
+        ce_fn_baseline = get_sparse_cross_entropy_fn(**common)
+        ce_fn_hard_peak = get_sparse_cross_entropy_fn(hard_peak_temperature=1.0, **common)
+
+        baseline_ios, baseline_oos, _, _ = ce_fn_baseline(
+            mzs, true_lp, bidxs, mzs, pred_lp, bidxs, pred_oos
+        )
+        # "train" mode: reweighting must actually change the result vs baseline.
+        train_ios, _, _, _ = ce_fn_hard_peak(
+            mzs,
+            true_lp,
+            bidxs,
+            mzs,
+            pred_lp,
+            bidxs,
+            pred_oos,
+            apply_hard_peak_weighting=True,
+        )
+        assert not th.allclose(train_ios, baseline_ios, atol=1e-4), (
+            "expected hard_peak_temperature to change ios_ce when applied"
+        )
+        # "eval" mode: apply_hard_peak_weighting=False must match the unweighted baseline.
+        eval_ios, eval_oos, _, _ = ce_fn_hard_peak(
+            mzs,
+            true_lp,
+            bidxs,
+            mzs,
+            pred_lp,
+            bidxs,
+            pred_oos,
+            apply_hard_peak_weighting=False,
+        )
+        assert th.allclose(eval_ios, baseline_ios, atol=1e-6)
+        assert th.allclose(eval_oos, baseline_oos, atol=1e-6)
+
+    def test_weight_concentration_stabilizes_instead_of_collapsing(self):
+        """Regression test for the winner-take-all collapse bug: with raw (non
+        z-scored) CE, a persistently-hard peak's weight share among 20 peaks grows
+        unboundedly toward 100% as the other 19 peaks' fit improves (simulating
+        training progress) — starving them of gradient entirely. Z-scoring must
+        make the hard peak's weight share stabilize at a bounded plateau instead of
+        continuing to grow as the easy majority's CE scale keeps increasing."""
+        n_peaks = 20
+        mzs = th.arange(n_peaks).float() * 50.0 + 100.0
+        true_lp = th.zeros(n_peaks)
+        per_peak_bidxs = th.arange(n_peaks)
+        pred_oos_n = th.full((n_peaks,), -2.0)
+        common = dict(
+            tolerance=1e-4,
+            relative=False,
+            tolerance_min_mz=0.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
+        )
+
+        def hard_peak_weight_share(easy_pred_lp: float) -> float:
+            pred_lp = th.full((n_peaks,), easy_pred_lp)
+            pred_lp[0] = -0.2  # persistently "hard" peak, doesn't improve
+            individual_ce, _, _, _ = sparse_cross_entropy_vec(
+                mzs, true_lp, per_peak_bidxs, mzs, pred_lp, per_peak_bidxs, pred_oos_n, **common
+            )
+            z = (individual_ce - individual_ce.mean()) / th.clamp(individual_ce.std(), min=EPS)
+            weight = th.softmax(z, dim=0) * n_peaks
+            return (weight[0] / n_peaks).item()
+
+        # Simulate the easy majority's fit improving over the course of training.
+        shares = [hard_peak_weight_share(easy_lp) for easy_lp in (0.0, 10.0, 20.0, 40.0, 80.0)]
+
+        # Must not approach total collapse (the old raw-CE bug reached ~100% by lp=10).
+        assert max(shares) < 0.95, f"hard-peak weight share should stay bounded, got {shares}"
+        # Must stabilize (not keep climbing) once the easy/hard gap is established —
+        # the last few stages should be within numerical noise of each other.
+        assert abs(shares[-1] - shares[-2]) < 1e-3, (
+            f"expected weight share to plateau, got shares={shares}"
+        )

@@ -68,6 +68,7 @@ class PrecursorPL(SpectrumPL):
                     device=pred_logprobs.device,
                     dtype=pred_logprobs.dtype,
                 ),
+                apply_hard_peak_weighting=self.training,
             )
             spec_ce = ios_ce + oos_ce
             if self.hparams.oos_loss:
