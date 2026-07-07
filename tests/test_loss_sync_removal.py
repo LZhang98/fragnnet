@@ -268,28 +268,27 @@ class TestSparseCEEdgeCases:
 
 # ── 3. Correctness vs reference implementation ────────────────────────────────
 
-@pytest.fixture
-def batch_data():
-    th.manual_seed(42)
-    batch_size = 8
-    peaks_true = [4, 6, 3, 8, 5, 2, 7, 4]
-    peaks_pred = [5, 4, 6, 3, 7, 5, 3, 6]
-    true_bidxs = _make_batch_idxs(peaks_true, th.device("cpu"))
-    pred_bidxs = _make_batch_idxs(peaks_pred, th.device("cpu"))
-    # m/z values with partial overlap
-    true_mzs = th.cat([th.linspace(100.0 + i * 5, 200.0 + i * 5, n)
-                       for i, n in enumerate(peaks_true)])
-    pred_mzs = th.cat([th.linspace(95.0 + i * 5, 195.0 + i * 5, n)
-                       for i, n in enumerate(peaks_pred)])
-    true_lp = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_true])
-    pred_lp = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_pred])
-    pred_oos = th.full((batch_size,), -2.0)
-    return (batch_size, true_mzs, true_lp, true_bidxs,
-            pred_mzs, pred_lp, pred_bidxs, pred_oos)
-
-
 class TestSparseCEMatchesReference:
     """New implementation must match the old th.any/th.all reference for normal inputs."""
+
+    @pytest.fixture
+    def batch_data(self):
+        th.manual_seed(42)
+        batch_size = 8
+        peaks_true = [4, 6, 3, 8, 5, 2, 7, 4]
+        peaks_pred = [5, 4, 6, 3, 7, 5, 3, 6]
+        true_bidxs = _make_batch_idxs(peaks_true, th.device("cpu"))
+        pred_bidxs = _make_batch_idxs(peaks_pred, th.device("cpu"))
+        # m/z values with partial overlap
+        true_mzs = th.cat([th.linspace(100.0 + i * 5, 200.0 + i * 5, n)
+                           for i, n in enumerate(peaks_true)])
+        pred_mzs = th.cat([th.linspace(95.0 + i * 5, 195.0 + i * 5, n)
+                           for i, n in enumerate(peaks_pred)])
+        true_lp = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_true])
+        pred_lp = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_pred])
+        pred_oos = th.full((batch_size,), -2.0)
+        return (batch_size, true_mzs, true_lp, true_bidxs,
+                pred_mzs, pred_lp, pred_bidxs, pred_oos)
 
     def test_ios_ce_matches_reference(self, batch_data):
         (batch_size, true_mzs, true_lp, true_bidxs,
@@ -364,195 +363,3 @@ class TestSparseCEMatchesReference:
             ios, oos = run(lbs)
             assert th.allclose(ios, ios_ref, atol=1e-5), f"IOS mismatch at loss_batch_size={lbs}"
             assert th.allclose(oos, oos_ref, atol=1e-5), f"OOS mismatch at loss_batch_size={lbs}"
-
-
-# ── 4. hard_peak_temperature hard-example-mining weighting ───────────────────
-
-class TestHardPeakTemperatureWeighting:
-    """hard_peak_temperature continuously upweights matched true peaks within each
-    spectrum in proportion to their own CE, via a per-spectrum softmax that
-    conserves total loss mass (weights sum to the spectrum's peak count)."""
-
-    def test_disabled_matches_no_kwarg_baseline(self, batch_data):
-        """hard_peak_temperature=None (explicit) must match not passing it at all."""
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
-        common = dict(
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-        ios_default, oos_default, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos, **common
-        )
-        ios_explicit, oos_explicit, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            hard_peak_temperature=None, **common
-        )
-        assert th.allclose(ios_explicit, ios_default)
-        assert th.allclose(oos_explicit, oos_default)
-
-    def test_equal_ce_peaks_are_unaffected_regardless_of_temperature(self, batch_data):
-        """When all matched peaks in a spectrum have identical CE, softmax is
-        uniform, so weight == 1 everywhere and the result must match baseline —
-        true for ANY temperature, since it's a property of equal inputs, not of T."""
-        mzs = th.tensor([100.0, 200.0, 300.0])
-        true_lp = th.zeros(3)
-        pred_lp = th.full((3,), -1.0)  # identical CE across all 3 peaks
-        bidxs = th.zeros(3, dtype=th.long)
-        pred_oos = th.full((1,), -2.0)
-        common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-        baseline, _, _, _ = sparse_cross_entropy_vec(
-            mzs, true_lp, bidxs, mzs, pred_lp, bidxs, pred_oos, **common
-        )
-        # Very low temperatures amplify floating-point noise between nominally-equal
-        # CE values (through the logsumexp/masking pipeline) — not tested here since
-        # it's numerical noise, not a correctness property; 1.0/100.0 stay stable.
-        for temperature in (1.0, 100.0):
-            weighted, _, _, _ = sparse_cross_entropy_vec(
-                mzs, true_lp, bidxs, mzs, pred_lp, bidxs, pred_oos,
-                hard_peak_temperature=temperature, **common
-            )
-            assert th.allclose(weighted, baseline, atol=1e-5), (
-                f"temperature={temperature}: expected {baseline}, got {weighted}"
-            )
-
-    def test_high_temperature_approaches_uniform_weighting(self, batch_data):
-        """As temperature -> large, softmax approaches uniform, so weighted result
-        must approach (but need not exactly equal) the unweighted baseline."""
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
-        common = dict(
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-        baseline, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos, **common
-        )
-        weighted, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            hard_peak_temperature=1e6, **common
-        )
-        assert th.allclose(weighted, baseline, atol=1e-3), (
-            f"high-temperature weighted CE should ~match baseline:\n"
-            f"  weighted={weighted}\n  baseline={baseline}"
-        )
-
-    def test_upweights_the_hardest_peak_in_a_spectrum(self):
-        """Hand-constructed single spectrum: verify the exact softmax-weighted sum
-        against per-peak CEs obtained independently (own single-peak 'spectrum')."""
-        # Widely-spaced, 1:1 matched mzs — no cross-matching between peaks.
-        mzs = th.tensor([100.0, 200.0, 300.0, 400.0])
-        true_lp = th.zeros(4)  # exp(0) = 1, so per-peak CE = -ios_log_prob
-        pred_lp = th.tensor([-3.0, -0.1, -2.0, -0.5])
-        temperature = 1.0
-        common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-
-        # Obtain each peak's individual CE contribution by putting each in its own
-        # "spectrum" (batch_size=4) — grouping doesn't affect the pairwise ios_log_prob.
-        per_peak_bidxs = th.tensor([0, 1, 2, 3])
-        pred_oos_4 = th.full((4,), -2.0)
-        individual_ce, _, _, _ = sparse_cross_entropy_vec(
-            mzs, true_lp, per_peak_bidxs, mzs, pred_lp, per_peak_bidxs, pred_oos_4, **common
-        )
-
-        # Now combine all 4 peaks into a single spectrum with continuous weighting.
-        combined_bidxs = th.zeros(4, dtype=th.long)
-        pred_oos_1 = th.full((1,), -2.0)
-        combined_ce, _, _, _ = sparse_cross_entropy_vec(
-            mzs, true_lp, combined_bidxs, mzs, pred_lp, combined_bidxs, pred_oos_1,
-            hard_peak_temperature=temperature, **common
-        )
-
-        expected_weight = th.softmax(individual_ce / temperature, dim=0) * 4
-        expected = th.sum(expected_weight * individual_ce)
-        assert th.allclose(combined_ce[0], expected, atol=1e-5), (
-            f"expected {expected}, got {combined_ce[0]}"
-        )
-
-    def test_single_peak_spectrum_is_noop(self):
-        """A spectrum with exactly one matched peak: softmax over a single-element
-        group is always 1.0, so weight == 1*1 == 1 regardless of temperature."""
-        mz = th.tensor([300.0])
-        true_lp = th.tensor([0.0])
-        pred_lp = th.tensor([-1.0])
-        pred_oos = th.tensor([-2.0])
-        bidxs = th.tensor([0])
-        common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-        baseline, _, _, _ = sparse_cross_entropy_vec(
-            mz, true_lp, bidxs, mz, pred_lp, bidxs, pred_oos, **common
-        )
-        weighted, _, _, _ = sparse_cross_entropy_vec(
-            mz, true_lp, bidxs, mz, pred_lp, bidxs, pred_oos,
-            hard_peak_temperature=0.1, **common
-        )
-        assert th.allclose(weighted, baseline, atol=1e-5)
-
-    def test_ragged_batch_with_all_oos_spectrum(self):
-        """A spectrum with zero matched peaks (all OOS) inside the same loss-batch as
-        a spectrum with matched peaks must not crash and must not affect the other
-        spectrum's weighting."""
-        # Spectrum 0: 2 matched peaks. Spectrum 1: true/pred far apart -> no matches.
-        true_mzs = th.tensor([100.0, 200.0, 50.0, 60.0])
-        pred_mzs = th.tensor([100.0, 200.0, 900.0, 950.0])
-        true_bidxs = th.tensor([0, 0, 1, 1])
-        pred_bidxs = th.tensor([0, 0, 1, 1])
-        true_lp = th.tensor([0.0, 0.0, 0.0, 0.0])
-        pred_lp = th.tensor([-2.0, -0.5, -1.0, -1.0])
-        pred_oos = th.tensor([-2.0, -2.0])
-        temperature = 1.0
-        common = dict(
-            tolerance=1e-4, relative=False, tolerance_min_mz=0.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-        weighted, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-            hard_peak_temperature=temperature, **common
-        )
-        # Spectrum 1 (all OOS, no matched peaks) must be untouched.
-        assert th.allclose(weighted[1], th.zeros(1), atol=1e-6)
-
-        # Spectrum 0: derive each peak's individual CE to compute the expected
-        # weighted sum exactly (no crash from the ragged missing-group case).
-        per_peak_bidxs = th.tensor([0, 1])
-        pred_oos_2 = th.full((2,), -2.0)
-        individual_ce, _, _, _ = sparse_cross_entropy_vec(
-            true_mzs[:2], true_lp[:2], per_peak_bidxs,
-            pred_mzs[:2], pred_lp[:2], per_peak_bidxs, pred_oos_2, **common
-        )
-        expected_weight = th.softmax(individual_ce / temperature, dim=0) * 2
-        expected_spec0 = th.sum(expected_weight * individual_ce)
-        assert th.allclose(weighted[0], expected_spec0, atol=1e-5), (
-            f"expected {expected_spec0}, got {weighted[0]}"
-        )
-
-    def test_invalid_temperature_raises(self, batch_data):
-        (batch_size, true_mzs, true_lp, true_bidxs,
-         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
-        common = dict(
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
-            oos_tolerance_multiple=1, gaussian_renormalize=True, loss_batch_size=4,
-        )
-        for bad_temperature in (0.0, -1.0):
-            with pytest.raises(ValueError):
-                sparse_cross_entropy_vec(
-                    true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos,
-                    hard_peak_temperature=bad_temperature, **common
-                )
-
-    def test_non_vectorized_with_temperature_raises(self):
-        """hard_peak_temperature is only supported by the vectorized loss path."""
-        with pytest.raises(NotImplementedError):
-            get_sparse_cross_entropy_fn(
-                dist="gaussian", vectorized=False, tolerance=1e-5, relative=True,
-                tolerance_min_mz=200.0, oos_tolerance_multiple=1, gaussian_renormalize=True,
-                pm_tolerance_multiple=1, loss_batch_size=4, hard_peak_temperature=1.0,
-            )

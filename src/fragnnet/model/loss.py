@@ -27,7 +27,6 @@ from fragnnet.utils.misc_utils import (
     scatter_logsoftmax,
     scatter_logsumexp,
     scatter_reduce,
-    scatter_softmax,
     validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
@@ -296,7 +295,6 @@ def sparse_cross_entropy_vec(
     loss_batch_size: int,
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
-    hard_peak_temperature: float | None = None,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
@@ -315,23 +313,12 @@ def sparse_cross_entropy_vec(
         oos_tolerance_multiple: Multiplier for OOS tolerance.
         gaussian_renormalize: Whether to renormalize Gaussian.
         loss_batch_size: Batch size for loss computation.
-        hard_peak_temperature: If set, upweight matched true peaks within each
-            spectrum in proportion to their (detached) cross-entropy contribution,
-            via a per-spectrum softmax over peak CE / hard_peak_temperature, scaled
-            so the weights sum to the peak count (total loss mass per spectrum is
-            conserved, only redistributed toward harder peaks). Lower temperature
-            concentrates weight on the single hardest peak; higher temperature
-            approaches uniform (no reweighting). None disables (default).
 
     Returns:
         ios_ce: In-sample cross-entropy per batch.
         oos_ce: Out-of-sample cross-entropy per batch.
         0., 1.: Placeholders for compatibility.
     """
-    if hard_peak_temperature is not None and hard_peak_temperature <= 0:
-        raise ValueError(
-            f"hard_peak_temperature must be > 0 or None, got {hard_peak_temperature}"
-        )
 
     # Set up types and constants
     float_dtype = true_logprobs.dtype
@@ -468,31 +455,9 @@ def sparse_cross_entropy_vec(
         bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=1)
 
         # In-sample CE: scatter_reduce handles empty mask → zeros (no GPU sync needed).
-        bl_matched_ce = (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask]
-        bl_matched_batch_idxs = bl_true_batch_idxs[bl_true_both_mask]
-
-        # Hard-example mining: continuously upweight matched peaks within each
-        # spectrum in proportion to their own (detached) CE, via a per-spectrum
-        # softmax. Multiplying by each spectrum's matched-peak count rescales the
-        # softmax (which sums to 1 per group) back up to sum to that count, so total
-        # loss mass per spectrum is conserved — only redistributed toward harder peaks.
-        if hard_peak_temperature is not None and bl_matched_ce.numel() > 0:
-            bl_counts = scatter_reduce(
-                th.ones_like(bl_matched_ce),
-                bl_matched_batch_idxs,
-                "sum",
-                dim_size=bl_batch_size,
-                default=0.0,
-            )
-            bl_softmax_weight = scatter_softmax(
-                bl_matched_ce.detach() / hard_peak_temperature, bl_matched_batch_idxs
-            )
-            bl_weight = bl_softmax_weight * bl_counts[bl_matched_batch_idxs]
-            bl_matched_ce = bl_matched_ce * bl_weight
-
         bl_ios_ce = scatter_reduce(
-            bl_matched_ce,
-            bl_matched_batch_idxs,
+            (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
+            bl_true_batch_idxs[bl_true_both_mask],
             "sum",
             dim=0,
             dim_size=bl_batch_size,
@@ -526,7 +491,6 @@ def get_sparse_cross_entropy_fn(
     gaussian_renormalize: bool,
     pm_tolerance_multiple: float,
     loss_batch_size: int,
-    hard_peak_temperature: float | None = None,
 ) -> Callable:
     if dist == "gaussian":
         ce_fn = mog_ce_fn
@@ -555,16 +519,8 @@ def get_sparse_cross_entropy_fn(
                 loss_batch_size=loss_batch_size,
                 tol_per_sample=tol_per_sample,
                 min_mz_per_sample=min_mz_per_sample,
-                hard_peak_temperature=hard_peak_temperature,
             )
     else:
-        if hard_peak_temperature is not None:
-            msg = (
-                "hard_peak_temperature hard-example mining is only implemented for "
-                "the vectorized loss path (loss_vectorized=True)."
-            )
-            raise NotImplementedError(msg)
-
         if dist == "gaussian":
             tolerance_multiple = oos_tolerance_multiple
         else:

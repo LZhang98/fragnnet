@@ -393,7 +393,6 @@ class FraGNNetPL(SpectrumPL):
             gaussian_renormalize=self.hparams.gaussian_renormalize,
             pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
             loss_batch_size=self.hparams.loss_batch_size,
-            hard_peak_temperature=self.hparams.hard_peak_temperature,
         )
         # binned cosine distance
         def cos_dist_fn(
