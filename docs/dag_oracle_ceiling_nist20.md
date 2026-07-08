@@ -6,11 +6,32 @@ Computed the **best possible cos_hun / jss_hun a model could ever achieve** give
 DAG's fragment coverage (no training run required) on the full NIST20 `test` split
 (96,128 spectra, 5,173 molecules, split `data/split/nist20_ma_mi_inchikey`). The
 baseline d3 DAG's ceiling is **0.937 cos_hun** (fixed 10 ppm tolerance) / **0.959** under
-the instrument-appropriate tolerance. Actual trained-model performance on comparable
-data (NIST23, 9-fold CV, per-CE setup — see `[[project_alvhehe2_vs_pqx7ywc9_run_comparison]]`
-in memory) is ~0.786 overall. These two numbers are **not from the same eval setup**
-(different dataset, split, and possibly tolerance), so the gap is suggestive, not exact —
-but it points at real, sizeable headroom, concentrated in specific places identified below.
+the instrument-appropriate tolerance.
+
+`output/inference_eval/{alvhehe2,pqx7ywc9}/predictions_test.hdf5` are real trained-model
+inference outputs on this **exact same 96,128-spectrum test split** (verified: identical
+spec_id sets) and already store a real `cos_hun_inst_tol` per spectrum — giving a genuine,
+apples-to-apples actual-vs-oracle comparison (no dataset/protocol mismatch, unlike the NIST23
+figures cited in earlier drafts of this doc):
+
+| Run | actual cos_hun_inst_tol | oracle cos_hun_inst_tol_opt | **gap** |
+|---|---|---|---|
+| alvhehe2 | 0.7521 | 0.9591 | **0.2070** |
+| pqx7ywc9 | 0.7555 | 0.9591 | **0.2036** |
+
+**~20 points of cos_hun is genuinely left on the table**, and it is not evenly distributed. By
+per-spectrum rate it looks concentrated in rare adducts ([M+Cl]⁻) and instruments (QTOF); by
+**total error mass (gap × n), which is the actual prioritization signal, 87% sits in FT-HCD and
+62% in [M+H]⁺** — see "Where performance is actually left on the table" below.
+
+**Cool finding, drilling into that dominant FT-HCD ∩ [M+H]⁺ bucket**: the dramatic near-zero-score
+tail (rare/novel scaffolds, an out-of-scope-detector blind spot) makes for a vivid story but
+explains only ~1-2% of total error mass. **82% of spectra already score ≥0.5 and still account
+for 55% of total error mass.** For that bulk, the model already *selects* nearly the right
+fragments (71% match rate vs. the DAG's own 78% ceiling) but only moderately gets their
+*relative intensity ranking* right (median Spearman rho 0.69, matched-peaks-only) — a
+ranking/calibration problem, not a coverage problem. See "The dramatic tail is a red herring for
+total impact" below.
 
 ## Method: what "oracle" means here
 
@@ -89,10 +110,11 @@ By adduct (prec_type):
 | [M-H]⁻ | 24,735 | 0.9647 | 0.9738 | 0.9785 | 0.9539 |
 
 **[M+H]⁺ is both the largest adduct group (65% of spectra) and the lowest ceiling** at every
-tolerance setting, including sqrt (0.914) where tolerance artifacts are minimized. Unlike the
-QTOF case, this gap survives the tolerance relaxation — i.e. it looks like genuine DAG/fragment
-coverage headroom, not a measurement artifact. [M+Cl]⁻ and [M-H]⁻ look near-ceiling (>0.96 even
-under sqrt) — but see the CMF ablation below before concluding they're "not worth investment".
+tolerance setting, including sqrt (0.914) where tolerance artifacts are minimized. [M+Cl]⁻ and
+[M-H]⁻ look near-ceiling (>0.96 even under sqrt) — but see the CMF ablation below, and then the
+real actual-vs-oracle gap section further down, before concluding low ceiling ⇒ where the real
+model headroom is. It turns out **ceiling alone is the wrong signal** for that question — the
+real per-adduct gap (actual model score vs. its own ceiling) inverts this ranking.
 
 ### Why [M+Cl]⁻ and [M+Na]⁺ score so high: it's the CMF convention, not easy fragmentation
 
@@ -127,35 +149,402 @@ buckets. So **the CMF-inclusive ceilings reported above are the chemically faith
 an artifact — [M+Cl]⁻ genuinely is well-explained once the correct fragmentation mechanism is
 accounted for, matching how production eval already scores it.
 
+## Real actual-vs-oracle gap: alvhehe2 & pqx7ywc9 model runs
+
+`output/inference_eval/{alvhehe2,pqx7ywc9}/predictions_test.hdf5` are real trained-model
+inference outputs (see `[[project_alvhehe2_vs_pqx7ywc9_run_comparison]]` in memory) on
+**exactly this NIST20 test split** — verified identical `spec_id` sets to
+`data/split/nist20_ma_mi_inchikey/test_ids.csv` (96,128 spectra each) — and each already
+stores a real per-spectrum `cos_hun_inst_tol`. Joining that to the baseline DAG's
+`cos_hun_inst_tol_opt` oracle gives a genuine, same-split, same-tolerance actual-vs-ceiling
+gap (no cross-dataset caveat needed, unlike an earlier draft of this doc that used NIST23
+9-fold numbers as a rough proxy).
+
+Overall:
+
+| Run | actual | oracle | gap |
+|---|---|---|---|
+| alvhehe2 | 0.7521 | 0.9591 | 0.2070 |
+| pqx7ywc9 | 0.7555 | 0.9591 | 0.2036 |
+
+By instrument/mode (alvhehe2; pqx7ywc9 is within ~0.001-0.002 throughout):
+
+| | n | actual | oracle | gap |
+|---|---|---|---|---|
+| FT CID | 7,266 | 0.7577 | 0.9778 | 0.2201 |
+| FT HCD | 83,099 | 0.7473 | 0.9559 | 0.2086 |
+| QTOF CID | 5,763 | 0.8141 | 0.9818 | 0.1676 |
+
+By adduct:
+
+| Adduct | n | actual (alvhehe2) | oracle | gap (alvhehe2) | actual (pqx7ywc9) | gap (pqx7ywc9) |
+|---|---|---|---|---|---|---|
+| [M+Cl]⁻ | 1,497 | 0.7163 | 0.9906 | **0.2742** | 0.7273 | **0.2632** |
+| [M-H]⁻ | 24,735 | 0.7469 | 0.9738 | 0.2269 | 0.7497 | 0.2241 |
+| [M+Na]⁺ | 7,719 | 0.7406 | 0.9535 | 0.2129 | 0.7485 | 0.2050 |
+| [M+H]⁺ | 62,177 | 0.7564 | 0.9532 | 0.1968 | 0.7593 | 0.1939 |
+
+**This inverts the ceiling-only ranking above.** [M+H]⁺ has the lowest *ceiling* but the
+*smallest* actual gap — the model already captures a larger share of what's achievable for it.
+[M+Cl]⁻ has the highest ceiling (via the CMF mechanism) but the *largest* gap: the model is
+worst, in absolute terms, at recovering the ceiling that's chemically available to it. Ceiling
+alone was the wrong signal for prioritization; the gap is.
+
 ## Where performance is actually left on the table
 
-Ranking the headroom signals from this analysis, most to least actionable:
+Per-spectrum gap (used above) rewards rare-but-broken buckets over common-but-slightly-broken
+ones. Weighting by volume — **error mass = mean gap × n** — is the actual prioritization
+signal, since it estimates each bucket's share of total unrealized cos_hun across the split
+(alvhehe2 numbers; pqx7ywc9 is within ~1-2% relative throughout):
 
-1. **[M+H]⁺ fragment coverage** — lowest ceiling across all tolerance settings, largest
-   spectrum count. A genuine DAG-coverage gap, not a tolerance artifact. Worth auditing which
-   [M+H]⁺ true peaks fall outside the DAG's achievable set (the `n_achievable_peaks` /
-   `n_true_peaks` columns in the per-spectrum CSV make this queryable directly).
-2. **Ring-merge / d4 DAG upgrade** — +0.015 cos_hun / +0.017-0.019 jss_hun ceiling over the
-   current production baseline DAG, concentrated in FT-HCD (the bulk of the data, +0.017).
-   Ring-merge reaches the same ceiling as d4 without d4's node-blowup risk — prefer it.
-3. **QTOF/instrument-tolerance wiring** — not a DAG problem. If `inst_type_loss_tol` isn't
-   already active in the training loss (only in eval), wiring it in could recover most of the
-   QTOF gap directly, no DAG work needed.
+By instrument/mode:
+
+| | gap | n | error mass | share |
+|---|---|---|---|---|
+| FT CID | 0.2201 | 7,266 | 1,599 | 8.0% |
+| **FT HCD** | 0.2086 | 83,099 | **17,335** | **87.1%** |
+| QTOF CID | 0.1676 | 5,763 | 966 | 4.9% |
+
+By adduct:
+
+| | gap | n | error mass | share |
+|---|---|---|---|---|
+| [M+Cl]⁻ | 0.2742 | 1,497 | 411 | 2.1% |
+| [M-H]⁻ | 0.2269 | 24,735 | 5,612 | 28.2% |
+| [M+Na]⁺ | 0.2129 | 7,719 | 1,643 | 8.3% |
+| **[M+H]⁺** | 0.1968 | 62,177 | **12,236** | **61.5%** |
+
+(The two totals agree to within 0.02% — 19,900 vs 19,903 — a useful cross-check that the
+instrument and adduct breakdowns are self-consistent.)
+
+**87% of total unrealized cos_hun is in FT-HCD; 62% is in [M+H]⁺.** [M+Cl]⁻, despite having the
+largest *per-spectrum* gap, is only 2% of total opportunity — it's a rare adduct (1.6% of
+spectra). Ranked by actual impact:
+
+1. **FT-HCD / [M+H]⁺ model quality** — dominant by volume on both axes (these overlap heavily:
+   [M+H]⁺ is mostly FT-HCD spectra). This is where model-side work (not just DAG coverage) would
+   move the overall metric the most.
+2. **Ring-merge / d4 DAG upgrade** — +0.015 cos_hun / +0.017-0.019 jss_hun *ceiling* over the
+   current production baseline DAG (fixed 10 ppm tolerance), concentrated in **FT-HCD** (+0.017)
+   and **[M+H]⁺** (+0.017 to +0.025) — see the by-instrument/by-adduct breakdown below. This
+   directly targets the #1 error-mass bucket, not a low-volume one like [M+Cl]⁻. It raises the
+   ceiling but doesn't by itself close the gap — whether it also reduces the *actual* gap (i.e.
+   whether the model can use the new coverage) is untested until a model is trained on ring-merge
+   DAGs. Ring-merge vs d4 is a tractability-vs-ceiling-quality tradeoff, not a clean win for
+   either — see "Drilling into the single dominant bucket" below, which flips the initial
+   "ring-merge ties d4, so prefer it" read once weighted by where the data actually is.
+3. **[M-H]⁻ (28% of error mass)** — second-largest lever by volume, worth its own look; not
+   examined further here.
+4. **[M+Cl]⁻ / QTOF-CID (2-5% of error mass each)** — largest *rates*, smallest *impact*. Not
+   worth prioritizing on this data despite how dramatic the per-spectrum numbers look.
+
+## Is the ring-merge/d4 ceiling gain CMF-driven, like [M+Cl]⁻/[M+Na]⁺? No — the opposite
+
+Given the CMF finding above, a natural hypothesis is that ring-merge/d4's higher average
+ceiling is itself another CMF-side-effect (e.g. deeper cuts producing more
+charge-migration-compatible neutral losses). Re-running the by-adduct breakdown for ring-merge
+and d4 (fixed 10 ppm, CMF included, full test split) and diffing against the baseline directly
+refutes this:
+
+| Adduct | baseline | ring-merge | Δ ring-merge | d4 | Δ d4 |
+|---|---|---|---|---|---|
+| [M+Cl]⁻ | 0.9906 | 0.9929 | +0.0023 | 0.9766 | **−0.0140** |
+| [M+Na]⁺ | 0.9426 | 0.9575 | +0.0149 | 0.9618 | +0.0192 |
+| [M-H]⁻ | 0.9647 | 0.9751 | +0.0104 | 0.9552 | −0.0095 |
+| [M+H]⁺ | 0.9242 | 0.9410 | +0.0168 | 0.9487 | **+0.0245** |
+
+By instrument/mode, the same pattern holds — the gain concentrates in the highest-error-mass
+bucket (FT-HCD, 87% of total error mass above), not the highest-ceiling one:
+
+| | baseline | ring-merge Δ | d4 Δ |
+|---|---|---|---|
+| FT CID | 0.9778 | +0.0020 | +0.0010 |
+| **FT HCD** | 0.9559 | **+0.0166** | **+0.0163** |
+| QTOF CID | 0.6151 | +0.0051 | +0.0092 |
+
+**[M+Cl]⁻ — the most CMF-dependent adduct — gets the smallest gain from ring-merge and actually
+*regresses* under d4.** [M+H]⁺ — the adduct with essentially no CMF dependence (see the ablation
+above, Δ −0.008 when CMF is removed) — gets the *largest* gain under both DAG variants. The
+ring-merge/d4 ceiling improvement is a genuine, broad new-fragment-formula effect from deeper
+cuts, unrelated to the CMF ion-mass-convention mechanism that inflates [M+Cl]⁻/[M+Na]⁺. This is
+good news for prioritization: DAG-depth investment (ring-merge in particular) targets exactly
+the adduct ([M+H]⁺) already identified as the largest real-coverage gap, not a CMF artifact.
+
+d4's small regression on [M+Cl]⁻/[M-H]⁻ is itself notable: unlike ring-merge (base d3 DAG +
+strictly *added* leaf fragments, so per-spectrum coverage can only stay the same or improve),
+d4 is an independently regenerated depth-4 DAG and is **not guaranteed to be a superset of d3**
+per molecule — some fragment formulas present at d3 can apparently drop out at d4 (e.g. via
+`max_num_dag_nodes`/pruning interactions specific to some molecules).
+
+## Drilling into the single dominant bucket: FT-HCD ∩ [M+H]⁺
+
+The instrument and adduct breakdowns above overlap heavily — [M+H]⁺ is mostly FT-HCD spectra.
+Filtering to that intersection directly:
+
+| | value |
+|---|---|
+| n | 53,058 — **55.2% of the entire test split** |
+| Oracle ceiling, baseline d3 (`cos_hun_opt`) | 0.9486 |
+| — without CMF | 0.9402 (Δ −0.0084 — confirms not CMF-dependent, consistent with the adduct-level ablation) |
+| — ring-merge | 0.9676 (Δ +0.0191) |
+| — d4 | **0.9759 (Δ +0.0273)** |
+| Actual (alvhehe2 / pqx7ywc9) | 0.7491 / 0.7523 |
+| Gap | 0.1994 / 0.1962 — essentially identical to the overall 0.207/0.204 gap |
+| Share of total error mass | **53.2%** — over half the dataset's entire unrealized cos_hun is in this one slice |
+| Peak coverage | 35.0 true peaks/spectrum on average; 23.4 achievable at baseline (67%) → 26.8 ring-merge (76%) → 27.8 d4 (79%) |
+
+**This revises the ring-merge-vs-d4 recommendation above.** In this specific dominant slice, d4
+beats ring-merge by +0.0082 (0.9759 vs 0.9676) — a bigger edge than their near-tie in the
+unweighted aggregate. Weighting by error mass: d4's extra recovery here (~+0.0082 × 53,058 ≈
++435 units) exceeds its regression in the tiny [M+Cl]⁻/[M-H]⁻ buckets combined (~−0.014 × 1,497
++ −0.0095 × 24,735 ≈ −256 units), so **on pure error-mass-weighted ceiling quality, d4 slightly
+edges out ring-merge** — the opposite of what the unweighted averages suggested. Ring-merge's
+real advantage is *tractability* (avoiding d4's combinatorial-blowup outlier risk,
+`[[project_bond_breakability_mask_plan]]`), not ceiling quality — these are two separate axes
+that the earlier "ring-merge ties d4, so prefer it" framing had conflated. If blowup risk can be
+managed/filtered, d4 may be the better ceiling target specifically because of its edge in this
+one dominant bucket.
+
+### Median vs mean, and what's in the tail
+
+Within FT-HCD ∩ [M+H]⁺, mean and median diverge sharply for both the actual score and the
+oracle ceiling — a long left tail of badly-scored spectra drags the mean well below what a
+typical spectrum looks like:
+
+| | mean | median |
+|---|---|---|
+| oracle ceiling (`cos_hun_inst_tol_opt`) | 0.9486 | **0.9993** |
+| actual (alvhehe2) | 0.7491 | **0.8377** |
+| gap | 0.1994 | **0.1616** |
+
+A typical spectrum in this bucket is nearly fully DAG-explainable (median ceiling 0.9993) and
+the model recovers most of it (median actual 0.8377) — the mean gap (0.199) overstates the
+typical-spectrum gap (0.162).
+
+Splitting the bottom 25% by actual score (n=13,265) from the rest characterizes the tail:
+
+| | tail (bottom 25%, actual ≤ 0.598) | rest |
+|---|---|---|
+| oracle ceiling | 0.839 | 0.985 |
+| n_true_peaks | 57.5 | 27.5 |
+| peak coverage (achievable / true) | 0.666 | 0.786 |
+| `pred_oos_prob` (model's own out-of-scope confidence) | 0.282 | 0.124 |
+
+Two effects stack, one larger than the other:
+
+1. **Genuinely harder chemistry** — the tail has ~2x the true peaks and a meaningfully lower DAG
+   ceiling itself (0.839 vs 0.985). Correlation of n_true_peaks with actual score: **−0.39**.
+2. **Model uncertainty/scaffold novelty is the stronger signal** — `pred_oos_prob` correlates
+   with actual score at **−0.54**, stronger than peak count. The tail has ~2.3x the baseline
+   out-of-scope probability.
+
+The sharpest cut is the complete-failure sub-tail: **285 spectra (0.5%) score essentially zero**
+actual cos_hun. Their mean oracle ceiling is still **0.478** (the DAG could explain roughly half
+the true spectrum), but mean `pred_oos_prob` is **0.464** — about 4x the overall baseline
+(~0.12). This reads as scaffold/structure-identification failure (the model doesn't recognize
+the molecule class at all) rather than fine-grained intensity misprediction: the DAG ceiling
+isn't the bottleneck here, and the model's own confidence signal already flags these cases.
+
+This shape — a big spike near 1.0 plus a heavy left tail, median well above mean — matches the
+full-test-split distribution/CDF plots already generated in `output/inference_eval/*/plots`
+(e.g. `cos_hun_inst_tol` median ≈0.838, ≥0.7 for 63.7% of spectra, ≥0.9 for only 41.0%; JSS
+distributions skew even further left, ≥0.7 for 0% since JSS-inst-tol tops out near 0.69 in that
+plot's binning). Consistent with this doc's numbers, not an independent confirmation of the
+FT-HCD∩[M+H]⁺-specific slice above (those plots aren't filtered to that slice).
+
+### Digging deeper: is the tail rare-scaffold-driven?
+
+Four follow-up checks on the near-zero-score sub-tail (285 spectra / 115 unique molecules),
+within FT-HCD ∩ [M+H]⁺, alvhehe2 unless noted:
+
+**1. Shared across independently different model configs, not per-model noise.** 71-77%
+overlap between alvhehe2's and pqx7ywc9's near-zero-failure spec_ids (two runs with different
+DAG/feature setups — prepass-DAG vs no-prepass, see `[[project_alvhehe2_vs_pqx7ywc9_run_comparison]]`).
+Whatever drives this is structural, not architecture-specific noise.
+
+**2. Partially molecule-level, not purely spectrum-level.** Mean within-molecule std of actual
+score (0.168, over 4,237 molecules with ≥3 spectra in this slice) is well below the overall std
+(0.250) — if one CE of a molecule fails, its other CEs often do too, though not perfectly.
+
+**3. Molecule size is a weak driver.** num_atoms correlates with actual score at only −0.097,
+far weaker than n_true_peaks (−0.39) or `pred_oos_prob` (−0.54). Rules out "just bigger
+molecules are harder" as the main story.
+
+**4. Ruled out: model defaults to intact precursor, true spectrum is fully fragmented.**
+Several hand-picked, very-low-peak-count near-zero examples (a trichloromethyl carbamate, a
+hydrazine-diacetic-acid, a tetrasulfide-ring compound) showed the model's top predicted peak
+sitting exactly at the precursor m/z while the true spectrum had no precursor peak at all —
+looked like a systematic "doesn't believe this fragments" bias. Testing across all 285 near-zero
+spectra killed it: the model's top predicted peak matches the precursor m/z in only **11.2%** of
+near-zero cases, actually *below* the **28.6%** baseline rate in a random sample of the same
+slice. Those examples were unrepresentative anecdotes, not a general mechanism.
+
+**5. Independent (non-model-derived) novelty check: rare/novel scaffolds are measurably
+over-represented, but don't fully explain the tail.** `pred_oos_prob` is the model's own
+self-assessment, so its correlation with failure is somewhat circular. Testing chemistry-based
+novelty directly against the training set (Bemis-Murcko scaffold matching + Morgan-fingerprint
+nearest-neighbor Tanimoto, RDKit) on the 115 near-zero-failure molecules vs. a random baseline
+sample from the rest of the slice:
+
+| | near-zero failures | baseline |
+|---|---|---|
+| Exact Murcko scaffold seen in training set | 56.5% | 73.9% |
+| Mean NN-Tanimoto similarity to nearest training molecule | 0.546 | 0.591 |
+| Fraction with NN-Tanimoto < 0.5 (quite novel) | 39.1% | 26.1% |
+
+Both measures point the same direction: a real, moderate, independent effect (see below — it
+turns out *not* to be the same signal as `pred_oos_prob`), but not a full explanation. 56.5% of
+near-zero-failure molecules *do* have their scaffold represented in training, and mean Tanimoto
+similarity (0.546) is still fairly high in absolute terms, just measurably lower than baseline.
+
+### Why this happens: two separate, largely uncorrelated failure mechanisms
+
+The natural hypothesis is that `pred_oos_prob` is simply proxying structural novelty, and that
+the model appropriately hedges (spreads its predicted intensity distribution) when it detects
+novelty. Testing this directly, on an 800-molecule sample of the FT-HCD ∩ [M+H]⁺ slice with
+per-spectrum prediction entropy / top-1 intensity concentration computed from `pred_ints`:
+
+| | correlation |
+|---|---|
+| Tanimoto-novelty ↔ `pred_oos_prob` | **−0.049** — essentially independent |
+| Tanimoto-novelty ↔ actual score | 0.241 |
+| `pred_oos_prob` ↔ actual score | **−0.509** |
+| `pred_oos_prob` ↔ prediction concentration (top-1 intensity fraction) | **−0.488** |
+| Tanimoto-novelty ↔ actual score, computed separately within low- vs high-`pred_oos_prob` halves | 0.252 / 0.218 — holds independently in both |
+
+`pred_oos_prob` and Tanimoto-based structural novelty are **not the same signal** (r ≈ 0) —
+`pred_oos_prob` is tracking something else (plausibly formula/DAG-size/precursor-mass
+distribution shift rather than raw whole-molecule structural similarity; not isolated further
+here). This splits the tail into two mechanistically distinct components:
+
+1. **`pred_oos_prob`-driven failures — the model correctly hedges.** When `pred_oos_prob` is
+   high, predictions genuinely become more diffuse: mean top-1 intensity concentration collapses
+   from 0.513 (bottom decile) to 0.155 (top decile), and mean actual score drops from 0.903 to
+   0.447 in step. This is calibration working as intended for whatever `pred_oos_prob` detects.
+2. **Tanimoto-novelty-driven failures — a genuine blind spot.** This effect is independent of
+   `pred_oos_prob` (holds at similar strength inside both the low- and high-`pred_oos_prob`
+   halves) and does **not** trigger hedging: an earlier check (bottom-25%-Tanimoto-similarity
+   vs top-25%) found near-identical prediction concentration (0.345 vs 0.329) despite a large
+   actual-score gap (0.656 vs 0.810). For structurally novel molecules the OOS gate doesn't
+   catch, the model stays just as confident and simply gets the dominant peaks wrong — this is
+   the genuine overconfidence/miscalibration component.
+
+So: is this a probabilistic-modeling calibration failure? **Partially, and specifically in
+mechanism (2).** The model's uncertainty machinery works as intended for whatever
+`pred_oos_prob` tracks — that's the majority of the correlation with failure (−0.51, vs
+Tanimoto-novelty's 0.24) and it does the right thing (hedges). The real gap is that this
+detector has a blind spot for whole-molecule structural novelty specifically: those cases don't
+get flagged, don't get hedged, and the model commits confidently to the wrong answer.
+
+## The dramatic tail is a red herring for total impact — the real gap is in the "boring" bulk
+
+All of the novelty/OOS investigation above concerns the dramatic near-zero-score tail. Checking
+how much of the *total* error mass that tail actually accounts for reframes the whole priority
+list:
+
+| | n | % of spectra | gap-mass | **% of total error mass** |
+|---|---|---|---|---|
+| Near-zero sub-tail (score < 0.05) | 285 | 0.5% | 129 | **1.2%** |
+| Bottom-25% tail (score ≤ 0.60) | 13,265 | 25% | 6,151 | 58.1% |
+| **"Reasonably OK" (score ≥ 0.5)** | **43,448** | **81.9%** | **5,796** | **54.8%** |
+
+The novel-scaffold/OOS-blind-spot mechanism explains at most ~1-2% of total error mass directly
+(the near-zero cases). **82% of spectra already score ≥0.5 and still account for 55% of total
+error mass** — each falling short of its own ceiling by a modest, consistent ~0.13 on average.
+That's not a novelty/OOD story; it's a broad, systematic shortfall across most of the data.
+
+### Is the bulk gap a selection problem or a ranking problem?
+
+For the "reasonably OK" bulk, checking whether the model fails to identify *which* fragments
+matter (selection) vs. correctly identifies them but assigns the *wrong relative magnitudes*
+(ranking) — these need different fixes (richer DAG coverage/node features vs. loss/calibration
+changes targeting relative intensity order). Measured via: (a) selection rate = fraction of true
+peaks matched by *any* predicted node within tolerance, vs. the DAG's own oracle match rate for
+the same spectra; (b) Spearman rank correlation between true and predicted intensity, computed
+only over the peaks that *are* matched (isolates ordering accuracy from coverage):
+
+| | value |
+|---|---|
+| Actual selection rate (true peaks matched by some predicted node) | 71.0% |
+| DAG's own oracle selection rate (n_achievable/n_true), same spectra | 77.8% |
+| Selection shortfall | only ~7 points |
+| Spearman rank correlation, true vs. predicted intensity among matched peaks | mean 0.672, median 0.691 |
+| Spectra with rho > 0.7 (well-ranked) | 48.5% |
+| Spectra with rho < 0.3 (poorly-ranked) | only 4.75% |
+
+Selection is already close to the DAG's own ceiling (78% → 71%, a modest shortfall). But among
+the fragments the model *does* correctly select, relative intensity ordering is only moderately
+correlated with ground truth (median rho 0.69 — barely half the spectra clear even a 0.7
+threshold). **This is predominantly a ranking/intensity-calibration problem, not a
+coverage/selection problem** — concretely: the model usually knows *which* fragments exist and
+matter (say A, B, C), but doesn't reliably know that A should dominate over B and C; `cos_hun`
+normalizes both intensity vectors to unit length before comparing, so getting the fragments
+right but their relative order/proportions wrong scores nearly as badly as missing fragments
+outright.
+
+**This reorders the improvement priority:**
+
+1. **Ring-merge/d4 (more DAG coverage) has a lower payoff ceiling than the earlier ceiling-only
+   analysis implied.** Selection is already near its own limit for the dominant bulk — more
+   fragment coverage mostly closes the smaller ~7-point selection gap, not the larger ranking gap.
+   Still worth testing whether a trained model on ring-merge DAGs improves things (open question
+   below), but temper expectations: it targets the smaller of the two components.
+2. **Intensity-ranking fidelity is now the single highest-value open question.** Is the training
+   loss actually optimizing Hungarian-matched relative ranking (the way `cos_hun`/`jss_hun`
+   score at eval), or a surrogate that doesn't directly reward getting relative order right?
+   Worth checking the actual training loss definition before proposing architecture changes.
+3. The tail/novelty investigation above is real but now clearly secondary for total impact
+   (~1-2% of error mass) — worth fixing on its own merits (it's egregious when it happens) but
+   not where the bulk of the ~20-point gap lives.
+
+## What's still needed before a concrete improvement plan
+
+- **Does a model trained on ring-merge/d4 DAGs actually recover a smaller actual-vs-oracle gap**,
+  or does the extra coverage go unused because the bottleneck is ranking, not selection? Untested.
+- **What loss function is actually driving gradients during training**, and does it directly
+  reward Hungarian-matched relative intensity ordering (`cos_hun`/`jss_hun`-shaped) or a
+  surrogate (binned cosine, cross-entropy) that could plausibly produce exactly this
+  "selects-right-but-ranks-wrong" pattern? Not yet checked.
+- **What does `pred_oos_prob` actually key on?** Confirmed not to be raw Tanimoto structural
+  similarity (r ≈ 0) — candidates (formula/elemental novelty, DAG size, precursor-mass range)
+  are untested.
+- **Is the Tanimoto-novelty blind spot fixable with more/better training data**, or is it an
+  inherent generalization limit of the architecture? Would need a scaffold-holdout-style ablation
+  to test causally rather than just correlationally.
+- **Does the same selection-vs-ranking split hold outside FT-HCD ∩ [M+H]⁺** (e.g. QTOF, other
+  adducts), or is the mechanism different elsewhere? All of this section's mechanistic work was
+  done on the one (dominant) slice.
 
 ## Caveats
 
-- These ceilings are computed against `data/split/nist20_ma_mi_inchikey`'s `test` split; the
-  ~0.786 actual-model figure in memory is from a **different dataset and eval protocol**
-  (NIST23, 9-fold CV, per-CE). No apples-to-apples actual-vs-oracle number exists yet — to get
-  one, run the trained model's real eval on this same NIST20 split with the same tolerance
-  definitions used here.
+- The selection-vs-ranking check (n=2,866 spectra, random 3,000-spectrum sample of the "OK"
+  bulk) used greedy nearest-candidate matching per true peak for the matched-predicted-intensity
+  value (max predicted intensity among within-tolerance candidates), not the full Hungarian
+  one-to-one assignment `cos_hun_helper` itself solves — a reasonable proxy for isolating
+  ranking accuracy, but not bit-for-bit identical to the production metric's matching logic.
+- The scaffold/Tanimoto novelty check (n=115 near-zero-failure molecules vs. a single random
+  n=115 baseline draw, seed=0) is small-sample and not significance-tested — the direction is
+  consistent across two independent measures (exact scaffold match and NN-Tanimoto), which is
+  reassuring, but treat the exact percentages as indicative, not precise.
+- The `pred_oos_prob` vs Tanimoto-novelty reconciliation (n=800-molecule sample) is correlational,
+  not causal, and what `pred_oos_prob` is actually keyed on was not isolated here (candidates:
+  formula/elemental-composition novelty, DAG size, precursor-mass range — untested). "The model
+  correctly hedges when `pred_oos_prob` fires" describes the observed correlation between that
+  signal and prediction diffuseness, not a mechanistic account of what triggers the signal itself.
+- The DAG-variant comparison (baseline/ringmerge/smpTrue/d4) is ceiling-only — no trained model
+  exists yet on ring-merge/d4/smpTrue DAGs, so whether their higher ceiling translates into a
+  smaller actual-vs-oracle gap (rather than just a higher, still-unrecovered ceiling) is
+  untested, not just unconfirmed-but-likely.
+- smpTrue's inst_tol/0.01Da/sqrt/adduct breakdown was not run (only its fixed-10ppm overall
+  number is in the DAG-variant table above) — low priority given it barely moved the ceiling.
 - The jss_hun oracle is a tractable heuristic (reuse true intensities on the achievable
   support), not a formally re-optimized maximum — treat it as directionally correct, not exact.
-- Ring-merge/d4/smpTrue numbers above are from the earlier 4-DAG comparison run at fixed 10 ppm
-  tolerance only; the inst_tol/0.01Da/sqrt breakdown was only run for the baseline DAG so far.
 - The CMF ablation (`--no_cmf`) was only run for the baseline DAG at fixed 10 ppm tolerance;
   the per-instrument/0.01Da/sqrt columns in that run (see script output) are included in the
   saved CSV but not tabulated above since they don't change the headline finding.
+- The alvhehe2/pqx7ywc9 actual-vs-oracle gap is only computed at the `inst_tol` tolerance
+  (the only real metric stored in those prediction files); the fixed-10ppm/0.01Da/sqrt actual
+  scores aren't in the HDF5s and weren't recomputed from `pred_mzs`/`pred_ints` here.
 
 ## Reproducing
 

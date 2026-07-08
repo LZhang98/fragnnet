@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal
 
@@ -1380,6 +1381,42 @@ def _make_ce_bins(
     return labels, arrays
 
 
+# Explicit colors for the well-known instrument types; anything else cycles
+# through the fallback palette below.
+_INST_CE_COLORS: dict[str, str] = {
+    "QTOF": "#5B9BD5",  # Blue
+    "FT": "#70AD47",  # Green
+}
+_INST_CE_FALLBACK_COLORS = ["#ED7D31", "#FFC000", "#A5A5A5", "#7030A0", "#264478"]
+
+
+def _inst_ce_rows(inst_types: Iterable[str]) -> list[tuple[str, str, int, str]]:
+    """Build (inst_type, ce_col, ce_cap, color) rows for every instrument type present.
+
+    QTOF bins on ``ace`` (eV, cap 50); every other instrument type (FT, IT, ...)
+    bins on ``nce`` (%, cap 70). QTOF and FT are ordered first to match the
+    original fixed layout; any other instrument types are appended alphabetically.
+
+    Args:
+        inst_types: Instrument type values present in the data.
+
+    Returns:
+        List of (inst_type, ce_col, ce_cap, color) tuples, one per instrument type.
+    """
+    present = set(inst_types)
+    ordered = [t for t in ("QTOF", "FT") if t in present]
+    ordered += sorted(present - {"QTOF", "FT"})
+
+    fallback_iter = iter(_INST_CE_FALLBACK_COLORS)
+    rows = []
+    for inst_type in ordered:
+        ce_col = "ace" if inst_type == "QTOF" else "nce"
+        ce_cap = 50 if inst_type == "QTOF" else 70
+        color = _INST_CE_COLORS.get(inst_type) or next(fallback_iter, "#808080")
+        rows.append((inst_type, ce_col, ce_cap, color))
+    return rows
+
+
 def _violin_ax(
     ax: plt.Axes,
     global_labels: list[str],
@@ -1508,10 +1545,11 @@ def _plot_ce_breakdown_grid(
     score_col: str,
     save_dp: str,
 ) -> None:
-    """Plot CE breakdown bars as grid: QTOF (ACE) in row 0, FT (NCE) in row 1.
+    """Plot CE breakdown bars as grid: one row per instrument type present in the data.
 
-    Creates a single figure with 2 rows (QTOF and FT) and columns for each adduct.
-    Both rows show x-axis with their respective units.
+    Creates a single figure with one row per instrument type (QTOF/FT first, then any
+    others alphabetically) and columns for each adduct. All rows show x-axis with
+    their respective units.
 
     Args:
         joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
@@ -1533,18 +1571,13 @@ def _plot_ce_breakdown_grid(
         return
 
     n_adducts = len(adducts_all)
-    n_rows = 2  # QTOF and FT
+    inst_rows = _inst_ce_rows(df["inst_type"].dropna().unique())
+    n_rows = len(inst_rows)
 
     fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
     fig.patch.set_facecolor("white")
 
-    # Row 0: QTOF (ACE), Row 1: FT (NCE)
-    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(
-        [
-            ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
-            ("FT", "nce", 70, "#70AD47"),  # Green
-        ]
-    ):
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(inst_rows):
         for col_idx, adduct in enumerate(adducts_all):
             ax = axes[row_idx, col_idx]
 
@@ -1619,13 +1652,14 @@ def _plot_ce_breakdown_grid(
             ax.spines["right"].set_visible(False)
             ax.grid(axis="y", alpha=0.2, linestyle="-")
 
-            # Show x-axis on both rows
-            ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+            # Show x-axis on every row
+            ce_unit = "eV" if ce_col == "ace" else "NCE"
             ax.set_xlabel(f"Collision Energy ({ce_unit})", fontsize=10)
 
     # Add row labels on the left
-    fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
-    fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
+    for row_idx, (inst_type, _, _, _) in enumerate(inst_rows):
+        y = 1 - (row_idx + 0.5) / n_rows
+        fig.text(0.02, y, inst_type, fontsize=11, fontweight="bold", rotation=90, va="center")
 
     fig.suptitle(
         f"{score_col} — Collision Energy Breakdown (95% CI)", fontsize=13, fontweight="bold"
@@ -1644,10 +1678,11 @@ def _plot_ce_breakdown_grid_violin(
     score_col: str,
     save_dp: str,
 ) -> None:
-    """Plot CE breakdown violins as grid: QTOF (ACE) in row 0, FT (NCE) in row 1.
+    """Plot CE breakdown violins as grid: one row per instrument type present in the data.
 
-    Creates a single figure with 2 rows (QTOF and FT) and columns for each adduct.
-    Both rows show x-axis with their respective units.
+    Creates a single figure with one row per instrument type (QTOF/FT first, then any
+    others alphabetically) and columns for each adduct. All rows show x-axis with
+    their respective units.
 
     Args:
         joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
@@ -1669,44 +1704,13 @@ def _plot_ce_breakdown_grid_violin(
         return
 
     n_adducts = len(adducts_all)
-    n_rows = 2  # QTOF and FT
-
-    # Compute max bins to determine figure width
-    inst_full_qtof = df[(df["inst_type"] == "QTOF") & df["ace"].notna()]
-    inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] > 0]
-    inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] < 50]
-    qtof_ce_max = inst_full_qtof["ace"].max() + 10 if len(inst_full_qtof) > 0 else 50
-    qtof_labels, _ = (
-        _make_ce_bins(inst_full_qtof, "ace", 10, qtof_ce_max, score_col)
-        if len(inst_full_qtof) > 0
-        else ([], [])
-    )
-    qtof_n_bins = len(qtof_labels)
-
-    inst_full_ft = df[(df["inst_type"] == "FT") & df["nce"].notna()]
-    inst_full_ft = inst_full_ft[inst_full_ft["nce"] < 70]
-    ft_ce_max = inst_full_ft["nce"].max() + 10 if len(inst_full_ft) > 0 else 70
-    ft_labels, _ = (
-        _make_ce_bins(inst_full_ft, "nce", 10, ft_ce_max, score_col)
-        if len(inst_full_ft) > 0
-        else ([], [])
-    )
-    ft_n_bins = len(ft_labels)
-
-    n_bins = max(qtof_n_bins, ft_n_bins)
-    fig_w = max(36, n_bins * 4.5 + 4)
-    fig_h = 7 * n_rows
+    inst_rows = _inst_ce_rows(df["inst_type"].dropna().unique())
+    n_rows = len(inst_rows)
 
     fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
     fig.patch.set_facecolor("white")
 
-    # Row 0: QTOF (ACE), Row 1: FT (NCE)
-    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(
-        [
-            ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
-            ("FT", "nce", 70, "#70AD47"),  # Green
-        ]
-    ):
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(inst_rows):
         # Compute global CE bins for this instrument type
         inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
         if ce_col == "ace":
@@ -1746,7 +1750,7 @@ def _plot_ce_breakdown_grid_violin(
                 fig.delaxes(ax)
                 continue
 
-            ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+            ce_unit = "eV" if ce_col == "ace" else "NCE"
             _violin_ax(
                 ax,
                 global_labels,
@@ -1760,8 +1764,9 @@ def _plot_ce_breakdown_grid_violin(
             )
 
     # Add row labels on the left
-    fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
-    fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
+    for row_idx, (inst_type, _, _, _) in enumerate(inst_rows):
+        y = 1 - (row_idx + 0.5) / n_rows
+        fig.text(0.02, y, inst_type, fontsize=11, fontweight="bold", rotation=90, va="center")
 
     fig.suptitle(
         f"{score_col} — Collision Energy Breakdown (Violin)", fontsize=13, fontweight="bold"
@@ -1972,9 +1977,9 @@ def plot_spectra_by_ce_bin(
 ) -> None:
     """Plot worst N mirror spectra for each CE bin, split by instrument type.
 
-    QTOF spectra are binned by ACE (10 eV bins up to 50 eV); FT spectra are
-    binned by NCE (10% bins up to 70%). Each bin's worst N spectra by score_col
-    are saved to ``{save_dp}/spectra/by_ce/{inst_type}/{bin_label}/worst/``.
+    QTOF spectra are binned by ACE (10 eV bins up to 50 eV); every other instrument
+    type is binned by NCE (10% bins up to 70%). Each bin's worst N spectra by
+    score_col are saved to ``{save_dp}/spectra/by_ce/{inst_type}/{bin_label}/worst/``.
 
     Args:
         meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
@@ -1994,7 +1999,7 @@ def plot_spectra_by_ce_bin(
         how="left",
     )
 
-    for inst_type, ce_col, ce_cap in [("QTOF", "ace", 50), ("FT", "nce", 70)]:
+    for inst_type, ce_col, ce_cap, _ in _inst_ce_rows(joined["inst_type"].dropna().unique()):
         inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()].copy()
         if ce_col == "ace":
             inst_df = inst_df[inst_df[ce_col] > 0]
