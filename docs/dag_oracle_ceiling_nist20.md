@@ -489,22 +489,53 @@ outright.
    fragment coverage mostly closes the smaller ~7-point selection gap, not the larger ranking gap.
    Still worth testing whether a trained model on ring-merge DAGs improves things (open question
    below), but temper expectations: it targets the smaller of the two components.
-2. **Intensity-ranking fidelity is now the single highest-value open question.** Is the training
-   loss actually optimizing Hungarian-matched relative ranking (the way `cos_hun`/`jss_hun`
-   score at eval), or a surrogate that doesn't directly reward getting relative order right?
-   Worth checking the actual training loss definition before proposing architecture changes.
+2. **Confirmed: the training loss doesn't match the eval metric, and plausibly explains the
+   ranking gap directly.** See the mechanism section immediately below — this is now a concrete,
+   low-cost, ready-to-test lever rather than an open question.
 3. The tail/novelty investigation above is real but now clearly secondary for total impact
    (~1-2% of error mass) — worth fixing on its own merits (it's egregious when it happens) but
    not where the bulk of the ~20-point gap lives.
 
+### Why cross-entropy allows selection-right/ranking-wrong (and why the Hungarian losses fix it)
+
+Traced into the actual loss code (`src/fragnnet/pl_model/fragnnet_pl.py`,
+`src/fragnnet/model/loss.py`). Neither alvhehe2 nor pqx7ywc9's config overrides `loss_type`, so
+both inherit `config/template.yml`'s default: **`loss_type: cross_entropy`** with
+`output_distribution: gaussian`.
+
+- **`cross_entropy` routes to `mog_ce_fn`** (`loss.py:484-524`, via `get_sparse_cross_entropy_fn`)
+  — a mixture-of-Gaussians negative-log-likelihood loss computed **independently per true peak**:
+  for each true peak, does the model place enough predicted probability density near that
+  position? Peaks are scored roughly independently against the predicted distribution; nothing
+  in the objective forces peak A's predicted magnitude to be proportionally bigger than peak B's
+  just because the true spectrum says so. A model can satisfy every peak's presence-likelihood
+  independently while completely scrambling their relative weights, with little penalty.
+- **`log_cosine_distance_hungarian` / `jss_distance_hungarian` route to
+  `sparse_cosine_distance_hungarian` (`loss.py:915`) / `sparse_jensen_shannon_divergence_hungarian`**
+  — differentiable reimplementations of the exact eval metrics: same Hungarian one-to-one
+  matching, same tolerance, same normalize-then-compare logic as `cos_hun_helper`/
+  `jss_hun_helper`. Loss = 1 − cos_hun (or the JS analog), computed on the **whole intensity
+  vector jointly**. Reducing this loss forces the model to get relative proportions across *all*
+  peaks right simultaneously, because normalization ties every peak's optimal value to every
+  other peak's — exactly the property cross-entropy's peak-independent formulation lacks, and
+  exactly what's missing per the selection-vs-ranking diagnostic (selection near-ceiling at 71%
+  vs 78%; ranking only moderate at median rho 0.69).
+
+This isn't a naming-based guess — the independence-per-peak structure of `mog_ce_fn` and the
+joint-normalization structure of the Hungarian losses map directly onto the selection-vs-ranking
+split found in the data. `config/loss_funcs/fraggnn_d3_nist20_jss_hun*.yml` already exist as
+prepared recipes for this; as far as this investigation found, neither alvhehe2 nor pqx7ywc9 used
+them. **Training a comparison run with `loss_type: jss_distance_hungarian` (or
+`log_cosine_distance_hungarian`) on the same data/DAG is the single highest-leverage,
+lowest-cost next experiment** given everything in this document.
+
 ## What's still needed before a concrete improvement plan
 
+- **Train the Hungarian-loss comparison run** (above) and check whether it closes the ranking
+  gap specifically (selection-vs-ranking diagnostic re-run on its predictions) — the most direct
+  test of the mechanism proposed here.
 - **Does a model trained on ring-merge/d4 DAGs actually recover a smaller actual-vs-oracle gap**,
   or does the extra coverage go unused because the bottleneck is ranking, not selection? Untested.
-- **What loss function is actually driving gradients during training**, and does it directly
-  reward Hungarian-matched relative intensity ordering (`cos_hun`/`jss_hun`-shaped) or a
-  surrogate (binned cosine, cross-entropy) that could plausibly produce exactly this
-  "selects-right-but-ranks-wrong" pattern? Not yet checked.
 - **What does `pred_oos_prob` actually key on?** Confirmed not to be raw Tanimoto structural
   similarity (r ≈ 0) — candidates (formula/elemental novelty, DAG size, precursor-mass range)
   are untested.
