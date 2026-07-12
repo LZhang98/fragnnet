@@ -456,7 +456,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         return frag_node_mask_embed * keep.to(dtype=frag_node_mask_embed.dtype)
 
     def _ce_location_check(self):
-        assert self.ce_insert_location != "frag", "ce_insert_location=frag not supported"
+        assert "frag" not in self.ce_insert_locations, "ce_insert_location=frag not supported"
 
     def _prec_location_check(self):
         assert self.prec_insert_location != "frag", "prec_insert_location=frag not supported"
@@ -654,7 +654,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         mol_batch_counts = mol_num_nodes[1:] - mol_num_nodes[:-1]
 
         _mol_extras = []
-        if self.ce_insert_location == "mol":
+        if "mol" in self.ce_insert_locations:
             assert ce_embed is not None, "ce_embed must not be None"
             _mol_extras.append(ce_embed)
         if self.prec_insert_location == "mol":
@@ -1172,7 +1172,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
         # Cache unique batch counts to avoid redundant computation (Memory Opt #1)
         if (
-            self.ce_insert_location == "mlp"
+            "mlp" in self.ce_insert_locations
             or self.prec_insert_location == "mlp"
             or self.inst_insert_location == "mlp"
             or self.frag_mode_insert_location == "mlp"
@@ -1181,7 +1181,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # equivalent to th.unique(frag_node_batch_idxs, return_counts=True)[1] but O(batch)
             unique_batch_counts = frag_num_nodes[1:] - frag_num_nodes[:-1]
             _mlp_extras = []
-            if self.ce_insert_location == "mlp":
+            if "mlp" in self.ce_insert_locations:
                 _mlp_extras.append(ce_embed)
             if self.prec_insert_location == "mlp":
                 _mlp_extras.append(prec_embed)

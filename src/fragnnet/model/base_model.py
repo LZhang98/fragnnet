@@ -60,8 +60,21 @@ class CEModel:
             ace_std: Std of ACE for normalization (lin/id types). Default 15.0.
         """
         assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin"]
-        assert ce_insert_location in ["none", "mol", "frag", "mlp"]
-        if ce_insert_location != "none" and not use_nce and not use_ace:
+        # ce_insert_location may name multiple insertion points, comma-separated (e.g.
+        # "mol,mlp"): inject CE into the molecule encoder input AND the per-fragment scoring
+        # MLP. "mol" alone (mol-encoder only) or "mlp" alone (per-fragment only) are the
+        # single-location cases; "none" disables CE. Parsed into a set so downstream checks
+        # are membership tests instead of exact string matches.
+        if ce_insert_location == "none":
+            self.ce_insert_locations: set[str] = set()
+        else:
+            self.ce_insert_locations = {loc.strip() for loc in ce_insert_location.split(",")}
+            invalid = self.ce_insert_locations - {"mol", "frag", "mlp"}
+            if invalid:
+                raise ValueError(
+                    f"Invalid ce_insert_location(s) {invalid}; allowed: mol, frag, mlp (or 'none')"
+                )
+        if self.ce_insert_locations and not use_nce and not use_ace:
             raise ValueError("At least one of use_nce or use_ace must be True")
         self.ce_insert_type = ce_insert_type
         self.ce_insert_location = ce_insert_location
@@ -159,16 +172,10 @@ class CEModel:
 
         self.ce_embed_dim = effective_dim
 
-        if self.ce_insert_location == "mol":
-            self.ce_mol_input_dim = effective_dim
-            self.ce_mlp_input_dim = 0
-        elif self.ce_insert_location == "mlp":
-            self.ce_mol_input_dim = 0
-            self.ce_mlp_input_dim = effective_dim
-        else:
-            assert self.ce_insert_location == "none"
-            self.ce_mol_input_dim = 0
-            self.ce_mlp_input_dim = 0
+        # Independent dims: with "mol,mlp" both are nonzero, so CE widens the mol-encoder
+        # input AND the per-fragment MLP input.
+        self.ce_mol_input_dim = effective_dim if "mol" in self.ce_insert_locations else 0
+        self.ce_mlp_input_dim = effective_dim if "mlp" in self.ce_insert_locations else 0
 
     def _embed_single_ce(
         self,
@@ -223,9 +230,9 @@ class CEModel:
             ace_batch_idxs: Batch indices for each ACE value. Required when use_ace is True.
 
         Returns:
-            Embedded CE tensor or None if ce_insert_location is "none".
+            Embedded CE tensor or None if no insertion location is set ("none").
         """
-        if self.ce_insert_location == "none":
+        if not self.ce_insert_locations:
             return None
         embeds = []
         if self.use_nce:
