@@ -15,9 +15,13 @@ import pytest
 from fragnnet.model.fragnnet_model import FraGNNetModel
 
 
-def _build(ce_insert_location: str) -> FraGNNetModel:
-    """Smallest valid FraGNNetModel with the given ce_insert_location."""
-    return FraGNNetModel(
+def _build(ce_insert_location: str = "mol", **overrides) -> FraGNNetModel:
+    """Smallest valid FraGNNetModel with the given ce_insert_location.
+
+    Extra keyword args override the default FraGNNetModel kwargs (e.g. context_embedding=True),
+    so sibling test modules can reuse this builder.
+    """
+    kwargs = dict(
         num_depth=4,
         num_hs=2,
         num_elements=17,
@@ -88,6 +92,9 @@ def _build(ce_insert_location: str) -> FraGNNetModel:
         ace_std=10.0,
         cc_feature_dropout=0.0,
     )
+    kwargs["ce_insert_location"] = ce_insert_location
+    kwargs.update(overrides)
+    return FraGNNetModel(**kwargs)
 
 
 class TestCeInsertLocationParsing:

@@ -14,6 +14,7 @@ from fragnnet.model.base_model import (
     AdductScaler,
     CEModel,
     CEScaler,
+    ContextEmbedding,
     FragModeModel,
     FragModeScaler,
     InstModel,
@@ -118,6 +119,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ace_std: float,
         cc_feature_dropout: float,
         depth_ce_bias: bool = False,
+        context_embedding: bool = False,
+        context_embedding_dim: int = 64,
+        context_embedding_hidden_dim: int = 64,
+        context_insert_location: str = "mol,mlp",
         debug_validate_outputs: bool = False,
     ):
         # nn.Module init
@@ -158,6 +163,46 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         )
         self.frag_modes = frag_modes
 
+        # Combined context (stratum) embedding. When enabled, CE/adduct/instrument/frag_mode are
+        # combined into ONE learned vector injected at context_insert_location; the individual
+        # *_insert paths are subsumed (their embeddings feed the context and are NOT injected
+        # separately, so their mol/mlp input contributions are zeroed here). See
+        # docs/conditioning_refactor_plan.md. Gated: off (default) leaves existing behavior intact.
+        self.context_embedding = context_embedding
+        if context_embedding:
+            active_dims = [
+                self.ce_embed_dim if self.ce_insert_locations else 0,
+                prec_insert_size if prec_insert_location != "none" else 0,
+                inst_insert_size if inst_insert_location != "none" else 0,
+                frag_mode_insert_size if frag_mode_insert_location != "none" else 0,
+            ]
+            ctx_in = sum(active_dims)
+            if ctx_in == 0:
+                raise ValueError("context_embedding=True requires at least one metadata enabled")
+            self.context_insert_locations = {loc.strip() for loc in context_insert_location.split(",")}
+            invalid = self.context_insert_locations - {"mol", "mlp"}
+            if invalid:
+                raise ValueError(f"context_insert_location must be mol/mlp, got {invalid}")
+            self.context_embedder = ContextEmbedding(
+                ctx_in, context_embedding_hidden_dim, context_embedding_dim
+            )
+            # context replaces the per-metadata injections -> zero their input-dim contributions
+            self.ce_mol_input_dim = self.ce_mlp_input_dim = 0
+            self.prec_mol_input_dim = self.prec_mlp_input_dim = 0
+            self.inst_mol_input_dim = self.inst_mlp_input_dim = 0
+            self.frag_mode_mol_input_dim = self.frag_mode_mlp_input_dim = 0
+            self.context_mol_input_dim = (
+                context_embedding_dim if "mol" in self.context_insert_locations else 0
+            )
+            self.context_mlp_input_dim = (
+                context_embedding_dim if "mlp" in self.context_insert_locations else 0
+            )
+        else:
+            self.context_embedder = None
+            self.context_insert_locations = set()
+            self.context_mol_input_dim = 0
+            self.context_mlp_input_dim = 0
+
         self.num_depth = num_depth
         self.num_hs = num_hs
         self.num_elements = num_elements
@@ -178,6 +223,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             + self.prec_mol_input_dim
             + self.inst_mol_input_dim
             + self.frag_mode_mol_input_dim
+            + self.context_mol_input_dim
         )
         mol_kwargs = {
             "node_feats_size": self.mol_node_feats_size,
@@ -306,6 +352,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             + self.prec_mlp_input_dim
             + self.inst_mlp_input_dim
             + self.frag_mode_mlp_input_dim
+            + self.context_mlp_input_dim
         )
 
         #  mlp for formula
@@ -647,6 +694,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # get frag_mode value
         frag_mode_embed = self.embed_frag_mode(spec_frag_mode)
 
+        # Combined context vector (when enabled): consolidate the active metadata embeddings into
+        # one vector, in the same fixed order used to size context_embedder's input dim.
+        context_embed = None
+        if self.context_embedding:
+            _ctx_embeds = [
+                e for e in (ce_embed, prec_embed, inst_embed, frag_mode_embed) if e is not None
+            ]
+            context_embed = self.context_embedder(_ctx_embeds)
+
         # Type assertions for embedding tensors (narrow types from Any | None to Tensor)
 
         # Precompute per-mol node counts once from the cumulative prefix sum (avoids up to 4
@@ -654,18 +710,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         mol_batch_counts = mol_num_nodes[1:] - mol_num_nodes[:-1]
 
         _mol_extras = []
-        if "mol" in self.ce_insert_locations:
-            assert ce_embed is not None, "ce_embed must not be None"
-            _mol_extras.append(ce_embed)
-        if self.prec_insert_location == "mol":
-            assert prec_embed is not None, "prec_embed must not be None"
-            _mol_extras.append(prec_embed)
-        if self.inst_insert_location == "mol":
-            assert inst_embed is not None, "inst_embed must not be None"
-            _mol_extras.append(inst_embed)
-        if self.frag_mode_insert_location == "mol":
-            assert frag_mode_embed is not None, "frag_mode_embed must not be None"
-            _mol_extras.append(frag_mode_embed)
+        if self.context_embedding:
+            # context subsumes the individual metadata; inject only the context vector
+            if "mol" in self.context_insert_locations:
+                _mol_extras.append(context_embed)
+        else:
+            if "mol" in self.ce_insert_locations:
+                assert ce_embed is not None, "ce_embed must not be None"
+                _mol_extras.append(ce_embed)
+            if self.prec_insert_location == "mol":
+                assert prec_embed is not None, "prec_embed must not be None"
+                _mol_extras.append(prec_embed)
+            if self.inst_insert_location == "mol":
+                assert inst_embed is not None, "inst_embed must not be None"
+                _mol_extras.append(inst_embed)
+            if self.frag_mode_insert_location == "mol":
+                assert frag_mode_embed is not None, "frag_mode_embed must not be None"
+                _mol_extras.append(frag_mode_embed)
         if _mol_extras:
             mol_x = th.cat(
                 [mol_x, th.repeat_interleave(th.cat(_mol_extras, dim=1), mol_batch_counts, dim=0)],
@@ -1171,24 +1232,30 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_embed_parts = [0.5 * frag_embed_gnn + 0.5 * frag_embed_node]
 
         # Cache unique batch counts to avoid redundant computation (Memory Opt #1)
-        if (
+        _inject_context_mlp = self.context_embedding and "mlp" in self.context_insert_locations
+        _inject_individual_mlp = not self.context_embedding and (
             "mlp" in self.ce_insert_locations
             or self.prec_insert_location == "mlp"
             or self.inst_insert_location == "mlp"
             or self.frag_mode_insert_location == "mlp"
-        ):
+        )
+        if _inject_context_mlp or _inject_individual_mlp:
             # frag_num_nodes is a cumulative prefix sum → diff gives per-sample node counts,
             # equivalent to th.unique(frag_node_batch_idxs, return_counts=True)[1] but O(batch)
             unique_batch_counts = frag_num_nodes[1:] - frag_num_nodes[:-1]
             _mlp_extras = []
-            if "mlp" in self.ce_insert_locations:
-                _mlp_extras.append(ce_embed)
-            if self.prec_insert_location == "mlp":
-                _mlp_extras.append(prec_embed)
-            if self.inst_insert_location == "mlp":
-                _mlp_extras.append(inst_embed)
-            if self.frag_mode_insert_location == "mlp":
-                _mlp_extras.append(frag_mode_embed)
+            if _inject_context_mlp:
+                # context subsumes the individual metadata; inject only the context vector
+                _mlp_extras.append(context_embed)
+            else:
+                if "mlp" in self.ce_insert_locations:
+                    _mlp_extras.append(ce_embed)
+                if self.prec_insert_location == "mlp":
+                    _mlp_extras.append(prec_embed)
+                if self.inst_insert_location == "mlp":
+                    _mlp_extras.append(inst_embed)
+                if self.frag_mode_insert_location == "mlp":
+                    _mlp_extras.append(frag_mode_embed)
             frag_embed_parts.append(
                 th.repeat_interleave(th.cat(_mlp_extras, dim=1), unique_batch_counts, dim=0)
             )

@@ -469,6 +469,14 @@ ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
 ce_insert_location: none # Where CE is inserted: ["none","mol_input","frag_input","mlp_input"] or comma-separated
 ce_insert_merge: False # Whether to merge CE embeddings when inserted at multiple locations
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
+# Combined context (stratum) embedding: consolidate CE + adduct + instrument + frag_mode into
+# ONE learned vector injected at context_insert_location, instead of four separate *_insert
+# paths (see docs/conditioning_refactor_plan.md). When True, the individual metadata embeddings
+# feed the context and are NOT injected separately. Off = existing per-metadata behavior.
+context_embedding: False
+context_embedding_dim: 64       # width of the produced context vector
+context_embedding_hidden_dim: 64  # hidden width of the combining MLP
+context_insert_location: mol,mlp  # where to inject the context vector (mol and/or mlp)
 # Dataset CE flags live under spec_params.nce/ace. Model CE embedding is controlled by
 # use_nce/use_ace when constructing FraGNNetModel. When both model flags are True, the two
 # CE embeddings are concatenated, doubling the CE dim.

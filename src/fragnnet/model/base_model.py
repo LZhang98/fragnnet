@@ -721,3 +721,69 @@ class StratumScaler(nn.Module):
         log_scale = params_per_node[:, : self.output_dim]
         bias = params_per_node[:, self.output_dim :]
         return logits * th.exp(log_scale) + bias
+
+
+class ContextEmbedding(nn.Module):
+    """Combine acquisition-metadata embeddings into one learned context (stratum) vector.
+
+    FraGNNet conditions on CE, adduct, instrument, and fragmentation mode through four separate
+    ``*_insert`` embeddings that are concatenated into node features, plus a chain of
+    rescale-only output-FiLM scalers (see ``docs/conditioning_refactor_plan.md``). This module
+    consolidates the metadata into a single vector, projected through an MLP so cross-metadata
+    interactions (e.g. CE x mode, adduct x CE) are modeled in a shared low-dimensional space
+    *before* injection -- unlike plain concatenation, which defers all interaction to the
+    downstream network and produces a variable-width block. The one context vector is meant to
+    be injected consistently at the mol encoder, the per-fragment nodeMLP, and the competition
+    module, replacing the four separate insert paths.
+
+    This is a self-contained module: it does NOT wire itself into the model. The forward model
+    keeps computing the individual ``ce_embed``/``prec_embed``/``inst_embed``/``frag_mode_embed``
+    and passes whichever are active (in a fixed order matching ``input_dim``) to this module.
+
+    Attributes:
+        input_dim: Sum of the active metadata embedding dims (fixed at construction).
+        out_dim: Dimension of the produced context vector.
+        net: MLP mapping the concatenated metadata embeddings to the context vector.
+    """
+
+    def __init__(self, input_dim: int, hidden_dim: int, out_dim: int) -> None:
+        """Initialize ContextEmbedding.
+
+        Args:
+            input_dim: Total width of the concatenated active metadata embeddings. Must equal
+                the summed dim of the tensors passed to ``forward``.
+            hidden_dim: Hidden width of the combining MLP.
+            out_dim: Dimension of the output context vector.
+        """
+        super().__init__()
+        if input_dim <= 0:
+            raise ValueError(f"ContextEmbedding input_dim must be positive, got {input_dim}")
+        self.input_dim = input_dim
+        self.out_dim = out_dim
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, out_dim),
+        )
+
+    def forward(self, embeds: list[th.Tensor]) -> th.Tensor:
+        """Combine active metadata embeddings into a context vector.
+
+        Args:
+            embeds: Active per-spectrum metadata embeddings, each of shape (batch, d_k), in a
+                fixed order; the summed ``d_k`` must equal ``input_dim``.
+
+        Returns:
+            Context vector of shape (batch, out_dim).
+
+        Raises:
+            ValueError: If ``embeds`` is empty or its concatenated width != ``input_dim``.
+        """
+        if not embeds:
+            raise ValueError("ContextEmbedding.forward requires at least one metadata embedding")
+        x = th.cat(embeds, dim=-1)
+        if x.shape[-1] != self.input_dim:
+            raise ValueError(
+                f"ContextEmbedding got concatenated width {x.shape[-1]}, expected {self.input_dim}"
+            )
+        return self.net(x)
