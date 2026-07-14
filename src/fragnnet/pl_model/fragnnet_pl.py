@@ -120,6 +120,7 @@ class FraGNNetPL(SpectrumPL):
             context_embedding_hidden_dim=self.hparams.context_embedding_hidden_dim,
             context_insert_location=self.hparams.context_insert_location,
             debug_validate_outputs=self.hparams.debug_validate_outputs,
+            skip_explainability_when_training=self.hparams.skip_train_explainability,
         )
 
         self._check_ce_params()
@@ -384,6 +385,36 @@ class FraGNNetPL(SpectrumPL):
 
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
+
+        # skip_train_explainability drops the frag_real_* / nb_iso marginals on training forwards to
+        # cut the forward peak. Those marginals are consumed only by the entropy aux losses below, so
+        # refuse to enable it while any such loss is active (fail fast rather than crash on a None).
+        if self.hparams.skip_train_explainability:
+            _expl_losses = {
+                "formula_e",
+                "formula_ne",
+                "node_e",
+                "node_ne",
+                "node_formula_e",
+                "node_formula_ne",
+                "formula_node_e",
+                "formula_node_ne",
+                "nb_node_e",
+                "nb_node_ne",
+                "nb_node_formula_e",
+                "nb_node_formula_ne",
+                "nb_formula_node_e",
+                "nb_formula_node_ne",
+                "nb_node_node_e",
+                "nb_node_node_ne",
+            }
+            _active = _expl_losses.intersection(loss_names)
+            if _active:
+                raise ValueError(
+                    "skip_train_explainability=True is incompatible with the active explainability "
+                    f"losses {sorted(_active)}; they consume the per-node/formula marginals that the "
+                    "flag skips during training. Disable those losses or the flag."
+                )
 
     def _setup_loss_fn(self):
         # cross entropy

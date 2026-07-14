@@ -124,6 +124,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         context_embedding_hidden_dim: int = 64,
         context_insert_location: str = "mol,mlp",
         debug_validate_outputs: bool = False,
+        skip_explainability_when_training: bool = False,
     ):
         # nn.Module init
         super().__init__()
@@ -207,6 +208,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.num_hs = num_hs
         self.num_elements = num_elements
         self.debug_validate_outputs = debug_validate_outputs
+        # When True, the frag_real_* explainability marginals (P(n), P(f), P(f|n), P(n|f), P(h) and
+        # the nb_iso variants) are skipped during TRAINING forward passes -- they are consumed only
+        # by the entropy aux losses and by eval/inference, so with those off they are dead weight on
+        # the forward peak. Only affects self.training=True passes; eval/inference always compute
+        # them. Default False keeps the original behavior. The PL module gates this on the active
+        # loss set so it is never enabled while a consumer is live.
+        self.skip_explainability_when_training = skip_explainability_when_training
         if not 0.0 <= cc_feature_dropout <= 1.0:
             raise ValueError(f"cc_feature_dropout must be in [0, 1], got {cc_feature_dropout}")
         self.cc_feature_dropout = float(cc_feature_dropout)
@@ -1550,80 +1558,110 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_edge_h_logprobs = None
             frag_edge_batch_idxs = None
 
-        # select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
-        _real_mask = frag_joint_mask.bool()
-        # Compute real positions once; derive node/h-slot indices via integer div/mod to avoid
-        # materializing three separate (N×H) long tensors (node_idxs, h_counts, h_offsets).
-        real_pos = th.nonzero(_real_mask, as_tuple=False).squeeze(1)  # (J,)
-        H = self.mlp_output_dim
-        frag_real_joint_logits = frag_joint_logits[_real_mask]
-        frag_real_joint_node_idxs = real_pos // H
-        _real_h_pos = real_pos % H
-        frag_real_joint_h_counts = self._h_counts_buf[_real_h_pos]
-        frag_real_joint_h_offsets = th.zeros_like(frag_real_joint_h_counts)
-        frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
-        frag_real_joint_batch_idxs = frag_node_batch_idxs[frag_real_joint_node_idxs]
-        # P(f,n)
-        frag_real_joint_logprobs = scatter_logsoftmax(
-            frag_real_joint_logits, frag_real_joint_batch_idxs
+        # Explainability marginals (P(n), P(f), P(f|n), P(n|f), P(h) + nb_iso below) are terminal:
+        # nothing on the loss-critical spectrum path (spec_logprobs, null, oos) depends on them.
+        # Skip them on TRAINING forwards when opted in (no active consumer) to cut the forward peak;
+        # eval/inference (self.training False) and any explainability request always compute them.
+        _compute_expl = (
+            return_explainability_tensors
+            or self.debug_validate_outputs
+            or not (self.training and self.skip_explainability_when_training)
         )
-        # P(n) - sum, renormalize, but keep all-NULL nodes (as zeros)
-        _need_expl_idxs = return_explainability_tensors or self.debug_validate_outputs
-        frag_real_node_node_idxs = (
-            th.arange(batch_frag_num_nodes, device=device) if _need_expl_idxs else None
-        )
-        frag_real_node_logprobs = scatter_logsumexp(
-            frag_real_joint_logprobs,
-            frag_real_joint_node_idxs,
-            dim_size=batch_frag_num_nodes,
-        )
-        frag_real_node_logprobs = scatter_logsoftmax(frag_real_node_logprobs, frag_node_batch_idxs)
-        # P(f) - sum, renormalize, but keep NULL formulae (as zeros)
-        frag_real_formula_logprobs = scatter_logsumexp(
-            frag_real_joint_logprobs,
-            frag_real_joint_formula_idxs,
-            dim_size=batch_frag_num_formulae,
-        )
-        frag_real_formula_logprobs = scatter_logsoftmax(
-            frag_real_formula_logprobs,
-            frag_formula_batch_idxs,
-        )
-        frag_real_formula_formula_idxs = (
-            th.arange(batch_frag_num_formulae, device=device) if _need_expl_idxs else None
-        )
-        # P(f|n) - remove all NULLs from conditionals
-        frag_real_node_formula_logprobs = (
-            frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
-        )
-        frag_real_node_formula_logprobs = scatter_logsoftmax(
-            frag_real_node_formula_logprobs, frag_real_joint_node_idxs
-        )
-        # P(n|f) - remove all NULLs from conditionals
-        frag_real_formula_node_logprobs = (
-            frag_real_joint_logprobs - frag_real_formula_logprobs[frag_real_joint_formula_idxs]
-        )
-        frag_real_formula_node_logprobs = scatter_logsoftmax(
-            frag_real_formula_node_logprobs, frag_real_joint_formula_idxs
-        )
-        # hydrogens
-        frag_real_joint_h_idxs = (
-            frag_real_joint_h_counts + self.num_hs + frag_real_joint_h_offsets
-        ) + frag_real_joint_batch_idxs * self.mlp_output_dim
+        if _compute_expl:
+            # select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
+            _real_mask = frag_joint_mask.bool()
+            # Compute real positions once; derive node/h-slot indices via integer div/mod to avoid
+            # materializing three separate (N×H) long tensors (node_idxs, h_counts, h_offsets).
+            real_pos = th.nonzero(_real_mask, as_tuple=False).squeeze(1)  # (J,)
+            H = self.mlp_output_dim
+            frag_real_joint_logits = frag_joint_logits[_real_mask]
+            frag_real_joint_node_idxs = real_pos // H
+            _real_h_pos = real_pos % H
+            frag_real_joint_h_counts = self._h_counts_buf[_real_h_pos]
+            frag_real_joint_h_offsets = th.zeros_like(frag_real_joint_h_counts)
+            frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
+            frag_real_joint_batch_idxs = frag_node_batch_idxs[frag_real_joint_node_idxs]
+            # P(f,n)
+            frag_real_joint_logprobs = scatter_logsoftmax(
+                frag_real_joint_logits, frag_real_joint_batch_idxs
+            )
+            # P(n) - sum, renormalize, but keep all-NULL nodes (as zeros)
+            _need_expl_idxs = return_explainability_tensors or self.debug_validate_outputs
+            frag_real_node_node_idxs = (
+                th.arange(batch_frag_num_nodes, device=device) if _need_expl_idxs else None
+            )
+            frag_real_node_logprobs = scatter_logsumexp(
+                frag_real_joint_logprobs,
+                frag_real_joint_node_idxs,
+                dim_size=batch_frag_num_nodes,
+            )
+            frag_real_node_logprobs = scatter_logsoftmax(
+                frag_real_node_logprobs, frag_node_batch_idxs
+            )
+            # P(f) - sum, renormalize, but keep NULL formulae (as zeros)
+            frag_real_formula_logprobs = scatter_logsumexp(
+                frag_real_joint_logprobs,
+                frag_real_joint_formula_idxs,
+                dim_size=batch_frag_num_formulae,
+            )
+            frag_real_formula_logprobs = scatter_logsoftmax(
+                frag_real_formula_logprobs,
+                frag_formula_batch_idxs,
+            )
+            frag_real_formula_formula_idxs = (
+                th.arange(batch_frag_num_formulae, device=device) if _need_expl_idxs else None
+            )
+            # P(f|n) - remove all NULLs from conditionals
+            frag_real_node_formula_logprobs = (
+                frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
+            )
+            frag_real_node_formula_logprobs = scatter_logsoftmax(
+                frag_real_node_formula_logprobs, frag_real_joint_node_idxs
+            )
+            # P(n|f) - remove all NULLs from conditionals
+            frag_real_formula_node_logprobs = (
+                frag_real_joint_logprobs - frag_real_formula_logprobs[frag_real_joint_formula_idxs]
+            )
+            frag_real_formula_node_logprobs = scatter_logsoftmax(
+                frag_real_formula_node_logprobs, frag_real_joint_formula_idxs
+            )
+            # hydrogens
+            frag_real_joint_h_idxs = (
+                frag_real_joint_h_counts + self.num_hs + frag_real_joint_h_offsets
+            ) + frag_real_joint_batch_idxs * self.mlp_output_dim
 
-        frag_real_h_logprobs = scatter_logsumexp(
-            frag_real_joint_logprobs,
-            frag_real_joint_h_idxs,
-            dim_size=batch_size * self.mlp_output_dim,
-        )
+            frag_real_h_logprobs = scatter_logsumexp(
+                frag_real_joint_logprobs,
+                frag_real_joint_h_idxs,
+                dim_size=batch_size * self.mlp_output_dim,
+            )
 
-        frag_real_h_logprobs = th.clamp(frag_real_h_logprobs, max=0.0)
-        frag_real_h_counts = self._h_counts_range_buf.repeat(batch_size)
-        frag_real_h_batch_idxs = th.repeat_interleave(
-            th.arange(batch_size, device=device), self.mlp_output_dim
-        )
+            frag_real_h_logprobs = th.clamp(frag_real_h_logprobs, max=0.0)
+            frag_real_h_counts = self._h_counts_range_buf.repeat(batch_size)
+            frag_real_h_batch_idxs = th.repeat_interleave(
+                th.arange(batch_size, device=device), self.mlp_output_dim
+            )
+        else:
+            # training fast path: marginals unused (no active consumer) -> emit None
+            frag_real_joint_node_idxs = None
+            frag_real_joint_formula_idxs = None
+            frag_real_joint_batch_idxs = None
+            frag_real_joint_logprobs = None
+            frag_real_node_node_idxs = None
+            frag_real_node_logprobs = None
+            frag_real_formula_logprobs = None
+            frag_real_formula_formula_idxs = None
+            frag_real_node_formula_logprobs = None
+            frag_real_formula_node_logprobs = None
+            frag_real_joint_h_counts = None
+            frag_real_joint_h_idxs = None
+            frag_real_h_logprobs = None
+            frag_real_h_counts = None
+            frag_real_h_batch_idxs = None
 
-        # calculate isomorphic distributions
-        if self.nb_iso:
+        # calculate isomorphic distributions (explainability-only; skipped with the frag_real_*
+        # block on the training fast path, where _compute_expl is False)
+        if self.nb_iso and _compute_expl:
             # P(n')
             frag_nb_node_logprobs = scatter_logsumexp(
                 frag_real_node_logprobs, frag_nb_idxs, dim_size=batch_frag_nb_num_nodes

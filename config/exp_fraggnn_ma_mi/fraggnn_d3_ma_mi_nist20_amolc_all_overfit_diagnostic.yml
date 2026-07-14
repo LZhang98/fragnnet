@@ -269,3 +269,7 @@ mlp_hidden_size: 256    # keep the per-node formula head at default: it runs per
 mlp_num_layers: 3
 # fast debug: no checkpoint IO
 disable_checkpoints: True
+# skip the explainability marginals on training forwards to cut the forward peak. Safe here: the
+# only train-time consumers are the entropy losses (off under skip_extra_losses) and the aux
+# metrics cos_sim/opt_cos_sim (use the spectrum path, not the marginals).
+skip_train_explainability: True

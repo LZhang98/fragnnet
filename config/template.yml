@@ -615,6 +615,13 @@ log_adduct_inst_ce_metrics: False  # log per-(adduct×inst, CE-bin) metrics to w
 log_adduct_inst_ce_min_count: 20  # min spectra per group to include in the table/chart
 report_metric_std: False
 track_datapoint_metrics: False
+compute_train_auxiliary_metrics: False  # also compute auxiliary_scores (cos_sim, cos_hun, pred_node_count, etc.) on train, not just val/test -- adds eval-tensor overhead to every train batch
+# Skip the frag_real_* / nb_iso explainability marginals (P(n), P(f), P(f|n), P(n|f), P(h)) on
+# TRAINING forwards to cut the forward-pass memory peak. Those marginals are consumed only by the
+# entropy aux losses and by eval/inference, so this is a no-op on the trained model when they are
+# off. Refuses to enable while an explainability loss is active. Eval/val/inference always compute
+# them (so aux metrics are unaffected). Only enable when train aux metrics also don't need them.
+skip_train_explainability: False
 gaussian_renormalize: False
 pm_tolerance_multiple: 3.0
 activation_checkpointing: False
