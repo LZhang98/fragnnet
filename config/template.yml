@@ -225,6 +225,12 @@ mol_num_heads: 4  # Number of attention heads (GINE_EFA only); must divide mol_h
 cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "mlp", "bilinear"]
 cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
 cc_feature_dropout: 0.0  # Training-only batch-level dropout for full-fragment cc node feature group
+# Training-only PER-ATOM dropout on the cc mask: independently drop each atom from a fragment's
+# atom-membership set, so the pooled cc embedding sees a random subset of the fragment's atoms.
+# Regularizes against memorizing exact atom sets (aimed at the train->val gap). Much finer-grained
+# than cc_feature_dropout (which drops the whole cc group for the whole batch on one scalar draw).
+# boundary_cc / boundary_pair keep the true mask. Fragments are never fully emptied.
+cc_atom_dropout: 0.0
 
 # ============================================================================
 # Fragment GNN Configuration

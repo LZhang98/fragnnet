@@ -115,6 +115,7 @@ class FraGNNetPL(SpectrumPL):
             stratum_scaler_embed_dim=self.hparams.stratum_scaler_embed_dim,
             output_formula_str=self.hparams.output_formula_str,
             cc_feature_dropout=self.hparams.cc_feature_dropout,
+            cc_atom_dropout=self.hparams.cc_atom_dropout,
             context_embedding=self.hparams.context_embedding,
             context_embedding_dim=self.hparams.context_embedding_dim,
             context_embedding_hidden_dim=self.hparams.context_embedding_hidden_dim,

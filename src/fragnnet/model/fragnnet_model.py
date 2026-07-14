@@ -118,6 +118,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ace_mean: float,
         ace_std: float,
         cc_feature_dropout: float,
+        cc_atom_dropout: float = 0.0,
         depth_ce_bias: bool = False,
         context_embedding: bool = False,
         context_embedding_dim: int = 64,
@@ -218,6 +219,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if not 0.0 <= cc_feature_dropout <= 1.0:
             raise ValueError(f"cc_feature_dropout must be in [0, 1], got {cc_feature_dropout}")
         self.cc_feature_dropout = float(cc_feature_dropout)
+        # Per-ATOM dropout on the cc mask during training: independently drop each atom from a
+        # fragment's atom-membership set, so the pooled cc embedding sees a random subset of the
+        # fragment's atoms. Regularizes against memorizing exact atom sets (targets the train->val
+        # gap). Distinct from cc_feature_dropout, which zeroes the WHOLE cc group for the whole
+        # batch on a single scalar draw. Applied only to the local cc_mask, so boundary_cc /
+        # boundary_pair keep the true mask (same convention as cc_corruption_frac). A fragment is
+        # never emptied: any fragment that loses all atoms is restored.
+        if not 0.0 <= cc_atom_dropout <= 1.0:
+            raise ValueError(f"cc_atom_dropout must be in [0, 1], got {cc_atom_dropout}")
+        self.cc_atom_dropout = float(cc_atom_dropout)
+        # Diagnostic-only: fraction of cc mask bits to randomly flip at eval time, to test
+        # whether the model relies on precise cc atom-identity content. Not a config option;
+        # set directly on the model instance (see scripts/debug/debug_cc_corruption_eval.py).
+        self.cc_corruption_frac = 0.0
 
         # calculate node/edge feats sizes
         self.mol_node_feats = mol_node_feats
@@ -768,7 +783,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 get_node_feats(frag_x, frag_node_feat_idxs, "cc").to(device)
             )
         if "cc" in self.frag_node_feats:
-            frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
+            cc_mask = frag_node_mask
+            if self.cc_corruption_frac > 0.0:
+                flip = th.rand_like(cc_mask, dtype=float_dtype) < self.cc_corruption_frac
+                cc_mask = cc_mask ^ flip
+            if self.training and self.cc_atom_dropout > 0.0:
+                # per-atom dropout: independently drop atoms from each fragment's membership set
+                drop = th.rand_like(cc_mask, dtype=float_dtype) < self.cc_atom_dropout
+                cc_mask = cc_mask & ~drop
+                # never empty a fragment (an empty pool would yield a degenerate cc embedding):
+                # restore the true mask for any fragment that lost every atom
+                _emptied = ~cc_mask.any(dim=1)
+                if _emptied.any():
+                    cc_mask = th.where(_emptied.unsqueeze(1), frag_node_mask, cc_mask)
+            frag_node_mask_idxs = th.nonzero(cc_mask).long()
             # Compute offset to convert local atom indices to global batch indices
             frag_node_offsets = mol_num_nodes[
                 th.bucketize(frag_node_mask_idxs[:, 0], frag_num_nodes, right=True) - 1
