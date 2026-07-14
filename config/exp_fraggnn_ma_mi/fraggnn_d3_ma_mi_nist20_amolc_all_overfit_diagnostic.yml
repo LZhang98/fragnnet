@@ -263,7 +263,9 @@ debug_overfit_batches: 8      # ~8*128 ~= 1024 spectra: small enough to memorize
                               # to be a real (molecule, CE) ranking test
 # capacity up (remove model size as a confound)
 mol_num_layers: 5
-mlp_hidden_size: 512
+mlp_hidden_size: 256    # keep the per-node formula head at default: it runs per DAG-node, so
+                        # widening it is the main memory cost and adds little for the ranking test;
+                        # the capacity that matters is the mol encoder (512 / 5 layers) above.
 mlp_num_layers: 3
 # fast debug: no checkpoint IO
 disable_checkpoints: True
