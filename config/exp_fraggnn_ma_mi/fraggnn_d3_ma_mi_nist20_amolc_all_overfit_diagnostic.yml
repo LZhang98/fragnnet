@@ -67,8 +67,10 @@ frag_params:
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
-  preload: True        # load all DAGs into memory at startup for speed
-  preprocess: True     # apply preprocessing transforms at load time
+  preload: False       # load DAGs from disk per __getitem__ instead of holding them all in RAM:
+                       # the resident DAG dict is forked into every worker each epoch (COW), and
+                       # this run was OOM-killed on host RAM. Slower per epoch, bounded memory.
+  preprocess: False    # requires preload (asserted in _preprocess_frag); process per-item instead
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
@@ -229,7 +231,8 @@ use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: False   # fixed subset: same batches every epoch (clean overfit)
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 400000
+dynamic_batch_sampler_max: 400000  # 200k packed only ~1.8 spectra/mini-batch (2248 per epoch);
+                                   # doubling halves the batch count and the per-batch IPC overhead
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)
@@ -246,6 +249,12 @@ simple_group_sampler_type: group
 # ============================================================================
 pl_enable_progress_bar: False
 pandarallel_enable_progress_bar: False
+# Down from the template default of 7. dynamic_batch_sampler forces
+# reload_dataloaders_every_n_epochs=1, so every ~9s epoch re-forks the whole worker pool and
+# re-ships ~2248 tiny mini-batches through shared memory; the job was OOM-killed on host RAM
+# (128G) at epoch 140. The subset is preloaded and preprocessed in RAM, so __getitem__ is cheap
+# and extra workers buy little here.
+num_workers: 2
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
