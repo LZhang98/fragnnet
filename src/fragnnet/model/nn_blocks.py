@@ -171,6 +171,18 @@ class GNN(nn.Module):
                 normalization=self.normalization,
                 **kwargs,
             )
+        elif self.gnn_type == "GINE_GATED":
+            self.gnn = GatedGINE(
+                hidden_size=self.hidden_size,
+                edge_feats_size=self.edge_feats_size,
+                node_feats_size=self.node_feats_size,
+                num_layers=self.num_layers,
+                dropout=self.dropout,
+                normalization=self.normalization,
+                ctx_dim=kwargs["ctx_dim"],
+                gate_mode=kwargs["gate_mode"],
+                gate_hidden_dim=kwargs["gate_hidden_dim"],
+            )
         elif self.gnn_type == "NodeMLP":
             self.gnn = NodeMLP(
                 hidden_size=self.hidden_size,
@@ -209,7 +221,7 @@ class GNN(nn.Module):
         else:
             raise NotImplementedError(self.gnn_type)
 
-    def forward(self, x, batch_index, edge_index, edge_attr):
+    def forward(self, x, batch_index, edge_index, edge_attr, ctx=None):
         """
         Forward pass for the GNN.
 
@@ -218,12 +230,22 @@ class GNN(nn.Module):
             batch_index (torch.Tensor): Batch indices for nodes.
             edge_index (torch.Tensor): Edge indices.
             edge_attr (torch.Tensor): Edge features.
+            ctx (torch.Tensor | None): Per-graph context of shape (num_graphs, ctx_dim).
+                Required by gnn_type="GINE_GATED", ignored by every other type.
 
         Returns:
             torch.Tensor: Encoded node features.
+
+        Raises:
+            ValueError: If gnn_type="GINE_GATED" and ctx is None.
         """
         z = self.input_project(x)
-        z = self.gnn(z, batch_index, edge_index, edge_attr)
+        if self.gnn_type == "GINE_GATED":
+            if ctx is None:
+                raise ValueError("gnn_type='GINE_GATED' requires ctx, got None")
+            z = self.gnn(z, batch_index, edge_index, edge_attr, ctx)
+        else:
+            z = self.gnn(z, batch_index, edge_index, edge_attr)
         return z
 
 
@@ -323,6 +345,205 @@ class GINE(nn.Module):
         edge_attr = self.edge_transform(edge_attr)
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x, edge_index, edge_attr)
+            layer_out = self.norm_fn(layer_out, batch_index, norm)
+            x = F.relu(dropout(layer_out)) + x  # Residual connection
+        return x
+
+
+class GatedGINEConv(nn.Module):
+    """A GINE convolution whose per-edge messages are scaled by an externally supplied gate.
+
+    Reproduces ``pyg.nn.conv.GINEConv(nn=..., eps=0.0, edge_dim=None)``, i.e.
+    ``out_i = nn((1 + eps) * x_i + sum_j relu(x_j + e_ij))``, but weights each message by a
+    scalar ``g_ij``. The gate is passed per call rather than owned here, so the caller decides
+    whether it is static or recomputed per layer (see ``GatedGINE``).
+
+    Implemented directly rather than by subclassing GINEConv: ``MessagePassing.propagate`` has
+    its signature generated from the parent's ``message()`` at class-creation time and rejects
+    the extra ``gate`` argument. Parameter names mirror GINEConv (``nn``, ``eps``) so the two
+    stay state-dict compatible, which is what lets the identity-at-init test compare them.
+
+    Attributes:
+        nn: The GINE apply function, applied after aggregation.
+        eps: Self-loop weighting, registered as a buffer to match GINEConv's state dict.
+    """
+
+    def __init__(self, nn_module: nn.Module, eps: float = 0.0):
+        """Initialize the gated GINE convolution.
+
+        Args:
+            nn_module: Apply function mapping (hidden_size,) -> (hidden_size,) after aggregation.
+            eps: Self-loop weighting; 0.0 matches the stock GINE setup.
+        """
+        super().__init__()
+        self.nn = nn_module
+        self.register_buffer("eps", th.tensor([eps]))
+
+    def forward(
+        self, x: th.Tensor, edge_index: th.Tensor, edge_attr: th.Tensor, gate: th.Tensor
+    ) -> th.Tensor:
+        """Forward pass with gated messages.
+
+        Args:
+            x: Node features of shape (num_nodes, hidden_size).
+            edge_index: Edge connectivity of shape (2, num_edges); row 0 is the message source,
+                row 1 the target (PyG's source_to_target convention).
+            edge_attr: Edge features of shape (num_edges, hidden_size).
+            gate: Per-edge message scale of shape (num_edges, 1), broadcast over hidden_size.
+
+        Returns:
+            Updated node features of shape (num_nodes, hidden_size).
+        """
+        src, dst = edge_index[0], edge_index[1]
+        msg = F.relu(x[src] + edge_attr) * gate
+        aggr = th.zeros_like(x).index_add_(0, dst, msg)
+        return self.nn((1 + self.eps) * x + aggr)
+
+
+class GatedGINE(nn.Module):
+    """GINE whose messages are gated by a per-bond scalar conditioned on a context vector.
+
+    Stock GINE shares one message function across every collision energy and adduct: context
+    enters only as an extra constant channel concatenated onto every atom's input features, so
+    the model must discover any energy-by-bond interaction inside a shared MLP. This variant
+    makes that interaction structural -- each bond gets a scalar conductance
+    ``g_ij = 1 + tanh(MLP([...]))`` bounded to [0, 2] that depends on the context, so which bonds
+    transmit information can change with energy/adduct rather than only how much the result is
+    rescaled afterwards.
+
+    The gate readout is zero-initialized, so ``g_ij == 1`` exactly at init and the module is
+    bit-identical to ``GINE`` on the first forward. It is therefore a strict superset: training
+    can recover stock GINE by keeping the gate at 1.
+
+    Two modes trade cost for expressiveness:
+        - "static": one gate computed from (bond, context) before the layer loop and reused at
+          every layer. Tests "bond identity x context" directly and is readable as a per-bond
+          lability score.
+        - "dynamic": a gate recomputed per layer from the live hidden states
+          (x_src, x_dst, bond, context), so the gate also sees the electronic environment the
+          GNN builds up. Subsumes "static" at the cost of one gate MLP per layer.
+
+    Attributes:
+        gate_mode: Either "static" or "dynamic".
+        gate_mlps: Gate readout(s); length 1 for "static", num_layers for "dynamic".
+        edge_transform: Shared linear mapping raw edge features to hidden_size.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        node_feats_size: int,
+        edge_feats_size: int,
+        num_layers: int,
+        dropout: float,
+        normalization: str,
+        ctx_dim: int,
+        gate_mode: str,
+        gate_hidden_dim: int,
+        **kwargs,
+    ):
+        """Initialize GatedGINE.
+
+        Args:
+            hidden_size: Hidden layer size.
+            node_feats_size: Size of node features.
+            edge_feats_size: Size of edge features.
+            num_layers: Number of GINE layers.
+            dropout: Dropout rate.
+            normalization: Normalization type ("batch", "layer", "graph", "none").
+            ctx_dim: Width of the per-graph context vector conditioning the gate.
+            gate_mode: "static" (one gate, bond x context) or "dynamic" (per-layer, also sees
+                the live hidden states).
+            gate_hidden_dim: Hidden width of the gate MLP(s).
+
+        Raises:
+            ValueError: If gate_mode is not "static" or "dynamic", or ctx_dim is not positive.
+        """
+        super().__init__()
+        if gate_mode not in ("static", "dynamic"):
+            raise ValueError(f"gate_mode must be 'static' or 'dynamic', got {gate_mode!r}")
+        if ctx_dim <= 0:
+            raise ValueError(f"ctx_dim must be positive, got {ctx_dim}")
+        self.gate_mode = gate_mode
+
+        self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
+
+        self.layers = nn.ModuleList(
+            [
+                GatedGINEConv(
+                    nn_module=nn.Sequential(
+                        nn.Linear(hidden_size, hidden_size),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size, hidden_size),
+                    ),
+                    eps=0.0,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+        # static: [edge_attr, ctx]; dynamic: [x_src, x_dst, edge_attr, ctx]
+        gate_in = (hidden_size + ctx_dim) if gate_mode == "static" else (3 * hidden_size + ctx_dim)
+        num_gates = 1 if gate_mode == "static" else num_layers
+        self.gate_mlps = nn.ModuleList(
+            [self._build_gate_mlp(gate_in, gate_hidden_dim) for _ in range(num_gates)]
+        )
+
+        norm_mod, norm_fn = get_norm(normalization, hidden_size)
+        self.norm_fn = norm_fn
+        self.norms = get_clones(norm_mod, num_layers)
+        self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
+
+    @staticmethod
+    def _build_gate_mlp(in_dim: int, hidden_dim: int) -> nn.Module:
+        """Build a gate readout whose output is zero at init (so the gate starts at 1.0)."""
+        out = nn.Linear(hidden_dim, 1)
+        nn.init.zeros_(out.weight)
+        nn.init.zeros_(out.bias)
+        return nn.Sequential(nn.Linear(in_dim, hidden_dim), nn.SiLU(), out)
+
+    @staticmethod
+    def _gate(mlp: nn.Module, feats: th.Tensor) -> th.Tensor:
+        """Map gate features to a per-edge scale bounded to [0, 2], equal to 1 at zero-init."""
+        return 1.0 + th.tanh(mlp(feats))
+
+    def forward(
+        self,
+        x: th.Tensor,
+        batch_index: th.Tensor,
+        edge_index: th.Tensor,
+        edge_attr: th.Tensor,
+        ctx: th.Tensor,
+    ) -> th.Tensor:
+        """Forward pass with context-gated messages.
+
+        Args:
+            x: Node features of shape (num_nodes, hidden_size).
+            batch_index: Graph assignment per node, shape (num_nodes,).
+            edge_index: Edge connectivity of shape (2, num_edges).
+            edge_attr: Raw edge features of shape (num_edges, edge_feats_size).
+            ctx: Per-graph context vector of shape (num_graphs, ctx_dim).
+
+        Returns:
+            Encoded node features of shape (num_nodes, hidden_size).
+        """
+        edge_attr = self.edge_transform(edge_attr)
+        # PyG's default source_to_target flow: messages run x[src] -> x[dst].
+        src, dst = edge_index[0], edge_index[1]
+        ctx_e = ctx[batch_index[src]]  # broadcast per-graph context to its edges
+
+        static_gate = None
+        if self.gate_mode == "static":
+            static_gate = self._gate(self.gate_mlps[0], th.cat([edge_attr, ctx_e], dim=-1))
+
+        for i, (dropout, layer, norm) in enumerate(zip(self.dropouts, self.layers, self.norms)):
+            if static_gate is not None:
+                gate = static_gate
+            else:
+                gate = self._gate(
+                    self.gate_mlps[i], th.cat([x[src], x[dst], edge_attr, ctx_e], dim=-1)
+                )
+            layer_out = layer(x, edge_index, edge_attr, gate)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
             x = F.relu(dropout(layer_out)) + x  # Residual connection
         return x

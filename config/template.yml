@@ -213,7 +213,16 @@ spectrum_encoder_params:
 # ============================================================================
 mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
-mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
+mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA", "GINE_GATED"]
+# GINE_GATED: each bond's message is scaled by a context-conditioned scalar gate in [0, 2], so
+# which bonds conduct can change with CE/adduct instead of context only rescaling the output.
+# Requires context_embedding: True (supplies the conditioning vector). Zero-init => gate == 1.0
+# at init, i.e. bit-identical to GINE, so it is a strict superset. Ignored for other gnn_types.
+mol_msg_gate_mode: static  # ["static", "dynamic"] — static: one gate from (bond, context),
+                           # reused every layer. dynamic: recomputed per layer, also sees the
+                           # live hidden states (x_src, x_dst); subsumes static, costs one gate
+                           # MLP per layer.
+mol_msg_gate_hidden_dim: 64  # Hidden width of the gate MLP(s)
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]

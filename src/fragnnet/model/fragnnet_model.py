@@ -123,6 +123,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         context_embedding: bool = False,
         context_embedding_dim: int = 64,
         context_embedding_hidden_dim: int = 64,
+        mol_msg_gate_mode: str = "static",
+        mol_msg_gate_hidden_dim: int = 64,
         context_insert_location: str = "mol,mlp",
         debug_validate_outputs: bool = False,
         skip_explainability_when_training: bool = False,
@@ -258,6 +260,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "normalization": mol_normalization,
             "num_heads": mol_num_heads,
         }
+        # Context-gated mol messages: the gate is conditioned on the combined context vector, so
+        # it needs context_embedding to have produced one. Metadata concatenated at the mol input
+        # cannot serve -- it is per-atom-broadcast and already inside x. See
+        # docs/mol_msg_gate_plan.md.
+        self.mol_msg_gate = mol_gnn_type == "GINE_GATED"
+        if self.mol_msg_gate:
+            if not self.context_embedding:
+                raise ValueError(
+                    "mol_gnn_type='GINE_GATED' requires context_embedding=True to supply the "
+                    "context vector that conditions the gate"
+                )
+            mol_kwargs["ctx_dim"] = context_embedding_dim
+            mol_kwargs["gate_mode"] = mol_msg_gate_mode
+            mol_kwargs["gate_hidden_dim"] = mol_msg_gate_hidden_dim
 
         # Mol GNN
         self.mol_embedder = GNN(**mol_kwargs)
@@ -757,7 +773,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
 
         # get per-atom embeddings
-        mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
+        mol_embed_gnn = self.mol_embedder(
+            mol_x,
+            mol_batch,
+            mol_edge_index,
+            mol_edge_attr,
+            ctx=context_embed if self.mol_msg_gate else None,
+        )
 
         # pool mol embeddings
         # For sum/mean, use segment_csr (ptr-only path) — same logic as frag_pool below.
