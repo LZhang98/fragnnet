@@ -130,6 +130,12 @@ frag_params:
     # - cmf_h_formulae_idx  # CMF-derived H-formula index (filled at dataset load time)
     # - h_counts            # explicit H counts per fragment atom
     # - nb_iso_idx          # isotope index; requires nb_iso=True
+    # - num_cut_bonds       # how many bonds were broken to make this fragment. NO-OP on plain
+    #                       # single-bond BFS DAGs (cut count == depth there); only informative
+    #                       # on multi-cut DAGs (_mbfs / _ringmerge / SMARTS prepass)
+    # - rdbe                # ring-and-double-bond equivalents, 1 + sum_i n_i*(v_i-2)/2.
+    #                       # REQUIRES base_formula + h_counts (base_formula has no H column);
+    #                       # h_counts adds a DAG column but contributes 0 feature dims
     # - prepass_rule_id     # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
     # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
     # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; does not expose full-fragment cc

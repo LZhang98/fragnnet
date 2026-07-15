@@ -28,6 +28,8 @@ from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.utils.frag_utils import (
+    ELEMENT_TO_VE,
+    HEAVY_ELEMENTS,
     compute_boundary_mask,
     get_edge_feats,
     get_node_feats,
@@ -292,16 +294,52 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             complement_d = {"max_count_int": 2}
             dag_degree_d = {"max_count_int": 64}
             num_heavy_atoms_d = {"max_count_int": 128}
+            # cut bonds per fragment: the SMARTS ring-cleavage rules are the heaviest at 4 cuts
+            num_cut_bonds_d = {"max_count_int": 32}
+            # 2*RDBE (see below); ~2*(num_heavy_atoms+1) at most
+            rdbe_d = {"max_count_int": 256}
         else:
             formula_d = depth_d = complement_d = dag_degree_d = num_heavy_atoms_d = {}
+            num_cut_bonds_d = rdbe_d = {}
         self.formula_embedder = get_embedder(int_embedder, **formula_d)
         self.depth_embedder = get_embedder(int_embedder, **depth_d)
         self.complement_embedder = get_embedder(int_embedder, **complement_d)
         self.out_degree_embedder = get_embedder(int_embedder, **dag_degree_d)
         self.in_degree_embedder = get_embedder(int_embedder, **dag_degree_d)
         self.num_heavy_atoms_embedder = get_embedder(int_embedder, **num_heavy_atoms_d)
+        # Built only when enabled (the frag_q precedent below), unlike the embedders above: an
+        # unconditional module would add dead parameters to every existing config and break
+        # strict=True checkpoint loads for runs that predate these features.
+        if "num_cut_bonds" in frag_node_feats:
+            self.num_cut_bonds_embedder = get_embedder(int_embedder, **num_cut_bonds_d)
+        if "rdbe" in frag_node_feats:
+            self.rdbe_embedder = get_embedder(int_embedder, **rdbe_d)
         if "frag_q" in frag_node_feats:
             self.frag_q_proj = nn.Linear(1, self.out_degree_embedder.num_dim)
+        if "rdbe" in frag_node_feats:
+            # Validate at construction rather than on the first batch: these are config errors and
+            # should not surface hours into a run.
+            if "base_formula" not in frag_node_feats:
+                raise ValueError("rdbe requires base_formula in frag_node_feats")
+            if "h_counts" not in frag_node_feats:
+                raise ValueError(
+                    "rdbe requires h_counts in frag_node_feats (base_formula has no H column); "
+                    "h_counts adds a DAG column but contributes 0 feature dims"
+                )
+            # Ring-and-double-bond equivalents: RDBE = 1 + sum_i n_i * (v_i - 2) / 2, the standard
+            # generalization of "C - H/2 + N/2 + 1" to arbitrary valences. Derived from
+            # ELEMENT_TO_VE rather than hardcoded so it stays correct if the element list changes.
+            # H is appended last in ELEMENTS and is monovalent. Stored doubled (v_i - 2, not
+            # (v_i - 2)/2) so the contraction stays in integer arithmetic; see the forward.
+            _val = th.tensor(
+                [ELEMENT_TO_VE[e] for e in HEAVY_ELEMENTS] + [1], dtype=th.long
+            )
+            if _val.shape[0] != self.num_elements:
+                raise ValueError(
+                    f"rdbe valence table has {_val.shape[0]} entries but num_elements="
+                    f"{self.num_elements}; they must describe the same element list"
+                )
+            self.register_buffer("_rdbe_coef_buf", _val - 2, persistent=False)
         self.frag_node_feats = frag_node_feats
         self.frag_edge_feats = frag_edge_feats
         self._compute_frag_feats_sizes()
@@ -611,6 +649,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_node_feats_size += self.in_degree_embedder.num_dim
         if "num_heavy_atoms" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_heavy_atoms_embedder.num_dim
+        if "num_cut_bonds" in self.frag_node_feats:
+            self.frag_node_feats_size += self.num_cut_bonds_embedder.num_dim
+        if "rdbe" in self.frag_node_feats:
+            self.frag_node_feats_size += self.rdbe_embedder.num_dim
         if "frag_q" in self.frag_node_feats:
             self.frag_node_feats_size += self.out_degree_embedder.num_dim
         # edges
@@ -637,6 +679,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.out_degree_embedder = th.compile(self.out_degree_embedder, **kwargs)
         self.in_degree_embedder = th.compile(self.in_degree_embedder, **kwargs)
         self.num_heavy_atoms_embedder = th.compile(self.num_heavy_atoms_embedder, **kwargs)
+        if hasattr(self, "num_cut_bonds_embedder"):
+            self.num_cut_bonds_embedder = th.compile(self.num_cut_bonds_embedder, **kwargs)
+        if hasattr(self, "rdbe_embedder"):
+            self.rdbe_embedder = th.compile(self.rdbe_embedder, **kwargs)
         if hasattr(self, "ce_embedder"):
             self.ce_embedder = th.compile(self.ce_embedder, **kwargs)
         if hasattr(self, "m_ce_embedder"):
@@ -1123,6 +1169,50 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     )
                 )
             )
+        if "num_cut_bonds" in self.frag_node_feats:
+            # How many bonds were broken to make this fragment. Not recoverable from anything the
+            # model already has: mol_pool is a mean, so boundary_pair / cut_bond discard bond
+            # multiplicity, and `depth` is NOT a proxy -- the SMARTS ring-cleavage rules break 4
+            # bonds in a single BFS step, so a 4-cut xanthone node and a 1-cut node are both
+            # depth 1. Derived from the same precomputed indices boundary_pair uses (batched on
+            # every forward regardless of config), so it costs no data and no DAG regeneration.
+            # The mol graph is bidirectional (mol_params.pyg_bigraph), so a cut bond yields one
+            # entry per direction and BOTH map to the same (frag, inside_atom, outside_atom)
+            # triple -- a raw bincount returns exactly 2x the true count. Deduplicate rather than
+            # halve, so this stays correct if the mol graph is ever built undirected.
+            triples = th.stack(
+                [
+                    kwargs["boundary_pair_frag_idxs"],
+                    kwargs["boundary_pair_in_idxs"],
+                    kwargs["boundary_pair_out_idxs"],
+                ],
+                dim=1,
+            )
+            uniq_triples = th.unique(triples, dim=0)
+            cut_counts = th.bincount(uniq_triples[:, 0], minlength=frag_x.shape[0])[
+                : frag_x.shape[0]
+            ]
+            frag_ndata.append(
+                self.num_cut_bonds_embedder(cut_counts.reshape(batch_frag_num_nodes, -1))
+            )
+        if "rdbe" in self.frag_node_feats:
+            # Ring-and-double-bond equivalents: RDBE = 1 + sum_i n_i * (v_i - 2) / 2.
+            # base_formula carries NO hydrogen (its H column is identically zero), so H is taken
+            # from h_counts column 0 -- the delta-0 (unshifted) H count. RDBE is therefore the
+            # SKELETON value: each h-shift moves the true RDBE by +/-0.5, but the h-shift is an
+            # OUTPUT dimension of formula_module, not an input, so a per-node feature can only
+            # carry the delta-0 value. The shift correction is deterministic downstream.
+            # Embedded doubled (2*RDBE) to keep the half-integer resolution of odd-electron
+            # species on an integer embedder. Config validity is enforced in __init__.
+            h_delta0 = (
+                get_node_feats(frag_x, frag_node_feat_idxs, "h_counts")
+                .reshape(batch_frag_num_nodes, -1)[:, 0]
+                .clamp(min=0)  # -1 marks an unavailable h-state
+            )
+            counts = frag_base_formula_raw.clone()
+            counts[:, self.num_elements - 1] = h_delta0  # H is last in ELEMENTS
+            rdbe_x2 = 2 + (counts * self._rdbe_coef_buf).sum(dim=1)  # == 2 * RDBE
+            frag_ndata.append(self.rdbe_embedder(rdbe_x2.reshape(batch_frag_num_nodes, -1)))
         if "frag_q" in self.frag_node_feats:
             frag_ndata.append(
                 self.frag_q_proj(frag_pyg.frag_q.to(device=device, dtype=float_dtype))
