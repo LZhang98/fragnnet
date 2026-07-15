@@ -166,27 +166,37 @@ weight_decay: 0.0
 # THE ONLY FUNCTIONAL DELTA vs the constant-LR control run kljly2s9.
 # ----------------------------------------------------------------------------
 # Step budget is set by the FROZEN 4096-spectrum subset, not the full dataset.
-# Measured on kljly2s9: global_step 5535 at epoch 172 => ~32 optimizer steps per
-# epoch (dynamic_batch_sampler packs by frag_node, so this is measured, not
-# derived from train_batch_size). 1000 epochs => ~32,000 total steps.
-# The template's full-data numbers are ~12x wrong at this scale: a 5000-step
-# warmup would span ~156 epochs, and a 390k-step cosine would complete only ~8%
-# of its decay by end of run. Both are resized to the real budget below.
-# warmup: ~16 epochs (500 steps); cosine decay to 1% of peak (4e-6) by step 32k.
+# Measured on kljly2s9: exactly 32.00 optimizer steps/epoch at 46.8 s/epoch
+# (dynamic_batch_sampler packs by frag_node, so this is measured, not derived
+# from train_batch_size). The template's full-data numbers are ~40x wrong at this
+# scale: a 5000-step warmup would span ~156 epochs, and a 390k-step cosine would
+# complete <3% of its decay before the job's wall clock expires.
+#
+# SIZED TO THE WALL CLOCK, NOT max_epochs: at 76.9 epochs/h, 1000 epochs needs
+# ~13h, but these jobs run on a 4-6h limit (kljly2s9 was SLURM-killed at epoch
+# 304 / 3.94h). So the cosine is sized to COMPLETE AT EPOCH 300 (9600 steps),
+# which is where the constant-LR control had already plateaued (0.8860 at ep
+# 260-280 -> 0.8861 at ep 285-304). warmup: ~16 epochs (500 steps).
+#
+# max_epochs stays 1000 on purpose: build_lr_scheduler clamps cosine progress at
+# 1.0, so past step 9600 the LR simply holds the 1% floor (4e-6) instead of
+# wrapping or going negative. The verdict therefore lands at epoch ~300 no matter
+# when SLURM kills the job, and any extra wall clock just anneals at the floor.
 #
 # WHY THIS ARM EXISTS: at constant lr=4e-4, Adam bounces in a noise ball around
-# the optimum rather than settling into it, so kljly2s9's ~0.88 asymptote
+# the optimum rather than settling into it, so the control's 0.886 plateau
 # conflates an LR noise floor with a true expressivity ceiling. Decaying the LR
-# separates them, giving a real fit ceiling to compare against the 0.9221 train
-# oracle. Settles at ~0.922 => expressivity is fine, gap is generalization.
-# Settles at ~0.88 with LR at 1% of peak => a real wall the optimizer cannot
-# cross on memorizable data.
+# separates them, giving a real fit ceiling against the 0.9221 train oracle.
+# Read at epoch ~300, head-to-head vs the control's 0.8861:
+#   climbs toward ~0.922 => expressivity is fine, the gap is generalization.
+#   stays ~0.886 with LR at 1% of peak => a real wall the optimizer cannot cross
+#   on data it is actively memorizing.
 # ============================================================================
 lr_schedule: True
 lr: 0.0004
 lr_schedule_type: cosine
 lr_warmup_steps: 500
-lr_total_steps: 32000
+lr_total_steps: 9600
 lr_min_ratio: 0.01    # floor at 1% of peak LR (4e-6)
 lr_decay_rate: 0.95   # unused for cosine but required by template
 lr_decay_steps: 5000  # unused for cosine but required by template
