@@ -334,8 +334,29 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         )
 
     def _ce_location_check(self):
-        # input not used, just for shape consistency
-        pass
+        """Validate ce_insert_location against what this model actually implements.
+
+        Unlike prec/inst below, CE *is* consumed in forward, but only at a single location
+        ("mol" or "mlp"). The layer input dims are sized from the parsed location set while
+        forward dispatches on the raw string, so an unimplemented value would either drop CE
+        silently ("frag": no dim added, no branch taken) or mismatch shapes at the first
+        forward ("mol,mlp": dims added at both, CE concatenated at neither).
+
+        Raises:
+            ValueError: If a location other than "mol"/"mlp" is requested, or if more than one
+                location is requested.
+        """
+        unsupported = self.ce_insert_locations - {"mol", "mlp"}
+        if unsupported:
+            raise ValueError(
+                f"SiameseGNNModel does not support ce_insert_location(s) {sorted(unsupported)}; "
+                "allowed: mol, mlp (or none)"
+            )
+        if len(self.ce_insert_locations) > 1:
+            raise ValueError(
+                "SiameseGNNModel does not support multi-location CE insertion, got "
+                f"ce_insert_location={self.ce_insert_location!r}; use a single location"
+            )
 
     def _prec_location_check(self):
         # input not used, just for shape consistency
