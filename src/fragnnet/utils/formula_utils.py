@@ -45,7 +45,10 @@ PREC_TYPE_TO_MASS_DIFF = {
 # charge transfer (CMF): direct-charge mode — fragment retains charge without the proton/adduct.
 # For [M+H]+: proton departs with neutral → fragment is a direct cation, mass_diff ≈ 0 (-e only).
 # For [M-H]-: proton stays with neutral  → fragment is a direct anion,  mass_diff ≈ 0 (+e only).
-# Only delta_h=0 is used for these two adducts (other delta_h values duplicate CRF peaks).
+# [M-H-CO2]- carries the same [frag-H]- CRF carrier as [M-H]-, so it takes the same direct-anion
+# mass_diff. Giving it the CRF value instead makes every CMF row an exact duplicate of its own
+# CRF row (CMF(F) == CRF(F)), contributing no new m/z at all.
+# Only delta_h=0 is used for these adducts (other delta_h values duplicate CRF peaks).
 PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+H]+": -ELECTRON_MASS,  # direct cation: observed ≈ neutral mass
     "[M+Na]+": H_MASS - ELECTRON_MASS,
@@ -57,7 +60,7 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+H-NH3]+": H_MASS - ELECTRON_MASS,
     # negative stuff
     "[M-H]-": ELECTRON_MASS,  # direct anion: observed ≈ neutral mass
-    "[M-H-CO2]-": -H_MASS + ELECTRON_MASS,
+    "[M-H-CO2]-": ELECTRON_MASS,  # direct anion, same carrier as [M-H]-
     "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # fragments are [frag-H]-, same carrier as [M-H]-
     "[M-H-H2O]-": -H_MASS + ELECTRON_MASS,
     "[M-H+2i]-": -H_MASS + ELECTRON_MASS,

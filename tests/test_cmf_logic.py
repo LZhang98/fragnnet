@@ -224,6 +224,7 @@ def test_cmf_mminus_h_col0_only():
     [
         ("[M+H]+", True),
         ("[M-H]-", True),
+        ("[M-H-CO2]-", True),
         ("[M+Na]+", False),
         ("[M+NH4]+", False),
         ("[M+K]+", False),
@@ -263,6 +264,26 @@ def test_cmf_mass_diffs_direct_charge():
     """[M+H]+ and [M-H]- CMF mass diffs are ±ELECTRON_MASS (direct charge, no H transfer)."""
     assert abs(PREC_TYPE_TO_CMF_MASS_DIFF["[M+H]+"] - (-ELECTRON_MASS)) < 1e-9
     assert abs(PREC_TYPE_TO_CMF_MASS_DIFF["[M-H]-"] - ELECTRON_MASS) < 1e-9
+
+
+def test_cmf_mass_diff_m_h_co2_is_direct_anion():
+    """[M-H-CO2]- shares the [frag-H]- carrier of [M-H]-, so its CMF diff is +ELECTRON_MASS."""
+    assert abs(PREC_TYPE_TO_CMF_MASS_DIFF["[M-H-CO2]-"] - ELECTRON_MASS) < 1e-9
+
+
+def test_no_adduct_has_degenerate_cmf_mass_diff():
+    """No adduct may give CMF the same mass diff as CRF.
+
+    CMF(F) == CRF(F) makes every CMF row an exact m/z duplicate of its own CRF row, so the
+    CMF doubling adds no candidate m/z while still enlarging the formula softmax. This is a
+    regression guard: [M-H-CO2]- previously reused the CRF value.
+    """
+    degenerate = [
+        pt
+        for pt, cmf in PREC_TYPE_TO_CMF_MASS_DIFF.items()
+        if abs(cmf - PREC_TYPE_TO_MASS_DIFF[pt]) < 1e-9
+    ]
+    assert degenerate == [], f"CMF mass diff equals CRF mass diff for: {degenerate}"
 
 
 def test_unknown_precursor_raises_keyerror():

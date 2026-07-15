@@ -501,12 +501,12 @@ class SpecMolFragDataset(SpecMolDataset):
                 frag_node_feat_idxs[crf_node_feat_idx] : frag_node_feat_idxs[crf_node_feat_idx + 1],
             ]
 
-            # For [M+H]+/[M-H]- the CMF mode is direct-charge (proton departs with neutral):
-            # only delta_h=0 produces a unique peak; all other delta_h values duplicate CRF
-            # peaks shifted by ±1H, so only column 0 is written. Remaining CMF columns stay
+            # For [M+H]+/[M-H]-/[M-H-CO2]- the CMF mode is direct-charge (proton departs with
+            # neutral): only delta_h=0 produces a unique peak; all other delta_h values duplicate
+            # CRF peaks shifted by ±1H, so only column 0 is written. Remaining CMF columns stay
             # 0 (NULL from DAG initialisation) and are masked out by frag_joint_mask.
             # For all other adducts the full H-shift range is valid (charge migrates to H+).
-            if prec_type in ("[M+H]+", "[M-H]-"):
+            if prec_type in ("[M+H]+", "[M-H]-", "[M-H-CO2]-"):
                 crf_col0 = crf_formula_matrix[:, 0:1]
                 frag_pyg.x[
                     :,
