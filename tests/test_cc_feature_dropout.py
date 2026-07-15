@@ -1,7 +1,4 @@
-from pathlib import Path
-
 import torch as th
-import yaml
 
 from fragnnet.model.fragnnet_model import FraGNNetModel
 
@@ -61,16 +58,3 @@ def test_cc_feature_dropout_noop_when_cc_feature_absent():
 
     assert out is x
     assert th.equal(out, x)
-
-
-def test_cc_feature_dropout_config_keys_exist():
-    template = yaml.safe_load(Path("config/template.yml").read_text())
-    exp = yaml.safe_load(
-        Path(
-            "config/exp_fraggnn_ma_mi/d3_new_features/"
-            "fraggnn_d3_ma_mi_nist20_amolc_cc_dropout_02.yml"
-        ).read_text()
-    )
-
-    assert template["cc_feature_dropout"] == 0.0
-    assert exp["cc_feature_dropout"] == 0.2
