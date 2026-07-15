@@ -1,0 +1,316 @@
+# ============================================================================
+# W&B Logging
+# ============================================================================
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_overfit_diagnostic_lrdecay
+wandb_tags:
+- overfit_diagnostic  # small fixed subset, capacity up, reg off: can train_cos reach the oracle?
+- lr_decay            # THIS ARM: cosine decay resized to the real step budget (paired with constant-LR control kljly2s9)
+- retrieval
+- nist20
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- oos_multiple_1
+- gaussian_renormalize
+- b256          # batch size 256
+- vectorized_loss
+- lb16          # loss batch size 16
+- preload
+- preprocess
+- new_no_edges  # no edge features in fragment GNN
+- skip_extra_losses
+- binned_cosine_similarity
+- m+h
+- m-h
+- m+na
+- m+cl
+- frag_mode     # HCD/CID conditioning token
+- frag_mode_scale  # mode-conditioned affine output scaling
+- ce_scale      # CE-conditioned FiLM scaler
+- nce
+- cmf           # charge-migration fragments included
+- inst_tol      # per-instrument loss tolerance
+- boundary_pair   # boundary_pair node feature in fragment GNN
+- train_metrics_diagnostic   # same as baseline, but auxiliary_scores also computed on train
+
+# ============================================================================
+# Data File Paths
+# ============================================================================
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+
+# ============================================================================
+# Frozen subset (the actual overfit mechanism)
+# ----------------------------------------------------------------------------
+# Subsample the split IDs at dataset load time with a fixed seed, so the training set is a
+# genuinely FIXED 4096 spectra every epoch. This replaces Lightning's overfit_batches, which was
+# invalid here: with dynamic_batch_sampler + reload_dataloaders_every_n_epochs=1 the loader
+# re-packs each epoch, so overfit_batches took a DIFFERENT random 8 batches every epoch (the
+# per-subset oracle drifted 0.906-0.940 across epochs instead of staying constant) -- the model
+# never saw the same spectra twice and was merely undertrained, not overfitting.
+subsample_params:
+  subsample_size: 4096   # ~1400 params/spectrum at 5.8M -> trivially memorizable if learnable
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+# ============================================================================
+# Model Architecture
+# ============================================================================
+num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
+num_hs: 4       # number of H-transfer options per fragment (0..4)
+frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_hidden_size: 512
+
+# ============================================================================
+# Fragment DAG Parameters
+# ============================================================================
+frag_params:
+  pyg_node_feats:
+    - cc            # connected-component index within DAG
+    - base_formula  # molecular formula of fragment (no H)
+    - depth         # depth of fragment node in the DAG
+    - h_formulae_idx     # index into H-transfer formula table
+    - cmf_h_formulae_idx # same as above but for charge-migration fragments
+    - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
+  pyg_edge_feats: []   # no edge features (new_no_edges variant)
+  pyg_edges: False     # disable edge message-passing
+  pyg_bigraph: False
+  preload: False       # load DAGs from disk per __getitem__ instead of holding them all in RAM:
+                       # the resident DAG dict is forked into every worker each epoch (COW), and
+                       # this run was OOM-killed on host RAM. Slower per epoch, bounded memory.
+  preprocess: False    # requires preload (asserted in _preprocess_frag); process per-item instead
+  include_cmf: True    # include charge-migration fragment nodes
+
+# ============================================================================
+# Spectrum Parameters
+# ============================================================================
+spec_params:
+  merge: False          # keep per-CE spectra separate (not merged)
+  nce: True             # use normalized collision energy (NCE) as input
+  ace: True            # do not use absolute collision energy (ACE)
+  merge_keep_ces: False
+  preprocess: True
+  prec_type_str: False  # encode precursor type as integer index, not string
+  prec_types:           # adduct types to include
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+    - "[M+Cl]-"
+  inst_type: True       # condition on instrument type
+  inst_types:           # instrument types to include
+    - "FT"
+    - "QTOF"
+    - "IT"
+  frag_mode: True       # condition on fragmentation mode
+  frag_modes:           # known modes; unknown falls back to index num_frag_modes
+    - "HCD"
+    - "CID"
+
+# ============================================================================
+# Molecule Parameters
+# ============================================================================
+mol_params:
+  preprocess: True
+
+# ============================================================================
+# Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
+# All inserted at the mol encoder input ("mol" location)
+# ============================================================================
+ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
+ce_insert_location: mol       # inject into molecule encoder input
+ce_insert_merge: True         # merge embeddings when injected at multiple locations
+ce_insert_size: 32            # CE embedding dimension
+prec_insert_location: mol     # inject precursor-type embedding into molecule encoder
+prec_insert_size: 32
+inst_insert_location: mol     # inject instrument-type embedding into molecule encoder
+inst_insert_size: 32
+frag_mode_insert_location: mol  # inject frag-mode embedding into molecule encoder
+frag_mode_insert_size: 32
+frag_mode_scale: True         # enable mode-conditioned affine scaling on output logits
+ce_scale: True                # enable CE-conditioned FiLM scaler on output logits
+ce_scaler_hidden_dim: 64      # hidden dim of CE→FiLM MLP
+
+# ============================================================================
+# Training Hyperparameters
+# ============================================================================
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+accelerator: gpu
+devices: 1
+min_epochs: 1000
+max_epochs: 1000
+debug_overfit: False   # subsample_params freezes the subset instead (overfit_batches was invalid here)
+
+# ============================================================================
+# Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
+# ============================================================================
+mol_dropout: 0.0
+frag_dropout: 0.0
+mlp_dropout: 0.0
+weight_decay: 0.0
+
+# ============================================================================
+# LR Schedule — cosine warmup + decay
+# THE ONLY FUNCTIONAL DELTA vs the constant-LR control run kljly2s9.
+# ----------------------------------------------------------------------------
+# Step budget is set by the FROZEN 4096-spectrum subset, not the full dataset.
+# Measured on kljly2s9: global_step 5535 at epoch 172 => ~32 optimizer steps per
+# epoch (dynamic_batch_sampler packs by frag_node, so this is measured, not
+# derived from train_batch_size). 1000 epochs => ~32,000 total steps.
+# The template's full-data numbers are ~12x wrong at this scale: a 5000-step
+# warmup would span ~156 epochs, and a 390k-step cosine would complete only ~8%
+# of its decay by end of run. Both are resized to the real budget below.
+# warmup: ~16 epochs (500 steps); cosine decay to 1% of peak (4e-6) by step 32k.
+#
+# WHY THIS ARM EXISTS: at constant lr=4e-4, Adam bounces in a noise ball around
+# the optimum rather than settling into it, so kljly2s9's ~0.88 asymptote
+# conflates an LR noise floor with a true expressivity ceiling. Decaying the LR
+# separates them, giving a real fit ceiling to compare against the 0.9221 train
+# oracle. Settles at ~0.922 => expressivity is fine, gap is generalization.
+# Settles at ~0.88 with LR at 1% of peak => a real wall the optimizer cannot
+# cross on memorizable data.
+# ============================================================================
+lr_schedule: True
+lr: 0.0004
+lr_schedule_type: cosine
+lr_warmup_steps: 500
+lr_total_steps: 32000
+lr_min_ratio: 0.01    # floor at 1% of peak LR (4e-6)
+lr_decay_rate: 0.95   # unused for cosine but required by template
+lr_decay_steps: 5000  # unused for cosine but required by template
+
+# ============================================================================
+# Loss Configuration
+# ============================================================================
+mask_null_formula: False   # include null-formula peaks in loss
+predict_oos: True          # predict out-of-structure (OOS) probability
+oos_tolerance_multiple: 1  # tolerance multiplier for OOS peak matching
+oos_loss: True             # train with OOS auxiliary loss
+gaussian_renormalize: True # renormalize output with Gaussian smoothing before loss
+
+# ============================================================================
+# Spectrum Binning & Evaluation
+# ============================================================================
+mz_bin_res: 0.01           # m/z bin resolution in Da
+mz_max: 1500.0             # maximum m/z to include
+sparse_cosine_similarity: True  # use sparse dot-product for speed
+mol_pool_type: mean
+frag_pool_type: max  # sweep: top 3 runs all use max
+upload_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
+
+# ----------------------------------------------------------------------------
+# All auxiliary metrics enabled, and mirrored onto train (see
+# compute_train_auxiliary_metrics below) so train/val can be compared directly
+# to check (1) whether training has plateaued (train vs val loss/cos_sim gap)
+# and (2) whether over-prediction (Mode B: too many low-intensity predicted
+# peaks) shows up on train too, or only on held-out val/test.
+# ----------------------------------------------------------------------------
+auxiliary_scores:
+  - cos_sim
+  #- cos_hun
+  #- jss
+  #- jss_hun
+  #- precision
+  #- wprecision
+  #- recall
+  #- wrecall
+  - opt_cos_sim
+  #- ndcg
+  #- true_spec_e
+  #- true_spec_ne
+  #- pred_spec_e
+  #- pred_spec_ne
+  #- true_oos_prob
+  #- true_oos_e
+  #- pred_node_count       # DAG nodes predicted with nonzero mass -- direct over-prediction signal
+  #- pred_formula_count    # distinct formulas predicted with nonzero mass
+  #- pred_edge_count
+  #- cos_hun_inst_tol      # cos_hun with per-instrument-type tolerance (the metric used in docs/model_improvement_plan.md failure-mode analysis)
+  #- jss_hun_inst_tol
+eval_mz_bin_res:
+  - 0.01
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
+
+# Compute all of the above on train batches too, not just val/test (default:
+# False, since this adds the same eval-tensor materialization cost -- binning,
+# match_mzs, entropy -- to every train step, and there are ~1300 train
+# steps/epoch vs far fewer val steps). Expect a real training-throughput hit;
+# this config is for a diagnostic run, not for regular sweeps.
+compute_train_auxiliary_metrics: True
+report_metric_std: True  # also log per-metric std (cheap, useful for train/val comparison)
+
+# Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
+inst_type_loss_tol:
+  FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
+
+# ============================================================================
+# PyTorch / Lightning Options
+# ============================================================================
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
+dynamic_batch_sampler: True    # required by the manual-opt / vectorized-loss step path
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 400000  # 200k packed only ~1.8 spectra/mini-batch (2248 per epoch);
+                                   # doubling halves the batch count and the per-batch IPC overhead
+
+# ============================================================================
+# Group Sampler (same-molecule multi-CE batching)
+# ============================================================================
+group_sampler: False
+group_sampler_type: group
+group_sampler_max_per_group: 5
+simple_group_sampler: False             # plain fixed batching for the overfit subset
+simple_group_sampler_avg_per_group: 5   # average spectra per molecule group per batch
+simple_group_sampler_type: group
+
+# ============================================================================
+# Miscellaneous
+# ============================================================================
+pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
+# Down from the template default of 7. dynamic_batch_sampler forces
+# reload_dataloaders_every_n_epochs=1, so every ~9s epoch re-forks the whole worker pool and
+# re-ships ~2248 tiny mini-batches through shared memory; the job was OOM-killed on host RAM
+# (128G) at epoch 140. The subset is preloaded and preprocessed in RAM, so __getitem__ is cheap
+# and extra workers buy little here.
+num_workers: 2
+activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
+compile: False                    # torch.compile for speed
+pin_memory: True
+loss_vectorized: True            # vectorized pairwise loss computation
+loss_batch_size: 32              # sub-batch size for vectorized loss
+
+# ============================================================================
+# Overfit diagnostic overrides (fit-vs-generalize test)
+# ----------------------------------------------------------------------------
+# Lightning overfit_batches: train AND report on the same debug_overfit_batches batches every
+# epoch (no separate val loop). We watch train_cos_sim_0.01_epoch/mean climb toward the per-subset
+# oracle train_opt_cos_sim_0.01_epoch/mean. Base model only (no correction heads) so this measures
+# the core per-fragment scoring's ability to rank intensity on data it is actively memorizing.
+# capacity up (remove model size as a confound)
+mol_num_layers: 5
+mlp_hidden_size: 256    # keep the per-node formula head at default: it runs per DAG-node, so
+                        # widening it is the main memory cost and adds little for the ranking test;
+                        # the capacity that matters is the mol encoder (512 / 5 layers) above.
+mlp_num_layers: 3
+# fast debug: no checkpoint IO
+disable_checkpoints: True
+# skip the explainability marginals on training forwards to cut the forward peak. Safe here: the
+# only train-time consumers are the entropy losses (off under skip_extra_losses) and the aux
+# metrics cos_sim/opt_cos_sim (use the spectrum path, not the marginals).
+skip_train_explainability: True

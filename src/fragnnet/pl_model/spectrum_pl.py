@@ -1652,7 +1652,7 @@ class SpectrumPL(L.LightningModule):
 
     def _get_active_metric_names(self, split: str) -> set[str]:
         """Return the metric names that should be computed and reduced for a split."""
-        if split == "train":
+        if split == "train" and not self.hparams.compute_train_auxiliary_metrics:
             return self.metric_names.difference(self.auxiliary_metric_names)
         return self.metric_names
 
