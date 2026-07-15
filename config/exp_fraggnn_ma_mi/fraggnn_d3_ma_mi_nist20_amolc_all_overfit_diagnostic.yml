@@ -46,6 +46,26 @@ split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]-
 frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
+# Frozen subset (the actual overfit mechanism)
+# ----------------------------------------------------------------------------
+# Subsample the split IDs at dataset load time with a fixed seed, so the training set is a
+# genuinely FIXED 4096 spectra every epoch. This replaces Lightning's overfit_batches, which was
+# invalid here: with dynamic_batch_sampler + reload_dataloaders_every_n_epochs=1 the loader
+# re-packs each epoch, so overfit_batches took a DIFFERENT random 8 batches every epoch (the
+# per-subset oracle drifted 0.906-0.940 across epochs instead of staying constant) -- the model
+# never saw the same spectra twice and was merely undertrained, not overfitting.
+# Freezing the subset at the DATASET level (rather than the batch level) is also what lets
+# dynamic_batch_sampler stay True below: the subset no longer depends on how the loader packs.
+# ============================================================================
+subsample_params:
+  subsample_size: 4096   # ~1400 params/spectrum at 5.8M -> trivially memorizable if learnable
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+# ============================================================================
 # Model Architecture
 # ============================================================================
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
@@ -133,7 +153,7 @@ accelerator: gpu
 devices: 1
 min_epochs: 500
 max_epochs: 500
-debug_overfit: True
+debug_overfit: False   # subsample_params freezes the subset instead (overfit_batches was invalid here)
 
 # ============================================================================
 # Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
@@ -229,7 +249,14 @@ inst_type_loss_tol:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
-dynamic_batch_sampler: False   # fixed subset: same batches every epoch (clean overfit)
+dynamic_batch_sampler: True    # required by the manual-opt / vectorized-loss step path. Also
+                               # bounds GPU memory: with it False a batch is train_batch_size
+                               # SPECTRA with no cap on DAG nodes, so one batch of large-DAG
+                               # molecules produced ~5M boundary pairs and a 19 GiB single alloc
+                               # in boundary_pair_proj (CUDA OOM). Packing by frag_node caps it.
+                               # Safe to leave on now: subsample_params freezes the subset at the
+                               # dataset level, so per-epoch re-packing no longer changes WHICH
+                               # spectra are trained on.
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 400000  # 200k packed only ~1.8 spectra/mini-batch (2248 per epoch);
                                    # doubling halves the batch count and the per-batch IPC overhead
