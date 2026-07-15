@@ -223,6 +223,14 @@ mol_msg_gate_mode: static  # ["static", "dynamic"] — static: one gate from (bo
                            # live hidden states (x_src, x_dst); subsumes static, costs one gate
                            # MLP per layer.
 mol_msg_gate_hidden_dim: 64  # Hidden width of the gate MLP(s)
+# Hidden width of the cut_bond encoder MLP (frag_params.pyg_node_feats: cut_bond).
+# cut_bond replaces boundary_pair: boundary_pair encodes a cut bond as Linear(cat(in, out)),
+# which is additive and commutes through pooling, so the pooled feature collapses to
+# Linear(mean(inside_atoms), mean(outside_atoms)) and WHICH atom bonded to which is lost.
+# cut_bond adds an in*out interaction plus a hidden nonlinearity. Same output width and
+# pooling as boundary_pair, and it reuses the same precomputed cut-bond indices, so it is a
+# drop-in swap needing no DAG regeneration.
+cut_bond_hidden_dim: 256
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]

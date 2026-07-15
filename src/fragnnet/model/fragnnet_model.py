@@ -15,6 +15,7 @@ from fragnnet.model.base_model import (
     CEModel,
     CEScaler,
     ContextEmbedding,
+    CutBondEncoder,
     FragModeModel,
     FragModeScaler,
     InstModel,
@@ -125,6 +126,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         context_embedding_hidden_dim: int = 64,
         mol_msg_gate_mode: str = "static",
         mol_msg_gate_hidden_dim: int = 64,
+        cut_bond_hidden_dim: int = 256,
         context_insert_location: str = "mol,mlp",
         debug_validate_outputs: bool = False,
         skip_explainability_when_training: bool = False,
@@ -348,7 +350,21 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # Projects cat(inside_atom_embed, outside_atom_embed) → mol_hidden_size.
             # Pooling over pairs then yields mol_pool_out_size (same as cc / boundary_cc).
             # TODO(next version): remove the legacy boundary_pair feature path entirely.
+            # NOTE: being linear, this collapses under pooling to
+            # Linear(mean(inside_atoms), mean(outside_atoms)) -- the bond pairing is discarded.
+            # `cut_bond` below is the non-degenerate replacement at identical output width.
             self.boundary_pair_proj = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
+        if "cut_bond" in self.frag_node_feats:
+            # Non-degenerate replacement for boundary_pair: adds an explicit in*out interaction
+            # and a hidden nonlinearity so the bond pairing survives pooling. Same output width
+            # (mol_pool_out_size) and same pooling as boundary_pair, so swapping the two feature
+            # names is a clean one-variable comparison. Reuses the SAME precomputed
+            # boundary_pair_* indices, so no DAG regeneration is required.
+            self.cut_bond_encoder = CutBondEncoder(
+                atom_dim=mol_hidden_size,
+                hidden_dim=cut_bond_hidden_dim,
+                out_dim=mol_hidden_size,
+            )
 
         frag_kwargs = {
             "node_feats_size": self.frag_node_feats_size,
@@ -581,6 +597,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_node_feats_size += mol_pool_out_size
         if "boundary_pair" in self.frag_node_feats:
             self.frag_node_feats_size += mol_pool_out_size
+        if "cut_bond" in self.frag_node_feats:
+            self.frag_node_feats_size += mol_pool_out_size
         if "base_formula" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_elements * self.formula_embedder.num_dim
         if "neutral_loss_formula" in self.frag_node_feats:
@@ -625,6 +643,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.m_ce_embedder = th.compile(self.m_ce_embedder, **kwargs)
         if hasattr(self, "boundary_pair_proj"):
             self.boundary_pair_proj = th.compile(self.boundary_pair_proj, **kwargs)
+        if hasattr(self, "cut_bond_encoder"):
+            self.cut_bond_encoder = th.compile(self.cut_bond_encoder, **kwargs)
         if hasattr(self, "frag_q_proj"):
             self.frag_q_proj = th.compile(self.frag_q_proj, **kwargs)
         if check_pyg_compile():
@@ -980,6 +1000,35 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     dtype=mol_embed_gnn.dtype,
                 )
             frag_ndata.append(boundary_pair_out)
+        if "cut_bond" in self.frag_node_feats:
+            # Same cut-bond indices as boundary_pair (no DAG regeneration needed); the only
+            # difference is the encoder -- see CutBondEncoder for why the linear one is
+            # degenerate. Same mol_pool and output width, so the two are directly comparable.
+            num_frags_total = frag_x.shape[0]
+            cut_frag_idxs = kwargs["boundary_pair_frag_idxs"]
+            cut_in_global = kwargs["boundary_pair_in_idxs"]
+            cut_out_global = kwargs["boundary_pair_out_idxs"]
+            if cut_frag_idxs.numel() > 0:
+                valid = (cut_in_global < mol_embed_gnn.shape[0]) & (
+                    cut_out_global < mol_embed_gnn.shape[0]
+                )
+                cut_frag_idxs = cut_frag_idxs[valid]
+                cut_in_global = cut_in_global[valid]
+                cut_out_global = cut_out_global[valid]
+            if cut_frag_idxs.numel() > 0:
+                bond_embed = self.cut_bond_encoder(
+                    th.index_select(mol_embed_gnn, 0, cut_in_global),
+                    th.index_select(mol_embed_gnn, 0, cut_out_global),
+                )
+                cut_bond_out = self.mol_pool(bond_embed, cut_frag_idxs, dim_size=num_frags_total)
+            else:
+                cut_bond_out = th.zeros(
+                    num_frags_total,
+                    mol_embed_gnn.shape[1],
+                    device=device,
+                    dtype=mol_embed_gnn.dtype,
+                )
+            frag_ndata.append(cut_bond_out)
         # edge atom embeddings
         if "cc" in self.frag_edge_feats:
             # connected competents

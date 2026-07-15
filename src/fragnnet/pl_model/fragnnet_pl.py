@@ -122,6 +122,7 @@ class FraGNNetPL(SpectrumPL):
             context_insert_location=self.hparams.context_insert_location,
             mol_msg_gate_mode=self.hparams.mol_msg_gate_mode,
             mol_msg_gate_hidden_dim=self.hparams.mol_msg_gate_hidden_dim,
+            cut_bond_hidden_dim=self.hparams.cut_bond_hidden_dim,
             debug_validate_outputs=self.hparams.debug_validate_outputs,
             skip_explainability_when_training=self.hparams.skip_train_explainability,
         )
