@@ -119,6 +119,41 @@ addresses.
 This independently corroborates `project_oracle_decomposition`'s "rank/identity, not calibration"
 conclusion on a second, unrelated axis.
 
+## Confirming the identity signal is present (cc-corruption probe)
+
+"Wrong fragment at the right extent" has two possible causes: the model cannot *see* which fragment
+is which (representation not used / redundant), or it sees them fine but cannot *compare* them. These
+demand opposite fixes — more features vs. a competition mechanism — so the branch has to be resolved
+before building anything.
+
+The `cc` fragment feature is the atom-membership mask (which atoms of the molecule belong to a
+fragment), pooled out of the mol GNN to give each fragment its structure-aware embedding.
+`scripts/debug/debug_cc_corruption_eval.py` flips each bit of that mask independently with
+probability `frac` at eval time on the frozen 9t63zils baseline — only `cc`, with `boundary_pair`
+left on the true mask, no training. nist20 test, ~2,400 spectra, 17-element DAG dir:
+
+| cc corruption frac | cos_hun_inst_tol |
+|---|---|
+| 0.00 (baseline) | 0.8209 |
+| 0.05 | 0.8023 |
+| 0.10 | 0.7849 |
+| 0.20 | 0.7563 |
+| 0.40 | 0.7189 |
+| 0.80 | 0.6511 |
+| 1.00 (fully random) | 0.6106 |
+
+Monotonic; full randomization costs **−0.21 cos (−26% relative)**, visible even at 5%. So the model
+**uses** precise fragment atom identity — this rules out the "coasts on formula/size, ignores
+structure" failure mode. The inputs to the fragment-vs-fragment comparison are already good; what is
+missing is the comparison itself.
+
+Combined with the extent null above, the CE→identity gap is neither an extent-prior problem nor a
+representation problem. It is **comparative scoring**: with `pyg_edges: False`, each fragment is
+scored by an independent per-node MLP, and nothing relates same-size siblings except the
+global-softmax normalizer. This closes the "more features / richer encoder" branch and green-lights
+`FragmentCompetitionHead` as the correctly-aimed bet. Full detail and reproduce steps:
+`docs/cc_corruption_probe_finding.md`.
+
 ## Caveats
 
 - **FT only.** Other `inst_type` values did not clear the 50-per-bin threshold. CID and QTOF — the
