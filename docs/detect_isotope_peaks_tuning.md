@@ -2,6 +2,7 @@
 
 **Date:** 2026-04-20
 **Scripts:**
+
 - `scripts/debug/debug_prec_iso_leakage_pyopenms.py`
 - `scripts/debug/debug_dag_iso_peak_detection.py`
 
@@ -26,17 +27,21 @@ co-isolation fraction `f`.
 
 For fragment ion `i`, a first-order model is:
 
-$$r_i^{(k)} = R_{\text{exp},i}^{(k)} \cdot f$$
+$$
+r_i^{(k)} = R_{\text{exp},i}^{(k)} \cdot f
+$$
 
 where `f` is the co-isolation fraction and
 $R_{\text{exp},i}^{(k)}$ is the natural M+k/M+0 ratio for the fragment formula.
 When the fragment formula is unavailable, estimate it by scaling the precursor
 expected ratio by relative neutral mass:
 
-$$R_{\text{exp},i}^{(k)} \approx R_{\text{exp,prec}}^{(k)} \cdot
+$$
+R_{\text{exp},i}^{(k)} \approx R_{\text{exp,prec}}^{(k)} \cdot
   \frac{m_i^{\text{neutral}}}{m_{\text{prec}}^{\text{neutral}}},
 \qquad
-m_i^{\text{neutral}} = \mathrm{mz}_i - \Delta m_{\text{adduct}}$$
+m_i^{\text{neutral}} = \mathrm{mz}_i - \Delta m_{\text{adduct}}
+$$
 
 This scales the detection window per fragment.  A small fragment needs a much
 lower absolute M+k/M+0 ratio than the intact precursor to qualify as a
@@ -84,13 +89,17 @@ through the isolation window.
 
 For each detected precursor residual:
 
-$$\hat{f}^{(k)} = \frac{R_k^{\text{obs,prec}}}{R_{\text{exp,prec}}^{(k)}},
+$$
+\hat{f}^{(k)} = \frac{R_k^{\text{obs,prec}}}{R_{\text{exp,prec}}^{(k)}},
 \qquad
-R_k^{\text{obs,prec}} = \frac{I(M{+}k)_\text{prec}}{I(M{+}0)_\text{prec}}$$
+R_k^{\text{obs,prec}} = \frac{I(M{+}k)_\text{prec}}{I(M{+}0)_\text{prec}}
+$$
 
 Accept only if the co-isolation fraction is physically plausible:
 
-$$f_{\min} \leq \hat{f}^{(k)} \leq f_{\max}$$
+$$
+f_{\min} \leq \hat{f}^{(k)} \leq f_{\max}
+$$
 
 When both M+1 and M+2 residuals are present, also compute the direct
 above-precursor envelope ratio:
@@ -127,8 +136,10 @@ relative consistency.
 The existing consistency gate can be expressed either as
 `f_hat[2] / f_hat[1]` or equivalently as the normalized M2/M1 envelope ratio:
 
-$$r_{\text{lo}} \leq
-\frac{\hat{f}^{(2)}}{\hat{f}^{(1)}} \leq r_{\text{hi}}$$
+$$
+r_{\text{lo}} \leq
+\frac{\hat{f}^{(2)}}{\hat{f}^{(1)}} \leq r_{\text{hi}}
+$$
 
 ### Step 2 - Group-level `f` imputation
 
@@ -162,23 +173,26 @@ When no above-precursor reference peaks are found, the current fallback estimate
 `f` from the formula-normalized ratios of all in-spectrum `(M, M+k)` candidate
 pairs:
 
-$$\tilde{f}_i^{(k)} = \frac{r_i^{(k)}}{R_{\text{exp},i}^{(k)}},
+$$
+\tilde{f}_i^{(k)} = \frac{r_i^{(k)}}{R_{\text{exp},i}^{(k)}},
 \qquad
-\hat{f}^{(k)} = \text{median}_i\!\left(\tilde{f}_i^{(k)}\right)$$
+\hat{f}^{(k)} = \text{median}_i\!\left(\tilde{f}_i^{(k)}\right)
+$$
 
 Because genuine co-isolation makes `f` a spectrum-level constant, all normalized
 values should cluster tightly.  Accept if the coefficient of variation is small:
 
-$$\mathrm{CV}\!\left(\tilde{f}_i^{(k)}\right)
+$$
+\mathrm{CV}\!\left(\tilde{f}_i^{(k)}\right)
 = \frac{\sigma\!\left(\tilde{f}_i^{(k)}\right)}{\hat{f}^{(k)}}
-\leq \mathrm{CV}_{\max}$$
+\leq \mathrm{CV}_{\max}
+$$
 
 This fallback is the highest-risk path because it tries to infer `f` from
 fragment peaks alone.  For monoisotopic-target cleanup, prefer this priority:
 
 1. Use local precursor-derived `f` when visible.
-2. Use group-level precursor-derived `f` from the same `mol_id + prec_type +
-   inst_type` group when local precursor residuals are missing.
+2. Use group-level precursor-derived `f` from the same `mol_id + prec_type + inst_type` group when local precursor residuals are missing.
 3. Use DAG formula support to downweight ambiguous isotope-derived peaks.
 4. Use aggressive cross-pair fallback only as weak evidence, or disable it for
    hard removal.
@@ -204,11 +218,11 @@ Then score each candidate isotope-derived peak using:
 
 Recommended action for monoisotopic targets:
 
-| Evidence | Action |
-|---|---|
-| Strong isotope explanation, weak monoisotopic DAG explanation | remove |
+| Evidence                                                              | Action     |
+| --------------------------------------------------------------------- | ---------- |
+| Strong isotope explanation, weak monoisotopic DAG explanation         | remove     |
 | Strong isotope explanation and plausible monoisotopic DAG explanation | downweight |
-| Weak isotope explanation, strong monoisotopic DAG explanation | keep |
+| Weak isotope explanation, strong monoisotopic DAG explanation         | keep       |
 
 This avoids forcing a hard regular-isotope vs co-isolation label when the
 observable spectrum cannot support that distinction.
@@ -226,11 +240,13 @@ Accept as an isotope leak if:
 
 For the current first-order model, the ratio window is:
 
-$$r_{\text{lo}} \cdot R_{\text{exp},i}^{(k)} \cdot \hat{f}^{(k)}
+$$
+r_{\text{lo}} \cdot R_{\text{exp},i}^{(k)} \cdot \hat{f}^{(k)}
 \leq
 \frac{I(M{+}k)_i}{I(M{+}0)_i}
 \leq
-r_{\text{hi}} \cdot R_{\text{exp},i}^{(k)} \cdot \hat{f}^{(k)}$$
+r_{\text{hi}} \cdot R_{\text{exp},i}^{(k)} \cdot \hat{f}^{(k)}
+$$
 
 For `k=1`, the corrected denominator-aware expectation should be preferred when
 $R_{\text{prec}}^{(1)}$ and a DAG fragment formula are available:
@@ -263,11 +279,11 @@ The DAG experiment tested whether the fragmentation DAG can improve
 
 ### DAG structure
 
-| Field | Shape | Description |
-|---|---|---|
+| Field                | Shape               | Description                                                                     |
+| -------------------- | ------------------- | ------------------------------------------------------------------------------- |
 | `formula_peak_mzs` | `(n_formulas, 5)` | M+0 through M+4 m/z per formula variant; M+1-M+4 columns are zero in this build |
-| `idx_to_formula` | `dict[int, str]` | Formula index to formula string |
-| `dag.x` | `(n_nodes, 45)` | Node features; `NODE_FEAT_TO_IDX["h_formulae_idx"]` points to formula index |
+| `idx_to_formula`   | `dict[int, str]`  | Formula index to formula string                                                 |
+| `dag.x`            | `(n_nodes, 45)`   | Node features;`NODE_FEAT_TO_IDX["h_formulae_idx"]` points to formula index    |
 
 Key observations:
 
@@ -278,21 +294,21 @@ Key observations:
 
 ### Methods tested
 
-| Method | Description |
-|---|---|
-| `current` | Existing detector with `formula` and `prec_type`; uses `frag_mz / prec_neutral_mass` as composition proxy |
-| `dag_filter` | Keep only flagged peaks whose parent M+0 is found in the DAG or is the precursor |
-| `dag_protect` | Unflag any peak whose m/z directly matches a DAG M+0 node |
-| `dag_formula` | Re-check flagged pairs using exact DAG fragment formula and precursor-derived `f` |
+| Method          | Description                                                                                                    |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| `current`     | Existing detector with`formula` and `prec_type`; uses `frag_mz / prec_neutral_mass` as composition proxy |
+| `dag_filter`  | Keep only flagged peaks whose parent M+0 is found in the DAG or is the precursor                               |
+| `dag_protect` | Unflag any peak whose m/z directly matches a DAG M+0 node                                                      |
+| `dag_formula` | Re-check flagged pairs using exact DAG fragment formula and precursor-derived`f`                             |
 
 ### Historical results
 
-| Method | TP | FP | FN | Precision | Recall | F1 |
-|---|---|---|---|---|---|---|
-| Current | 1895 | 237 | 545 | 0.889 | 0.777 | 0.829 |
-| DAG-filter | 1735 | 191 | 705 | 0.901 | 0.711 | 0.795 |
-| DAG-protect | 369 | 39 | 2071 | 0.904 | 0.151 | 0.259 |
-| DAG-formula | 1892 | 236 | 548 | 0.889 | 0.775 | 0.828 |
+| Method      | TP   | FP  | FN   | Precision | Recall | F1    |
+| ----------- | ---- | --- | ---- | --------- | ------ | ----- |
+| Current     | 1895 | 237 | 545  | 0.889     | 0.777  | 0.829 |
+| DAG-filter  | 1735 | 191 | 705  | 0.901     | 0.711  | 0.795 |
+| DAG-protect | 369  | 39  | 2071 | 0.904     | 0.151  | 0.259 |
+| DAG-formula | 1892 | 236 | 548  | 0.889     | 0.775  | 0.828 |
 
 ### Interpretation
 
@@ -342,17 +358,17 @@ Data loaded:
 
 Results:
 
-| Method | TP | FP | FN | Precision | Recall | F1 |
-|---|---:|---:|---:|---:|---:|---:|
-| Current | 2008 | 482 | 432 | 0.806 | 0.823 | 0.815 |
-| Group-f | 2278 | 552 | 162 | 0.805 | 0.934 | 0.865 |
-| DAG-native | 1948 | 426 | 492 | 0.821 | 0.798 | 0.809 |
-| DAG+Group-f | 2293 | 509 | 147 | 0.818 | 0.940 | 0.875 |
-| DAG-native-prot | 366 | 63 | 2074 | 0.853 | 0.150 | 0.255 |
-| DAG-filter | 1849 | 411 | 591 | 0.818 | 0.758 | 0.787 |
-| DAG-protect | 372 | 71 | 2068 | 0.840 | 0.152 | 0.258 |
-| DAG-formula | 2001 | 476 | 439 | 0.808 | 0.820 | 0.814 |
-| DAG-form+Group | 2271 | 545 | 169 | 0.806 | 0.931 | 0.864 |
+| Method          |   TP |  FP |   FN | Precision | Recall |    F1 |
+| --------------- | ---: | --: | ---: | --------: | -----: | ----: |
+| Current         | 2008 | 482 |  432 |     0.806 |  0.823 | 0.815 |
+| Group-f         | 2278 | 552 |  162 |     0.805 |  0.934 | 0.865 |
+| DAG-native      | 1948 | 426 |  492 |     0.821 |  0.798 | 0.809 |
+| DAG+Group-f     | 2293 | 509 |  147 |     0.818 |  0.940 | 0.875 |
+| DAG-native-prot |  366 |  63 | 2074 |     0.853 |  0.150 | 0.255 |
+| DAG-filter      | 1849 | 411 |  591 |     0.818 |  0.758 | 0.787 |
+| DAG-protect     |  372 |  71 | 2068 |     0.840 |  0.152 | 0.258 |
+| DAG-formula     | 2001 | 476 |  439 |     0.808 |  0.820 | 0.814 |
+| DAG-form+Group  | 2271 | 545 |  169 |     0.806 |  0.931 | 0.864 |
 
 Interpretation:
 
@@ -384,12 +400,12 @@ mandatory DAG-parent filtering.
 Follow-up sweeps on the same 500-spectrum sample tested whether stricter
 group-level `f` aggregation improves the `DAG+Group-f` result:
 
-| `group_min_count` | `group_max_cv` | Group/order estimates | DAG+Group-f TP | DAG+Group-f FP | DAG+Group-f FN | Precision | Recall | F1 |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 1.0 | 10,618 | 2293 | 509 | 147 | 0.818 | 0.940 | 0.875 |
-| 1 | 0.5 | 10,168 | 2278 | 502 | 162 | 0.819 | 0.934 | 0.873 |
-| 2 | 1.0 | 9,230 | 2279 | 504 | 161 | 0.819 | 0.934 | 0.873 |
-| 2 | 0.5 | 8,780 | 2264 | 497 | 176 | 0.820 | 0.928 | 0.871 |
+| `group_min_count` | `group_max_cv` | Group/order estimates | DAG+Group-f TP | DAG+Group-f FP | DAG+Group-f FN | Precision | Recall |    F1 |
+| ------------------: | ---------------: | --------------------: | -------------: | -------------: | -------------: | --------: | -----: | ----: |
+|                   1 |              1.0 |                10,618 |           2293 |            509 |            147 |     0.818 |  0.940 | 0.875 |
+|                   1 |              0.5 |                10,168 |           2278 |            502 |            162 |     0.819 |  0.934 | 0.873 |
+|                   2 |              1.0 |                 9,230 |           2279 |            504 |            161 |     0.819 |  0.934 | 0.873 |
+|                   2 |              0.5 |                 8,780 |           2264 |            497 |            176 |     0.820 |  0.928 | 0.871 |
 
 Stricter group filters reduce false positives slightly, but they remove more
 true positives than they save.  Keep the permissive defaults
@@ -441,15 +457,15 @@ from `0.675` to `0.716`.
 
 ## Recommended Defaults
 
-| Parameter | Default |
-|---|---|
-| `min_coiso_fraction` | `0.05` |
-| `max_leak_factor` | `1.5` |
-| `ratio_lo` | `0.05` |
-| `ratio_hi` | `10.0` |
-| `precursor_envelope_lo` | `0.2` |
-| `precursor_envelope_hi` | `5.0` |
-| `aggressive_cv` | `0.6` |
+| Parameter                        | Default  |
+| -------------------------------- | -------- |
+| `min_coiso_fraction`           | `0.05` |
+| `max_leak_factor`              | `1.5`  |
+| `ratio_lo`                     | `0.05` |
+| `ratio_hi`                     | `10.0` |
+| `precursor_envelope_lo`        | `0.2`  |
+| `precursor_envelope_hi`        | `5.0`  |
+| `aggressive_cv`                | `0.6`  |
 | `aggressive_single_pair_min_f` | `0.05` |
 
 ## Implementation Notes
