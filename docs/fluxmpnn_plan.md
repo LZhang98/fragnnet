@@ -176,23 +176,39 @@ Replace the flat P(n) with a flow:
 2. Propagate over the **DAG directly** — a topological traversal of `frag_edge_index` itself (the DAG
    is provably acyclic, so its own edge structure gives the order). Do NOT reorder by a heavy-atom
    proxy; a node's `F_in` is ready once all its in-edges have been processed.
-3. At each node, a **factored exit** with **two structural halt gates** — NOT one joint softmax over
-   `{sink, escape, children}`:
+3. At each node, a **factored exit**. Think of every parent as having three kinds of **outgoing
+   edge** — `p→child_c` (continue), `p→sink` (emit/observe here), `p→escape` (unobserved) — with
+   flux conserved: `F_in(p) = Σ_c F(p→child_c) + F(p→sink) + F(p→escape)`. The split is a **nested
+   (2-level) normalizer**, NOT one flat softmax over `{children, sink, escape}`:
    - CE-free **halt gate**: `α_halt(p) = σ(halt_logit(h_p))` (structural node repr only).
    - CE-free **sink gate**: `α_sink(p) = σ(sink_logit(h_p))` — observed fraction of halted flux.
-   - CE-conditioned **sibling softmax**: `β_c = softmax_children(edge_logits(h_p, h_c, cc, ce))`.
+   - CE-conditioned **sibling softmax**: `β_c = softmax_children(edge_logits(h_p, h_c, cc, ce))` —
+     `β` is the branching *ratio* `P(child=c | p continues, CE)`, normalised over children **only**;
+     it is the sole CE-carrier (an `EdgeMLP` over `(parent, child)` pairs).
    - combine: to child `F(p→c) = (1 − α_halt)·β_c·F_in`; observed `F_sink = α_halt·α_sink·F_in`
-     (→ `P(n)`, then the channel head); escaped `F_escape = α_halt·(1 − α_sink)·F_in` (→ OOS/null).
+     (→ `P(n)`, then the channel head); escaped `F_escape = α_halt·(1 − α_sink)·F_in`.
 
-   Three separate normalizers keep CE out of both halt and sink *by construction*. A joint softmax
+   Three separate normalizers keep CE out of both halt and sink *by construction*. A **flat** softmax
    `[α_sink, α_escape, α_c1, …] = softmax(exit_logits)` would re-couple them: the shared partition
    function `Z` means any CE-driven change to a child logit moves `α_sink`/`α_escape` too, leaking
-   the CE-live branching signal into the CE-flat extent axis.
+   the CE-live branching signal into the CE-flat extent axis. The nested form is what makes the
+   all-edges picture safe.
 4. Multi-parent: incoming flux to a node = `logsumexp` over its in-edges ("evidence combines" for
-   different parents, competition only among siblings).
-5. `P(n)` (from `F_sink`) feeds the existing formula→spectrum pipeline unchanged; the escape mass
-   `Σ_p F_escape(p)` *is* the OOS/null-formula bucket — conservation makes peaks + escape = 1, so it
-   reconciles by construction rather than via a bolted-on term.
+   different parents, competition only among siblings). **This is load-bearing:** the DAG is ~98%
+   multi-parent (median in-degree 3, mean 8; `scripts/debug/debug_dag_indegree_stats.py`), so branching
+   is irreducibly per-edge and a per-node projection of it loses the parent-conditional structure —
+   the flow's per-edge `β` + this in-edge aggregation is the *only* place that structure survives.
+5. **`P(n)` (from `F_sink`) feeds the existing formula→spectrum pipeline unchanged.** OOS handling —
+   **v1 keeps the existing `oos_module` and does NOT model escape**: set `α_sink = 1` (all halted
+   flux is observed), so `P(n) = F_sink(n)` sums to 1 over nodes (a valid distribution, since every
+   leaf halts) and the current pooled OOS gate stays on top exactly as today. Rationale: `α_sink` is
+   a CE-free knob on the **halt/extent** axis, which [[project_ce_extent_allocation_null]] proved has
+   no residual headroom; and the per-node escape split is **under-identified** (the observed spectrum
+   only constrains the *aggregate* off-peak mass, never *which* node leaked), so a rich escape model
+   just regularises to a global constant with extra machinery. Spend all capacity on `β`.
+   **Later (optional):** if conservation-native OOS is wanted for its own sake, turn `α_sink` back on
+   with **low capacity** (global / near-constant) and **anchor** `Σ_p F_escape(p)` to the observed
+   unexplained fraction — treat it as a normalization nicety, not a modeling lever.
 All in log-space, differentiable, trained with the existing spectrum loss.
 
 ## Risks / watch-items
@@ -207,9 +223,12 @@ All in log-space, differentiable, trained with the existing spectrum loss.
 - **Gradient stability**: the earlier top-K competition head NaN'd from gradient backflow into the
   shared frag encoder (fixed via `frag_embed.detach()`). Flow over 3 layers is milder but start with
   the encoder detached, then relax.
-- **OOS/normalization reconciliation**: the escape gate *is* the OOS bucket (peaks + escape = 1 by
-  conservation). Wire `Σ_p F_escape(p)` into the current `frag_null_formula_logprob` / `oos_logprobs`
-  slot rather than adding a second normalizer — **do not double-count** a separate OOS term on top.
+- **OOS/normalization — do NOT unify escape with OOS in v1.** The current `oos_logprobs`
+  (`fragnnet_model.py:1672`) is a *global pooled sigmoid*, not flow-derived; escape would be a
+  per-node, under-identified latent on the no-headroom extent axis (see Stage 3 step 5). v1: keep the
+  pooled `oos_module`, set `α_sink=1`, no escape. Only later, if you add escape, anchor its aggregate
+  and keep it low-capacity — and wire it *into* the existing OOS slot, never as a second normalizer
+  on top (that double-counts).
 - **Scope discipline**: Stage 3 is a real re-architecture; Stages 0–2 must each pay their way first.
   Supersedes the top-K transformer competition head (`project_frag_competition`).
 
