@@ -1349,6 +1349,8 @@ def plot_spectra(
 _MIN_BIN_N = 30  # drop bins with fewer spectra than this
 _SWEEP_THRESHOLDS = [0, 5, 10, 20, 50, 100]  # raw intensity units (0–1000 scale)
 _SWEEP_MAX_SPECTRA_COS = 10_000  # max spectra sampled for cosine sim recomputation
+_SINA_HALFWIDTH = 0.38  # max +/- horizontal offset (in x-position units) for the sina strip
+_SINA_MAX_POINTS = 4000  # max points drawn per bin, subsampled for legibility
 
 
 def _make_ce_bins(
@@ -1509,6 +1511,147 @@ def _violin_ax(
         ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=9)
     else:
         # Show n= as small text inside the plot top for non-bottom rows
+        for pos, arr in zip(all_positions, arrays_aligned):
+            if arr is None or len(arr) < _MIN_BIN_N:
+                continue
+            ax.text(
+                pos,
+                1.02,
+                f"n={len(arr):,}",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                color="grey",
+                transform=ax.get_xaxis_transform(),
+            )
+        ax.set_xticklabels([])
+    ax.set_xlim(0.5, n_total + 0.5)
+    ax.set_ylim(-0.05, 1.12)
+    ax.set_ylabel(score_col, fontsize=10)
+    if show_xlabel:
+        ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_title(title, fontsize=12, pad=12)
+    for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
+        ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=8, color="grey")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(0.8)
+    ax.spines["bottom"].set_linewidth(0.8)
+    ax.grid(axis="y", alpha=0.2, linestyle="-", linewidth=0.5)
+    ax.legend(fontsize=8, loc="lower left", ncol=3, framealpha=0.95, edgecolor="grey")
+
+
+def _sina_x(
+    vals: np.ndarray,
+    center: float,
+    rng: np.random.Generator,
+    halfwidth: float = _SINA_HALFWIDTH,
+) -> np.ndarray:
+    """Horizontal positions for a sina (violin-shaped) strip, jittered by local density.
+
+    Each point is offset from ``center`` by a random amount whose maximum scales with the
+    density of points at that score value, so the resulting cloud traces the violin outline.
+
+    Args:
+        vals: Score values in [0, 1] for the points in one bin.
+        center: X-position the strip is centred on.
+        rng: Random generator for the jitter.
+        halfwidth: Maximum absolute offset (at the densest score value).
+
+    Returns:
+        X-positions of shape (len(vals),).
+    """
+    counts, edges = np.histogram(vals, bins=40, range=(0.0, 1.0))
+    peak = counts.max() or 1
+    idx = np.clip(np.digitize(vals, edges) - 1, 0, len(counts) - 1)
+    width = counts[idx] / peak * halfwidth
+    return center + rng.uniform(-1.0, 1.0, len(vals)) * width
+
+
+def _sina_ax(
+    ax: plt.Axes,
+    global_labels: list[str],
+    arrays_aligned: list[np.ndarray | None],
+    title: str,
+    xlabel: str,
+    color: str,
+    score_col: str,
+    show_xticklabels: bool = True,
+    show_xlabel: bool = True,
+) -> None:
+    """Draw a sina (density-jittered, violin-shaped) scatter + median/mean dots on ax.
+
+    Mirrors :func:`_violin_ax` (same aligned-arrays contract and styling) but shows every
+    per-spectrum point instead of a smoothed violin; horizontal spread within each bin is
+    scaled by local density so the point cloud takes the violin's shape.
+
+    Args:
+        ax: Axes to draw on.
+        global_labels: Bin label strings for every position (including empty bins).
+        arrays_aligned: Score array per bin, or None for bins with < _MIN_BIN_N spectra.
+        title: Axes title.
+        xlabel: X-axis label (shown only when show_xlabel=True).
+        color: Point colour.
+        score_col: Score column name (for y-axis label).
+        show_xticklabels: Whether to draw x-tick labels (False for non-bottom rows).
+        show_xlabel: Whether to draw the x-axis label (False for non-bottom rows).
+    """
+    all_positions = list(range(1, len(global_labels) + 1))
+    n_total = len(global_labels)
+
+    _MED_COLOR = "#1a1a2e"
+    _MEAN_COLOR = "#e05c1a"
+    rng = np.random.default_rng(0)
+
+    bin_counts: dict[int, int] = {}
+
+    for pos, arr in zip(all_positions, arrays_aligned):
+        if arr is None or len(arr) < _MIN_BIN_N:
+            continue
+
+        n = len(arr)
+        bin_counts[pos] = n
+        pts = arr if n <= _SINA_MAX_POINTS else rng.choice(arr, _SINA_MAX_POINTS, replace=False)
+        ax.scatter(
+            _sina_x(pts, pos, rng), pts, s=5, alpha=0.2, color=color, linewidths=0, zorder=2
+        )
+
+        med = np.median(arr)
+        mn = np.mean(arr)
+        q1 = np.percentile(arr, 25)
+        q3 = np.percentile(arr, 75)
+
+        ax.vlines([pos], [q1], [q3], color=_MED_COLOR, linewidth=2, zorder=4)
+        ax.scatter(
+            [pos], [med], color="white", s=35, zorder=6, edgecolors=_MED_COLOR, linewidths=1.5
+        )
+        ax.scatter(
+            [pos],
+            [mn],
+            color=_MEAN_COLOR,
+            s=30,
+            zorder=6,
+            marker="D",
+            edgecolors="white",
+            linewidths=0.6,
+        )
+
+    # Legend proxy handles
+    ax.vlines([], [], [], color=_MED_COLOR, linewidth=2, label="IQR (25–75)")
+    ax.scatter([], [], color="white", s=35, edgecolors=_MED_COLOR, linewidths=1.5, label="Median")
+    ax.scatter(
+        [], [], color=_MEAN_COLOR, s=30, marker="D", edgecolors="white", linewidths=0.6, label="Mean"
+    )
+
+    ax.set_xticks(all_positions)
+    if show_xticklabels:
+        tick_labels = [
+            f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
+            for p, lbl in zip(all_positions, global_labels)
+        ]
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=9)
+    else:
         for pos, arr in zip(all_positions, arrays_aligned):
             if arr is None or len(arr) < _MIN_BIN_N:
                 continue
@@ -1780,17 +1923,122 @@ def _plot_ce_breakdown_grid_violin(
     print(f"Saved: {out_fp}")
 
 
+def _plot_ce_breakdown_grid_sina(
+    joined: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown sina scatters as grid: one row per instrument type present.
+
+    Same facet layout and bin alignment as :func:`_plot_ce_breakdown_grid_violin` (one row per
+    instrument type, one column per adduct), but each facet shows the raw per-spectrum points
+    as a density-jittered (violin-shaped) sina strip instead of a smoothed violin.
+
+    Args:
+        joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+    """
+    df = joined[[score_col, "inst_type", "prec_type", "ace", "nce"]].copy()
+
+    adducts_all = (
+        df.groupby("prec_type")[score_col]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts_all:
+        logger.warning("No adducts with enough data")
+        return
+
+    n_adducts = len(adducts_all)
+    inst_rows = _inst_ce_rows(df["inst_type"].dropna().unique())
+    n_rows = len(inst_rows)
+
+    fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
+    fig.patch.set_facecolor("white")
+
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(inst_rows):
+        inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
+        if ce_col == "ace":
+            inst_full = inst_full[inst_full[ce_col] > 0]
+        inst_full = inst_full[inst_full[ce_col] < ce_cap]
+
+        if len(inst_full) == 0:
+            for col_idx in range(n_adducts):
+                fig.delaxes(axes[row_idx, col_idx])
+            continue
+
+        ce_max = inst_full[ce_col].max() + 10
+        global_labels, _ = _make_ce_bins(inst_full, ce_col, 10, ce_max, score_col)
+        global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
+
+        for col_idx, adduct in enumerate(adducts_all):
+            ax = axes[row_idx, col_idx]
+
+            sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
+            if ce_col == "ace":
+                sub = sub[sub[ce_col] > 0]
+            sub = sub[sub[ce_col] < ce_cap]
+
+            if len(sub) < _MIN_BIN_N:
+                fig.delaxes(ax)
+                continue
+
+            arrays_aligned: list[np.ndarray | None] = []
+            for lo in global_lo:
+                hi = lo + 10
+                mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+                vals = sub.loc[mask, score_col].dropna().to_numpy()
+                arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
+            if all(a is None for a in arrays_aligned):
+                fig.delaxes(ax)
+                continue
+
+            ce_unit = "eV" if ce_col == "ace" else "NCE"
+            _sina_ax(
+                ax,
+                global_labels,
+                arrays_aligned,
+                title=f"{adduct}",
+                xlabel=f"Collision Energy ({ce_unit})",
+                color=color,
+                score_col=score_col,
+                show_xticklabels=True,
+                show_xlabel=True,
+            )
+
+    for row_idx, (inst_type, _, _, _) in enumerate(inst_rows):
+        y = 1 - (row_idx + 0.5) / n_rows
+        fig.text(0.02, y, inst_type, fontsize=11, fontweight="bold", rotation=90, va="center")
+
+    fig.suptitle(
+        f"{score_col} — Collision Energy Breakdown (Sina / per-spectrum)",
+        fontsize=13,
+        fontweight="bold",
+    )
+    fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
+
+    out_fp = os.path.join(save_dp, "ce_breakdown_sina_all.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE breakdown sina grid: {out_fp}")
+    print(f"Saved: {out_fp}")
+
+
 def plot_ce_breakdown(
     meta: pd.DataFrame,
     spec_df: pd.DataFrame,
     score_col: str,
     save_dp: str,
 ) -> None:
-    """Plot CE breakdown bar charts with 95% CI, merging QTOF (ACE) and FT (NCE).
+    """Plot CE breakdown as a grid by (instrument, adduct), merging QTOF (ACE) and FT (NCE).
 
-    Creates a single figure showing bars for each CE bin with 95% confidence interval
-    error bars and mean points, organized in a grid by adduct type.
-    QTOF bars are blue, FT bars are green.
+    Emits three figures over the same facets: bars with 95% CI (``ce_breakdown_bar_all.png``),
+    violins (``ce_breakdown_violin_all.png``), and a density-jittered per-spectrum sina strip
+    (``ce_breakdown_sina_all.png``). QTOF is blue, FT is green.
 
     Args:
         meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
@@ -1811,6 +2059,7 @@ def plot_ce_breakdown(
 
     _plot_ce_breakdown_grid(joined, score_col, save_dp)
     _plot_ce_breakdown_grid_violin(joined, score_col, save_dp)
+    _plot_ce_breakdown_grid_sina(joined, score_col, save_dp)
 
 
 # ---------------------------------------------------------------------------
