@@ -22,7 +22,8 @@ quantify how much of the spectrum that covers.
 Per-spectrum data: `data/eval/oracle_cos_nist20_default/recall_wrecall_by_ce.csv`
 (adduct-binned aggregate: `recall_wrecall_by_ce_adduct.csv`). Reproduce with
 `scripts/eval/dag_oracle_scores.py` (`n_achievable_peaks` / `n_true_peaks` give recall)
-plus the CE grouping.
+plus the CE grouping. All figures below regenerate from the per-spectrum CSV via
+`scripts/plotting/plot_oracle_ce_coverage.py`.
 
 ## Coverage vs collision energy, by adduct
 
@@ -41,6 +42,35 @@ many small unmatched satellite peaks. Violins are colored light→dark by energy
 is the median.
 
 ![recall and wrecall distributions by CE (violin)](figures/oracle_recall_wrecall_violin_by_ce.png)
+
+### By adduct
+
+Faceting the violins by adduct isolates the per-adduct behavior. `[M+Na]+` has the fattest,
+fastest-growing low tail (its coverage collapses hardest with energy); `[M-H]-` stays tight
+near 1.0 across the whole range; QTOF `[M+Cl]-` has too few spectra to show.
+
+wrecall:
+
+![wrecall distributions by CE and adduct (violin)](figures/oracle_wrecall_violin_by_ce_adduct.png)
+
+recall:
+
+![recall distributions by CE and adduct (violin)](figures/oracle_recall_violin_by_ce_adduct.png)
+
+## Per-spectrum scatter vs CE, by adduct
+
+Raw per-spectrum points (same adduct × instrument facets as the violins), subsampled with small
+CE jitter. The dense band pinned at ~1.0 is the well-covered majority; the downward scatter is
+the low-coverage tail, which visibly thickens toward higher CE. `[M+Na]+` shows the widest
+downward spread; `[M-H]-` the tightest. QTOF `[M+Cl]-` has no data.
+
+wrecall:
+
+![wrecall vs CE scatter by adduct](figures/oracle_wrecall_scatter_by_ce_adduct.png)
+
+recall:
+
+![recall vs CE scatter by adduct](figures/oracle_recall_scatter_by_ce_adduct.png)
 
 ## Overall by CE
 
