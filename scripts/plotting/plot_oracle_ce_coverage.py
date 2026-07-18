@@ -185,11 +185,24 @@ def plot_violin_by_adduct(df: pd.DataFrame, metric: str, out_fp: Path) -> None:
     log.info("saved %s", out_fp)
 
 
-def plot_scatter_by_adduct(df: pd.DataFrame, metric: str, out_fp: Path) -> None:
-    """Per-spectrum scatter of one metric vs CE, faceted adduct (rows) x instrument (cols).
+def _sina_x(vals: np.ndarray, center: float, rng: np.random.Generator) -> np.ndarray:
+    """CE positions for a sina/violin-shaped strip: horizontal jitter scaled by local density.
 
-    Same facet layout as plot_violin_by_adduct, but showing the raw per-spectrum points
-    (subsampled, with small CE jitter) instead of binned violins.
+    Each point in a CE bin is offset from ``center`` by a random amount whose maximum scales
+    with the density of points at that metric value, so the cloud takes the violin's outline.
+    """
+    counts, edges = np.histogram(vals, bins=40, range=(0.0, 1.0))
+    peak = counts.max() or 1
+    idx = np.clip(np.digitize(vals, edges) - 1, 0, len(counts) - 1)
+    width = counts[idx] / peak * SINA_HALFWIDTH
+    return center + rng.uniform(-1.0, 1.0, len(vals)) * width
+
+
+def plot_scatter_by_adduct(df: pd.DataFrame, metric: str, out_fp: Path) -> None:
+    """Per-spectrum sina (violin-shaped) strip of one metric vs CE, faceted adduct x instrument.
+
+    Same facet layout as plot_violin_by_adduct, but showing the raw per-spectrum points; within
+    each CE bin the horizontal jitter is scaled by local density so the cloud mirrors the violin.
     """
     rng = np.random.default_rng(0)
     fig, axes = plt.subplots(len(ADDUCTS), 2, figsize=(12, 12), sharex="col", sharey=True)
@@ -203,8 +216,10 @@ def plot_scatter_by_adduct(df: pd.DataFrame, metric: str, out_fp: Path) -> None:
             else:
                 if len(sub) > SCATTER_MAX_POINTS:
                     sub = sub.sample(SCATTER_MAX_POINTS, random_state=0)
-                x = sub["ce"].to_numpy() + rng.uniform(-SCATTER_JITTER, SCATTER_JITTER, len(sub))
-                ax.scatter(x, sub[metric], s=5, alpha=0.2, color=ADDUCT_COLORS[pt], linewidths=0)
+                for b in sorted(sub["ce_bin"].unique()):
+                    v = sub.loc[sub["ce_bin"] == b, metric].to_numpy()
+                    ax.scatter(_sina_x(v, b + 5, rng), v, s=5, alpha=0.2,
+                               color=ADDUCT_COLORS[pt], linewidths=0)
             ax.grid(True, alpha=0.25, lw=0.6)
             ax.set_ylim(-0.02, 1.03)
             if col == 0:
@@ -215,7 +230,7 @@ def plot_scatter_by_adduct(df: pd.DataFrame, metric: str, out_fp: Path) -> None:
                 ax.set_xlabel(f"collision energy — {unit}")
     fig.suptitle(
         f"Per-spectrum {metric} vs collision energy by adduct (NIST20, default DAGs)\n"
-        "each point = one spectrum (subsampled, CE jittered)",
+        "each point = one spectrum; horizontal spread scaled by density (sina / violin shape)",
         fontsize=13, y=0.995,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])

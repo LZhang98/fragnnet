@@ -59,10 +59,12 @@ recall:
 
 ## Per-spectrum scatter vs CE, by adduct
 
-Raw per-spectrum points (same adduct × instrument facets as the violins), subsampled with small
-CE jitter. The dense band pinned at ~1.0 is the well-covered majority; the downward scatter is
-the low-coverage tail, which visibly thickens toward higher CE. `[M+Na]+` shows the widest
-downward spread; `[M-H]-` the tightest. QTOF `[M+Cl]-` has no data.
+Raw per-spectrum points (same adduct × instrument facets as the violins). Within each CE bin the
+horizontal spread is scaled by local density (a **sina plot**), so the point cloud traces the
+violin outline while still showing every spectrum. The dense band pinned at ~1.0 is the
+well-covered majority; the downward taper is the low-coverage tail, which visibly thickens toward
+higher CE. `[M+Na]+` shows the widest downward spread; `[M-H]-` the tightest. QTOF `[M+Cl]-` has
+no data.
 
 wrecall:
 
