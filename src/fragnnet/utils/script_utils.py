@@ -558,6 +558,20 @@ OUTPUT_SUBSET_OPTIONS = [
 ]
 
 
+# Probability tokens are exp() of the corresponding raw log-prob model output key.
+# The raw FraGNNet output (fragnnet_model out_d) is emitted in log space, while the
+# `output_subset` vocabulary above uses probability names. `pred_ints` is handled
+# separately because it also needs the intensity untransform. This mirrors the
+# derivations in `process_batch_to_tabular_row`.
+_PROB_TOKEN_TO_LOGPROB_KEY = {
+    "pred_oos_prob": "pred_oos_logprobs",
+    "pred_formula_probs": "pred_formula_logprobs",
+    "pred_formula_node_probs": "pred_formula_node_logprobs",
+    "pred_node_formula_probs": "pred_node_formula_logprobs",
+    "pred_node_probs": "pred_node_logprobs",
+}
+
+
 def list_output_subset_options() -> list[str]:
     """List all valid output subset option tokens.
 
@@ -920,7 +934,40 @@ def run_inference_pkl(
 
             b_output = to_device(b_output, "cpu", non_blocking=False)
             if output_set is not None:
-                b_output = {k: b_output[k] for k in b_output if k in output_set}
+                # Translate user-facing `output_subset` tokens into concrete model
+                # output columns. The raw model output uses log-prob keys
+                # (e.g. `pred_node_logprobs`), while the token vocabulary uses
+                # probability names (e.g. `pred_node_probs`). Probability tokens are
+                # exp() of their logprob key; `pred_ints` also applies the intensity
+                # untransform (mirrors `process_batch_to_tabular_row`). Index variables
+                # are always retained so the flat concatenated columns can be regrouped
+                # per-spectrum / per-node downstream.
+                all_idx_vars = set(
+                    BATCH_IDX_VARS + NODE_IDX_VARS + FORMULA_IDX_VARS + NB_NODE_IDX_VARS
+                )
+                derived = {k: b_output[k] for k in all_idx_vars if b_output.get(k) is not None}
+                for token in output_set:
+                    if token == "pred_ints":
+                        if b_output.get("pred_logprobs") is None:
+                            raise KeyError("output token 'pred_ints' needs model output "
+                                           "'pred_logprobs', which is absent/None")
+                        derived["pred_ints"] = model.ints_untransform_func(
+                            th.exp(b_output["pred_logprobs"]), b_output["pred_batch_idxs"]
+                        )
+                    elif token in _PROB_TOKEN_TO_LOGPROB_KEY:
+                        key = _PROB_TOKEN_TO_LOGPROB_KEY[token]
+                        if b_output.get(key) is None:
+                            raise KeyError(f"output token {token!r} needs model output "
+                                           f"{key!r}, which is absent/None")
+                        derived[token] = th.exp(b_output[key])
+                    elif b_output.get(token) is not None:
+                        derived[token] = b_output[token]
+                    else:
+                        raise KeyError(
+                            f"output token {token!r} is not produced by run_inference_pkl; "
+                            "use output_format=hdf5 for this token"
+                        )
+                b_output = derived
 
             # ============================================================
             # EVALUATION MODE: Collect all outputs with index rebatching
