@@ -132,13 +132,31 @@ the spectrum loss — is untouched.
 
 ## Staged plan (each stage is a decision gate)
 
-### Stage 0 — headroom gate (in flight)
+### Stage 0 — headroom gate ✅ GREEN (ran 2026-07-18, `gdu9njqa` val)
 Model-vs-oracle branching probe: `q_base(p→c) = softmax_siblings(pred_node_probs)` vs the observed
-sibling target (`branching_headroom.py` machinery), NCE-stratified, on run `gdu9njqa` val.
-- **Read:** if `q_base` already tracks the observed cross-NCE shift → the model captures branching,
-  STOP. If it diverges (and worse at high NCE) → real headroom, proceed.
-- Necessary condition already holds (branching is CE-dependent in the data); this checks the model
-  doesn't already have it. **Do not build Stages 1–3 until this is green.**
+sibling target (`branching_headroom.py` machinery), NCE-stratified.
+Script: `scripts/eval/stage0_branching_model_vs_oracle.py` (reads the node-grouped inference HDF5).
+
+**Result** (4,945 mols, 90,904 spectra, 5.87M competable parent-spectra = 48.6%, matching
+`branching_headroom` coverage exactly). Per-parent, over the explained-sibling support, by NCE:
+
+| NCE | TV_model | TV_unif | dom-mismatch model | dom-mismatch unif |
+|-----|----------|---------|--------------------|-------------------|
+| 0–20  | 0.397 | 0.326 | 0.452 | 0.679 |
+| 35–50 | 0.402 | 0.397 | 0.506 | 0.751 |
+| ≥120  | 0.324 | 0.362 | 0.442 | 0.690 |
+
+- **The model does NOT capture branching → PROCEED.** Its implied sibling split is *at or below* the
+  uniform-over-siblings baseline on TV (worse than a coin flip at NCE ≤35), and it picks the wrong
+  dominant sibling **~45–50%** of the time vs the **~0.11** same-NCE replicate floor. Parent-local
+  competition is genuinely absent from the flat node-softmax. Large absolute headroom.
+- **BUT the error is NOT concentrated at high NCE** — flat-to-U-shaped (worst mid-band 35–50, better
+  at both extremes). Min/max brackets agree, so alias ambiguity doesn't hide it. The observed
+  branching *is* CE-dependent (`branching_headroom`), but the *model's error* is CE-flat → the
+  first-order gap is **structural sibling competition, not its CE-modulation**.
+- **Implication for Stage 1:** build the sibling-softmax residual CE-conditioned (cheap) but **ablate
+  against a CE-free sibling head** — the data predicts the structural head carries the gain and CE is
+  a second-order correction, not the driver. Do not over-invest in CE-conditioning up front.
 
 ### Stage 1 — sibling edge-softmax residual (de-risk, non-flow)
 Learned `EdgeMLP` over directed `frag_edge_index` → `scatter_logsoftmax(logits, src)` (per-parent
