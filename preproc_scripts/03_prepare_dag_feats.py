@@ -15,6 +15,16 @@ from fragnnet.utils.frag_utils import run_frag_gen_hdf5
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
+# Default per-instrument m/z tolerance, matching inst_type_loss_tol in the training configs
+# (e.g. config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
+# cos_hun_inst_tol_opt convention in scripts/eval/dag_oracle_scores.py. Instrument types
+# not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
+# --inst_type_loss_tol (JSON).
+DEFAULT_INST_TYPE_LOSS_TOL = {
+    "FT": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da (covers truncation artifact)
+}
+
 
 def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
     """Log series statistics to dictionary and optionally to W&B.
@@ -140,17 +150,26 @@ def main(args):
         idx_by_h_delta,
         prec_mz,
         prec_type,
+        inst_type,
         tolerances: list,
         max_h_transfer: int,
     ):
-        """_summary_
+        """Compute per-spectrum DAG coverage stats across tolerances and H-transfer budgets.
+
+        In addition to each fixed tolerance in ``tolerances``, an ``inst_tol`` variant is
+        emitted that uses the per-instrument m/z tolerance in ``args.inst_type_loss_tol``
+        (default: FT 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
+        to 10 ppm).
+        This mirrors the ``cos_hun_inst_tol_opt`` convention in
+        ``scripts/eval/dag_oracle_scores.py`` so recall/wrecall use the same matching logic.
 
         Args:
-            tolerances (list): _description_
-            h_transfer (int): _description_
+            inst_type: Instrument type for this spectrum, used to select the inst-tol tolerance.
+            tolerances: Fixed tolerance labels (e.g. "0.01", "10ppm").
+            max_h_transfer: Maximum H-transfer budget; stats are emitted for each h in 1..max.
 
         Returns:
-            _type_: _description_
+            One-row DataFrame with a column per (stat, tolerance, h_transfer).
         """
         results = []
         cols = []
@@ -190,6 +209,36 @@ def main(args):
                     )
                 cols += keys
                 results.append(result)
+
+        # Per-instrument tolerance variant (inst_tol). The base tolerance=10/is_ppm=True is
+        # the 10 ppm fallback for instrument types absent from args.inst_type_loss_tol; for
+        # FT/QTOF it is overridden per-peak by inst_type_tol.
+        for h_transfer in range(1, max_h_transfer + 1):
+            cols += [
+                f"recall_inst_tol_h{h_transfer}",
+                f"wrecall_inst_tol_h{h_transfer}",
+                f"prec_inst_tol_h{h_transfer}",
+                f"ppt_peak_inst_tol_h{h_transfer}",
+                f"ppt_formula_inst_tol_h{h_transfer}",
+                f"prec_recall_inst_tol_h{h_transfer}",
+                f"prec_spec_recall_inst_tol_h{h_transfer}",
+            ]
+            results.append(
+                frag_utils.compute_frag_peak_stats(
+                    peaks,
+                    formula_peak_mzs,
+                    formula_peak_probs,
+                    idx_by_h_delta,
+                    prec_mz,
+                    h_transfer,
+                    tolerance=10.0,
+                    prec_type=prec_type,
+                    is_ppm=True,
+                    inst_type=inst_type,
+                    inst_type_tol=args.inst_type_loss_tol,
+                )
+            )
+
         result_series = pd.concat(results, axis=0)
         result_df = result_series.to_frame().T
         result_df.columns = cols
@@ -486,9 +535,9 @@ def main(args):
             mol_stats_fp = os.path.join(args.frag_dp, "m_mol_stats_df.pkl")
 
         # compute spectra stats
-        peak_spec_df = _spec_df[[spec_key, "mol_id", "peaks", "prec_mz", "prec_type"]].merge(
-            frag_stats_df[id_cols + data_cols], on="mol_id", how="inner"
-        )
+        peak_spec_df = _spec_df[
+            [spec_key, "mol_id", "peaks", "prec_mz", "prec_type", "inst_type"]
+        ].merge(frag_stats_df[id_cols + data_cols], on="mol_id", how="inner")
         assert (
             peak_spec_df.shape[0]
             == peak_spec_df.drop_duplicates(subset=[spec_key, "mol_id"]).shape[0]
@@ -510,6 +559,7 @@ def main(args):
                     row["idx_by_h_delta"],
                     row["prec_mz"],
                     row["prec_type"],
+                    row["inst_type"],
                     tolerances,
                     args.max_h_transfer,
                 ]
@@ -614,6 +664,18 @@ if __name__ == "__main__":
         nargs="+",
         default=["0.01", "0.005", "0.001", "0.0001", "10ppm", "5ppm"],
         help="Mass tolerance values for peak matching statistics",
+    )
+    parser.add_argument(
+        "--inst_type_loss_tol",
+        type=json.loads,
+        default=DEFAULT_INST_TYPE_LOSS_TOL,
+        help=(
+            "JSON mapping of instrument type to per-instrument m/z tolerance for the "
+            'inst_tol stats variant, e.g. \'{"FT": {"rel": 1e-5, "min_mz": 200.0}}\'. '
+            "Instrument types absent from the mapping fall back to a 10 ppm relative "
+            "tolerance. Default matches the training configs (FT 10 ppm/200 Da, "
+            "QTOF 20 ppm/750 Da)."
+        ),
     )
     parser.add_argument(
         "--isotopes",

@@ -34,41 +34,75 @@ measurements pin down where collision energy is allowed to act:
 | Axis | Measurement | Verdict |
 |---|---|---|
 | *Which sibling* (branching) | `branching_headroom.py`, 2026-07-16 | **strongly CE-dependent** (dom-sibling flip: floor 0.11 → cross-NCE 0.43, monotonic in NCE gap to 0.68) |
-| *How deep* / extent (cumulative stop) | `ce_extent_headroom.py`, 2026-07-16 | **CE-INVARIANT** (extent error ~10% in every NCE bin; killed the CFM-flow stop head, `depth_ce_bias`) |
+| *How deep* / extent (path-level observable) | `ce_extent_headroom.py`, 2026-07-16 | extent **is** CE-dependent (0.838→0.350), but the model already reproduces it with **CE-flat residual error** (~10%/bin) → no headroom for a CE→halt knob; killed the CFM-flow stop head, `depth_ce_bias` |
 
-Cumulative stop probability **is** fragmentation extent. Therefore:
+Two knobs both drive observed extent the same way — CE in **branching** (route flux into deeper
+subtrees) and CE in **local halt** `α_halt(p)` (stop less at high CE) — so for extent alone they are
+**near-degenerate**. The measurement breaks the tie by *headroom, not physics*: branching has
+residual headroom (the sibling-flip), extent does not. Therefore:
 
-> **CE conditions the branching softmax ONLY. The stop/emission must be CE-invariant (or nearly).**
+> **CE conditions the branching softmax ONLY. Local halt `α_halt(p)` stays CE-free (or nearly) —
+> not because halt is energy-independent (it isn't), but because CE-conditioned branching already
+> reproduces the extent trend, so a separate CE→halt term has no measured headroom.**
 
-This is what makes FluxMPNN *evidence-shaped* rather than a CFM clone — vanilla CFM makes
-everything energy-dependent, which here would burn the CE budget re-modelling a measured null.
+This is what makes FluxMPNN *evidence-shaped* rather than a CFM clone — vanilla CFM makes everything
+energy-dependent, which here would spend the CE budget on a second knob for an observable already fit.
 
-### Sharpening: three flux fates, and what "CE-invariant stop" actually claims
+### Sharpening: flux fates — branch, sink, escape (two structural halt gates)
 
-The "stop/emission" knob above is really **two stages**. Flux at a node `p` has three fates:
+The "stop/emission" knob above is really **two structural halt gates** feeding four flux fates:
 
 ```text
 F_in(p)
-  ├─ BRANCH  → continue to a child (outgoing edge flux)          stage 1, CE-live
-  └─ HALT    → stop fragmenting here (F_stop)                    stage 1, structural
-                └─ OBSERVE → peak intensity via the existing
-                             channel head P(h | node)             stage 2 (H-shift/CRF/CMF)
+  ├─ BRANCH  → continue to a child (outgoing edge flux)          stage 1, CE-live (β)
+  └─ HALT    → stop fragmenting here                             stage 1, structural (α_halt)
+        ├─ SINK   → observed: emit a peak                        structural (α_sink), CE-free
+        │            └─ OBSERVE = existing channel head P(h|node) stage 2 (H-shift/CRF/CMF)
+        └─ ESCAPE → unobserved: flux leaves the modeled system   structural, CE-free → OOS/null
 ```
 
-So `sink (peak intensity) = HALT × OBSERVE` (`F_sink · P(h|node)`). The exit softmax governs
-**BRANCH vs HALT only**; OBSERVE is the current channel head, untouched. The extent-null constrains
-**HALT**; it says nothing about OBSERVE's CE-dependence (a separate, pre-existing question).
+Two gates split the halted flux where the original plan had one.
+`α_halt(p) = σ(halt_logit(h_p))` is halt-vs-branch; `α_sink(p) = σ(sink_logit(h_p))` is, of the
+halted flux, the fraction that is *observed*:
 
-**"HALT is CE-invariant" is a *headroom* claim, not a physics claim.** Extent *is* CE-dependent in
-the data (retained-heavy-atom fraction 0.838→0.350). The point is the current model already
-reproduces that trend (0.863→0.368) with CE-flat residual error, so an explicit CE→halt knob has
-nothing to fix — the high-NCE cosine collapse is not coming from getting extent wrong.
+- `F(p→c)     = (1 − α_halt(p)) · β_c · F_in(p)`      (β = CE-live sibling softmax)
+- `F_sink(p)   = α_halt(p) · α_sink(p) · F_in(p)`      → peak, then OBSERVE channel head
+- `F_escape(p) = α_halt(p) · (1 − α_sink(p)) · F_in(p)` → global escape / OOS bucket
 
-**How extent still moves with CE while local `α_halt` stays CE-free.** Extent is a *path-level*
-quantity; `α_halt(p)` is *local*. CE-conditioned *branching* that routes flux into smaller (deeper)
-subtrees at high CE shifts emission mass toward low-heavy-atom nodes — so extent falls with CE even
-when every node's halt fraction is CE-free. Extent is meant to be **emergent from branching**, not
-set by a local CE→halt term.
+They sum to `F_in(p)` exactly. **Why escape is its own gate, not folded into halt or a bolted-on
+OOS term:** the DAG is depth-truncated and MS is lossy — neutral/uncharged products, sub-detection
+fragments, and out-of-DAG continuations all carry real flux that must *not* be forced to emit a
+peak. A single halt gate makes every stopped fragment observable. Total escape `Σ_p F_escape(p)` is
+then a **flow-native home for the OOS/null-formula mass**: peaks + escape = 1 from the root by
+conservation, so normalization falls out instead of being reconciled ad hoc.
+
+**CE placement (extends the hard constraint to both gates).** `α_halt` is CE-free — it *is* extent
+(extent-null). `α_sink` is CE-free to start: observed-vs-unobserved is a structural/ionization
+property, and the extent-null buys no license to CE-condition it. It is the **one gate worth
+relaxing later** if total observed coverage turns out CE-dependent — but only through its own
+sigmoid, never a joint softmax over `{sink, escape, children}` (a shared `Z` recouples CE into
+halt/extent). Flag, don't build.
+
+So `sink (peak intensity) = HALT × SINK × OBSERVE`; the extent-null constrains **HALT** and says
+nothing about OBSERVE's CE-dependence (a separate, pre-existing question).
+
+**Why local halt stays CE-free — the precise claim.** The phrase "CE-invariant halt" conflates two
+different quantities; only one is CE-free:
+
+- **Extent** (observed, path-level): strongly CE-dependent, 0.838→0.350. Not disputed.
+- **`α_halt(p)`** (latent, per-node — the fraction of flux arriving at `p` that stops here rather
+  than continuing to a child): the knob we freeze CE-free.
+
+**Physically `α_halt` *is* energy-dependent** (higher internal energy → lower survival → more
+fragmentation; CFM models it so). We freeze it anyway on an **identifiability** argument, not a
+physics one. Extent is **emergent from the whole flow**: CE-conditioned *branching* that routes flux
+into smaller (deeper) subtrees at high CE lowers observed extent *even with every node's `α_halt`
+CE-free*. So the two knobs are near-degenerate for the observable — and the measurement says the
+model already reproduces the 0.838→0.350 curve (0.863→0.368) with CE-flat residual error, while
+branching still shows headroom (the sibling-flip). Spend CE where there's headroom (branching);
+freeze the degenerate knob to keep the halt normalizer clean and the high-NCE regime from getting a
+second, redundant lever. **We never measured `α_halt` directly** (it's latent) — only that the
+path-level observable it feeds has no residual headroom.
 
 **Failure mode (why "or nearly").** In a linear chain, branching has no freedom, so the only way to
 deepen penetration at high CE is to lower `α_halt` — which needs CE in halt. FraGNNet DAGs branch
@@ -121,36 +155,43 @@ correction on top of base P(n); no flow yet.
 ### Stage 3 — FluxMPNN (conserved probability flow)
 Replace the flat P(n) with a flow:
 1. `flux = 1` at the root (node 0).
-2. Process nodes in **topological order by heavy-atom count**.
-3. At each node, a **factored exit** — NOT one joint softmax over `{sink, children}`:
-   - CE-free **halt gate**: `α_halt(p) = σ(stop_logit(h_p))` (structural node repr only).
+2. Propagate over the **DAG directly** — a topological traversal of `frag_edge_index` itself (the DAG
+   is provably acyclic, so its own edge structure gives the order). Do NOT reorder by a heavy-atom
+   proxy; a node's `F_in` is ready once all its in-edges have been processed.
+3. At each node, a **factored exit** with **two structural halt gates** — NOT one joint softmax over
+   `{sink, escape, children}`:
+   - CE-free **halt gate**: `α_halt(p) = σ(halt_logit(h_p))` (structural node repr only).
+   - CE-free **sink gate**: `α_sink(p) = σ(sink_logit(h_p))` — observed fraction of halted flux.
    - CE-conditioned **sibling softmax**: `β_c = softmax_children(edge_logits(h_p, h_c, cc, ce))`.
-   - combine: `α_p→c = (1 − α_halt(p)) · β_c`, and `F_stop(p) = α_halt(p) · F_in(p)`.
+   - combine: to child `F(p→c) = (1 − α_halt)·β_c·F_in`; observed `F_sink = α_halt·α_sink·F_in`
+     (→ `P(n)`, then the channel head); escaped `F_escape = α_halt·(1 − α_sink)·F_in` (→ OOS/null).
 
-   Separate normalizers keep CE out of halt *by construction*. A joint softmax
-   `[α_sink, α_c1, …] = softmax(exit_logits)` would re-couple them: the shared partition function
-   `Z` means any CE-driven change to a child logit moves `α_sink` too, leaking the CE-live branching
-   signal into the CE-flat extent axis. Halted flux → node emission `P(n)`, then the existing
-   channel head observes it.
+   Three separate normalizers keep CE out of both halt and sink *by construction*. A joint softmax
+   `[α_sink, α_escape, α_c1, …] = softmax(exit_logits)` would re-couple them: the shared partition
+   function `Z` means any CE-driven change to a child logit moves `α_sink`/`α_escape` too, leaking
+   the CE-live branching signal into the CE-flat extent axis.
 4. Multi-parent: incoming flux to a node = `logsumexp` over its in-edges ("evidence combines" for
    different parents, competition only among siblings).
-5. `P(n)` feeds the existing formula→spectrum pipeline unchanged; conservation reconciles with the
-   existing OOS/null-formula mass.
+5. `P(n)` (from `F_sink`) feeds the existing formula→spectrum pipeline unchanged; the escape mass
+   `Σ_p F_escape(p)` *is* the OOS/null-formula bucket — conservation makes peaks + escape = 1, so it
+   reconciles by construction rather than via a bolted-on term.
 All in log-space, differentiable, trained with the existing spectrum loss.
 
 ## Risks / watch-items
 
 - **CE at branching only** (above) — the load-bearing constraint. Parameterise halt as a per-node
-  scalar from structure, not from `ce_embed`; use a **factored exit** (halt gate ⊗ sibling softmax),
-  not a joint softmax over `{sink, children}`, or the shared normalizer re-couples them. Also guard
+  scalar from structure, not from `ce_embed`; use a **factored exit** (halt gate ⊗ sink gate ⊗
+  sibling softmax), not a joint softmax over `{sink, escape, children}`, or the shared normalizer
+  re-couples them. Also guard
   against CE reaching halt *through* `h_p` (detach / use a CE-free view if `ce_embed` was fused
   upstream). **Verify** extent still tracks CE (0.84→0.35) under CE-free halt before locking it in —
   chain-like subgraphs are the failure mode.
 - **Gradient stability**: the earlier top-K competition head NaN'd from gradient backflow into the
   shared frag encoder (fixed via `frag_embed.detach()`). Flow over 3 layers is milder but start with
   the encoder detached, then relax.
-- **OOS/normalization reconciliation**: flow mass + OOS must sum to 1; integrate with the current
-  `frag_null_formula_logprob` / `oos_logprobs` path, don't double-count.
+- **OOS/normalization reconciliation**: the escape gate *is* the OOS bucket (peaks + escape = 1 by
+  conservation). Wire `Σ_p F_escape(p)` into the current `frag_null_formula_logprob` / `oos_logprobs`
+  slot rather than adding a second normalizer — **do not double-count** a separate OOS term on top.
 - **Scope discipline**: Stage 3 is a real re-architecture; Stages 0–2 must each pay their way first.
   Supersedes the top-K transformer competition head (`project_frag_competition`).
 

@@ -220,7 +220,10 @@ def _process_mol_group(
     include_cmf: bool = True,
 ) -> list[dict]:
     """Load one molecule's DAG and score every one of its spectra against it."""
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    try:
+        dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    except FileNotFoundError:
+        dag_d = None  # molecule has no DAG on disk (folder backend raises rather than None)
     if dag_d is None:
         return []
 
@@ -239,6 +242,24 @@ def _process_mol_group(
         true_mzs_raw, true_ints_raw = zip(*peaks)
         true_mzs = th.tensor(true_mzs_raw, dtype=th.float32)
         true_ints = th.tensor(true_ints_raw, dtype=th.float32)
+
+        # Optionally drop UWPR contaminant_only peaks (matched to a known contaminant m/z and
+        # unexplainable by the DAG) so the oracle ceiling is measured on the denoised spectrum.
+        contam_mzs = row["contam_mzs"]
+        n_uwpr_removed = 0
+        if contam_mzs:
+            mzs_np = np.asarray(true_mzs_raw)
+            keep = np.ones(len(mzs_np), dtype=bool)
+            for cmz in contam_mzs:
+                keep &= np.abs(mzs_np - cmz) > 1e-4
+            n_uwpr_removed = int((~keep).sum())
+            if n_uwpr_removed:
+                if not keep.any():
+                    continue  # entire spectrum is contaminant; oracle undefined, skip
+                keep_t = th.tensor(keep)
+                true_mzs = true_mzs[keep_t]
+                true_ints = true_ints[keep_t]
+
         dag_ion_mzs = _dag_ion_mzs(theo_mzs, prec_mask, row["prec_type"], include_cmf=include_cmf)
 
         cos_opt, jss_opt, n_achievable, n_true = _oracle_scores_for_spectrum(
@@ -278,6 +299,7 @@ def _process_mol_group(
                 "n_achievable_peaks": n_achievable,
                 "n_achievable_peaks_inst_tol": n_achievable_it,
                 "n_achievable_peaks_0p01da": n_achievable_da,
+                "n_uwpr_removed": n_uwpr_removed,
                 "dag_num_nodes": dag_d["dag_num_nodes"],
             }
         )
@@ -395,6 +417,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional path to save per-spectrum results (one CSV per --frag_dp, suffixed by label).")
+    parser.add_argument(
+        "--uwpr_feasibility_csv", default=None,
+        help="Optional UWPR feasibility CSV (from scripts/eval/uwpr_feasibility.py). When set, "
+        "peaks flagged 'contaminant_only' are removed per spectrum before scoring, giving the "
+        "denoised oracle ceiling; the per-spectrum output gains an n_uwpr_removed column.",
+    )
     args = parser.parse_args()
 
     labels = args.frag_dp_labels if args.frag_dp_labels else [os.path.basename(os.path.dirname(fp.rstrip("/"))) for fp in args.frag_dp]
@@ -412,7 +440,19 @@ def main() -> None:
         split_spec_ids = set(pd.read_csv(split_fp)["spec_id"])
         spec_df = spec_df[spec_df["spec_id"].isin(split_spec_ids)]
 
-    spec_df = spec_df[["spec_id", "mol_id", "peaks", "prec_mz", "prec_type", "inst_type", "frag_mode"]]
+    spec_df = spec_df[["spec_id", "mol_id", "peaks", "prec_mz", "prec_type", "inst_type", "frag_mode"]].copy()
+
+    # Per-spectrum UWPR contaminant m/z to strip before scoring (empty list = no removal).
+    if args.uwpr_feasibility_csv is not None:
+        log.info("Loading UWPR feasibility from %s", args.uwpr_feasibility_csv)
+        feas = pd.read_csv(args.uwpr_feasibility_csv, usecols=["spec_id", "peak_mz", "feasibility"])
+        contam = feas[feas["feasibility"] == "contaminant_only"]
+        contam_map = contam.groupby("spec_id")["peak_mz"].apply(list).to_dict()
+        spec_df["contam_mzs"] = spec_df["spec_id"].map(lambda s: contam_map.get(s, []))
+        n_affected = spec_df["contam_mzs"].apply(bool).sum()
+        log.info("UWPR removal active: %d/%d spectra have >=1 contaminant_only peak", n_affected, len(spec_df))
+    else:
+        spec_df["contam_mzs"] = [[] for _ in range(len(spec_df))]
 
     if args.limit_mols is not None:
         rng = np.random.default_rng(args.seed)

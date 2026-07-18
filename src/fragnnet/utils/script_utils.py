@@ -974,13 +974,22 @@ def run_inference_pkl(
             # ============================================================
             output_keys = b_output.keys()
 
-            # Calculate batch counts for index rebatching
-            if "pred_batch_idxs" in output_keys:
-                b_num_datapoints = b_output["pred_batch_idxs"].max() + 1
-            elif "true_batch_idxs" in output_keys:
-                b_num_datapoints = b_output["true_batch_idxs"].max() + 1
-            else:
-                b_num_datapoints = 0
+            # Calculate batch counts for index rebatching. Any per-batch index that
+            # ranges over spectra gives the datapoint count, so fall back through them
+            # (e.g. a node-only output_subset has no `pred_batch_idxs` but still needs
+            # `pred_node_batch_idxs` rebatched across batches).
+            b_num_datapoints = 0
+            for _batch_key in (
+                "pred_batch_idxs",
+                "true_batch_idxs",
+                "pred_node_batch_idxs",
+                "pred_formula_batch_idxs",
+                "pred_joint_batch_idxs",
+            ):
+                v = b_output.get(_batch_key)
+                if v is not None and v.numel() > 0:
+                    b_num_datapoints = int(v.max()) + 1
+                    break
 
             if is_fragnnet_model and "pred_node_node_idxs" in output_keys:
                 b_num_nodes = b_output["pred_node_node_idxs"].max() + 1
@@ -1157,6 +1166,11 @@ def run_inference_hdf5(
     sequential_name = set(
         ["pred_mzs", "pred_ints", "frag_formula_peak_idxs", "frag_formula_peak_mzs"]
     )  # can update this vec
+    # Node-level per-spectrum arrays. Like the peak columns, each spectrum contributes a
+    # variable-length block, so they need their own running offset + node_start/end_points.
+    # Saving them at the per-spectrum offset (as scalar columns are) corrupts them across
+    # chunks. (Formula/joint-level arrays have the same requirement if ever requested.)
+    node_name = {"pred_node_probs", "pred_node_node_idxs"}
     # Accumulate all batch results
     num_pred = 0
     num_batch = len(dataloader)
@@ -1164,6 +1178,7 @@ def run_inference_hdf5(
     filter_stats: dict = {}
 
     spec_start_point = 0
+    node_start_point = 0
     start_point = 0
     with h5py.File(save_path, "w") as save_file:
 
@@ -1214,14 +1229,25 @@ def run_inference_hdf5(
             # use pred_mzs length as the canonical flush trigger (always present)
             if len(preds_l["pred_mzs"]) >= chunk_size or num_pred == num_batch:
                 print("saving ...", start_point)
+                # Node-level arrays are saved below with a node offset + node_start/end_points,
+                # not the per-spectrum offset. Only when actually populated (i.e. requested,
+                # so the elements are tensors rather than nan placeholders).
+                node_arrays_present = (
+                    "pred_node_probs" in preds_l
+                    and len(preds_l["pred_node_probs"]) > 0
+                    and isinstance(preds_l["pred_node_probs"][0], th.Tensor)
+                )
                 for k in preds_l:
-                    if k not in sequential_name:
-                        # check whether is tensor
-                        if len(preds_l[k]) > 0 and hasattr(preds_l[k][0], "detach"):
-                            save_v = th.cat(preds_l[k], 0).detach().cpu().numpy()
-                        else:
-                            save_v = np.array(preds_l[k])
-                        resize_and_save(k, save_v, start_point)
+                    if k in sequential_name:
+                        continue
+                    if node_arrays_present and k in node_name:
+                        continue
+                    # check whether is tensor
+                    if len(preds_l[k]) > 0 and hasattr(preds_l[k][0], "detach"):
+                        save_v = th.cat(preds_l[k], 0).detach().cpu().numpy()
+                    else:
+                        save_v = np.array(preds_l[k])
+                    resize_and_save(k, save_v, start_point)
                 # save mz and intensity
                 spec_start_points = []
                 spec_end_points = []
@@ -1245,6 +1271,35 @@ def run_inference_hdf5(
                     resize_and_save(k, save_v, spec_start_point - save_length)
                 resize_and_save("start_points", np.array(spec_start_points), start_point)
                 resize_and_save("end_points", np.array(spec_end_points), start_point)
+
+                # Save node-level arrays with a node offset, plus per-spectrum
+                # node_start/end_points (indexed by spectrum, like start/end_points) so
+                # P(n) can be sliced per spectrum and aligned to each DAG.
+                if node_arrays_present:
+                    node_start_points = []
+                    node_end_points = []
+                    for probs in preds_l["pred_node_probs"]:
+                        node_start_points.append(node_start_point)
+                        node_start_point += len(probs)
+                        node_end_points.append(node_start_point)
+                    node_save_length = None
+                    for k in node_name:
+                        if k not in preds_l:
+                            continue
+                        if not preds_l[k] or not isinstance(preds_l[k][0], th.Tensor):
+                            continue
+                        save_v = th.cat(preds_l[k], 0).detach().cpu().numpy()
+                        if node_save_length is None:
+                            node_save_length = len(save_v)
+                        else:
+                            assert len(save_v) == node_save_length, k
+                        resize_and_save(k, save_v, node_start_point - node_save_length)
+                    resize_and_save(
+                        "node_start_points", np.array(node_start_points), start_point
+                    )
+                    resize_and_save(
+                        "node_end_points", np.array(node_end_points), start_point
+                    )
                 start_point += len(preds_l["pred_mzs"])
                 del preds_l
                 preds_l = {}
