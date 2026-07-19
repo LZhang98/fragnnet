@@ -160,9 +160,18 @@ Script: `scripts/eval/stage0_branching_model_vs_oracle.py` (reads the node-group
 
 ### Stage 1 — sibling edge-softmax residual (de-risk, non-flow)
 Learned `EdgeMLP` over directed `frag_edge_index` → `scatter_logsoftmax(logits, src)` (per-parent
-sibling softmax, CE-conditioned) → logsumexp-over-parents → per-node residual at `1519`. Zero-init,
-KL-leashed to base. Tests whether parent-local competition helps *at all* before re-architecting the
-output. This is the minimal version of the user's directional-transition head.
+sibling softmax, CE-conditioned) → logsumexp-over-parents → per-node residual at `1519`. The residual
+must be **identity at init**: a raw sibling log-softmax is *not* neutral, because zero logits imply a
+uniform-over-children prior and, after parent aggregation, inject an in-degree/out-degree structural
+bias before learning. Implement the correction as either:
+
+- a baseline-centered edge residual, e.g. `log β_edge - log β_uniform(parent)`, then aggregate to the
+  node; or
+- a learned scalar gate multiplying the whole parent-competition residual, initialized exactly to 0.
+
+Zero-init the edge scorer, KL-leash the final node distribution to the base distribution, and ablate
+CE-conditioned vs CE-free sibling heads. Tests whether parent-local competition helps *at all* before
+re-architecting the output. This is the minimal version of the user's directional-transition head.
 
 ### Stage 2 — directional transition MPNN
 Maintain a state per directed edge `p→c` initialised from `[h_p, h_c, h_c−h_p, complement, cc,
@@ -173,9 +182,11 @@ correction on top of base P(n); no flow yet.
 ### Stage 3 — FluxMPNN (conserved probability flow)
 Replace the flat P(n) with a flow:
 1. `flux = 1` at the root (node 0).
-2. Propagate over the **DAG directly** — a topological traversal of `frag_edge_index` itself (the DAG
-   is provably acyclic, so its own edge structure gives the order). Do NOT reorder by a heavy-atom
-   proxy; a node's `F_in` is ready once all its in-edges have been processed.
+2. Propagate over the **DAG directly** using a real topological order computed from
+   `frag_edge_index` per graph (Kahn/CSR traversal is fine). The DAG is provably acyclic, so the
+   traversal is exact; a node's `F_in` is ready once all its in-edges have been processed. Descending
+   heavy-atom count is a useful verified shortcut/test oracle, but not the implementation contract.
+   Do NOT layer by `nodes_min_depth`.
 3. At each node, a **factored exit**. Think of every parent as having three kinds of **outgoing
    edge** — `p→child_c` (continue), `p→sink` (emit/observe here), `p→escape` (unobserved) — with
    flux conserved: `F_in(p) = Σ_c F(p→child_c) + F(p→sink) + F(p→escape)`. The split is a **nested
@@ -187,6 +198,9 @@ Replace the flat P(n) with a flow:
      it is the sole CE-carrier (an `EdgeMLP` over `(parent, child)` pairs).
    - combine: to child `F(p→c) = (1 − α_halt)·β_c·F_in`; observed `F_sink = α_halt·α_sink·F_in`
      (→ `P(n)`, then the channel head); escaped `F_escape = α_halt·(1 − α_sink)·F_in`.
+   - **leaf rule:** for nodes with no children, force `α_halt = 1` (or equivalently route all
+     incoming flux to halt before sink/escape). Otherwise `(1 − α_halt)` has no outgoing edge and
+     conservation silently leaks mass.
 
    Three separate normalizers keep CE out of both halt and sink *by construction*. A **flat** softmax
    `[α_sink, α_escape, α_c1, …] = softmax(exit_logits)` would re-couple them: the shared partition
@@ -201,11 +215,12 @@ Replace the flat P(n) with a flow:
 5. **`P(n)` (from `F_sink`) feeds the existing formula→spectrum pipeline unchanged.** OOS handling —
    **v1 keeps the existing `oos_module` and does NOT model escape**: set `α_sink = 1` (all halted
    flux is observed), so `P(n) = F_sink(n)` sums to 1 over nodes (a valid distribution, since every
-   leaf halts) and the current pooled OOS gate stays on top exactly as today. Rationale: `α_sink` is
-   a CE-free knob on the **halt/extent** axis, which [[project_ce_extent_allocation_null]] proved has
-   no residual headroom; and the per-node escape split is **under-identified** (the observed spectrum
-   only constrains the *aggregate* off-peak mass, never *which* node leaked), so a rich escape model
-   just regularises to a global constant with extra machinery. Spend all capacity on `β`.
+   leaf is explicitly forced to halt) and the current pooled OOS gate stays on top exactly as today.
+   Rationale: `α_sink` is a CE-free knob on the **halt/extent** axis, which
+   [[project_ce_extent_allocation_null]] proved has no residual headroom; and the per-node escape
+   split is **under-identified** (the observed spectrum only constrains the *aggregate* off-peak mass,
+   never *which* node leaked), so a rich escape model just regularises to a global constant with extra
+   machinery. Spend all capacity on `β`.
    **Later (optional):** if conservation-native OOS is wanted for its own sake, turn `α_sink` back on
    with **low capacity** (global / near-constant) and **anchor** `Σ_p F_escape(p)` to the observed
    unexplained fraction — treat it as a normalization nicety, not a modeling lever.
@@ -214,12 +229,13 @@ All in log-space, differentiable, trained with the existing spectrum loss.
 ## Risks / watch-items
 
 - **CE at branching only** (above) — the load-bearing constraint. Parameterise halt as a per-node
-  scalar from structure, not from `ce_embed`; use a **factored exit** (halt gate ⊗ sink gate ⊗
-  sibling softmax), not a joint softmax over `{sink, escape, children}`, or the shared normalizer
-  re-couples them. Also guard
-  against CE reaching halt *through* `h_p` (detach / use a CE-free view if `ce_embed` was fused
-  upstream). **Verify** extent still tracks CE (0.84→0.35) under CE-free halt before locking it in —
-  chain-like subgraphs are the failure mode.
+  scalar from a named **CE-free node representation**, not from `ce_embed` and not from any
+  `frag_embed` tensor after CE/context has been concatenated. Concretely, expose/pass a structural
+  node view for halt/sink (`h_struct`) and reserve the CE-conditioned edge view for `β`. Use a
+  **factored exit** (halt gate ⊗ sink gate ⊗ sibling softmax), not a joint softmax over
+  `{sink, escape, children}`, or the shared normalizer re-couples them. **Verify** extent still
+  tracks CE (0.84→0.35) under CE-free halt before locking it in — chain-like subgraphs are the
+  failure mode.
 - **Gradient stability**: the earlier top-K competition head NaN'd from gradient backflow into the
   shared frag encoder (fixed via `frag_embed.detach()`). Flow over 3 layers is milder but start with
   the encoder detached, then relax.
