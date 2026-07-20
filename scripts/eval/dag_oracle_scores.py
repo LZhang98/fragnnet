@@ -22,6 +22,12 @@ elsewhere in eval:
     inst_type_loss_tol in config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
   - cos_hun_0p01da_opt / jss_hun_0p01da_opt: fixed absolute 0.01 Da tolerance.
 
+True peaks above the precursor m/z are always dropped before scoring: no fragment can exceed the
+precursor mass, so they are noise/co-isolation and would otherwise depress the ceiling for a
+reason the DAG cannot fix. The cutoff uses the per-instrument tolerance (the widest of the three
+variants, so the filter never removes a peak that any variant could still have matched), and the
+count is reported per spectrum as n_above_prec_removed.
+
 Additionally, cos_hun_sqrt_opt / jss_hun_sqrt_opt sqrt-transform intensities before scoring
 (at the default 10 ppm tolerance), matching the cos_hun_sqrt / jss_hun_sqrt eval variant that
 de-emphasizes the dominant peak.
@@ -243,22 +249,34 @@ def _process_mol_group(
         true_mzs = th.tensor(true_mzs_raw, dtype=th.float32)
         true_ints = th.tensor(true_ints_raw, dtype=th.float32)
 
-        # Optionally drop UWPR contaminant_only peaks (matched to a known contaminant m/z and
-        # unexplainable by the DAG) so the oracle ceiling is measured on the denoised spectrum.
+        # Denoise before scoring. Two filters, both applied to the true spectrum only:
+        #   1. Peaks above the precursor m/z (beyond match tolerance) -- no fragment can exceed
+        #      the precursor mass, so these are noise/co-isolation and are never DAG-achievable.
+        #   2. Optionally, UWPR contaminant_only peaks (matched to a known contaminant m/z and
+        #      unexplainable by the DAG), when a feasibility CSV was supplied.
+        inst_tol, inst_tol_min_mz = _tolerance_for_inst_type(row["inst_type"])
+
+        mzs_np = np.asarray(true_mzs_raw)
+        prec_cutoff = row["prec_mz"] + max(row["prec_mz"], inst_tol_min_mz) * inst_tol
+        keep = mzs_np <= prec_cutoff
+        n_above_prec_removed = int((~keep).sum())
+
         contam_mzs = row["contam_mzs"]
-        n_uwpr_removed = 0
         if contam_mzs:
-            mzs_np = np.asarray(true_mzs_raw)
-            keep = np.ones(len(mzs_np), dtype=bool)
+            keep_contam = np.ones(len(mzs_np), dtype=bool)
             for cmz in contam_mzs:
-                keep &= np.abs(mzs_np - cmz) > 1e-4
-            n_uwpr_removed = int((~keep).sum())
-            if n_uwpr_removed:
-                if not keep.any():
-                    continue  # entire spectrum is contaminant; oracle undefined, skip
-                keep_t = th.tensor(keep)
-                true_mzs = true_mzs[keep_t]
-                true_ints = true_ints[keep_t]
+                keep_contam &= np.abs(mzs_np - cmz) > 1e-4
+            n_uwpr_removed = int((~keep_contam).sum())
+            keep &= keep_contam
+        else:
+            n_uwpr_removed = 0
+
+        if not keep.all():
+            if not keep.any():
+                continue  # every peak was filtered out; oracle undefined, skip
+            keep_t = th.tensor(keep)
+            true_mzs = true_mzs[keep_t]
+            true_ints = true_ints[keep_t]
 
         dag_ion_mzs = _dag_ion_mzs(theo_mzs, prec_mask, row["prec_type"], include_cmf=include_cmf)
 
@@ -266,7 +284,6 @@ def _process_mol_group(
             true_mzs, true_ints, dag_ion_mzs, remove_prec_peak, row["prec_mz"],
             tolerance=TOLERANCE, relative=True, tolerance_min_mz=TOLERANCE_MIN_MZ,
         )
-        inst_tol, inst_tol_min_mz = _tolerance_for_inst_type(row["inst_type"])
         cos_opt_it, jss_opt_it, n_achievable_it, _ = _oracle_scores_for_spectrum(
             true_mzs, true_ints, dag_ion_mzs, remove_prec_peak, row["prec_mz"],
             tolerance=inst_tol, relative=True, tolerance_min_mz=inst_tol_min_mz,
@@ -300,6 +317,7 @@ def _process_mol_group(
                 "n_achievable_peaks_inst_tol": n_achievable_it,
                 "n_achievable_peaks_0p01da": n_achievable_da,
                 "n_uwpr_removed": n_uwpr_removed,
+                "n_above_prec_removed": n_above_prec_removed,
                 "dag_num_nodes": dag_d["dag_num_nodes"],
             }
         )
