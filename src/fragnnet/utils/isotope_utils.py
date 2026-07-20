@@ -1,3 +1,4 @@
+import math
 from collections.abc import Mapping
 
 import numpy as np
@@ -5,7 +6,6 @@ import numpy as np
 from fragnnet.utils.formula_utils import (
     C13_SPACING,
     MASS,
-    NEUTRON_MASS,
     PREC_TYPE_TO_FORMULA_DIFF,
     isotope_offsets_from_formula,
     parse_formula,
@@ -22,7 +22,7 @@ def detect_isotope_peaks(
     """Detect isotope peaks in a reference spectrum.
 
     A peak is considered an isotope peak (M+k, k >= 1) if there exists a
-    lower-m/z peak separated by approximately k * NEUTRON_MASS within
+    lower-m/z peak separated by approximately k * C13_SPACING within
     ``mz_tol``.  Optionally, that lower-m/z peak must also be more intense
     than the candidate isotope peak.
 
@@ -33,9 +33,9 @@ def detect_isotope_peaks(
         mzs: Peak m/z values of shape (N,).  Need not be sorted.
         ints: Peak intensities of shape (N,).  Same order as ``mzs``.
         mz_tol: Absolute m/z tolerance in Da for matching isotope spacing.
-            The default of 0.02 Da covers both the exact 13C–12C spacing
-            (~1.0034 Da) and the NEUTRON_MASS approximation (1.0087 Da) used
-            in the rest of the codebase.  Defaults to 0.02.
+            The step is centred on the exact 13C–12C spacing (C13_SPACING,
+            ~1.0034 Da); the default of 0.02 Da also tolerates the slightly
+            larger neutron-mass spacing (~1.0087 Da).  Defaults to 0.02.
         max_isotope: Maximum isotope order to consider (1 = M+1 only,
             2 = up to M+2, etc.). Defaults to 3.
         check_intensity: If True, require that the candidate monoisotopic
@@ -71,7 +71,7 @@ def detect_isotope_peaks(
 
     for i in range(n):
         for k in range(1, max_isotope + 1):
-            target_mz = sorted_mzs[i] - k * NEUTRON_MASS
+            target_mz = sorted_mzs[i] - k * C13_SPACING
             lo = np.searchsorted(sorted_mzs, target_mz - mz_tol, side="left")
             hi = np.searchsorted(sorted_mzs, target_mz + mz_tol, side="right")
             if lo >= hi:
@@ -100,7 +100,7 @@ def detect_isotope_peaks_formula_aware(
 ) -> np.ndarray:
     """Detect isotope peaks using exact pyopenms isotopologue mass offsets.
 
-    Unlike :func:`detect_isotope_peaks`, which uses a fixed ``k * NEUTRON_MASS``
+    Unlike :func:`detect_isotope_peaks`, which uses a fixed ``k * C13_SPACING``
     step, this function queries pyopenms ``CoarseIsotopePatternGenerator`` for
     the actual M+k mass offsets predicted for the given molecular formula.  This
     improves accuracy for molecules containing Cl, Br, S, or K where even-mass
@@ -249,8 +249,6 @@ def _expected_mk_ratio(
     Returns:
         Expected M+k/M+0 intensity ratio, floored at 1e-4.
     """
-    import math
-
     if adduct_counts is None:
         adduct_counts = {}
 
@@ -461,7 +459,7 @@ def _fragment_expected_ratio(
     if dag_formula is not None:
         try:
             return _expected_mk_ratio(parse_formula(dag_formula), 1.0, k)
-        except Exception:
+        except (ValueError, AssertionError):
             pass
     neutral_frag = m0_mz - adduct_delta_mass
     mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
@@ -644,7 +642,7 @@ def estimate_coisolation_fraction_from_precursor(
             k: _expected_mk_ratio(mol_counts, 1.0, k, adduct_counts)
             for k in range(1, max_isotope + 1)
         }
-    except Exception:
+    except (ValueError, AssertionError):
         return {}
 
     sort_idx = np.argsort(mzs)
@@ -843,7 +841,7 @@ def detect_isotope_peaks_for_training(
             adduct_counts_parsed, adduct_delta_mass = _parse_adduct_counts(prec_type)
             for _k in range(1, max_isotope + 1):
                 r_exp_prec[_k] = _expected_mk_ratio(mol_counts, 1.0, _k, adduct_counts_parsed)
-        except Exception:
+        except (ValueError, AssertionError):
             mol_counts = None
             r_exp_prec = {}
 
@@ -1162,7 +1160,7 @@ def detect_isotope_peaks_for_training_cleanup(
     if formula:
         try:
             element_counts = parse_formula(formula)
-        except Exception:
+        except (ValueError, AssertionError):
             element_counts = None
         if remove_regular_isotopes and element_counts is not None:
             mz_tol = regular_mz_tol
