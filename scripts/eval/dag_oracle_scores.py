@@ -22,11 +22,18 @@ elsewhere in eval:
     inst_type_loss_tol in config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
   - cos_hun_0p01da_opt / jss_hun_0p01da_opt: fixed absolute 0.01 Da tolerance.
 
-True peaks above the precursor m/z are always dropped before scoring: no fragment can exceed the
-precursor mass, so they are noise/co-isolation and would otherwise depress the ceiling for a
-reason the DAG cannot fix. The cutoff uses the per-instrument tolerance (the widest of the three
-variants, so the filter never removes a peak that any variant could still have matched), and the
-count is reported per spectrum as n_above_prec_removed.
+Every spectrum is scored under four denoise filter tiers, reported stacked so the marginal effect
+of each filter on the DAG ceiling is visible (see FILTER_TIERS):
+  - 0_raw:           no filter (the spectrum as stored).
+  - 1_above_prec:    drop true peaks above the precursor m/z. No fragment can exceed the precursor
+                     mass, so these are noise/co-isolation the DAG can never explain; the cutoff
+                     uses the per-instrument tolerance. Count reported as n_above_prec_removed.
+  - 2_uwpr_rm:       additionally drop every peak matching a known UWPR contaminant m/z (aggressive
+                     -- removes even contaminant peaks that coincide with a real DAG fragment).
+  - 3_uwpr_keepexpl: like 2_uwpr_rm but KEEP contaminant-matched peaks the current DAG can explain
+                     at 10 ppm (a coincidental contaminant/fragment overlap is treated as real).
+Tiers 2-3 require --uwpr_feasibility_csv; without it they equal 1_above_prec. Per-spectrum output
+columns are suffixed with the tier, e.g. cos_hun_opt__0_raw, cos_hun_opt__3_uwpr_keepexpl.
 
 Additionally, cos_hun_sqrt_opt / jss_hun_sqrt_opt sqrt-transform intensities before scoring
 (at the default 10 ppm tolerance), matching the cos_hun_sqrt / jss_hun_sqrt eval variant that
@@ -70,6 +77,36 @@ INST_TYPE_LOSS_TOL = {
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da
 }
 ABS_TOLERANCE_DA = 0.01  # fixed absolute Da tolerance, reproduces the cos_sim_0.01 convention
+
+# Denoise filter tiers applied to the true spectrum before scoring. Every spectrum is scored under
+# all four and the DAG ceiling is reported stacked, exposing the marginal effect of each filter.
+# Tiers 0-2 are strictly nested; tier 3 relaxes tier 2 (it keeps contaminant peaks the DAG can
+# explain), so 3_uwpr_keepexpl >= 2_uwpr_rm in retained peaks.
+#   0_raw:            no filter.
+#   1_above_prec:     0_raw + drop peaks above the precursor m/z (never DAG-achievable).
+#   2_uwpr_rm:        1_above_prec + drop every UWPR contaminant-matched peak (aggressive denoise).
+#   3_uwpr_keepexpl:  1_above_prec + drop contaminant-matched peaks EXCEPT those the current DAG
+#                     can explain (a coincidental contaminant/fragment m/z overlap is kept as
+#                     plausibly-real signal). Explainability is recomputed against this run's DAG
+#                     at the default 10 ppm tolerance, not read from the feasibility CSV label.
+# Tiers 2-3 are identical to 1_above_prec unless a --uwpr_feasibility_csv is supplied.
+FILTER_TIERS = ["0_raw", "1_above_prec", "2_uwpr_rm", "3_uwpr_keepexpl"]
+
+# Per-tier metric base names. Each becomes a "<base>__<tier>" column in the per-spectrum output.
+METRIC_BASES = [
+    "cos_hun_opt",
+    "jss_hun_opt",
+    "cos_hun_inst_tol_opt",
+    "jss_hun_inst_tol_opt",
+    "cos_hun_0p01da_opt",
+    "jss_hun_0p01da_opt",
+    "cos_hun_sqrt_opt",
+    "jss_hun_sqrt_opt",
+    "n_true_peaks",
+    "n_achievable_peaks",
+    "n_achievable_peaks_inst_tol",
+    "n_achievable_peaks_0p01da",
+]
 
 
 def _tolerance_for_inst_type(inst_type: str) -> tuple[float, float]:
@@ -178,7 +215,11 @@ def _oracle_scores_for_spectrum(
         Tuple of (cos_hun_opt, jss_hun_opt in [0, 1], n_achievable_peaks, n_true_peaks).
     """
     match_mask = calculate_match_mzs(
-        true_mzs, dag_ion_mzs, tolerance=tolerance, relative=relative, tolerance_min_mz=tolerance_min_mz
+        true_mzs,
+        dag_ion_mzs,
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
     )
     true_match_mask = match_mask.any(dim=1)
     # Oracle predicted spectrum: true intensity on DAG-achievable peaks, zero elsewhere.
@@ -201,12 +242,25 @@ def _oracle_scores_for_spectrum(
         (th.sqrt(true_ints), th.sqrt(pred_ints)) if sqrt else (true_ints, pred_ints)
     )
     cos_opt = cos_hun_helper(
-        score_true_ints, score_pred_ints, eye_mask, true_match_mask, true_match_mask,
-        remove_prec_peak, prec_mask, prec_mask,
+        score_true_ints,
+        score_pred_ints,
+        eye_mask,
+        true_match_mask,
+        true_match_mask,
+        remove_prec_peak,
+        prec_mask,
+        prec_mask,
     )
     jss_opt = jss_hun_helper(
-        score_true_ints, score_pred_ints, eye_mask, true_match_mask, true_match_mask,
-        remove_prec_peak, prec_mask, prec_mask, LOG_MIN,
+        score_true_ints,
+        score_pred_ints,
+        eye_mask,
+        true_match_mask,
+        true_match_mask,
+        remove_prec_peak,
+        prec_mask,
+        prec_mask,
+        LOG_MIN,
     )
     return (
         float(cos_opt),
@@ -214,6 +268,89 @@ def _oracle_scores_for_spectrum(
         int(true_match_mask.sum()),
         int(true_match_mask.shape[0]),
     )
+
+
+def _score_all_tolerances(
+    true_mzs: th.Tensor,
+    true_ints: th.Tensor,
+    dag_ion_mzs: th.Tensor,
+    remove_prec_peak: bool,
+    prec_mz: float,
+    inst_tol: float,
+    inst_tol_min_mz: float,
+) -> dict[str, float]:
+    """Score one (already-filtered) spectrum at all four tolerance conventions.
+
+    Args:
+        true_mzs: Filtered true peak m/z values of shape (N,).
+        true_ints: Filtered true peak intensities of shape (N,).
+        dag_ion_mzs: Candidate ion m/z values implied by the DAG, shape (M,).
+        remove_prec_peak: Whether to zero the precursor peak before scoring.
+        prec_mz: Precursor m/z, used only when remove_prec_peak is True.
+        inst_tol: Per-instrument relative tolerance for the inst_tol variant.
+        inst_tol_min_mz: Per-instrument tolerance floor for the inst_tol variant.
+
+    Returns:
+        Dict keyed by the entries of METRIC_BASES. When N == 0 (the filter emptied the
+        spectrum), cos/jss metrics are NaN (excluded from means) and peak counts are 0.
+    """
+    if true_mzs.numel() == 0:
+        return {b: (float("nan") if b.startswith(("cos", "jss")) else 0) for b in METRIC_BASES}
+
+    cos_opt, jss_opt, n_ach, n_true = _oracle_scores_for_spectrum(
+        true_mzs,
+        true_ints,
+        dag_ion_mzs,
+        remove_prec_peak,
+        prec_mz,
+        tolerance=TOLERANCE,
+        relative=True,
+        tolerance_min_mz=TOLERANCE_MIN_MZ,
+    )
+    cos_it, jss_it, n_ach_it, _ = _oracle_scores_for_spectrum(
+        true_mzs,
+        true_ints,
+        dag_ion_mzs,
+        remove_prec_peak,
+        prec_mz,
+        tolerance=inst_tol,
+        relative=True,
+        tolerance_min_mz=inst_tol_min_mz,
+    )
+    cos_da, jss_da, n_ach_da, _ = _oracle_scores_for_spectrum(
+        true_mzs,
+        true_ints,
+        dag_ion_mzs,
+        remove_prec_peak,
+        prec_mz,
+        tolerance=ABS_TOLERANCE_DA,
+        relative=False,
+    )
+    cos_sqrt, jss_sqrt, _, _ = _oracle_scores_for_spectrum(
+        true_mzs,
+        true_ints,
+        dag_ion_mzs,
+        remove_prec_peak,
+        prec_mz,
+        tolerance=TOLERANCE,
+        relative=True,
+        tolerance_min_mz=TOLERANCE_MIN_MZ,
+        sqrt=True,
+    )
+    return {
+        "cos_hun_opt": cos_opt,
+        "jss_hun_opt": jss_opt,
+        "cos_hun_inst_tol_opt": cos_it,
+        "jss_hun_inst_tol_opt": jss_it,
+        "cos_hun_0p01da_opt": cos_da,
+        "jss_hun_0p01da_opt": jss_da,
+        "cos_hun_sqrt_opt": cos_sqrt,
+        "jss_hun_sqrt_opt": jss_sqrt,
+        "n_true_peaks": n_true,
+        "n_achievable_peaks": n_ach,
+        "n_achievable_peaks_inst_tol": n_ach_it,
+        "n_achievable_peaks_0p01da": n_ach_da,
+    }
 
 
 def _process_mol_group(
@@ -248,79 +385,68 @@ def _process_mol_group(
         true_mzs_raw, true_ints_raw = zip(*peaks)
         true_mzs = th.tensor(true_mzs_raw, dtype=th.float32)
         true_ints = th.tensor(true_ints_raw, dtype=th.float32)
-
-        # Denoise before scoring. Two filters, both applied to the true spectrum only:
-        #   1. Peaks above the precursor m/z (beyond match tolerance) -- no fragment can exceed
-        #      the precursor mass, so these are noise/co-isolation and are never DAG-achievable.
-        #   2. Optionally, UWPR contaminant_only peaks (matched to a known contaminant m/z and
-        #      unexplainable by the DAG), when a feasibility CSV was supplied.
         inst_tol, inst_tol_min_mz = _tolerance_for_inst_type(row["inst_type"])
-
-        mzs_np = np.asarray(true_mzs_raw)
-        prec_cutoff = row["prec_mz"] + max(row["prec_mz"], inst_tol_min_mz) * inst_tol
-        keep = mzs_np <= prec_cutoff
-        n_above_prec_removed = int((~keep).sum())
-
-        contam_mzs = row["contam_mzs"]
-        if contam_mzs:
-            keep_contam = np.ones(len(mzs_np), dtype=bool)
-            for cmz in contam_mzs:
-                keep_contam &= np.abs(mzs_np - cmz) > 1e-4
-            n_uwpr_removed = int((~keep_contam).sum())
-            keep &= keep_contam
-        else:
-            n_uwpr_removed = 0
-
-        if not keep.all():
-            if not keep.any():
-                continue  # every peak was filtered out; oracle undefined, skip
-            keep_t = th.tensor(keep)
-            true_mzs = true_mzs[keep_t]
-            true_ints = true_ints[keep_t]
 
         dag_ion_mzs = _dag_ion_mzs(theo_mzs, prec_mask, row["prec_type"], include_cmf=include_cmf)
 
-        cos_opt, jss_opt, n_achievable, n_true = _oracle_scores_for_spectrum(
-            true_mzs, true_ints, dag_ion_mzs, remove_prec_peak, row["prec_mz"],
-            tolerance=TOLERANCE, relative=True, tolerance_min_mz=TOLERANCE_MIN_MZ,
-        )
-        cos_opt_it, jss_opt_it, n_achievable_it, _ = _oracle_scores_for_spectrum(
-            true_mzs, true_ints, dag_ion_mzs, remove_prec_peak, row["prec_mz"],
-            tolerance=inst_tol, relative=True, tolerance_min_mz=inst_tol_min_mz,
-        )
-        cos_opt_da, jss_opt_da, n_achievable_da, _ = _oracle_scores_for_spectrum(
-            true_mzs, true_ints, dag_ion_mzs, remove_prec_peak, row["prec_mz"],
-            tolerance=ABS_TOLERANCE_DA, relative=False,
-        )
-        cos_opt_sqrt, jss_opt_sqrt, _, _ = _oracle_scores_for_spectrum(
-            true_mzs, true_ints, dag_ion_mzs, remove_prec_peak, row["prec_mz"],
-            tolerance=TOLERANCE, relative=True, tolerance_min_mz=TOLERANCE_MIN_MZ, sqrt=True,
-        )
+        # Build the denoise masks over the true peaks (see FILTER_TIERS).
+        mzs_np = np.asarray(true_mzs_raw)
+        prec_cutoff = row["prec_mz"] + max(row["prec_mz"], inst_tol_min_mz) * inst_tol
+        keep_above_prec = mzs_np <= prec_cutoff
+        n_above_prec_removed = int((~keep_above_prec).sum())
 
-        results.append(
-            {
-                "spec_id": row["spec_id"],
-                "mol_id": mol_id,
-                "inst_type": row["inst_type"],
-                "frag_mode": row["frag_mode"],
-                "prec_type": row["prec_type"],
-                "cos_hun_opt": cos_opt,
-                "jss_hun_opt": jss_opt,
-                "cos_hun_inst_tol_opt": cos_opt_it,
-                "jss_hun_inst_tol_opt": jss_opt_it,
-                "cos_hun_0p01da_opt": cos_opt_da,
-                "jss_hun_0p01da_opt": jss_opt_da,
-                "cos_hun_sqrt_opt": cos_opt_sqrt,
-                "jss_hun_sqrt_opt": jss_opt_sqrt,
-                "n_true_peaks": n_true,
-                "n_achievable_peaks": n_achievable,
-                "n_achievable_peaks_inst_tol": n_achievable_it,
-                "n_achievable_peaks_0p01da": n_achievable_da,
-                "n_uwpr_removed": n_uwpr_removed,
-                "n_above_prec_removed": n_above_prec_removed,
-                "dag_num_nodes": dag_d["dag_num_nodes"],
-            }
+        # Peaks matching a UWPR contaminant m/z, and (separately) peaks the DAG can explain at the
+        # default 10 ppm tolerance. The two UWPR tiers differ only on contaminant peaks that ARE
+        # DAG-explainable: 2_uwpr_rm drops them, 3_uwpr_keepexpl keeps them.
+        contam_mask = np.zeros(len(mzs_np), dtype=bool)
+        for cmz in row["contam_mzs"]:
+            contam_mask |= np.abs(mzs_np - cmz) <= 1e-4
+        dag_expl_mask = (
+            calculate_match_mzs(
+                true_mzs,
+                dag_ion_mzs,
+                tolerance=TOLERANCE,
+                relative=True,
+                tolerance_min_mz=TOLERANCE_MIN_MZ,
+            )
+            .any(dim=1)
+            .numpy()
         )
+        n_uwpr_matched = int(contam_mask.sum())
+        n_uwpr_explainable = int((contam_mask & dag_expl_mask).sum())
+
+        tier_masks = {
+            "0_raw": np.ones(len(mzs_np), dtype=bool),
+            "1_above_prec": keep_above_prec,
+            "2_uwpr_rm": keep_above_prec & ~contam_mask,
+            "3_uwpr_keepexpl": keep_above_prec & (~contam_mask | dag_expl_mask),
+        }
+
+        record = {
+            "spec_id": row["spec_id"],
+            "mol_id": mol_id,
+            "inst_type": row["inst_type"],
+            "frag_mode": row["frag_mode"],
+            "prec_type": row["prec_type"],
+            "n_above_prec_removed": n_above_prec_removed,
+            "n_uwpr_matched": n_uwpr_matched,
+            "n_uwpr_explainable": n_uwpr_explainable,
+            "dag_num_nodes": dag_d["dag_num_nodes"],
+        }
+        for tier, mask in tier_masks.items():
+            keep_t = th.tensor(mask)
+            metrics = _score_all_tolerances(
+                true_mzs[keep_t],
+                true_ints[keep_t],
+                dag_ion_mzs,
+                remove_prec_peak,
+                row["prec_mz"],
+                inst_tol,
+                inst_tol_min_mz,
+            )
+            for base, val in metrics.items():
+                record[f"{base}__{tier}"] = val
+        results.append(record)
     return results
 
 
@@ -346,15 +472,14 @@ def score_dag(
         n_jobs: Number of parallel worker processes.
 
     Returns:
-        Per-spectrum DataFrame with cos_hun_opt, jss_hun_opt, and peak-coverage columns.
+        Per-spectrum DataFrame with tier-suffixed score/coverage columns (e.g. cos_hun_opt__0_raw)
+        for each filter tier in FILTER_TIERS, plus n_above_prec_removed and n_uwpr_removed.
     """
     groups = spec_df.groupby("mol_id")
     sample_mol_id = int(next(iter(groups.groups.keys())))
     is_compressed = _detect_is_compressed(frag_dp, sample_mol_id)
 
-    mol_inputs = [
-        (int(mol_id), group.to_dict("records")) for mol_id, group in groups
-    ]
+    mol_inputs = [(int(mol_id), group.to_dict("records")) for mol_id, group in groups]
     worker = functools.partial(
         _process_mol_group,
         frag_dp=frag_dp,
@@ -363,18 +488,27 @@ def score_dag(
         max_h_transfer=max_h_transfer,
         include_cmf=include_cmf,
     )
-    log.info("Scoring %d molecules (%d spectra) against DAGs in %s", len(mol_inputs), len(spec_df), frag_dp)
+    log.info(
+        "Scoring %d molecules (%d spectra) against DAGs in %s",
+        len(mol_inputs),
+        len(spec_df),
+        frag_dp,
+    )
     per_mol_results = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=n_jobs)
 
     n_missing_dag = sum(1 for r in per_mol_results if len(r) == 0)
     if n_missing_dag > 0:
-        log.warning("%d/%d molecules had no DAG found under %s", n_missing_dag, len(mol_inputs), frag_dp)
+        log.warning(
+            "%d/%d molecules had no DAG found under %s", n_missing_dag, len(mol_inputs), frag_dp
+        )
 
     rows = [r for mol_results in per_mol_results for r in mol_results]
     return pd.DataFrame(rows)
 
 
-SCORE_COLS = [
+# Score metric bases (cos/jss variants) reported per tier. Subset of METRIC_BASES; excludes the
+# peak-count columns, which are summarized separately as coverage.
+SCORE_BASES = [
     "cos_hun_opt",
     "jss_hun_opt",
     "cos_hun_inst_tol_opt",
@@ -386,66 +520,115 @@ SCORE_COLS = [
 ]
 
 
+def _tier_mean_table(results_df: pd.DataFrame, bases: list[str]) -> pd.DataFrame:
+    """Build a (rows = FILTER_TIERS) x (cols = bases) mean table, stacking the filter tiers."""
+    data = {b: [results_df[f"{b}__{t}"].mean() for t in FILTER_TIERS] for b in bases}
+    return pd.DataFrame(data, index=FILTER_TIERS).round(4)
+
+
 def summarize(results_df: pd.DataFrame, label: str) -> None:
-    """Print overall, per-inst_type/frag_mode, and per-adduct summaries for one DAG's results."""
+    """Print the stacked-tier overall summary plus per-inst_type/frag_mode and per-adduct tables."""
     print(f"\n{'=' * 70}\nDAG: {label}\n{'=' * 70}")
     print(f"n spectra scored: {len(results_df)}  (n mols: {results_df['mol_id'].nunique()})")
-    overall = results_df[SCORE_COLS].agg(["mean", "median"]).round(4)
-    print(overall.to_string())
+
+    print("\nCumulative filter tiers (mean over spectra):")
+    print(_tier_mean_table(results_df, SCORE_BASES).to_string())
+
+    cov_rows = []
+    for t in FILTER_TIERS:
+        num = results_df[f"n_achievable_peaks__{t}"]
+        den = results_df[f"n_true_peaks__{t}"]
+        cov = (num[den > 0] / den[den > 0]).mean()
+        cov_rows.append((t, den.mean(), cov))
+    print("\nPer tier: mean n_true_peaks | mean peak coverage (n_achievable/n_true), 10ppm tol:")
+    for t, n_true_mean, cov in cov_rows:
+        print(f"  {t:<14} n_true={n_true_mean:7.2f}  coverage={cov:.4f}")
+
     print(
-        f"mean peak coverage (n_achievable/n_true), 10ppm tol: "
-        f"{(results_df['n_achievable_peaks'] / results_df['n_true_peaks']).mean():.4f}"
+        f"\nMean peaks removed per spectrum: above_prec={results_df['n_above_prec_removed'].mean():.2f}"
+        f"  uwpr_matched={results_df['n_uwpr_matched'].mean():.3f}"
+        f"  (of which DAG-explainable={results_df['n_uwpr_explainable'].mean():.3f}, "
+        f"kept by 3_uwpr_keepexpl)"
     )
 
-    print("\nBy inst_type / frag_mode:")
-    breakdown = (
-        results_df.groupby(["inst_type", "frag_mode"], observed=True)[SCORE_COLS]
-        .agg(["mean", "count"])
-        .round(4)
-    )
+    # Per-group breakdowns report the headline cos_hun_opt across the three tiers only, to stay
+    # readable (the full metric x tier grid lives in the per-spectrum CSV).
+    cos_cols = [f"cos_hun_opt__{t}" for t in FILTER_TIERS]
+    print("\nBy inst_type / frag_mode (cos_hun_opt per tier):")
+    g = results_df.groupby(["inst_type", "frag_mode"], observed=True)
+    breakdown = g[cos_cols].mean().round(4)
+    breakdown.columns = FILTER_TIERS
+    breakdown["count"] = g.size()
     print(breakdown.to_string())
 
-    print("\nBy adduct (prec_type):")
-    adduct_breakdown = (
-        results_df.groupby("prec_type", observed=True)[SCORE_COLS]
-        .agg(["mean", "count"])
-        .round(4)
-    )
+    print("\nBy adduct (prec_type) (cos_hun_opt per tier):")
+    ga = results_df.groupby("prec_type", observed=True)
+    adduct_breakdown = ga[cos_cols].mean().round(4)
+    adduct_breakdown.columns = FILTER_TIERS
+    adduct_breakdown["count"] = ga.size()
     print(adduct_breakdown.to_string())
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
-        "--frag_dp", action="append", required=True,
+        "--frag_dp",
+        action="append",
+        required=True,
         help="Directory of precomputed DAG pickles (repeat to compare multiple DAG variants).",
     )
-    parser.add_argument("--frag_dp_labels", nargs="+", default=None, help="Labels for each --frag_dp, same order.")
+    parser.add_argument(
+        "--frag_dp_labels", nargs="+", default=None, help="Labels for each --frag_dp, same order."
+    )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="test")
     parser.add_argument("--remove_prec_peak", action="store_true")
-    parser.add_argument("--max_h_transfer", type=int, default=None, help="Default: use the DAG's full H-transfer budget.")
     parser.add_argument(
-        "--no_cmf", action="store_true",
+        "--max_h_transfer",
+        type=int,
+        default=None,
+        help="Default: use the DAG's full H-transfer budget.",
+    )
+    parser.add_argument(
+        "--no_cmf",
+        action="store_true",
         help="Disable the charge-migration-fragment (CMF) ion-mass convention; match only "
         "the direct-charge-retention (std) convention.",
     )
-    parser.add_argument("--limit_mols", type=int, default=None, help="Randomly subsample this many molecules for a quick check.")
+    parser.add_argument(
+        "--limit_mols",
+        type=int,
+        default=None,
+        help="Randomly subsample this many molecules for a quick check.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
-    parser.add_argument("--out_fp", default=None, help="Optional path to save per-spectrum results (one CSV per --frag_dp, suffixed by label).")
     parser.add_argument(
-        "--uwpr_feasibility_csv", default=None,
+        "--out_fp",
+        default=None,
+        help="Optional path to save per-spectrum results (one CSV per --frag_dp, suffixed by label).",
+    )
+    parser.add_argument(
+        "--uwpr_feasibility_csv",
+        default=None,
         help="Optional UWPR feasibility CSV (from scripts/eval/uwpr_feasibility.py). When set, "
-        "peaks flagged 'contaminant_only' are removed per spectrum before scoring, giving the "
-        "denoised oracle ceiling; the per-spectrum output gains an n_uwpr_removed column.",
+        "peaks flagged 'contaminant_only' are removed in the '2_uwpr' filter tier. Without it, "
+        "tier '2_uwpr' is identical to '1_above_prec'.",
     )
     args = parser.parse_args()
 
-    labels = args.frag_dp_labels if args.frag_dp_labels else [os.path.basename(os.path.dirname(fp.rstrip("/"))) for fp in args.frag_dp]
+    labels = (
+        args.frag_dp_labels
+        if args.frag_dp_labels
+        else [os.path.basename(os.path.dirname(fp.rstrip("/"))) for fp in args.frag_dp]
+    )
     if len(labels) != len(args.frag_dp):
-        raise ValueError(f"--frag_dp_labels must match --frag_dp in length: {len(labels)} != {len(args.frag_dp)}")
+        raise ValueError(
+            f"--frag_dp_labels must match --frag_dp in length: {len(labels)} != {len(args.frag_dp)}"
+        )
 
     log.info("Loading %s", args.spec_fp)
     spec_df = pd.read_pickle(args.spec_fp)
@@ -458,19 +641,28 @@ def main() -> None:
         split_spec_ids = set(pd.read_csv(split_fp)["spec_id"])
         spec_df = spec_df[spec_df["spec_id"].isin(split_spec_ids)]
 
-    spec_df = spec_df[["spec_id", "mol_id", "peaks", "prec_mz", "prec_type", "inst_type", "frag_mode"]].copy()
+    spec_df = spec_df[
+        ["spec_id", "mol_id", "peaks", "prec_mz", "prec_type", "inst_type", "frag_mode"]
+    ].copy()
 
-    # Per-spectrum UWPR contaminant m/z to strip before scoring (empty list = no removal).
+    # Per-spectrum UWPR contaminant-matched peak m/z (every hit row, regardless of the CSV's own
+    # feasibility label -- DAG-explainability is recomputed per run in _process_mol_group so the
+    # 2_uwpr_rm / 3_uwpr_keepexpl split stays consistent with whichever DAG set is being scored).
     if args.uwpr_feasibility_csv is not None:
-        log.info("Loading UWPR feasibility from %s", args.uwpr_feasibility_csv)
-        feas = pd.read_csv(args.uwpr_feasibility_csv, usecols=["spec_id", "peak_mz", "feasibility"])
-        contam = feas[feas["feasibility"] == "contaminant_only"]
-        contam_map = contam.groupby("spec_id")["peak_mz"].apply(list).to_dict()
+        log.info("Loading UWPR contaminant hits from %s", args.uwpr_feasibility_csv)
+        feas = pd.read_csv(args.uwpr_feasibility_csv, usecols=["spec_id", "peak_mz"])
+        contam_map = feas.groupby("spec_id")["peak_mz"].apply(list).to_dict()
         spec_df["contam_mzs"] = spec_df["spec_id"].map(lambda s: contam_map.get(s, []))
         n_affected = spec_df["contam_mzs"].apply(bool).sum()
-        log.info("UWPR removal active: %d/%d spectra have >=1 contaminant_only peak", n_affected, len(spec_df))
+        log.info(
+            "UWPR active: %d/%d spectra have >=1 contaminant-matched peak", n_affected, len(spec_df)
+        )
     else:
         spec_df["contam_mzs"] = [[] for _ in range(len(spec_df))]
+        log.warning(
+            "No --uwpr_feasibility_csv supplied: tiers 2_uwpr_rm and 3_uwpr_keepexpl will be "
+            "identical to 1_above_prec."
+        )
 
     if args.limit_mols is not None:
         rng = np.random.default_rng(args.seed)
@@ -483,7 +675,8 @@ def main() -> None:
     all_results = {}
     for frag_dp, label in zip(args.frag_dp, labels):
         results_df = score_dag(
-            spec_df, frag_dp,
+            spec_df,
+            frag_dp,
             remove_prec_peak=args.remove_prec_peak,
             max_h_transfer=args.max_h_transfer,
             include_cmf=not args.no_cmf,
@@ -498,10 +691,14 @@ def main() -> None:
             log.info("Saved per-spectrum results to %s", out_fp)
 
     if len(all_results) > 1:
-        print(f"\n{'=' * 70}\nComparison (mean)\n{'=' * 70}")
+        print(f"\n{'=' * 70}\nComparison: cos_hun_opt per filter tier (mean)\n{'=' * 70}")
         comparison = pd.DataFrame(
-            {label: df[SCORE_COLS].mean() for label, df in all_results.items()}
-        ).T.round(4)
+            {
+                label: [df[f"cos_hun_opt__{t}"].mean() for t in FILTER_TIERS]
+                for label, df in all_results.items()
+            },
+            index=FILTER_TIERS,
+        ).round(4)
         print(comparison.to_string())
 
 
