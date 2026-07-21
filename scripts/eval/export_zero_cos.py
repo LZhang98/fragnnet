@@ -99,6 +99,7 @@ def write_mgf(meta: pd.DataFrame, peaks_by_id: dict, out_fp: str) -> None:
     """
     with open(out_fp, "w") as fh:
         for spec_id, row in meta.iterrows():
+            # MGF CHARGE is written as magnitude + sign (e.g. "1+" / "1-"); all adducts here are z=1.
             charge = row["charge"]
             sign = "+" if charge > 0 else "-"
             fh.write("BEGIN IONS\n")
@@ -122,6 +123,8 @@ def main() -> None:
     scoped = orc[
         orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)
     ].copy()
+    # Sibling stats must see the FULL scope (all CEs), not just the zero-cos rows -- the control is
+    # precisely the non-zero siblings, so compute this before subsetting to the zero-cos tail.
     sib = cross_ce_stats(scoped)
 
     zero = scoped[scoped[COS_COL] == 0.0].copy().set_index("spec_id")
@@ -133,11 +136,13 @@ def main() -> None:
     cf = pd.read_pickle(args.classyfire_fp)[["mol_id", "superklass", "klass"]]
     zero = zero.reset_index().merge(mol, on="mol_id", how="left").merge(cf, on="mol_id", how="left")
 
-    # peaks + precursor m/z from spec_df
+    # peaks + precursor m/z from spec_df (the oracle CSV carries neither; peaks are the raw,
+    # unfiltered measured m/z -- exactly what a formula-decomposition tool needs to see).
     spec = pd.read_pickle(args.spec_fp)[["spec_id", "prec_mz", "peaks"]]
     zero = zero.merge(spec, on="spec_id", how="left")
     peaks_by_id = dict(zip(zero["spec_id"], zero["peaks"]))
     zero["n_peaks"] = zero["peaks"].apply(len)
+    # charge sign drives the MGF CHARGE line; fail loud if an adduct slips through without a mapping.
     zero["charge"] = zero["prec_type"].map(ADDUCT_CHARGE)
     if zero["charge"].isna().any():
         missing = sorted(zero.loc[zero["charge"].isna(), "prec_type"].unique())
@@ -158,10 +163,14 @@ def main() -> None:
         "n_peaks", "n_true_peaks", "n_siblings", "best_sibling_cos", "all_ce_zero",
         "formula", "exact_mw", "num_atoms", "superklass", "klass", "smiles",
     ]
+    # Splice the optional recoverability columns in right after the cross-CE flags, so all triage
+    # signals sit together in the CSV. Only added when zero_cos_recoverability.py has been run.
     if "recoverable_0p05da" in zero.columns:
         meta_cols[meta_cols.index("all_ce_zero") + 1 : meta_cols.index("all_ce_zero") + 1] = [
             "recoverable_0p05da", "n_ach_0p05da"
         ]
+    # Sort the systematic residue to the top: all-CE-zero first, then worst cross-CE control -- the
+    # rows a formula-decomposition pass most needs to look at (siblings can't already vindicate them).
     meta = zero[meta_cols].sort_values(["all_ce_zero", "best_sibling_cos"], ascending=[False, True])
     meta_fp = os.path.join(args.out_dp, "zero_cos_export_meta.csv")
     meta.to_csv(meta_fp, index=False)
