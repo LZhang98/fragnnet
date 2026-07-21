@@ -55,6 +55,8 @@ def get_args() -> argparse.Namespace:
         default="data/eval/oracle_cos_nist20_default/oracle_cos_default.csv",
         help="Per-spectrum CSV from dag_oracle_scores.py.",
     )
+    parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter oracle rows to this dataset label.")
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument("--out_dp", required=True, help="Output directory for CSVs + figures.")
@@ -87,6 +89,10 @@ def load_scoped(args: argparse.Namespace) -> pd.DataFrame:
         ValueError: If the scope filter removes every row.
     """
     df = pd.read_csv(args.oracle_csv)
+    if args.dset:
+        spec_ids = pd.read_pickle(args.spec_fp)[["spec_id", "dset"]]
+        spec_ids = spec_ids[spec_ids["dset"] == args.dset]
+        df = df.merge(spec_ids, on="spec_id", how="inner")
     df = df[df["prec_type"].isin(args.prec_types) & df["inst_type"].isin(args.inst_types)].copy()
     if df.empty:
         raise ValueError("Scope filter (inst_types / prec_types) matched no rows.")

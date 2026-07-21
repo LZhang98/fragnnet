@@ -59,6 +59,7 @@ def get_args() -> argparse.Namespace:
         "--oracle_csv", default="data/eval/oracle_cos_nist20_default/oracle_cos_default.csv"
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df/oracle rows to this dataset label.")
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument(
@@ -132,6 +133,10 @@ def main() -> None:
     os.makedirs(args.out_dp, exist_ok=True)
 
     orc = pd.read_csv(args.oracle_csv)
+    if args.dset:
+        spec_ids = pd.read_pickle(args.spec_fp)[["spec_id", "dset"]]
+        spec_ids = spec_ids[spec_ids["dset"] == args.dset]
+        orc = orc.merge(spec_ids, on="spec_id", how="inner")
     scoped = orc[
         orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)
     ].copy()
@@ -154,7 +159,11 @@ def main() -> None:
 
     # peaks + precursor m/z from spec_df (the oracle CSV carries neither; peaks are the raw,
     # unfiltered measured m/z -- exactly what a formula-decomposition tool needs to see).
-    spec = pd.read_pickle(args.spec_fp)[["spec_id", "prec_mz", "peaks"]]
+    spec_cols = ["spec_id", "dset", "prec_mz", "peaks"]
+    spec = pd.read_pickle(args.spec_fp)[spec_cols]
+    if args.dset:
+        spec = spec[spec["dset"] == args.dset]
+    spec = spec.drop(columns=["dset"])
     zero = zero.merge(spec, on="spec_id", how="left")
     peaks_by_id = dict(zip(zero["spec_id"], zero["peaks"]))
     zero["n_peaks"] = zero["peaks"].apply(len)

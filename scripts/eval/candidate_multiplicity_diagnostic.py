@@ -245,6 +245,7 @@ def summarize(df: pd.DataFrame) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", default="test")
     parser.add_argument("--frag_dp", default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags")
@@ -258,6 +259,8 @@ def main() -> None:
 
     log.info("Loading %s", args.spec_fp)
     spec_df = pd.read_pickle(args.spec_fp)
+    if args.dset:
+        spec_df = spec_df[spec_df["dset"] == args.dset]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
     spec_df = spec_df[spec_df["prec_type"] == args.prec_type]
     spec_df = spec_df[spec_df["inst_type"] == args.inst_type]

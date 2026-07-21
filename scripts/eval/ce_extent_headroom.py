@@ -275,10 +275,12 @@ def _process_mol_group(
     return results
 
 
-def load_spec_df(spec_fp: str, split_dp: str, split: str) -> pd.DataFrame:
+def load_spec_df(spec_fp: str, split_dp: str, split: str, dset: str | None) -> pd.DataFrame:
     """Load spec_df and filter to a split, matching dag_oracle_scores.main's filtering."""
     log.info("Loading %s", spec_fp)
     spec_df = pd.read_pickle(spec_fp)
+    if dset:
+        spec_df = spec_df[spec_df["dset"] == dset]
     spec_df = spec_df[spec_df["prec_type"].isin(PREC_TYPE_TO_MASS_DIFF.keys())]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
     spec_df = spec_df[spec_df["nce"].notna()]
@@ -372,6 +374,7 @@ def main() -> None:
         "extent mechanism could recover.",
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="val")
     parser.add_argument("--limit_mols", type=int, default=None, help="Subsample this many mols.")
@@ -383,7 +386,7 @@ def main() -> None:
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-spectrum table.")
     args = parser.parse_args()
 
-    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split)
+    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dset)
 
     pred_peaks = {}
     if args.pred_hdf5 is not None:

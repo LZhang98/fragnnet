@@ -280,6 +280,7 @@ def main() -> None:
         help="DAG dir the run was trained on (must match the HDF5 node ordering).",
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="val")
     parser.add_argument("--max_h_transfer", type=int, default=None)
@@ -288,7 +289,7 @@ def main() -> None:
     args = parser.parse_args()
 
     pn_by_spec = _load_pred_pn(args.pred_hdf5)
-    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split)
+    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dset)
     spec_df = spec_df[spec_df["spec_id"].isin(pn_by_spec)]
     if spec_df.empty:
         raise ValueError("No overlap between spec_df split and the HDF5 spec_ids.")

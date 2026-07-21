@@ -69,10 +69,12 @@ def load_actual_cos(pred_hdf5: str) -> pd.DataFrame:
     return pd.DataFrame({"spec_id": spec_id, "cos_actual": cos_actual})
 
 
-def load_test_spec_df(spec_fp: str, split_dp: str, split: str) -> pd.DataFrame:
+def load_test_spec_df(spec_fp: str, split_dp: str, split: str, dset: str | None) -> pd.DataFrame:
     """Load and filter spec_df to a split, matching dag_oracle_scores.main's filtering."""
     log.info("Loading %s", spec_fp)
     spec_df = pd.read_pickle(spec_fp)
+    if dset:
+        spec_df = spec_df[spec_df["dset"] == dset]
     spec_df = spec_df[spec_df["prec_type"].isin(PREC_TYPE_TO_MASS_DIFF.keys())]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
     if split != "all":
@@ -157,6 +159,7 @@ def main() -> None:
     parser.add_argument("--pred_hdf5", required=True, help="predictions_test.hdf5 with cos_hun_inst_tol.")
     parser.add_argument("--frag_dp", required=True, help="DAG dir the run was trained/evaluated on.")
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="test")
     parser.add_argument("--bad_threshold", type=float, default=0.3, help="cos_actual below this = 'worst'.")
@@ -169,7 +172,7 @@ def main() -> None:
     actual_df = load_actual_cos(args.pred_hdf5)
     log.info("Loaded %d actual cos values from %s", len(actual_df), args.pred_hdf5)
 
-    spec_df = load_test_spec_df(args.spec_fp, args.split_dp, args.split)
+    spec_df = load_test_spec_df(args.spec_fp, args.split_dp, args.split, args.dset)
     # Only score spectra we have predictions for (and vice versa) -- the join below is the intersection.
     spec_df = spec_df[spec_df["spec_id"].isin(set(actual_df["spec_id"]))]
 

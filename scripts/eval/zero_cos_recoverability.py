@@ -60,6 +60,7 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument("--frag_dp", default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags")
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df/oracle rows to this dataset label.")
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument("--out_dp", required=True)
@@ -78,6 +79,10 @@ def main() -> None:
     os.makedirs(out_dp, exist_ok=True)
 
     orc = pd.read_csv(args.oracle_csv)
+    if args.dset:
+        spec_ids = pd.read_pickle(args.spec_fp)[["spec_id", "dset"]]
+        spec_ids = spec_ids[spec_ids["dset"] == args.dset]
+        orc = orc.merge(spec_ids, on="spec_id", how="inner")
     orc = orc[orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)]
     cos_col = tier_col(orc, COS_COL)
     ach_col = tier_col(orc, "n_achievable_peaks_inst_tol")
@@ -92,6 +97,8 @@ def main() -> None:
     # Re-score every spectrum of the affected molecules (spectra of the same mols come for free and
     # are used to validate that we reproduced the source tier).
     spec_df = pd.read_pickle(args.spec_fp)
+    if args.dset:
+        spec_df = spec_df[spec_df["dset"] == args.dset]
     spec_df = spec_df[
         spec_df["mol_id"].isin(zero_mol_ids)
         & spec_df["prec_type"].isin(args.prec_types)
