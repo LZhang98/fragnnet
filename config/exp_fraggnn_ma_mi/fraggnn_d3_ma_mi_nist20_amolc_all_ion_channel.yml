@@ -51,11 +51,13 @@ num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 level
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
-candidate_ion_head: True
+candidate_ion_head: False
 candidate_ion_formula_features: False
 candidate_ion_neutral_loss_features: False
 candidate_ion_chunk_size: 2048
 candidate_ion_checkpoint: True
+ion_channel_factorized: True
+ion_channel_rank: 32
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -127,9 +129,9 @@ ce_scaler_hidden_dim: 64      # hidden dim of CE→FiLM MLP
 # ============================================================================
 # Training Hyperparameters
 # ============================================================================
-train_batch_size: 4
-eval_batch_size: 4
-accumulate_grad_batches: 64
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1

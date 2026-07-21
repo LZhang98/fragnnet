@@ -138,6 +138,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         candidate_ion_neutral_loss_features: bool = True,
         candidate_ion_chunk_size: int = 32768,
         candidate_ion_checkpoint: bool = True,
+        ion_channel_factorized: bool = False,
+        ion_channel_rank: int = 32,
     ):
         # nn.Module init
         super().__init__()
@@ -460,6 +462,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.candidate_ion_chunk_size = int(candidate_ion_chunk_size)
         self.candidate_ion_checkpoint = bool(candidate_ion_checkpoint)
         self.candidate_ion_feature_dim = 0
+        self.ion_channel_factorized = bool(ion_channel_factorized)
+        self.ion_channel_rank = int(ion_channel_rank)
+        if self.candidate_ion_head and self.ion_channel_factorized:
+            raise ValueError(
+                "candidate_ion_head and ion_channel_factorized are mutually exclusive"
+            )
         if self.candidate_ion_head:
             # These features describe the candidate peak row, not just the fragment node. The
             # candidate scores are reshaped back to (node, H-channel), so downstream spectrum
@@ -500,6 +508,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         else:
             self.candidate_h_channel_embedder = None
             self.candidate_cmf_flag_embedder = None
+
+        if self.ion_channel_factorized:
+            if self.ion_channel_rank <= 0:
+                raise ValueError(f"ion_channel_rank must be positive, got {ion_channel_rank}")
+            self.ion_channel_node_proj = nn.Linear(
+                mlp_input_dim, self.ion_channel_rank, bias=False
+            )
+            self.ion_channel_embed = nn.Embedding(self.mlp_output_dim, self.ion_channel_rank)
+            self.ion_channel_bias = nn.Parameter(th.zeros(self.mlp_output_dim))
+            # Identity start: residual is zero, but node_proj receives gradients immediately
+            # because ion_channel_embed is nonzero.
+            nn.init.zeros_(self.ion_channel_node_proj.weight)
+            nn.init.normal_(self.ion_channel_embed.weight, mean=0.0, std=0.02)
+        else:
+            self.ion_channel_node_proj = None
+            self.ion_channel_embed = None
+            self.ion_channel_bias = None
 
         #  mlp for formula
         if self.mlp_output_format in ["formula", "node_formula"]:
@@ -716,6 +741,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_edge_feats_size += self.num_elements * self.formula_embedder.num_dim
         if "complement" in self.frag_edge_feats:
             self.frag_edge_feats_size += self.complement_embedder.num_dim
+
+    def _apply_ion_channel_factorized(
+        self, logits: th.Tensor, frag_embed: th.Tensor
+    ) -> th.Tensor:
+        """Add a cheap low-rank ion-channel residual to per-node H/CMF logits."""
+        if not self.ion_channel_factorized:
+            return logits
+        node_factor = self.ion_channel_node_proj(frag_embed)
+        channel_factor = self.ion_channel_embed.weight
+        residual = node_factor @ channel_factor.T + self.ion_channel_bias
+        return logits + residual
 
     def _candidate_ion_features(
         self,
@@ -1699,6 +1735,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
             else:
                 frag_joint_logits = self.formula_module(frag_embed)
+            frag_joint_logits = self._apply_ion_channel_factorized(
+                frag_joint_logits, frag_embed
+            )
             # apply mode-conditioned affine scaling if enabled
             if self.frag_mode_scaler is not None:
                 assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
@@ -1809,6 +1848,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
             else:
                 frag_node_formula_logits = self.formula_module(frag_embed)
+            frag_node_formula_logits = self._apply_ion_channel_factorized(
+                frag_node_formula_logits, frag_embed
+            )
             # apply mode-conditioned affine scaling if enabled
             if self.frag_mode_scaler is not None:
                 assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"

@@ -276,6 +276,8 @@ candidate_ion_formula_features: True  # Add reconstructed candidate formula feat
 candidate_ion_neutral_loss_features: True  # Add precursor_formula - candidate_formula features; requires depth and candidate formula features
 candidate_ion_chunk_size: 32768  # Candidate rows scored at once; lower this if large DAGs OOM
 candidate_ion_checkpoint: True  # Checkpoint candidate chunks during training to avoid retaining every chunk activation
+ion_channel_factorized: False  # Cheap alternative: keep per-node H logits and add a low-rank learned H/CMF-channel residual
+ion_channel_rank: 32
 mlp_hidden_size: 256  # Hidden dimension for MLP layers
 mlp_dropout: 0.0  # Dropout rate for MLP
 mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]

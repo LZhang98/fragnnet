@@ -165,6 +165,27 @@ class TestCandidateIonHead:
         assert candidate.candidate_ion_feature_dim > 0
 
 
+class TestIonChannelFactorized:
+    def test_factorized_channel_path_keeps_node_scorer_shape(self):
+        base = _build("mol")
+        factorized = _build("mol", ion_channel_factorized=True, ion_channel_rank=4)
+        assert factorized.formula_module.output_layer.out_features == factorized.mlp_output_dim
+        assert (
+            factorized.formula_module.input_layer.in_features
+            == base.formula_module.input_layer.in_features
+        )
+        assert factorized.ion_channel_node_proj.out_features == 4
+
+    def test_factorized_channel_conflicts_with_candidate_head(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            _build(
+                "mol",
+                candidate_ion_head=True,
+                candidate_ion_formula_features=False,
+                ion_channel_factorized=True,
+            )
+
+
 def _build_siamese(ce_insert_location: str = "mol") -> SiameseGNNModel:
     """Smallest valid SiameseGNNModel with the given ce_insert_location."""
     return SiameseGNNModel(

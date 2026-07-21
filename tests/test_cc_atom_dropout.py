@@ -32,6 +32,7 @@ def _build_model(
     cc_atom_dropout: float,
     frag_node_feats: list[str] | None = None,
     candidate_ion_head: bool = False,
+    ion_channel_factorized: bool = False,
 ) -> FraGNNetModel:
     if frag_node_feats is None:
         frag_node_feats = FRAG_NODE_FEATS
@@ -107,6 +108,8 @@ def _build_model(
         cc_feature_dropout=0.0,
         cc_atom_dropout=cc_atom_dropout,
         candidate_ion_head=candidate_ion_head,
+        ion_channel_factorized=ion_channel_factorized,
+        ion_channel_rank=4,
     )
 
 
@@ -260,5 +263,21 @@ class TestCandidateIonForward:
         loss = -out["pred_logprobs"].mean()
         loss.backward()
         grads = [p.grad for p in model.formula_module.parameters() if p.grad is not None]
+        assert grads
+        assert any(th.isfinite(g).all() and th.any(g != 0) for g in grads)
+
+
+class TestIonChannelFactorizedForward:
+    def test_ion_channel_factorized_backward(self) -> None:
+        model = _build_model(cc_atom_dropout=0.0, ion_channel_factorized=True)
+        model.train()
+        out = model(**_forward_kwargs())
+        loss = -out["pred_logprobs"].mean()
+        loss.backward()
+        grads = [
+            p.grad
+            for n, p in model.named_parameters()
+            if n.startswith("ion_channel_") and p.grad is not None
+        ]
         assert grads
         assert any(th.isfinite(g).all() and th.any(g != 0) for g in grads)
