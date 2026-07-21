@@ -41,6 +41,16 @@ TIER = "1_above_prec"  # source CSV tier: above-precursor peaks dropped, no UWPR
 COS_COL = "cos_hun_inst_tol_opt"
 
 
+def tier_col(df: pd.DataFrame, base: str, tier: str = TIER) -> str:
+    """Return the tiered metric column, with fallback for legacy unsuffixed CSVs."""
+    suffixed = f"{base}__{tier}"
+    if suffixed in df.columns:
+        return suffixed
+    if base in df.columns:
+        return base
+    raise KeyError(f"Missing column {base!r} or {suffixed!r}")
+
+
 def get_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -69,9 +79,15 @@ def main() -> None:
 
     orc = pd.read_csv(args.oracle_csv)
     orc = orc[orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)]
-    zero_ids = set(orc.loc[orc[COS_COL] == 0.0, "spec_id"])
-    zero_mol_ids = set(orc.loc[orc[COS_COL] == 0.0, "mol_id"])
+    cos_col = tier_col(orc, COS_COL)
+    ach_col = tier_col(orc, "n_achievable_peaks_inst_tol")
+    zero_mask = orc[cos_col] == 0.0
+    zero_ids = set(orc.loc[zero_mask, "spec_id"])
+    zero_mol_ids = set(orc.loc[zero_mask, "mol_id"])
     log.info("Zero-cos: %d spectra across %d molecules", len(zero_ids), len(zero_mol_ids))
+    if not zero_ids:
+        log.info("No zero-cos spectra in scope; nothing to re-score.")
+        return
 
     # Re-score every spectrum of the affected molecules (spectra of the same mols come for free and
     # are used to validate that we reproduced the source tier).
@@ -88,12 +104,10 @@ def main() -> None:
     res = score_dag(spec_df, args.frag_dp)
 
     # --- validate we reproduced the source CSV's tier (cos_hun_inst_tol_opt on 1_above_prec) ---
-    chk = res.merge(
-        orc[["spec_id", COS_COL, "n_achievable_peaks_inst_tol"]], on="spec_id", how="inner"
-    )
-    cos_diff = (chk[f"{COS_COL}__{TIER}"] - chk[COS_COL]).abs().max()
+    chk = res.merge(orc[["spec_id", cos_col, ach_col]], on="spec_id", how="inner")
+    cos_diff = (chk[f"{COS_COL}__{TIER}"] - chk[cos_col]).abs().max()
     ach_diff = (
-        chk[f"n_achievable_peaks_inst_tol__{TIER}"] - chk["n_achievable_peaks_inst_tol"]
+        chk[f"n_achievable_peaks_inst_tol__{TIER}"] - chk[ach_col]
     ).abs().max()
     log.info("Tier reproduction check: max |cos diff|=%.2e, max |achievable diff|=%d", cos_diff, ach_diff)
     if cos_diff > 1e-4 or ach_diff > 0:

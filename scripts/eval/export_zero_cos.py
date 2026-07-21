@@ -37,8 +37,19 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
 COS_COL = "cos_hun_inst_tol_opt"
+DEFAULT_TIER = "1_above_prec"
 # Adduct -> integer charge (sign only; all these are singly charged).
 ADDUCT_CHARGE = {"[M+H]+": 1, "[M+Na]+": 1, "[M+Cl]-": -1, "[M-H]-": -1}
+
+
+def resolve_metric_col(df: pd.DataFrame, base: str, tier: str = DEFAULT_TIER) -> str:
+    """Resolve a metric column from current tier-suffixed or legacy unsuffixed oracle CSVs."""
+    suffixed = f"{base}__{tier}"
+    if suffixed in df.columns:
+        return suffixed
+    if base in df.columns:
+        return base
+    raise KeyError(f"Missing column {base!r} or {suffixed!r}")
 
 
 def get_args() -> argparse.Namespace:
@@ -76,8 +87,9 @@ def cross_ce_stats(scoped: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame indexed by spec_id with columns n_siblings, best_sibling_cos, all_ce_zero.
     """
+    cos_col = resolve_metric_col(scoped, COS_COL)
     grp = ["mol_id", "prec_type", "inst_type"]
-    g = scoped.groupby(grp)[COS_COL]
+    g = scoped.groupby(grp)[cos_col]
     out = pd.DataFrame({"spec_id": scoped["spec_id"].to_numpy()})
     out["grp_size"] = g.transform("size").to_numpy()
     out["grp_max"] = g.transform("max").to_numpy()
@@ -123,11 +135,15 @@ def main() -> None:
     scoped = orc[
         orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)
     ].copy()
+    cos_col = resolve_metric_col(scoped, COS_COL)
+    n_true_col = resolve_metric_col(scoped, "n_true_peaks")
+    if n_true_col != "n_true_peaks":
+        scoped["n_true_peaks"] = scoped[n_true_col]
     # Sibling stats must see the FULL scope (all CEs), not just the zero-cos rows -- the control is
     # precisely the non-zero siblings, so compute this before subsetting to the zero-cos tail.
     sib = cross_ce_stats(scoped)
 
-    zero = scoped[scoped[COS_COL] == 0.0].copy().set_index("spec_id")
+    zero = scoped[scoped[cos_col] == 0.0].copy().set_index("spec_id")
     zero = zero.join(sib, how="left")
     log.info("Zero-cos spectra: %d across %d molecules", len(zero), zero["mol_id"].nunique())
 

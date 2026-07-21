@@ -47,6 +47,7 @@ from dag_oracle_scores import score_dag  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
+ORACLE_TIER = "1_above_prec"
 
 
 def load_actual_cos(pred_hdf5: str) -> pd.DataFrame:
@@ -180,9 +181,21 @@ def main() -> None:
 
     log.info("Scoring oracle on %d spectra / %d mols", len(spec_df), spec_df["mol_id"].nunique())
     oracle_df = score_dag(spec_df, args.frag_dp, n_jobs=args.n_jobs)
-    oracle_df = oracle_df[["spec_id", "mol_id", "cos_hun_inst_tol_opt", "inst_type", "frag_mode",
-                           "prec_type", "n_true_peaks", "n_achievable_peaks_inst_tol"]]
-    oracle_df = oracle_df.rename(columns={"cos_hun_inst_tol_opt": "cos_oracle"})
+    tier_cols = {
+        f"cos_hun_inst_tol_opt__{ORACLE_TIER}": "cos_oracle",
+        f"n_true_peaks__{ORACLE_TIER}": "n_true_peaks",
+        f"n_achievable_peaks_inst_tol__{ORACLE_TIER}": "n_achievable_peaks_inst_tol",
+    }
+    oracle_df = oracle_df[
+        [
+            "spec_id",
+            "mol_id",
+            *tier_cols.keys(),
+            "inst_type",
+            "frag_mode",
+            "prec_type",
+        ]
+    ].rename(columns=tier_cols)
 
     df = oracle_df.merge(actual_df, on="spec_id", how="inner")
     log.info("Joined %d spectra (oracle x actual)", len(df))

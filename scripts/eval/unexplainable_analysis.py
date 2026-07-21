@@ -6,9 +6,8 @@ only the DAG's fragment coverage) falls below a threshold. This script restricts
 instrument/adduct scope, then:
 
   1. summarizes the oracle ceiling by adduct x instrument and by ClassyFire class,
-  2. isolates the zero-cosine tail (oracle matches NO peak) and splits it into
-     "recoverable" (>=1 peak matches at a loose 0.01 Da tolerance -> borderline miscalibration)
-     vs. "broken" (no peak matches even at 0.01 Da -> wrong annotation / gross mass error / noise),
+  2. isolates the zero-cosine tail (oracle matches NO peak); recoverable vs. broken splitting is
+     handled separately by ``zero_cos_recoverability.py`` at a loose 0.05 Da tolerance,
   3. writes per-spectrum, per-molecule, and per-class CSVs, and
   4. renders two figures: an unexplainability overview and a zero-cosine diagnostic.
 
@@ -35,6 +34,17 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
 COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B3", "#937860"]
+DEFAULT_TIER = "1_above_prec"
+
+
+def resolve_metric_col(df: pd.DataFrame, base: str, tier: str = DEFAULT_TIER) -> str:
+    """Resolve a metric column from current tier-suffixed or legacy unsuffixed oracle CSVs."""
+    suffixed = f"{base}__{tier}"
+    if suffixed in df.columns:
+        return suffixed
+    if base in df.columns:
+        return base
+    raise KeyError(f"Missing column {base!r} or {suffixed!r}")
 
 
 def get_args() -> argparse.Namespace:
@@ -80,20 +90,30 @@ def load_scoped(args: argparse.Namespace) -> pd.DataFrame:
     df = df[df["prec_type"].isin(args.prec_types) & df["inst_type"].isin(args.inst_types)].copy()
     if df.empty:
         raise ValueError("Scope filter (inst_types / prec_types) matched no rows.")
+    cos_col = resolve_metric_col(df, args.cos_col)
+    for base in [
+        args.cos_col,
+        "n_true_peaks",
+        "n_achievable_peaks_inst_tol",
+        "n_achievable_peaks_0p01da",
+    ]:
+        resolved = resolve_metric_col(df, base)
+        if resolved != base:
+            df[base] = df[resolved]
 
     mol = pd.read_pickle(args.mol_fp)[["mol_id", "smiles", "formula", "num_atoms"]]
     cf = pd.read_pickle(args.classyfire_fp)[["mol_id", "superklass", "klass"]]
     df = df.merge(mol, on="mol_id", how="left").merge(cf, on="mol_id", how="left")
     df["klass"] = df["klass"].fillna("(unclassified)")
     df["superklass"] = df["superklass"].fillna("(unclassified)")
-    df["unexpl"] = df[args.cos_col] < args.thresh
+    df["unexpl"] = df[cos_col] < args.thresh
 
     log.info(
         "Scope: %d spectra, %d molecules; overall unexplainable %.2f%% (%s < %.2f)",
         len(df),
         df["mol_id"].nunique(),
         100 * df["unexpl"].mean(),
-        args.cos_col,
+        cos_col,
         args.thresh,
     )
     return df
@@ -133,12 +153,15 @@ def dump_tables(df: pd.DataFrame, args: argparse.Namespace, out_dp: Path) -> pd.
     Returns:
         The zero-cosine per-spectrum DataFrame (for the diagnostic figure).
     """
-    cos_col = args.cos_col
+    cos_col = resolve_metric_col(df, args.cos_col)
+    n_true_col = resolve_metric_col(df, "n_true_peaks")
+    n_ach_inst_col = resolve_metric_col(df, "n_achievable_peaks_inst_tol")
+    n_ach_0p01_col = resolve_metric_col(df, "n_achievable_peaks_0p01da")
     unexpl = df[df["unexpl"]].copy()
 
     spec_cols = [
         "spec_id", "mol_id", "prec_type", "inst_type", "frag_mode", cos_col,
-        "n_true_peaks", "n_achievable_peaks_inst_tol", "n_achievable_peaks_0p01da",
+        n_true_col, n_ach_inst_col, n_ach_0p01_col,
         "dag_num_nodes", "num_atoms", "klass", "formula", "smiles",
     ]
     spec_cols = [c for c in spec_cols if c in unexpl.columns]
@@ -192,7 +215,7 @@ def plot_overview(df: pd.DataFrame, args: argparse.Namespace, out_fp: Path) -> N
         args: Parsed CLI arguments.
         out_fp: Path to write the PNG.
     """
-    cos_col = args.cos_col
+    cos_col = resolve_metric_col(df, args.cos_col)
     fig, axes = plt.subplots(2, 2, figsize=(15, 11))
 
     # (A) ceiling distribution
