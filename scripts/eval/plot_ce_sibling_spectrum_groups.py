@@ -20,9 +20,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from matplotlib.backends.backend_pdf import PdfPages
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
@@ -143,7 +142,12 @@ def choose_group_rows(group: pd.DataFrame, metric: str, max_rows: int) -> pd.Dat
 
 def label_for_row(row: pd.Series, metric: str) -> tuple[str, str]:
     """Return subplot title and color for a spectrum row."""
-    bits = [f"spec {int(row.spec_id)}", str(row.ce_key), f"{metric}={row[metric]:.3f}"]
+    bits = [
+        f"spec {int(row.spec_id)}",
+        f"dset={row.dset}",
+        str(row.ce_key),
+        f"{metric}={row[metric]:.3f}",
+    ]
     color = "#4C72B0"
     if bool(row.get("flag_any_diff_ce_ok", False)):
         bits.append("LOW_NO_GOOD_REASON: diff CE ok")
@@ -172,6 +176,13 @@ def mol_image_array(smiles: str | None) -> np.ndarray | None:
     return np.asarray(img)
 
 
+def safe_text(value: object) -> str:
+    """Format scalar metadata without leaking pandas missing values into plot text."""
+    if value is None or pd.isna(value):
+        return ""
+    return str(value)
+
+
 def plot_group_page(
     pdf: PdfPages,
     group: pd.DataFrame,
@@ -186,8 +197,20 @@ def plot_group_page(
     n = len(group)
     ncols = 2 if n > 6 else 1
     nrows = math.ceil(n / ncols)
-    fig_h = max(5.5, min(18.0, 1.65 * nrows + 1.4))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(13.5, fig_h), squeeze=False, sharex=True)
+    fig_h = max(6.2, min(18.0, 1.65 * nrows + 2.4))
+    fig = plt.figure(figsize=(13.5, fig_h), constrained_layout=False)
+    grid = fig.add_gridspec(
+        nrows + 1,
+        ncols,
+        height_ratios=[1.35] + [1.0] * nrows,
+        hspace=0.62,
+        wspace=0.18,
+    )
+    header_ax = fig.add_subplot(grid[0, :])
+    header_ax.axis("off")
+    axes = np.array(
+        [[fig.add_subplot(grid[row + 1, col]) for col in range(ncols)] for row in range(nrows)]
+    )
     axes_flat = axes.ravel()
 
     all_mzs = []
@@ -205,21 +228,40 @@ def plot_group_page(
     first = group.iloc[0]
     formula = ""
     smiles = ""
+    inchikey = ""
     if mol_row is not None:
-        formula = str(mol_row.get("formula", ""))
-        smiles = str(mol_row.get("smiles", ""))
+        formula = safe_text(mol_row.get("formula", ""))
+        smiles = safe_text(mol_row.get("smiles", ""))
+        inchikey = safe_text(mol_row.get("inchikey_s", mol_row.get("inchikey", "")))
     flagged_ids = group.loc[group["is_flagged"], "spec_id"].astype(int).tolist()
-    fig.suptitle(
+    dsets = sorted(group["dset"].dropna().astype(str).unique())
+    dset_label = ",".join(dsets) if dsets else "NA"
+    header_text = (
         f"page {page} | mol {int(first.mol_id)} | {first.prec_type} | {first.inst_type} | "
-        f"{first.frag_mode} | formula {formula}\n"
-        f"flagged specs: {flagged_ids} | {smiles[:140]}",
-        fontsize=10,
+        f"{first.frag_mode} | dset {dset_label} | formula {formula}\n"
+        f"flagged specs: {flagged_ids}"
     )
+    if inchikey:
+        header_text += f"\n{inchikey}"
+    if smiles:
+        header_text += f"\n{smiles[:180]}"
+    header_ax.text(0.01, 0.96, header_text, transform=header_ax.transAxes, va="top", fontsize=9.5)
     mol_img = mol_image_array(smiles)
     if mol_img is not None:
-        mol_ax = fig.add_axes([0.74, 0.885, 0.22, 0.09])
+        mol_ax = header_ax.inset_axes([0.72, 0.02, 0.26, 0.94])
         mol_ax.imshow(mol_img)
         mol_ax.axis("off")
+    else:
+        header_ax.text(
+            0.84,
+            0.5,
+            "molecule image unavailable",
+            transform=header_ax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=8,
+            color="#666666",
+        )
 
     for ax, (_idx, row) in zip(axes_flat, group.iterrows()):
         mzs, ints = peaks_to_arrays(row["peaks"])
@@ -251,7 +293,6 @@ def plot_group_page(
     for ax in axes[-1, :]:
         ax.set_xlabel("m/z", fontsize=8)
 
-    fig.subplots_adjust(left=0.06, right=0.98, bottom=0.06, top=0.86, hspace=0.58, wspace=0.18)
     pdf.savefig(fig, bbox_inches="tight")
     plt.close(fig)
 
@@ -328,6 +369,8 @@ def main() -> None:
             group = plot_df[mask].sort_values("ce_sort").copy()
             group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
             mol_row = mol_by_id.loc[row.mol_id] if row.mol_id in mol_by_id.index else None
+            if isinstance(mol_row, pd.DataFrame):
+                mol_row = mol_row.iloc[0]
             plot_group_page(
                 pdf,
                 group,
@@ -343,6 +386,7 @@ def main() -> None:
                 {
                     **key,
                     "page": page,
+                    "dsets": ";".join(sorted(group["dset"].dropna().astype(str).unique())),
                     "n_plotted_spectra": len(group),
                     "flagged_spec_ids": ";".join(flagged["spec_id"].astype(str)),
                     "worst_metric": flagged[args.metric].min(),
