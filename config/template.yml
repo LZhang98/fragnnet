@@ -274,6 +274,7 @@ mlp_output_format: formula  # Output format: ["formula", "peak"]
 candidate_ion_head: False  # Score each (node, H/formula-channel) candidate row with ion identity features, then reshape to the usual logits
 candidate_ion_formula_features: True  # Add reconstructed candidate formula features; requires h_counts in frag_params.pyg_node_feats
 candidate_ion_neutral_loss_features: True  # Add precursor_formula - candidate_formula features; requires depth and candidate formula features
+candidate_ion_chunk_size: 32768  # Candidate rows scored at once; lower this if large DAGs OOM
 mlp_hidden_size: 256  # Hidden dimension for MLP layers
 mlp_dropout: 0.0  # Dropout rate for MLP
 mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]

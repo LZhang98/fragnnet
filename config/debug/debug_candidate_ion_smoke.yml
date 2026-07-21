@@ -55,6 +55,7 @@ mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 candidate_ion_head: True
 candidate_ion_formula_features: True
 candidate_ion_neutral_loss_features: True
+candidate_ion_chunk_size: 4096
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -127,8 +128,8 @@ ce_scaler_hidden_dim: 64      # hidden dim of CE→FiLM MLP
 # ============================================================================
 # Training Hyperparameters
 # ============================================================================
-train_batch_size: 8
-eval_batch_size: 8
+train_batch_size: 1
+eval_batch_size: 1
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu
