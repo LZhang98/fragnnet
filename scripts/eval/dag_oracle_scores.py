@@ -77,6 +77,10 @@ INST_TYPE_LOSS_TOL = {
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da
 }
 ABS_TOLERANCE_DA = 0.01  # fixed absolute Da tolerance, reproduces the cos_sim_0.01 convention
+# Loose absolute tolerance, guaranteed wider than every per-instrument tol above (FT ~0.01 Da at
+# m/z 1000, QTOF ~0.015 Da at low m/z). Used to probe whether a peak that misses at instrument
+# tolerance is a borderline miscalibration (recoverable here) vs. a gross error (still a miss).
+ABS_TOLERANCE_DA_LOOSE = 0.05
 
 # Denoise filter tiers applied to the true spectrum before scoring. Every spectrum is scored under
 # all four and the DAG ceiling is reported stacked, exposing the marginal effect of each filter.
@@ -100,12 +104,15 @@ METRIC_BASES = [
     "jss_hun_inst_tol_opt",
     "cos_hun_0p01da_opt",
     "jss_hun_0p01da_opt",
+    "cos_hun_0p05da_opt",
+    "jss_hun_0p05da_opt",
     "cos_hun_sqrt_opt",
     "jss_hun_sqrt_opt",
     "n_true_peaks",
     "n_achievable_peaks",
     "n_achievable_peaks_inst_tol",
     "n_achievable_peaks_0p01da",
+    "n_achievable_peaks_0p05da",
 ]
 
 
@@ -326,6 +333,15 @@ def _score_all_tolerances(
         tolerance=ABS_TOLERANCE_DA,
         relative=False,
     )
+    cos_da5, jss_da5, n_ach_da5, _ = _oracle_scores_for_spectrum(
+        true_mzs,
+        true_ints,
+        dag_ion_mzs,
+        remove_prec_peak,
+        prec_mz,
+        tolerance=ABS_TOLERANCE_DA_LOOSE,
+        relative=False,
+    )
     cos_sqrt, jss_sqrt, _, _ = _oracle_scores_for_spectrum(
         true_mzs,
         true_ints,
@@ -344,12 +360,15 @@ def _score_all_tolerances(
         "jss_hun_inst_tol_opt": jss_it,
         "cos_hun_0p01da_opt": cos_da,
         "jss_hun_0p01da_opt": jss_da,
+        "cos_hun_0p05da_opt": cos_da5,
+        "jss_hun_0p05da_opt": jss_da5,
         "cos_hun_sqrt_opt": cos_sqrt,
         "jss_hun_sqrt_opt": jss_sqrt,
         "n_true_peaks": n_true,
         "n_achievable_peaks": n_ach,
         "n_achievable_peaks_inst_tol": n_ach_it,
         "n_achievable_peaks_0p01da": n_ach_da,
+        "n_achievable_peaks_0p05da": n_ach_da5,
     }
 
 
@@ -515,6 +534,8 @@ SCORE_BASES = [
     "jss_hun_inst_tol_opt",
     "cos_hun_0p01da_opt",
     "jss_hun_0p01da_opt",
+    "cos_hun_0p05da_opt",
+    "jss_hun_0p05da_opt",
     "cos_hun_sqrt_opt",
     "jss_hun_sqrt_opt",
 ]

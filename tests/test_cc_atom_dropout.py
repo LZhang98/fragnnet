@@ -33,6 +33,7 @@ def _build_model(
     frag_node_feats: list[str] | None = None,
     candidate_ion_head: bool = False,
     ion_channel_factorized: bool = False,
+    ion_channel_adduct_gated: bool = False,
 ) -> FraGNNetModel:
     if frag_node_feats is None:
         frag_node_feats = FRAG_NODE_FEATS
@@ -109,6 +110,7 @@ def _build_model(
         cc_atom_dropout=cc_atom_dropout,
         candidate_ion_head=candidate_ion_head,
         ion_channel_factorized=ion_channel_factorized,
+        ion_channel_adduct_gated=ion_channel_adduct_gated,
         ion_channel_rank=4,
     )
 

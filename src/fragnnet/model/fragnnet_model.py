@@ -139,6 +139,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         candidate_ion_chunk_size: int = 32768,
         candidate_ion_checkpoint: bool = True,
         ion_channel_factorized: bool = False,
+        ion_channel_adduct_gated: bool = False,
         ion_channel_rank: int = 32,
     ):
         # nn.Module init
@@ -463,10 +464,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.candidate_ion_checkpoint = bool(candidate_ion_checkpoint)
         self.candidate_ion_feature_dim = 0
         self.ion_channel_factorized = bool(ion_channel_factorized)
+        self.ion_channel_adduct_gated = bool(ion_channel_adduct_gated)
         self.ion_channel_rank = int(ion_channel_rank)
-        if self.candidate_ion_head and self.ion_channel_factorized:
+        if self.candidate_ion_head and (self.ion_channel_factorized or self.ion_channel_adduct_gated):
             raise ValueError(
-                "candidate_ion_head and ion_channel_factorized are mutually exclusive"
+                "candidate_ion_head and ion_channel_factorized/ion_channel_adduct_gated are "
+                "mutually exclusive"
+            )
+        if self.ion_channel_factorized and self.ion_channel_adduct_gated:
+            raise ValueError(
+                "ion_channel_factorized and ion_channel_adduct_gated are mutually exclusive"
             )
         if self.candidate_ion_head:
             # These features describe the candidate peak row, not just the fragment node. The
@@ -509,22 +516,36 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.candidate_h_channel_embedder = None
             self.candidate_cmf_flag_embedder = None
 
-        if self.ion_channel_factorized:
+        if self.ion_channel_factorized or self.ion_channel_adduct_gated:
             if self.ion_channel_rank <= 0:
                 raise ValueError(f"ion_channel_rank must be positive, got {ion_channel_rank}")
             self.ion_channel_node_proj = nn.Linear(
                 mlp_input_dim, self.ion_channel_rank, bias=False
             )
             self.ion_channel_embed = nn.Embedding(self.mlp_output_dim, self.ion_channel_rank)
-            self.ion_channel_bias = nn.Parameter(th.zeros(self.mlp_output_dim))
             # Identity start: residual is zero, but node_proj receives gradients immediately
             # because ion_channel_embed is nonzero.
             nn.init.zeros_(self.ion_channel_node_proj.weight)
             nn.init.normal_(self.ion_channel_embed.weight, mean=0.0, std=0.02)
+            if self.ion_channel_adduct_gated:
+                # Adduct-gated: per-adduct multiplicative gate on the rank-r node factor gives a
+                # node x channel x adduct trilinear residual (the interaction AdductScaler's
+                # node-invariant affine cannot express). No bias here: AdductScaler owns the
+                # adduct x channel additive term. Gate init at ones keeps the identity start
+                # (residual still zero because node_proj is zero) while preserving node_proj grads.
+                self.ion_channel_adduct_gate = nn.Embedding(
+                    len(prec_types) + 1, self.ion_channel_rank
+                )
+                nn.init.ones_(self.ion_channel_adduct_gate.weight)
+                self.ion_channel_bias = None
+            else:
+                self.ion_channel_adduct_gate = None
+                self.ion_channel_bias = nn.Parameter(th.zeros(self.mlp_output_dim))
         else:
             self.ion_channel_node_proj = None
             self.ion_channel_embed = None
             self.ion_channel_bias = None
+            self.ion_channel_adduct_gate = None
 
         #  mlp for formula
         if self.mlp_output_format in ["formula", "node_formula"]:
@@ -743,14 +764,44 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.frag_edge_feats_size += self.complement_embedder.num_dim
 
     def _apply_ion_channel_factorized(
-        self, logits: th.Tensor, frag_embed: th.Tensor
+        self,
+        logits: th.Tensor,
+        frag_embed: th.Tensor,
+        spec_prec_type: th.Tensor | None = None,
+        frag_node_batch_idxs: th.Tensor | None = None,
     ) -> th.Tensor:
-        """Add a cheap low-rank ion-channel residual to per-node H/CMF logits."""
-        if not self.ion_channel_factorized:
+        """Add a low-rank ion-channel residual to per-node H/CMF logits.
+
+        Two mutually exclusive modes:
+        - ``ion_channel_factorized``: ``residual = node_proj(x) @ channel_embed.T + bias``,
+          a static node x channel term.
+        - ``ion_channel_adduct_gated``: ``residual = (node_proj(x) * gate[adduct]) @
+          channel_embed.T``, a node x channel x adduct trilinear term with no bias.
+
+        Args:
+            logits: Per-node channel logits of shape (num_nodes, mlp_output_dim).
+            frag_embed: Per-node fragment embedding of shape (num_nodes, mlp_input_dim).
+            spec_prec_type: Per-sample adduct indices of shape (batch_size,). Required for the
+                adduct-gated mode.
+            frag_node_batch_idxs: Batch index per node of shape (num_nodes,). Required for the
+                adduct-gated mode.
+
+        Returns:
+            Logits of shape (num_nodes, mlp_output_dim) with the residual added.
+        """
+        if not (self.ion_channel_factorized or self.ion_channel_adduct_gated):
             return logits
         node_factor = self.ion_channel_node_proj(frag_embed)
-        channel_factor = self.ion_channel_embed.weight
-        residual = node_factor @ channel_factor.T + self.ion_channel_bias
+        if self.ion_channel_adduct_gated:
+            if spec_prec_type is None or frag_node_batch_idxs is None:
+                raise ValueError(
+                    "ion_channel_adduct_gated requires spec_prec_type and frag_node_batch_idxs"
+                )
+            gate = self.ion_channel_adduct_gate(spec_prec_type)[frag_node_batch_idxs]
+            node_factor = node_factor * gate
+        residual = node_factor @ self.ion_channel_embed.weight.T
+        if self.ion_channel_bias is not None:
+            residual = residual + self.ion_channel_bias
         return logits + residual
 
     def _candidate_ion_features(
@@ -1736,7 +1787,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             else:
                 frag_joint_logits = self.formula_module(frag_embed)
             frag_joint_logits = self._apply_ion_channel_factorized(
-                frag_joint_logits, frag_embed
+                frag_joint_logits, frag_embed, spec_prec_type, frag_node_batch_idxs
             )
             # apply mode-conditioned affine scaling if enabled
             if self.frag_mode_scaler is not None:
@@ -1849,7 +1900,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             else:
                 frag_node_formula_logits = self.formula_module(frag_embed)
             frag_node_formula_logits = self._apply_ion_channel_factorized(
-                frag_node_formula_logits, frag_embed
+                frag_node_formula_logits, frag_embed, spec_prec_type, frag_node_batch_idxs
             )
             # apply mode-conditioned affine scaling if enabled
             if self.frag_mode_scaler is not None:
