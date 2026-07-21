@@ -62,7 +62,7 @@ def get_args() -> argparse.Namespace:
         default=["cos_hun_inst_tol_opt"],
         help="Metric columns to audit. Tier-suffixed columns are resolved automatically.",
     )
-    parser.add_argument("--low_thresh", type=float, default=0.10)
+    parser.add_argument("--low_thresh", type=float, default=0.30)
     parser.add_argument("--normal_thresh", type=float, default=0.90)
     parser.add_argument(
         "--drop_thresh",

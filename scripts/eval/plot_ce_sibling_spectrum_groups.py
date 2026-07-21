@@ -148,14 +148,24 @@ def label_for_row(row: pd.Series, metric: str) -> tuple[str, str]:
         str(row.ce_key),
         f"{metric}={row[metric]:.3f}",
     ]
-    color = "#4C72B0"
-    if bool(row.get("flag_any_diff_ce_ok", False)):
-        color = "#C44E52"
-    elif bool(row.get("flag_trend_drop", False)):
-        color = "#DD8452"
-    elif row[metric] < 0.1:
-        color = "#8172B3"
-    return " | ".join(bits), color
+    return " | ".join(bits), metric_color(row[metric])
+
+
+def metric_color(value: float) -> str:
+    """Color spectra by metric in 0.1 bins; good spectra stay blue."""
+    if pd.isna(value):
+        return "#666666"
+    if value < 0.1:
+        return "#C44E52"
+    if value < 0.2:
+        return "#DD8452"
+    if value < 0.3:
+        return "#E6C84F"
+    if value < 0.4:
+        return "#55A868"
+    if value < 0.5:
+        return "#64B5CD"
+    return "#4C72B0"
 
 
 def mol_image_array(smiles: str | None) -> np.ndarray | None:

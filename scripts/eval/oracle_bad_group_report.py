@@ -53,7 +53,7 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument("--out_dp", required=True)
     parser.add_argument("--metric", default="cos_hun_inst_tol_opt")
-    parser.add_argument("--low_thresh", type=float, default=0.10)
+    parser.add_argument("--low_thresh", type=float, default=0.30)
     parser.add_argument("--normal_thresh", type=float, default=0.90)
     parser.add_argument("--inst_types", nargs="+", default=["FT", "QTOF"])
     parser.add_argument(
@@ -105,7 +105,9 @@ def classify_low_spectra(scored: pd.DataFrame, flag_ids: set[int], metric: str) 
     return low
 
 
-def summarize_groups(low: pd.DataFrame, scored: pd.DataFrame, metric: str) -> pd.DataFrame:
+def summarize_groups(
+    low: pd.DataFrame, scored: pd.DataFrame, metric: str, normal_thresh: float
+) -> pd.DataFrame:
     """Build one row per group that contains at least one low spectrum."""
     rows = []
     group_meta = scored.groupby(GROUP_COLS, observed=True)
@@ -123,7 +125,7 @@ def summarize_groups(low: pd.DataFrame, scored: pd.DataFrame, metric: str) -> pd
                 "n_spectra": len(full_g),
                 "n_bad_spectra": len(low_g),
                 "n_ce_sibling_flagged": int(low_g["in_ce_sibling_flags"].sum()),
-                "n_normal_spectra": int((full_g[metric] >= 0.90).sum()),
+                "n_normal_spectra": int((full_g[metric] >= normal_thresh).sum()),
                 "worst_metric": float(low_g[metric].min()),
                 "median_bad_metric": float(low_g[metric].median()),
                 "best_group_metric": float(full_g[metric].max()),
@@ -303,7 +305,7 @@ def main() -> None:
     scope = add_sibling_features(scope, GROUP_COLS, args.metric)
 
     low = classify_low_spectra(scope, flag_ids, args.metric)
-    group_df = summarize_groups(low, scope, args.metric)
+    group_df = summarize_groups(low, scope, args.metric, args.normal_thresh)
     missing_groups = group_df[group_df["n_ce_sibling_flagged"].eq(0)].copy()
 
     spectra_fp = out_dp / "oracle_bad_spectra_all.csv"
