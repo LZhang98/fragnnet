@@ -145,6 +145,26 @@ class TestCeInsertLocationParsing:
             _build("mol,bogus")
 
 
+class TestCandidateIonHead:
+    def test_formula_features_require_h_counts(self):
+        with pytest.raises(ValueError, match="candidate_ion_formula_features requires"):
+            _build("mol", candidate_ion_head=True)
+
+    def test_candidate_head_scores_candidate_rows(self):
+        base = _build("mol", candidate_ion_head=False)
+        candidate = _build(
+            "mol",
+            frag_node_feats=["cc", "base_formula", "depth", "h_formulae_idx", "h_counts"],
+            candidate_ion_head=True,
+        )
+        assert candidate.formula_module.output_layer.out_features == 1
+        assert (
+            candidate.formula_module.input_layer.in_features
+            == base.formula_module.input_layer.in_features + candidate.candidate_ion_feature_dim
+        )
+        assert candidate.candidate_ion_feature_dim > 0
+
+
 def _build_siamese(ce_insert_location: str = "mol") -> SiameseGNNModel:
     """Smallest valid SiameseGNNModel with the given ce_insert_location."""
     return SiameseGNNModel(

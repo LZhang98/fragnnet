@@ -132,6 +132,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         context_insert_location: str = "mol,mlp",
         debug_validate_outputs: bool = False,
         skip_explainability_when_training: bool = False,
+        candidate_ion_head: bool = False,
+        candidate_ion_formula_features: bool = True,
+        candidate_ion_neutral_loss_features: bool = True,
     ):
         # nn.Module init
         super().__init__()
@@ -448,11 +451,56 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             + self.context_mlp_input_dim
         )
 
+        self.candidate_ion_head = candidate_ion_head
+        self.candidate_ion_formula_features = candidate_ion_formula_features
+        self.candidate_ion_neutral_loss_features = candidate_ion_neutral_loss_features
+        self.candidate_ion_feature_dim = 0
+        if self.candidate_ion_head:
+            # These features describe the candidate peak row, not just the fragment node. The
+            # candidate scores are reshaped back to (node, H-channel), so downstream spectrum
+            # normalization and metric code stay on the existing path.
+            self.candidate_h_channel_embedder = get_embedder(
+                int_embedder, max_count_int=self.mlp_output_dim
+            )
+            self.candidate_cmf_flag_embedder = get_embedder(int_embedder, max_count_int=2)
+            self.candidate_ion_feature_dim += (
+                self.candidate_h_channel_embedder.num_dim
+                + self.candidate_cmf_flag_embedder.num_dim
+            )
+            if self.candidate_ion_formula_features:
+                if (
+                    "base_formula" not in self.frag_node_feats
+                    or "h_counts" not in self.frag_node_feats
+                ):
+                    raise ValueError(
+                        "candidate_ion_formula_features requires base_formula and h_counts in "
+                        "frag_node_feats"
+                    )
+                self.candidate_ion_feature_dim += (
+                    self.num_elements * self.formula_embedder.num_dim
+                )
+            if self.candidate_ion_neutral_loss_features:
+                if not self.candidate_ion_formula_features:
+                    raise ValueError(
+                        "candidate_ion_neutral_loss_features requires "
+                        "candidate_ion_formula_features=True"
+                    )
+                if "depth" not in self.frag_node_feats:
+                    raise ValueError(
+                        "candidate_ion_neutral_loss_features requires depth in frag_node_feats"
+                    )
+                self.candidate_ion_feature_dim += (
+                    self.num_elements * self.formula_embedder.num_dim
+                )
+        else:
+            self.candidate_h_channel_embedder = None
+            self.candidate_cmf_flag_embedder = None
+
         #  mlp for formula
         if self.mlp_output_format in ["formula", "node_formula"]:
             formula_mlp_kwargs = {
-                "input_size": mlp_input_dim,
-                "output_size": self.mlp_output_dim,
+                "input_size": mlp_input_dim + self.candidate_ion_feature_dim,
+                "output_size": 1 if self.candidate_ion_head else self.mlp_output_dim,
                 "hidden_size": mlp_hidden_size,
                 "num_layers": mlp_num_layers,
                 "dropout": mlp_dropout,
@@ -664,6 +712,77 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if "complement" in self.frag_edge_feats:
             self.frag_edge_feats_size += self.complement_embedder.num_dim
 
+    def _candidate_ion_features(
+        self,
+        frag_embed: th.Tensor,
+        frag_x: th.Tensor,
+        frag_node_feat_idxs: th.Tensor,
+        frag_node_batch_idxs: th.Tensor,
+        frag_joint_mask: th.Tensor,
+        batch_size: int,
+    ) -> th.Tensor:
+        """Build per-(node, H-channel) feature rows for the observable ion scorer."""
+        device = frag_embed.device
+        H = self.mlp_output_dim
+        N = frag_embed.shape[0]
+        h_pos = th.arange(H, device=device)
+        h_pos_2d = h_pos.unsqueeze(0).expand(N, H)
+        candidate_parts = [
+            self.candidate_h_channel_embedder(h_pos_2d.reshape(-1, 1)),
+        ]
+
+        crf_width = 2 * self.num_hs + 1
+        cmf_flag = (h_pos_2d >= crf_width).long()
+        candidate_parts.append(self.candidate_cmf_flag_embedder(cmf_flag.reshape(-1, 1)))
+
+        if self.candidate_ion_formula_features:
+            base_formula = get_node_feats(frag_x, frag_node_feat_idxs, "base_formula").reshape(
+                N, -1
+            )
+            node_h_counts = get_node_feats(frag_x, frag_node_feat_idxs, "h_counts").reshape(
+                N, -1
+            )
+            h_lookup = h_pos.remainder(crf_width).clamp(max=node_h_counts.shape[1] - 1)
+            candidate_h = node_h_counts[:, h_lookup].clamp(min=0)
+            candidate_formula = base_formula.unsqueeze(1).expand(N, H, -1).clone()
+            candidate_formula[:, :, self.num_elements - 1] = candidate_h
+            candidate_formula = candidate_formula.reshape(N * H, self.num_elements)
+            candidate_parts.append(self.formula_embedder(candidate_formula))
+
+            if self.candidate_ion_neutral_loss_features:
+                depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(N, -1)
+                root_mask = depth_raw[:, 0].bool()
+                precursor_formula = th.zeros(
+                    batch_size,
+                    self.num_elements,
+                    dtype=base_formula.dtype,
+                    device=device,
+                )
+                root_formula = base_formula[root_mask].clone()
+                root_h_counts = node_h_counts[root_mask, 0].clamp(min=0)
+                root_formula[:, self.num_elements - 1] = root_h_counts
+                precursor_formula[frag_node_batch_idxs[root_mask]] = root_formula
+                neutral_loss_formula = (
+                    precursor_formula[frag_node_batch_idxs]
+                    .unsqueeze(1)
+                    .expand(N, H, -1)
+                    - candidate_formula.reshape(N, H, self.num_elements)
+                )
+                candidate_parts.append(
+                    self.formula_embedder(
+                        neutral_loss_formula.reshape(N * H, self.num_elements)
+                    )
+                )
+
+        candidate_feats = th.cat(candidate_parts, dim=1)
+        candidate_feats = candidate_feats * frag_joint_mask.reshape(-1, 1).to(
+            candidate_feats.dtype
+        )
+        frag_embed_expanded = (
+            frag_embed.unsqueeze(1).expand(N, H, frag_embed.shape[1]).reshape(N * H, -1)
+        )
+        return th.cat([frag_embed_expanded, candidate_feats], dim=1)
+
     def get_compile(self, **kwargs):
         if check_pyg_full_compile():
             return th.compile(self, **kwargs)
@@ -683,6 +802,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.num_cut_bonds_embedder = th.compile(self.num_cut_bonds_embedder, **kwargs)
         if hasattr(self, "rdbe_embedder"):
             self.rdbe_embedder = th.compile(self.rdbe_embedder, **kwargs)
+        if (
+            hasattr(self, "candidate_h_channel_embedder")
+            and self.candidate_h_channel_embedder is not None
+        ):
+            self.candidate_h_channel_embedder = th.compile(
+                self.candidate_h_channel_embedder, **kwargs
+            )
+        if (
+            hasattr(self, "candidate_cmf_flag_embedder")
+            and self.candidate_cmf_flag_embedder is not None
+        ):
+            self.candidate_cmf_flag_embedder = th.compile(
+                self.candidate_cmf_flag_embedder, **kwargs
+            )
         if hasattr(self, "ce_embedder"):
             self.ce_embedder = th.compile(self.ce_embedder, **kwargs)
         if hasattr(self, "m_ce_embedder"):
@@ -1474,7 +1607,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if self.mlp_output_format == "formula":
             #  predicts joint logits for each (node, formula) pair:
             # log p(f,n)
-            frag_joint_logits = self.formula_module(frag_embed)
+            if self.candidate_ion_head:
+                candidate_input = self._candidate_ion_features(
+                    frag_embed=frag_embed,
+                    frag_x=frag_x,
+                    frag_node_feat_idxs=frag_node_feat_idxs,
+                    frag_node_batch_idxs=frag_node_batch_idxs,
+                    frag_joint_mask=frag_joint_mask,
+                    batch_size=batch_size,
+                )
+                frag_joint_logits = self.formula_module(candidate_input).reshape(
+                    batch_frag_num_nodes, self.mlp_output_dim
+                )
+            else:
+                frag_joint_logits = self.formula_module(frag_embed)
             # apply mode-conditioned affine scaling if enabled
             if self.frag_mode_scaler is not None:
                 assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
@@ -1574,7 +1720,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         elif self.mlp_output_format == "node_formula":
             # predicts log p(f|n) (formula given node) and log p(n) (node probability) separately.
             # log p(f|n) formula given node
-            frag_node_formula_logits = self.formula_module(frag_embed)
+            if self.candidate_ion_head:
+                candidate_input = self._candidate_ion_features(
+                    frag_embed=frag_embed,
+                    frag_x=frag_x,
+                    frag_node_feat_idxs=frag_node_feat_idxs,
+                    frag_node_batch_idxs=frag_node_batch_idxs,
+                    frag_joint_mask=frag_joint_mask,
+                    batch_size=batch_size,
+                )
+                frag_node_formula_logits = self.formula_module(candidate_input).reshape(
+                    batch_frag_num_nodes, self.mlp_output_dim
+                )
+            else:
+                frag_node_formula_logits = self.formula_module(frag_embed)
             # apply mode-conditioned affine scaling if enabled
             if self.frag_mode_scaler is not None:
                 assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"

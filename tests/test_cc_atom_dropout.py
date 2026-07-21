@@ -28,7 +28,13 @@ MOL_EDGE_FEATS = ["b_degree"]
 FRAG_NODE_FEATS = ["cc", "base_formula", "depth", "h_formulae_idx"]
 
 
-def _build_model(cc_atom_dropout: float) -> FraGNNetModel:
+def _build_model(
+    cc_atom_dropout: float,
+    frag_node_feats: list[str] | None = None,
+    candidate_ion_head: bool = False,
+) -> FraGNNetModel:
+    if frag_node_feats is None:
+        frag_node_feats = FRAG_NODE_FEATS
     return FraGNNetModel(
         num_depth=4,
         num_hs=2,
@@ -45,7 +51,7 @@ def _build_model(cc_atom_dropout: float) -> FraGNNetModel:
         mol_dropout=0.0,
         mol_num_heads=1,
         mol_pool_type="mean",
-        frag_node_feats=FRAG_NODE_FEATS,
+        frag_node_feats=frag_node_feats,
         frag_edge_feats=[],
         frag_hidden_size=32,
         frag_num_layers=2,
@@ -100,10 +106,16 @@ def _build_model(cc_atom_dropout: float) -> FraGNNetModel:
         ace_std=10.0,
         cc_feature_dropout=0.0,
         cc_atom_dropout=cc_atom_dropout,
+        candidate_ion_head=candidate_ion_head,
     )
 
 
-def _forward_kwargs(smiles: str = "CCOC(=O)c1ccccc1") -> dict:
+def _forward_kwargs(
+    smiles: str = "CCOC(=O)c1ccccc1",
+    frag_node_feats: list[str] | None = None,
+) -> dict:
+    if frag_node_feats is None:
+        frag_node_feats = FRAG_NODE_FEATS
     mol = mol_from_smiles(smiles)
     mol_pyg = get_mol_graph(
         mol, atom_feats=MOL_NODE_FEATS, bond_feats=MOL_EDGE_FEATS, pe_embed_k=0, bigraph=True
@@ -122,7 +134,7 @@ def _forward_kwargs(smiles: str = "CCOC(=O)c1ccccc1") -> dict:
     )
     frag_pyg = get_frag_graph(
         dag_d["dag"],
-        frag_node_feats=FRAG_NODE_FEATS,
+        frag_node_feats=frag_node_feats,
         frag_edge_feats=[],
         edges=False,
         bigraph=False,
@@ -218,3 +230,18 @@ class TestCCAtomDropoutBehavior:
         ]
         assert len(grads) > 0
         assert any(th.any(g != 0) for g in grads)
+
+
+class TestCandidateIonForward:
+    def test_candidate_ion_head_forward_is_finite(self) -> None:
+        frag_node_feats = ["cc", "base_formula", "depth", "h_formulae_idx", "h_counts"]
+        model = _build_model(
+            cc_atom_dropout=0.0,
+            frag_node_feats=frag_node_feats,
+            candidate_ion_head=True,
+        )
+        model.eval()
+        with th.no_grad():
+            out = model(**_forward_kwargs(frag_node_feats=frag_node_feats))
+        assert th.isfinite(out["pred_logprobs"]).all()
+        assert th.isfinite(out["pred_mzs"]).all()

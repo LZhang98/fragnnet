@@ -125,6 +125,13 @@ class FraGNNetPL(SpectrumPL):
             cut_bond_hidden_dim=self.hparams.cut_bond_hidden_dim,
             debug_validate_outputs=self.hparams.debug_validate_outputs,
             skip_explainability_when_training=self.hparams.skip_train_explainability,
+            candidate_ion_head=self.hparams.get("candidate_ion_head", False),
+            candidate_ion_formula_features=self.hparams.get(
+                "candidate_ion_formula_features", True
+            ),
+            candidate_ion_neutral_loss_features=self.hparams.get(
+                "candidate_ion_neutral_loss_features", True
+            ),
         )
 
         self._check_ce_params()
