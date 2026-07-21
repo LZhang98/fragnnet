@@ -245,3 +245,20 @@ class TestCandidateIonForward:
             out = model(**_forward_kwargs(frag_node_feats=frag_node_feats))
         assert th.isfinite(out["pred_logprobs"]).all()
         assert th.isfinite(out["pred_mzs"]).all()
+
+    def test_candidate_ion_checkpoint_backward(self) -> None:
+        frag_node_feats = ["cc", "base_formula", "depth", "h_formulae_idx", "h_counts"]
+        model = _build_model(
+            cc_atom_dropout=0.0,
+            frag_node_feats=frag_node_feats,
+            candidate_ion_head=True,
+        )
+        model.candidate_ion_chunk_size = 64
+        model.candidate_ion_checkpoint = True
+        model.train()
+        out = model(**_forward_kwargs(frag_node_feats=frag_node_feats))
+        loss = -out["pred_logprobs"].mean()
+        loss.backward()
+        grads = [p.grad for p in model.formula_module.parameters() if p.grad is not None]
+        assert grads
+        assert any(th.isfinite(g).all() and th.any(g != 0) for g in grads)

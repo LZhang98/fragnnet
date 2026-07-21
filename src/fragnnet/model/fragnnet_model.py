@@ -828,6 +828,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 _frag_node_feat_idxs: th.Tensor,
                 _frag_node_batch_idxs: th.Tensor,
                 _frag_joint_mask: th.Tensor,
+                _node_start: int = node_start,
+                _node_end: int = node_end,
             ) -> th.Tensor:
                 candidate_input = self._candidate_ion_features(
                     frag_embed=_frag_embed,
@@ -836,10 +838,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     frag_node_batch_idxs=_frag_node_batch_idxs,
                     frag_joint_mask=_frag_joint_mask,
                     batch_size=batch_size,
-                    node_start=node_start,
-                    node_end=node_end,
+                    node_start=_node_start,
+                    node_end=_node_end,
                 )
-                return self.formula_module(candidate_input).reshape(node_end - node_start, H)
+                return self.formula_module(candidate_input).reshape(_node_end - _node_start, H)
 
             if self.training and self.candidate_ion_checkpoint:
                 chunk_logits = th_checkpoint.checkpoint(
