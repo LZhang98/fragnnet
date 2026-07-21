@@ -150,18 +150,11 @@ def label_for_row(row: pd.Series, metric: str) -> tuple[str, str]:
     ]
     color = "#4C72B0"
     if bool(row.get("flag_any_diff_ce_ok", False)):
-        bits.append("LOW_NO_GOOD_REASON: diff CE ok")
         color = "#C44E52"
     elif bool(row.get("flag_trend_drop", False)):
-        bits.append("LOW_TREND_DROP")
         color = "#DD8452"
     elif row[metric] < 0.1:
-        bits.append("LOW")
         color = "#8172B3"
-    if pd.notna(row.get("best_lower_ce", np.nan)):
-        bits.append(f"best lower={row.best_lower_ce:.2f}")
-    if pd.notna(row.get("best_higher_ce", np.nan)):
-        bits.append(f"best higher={row.best_higher_ce:.2f}")
     return " | ".join(bits), color
 
 
@@ -211,7 +204,7 @@ def plot_group_page(
     axes = np.array(
         [[fig.add_subplot(grid[row + 1, col]) for col in range(ncols)] for row in range(nrows)]
     )
-    axes_flat = axes.ravel()
+    axes_flat = axes.T.ravel()
 
     all_mzs = []
     for peaks in group["peaks"]:
