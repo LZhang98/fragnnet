@@ -53,8 +53,9 @@ frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 candidate_ion_head: True
 candidate_ion_formula_features: True
-candidate_ion_neutral_loss_features: True
-candidate_ion_chunk_size: 4096
+candidate_ion_neutral_loss_features: False
+candidate_ion_chunk_size: 1024
+candidate_ion_checkpoint: True
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -127,9 +128,9 @@ ce_scaler_hidden_dim: 64      # hidden dim of CE→FiLM MLP
 # ============================================================================
 # Training Hyperparameters
 # ============================================================================
-train_batch_size: 8
-eval_batch_size: 8
-accumulate_grad_batches: 32
+train_batch_size: 4
+eval_batch_size: 4
+accumulate_grad_batches: 64
 gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1

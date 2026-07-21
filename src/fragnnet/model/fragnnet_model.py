@@ -8,6 +8,7 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint as th_checkpoint
 import torch_geometric as pyg
 
 from fragnnet.model.base_model import (
@@ -136,6 +137,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         candidate_ion_formula_features: bool = True,
         candidate_ion_neutral_loss_features: bool = True,
         candidate_ion_chunk_size: int = 32768,
+        candidate_ion_checkpoint: bool = True,
     ):
         # nn.Module init
         super().__init__()
@@ -456,6 +458,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.candidate_ion_formula_features = candidate_ion_formula_features
         self.candidate_ion_neutral_loss_features = candidate_ion_neutral_loss_features
         self.candidate_ion_chunk_size = int(candidate_ion_chunk_size)
+        self.candidate_ion_checkpoint = bool(candidate_ion_checkpoint)
         self.candidate_ion_feature_dim = 0
         if self.candidate_ion_head:
             # These features describe the candidate peak row, not just the fragment node. The
@@ -818,17 +821,45 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         logits = []
         for node_start in range(0, total_nodes, node_step):
             node_end = min(total_nodes, node_start + node_step)
-            candidate_input = self._candidate_ion_features(
-                frag_embed=frag_embed,
-                frag_x=frag_x,
-                frag_node_feat_idxs=frag_node_feat_idxs,
-                frag_node_batch_idxs=frag_node_batch_idxs,
-                frag_joint_mask=frag_joint_mask,
-                batch_size=batch_size,
-                node_start=node_start,
-                node_end=node_end,
-            )
-            logits.append(self.formula_module(candidate_input).reshape(node_end - node_start, H))
+
+            def _chunk_forward(
+                _frag_embed: th.Tensor,
+                _frag_x: th.Tensor,
+                _frag_node_feat_idxs: th.Tensor,
+                _frag_node_batch_idxs: th.Tensor,
+                _frag_joint_mask: th.Tensor,
+            ) -> th.Tensor:
+                candidate_input = self._candidate_ion_features(
+                    frag_embed=_frag_embed,
+                    frag_x=_frag_x,
+                    frag_node_feat_idxs=_frag_node_feat_idxs,
+                    frag_node_batch_idxs=_frag_node_batch_idxs,
+                    frag_joint_mask=_frag_joint_mask,
+                    batch_size=batch_size,
+                    node_start=node_start,
+                    node_end=node_end,
+                )
+                return self.formula_module(candidate_input).reshape(node_end - node_start, H)
+
+            if self.training and self.candidate_ion_checkpoint:
+                chunk_logits = th_checkpoint.checkpoint(
+                    _chunk_forward,
+                    frag_embed,
+                    frag_x,
+                    frag_node_feat_idxs,
+                    frag_node_batch_idxs,
+                    frag_joint_mask,
+                    use_reentrant=False,
+                )
+            else:
+                chunk_logits = _chunk_forward(
+                    frag_embed,
+                    frag_x,
+                    frag_node_feat_idxs,
+                    frag_node_batch_idxs,
+                    frag_joint_mask,
+                )
+            logits.append(chunk_logits)
         return th.cat(logits, dim=0)
 
     def get_compile(self, **kwargs):

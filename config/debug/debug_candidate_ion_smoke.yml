@@ -54,8 +54,9 @@ frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 candidate_ion_head: True
 candidate_ion_formula_features: True
-candidate_ion_neutral_loss_features: True
-candidate_ion_chunk_size: 4096
+candidate_ion_neutral_loss_features: False
+candidate_ion_chunk_size: 512
+candidate_ion_checkpoint: True
 
 # ============================================================================
 # Fragment DAG Parameters

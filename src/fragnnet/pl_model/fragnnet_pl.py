@@ -133,6 +133,7 @@ class FraGNNetPL(SpectrumPL):
                 "candidate_ion_neutral_loss_features", True
             ),
             candidate_ion_chunk_size=self.hparams.get("candidate_ion_chunk_size", 32768),
+            candidate_ion_checkpoint=self.hparams.get("candidate_ion_checkpoint", True),
         )
 
         self._check_ce_params()
