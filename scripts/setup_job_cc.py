@@ -552,6 +552,7 @@ def main(args):
                 "run_pl_model_fit.py",
                 "run_wandb_sweep.py",
                 "run_save_inference_eval.py",
+                "node_vs_h_transfer_diagnostic.py",
             ]:
                 frag_dp = path_value.rsplit("/", 1)[0]  # strip /dags suffix to get parent dir
             else:
