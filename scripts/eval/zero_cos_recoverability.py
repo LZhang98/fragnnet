@@ -30,6 +30,8 @@ import sys
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import score_dag  # noqa: E402  (needs sys.path tweak first)
 
@@ -60,7 +62,9 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument("--frag_dp", default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags")
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df/oracle rows to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df/oracle rows to these dataset labels."
+    )
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument("--out_dp", required=True)
@@ -69,7 +73,9 @@ def get_args() -> argparse.Namespace:
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )
     parser.add_argument("--top_classes", type=int, default=15)
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
+    return args
 
 
 def main() -> None:
@@ -79,9 +85,9 @@ def main() -> None:
     os.makedirs(out_dp, exist_ok=True)
 
     orc = pd.read_csv(args.oracle_csv)
-    if args.dset:
+    if args.dsets:
         spec_ids = pd.read_pickle(args.spec_fp)[["spec_id", "dset"]]
-        spec_ids = spec_ids[spec_ids["dset"] == args.dset]
+        spec_ids = spec_ids[spec_ids["dset"].isin(args.dsets)]
         orc = orc.merge(spec_ids, on="spec_id", how="inner")
     orc = orc[orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)]
     cos_col = tier_col(orc, COS_COL)
@@ -97,8 +103,8 @@ def main() -> None:
     # Re-score every spectrum of the affected molecules (spectra of the same mols come for free and
     # are used to validate that we reproduced the source tier).
     spec_df = pd.read_pickle(args.spec_fp)
-    if args.dset:
-        spec_df = spec_df[spec_df["dset"] == args.dset]
+    if args.dsets:
+        spec_df = spec_df[spec_df["dset"].isin(args.dsets)]
     spec_df = spec_df[
         spec_df["mol_id"].isin(zero_mol_ids)
         & spec_df["prec_type"].isin(args.prec_types)

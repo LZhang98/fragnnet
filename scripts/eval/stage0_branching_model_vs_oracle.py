@@ -56,6 +56,8 @@ import h5py
 import numpy as np
 import pandas as pd
 
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
+
 import fragnnet.utils.data_utils as data_utils
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -280,16 +282,19 @@ def main() -> None:
         help="DAG dir the run was trained on (must match the HDF5 node ordering).",
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="val")
     parser.add_argument("--max_h_transfer", type=int, default=None)
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-mol accumulators.")
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
     pn_by_spec = _load_pred_pn(args.pred_hdf5)
-    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dset)
+    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dsets)
     spec_df = spec_df[spec_df["spec_id"].isin(pn_by_spec)]
     if spec_df.empty:
         raise ValueError("No overlap between spec_df split and the HDF5 spec_ids.")

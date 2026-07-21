@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
@@ -50,7 +52,9 @@ def get_args() -> argparse.Namespace:
         help="Per-spectrum oracle or recall CSV.",
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--out_dp", required=True)
     parser.add_argument(
         "--metrics",
@@ -75,7 +79,9 @@ def get_args() -> argparse.Namespace:
         action="store_true",
         help="Group only by mol_id/adduct/instrument. Default also controls for frag_mode.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
+    return args
 
 
 def add_ce_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -269,8 +275,8 @@ def main() -> None:
 
     oracle = pd.read_csv(args.oracle_csv)
     spec = pd.read_pickle(args.spec_fp)[["spec_id", "dset", "ace", "nce", "ce_type"]]
-    if args.dset:
-        spec = spec[spec["dset"] == args.dset]
+    if args.dsets:
+        spec = spec[spec["dset"].isin(args.dsets)]
     df = oracle.merge(spec, on="spec_id", how="left")
     df = df[df["dset"].notna()].copy()
     df = df[df["prec_type"].isin(args.prec_types) & df["inst_type"].isin(args.inst_types)].copy()

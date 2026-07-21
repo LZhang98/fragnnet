@@ -72,6 +72,8 @@ from itertools import combinations
 
 import numpy as np
 import pandas as pd
+
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 import fragnnet.utils.data_utils as data_utils
@@ -358,12 +360,15 @@ def _process_mol_group(
     return out
 
 
-def load_spec_df(spec_fp: str, split_dp: str, split: str, dset: str | None = "nist20_hr") -> pd.DataFrame:
+def load_spec_df(
+    spec_fp: str, split_dp: str, split: str, dsets: list[str] | None = None
+) -> pd.DataFrame:
     """Load spec_df and filter to a split (mirrors ce_extent_headroom.load_spec_df)."""
     log.info("Loading %s", spec_fp)
     spec_df = pd.read_pickle(spec_fp)
-    if dset:
-        spec_df = spec_df[spec_df["dset"] == dset]
+    dsets = resolve_dsets_for_spec_fp(spec_fp, dsets)
+    if dsets:
+        spec_df = spec_df[spec_df["dset"].isin(dsets)]
     spec_df = spec_df[spec_df["prec_type"].isin(PREC_TYPE_TO_MASS_DIFF.keys())]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
     spec_df = spec_df[spec_df["nce"].notna()]
@@ -448,7 +453,9 @@ def main() -> None:
     )
     parser.add_argument("--frag_dp", required=True, help="DAG dir the model is trained on.")
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="val")
     parser.add_argument("--limit_mols", type=int, default=None, help="Subsample this many mols.")
@@ -457,8 +464,9 @@ def main() -> None:
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-mol accumulators.")
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
-    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dset)
+    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dsets)
     if args.limit_mols is not None:
         rng = np.random.default_rng(args.seed)
         mol_ids = spec_df["mol_id"].unique()

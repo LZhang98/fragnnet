@@ -38,6 +38,8 @@ import h5py
 import numpy as np
 import pandas as pd
 
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
+
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
@@ -69,12 +71,13 @@ def load_actual_cos(pred_hdf5: str) -> pd.DataFrame:
     return pd.DataFrame({"spec_id": spec_id, "cos_actual": cos_actual})
 
 
-def load_test_spec_df(spec_fp: str, split_dp: str, split: str, dset: str | None) -> pd.DataFrame:
+def load_test_spec_df(spec_fp: str, split_dp: str, split: str, dsets: list[str] | None) -> pd.DataFrame:
     """Load and filter spec_df to a split, matching dag_oracle_scores.main's filtering."""
     log.info("Loading %s", spec_fp)
     spec_df = pd.read_pickle(spec_fp)
-    if dset:
-        spec_df = spec_df[spec_df["dset"] == dset]
+    dsets = resolve_dsets_for_spec_fp(spec_fp, dsets)
+    if dsets:
+        spec_df = spec_df[spec_df["dset"].isin(dsets)]
     spec_df = spec_df[spec_df["prec_type"].isin(PREC_TYPE_TO_MASS_DIFF.keys())]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
     if split != "all":
@@ -159,7 +162,9 @@ def main() -> None:
     parser.add_argument("--pred_hdf5", required=True, help="predictions_test.hdf5 with cos_hun_inst_tol.")
     parser.add_argument("--frag_dp", required=True, help="DAG dir the run was trained/evaluated on.")
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="test")
     parser.add_argument("--bad_threshold", type=float, default=0.3, help="cos_actual below this = 'worst'.")
@@ -168,11 +173,12 @@ def main() -> None:
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-spectrum joined table.")
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
     actual_df = load_actual_cos(args.pred_hdf5)
     log.info("Loaded %d actual cos values from %s", len(actual_df), args.pred_hdf5)
 
-    spec_df = load_test_spec_df(args.spec_fp, args.split_dp, args.split, args.dset)
+    spec_df = load_test_spec_df(args.spec_fp, args.split_dp, args.split, args.dsets)
     # Only score spectra we have predictions for (and vice versa) -- the join below is the intersection.
     spec_df = spec_df[spec_df["spec_id"].isin(set(actual_df["spec_id"]))]
 

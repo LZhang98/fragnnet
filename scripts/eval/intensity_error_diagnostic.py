@@ -40,6 +40,8 @@ import os
 import h5py
 import numpy as np
 import pandas as pd
+
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 from scipy.stats import entropy as scipy_entropy
 from scipy.stats import spearmanr
@@ -207,7 +209,9 @@ def main() -> None:
     )
     parser.add_argument("--pred_hdf5", required=True)
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="test")
     parser.add_argument(
@@ -220,14 +224,15 @@ def main() -> None:
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional per-spectrum CSV.")
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
     log.info("Loading predicted spectra from %s", args.pred_hdf5)
     pred_by_sid = load_pred_spectra(args.pred_hdf5)
 
     log.info("Loading %s", args.spec_fp)
     spec_df = pd.read_pickle(args.spec_fp)
-    if args.dset:
-        spec_df = spec_df[spec_df["dset"] == args.dset]
+    if args.dsets:
+        spec_df = spec_df[spec_df["dset"].isin(args.dsets)]
     spec_df = spec_df[spec_df["prec_type"].isin(PREC_TYPE_TO_MASS_DIFF.keys())]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
     if args.split != "all":

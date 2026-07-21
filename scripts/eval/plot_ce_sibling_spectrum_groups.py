@@ -20,6 +20,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from matplotlib.backends.backend_pdf import PdfPages
 from rdkit import Chem
 from rdkit.Chem import Draw
@@ -44,7 +46,9 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--out_dp", required=True)
     parser.add_argument("--metric", default="cos_hun_inst_tol_opt")
     parser.add_argument(
@@ -67,7 +71,9 @@ def get_args() -> argparse.Namespace:
         default=150,
         help="Plot only the top-N retained peaks by intensity for speed/readability.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
+    return args
 
 
 def add_ce_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -262,8 +268,8 @@ def main() -> None:
     spec = pd.read_pickle(args.spec_fp)[
         ["spec_id", "mol_id", "prec_type", "inst_type", "frag_mode", "dset", "ace", "nce", "peaks"]
     ]
-    if args.dset:
-        spec = spec[spec["dset"] == args.dset]
+    if args.dsets:
+        spec = spec[spec["dset"].isin(args.dsets)]
     mol = pd.read_pickle(args.mol_fp)
     mol_by_id = mol.set_index("mol_id")
 

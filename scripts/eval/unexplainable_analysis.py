@@ -30,6 +30,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
@@ -56,7 +58,9 @@ def get_args() -> argparse.Namespace:
         help="Per-spectrum CSV from dag_oracle_scores.py.",
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter oracle rows to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter oracle rows to these dataset labels."
+    )
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument("--out_dp", required=True, help="Output directory for CSVs + figures.")
@@ -72,7 +76,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--thresh", type=float, default=0.5, help="Unexplainable if cos < thresh.")
     parser.add_argument("--min_class_count", type=int, default=500)
     parser.add_argument("--top_classes", type=int, default=15)
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
+    return args
 
 
 def load_scoped(args: argparse.Namespace) -> pd.DataFrame:
@@ -89,9 +95,9 @@ def load_scoped(args: argparse.Namespace) -> pd.DataFrame:
         ValueError: If the scope filter removes every row.
     """
     df = pd.read_csv(args.oracle_csv)
-    if args.dset:
+    if args.dsets:
         spec_ids = pd.read_pickle(args.spec_fp)[["spec_id", "dset"]]
-        spec_ids = spec_ids[spec_ids["dset"] == args.dset]
+        spec_ids = spec_ids[spec_ids["dset"].isin(args.dsets)]
         df = df.merge(spec_ids, on="spec_id", how="inner")
     df = df[df["prec_type"].isin(args.prec_types) & df["inst_type"].isin(args.inst_types)].copy()
     if df.empty:

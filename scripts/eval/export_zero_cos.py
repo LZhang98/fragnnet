@@ -33,6 +33,8 @@ import os
 
 import pandas as pd
 
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
@@ -59,7 +61,9 @@ def get_args() -> argparse.Namespace:
         "--oracle_csv", default="data/eval/oracle_cos_nist20_default/oracle_cos_default.csv"
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df/oracle rows to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df/oracle rows to these dataset labels."
+    )
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument(
@@ -72,7 +76,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
+    return args
 
 
 def cross_ce_stats(scoped: pd.DataFrame) -> pd.DataFrame:
@@ -133,9 +139,9 @@ def main() -> None:
     os.makedirs(args.out_dp, exist_ok=True)
 
     orc = pd.read_csv(args.oracle_csv)
-    if args.dset:
+    if args.dsets:
         spec_ids = pd.read_pickle(args.spec_fp)[["spec_id", "dset"]]
-        spec_ids = spec_ids[spec_ids["dset"] == args.dset]
+        spec_ids = spec_ids[spec_ids["dset"].isin(args.dsets)]
         orc = orc.merge(spec_ids, on="spec_id", how="inner")
     scoped = orc[
         orc["prec_type"].isin(args.prec_types) & orc["inst_type"].isin(args.inst_types)
@@ -161,8 +167,8 @@ def main() -> None:
     # unfiltered measured m/z -- exactly what a formula-decomposition tool needs to see).
     spec_cols = ["spec_id", "dset", "prec_mz", "peaks"]
     spec = pd.read_pickle(args.spec_fp)[spec_cols]
-    if args.dset:
-        spec = spec[spec["dset"] == args.dset]
+    if args.dsets:
+        spec = spec[spec["dset"].isin(args.dsets)]
     spec = spec.drop(columns=["dset"])
     zero = zero.merge(spec, on="spec_id", how="left")
     peaks_by_id = dict(zip(zero["spec_id"], zero["peaks"]))

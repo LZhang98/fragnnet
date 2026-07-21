@@ -56,6 +56,8 @@ import os
 
 import numpy as np
 import pandas as pd
+
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 import fragnnet.utils.data_utils as data_utils
@@ -604,7 +606,9 @@ def main() -> None:
         "--frag_dp_labels", nargs="+", default=None, help="Labels for each --frag_dp, same order."
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="test")
     parser.add_argument("--remove_prec_peak", action="store_true")
@@ -641,6 +645,7 @@ def main() -> None:
         "tier '2_uwpr' is identical to '1_above_prec'.",
     )
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
     labels = (
         args.frag_dp_labels
@@ -654,8 +659,8 @@ def main() -> None:
 
     log.info("Loading %s", args.spec_fp)
     spec_df = pd.read_pickle(args.spec_fp)
-    if args.dset:
-        spec_df = spec_df[spec_df["dset"] == args.dset]
+    if args.dsets:
+        spec_df = spec_df[spec_df["dset"].isin(args.dsets)]
     spec_df = spec_df[spec_df["prec_type"].isin(PREC_TYPE_TO_MASS_DIFF.keys())]
     spec_df = spec_df[spec_df["peaks"].apply(len) > 0]
 

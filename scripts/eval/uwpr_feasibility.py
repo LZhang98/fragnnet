@@ -29,6 +29,8 @@ import functools
 import logging
 
 import pandas as pd
+
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 # Reuse the exact ion-mass / H-transfer / tolerance conventions from the oracle scorer.
@@ -111,12 +113,15 @@ def main() -> None:
         "--frag_dp", default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse_mbfs/dags"
     )
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
-    parser.add_argument("--dset", default="nist20_hr", help="Filter spec_df to this dataset label.")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--out_csv", default="data/uwpr/nist20_uwpr_hits_feasibility.csv")
     parser.add_argument("--max_h_transfer", type=int, default=None)
     parser.add_argument("--no_cmf", action="store_true", help="Use std ion-mass convention only.")
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
     log.info("Loading hits from %s", args.hits_csv)
     hits = pd.read_csv(args.hits_csv)
@@ -129,8 +134,8 @@ def main() -> None:
 
     # The hits CSV has ion_mode but not the precursor adduct; join it from spec_df.
     spec_df = pd.read_pickle(args.spec_fp)[["spec_id", "dset", "prec_type"]]
-    if args.dset:
-        spec_df = spec_df[spec_df["dset"] == args.dset]
+    if args.dsets:
+        spec_df = spec_df[spec_df["dset"].isin(args.dsets)]
     spec_df = spec_df.drop(columns=["dset"])
     hits = hits.merge(spec_df, on="spec_id", how="left")
     n_no_prec = hits["prec_type"].isna().sum()
