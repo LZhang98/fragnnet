@@ -40,9 +40,8 @@ import os
 import h5py
 import numpy as np
 import pandas as pd
-
-from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from scipy.stats import entropy as scipy_entropy
 from scipy.stats import spearmanr
 
@@ -155,10 +154,7 @@ def load_pred_spectra(pred_hdf5: str) -> dict[int, tuple[np.ndarray, np.ndarray]
         end = f["end_points"][:]
         pred_mzs = f["pred_mzs"][:]
         pred_ints = f["pred_ints"][:]
-    return {
-        int(sid): (pred_mzs[s:e], pred_ints[s:e])
-        for sid, s, e in zip(spec_id, start, end)
-    }
+    return {int(sid): (pred_mzs[s:e], pred_ints[s:e]) for sid, s, e in zip(spec_id, start, end)}
 
 
 def _fmt(df: pd.DataFrame, label: str) -> str:
@@ -198,8 +194,10 @@ def summarize(df: pd.DataFrame) -> None:
     print(f"\n{'-' * 108}")
     rank = df["spearman"].dropna()
     print(f"rank error:       {100 * (rank < 0.5).mean():.1f}% of spectra have spearman < 0.5")
-    print(f"dynamic range:    {100 * (df['entropy_diff'] > 0).mean():.1f}% predicted TOO FLAT "
-          f"(pred entropy > true); mean dH = {df['entropy_diff'].mean():+.3f} nats")
+    print(
+        f"dynamic range:    {100 * (df['entropy_diff'] > 0).mean():.1f}% predicted TOO FLAT "
+        f"(pred entropy > true); mean dH = {df['entropy_diff'].mean():+.3f} nats"
+    )
     print(f"dominant peak:    {100 * (~df['base_peak_hit']).mean():.1f}% MISS the base peak")
 
 
@@ -215,7 +213,9 @@ def main() -> None:
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="test")
     parser.add_argument(
-        "--min_int_frac", type=float, default=0.0,
+        "--min_int_frac",
+        type=float,
+        default=0.0,
         help="Drop peaks below this fraction of the base peak in BOTH pred and true before "
         "scoring (e.g. 0.01 = 1%% threshold). Default 0.0 = no threshold.",
     )
