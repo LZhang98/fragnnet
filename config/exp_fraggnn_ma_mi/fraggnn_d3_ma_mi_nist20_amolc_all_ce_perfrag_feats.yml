@@ -171,9 +171,6 @@ oos_tolerance_multiple: 1  # tolerance multiplier for OOS peak matching
 oos_loss: True             # train with OOS auxiliary loss
 gaussian_renormalize: True # renormalize output with Gaussian smoothing before loss
 
-# Formula-bag correction control arm (head disabled; identical to baseline otherwise).
-formula_bag_correction: False
-
 # ============================================================================
 # Spectrum Binning & Evaluation
 # ============================================================================
