@@ -443,6 +443,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
         self.mlp_output_format = mlp_output_format
 
+        # Pool output width (multi-stat pools triple the feature width). Hoisted here so both the
+        # concat set-context injection and the OOS head reuse a single definition.
+        self.frag_pool_out_size = self.frag_embedder.hidden_size * (
+            3 if self.frag_pool_type in ["mean_max_sum", "mean_std_softmax"] else 1
+        )
+
         # determine mlp input dims
         if self.frag_embed_combine == "cat":
             mlp_input_dim = 2 * self.frag_embedder.hidden_size
@@ -456,6 +462,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             + self.frag_mode_mlp_input_dim
             + self.context_mlp_input_dim
         )
+        if self.frag_pool_combine == "concat":
+            if self.mlp_output_format != "formula":
+                raise ValueError(
+                    "frag_pool_combine='concat' is only supported with "
+                    f"mlp_output_format='formula', got {self.mlp_output_format!r}."
+                )
+            # Append the pooled set-context to each node's readout input (DeepSets-style global
+            # feature); the readout MLP then learns an arbitrary node x set interaction instead of
+            # the fixed elementwise shift that 'subtract'/'add' apply.
+            mlp_input_dim += self.frag_pool_out_size
 
         self.candidate_ion_head = candidate_ion_head
         self.candidate_ion_formula_features = candidate_ion_formula_features
@@ -640,10 +656,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.predict_oos = predict_oos
         if self.predict_oos:
             # Account for pooling output sizes
-            if self.frag_pool_type in ["mean_max_sum", "mean_std_softmax"]:
-                frag_pool_out_size = self.frag_embedder.hidden_size * 3
-            else:
-                frag_pool_out_size = self.frag_embedder.hidden_size
+            frag_pool_out_size = self.frag_pool_out_size
 
             oos_mlp_kwargs = {
                 "input_size": mol_pool_out_size + frag_pool_out_size,
@@ -1719,6 +1732,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
             frag_embed_gnn = frag_embed_gnn + frag_embed_gnn_pool[frag_batch]
             frag_embed_node = frag_embed_node + frag_embed_node_pool[frag_batch]
+        elif self.frag_pool_combine == "concat":
+            # Global set-context is appended to frag_embed_parts below rather than combined into
+            # the per-node embeddings in place.
+            pass
         else:
             assert self.frag_pool_combine == "none", self.frag_pool_combine
 
@@ -1728,6 +1745,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         else:
             assert self.frag_embed_combine == "avg", self.frag_embed_combine
             frag_embed_parts = [0.5 * frag_embed_gnn + 0.5 * frag_embed_node]
+        if self.frag_pool_combine == "concat":
+            frag_embed_parts.append(frag_embed_gnn_pool[frag_batch])
 
         # Cache unique batch counts to avoid redundant computation (Memory Opt #1)
         _inject_context_mlp = self.context_embedding and "mlp" in self.context_insert_locations
