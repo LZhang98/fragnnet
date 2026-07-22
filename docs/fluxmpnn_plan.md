@@ -253,3 +253,61 @@ All in log-space, differentiable, trained with the existing spectrum loss.
 Overall `cos_hun_inst_tol`, but the axis this targets is **high-NCE** (enable
 `log_adduct_inst_ce_metrics`). Interpretable diagnostics for free: `P(child|parent, CE)`, sibling
 entropy, top-transition accuracy vs the `branching_headroom` oracle, branching-ratio shift with CE.
+
+---
+
+# POST-MORTEM ADDENDUM 2026-07-22 — β pooling tested, "no tying" hypothesis REFUTED
+
+Hypothesis under test (proposed in discussion, never measured): Stage 3's β failed to learn because a
+GNN-produced per-edge β can give every edge its own value, so evidence never pools across molecules
+the way CFM's coarse feature-tied break parameters do. If true, the fix would be CFM-style tying —
+β as a function of a coarse bond descriptor rather than a learned edge embedding.
+
+**Tested offline with no retraining and no checkpoint**, via `scripts/eval/flux_beta_bucket_variance.py`.
+β is not in the inference dump, but is exactly recoverable for single-parent children from the
+already-exported node latents:
+
+```
+log_f_in       = log_f_sink - log_alpha_halt
+log β(p→c)     = log_f_in(c) - log_f_in(p) - log(1 - alpha_halt(p))
+```
+
+400 val mols → 14,319 recoverable edges. Variance of excess-over-uniform `log β`
+(`log β + log out_degree`, removing the sibling-softmax fan-out baseline) decomposed three ways:
+within-edge (CE/context), within-bucket (edge-to-edge, same bond environment), between-bucket
+(bond chemistry).
+
+| radius | ICC (all) | n (all) | buckets | ICC (fixed@r2) | n | buckets |
+|---|---|---|---|---|---|---|
+| coarse 12-way | 0.1863 | 14,291 | 24 | — | — | — |
+| 0 | 0.1990 | 14,022 | 42 | 0.5628 | 837 | 9 |
+| 1 | 0.4865 | 5,289 | 113 | 0.7177 | 837 | 19 |
+| 2 | 0.7219 | 837 | 25 | 0.7219 | 837 | 25 |
+| 3 | 0.7251 | 223 | 9 | 0.7251 | 223 | 9 |
+| 4 | 0.5735 | 75 | 3 | 0.5735 | 75 | 3 |
+
+**Findings:**
+
+- The hypothesis is **refuted**. Bond environment explains ~72% of edge-to-edge β variance where it
+  can be measured. β is not arbitrary per edge; pooling works.
+- The coarse 12-way ICC of 0.186 is **bucket crudeness, not per-edge arbitrariness** — the fixed-edge-set
+  control shows the same 837 edges score 0.563 under the coarsest bucketing and 0.718 at radius 1.
+- **Radius 1–2 saturates.** r3 adds +0.003 on a quarter of the edges (noise); r4's drop is a small-n
+  artifact (75 edges, 3 buckets). The model encodes *local* bond chemistry in β, not long-range context.
+- Parent fan-out is not a confound (ICC 0.203 raw vs 0.186 excess). Single-parent edges are **not**
+  depth-1-biased (68.9% depth-3, 13.7% depth-1).
+- Caveat: the fixed-set column is not truly fixed-n at r3/r4 — the ≥20-member filter re-applies within
+  the subset. Only the r0/r1/r2 rows are a clean same-edges comparison. All results are single-parent
+  edges only.
+
+**Revised picture.** Only 5.8% of edges sit in a radius-2 bucket with ≥20 support. β is well-determined
+where the environment recurs and *unmeasurable* where it does not. The binding constraint is **support
+in the rare-environment tail**, not expressiveness, radius, or absence of tying. Coarse tying therefore
+survives only as a way to borrow strength into the tail — a much smaller predicted effect than "fix
+global arbitrariness", and not currently ranked above the marginal-level work in
+`docs/sibling_ranking_target_plan.md`.
+
+**Open reference test.** The same decomposition on observed `q_obs` gives the ceiling: how much of REAL
+branching variance bond environment explains at all. If real branching also saturates near 0.72 at
+radius 1, β was about as good as bond chemistry allows and the tying line closes entirely. Shares all
+its machinery with the sibling-ranking target builder.
