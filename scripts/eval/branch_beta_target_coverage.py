@@ -15,8 +15,8 @@ can be built without MAGMa-style intensity splitting or multi-parent credit
 assignment.
 
 Usage:
-    python scripts/eval/branch_beta_target_coverage.py \\
-        --frag_dp data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags \\
+    python scripts/eval/branch_beta_target_coverage.py \
+        --frag_dp data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags \
         --split train --limit_mols 1000
 """
 
@@ -31,6 +31,7 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 import fragnnet.utils.data_utils as data_utils
 
@@ -99,6 +100,7 @@ def _process_mol_group(
     is_compressed: bool,
     max_h_transfer: int | None,
     dominance_margin: float,
+    allow_multi_parent: bool,
 ) -> dict | None:
     """Return clean beta-target coverage counts for one molecule."""
     import fragnnet.utils.frag_utils as frag_utils
@@ -128,7 +130,7 @@ def _process_mol_group(
     for p in parents_all:
         children = np.unique(edge_index[1][edge_index[0] == p])
         children_all[int(p)] = children
-        sp_children = children[indeg[children] == 1]
+        sp_children = children if allow_multi_parent else children[indeg[children] == 1]
         if sp_children.size >= 2:
             children_single_parent[int(p)] = sp_children
 
@@ -296,7 +298,9 @@ def summarize(df: pd.DataFrame, dominance_margin: float) -> None:
     print(f"  mean explained-intensity fraction:      {mean_expl:.4f}")
     print()
     print("NCE bins:")
-    print(f"  {'nce':>8s} {'eligible':>12s} {'alias-free':>12s} {'dominant':>12s} {'dom/elig':>10s}")
+    print(
+        f"  {'nce':>8s} {'eligible':>12s} {'alias-free':>12s} {'dominant':>12s} {'dom/elig':>10s}"
+    )
     for lab in NCE_LABELS:
         elig = int(total[f"nce_{lab}__eligible"])
         af = int(total[f"nce_{lab}__alias_free"])
@@ -316,7 +320,9 @@ def summarize(df: pd.DataFrame, dominance_margin: float) -> None:
     print("READ:")
     print("  dominant-sibling usable is the effective sample count for the stop-test target.")
     print("  if alias-free coverage is tiny, the clean target is too sparse before any loss work.")
-    print("  if controlled dominant flips are tiny, CE-specific beta supervision has little signal.")
+    print(
+        "  if controlled dominant flips are tiny, CE-specific beta supervision has little signal."
+    )
 
 
 def main() -> None:
@@ -325,9 +331,14 @@ def main() -> None:
     )
     parser.add_argument("--frag_dp", required=True, help="DAG dir used for the target model.")
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
+    parser.add_argument(
+        "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
+    )
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="train")
-    parser.add_argument("--limit_mols", type=int, default=None, help="Subsample mols for a quick check.")
+    parser.add_argument(
+        "--limit_mols", type=int, default=None, help="Subsample mols for a quick check."
+    )
     parser.add_argument("--max_h_transfer", type=int, default=None)
     parser.add_argument(
         "--dominance_margin",
@@ -335,12 +346,21 @@ def main() -> None:
         default=0.0,
         help="Optional minimum (top-second)/sum margin for dominant-child labels.",
     )
+    parser.add_argument(
+        "--allow_multi_parent",
+        action="store_true",
+        help=(
+            "Drop the single-parent child filter. Targets a marginal-ranking loss on P(n) "
+            "rather than edge-flux beta; alias-freeness is still required."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of per-mol accumulators.")
     args = parser.parse_args()
+    args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
-    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split)
+    spec_df = load_spec_df(args.spec_fp, args.split_dp, args.split, args.dsets)
     if args.limit_mols is not None:
         rng = np.random.default_rng(args.seed)
         mol_ids = spec_df["mol_id"].unique()
@@ -358,6 +378,7 @@ def main() -> None:
         is_compressed=is_compressed,
         max_h_transfer=args.max_h_transfer,
         dominance_margin=args.dominance_margin,
+        allow_multi_parent=args.allow_multi_parent,
     )
     log.info("Processing %d mols (%d spectra)", len(mol_inputs), len(spec_df))
     per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)

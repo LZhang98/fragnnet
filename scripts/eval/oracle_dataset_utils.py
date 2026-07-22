@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 
-
 NIST20_DSETS = ["nist20_hr"]
 NIST23_DSETS = ["nist23_hr1", "nist23_hr2"]
 
