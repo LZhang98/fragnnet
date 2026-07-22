@@ -186,3 +186,63 @@ def test_group_id_differs_when_precursor_changes(monkeypatch):
     # mol_id and inst_type match, prec_type differs
     assert spec_df[["mol_id", "inst_type"]].nunique().sum() == 2
     assert spec_df[["prec_type"]].nunique().iloc[0] == 2
+
+
+def test_annotation_merge_uses_dataset_with_dset_spec_id(monkeypatch):
+    """Duplicate source ids across datasets must not create cross-dataset ann rows."""
+    module = load_prepare_module()
+    _setup_stubs(monkeypatch, module)
+    monkeypatch.setattr(
+        module.data_utils,
+        "parse_annotations",
+        lambda row: ([100.0], ["C2H6"], [], [], [100.0]),
+    )
+
+    rows = [
+        {
+            "spec_id": 0,
+            "smiles": "CC",
+            "dset": "ms_gym",
+            "dset_spec_id": "shared-id",
+            "col_energy": "10 eV",
+            "col_energy_extra_1": None,
+            "col_energy_extra_2": None,
+            "peaks": "100 1.0",
+            "prec_type": "[M+H]+",
+            "spec_type": "MS2",
+            "ion_mode": "P",
+            "col_gas": "N2",
+            "ri": "",
+            "formula": "",
+            "inchikey": None,
+            "exact_mass": None,
+            "prec_mz": None,
+            "notes": "",
+        },
+        {
+            "spec_id": 1,
+            "smiles": "CCC",
+            "dset": "ms_gym_extra",
+            "dset_spec_id": "shared-id",
+            "col_energy": "20 eV",
+            "col_energy_extra_1": None,
+            "col_energy_extra_2": None,
+            "peaks": "100 1.0",
+            "prec_type": "[M+H]+",
+            "spec_type": "MS2",
+            "ion_mode": "P",
+            "col_gas": "N2",
+            "ri": "",
+            "formula": "",
+            "inchikey": None,
+            "exact_mass": None,
+            "prec_mz": None,
+            "notes": "",
+        },
+    ]
+
+    spec_df, _, ann_df, _ = module.preprocess_spec(pd.DataFrame(rows))
+
+    assert len(spec_df) == 2
+    assert len(ann_df) == 2
+    assert set(ann_df["spec_id"]) == set(spec_df["spec_id"])

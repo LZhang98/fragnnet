@@ -443,10 +443,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ces",
         type=str,
-        choices=["nce", "ace", "nce_or_ace", None],
+        choices=["nce", "ace", "nce_or_ace", "none"],
         default="nce_or_ace",
         required=False,
-        help="Collision energy scale used (nce or ace)",
+        help="Collision energy scale used (nce, ace, nce_or_ace, or none to disable CE filtering)",
     )
     parser.add_argument(
         "--ce_types",
@@ -590,5 +590,7 @@ if __name__ == "__main__":
         help="Output directory where splits and metadata are written",
     )
     args = parser.parse_args()
+    if args.ces == "none":
+        args.ces = None
 
     make_splits(args)

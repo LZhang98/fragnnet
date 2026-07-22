@@ -171,6 +171,39 @@ Compound2,"60 300
         Path(csv_fp).unlink()
 
 
+def test_process_ms_gym_infers_negative_ion_mode():
+    """MassSpecGym ion polarity should follow the adduct charge."""
+    module = load_prepare_module()
+
+    tsv_content = (
+        "simulation_challenge\tmzs\tintensities\tprecursor_mz\tadduct\tparent_mass\t"
+        "instrument_type\tcollision_energy\tidentifier\tfold\tsmiles\n"
+        "True\t100,150\t10,20\t99.0\t[M-H]-\t100.0\tQTOF\t20\tMSG0001\t0\tCCO\n"
+        "False\t101\t11\t103.0\t[M+H]+\t102.0\tOrbitrap\t30 normalized=True\t"
+        "MSG0002\t1\tCCN\n"
+    )
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False) as f:
+        f.write(tsv_content)
+        tsv_fp = f.name
+
+    try:
+        sim_df, sim_split_df = module.process_ms_gym(tsv_fp, "simulation_challenge")
+        extra_df, _ = module.process_ms_gym(tsv_fp, "extra")
+
+        assert len(sim_df) == 1
+        assert sim_df.iloc[0]["ion_mode"] == "N"
+        assert sim_df.iloc[0]["peaks"] == "100 10\n150 20"
+        assert sim_df.iloc[0]["prec_type"] == "[M-H]-"
+        assert sim_split_df.to_dict("records") == [{"dset_spec_id": "MSG0001", "fold": 0}]
+
+        assert len(extra_df) == 1
+        assert extra_df.iloc[0]["ion_mode"] == "P"
+        assert extra_df.iloc[0]["normalized"] == True
+        assert extra_df.iloc[0]["col_energy"] == "NCE=30%"
+    finally:
+        Path(tsv_fp).unlink()
+
+
 def test_msp_key_dict_has_required_keys():
     """Verify MSP key dictionary contains expected keys."""
     module = load_prepare_module()

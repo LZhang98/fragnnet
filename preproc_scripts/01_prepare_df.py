@@ -416,6 +416,21 @@ def read_pcdl(zipped_spectra_dp: str) -> pd.DataFrame:
     return spec_df
 
 
+def _ion_mode_from_adduct(adduct: str) -> str | float:
+    if pd.isna(adduct):
+        return np.nan
+    adduct = str(adduct).strip()
+    if adduct.endswith("+"):
+        return "P"
+    if adduct.endswith("-"):
+        return "N"
+    if "+" in adduct:
+        return "P"
+    if "-" in adduct:
+        return "N"
+    return np.nan
+
+
 def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     spec_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
 
@@ -465,7 +480,7 @@ def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.Da
     # spec_df = spec_df.astype({"prec_mz":float,"exact_mass":float})
 
     # add ion_mode
-    spec_df["ion_mode"] = "P"
+    spec_df["ion_mode"] = spec_df["prec_type"].apply(_ion_mode_from_adduct)
     # add spec_type
     spec_df["spec_type"] = "MS2"
     # add ion_type

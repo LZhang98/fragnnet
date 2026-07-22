@@ -299,7 +299,9 @@ def preprocess_spec(
 
     # extract annotation info
     ann_df = ann_df.merge(
-        spec_df[["dset_spec_id", "spec_id", "prec_type"]], on="dset_spec_id", how="inner"
+        spec_df[["dset", "dset_spec_id", "spec_id", "prec_type"]],
+        on=["dset", "dset_spec_id"],
+        how="inner",
     )
     ann_df = ann_df.merge(mol_df[["mol_id", "formula"]], on="mol_id", how="inner")
     ann_results = par_apply_df_rows_t(ann_df, data_utils.parse_annotations)
