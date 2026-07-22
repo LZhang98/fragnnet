@@ -20,10 +20,21 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch as th
+from dag_oracle_scores import (
+    _allowed_formula_idxs,
+    _dag_ion_mzs,
+    _detect_is_compressed,
+    _tolerance_for_inst_type,
+)
 from matplotlib.backends.backend_pdf import PdfPages
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
+
+from fragnnet.utils import frag_utils
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.spec_utils import calculate_match_mzs
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -46,6 +57,11 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument(
+        "--frag_dp",
+        default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags",
+        help="DAG directory used to color matched/unmatched peaks.",
+    )
+    parser.add_argument(
         "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
     )
     parser.add_argument("--out_dp", required=True)
@@ -64,6 +80,23 @@ def get_args() -> argparse.Namespace:
     )
     parser.add_argument("--mz_max", type=float, default=None)
     parser.add_argument("--min_int_frac", type=float, default=0.005)
+    parser.add_argument(
+        "--peak_color_mode",
+        choices=["match", "metric"],
+        default="match",
+        help="match: color individual peaks by DAG match status; metric: color whole spectrum.",
+    )
+    parser.add_argument(
+        "--max_h_transfer",
+        type=int,
+        default=None,
+        help="Default: use the DAG's full H-transfer budget for match coloring.",
+    )
+    parser.add_argument(
+        "--no_cmf",
+        action="store_true",
+        help="For match coloring, use direct-charge-retention ion masses only.",
+    )
     parser.add_argument(
         "--max_peaks_per_spectrum",
         type=int,
@@ -115,6 +148,61 @@ def peaks_to_arrays(peaks: object) -> tuple[np.ndarray, np.ndarray]:
     return arr[:, 0], arr[:, 1]
 
 
+def highest_peak_mz(peaks: object) -> float:
+    """Return the m/z of the highest-intensity peak, or NaN if there are no peaks."""
+    mzs, ints = peaks_to_arrays(peaks)
+    if mzs.size == 0 or ints.size == 0:
+        return float("nan")
+    return float(mzs[int(np.nanargmax(ints))])
+
+
+def compute_peak_match_masks(
+    plot_df: pd.DataFrame,
+    frag_dp: str,
+    max_h_transfer: int | None,
+    include_cmf: bool,
+) -> dict[int, np.ndarray]:
+    """Return spec_id -> true peak mask for DAG matches under instrument tolerance."""
+    if plot_df.empty:
+        return {}
+    sample_mol_id = int(plot_df["mol_id"].iloc[0])
+    is_compressed = _detect_is_compressed(frag_dp, sample_mol_id)
+    masks: dict[int, np.ndarray] = {}
+
+    for mol_id, mol_group in plot_df.groupby("mol_id", observed=True):
+        try:
+            dag_d = frag_utils.load_frag_d(int(mol_id), frag_dp, is_compressed=is_compressed)
+        except FileNotFoundError:
+            dag_d = None
+        if dag_d is None:
+            continue
+
+        theo_mzs_full = dag_d["formula_peak_mzs"]
+        theo_probs_full = dag_d["formula_peak_probs"]
+        allowed_idx = _allowed_formula_idxs(dag_d["idx_by_h_delta"], max_h_transfer)
+        idx_t = th.tensor(allowed_idx, dtype=th.long)
+        theo_mzs = theo_mzs_full.index_select(0, idx_t)
+        prec_mask = (theo_probs_full.index_select(0, idx_t) > 0.0).float()
+
+        for row in mol_group.itertuples(index=False):
+            mzs, _ints = peaks_to_arrays(row.peaks)
+            if mzs.size == 0:
+                masks[int(row.spec_id)] = np.array([], dtype=bool)
+                continue
+            inst_tol, inst_tol_min_mz = _tolerance_for_inst_type(row.inst_type)
+            dag_ion_mzs = _dag_ion_mzs(theo_mzs, prec_mask, row.prec_type, include_cmf=include_cmf)
+            true_mzs = th.tensor(mzs, dtype=th.float32)
+            match_mask = calculate_match_mzs(
+                true_mzs,
+                dag_ion_mzs,
+                tolerance=inst_tol,
+                relative=True,
+                tolerance_min_mz=inst_tol_min_mz,
+            ).any(dim=1)
+            masks[int(row.spec_id)] = match_mask.cpu().numpy().astype(bool)
+    return masks
+
+
 def choose_group_rows(group: pd.DataFrame, metric: str, max_rows: int) -> pd.DataFrame:
     """Select rows to plot for a large group while preserving flagged context."""
     if len(group) <= max_rows:
@@ -142,13 +230,27 @@ def choose_group_rows(group: pd.DataFrame, metric: str, max_rows: int) -> pd.Dat
 
 def label_for_row(row: pd.Series, metric: str) -> tuple[str, str]:
     """Return subplot title and color for a spectrum row."""
+    calc_pmz = row.get("calc_prec_mz", np.nan)
+    top_mz = row.get("top_peak_mz", np.nan)
     bits = [
         f"spec {int(row.spec_id)}",
         f"dset={row.dset}",
         str(row.ce_key),
+        f"calc_pmz={calc_pmz:.4f}" if pd.notna(calc_pmz) else "calc_pmz=NA",
+        f"top_mz={top_mz:.4f}" if pd.notna(top_mz) else "top_mz=NA",
         f"{metric}={row[metric]:.3f}",
     ]
     return " | ".join(bits), metric_color(row[metric])
+
+
+def add_peak_label_columns(df: pd.DataFrame, mol_by_id: pd.DataFrame) -> pd.DataFrame:
+    """Add computed precursor m/z and highest observed peak m/z for plot labels."""
+    out = df.copy()
+    exact_mw = out["mol_id"].map(mol_by_id["exact_mw"]) if "exact_mw" in mol_by_id else np.nan
+    mass_diff = out["prec_type"].map(PREC_TYPE_TO_MASS_DIFF)
+    out["calc_prec_mz"] = exact_mw + mass_diff
+    out["top_peak_mz"] = out["peaks"].map(highest_peak_mz)
+    return out
 
 
 def metric_color(value: float) -> str:
@@ -276,6 +378,11 @@ def plot_group_page(
             if max_int > 0:
                 ints = ints / max_int
             keep = ints >= min_int_frac
+            match_mask = row.get("match_mask", None)
+            if isinstance(match_mask, np.ndarray) and len(match_mask) == len(ints):
+                match_mask = match_mask[keep]
+            else:
+                match_mask = None
             mzs = mzs[keep]
             ints = ints[keep]
             if max_peaks_per_spectrum > 0 and len(ints) > max_peaks_per_spectrum:
@@ -283,9 +390,15 @@ def plot_group_page(
                 top_idx = top_idx[np.argsort(mzs[top_idx])]
                 mzs = mzs[top_idx]
                 ints = ints[top_idx]
-            ax.vlines(mzs, 0.0, ints, color=color, linewidth=0.65)
+                if match_mask is not None:
+                    match_mask = match_mask[top_idx]
             ax.set_ylim(0, 1.05)
             ax.set_xlim(0, x_max)
+            if match_mask is None:
+                ax.vlines(mzs, 0.0, ints, color=color, linewidth=0.65)
+            else:
+                ax.vlines(mzs[match_mask], 0.0, ints[match_mask], color="#4C72B0", linewidth=0.7)
+                ax.vlines(mzs[~match_mask], 0.0, ints[~match_mask], color="#C44E52", linewidth=0.7)
         ax.set_title(title, fontsize=7.5, loc="left", color=color)
         ax.grid(axis="y", alpha=0.25, linewidth=0.4)
         ax.tick_params(labelsize=7)
@@ -310,7 +423,18 @@ def main() -> None:
     oracle_cols = ["spec_id", args.metric]
     oracle = pd.read_csv(args.oracle_csv, usecols=lambda c: c in set(oracle_cols))
     spec = pd.read_pickle(args.spec_fp)[
-        ["spec_id", "mol_id", "prec_type", "inst_type", "frag_mode", "dset", "ace", "nce", "peaks"]
+        [
+            "spec_id",
+            "mol_id",
+            "prec_type",
+            "inst_type",
+            "frag_mode",
+            "dset",
+            "ace",
+            "nce",
+            "prec_mz",
+            "peaks",
+        ]
     ]
     if args.dsets:
         spec = spec[spec["dset"].isin(args.dsets)]
@@ -334,6 +458,7 @@ def main() -> None:
     plot_df = spec.merge(groups, on=GROUP_COLS, how="inner").merge(oracle, on="spec_id", how="left")
     plot_df = plot_df.merge(flag_by_spec, on="spec_id", how="left")
     plot_df = add_ce_columns(plot_df)
+    plot_df = add_peak_label_columns(plot_df, mol_by_id)
     plot_df["ce_sort"] = plot_df["ce_value"].fillna(np.inf)
     plot_df["is_flagged"] = plot_df["spec_id"].isin(set(flags["spec_id"]))
     for col in [
@@ -356,22 +481,43 @@ def main() -> None:
     if args.max_groups is not None:
         group_order = group_order.head(args.max_groups)
 
+    page_groups = []
+    selected_frames = []
+    for row in group_order.itertuples(index=False):
+        key = {
+            "mol_id": row.mol_id,
+            "prec_type": row.prec_type,
+            "inst_type": row.inst_type,
+            "frag_mode": row.frag_mode,
+        }
+        mask = np.ones(len(plot_df), dtype=bool)
+        for col, val in key.items():
+            mask &= plot_df[col].to_numpy() == val
+        group = plot_df[mask].sort_values("ce_sort").copy()
+        group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
+        page_groups.append((key, group))
+        selected_frames.append(group)
+
+    if args.peak_color_mode == "match" and selected_frames:
+        selected_df = pd.concat(selected_frames, ignore_index=True)
+        log.info("Computing DAG match masks for %d plotted spectra", len(selected_df))
+        match_masks = compute_peak_match_masks(
+            selected_df,
+            args.frag_dp,
+            args.max_h_transfer,
+            include_cmf=not args.no_cmf,
+        )
+        page_groups = [
+            (key, group.assign(match_mask=group["spec_id"].astype(int).map(match_masks)))
+            for key, group in page_groups
+        ]
+
     pdf_fp = out_dp / "oracle_ce_sibling_spectrum_groups.pdf"
     index_rows = []
     with PdfPages(pdf_fp) as pdf:
-        for page, row in enumerate(group_order.itertuples(index=False), start=1):
-            key = {
-                "mol_id": row.mol_id,
-                "prec_type": row.prec_type,
-                "inst_type": row.inst_type,
-                "frag_mode": row.frag_mode,
-            }
-            mask = np.ones(len(plot_df), dtype=bool)
-            for col, val in key.items():
-                mask &= plot_df[col].to_numpy() == val
-            group = plot_df[mask].sort_values("ce_sort").copy()
-            group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
-            mol_row = mol_by_id.loc[row.mol_id] if row.mol_id in mol_by_id.index else None
+        for page, (key, group) in enumerate(page_groups, start=1):
+            mol_id = int(key["mol_id"])
+            mol_row = mol_by_id.loc[mol_id] if mol_id in mol_by_id.index else None
             if isinstance(mol_row, pd.DataFrame):
                 mol_row = mol_row.iloc[0]
             plot_group_page(

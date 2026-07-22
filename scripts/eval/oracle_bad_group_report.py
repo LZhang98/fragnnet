@@ -25,7 +25,9 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from plot_ce_sibling_spectrum_groups import (
     GROUP_COLS,
     add_ce_columns,
+    add_peak_label_columns,
     choose_group_rows,
+    compute_peak_match_masks,
     plot_group_page,
 )
 
@@ -49,6 +51,11 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument(
+        "--frag_dp",
+        default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags",
+        help="DAG directory used to color matched/unmatched peaks.",
+    )
+    parser.add_argument(
         "--dsets", "--dset", nargs="+", default=None, help="Filter spec_df to these dataset labels."
     )
     parser.add_argument("--out_dp", required=True)
@@ -68,6 +75,23 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--mz_max", type=float, default=None)
     parser.add_argument("--min_int_frac", type=float, default=0.005)
     parser.add_argument("--max_peaks_per_spectrum", type=int, default=150)
+    parser.add_argument(
+        "--peak_color_mode",
+        choices=["match", "metric"],
+        default="match",
+        help="match: color individual peaks by DAG match status; metric: color whole spectrum.",
+    )
+    parser.add_argument(
+        "--max_h_transfer",
+        type=int,
+        default=None,
+        help="Default: use the DAG's full H-transfer budget for match coloring.",
+    )
+    parser.add_argument(
+        "--no_cmf",
+        action="store_true",
+        help="For match coloring, use direct-charge-retention ion masses only.",
+    )
     parser.add_argument(
         "--max_plot_groups",
         type=int,
@@ -277,7 +301,18 @@ def main() -> None:
     flag_ids = set(flags["spec_id"].astype(int))
     oracle = pd.read_csv(args.oracle_csv)
     spec = pd.read_pickle(args.spec_fp)[
-        ["spec_id", "mol_id", "prec_type", "inst_type", "frag_mode", "dset", "ace", "nce", "peaks"]
+        [
+            "spec_id",
+            "mol_id",
+            "prec_type",
+            "inst_type",
+            "frag_mode",
+            "dset",
+            "ace",
+            "nce",
+            "prec_mz",
+            "peaks",
+        ]
     ]
     if args.dsets:
         spec = spec[spec["dset"].isin(args.dsets)]
@@ -344,6 +379,7 @@ def main() -> None:
         missing_groups[GROUP_COLS].drop_duplicates(), on=GROUP_COLS, how="inner"
     ).merge(oracle[["spec_id", args.metric]], on="spec_id", how="left")
     plot_df = add_ce_columns(plot_df)
+    plot_df = add_peak_label_columns(plot_df, mol_by_id)
     plot_df["ce_sort"] = plot_df["ce_value"].fillna(np.inf)
     plot_df["is_flagged"] = plot_df[args.metric] < args.low_thresh
 
@@ -351,14 +387,36 @@ def main() -> None:
     if args.max_plot_groups is not None:
         missing_order = missing_order.head(args.max_plot_groups)
 
+    page_groups = []
+    selected_frames = []
+    for row in missing_order.itertuples(index=False):
+        key = {col: getattr(row, col) for col in GROUP_COLS}
+        mask = np.ones(len(plot_df), dtype=bool)
+        for col, val in key.items():
+            mask &= plot_df[col].to_numpy() == val
+        group = plot_df[mask].sort_values("ce_sort").copy()
+        group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
+        page_groups.append((key, group))
+        selected_frames.append(group)
+
+    if args.peak_color_mode == "match" and selected_frames:
+        selected_df = pd.concat(selected_frames, ignore_index=True)
+        log.info("Computing DAG match masks for %d plotted missing-group spectra", len(selected_df))
+        match_masks = compute_peak_match_masks(
+            selected_df,
+            args.frag_dp,
+            args.max_h_transfer,
+            include_cmf=not args.no_cmf,
+        )
+        page_groups = [
+            (key, group.assign(match_mask=group["spec_id"].astype(int).map(match_masks)))
+            for key, group in page_groups
+        ]
+
     with PdfPages(missing_pdf_fp) as pdf:
-        for page, row in enumerate(missing_order.itertuples(index=False), start=1):
-            mask = np.ones(len(plot_df), dtype=bool)
-            for col in GROUP_COLS:
-                mask &= plot_df[col].to_numpy() == getattr(row, col)
-            group = plot_df[mask].sort_values("ce_sort").copy()
-            group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
-            mol_row = mol_by_id.loc[row.mol_id] if row.mol_id in mol_by_id.index else None
+        for page, (key, group) in enumerate(page_groups, start=1):
+            mol_id = int(key["mol_id"])
+            mol_row = mol_by_id.loc[mol_id] if mol_id in mol_by_id.index else None
             if isinstance(mol_row, pd.DataFrame):
                 mol_row = mol_row.iloc[0]
             plot_group_page(
@@ -372,7 +430,7 @@ def main() -> None:
                 page,
             )
             if page % 100 == 0:
-                log.info("Plotted %d/%d missing groups", page, len(missing_order))
+                log.info("Plotted %d/%d missing groups", page, len(page_groups))
 
     write_findings_doc(doc_fp, scope, low, group_df, missing_groups, args)
     log.info("Wrote %s", spectra_fp)
