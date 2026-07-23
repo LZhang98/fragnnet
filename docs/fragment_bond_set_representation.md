@@ -107,19 +107,42 @@ from the same atom embeddings. If they don't, the mechanism is fitting noise rat
 
 ## 4. The supervision opportunity: complementary pairs
 
+**Status: gates 6.1 and 6.2 MEASURED (2026-07-22). Survives, but not in the binary form originally
+written here.**
+
 Cutting one bond yields two pieces; typically only one is observed, because only one keeps the
-charge. **If both sides exist as DAG nodes**, each cut defines a binary competition — which side held
+charge. Both sides exist as DAG nodes (§6.1), so each cut defines a competition — which side held
 the charge.
 
 Why this is attractive: unlike sibling branching, the pair is defined by a *single cut*, so it does
 not suffer the multi-parent entanglement that killed edge-β supervision
-(`project_beta_identifiability_pruning`, `project_fluxmpnn_stage3`). The two nodes are distinguishable
-in the spectrum by m/z, and the competition is local and identifiable.
+(`project_beta_identifiability_pruning`, `project_fluxmpnn_stage3`). Pair membership is recoverable
+offline with no extra bookkeeping — `cc[a] ∩ cc[b] = ∅ ∧ cc[a] ∪ cc[b] = cc[parent]` identifies the
+cut uniquely, and it determines the parent.
 
-This would be a new supervision signal, orthogonal to the marginal sibling-ranking targets in
-`docs/sibling_ranking_target_plan.md`, and probably cleaner.
+### 4.1 What the measurement says
 
-**It is entirely conditional on the gate in §6.1.**
+From §6.2: 1,326 decidable pairs per spectrum covering 70.9% of spectrum intensity — far more reach
+than the sibling-ranking targets (0.285). The label is **not** a mass proxy: the larger side wins only
+55.01% of the time, near chance, so whatever decides it is chemical rather than size-driven. Those two
+results are why this line stays open.
+
+### 4.2 Why it must be soft, not binary
+
+Only **3.37%** of decidable pairs have a winner explaining a peak that no other DAG node claims. In
+the other 96.6% the evidence is a shared attribution across many nodes at the same m/z. A hard "this
+side won" target is therefore exactly the m/z-only many-to-one per-candidate label ruled out by
+`feedback_candidate_level_hard_labels`, and 3.37% is the number that says so.
+
+The form to build is responsibility-weighted, mirroring the soft sibling loss in
+`docs/sibling_ranking_target_plan.md`: a pair contributes in proportion to how exclusively its
+winner's peaks are attributable to it, rather than asserting a winner outright. The 1,326 pairs/spectrum
+is **not** 1,326 independent facts; the effective count is much lower and is not yet quantified.
+
+Note also that a winner is inferred partly from the *absence* of a peak for the partner, and absence
+has causes other than charge retention — below detection, aliased onto another node's m/z, or the
+fragment not forming at all. This is a second reason the target must carry uncertainty rather than
+commit.
 
 ## 5. What this changes elsewhere
 
@@ -134,17 +157,50 @@ This would be a new supervision signal, orthogonal to the marginal sibling-ranki
 
 ## 6. Gates — run before building anything
 
-1. **Do DAGs retain both complementary fragments as nodes?** If BFS keeps only the retained side, §4
-   collapses entirely. Check `compute_frags.pyx` and a handful of real DAGs. *Everything in §4 depends
-   on this.*
-2. **If yes: how often is exactly one member of a complementary pair observed?** That frequency is the
-   headroom for a charge-retention head — same shape as the sibling coverage gate, and it either
-   justifies the work or closes it.
+1. **Do DAGs retain both complementary fragments as nodes?** — **PASSED, 2026-07-22.**
+   Both `compute_frags.pyx:358` and `multi_cut_bfs.pyx:687` register both components of a cut. The only
+   thing that would drop a side is `min_frag_atoms`, which is **0 on all production DAGs**
+   (`preproc_scripts/03_prepare_dag_feats.py:818` default; `frag_gen_nist20_d3_mbfs*.sh`). Measured on
+   300 mols / 313,558 nodes: 100.00% of parent-child slots are half of a complementary pair;
+   1,399,558 pairs, median ~20 per parent, tail to 875.
+
+   This gate could not really have failed once `min_frag_atoms=0` was confirmed — both CCs are emitted
+   by construction. Treat it as a precondition check, not evidence for the design.
+
+   *Caveat:* `min_frag_atoms` is a config knob, not an invariant. A target builder relying on pairing
+   should assert it rather than assume it; a regeneration with a nonzero value would silently break
+   pairing for exactly the small-fragment cases where charge retention is most lopsided.
+
+2. **How often is exactly one member observed?** — **MEASURED, 2026-07-22.** 100 train mols / 1,988
+   spectra:
+
+   | | |
+   |---|---|
+   | pair-spectra evaluated | 15,269,172 (7,681/spectrum) |
+   | neither observed | 80.71% |
+   | both observed (ambiguous) | 2.02% |
+   | **exactly one observed** | **17.26%** → 1,326/spectrum |
+   | winner has a private peak | 3.37% → 44.7/spectrum |
+   | larger side wins | 55.01% |
+   | intensity covered by winners | 0.709 |
+
+   Verdict: passes on volume and on non-triviality (55% ≈ chance rules out a mass proxy), fails on
+   attribution cleanliness (3.37%). Drives the soft-form rewrite in §4.2.
+
+   *Two probe bugs found and fixed while running this, recorded so they are not repeated:* an
+   alias check asking whether a peak is claimed by both members is **vacuous** — if exactly one side is
+   observed the partner explains no peaks and cannot co-claim one, so it returns 100% by construction;
+   the meaningful test is whether the winner's peaks are claimed by *any other DAG node*. And coverage
+   must be the union of peaks explained by winning nodes, not a sum of per-node intensities — winners
+   share peaks, and the naive sum exceeded 1.0.
+
 3. **Oracle reference for radius.** ICC of *observed* `q_obs` by bond environment at r1 vs r2. Settles
    whether r=2 carries real branching signal beyond r=1, which §2.1's ICC number does not. Shares
    machinery with the sibling-ranking target builder.
 4. **Representation probe.** Using the 583k sibling targets, predict observed sibling ordering from
    (a) cc-pooled atom embeddings vs (b) directed boundary-bond embeddings + heteroatom pool + formula.
-   Same targets, two feature sets, offline. Measures exactly the trade being proposed.
+   Same targets, two feature sets, offline. Measures exactly the trade being proposed. **This is the
+   gate that tests the load-bearing claim** — gates 1 and 2 concern §4, which is the speculative part;
+   the cost case in §1–§3 is what the proposal actually rests on.
 
 All four are offline and need no training run.
