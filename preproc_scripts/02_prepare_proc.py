@@ -9,13 +9,12 @@ from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import (
+    compute_mol_df_props,
     par_apply_df_rows,
     par_apply_df_rows_t,
     par_apply_series,
     seq_apply_df_rows_t,
-    compute_mol_df_props,
 )
-
 from fragnnet.utils.misc_utils import booltype
 
 # Module-level logger
@@ -109,7 +108,9 @@ def preprocess_spec(
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
     # convert smiles to mol and back (for standardization/stereochemistry)
     if skip_standardize:
-        spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
+        spec_df.loc[:, "mol"] = par_apply_series(
+            spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False)
+        )
     else:
         spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], data_utils.mol_from_smiles)
     spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], data_utils.mol_to_smiles)
@@ -233,11 +234,18 @@ def preprocess_spec(
     mol_df = pd.DataFrame(
         zip(sorted(smiles_set), list(range(len(smiles_set)))), columns=["smiles", "mol_id"]
     )
-    
+
     # convert smiles to mol
     # use skip_standardize flag to control whether to apply the same standardization as in the spec_df processing step, this is to save time when we want to keep the original mols without standardization
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=not skip_standardize, canonicalize_tautomers=canonicalize_tautomers))
-    
+    mol_df.loc[:, "mol"] = par_apply_series(
+        mol_df["smiles"],
+        partial(
+            data_utils.mol_from_smiles,
+            ml_standardize=not skip_standardize,
+            canonicalize_tautomers=canonicalize_tautomers,
+        ),
+    )
+
     compute_mol_df_props(mol_df)
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
@@ -267,7 +275,7 @@ def preprocess_spec(
     inchikey_df["inchikey_s"] = inchikey_df["inchikey"].str[:14]
     inchikey_df = inchikey_df.drop(columns=["inchikey"])
     inchikey_df = inchikey_df.merge(mol_df[["mol_id", "inchikey_s"]], on="mol_id", how="inner")
-    
+
     diff_inchikey_df = inchikey_df[inchikey_df["inchikey_s_x"] != inchikey_df["inchikey_s_y"]]
     logger.info("> inchikey_s inconsistencies")
     logger.info(
@@ -362,9 +370,7 @@ if __name__ == "__main__":
         help="whether use NA for missing str labels (such as inst_type, frag_mode, etc.) or use np.nan",
     )
     parser.add_argument(
-        "--skip_standardize",
-        action="store_true",
-        help="whether skip standardize for mols"
+        "--skip_standardize", action="store_true", help="whether skip standardize for mols"
     )
     parser.add_argument(
         "--canonicalize_tautomers",

@@ -156,14 +156,14 @@ def filter_spec_mol(
 
     # max prec mz
     if max_prec_mz is not None:
-        print(f">> max_prec_mz {max_prec_mz}")
+        print(f">> max_prec_mz value: {max_prec_mz}")
         max_prec_mz_mask = spec_df["prec_mz"] <= max_prec_mz
         print(f">> max prec mz: {max_prec_mz_mask.mean()}")
         masks.append(max_prec_mz_mask)
 
     # min prec mz
     if min_prec_mz is not None:
-        print(f">> min_prec_mz {min_prec_mz}")
+        print(f">> min_prec_mz value: {min_prec_mz}")
         min_prec_mz_mask = spec_df["prec_mz"] >= min_prec_mz
         print(f">> min prec mz: {min_prec_mz_mask.mean()}")
         masks.append(min_prec_mz_mask)
@@ -174,6 +174,7 @@ def filter_spec_mol(
         def get_max_mz(peaks):
             return max([peak[0] for peak in peaks])
 
+        print(f">> max_peak_mz value: {max_peak_mz}")
         max_peak_mz_mask = spec_df["peaks"].apply(get_max_mz) <= max_peak_mz
         print(f">> max peak mz: {max_peak_mz_mask.mean()}")
         masks.append(max_peak_mz_mask)

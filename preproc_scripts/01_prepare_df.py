@@ -442,6 +442,7 @@ def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.Da
         "If you are doing simulation challenge, make sure to use only simulation_challenge subset"
     )
 
+    # spec_df["dset"] = "ms_gym_benchmark" if subset == "simulation_challenge" else "ms_gym_extra"
     if subset == "simulation_challenge":
         spec_df = spec_df[spec_df["simulation_challenge"]]
         logger.info(f"{len(spec_df)} rows selected for subset {subset}")
@@ -663,6 +664,7 @@ if __name__ == "__main__":
             "msp+pkl",
             "ms_gym",
             "ms_gym_extra",
+            "ms_gym_all",
             "pcdl_zip",
             "spectraverse",
             "nist_csv",
@@ -719,6 +721,12 @@ if __name__ == "__main__":
         ms_gym_tsv_fp = os.path.join(args.raw_data_dp, args.ms_gym_tsv)
         assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
         spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, "extra")
+        split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
+        split_df.to_csv(split_df_fp, index=False)
+    elif args.input_format == "ms_gym_all":
+        ms_gym_tsv_fp = os.path.join(args.raw_data_dp, args.ms_gym_tsv)
+        assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
+        spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, "all")
         split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
         split_df.to_csv(split_df_fp, index=False)
     elif args.input_format == "pcdl_zip":
