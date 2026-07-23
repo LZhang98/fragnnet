@@ -4,7 +4,7 @@
 #SBATCH --job-name=frag_gen_msgym_all_1_5
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=128
-#SBATCH --time=0-3:00
+#SBATCH --time=0-3:00:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_msgym_all_1_5_%j.out
