@@ -24,7 +24,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -110,31 +109,37 @@ def add_ce_columns(df: pd.DataFrame) -> pd.DataFrame:
 def add_sibling_features(df: pd.DataFrame, group_cols: list[str], metric_col: str) -> pd.DataFrame:
     """Attach best lower-/higher-/different-CE sibling scores for one metric."""
     # Work at CE-bin level first so duplicate spectra at the same CE do not become siblings.
+    # Keep ACE and NCE series separate: their numeric values are not directly comparable.
+    sibling_group_cols = group_cols + ["ce_source"]
     ce_stats = (
         df.dropna(subset=["ce_value"])
-        .groupby(group_cols + ["ce_key", "ce_value"], observed=True)[metric_col]
+        .groupby(sibling_group_cols + ["ce_key", "ce_value"], observed=True)[metric_col]
         .max()
         .reset_index(name="ce_metric_max")
     )
     sibling_rows = []
-    for _, g in ce_stats.groupby(group_cols, observed=True):
+    for _, g in ce_stats.groupby(sibling_group_cols, observed=True):
         g = g.sort_values("ce_value")
         ce_scores = g["ce_metric_max"].to_numpy()
         ce_keys = g["ce_key"].to_numpy()
 
         lower = [np.nanmax(ce_scores[:i]) if i > 0 else np.nan for i in range(len(g))]
         higher = [
-            np.nanmax(ce_scores[i + 1 :]) if i + 1 < len(g) else np.nan
-            for i in range(len(g))
+            np.nanmax(ce_scores[i + 1 :]) if i + 1 < len(g) else np.nan for i in range(len(g))
         ]
-        group_vals = {col: g[col].iloc[0] for col in group_cols}
+        group_vals = {col: g[col].iloc[0] for col in sibling_group_cols}
         for key, lo, hi in zip(ce_keys, lower, higher):
             sibling_rows.append(
                 {**group_vals, "ce_key": key, "best_lower_ce": lo, "best_higher_ce": hi}
             )
 
-    sibling_df = pd.DataFrame(sibling_rows)
-    out = df.merge(sibling_df, on=group_cols + ["ce_key"], how="left")
+    sibling_cols = sibling_group_cols + [
+        "ce_key",
+        "best_lower_ce",
+        "best_higher_ce",
+    ]
+    sibling_df = pd.DataFrame(sibling_rows, columns=sibling_cols)
+    out = df.merge(sibling_df, on=sibling_group_cols + ["ce_key"], how="left")
     out["best_diff_ce"] = out[["best_lower_ce", "best_higher_ce"]].max(axis=1, skipna=True)
     return out
 

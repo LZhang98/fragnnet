@@ -231,11 +231,13 @@ def choose_group_rows(group: pd.DataFrame, metric: str, max_rows: int) -> pd.Dat
 def label_for_row(row: pd.Series, metric: str) -> tuple[str, str]:
     """Return subplot title and color for a spectrum row."""
     calc_pmz = row.get("calc_prec_mz", np.nan)
+    pmz = row.get("prec_mz", np.nan)
     top_mz = row.get("top_peak_mz", np.nan)
     bits = [
         f"spec {int(row.spec_id)}",
         f"dset={row.dset}",
         str(row.ce_key),
+        f"pmz={pmz:.4f}" if pd.notna(pmz) else "pmz=NA",
         f"calc_pmz={calc_pmz:.4f}" if pd.notna(calc_pmz) else "calc_pmz=NA",
         f"top_mz={top_mz:.4f}" if pd.notna(top_mz) else "top_mz=NA",
         f"{metric}={row[metric]:.3f}",
@@ -286,6 +288,12 @@ def safe_text(value: object) -> str:
     if value is None or pd.isna(value):
         return ""
     return str(value)
+
+
+def format_group_values(values: pd.Series, decimals: int = 4) -> str:
+    """Format the distinct finite numeric values represented on a group page."""
+    numeric = pd.to_numeric(values, errors="coerce").dropna().unique()
+    return ", ".join(f"{value:.{decimals}f}" for value in np.sort(numeric)) or "NA"
 
 
 def plot_group_page(
@@ -341,9 +349,13 @@ def plot_group_page(
     flagged_ids = group.loc[group["is_flagged"], "spec_id"].astype(int).tolist()
     dsets = sorted(group["dset"].dropna().astype(str).unique())
     dset_label = ",".join(dsets) if dsets else "NA"
+    exact_mass = safe_text(mol_row.get("exact_mw", "")) if mol_row is not None else ""
+    exact_mass_label = f"{float(exact_mass):.4f}" if exact_mass else "NA"
+    pmz_label = format_group_values(group["prec_mz"])
     header_text = (
         f"page {page} | mol {int(first.mol_id)} | {first.prec_type} | {first.inst_type} | "
-        f"{first.frag_mode} | dset {dset_label} | formula {formula}\n"
+        f"{first.frag_mode} | dset {dset_label} | formula {formula} | "
+        f"exact mass {exact_mass_label} | pmz {pmz_label}\n"
         f"flagged specs: {flagged_ids}"
     )
     if inchikey:
@@ -535,6 +547,10 @@ def main() -> None:
                 {
                     **key,
                     "page": page,
+                    "exact_mass": (
+                        mol_row.get("exact_mw", np.nan) if mol_row is not None else np.nan
+                    ),
+                    "pmz": format_group_values(group["prec_mz"]),
                     "dsets": ";".join(sorted(group["dset"].dropna().astype(str).unique())),
                     "n_plotted_spectra": len(group),
                     "flagged_spec_ids": ";".join(flagged["spec_id"].astype(str)),
