@@ -48,8 +48,10 @@ The main problem is choosing and ranking intensities over candidates already in 
 Therefore, the next budget goes to reproducibility, objective alignment, regularization, and direct
 ranking supervision—not larger encoders, more CE-depth machinery, or generic DAG expansion.
 
-**Immediate priority:** localize the ranking error using the existing `4ews8j6f` model. This is
-read-only, requires no new training, and determines which later intervention is correctly aimed.
+**Immediate priority:** localize the ranking error using the local `9t63zils` baseline checkpoint.
+This is read-only, requires no new training, and determines which later intervention is correctly
+aimed. Run `4ews8j6f` is retained above as the measured oracle-decomposition reference, but its
+checkpoint is not available locally.
 
 ## Evaluation Contract
 
@@ -84,7 +86,13 @@ Current saved HDF5 files have empty attributes, so run IDs alone are not adequat
 
 ### 0. Localize the ranking error — immediate priority
 
-Start with the existing `4ews8j6f` checkpoint. Run:
+Start with:
+
+- config: `config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml`;
+- checkpoint: `saved_ckpts/nist20_inchikey_fraggnn_d3_ma_mi_all_9t63zils.ckpt`;
+- split: validation.
+
+Run:
 
 ```bash
 python scripts/eval/node_vs_h_transfer_diagnostic.py ...
@@ -108,8 +116,8 @@ Repeat the classification for:
 Weight the primary result by true intensity, not peak count. Report overall results and slices by
 collision energy, instrument, fragmentation mode, and adduct.
 
-The current script records collision energy and instrument. Add fragmentation-mode and adduct
-columns before the full diagnostic so the required slices are available.
+The output already contains `spec_id`. Join it to `data/proc/nist20/spec_df.pkl` for fragmentation
+mode and adduct slices; no second inference pass is needed.
 
 If `P(n)` dominates, use the existing sibling diagnostic to split node error into:
 
@@ -236,7 +244,7 @@ If the current-protocol ensemble wins:
 
 | Order | Experiment | New model code? | Required output |
 |---:|---|---:|---|
-| 0 | Ranking-error localization on `4ews8j6f` | Diagnostic only | Error-mass decomposition and one next experiment |
+| 0 | Ranking-error localization on `9t63zils` | Diagnostic only | Error-mass decomposition and one next experiment |
 | 1 | Three-seed attributable baseline | No | Reference mean, variance, replay |
 | 2 | Loss/objective comparison | Mostly config | Best objective |
 | 3 | `cc_atom_dropout` sweep | No | Regularization setting |
