@@ -151,7 +151,9 @@ def _batch_items(values: Any, batch_size: int) -> list[Any]:
             return [values.item()]
         return [values[i].item() for i in range(min(batch_size, values.shape[0]))]
     if isinstance(values, np.ndarray):
-        return [values[i].item() if np.ndim(values[i]) == 0 else values[i] for i in range(batch_size)]
+        return [
+            values[i].item() if np.ndim(values[i]) == 0 else values[i] for i in range(batch_size)
+        ]
     if isinstance(values, Sequence) and not isinstance(values, str):
         return list(values)[:batch_size]
     return [values] * batch_size
@@ -212,13 +214,13 @@ def _sample_tolerance(
 def _classify_peak(
     *,
     matched_formula_idxs: set[int],
-    formula_idxs: th.Tensor,
-    formula_probs: th.Tensor,
-    node_idxs: th.Tensor,
-    node_probs: th.Tensor,
-    joint_formula_idxs: th.Tensor,
+    formula_rank: dict[int, int],
+    formula_prob: dict[int, float],
+    node_rank: dict[int, int],
+    node_prob: dict[int, float],
+    joint_positions_by_formula: dict[int, list[int]],
     joint_node_idxs: th.Tensor,
-    joint_probs: th.Tensor,
+    joint_ranks: th.Tensor,
     node_formula_probs: th.Tensor,
     node_rank_k: int,
     formula_rank_k: int,
@@ -237,20 +239,16 @@ def _classify_peak(
             "top_support_node_p_f_given_n": math.nan,
         }
 
-    formula_rank = _rank_map(formula_idxs, formula_probs)
-    formula_prob = _prob_map(formula_idxs, formula_probs)
-    node_rank = _rank_map(node_idxs, node_probs)
-    node_prob = _prob_map(node_idxs, node_probs)
-
-    support_mask = th.tensor(
-        [int(f.item()) in matched_formula_idxs for f in joint_formula_idxs],
-        dtype=th.bool,
-    )
-    support_node_idxs = sorted({int(n.item()) for n in joint_node_idxs[support_mask]})
-
-    matched_formula_present = [
-        f_idx for f_idx in matched_formula_idxs if f_idx in formula_rank
+    support_positions = [
+        position
+        for formula_idx in matched_formula_idxs
+        for position in joint_positions_by_formula.get(formula_idx, [])
     ]
+    support_position_tensor = th.tensor(support_positions, dtype=th.long)
+    support_nodes = joint_node_idxs[support_position_tensor]
+    support_node_idxs = sorted(set(support_nodes.tolist()))
+
+    matched_formula_present = [f_idx for f_idx in matched_formula_idxs if f_idx in formula_rank]
     p_formula = sum(formula_prob[f_idx] for f_idx in matched_formula_present)
     best_formula_rank = _safe_min([formula_rank[f_idx] for f_idx in matched_formula_present])
 
@@ -259,12 +257,9 @@ def _classify_peak(
         [node_rank[n_idx] for n_idx in support_node_idxs if n_idx in node_rank]
     )
 
-    if support_mask.any():
-        joint_order = th.argsort(joint_probs, descending=True)
-        joint_ranks = th.empty_like(joint_order)
-        joint_ranks[joint_order] = th.arange(1, joint_order.numel() + 1)
-        best_joint_rank = int(joint_ranks[support_mask].min().item())
-        best_p_f_given_n = float(node_formula_probs[support_mask].max().item())
+    if support_positions:
+        best_joint_rank = int(joint_ranks[support_position_tensor].min().item())
+        best_p_f_given_n = float(node_formula_probs[support_position_tensor].max().item())
     else:
         best_joint_rank = math.nan
         best_p_f_given_n = math.nan
@@ -272,14 +267,14 @@ def _classify_peak(
     top_support_node_p_f_given_n = math.nan
     if support_node_idxs:
         top_node = max(support_node_idxs, key=lambda n_idx: node_prob.get(n_idx, 0.0))
-        top_mask = support_mask & (joint_node_idxs == top_node)
+        top_mask = support_nodes == top_node
         if top_mask.any():
-            top_support_node_p_f_given_n = float(node_formula_probs[top_mask].max().item())
+            top_support_node_p_f_given_n = float(
+                node_formula_probs[support_position_tensor][top_mask].max().item()
+            )
 
     node_ok = bool(not math.isnan(best_node_rank) and best_node_rank <= node_rank_k)
-    formula_ok = bool(
-        not math.isnan(best_formula_rank) and best_formula_rank <= formula_rank_k
-    )
+    formula_ok = bool(not math.isnan(best_formula_rank) and best_formula_rank <= formula_rank_k)
     if node_ok and not formula_ok:
         bottleneck = "h_formula"
     elif not node_ok and formula_ok:
@@ -312,15 +307,17 @@ def _summarize(df: pd.DataFrame) -> None:
         denom = group["true_intensity"].sum()
         if denom <= 0:
             return pd.Series(dtype=float)
-        return group.groupby("bottleneck")["true_intensity"].sum().sort_values(
-            ascending=False
-        ) / denom
+        return (
+            group.groupby("bottleneck")["true_intensity"].sum().sort_values(ascending=False) / denom
+        )
 
     print("\n>>> Bottleneck by true-intensity mass")
     print(weighted(df).to_string(float_format=lambda x: f"{x:.4f}"))
 
     print("\n>>> Bottleneck by peak count")
-    print(df["bottleneck"].value_counts(normalize=True).to_string(float_format=lambda x: f"{x:.4f}"))
+    print(
+        df["bottleneck"].value_counts(normalize=True).to_string(float_format=lambda x: f"{x:.4f}")
+    )
 
     if "ce_nce" in df and df["ce_nce"].notna().any():
         bins = [-math.inf, 20.0, 40.0, math.inf]
@@ -483,47 +480,64 @@ def main() -> None:
                 if true_mzs is None or peak_mzs is None or true_mzs.numel() == 0:
                     continue
 
+                # 1. Select the true peaks before building the match matrix.
+                true_order = th.argsort(true_probs, descending=True)
+                true_rank = th.empty_like(true_order)
+                true_rank[true_order] = th.arange(1, true_order.numel() + 1)
+                max_true = float(true_probs.max().item()) if true_probs.numel() else 0.0
+                true_rel_ints = (
+                    true_probs / max_true
+                    if max_true > 0
+                    else th.full_like(true_probs, float("nan"))
+                )
+                keep = true_rel_ints >= args.min_true_rel_int
+                if args.top_true_peak_k > 0:
+                    keep &= true_rank <= args.top_true_peak_k
+                selected_peak_idxs = th.nonzero(keep, as_tuple=False).reshape(-1)
+                if selected_peak_idxs.numel() == 0:
+                    continue
+
                 tol, relative, min_mz = _sample_tolerance(model, batch_cpu, b_idx, args)
                 match = calculate_match_mzs(
-                    true_mzs,
+                    true_mzs[selected_peak_idxs],
                     peak_mzs,
                     tolerance=tol,
                     relative=relative,
                     tolerance_min_mz=200.0 if min_mz is None else min_mz,
                 )
 
-                true_order = th.argsort(true_probs, descending=True)
-                true_rank = th.empty_like(true_order)
-                true_rank[true_order] = th.arange(1, true_order.numel() + 1)
-                max_true = float(true_probs.max().item()) if true_probs.numel() else 0.0
+                # 2. Rank model outputs once per spectrum, not once per true peak.
+                formula_rank = _rank_map(formula_idx_split[b_idx], formula_prob_split[b_idx])
+                formula_prob = _prob_map(formula_idx_split[b_idx], formula_prob_split[b_idx])
+                node_rank = _rank_map(node_idx_split[b_idx], node_prob_split[b_idx])
+                node_prob = _prob_map(node_idx_split[b_idx], node_prob_split[b_idx])
+                joint_order = th.argsort(joint_prob_split[b_idx], descending=True)
+                joint_ranks = th.empty_like(joint_order)
+                joint_ranks[joint_order] = th.arange(1, joint_order.numel() + 1)
+                joint_positions_by_formula: dict[int, list[int]] = {}
+                for position, formula_idx in enumerate(joint_formula_split[b_idx].tolist()):
+                    joint_positions_by_formula.setdefault(formula_idx, []).append(position)
 
-                for peak_i in range(true_mzs.numel()):
+                # 3. Classify each retained true peak using the shared ranks.
+                for selected_i, peak_i_tensor in enumerate(selected_peak_idxs):
+                    peak_i = int(peak_i_tensor.item())
                     rank = int(true_rank[peak_i].item())
-                    rel_int = (
-                        float(true_probs[peak_i].item()) / max_true
-                        if max_true > 0
-                        else math.nan
-                    )
-                    if args.top_true_peak_k > 0 and rank > args.top_true_peak_k:
-                        continue
-                    if rel_int < args.min_true_rel_int:
-                        continue
+                    rel_int = float(true_probs[peak_i].item()) / max_true
 
-                    peak_match = match[peak_i]
+                    peak_match = match[selected_i]
                     local_formula_idxs = peak_formula_idxs[peak_match].long()
                     matched_formula_idxs = {
-                        int(f.item() + formula_offsets[b_idx].item())
-                        for f in local_formula_idxs
+                        int(f.item() + formula_offsets[b_idx].item()) for f in local_formula_idxs
                     }
                     result = _classify_peak(
                         matched_formula_idxs=matched_formula_idxs,
-                        formula_idxs=formula_idx_split[b_idx],
-                        formula_probs=formula_prob_split[b_idx],
-                        node_idxs=node_idx_split[b_idx],
-                        node_probs=node_prob_split[b_idx],
-                        joint_formula_idxs=joint_formula_split[b_idx],
+                        formula_rank=formula_rank,
+                        formula_prob=formula_prob,
+                        node_rank=node_rank,
+                        node_prob=node_prob,
+                        joint_positions_by_formula=joint_positions_by_formula,
                         joint_node_idxs=joint_node_split[b_idx],
-                        joint_probs=joint_prob_split[b_idx],
+                        joint_ranks=joint_ranks,
                         node_formula_probs=node_formula_prob_split[b_idx],
                         node_rank_k=args.node_rank_k,
                         formula_rank_k=args.formula_rank_k,
