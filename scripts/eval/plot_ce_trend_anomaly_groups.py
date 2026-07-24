@@ -31,6 +31,7 @@ from plot_ce_sibling_spectrum_groups import (  # noqa: E402  (needs sys.path twe
     GROUP_COLS,
     add_ce_columns,
     add_peak_label_columns,
+    add_peak_tracks,
     choose_group_rows,
     compute_peak_match_masks,
     plot_group_page,
@@ -157,6 +158,7 @@ def main() -> None:
             mask &= plot_df[col].to_numpy() == val
         group = plot_df[mask].sort_values("ce_sort").copy()
         group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
+        group, _track_df = add_peak_tracks(group)
         page_groups.append((key, group))
         selected_frames.append(group)
 

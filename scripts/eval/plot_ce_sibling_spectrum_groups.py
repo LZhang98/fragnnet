@@ -296,6 +296,108 @@ def format_group_values(values: pd.Series, decimals: int = 4) -> str:
     return ", ".join(f"{value:.{decimals}f}" for value in np.sort(numeric)) or "NA"
 
 
+def add_peak_tracks(group: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Label cross-CE peaks by instrument-tolerance m/z tracks.
+
+    A track contains at most one peak from each spectrum. Track IDs are ordered by
+    their final mean m/z and only tracks present at two or more CE values are retained.
+    """
+    if group.empty:
+        return group.copy(), pd.DataFrame()
+
+    inst_types = group["inst_type"].dropna().unique()
+    if len(inst_types) != 1:
+        raise ValueError("Peak tracking requires one instrument type per group.")
+    tolerance, tolerance_min_mz = _tolerance_for_inst_type(str(inst_types[0]))
+
+    peak_rows = []
+    for row in group.itertuples():
+        mzs, ints = peaks_to_arrays(row.peaks)
+        for peak_idx, (mz, intensity) in enumerate(zip(mzs, ints)):
+            peak_rows.append(
+                {
+                    "row_index": row.Index,
+                    "spec_id": int(row.spec_id),
+                    "ce_key": row.ce_key,
+                    "ce_value": row.ce_value,
+                    "peak_idx": peak_idx,
+                    "mz": float(mz),
+                    "intensity": float(intensity),
+                }
+            )
+    if not peak_rows:
+        out = group.copy()
+        out["peak_track_ids"] = [np.array([], dtype=int) for _ in range(len(out))]
+        return out, pd.DataFrame()
+
+    # 1. Greedily form narrow m/z tracks, preventing two peaks from one spectrum
+    # from being assigned to the same track.
+    tracks: list[dict[str, object]] = []
+    for peak in sorted(peak_rows, key=lambda item: (item["mz"], item["spec_id"])):
+        candidates = []
+        for track_idx, track in enumerate(tracks):
+            if peak["spec_id"] in track["spec_ids"]:
+                continue
+            center_mz = float(np.mean(track["mzs"]))
+            max_diff = max(float(peak["mz"]), center_mz, tolerance_min_mz) * tolerance
+            diff = abs(float(peak["mz"]) - center_mz)
+            if diff <= max_diff:
+                candidates.append((diff, track_idx))
+        if candidates:
+            _, track_idx = min(candidates)
+            track = tracks[track_idx]
+        else:
+            track_idx = len(tracks)
+            track = {"mzs": [], "spec_ids": set(), "peaks": []}
+            tracks.append(track)
+        track["mzs"].append(peak["mz"])
+        track["spec_ids"].add(peak["spec_id"])
+        track["peaks"].append(peak)
+
+    # 2. Give stable m/z-ordered IDs only to tracks observed across multiple CEs.
+    cross_ce_tracks = []
+    for track in tracks:
+        ce_keys = {peak["ce_key"] for peak in track["peaks"]}
+        if len(ce_keys) >= 2:
+            cross_ce_tracks.append(track)
+    cross_ce_tracks.sort(key=lambda track: float(np.mean(track["mzs"])))
+
+    assignments: dict[tuple[object, int], int] = {}
+    table_rows = []
+    for track_id, track in enumerate(cross_ce_tracks, start=1):
+        center_mz = float(np.mean(track["mzs"]))
+        n_ce = len({peak["ce_key"] for peak in track["peaks"]})
+        for peak in track["peaks"]:
+            assignments[(peak["row_index"], peak["peak_idx"])] = track_id
+            table_rows.append(
+                {
+                    "track_id": track_id,
+                    "track_mz": center_mz,
+                    "n_ce": n_ce,
+                    "spec_id": peak["spec_id"],
+                    "ce_key": peak["ce_key"],
+                    "ce_value": peak["ce_value"],
+                    "peak_idx": peak["peak_idx"],
+                    "mz": peak["mz"],
+                    "intensity": peak["intensity"],
+                }
+            )
+
+    # 3. Attach arrays aligned one-to-one with each spectrum's original peak array.
+    out = group.copy()
+    track_arrays = []
+    for row_index, row in out.iterrows():
+        mzs, _ints = peaks_to_arrays(row["peaks"])
+        track_arrays.append(
+            np.array(
+                [assignments.get((row_index, peak_idx), 0) for peak_idx in range(len(mzs))],
+                dtype=int,
+            )
+        )
+    out["peak_track_ids"] = track_arrays
+    return out, pd.DataFrame(table_rows)
+
+
 def plot_group_page(
     pdf: PdfPages,
     group: pd.DataFrame,
@@ -390,6 +492,11 @@ def plot_group_page(
             if max_int > 0:
                 ints = ints / max_int
             keep = ints >= min_int_frac
+            track_ids = row.get("peak_track_ids", None)
+            if isinstance(track_ids, np.ndarray) and len(track_ids) == len(ints):
+                track_ids = track_ids[keep]
+            else:
+                track_ids = None
             match_mask = row.get("match_mask", None)
             if isinstance(match_mask, np.ndarray) and len(match_mask) == len(ints):
                 match_mask = match_mask[keep]
@@ -404,6 +511,8 @@ def plot_group_page(
                 ints = ints[top_idx]
                 if match_mask is not None:
                     match_mask = match_mask[top_idx]
+                if track_ids is not None:
+                    track_ids = track_ids[top_idx]
             ax.set_ylim(0, 1.05)
             ax.set_xlim(0, x_max)
             if match_mask is None:
@@ -411,6 +520,20 @@ def plot_group_page(
             else:
                 ax.vlines(mzs[match_mask], 0.0, ints[match_mask], color="#4C72B0", linewidth=0.7)
                 ax.vlines(mzs[~match_mask], 0.0, ints[~match_mask], color="#C44E52", linewidth=0.7)
+            if track_ids is not None:
+                for mz, intensity, track_id in zip(mzs, ints, track_ids):
+                    if track_id > 0:
+                        ax.text(
+                            mz,
+                            min(float(intensity) + 0.025, 1.03),
+                            f"T{track_id}",
+                            rotation=90,
+                            ha="center",
+                            va="bottom",
+                            fontsize=4.5,
+                            color="#222222",
+                            clip_on=True,
+                        )
         ax.set_title(title, fontsize=7.5, loc="left", color=color)
         ax.grid(axis="y", alpha=0.25, linewidth=0.4)
         ax.tick_params(labelsize=7)
@@ -495,6 +618,7 @@ def main() -> None:
 
     page_groups = []
     selected_frames = []
+    track_frames = []
     for row in group_order.itertuples(index=False):
         key = {
             "mol_id": row.mol_id,
@@ -507,8 +631,13 @@ def main() -> None:
             mask &= plot_df[col].to_numpy() == val
         group = plot_df[mask].sort_values("ce_sort").copy()
         group = choose_group_rows(group, args.metric, args.max_spectra_per_group)
+        group, track_df = add_peak_tracks(group)
         page_groups.append((key, group))
         selected_frames.append(group)
+        if not track_df.empty:
+            for col, val in key.items():
+                track_df[col] = val
+            track_frames.append(track_df)
 
     if args.peak_color_mode == "match" and selected_frames:
         selected_df = pd.concat(selected_frames, ignore_index=True)
@@ -564,8 +693,28 @@ def main() -> None:
 
     index_fp = out_dp / "oracle_ce_sibling_spectrum_groups_index.csv"
     pd.DataFrame(index_rows).to_csv(index_fp, index=False)
+    tracks_fp = out_dp / "oracle_ce_sibling_peak_tracks.csv"
+    track_cols = [
+        *GROUP_COLS,
+        "track_id",
+        "track_mz",
+        "n_ce",
+        "spec_id",
+        "ce_key",
+        "ce_value",
+        "peak_idx",
+        "mz",
+        "intensity",
+    ]
+    tracks_df = (
+        pd.concat(track_frames, ignore_index=True)
+        if track_frames
+        else pd.DataFrame(columns=track_cols)
+    )
+    tracks_df[track_cols].to_csv(tracks_fp, index=False)
     log.info("Wrote %s", pdf_fp)
     log.info("Wrote %s", index_fp)
+    log.info("Wrote %s", tracks_fp)
 
 
 if __name__ == "__main__":
