@@ -48,6 +48,9 @@ The main problem is choosing and ranking intensities over candidates already in 
 Therefore, the next budget goes to reproducibility, objective alignment, regularization, and direct
 ranking supervision—not larger encoders, more CE-depth machinery, or generic DAG expansion.
 
+**Immediate priority:** localize the ranking error using the existing `4ews8j6f` model. This is
+read-only, requires no new training, and determines which later intervention is correctly aimed.
+
 ## Evaluation Contract
 
 Every experiment must use the same:
@@ -79,36 +82,66 @@ Current saved HDF5 files have empty attributes, so run IDs alone are not adequat
 
 ## Ordered Plan
 
-### 0. Freeze the baseline
+### 0. Localize the ranking error — immediate priority
 
-1. Select the current production NIST20 config.
-2. Save an immutable experiment config for each of three seeds.
-3. Train and evaluate all three seeds under the evaluation contract.
-4. Replay one seed entirely from its recorded artifacts.
-
-**Gate:** replayed metrics agree within numerical tolerance, and seed variance is known. Do not
-compare new models before this passes.
-
-### 1. Localize the intensity error
-
-Run:
+Start with the existing `4ews8j6f` checkpoint. Run:
 
 ```bash
 python scripts/eval/node_vs_h_transfer_diagnostic.py ...
 ```
 
-Separate error in:
+Classify true-intensity mass into:
 
+- candidate coverage;
 - `P(n)`: choosing the fragment node;
-- `P(f|n)`: choosing its H-transfer/CMF/CRF ion channel.
+- `P(f|n)`: choosing its H-transfer/CMF/CRF ion channel;
+- both node and ion channel ranked too low;
+- both ranked adequately, indicating calibration or competition after candidate identification.
 
-Report error mass and ranking accuracy for both branches overall and by instrument/mode/adduct.
+Repeat the classification for:
 
-**Decision:**
+- all true peaks;
+- the top 1, 3, and 5 true peaks;
+- relative-intensity thresholds 0.01, 0.05, and 0.10;
+- node/formula rank cutoffs 1, 5, and 10.
 
-- `P(n)` dominates → prioritize fragment regularization and sibling-ranking supervision;
-- `P(f|n)` dominates → prioritize the existing candidate-ion/factorized/adduct-gated path;
-- neither dominates → test both independently against the same baseline.
+Weight the primary result by true intensity, not peak count. Report overall results and slices by
+collision energy, instrument, fragmentation mode, and adduct.
+
+The current script records collision energy and instrument. Add fragmentation-mode and adduct
+columns before the full diagnostic so the required slices are available.
+
+If `P(n)` dominates, use the existing sibling diagnostic to split node error into:
+
+- wrong ordering inside structurally related sibling sets;
+- global node-ranking error outside measured sibling sets.
+
+This second split matters because sibling targets currently explain only about 28.5% of intensity.
+They are the right intervention only if they overlap a meaningful share of the measured node error.
+
+**Decision gate:**
+
+- sibling-local `P(n)` error dominates → direct sibling-ranking supervision;
+- broader `P(n)` error dominates → fragment regularization and objective alignment;
+- `P(f|n)` dominates → candidate-ion/factorized/adduct-gated modeling;
+- candidates rank adequately but intensities are wrong → calibration/competition loss;
+- the answer changes across major strata → use a stratum-specific correction instead of one global
+  mechanism.
+
+Finish this stage with one table assigning total true-intensity error mass to these branches and one
+recommended training experiment. Do not start several architecture branches in parallel.
+
+### 1. Freeze the baseline before new training comparisons
+
+The ranking diagnostic does not need to wait for a new baseline. New training experiments do:
+
+1. select the current production NIST20 config;
+2. save an immutable experiment config for each of three seeds;
+3. train and evaluate all three seeds under the evaluation contract;
+4. replay one seed entirely from its recorded artifacts.
+
+**Gate:** replayed metrics agree within numerical tolerance, and seed variance is known. Do not
+promote a newly trained model before this passes.
 
 ### 2. Run existing low-cost experiments
 
@@ -203,8 +236,8 @@ If the current-protocol ensemble wins:
 
 | Order | Experiment | New model code? | Required output |
 |---:|---|---:|---|
-| 0 | Three-seed attributable baseline | No | Reference mean, variance, replay |
-| 1 | Node versus ion-channel diagnostic | No | Select live error branch |
+| 0 | Ranking-error localization on `4ews8j6f` | Diagnostic only | Error-mass decomposition and one next experiment |
+| 1 | Three-seed attributable baseline | No | Reference mean, variance, replay |
 | 2 | Loss/objective comparison | Mostly config | Best objective |
 | 3 | `cc_atom_dropout` sweep | No | Regularization setting |
 | 4 | Static radius-2 probe and selected arm | Probe exists | Representation decision |
