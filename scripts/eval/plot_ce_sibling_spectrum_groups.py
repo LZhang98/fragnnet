@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 
 
 GROUP_COLS = ["mol_id", "prec_type", "inst_type", "frag_mode"]
+PEAK_TRACK_TOLERANCE_DA = 0.01
 
 
 def get_args() -> argparse.Namespace:
@@ -297,18 +298,13 @@ def format_group_values(values: pd.Series, decimals: int = 4) -> str:
 
 
 def add_peak_tracks(group: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Label cross-CE peaks by instrument-tolerance m/z tracks.
+    """Label cross-CE peaks using a fixed absolute m/z tolerance.
 
     A track contains at most one peak from each spectrum. Track IDs are ordered by
     their final mean m/z and only tracks present at two or more CE values are retained.
     """
     if group.empty:
         return group.copy(), pd.DataFrame()
-
-    inst_types = group["inst_type"].dropna().unique()
-    if len(inst_types) != 1:
-        raise ValueError("Peak tracking requires one instrument type per group.")
-    tolerance, tolerance_min_mz = _tolerance_for_inst_type(str(inst_types[0]))
 
     peak_rows = []
     for row in group.itertuples():
@@ -339,9 +335,8 @@ def add_peak_tracks(group: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             if peak["spec_id"] in track["spec_ids"]:
                 continue
             center_mz = float(np.mean(track["mzs"]))
-            max_diff = max(float(peak["mz"]), center_mz, tolerance_min_mz) * tolerance
             diff = abs(float(peak["mz"]) - center_mz)
-            if diff <= max_diff:
+            if diff <= PEAK_TRACK_TOLERANCE_DA:
                 candidates.append((diff, track_idx))
         if candidates:
             _, track_idx = min(candidates)
@@ -396,6 +391,30 @@ def add_peak_tracks(group: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         )
     out["peak_track_ids"] = track_arrays
     return out, pd.DataFrame(table_rows)
+
+
+def keep_tracks_with_unexplainable_peaks(group: pd.DataFrame) -> pd.DataFrame:
+    """Keep track labels only when at least one member is unmatched by the DAG."""
+    out = group.copy()
+    qualifying_ids: set[int] = set()
+    for row in out.itertuples():
+        track_ids = getattr(row, "peak_track_ids", None)
+        match_mask = getattr(row, "match_mask", None)
+        if not (
+            isinstance(track_ids, np.ndarray)
+            and isinstance(match_mask, np.ndarray)
+            and len(track_ids) == len(match_mask)
+        ):
+            continue
+        qualifying_ids.update(track_ids[(track_ids > 0) & ~match_mask].astype(int).tolist())
+
+    out["peak_track_ids"] = [
+        np.where(np.isin(track_ids, list(qualifying_ids)), track_ids, 0)
+        if isinstance(track_ids, np.ndarray)
+        else track_ids
+        for track_ids in out["peak_track_ids"]
+    ]
+    return out
 
 
 def plot_group_page(
@@ -649,7 +668,12 @@ def main() -> None:
             include_cmf=not args.no_cmf,
         )
         page_groups = [
-            (key, group.assign(match_mask=group["spec_id"].astype(int).map(match_masks)))
+            (
+                key,
+                keep_tracks_with_unexplainable_peaks(
+                    group.assign(match_mask=group["spec_id"].astype(int).map(match_masks))
+                ),
+            )
             for key, group in page_groups
         ]
 

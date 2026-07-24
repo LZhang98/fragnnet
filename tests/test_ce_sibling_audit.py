@@ -13,6 +13,7 @@ from oracle_ce_sibling_trend_audit import add_ce_columns, add_sibling_features  
 from plot_ce_sibling_spectrum_groups import (  # noqa: E402
     add_peak_tracks,
     format_group_values,
+    keep_tracks_with_unexplainable_peaks,
     label_for_row,
 )
 
@@ -103,3 +104,42 @@ def test_add_peak_tracks_never_merges_peaks_from_one_spectrum() -> None:
 
     first_ids = tracked.iloc[0]["peak_track_ids"]
     assert sum(first_ids > 0) == 1
+
+
+def test_add_peak_tracks_uses_absolute_0p01_da_tolerance() -> None:
+    group = pd.DataFrame(
+        {
+            "spec_id": [1, 2, 3],
+            "inst_type": ["FT"] * 3,
+            "ce_key": ["nce=10.0", "nce=20.0", "nce=30.0"],
+            "ce_value": [10.0, 20.0, 30.0],
+            "peaks": [[(1000.0, 0.2)], [(1000.009, 0.4)], [(1000.02, 0.6)]],
+        }
+    )
+
+    tracked, track_df = add_peak_tracks(group)
+
+    assert tracked.iloc[0]["peak_track_ids"].tolist() == [1]
+    assert tracked.iloc[1]["peak_track_ids"].tolist() == [1]
+    assert tracked.iloc[2]["peak_track_ids"].tolist() == [0]
+    assert len(track_df) == 2
+
+
+def test_track_label_requires_an_unexplainable_member() -> None:
+    group = pd.DataFrame(
+        {
+            "peak_track_ids": [
+                np.array([1, 2, 0]),
+                np.array([1, 2]),
+            ],
+            "match_mask": [
+                np.array([True, True, False]),
+                np.array([False, True]),
+            ],
+        }
+    )
+
+    filtered = keep_tracks_with_unexplainable_peaks(group)
+
+    assert filtered.iloc[0]["peak_track_ids"].tolist() == [1, 0, 0]
+    assert filtered.iloc[1]["peak_track_ids"].tolist() == [1, 0]

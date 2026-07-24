@@ -34,6 +34,7 @@ from plot_ce_sibling_spectrum_groups import (  # noqa: E402  (needs sys.path twe
     add_peak_tracks,
     choose_group_rows,
     compute_peak_match_masks,
+    keep_tracks_with_unexplainable_peaks,
     plot_group_page,
 )
 
@@ -169,7 +170,12 @@ def main() -> None:
             selected_df, args.frag_dp, args.max_h_transfer, include_cmf=not args.no_cmf
         )
         page_groups = [
-            (key, group.assign(match_mask=group["spec_id"].astype(int).map(match_masks)))
+            (
+                key,
+                keep_tracks_with_unexplainable_peaks(
+                    group.assign(match_mask=group["spec_id"].astype(int).map(match_masks))
+                ),
+            )
             for key, group in page_groups
         ]
 
