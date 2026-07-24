@@ -63,3 +63,4 @@ containers/apptainer/
 # Claude configuration and cache
 .claude
 .codex
+AGENTS.md
