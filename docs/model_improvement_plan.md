@@ -215,7 +215,22 @@ regularization.
 do not reproduce the gain. Current alias-free groups explain about 28.5% of intensity, so this
 intervention has bounded reach.
 
-### 4. Train against cleaner targets
+### 4. Pretrain the molecular encoder with ClassyFire atom labels
+
+Before changing spectrum targets, evaluate large-scale molecular representation pretraining if the
+ClassyFire molecule and atom-level corpus is ready. Follow
+[classyfire_atom_pretraining_plan.md](classyfire_atom_pretraining_plan.md):
+
+1. pretrain a FraGNNet-compatible `mol_embedder` on 1M molecules;
+2. compare molecule-level, atom-level, combined, and combined-plus-cut/JEPA objectives;
+3. transfer only compatible molecular-encoder weights;
+4. compare frozen and reduced-learning-rate fine-tuning;
+5. scale to 10M and then 100M only when downstream transfer continues improving.
+
+**Gate:** three-seed downstream FraGNNet improvement over scratch, reduced train-validation gap,
+and no retrieval regression. Pretraining accuracy is not a promotion metric.
+
+### 5. Train against cleaner targets
 
 Create separate, fingerprinted manifests for these arms:
 
@@ -229,7 +244,7 @@ Measure isolated arms before combining filters. Do not change canonical preproce
 **Gate:** the model must improve on the unchanged validation set. Improvement only on cleaned
 validation data does not establish a better production model.
 
-### 5. Validate an ensemble, then distill
+### 6. Validate an ensemble, then distill
 
 Ensemble the best three to five independent seeds under the current per-CE protocol. The previously
 reported +4.2% result used merged spectra and a scaffold split, so it is not directly transferable.
@@ -250,8 +265,9 @@ If the current-protocol ensemble wins:
 | 3 | `cc_atom_dropout` sweep | No | Regularization setting |
 | 4 | Static radius-2 probe and selected arm | Probe exists | Representation decision |
 | 5 | Sibling target cache and loss | Yes | Direct `P(n)` ranking test |
-| 6 | Clean-target arms | Data/config | Label-noise contribution |
-| 7 | Ensemble and distillation | Distillation only | Deployment ceiling and student |
+| 6 | ClassyFire atom-level molecular pretraining | Yes | Representation transfer gain |
+| 7 | Clean-target arms | Data/config | Label-noise contribution |
+| 8 | Ensemble and distillation | Distillation only | Deployment ceiling and student |
 
 ## Deferred Work
 
@@ -278,6 +294,7 @@ after the reconstruction baseline is reproducible.
 - [CE extent headroom finding](ce_extent_headroom_finding.md)
 - [Fragment representation audit](fragment_bond_set_representation.md)
 - [Sibling-ranking target design](sibling_ranking_target_plan.md)
+- [ClassyFire atom-level pretraining plan](classyfire_atom_pretraining_plan.md)
 - [FluxMPNN results and interpretation](fluxmpnn_plan.md)
 - [NIST data-quality plan](nist_data_quality_plan.md)
 - [Pairwise and retrieval loss findings](pairwise_loss.md)
