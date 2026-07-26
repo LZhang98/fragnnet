@@ -1,8 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: spectraverse_fragnnet_cv0
-wandb_group: spectraverse_fragnnet
+wandb_name: msgym_all_1_5
 wandb_tags:
 - massspecgym
 - ms_gym_all_1_5
