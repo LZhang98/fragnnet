@@ -248,6 +248,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # whether the model relies on precise cc atom-identity content. Not a config option;
         # set directly on the model instance (see scripts/debug/debug_cc_corruption_eval.py).
         self.cc_corruption_frac = 0.0
+        # Diagnostic-only: bypass molecular message passing while retaining the learned input
+        # projection and exact cc atom mask. This removes surrounding-molecule context from each
+        # atom embedding without changing checkpoint shapes.
+        self.mol_context_input_only = False
 
         # calculate node/edge feats sizes
         self.mol_node_feats = mol_node_feats
@@ -1160,6 +1164,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             mol_edge_attr,
             ctx=context_embed if self.mol_msg_gate else None,
         )
+        if self.mol_context_input_only:
+            mol_embed_gnn = self.mol_embedder.input_project(mol_x)
 
         # pool mol embeddings
         # For sum/mean, use segment_csr (ptr-only path) — same logic as frag_pool below.

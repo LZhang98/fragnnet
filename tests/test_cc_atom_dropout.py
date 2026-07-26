@@ -237,6 +237,31 @@ class TestCCAtomDropoutBehavior:
         assert any(th.any(g != 0) for g in grads)
 
 
+class TestIdentityShortcutDiagnostics:
+    def test_mol_input_only_changes_predictions_and_stays_finite(self) -> None:
+        model = _build_model(cc_atom_dropout=0.0)
+        model.eval()
+        kwargs = _forward_kwargs()
+        with th.no_grad():
+            baseline = model(**kwargs)
+            model.mol_context_input_only = True
+            ablated = model(**kwargs)
+        assert th.isfinite(ablated["pred_logprobs"]).all()
+        assert not th.allclose(
+            baseline["pred_logprobs"], ablated["pred_logprobs"], atol=1e-4
+        )
+
+    def test_mol_input_only_keeps_cc_mask_uncorrupted(self) -> None:
+        model = _build_model(cc_atom_dropout=0.0)
+        model.eval()
+        model.mol_context_input_only = True
+        model.cc_corruption_frac = 0.0
+        with th.no_grad():
+            first = model(**_forward_kwargs())
+            second = model(**_forward_kwargs())
+        assert th.allclose(first["pred_logprobs"], second["pred_logprobs"], atol=1e-6)
+
+
 class TestCandidateIonForward:
     def test_candidate_ion_head_forward_is_finite(self) -> None:
         frag_node_feats = ["cc", "base_formula", "depth", "h_formulae_idx", "h_counts"]
