@@ -9,9 +9,15 @@ No checkpoint weights or configuration schemas are changed.
 """
 
 import argparse
+import os
 import random
 
 import numpy as np
+
+# Hungarian peak matching temporarily allocates large pairwise matrices. Expandable segments let
+# PyTorch reuse fragmented reserved memory instead of requiring one new contiguous CUDA block.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch as th
 from tqdm import tqdm
 
