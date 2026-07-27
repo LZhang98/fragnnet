@@ -132,7 +132,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             f"[SpecMolFragDynamicBatchSampler] Metadata loaded. Expecting {expected_total}/{len(self.data_source)} samples with skip_too_big={self._skip_too_big}"
         )
         # Convert to numpy array for O(1) vectorised column reads in _pre_compute_batches
-        self._data_meta = np.array(self._data_meta, dtype=np.int32)
+        self._data_meta = np.asarray(self._data_meta, dtype=np.int32).reshape(-1, 2)
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch number to trigger batch recomputation.

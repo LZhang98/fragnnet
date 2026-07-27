@@ -101,6 +101,17 @@ class DS2:
 class TestSpecMolFragDynamicBatchSampler:
     """Tests for dynamic batch sampling with node/edge constraints."""
 
+    def test_dynamic_batch_sampler_empty_dataset(self):
+        """Test an empty split produces no batches."""
+        ds = FakeDataset([])
+
+        sampler = SpecMolFragDynamicBatchSampler(
+            data_source=ds, max_num=10, limited_by="frag_node"
+        )
+
+        assert list(sampler) == []
+        assert len(sampler) == 0
+
     def test_dynamic_batch_sampler(self):
         """Test basic dynamic batch sampler functionality."""
         sizes = [(1, 2), (3, 4), (2, 1), (8, 2), (5, 6), (2, 2), (4, 1), (6, 6)]
