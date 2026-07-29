@@ -154,13 +154,59 @@ pip install --no-deps -I -e .
 
 For submitting training jobs on Compute Canada clusters, use the `setup_job_cc.py` script:
 
+For Vulcan
+```bash
+python ./scripts/setup_job_cc.py \
+  --job_name=your_job_name \
+  --python_script_fp=./scripts/run_pl_model_fit.py \
+  --frag_gnn_dp=./ \
+  --script_kwargs \
+  w=online \
+  c=config/path/to/experiment.yml \
+  --time=12:00:00 \
+  --cc_account=aip-rgreiner
+```
+
+For example, submit the CC channel-dropout `p=0.1` experiment with:
+
+```bash
+python ./scripts/setup_job_cc.py \
+  --job_name=fraggnn_d3_cc_channel_dropout_p01 \
+  --python_script_fp=./scripts/run_pl_model_fit.py \
+  --frag_gnn_dp=./ \
+  --script_kwargs \
+  w=online \
+  c=config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_cc_channel_dropout_p01.yml \
+  --time=12:00:00 \
+  --cc_account=aip-rgreiner
+```
+
+For Fir, submit all 10 SpectraVerse FraGNNet cross-validation folds with:
+
 ```bash
 python scripts/setup_job_cc.py \
   --python_script_fp scripts/run_pl_model_fit.py \
-  --frag_gnn_dp /path/to/frag-gnn \
-  --job_name my_training_job \
-  --gpu_profile narval:a100-40gb \
-  --script_kwargs config=config/my_config.yml
+  --frag_gnn_dp . \
+  --cv_config_dp config/spectraverse/fragnnet \
+  --cv_start 0 --cv_end 9 \
+  --gpu_profile fir:h100-3g.40gb \
+  --job_name fragnnet_cv \
+  --script_kwargs w=online \
+  --time 24:00:00
+```
+
+For the square-root-intensity variant:
+
+```bash
+python scripts/setup_job_cc.py \
+  --python_script_fp scripts/run_pl_model_fit.py \
+  --frag_gnn_dp . \
+  --cv_config_dp config/spectraverse/fragnnet_sqrt \
+  --cv_start 0 --cv_end 9 \
+  --gpu_profile fir:h100-3g.40gb \
+  --job_name fragnnet_cv_sqrt \
+  --script_kwargs w=online \
+  --time 24:00:00
 ```
 
 **Available GPU profiles** (use `--gpu_profile` or `--list_gpu_profiles`):
