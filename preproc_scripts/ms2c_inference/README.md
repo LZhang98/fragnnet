@@ -156,6 +156,35 @@ CSV file indexing all processed queries.
 
 ## Running Inference
 
+### MSGYM retrieval migration
+
+Export MSGYM query-candidate records and a de-duplicated candidate list for
+fresh downstream preprocessing:
+
+```bash
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_mass.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass
+
+# Include every test-fold spectrum, not only simulation_challenge.
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_mass.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass_all \
+  --subset all
+
+# Formula-constrained candidates for every test-fold spectrum.
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_formula.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_formula_all \
+  --subset all
+
+```
+
+The output contains `query_candidates.pkl.gz` and `candidate_smiles.csv`.
+
 ### run_ms2c_predict_val.py
 
 Runs inference on MS2C prediction datasets using a trained FraGNNet checkpoint.

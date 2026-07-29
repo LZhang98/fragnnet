@@ -60,6 +60,12 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--template_fp", type=str, default="./config/template.yml")
     parser.add_argument("--num_workers", type=int, default=get_core_count())
     parser.add_argument(
+        "--evaluate",
+        type=booltype,
+        default=True,
+        help="Compute observed-spectrum metrics. Set False for MSGYM candidate prediction.",
+    )
+    parser.add_argument(
         "--auxiliary_scores",
         type=str,
         nargs="+",
@@ -170,7 +176,7 @@ if __name__ == "__main__":
         model=model,
         dataloader=dl,
         device=device,
-        evaluate=True,
+        evaluate=args.evaluate,
     )
 
     # Save results
