@@ -30,6 +30,7 @@ FRAG_NODE_FEATS = ["cc", "base_formula", "depth", "h_formulae_idx"]
 
 def _build_model(
     cc_atom_dropout: float,
+    cc_channel_dropout: float = 0.0,
     frag_node_feats: list[str] | None = None,
     candidate_ion_head: bool = False,
     ion_channel_factorized: bool = False,
@@ -108,6 +109,7 @@ def _build_model(
         ace_std=10.0,
         cc_feature_dropout=0.0,
         cc_atom_dropout=cc_atom_dropout,
+        cc_channel_dropout=cc_channel_dropout,
         candidate_ion_head=candidate_ion_head,
         ion_channel_factorized=ion_channel_factorized,
         ion_channel_adduct_gated=ion_channel_adduct_gated,
@@ -172,6 +174,30 @@ class TestCCAtomDropoutValidation:
             _build_model(cc_atom_dropout=1.5)
         with pytest.raises(ValueError, match="cc_atom_dropout"):
             _build_model(cc_atom_dropout=-0.1)
+
+
+class TestCCChannelDropoutValidation:
+    def test_rejects_out_of_range(self) -> None:
+        with pytest.raises(ValueError, match="cc_channel_dropout"):
+            _build_model(cc_atom_dropout=0.0, cc_channel_dropout=1.5)
+        with pytest.raises(ValueError, match="cc_channel_dropout"):
+            _build_model(cc_atom_dropout=0.0, cc_channel_dropout=-0.1)
+
+
+class TestCCChannelDropoutForward:
+    def test_active_only_during_training(self) -> None:
+        model = _build_model(cc_atom_dropout=0.0, cc_channel_dropout=0.5)
+        kwargs = _forward_kwargs()
+        with th.no_grad():
+            model.eval()
+            out_eval = model(**kwargs)
+            model.train()
+            th.manual_seed(0)
+            out_train = model(**kwargs)
+        assert th.isfinite(out_train["pred_logprobs"]).all()
+        assert not th.allclose(
+            out_eval["pred_logprobs"], out_train["pred_logprobs"], atol=1e-4
+        )
 
 
 class TestCCAtomDropoutBehavior:

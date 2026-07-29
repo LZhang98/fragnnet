@@ -116,6 +116,7 @@ class FraGNNetPL(SpectrumPL):
             output_formula_str=self.hparams.output_formula_str,
             cc_feature_dropout=self.hparams.cc_feature_dropout,
             cc_atom_dropout=self.hparams.cc_atom_dropout,
+            cc_channel_dropout=self.hparams.get("cc_channel_dropout", 0.0),
             context_embedding=self.hparams.context_embedding,
             context_embedding_dim=self.hparams.context_embedding_dim,
             context_embedding_hidden_dim=self.hparams.context_embedding_hidden_dim,

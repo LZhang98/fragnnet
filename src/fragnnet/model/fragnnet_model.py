@@ -123,6 +123,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ace_std: float,
         cc_feature_dropout: float,
         cc_atom_dropout: float = 0.0,
+        cc_channel_dropout: float = 0.0,
         depth_ce_bias: bool = False,
         context_embedding: bool = False,
         context_embedding_dim: int = 64,
@@ -244,6 +245,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if not 0.0 <= cc_atom_dropout <= 1.0:
             raise ValueError(f"cc_atom_dropout must be in [0, 1], got {cc_atom_dropout}")
         self.cc_atom_dropout = float(cc_atom_dropout)
+        if not 0.0 <= cc_channel_dropout <= 1.0:
+            raise ValueError(f"cc_channel_dropout must be in [0, 1], got {cc_channel_dropout}")
+        self.cc_channel_dropout = float(cc_channel_dropout)
         # Diagnostic-only: fraction of cc mask bits to randomly flip at eval time, to test
         # whether the model relies on precise cc atom-identity content. Not a config option;
         # set directly on the model instance (see scripts/debug/debug_cc_corruption_eval.py).
@@ -710,6 +714,26 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             return frag_node_mask_embed
         keep = th.rand((), device=frag_node_mask_embed.device) >= self.cc_feature_dropout
         return frag_node_mask_embed * keep.to(dtype=frag_node_mask_embed.dtype)
+
+    def _maybe_apply_cc_channel_dropout(self, frag_node_mask_embed: th.Tensor) -> th.Tensor:
+        """Drop pooled cc embedding channels with one mask shared by all fragments."""
+        if not self.training or self.cc_channel_dropout <= 0.0:
+            return frag_node_mask_embed
+        if self.cc_channel_dropout == 1.0:
+            return th.zeros_like(frag_node_mask_embed)
+        keep = (
+            th.rand(
+                1,
+                frag_node_mask_embed.shape[1],
+                device=frag_node_mask_embed.device,
+            )
+            >= self.cc_channel_dropout
+        )
+        return (
+            frag_node_mask_embed
+            * keep.to(dtype=frag_node_mask_embed.dtype)
+            / (1.0 - self.cc_channel_dropout)
+        )
 
     def _ce_location_check(self):
         assert "frag" not in self.ce_insert_locations, "ce_insert_location=frag not supported"
@@ -1294,6 +1318,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 assert self.cc_interstage_type == "direct", self.cc_interstage_type
                 frag_node_mask_embed = frag_node_mask_embed
 
+            frag_node_mask_embed = self._maybe_apply_cc_channel_dropout(frag_node_mask_embed)
             frag_node_mask_embed = self._maybe_apply_cc_feature_dropout(frag_node_mask_embed)
             frag_ndata.append(frag_node_mask_embed)
         if "boundary_cc" in self.frag_node_feats:
