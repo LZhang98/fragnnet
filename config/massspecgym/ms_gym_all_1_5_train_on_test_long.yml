@@ -130,7 +130,7 @@ gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1
 min_epochs: 100
-max_epochs: 1000
+max_epochs: 300
 debug_overfit: False
 
 # ============================================================================
