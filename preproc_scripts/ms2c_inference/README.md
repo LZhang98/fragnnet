@@ -185,6 +185,19 @@ python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
 
 The output contains `query_candidates.pkl.gz` and `candidate_smiles.csv`.
 
+Convert the exported manifest into global MS2C molecule and spectrum
+dataframes:
+
+```bash
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py build-proc \
+  --manifest_fp data/ms2c/msgym/current/retrieval_candidates_mass/query_candidates.pkl.gz \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass/proc
+```
+
+This writes `mol_df.pkl`, `spec_df.pkl`, and `test_ids.csv`. Each
+query-candidate pair is one spectrum row, and candidates belonging to the same
+MSGYM spectrum share a `group_id`.
+
 ### run_ms2c_predict_val.py
 
 Runs inference on MS2C prediction datasets using a trained FraGNNet checkpoint.

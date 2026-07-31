@@ -46,3 +46,47 @@ def test_msgym_json_exports_selected_candidates(tmp_path: Path) -> None:
     manifest = pd.read_pickle(manifest_fp)
     assert manifest["source_identifier"].tolist() == ["query_a", "query_a"]
     assert manifest["candidate_smiles"].tolist() == ["C", "CC"]
+
+
+def test_build_proc_aligns_candidates_and_query_groups(tmp_path: Path) -> None:
+    manifest_fp = tmp_path / "query_candidates.pkl.gz"
+    output_dp = tmp_path / "proc"
+    pd.DataFrame(
+        {
+            "source_identifier": ["query_a", "query_a", "query_a", "query_b"],
+            "source_smiles": ["C", "C", "C", "CC"],
+            "candidate_smiles": ["C", "CC", "CC", "CC"],
+            "prec_type": ["[M+H]+", "[M+H]+", "[M+H]+", "[M-H]-"],
+            "prec_mz": [17.0, 17.0, 17.0, 29.0],
+            "inst_type": ["FT", "FT", "FT", "QTOF"],
+            "frag_mode": ["HCD", "HCD", "HCD", "CID"],
+            "ace": [20.0, 20.0, 20.0, 30.0],
+            "nce": [float("nan")] * 4,
+            "ion_mode": ["P", "P", "P", "N"],
+            "spec_type": ["MS2"] * 4,
+            "dset": ["msgym_1_5"] * 4,
+            "peaks": [[], [], [], []],
+        }
+    ).to_pickle(manifest_fp)
+
+    mol_fp, spec_fp, split_fp = MSGYM.build_proc_from_manifest(manifest_fp, output_dp)
+
+    mol_df = pd.read_pickle(mol_fp)
+    assert mol_df[["mol_id", "smiles"]].to_dict("records") == [
+        {"mol_id": 0, "smiles": "C"},
+        {"mol_id": 1, "smiles": "CC"},
+    ]
+    assert mol_df["formula"].tolist() == ["CH4", "C2H6"]
+
+    spec_df = pd.read_pickle(spec_fp)
+    assert spec_df["mol_id"].tolist() == [0, 1, 1]
+    assert spec_df["spec_id"].tolist() == [0, 1, 2]
+    assert spec_df["group_id"].tolist() == [0, 0, 1]
+    assert spec_df["ace_extra_1"].tolist() == [-1.0, -1.0, -1.0]
+
+    split_df = pd.read_csv(split_fp)
+    assert split_df.to_dict("records") == [
+        {"spec_id": 0, "mol_id": 0, "group_id": 0},
+        {"spec_id": 1, "mol_id": 1, "group_id": 0},
+        {"spec_id": 2, "mol_id": 1, "group_id": 1},
+    ]

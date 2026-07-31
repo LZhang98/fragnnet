@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +26,22 @@ import pandas as pd
 from fragnnet.utils import data_utils
 
 logger = logging.getLogger(__name__)
+
+REQUIRED_MANIFEST_COLUMNS = {
+    "source_identifier",
+    "source_smiles",
+    "candidate_smiles",
+    "prec_type",
+    "prec_mz",
+    "inst_type",
+    "frag_mode",
+    "ace",
+    "nce",
+    "ion_mode",
+    "spec_type",
+    "dset",
+    "peaks",
+}
 
 
 def canonicalize_smiles(smiles: str) -> str:
@@ -134,6 +151,79 @@ def export_msgym_json(
     return manifest_fp, candidates_fp
 
 
+def build_proc_from_manifest(
+    manifest_fp: Path,
+    output_dp: Path,
+) -> tuple[Path, Path, Path]:
+    """Convert an exported MSGYM manifest to global MS2C dataframes and a test split."""
+    # 1. Validate the manifest and build the global candidate molecule table.
+    manifest = pd.read_pickle(manifest_fp)
+    missing = REQUIRED_MANIFEST_COLUMNS - set(manifest.columns)
+    if missing:
+        raise ValueError(f"Missing required manifest columns in {manifest_fp}: {sorted(missing)}")
+    if manifest.empty:
+        raise ValueError(f"MSGYM manifest is empty: {manifest_fp}")
+    original_size = len(manifest)
+    manifest = manifest.drop_duplicates(
+        subset=["source_identifier", "candidate_smiles"],
+        keep="first",
+    ).reset_index(drop=True)
+    if len(manifest) != original_size:
+        logger.info(
+            "Removed %d duplicate query-candidate records",
+            original_size - len(manifest),
+        )
+
+    candidate_smiles = sorted(manifest["candidate_smiles"].unique())
+    mol_df = pd.DataFrame(
+        {
+            "smiles": candidate_smiles,
+            "mol_id": range(len(candidate_smiles)),
+        }
+    )
+    mol_df["mol"] = data_utils.par_apply_series(
+        mol_df["smiles"],
+        partial(data_utils.mol_from_smiles, canonicalize_tautomers=False),
+    )
+    invalid_smiles = mol_df.loc[mol_df["mol"].isna(), "smiles"].tolist()
+    if invalid_smiles:
+        raise ValueError(
+            f"Could not build molecules for {len(invalid_smiles)} candidate SMILES: "
+            f"{invalid_smiles[:5]}"
+        )
+    data_utils.compute_mol_df_props(mol_df)
+
+    # 2. Expand query metadata over candidates and align every row to mol_df.
+    smiles_to_mol_id = mol_df.set_index("smiles")["mol_id"]
+    spec_df = manifest.copy()
+    spec_df["mol_id"] = spec_df["candidate_smiles"].map(smiles_to_mol_id)
+    if spec_df["mol_id"].isna().any():
+        raise ValueError("Some manifest candidates could not be mapped to mol_df")
+    spec_df["mol_id"] = spec_df["mol_id"].astype(int)
+    spec_df["spec_id"] = range(len(spec_df))
+    spec_df["dset_spec_id"] = spec_df["spec_id"]
+    spec_df["group_id"] = pd.factorize(spec_df["source_identifier"], sort=False)[0]
+    for ce_type in ("ace", "nce"):
+        spec_df[f"{ce_type}_extra_1"] = -1.0
+        spec_df[f"{ce_type}_extra_2"] = -1.0
+
+    # 3. Save the dataframes and the all-candidate test split used by inference.
+    output_dp.mkdir(parents=True, exist_ok=True)
+    mol_fp = output_dp / "mol_df.pkl"
+    spec_fp = output_dp / "spec_df.pkl"
+    split_fp = output_dp / "test_ids.csv"
+    mol_df.to_pickle(mol_fp)
+    spec_df.to_pickle(spec_fp)
+    spec_df[["spec_id", "mol_id", "group_id"]].to_csv(split_fp, index=False)
+    logger.info(
+        "Saved %d molecules and %d query-candidate spectra to %s",
+        len(mol_df),
+        len(spec_df),
+        output_dp,
+    )
+    return mol_fp, spec_fp, split_fp
+
+
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -149,13 +239,23 @@ def get_args() -> argparse.Namespace:
         help="Use test-fold simulation-challenge spectra (default) or all test spectra.",
     )
 
+    proc_parser = subparsers.add_parser(
+        "build-proc",
+        help="Convert query_candidates.pkl.gz to mol_df.pkl and spec_df.pkl.",
+    )
+    proc_parser.add_argument("--manifest_fp", type=Path, required=True)
+    proc_parser.add_argument("--output_dp", type=Path, required=True)
+
     return parser.parse_args()
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     args = get_args()
-    export_msgym_json(args.tsv_fp, args.candidates_fp, args.output_dp, args.subset)
+    if args.command == "export":
+        export_msgym_json(args.tsv_fp, args.candidates_fp, args.output_dp, args.subset)
+    elif args.command == "build-proc":
+        build_proc_from_manifest(args.manifest_fp, args.output_dp)
 
 
 if __name__ == "__main__":
