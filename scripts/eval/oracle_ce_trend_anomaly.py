@@ -11,9 +11,9 @@ distinct CE values, it fits a non-increasing isotonic regression to the per-CE m
 (``iso_resid = fit - metric``). The residual is threshold-independent, so a sweep over
 ``--resid_thresholds`` is just a filter -- the per-spectrum table is written once and re-used.
 
-A dip that ALSO has a well-explained sibling at another CE (``best_diff_ce >= --normal_thresh``) is
-corroborated as a per-spectrum data-quality artifact (the DAG is CE-independent, so a good sibling
-proves coverage is fine). The sweep reports both the flagged count and the corroborated subset.
+A dip is conservatively corroborated for human review only when a normal replicate exists at the
+same CE or normal siblings exist on both sides of the CE. A normal lower-CE sibling alone is not
+corroboration because legitimate high-energy fragments may fall outside a shallow DAG.
 
 Usage:
     python scripts/eval/oracle_ce_trend_anomaly.py \\
@@ -78,7 +78,7 @@ def get_args() -> argparse.Namespace:
         "--normal_thresh",
         type=float,
         default=0.90,
-        help="A different-CE sibling >= this corroborates a dip as a data-quality artifact.",
+        help="Normal-score threshold for same-CE replicate or two-sided CE corroboration.",
     )
     parser.add_argument(
         "--min_ce_bins",
@@ -96,6 +96,12 @@ def get_args() -> argparse.Namespace:
         help="Group only by mol_id/adduct/instrument. Default also controls for frag_mode.",
     )
     args = parser.parse_args()
+    if not 0.0 <= args.normal_thresh <= 1.0:
+        raise ValueError("normal_thresh must be between 0 and 1")
+    if args.min_ce_bins < 2:
+        raise ValueError("min_ce_bins must be at least 2")
+    if any(threshold < 0.0 for threshold in args.resid_thresholds):
+        raise ValueError("resid_thresholds must be non-negative")
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
     return args
 
@@ -139,7 +145,8 @@ def add_isotonic_residual(
         np.maximum.at(env, inv, g_val[finite])
         ir = IsotonicRegression(increasing=False, out_of_bounds="clip")
         ir.fit(ce_u, env)
-        iso_fit[gidx] = ir.predict(g_ce)
+        finite_positions = np.asarray(gidx)[finite]
+        iso_fit[finite_positions] = ir.predict(g_ce[finite])
 
     df["n_ce_bins"] = n_ce_bins
     df["iso_fit"] = iso_fit
@@ -156,7 +163,13 @@ def sweep_thresholds(
     rows = []
     for t in thresholds:
         flagged = fittable[fittable["iso_resid"] >= t]
-        corrob = flagged[flagged["best_diff_ce"] >= normal_thresh]
+        corrob = flagged[
+            flagged["best_same_ce_other"].ge(normal_thresh)
+            | (
+                flagged["best_lower_ce"].ge(normal_thresh)
+                & flagged["best_higher_ce"].ge(normal_thresh)
+            )
+        ]
         rows.append(
             {
                 "resid_thresh": t,
@@ -183,7 +196,7 @@ def plot_sweep(sweep: pd.DataFrame, out_fp: Path) -> None:
         sweep["n_corroborated"],
         "-s",
         color=COLORS[2],
-        label="corroborated (sibling >= normal)",
+        label="corroborated for review",
     )
     ax.set_xlabel("isotonic-residual threshold")
     ax.set_ylabel("# spectra")
@@ -193,7 +206,7 @@ def plot_sweep(sweep: pd.DataFrame, out_fp: Path) -> None:
     ax = axes[1]
     ax.plot(sweep["resid_thresh"], sweep["pct_corroborated"], "-o", color=COLORS[4])
     ax.set_xlabel("isotonic-residual threshold")
-    ax.set_ylabel("% flagged with good different-CE sibling")
+    ax.set_ylabel("% flagged with conservative corroboration")
     ax.set_ylim(0, 100)
     ax.set_title("Corroboration rate")
 
@@ -224,9 +237,10 @@ def main() -> None:
         group_cols.append("frag_mode")
 
     metric_col = resolve_metric_col(df, args.metric)
-    # best_diff_ce (the corroborating good sibling) comes from the shared audit machinery.
+    # Sibling context comes from the shared audit machinery.
     df = add_sibling_features(df, group_cols, metric_col)
-    df = add_isotonic_residual(df, group_cols, metric_col, args.min_ce_bins)
+    trend_group_cols = [*group_cols, "ce_source"]
+    df = add_isotonic_residual(df, trend_group_cols, metric_col, args.min_ce_bins)
     df.attrs["metric_col"] = metric_col
 
     fittable = df[df["iso_resid"].notna()]
@@ -236,7 +250,7 @@ def main() -> None:
         len(fittable),
         args.min_ce_bins,
         df["mol_id"].nunique(),
-        ", ".join(group_cols),
+        ", ".join(trend_group_cols),
     )
 
     # Per-spectrum residual table (threshold-independent) -- apply any cutoff downstream.
@@ -254,6 +268,7 @@ def main() -> None:
         "best_lower_ce",
         "best_higher_ce",
         "best_diff_ce",
+        "best_same_ce_other",
         "n_true_peaks",
         "n_achievable_peaks_inst_tol",
     ]

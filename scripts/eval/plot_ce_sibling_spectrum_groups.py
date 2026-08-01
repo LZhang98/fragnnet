@@ -1,9 +1,9 @@
 """Plot CE-series spectra for groups with suspicious low oracle scores.
 
 Each PDF page is one ``(mol_id, adduct, instrument, frag_mode)`` group. Spectra are sorted by
-collision energy and suspicious low-oracle spectra are labeled in red. The intended use is to
-inspect spectra where the oracle score is low even though another CE sibling in the same group is
-normal, which is likely a bad acquisition/annotation rather than a DAG coverage gap.
+collision energy and conservative human-review candidates are labeled in red. Candidates require
+a normal same-CE replicate or a two-sided interior CE dip; a high-CE decline with only a normal
+lower-CE sibling is not sufficient.
 
 Usage:
     python scripts/eval/plot_ce_sibling_spectrum_groups.py \\
@@ -28,6 +28,7 @@ from dag_oracle_scores import (
     _tolerance_for_inst_type,
 )
 from matplotlib.backends.backend_pdf import PdfPages
+from oracle_ce_sibling_trend_audit import add_ce_columns as add_oracle_ce_columns
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
@@ -110,26 +111,8 @@ def get_args() -> argparse.Namespace:
 
 
 def add_ce_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Add CE value/key columns.
-
-    FT spectra use NCE when available because NCE is the intended comparable scale there.
-    Other instruments use ACE first, then fall back to NCE.
-    """
-    df = df.copy()
-    use_nce = df["inst_type"].eq("FT") & df["nce"].notna()
-    df["ce_value"] = df["ace"].where(df["ace"].notna(), df["nce"])
-    df.loc[use_nce, "ce_value"] = df.loc[use_nce, "nce"]
-    df["ce_source"] = np.where(
-        use_nce,
-        "nce",
-        np.where(df["ace"].notna(), "ace", np.where(df["nce"].notna(), "nce", "none")),
-    )
-    df["ce_key"] = np.where(
-        df["ce_value"].notna(),
-        df["ce_source"] + "=" + df["ce_value"].round(6).astype(str),
-        "ce=NA",
-    )
-    return df
+    """Delegate to the shared ACE/NCE-aware CE normalization."""
+    return add_oracle_ce_columns(df)
 
 
 def peaks_to_arrays(peaks: object) -> tuple[np.ndarray, np.ndarray]:
@@ -604,6 +587,9 @@ def main() -> None:
         "flag_high_ce_bad_low_ce_ok",
         "flag_any_diff_ce_ok",
         "flag_trend_drop",
+        "flag_same_ce_replicate_contradiction",
+        "flag_interior_ce_dip",
+        "flag_review_candidate",
     ]
     flag_cols = [c for c in flag_cols if c in flags.columns]
     flag_by_spec = flags[flag_cols].drop_duplicates("spec_id")
@@ -620,6 +606,9 @@ def main() -> None:
         "flag_high_ce_bad_low_ce_ok",
         "flag_any_diff_ce_ok",
         "flag_trend_drop",
+        "flag_same_ce_replicate_contradiction",
+        "flag_interior_ce_dip",
+        "flag_review_candidate",
     ]:
         if col in plot_df.columns:
             plot_df[col] = pd.Series(
@@ -708,8 +697,10 @@ def main() -> None:
                     "n_plotted_spectra": len(group),
                     "flagged_spec_ids": ";".join(flagged["spec_id"].astype(str)),
                     "worst_metric": flagged[args.metric].min(),
-                    "n_low_no_good_reason": int(flagged["flag_any_diff_ce_ok"].sum()),
-                    "n_trend_drop": int(flagged["flag_trend_drop"].sum()),
+                    "n_same_ce_replicate_contradiction": int(
+                        flagged["flag_same_ce_replicate_contradiction"].sum()
+                    ),
+                    "n_interior_ce_dip": int(flagged["flag_interior_ce_dip"].sum()),
                 }
             )
             if page % 100 == 0:

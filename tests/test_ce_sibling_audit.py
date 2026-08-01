@@ -9,7 +9,12 @@ import pandas as pd
 EVAL_SCRIPT_DP = Path(__file__).parents[1] / "scripts" / "eval"
 sys.path.insert(0, str(EVAL_SCRIPT_DP))
 
-from oracle_ce_sibling_trend_audit import add_ce_columns, add_sibling_features  # noqa: E402
+from oracle_ce_sibling_trend_audit import (  # noqa: E402
+    add_ce_columns,
+    add_sibling_features,
+    audit_metric,
+)
+from oracle_ce_trend_anomaly import add_isotonic_residual  # noqa: E402
 from plot_ce_sibling_spectrum_groups import (  # noqa: E402
     add_peak_tracks,
     format_group_values,
@@ -42,6 +47,109 @@ def test_sibling_detection_does_not_compare_ace_with_nce() -> None:
     assert scored.loc[0, "best_higher_ce"] == 0.9
     assert np.isnan(scored.loc[2, "best_lower_ce"])
     assert np.isnan(scored.loc[2, "best_higher_ce"])
+
+
+def test_sibling_detection_preserves_rows_when_rounded_ce_bins_collide() -> None:
+    df = pd.DataFrame(
+        {
+            "spec_id": [1, 2],
+            "mol_id": [1, 1],
+            "prec_type": ["[M+H]+"] * 2,
+            "inst_type": ["FT"] * 2,
+            "frag_mode": ["HCD"] * 2,
+            "ace": [np.nan, np.nan],
+            "nce": [10.00000011, 10.00000019],
+            "metric": [0.2, 0.9],
+        }
+    )
+
+    scored = add_sibling_features(
+        add_ce_columns(df),
+        ["mol_id", "prec_type", "inst_type", "frag_mode"],
+        "metric",
+    )
+
+    assert scored["spec_id"].tolist() == [1, 2]
+    assert scored.loc[0, "best_same_ce_other"] == 0.9
+    assert scored.loc[1, "best_same_ce_other"] == 0.2
+
+
+def test_audit_only_reviews_same_ce_contradictions_or_two_sided_dips() -> None:
+    df = pd.DataFrame(
+        {
+            "spec_id": [1, 2, 3, 4, 5],
+            "mol_id": [1] * 5,
+            "prec_type": ["[M+H]+"] * 5,
+            "inst_type": ["FT"] * 5,
+            "frag_mode": ["HCD"] * 5,
+            "ace": [np.nan] * 5,
+            "nce": [10.0, 20.0, 20.0, 30.0, 40.0],
+            "metric": [0.95, 0.1, 0.95, 0.95, 0.1],
+        }
+    )
+    df = add_ce_columns(df)
+
+    scored, _summary = audit_metric(
+        df,
+        ["mol_id", "prec_type", "inst_type", "frag_mode"],
+        "metric",
+        low_thresh=0.3,
+        normal_thresh=0.9,
+        drop_thresh=0.5,
+    )
+    by_id = scored.set_index("spec_id")
+
+    assert by_id.loc[2, "flag_same_ce_replicate_contradiction"]
+    assert by_id.loc[2, "flag_interior_ce_dip"]
+    assert by_id.loc[2, "flag_review_candidate"]
+    assert by_id.loc[5, "flag_high_ce_bad_low_ce_ok"]
+    assert not by_id.loc[5, "flag_review_candidate"]
+
+
+def test_sibling_detection_ignores_missing_metrics_without_warning() -> None:
+    df = pd.DataFrame(
+        {
+            "mol_id": [1, 1],
+            "prec_type": ["[M+H]+"] * 2,
+            "inst_type": ["FT"] * 2,
+            "frag_mode": ["HCD"] * 2,
+            "ace": [np.nan, np.nan],
+            "nce": [10.0, 20.0],
+            "metric": [np.nan, np.nan],
+        }
+    )
+
+    scored = add_sibling_features(
+        add_ce_columns(df),
+        ["mol_id", "prec_type", "inst_type", "frag_mode"],
+        "metric",
+    )
+
+    assert scored[["best_lower_ce", "best_higher_ce", "best_same_ce_other"]].isna().all().all()
+
+
+def test_isotonic_fit_separates_ce_sources_and_skips_missing_ce() -> None:
+    df = pd.DataFrame(
+        {
+            "mol_id": [1] * 7,
+            "prec_type": ["[M+H]+"] * 7,
+            "inst_type": ["FT"] * 7,
+            "frag_mode": ["HCD"] * 7,
+            "ce_source": ["ace"] * 3 + ["nce"] * 3 + ["none"],
+            "ce_value": [10.0, 20.0, 30.0, 10.0, 20.0, 30.0, np.nan],
+            "metric": [0.9, 0.8, 0.7, 0.4, 0.3, 0.2, 0.1],
+        }
+    )
+
+    scored = add_isotonic_residual(
+        df,
+        ["mol_id", "prec_type", "inst_type", "frag_mode", "ce_source"],
+        "metric",
+        min_ce_bins=3,
+    )
+
+    assert np.allclose(scored.loc[:5, "iso_resid"], 0.0)
+    assert np.isnan(scored.loc[6, "iso_resid"])
 
 
 def test_plot_metadata_uses_recorded_pmz_and_group_values() -> None:

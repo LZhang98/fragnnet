@@ -1,9 +1,9 @@
-"""Flag low-oracle spectra contradicted by same-adduct/instrument CE siblings.
+"""Find low-oracle spectra contradicted by comparable CE siblings.
 
-This catches likely per-spectrum data-quality failures: a spectrum has very low oracle coverage,
-but another collision energy for the same molecule/adduct/instrument/mode has normal coverage.
-The DAG is collision-energy independent, so a normal sibling proves the DAG can explain that
-chemistry and points at a bad CE acquisition/annotation rather than a fragmentation-rule gap.
+Different-CE comparisons describe CE-dependent DAG coverage but do not by themselves prove bad
+data: a shallow DAG can explain low-energy fragments while missing legitimate high-energy products.
+The conservative human-review candidates are therefore limited to low spectra with either a normal
+replicate at the same CE or normal siblings on both sides of an interior CE dip.
 
 The script is metric-agnostic. It defaults to ``cos_hun_inst_tol_opt`` from
 ``dag_oracle_scores.py`` and also accepts any other per-spectrum metric columns, including
@@ -79,6 +79,10 @@ def get_args() -> argparse.Namespace:
         help="Group only by mol_id/adduct/instrument. Default also controls for frag_mode.",
     )
     args = parser.parse_args()
+    if not 0.0 <= args.low_thresh < args.normal_thresh <= 1.0:
+        raise ValueError("Require 0 <= low_thresh < normal_thresh <= 1")
+    if args.drop_thresh < 0.0:
+        raise ValueError("drop_thresh must be non-negative")
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
     return args
 
@@ -98,48 +102,65 @@ def add_ce_columns(df: pd.DataFrame) -> pd.DataFrame:
         "nce",
         np.where(df["ace"].notna(), "ace", np.where(df["nce"].notna(), "nce", "none")),
     )
+    df["ce_bin"] = df["ce_value"].round(6)
     df["ce_key"] = np.where(
-        df["ce_value"].notna(),
-        df["ce_source"] + "=" + df["ce_value"].round(6).astype(str),
+        df["ce_bin"].notna(),
+        df["ce_source"] + "=" + df["ce_bin"].astype(str),
         "ce=NA",
     )
     return df
 
 
 def add_sibling_features(df: pd.DataFrame, group_cols: list[str], metric_col: str) -> pd.DataFrame:
-    """Attach best lower-/higher-/different-CE sibling scores for one metric."""
+    """Attach same-, lower-, higher-, and different-CE sibling scores for one metric."""
     # Work at CE-bin level first so duplicate spectra at the same CE do not become siblings.
     # Keep ACE and NCE series separate: their numeric values are not directly comparable.
     sibling_group_cols = group_cols + ["ce_source"]
     ce_stats = (
-        df.dropna(subset=["ce_value"])
-        .groupby(sibling_group_cols + ["ce_key", "ce_value"], observed=True)[metric_col]
+        df.dropna(subset=["ce_bin", metric_col])
+        .groupby(sibling_group_cols + ["ce_bin"], observed=True)[metric_col]
         .max()
         .reset_index(name="ce_metric_max")
     )
     sibling_rows = []
     for _, g in ce_stats.groupby(sibling_group_cols, observed=True):
-        g = g.sort_values("ce_value")
+        g = g.sort_values("ce_bin")
         ce_scores = g["ce_metric_max"].to_numpy()
-        ce_keys = g["ce_key"].to_numpy()
+        ce_bins = g["ce_bin"].to_numpy()
 
-        lower = [np.nanmax(ce_scores[:i]) if i > 0 else np.nan for i in range(len(g))]
+        lower = [ce_scores[:i].max() if i > 0 else np.nan for i in range(len(g))]
         higher = [
-            np.nanmax(ce_scores[i + 1 :]) if i + 1 < len(g) else np.nan for i in range(len(g))
+            ce_scores[i + 1 :].max() if i + 1 < len(g) else np.nan for i in range(len(g))
         ]
         group_vals = {col: g[col].iloc[0] for col in sibling_group_cols}
-        for key, lo, hi in zip(ce_keys, lower, higher):
+        for ce_bin, lo, hi in zip(ce_bins, lower, higher):
             sibling_rows.append(
-                {**group_vals, "ce_key": key, "best_lower_ce": lo, "best_higher_ce": hi}
+                {**group_vals, "ce_bin": ce_bin, "best_lower_ce": lo, "best_higher_ce": hi}
             )
 
     sibling_cols = sibling_group_cols + [
-        "ce_key",
+        "ce_bin",
         "best_lower_ce",
         "best_higher_ce",
     ]
     sibling_df = pd.DataFrame(sibling_rows, columns=sibling_cols)
-    out = df.merge(sibling_df, on=sibling_group_cols + ["ce_key"], how="left")
+    out = df.merge(sibling_df, on=sibling_group_cols + ["ce_bin"], how="left", validate="many_to_one")
+
+    out["best_same_ce_other"] = np.nan
+    same_ce_cols = sibling_group_cols + ["ce_bin"]
+    finite = out["ce_bin"].notna() & out[metric_col].notna()
+    for _, index_labels in out.loc[finite].groupby(same_ce_cols, observed=True).groups.items():
+        positions = out.index.get_indexer(index_labels)
+        if len(positions) < 2:
+            continue
+        values = out.iloc[positions][metric_col].to_numpy()
+        order = np.argsort(values)
+        best_pos = order[-1]
+        second_best = values[order[-2]]
+        best = values[best_pos]
+        out.iloc[positions, out.columns.get_loc("best_same_ce_other")] = best
+        out.iat[positions[best_pos], out.columns.get_loc("best_same_ce_other")] = second_best
+
     out["best_diff_ce"] = out[["best_lower_ce", "best_higher_ce"]].max(axis=1, skipna=True)
     return out
 
@@ -157,19 +178,34 @@ def audit_metric(
     metric = scored[metric_col]
     low = metric < low_thresh
     scored["flag_low_metric"] = low
+    # Legacy directional context columns. These do not determine flag_review_candidate.
     scored["flag_low_ce_bad_high_ce_ok"] = low & scored["best_higher_ce"].ge(normal_thresh)
     scored["flag_high_ce_bad_low_ce_ok"] = low & scored["best_lower_ce"].ge(normal_thresh)
     scored["flag_any_diff_ce_ok"] = low & scored["best_diff_ce"].ge(normal_thresh)
     scored["flag_trend_drop"] = low & ((scored["best_diff_ce"] - metric) >= drop_thresh)
+    scored["flag_same_ce_replicate_contradiction"] = low & scored["best_same_ce_other"].ge(
+        normal_thresh
+    )
+    scored["flag_interior_ce_dip"] = (
+        low
+        & scored["best_lower_ce"].ge(normal_thresh)
+        & scored["best_higher_ce"].ge(normal_thresh)
+    )
+    scored["flag_review_candidate"] = scored[
+        ["flag_same_ce_replicate_contradiction", "flag_interior_ce_dip"]
+    ].any(axis=1)
 
     rows = []
     low_df = scored[low]
     for label, mask in {
         "low_all": low,
-        "low_ce_bad_high_ce_ok": scored["flag_low_ce_bad_high_ce_ok"],
-        "high_ce_bad_low_ce_ok": scored["flag_high_ce_bad_low_ce_ok"],
+        "low_ce_with_normal_higher": scored["flag_low_ce_bad_high_ce_ok"],
+        "high_ce_with_normal_lower": scored["flag_high_ce_bad_low_ce_ok"],
         "any_diff_ce_ok": scored["flag_any_diff_ce_ok"],
         "trend_drop": scored["flag_trend_drop"],
+        "same_ce_replicate_contradiction": scored["flag_same_ce_replicate_contradiction"],
+        "interior_ce_dip": scored["flag_interior_ce_dip"],
+        "review_candidate": scored["flag_review_candidate"],
     }.items():
         sub = scored[mask]
         rows.append(
@@ -197,10 +233,13 @@ def summarize_by_inst_adduct(scored_df: pd.DataFrame, metric_col: str) -> pd.Dat
             metric=(metric_col, lambda _s: metric_col),
             n_low=("spec_id", "size"),
             n_mols=("mol_id", "nunique"),
-            low_ce_bad_high_ce_ok=("flag_low_ce_bad_high_ce_ok", "sum"),
-            high_ce_bad_low_ce_ok=("flag_high_ce_bad_low_ce_ok", "sum"),
+            low_ce_with_normal_higher=("flag_low_ce_bad_high_ce_ok", "sum"),
+            high_ce_with_normal_lower=("flag_high_ce_bad_low_ce_ok", "sum"),
             any_diff_ce_ok=("flag_any_diff_ce_ok", "sum"),
             trend_drop=("flag_trend_drop", "sum"),
+            same_ce_replicate_contradiction=("flag_same_ce_replicate_contradiction", "sum"),
+            interior_ce_dip=("flag_interior_ce_dip", "sum"),
+            review_candidate=("flag_review_candidate", "sum"),
             median_metric=(metric_col, "median"),
             median_best_diff_ce=("best_diff_ce", "median"),
         )
@@ -225,29 +264,20 @@ def plot_by_inst_adduct(by_group_df: pd.DataFrame, out_fp: Path) -> None:
     x = np.arange(len(df))
     width = 0.28
     ax.bar(
-        x - width,
-        df["low_ce_bad_high_ce_ok"],
+        x - width / 2,
+        df["same_ce_replicate_contradiction"],
         width=width,
-        label="low CE bad, higher CE ok",
+        label="same-CE replicate contradiction",
         color="#4C72B0",
         edgecolor="black",
         linewidth=0.4,
     )
     ax.bar(
-        x,
-        df["high_ce_bad_low_ce_ok"],
+        x + width / 2,
+        df["interior_ce_dip"],
         width=width,
-        label="high CE bad, lower CE ok",
+        label="interior CE dip",
         color="#DD8452",
-        edgecolor="black",
-        linewidth=0.4,
-    )
-    ax.bar(
-        x + width,
-        df["trend_drop"],
-        width=width,
-        label="large CE sibling drop",
-        color="#55A868",
         edgecolor="black",
         linewidth=0.4,
     )
@@ -258,11 +288,11 @@ def plot_by_inst_adduct(by_group_df: pd.DataFrame, out_fp: Path) -> None:
     ax.legend(fontsize=8)
 
     ax = axes[1]
-    pct = df["any_diff_ce_ok"] / df["n_low"].replace(0, np.nan) * 100.0
+    pct = df["review_candidate"] / df["n_low"].replace(0, np.nan) * 100.0
     ax.barh(df["label"], pct, color="#8172B3", edgecolor="black", linewidth=0.4)
     ax.set_xlim(0, 100)
-    ax.set_xlabel("% of low spectra with different-CE sibling >= normal threshold")
-    ax.set_title("Contradicted low-oracle spectra")
+    ax.set_xlabel("% of low spectra meeting conservative review criteria")
+    ax.set_title("Human-review candidates")
     for y, val in enumerate(pct):
         if np.isfinite(val):
             ax.text(min(val + 1.0, 98.0), y, f"{val:.0f}%", va="center", fontsize=8)
@@ -317,16 +347,7 @@ def main() -> None:
         scored["audit_metric"] = metric_col
         by_group_frames.append(summarize_by_inst_adduct(scored, metric_col))
         flagged_frames.append(
-            scored[
-                scored[
-                    [
-                        "flag_low_ce_bad_high_ce_ok",
-                        "flag_high_ce_bad_low_ce_ok",
-                        "flag_any_diff_ce_ok",
-                        "flag_trend_drop",
-                    ]
-                ].any(axis=1)
-            ]
+            scored[scored["flag_review_candidate"]]
         )
         summary_frames.append(summary)
 
@@ -351,16 +372,21 @@ def main() -> None:
         "best_lower_ce",
         "best_higher_ce",
         "best_diff_ce",
+        "best_same_ce_other",
         "flag_low_ce_bad_high_ce_ok",
         "flag_high_ce_bad_low_ce_ok",
         "flag_any_diff_ce_ok",
         "flag_trend_drop",
+        "flag_same_ce_replicate_contradiction",
+        "flag_interior_ce_dip",
+        "flag_review_candidate",
         "n_true_peaks",
         "n_achievable_peaks_inst_tol",
     ]
     flagged_cols = [c for c in flagged_cols if c in flagged_df.columns]
     flagged_df[flagged_cols].sort_values(
-        ["audit_metric", "flag_any_diff_ce_ok", "best_diff_ce"], ascending=[True, False, False]
+        ["audit_metric", "flag_same_ce_replicate_contradiction", "best_same_ce_other"],
+        ascending=[True, False, False],
     ).to_csv(flagged_fp, index=False)
     plot_by_inst_adduct(by_group_df, plot_fp)
 
