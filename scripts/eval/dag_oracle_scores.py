@@ -25,13 +25,16 @@ elsewhere in eval:
 Every spectrum is scored under four denoise filter tiers, reported stacked so the marginal effect
 of each filter on the DAG ceiling is visible (see FILTER_TIERS):
   - 0_raw:           no filter (the spectrum as stored).
-  - 1_above_prec:    drop true peaks above the precursor m/z. No fragment can exceed the precursor
-                     mass, so these are noise/co-isolation the DAG can never explain; the cutoff
-                     uses the per-instrument tolerance. Count reported as n_above_prec_removed.
+  - 1_above_prec:    drop true peaks above the precursor m/z using the per-instrument tolerance.
+                     These peaks are outside this DAG's candidate support, but may include isotope,
+                     co-isolation, or annotation effects; treat this as a sensitivity tier rather
+                     than a definitive noise label. Count reported as n_above_prec_removed.
   - 2_uwpr_rm:       additionally drop every peak matching a known UWPR contaminant m/z (aggressive
                      -- removes even contaminant peaks that coincide with a real DAG fragment).
-  - 3_uwpr_keepexpl: like 2_uwpr_rm but KEEP contaminant-matched peaks the current DAG can explain
-                     at 10 ppm (a coincidental contaminant/fragment overlap is treated as real).
+  - 3_uwpr_keepexpl: drop only peaks labelled ``contaminant_only`` in the supplied feasibility
+                     CSV. Peaks labelled ``dag_feasible`` are kept. This tier is still dependent
+                     on the DAG used to create that CSV and is a sensitivity analysis, not an
+                     intrinsic data-quality label.
 Tiers 2-3 require --uwpr_feasibility_csv; without it they equal 1_above_prec. Per-spectrum output
 columns are suffixed with the tier, e.g. cos_hun_opt__0_raw, cos_hun_opt__3_uwpr_keepexpl.
 
@@ -89,12 +92,11 @@ ABS_TOLERANCE_DA_LOOSE = 0.05
 # Tiers 0-2 are strictly nested; tier 3 relaxes tier 2 (it keeps contaminant peaks the DAG can
 # explain), so 3_uwpr_keepexpl >= 2_uwpr_rm in retained peaks.
 #   0_raw:            no filter.
-#   1_above_prec:     0_raw + drop peaks above the precursor m/z (never DAG-achievable).
+#   1_above_prec:     0_raw + drop peaks above the precursor m/z (outside this DAG's support).
 #   2_uwpr_rm:        1_above_prec + drop every UWPR contaminant-matched peak (aggressive denoise).
-#   3_uwpr_keepexpl:  1_above_prec + drop contaminant-matched peaks EXCEPT those the current DAG
-#                     can explain (a coincidental contaminant/fragment m/z overlap is kept as
-#                     plausibly-real signal). Explainability is recomputed against this run's DAG
-#                     at the default 10 ppm tolerance, not read from the feasibility CSV label.
+#   3_uwpr_keepexpl:  1_above_prec + drop only rows labelled contaminant_only in the feasibility
+#                     CSV. This keeps dag_feasible matches, but the label remains dependent on the
+#                     DAG used to create the CSV and must not be treated as intrinsic ground truth.
 # Tiers 2-3 are identical to 1_above_prec unless a --uwpr_feasibility_csv is supplied.
 FILTER_TIERS = ["0_raw", "1_above_prec", "2_uwpr_rm", "3_uwpr_keepexpl"]
 
@@ -130,13 +132,22 @@ def _detect_is_compressed(frag_dp: str, sample_mol_id: int) -> bool:
     """Check on disk whether DAG pickle files under frag_dp are bz2-compressed."""
     if os.path.isfile(frag_dp) and str(frag_dp).endswith((".tar", ".zip")):
         return True
-    if os.path.isfile(os.path.join(frag_dp, f"{int(sample_mol_id)}.pkl.bz2")):
+    bz2_sample = os.path.join(frag_dp, f"{int(sample_mol_id)}.pkl.bz2")
+    pkl_sample = os.path.join(frag_dp, f"{int(sample_mol_id)}.pkl")
+    if os.path.isfile(bz2_sample):
         return True
-    if os.path.isfile(os.path.join(frag_dp, f"{int(sample_mol_id)}.pkl")):
+    if os.path.isfile(pkl_sample):
         return False
+
+    if os.path.isdir(frag_dp):
+        with os.scandir(frag_dp) as entries:
+            for entry in entries:
+                if entry.is_file() and entry.name.endswith(".pkl.bz2"):
+                    return True
+                if entry.is_file() and entry.name.endswith(".pkl"):
+                    return False
     raise FileNotFoundError(
-        f"Could not find DAG file for mol_id={sample_mol_id} under {frag_dp} "
-        "(tried .pkl and .pkl.bz2)"
+        f"Could not find any .pkl or .pkl.bz2 DAG files under {frag_dp}"
     )
 
 
@@ -152,6 +163,13 @@ def _allowed_formula_idxs(idx_by_h_delta: list[set], max_h_transfer: int | None)
     Returns:
         Sorted list of unique formula-row indices.
     """
+    available_h_transfer = (len(idx_by_h_delta) - 1) // 2
+    if max_h_transfer is not None and not 0 <= max_h_transfer <= available_h_transfer:
+        raise ValueError(
+            f"max_h_transfer={max_h_transfer} is outside the DAG-supported range "
+            f"0..{available_h_transfer}"
+        )
+
     if max_h_transfer is None:
         allowed = set().union(*idx_by_h_delta) if idx_by_h_delta else set()
     else:
@@ -416,12 +434,14 @@ def _process_mol_group(
         keep_above_prec = mzs_np <= prec_cutoff
         n_above_prec_removed = int((~keep_above_prec).sum())
 
-        # Peaks matching a UWPR contaminant m/z, and (separately) peaks the DAG can explain at the
-        # default 10 ppm tolerance. The two UWPR tiers differ only on contaminant peaks that ARE
-        # DAG-explainable: 2_uwpr_rm drops them, 3_uwpr_keepexpl keeps them.
+        # Tier 2 removes every UWPR mass match. Tier 3 removes only peaks classified as
+        # contaminant_only by the DAG used to produce the feasibility CSV.
         contam_mask = np.zeros(len(mzs_np), dtype=bool)
-        for cmz in row["contam_mzs"]:
+        for cmz in row.get("contam_mzs", []):
             contam_mask |= np.abs(mzs_np - cmz) <= 1e-4
+        contaminant_only_mask = np.zeros(len(mzs_np), dtype=bool)
+        for cmz in row.get("contaminant_only_mzs", []):
+            contaminant_only_mask |= np.abs(mzs_np - cmz) <= 1e-4
         dag_expl_mask = (
             calculate_match_mzs(
                 true_mzs,
@@ -440,7 +460,7 @@ def _process_mol_group(
             "0_raw": np.ones(len(mzs_np), dtype=bool),
             "1_above_prec": keep_above_prec,
             "2_uwpr_rm": keep_above_prec & ~contam_mask,
-            "3_uwpr_keepexpl": keep_above_prec & (~contam_mask | dag_expl_mask),
+            "3_uwpr_keepexpl": keep_above_prec & ~contaminant_only_mask,
         }
 
         record = {
@@ -452,6 +472,7 @@ def _process_mol_group(
             "n_above_prec_removed": n_above_prec_removed,
             "n_uwpr_matched": n_uwpr_matched,
             "n_uwpr_explainable": n_uwpr_explainable,
+            "n_uwpr_contaminant_only": int(contaminant_only_mask.sum()),
             "dag_num_nodes": dag_d["dag_num_nodes"],
         }
         for tier, mask in tier_masks.items():
@@ -571,7 +592,7 @@ def summarize(results_df: pd.DataFrame, label: str) -> None:
         f"\nMean peaks removed per spectrum: above_prec={results_df['n_above_prec_removed'].mean():.2f}"
         f"  uwpr_matched={results_df['n_uwpr_matched'].mean():.3f}"
         f"  (of which DAG-explainable={results_df['n_uwpr_explainable'].mean():.3f}, "
-        f"kept by 3_uwpr_keepexpl)"
+        f"classified contaminant_only={results_df['n_uwpr_contaminant_only'].mean():.3f})"
     )
 
     # Per-group breakdowns report the headline cos_hun_opt across the three tiers only, to stay
@@ -590,6 +611,32 @@ def summarize(results_df: pd.DataFrame, label: str) -> None:
     adduct_breakdown.columns = FILTER_TIERS
     adduct_breakdown["count"] = ga.size()
     print(adduct_breakdown.to_string())
+
+
+def _load_uwpr_maps(csv_path: str) -> tuple[dict[int, list[float]], dict[int, list[float]]]:
+    """Load all UWPR matches and the conservative ``contaminant_only`` subset."""
+    required_cols = ["spec_id", "peak_mz", "feasibility"]
+    feasibility_df = pd.read_csv(csv_path, usecols=required_cols)
+    if feasibility_df[required_cols].isna().any().any():
+        raise ValueError(f"UWPR feasibility CSV contains missing required values: {csv_path}")
+
+    known_labels = {
+        "dag_feasible",
+        "contaminant_only",
+        "no_dag_file",
+        "unsupported_prec",
+        "missing_metadata",
+    }
+    unknown_labels = set(feasibility_df["feasibility"].unique()) - known_labels
+    if unknown_labels:
+        raise ValueError(f"Unknown UWPR feasibility labels: {sorted(unknown_labels)}")
+
+    all_matches = feasibility_df.groupby("spec_id")["peak_mz"].apply(list).to_dict()
+    contaminant_only = feasibility_df[
+        feasibility_df["feasibility"] == "contaminant_only"
+    ]
+    conservative_matches = contaminant_only.groupby("spec_id")["peak_mz"].apply(list).to_dict()
+    return all_matches, conservative_matches
 
 
 def main() -> None:
@@ -641,8 +688,9 @@ def main() -> None:
         "--uwpr_feasibility_csv",
         default=None,
         help="Optional UWPR feasibility CSV (from scripts/eval/uwpr_feasibility.py). When set, "
-        "peaks flagged 'contaminant_only' are removed in the '2_uwpr' filter tier. Without it, "
-        "tier '2_uwpr' is identical to '1_above_prec'.",
+        "tier 2 removes every UWPR mass match (aggressive), while tier 3 removes only rows "
+        "labelled 'contaminant_only' (DAG-dependent sensitivity analysis). Without it, both "
+        "UWPR tiers are identical to tier 1.",
     )
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
@@ -674,20 +722,22 @@ def main() -> None:
         ["spec_id", "mol_id", "peaks", "prec_mz", "prec_type", "inst_type", "frag_mode"]
     ].copy()
 
-    # Per-spectrum UWPR contaminant-matched peak m/z (every hit row, regardless of the CSV's own
-    # feasibility label -- DAG-explainability is recomputed per run in _process_mol_group so the
-    # 2_uwpr_rm / 3_uwpr_keepexpl split stays consistent with whichever DAG set is being scored).
+    # Keep both the complete mass-match set and the DAG-dependent contaminant_only subset so the
+    # aggressive and conservative sensitivity analyses remain explicit.
     if args.uwpr_feasibility_csv is not None:
         log.info("Loading UWPR contaminant hits from %s", args.uwpr_feasibility_csv)
-        feas = pd.read_csv(args.uwpr_feasibility_csv, usecols=["spec_id", "peak_mz"])
-        contam_map = feas.groupby("spec_id")["peak_mz"].apply(list).to_dict()
+        contam_map, contaminant_only_map = _load_uwpr_maps(args.uwpr_feasibility_csv)
         spec_df["contam_mzs"] = spec_df["spec_id"].map(lambda s: contam_map.get(s, []))
+        spec_df["contaminant_only_mzs"] = spec_df["spec_id"].map(
+            lambda s: contaminant_only_map.get(s, [])
+        )
         n_affected = spec_df["contam_mzs"].apply(bool).sum()
         log.info(
             "UWPR active: %d/%d spectra have >=1 contaminant-matched peak", n_affected, len(spec_df)
         )
     else:
         spec_df["contam_mzs"] = [[] for _ in range(len(spec_df))]
+        spec_df["contaminant_only_mzs"] = [[] for _ in range(len(spec_df))]
         log.warning(
             "No --uwpr_feasibility_csv supplied: tiers 2_uwpr_rm and 3_uwpr_keepexpl will be "
             "identical to 1_above_prec."

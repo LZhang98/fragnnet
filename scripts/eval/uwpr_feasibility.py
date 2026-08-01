@@ -13,6 +13,7 @@ Verdict per matched peak:
                             high-confidence contamination in the reference spectrum.
   - ``no_dag_file``       : molecule has no DAG on disk -> cannot decide.
   - ``unsupported_prec``  : precursor adduct not in the ion-mass mapping -> cannot decide.
+  - ``missing_metadata``  : precursor adduct or instrument type is missing -> cannot decide.
 
 Usage:
     python scripts/eval/uwpr_feasibility.py \\
@@ -81,17 +82,19 @@ def _feasibility_for_mol(
     if dag_d is None:
         return verdict
 
+    verdict.loc[:] = "missing_metadata"
+
     allowed_idx = _allowed_formula_idxs(dag_d["idx_by_h_delta"], max_h_transfer)
     idx_t = th.tensor(allowed_idx, dtype=th.long)
     theo_mzs = dag_d["formula_peak_mzs"].index_select(0, idx_t)
     prec_mask = (dag_d["formula_peak_probs"].index_select(0, idx_t) > 0.0).float()
 
-    for prec_type, pt_rows in rows.groupby("prec_type"):
+    valid_rows = rows.dropna(subset=["prec_type", "inst_type"])
+    for prec_type, pt_rows in valid_rows.groupby("prec_type"):
         if prec_type not in PREC_TYPE_TO_MASS_DIFF:
             verdict.loc[pt_rows.index] = "unsupported_prec"
             continue
         dag_ion_mzs = _dag_ion_mzs(theo_mzs, prec_mask, prec_type, include_cmf=include_cmf)
-        peak_mzs = th.tensor(pt_rows["peak_mz"].to_numpy(), dtype=th.float32)
         # inst-type tolerance can differ within a prec_type group, so batch per inst_type.
         for inst_type, it_rows in pt_rows.groupby("inst_type"):
             tol, tol_min_mz = _tolerance_for_inst_type(inst_type)
@@ -125,6 +128,8 @@ def main() -> None:
 
     log.info("Loading hits from %s", args.hits_csv)
     hits = pd.read_csv(args.hits_csv)
+    if hits.empty:
+        raise ValueError(f"UWPR hits CSV is empty: {args.hits_csv}")
     log.info(
         "Loaded %d matched peaks (%d spectra, %d mols)",
         len(hits),

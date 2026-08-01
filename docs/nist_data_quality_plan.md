@@ -1,7 +1,7 @@
-# NIST20 Data-Quality Plan
+# NIST20 Data-Quality Diagnostics and Proposed Validation
 
-Tracks measured data-quality issues in the NIST20 training set and the filters proposed to
-address them. Scope so far: contaminant peaks (UWPR/MaConDa) and DAG-unexplainable spectra.
+Tracks candidate data-quality issues in the NIST20 training set and the evidence needed before
+filtering. Scope so far: contaminant-mass matches (UWPR/MaConDa) and DAG-unexplainable spectra.
 All numbers below are on the analysis set: FT (NCE 0–70) + QTOF (ACE 0–60 eV), adducts
 `[M+H]+`/`[M-H]-`/`[M+Na]+`/`[M+Cl]-`, default D3/H4 DAGs, per-instrument tolerance
 (FT 10 ppm, QTOF 20 ppm), CMF ∪ CRF, full H-transfer.
@@ -13,7 +13,7 @@ All numbers below are on the analysis set: FT (NCE 0–70) + QTOF (ACE 0–60 eV
 | Zero-coverage — precursor-mass mismatch (annotation error) | 16 | real, tiny | filter out |
 | Zero-coverage — sparse (≤2 peaks) | 144 | low-information | flag / down-weight |
 | Zero-coverage — genuine DAG coverage gap | 95 | model/DAG limit | not a data issue |
-| UWPR contaminant peaks (peak-level) | 71,503 spectra with ≥1 | pervasive, low-intensity | strip contaminant peaks |
+| UWPR contaminant candidates (peak-level) | 71,503 spectra with ≥1 | pervasive, low-intensity | flag; validate independently |
 
 ## 1. Zero-coverage spectra ("can't explain anything")
 
@@ -62,27 +62,33 @@ a flat 0.1 Da) additionally catches 1 borderline QTOF case (C5H8O5 at 142 ppm).
 
 ## 2. UWPR / MaConDa contaminant peaks
 
-Peak-level contamination: NIST reference peaks that match a known contaminant m/z (solvent,
-PEG/PPG, DMSO, phthalate, …) **and** cannot be explained by the molecule's DAG.
+Peak-level contamination candidates: NIST reference peaks that match a known contaminant m/z
+(solvent, PEG/PPG, DMSO, phthalate, …) **and** cannot be explained by the baseline molecule DAG.
+The second condition is model-dependent: an incomplete DAG can fail to explain a legitimate
+fragment. Therefore `contaminant_only` is a useful sensitivity-analysis label, not intrinsic
+ground truth that the peak is contamination.
 
 - **71,503 spectra** have ≥1 `contaminant_only` peak; of 561,651 DAG-evaluable matched peaks,
   **51% are contaminant_only**.
 - Removing them lifts oracle coverage on affected spectra: recall **+3.3 pts**, wrecall **+0.9 pt**,
-  opt-cos **+0.25 pt** — a clean but small, low-intensity-peak hygiene gain.
+  opt-cos **+0.25 pt**. This is expected partly by construction because the removal criterion uses
+  DAG explainability; it does not independently prove a data-quality gain.
 - Feasibility per peak: `scripts/eval/uwpr_feasibility.py` →
   `data/uwpr/nist20_uwpr_hits_feasibility.csv`. Denoised oracle scoring is wired into
   `dag_oracle_scores.py` via `--uwpr_feasibility_csv`.
 
-**Action: strip `contaminant_only` peaks during preprocessing** (not whole-spectrum removal —
-the rest of each spectrum is real).
+**Action: retain the flags and compare raw, aggressive-all-match, and `contaminant_only` sensitivity
+tiers. Do not strip these peaks from training until an independent check (for example a deeper or
+alternative fragmentation method, replicate spectra, or manual spectral review) confirms that the
+false-removal rate is acceptable.**
 
-## Proposed cleanup pipeline
+## Proposed validation and cleanup pipeline
 
 1. **Precursor-mass sanity filter** — drop spectra where `|prec_mz − expected|` exceeds the
    per-instrument tolerance (FT 10 ppm / QTOF 20 ppm; ≈0.003/0.006 Da at m/z 300). Removes the
    16 lipid-annotation errors + 1 borderline QTOF case here, and similar mismatches at scale.
-2. **Contaminant peak stripping** — remove `contaminant_only` peaks per spectrum via the UWPR
-   feasibility map.
+2. **Contaminant candidate validation** — retain UWPR and `contaminant_only` flags; estimate the
+   false-removal rate independently before enabling any peak stripping in preprocessing.
 3. **Sparse-spectrum handling** (optional) — flag `n_peaks ≤ 2` spectra; consider down-weighting
    rather than dropping (they are low-information but not wrong).
 
