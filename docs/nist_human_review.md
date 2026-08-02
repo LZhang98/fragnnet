@@ -6,6 +6,9 @@ Generate a ranked queue and visual report:
 python scripts/eval/nist_bad_data_review.py \
   --spec_fp data/proc/nist20/spec_df.pkl \
   --mol_fp data/proc/nist20/mol_df.pkl \
+  --uwpr_feasibility_csv \
+    data/uwpr/nist20_uwpr_hits_feasibility.csv \
+    data/uwpr/nist20_uwpr_hits_feasibility_d4.csv \
   --out_csv data/eval/nist20_bad_data_review.csv \
   --out_html data/eval/nist20_bad_data_review.html
 ```
@@ -33,7 +36,14 @@ Review heuristics, not proof of bad data:
 - at least 5% of intensity above the precursor tolerance;
 - one peak carrying at least 98% of total intensity;
 - unsorted peak arrays or duplicate peak m/z values;
-- UWPR/MaConDa mass matches or baseline-DAG non-explainability.
+- one same-CE replicate that disagrees with every peer when the remaining replicates agree;
+- at least 20% orphan intensity absent from every one of at least two other CE bins;
+- at least 5% intensity matching UWPR/MaConDa ions that the supplied DAG cannot explain.
+
+The CSV also reports all UWPR/MaConDa mass-matched intensity as context. When multiple feasibility
+files are supplied, only peaks labelled `contaminant_only` by every file increase review priority;
+DAG disagreements are reported separately. These labels depend on the DAG, so record each
+depth/configuration with the review artifact.
 
 Unsupported precursor types are retained as context but do not increase review priority. The
 precursor sanity check uses precursor-specific shifts for neutral-loss labels; the fragment-ion

@@ -21,6 +21,9 @@ from dag_oracle_scores import (  # noqa: E402
 )
 from nist_bad_data_review import (  # noqa: E402
     PRECURSOR_TYPE_TO_MASS_DIFF,
+    add_cross_ce_orphan_signals,
+    add_replicate_consensus_signals,
+    add_uwpr_signals,
     analyze_spectrum,
     finalize_review_queue,
 )
@@ -191,3 +194,103 @@ def test_review_queue_flags_identical_spectrum_across_molecules() -> None:
     assert len(candidates) == 2
     assert candidates["duplicate_spectrum_cross_molecule"].all()
     assert (candidates["review_priority"] == 4).all()
+
+
+def _signal_spec_df(rows: list[dict[str, object]]) -> pd.DataFrame:
+    defaults = {
+        "mol_id": 10,
+        "prec_type": "[M+H]+",
+        "inst_type": "FT",
+        "frag_mode": "HCD",
+        "group_id": 1,
+        "ace": 10.0,
+        "nce": None,
+    }
+    return pd.DataFrame([{**defaults, **row} for row in rows])
+
+
+def test_replicate_consensus_flags_only_the_disagreeing_spectrum() -> None:
+    spec_df = _signal_spec_df(
+        [
+            {"spec_id": 1, "peaks": [(50.0, 10.0), (75.0, 5.0)]},
+            {"spec_id": 2, "peaks": [(50.001, 9.0), (75.001, 5.0)]},
+            {"spec_id": 3, "peaks": [(120.0, 10.0), (140.0, 5.0)]},
+        ]
+    )
+    review_df = pd.DataFrame({"spec_id": [1, 2, 3]})
+
+    result = add_replicate_consensus_signals(spec_df, review_df)
+
+    flags = result.set_index("spec_id")["replicate_consensus_disagreement"]
+    assert flags.to_dict() == {1: False, 2: False, 3: True}
+    assert result.set_index("spec_id").loc[3, "other_replicate_consensus"] > 0.99
+
+
+def test_cross_ce_orphan_signal_requires_two_other_collision_energies() -> None:
+    three_ces = _signal_spec_df(
+        [
+            {"spec_id": 1, "ace": 10.0, "peaks": [(50.0, 1.0), (999.0, 9.0)]},
+            {"spec_id": 2, "ace": 20.0, "peaks": [(50.001, 1.0), (75.0, 9.0)]},
+            {"spec_id": 3, "ace": 30.0, "peaks": [(50.002, 1.0), (75.001, 9.0)]},
+        ]
+    )
+    review_df = pd.DataFrame({"spec_id": [1, 2, 3]})
+
+    result = add_cross_ce_orphan_signals(three_ces, review_df)
+
+    row = result.set_index("spec_id").loc[1]
+    assert row["cross_ce_orphan_intensity_fraction"] == pytest.approx(0.9)
+    assert bool(row["substantial_cross_ce_orphan_intensity"])
+
+    two_ces = three_ces.iloc[:2]
+    result = add_cross_ce_orphan_signals(two_ces, review_df.iloc[:2])
+    assert not result["substantial_cross_ce_orphan_intensity"].any()
+
+
+def test_uwpr_signal_uses_unique_peak_intensity_and_conservative_labels(tmp_path: Path) -> None:
+    spec_df = _signal_spec_df([{"spec_id": 1, "peaks": [(59.0, 8.0), (100.0, 2.0)]}])
+    review_df = pd.DataFrame({"spec_id": [1]})
+    uwpr_fp = tmp_path / "uwpr.csv"
+    pd.DataFrame(
+        {
+            "spec_id": [1, 1, 1],
+            "peak_mz": [59.0, 59.0, 100.0],
+            "feasibility": ["contaminant_only", "contaminant_only", "dag_feasible"],
+        }
+    ).to_csv(uwpr_fp, index=False)
+
+    result = add_uwpr_signals(spec_df, review_df, uwpr_fp)
+    row = result.iloc[0]
+
+    assert row["uwpr_matched_intensity_fraction"] == pytest.approx(1.0)
+    assert row["uwpr_contaminant_only_intensity_fraction"] == pytest.approx(0.8)
+    assert row["n_uwpr_contaminant_only_peaks"] == 1
+    assert bool(row["substantial_uwpr_contaminant_only_intensity"])
+
+
+def test_uwpr_signal_requires_consensus_across_dag_audits(tmp_path: Path) -> None:
+    spec_df = _signal_spec_df([{"spec_id": 1, "peaks": [(59.0, 8.0), (100.0, 2.0)]}])
+    review_df = pd.DataFrame({"spec_id": [1]})
+    d3_fp = tmp_path / "d3.csv"
+    d4_fp = tmp_path / "d4.csv"
+    pd.DataFrame(
+        {
+            "spec_id": [1, 1],
+            "peak_mz": [59.0, 100.0],
+            "feasibility": ["contaminant_only", "dag_feasible"],
+        }
+    ).to_csv(d3_fp, index=False)
+    pd.DataFrame(
+        {
+            "spec_id": [1, 1],
+            "peak_mz": [59.0, 100.0],
+            "feasibility": ["dag_feasible", "dag_feasible"],
+        }
+    ).to_csv(d4_fp, index=False)
+
+    row = add_uwpr_signals(spec_df, review_df, [d3_fp, d4_fp]).iloc[0]
+
+    assert row["n_uwpr_feasibility_sources"] == 2
+    assert row["uwpr_contaminant_only_intensity_fraction"] == 0.0
+    assert row["uwpr_dag_disagreement_intensity_fraction"] == pytest.approx(0.8)
+    assert not bool(row["substantial_uwpr_contaminant_only_intensity"])
