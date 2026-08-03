@@ -13,7 +13,7 @@ line does not get re-run.
 | `FINDING` | A measurement. `CLOSED` = the question is answered and settled. |
 | `CLOSED NULL` | Measured, no headroom. **Read before re-proposing the same mechanism.** |
 | `SUPERSEDED` / `STOPPED` / `PARTLY DEAD` | Do not resume without reading why it stopped. |
-| `GENERATED` | Script output. Regenerate, don't hand-edit. |
+| `CURATED ANALYSIS` | Long-running analysis doc. Append via its slash command rather than hand-editing. |
 
 **Start at [plans/model_improvement_plan.md](plans/model_improvement_plan.md)** — the canonical
 roadmap. It links the analyses that justify each item.
@@ -89,11 +89,13 @@ roadmap. It links the analyses that justify each item.
 | [lz_molecular_generation.md](notes/lz_molecular_generation.md) | Literature notes on spectrum-conditioned molecular generation (§1–3). |
 | [lz_part2.md](notes/lz_part2.md) | Continuation of the above, starting at §4 (spectrum-to-DAG generation). |
 
-## Top level — generated output
+## Top level — curated analysis logs
 
-These two are **script output**, not prose, which is why they sit outside the subdirectories.
-Regenerate with `scripts/eval/find_missing_peaks.py`; `src/fragnnet/frag/smarts_prepass.py` cites
-the first one by path.
+These two are **append-only analysis logs**, kept at top level because they grow by subclass rather
+than belonging to one category. Add sections with the `/analyze-subclass` and `/analyze-subclass-mh`
+commands, which insert before the Summary section. The measurement they interpret comes from
+`scripts/eval/find_missing_peaks.py`; the prose is written, not generated.
+`src/fragnnet/frag/smarts_prepass.py` cites the first one by path.
 
 | Doc | Scope |
 |-----|-------|

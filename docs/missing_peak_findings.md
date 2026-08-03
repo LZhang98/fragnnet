@@ -1,8 +1,12 @@
 # DAG Missing-Peak Findings, Grouped by Root Cause
 
-> **Status:** GENERATED — DO NOT HAND-EDIT &nbsp;·&nbsp; **Updated:** 2026-07-18
+> **Status:** CURATED ANALYSIS — APPEND-ONLY &nbsp;·&nbsp; **Updated:** 2026-07-18
 >
-> Regenerate with `python scripts/eval/find_missing_peaks.py --frag_dp data/frag/nist23_ma_mi_d3_h4_isoFalse.tar`. FT, [M+H]+, min_intensity=0.05, min_spectra=20.
+> Per-subclass findings grouped by root cause. FT, `[M+H]+`, min_intensity=0.05, min_spectra=20.
+> New sections are added by the `/analyze-subclass` command, which inserts them before the Summary
+> section — prefer that over hand-editing. The underlying measurement (`dag_missing_by_class_m+h.txt`)
+> comes from `python scripts/eval/find_missing_peaks.py --frag_dp data/frag/nist23_ma_mi_d3_h4_isoFalse.tar`;
+> the prose here is written, not generated. Cited by path from `src/fragnnet/frag/smarts_prepass.py`.
 
 Analysis of `dag_missing_by_class_m+h.txt` (FT, [M+H]+, min_intensity=0.05,
 min_spectra=20). Source script: `scripts/eval/find_missing_peaks.py --frag_dp
