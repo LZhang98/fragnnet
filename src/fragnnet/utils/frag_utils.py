@@ -889,7 +889,7 @@ def _inject_smarts_pairs_into_dag(
     cuts plus 1 new bond formation, so injected fragments receive **node depth 2**
     (not 1) to reflect the two-cut distance from the root.  The root→fragment
     edge retains ``min_depth=1`` since it is introduced in the same expansion
-    pass as depth-1 BFS edges.  See ``docs/frag_gen_prepass.md`` for the full
+    pass as depth-1 BFS edges.  See ``docs/reference/frag_gen_prepass.md`` for the full
     depth-semantics rationale.
 
     Fragments already present in the DAG are deduplicated via their byte-string
@@ -946,7 +946,7 @@ def _inject_smarts_pairs_into_dag(
                 new_masks.append(mask.astype(MASK_DTYPE))
                 depth_row = np.zeros(max_depth_cols, dtype=MASK_DTYPE)
                 # Prepass rules require ≥2 bond cuts + 1 new bond from the root,
-                # so the node depth label is 2 (not 1).  See docs/frag_gen_prepass.md.
+                # so the node depth label is 2 (not 1).  See docs/reference/frag_gen_prepass.md.
                 depth_row[min(2, max_depth_cols - 1)] = 1
                 new_depth_rows.append(depth_row)
                 new_min_depths.append(2)

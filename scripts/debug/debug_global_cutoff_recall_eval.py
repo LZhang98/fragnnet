@@ -1,4 +1,4 @@
-"""Step 4 of docs/dag_full_recall_tractability_plan.md: test whether the MECHANISM change
+"""Step 4 of docs/plans/dag_full_recall_tractability_plan.md: test whether the MECHANISM change
 alone -- global (not per-parent) cutoff with max-over-redundant-routes, modeled on
 src/fragnnet/iceberg/pl_model.py's autoregressive generation loop -- recovers the recall
 that Step 3 (debug_fanout_cap_recall_eval.py) found lost when hand-mined/learned priority

@@ -1,6 +1,6 @@
 """Tests for ContextEmbedding -- the combined acquisition-metadata (stratum) embedding.
 
-Scaffolded ahead of wiring (see docs/conditioning_refactor_plan.md). Verifies shape, that it
+Scaffolded ahead of wiring (see docs/plans/conditioning_refactor_plan.md). Verifies shape, that it
 consumes ALL metadata inputs (a change to any input changes the output -- the property that
 justifies one combined vector over four separate inserts), cross-metadata interaction capacity,
 gradient flow, and the input-width guard against misordered/misconfigured metadata.

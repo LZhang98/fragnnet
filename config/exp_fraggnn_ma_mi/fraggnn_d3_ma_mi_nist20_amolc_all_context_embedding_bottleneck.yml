@@ -217,7 +217,7 @@ auxiliary_scores:
   #- pred_node_count       # DAG nodes predicted with nonzero mass -- direct over-prediction signal
   #- pred_formula_count    # distinct formulas predicted with nonzero mass
   #- pred_edge_count
-  #- cos_hun_inst_tol      # cos_hun with per-instrument-type tolerance (the metric used in docs/model_improvement_plan.md failure-mode analysis)
+  #- cos_hun_inst_tol      # cos_hun with per-instrument-type tolerance (the metric used in docs/plans/model_improvement_plan.md failure-mode analysis)
   #- jss_hun_inst_tol
 eval_mz_bin_res:
   - 0.01

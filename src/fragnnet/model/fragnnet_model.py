@@ -185,7 +185,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # combined into ONE learned vector injected at context_insert_location; the individual
         # *_insert paths are subsumed (their embeddings feed the context and are NOT injected
         # separately, so their mol/mlp input contributions are zeroed here). See
-        # docs/conditioning_refactor_plan.md. Gated: off (default) leaves existing behavior intact.
+        # docs/plans/conditioning_refactor_plan.md. Gated: off (default) leaves existing behavior intact.
         self.context_embedding = context_embedding
         if context_embedding:
             active_dims = [
@@ -283,8 +283,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         }
         # Context-gated mol messages: the gate is conditioned on the combined context vector, so
         # it needs context_embedding to have produced one. Metadata concatenated at the mol input
-        # cannot serve -- it is per-atom-broadcast and already inside x. See
-        # docs/mol_msg_gate_plan.md.
+        # cannot serve -- it is per-atom-broadcast and already inside x.
         self.mol_msg_gate = mol_gnn_type == "GINE_GATED"
         if self.mol_msg_gate:
             if not self.context_embedding:

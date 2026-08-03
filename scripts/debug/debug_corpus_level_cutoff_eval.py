@@ -1,5 +1,5 @@
 """Test whether a TRUE corpus-level (aggregate) node budget changes the picture from
-docs/dag_full_recall_tractability_plan.md's per-molecule uniform-retention-fraction
+docs/plans/dag_full_recall_tractability_plan.md's per-molecule uniform-retention-fraction
 experiments.
 
 Every prior experiment in this investigation (debug_fanout_cap_recall_eval.py,

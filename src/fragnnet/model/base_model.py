@@ -728,7 +728,7 @@ class ContextEmbedding(nn.Module):
 
     FraGNNet conditions on CE, adduct, instrument, and fragmentation mode through four separate
     ``*_insert`` embeddings that are concatenated into node features, plus a chain of
-    rescale-only output-FiLM scalers (see ``docs/conditioning_refactor_plan.md``). This module
+    rescale-only output-FiLM scalers (see ``docs/plans/conditioning_refactor_plan.md``). This module
     consolidates the metadata into a single vector, projected through an MLP so cross-metadata
     interactions (e.g. CE x mode, adduct x CE) are modeled in a shared low-dimensional space
     *before* injection -- unlike plain concatenation, which defers all interaction to the

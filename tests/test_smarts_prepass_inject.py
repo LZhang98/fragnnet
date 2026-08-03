@@ -112,7 +112,7 @@ class TestInjectSmartsPairs:
         """Injected prepass fragments are marked at depth 2 (not 1).
 
         Prepass rules require ≥2 bond cuts + 1 new bond from the root,
-        so the node depth label is 2.  See docs/frag_gen_prepass.md.
+        so the node depth label is 2.  See docs/reference/frag_gen_prepass.md.
         """
         num_nodes = 6
         nmm, ndm, dem, meta = self._make_dag(n_frags=1, num_nodes=num_nodes)

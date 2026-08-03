@@ -1,5 +1,9 @@
 # DAG Missing Peak Findings — [M-H]⁻ Negative Mode
 
+> **Status:** GENERATED — DO NOT HAND-EDIT &nbsp;·&nbsp; **Updated:** 2026-06-30
+>
+> Regenerate with `python scripts/eval/find_missing_peaks.py --frag_dp data/frag/nist23_ma_mi_d3_h4_isoFalse.tar`. FT, [M-H]-, min_intensity=0.05, min_spectra=20.
+
 Analysis of `dag_missing_by_class_m-h.txt` (FT, [M-H]-, min_intensity=0.05,
 min_spectra=20). Source script: `scripts/eval/find_missing_peaks.py --frag_dp
 data/frag/nist23_ma_mi_d3_h4_isoFalse.tar`.

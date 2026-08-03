@@ -511,7 +511,7 @@ ce_insert_merge: False # Whether to merge CE embeddings when inserted at multipl
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
 # Combined context (stratum) embedding: consolidate CE + adduct + instrument + frag_mode into
 # ONE learned vector injected at context_insert_location, instead of four separate *_insert
-# paths (see docs/conditioning_refactor_plan.md). When True, the individual metadata embeddings
+# paths (see docs/plans/conditioning_refactor_plan.md). When True, the individual metadata embeddings
 # feed the context and are NOT injected separately. Off = existing per-metadata behavior.
 context_embedding: False
 context_embedding_dim: 64       # width of the produced context vector

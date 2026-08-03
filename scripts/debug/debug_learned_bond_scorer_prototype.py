@@ -1,9 +1,9 @@
-"""Learned bond-priority scorer prototype (Step 2 of docs/dag_full_recall_tractability_plan.md).
+"""Learned bond-priority scorer prototype (Step 2 of docs/plans/dag_full_recall_tractability_plan.md).
 
 Trains a small linear (logistic regression over hashed features) scorer that predicts
 whether a bond is "load-bearing" -- appears in at least one route to a formula first-matched
 at the deepest mined depth -- as a candidate replacement for the hand-mined BUCKET_LOSS_RANK
-table used by docs/dag_fanout_cap_plan.md's per-parent fan-out cap.
+table used by docs/plans/dag_fanout_cap_plan.md's per-parent fan-out cap.
 
 Positive ("critical") examples: bonds that appear in EVERY route (per analyze_dag, reused
 from debug_dag_bond_radius_env_stats.py) to some depth-max matched formula -- i.e. masking
@@ -18,7 +18,7 @@ is never singly-critical for any matched formula at the deepest depth).
 
 Features are radius-1 and radius-2 bond environment buckets (same descriptor as the sibling
 script), hashed via sklearn's FeatureHasher so the model needs no fixed vocabulary -- this is
-the point of a learned scorer over a hand-mined table per docs/dag_bond_radius_env_plan.md's
+the point of a learned scorer over a hand-mined table per docs/plans/dag_bond_radius_env_plan.md's
 finding that cardinality (~2,000 buckets at radius 2) is too large to hand-curate even though
 it isn't data-starved.
 
@@ -196,7 +196,7 @@ def main() -> None:
 
     # Human-readable check: inspect the highest-scored bonds' raw environment strings to
     # sanity-check the model recovers known chemistry (e.g. ring C-heteroatom bonds should
-    # score high, per docs/bond_breakability_mask_plan.md's Step 3 findings). Feature hashing
+    # score high, per docs/plans/bond_breakability_mask_plan.md's Step 3 findings). Feature hashing
     # collapses names to indices, so coefficients aren't directly inspectable -- read the
     # examples themselves instead.
     print(f"\nTop {args.top_k} highest-scored test bonds (env string, true label):")

@@ -2,7 +2,7 @@
 
 Consumes the per-spectrum CSV produced alongside the oracle scoring
 (``recall_wrecall_by_ce.csv`` with columns spec_id, inst_type, prec_type, ce, recall,
-wrecall) and regenerates every figure in ``docs/oracle_recall_wrecall_by_ce.md``:
+wrecall) and regenerates every figure in ``docs/findings/oracle_recall_wrecall_by_ce.md``:
 
   1. recall & wrecall means vs CE, one line per adduct (FT + QTOF panels)
   2. wrecall mean vs median vs CE (tail-broadening view)

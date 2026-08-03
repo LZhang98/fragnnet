@@ -6,7 +6,7 @@ Verifies that:
 3. Structural constraints: prepass only adds fragments, never removes them.
 4. Prepass-injected fragments have node depth 2 (not 1): prepass rules require
    >=2 bond cuts + 1 new bond, so depth 2 correctly encodes the two-cut
-   distance from the root. See docs/frag_gen_prepass.md.
+   distance from the root. See docs/reference/frag_gen_prepass.md.
 """
 
 from __future__ import annotations

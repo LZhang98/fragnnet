@@ -3,7 +3,7 @@ of the fixed (in_ring, element_pair, alpha_hetero) bucket used in
 debug_dag_bond_descriptor_stats.py. The fixed bucket is itself only a radius-1 approximation
 (it looks one bond out to check for an adjacent heteroatom); this script generalizes to an
 arbitrary radius N so bonds like the C-C in O=C-C=C (conjugated / alpha to a carbonyl) can be
-told apart from a bare alkyl C-C, per docs/dag_fanout_cap_plan.md's open question of whether
+told apart from a bare alkyl C-C, per docs/plans/dag_fanout_cap_plan.md's open question of whether
 hand-mining still works at finer granularity or a learned scorer is needed instead.
 
 This is a cardinality/support diagnostic, not a masking-policy search: at radius >= 2 the
