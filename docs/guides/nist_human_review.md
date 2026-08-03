@@ -18,8 +18,9 @@ python scripts/eval/nist_bad_data_review.py \
   --out_pdf data/eval/nist20_bad_data_review.pdf
 ```
 
-The HTML and PDF default to the top 500 ranked candidates. The PDF uses four spectrum cards per
-page plus a summary page; change the limit with `--max_pdf_spectra`.
+The HTML and PDF default to the top 500 ranked candidates. Each PDF page contains up to four
+equal-size spectrum cards from one molecule/adduct pair only and shows that molecule's structure,
+plus a summary page; change the limit with `--max_pdf_spectra`.
 
 The priority score orders work. It is not a probability and must not be used directly as a
 training filter. The CSV preserves separate hard and heuristic reasons and includes blank reviewer

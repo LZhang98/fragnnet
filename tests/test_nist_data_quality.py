@@ -303,7 +303,7 @@ def test_write_review_pdf_creates_summary_and_spectrum_pages(tmp_path: Path) -> 
     candidates = finalize_review_queue(pd.DataFrame([review]))
     out_fp = tmp_path / "review.pdf"
 
-    write_review_pdf(candidates, {1: row.peaks}, str(out_fp))
+    write_review_pdf(candidates, {1: row.peaks}, str(out_fp), smiles_by_mol_id={10: "CCO"})
 
     assert out_fp.read_bytes().startswith(b"%PDF")
     assert out_fp.stat().st_size > 1_000

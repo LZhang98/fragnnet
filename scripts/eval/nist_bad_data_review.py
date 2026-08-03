@@ -28,6 +28,8 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
+from rdkit import Chem
+from rdkit.Chem import Draw
 
 from fragnnet.utils.formula_utils import (
     C_MASS,
@@ -723,15 +725,28 @@ def _flag_count(candidates: pd.DataFrame, column: str) -> int:
     return int(candidates[column].sum()) if column in candidates else 0
 
 
+def _mol_image_array(smiles: str | None) -> np.ndarray | None:
+    """Render a molecule image array from SMILES, returning None on failure."""
+    if not smiles or smiles == "nan":
+        return None
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return np.asarray(Draw.MolToImage(mol, size=(360, 180), kekulize=False))
+
+
 def write_review_pdf(
     candidates: pd.DataFrame,
     peaks_by_spec_id: dict[int, Sequence[Sequence[float]]],
     out_fp: str,
     total_candidate_count: int | None = None,
+    smiles_by_mol_id: dict[int, str] | None = None,
 ) -> None:
-    """Write a summary and four ranked human-review spectrum cards per PDF page."""
+    """Write ranked spectrum cards without mixing molecule/adduct pairs on a page."""
     if total_candidate_count is None:
         total_candidate_count = len(candidates)
+    if smiles_by_mol_id is None:
+        smiles_by_mol_id = {}
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
     with PdfPages(out_fp) as pdf:
         # 1. Summarize the queue represented by this review document.
@@ -779,52 +794,95 @@ def write_review_pdf(
         pdf.savefig(fig)
         plt.close(fig)
 
-        # 2. Render four ranked candidates per page.
+        # 2. Group in priority order so a page never mixes molecule/adduct pairs.
         rows = list(
             candidates[candidates["spec_id"].isin(peaks_by_spec_id)].itertuples(index=False)
         )
-        for page_start in range(0, len(rows), 4):
-            page_rows = rows[page_start : page_start + 4]
-            fig, axes = plt.subplots(2, 2, figsize=(11, 8.5))
-            for axis, row in zip(axes.flat, page_rows, strict=False):
-                peak_arrays = _valid_peak_arrays(peaks_by_spec_id.get(int(row.spec_id), []))
-                if peak_arrays is None:
-                    axis.text(0.5, 0.5, "Malformed or empty spectrum", ha="center", va="center")
+        grouped_rows: dict[tuple[int, str], list[object]] = {}
+        for row in rows:
+            grouped_rows.setdefault((int(row.mol_id), str(row.prec_type)), []).append(row)
+
+        page_number = 0
+        for (mol_id, prec_type), group_rows in grouped_rows.items():
+            for group_start in range(0, len(group_rows), 4):
+                page_number += 1
+                page_rows = group_rows[group_start : group_start + 4]
+                fig, axes_grid = plt.subplots(2, 2, figsize=(11, 8.5))
+                axes = np.asarray(axes_grid).reshape(-1)
+                for axis, row in zip(axes, page_rows, strict=False):
+                    peak_arrays = _valid_peak_arrays(peaks_by_spec_id.get(int(row.spec_id), []))
+                    if peak_arrays is None:
+                        axis.text(
+                            0.5, 0.5, "Malformed or empty spectrum", ha="center", va="center"
+                        )
+                    else:
+                        mzs, intensities = peak_arrays
+                        normalized = intensities / intensities.max()
+                        axis.vlines(mzs, 0.0, normalized, color="#2457a6", linewidth=0.8)
+                        axis.set_xlim(0.0, max(float(mzs.max()) * 1.03, 1.0))
+                        axis.set_ylim(0.0, 1.08)
+                    reason_text = str(row.review_reasons).replace(";", "; ")
+                    reason = textwrap.fill(
+                        reason_text,
+                        width=62,
+                        break_long_words=False,
+                        break_on_hyphens=False,
+                    )
+                    axis.set_title(
+                        f"Priority {row.review_priority} | spec {row.spec_id}\n{reason}",
+                        fontsize=7.5,
+                    )
+                    axis.set_xlabel("m/z", fontsize=8)
+                    axis.set_ylabel("relative intensity", fontsize=8)
+                    axis.tick_params(labelsize=7)
+                    families = str(row.evidence_families) or "basic heuristic"
+                    metadata = (
+                        f"NIST {row.dset_spec_id} | {row.formula} | {row.inst_type}\n"
+                        f"families: {families}\n"
+                        f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
+                        f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
+                        f"contaminant="
+                        f"{_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
+                        f"DAG disagreement="
+                        f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
+                    )
+                    axis.text(
+                        0.0,
+                        -0.30,
+                        metadata,
+                        transform=axis.transAxes,
+                        fontsize=6.5,
+                        va="top",
+                    )
+                for axis in axes[len(page_rows) :]:
+                    axis.set_visible(False)
+                continuation = (
+                    f" | part {group_start // 4 + 1}"
+                    if len(group_rows) > 4
+                    else ""
+                )
+                fig.suptitle(
+                    f"mol {mol_id} | {prec_type}{continuation} | review page {page_number}",
+                    fontsize=12,
+                    y=0.985,
+                )
+                fig.tight_layout(rect=(0.03, 0.04, 0.97, 0.76), h_pad=3.8)
+                structure_axis = fig.add_axes((0.40, 0.79, 0.20, 0.16))
+                mol_image = _mol_image_array(smiles_by_mol_id.get(mol_id))
+                if mol_image is None:
+                    structure_axis.text(
+                        0.5,
+                        0.5,
+                        "Molecule structure unavailable",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                    )
                 else:
-                    mzs, intensities = peak_arrays
-                    normalized = intensities / intensities.max()
-                    axis.vlines(mzs, 0.0, normalized, color="#2457a6", linewidth=0.8)
-                    axis.set_xlim(0.0, max(float(mzs.max()) * 1.03, 1.0))
-                    axis.set_ylim(0.0, 1.08)
-                reason = textwrap.shorten(str(row.review_reasons), width=76, placeholder="…")
-                axis.set_title(
-                    f"Priority {row.review_priority} | spec {row.spec_id}\n{reason}",
-                    fontsize=9,
-                )
-                axis.set_xlabel("m/z", fontsize=8)
-                axis.set_ylabel("relative intensity", fontsize=8)
-                axis.tick_params(labelsize=7)
-                families = str(row.evidence_families) or "basic heuristic"
-                metadata = (
-                    f"NIST {row.dset_spec_id} | mol {row.mol_id} | {row.formula} | "
-                    f"{row.prec_type} | {row.inst_type}\n"
-                    f"families: {families}\n"
-                    f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
-                    f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
-                    f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
-                    f"DAG disagreement="
-                    f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
-                )
-                axis.text(0.0, -0.30, metadata, transform=axis.transAxes, fontsize=6.5, va="top")
-            for axis in axes.flat[len(page_rows) :]:
-                axis.set_visible(False)
-            fig.suptitle(
-                f"Ranked candidates {page_start + 1}–{page_start + len(page_rows)}",
-                fontsize=12,
-            )
-            fig.tight_layout(rect=(0.03, 0.04, 0.97, 0.94), h_pad=3.8)
-            pdf.savefig(fig)
-            plt.close(fig)
+                    structure_axis.imshow(mol_image)
+                structure_axis.axis("off")
+                pdf.savefig(fig)
+                plt.close(fig)
 
 
 def main() -> None:
@@ -863,7 +921,7 @@ def main() -> None:
         spec_df = spec_df.head(args.limit)
         log.warning("--limit is active; duplicate flags apply only to this subset")
 
-    mol_df = pd.read_pickle(args.mol_fp)[["mol_id", "exact_mw", "formula"]]
+    mol_df = pd.read_pickle(args.mol_fp)[["mol_id", "exact_mw", "formula", "smiles"]]
     mol_meta = {
         int(row.mol_id): (float(row.exact_mw), str(row.formula))
         for row in mol_df.itertuples(index=False)
@@ -920,11 +978,17 @@ def main() -> None:
         log.info("Saved visual review report to %s", args.out_html)
     if args.out_pdf:
         pdf_candidates = candidates.head(args.max_pdf_spectra)
+        wanted_mol_ids = set(pdf_candidates["mol_id"])
+        smiles_by_mol_id = {
+            int(row.mol_id): str(row.smiles)
+            for row in mol_df[mol_df["mol_id"].isin(wanted_mol_ids)].itertuples(index=False)
+        }
         write_review_pdf(
             pdf_candidates,
             peaks_by_spec_id,
             args.out_pdf,
             total_candidate_count=len(candidates),
+            smiles_by_mol_id=smiles_by_mol_id,
         )
         log.info("Saved PDF review report to %s", args.out_pdf)
 
