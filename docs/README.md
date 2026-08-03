@@ -24,7 +24,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | What it covers |
 |-----|----------------|
-| [run_inference.md](guides/run_inference.md) | Data prep (`02_prepare_mol_df.py`, `03_prepare_spec_df.py`) and running prediction. |
+| [run_inference.md](guides/run_inference.md) | Data prep (`01_inf_prepare_mol_df.py`, `02_inf_prepare_spec_df.py`) and running prediction. |
 | [finetune_fragnnet.md](guides/finetune_fragnnet.md) | Fine-tuning for spectrum-to-molecule ranking and retrieval; component freezing. |
 | [nist_human_review.md](guides/nist_human_review.md) | Generating the ranked suspicious-spectrum queue and visual report. |
 

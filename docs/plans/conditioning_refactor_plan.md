@@ -10,7 +10,7 @@ FraGNNet conditions on acquisition metadata (collision energy, adduct/precursor 
 instrument type, fragmentation mode) through **three** parallel mechanisms, and most metadata
 is conditioned **2–3× redundantly**. The bulk of the machinery (the output-FiLM "scaler"
 chain) can only *rescale* the intensity distribution uniformly across fragments — the exact
-lever the sharpening analysis ([oracle decomposition](project_oracle_decomposition)) proved
+lever the sharpening analysis (`project_oracle_decomposition`) proved
 buys ~nothing — while the one path that can actually *re-rank* fragments (the "insert"
 embeddings) was, until the `mol,mlp` change, used only weakly at the mol-encoder input.
 
@@ -27,7 +27,7 @@ change which fragment scores highest.
 - `ce_insert`, `prec_insert`, `inst_insert`, `frag_mode_insert`
 - Params: `*_insert_location`, `*_insert_size` (+ `ce_insert_type`, `ce_insert_merge`).
 - `ce_insert_location` is now multi-valued ("mol,mlp"); the other three are still single-value
-  exact-match (see [ce-perfrag note](project_ce_perfrag_conditioning)).
+  exact-match (see `project_ce_perfrag_conditioning`).
 
 ### Mechanism ② — "scaler" FiLM chain (condition output logits; RESCALE ONLY)
 Applied in sequence to `frag_joint_logits` in `fragnnet_model.py` forward
@@ -86,7 +86,7 @@ One combined **context (stratum) embedding**:
 used in exactly the two re-ranking-capable places:
 1. **Insert at `mol` + `mlp`** — one context vector replacing the four separate `*_insert`
    paths (generalizes the `ce_insert_location: mol,mlp` change to all metadata).
-2. **Feed the competition module** ([competition plan](ce_perfrag_competition_plan)) — so
+2. **Feed the competition module** (`ce_perfrag_competition_plan`) — so
    competition is stratum-dependent, not CE-only.
 
 **Deprecate** the output-FiLM chain (②) and `depth_ce_bias` (③). Optionally retain a single

@@ -26,6 +26,7 @@ from nist_bad_data_review import (  # noqa: E402
     add_uwpr_signals,
     analyze_spectrum,
     finalize_review_queue,
+    write_review_pdf,
 )
 
 
@@ -294,3 +295,15 @@ def test_uwpr_signal_requires_consensus_across_dag_audits(tmp_path: Path) -> Non
     assert row["uwpr_contaminant_only_intensity_fraction"] == 0.0
     assert row["uwpr_dag_disagreement_intensity_fraction"] == pytest.approx(0.8)
     assert not bool(row["substantial_uwpr_contaminant_only_intensity"])
+
+
+def test_write_review_pdf_creates_summary_and_spectrum_pages(tmp_path: Path) -> None:
+    row = _review_row(peaks=[(20.0, 1.0), (40.0, 0.5)])
+    review = analyze_spectrum(row, {10: (100.0, "C6H12O")})
+    candidates = finalize_review_queue(pd.DataFrame([review]))
+    out_fp = tmp_path / "review.pdf"
+
+    write_review_pdf(candidates, {1: row.peaks}, str(out_fp))
+
+    assert out_fp.read_bytes().startswith(b"%PDF")
+    assert out_fp.stat().st_size > 1_000

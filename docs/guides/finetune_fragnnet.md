@@ -119,6 +119,7 @@ finetune_shared_components:
 finetune: true
 finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
 finetune_freeze_all_shared: false
+finetune_freeze_components: []
 finetune_weights_lr_ratio: 0.1  # Shared LR = 0.0004 * 0.1 = 0.00004
 finetune_shared_components:
   - mol_embedder
@@ -363,6 +364,7 @@ mces_fp: data/proc/mces/mces_pairs.pkl
 finetune: true
 finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
 finetune_freeze_all_shared: false                    # All trainable
+finetune_freeze_components: []                       # Override template default
 finetune_weights_lr_ratio: 0.1                      # Shared: 0.00004
 
 # Model - NodeMLP
@@ -391,11 +393,11 @@ oos_loss: True
 ```bash
 # Freeze strategy - best for quick fine-tuning
 python scripts/run_pl_model_fit.py \
-  --config config/fragnnet_finetuning/nist20_finetuning_freeze.yml
+  --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml
 
 # Full fine-tune strategy - best for larger datasets
 python scripts/run_pl_model_fit.py \
-  --config config/fragnnet_finetuning/nist20_finetuning.yml
+  --custom_fp config/fragnnet_finetuning/nist20_finetuning.yml
 ```
 
 ### SLURM Cluster Training
@@ -415,7 +417,7 @@ module load cuda/11.8
 source venv/bin/activate
 
 python scripts/run_pl_model_fit.py \
-  --config config/fragnnet_finetuning/nist20_finetuning_freeze.yml
+  --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml
 ```
 
 Submit:
@@ -423,12 +425,16 @@ Submit:
 sbatch slurm_scripts/fraggnn_finetune.sh
 ```
 
-### Resume Training
+### Resume Training with W&B
+
+Run with a stable job ID and online W&B logging. Re-running the same command resumes from
+`last.ckpt` when the earlier run and checkpoint are available:
 
 ```bash
 python scripts/run_pl_model_fit.py \
-  --config config/fragnnet_finetuning/nist20_finetuning_freeze.yml \
-  --resume_from_checkpoint saved_ckpts/last.ckpt
+  --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml \
+  --wandb_mode online \
+  --job_id nist20_finetuning_freeze
 ```
 
 ---
@@ -501,6 +507,7 @@ train_batch_size: 256                    # Keep batch size large
 **Solution** (use full fine-tune strategy):
 ```yaml
 finetune_freeze_all_shared: false         # Allow shared adaptation
+finetune_freeze_components: []            # Do not retain the template's component freeze
 finetune_weights_lr_ratio: 0.1
 lr: 0.0004                                # Standard LR
 max_epochs: 100                           # More epochs
@@ -545,7 +552,7 @@ This makes NodeMLP ideal for fine-tuning scenarios with resource constraints.
 1. **Start with Freeze Strategy**
    ```bash
    python scripts/run_pl_model_fit.py \
-     --config config/fragnnet_finetuning/nist20_finetuning_freeze.yml
+     --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml
    ```
    - Quick baseline
    - Observe convergence
@@ -558,7 +565,7 @@ This makes NodeMLP ideal for fine-tuning scenarios with resource constraints.
 3. **Full Fine-tune (if needed)**
    ```bash
    python scripts/run_pl_model_fit.py \
-     --config config/fragnnet_finetuning/nist20_finetuning.yml
+     --custom_fp config/fragnnet_finetuning/nist20_finetuning.yml
    ```
    - Use differential learning rates
    - Monitor per-component gradients

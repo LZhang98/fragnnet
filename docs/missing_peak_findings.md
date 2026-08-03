@@ -1615,7 +1615,7 @@ All 11 in-tar molecules are **halogenated phenyl sulfoxides** (Br and/or Cl subs
 The .9 m/z bins — both in A (254.9) and B (186.9, 370.9, 225.9) — reflect ³⁵Cl (offset +0.969) and
 ⁷⁹Br (offset +0.918) mass defects: **halide-retaining direct cations** from heterolytic C−X cleavage,
 which BFS cannot generate (produces only [neutral+H]⁺). Confirmed: mol_id=52125
-([O-][S+](c1cc(Cl)cc(Cl)c1O)c1cc(Cl)cc(Cl)c1O, a tetrachlorodiphenyl sulfoxide) contributes
+(`[O-][S+](c1cc(Cl)cc(Cl)c1O)c1cc(Cl)cc(Cl)c1O`, a tetrachlorodiphenyl sulfoxide) contributes
 m/z 254.9 peaks in 5/14 spectra.
 
 Category A integer-bin peaks (69.0, 82.0, 95.0, 192.0) are a separate gap: aliphatic and ring fragments
@@ -2419,7 +2419,7 @@ Not model or BFS limitations. Three sub-kinds:
 
 **11 mols in tar (35 missing).** Sphingomyelins and ceramide phosphates — a sphingoid base
 backbone (C18 long-chain amino alcohol) with a phosphocholine or phosphoethanolamine head
-group. Most in-tar mols contain a quaternary [N+](C)(C)C choline group (zwitterion in
+group. Most in-tar mols contain a quaternary `[N+](C)(C)C` choline group (zwitterion in
 neutral form, protonated head in [M+H]⁺).
 
 #### Missing peaks (category A — absent from DAG)
@@ -2458,7 +2458,7 @@ bins (633.5, 651.5) are doubly-charged fragment ions from the large sphingolipid
 ### Other Glycerolipids (n=66, DAG miss rate=11.1%)
 
 **3 mols in tar (9 missing).** Glycerophospholipids and ether lipids with long unsaturated
-acyl chains (C18:1, C18:2). One mol (mol_id=14740) contains a quaternary [N+](C)(C)C.
+acyl chains (C18:1, C18:2). One mol (mol_id=14740) contains a quaternary `[N+](C)(C)C`.
 Very small in-tar sample limits conclusions.
 
 #### Missing peaks (category A — absent from DAG)
@@ -2660,4 +2660,3 @@ mechanism. Not a significant BFS gap.
 | Pyrimidine deoxyribonucleotides | 24 | 75.0% | n=1 per missing peak |
 | 1-Benzylquinolines | 25 | 71.4% | m/z 306.2 in only 5 spectra |
 | Aminoxides | 51 | 57.7% | Only m/z 62.1 missing (15 spectra, 0.091 intensity); insufficient for mechanistic conclusion |
-

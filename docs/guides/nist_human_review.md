@@ -14,8 +14,12 @@ python scripts/eval/nist_bad_data_review.py \
     data/uwpr/nist20_uwpr_hits_feasibility.csv \
     data/uwpr/nist20_uwpr_hits_feasibility_d4.csv \
   --out_csv data/eval/nist20_bad_data_review.csv \
-  --out_html data/eval/nist20_bad_data_review.html
+  --out_html data/eval/nist20_bad_data_review.html \
+  --out_pdf data/eval/nist20_bad_data_review.pdf
 ```
+
+The HTML and PDF default to the top 500 ranked candidates. The PDF uses four spectrum cards per
+page plus a summary page; change the limit with `--max_pdf_spectra`.
 
 The priority score orders work. It is not a probability and must not be used directly as a
 training filter. The CSV preserves separate hard and heuristic reasons and includes blank reviewer

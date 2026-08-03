@@ -1,3 +1,5 @@
+# Molecular Generation from Mass Spectra — Part 2
+
 > **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-06-08
 >
 > Continuation of `lz_molecular_generation.md` — starts at section 4, spectrum-to-DAG generation.

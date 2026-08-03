@@ -7,12 +7,13 @@
 ## Data Preparation (Two-Step Process)
 
 The inference input preparation is split into two scripts:
-1. **Step 1**: `02_prepare_mol_df.py` - Create molecular dataframe from SMILES
-2. **Step 2**: `03_prepare_spec_df.py` - Create spectrum dataframe from mol_df and experimental conditions
+
+1. **Step 1**: `01_inf_prepare_mol_df.py` - Create molecular dataframe from SMILES
+2. **Step 2**: `02_inf_prepare_spec_df.py` - Create spectrum dataframe from mol_df and experimental conditions
 
 This separation allows independent execution and easier customization.
 
-### 1. `02_prepare_mol_df.py`
+### 1. `01_inf_prepare_mol_df.py`
 
 Prepares a molecular dataframe for FraGNNet inference from a list of SMILES strings.
 
@@ -29,7 +30,7 @@ Prepares a molecular dataframe for FraGNNet inference from a list of SMILES stri
 
 From command line SMILES list:
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_list <SMILES> [<SMILES> ...] \
   --output_dir <OUTPUT_DIR> \
   [--max_heavy_atoms <MAX_ATOMS>]
@@ -37,14 +38,14 @@ python preproc_scripts/inference/02_prepare_mol_df.py \
 
 From a text file:
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_file <SMILES_FILE> \
   --output_dir <OUTPUT_DIR>
 ```
 
 From a CSV/TSV file with custom columns:
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_file <CSV_FILE> \
   --smiles_colname <SMILES_COLUMN> \
   --id_colname <ID_COLUMN> \
@@ -63,20 +64,20 @@ python preproc_scripts/inference/02_prepare_mol_df.py \
 
 **Output Options**:
 - `--output_dir`: Output directory for `mol_df.pkl.gz` and `mol_df_config.json`
-- `--max_heavy_atoms`: Maximum number of heavy atoms in a molecule (default: 60)
+- `--max_heavy_atoms`: Maximum number of heavy atoms in a molecule (default: 128)
 
 #### Sample Commands
 
 ##### Basic Single Molecule Example
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_list "CCO" \
   --output_dir output/single_molecule
 ```
 
 ##### From CSV File with Custom Columns
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_file data/metabolites.csv \
   --smiles_colname smiles \
   --id_colname compound_id \
@@ -85,7 +86,7 @@ python preproc_scripts/inference/02_prepare_mol_df.py \
 
 ##### Multiple Molecules
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_list "CCO" "CC(=O)O" "CCN" "CC(C)O" \
   --output_dir output/multi_molecule
 ```
@@ -96,14 +97,14 @@ python preproc_scripts/inference/02_prepare_mol_df.py \
 echo -e "CCO\nCC(=O)O\nCCN\nCC(C)O\nCCC" > my_molecules.txt
 
 # Then run the script
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_file my_molecules.txt \
   --output_dir output/from_file
 ```
 
 ##### Drug Molecules Example
 ```bash
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_list \
     "CC1=CC=C(C=C1)C2=CC(=NN2C3=CC=C(C=C3)S(=O)(=O)N)C(F)(F)F" \
     "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O" \
@@ -134,15 +135,15 @@ Filtered molecules are logged with detailed counts and reasons for removal.
 
 ---
 
-### 2. `03_prepare_spec_df.py`
+### 2. `02_inf_prepare_spec_df.py`
 
 Prepares spectrum metadata dataframe from the mol_df created in step 1 and experimental conditions.
 
 #### Features
 - Creates all combinations of molecules × experimental conditions
 - Handles instrument-specific collision energy units (NCE for Orbitrap, eV for others)
-- Supports multiple precursor types and instruments in a single run
-- Flexible merged spectra mode for simplified predictions
+- Supports multiple precursor types and FT/QTOF instruments in a single run
+- Supports alternate grouping with merged spectra mode
 - Automatically computes precursor m/z values
 - Generates `spec_df.pkl.gz` and `spec_df_config.json` files
 - Detailed logging of spectrum generation
@@ -151,7 +152,7 @@ Prepares spectrum metadata dataframe from the mol_df created in step 1 and exper
 
 Basic usage with experimental conditions:
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path <MOL_DF_PATH> \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
   --ft_ces <NCE_VALS> [<NCE_VALS> ...] \
@@ -162,7 +163,7 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 For QToF instruments with eV values:
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path <MOL_DF_PATH> \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
   --qtof_ces <CE_EV> [<CE_EV> ...] \
@@ -173,13 +174,13 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 #### Arguments
 
 **Input**:
-- `--mol_df_path`: Path to `mol_df.pkl.gz` file (required, created by `02_prepare_mol_df.py`)
+- `--mol_df_path`: Path to `mol_df.pkl.gz` file (required, created by `01_inf_prepare_mol_df.py`)
 
 **Experimental Conditions** (at least one required):
 - `--prec_types`: Precursor types. Choices: `[M+H]+`, `[M-H]-` (required)
 - `--qtof_ces`: Collision energies in eV for QToF instruments (e.g., `10.0eV 20.0eV`)
 - `--ft_ces`: Normalized collision energies for Orbitrap (e.g., `15.0NCE 25.0% 30.0eV`)
-- `--inst_types`: Instrument types. Choices: `FT`, `QTOF`, `IT`, `Q`, `TOF`, `QQQ` (required)
+- `--inst_types`: Instrument types (required). The current preparation logic supports `FT` and `QTOF`; other parser choices are not implemented.
 
 **Output Options**:
 - `--output_dir`: Output directory for `spec_df.pkl.gz` and `spec_df_config.json`
@@ -189,7 +190,7 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ##### Single Condition (FT Orbitrap with NCE)
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 25.0NCE \
@@ -199,7 +200,7 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ##### Multiple Conditions
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" "[M-H]-" \
   --ft_ces 15.0NCE 25.0NCE 35.0NCE \
@@ -209,7 +210,7 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ##### Merged Spectra Mode
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --qtof_ces 20.0eV \
@@ -220,7 +221,7 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ##### QToF with eV Collision Energies
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --qtof_ces 10.0eV 20.0eV 30.0eV \
@@ -230,7 +231,7 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ##### Orbitrap Only
 ```bash
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 15.0% 25.0% 35.0% \
@@ -245,11 +246,10 @@ Different instrument types use different collision energy units:
 | Instrument Type | Unit | Field Used | Description |
 |-----------------|------|------------|-------------|
 | FT (Orbitrap)   | NCE (%) | `nce` | Normalized Collision Energy |
-| IT (Ion Trap)   | NCE (%) | `nce` | Normalized Collision Energy |
 | QTOF            | eV      | `ace` | Absolute Collision Energy |
-| Q (Single Quad) | eV      | `ace` | Absolute Collision Energy |
-| TOF             | eV      | `ace` | Absolute Collision Energy |
-| QQQ (Triple Quad) | eV    | `ace` | Absolute Collision Energy |
+
+Although the CLI parser also lists `IT`, `Q`, `TOF`, and `QQQ`, collision-energy combination
+generation for those instruments is not implemented.
 
 #### Output Files
 
@@ -267,11 +267,9 @@ The script generates two files in the specified output directory:
 
 #### Merged Spectra Mode
 
-When `--merged_spectra true` is specified:
-- Generates one spectrum entry per unique (prec_type, inst_type) combination across all molecules
-- Groups spectra by precursor type and instrument type
-- Simplifies downstream analysis for molecule-level predictions
-- Reduces total number of predictions
+When `--merged_spectra true` is specified, the script retains one row per molecule and condition
+but assigns a shared `group_id` to rows with the same precursor and instrument types. It does not
+reduce the number of spectrum rows.
 
 ---
 
@@ -281,12 +279,12 @@ When `--merged_spectra true` is specified:
 
 ```bash
 # Step 1: Create molecular dataframe
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_list "CCO" "CC(=O)O" "CCN" \
   --output_dir data/inference
 
 # Step 2: Create spectrum dataframe with multiple conditions
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path data/inference/mol_df.pkl.gz \
   --prec_types "[M+H]+" "[M-H]-" \
   --ft_ces 15.0NCE 25.0NCE 35.0NCE \
@@ -299,14 +297,14 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ```bash
 # Step 1: Create molecular dataframe from CSV
-python preproc_scripts/inference/02_prepare_mol_df.py \
+python preproc_scripts/inference/01_inf_prepare_mol_df.py \
   --smiles_file compounds.csv \
   --smiles_colname smiles \
   --id_colname compound_id \
   --output_dir data/inference
 
 # Step 2: Create spectrum dataframe for Orbitrap
-python preproc_scripts/inference/03_prepare_spec_df.py \
+python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path data/inference/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 10eV 20eV 30eV \
@@ -316,28 +314,31 @@ python preproc_scripts/inference/03_prepare_spec_df.py \
 
 ---
 
-### 3. `02_run_inference_frag_gen.py`
+### 3. `scripts/run_inference.py`
 
-Runs FraGNNet inference on prepared data and saves predictions. Supports resuming from interrupted runs.
+Runs FraGNNet inference on prepared data and saves predictions. Supports resuming from interrupted
+runs. If `--frag_dp` is omitted, the script generates fragment DAGs in a temporary directory.
 
 #### Usage
 
 ```bash
-python scripts/inference/run_inference.py \
+mkdir -p <OUTPUT_DIRECTORY>
+
+python scripts/run_inference.py \
   --mol_fp <MOL_DF_PATH> \
   --spec_fp <SPEC_DF_PATH> \
-  --frag_dp <FRAG_DIR> \
   --model_ckpt <MODEL_CHECKPOINT> \
   --save_dp <OUTPUT_DIRECTORY> \
-  [--save_format parquet|pkl]
+  [--frag_dp <FRAG_DIR>] \
+  [--save_format parquet|pkl|pkl.gz]
 ```
 
 #### Arguments
 
 **Input Data**:
 - `--mol_fp`: Path to `mol_df.pkl.gz` (from step 1)
-- `--spec_fp`: Path to `spec_df.pkl.gz` (from step 1)
-- `--frag_dp`: Directory containing precomputed fragment graphs (from step 2)
+- `--spec_fp`: Path to `spec_df.pkl.gz` (from step 2)
+- `--frag_dp`: Optional directory containing precomputed fragment graphs. If omitted, DAGs are generated automatically.
 
 **Model Loading**:
 - `--model_ckpt`: Path to local model checkpoint (.ckpt)
@@ -346,12 +347,12 @@ python scripts/inference/run_inference.py \
 
 **Output Options**:
 - `--save_dp`: Directory to save inference results
-- `--save_format`: Output format (`parquet` or `pkl`, default: `parquet`)
+- `--save_format`: Output format (`parquet`, `pkl`, or `pkl.gz`; default: `parquet`)
 - `--save_chunk_size`: Number of predictions per chunk file (default: 10,000)
 - `--output_subset`: Subset of columns to output (optional)
 
 **Inference Options**:
-- `--eval_batch_size`: Batch size for inference (default: 1)
+- `--batch_size`: Batch size for inference (default: 1)
 - `--min_intensity`: Minimum intensity threshold for peaks (default: 1.0)
 - `--disable_preproc`: Disable dataset preprocessing to save memory (default: True)
 
@@ -360,11 +361,10 @@ The script automatically checks the output directory (`--save_dp`) for existing 
 
 ## Workflow Overview
 
-1. **Prepare Molecules**: Use `02_prepare_mol_df.py` to create molecule dataframe from SMILES
-2. **Prepare Spectra**: Use `03_prepare_spec_df.py` to create spectrum dataframe with experimental conditions
-3. **Generate Fragments**: Use `02_run_inference_frag_gen.py` to generate fragmentation trees
-4. **Run Inference**: Use `run_inference.py` to generate predictions
-5. **Analyze Results**: Process the prediction outputs for your analysis
+1. **Prepare Molecules**: Use `01_inf_prepare_mol_df.py` to create the molecule dataframe from SMILES.
+2. **Prepare Spectra**: Use `02_inf_prepare_spec_df.py` to create the spectrum dataframe with experimental conditions.
+3. **Run Inference**: Use `scripts/run_inference.py` to generate fragment DAGs if needed and save predictions.
+4. **Analyze Results**: Process the prediction outputs for your analysis.
 
 ## Important Notes
 
@@ -383,7 +383,7 @@ The script automatically checks the output directory (`--save_dp`) for existing 
 ### Quality Filtering
 
 - Removes non-single molecules, charged molecules, and molecules with radicals
-- Filters by heavy atom limit (default: 60 atoms)
+- Filters by heavy atom limit (default: 128 atoms)
 - Removes molecules with out-of-set elements not in fragmentation model
 - All filtering criteria are logged with detailed counts
 

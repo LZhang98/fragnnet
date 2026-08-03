@@ -1,3 +1,5 @@
+# SMARTS Coverage Survey
+
 > **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-03-02
 >
 > 72-rule coverage survey with per-rule status codes. Predates the current `FRAG_RULES`/`NL_RULES` split.

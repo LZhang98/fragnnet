@@ -19,11 +19,14 @@ import html
 import logging
 import math
 import os
+import textwrap
 from collections.abc import Sequence
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.backends.backend_pdf import PdfPages
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 from fragnnet.utils.formula_utils import (
@@ -709,6 +712,121 @@ score, not a bad-data probability.</p>{"".join(cards)}</body></html>"""
         handle.write(document)
 
 
+def _pdf_metric(row: object, name: str) -> str:
+    """Format one optional review metric for a PDF spectrum card."""
+    value = getattr(row, name, math.nan)
+    return f"{float(value):.3f}" if pd.notna(value) else "n/a"
+
+
+def _flag_count(candidates: pd.DataFrame, column: str) -> int:
+    """Count an optional boolean review flag."""
+    return int(candidates[column].sum()) if column in candidates else 0
+
+
+def write_review_pdf(
+    candidates: pd.DataFrame,
+    peaks_by_spec_id: dict[int, Sequence[Sequence[float]]],
+    out_fp: str,
+    total_candidate_count: int | None = None,
+) -> None:
+    """Write a summary and four ranked human-review spectrum cards per PDF page."""
+    if total_candidate_count is None:
+        total_candidate_count = len(candidates)
+    os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
+    with PdfPages(out_fp) as pdf:
+        # 1. Summarize the queue represented by this review document.
+        fig = plt.figure(figsize=(11, 8.5))
+        fig.suptitle("NIST suspicious-spectrum human review", fontsize=20, y=0.94)
+        signal_counts = [
+            ("Candidates in complete queue", total_candidate_count),
+            ("Spectra included in this PDF", len(peaks_by_spec_id)),
+            (
+                "Within PDF: same-CE replicate disagreements",
+                _flag_count(candidates, "replicate_consensus_disagreement"),
+            ),
+            (
+                "Within PDF: substantial cross-CE orphan intensity",
+                _flag_count(candidates, "substantial_cross_ce_orphan_intensity"),
+            ),
+            (
+                "Within PDF: D3+D4 contaminant consensus",
+                _flag_count(candidates, "substantial_uwpr_contaminant_only_intensity"),
+            ),
+        ]
+        summary = "\n".join(f"{label}: {count:,}" for label, count in signal_counts)
+        guidance = (
+            "Priority is a triage score, not a probability of bad data. Review the molecular "
+            "assignment, precursor/adduct/polarity, same-CE replicates, adjacent collision "
+            "energies, and evidence fields before choosing keep, exclude, or needs_followup. "
+            "D3/D4 disagreement is context, not an exclusion rule."
+        )
+        fig.text(0.12, 0.74, summary, fontsize=14, linespacing=1.7, va="top")
+        fig.text(
+            0.12,
+            0.40,
+            textwrap.fill(guidance, 95),
+            fontsize=12,
+            linespacing=1.5,
+            va="top",
+        )
+        fig.text(
+            0.12,
+            0.18,
+            "Thresholds: replicate ≤0.50 with peer consensus ≥0.80; "
+            "cross-CE orphan intensity ≥20%; D3+D4 contaminant consensus intensity ≥5%.",
+            fontsize=10,
+        )
+        pdf.savefig(fig)
+        plt.close(fig)
+
+        # 2. Render four ranked candidates per page.
+        rows = list(
+            candidates[candidates["spec_id"].isin(peaks_by_spec_id)].itertuples(index=False)
+        )
+        for page_start in range(0, len(rows), 4):
+            page_rows = rows[page_start : page_start + 4]
+            fig, axes = plt.subplots(2, 2, figsize=(11, 8.5))
+            for axis, row in zip(axes.flat, page_rows, strict=False):
+                peak_arrays = _valid_peak_arrays(peaks_by_spec_id.get(int(row.spec_id), []))
+                if peak_arrays is None:
+                    axis.text(0.5, 0.5, "Malformed or empty spectrum", ha="center", va="center")
+                else:
+                    mzs, intensities = peak_arrays
+                    normalized = intensities / intensities.max()
+                    axis.vlines(mzs, 0.0, normalized, color="#2457a6", linewidth=0.8)
+                    axis.set_xlim(0.0, max(float(mzs.max()) * 1.03, 1.0))
+                    axis.set_ylim(0.0, 1.08)
+                reason = textwrap.shorten(str(row.review_reasons), width=76, placeholder="…")
+                axis.set_title(
+                    f"Priority {row.review_priority} | spec {row.spec_id}\n{reason}",
+                    fontsize=9,
+                )
+                axis.set_xlabel("m/z", fontsize=8)
+                axis.set_ylabel("relative intensity", fontsize=8)
+                axis.tick_params(labelsize=7)
+                families = str(row.evidence_families) or "basic heuristic"
+                metadata = (
+                    f"NIST {row.dset_spec_id} | mol {row.mol_id} | {row.formula} | "
+                    f"{row.prec_type} | {row.inst_type}\n"
+                    f"families: {families}\n"
+                    f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
+                    f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
+                    f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
+                    f"DAG disagreement="
+                    f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
+                )
+                axis.text(0.0, -0.30, metadata, transform=axis.transAxes, fontsize=6.5, va="top")
+            for axis in axes.flat[len(page_rows) :]:
+                axis.set_visible(False)
+            fig.suptitle(
+                f"Ranked candidates {page_start + 1}–{page_start + len(page_rows)}",
+                fontsize=12,
+            )
+            fig.tight_layout(rect=(0.03, 0.04, 0.97, 0.94), h_pad=3.8)
+            pdf.savefig(fig)
+            plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec_fp", default="data/proc/nist20/spec_df.pkl")
@@ -716,6 +834,7 @@ def main() -> None:
     parser.add_argument("--dsets", "--dset", nargs="+", default=None)
     parser.add_argument("--out_csv", required=True)
     parser.add_argument("--out_html", default=None)
+    parser.add_argument("--out_pdf", default=None)
     parser.add_argument(
         "--uwpr_feasibility_csv",
         nargs="+",
@@ -726,6 +845,7 @@ def main() -> None:
         ),
     )
     parser.add_argument("--max_html_spectra", type=int, default=500)
+    parser.add_argument("--max_pdf_spectra", type=int, default=500)
     parser.add_argument(
         "--limit",
         type=int,
@@ -782,17 +902,31 @@ def main() -> None:
     candidates.to_csv(args.out_csv, index=False)
     log.info("Saved %d review candidates to %s", len(candidates), args.out_csv)
 
-    if args.out_html:
-        html_candidates = candidates.head(args.max_html_spectra)
-        wanted_ids = set(html_candidates["spec_id"])
+    if args.out_html or args.out_pdf:
+        max_rendered = max(
+            args.max_html_spectra if args.out_html else 0,
+            args.max_pdf_spectra if args.out_pdf else 0,
+        )
+        wanted_ids = set(candidates.head(max_rendered)["spec_id"])
         peaks_by_spec_id = {
             int(row.spec_id): row.peaks
             for row in spec_df[spec_df["spec_id"].isin(wanted_ids)][
                 ["spec_id", "peaks"]
             ].itertuples(index=False)
         }
+    if args.out_html:
+        html_candidates = candidates.head(args.max_html_spectra)
         write_review_html(html_candidates, peaks_by_spec_id, args.out_html)
         log.info("Saved visual review report to %s", args.out_html)
+    if args.out_pdf:
+        pdf_candidates = candidates.head(args.max_pdf_spectra)
+        write_review_pdf(
+            pdf_candidates,
+            peaks_by_spec_id,
+            args.out_pdf,
+            total_candidate_count=len(candidates),
+        )
+        log.info("Saved PDF review report to %s", args.out_pdf)
 
 
 if __name__ == "__main__":
