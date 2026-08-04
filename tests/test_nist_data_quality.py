@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,14 +21,50 @@ from dag_oracle_scores import (  # noqa: E402
     _load_uwpr_maps,
 )
 from nist_bad_data_review import (  # noqa: E402
+    HARD_FLAG_WEIGHTS,
+    HEURISTIC_FLAG_WEIGHTS,
     PRECURSOR_TYPE_TO_MASS_DIFF,
+    REVIEW_FLAG_GLOSSARY,
     add_cross_ce_orphan_signals,
     add_replicate_consensus_signals,
     add_uwpr_signals,
     analyze_spectrum,
+    canonicalize_prec_type,
+    collect_cross_ce_comparison_spectra,
     finalize_review_queue,
     write_review_pdf,
 )
+
+
+def test_every_review_flag_has_a_glossary_entry() -> None:
+    emitted_reasons = set(HARD_FLAG_WEIGHTS) | set(HEURISTIC_FLAG_WEIGHTS)
+    context_only_flags = {
+        "unsupported_precursor_type",
+        "duplicate_spectrum_cross_molecule",
+        "prec_type_was_normalized",
+        "duplicate_spectrum_same_structure",
+    }
+
+    assert set(REVIEW_FLAG_GLOSSARY) == emitted_reasons | context_only_flags
+    assert all(
+        level in {"Hard", "Heuristic", "Context"} for level, _ in REVIEW_FLAG_GLOSSARY.values()
+    )
+    assert all(REVIEW_FLAG_GLOSSARY[flag][0] == "Context" for flag in context_only_flags)
+    assert all(explanation.strip() for _, explanation in REVIEW_FLAG_GLOSSARY.values())
+
+
+def test_guide_glossary_matches_code_names_levels_and_order() -> None:
+    guide_fp = Path(__file__).parents[1] / "docs" / "guides" / "nist_human_review.md"
+    guide = guide_fp.read_text(encoding="utf-8")
+    glossary = guide.split("## Review flag glossary", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    guide_entries = re.findall(
+        r"^- `([^`]+)` — \*\*(Hard|Heuristic|Context):\*\*",
+        glossary,
+        flags=re.MULTILINE,
+    )
+    code_entries = [(name, level) for name, (level, _) in REVIEW_FLAG_GLOSSARY.items()]
+
+    assert guide_entries == code_entries
 
 
 def test_detect_is_compressed_falls_back_to_another_molecule(tmp_path: Path) -> None:
@@ -147,7 +184,8 @@ def test_review_detector_flags_independent_consistency_errors() -> None:
     assert result["precursor_mass_mismatch"]
     assert result["polarity_mismatch"]
     assert not result["invalid_peaks"]
-    assert "precursor_mass_mismatch" in result["hard_reasons"]
+    assert "precursor_mass_mismatch" in result["heuristic_reasons"]
+    assert "precursor_mass_mismatch" not in result["hard_reasons"]
 
 
 def test_review_detector_does_not_flag_consistent_spectrum() -> None:
@@ -155,6 +193,67 @@ def test_review_detector_does_not_flag_consistent_spectrum() -> None:
     candidates = finalize_review_queue(pd.DataFrame([result]))
 
     assert candidates.empty
+
+
+@pytest.mark.parametrize(
+    ("raw_prec_type", "canonical_prec_type"),
+    [
+        ("[M+H-H2O]+", "[M-H2O+H]+"),
+        ("[M+H-2H2O]+", "[M-2H2O+H]+"),
+        ("[M+CHO2]-", "[M+HCOOH-H]-"),
+        ("M-H", "[M-H]-"),
+    ],
+)
+def test_precursor_spelling_variants_are_canonicalized(
+    raw_prec_type: str, canonical_prec_type: str
+) -> None:
+    ion_mode = "P" if canonical_prec_type.endswith("+") else "N"
+    prec_mz = 100.0 + PRECURSOR_TYPE_TO_MASS_DIFF[canonical_prec_type]
+
+    result = analyze_spectrum(
+        _review_row(prec_type=raw_prec_type, ion_mode=ion_mode, prec_mz=prec_mz),
+        {10: (100.0, "C6H12O")},
+    )
+
+    assert canonicalize_prec_type(raw_prec_type) == canonical_prec_type
+    assert result["prec_type_canonical"] == canonical_prec_type
+    assert result["prec_type_was_normalized"]
+    assert not result["unsupported_precursor_type"]
+    assert not result["precursor_mass_mismatch"]
+
+
+def test_empty_precursor_type_is_not_a_supported_zero_mass_adduct() -> None:
+    result = analyze_spectrum(
+        _review_row(prec_type="", prec_mz=100.0),
+        {10: (100.0, "C6H12O")},
+    )
+
+    assert "" not in PRECURSOR_TYPE_TO_MASS_DIFF
+    assert result["unsupported_precursor_type"]
+    assert "unsupported_precursor_type" not in result["review_reasons"]
+
+
+def test_dominant_peak_is_computed_without_precursor_mz() -> None:
+    result = analyze_spectrum(
+        _review_row(prec_mz=None, peaks=[(20.0, 98.0), (40.0, 1.0), (60.0, 1.0)]),
+        {10: (100.0, "C6H12O")},
+    )
+
+    assert result["dominant_peak_fraction"] == pytest.approx(0.98)
+    assert result["single_peak_dominates"]
+
+
+def test_precursor_envelope_intensity_is_not_flagged_as_suspicious_above_precursor() -> None:
+    prec_mz = 101.007276
+    result = analyze_spectrum(
+        _review_row(prec_mz=prec_mz, peaks=[(50.0, 10.0), (prec_mz + 1.003, 90.0)]),
+        {10: (100.0, "C6H12O")},
+    )
+
+    assert result["intensity_above_precursor_fraction"] == pytest.approx(0.9)
+    assert result["precursor_envelope_intensity_fraction"] == pytest.approx(0.9)
+    assert result["non_envelope_intensity_above_precursor_fraction"] == 0.0
+    assert not result["substantial_intensity_above_precursor"]
 
 
 @pytest.mark.parametrize(
@@ -184,17 +283,92 @@ def test_formula_dependent_isotope_precursors_are_not_mass_checked(prec_type: st
 
 
 def test_review_queue_flags_identical_spectrum_across_molecules() -> None:
-    first = analyze_spectrum(_review_row(), {10: (100.0, "C6H12O"), 11: (100.0, "C6H12O")})
+    mol_meta = {
+        10: (100.0, "C6H12O", "STRUCTURE-A"),
+        11: (100.0, "C7H16", "STRUCTURE-B"),
+    }
+    first = analyze_spectrum(_review_row(), mol_meta)
     second = analyze_spectrum(
         _review_row(spec_id=2, mol_id=11, dset_spec_id="nist-2"),
-        {10: (100.0, "C6H12O"), 11: (100.0, "C6H12O")},
+        mol_meta,
     )
 
     candidates = finalize_review_queue(pd.DataFrame([first, second]))
 
     assert len(candidates) == 2
     assert candidates["duplicate_spectrum_cross_molecule"].all()
-    assert (candidates["review_priority"] == 4).all()
+    assert candidates["duplicate_spectrum_formula_conflict"].all()
+    assert (candidates["review_priority"] == 5).all()
+    assert (candidates["review_tier"] == "hard_conflict").all()
+
+
+def test_review_queue_does_not_call_sparse_spectra_cross_molecule_duplicates() -> None:
+    sparse_peaks = [(20.0, 1.0), (40.0, 0.5)]
+    first = analyze_spectrum(
+        _review_row(peaks=sparse_peaks),
+        {10: (100.0, "C6H12O"), 11: (100.0, "C6H12O")},
+    )
+    second = analyze_spectrum(
+        _review_row(spec_id=2, mol_id=11, dset_spec_id="nist-2", peaks=sparse_peaks),
+        {10: (100.0, "C6H12O"), 11: (100.0, "C6H12O")},
+    )
+
+    candidates = finalize_review_queue(pd.DataFrame([first, second]))
+
+    assert not candidates["duplicate_spectrum_cross_molecule"].any()
+    assert candidates["sparse_spectrum"].all()
+    assert (candidates["review_priority"] == 1).all()
+
+
+def test_same_formula_duplicate_is_label_ambiguity_not_hard_conflict() -> None:
+    mol_meta = {
+        10: (100.0, "C6H12O", "STRUCTURE-A"),
+        11: (100.0, "C6H12O", "STRUCTURE-B"),
+    }
+    first = analyze_spectrum(_review_row(), mol_meta)
+    second = analyze_spectrum(_review_row(spec_id=2, mol_id=11, dset_spec_id="nist-2"), mol_meta)
+
+    candidates = finalize_review_queue(pd.DataFrame([first, second]))
+
+    assert candidates["duplicate_spectrum_structure_ambiguity"].all()
+    assert not candidates["duplicate_spectrum_formula_conflict"].any()
+    assert not candidates["has_hard_evidence"].any()
+    assert (candidates["review_priority"] == 1).all()
+
+
+def test_same_structure_duplicate_is_context_only() -> None:
+    mol_meta = {
+        10: (100.0, "C6H12O", "SAME-STRUCTURE"),
+        11: (100.0, "C6H12O", "SAME-STRUCTURE"),
+    }
+    first = analyze_spectrum(_review_row(), mol_meta)
+    second = analyze_spectrum(_review_row(spec_id=2, mol_id=11, dset_spec_id="nist-2"), mol_meta)
+
+    candidates = finalize_review_queue(pd.DataFrame([first, second]))
+
+    assert candidates.empty
+
+
+def test_hard_evidence_ranks_before_higher_scoring_heuristics() -> None:
+    hard_conflict = analyze_spectrum(
+        _review_row(spec_id=1, ion_mode="N"),
+        {10: (100.0, "C6H12O")},
+    )
+    heuristic_only = analyze_spectrum(
+        _review_row(
+            spec_id=2,
+            prec_mz=None,
+            ace=-1.0,
+            peaks=[(20.0, 99.0), (20.0, 1.0)],
+        ),
+        {10: (100.0, "C6H12O")},
+    )
+
+    candidates = finalize_review_queue(pd.DataFrame([heuristic_only, hard_conflict]))
+
+    assert candidates.loc[0, "spec_id"] == 1
+    assert candidates.loc[0, "review_tier"] == "hard_conflict"
+    assert candidates.loc[1, "review_priority"] > candidates.loc[0, "review_priority"]
 
 
 def _signal_spec_df(rows: list[dict[str, object]]) -> pd.DataFrame:
@@ -246,6 +420,39 @@ def test_cross_ce_orphan_signal_requires_two_other_collision_energies() -> None:
     two_ces = three_ces.iloc[:2]
     result = add_cross_ce_orphan_signals(two_ces, review_df.iloc[:2])
     assert not result["substantial_cross_ce_orphan_intensity"].any()
+
+
+def test_cross_ce_comparison_spectra_exclude_the_primary_ce_bin() -> None:
+    spec_df = _signal_spec_df(
+        [
+            {
+                "spec_id": 1,
+                "dset_spec_id": "nist-1",
+                "ace": 10.0,
+                "peaks": [(50.0, 1.0)],
+            },
+            {
+                "spec_id": 2,
+                "dset_spec_id": "nist-2",
+                "ace": 20.0,
+                "peaks": [(60.0, 1.0)],
+            },
+            {
+                "spec_id": 3,
+                "dset_spec_id": "nist-3",
+                "ace": 30.0,
+                "peaks": [(70.0, 1.0)],
+            },
+        ]
+    )
+    candidates = pd.DataFrame(
+        {"spec_id": [1], "substantial_cross_ce_orphan_intensity": [True]}
+    )
+
+    comparisons = collect_cross_ce_comparison_spectra(spec_df, candidates)
+
+    assert [row["spec_id"] for row in comparisons[1]] == [2, 3]
+    assert [row["ce_value"] for row in comparisons[1]] == [20.0, 30.0]
 
 
 def test_uwpr_signal_uses_unique_peak_intensity_and_conservative_labels(tmp_path: Path) -> None:

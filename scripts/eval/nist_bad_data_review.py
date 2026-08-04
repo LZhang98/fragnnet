@@ -31,13 +31,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-from fragnnet.utils.formula_utils import (
-    C_MASS,
-    H_MASS,
-    N_MASS,
-    O_MASS,
-    PREC_TYPE_TO_MASS_DIFF,
-)
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -48,29 +42,30 @@ INSTRUMENT_TOLERANCE = {
     "QTOF": (2.0e-5, 750.0),
 }
 DEFAULT_TOLERANCE = (1.0e-5, 200.0)
-# PREC_TYPE_TO_MASS_DIFF is primarily an ion-carrier mapping used for fragment peaks. Neutral-loss
-# labels require distinct precursor-m/z shifts. Formula-dependent ``+2i`` isotope-selected labels
-# are deliberately excluded from this simple monoisotopic precursor check.
+# Formula-dependent ``+2i`` isotope-selected labels are deliberately excluded from this simple
+# monoisotopic precursor check.
 PRECURSOR_TYPE_TO_MASS_DIFF = {
-    **{
-        prec_type: mass_diff
-        for prec_type, mass_diff in PREC_TYPE_TO_MASS_DIFF.items()
-        if "+2i" not in prec_type
-    },
-    "[M+H-NH3]+": PREC_TYPE_TO_MASS_DIFF["[M+H]+"] - N_MASS - 3 * H_MASS,
-    "[M-H-CO2]-": PREC_TYPE_TO_MASS_DIFF["[M-H]-"] - C_MASS - 2 * O_MASS,
+    prec_type: mass_diff
+    for prec_type, mass_diff in PREC_TYPE_TO_MASS_DIFF.items()
+    if prec_type and "+2i" not in prec_type
+}
+PRECURSOR_TYPE_ALIASES = {
+    "[M+H-H2O]+": "[M-H2O+H]+",
+    "[M+H-2H2O]+": "[M-2H2O+H]+",
+    "[M+CHO2]-": "[M+HCOOH-H]-",
+    "M-H": "[M-H]-",
 }
 
 HARD_FLAG_WEIGHTS = {
     "invalid_peaks": 5,
-    "precursor_mass_mismatch": 4,
-    "missing_precursor_mz": 4,
     "polarity_mismatch": 4,
-    "duplicate_spectrum_cross_molecule": 4,
+    "duplicate_spectrum_formula_conflict": 5,
     "missing_molecule_metadata": 4,
     "empty_spectrum": 3,
 }
 HEURISTIC_FLAG_WEIGHTS = {
+    "precursor_mass_mismatch": 1,
+    "missing_precursor_mz": 1,
     "substantial_intensity_above_precursor": 2,
     "missing_collision_energy": 1,
     "negative_collision_energy": 2,
@@ -81,17 +76,144 @@ HEURISTIC_FLAG_WEIGHTS = {
     "replicate_consensus_disagreement": 3,
     "substantial_cross_ce_orphan_intensity": 2,
     "substantial_uwpr_contaminant_only_intensity": 2,
+    "duplicate_spectrum_structure_ambiguity": 1,
+}
+REVIEW_FLAG_GLOSSARY = {
+    "invalid_peaks": (
+        "Hard",
+        "The peak array is malformed or contains non-finite m/z values, non-positive m/z "
+        "values, negative intensities, or no positive total intensity.",
+    ),
+    "polarity_mismatch": (
+        "Hard",
+        "The charge sign written in the precursor/adduct label disagrees with the recorded "
+        "positive or negative ion mode.",
+    ),
+    "duplicate_spectrum_formula_conflict": (
+        "Hard",
+        "The same exact-export spectrum with at least three peaks is assigned to molecules "
+        "having different molecular formulas.",
+    ),
+    "missing_molecule_metadata": (
+        "Hard",
+        "The spectrum's molecule ID has no usable exact molecular mass in the molecule table.",
+    ),
+    "empty_spectrum": (
+        "Hard",
+        "The spectrum contains no peaks.",
+    ),
+    "precursor_mass_mismatch": (
+        "Heuristic",
+        "The recorded precursor m/z differs from exact molecular mass plus the canonicalized "
+        "adduct shift by more than the instrument tolerance. NIST precursor m/z is usually "
+        "theoretical, so this is an integrity/regression guard for label or structure "
+        "inconsistency, not a measured-mass-quality test.",
+    ),
+    "missing_precursor_mz": (
+        "Heuristic",
+        "The record has no finite precursor m/z, so precursor-based checks cannot be run.",
+    ),
+    "substantial_intensity_above_precursor": (
+        "Heuristic",
+        "At least 5% of total intensity lies more than 4.5 Da above the precursor, outside the "
+        "protected precursor isotope-envelope window.",
+    ),
+    "missing_collision_energy": (
+        "Heuristic",
+        "None of the supported absolute or normalized collision-energy fields is present.",
+    ),
+    "negative_collision_energy": (
+        "Heuristic",
+        "At least one recorded collision-energy value is negative.",
+    ),
+    "sparse_spectrum": (
+        "Heuristic",
+        "The spectrum has only one or two peaks. This is a low-priority prompt for human "
+        "review, not evidence that the spectrum is wrong.",
+    ),
+    "single_peak_dominates": (
+        "Heuristic",
+        "The spectrum has at least three peaks and one peak carries at least 98% of total "
+        "intensity.",
+    ),
+    "unsorted_peak_mz": (
+        "Heuristic",
+        "Peak m/z values are not stored in ascending order.",
+    ),
+    "duplicate_peak_mz": (
+        "Heuristic",
+        "Two or more entries in the same spectrum have exactly the same m/z value.",
+    ),
+    "replicate_consensus_disagreement": (
+        "Heuristic",
+        "Within at least three same-collision-energy replicates, this spectrum has cosine "
+        "similarity at most 0.50 to every peer while the other peers agree at 0.80 or higher.",
+    ),
+    "substantial_cross_ce_orphan_intensity": (
+        "Heuristic",
+        "At least 20% of intensity comes from peaks absent from every spectrum in at least two "
+        "other collision-energy bins for the same molecule/adduct.",
+    ),
+    "substantial_uwpr_contaminant_only_intensity": (
+        "Heuristic",
+        "At least 5% of intensity matches UWPR/MaConDa contaminant ions that every supplied DAG "
+        "feasibility source, including D3 and D4 when supplied, labels contaminant-only.",
+    ),
+    "duplicate_spectrum_structure_ambiguity": (
+        "Heuristic",
+        "The same exact-export spectrum with at least three peaks is assigned to different "
+        "structures sharing one molecular formula; this may be label ambiguity among isomers.",
+    ),
+    "unsupported_precursor_type": (
+        "Context",
+        "The canonicalized precursor label has no entry in the simple monoisotopic mass-shift "
+        "table, so the precursor-mass check is skipped. This does not increase review priority "
+        "and does not appear in review_reasons.",
+    ),
+    "duplicate_spectrum_cross_molecule": (
+        "Context",
+        "The same exact-export spectrum with at least three peaks occurs under more than one "
+        "molecule ID. The formula-conflict and structure-ambiguity flags provide the actionable "
+        "classification; this union flag does not itself increase priority.",
+    ),
+    "prec_type_was_normalized": (
+        "Context",
+        "The original NIST precursor label was mapped to a known equivalent spelling before "
+        "mass and polarity checks. The original label remains available in prec_type.",
+    ),
+    "duplicate_spectrum_same_structure": (
+        "Context",
+        "The same exact-export spectrum appears under multiple molecule IDs having the same "
+        "formula and structure key. This may reflect duplicate identifiers and does not itself "
+        "increase review priority.",
+    ),
 }
 
 REPLICATE_LOW_SIMILARITY = 0.5
 REPLICATE_NORMAL_SIMILARITY = 0.8
 CROSS_CE_ORPHAN_FRACTION = 0.2
 UWPR_CONTAMINANT_ONLY_FRACTION = 0.05
+PRECURSOR_ENVELOPE_WINDOW_DA = 4.5
+DEFAULT_PDF_PRECURSOR_TYPES = [
+    "[M+H]+",
+    "[M-H]-",
+    "[M+Na]+",
+    "[M+K]+",
+    "[M+Cl]-",
+    "[M]+",
+]
 
 
 def _is_missing(value: object) -> bool:
     """Return whether a scalar value is missing."""
     return value is None or (isinstance(value, (float, np.floating)) and math.isnan(value))
+
+
+def canonicalize_prec_type(prec_type: object) -> object:
+    """Map known NIST spelling variants to the precursor mass-check vocabulary."""
+    if not isinstance(prec_type, str):
+        return prec_type
+    return PRECURSOR_TYPE_ALIASES.get(prec_type, prec_type)
 
 
 def _tolerance_for_inst_type(inst_type: str) -> tuple[float, float]:
@@ -361,6 +483,47 @@ def add_cross_ce_orphan_signals(spec_df: pd.DataFrame, review_df: pd.DataFrame) 
     return _attach_signals(review_df, pd.DataFrame.from_records(records), defaults)
 
 
+def collect_cross_ce_comparison_spectra(
+    spec_df: pd.DataFrame,
+    candidates: pd.DataFrame,
+) -> dict[int, list[dict[str, object]]]:
+    """Collect other-CE spectra used to contextualize flagged orphan-intensity rows."""
+    flagged_ids = set(
+        candidates.loc[
+            candidates["substantial_cross_ce_orphan_intensity"].astype(bool), "spec_id"
+        ].astype(int)
+    )
+    if not flagged_ids:
+        return {}
+
+    scoped = _add_ce_columns(spec_df)
+    primary_rows = scoped[scoped["spec_id"].isin(flagged_ids)].set_index("spec_id")
+    comparisons: dict[int, list[dict[str, object]]] = {}
+    for spec_id in flagged_ids:
+        if spec_id not in primary_rows.index:
+            continue
+        primary = primary_rows.loc[spec_id]
+        if pd.isna(primary["ce_bin"]):
+            continue
+        siblings = scoped[
+            scoped["group_id"].eq(primary["group_id"])
+            & scoped["ce_source"].eq(primary["ce_source"])
+            & scoped["ce_bin"].notna()
+            & scoped["ce_bin"].ne(primary["ce_bin"])
+        ].sort_values(["ce_bin", "spec_id"])
+        comparisons[spec_id] = [
+            {
+                "spec_id": int(row.spec_id),
+                "dset_spec_id": row.dset_spec_id,
+                "ce_source": str(row.ce_source),
+                "ce_value": float(row.ce_value),
+                "peaks": row.peaks,
+            }
+            for row in siblings.itertuples(index=False)
+        ]
+    return comparisons
+
+
 def _matched_peak_stats(
     peaks: object, target_mzs: Sequence[float], mz_tol: float = 1.0e-4
 ) -> tuple[int, float]:
@@ -470,7 +633,10 @@ def add_uwpr_signals(
     return _attach_signals(review_df, pd.DataFrame.from_records(records), defaults)
 
 
-def analyze_spectrum(row: object, mol_meta: dict[int, tuple[float, str]]) -> dict[str, object]:
+def analyze_spectrum(
+    row: object,
+    mol_meta: dict[int, tuple[float, str] | tuple[float, str, str]],
+) -> dict[str, object]:
     """Compute independent hard flags and softer review heuristics for one spectrum."""
     reasons: list[str] = []
     hard_reasons: list[str] = []
@@ -497,18 +663,24 @@ def analyze_spectrum(row: object, mol_meta: dict[int, tuple[float, str]]) -> dic
         except (TypeError, ValueError):
             invalid_peaks = True
 
-    exact_mw, formula = mol_meta.get(int(row.mol_id), (math.nan, ""))
+    molecule_values = mol_meta.get(int(row.mol_id), (math.nan, "", ""))
+    if len(molecule_values) == 2:
+        exact_mw, formula = molecule_values
+        inchikey_s = ""
+    else:
+        exact_mw, formula, inchikey_s = molecule_values
     missing_molecule_metadata = not np.isfinite(exact_mw)
+    canonical_prec_type = canonicalize_prec_type(row.prec_type)
     expected_prec_mz = math.nan
     precursor_error_da = math.nan
     precursor_error_ppm = math.nan
     precursor_mass_mismatch = False
     if (
         not missing_molecule_metadata
-        and row.prec_type in PRECURSOR_TYPE_TO_MASS_DIFF
+        and canonical_prec_type in PRECURSOR_TYPE_TO_MASS_DIFF
         and not _is_missing(row.prec_mz)
     ):
-        expected_prec_mz = exact_mw + PRECURSOR_TYPE_TO_MASS_DIFF[row.prec_type]
+        expected_prec_mz = exact_mw + PRECURSOR_TYPE_TO_MASS_DIFF[canonical_prec_type]
         precursor_error_da = float(row.prec_mz - expected_prec_mz)
         precursor_error_ppm = 1.0e6 * precursor_error_da / expected_prec_mz
         tolerance, tolerance_min_mz = _tolerance_for_inst_type(row.inst_type)
@@ -519,38 +691,53 @@ def analyze_spectrum(row: object, mol_meta: dict[int, tuple[float, str]]) -> dic
         float(intensities.sum()) if len(intensities) and not invalid_peaks else math.nan
     )
     intensity_above_precursor_fraction = math.nan
+    precursor_envelope_intensity_fraction = math.nan
+    non_envelope_intensity_above_precursor_fraction = math.nan
     dominant_peak_fraction = math.nan
     n_peaks = int(len(mzs)) if not invalid_peaks else 0
+    if n_peaks:
+        dominant_peak_fraction = float(intensities.max() / total_intensity)
     if n_peaks and not _is_missing(row.prec_mz):
         tolerance, tolerance_min_mz = _tolerance_for_inst_type(row.inst_type)
         cutoff = float(row.prec_mz) + tolerance * max(float(row.prec_mz), tolerance_min_mz)
-        intensity_above_precursor_fraction = float(
-            intensities[mzs > cutoff].sum() / total_intensity
+        above_precursor = mzs > cutoff
+        precursor_envelope = above_precursor & (
+            mzs <= float(row.prec_mz) + PRECURSOR_ENVELOPE_WINDOW_DA
         )
-        dominant_peak_fraction = float(intensities.max() / total_intensity)
+        non_envelope_above_precursor = mzs > (
+            float(row.prec_mz) + PRECURSOR_ENVELOPE_WINDOW_DA
+        )
+        intensity_above_precursor_fraction = float(
+            intensities[above_precursor].sum() / total_intensity
+        )
+        precursor_envelope_intensity_fraction = float(
+            intensities[precursor_envelope].sum() / total_intensity
+        )
+        non_envelope_intensity_above_precursor_fraction = float(
+            intensities[non_envelope_above_precursor].sum() / total_intensity
+        )
 
     missing_precursor_mz = _is_missing(row.prec_mz) or not np.isfinite(float(row.prec_mz))
     flags = {
         "empty_spectrum": empty_spectrum,
         "invalid_peaks": invalid_peaks,
-        "missing_precursor_mz": missing_precursor_mz,
         "missing_molecule_metadata": missing_molecule_metadata,
-        "precursor_mass_mismatch": precursor_mass_mismatch,
-        "polarity_mismatch": _polarity_mismatch(row.prec_type, row.ion_mode),
+        "polarity_mismatch": _polarity_mismatch(canonical_prec_type, row.ion_mode),
     }
     missing_ce, negative_ce = _collision_energy_flags(row)
     heuristic_flags = {
+        "missing_precursor_mz": missing_precursor_mz,
+        "precursor_mass_mismatch": precursor_mass_mismatch,
         "missing_collision_energy": missing_ce,
         "negative_collision_energy": negative_ce,
         "sparse_spectrum": not invalid_peaks and n_peaks <= 2,
         "substantial_intensity_above_precursor": (
-            np.isfinite(intensity_above_precursor_fraction)
-            and intensity_above_precursor_fraction >= 0.05
+            np.isfinite(non_envelope_intensity_above_precursor_fraction)
+            and non_envelope_intensity_above_precursor_fraction >= 0.05
         ),
         "single_peak_dominates": (
             n_peaks >= 3 and np.isfinite(dominant_peak_fraction) and dominant_peak_fraction >= 0.98
         ),
-        "unsupported_precursor_type": row.prec_type not in PRECURSOR_TYPE_TO_MASS_DIFF,
         "unsorted_peak_mz": n_peaks >= 2 and bool(np.any(np.diff(mzs) < 0)),
         "duplicate_peak_mz": n_peaks >= 2 and len(np.unique(mzs)) != n_peaks,
     }
@@ -564,7 +751,12 @@ def analyze_spectrum(row: object, mol_meta: dict[int, tuple[float, str]]) -> dic
         "mol_id": int(row.mol_id),
         "dset_spec_id": row.dset_spec_id,
         "formula": formula,
+        "inchikey_s": inchikey_s,
         "prec_type": row.prec_type,
+        "prec_type_canonical": canonical_prec_type,
+        "prec_type_was_normalized": (
+            isinstance(row.prec_type, str) and canonical_prec_type != row.prec_type
+        ),
         "ion_mode": row.ion_mode,
         "inst_type": row.inst_type,
         "frag_mode": row.frag_mode,
@@ -576,10 +768,15 @@ def analyze_spectrum(row: object, mol_meta: dict[int, tuple[float, str]]) -> dic
         "precursor_error_ppm": precursor_error_ppm,
         "n_peaks": n_peaks,
         "intensity_above_precursor_fraction": intensity_above_precursor_fraction,
+        "precursor_envelope_intensity_fraction": precursor_envelope_intensity_fraction,
+        "non_envelope_intensity_above_precursor_fraction": (
+            non_envelope_intensity_above_precursor_fraction
+        ),
         "dominant_peak_fraction": dominant_peak_fraction,
         "spectrum_hash": _spectrum_hash(mzs, intensities) if not invalid_peaks else None,
         **flags,
         **heuristic_flags,
+        "unsupported_precursor_type": canonical_prec_type not in PRECURSOR_TYPE_TO_MASS_DIFF,
         "hard_reasons": ";".join(hard_reasons),
         "heuristic_reasons": ";".join(heuristic_reasons),
         "review_reasons": ";".join(reasons),
@@ -587,25 +784,63 @@ def analyze_spectrum(row: object, mol_meta: dict[int, tuple[float, str]]) -> dic
 
 
 def mark_cross_molecule_duplicates(review_df: pd.DataFrame) -> None:
-    """Flag identical normalized spectra assigned to more than one molecule, in place."""
-    valid = review_df[review_df["spectrum_hash"].notna()]
-    molecule_counts = valid.groupby("spectrum_hash")["mol_id"].nunique()
-    suspicious_hashes = set(molecule_counts[molecule_counts > 1].index)
-    review_df["duplicate_spectrum_cross_molecule"] = review_df["spectrum_hash"].isin(
-        suspicious_hashes
+    """Split exact-export duplicates by molecular formula and structure identity."""
+    valid = review_df[review_df["spectrum_hash"].notna() & review_df["n_peaks"].ge(3)]
+    group_stats = valid.groupby("spectrum_hash").agg(
+        n_molecules=("mol_id", "nunique"),
+        n_formulas=("formula", "nunique"),
+        n_structures=("inchikey_s", "nunique"),
+    )
+    duplicate_stats = group_stats[group_stats["n_molecules"].gt(1)]
+    suspicious_hashes = set(duplicate_stats.index)
+    formula_conflict_hashes = set(duplicate_stats[duplicate_stats["n_formulas"].gt(1)].index)
+    structure_ambiguity_hashes = set(
+        duplicate_stats[
+            duplicate_stats["n_formulas"].eq(1) & duplicate_stats["n_structures"].gt(1)
+        ].index
+    )
+    same_structure_hashes = suspicious_hashes - formula_conflict_hashes - structure_ambiguity_hashes
+    informative = review_df["n_peaks"].ge(3)
+    review_df["duplicate_spectrum_cross_molecule"] = (
+        informative & review_df["spectrum_hash"].isin(suspicious_hashes)
+    )
+    review_df["duplicate_spectrum_formula_conflict"] = (
+        informative & review_df["spectrum_hash"].isin(formula_conflict_hashes)
+    )
+    review_df["duplicate_spectrum_structure_ambiguity"] = (
+        informative & review_df["spectrum_hash"].isin(structure_ambiguity_hashes)
+    )
+    review_df["duplicate_spectrum_same_structure"] = (
+        informative & review_df["spectrum_hash"].isin(same_structure_hashes)
     )
 
 
 def finalize_review_queue(review_df: pd.DataFrame) -> pd.DataFrame:
     """Add duplicate reasons, priority, and blank human-review fields."""
     mark_cross_molecule_duplicates(review_df)
-    duplicate_flag = review_df["duplicate_spectrum_cross_molecule"]
-    review_df.loc[duplicate_flag, "hard_reasons"] = review_df.loc[
-        duplicate_flag, "hard_reasons"
-    ].map(lambda value: ";".join(filter(None, [value, "duplicate_spectrum_cross_molecule"])))
-    review_df.loc[duplicate_flag, "review_reasons"] = review_df.loc[
-        duplicate_flag, "review_reasons"
-    ].map(lambda value: ";".join(filter(None, [value, "duplicate_spectrum_cross_molecule"])))
+    formula_conflict = review_df["duplicate_spectrum_formula_conflict"]
+    review_df.loc[formula_conflict, "hard_reasons"] = review_df.loc[
+        formula_conflict, "hard_reasons"
+    ].map(lambda value: ";".join(filter(None, [value, "duplicate_spectrum_formula_conflict"])))
+    review_df.loc[formula_conflict, "review_reasons"] = review_df.loc[
+        formula_conflict, "review_reasons"
+    ].map(lambda value: ";".join(filter(None, [value, "duplicate_spectrum_formula_conflict"])))
+
+    structure_ambiguity = review_df["duplicate_spectrum_structure_ambiguity"]
+    review_df.loc[structure_ambiguity, "heuristic_reasons"] = review_df.loc[
+        structure_ambiguity, "heuristic_reasons"
+    ].map(
+        lambda value: ";".join(
+            filter(None, [value, "duplicate_spectrum_structure_ambiguity"])
+        )
+    )
+    review_df.loc[structure_ambiguity, "review_reasons"] = review_df.loc[
+        structure_ambiguity, "review_reasons"
+    ].map(
+        lambda value: ";".join(
+            filter(None, [value, "duplicate_spectrum_structure_ambiguity"])
+        )
+    )
 
     dynamic_flags = [
         "replicate_consensus_disagreement",
@@ -631,6 +866,9 @@ def finalize_review_queue(review_df: pd.DataFrame) -> pd.DataFrame:
 
     family_flags = {
         "record_integrity": list(HARD_FLAG_WEIGHTS),
+        "metadata_completeness": ["missing_precursor_mz", "missing_collision_energy"],
+        "metadata_consistency": ["precursor_mass_mismatch", "negative_collision_energy"],
+        "label_ambiguity": ["duplicate_spectrum_structure_ambiguity"],
         "replicate_consensus": ["replicate_consensus_disagreement"],
         "cross_ce_orphans": ["substantial_cross_ce_orphan_intensity"],
         "contaminant_library": ["substantial_uwpr_contaminant_only_intensity"],
@@ -644,11 +882,23 @@ def finalize_review_queue(review_df: pd.DataFrame) -> pd.DataFrame:
         lambda row: ";".join(row.index[row].tolist()), axis=1
     )
     review_df["review_status"] = "unreviewed"
+    review_df["hard_flag_count"] = review_df[list(HARD_FLAG_WEIGHTS)].sum(axis=1)
+    review_df["has_hard_evidence"] = review_df["hard_flag_count"].gt(0)
+    review_df["review_tier"] = np.select(
+        [
+            review_df["has_hard_evidence"],
+            review_df["evidence_family_count"].ge(2),
+            review_df["evidence_family_count"].eq(1),
+        ],
+        ["hard_conflict", "corroborated", "single_evidence_family"],
+        default="heuristic_only",
+    )
     review_df["reviewer"] = ""
     review_df["review_notes"] = ""
     candidates = review_df[review_df["review_priority"] > 0].copy()
     return candidates.sort_values(
-        ["review_priority", "spec_id"], ascending=[False, True]
+        ["has_hard_evidence", "evidence_family_count", "review_priority", "spec_id"],
+        ascending=[False, False, False, True],
     ).reset_index(drop=True)
 
 
@@ -702,13 +952,20 @@ def write_review_html(
             f"<p>{evidence}</p>"
             f"{_spectrum_svg(peaks_by_spec_id.get(row.spec_id, []))}</article>"
         )
+    glossary = "".join(
+        "<dt><code>"
+        f"{html.escape(reason)}</code> ({level})</dt><dd>{html.escape(explanation)}</dd>"
+        for reason, (level, explanation) in REVIEW_FLAG_GLOSSARY.items()
+    )
     document = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>NIST spectrum review</title>
 <style>body{{font:14px sans-serif;max-width:1100px;margin:auto}}article{{border-bottom:1px solid #bbb;
-padding:12px}}h2{{font-size:16px}}svg{{width:100%;height:180px;background:#fafafa}}</style></head>
+padding:12px}}h2{{font-size:16px}}dt{{font-weight:bold;margin-top:10px}}svg{{width:100%;height:180px;
+background:#fafafa}}</style></head>
 <body><h1>NIST suspicious-spectrum review</h1>
 <p>Use the companion CSV to record keep/exclude/needs_followup decisions. Priority is a triage
-score, not a bad-data probability.</p>{"".join(cards)}</body></html>"""
+score, not a bad-data probability.</p><h2>Review flag glossary</h2><dl>{glossary}</dl>
+{"".join(cards)}</body></html>"""
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
     with open(out_fp, "w", encoding="utf-8") as handle:
         handle.write(document)
@@ -735,18 +992,48 @@ def _mol_image_array(smiles: str | None) -> np.ndarray | None:
     return np.asarray(Draw.MolToImage(mol, size=(360, 180), kekulize=False))
 
 
+def _plot_pdf_spectrum(
+    axis: object,
+    peaks: Sequence[Sequence[float]],
+    title: str,
+    color: str,
+    x_max: float | None = None,
+) -> None:
+    """Draw one full-width PDF spectrum axis."""
+    peak_arrays = _valid_peak_arrays(peaks)
+    if peak_arrays is None:
+        axis.text(0.5, 0.5, "Malformed or empty spectrum", ha="center", va="center")
+    else:
+        mzs, intensities = peak_arrays
+        normalized = intensities / intensities.max()
+        axis.vlines(mzs, 0.0, normalized, color=color, linewidth=0.9)
+        axis.set_ylim(0.0, 1.08)
+    if x_max is not None:
+        axis.set_xlim(0.0, x_max)
+    elif peak_arrays is not None:
+        axis.set_xlim(0.0, max(float(peak_arrays[0].max()) * 1.03, 1.0))
+    axis.set_title(title, fontsize=8, loc="left")
+    axis.grid(axis="y", alpha=0.25, linewidth=0.4)
+    axis.set_xlabel("m/z", fontsize=8)
+    axis.set_ylabel("relative intensity", fontsize=8)
+    axis.tick_params(labelsize=7)
+
+
 def write_review_pdf(
     candidates: pd.DataFrame,
     peaks_by_spec_id: dict[int, Sequence[Sequence[float]]],
     out_fp: str,
     total_candidate_count: int | None = None,
     smiles_by_mol_id: dict[int, str] | None = None,
+    cross_ce_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
 ) -> None:
-    """Write ranked spectrum cards without mixing molecule/adduct pairs on a page."""
+    """Write one large candidate spectrum per page, with other-CE comparisons when flagged."""
     if total_candidate_count is None:
         total_candidate_count = len(candidates)
     if smiles_by_mol_id is None:
         smiles_by_mol_id = {}
+    if cross_ce_comparisons_by_spec_id is None:
+        cross_ce_comparisons_by_spec_id = {}
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
     with PdfPages(out_fp) as pdf:
         # 1. Summarize the queue represented by this review document.
@@ -794,95 +1081,136 @@ def write_review_pdf(
         pdf.savefig(fig)
         plt.close(fig)
 
-        # 2. Group in priority order so a page never mixes molecule/adduct pairs.
+        # 2. Define every review reason and context-only flag.
+        glossary_items = list(REVIEW_FLAG_GLOSSARY.items())
+        for glossary_start in range(0, len(glossary_items), 9):
+            fig = plt.figure(figsize=(11, 8.5))
+            fig.suptitle("Review flag glossary", fontsize=18, y=0.96)
+            page_items = glossary_items[glossary_start : glossary_start + 9]
+            y = 0.89
+            for reason, (level, explanation) in page_items:
+                fig.text(0.08, y, f"{reason}  [{level}]", fontsize=10.5, weight="bold", va="top")
+                fig.text(
+                    0.08,
+                    y - 0.027,
+                    textwrap.fill(explanation, 115),
+                    fontsize=9,
+                    linespacing=1.25,
+                    va="top",
+                )
+                y -= 0.095
+            pdf.savefig(fig)
+            plt.close(fig)
+
+        # 3. Give each candidate a full-width plot and show every other-CE sibling when flagged.
         rows = list(
             candidates[candidates["spec_id"].isin(peaks_by_spec_id)].itertuples(index=False)
         )
-        grouped_rows: dict[tuple[int, str], list[object]] = {}
-        for row in rows:
-            grouped_rows.setdefault((int(row.mol_id), str(row.prec_type)), []).append(row)
-
         page_number = 0
-        for (mol_id, prec_type), group_rows in grouped_rows.items():
-            for group_start in range(0, len(group_rows), 4):
-                page_number += 1
-                page_rows = group_rows[group_start : group_start + 4]
-                fig, axes_grid = plt.subplots(2, 2, figsize=(11, 8.5))
-                axes = np.asarray(axes_grid).reshape(-1)
-                for axis, row in zip(axes, page_rows, strict=False):
-                    peak_arrays = _valid_peak_arrays(peaks_by_spec_id.get(int(row.spec_id), []))
-                    if peak_arrays is None:
-                        axis.text(
-                            0.5, 0.5, "Malformed or empty spectrum", ha="center", va="center"
-                        )
-                    else:
-                        mzs, intensities = peak_arrays
-                        normalized = intensities / intensities.max()
-                        axis.vlines(mzs, 0.0, normalized, color="#2457a6", linewidth=0.8)
-                        axis.set_xlim(0.0, max(float(mzs.max()) * 1.03, 1.0))
-                        axis.set_ylim(0.0, 1.08)
-                    reason_text = str(row.review_reasons).replace(";", "; ")
-                    reason = textwrap.fill(
-                        reason_text,
-                        width=62,
-                        break_long_words=False,
-                        break_on_hyphens=False,
-                    )
-                    axis.set_title(
-                        f"Priority {row.review_priority} | spec {row.spec_id}\n{reason}",
-                        fontsize=7.5,
-                    )
-                    axis.set_xlabel("m/z", fontsize=8)
-                    axis.set_ylabel("relative intensity", fontsize=8)
-                    axis.tick_params(labelsize=7)
-                    families = str(row.evidence_families) or "basic heuristic"
-                    metadata = (
-                        f"NIST {row.dset_spec_id} | {row.formula} | {row.inst_type}\n"
-                        f"families: {families}\n"
-                        f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
-                        f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
-                        f"contaminant="
-                        f"{_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
-                        f"DAG disagreement="
-                        f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
-                    )
-                    axis.text(
-                        0.0,
-                        -0.30,
-                        metadata,
-                        transform=axis.transAxes,
-                        fontsize=6.5,
-                        va="top",
-                    )
-                for axis in axes[len(page_rows) :]:
-                    axis.set_visible(False)
-                continuation = (
-                    f" | part {group_start // 4 + 1}"
-                    if len(group_rows) > 4
-                    else ""
+        for row in rows:
+            spec_id = int(row.spec_id)
+            mol_id = int(row.mol_id)
+            comparisons = (
+                cross_ce_comparisons_by_spec_id.get(spec_id, [])
+                if bool(row.substantial_cross_ce_orphan_intensity)
+                else []
+            )
+            page_number += 1
+            n_plots = 1 + len(comparisons)
+            ncols = 2
+            nrows = math.ceil(n_plots / ncols)
+            page_height = max(8.5, 2.25 * nrows + 2.4)
+            fig = plt.figure(figsize=(13.5, page_height), constrained_layout=False)
+            grid = fig.add_gridspec(
+                nrows + 1,
+                ncols,
+                height_ratios=[1.35] + [1.0] * nrows,
+                hspace=0.74,
+                wspace=0.18,
+            )
+            header_axis = fig.add_subplot(grid[0, :])
+            header_axis.axis("off")
+            axes = np.array(
+                [
+                    [fig.add_subplot(grid[plot_row + 1, col]) for col in range(ncols)]
+                    for plot_row in range(nrows)
+                ]
+            )
+            axes_flat = axes.T.ravel()
+            page_peaks = [peaks_by_spec_id.get(spec_id, [])] + [
+                comparison["peaks"] for comparison in comparisons
+            ]
+            valid_page_peaks = [
+                peak_arrays
+                for peaks in page_peaks
+                if (peak_arrays := _valid_peak_arrays(peaks)) is not None
+            ]
+            shared_x_max = max(
+                [float(peak_arrays[0].max()) for peak_arrays in valid_page_peaks],
+                default=1.0,
+            ) * 1.03
+            reason = textwrap.fill(
+                str(row.review_reasons).replace(";", "; "),
+                width=55,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            _plot_pdf_spectrum(
+                axes_flat[0],
+                peaks_by_spec_id.get(spec_id, []),
+                f"PRIMARY | Priority {row.review_priority} | spec {spec_id}\n{reason}",
+                "#2457a6",
+                shared_x_max,
+            )
+            for axis, comparison in zip(axes_flat[1:], comparisons, strict=False):
+                _plot_pdf_spectrum(
+                    axis,
+                    comparison["peaks"],
+                    "OTHER CE | "
+                    f"{comparison['ce_source']}={comparison['ce_value']:g} | "
+                    f"spec {comparison['spec_id']} | NIST {comparison['dset_spec_id']}",
+                    "#b04a35",
+                    shared_x_max,
                 )
-                fig.suptitle(
-                    f"mol {mol_id} | {prec_type}{continuation} | review page {page_number}",
-                    fontsize=12,
-                    y=0.985,
+            for axis in axes_flat[n_plots:]:
+                axis.axis("off")
+
+            families = str(row.evidence_families) or "basic heuristic"
+            metadata = (
+                f"review page {page_number} | mol {mol_id} | {row.prec_type} | "
+                f"NIST {row.dset_spec_id} | {row.formula} | {row.inst_type}\n"
+                f"families: {families} | "
+                f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
+                f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
+                f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
+                f"DAG disagreement="
+                f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
+            )
+            header_axis.text(
+                0.01,
+                0.96,
+                textwrap.fill(metadata, 95),
+                transform=header_axis.transAxes,
+                fontsize=7.5,
+                va="top",
+            )
+            mol_image = _mol_image_array(smiles_by_mol_id.get(mol_id))
+            if mol_image is None:
+                header_axis.text(
+                    0.86,
+                    0.5,
+                    "Molecule structure unavailable",
+                    transform=header_axis.transAxes,
+                    ha="center",
+                    va="center",
+                    fontsize=8,
                 )
-                fig.tight_layout(rect=(0.03, 0.04, 0.97, 0.76), h_pad=3.8)
-                structure_axis = fig.add_axes((0.40, 0.79, 0.20, 0.16))
-                mol_image = _mol_image_array(smiles_by_mol_id.get(mol_id))
-                if mol_image is None:
-                    structure_axis.text(
-                        0.5,
-                        0.5,
-                        "Molecule structure unavailable",
-                        ha="center",
-                        va="center",
-                        fontsize=8,
-                    )
-                else:
-                    structure_axis.imshow(mol_image)
+            else:
+                structure_axis = header_axis.inset_axes([0.72, 0.02, 0.26, 0.94])
+                structure_axis.imshow(mol_image)
                 structure_axis.axis("off")
-                pdf.savefig(fig)
-                plt.close(fig)
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)
 
 
 def main() -> None:
@@ -905,6 +1233,12 @@ def main() -> None:
     parser.add_argument("--max_html_spectra", type=int, default=500)
     parser.add_argument("--max_pdf_spectra", type=int, default=500)
     parser.add_argument(
+        "--pdf_prec_types",
+        nargs="+",
+        default=DEFAULT_PDF_PRECURSOR_TYPES,
+        help="Precursor types included in the PDF queue.",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -921,9 +1255,11 @@ def main() -> None:
         spec_df = spec_df.head(args.limit)
         log.warning("--limit is active; duplicate flags apply only to this subset")
 
-    mol_df = pd.read_pickle(args.mol_fp)[["mol_id", "exact_mw", "formula", "smiles"]]
+    mol_df = pd.read_pickle(args.mol_fp)[
+        ["mol_id", "exact_mw", "formula", "inchikey_s", "smiles"]
+    ]
     mol_meta = {
-        int(row.mol_id): (float(row.exact_mw), str(row.formula))
+        int(row.mol_id): (float(row.exact_mw), str(row.formula), str(row.inchikey_s))
         for row in mol_df.itertuples(index=False)
     }
     log.info("Computing review signals for %d spectra", len(spec_df))
@@ -960,12 +1296,14 @@ def main() -> None:
     candidates.to_csv(args.out_csv, index=False)
     log.info("Saved %d review candidates to %s", len(candidates), args.out_csv)
 
+    if args.out_pdf:
+        pdf_queue = candidates[candidates["prec_type"].isin(args.pdf_prec_types)]
     if args.out_html or args.out_pdf:
-        max_rendered = max(
-            args.max_html_spectra if args.out_html else 0,
-            args.max_pdf_spectra if args.out_pdf else 0,
-        )
-        wanted_ids = set(candidates.head(max_rendered)["spec_id"])
+        wanted_ids: set[int] = set()
+        if args.out_html:
+            wanted_ids.update(candidates.head(args.max_html_spectra)["spec_id"])
+        if args.out_pdf:
+            wanted_ids.update(pdf_queue.head(args.max_pdf_spectra)["spec_id"])
         peaks_by_spec_id = {
             int(row.spec_id): row.peaks
             for row in spec_df[spec_df["spec_id"].isin(wanted_ids)][
@@ -977,7 +1315,10 @@ def main() -> None:
         write_review_html(html_candidates, peaks_by_spec_id, args.out_html)
         log.info("Saved visual review report to %s", args.out_html)
     if args.out_pdf:
-        pdf_candidates = candidates.head(args.max_pdf_spectra)
+        pdf_candidates = pdf_queue.head(args.max_pdf_spectra)
+        cross_ce_comparisons_by_spec_id = collect_cross_ce_comparison_spectra(
+            spec_df, pdf_candidates
+        )
         wanted_mol_ids = set(pdf_candidates["mol_id"])
         smiles_by_mol_id = {
             int(row.mol_id): str(row.smiles)
@@ -987,8 +1328,9 @@ def main() -> None:
             pdf_candidates,
             peaks_by_spec_id,
             args.out_pdf,
-            total_candidate_count=len(candidates),
+            total_candidate_count=len(pdf_queue),
             smiles_by_mol_id=smiles_by_mol_id,
+            cross_ce_comparisons_by_spec_id=cross_ce_comparisons_by_spec_id,
         )
         log.info("Saved PDF review report to %s", args.out_pdf)
 
