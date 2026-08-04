@@ -524,6 +524,70 @@ def collect_cross_ce_comparison_spectra(
     return comparisons
 
 
+def _ordered_cross_ce_spectra(
+    row: object,
+    primary_peaks: Sequence[Sequence[float]],
+    comparisons: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Insert the review target into its low-to-high selected-CE sequence."""
+    ce_source = str(comparisons[0]["ce_source"])
+    primary = {
+        "is_review_target": True,
+        "spec_id": int(getattr(row, "spec_id")),
+        "dset_spec_id": getattr(row, "dset_spec_id"),
+        "ce_source": ce_source,
+        "ce_value": float(getattr(row, ce_source)),
+        "peaks": primary_peaks,
+    }
+    siblings = [dict(comparison, is_review_target=False) for comparison in comparisons]
+    return sorted(
+        [primary, *siblings],
+        key=lambda spectrum: (float(spectrum["ce_value"]), int(spectrum["spec_id"])),
+    )
+
+
+def collect_same_ce_replicate_spectra(
+    spec_df: pd.DataFrame,
+    candidates: pd.DataFrame,
+) -> dict[int, list[dict[str, object]]]:
+    """Collect same-CE peers used to contextualize replicate-disagreement rows."""
+    flagged_ids = set(
+        candidates.loc[
+            candidates["replicate_consensus_disagreement"].astype(bool), "spec_id"
+        ].astype(int)
+    )
+    if not flagged_ids:
+        return {}
+
+    scoped = _add_ce_columns(spec_df)
+    primary_rows = scoped[scoped["spec_id"].isin(flagged_ids)].set_index("spec_id")
+    comparisons: dict[int, list[dict[str, object]]] = {}
+    for spec_id in flagged_ids:
+        if spec_id not in primary_rows.index:
+            continue
+        primary = primary_rows.loc[spec_id]
+        if pd.isna(primary["ce_bin"]):
+            continue
+        siblings = scoped[
+            scoped["group_id"].eq(primary["group_id"])
+            & scoped["ce_source"].eq(primary["ce_source"])
+            & scoped["ce_bin"].eq(primary["ce_bin"])
+            & scoped["spec_id"].ne(spec_id)
+        ].sort_values("spec_id")
+        comparisons[spec_id] = [
+            {
+                "spec_id": int(row.spec_id),
+                "dset_spec_id": row.dset_spec_id,
+                "ace": row.ace,
+                "nce": row.nce,
+                "peaks": row.peaks,
+            }
+            for row in siblings.itertuples(index=False)
+            if _valid_peak_arrays(row.peaks) is not None
+        ]
+    return comparisons
+
+
 def collect_formula_conflict_comparison_spectra(
     spec_df: pd.DataFrame,
     review_df: pd.DataFrame,
@@ -549,6 +613,8 @@ def collect_formula_conflict_comparison_spectra(
     for primary in conflict_rows[conflict_rows["spec_id"].isin(flagged_ids)].itertuples(
         index=False
     ):
+        primary_peaks = peaks_by_spec_id[int(primary.spec_id)]
+        primary_peak_arrays = _valid_peak_arrays(primary_peaks)
         partners = conflict_rows[
             conflict_rows["spectrum_hash"].eq(primary.spectrum_hash)
             & conflict_rows["spec_id"].ne(primary.spec_id)
@@ -565,10 +631,102 @@ def collect_formula_conflict_comparison_spectra(
                 "prec_mz": row.prec_mz,
                 "expected_prec_mz": row.expected_prec_mz,
                 "peaks": peaks_by_spec_id[int(row.spec_id)],
+                "cosine_similarity": _spectral_cosine(
+                    primary_peak_arrays,
+                    _valid_peak_arrays(peaks_by_spec_id[int(row.spec_id)]),
+                    _mz_tolerance(str(primary.inst_type)),
+                ),
             }
             for row in partners.itertuples(index=False)
         ]
     return comparisons
+
+
+def collect_uwpr_peak_annotations(
+    feasibility_paths: Sequence[str | os.PathLike[str]],
+    candidates: pd.DataFrame,
+) -> dict[int, dict[str, list[float]]]:
+    """Collect D3/D4 agreement, directional flips, and contaminant labels."""
+    needs_annotations = candidates["substantial_uwpr_contaminant_only_intensity"].astype(bool)
+    if "n_uwpr_dag_disagreement_peaks" in candidates:
+        needs_annotations |= candidates["n_uwpr_dag_disagreement_peaks"].gt(0)
+    flagged_ids = set(candidates.loc[needs_annotations, "spec_id"].astype(int))
+    if not flagged_ids or not feasibility_paths:
+        return {}
+
+    labels_by_source: list[dict[tuple[int, float], str]] = []
+    for path in feasibility_paths:
+        source_labels: dict[tuple[int, float], str] = {}
+        for chunk in pd.read_csv(
+            path,
+            usecols=["spec_id", "peak_mz", "feasibility"],
+            chunksize=500_000,
+        ):
+            hits = chunk[chunk["spec_id"].isin(flagged_ids)]
+            for row in hits.itertuples(index=False):
+                key = (int(row.spec_id), float(row.peak_mz))
+                label = str(row.feasibility)
+                previous = source_labels.get(key)
+                if previous is not None and previous != label:
+                    raise ValueError(f"UWPR feasibility CSV has conflicting labels: {path}")
+                source_labels[key] = label
+        labels_by_source.append(source_labels)
+
+    annotations: dict[int, dict[str, list[float]]] = {}
+    all_keys = set().union(*(source.keys() for source in labels_by_source))
+    d3_feasible = {key for key in all_keys if labels_by_source[0].get(key) == "dag_feasible"}
+    if len(labels_by_source) >= 2:
+        d3_d4_feasible = {
+            key
+            for key in d3_feasible
+            if labels_by_source[1].get(key) == "dag_feasible"
+        }
+        d3_only_feasible = {
+            key
+            for key in d3_feasible
+            if labels_by_source[1].get(key) == "contaminant_only"
+        }
+        d4_only_feasible = {
+            key
+            for key in all_keys
+            if labels_by_source[0].get(key) == "contaminant_only"
+            and labels_by_source[1].get(key) == "dag_feasible"
+        }
+    else:
+        d3_d4_feasible = set()
+        d3_only_feasible = d3_feasible
+        d4_only_feasible = set()
+    contaminants = {
+        key
+        for key in all_keys
+        if all(source.get(key) == "contaminant_only" for source in labels_by_source)
+    }
+    for label, keys in (
+        ("d3_d4_dag", d3_d4_feasible),
+        ("d3_only_dag", d3_only_feasible),
+        ("d4_only_dag", d4_only_feasible),
+        ("uwpr_contaminant", contaminants),
+    ):
+        for spec_id, peak_mz in keys:
+            annotations.setdefault(spec_id, {}).setdefault(label, []).append(peak_mz)
+    return {
+        spec_id: {label: sorted(mzs) for label, mzs in labels.items()}
+        for spec_id, labels in annotations.items()
+    }
+
+
+def collect_uwpr_contaminant_matches(
+    feasibility_paths: Sequence[str | os.PathLike[str]],
+    candidates: pd.DataFrame,
+) -> dict[int, list[float]]:
+    """Collect candidate peaks called contaminant-only by every UWPR source."""
+    annotations = collect_uwpr_peak_annotations(feasibility_paths, candidates)
+    matches: dict[int, list[float]] = {}
+    for spec_id, labels in annotations.items():
+        contaminant_mzs = labels.get("uwpr_contaminant", [])
+        if contaminant_mzs:
+            matches[spec_id] = contaminant_mzs
+    return matches
 
 
 def _matched_peak_stats(
@@ -980,7 +1138,7 @@ def write_review_html(
             f"cross_CE_orphan_intensity={row.cross_ce_orphan_intensity_fraction:.3f} | "
             f"UWPR_contaminant_only_intensity="
             f"{row.uwpr_contaminant_only_intensity_fraction:.3f} | "
-            f"UWPR_DAG_disagreement_intensity="
+            f"UWPR_D3_D4_label_flip_intensity="
             f"{row.uwpr_dag_disagreement_intensity_fraction:.3f}"
         )
         cards.append(
@@ -1054,6 +1212,7 @@ def _plot_pdf_spectrum(
     title: str,
     color: str,
     x_max: float | None = None,
+    peak_annotations: dict[str, list[float]] | None = None,
 ) -> None:
     """Draw one full-width PDF spectrum axis."""
     peak_arrays = _valid_peak_arrays(peaks)
@@ -1063,6 +1222,36 @@ def _plot_pdf_spectrum(
         mzs, intensities = peak_arrays
         normalized = intensities / intensities.max()
         axis.vlines(mzs, 0.0, normalized, color=color, linewidth=0.9)
+        annotation_styles = {
+            "d3_d4_dag": ("#269653", "D3+D4 DAG"),
+            "d3_only_dag": ("#008c95", "D3-only DAG"),
+            "d4_only_dag": ("#7b4ab5", "D4-only DAG"),
+            "uwpr_contaminant": ("#e07a19", "UWPR"),
+        }
+        for annotation, target_mzs in (peak_annotations or {}).items():
+            annotation_color, annotation_label = annotation_styles[annotation]
+            for target_mz in target_mzs:
+                matched = np.flatnonzero(np.abs(mzs - target_mz) <= 1.0e-4)
+                if len(matched) == 0:
+                    continue
+                peak_idx = int(matched[0])
+                axis.vlines(
+                    mzs[peak_idx],
+                    0.0,
+                    normalized[peak_idx],
+                    color=annotation_color,
+                    linewidth=2.0,
+                )
+                axis.text(
+                    mzs[peak_idx],
+                    min(float(normalized[peak_idx]) + 0.025, 1.02),
+                    annotation_label,
+                    color=annotation_color,
+                    fontsize=6,
+                    rotation=90,
+                    ha="center",
+                    va="bottom",
+                )
         axis.set_ylim(0.0, 1.08)
     if x_max is not None:
         axis.set_xlim(0.0, x_max)
@@ -1075,6 +1264,48 @@ def _plot_pdf_spectrum(
     axis.tick_params(labelsize=7)
 
 
+def _plot_pdf_mirror_spectrum(
+    axis: object,
+    primary_peaks: Sequence[Sequence[float]],
+    comparison_peaks: Sequence[Sequence[float]],
+    title: str,
+    x_max: float,
+) -> None:
+    """Draw primary and comparison spectra upward and downward on one axis."""
+    primary = _valid_peak_arrays(primary_peaks)
+    comparison = _valid_peak_arrays(comparison_peaks)
+    if primary is None or comparison is None:
+        axis.text(0.5, 0.5, "Malformed or empty spectrum", ha="center", va="center")
+    else:
+        primary_mzs, primary_intensities = primary
+        comparison_mzs, comparison_intensities = comparison
+        axis.vlines(
+            primary_mzs,
+            0.0,
+            primary_intensities / primary_intensities.max(),
+            color="#2457a6",
+            linewidth=0.9,
+        )
+        axis.vlines(
+            comparison_mzs,
+            0.0,
+            -(comparison_intensities / comparison_intensities.max()),
+            color="#8b2f2f",
+            linewidth=0.9,
+        )
+    axis.axhline(0.0, color="black", linewidth=0.6)
+    axis.set_xlim(0.0, x_max)
+    axis.set_ylim(-1.08, 1.08)
+    axis.set_title(title, fontsize=8, loc="left")
+    axis.grid(axis="y", alpha=0.25, linewidth=0.4)
+    axis.set_xlabel("m/z", fontsize=8)
+    axis.set_ylabel(
+        "relative intensity\nreview target ↑ / conflicting assignment ↓",
+        fontsize=8,
+    )
+    axis.tick_params(labelsize=7)
+
+
 def write_review_pdf(
     candidates: pd.DataFrame,
     peaks_by_spec_id: dict[int, Sequence[Sequence[float]]],
@@ -1082,6 +1313,8 @@ def write_review_pdf(
     total_candidate_count: int | None = None,
     smiles_by_mol_id: dict[int, str] | None = None,
     cross_ce_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
+    same_ce_replicates_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
+    uwpr_annotations_by_spec_id: dict[int, dict[str, list[float]]] | None = None,
     formula_conflict_comparisons_by_spec_id: dict[
         int, list[dict[str, object]]
     ]
@@ -1094,6 +1327,10 @@ def write_review_pdf(
         smiles_by_mol_id = {}
     if cross_ce_comparisons_by_spec_id is None:
         cross_ce_comparisons_by_spec_id = {}
+    if same_ce_replicates_by_spec_id is None:
+        same_ce_replicates_by_spec_id = {}
+    if uwpr_annotations_by_spec_id is None:
+        uwpr_annotations_by_spec_id = {}
     if formula_conflict_comparisons_by_spec_id is None:
         formula_conflict_comparisons_by_spec_id = {}
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
@@ -1122,7 +1359,7 @@ def write_review_pdf(
             "Priority is a triage score, not a probability of bad data. Review the molecular "
             "assignment, precursor/adduct/polarity, same-CE replicates, adjacent collision "
             "energies, and evidence fields before choosing keep, exclude, or needs_followup. "
-            "D3/D4 disagreement is context, not an exclusion rule."
+            "D3/D4 label flips are context, not an exclusion rule."
         )
         fig.text(0.12, 0.74, summary, fontsize=14, linespacing=1.7, va="top")
         fig.text(
@@ -1177,34 +1414,46 @@ def write_review_pdf(
                 if bool(row.duplicate_spectrum_formula_conflict)
                 else []
             )
+            same_ce_replicates = (
+                same_ce_replicates_by_spec_id.get(spec_id, [])
+                if bool(row.replicate_consensus_disagreement)
+                else []
+            )
             cross_ce_comparisons = (
                 cross_ce_comparisons_by_spec_id.get(spec_id, [])
                 if bool(row.substantial_cross_ce_orphan_intensity)
                 else []
             )
-            comparisons = formula_conflicts + cross_ce_comparisons
+            comparisons = formula_conflicts + same_ce_replicates + cross_ce_comparisons
             page_number += 1
             n_plots = 1 + len(comparisons)
             ncols = 2
             nrows = math.ceil(n_plots / ncols)
             page_height = max(8.5, 2.25 * nrows + 2.4)
             fig = plt.figure(figsize=(13.5, page_height), constrained_layout=False)
+            header_height = 1.35 / page_height
+            grid_top = 1.0 - (1.65 / page_height)
+            grid_bottom = 0.55 / page_height
             grid = fig.add_gridspec(
-                nrows + 1,
+                nrows,
                 ncols,
-                height_ratios=[1.35] + [1.0] * nrows,
+                left=0.045,
+                right=0.985,
+                top=grid_top,
+                bottom=grid_bottom,
                 hspace=0.74,
                 wspace=0.18,
             )
-            header_axis = fig.add_subplot(grid[0, :])
+            header_axis = fig.add_axes([0.055, grid_top + 0.02, 0.91, header_height])
             header_axis.axis("off")
             axes = np.array(
                 [
-                    [fig.add_subplot(grid[plot_row + 1, col]) for col in range(ncols)]
+                    [fig.add_subplot(grid[plot_row, col]) for col in range(ncols)]
                     for plot_row in range(nrows)
                 ]
             )
             axes_flat = axes.ravel()
+            plot_axes = axes.T.ravel() if cross_ce_comparisons else axes_flat
             page_peaks = [peaks_by_spec_id.get(spec_id, [])] + [
                 comparison["peaks"] for comparison in comparisons
             ]
@@ -1226,27 +1475,65 @@ def write_review_pdf(
                 break_long_words=False,
                 break_on_hyphens=False,
             )
-            _plot_pdf_spectrum(
-                axes_flat[0],
-                peaks_by_spec_id.get(spec_id, []),
-                f"PRIMARY | Priority {row.review_priority} | spec {spec_id} | "
-                f"{_pdf_ce_label(row)}\n{reason}",
-                "#2457a6",
-                shared_x_max,
-            )
-            comparison_axes = iter(axes_flat[1:])
+            primary_peaks = peaks_by_spec_id.get(spec_id, [])
+            if cross_ce_comparisons:
+                cross_ce_spectra = _ordered_cross_ce_spectra(
+                    row, primary_peaks, cross_ce_comparisons
+                )
+                for axis, spectrum in zip(plot_axes, cross_ce_spectra, strict=False):
+                    ce_label = (
+                        f"{str(spectrum['ce_source']).upper()}="
+                        f"{float(spectrum['ce_value']):g}"
+                    )
+                    if bool(spectrum["is_review_target"]):
+                        _plot_pdf_spectrum(
+                            axis,
+                            spectrum["peaks"],
+                            f"REVIEW TARGET — CROSS-CE ORPHAN | Priority "
+                            f"{row.review_priority} | spec {spec_id} | {ce_label}\n{reason}",
+                            "#2457a6",
+                            shared_x_max,
+                            uwpr_annotations_by_spec_id.get(spec_id, {}),
+                        )
+                        axis.set_facecolor("#fff6cf")
+                        for spine in axis.spines.values():
+                            spine.set_color("#d18b00")
+                            spine.set_linewidth(1.8)
+                    else:
+                        _plot_pdf_spectrum(
+                            axis,
+                            spectrum["peaks"],
+                            f"OTHER CE | {ce_label} | spec {spectrum['spec_id']} | "
+                            f"NIST {spectrum['dset_spec_id']}",
+                            "#b04a35",
+                            shared_x_max,
+                        )
+                comparison_axes = iter(plot_axes[len(cross_ce_spectra) :])
+            else:
+                _plot_pdf_spectrum(
+                    plot_axes[0],
+                    primary_peaks,
+                    f"REVIEW TARGET | Priority {row.review_priority} | spec {spec_id} | "
+                    f"{_pdf_ce_label(row)}\n{reason}",
+                    "#2457a6",
+                    shared_x_max,
+                    uwpr_annotations_by_spec_id.get(spec_id, {}),
+                )
+                comparison_axes = iter(plot_axes[1:])
             for comparison in formula_conflicts:
                 axis = next(comparison_axes)
-                _plot_pdf_spectrum(
+                _plot_pdf_mirror_spectrum(
                     axis,
+                    primary_peaks,
                     comparison["peaks"],
-                    "EXACT DUPLICATE — DIFFERENT FORMULA | "
+                    "CONFLICTING ASSIGNMENT | "
                     f"spec {comparison['spec_id']} | mol {comparison['mol_id']} | "
-                    f"NIST {comparison['dset_spec_id']} | {_pdf_ce_label(comparison)}\n"
+                    f"NIST {comparison['dset_spec_id']} | {_pdf_ce_label(comparison)} | "
+                    f"cos={float(comparison['cosine_similarity']):.4f}\n"
+                    "EXACT DUPLICATE, DIFFERENT FORMULA | "
                     f"{comparison['formula']} | {comparison['prec_type']} | "
                     f"prec m/z recorded={_pdf_mz_value(comparison['prec_mz'])}, "
                     f"computed={_pdf_mz_value(comparison['expected_prec_mz'])}",
-                    "#8b2f2f",
                     shared_x_max,
                 )
                 duplicate_mol_image = _mol_image_array(
@@ -1257,18 +1544,18 @@ def write_review_pdf(
                     structure_axis.imshow(duplicate_mol_image)
                     structure_axis.set_facecolor("white")
                     structure_axis.axis("off")
-            for comparison in cross_ce_comparisons:
+            for comparison in same_ce_replicates:
                 axis = next(comparison_axes)
                 _plot_pdf_spectrum(
                     axis,
                     comparison["peaks"],
-                    "OTHER CE | "
-                    f"{str(comparison['ce_source']).upper()}={comparison['ce_value']:g} | "
-                    f"spec {comparison['spec_id']} | NIST {comparison['dset_spec_id']}",
-                    "#b04a35",
+                    "SAME-CE REPLICATE | "
+                    f"spec {comparison['spec_id']} | NIST {comparison['dset_spec_id']} | "
+                    f"{_pdf_ce_label(comparison)}",
+                    "#6f4a8e",
                     shared_x_max,
                 )
-            for axis in axes_flat[n_plots:]:
+            for axis in plot_axes[n_plots:]:
                 axis.axis("off")
 
             families = str(row.evidence_families) or "basic heuristic"
@@ -1282,7 +1569,7 @@ def write_review_pdf(
                 f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
                 f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
                 f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
-                f"DAG disagreement="
+                f"D3/D4 label-flip="
                 f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
             )
             header_axis.text(
@@ -1416,6 +1703,12 @@ def main() -> None:
         cross_ce_comparisons_by_spec_id = collect_cross_ce_comparison_spectra(
             spec_df, pdf_candidates
         )
+        same_ce_replicates_by_spec_id = collect_same_ce_replicate_spectra(
+            spec_df, pdf_candidates
+        )
+        uwpr_annotations_by_spec_id = collect_uwpr_peak_annotations(
+            uwpr_paths if args.uwpr_feasibility_csv else [], pdf_candidates
+        )
         formula_conflict_comparisons_by_spec_id = collect_formula_conflict_comparison_spectra(
             spec_df, review_df, pdf_candidates
         )
@@ -1436,6 +1729,8 @@ def main() -> None:
             total_candidate_count=len(pdf_queue),
             smiles_by_mol_id=smiles_by_mol_id,
             cross_ce_comparisons_by_spec_id=cross_ce_comparisons_by_spec_id,
+            same_ce_replicates_by_spec_id=same_ce_replicates_by_spec_id,
+            uwpr_annotations_by_spec_id=uwpr_annotations_by_spec_id,
             formula_conflict_comparisons_by_spec_id=(
                 formula_conflict_comparisons_by_spec_id
             ),

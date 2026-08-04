@@ -25,6 +25,7 @@ from nist_bad_data_review import (  # noqa: E402
     HEURISTIC_FLAG_WEIGHTS,
     PRECURSOR_TYPE_TO_MASS_DIFF,
     REVIEW_FLAG_GLOSSARY,
+    _ordered_cross_ce_spectra,
     add_cross_ce_orphan_signals,
     add_replicate_consensus_signals,
     add_uwpr_signals,
@@ -32,6 +33,9 @@ from nist_bad_data_review import (  # noqa: E402
     canonicalize_prec_type,
     collect_cross_ce_comparison_spectra,
     collect_formula_conflict_comparison_spectra,
+    collect_same_ce_replicate_spectra,
+    collect_uwpr_contaminant_matches,
+    collect_uwpr_peak_annotations,
     finalize_review_queue,
     write_review_pdf,
 )
@@ -456,6 +460,48 @@ def test_cross_ce_comparison_spectra_exclude_the_primary_ce_bin() -> None:
     assert [row["ce_value"] for row in comparisons[1]] == [20.0, 30.0]
 
 
+def test_cross_ce_plot_sequence_inserts_target_by_collision_energy() -> None:
+    row = SimpleNamespace(spec_id=1, dset_spec_id="nist-1", ace=20.0)
+    comparisons = [
+        {
+            "spec_id": 2,
+            "dset_spec_id": "nist-2",
+            "ce_source": "ace",
+            "ce_value": 10.0,
+            "peaks": [(50.0, 1.0)],
+        },
+        {
+            "spec_id": 3,
+            "dset_spec_id": "nist-3",
+            "ce_source": "ace",
+            "ce_value": 30.0,
+            "peaks": [(70.0, 1.0)],
+        },
+    ]
+
+    ordered = _ordered_cross_ce_spectra(row, [(60.0, 1.0)], comparisons)
+
+    assert [spectrum["ce_value"] for spectrum in ordered] == [10.0, 20.0, 30.0]
+    assert [spectrum["is_review_target"] for spectrum in ordered] == [False, True, False]
+
+
+def test_same_ce_replicate_spectra_include_every_peer() -> None:
+    spec_df = _signal_spec_df(
+        [
+            {"spec_id": 1, "dset_spec_id": "nist-1", "ace": 10.0, "peaks": [(50.0, 1.0)]},
+            {"spec_id": 2, "dset_spec_id": "nist-2", "ace": 10.0, "peaks": [(60.0, 1.0)]},
+            {"spec_id": 3, "dset_spec_id": "nist-3", "ace": 10.0, "peaks": [(70.0, 1.0)]},
+            {"spec_id": 4, "dset_spec_id": "nist-4", "ace": 20.0, "peaks": [(80.0, 1.0)]},
+        ]
+    )
+    candidates = pd.DataFrame({"spec_id": [1], "replicate_consensus_disagreement": [True]})
+
+    comparisons = collect_same_ce_replicate_spectra(spec_df, candidates)
+
+    assert [row["spec_id"] for row in comparisons[1]] == [2, 3]
+    assert all(row["ace"] == 10.0 for row in comparisons[1])
+
+
 def test_formula_conflict_comparisons_include_exact_duplicate_metadata() -> None:
     mol_meta = {
         10: (100.0, "C6H12O", "STRUCTURE-A"),
@@ -491,6 +537,7 @@ def test_formula_conflict_comparisons_include_exact_duplicate_metadata() -> None
     assert comparisons[1][0]["prec_type"] == "[M+Na]+"
     assert comparisons[1][0]["ace"] == 10.0
     assert comparisons[1][0]["peaks"] == second_row.peaks
+    assert comparisons[1][0]["cosine_similarity"] == pytest.approx(1.0)
 
 
 def test_uwpr_signal_uses_unique_peak_intensity_and_conservative_labels(tmp_path: Path) -> None:
@@ -540,6 +587,83 @@ def test_uwpr_signal_requires_consensus_across_dag_audits(tmp_path: Path) -> Non
     assert row["uwpr_contaminant_only_intensity_fraction"] == 0.0
     assert row["uwpr_dag_disagreement_intensity_fraction"] == pytest.approx(0.8)
     assert not bool(row["substantial_uwpr_contaminant_only_intensity"])
+
+
+def test_collect_uwpr_matches_requires_consensus_across_sources(tmp_path: Path) -> None:
+    d3_fp = tmp_path / "d3.csv"
+    d4_fp = tmp_path / "d4.csv"
+    columns = ["spec_id", "peak_mz", "feasibility"]
+    pd.DataFrame(
+        [[1, 59.0, "contaminant_only"], [1, 100.0, "contaminant_only"]],
+        columns=columns,
+    ).to_csv(d3_fp, index=False)
+    pd.DataFrame(
+        [[1, 59.0, "contaminant_only"], [1, 100.0, "dag_feasible"]],
+        columns=columns,
+    ).to_csv(d4_fp, index=False)
+    candidates = pd.DataFrame(
+        {"spec_id": [1], "substantial_uwpr_contaminant_only_intensity": [True]}
+    )
+
+    matches = collect_uwpr_contaminant_matches([d3_fp, d4_fp], candidates)
+
+    assert matches == {1: [59.0]}
+
+
+def test_collect_uwpr_annotations_separates_d3_and_additional_d4(tmp_path: Path) -> None:
+    d3_fp = tmp_path / "d3.csv"
+    d4_fp = tmp_path / "d4.csv"
+    columns = ["spec_id", "peak_mz", "feasibility"]
+    pd.DataFrame(
+        [
+            [1, 50.0, "dag_feasible"],
+            [1, 75.0, "contaminant_only"],
+            [1, 100.0, "contaminant_only"],
+        ],
+        columns=columns,
+    ).to_csv(d3_fp, index=False)
+    pd.DataFrame(
+        [
+            [1, 50.0, "dag_feasible"],
+            [1, 75.0, "dag_feasible"],
+            [1, 100.0, "contaminant_only"],
+        ],
+        columns=columns,
+    ).to_csv(d4_fp, index=False)
+    candidates = pd.DataFrame(
+        {"spec_id": [1], "substantial_uwpr_contaminant_only_intensity": [True]}
+    )
+
+    annotations = collect_uwpr_peak_annotations([d3_fp, d4_fp], candidates)
+
+    assert annotations == {
+        1: {
+            "d3_d4_dag": [50.0],
+            "d4_only_dag": [75.0],
+            "uwpr_contaminant": [100.0],
+        }
+    }
+
+
+def test_collect_uwpr_annotations_labels_d3_only_regression(tmp_path: Path) -> None:
+    d3_fp = tmp_path / "d3.csv"
+    d4_fp = tmp_path / "d4.csv"
+    columns = ["spec_id", "peak_mz", "feasibility"]
+    pd.DataFrame([[1, 50.0, "dag_feasible"]], columns=columns).to_csv(d3_fp, index=False)
+    pd.DataFrame([[1, 50.0, "contaminant_only"]], columns=columns).to_csv(
+        d4_fp, index=False
+    )
+    candidates = pd.DataFrame(
+        {
+            "spec_id": [1],
+            "substantial_uwpr_contaminant_only_intensity": [False],
+            "n_uwpr_dag_disagreement_peaks": [1],
+        }
+    )
+
+    annotations = collect_uwpr_peak_annotations([d3_fp, d4_fp], candidates)
+
+    assert annotations == {1: {"d3_only_dag": [50.0]}}
 
 
 def test_write_review_pdf_creates_summary_and_spectrum_pages(tmp_path: Path) -> None:

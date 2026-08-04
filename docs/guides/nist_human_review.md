@@ -23,10 +23,25 @@ two-column CE-spectrum grid as `plot_ce_trend_anomaly_groups.py`, with a shared 
 structure. The header reports recorded precursor m/z, computed precursor m/z, and precursor error
 in ppm when the precursor type is supported. When `substantial_cross_ce_orphan_intensity` is
 present, the grid also plots spectra from every other collision-energy bin used by that comparison.
+Those panels are sorted from low to high using the detector-selected NCE or ACE value, with the
+review target inserted at its corresponding CE and highlighted with a pale background and border.
+Cross-CE panels fill each column from top to bottom before continuing in the next column.
+For `replicate_consensus_disagreement`, every valid same-CE peer used by the consensus calculation
+is plotted on the candidate page.
+For `substantial_uwpr_contaminant_only_intensity` and D3/D4 label flips, peaks feasible in both DAGs
+are green and labeled `D3+D4 DAG`, D3-only peaks are teal, D4-only peaks are purple, and peaks called
+`contaminant_only` by every supplied source are orange and labeled `UWPR`. The PDF header calls
+`uwpr_dag_disagreement_intensity_fraction` the `D3/D4 label-flip` fraction because D4 is independently
+generated and is not guaranteed to be a superset of D3.
 For `duplicate_spectrum_formula_conflict`, the grid plots every exact duplicate partner and labels
-its molecule ID, formula, adduct, recorded and computed precursor m/z, and molecular structure.
+its molecule ID, formula, adduct, recorded and computed precursor m/z, and molecular structure. The
+comparison uses a mirror plot with the primary spectrum upward, the conflicting assignment
+downward, and their cosine similarity in the title. The page labels the primary record `REVIEW
+TARGET` and its comparison `CONFLICTING ASSIGNMENT`; these roles are relative to that page and do
+not assert which record is incorrect.
 All plots on the page use the same m/z scale, fill left-to-right from the top-left, hide unused grid
-cells, grow vertically as needed, and label the available ACE and/or NCE collision energy.
+cells, grow vertically as needed, and label the available ACE and/or NCE collision energy. A
+fixed-height header keeps the spectrum grid near the top of every page.
 The PDF defaults to `[M+H]+`, `[M-H]-`, `[M+Na]+`, `[M+K]+`, `[M+Cl]-`, and `[M]+`; change the list
 with `--pdf_prec_types` and the limit with `--max_pdf_spectra`.
 
@@ -69,7 +84,7 @@ can influence exclusions.
 
 The CSV also reports all UWPR/MaConDa mass-matched intensity as context. When multiple feasibility
 files are supplied, only peaks labelled `contaminant_only` by every file increase review priority;
-DAG disagreements are reported separately. These labels depend on the DAG, so record each
+D3/D4 label flips are reported separately. These labels depend on the DAG, so record each
 depth/configuration with the review artifact.
 
 Unsupported precursor types are retained as context but do not increase review priority. The
