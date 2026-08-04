@@ -90,5 +90,40 @@ class TestHillNotation:
         assert result == "H2O"
 
 
+class TestPrecTypeDiffs:
+    """PREC_TYPE_TO_MASS_DIFF must be the mass counterpart of PREC_TYPE_TO_FORMULA_DIFF.
+
+    Both are added to a *fragment* (formula and mass respectively) to produce the predicted ion,
+    so a disagreement between them silently shifts predicted m/z away from predicted formulas.
+    """
+
+    @staticmethod
+    def _mass_from_formula_diff(prec_type: str) -> float:
+        """Return the mass diff implied by the composition diff, including the charge electron."""
+        comp = fu.PREC_TYPE_TO_COMP_DIFF[prec_type]
+        mass = sum(fu.MASS(element) * count for element, count in comp.items())
+        return mass - fu.ELECTRON_MASS if prec_type.endswith("+") else mass + fu.ELECTRON_MASS
+
+    @pytest.mark.parametrize("prec_type", sorted(fu.PREC_TYPE_TO_FORMULA_DIFF))
+    def test_mass_diff_matches_formula_diff(self, prec_type):
+        assert fu.PREC_TYPE_TO_MASS_DIFF[prec_type] == pytest.approx(
+            self._mass_from_formula_diff(prec_type), abs=1e-6
+        )
+
+    def test_neutral_loss_adduct_values(self):
+        """Known values: the loss is applied on top of the ionizing adduct."""
+        h_plus = fu.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+        minus_h = fu.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
+        nh3 = fu.N_MASS + 3 * fu.H_MASS
+        co2 = fu.C_MASS + 2 * fu.O_MASS
+        assert fu.PREC_TYPE_TO_MASS_DIFF["[M+H-NH3]+"] == pytest.approx(h_plus - nh3, abs=1e-6)
+        assert fu.PREC_TYPE_TO_MASS_DIFF["[M-H-CO2]-"] == pytest.approx(minus_h - co2, abs=1e-6)
+
+    def test_radical_cation_diff_is_electron_only(self):
+        """Edge case: [M]+ adds no atoms, so its diff is a bare electron loss."""
+        assert fu.PREC_TYPE_TO_FORMULA_DIFF["[M]+"] == ""
+        assert fu.PREC_TYPE_TO_MASS_DIFF["[M]+"] == pytest.approx(-fu.ELECTRON_MASS, abs=1e-12)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

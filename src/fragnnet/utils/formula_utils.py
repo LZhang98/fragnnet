@@ -36,8 +36,8 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
     "[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
-    "[M+CH3COOH-H]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
-    "[M+CH3COO]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+    "[M+CH3COOH-H]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+    "[M+CH3COO]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     # some NL adducts
     "[M+H]+_NL": -H_MASS + ELECTRON_MASS,
     "[M-H]-_NL": H_MASS - ELECTRON_MASS,
@@ -83,9 +83,9 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M-H]-": "H-1",
     "[M-H-CO2]-": "H-1C-1O-2",
     "[M+Cl]-": "Cl1",
-    "[M-H-H2O]-": "H-2O-2",
+    "[M-H-H2O]-": "H-3O-1",
     "[M-H+2i]-": "H-1I2",
-    "[M+HCOOH-H]-": "CH2O2",
+    "[M+HCOOH-H]-": "C1H1O2",
     "[M+CH3COOH-H]-": "C2H3O2",
     "[M+CH3COO]-": "C2H3O2",
 }
