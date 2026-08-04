@@ -31,6 +31,7 @@ from nist_bad_data_review import (  # noqa: E402
     analyze_spectrum,
     canonicalize_prec_type,
     collect_cross_ce_comparison_spectra,
+    collect_formula_conflict_comparison_spectra,
     finalize_review_queue,
     write_review_pdf,
 )
@@ -453,6 +454,43 @@ def test_cross_ce_comparison_spectra_exclude_the_primary_ce_bin() -> None:
 
     assert [row["spec_id"] for row in comparisons[1]] == [2, 3]
     assert [row["ce_value"] for row in comparisons[1]] == [20.0, 30.0]
+
+
+def test_formula_conflict_comparisons_include_exact_duplicate_metadata() -> None:
+    mol_meta = {
+        10: (100.0, "C6H12O", "STRUCTURE-A"),
+        11: (78.017841, "C5H4N", "STRUCTURE-B"),
+    }
+    first_row = _review_row()
+    second_row = _review_row(
+        spec_id=2,
+        mol_id=11,
+        dset_spec_id="nist-2",
+        prec_type="[M+Na]+",
+        prec_mz=101.007061,
+    )
+    review_df = pd.DataFrame(
+        [analyze_spectrum(first_row, mol_meta), analyze_spectrum(second_row, mol_meta)]
+    )
+    candidates = finalize_review_queue(review_df)
+    spec_df = pd.DataFrame(
+        {
+            "spec_id": [1, 2],
+            "peaks": [first_row.peaks, second_row.peaks],
+        }
+    )
+
+    comparisons = collect_formula_conflict_comparison_spectra(
+        spec_df, review_df, candidates.iloc[[0]]
+    )
+
+    assert len(comparisons[1]) == 1
+    assert comparisons[1][0]["spec_id"] == 2
+    assert comparisons[1][0]["mol_id"] == 11
+    assert comparisons[1][0]["formula"] == "C5H4N"
+    assert comparisons[1][0]["prec_type"] == "[M+Na]+"
+    assert comparisons[1][0]["ace"] == 10.0
+    assert comparisons[1][0]["peaks"] == second_row.peaks
 
 
 def test_uwpr_signal_uses_unique_peak_intensity_and_conservative_labels(tmp_path: Path) -> None:

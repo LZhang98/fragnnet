@@ -20,9 +20,13 @@ python scripts/eval/nist_bad_data_review.py \
 
 The HTML and PDF default to the top 500 ranked candidates. Each PDF review page uses the same
 two-column CE-spectrum grid as `plot_ce_trend_anomaly_groups.py`, with a shared header and molecular
-structure. When `substantial_cross_ce_orphan_intensity` is present, the grid also plots spectra
-from every other collision-energy bin used by that comparison. All plots on the page use the same
-m/z scale, unused grid cells are hidden, and the page grows vertically as needed.
+structure. The header reports recorded precursor m/z, computed precursor m/z, and precursor error
+in ppm when the precursor type is supported. When `substantial_cross_ce_orphan_intensity` is
+present, the grid also plots spectra from every other collision-energy bin used by that comparison.
+For `duplicate_spectrum_formula_conflict`, the grid plots every exact duplicate partner and labels
+its molecule ID, formula, adduct, recorded and computed precursor m/z, and molecular structure.
+All plots on the page use the same m/z scale, fill left-to-right from the top-left, hide unused grid
+cells, grow vertically as needed, and label the available ACE and/or NCE collision energy.
 The PDF defaults to `[M+H]+`, `[M-H]-`, `[M+Na]+`, `[M+K]+`, `[M+Cl]-`, and `[M]+`; change the list
 with `--pdf_prec_types` and the limit with `--max_pdf_spectra`.
 

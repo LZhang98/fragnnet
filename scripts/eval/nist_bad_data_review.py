@@ -524,6 +524,53 @@ def collect_cross_ce_comparison_spectra(
     return comparisons
 
 
+def collect_formula_conflict_comparison_spectra(
+    spec_df: pd.DataFrame,
+    review_df: pd.DataFrame,
+    candidates: pd.DataFrame,
+) -> dict[int, list[dict[str, object]]]:
+    """Collect exact-export duplicate partners having conflicting formulas."""
+    flagged_ids = set(
+        candidates.loc[
+            candidates["duplicate_spectrum_formula_conflict"].astype(bool), "spec_id"
+        ].astype(int)
+    )
+    if not flagged_ids:
+        return {}
+
+    peaks_by_spec_id = dict(
+        spec_df.loc[:, ["spec_id", "peaks"]].itertuples(index=False, name=None)
+    )
+    conflict_rows = review_df[
+        review_df["duplicate_spectrum_formula_conflict"].astype(bool)
+        & review_df["spectrum_hash"].notna()
+    ]
+    comparisons: dict[int, list[dict[str, object]]] = {}
+    for primary in conflict_rows[conflict_rows["spec_id"].isin(flagged_ids)].itertuples(
+        index=False
+    ):
+        partners = conflict_rows[
+            conflict_rows["spectrum_hash"].eq(primary.spectrum_hash)
+            & conflict_rows["spec_id"].ne(primary.spec_id)
+        ].sort_values("spec_id")
+        comparisons[int(primary.spec_id)] = [
+            {
+                "spec_id": int(row.spec_id),
+                "mol_id": int(row.mol_id),
+                "dset_spec_id": row.dset_spec_id,
+                "formula": row.formula,
+                "prec_type": row.prec_type,
+                "ace": row.ace,
+                "nce": row.nce,
+                "prec_mz": row.prec_mz,
+                "expected_prec_mz": row.expected_prec_mz,
+                "peaks": peaks_by_spec_id[int(row.spec_id)],
+            }
+            for row in partners.itertuples(index=False)
+        ]
+    return comparisons
+
+
 def _matched_peak_stats(
     peaks: object, target_mzs: Sequence[float], mz_tol: float = 1.0e-4
 ) -> tuple[int, float]:
@@ -704,9 +751,7 @@ def analyze_spectrum(
         precursor_envelope = above_precursor & (
             mzs <= float(row.prec_mz) + PRECURSOR_ENVELOPE_WINDOW_DA
         )
-        non_envelope_above_precursor = mzs > (
-            float(row.prec_mz) + PRECURSOR_ENVELOPE_WINDOW_DA
-        )
+        non_envelope_above_precursor = mzs > (float(row.prec_mz) + PRECURSOR_ENVELOPE_WINDOW_DA)
         intensity_above_precursor_fraction = float(
             intensities[above_precursor].sum() / total_intensity
         )
@@ -801,17 +846,17 @@ def mark_cross_molecule_duplicates(review_df: pd.DataFrame) -> None:
     )
     same_structure_hashes = suspicious_hashes - formula_conflict_hashes - structure_ambiguity_hashes
     informative = review_df["n_peaks"].ge(3)
-    review_df["duplicate_spectrum_cross_molecule"] = (
-        informative & review_df["spectrum_hash"].isin(suspicious_hashes)
+    review_df["duplicate_spectrum_cross_molecule"] = informative & review_df["spectrum_hash"].isin(
+        suspicious_hashes
     )
-    review_df["duplicate_spectrum_formula_conflict"] = (
-        informative & review_df["spectrum_hash"].isin(formula_conflict_hashes)
-    )
-    review_df["duplicate_spectrum_structure_ambiguity"] = (
-        informative & review_df["spectrum_hash"].isin(structure_ambiguity_hashes)
-    )
-    review_df["duplicate_spectrum_same_structure"] = (
-        informative & review_df["spectrum_hash"].isin(same_structure_hashes)
+    review_df["duplicate_spectrum_formula_conflict"] = informative & review_df[
+        "spectrum_hash"
+    ].isin(formula_conflict_hashes)
+    review_df["duplicate_spectrum_structure_ambiguity"] = informative & review_df[
+        "spectrum_hash"
+    ].isin(structure_ambiguity_hashes)
+    review_df["duplicate_spectrum_same_structure"] = informative & review_df["spectrum_hash"].isin(
+        same_structure_hashes
     )
 
 
@@ -829,18 +874,10 @@ def finalize_review_queue(review_df: pd.DataFrame) -> pd.DataFrame:
     structure_ambiguity = review_df["duplicate_spectrum_structure_ambiguity"]
     review_df.loc[structure_ambiguity, "heuristic_reasons"] = review_df.loc[
         structure_ambiguity, "heuristic_reasons"
-    ].map(
-        lambda value: ";".join(
-            filter(None, [value, "duplicate_spectrum_structure_ambiguity"])
-        )
-    )
+    ].map(lambda value: ";".join(filter(None, [value, "duplicate_spectrum_structure_ambiguity"])))
     review_df.loc[structure_ambiguity, "review_reasons"] = review_df.loc[
         structure_ambiguity, "review_reasons"
-    ].map(
-        lambda value: ";".join(
-            filter(None, [value, "duplicate_spectrum_structure_ambiguity"])
-        )
-    )
+    ].map(lambda value: ";".join(filter(None, [value, "duplicate_spectrum_structure_ambiguity"])))
 
     dynamic_flags = [
         "replicate_consensus_disagreement",
@@ -953,8 +990,7 @@ def write_review_html(
             f"{_spectrum_svg(peaks_by_spec_id.get(row.spec_id, []))}</article>"
         )
     glossary = "".join(
-        "<dt><code>"
-        f"{html.escape(reason)}</code> ({level})</dt><dd>{html.escape(explanation)}</dd>"
+        f"<dt><code>{html.escape(reason)}</code> ({level})</dt><dd>{html.escape(explanation)}</dd>"
         for reason, (level, explanation) in REVIEW_FLAG_GLOSSARY.items()
     )
     document = f"""<!doctype html>
@@ -975,6 +1011,26 @@ def _pdf_metric(row: object, name: str) -> str:
     """Format one optional review metric for a PDF spectrum card."""
     value = getattr(row, name, math.nan)
     return f"{float(value):.3f}" if pd.notna(value) else "n/a"
+
+
+def _pdf_mz_value(value: object) -> str:
+    """Format one optional m/z value for a PDF label."""
+    return f"{float(value):.5f}" if pd.notna(value) else "n/a"
+
+
+def _pdf_mz(row: object, name: str) -> str:
+    """Format one optional m/z attribute for a PDF header."""
+    return _pdf_mz_value(getattr(row, name, math.nan))
+
+
+def _pdf_ce_label(row: object) -> str:
+    """Format available absolute and normalized collision energies."""
+    labels = []
+    for name, label in (("ace", "ACE"), ("nce", "NCE")):
+        value = row.get(name, math.nan) if isinstance(row, dict) else getattr(row, name, math.nan)
+        if pd.notna(value):
+            labels.append(f"{label}={float(value):g}")
+    return ", ".join(labels) if labels else "CE unavailable"
 
 
 def _flag_count(candidates: pd.DataFrame, column: str) -> int:
@@ -1026,14 +1082,20 @@ def write_review_pdf(
     total_candidate_count: int | None = None,
     smiles_by_mol_id: dict[int, str] | None = None,
     cross_ce_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
+    formula_conflict_comparisons_by_spec_id: dict[
+        int, list[dict[str, object]]
+    ]
+    | None = None,
 ) -> None:
-    """Write one large candidate spectrum per page, with other-CE comparisons when flagged."""
+    """Write one candidate per page with its relevant comparison spectra."""
     if total_candidate_count is None:
         total_candidate_count = len(candidates)
     if smiles_by_mol_id is None:
         smiles_by_mol_id = {}
     if cross_ce_comparisons_by_spec_id is None:
         cross_ce_comparisons_by_spec_id = {}
+    if formula_conflict_comparisons_by_spec_id is None:
+        formula_conflict_comparisons_by_spec_id = {}
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
     with PdfPages(out_fp) as pdf:
         # 1. Summarize the queue represented by this review document.
@@ -1102,7 +1164,7 @@ def write_review_pdf(
             pdf.savefig(fig)
             plt.close(fig)
 
-        # 3. Give each candidate a full-width plot and show every other-CE sibling when flagged.
+        # 3. Plot each candidate with exact-duplicate partners and other-CE siblings.
         rows = list(
             candidates[candidates["spec_id"].isin(peaks_by_spec_id)].itertuples(index=False)
         )
@@ -1110,11 +1172,17 @@ def write_review_pdf(
         for row in rows:
             spec_id = int(row.spec_id)
             mol_id = int(row.mol_id)
-            comparisons = (
+            formula_conflicts = (
+                formula_conflict_comparisons_by_spec_id.get(spec_id, [])
+                if bool(row.duplicate_spectrum_formula_conflict)
+                else []
+            )
+            cross_ce_comparisons = (
                 cross_ce_comparisons_by_spec_id.get(spec_id, [])
                 if bool(row.substantial_cross_ce_orphan_intensity)
                 else []
             )
+            comparisons = formula_conflicts + cross_ce_comparisons
             page_number += 1
             n_plots = 1 + len(comparisons)
             ncols = 2
@@ -1136,7 +1204,7 @@ def write_review_pdf(
                     for plot_row in range(nrows)
                 ]
             )
-            axes_flat = axes.T.ravel()
+            axes_flat = axes.ravel()
             page_peaks = [peaks_by_spec_id.get(spec_id, [])] + [
                 comparison["peaks"] for comparison in comparisons
             ]
@@ -1145,10 +1213,13 @@ def write_review_pdf(
                 for peaks in page_peaks
                 if (peak_arrays := _valid_peak_arrays(peaks)) is not None
             ]
-            shared_x_max = max(
-                [float(peak_arrays[0].max()) for peak_arrays in valid_page_peaks],
-                default=1.0,
-            ) * 1.03
+            shared_x_max = (
+                max(
+                    [float(peak_arrays[0].max()) for peak_arrays in valid_page_peaks],
+                    default=1.0,
+                )
+                * 1.03
+            )
             reason = textwrap.fill(
                 str(row.review_reasons).replace(";", "; "),
                 width=55,
@@ -1158,16 +1229,41 @@ def write_review_pdf(
             _plot_pdf_spectrum(
                 axes_flat[0],
                 peaks_by_spec_id.get(spec_id, []),
-                f"PRIMARY | Priority {row.review_priority} | spec {spec_id}\n{reason}",
+                f"PRIMARY | Priority {row.review_priority} | spec {spec_id} | "
+                f"{_pdf_ce_label(row)}\n{reason}",
                 "#2457a6",
                 shared_x_max,
             )
-            for axis, comparison in zip(axes_flat[1:], comparisons, strict=False):
+            comparison_axes = iter(axes_flat[1:])
+            for comparison in formula_conflicts:
+                axis = next(comparison_axes)
+                _plot_pdf_spectrum(
+                    axis,
+                    comparison["peaks"],
+                    "EXACT DUPLICATE — DIFFERENT FORMULA | "
+                    f"spec {comparison['spec_id']} | mol {comparison['mol_id']} | "
+                    f"NIST {comparison['dset_spec_id']} | {_pdf_ce_label(comparison)}\n"
+                    f"{comparison['formula']} | {comparison['prec_type']} | "
+                    f"prec m/z recorded={_pdf_mz_value(comparison['prec_mz'])}, "
+                    f"computed={_pdf_mz_value(comparison['expected_prec_mz'])}",
+                    "#8b2f2f",
+                    shared_x_max,
+                )
+                duplicate_mol_image = _mol_image_array(
+                    smiles_by_mol_id.get(int(comparison["mol_id"]))
+                )
+                if duplicate_mol_image is not None:
+                    structure_axis = axis.inset_axes([0.03, 0.57, 0.42, 0.35])
+                    structure_axis.imshow(duplicate_mol_image)
+                    structure_axis.set_facecolor("white")
+                    structure_axis.axis("off")
+            for comparison in cross_ce_comparisons:
+                axis = next(comparison_axes)
                 _plot_pdf_spectrum(
                     axis,
                     comparison["peaks"],
                     "OTHER CE | "
-                    f"{comparison['ce_source']}={comparison['ce_value']:g} | "
+                    f"{str(comparison['ce_source']).upper()}={comparison['ce_value']:g} | "
                     f"spec {comparison['spec_id']} | NIST {comparison['dset_spec_id']}",
                     "#b04a35",
                     shared_x_max,
@@ -1179,6 +1275,9 @@ def write_review_pdf(
             metadata = (
                 f"review page {page_number} | mol {mol_id} | {row.prec_type} | "
                 f"NIST {row.dset_spec_id} | {row.formula} | {row.inst_type}\n"
+                f"prec m/z: recorded={_pdf_mz(row, 'prec_mz')} | "
+                f"computed={_pdf_mz(row, 'expected_prec_mz')} | "
+                f"error={_pdf_metric(row, 'precursor_error_ppm')} ppm\n"
                 f"families: {families} | "
                 f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
                 f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
@@ -1189,7 +1288,7 @@ def write_review_pdf(
             header_axis.text(
                 0.01,
                 0.96,
-                textwrap.fill(metadata, 95),
+                "\n".join(textwrap.fill(line, 95) for line in metadata.splitlines()),
                 transform=header_axis.transAxes,
                 fontsize=7.5,
                 va="top",
@@ -1255,9 +1354,7 @@ def main() -> None:
         spec_df = spec_df.head(args.limit)
         log.warning("--limit is active; duplicate flags apply only to this subset")
 
-    mol_df = pd.read_pickle(args.mol_fp)[
-        ["mol_id", "exact_mw", "formula", "inchikey_s", "smiles"]
-    ]
+    mol_df = pd.read_pickle(args.mol_fp)[["mol_id", "exact_mw", "formula", "inchikey_s", "smiles"]]
     mol_meta = {
         int(row.mol_id): (float(row.exact_mw), str(row.formula), str(row.inchikey_s))
         for row in mol_df.itertuples(index=False)
@@ -1319,7 +1416,15 @@ def main() -> None:
         cross_ce_comparisons_by_spec_id = collect_cross_ce_comparison_spectra(
             spec_df, pdf_candidates
         )
+        formula_conflict_comparisons_by_spec_id = collect_formula_conflict_comparison_spectra(
+            spec_df, review_df, pdf_candidates
+        )
         wanted_mol_ids = set(pdf_candidates["mol_id"])
+        wanted_mol_ids.update(
+            int(comparison["mol_id"])
+            for comparisons in formula_conflict_comparisons_by_spec_id.values()
+            for comparison in comparisons
+        )
         smiles_by_mol_id = {
             int(row.mol_id): str(row.smiles)
             for row in mol_df[mol_df["mol_id"].isin(wanted_mol_ids)].itertuples(index=False)
@@ -1331,6 +1436,9 @@ def main() -> None:
             total_candidate_count=len(pdf_queue),
             smiles_by_mol_id=smiles_by_mol_id,
             cross_ce_comparisons_by_spec_id=cross_ce_comparisons_by_spec_id,
+            formula_conflict_comparisons_by_spec_id=(
+                formula_conflict_comparisons_by_spec_id
+            ),
         )
         log.info("Saved PDF review report to %s", args.out_pdf)
 
