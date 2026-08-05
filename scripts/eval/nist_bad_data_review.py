@@ -14,23 +14,28 @@ Example:
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import html
 import logging
 import math
 import os
 import textwrap
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch as th
+from dag_oracle_scores import _allowed_formula_idxs, _dag_ion_mzs, _detect_is_compressed
 from matplotlib.backends.backend_pdf import PdfPages
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
+import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils import data_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -42,6 +47,7 @@ INSTRUMENT_TOLERANCE = {
     "QTOF": (2.0e-5, 750.0),
 }
 DEFAULT_TOLERANCE = (1.0e-5, 200.0)
+PRECURSOR_MASS_CHECK_INSTRUMENTS = set(INSTRUMENT_TOLERANCE)
 # Formula-dependent ``+2i`` isotope-selected labels are deliberately excluded from this simple
 # monoisotopic precursor check.
 PRECURSOR_TYPE_TO_MASS_DIFF = {
@@ -69,7 +75,6 @@ HEURISTIC_FLAG_WEIGHTS = {
     "substantial_intensity_above_precursor": 2,
     "missing_collision_energy": 1,
     "negative_collision_energy": 2,
-    "sparse_spectrum": 1,
     "single_peak_dominates": 1,
     "unsorted_peak_mz": 1,
     "duplicate_peak_mz": 1,
@@ -127,7 +132,7 @@ REVIEW_FLAG_GLOSSARY = {
         "At least one recorded collision-energy value is negative.",
     ),
     "sparse_spectrum": (
-        "Heuristic",
+        "Context",
         "The spectrum has only one or two peaks. This is a low-priority prompt for human "
         "review, not evidence that the spectrum is wrong.",
     ),
@@ -156,8 +161,8 @@ REVIEW_FLAG_GLOSSARY = {
     ),
     "substantial_uwpr_contaminant_only_intensity": (
         "Heuristic",
-        "At least 5% of intensity matches UWPR/MaConDa contaminant ions that every supplied DAG "
-        "feasibility source, including D3 and D4 when supplied, labels contaminant-only.",
+        "At least 5% of intensity matches UWPR/MaConDa contaminant ions that every DAG source "
+        "returning a feasibility decision labels contaminant-only; undecidable sources abstain.",
     ),
     "duplicate_spectrum_structure_ambiguity": (
         "Heuristic",
@@ -194,6 +199,10 @@ REPLICATE_NORMAL_SIMILARITY = 0.8
 CROSS_CE_ORPHAN_FRACTION = 0.2
 UWPR_CONTAMINANT_ONLY_FRACTION = 0.05
 PRECURSOR_ENVELOPE_WINDOW_DA = 4.5
+DAG_WRECALL_REVIEW_CUTOFF = 0.75
+MAX_OTHER_CE_PDF_PANELS = 11
+MAX_GROUPED_PDF_PANELS = 12
+MAX_DEDICATED_COMPARISON_PANELS = 11
 DEFAULT_PDF_PRECURSOR_TYPES = [
     "[M+H]+",
     "[M-H]-",
@@ -511,15 +520,30 @@ def collect_cross_ce_comparison_spectra(
             & scoped["ce_bin"].notna()
             & scoped["ce_bin"].ne(primary["ce_bin"])
         ].sort_values(["ce_bin", "spec_id"])
+        representatives = siblings.drop_duplicates("ce_bin").copy()
+        n_available_bins = len(representatives)
+        if n_available_bins > MAX_OTHER_CE_PDF_PANELS:
+            representatives["ce_distance"] = (
+                representatives["ce_bin"] - float(primary["ce_bin"])
+            ).abs()
+            representatives["spec_sort_id"] = pd.to_numeric(
+                representatives["spec_id"], errors="raise"
+            )
+            representatives = representatives.nsmallest(
+                MAX_OTHER_CE_PDF_PANELS,
+                ["ce_distance", "ce_bin", "spec_sort_id"],
+            ).sort_values(["ce_bin", "spec_sort_id"])
         comparisons[spec_id] = [
             {
                 "spec_id": int(row.spec_id),
                 "dset_spec_id": row.dset_spec_id,
                 "ce_source": str(row.ce_source),
                 "ce_value": float(row.ce_value),
+                "prec_mz": getattr(row, "prec_mz", math.nan),
                 "peaks": row.peaks,
+                "n_other_ce_bins_available": n_available_bins,
             }
-            for row in siblings.itertuples(index=False)
+            for row in representatives.itertuples(index=False)
         ]
     return comparisons
 
@@ -537,7 +561,13 @@ def _ordered_cross_ce_spectra(
         "dset_spec_id": getattr(row, "dset_spec_id"),
         "ce_source": ce_source,
         "ce_value": float(getattr(row, ce_source)),
+        "prec_mz": getattr(row, "prec_mz", math.nan),
+        "expected_prec_mz": getattr(row, "expected_prec_mz", math.nan),
         "peaks": primary_peaks,
+        "n_other_ce_bins_shown": len(comparisons),
+        "n_other_ce_bins_available": int(
+            comparisons[0].get("n_other_ce_bins_available", len(comparisons))
+        ),
     }
     siblings = [dict(comparison, is_review_target=False) for comparison in comparisons]
     return sorted(
@@ -580,6 +610,7 @@ def collect_same_ce_replicate_spectra(
                 "dset_spec_id": row.dset_spec_id,
                 "ace": row.ace,
                 "nce": row.nce,
+                "prec_mz": getattr(row, "prec_mz", math.nan),
                 "peaks": row.peaks,
             }
             for row in siblings.itertuples(index=False)
@@ -602,9 +633,7 @@ def collect_formula_conflict_comparison_spectra(
     if not flagged_ids:
         return {}
 
-    peaks_by_spec_id = dict(
-        spec_df.loc[:, ["spec_id", "peaks"]].itertuples(index=False, name=None)
-    )
+    peaks_by_spec_id = dict(spec_df.loc[:, ["spec_id", "peaks"]].itertuples(index=False, name=None))
     conflict_rows = review_df[
         review_df["duplicate_spectrum_formula_conflict"].astype(bool)
         & review_df["spectrum_hash"].notna()
@@ -642,14 +671,18 @@ def collect_formula_conflict_comparison_spectra(
     return comparisons
 
 
+def _is_contaminant_only_consensus(labels: Iterable[str | None]) -> bool:
+    """Return whether at least one source decided and none found DAG feasibility."""
+    decided = [label for label in labels if label in {"dag_feasible", "contaminant_only"}]
+    return bool(decided) and "dag_feasible" not in decided
+
+
 def collect_uwpr_peak_annotations(
     feasibility_paths: Sequence[str | os.PathLike[str]],
     candidates: pd.DataFrame,
 ) -> dict[int, dict[str, list[float]]]:
-    """Collect D3/D4 agreement, directional flips, and contaminant labels."""
+    """Collect D3, additional-D4, and unanimous-contaminant peak labels."""
     needs_annotations = candidates["substantial_uwpr_contaminant_only_intensity"].astype(bool)
-    if "n_uwpr_dag_disagreement_peaks" in candidates:
-        needs_annotations |= candidates["n_uwpr_dag_disagreement_peaks"].gt(0)
     flagged_ids = set(candidates.loc[needs_annotations, "spec_id"].astype(int))
     if not flagged_ids or not feasibility_paths:
         return {}
@@ -675,36 +708,23 @@ def collect_uwpr_peak_annotations(
     annotations: dict[int, dict[str, list[float]]] = {}
     all_keys = set().union(*(source.keys() for source in labels_by_source))
     d3_feasible = {key for key in all_keys if labels_by_source[0].get(key) == "dag_feasible"}
-    if len(labels_by_source) >= 2:
-        d3_d4_feasible = {
-            key
-            for key in d3_feasible
-            if labels_by_source[1].get(key) == "dag_feasible"
-        }
-        d3_only_feasible = {
-            key
-            for key in d3_feasible
-            if labels_by_source[1].get(key) == "contaminant_only"
-        }
-        d4_only_feasible = {
+    d4_additional = (
+        {
             key
             for key in all_keys
-            if labels_by_source[0].get(key) == "contaminant_only"
-            and labels_by_source[1].get(key) == "dag_feasible"
+            if labels_by_source[1].get(key) == "dag_feasible" and key not in d3_feasible
         }
-    else:
-        d3_d4_feasible = set()
-        d3_only_feasible = d3_feasible
-        d4_only_feasible = set()
+        if len(labels_by_source) >= 2
+        else set()
+    )
     contaminants = {
         key
         for key in all_keys
-        if all(source.get(key) == "contaminant_only" for source in labels_by_source)
+        if _is_contaminant_only_consensus(source.get(key) for source in labels_by_source)
     }
     for label, keys in (
-        ("d3_d4_dag", d3_d4_feasible),
-        ("d3_only_dag", d3_only_feasible),
-        ("d4_only_dag", d4_only_feasible),
+        ("d3_dag", d3_feasible),
+        ("d4_additional_dag", d4_additional),
         ("uwpr_contaminant", contaminants),
     ):
         for spec_id, peak_mz in keys:
@@ -741,6 +761,137 @@ def _matched_peak_stats(
     for target_mz in np.unique(np.asarray(target_mzs, dtype=float)):
         matched |= np.abs(mzs - target_mz) <= mz_tol
     return int(matched.sum()), float(intensities[matched].sum() / intensities.sum())
+
+
+def _dag_weighted_recall(
+    peaks: object,
+    dag_ion_mzs: np.ndarray,
+    inst_type: str,
+) -> float:
+    """Return the fraction of observed intensity matched by candidate DAG ions."""
+    peak_arrays = _valid_peak_arrays(peaks)
+    if peak_arrays is None or len(dag_ion_mzs) == 0:
+        return math.nan
+    mzs, intensities = peak_arrays
+    candidate_mzs = np.sort(np.asarray(dag_ion_mzs, dtype=float))
+    insertion = np.searchsorted(candidate_mzs, mzs, side="left")
+    right_idx = np.minimum(insertion, len(candidate_mzs) - 1)
+    left_idx = np.maximum(insertion - 1, 0)
+    nearest_error = np.minimum(
+        np.abs(candidate_mzs[right_idx] - mzs),
+        np.abs(candidate_mzs[left_idx] - mzs),
+    )
+    tolerance, tolerance_min_mz = _tolerance_for_inst_type(inst_type)
+    matched = nearest_error <= tolerance * np.maximum(mzs, tolerance_min_mz)
+    return float(intensities[matched].sum() / intensities.sum())
+
+
+def _dag_weighted_recall_for_mol(
+    mol_id: int,
+    group: pd.DataFrame,
+    dag_paths: dict[str, str],
+    is_compressed_by_label: dict[str, bool],
+) -> dict[int, dict[str, float]]:
+    """Calculate every requested DAG wRecall for one molecule's spectra."""
+    recalls = {int(spec_id): dict.fromkeys(dag_paths, math.nan) for spec_id in group["spec_id"]}
+    for label, dag_path in dag_paths.items():
+        try:
+            dag = frag_utils.load_frag_d(
+                mol_id,
+                dag_path,
+                is_compressed=is_compressed_by_label[label],
+            )
+        except FileNotFoundError:
+            continue
+        if dag is None:
+            continue
+        allowed_idx = _allowed_formula_idxs(dag["idx_by_h_delta"], None)
+        idx_t = th.tensor(allowed_idx, dtype=th.long)
+        theo_mzs = dag["formula_peak_mzs"].index_select(0, idx_t)
+        prec_mask = (dag["formula_peak_probs"].index_select(0, idx_t) > 0.0).float()
+        ion_mzs_by_prec_type: dict[str, np.ndarray] = {}
+        for row in group.itertuples(index=False):
+            prec_type = canonicalize_prec_type(row.prec_type)
+            if prec_type not in PRECURSOR_TYPE_TO_MASS_DIFF:
+                continue
+            if prec_type not in ion_mzs_by_prec_type:
+                ion_mzs_by_prec_type[prec_type] = (
+                    _dag_ion_mzs(theo_mzs, prec_mask, prec_type).detach().cpu().numpy()
+                )
+            recalls[int(row.spec_id)][label] = _dag_weighted_recall(
+                row.peaks,
+                ion_mzs_by_prec_type[prec_type],
+                str(row.inst_type),
+            )
+    return recalls
+
+
+def collect_dag_weighted_recall(
+    spec_df: pd.DataFrame,
+    spec_ids: set[int],
+    dag_paths: dict[str, str],
+    n_jobs: int = data_utils.JOBLIB_N_JOBS,
+) -> dict[int, dict[str, float]]:
+    """Calculate per-spectrum intensity-weighted recall for supplied DAG variants."""
+    scoped = spec_df[spec_df["spec_id"].isin(spec_ids)]
+    if scoped.empty:
+        return {}
+
+    sample_mol_id = int(scoped["mol_id"].iloc[0])
+    is_compressed_by_label = {
+        label: _detect_is_compressed(dag_path, sample_mol_id)
+        for label, dag_path in dag_paths.items()
+    }
+    mol_inputs = [(int(mol_id), group) for mol_id, group in scoped.groupby("mol_id")]
+    worker = functools.partial(
+        _dag_weighted_recall_for_mol,
+        dag_paths=dag_paths,
+        is_compressed_by_label=is_compressed_by_label,
+    )
+    per_mol = data_utils.par_apply(
+        mol_inputs,
+        worker,
+        need_unpack=True,
+        n_jobs=n_jobs,
+    )
+    return {
+        spec_id: values
+        for molecule_recalls in per_mol
+        for spec_id, values in molecule_recalls.items()
+    }
+
+
+def apply_dag_wrecall_review_gate(
+    candidates: pd.DataFrame,
+    dag_wrecall_by_spec_id: dict[int, dict[str, float]],
+) -> pd.DataFrame:
+    """Annotate soft-only candidates adequately explained by either DAG."""
+    gated = candidates.copy()
+    for label in ("D3", "D4"):
+        gated[f"dag_wrecall_{label.lower()}"] = gated["spec_id"].map(
+            lambda spec_id, dag_label=label: dag_wrecall_by_spec_id.get(int(spec_id), {}).get(
+                dag_label, math.nan
+            )
+        )
+    gated["dag_wrecall_max"] = gated[["dag_wrecall_d3", "dag_wrecall_d4"]].max(axis=1, skipna=True)
+    non_spectral_families = {
+        "record_integrity",
+        "metadata_completeness",
+        "metadata_consistency",
+        "label_ambiguity",
+    }
+    evidence_families = (
+        gated["evidence_families"]
+        .fillna("")
+        .map(lambda value: set(filter(None, str(value).split(";"))))
+    )
+    gated["dag_wrecall_gate_exempt"] = gated["has_hard_evidence"].astype(
+        bool
+    ) | evidence_families.map(lambda families: bool(families & non_spectral_families))
+    gated["dag_wrecall_gated"] = ~gated["dag_wrecall_gate_exempt"] & gated["dag_wrecall_max"].ge(
+        DAG_WRECALL_REVIEW_CUTOFF
+    )
+    return gated
 
 
 def add_uwpr_signals(
@@ -783,6 +934,11 @@ def add_uwpr_signals(
         }
         labels_by_source.append(source_labels)
         all_match_keys.update(source_labels)
+        log.info(
+            "UWPR feasibility labels in %s:\n%s",
+            path,
+            hits["feasibility"].value_counts(dropna=False).to_string(),
+        )
 
     all_matches: dict[int, list[float]] = {}
     conservative_matches: dict[int, list[float]] = {}
@@ -791,7 +947,7 @@ def add_uwpr_signals(
         labels = [source.get(key) for source in labels_by_source]
         spec_id, peak_mz = key
         all_matches.setdefault(spec_id, []).append(peak_mz)
-        if all(label == "contaminant_only" for label in labels):
+        if _is_contaminant_only_consensus(labels):
             conservative_matches.setdefault(spec_id, []).append(peak_mz)
         evaluable_labels = {
             label for label in labels if label in {"dag_feasible", "contaminant_only"}
@@ -884,6 +1040,7 @@ def analyze_spectrum(
         not missing_molecule_metadata
         and canonical_prec_type in PRECURSOR_TYPE_TO_MASS_DIFF
         and not _is_missing(row.prec_mz)
+        and row.inst_type in PRECURSOR_MASS_CHECK_INSTRUMENTS
     ):
         expected_prec_mz = exact_mw + PRECURSOR_TYPE_TO_MASS_DIFF[canonical_prec_type]
         precursor_error_da = float(row.prec_mz - expected_prec_mz)
@@ -928,12 +1085,12 @@ def analyze_spectrum(
         "polarity_mismatch": _polarity_mismatch(canonical_prec_type, row.ion_mode),
     }
     missing_ce, negative_ce = _collision_energy_flags(row)
+    sparse_spectrum = not invalid_peaks and 1 <= n_peaks <= 2
     heuristic_flags = {
         "missing_precursor_mz": missing_precursor_mz,
         "precursor_mass_mismatch": precursor_mass_mismatch,
         "missing_collision_energy": missing_ce,
         "negative_collision_energy": negative_ce,
-        "sparse_spectrum": not invalid_peaks and n_peaks <= 2,
         "substantial_intensity_above_precursor": (
             np.isfinite(non_envelope_intensity_above_precursor_fraction)
             and non_envelope_intensity_above_precursor_fraction >= 0.05
@@ -977,6 +1134,7 @@ def analyze_spectrum(
         ),
         "dominant_peak_fraction": dominant_peak_fraction,
         "spectrum_hash": _spectrum_hash(mzs, intensities) if not invalid_peaks else None,
+        "sparse_spectrum": sparse_spectrum,
         **flags,
         **heuristic_flags,
         "unsupported_precursor_type": canonical_prec_type not in PRECURSOR_TYPE_TO_MASS_DIFF,
@@ -1073,9 +1231,12 @@ def finalize_review_queue(review_df: pd.DataFrame) -> pd.DataFrame:
         index=review_df.index,
     )
     review_df["evidence_family_count"] = family_enabled.sum(axis=1)
-    review_df["evidence_families"] = family_enabled.apply(
-        lambda row: ";".join(row.index[row].tolist()), axis=1
-    )
+    review_df["evidence_families"] = ""
+    for family in family_enabled:
+        enabled = family_enabled[family]
+        review_df.loc[enabled, "evidence_families"] = review_df.loc[
+            enabled, "evidence_families"
+        ].map(lambda value, name=family: ";".join(filter(None, [value, name])))
     review_df["review_status"] = "unreviewed"
     review_df["hard_flag_count"] = review_df[list(HARD_FLAG_WEIGHTS)].sum(axis=1)
     review_df["has_hard_evidence"] = review_df["hard_flag_count"].gt(0)
@@ -1097,23 +1258,36 @@ def finalize_review_queue(review_df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
-def _spectrum_svg(peaks: Sequence[Sequence[float]], width: int = 520, height: int = 160) -> str:
+def _spectrum_svg(
+    peaks: Sequence[Sequence[float]],
+    precursor_mz: float | None = None,
+    width: int = 520,
+    height: int = 160,
+) -> str:
     """Render a dependency-free SVG stick spectrum for the HTML review report."""
     if not peaks:
         return "<em>Empty spectrum</em>"
     peak_array = np.asarray(peaks, dtype=float)
     if peak_array.ndim != 2 or peak_array.shape[1] != 2 or not np.isfinite(peak_array).all():
         return "<em>Malformed spectrum</em>"
-    max_mz = max(float(peak_array[:, 0].max()), 1.0)
+    max_mz = max(float(peak_array[:, 0].max()), precursor_mz or 0.0, 1.0)
     max_intensity = max(float(peak_array[:, 1].max()), 1.0)
     lines = []
     for mz, intensity in peak_array:
         x = 5 + (width - 10) * float(mz) / max_mz
         y = height - 5 - (height - 10) * max(float(intensity), 0.0) / max_intensity
         lines.append(f'<line x1="{x:.1f}" y1="{height - 5}" x2="{x:.1f}" y2="{y:.1f}"/>')
+    precursor_line = ""
+    if precursor_mz is not None:
+        precursor_x = 5 + (width - 10) * precursor_mz / max_mz
+        precursor_line = (
+            f'<line x1="{precursor_x:.1f}" y1="5" x2="{precursor_x:.1f}" '
+            f'y2="{height - 5}" stroke="#555" stroke-width="1" stroke-dasharray="4 3"/>'
+        )
     return (
         f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="mass spectrum">'
         f'<g stroke="#2457a6" stroke-width="1">{"".join(lines)}</g>'
+        f"{precursor_line}"
         f'<line x1="5" y1="{height - 5}" x2="{width - 5}" y2="{height - 5}" '
         'stroke="#555"/></svg>'
     )
@@ -1137,15 +1311,14 @@ def write_review_html(
             f"replicate_best={row.replicate_best_similarity:.3f} | "
             f"cross_CE_orphan_intensity={row.cross_ce_orphan_intensity_fraction:.3f} | "
             f"UWPR_contaminant_only_intensity="
-            f"{row.uwpr_contaminant_only_intensity_fraction:.3f} | "
-            f"UWPR_D3_D4_label_flip_intensity="
-            f"{row.uwpr_dag_disagreement_intensity_fraction:.3f}"
+            f"{row.uwpr_contaminant_only_intensity_fraction:.3f}"
         )
         cards.append(
             "<article><h2>Priority "
             f"{row.review_priority}: {html.escape(row.review_reasons)}</h2><p>{metadata}</p>"
             f"<p>{evidence}</p>"
-            f"{_spectrum_svg(peaks_by_spec_id.get(row.spec_id, []))}</article>"
+            f"{_spectrum_svg(peaks_by_spec_id.get(row.spec_id, []), _pdf_precursor_mz(row))}"
+            "</article>"
         )
     glossary = "".join(
         f"<dt><code>{html.escape(reason)}</code> ({level})</dt><dd>{html.escape(explanation)}</dd>"
@@ -1181,6 +1354,19 @@ def _pdf_mz(row: object, name: str) -> str:
     return _pdf_mz_value(getattr(row, name, math.nan))
 
 
+def _pdf_wrecall(
+    spec_id: int,
+    dag_wrecall_by_spec_id: dict[int, dict[str, float]],
+) -> str:
+    """Format D3 and D4 intensity-weighted recall for one spectrum."""
+    values = dag_wrecall_by_spec_id.get(spec_id, {})
+    d3 = values.get("D3", math.nan)
+    d4 = values.get("D4", math.nan)
+    d3_text = f"{d3:.3f}" if np.isfinite(d3) else "n/a"
+    d4_text = f"{d4:.3f}" if np.isfinite(d4) else "n/a"
+    return f"wRecall D3={d3_text} | D4={d4_text}"
+
+
 def _pdf_ce_label(row: object) -> str:
     """Format available absolute and normalized collision energies."""
     labels = []
@@ -1189,6 +1375,65 @@ def _pdf_ce_label(row: object) -> str:
         if pd.notna(value):
             labels.append(f"{label}={float(value):g}")
     return ", ".join(labels) if labels else "CE unavailable"
+
+
+def _pdf_precursor_mz(row: object) -> float | None:
+    """Return recorded precursor m/z, falling back to the computed value."""
+    for name in ("prec_mz", "expected_prec_mz"):
+        value = row.get(name, math.nan) if isinstance(row, dict) else getattr(row, name, math.nan)
+        if pd.notna(value) and float(value) > 0.0:
+            return float(value)
+    return None
+
+
+def _plot_pdf_precursor_line(
+    axis: object,
+    precursor_mz: float | None,
+    color: str = "#555555",
+    label: str = "prec m/z",
+    linestyle: str = "--",
+    label_y: float = 0.98,
+) -> None:
+    """Draw and label a precursor marker without obscuring fragment sticks."""
+    if precursor_mz is None:
+        return
+    axis.axvline(
+        precursor_mz,
+        color=color,
+        linestyle=linestyle,
+        linewidth=0.9,
+        alpha=0.85,
+        zorder=0.5,
+    )
+    axis.text(
+        precursor_mz,
+        label_y,
+        label,
+        transform=axis.get_xaxis_transform(),
+        color=color,
+        fontsize=6,
+        rotation=90,
+        ha="right",
+        va="top",
+    )
+
+
+def _pdf_shared_x_max(
+    peaks_by_panel: Sequence[Sequence[Sequence[float]]],
+    records: Sequence[object],
+) -> float:
+    """Return an x limit containing every peak and precursor marker on a page."""
+    values = [
+        float(peak_arrays[0].max())
+        for peaks in peaks_by_panel
+        if (peak_arrays := _valid_peak_arrays(peaks)) is not None
+    ]
+    values.extend(
+        precursor_mz
+        for record in records
+        if (precursor_mz := _pdf_precursor_mz(record)) is not None
+    )
+    return max(values, default=1.0) * 1.03
 
 
 def _flag_count(candidates: pd.DataFrame, column: str) -> int:
@@ -1213,6 +1458,7 @@ def _plot_pdf_spectrum(
     color: str,
     x_max: float | None = None,
     peak_annotations: dict[str, list[float]] | None = None,
+    precursor_mz: float | None = None,
 ) -> None:
     """Draw one full-width PDF spectrum axis."""
     peak_arrays = _valid_peak_arrays(peaks)
@@ -1223,9 +1469,8 @@ def _plot_pdf_spectrum(
         normalized = intensities / intensities.max()
         axis.vlines(mzs, 0.0, normalized, color=color, linewidth=0.9)
         annotation_styles = {
-            "d3_d4_dag": ("#269653", "D3+D4 DAG"),
-            "d3_only_dag": ("#008c95", "D3-only DAG"),
-            "d4_only_dag": ("#7b4ab5", "D4-only DAG"),
+            "d3_dag": ("#269653", "D3 DAG"),
+            "d4_additional_dag": ("#7b4ab5", "D4+ DAG"),
             "uwpr_contaminant": ("#e07a19", "UWPR"),
         }
         for annotation, target_mzs in (peak_annotations or {}).items():
@@ -1257,6 +1502,7 @@ def _plot_pdf_spectrum(
         axis.set_xlim(0.0, x_max)
     elif peak_arrays is not None:
         axis.set_xlim(0.0, max(float(peak_arrays[0].max()) * 1.03, 1.0))
+    _plot_pdf_precursor_line(axis, precursor_mz)
     axis.set_title(title, fontsize=8, loc="left")
     axis.grid(axis="y", alpha=0.25, linewidth=0.4)
     axis.set_xlabel("m/z", fontsize=8)
@@ -1270,6 +1516,8 @@ def _plot_pdf_mirror_spectrum(
     comparison_peaks: Sequence[Sequence[float]],
     title: str,
     x_max: float,
+    primary_precursor_mz: float | None = None,
+    comparison_precursor_mz: float | None = None,
 ) -> None:
     """Draw primary and comparison spectra upward and downward on one axis."""
     primary = _valid_peak_arrays(primary_peaks)
@@ -1296,6 +1544,33 @@ def _plot_pdf_mirror_spectrum(
     axis.axhline(0.0, color="black", linewidth=0.6)
     axis.set_xlim(0.0, x_max)
     axis.set_ylim(-1.08, 1.08)
+    precursors_overlap = (
+        primary_precursor_mz is not None
+        and comparison_precursor_mz is not None
+        and math.isclose(primary_precursor_mz, comparison_precursor_mz, abs_tol=0.01)
+    )
+    if precursors_overlap:
+        _plot_pdf_precursor_line(
+            axis,
+            primary_precursor_mz,
+            label="target/conflict prec m/z",
+        )
+    else:
+        _plot_pdf_precursor_line(
+            axis,
+            primary_precursor_mz,
+            color="#2457a6",
+            label="target prec m/z",
+            linestyle="--",
+        )
+        _plot_pdf_precursor_line(
+            axis,
+            comparison_precursor_mz,
+            color="#8b2f2f",
+            label="conflict prec m/z",
+            linestyle=":",
+            label_y=0.72,
+        )
     axis.set_title(title, fontsize=8, loc="left")
     axis.grid(axis="y", alpha=0.25, linewidth=0.4)
     axis.set_xlabel("m/z", fontsize=8)
@@ -1304,6 +1579,66 @@ def _plot_pdf_mirror_spectrum(
         fontsize=8,
     )
     axis.tick_params(labelsize=7)
+
+
+def _group_pdf_candidate_pages(
+    rows: list[object],
+    formula_conflicts_by_spec_id: dict[int, list[dict[str, object]]],
+    same_ce_replicates_by_spec_id: dict[int, list[dict[str, object]]],
+    cross_ce_comparisons_by_spec_id: dict[int, list[dict[str, object]]],
+) -> list[list[object]]:
+    """Pack comparison-free candidates with the same molecule/adduct/instrument."""
+    comparison_spec_ids = {
+        int(spec_id)
+        for comparisons in (
+            formula_conflicts_by_spec_id,
+            same_ce_replicates_by_spec_id,
+            cross_ce_comparisons_by_spec_id,
+        )
+        for spec_id, spectra in comparisons.items()
+        if spectra
+    }
+    simple_groups: dict[tuple[int, str, str], list[object]] = {}
+    for row in rows:
+        if int(row.spec_id) in comparison_spec_ids:
+            continue
+        key = (int(row.mol_id), str(row.prec_type), str(row.inst_type))
+        simple_groups.setdefault(key, []).append(row)
+    for group in simple_groups.values():
+        group.sort(key=_pdf_candidate_ce_sort_key)
+
+    pages: list[list[object]] = []
+    emitted_groups: set[tuple[int, str, str]] = set()
+    for row in rows:
+        spec_id = int(row.spec_id)
+        if spec_id in comparison_spec_ids:
+            pages.append([row])
+            continue
+        key = (int(row.mol_id), str(row.prec_type), str(row.inst_type))
+        if key in emitted_groups:
+            continue
+        emitted_groups.add(key)
+        group = simple_groups[key]
+        pages.extend(
+            group[start : start + MAX_GROUPED_PDF_PANELS]
+            for start in range(0, len(group), MAX_GROUPED_PDF_PANELS)
+        )
+    return pages
+
+
+def _pdf_candidate_ce_sort_key(row: object) -> tuple[bool, float, int]:
+    """Sort grouped candidates from lower to higher preferred collision energy."""
+    nce = getattr(row, "nce", math.nan)
+    ace = getattr(row, "ace", math.nan)
+    if str(row.inst_type) == "FT" and not _is_missing(nce):
+        ce_value = float(nce)
+    elif not _is_missing(ace):
+        ce_value = float(ace)
+    elif not _is_missing(nce):
+        ce_value = float(nce)
+    else:
+        ce_value = math.inf
+    return not math.isfinite(ce_value), ce_value, int(row.spec_id)
 
 
 def write_review_pdf(
@@ -1315,12 +1650,10 @@ def write_review_pdf(
     cross_ce_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
     same_ce_replicates_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
     uwpr_annotations_by_spec_id: dict[int, dict[str, list[float]]] | None = None,
-    formula_conflict_comparisons_by_spec_id: dict[
-        int, list[dict[str, object]]
-    ]
-    | None = None,
+    dag_wrecall_by_spec_id: dict[int, dict[str, float]] | None = None,
+    formula_conflict_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
 ) -> None:
-    """Write one candidate per page with its relevant comparison spectra."""
+    """Write candidate pages with grouped targets or dedicated comparison spectra."""
     if total_candidate_count is None:
         total_candidate_count = len(candidates)
     if smiles_by_mol_id is None:
@@ -1331,6 +1664,8 @@ def write_review_pdf(
         same_ce_replicates_by_spec_id = {}
     if uwpr_annotations_by_spec_id is None:
         uwpr_annotations_by_spec_id = {}
+    if dag_wrecall_by_spec_id is None:
+        dag_wrecall_by_spec_id = {}
     if formula_conflict_comparisons_by_spec_id is None:
         formula_conflict_comparisons_by_spec_id = {}
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
@@ -1359,7 +1694,8 @@ def write_review_pdf(
             "Priority is a triage score, not a probability of bad data. Review the molecular "
             "assignment, precursor/adduct/polarity, same-CE replicates, adjacent collision "
             "energies, and evidence fields before choosing keep, exclude, or needs_followup. "
-            "D3/D4 label flips are context, not an exclusion rule."
+            "Peak-level DAG feasibility is supporting context; soft-only candidates with D3 "
+            "or D4 wRecall at or above 0.75 are omitted from visual review but retained in CSV."
         )
         fig.text(0.12, 0.74, summary, fontsize=14, linespacing=1.7, va="top")
         fig.text(
@@ -1373,7 +1709,8 @@ def write_review_pdf(
         fig.text(
             0.12,
             0.18,
-            "Thresholds: replicate ≤0.50 with peer consensus ≥0.80; "
+            "Thresholds: D3 or D4 wRecall ≥0.75 excluded; "
+            "replicate ≤0.50 with peer consensus ≥0.80; "
             "cross-CE orphan intensity ≥20%; D3+D4 contaminant consensus intensity ≥5%.",
             fontsize=10,
         )
@@ -1405,33 +1742,134 @@ def write_review_pdf(
         rows = list(
             candidates[candidates["spec_id"].isin(peaks_by_spec_id)].itertuples(index=False)
         )
+        candidate_pages = _group_pdf_candidate_pages(
+            rows,
+            formula_conflict_comparisons_by_spec_id,
+            same_ce_replicates_by_spec_id,
+            cross_ce_comparisons_by_spec_id,
+        )
         page_number = 0
-        for row in rows:
+        for page_rows in candidate_pages:
+            page_number += 1
+            if len(page_rows) > 1:
+                first_row = page_rows[0]
+                mol_id = int(first_row.mol_id)
+                n_plots = len(page_rows)
+                ncols = 2
+                nrows = math.ceil(n_plots / ncols)
+                page_height = max(8.5, 2.25 * nrows + 2.4)
+                fig = plt.figure(figsize=(13.5, page_height), constrained_layout=False)
+                grid_top = 1.0 - (1.65 / page_height)
+                grid_bottom = 0.55 / page_height
+                grid = fig.add_gridspec(
+                    nrows,
+                    ncols,
+                    left=0.045,
+                    right=0.985,
+                    top=grid_top,
+                    bottom=grid_bottom,
+                    hspace=0.9,
+                    wspace=0.18,
+                )
+                header_bottom = grid_top + 0.01
+                header_top = 1.0 - (0.1 / page_height)
+                header_axis = fig.add_axes([0.055, header_bottom, 0.91, header_top - header_bottom])
+                header_axis.axis("off")
+                plot_axes = np.array(
+                    [
+                        [fig.add_subplot(grid[plot_row, col]) for col in range(ncols)]
+                        for plot_row in range(nrows)
+                    ]
+                ).ravel()
+                grouped_page_peaks = [
+                    peaks_by_spec_id.get(int(grouped_row.spec_id), []) for grouped_row in page_rows
+                ]
+                shared_x_max = _pdf_shared_x_max(grouped_page_peaks, page_rows)
+                for axis, grouped_row in zip(plot_axes, page_rows, strict=False):
+                    grouped_spec_id = int(grouped_row.spec_id)
+                    reason = str(grouped_row.review_reasons).replace(";", "; ")
+                    _plot_pdf_spectrum(
+                        axis,
+                        peaks_by_spec_id.get(grouped_spec_id, []),
+                        f"REVIEW TARGET | Priority {grouped_row.review_priority} | "
+                        f"spec {grouped_spec_id} | NIST {grouped_row.dset_spec_id} | "
+                        f"{_pdf_ce_label(grouped_row)}\n"
+                        f"{_pdf_wrecall(grouped_spec_id, dag_wrecall_by_spec_id)} | "
+                        f"prec m/z recorded={_pdf_mz(grouped_row, 'prec_mz')}, "
+                        f"computed={_pdf_mz(grouped_row, 'expected_prec_mz')}\n"
+                        f"{reason}",
+                        "#2457a6",
+                        shared_x_max,
+                        uwpr_annotations_by_spec_id.get(grouped_spec_id, {}),
+                        precursor_mz=_pdf_precursor_mz(grouped_row),
+                    )
+                    axis.set_facecolor("#fff6cf")
+                    for spine in axis.spines.values():
+                        spine.set_color("#d18b00")
+                        spine.set_linewidth(1.4)
+                for axis in plot_axes[n_plots:]:
+                    axis.axis("off")
+
+                metadata = (
+                    f"review page {page_number} | grouped review targets={len(page_rows)} | "
+                    f"mol {mol_id} | {first_row.prec_type} | {first_row.formula} | "
+                    f"{first_row.inst_type}\n"
+                    "same molecule + adduct + instrument; each highlighted panel is a "
+                    "separate review candidate"
+                )
+                header_axis.text(
+                    0.01,
+                    0.96,
+                    "\n".join(textwrap.fill(line, 95) for line in metadata.splitlines()),
+                    transform=header_axis.transAxes,
+                    fontsize=7.5,
+                    va="top",
+                )
+                mol_image = _mol_image_array(smiles_by_mol_id.get(mol_id))
+                if mol_image is None:
+                    header_axis.text(
+                        0.86,
+                        0.5,
+                        "Molecule structure unavailable",
+                        transform=header_axis.transAxes,
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                    )
+                else:
+                    structure_axis = header_axis.inset_axes([0.72, 0.02, 0.26, 0.94])
+                    structure_axis.imshow(mol_image)
+                    structure_axis.axis("off")
+                pdf.savefig(fig, bbox_inches="tight")
+                plt.close(fig)
+                continue
+
+            row = page_rows[0]
             spec_id = int(row.spec_id)
             mol_id = int(row.mol_id)
             formula_conflicts = (
                 formula_conflict_comparisons_by_spec_id.get(spec_id, [])
                 if bool(row.duplicate_spectrum_formula_conflict)
                 else []
-            )
+            )[:MAX_DEDICATED_COMPARISON_PANELS]
+            remaining_comparison_panels = MAX_DEDICATED_COMPARISON_PANELS - len(formula_conflicts)
             same_ce_replicates = (
                 same_ce_replicates_by_spec_id.get(spec_id, [])
                 if bool(row.replicate_consensus_disagreement)
                 else []
-            )
+            )[:remaining_comparison_panels]
+            remaining_comparison_panels -= len(same_ce_replicates)
             cross_ce_comparisons = (
                 cross_ce_comparisons_by_spec_id.get(spec_id, [])
                 if bool(row.substantial_cross_ce_orphan_intensity)
                 else []
-            )
+            )[:remaining_comparison_panels]
             comparisons = formula_conflicts + same_ce_replicates + cross_ce_comparisons
-            page_number += 1
             n_plots = 1 + len(comparisons)
             ncols = 2
             nrows = math.ceil(n_plots / ncols)
             page_height = max(8.5, 2.25 * nrows + 2.4)
             fig = plt.figure(figsize=(13.5, page_height), constrained_layout=False)
-            header_height = 1.35 / page_height
             grid_top = 1.0 - (1.65 / page_height)
             grid_bottom = 0.55 / page_height
             grid = fig.add_gridspec(
@@ -1444,7 +1882,9 @@ def write_review_pdf(
                 hspace=0.74,
                 wspace=0.18,
             )
-            header_axis = fig.add_axes([0.055, grid_top + 0.02, 0.91, header_height])
+            header_bottom = grid_top + 0.01
+            header_top = 1.0 - (0.1 / page_height)
+            header_axis = fig.add_axes([0.055, header_bottom, 0.91, header_top - header_bottom])
             header_axis.axis("off")
             axes = np.array(
                 [
@@ -1457,18 +1897,7 @@ def write_review_pdf(
             page_peaks = [peaks_by_spec_id.get(spec_id, [])] + [
                 comparison["peaks"] for comparison in comparisons
             ]
-            valid_page_peaks = [
-                peak_arrays
-                for peaks in page_peaks
-                if (peak_arrays := _valid_peak_arrays(peaks)) is not None
-            ]
-            shared_x_max = (
-                max(
-                    [float(peak_arrays[0].max()) for peak_arrays in valid_page_peaks],
-                    default=1.0,
-                )
-                * 1.03
-            )
+            shared_x_max = _pdf_shared_x_max(page_peaks, [row, *comparisons])
             reason = textwrap.fill(
                 str(row.review_reasons).replace(";", "; "),
                 width=55,
@@ -1482,18 +1911,21 @@ def write_review_pdf(
                 )
                 for axis, spectrum in zip(plot_axes, cross_ce_spectra, strict=False):
                     ce_label = (
-                        f"{str(spectrum['ce_source']).upper()}="
-                        f"{float(spectrum['ce_value']):g}"
+                        f"{str(spectrum['ce_source']).upper()}=" f"{float(spectrum['ce_value']):g}"
                     )
                     if bool(spectrum["is_review_target"]):
                         _plot_pdf_spectrum(
                             axis,
                             spectrum["peaks"],
                             f"REVIEW TARGET — CROSS-CE ORPHAN | Priority "
-                            f"{row.review_priority} | spec {spec_id} | {ce_label}\n{reason}",
+                            f"{row.review_priority} | spec {spec_id} | {ce_label}\n"
+                            f"{_pdf_wrecall(spec_id, dag_wrecall_by_spec_id)} | "
+                            f"CE bins shown={spectrum['n_other_ce_bins_shown']}/"
+                            f"{spectrum['n_other_ce_bins_available']} | {reason}",
                             "#2457a6",
                             shared_x_max,
                             uwpr_annotations_by_spec_id.get(spec_id, {}),
+                            precursor_mz=_pdf_precursor_mz(spectrum),
                         )
                         axis.set_facecolor("#fff6cf")
                         for spine in axis.spines.values():
@@ -1504,9 +1936,11 @@ def write_review_pdf(
                             axis,
                             spectrum["peaks"],
                             f"OTHER CE | {ce_label} | spec {spectrum['spec_id']} | "
-                            f"NIST {spectrum['dset_spec_id']}",
+                            f"NIST {spectrum['dset_spec_id']}\n"
+                            f"{_pdf_wrecall(int(spectrum['spec_id']), dag_wrecall_by_spec_id)}",
                             "#b04a35",
                             shared_x_max,
+                            precursor_mz=_pdf_precursor_mz(spectrum),
                         )
                 comparison_axes = iter(plot_axes[len(cross_ce_spectra) :])
             else:
@@ -1514,10 +1948,12 @@ def write_review_pdf(
                     plot_axes[0],
                     primary_peaks,
                     f"REVIEW TARGET | Priority {row.review_priority} | spec {spec_id} | "
-                    f"{_pdf_ce_label(row)}\n{reason}",
+                    f"{_pdf_ce_label(row)}\n"
+                    f"{_pdf_wrecall(spec_id, dag_wrecall_by_spec_id)} | {reason}",
                     "#2457a6",
                     shared_x_max,
                     uwpr_annotations_by_spec_id.get(spec_id, {}),
+                    precursor_mz=_pdf_precursor_mz(row),
                 )
                 comparison_axes = iter(plot_axes[1:])
             for comparison in formula_conflicts:
@@ -1531,19 +1967,14 @@ def write_review_pdf(
                     f"NIST {comparison['dset_spec_id']} | {_pdf_ce_label(comparison)} | "
                     f"cos={float(comparison['cosine_similarity']):.4f}\n"
                     "EXACT DUPLICATE, DIFFERENT FORMULA | "
-                    f"{comparison['formula']} | {comparison['prec_type']} | "
+                    f"{comparison['formula']} | {comparison['prec_type']}\n"
+                    f"{_pdf_wrecall(int(comparison['spec_id']), dag_wrecall_by_spec_id)} | "
                     f"prec m/z recorded={_pdf_mz_value(comparison['prec_mz'])}, "
                     f"computed={_pdf_mz_value(comparison['expected_prec_mz'])}",
                     shared_x_max,
+                    primary_precursor_mz=_pdf_precursor_mz(row),
+                    comparison_precursor_mz=_pdf_precursor_mz(comparison),
                 )
-                duplicate_mol_image = _mol_image_array(
-                    smiles_by_mol_id.get(int(comparison["mol_id"]))
-                )
-                if duplicate_mol_image is not None:
-                    structure_axis = axis.inset_axes([0.03, 0.57, 0.42, 0.35])
-                    structure_axis.imshow(duplicate_mol_image)
-                    structure_axis.set_facecolor("white")
-                    structure_axis.axis("off")
             for comparison in same_ce_replicates:
                 axis = next(comparison_axes)
                 _plot_pdf_spectrum(
@@ -1551,9 +1982,11 @@ def write_review_pdf(
                     comparison["peaks"],
                     "SAME-CE REPLICATE | "
                     f"spec {comparison['spec_id']} | NIST {comparison['dset_spec_id']} | "
-                    f"{_pdf_ce_label(comparison)}",
+                    f"{_pdf_ce_label(comparison)}\n"
+                    f"{_pdf_wrecall(int(comparison['spec_id']), dag_wrecall_by_spec_id)}",
                     "#6f4a8e",
                     shared_x_max,
+                    precursor_mz=_pdf_precursor_mz(comparison),
                 )
             for axis in plot_axes[n_plots:]:
                 axis.axis("off")
@@ -1568,20 +2001,53 @@ def write_review_pdf(
                 f"families: {families} | "
                 f"replicate best={_pdf_metric(row, 'replicate_best_similarity')} | "
                 f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
-                f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')} | "
-                f"D3/D4 label-flip="
-                f"{_pdf_metric(row, 'uwpr_dag_disagreement_intensity_fraction')}"
+                f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')}"
             )
             header_axis.text(
                 0.01,
                 0.96,
-                "\n".join(textwrap.fill(line, 95) for line in metadata.splitlines()),
+                "\n".join(
+                    textwrap.fill(line, 65 if formula_conflicts else 95)
+                    for line in metadata.splitlines()
+                ),
                 transform=header_axis.transAxes,
                 fontsize=7.5,
                 va="top",
             )
             mol_image = _mol_image_array(smiles_by_mol_id.get(mol_id))
-            if mol_image is None:
+            if formula_conflicts:
+                structure_entries = [("REVIEW TARGET", mol_image)]
+                structure_entries.extend(
+                    (
+                        f"CONFLICT spec {comparison['spec_id']}",
+                        _mol_image_array(smiles_by_mol_id.get(int(comparison["mol_id"]))),
+                    )
+                    for comparison in formula_conflicts
+                )
+                structure_width = 0.43 / len(structure_entries)
+                for structure_idx, (label, image) in enumerate(structure_entries):
+                    structure_axis = header_axis.inset_axes(
+                        [
+                            0.56 + structure_idx * structure_width,
+                            0.02,
+                            structure_width * 0.96,
+                            0.9,
+                        ]
+                    )
+                    if image is None:
+                        structure_axis.text(
+                            0.5,
+                            0.5,
+                            "Structure unavailable",
+                            ha="center",
+                            va="center",
+                            fontsize=6,
+                        )
+                    else:
+                        structure_axis.imshow(image)
+                    structure_axis.set_title(label, fontsize=6, pad=1)
+                    structure_axis.axis("off")
+            elif mol_image is None:
                 header_axis.text(
                     0.86,
                     0.5,
@@ -1608,12 +2074,29 @@ def main() -> None:
     parser.add_argument("--out_html", default=None)
     parser.add_argument("--out_pdf", default=None)
     parser.add_argument(
+        "--d3_frag_dp",
+        default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse_mbfs/dags",
+        help="D3 MBFS DAG directory used for the wRecall gate and PDF labels.",
+    )
+    parser.add_argument(
+        "--d4_frag_dp",
+        default="data/frag/nist20_ma_mi_d4_h4_isoFalse_smpFalse/dags",
+        help="D4 DAG directory used for PDF wRecall.",
+    )
+    parser.add_argument(
+        "--dag_n_jobs",
+        type=int,
+        default=data_utils.JOBLIB_N_JOBS,
+        help="Parallel molecule workers for D3/D4 wRecall scoring.",
+    )
+    parser.add_argument(
         "--uwpr_feasibility_csv",
         nargs="+",
         default=["data/uwpr/nist20_uwpr_hits_feasibility.csv"],
         help=(
-            "One or more UWPR/MaConDa feasibility files. Multiple files require unanimous "
-            "contaminant_only labels before increasing review priority."
+            "One or more UWPR/MaConDa feasibility files. Every source returning a decision "
+            "must label a peak contaminant_only before it increases priority; undecidable "
+            "sources abstain."
         ),
     )
     parser.add_argument("--max_html_spectra", type=int, default=500)
@@ -1676,16 +2159,36 @@ def main() -> None:
             },
         )
     candidates = finalize_review_queue(review_df)
+    candidate_count_before_dag_gate = len(candidates)
+    log.info(
+        "Computing D3/D4 wRecall review gate for %d candidates",
+        candidate_count_before_dag_gate,
+    )
+    candidate_dag_wrecall = collect_dag_weighted_recall(
+        spec_df,
+        set(candidates["spec_id"].astype(int)),
+        {"D3": args.d3_frag_dp, "D4": args.d4_frag_dp},
+        n_jobs=args.dag_n_jobs,
+    )
+    candidates = apply_dag_wrecall_review_gate(candidates, candidate_dag_wrecall)
+    n_wrecall_gated = int(candidates["dag_wrecall_gated"].sum())
+    log.info(
+        "D3/D4 wRecall gate marked %d soft-only candidates at or above %.2f; "
+        "all candidates remain in the CSV",
+        n_wrecall_gated,
+        DAG_WRECALL_REVIEW_CUTOFF,
+    )
     os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
     candidates.to_csv(args.out_csv, index=False)
     log.info("Saved %d review candidates to %s", len(candidates), args.out_csv)
 
+    visual_candidates = candidates[~candidates["dag_wrecall_gated"]]
     if args.out_pdf:
-        pdf_queue = candidates[candidates["prec_type"].isin(args.pdf_prec_types)]
+        pdf_queue = visual_candidates[visual_candidates["prec_type"].isin(args.pdf_prec_types)]
     if args.out_html or args.out_pdf:
         wanted_ids: set[int] = set()
         if args.out_html:
-            wanted_ids.update(candidates.head(args.max_html_spectra)["spec_id"])
+            wanted_ids.update(visual_candidates.head(args.max_html_spectra)["spec_id"])
         if args.out_pdf:
             wanted_ids.update(pdf_queue.head(args.max_pdf_spectra)["spec_id"])
         peaks_by_spec_id = {
@@ -1695,7 +2198,7 @@ def main() -> None:
             ].itertuples(index=False)
         }
     if args.out_html:
-        html_candidates = candidates.head(args.max_html_spectra)
+        html_candidates = visual_candidates.head(args.max_html_spectra)
         write_review_html(html_candidates, peaks_by_spec_id, args.out_html)
         log.info("Saved visual review report to %s", args.out_html)
     if args.out_pdf:
@@ -1703,14 +2206,29 @@ def main() -> None:
         cross_ce_comparisons_by_spec_id = collect_cross_ce_comparison_spectra(
             spec_df, pdf_candidates
         )
-        same_ce_replicates_by_spec_id = collect_same_ce_replicate_spectra(
-            spec_df, pdf_candidates
-        )
+        same_ce_replicates_by_spec_id = collect_same_ce_replicate_spectra(spec_df, pdf_candidates)
         uwpr_annotations_by_spec_id = collect_uwpr_peak_annotations(
             uwpr_paths if args.uwpr_feasibility_csv else [], pdf_candidates
         )
         formula_conflict_comparisons_by_spec_id = collect_formula_conflict_comparison_spectra(
             spec_df, review_df, pdf_candidates
+        )
+        pdf_plot_spec_ids = set(pdf_candidates["spec_id"].astype(int))
+        for comparisons_by_spec_id in (
+            cross_ce_comparisons_by_spec_id,
+            same_ce_replicates_by_spec_id,
+            formula_conflict_comparisons_by_spec_id,
+        ):
+            pdf_plot_spec_ids.update(
+                int(comparison["spec_id"])
+                for comparisons in comparisons_by_spec_id.values()
+                for comparison in comparisons
+            )
+        dag_wrecall_by_spec_id = collect_dag_weighted_recall(
+            spec_df,
+            pdf_plot_spec_ids,
+            {"D3": args.d3_frag_dp, "D4": args.d4_frag_dp},
+            n_jobs=args.dag_n_jobs,
         )
         wanted_mol_ids = set(pdf_candidates["mol_id"])
         wanted_mol_ids.update(
@@ -1726,14 +2244,13 @@ def main() -> None:
             pdf_candidates,
             peaks_by_spec_id,
             args.out_pdf,
-            total_candidate_count=len(pdf_queue),
+            total_candidate_count=len(candidates),
             smiles_by_mol_id=smiles_by_mol_id,
             cross_ce_comparisons_by_spec_id=cross_ce_comparisons_by_spec_id,
             same_ce_replicates_by_spec_id=same_ce_replicates_by_spec_id,
             uwpr_annotations_by_spec_id=uwpr_annotations_by_spec_id,
-            formula_conflict_comparisons_by_spec_id=(
-                formula_conflict_comparisons_by_spec_id
-            ),
+            dag_wrecall_by_spec_id=dag_wrecall_by_spec_id,
+            formula_conflict_comparisons_by_spec_id=(formula_conflict_comparisons_by_spec_id),
         )
         log.info("Saved PDF review report to %s", args.out_pdf)
 

@@ -30,8 +30,6 @@ import functools
 import logging
 
 import pandas as pd
-
-from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 # Reuse the exact ion-mass / H-transfer / tolerance conventions from the oracle scorer.
@@ -41,6 +39,7 @@ from dag_oracle_scores import (  # noqa: E402  (local script import)
     _detect_is_compressed,
     _tolerance_for_inst_type,
 )
+from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
@@ -141,6 +140,14 @@ def main() -> None:
     spec_df = pd.read_pickle(args.spec_fp)[["spec_id", "dset", "prec_type"]]
     if args.dsets:
         spec_df = spec_df[spec_df["dset"].isin(args.dsets)]
+        n_before_scope = len(hits)
+        hits = hits[hits["spec_id"].isin(spec_df["spec_id"])]
+        log.info(
+            "Scoped hits to dsets=%s: retained %d/%d rows",
+            args.dsets,
+            len(hits),
+            n_before_scope,
+        )
     spec_df = spec_df.drop(columns=["dset"])
     hits = hits.merge(spec_df, on="spec_id", how="left")
     n_no_prec = hits["prec_type"].isna().sum()

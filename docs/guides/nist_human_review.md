@@ -22,26 +22,48 @@ The HTML and PDF default to the top 500 ranked candidates. Each PDF review page 
 two-column CE-spectrum grid as `plot_ce_trend_anomaly_groups.py`, with a shared header and molecular
 structure. The header reports recorded precursor m/z, computed precursor m/z, and precursor error
 in ppm when the precursor type is supported. When `substantial_cross_ce_orphan_intensity` is
-present, the grid also plots spectra from every other collision-energy bin used by that comparison.
-Those panels are sorted from low to high using the detector-selected NCE or ACE value, with the
-review target inserted at its corresponding CE and highlighted with a pale background and border.
+present, the grid plots one representative spectrum per other collision-energy bin, capped at the
+11 nearest bins. Those panels are sorted from low to high using the detector-selected NCE or ACE
+value, with the review target inserted at its corresponding CE and highlighted with a pale
+background and border.
 Cross-CE panels fill each column from top to bottom before continuing in the next column.
+Candidates sharing molecule ID, precursor type, and instrument type are packed onto the same page,
+up to 12 panels, when none requires a dedicated comparison layout. They are ordered from lower to
+higher collision energy, using NCE for FT spectra when available and ACE otherwise; missing CE is
+last. Each candidate remains separately highlighted and labeled. Mirror, same-CE replicate, and
+cross-CE comparison pages remain dedicated to one candidate so their evidence panels stay
+unambiguous. Dedicated pages show at most 11 total comparison panels; formula conflicts are kept
+first, followed by same-CE replicates and then other-CE spectra.
 For `replicate_consensus_disagreement`, every valid same-CE peer used by the consensus calculation
 is plotted on the candidate page.
-For `substantial_uwpr_contaminant_only_intensity` and D3/D4 label flips, peaks feasible in both DAGs
-are green and labeled `D3+D4 DAG`, D3-only peaks are teal, D4-only peaks are purple, and peaks called
-`contaminant_only` by every supplied source are orange and labeled `UWPR`. The PDF header calls
-`uwpr_dag_disagreement_intensity_fraction` the `D3/D4 label-flip` fraction because D4 is independently
-generated and is not guaranteed to be a superset of D3.
+For `substantial_uwpr_contaminant_only_intensity`, D3 `dag_feasible` peaks are green and labeled
+`D3 DAG`, peaks that become feasible only in D4 are purple and labeled `D4+ DAG`, and peaks called
+`contaminant_only` by every source returning a decision are orange and labeled `UWPR`; undecidable
+sources abstain. Only the orange consensus category supports bad-data priority; DAG-feasible
+matches are context.
 For `duplicate_spectrum_formula_conflict`, the grid plots every exact duplicate partner and labels
 its molecule ID, formula, adduct, recorded and computed precursor m/z, and molecular structure. The
 comparison uses a mirror plot with the primary spectrum upward, the conflicting assignment
 downward, and their cosine similarity in the title. The page labels the primary record `REVIEW
 TARGET` and its comparison `CONFLICTING ASSIGNMENT`; these roles are relative to that page and do
-not assert which record is incorrect.
-All plots on the page use the same m/z scale, fill left-to-right from the top-left, hide unused grid
-cells, grow vertically as needed, and label the available ACE and/or NCE collision energy. A
-fixed-height header keeps the spectrum grid near the top of every page.
+not assert which record is incorrect. Target and conflicting molecular structures are placed in a
+reserved header strip so they never cover spectrum peaks.
+All plots on the page use the same m/z scale, start at the top-left, hide unused grid cells, and
+label the available ACE and/or NCE collision energy. Non-cross-CE grids fill left-to-right;
+cross-CE grids use the column-major order described above. A fixed-height header keeps the
+spectrum grid near the top of every page. A dashed vertical line marks recorded precursor m/z,
+falling back to computed precursor m/z when the recorded value is unavailable; mirror plots use
+one combined marker within 0.01 Da and separate blue target and red conflict markers when the
+values differ more substantially.
+Every plotted spectrum title reports D3 and D4 `wRecall`, the fraction of its observed intensity
+matched by the corresponding DAG under the instrument-specific m/z tolerance. The default D3
+wRecall build is the same MBFS build used by `uwpr_feasibility.py`, so green D3 peak annotations
+and the displayed D3 score use one DAG definition.
+Candidates with D3 or D4 `wRecall >= 0.75` are marked `dag_wrecall_gated` when they have only
+soft spectral evidence. They remain in the CSV for auditing but are omitted from HTML/PDF review.
+Hard conflicts, record-integrity, metadata-completeness/consistency, and label-ambiguity evidence
+are exempt because DAG explainability cannot refute those defects. Low or unavailable D3/D4
+`wRecall` does not create a bad-data reason.
 The PDF defaults to `[M+H]+`, `[M-H]-`, `[M+Na]+`, `[M+K]+`, `[M+Cl]-`, and `[M]+`; change the list
 with `--pdf_prec_types` and the limit with `--max_pdf_spectra`.
 
@@ -84,8 +106,8 @@ can influence exclusions.
 
 The CSV also reports all UWPR/MaConDa mass-matched intensity as context. When multiple feasibility
 files are supplied, only peaks labelled `contaminant_only` by every file increase review priority;
-D3/D4 label flips are reported separately. These labels depend on the DAG, so record each
-depth/configuration with the review artifact.
+D3/D4 feasibility disagreements remain available as diagnostic CSV fields but are excluded from
+the human-review display and priority because they describe DAG instability, not spectrum quality.
 
 Unsupported precursor types are retained as context but do not increase review priority. The
 precursor sanity check canonicalizes known NIST spellings such as `[M+H-H2O]+`,
@@ -119,8 +141,8 @@ than evidence of measurement mass accuracy.
   collision-energy fields is present.
 - `negative_collision_energy` — **Heuristic:** At least one recorded collision-energy value is
   negative.
-- `sparse_spectrum` — **Heuristic:** The spectrum has only one or two peaks. This is a low-priority
-  review prompt, not evidence that the spectrum is wrong.
+- `sparse_spectrum` — **Context:** The spectrum has only one or two peaks. It does not enter the
+  queue or increase review priority by itself.
 - `single_peak_dominates` — **Heuristic:** The spectrum has at least three peaks and one peak
   carries at least 98% of total intensity.
 - `unsorted_peak_mz` — **Heuristic:** Peak m/z values are not stored in ascending order.
@@ -133,8 +155,8 @@ than evidence of measurement mass accuracy.
   peaks absent from every spectrum in at least two other collision-energy bins for the same
   molecule/adduct.
 - `substantial_uwpr_contaminant_only_intensity` — **Heuristic:** At least 5% of intensity matches
-  UWPR/MaConDa contaminant ions that every supplied DAG feasibility source labels
-  contaminant-only.
+  UWPR/MaConDa contaminant ions that every DAG source returning a feasibility decision labels
+  contaminant-only; undecidable sources abstain.
 - `duplicate_spectrum_structure_ambiguity` — **Heuristic:** The same exact-export spectrum with at
   least three peaks is assigned to different structures sharing one formula; this can be label
   ambiguity among isomers.

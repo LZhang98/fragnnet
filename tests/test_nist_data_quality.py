@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 import torch as th
+from matplotlib import pyplot as plt
 
 EVAL_SCRIPTS_DP = Path(__file__).parents[1] / "scripts" / "eval"
 sys.path.insert(0, str(EVAL_SCRIPTS_DP))
@@ -25,11 +27,16 @@ from nist_bad_data_review import (  # noqa: E402
     HEURISTIC_FLAG_WEIGHTS,
     PRECURSOR_TYPE_TO_MASS_DIFF,
     REVIEW_FLAG_GLOSSARY,
+    _dag_weighted_recall,
+    _group_pdf_candidate_pages,
     _ordered_cross_ce_spectra,
+    _pdf_shared_x_max,
+    _plot_pdf_spectrum,
     add_cross_ce_orphan_signals,
     add_replicate_consensus_signals,
     add_uwpr_signals,
     analyze_spectrum,
+    apply_dag_wrecall_review_gate,
     canonicalize_prec_type,
     collect_cross_ce_comparison_spectra,
     collect_formula_conflict_comparison_spectra,
@@ -48,6 +55,7 @@ def test_every_review_flag_has_a_glossary_entry() -> None:
         "duplicate_spectrum_cross_molecule",
         "prec_type_was_normalized",
         "duplicate_spectrum_same_structure",
+        "sparse_spectrum",
     }
 
     assert set(REVIEW_FLAG_GLOSSARY) == emitted_reasons | context_only_flags
@@ -56,6 +64,132 @@ def test_every_review_flag_has_a_glossary_entry() -> None:
     )
     assert all(REVIEW_FLAG_GLOSSARY[flag][0] == "Context" for flag in context_only_flags)
     assert all(explanation.strip() for _, explanation in REVIEW_FLAG_GLOSSARY.values())
+
+
+def test_dag_weighted_recall_uses_observed_intensity() -> None:
+    wrecall = _dag_weighted_recall(
+        [(20.0, 1.0), (40.0, 3.0)],
+        np.array([20.001]),
+        "FT",
+    )
+
+    assert wrecall == pytest.approx(0.25)
+
+
+def test_pdf_spectrum_marks_and_includes_precursor_mz() -> None:
+    row = SimpleNamespace(prec_mz=100.0, expected_prec_mz=99.9)
+    x_max = _pdf_shared_x_max([[(20.0, 1.0)]], [row])
+    figure, axis = plt.subplots()
+
+    _plot_pdf_spectrum(axis, [(20.0, 1.0)], "test", "#2457a6", x_max, precursor_mz=100.0)
+
+    assert x_max == pytest.approx(103.0)
+    assert any(np.allclose(line.get_xdata(), [100.0, 100.0]) for line in axis.lines)
+    assert any(label.get_text() == "prec m/z" for label in axis.texts)
+    plt.close(figure)
+
+
+def test_dag_wrecall_gate_only_marks_high_coverage_soft_spectral_evidence() -> None:
+    candidates = pd.DataFrame(
+        {
+            "spec_id": [1, 2, 3, 4, 5, 6, 7],
+            "has_hard_evidence": [False, False, False, False, False, True, False],
+            "evidence_families": [
+                "cross_ce_orphans",
+                "cross_ce_orphans",
+                "contaminant_library",
+                "cross_ce_orphans",
+                "cross_ce_orphans",
+                "record_integrity",
+                "metadata_completeness",
+            ],
+        }
+    )
+    recalls = {
+        1: {"D3": 0.749, "D4": 0.01},
+        2: {"D3": 0.75, "D4": 0.01},
+        3: {"D3": 0.01, "D4": 0.99},
+        4: {"D3": np.nan, "D4": np.nan},
+        5: {"D3": 0.1, "D4": 0.2},
+        6: {"D3": 0.99, "D4": 0.99},
+        7: {"D3": 0.99, "D4": 0.99},
+    }
+
+    gated = apply_dag_wrecall_review_gate(candidates, recalls)
+
+    assert gated["spec_id"].tolist() == [1, 2, 3, 4, 5, 6, 7]
+    assert gated["dag_wrecall_gated"].tolist() == [
+        False,
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert gated["dag_wrecall_gate_exempt"].tolist() == [
+        False,
+        False,
+        False,
+        False,
+        False,
+        True,
+        True,
+    ]
+    assert gated["dag_wrecall_d3"].iloc[0] == pytest.approx(0.749)
+    assert gated["dag_wrecall_d4"].iloc[0] == pytest.approx(0.01)
+    assert gated["dag_wrecall_max"].iloc[0] == pytest.approx(0.749)
+    assert pd.isna(gated["dag_wrecall_max"].iloc[3])
+
+
+def test_pdf_pages_group_same_molecule_adduct_and_instrument() -> None:
+    rows = [
+        SimpleNamespace(spec_id=spec_id, mol_id=10, prec_type="[M+H]+", inst_type="FT")
+        for spec_id in range(1, 15)
+    ]
+    rows.append(SimpleNamespace(spec_id=20, mol_id=11, prec_type="[M+H]+", inst_type="FT"))
+
+    pages = _group_pdf_candidate_pages(rows, {3: [{"spec_id": 30}]}, {}, {})
+
+    assert [[row.spec_id for row in page] for page in pages] == [
+        [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+        [14],
+        [3],
+        [20],
+    ]
+
+
+def test_grouped_pdf_candidates_put_higher_ce_after_lower_ce() -> None:
+    rows = [
+        SimpleNamespace(
+            spec_id=1,
+            mol_id=10,
+            prec_type="[M+H]+",
+            inst_type="FT",
+            nce=40.0,
+            ace=np.nan,
+        ),
+        SimpleNamespace(
+            spec_id=2,
+            mol_id=10,
+            prec_type="[M+H]+",
+            inst_type="FT",
+            nce=10.0,
+            ace=np.nan,
+        ),
+        SimpleNamespace(
+            spec_id=3,
+            mol_id=10,
+            prec_type="[M+H]+",
+            inst_type="FT",
+            nce=np.nan,
+            ace=np.nan,
+        ),
+    ]
+
+    pages = _group_pdf_candidate_pages(rows, {}, {}, {})
+
+    assert [[row.spec_id for row in page] for page in pages] == [[2, 1, 3]]
 
 
 def test_guide_glossary_matches_code_names_levels_and_order() -> None:
@@ -287,6 +421,23 @@ def test_formula_dependent_isotope_precursors_are_not_mass_checked(prec_type: st
     assert result["unsupported_precursor_type"]
 
 
+def test_low_resolution_precursor_is_not_mass_checked() -> None:
+    result = analyze_spectrum(
+        _review_row(inst_type="IT", prec_mz=101.2),
+        {10: (100.0, "C6H12O")},
+    )
+
+    assert not result["precursor_mass_mismatch"]
+    assert pd.isna(result["expected_prec_mz"])
+
+
+def test_empty_spectrum_is_not_also_sparse() -> None:
+    result = analyze_spectrum(_review_row(peaks=[]), {10: (100.0, "C6H12O")})
+
+    assert result["empty_spectrum"]
+    assert not result["sparse_spectrum"]
+
+
 def test_review_queue_flags_identical_spectrum_across_molecules() -> None:
     mol_meta = {
         10: (100.0, "C6H12O", "STRUCTURE-A"),
@@ -320,9 +471,7 @@ def test_review_queue_does_not_call_sparse_spectra_cross_molecule_duplicates() -
 
     candidates = finalize_review_queue(pd.DataFrame([first, second]))
 
-    assert not candidates["duplicate_spectrum_cross_molecule"].any()
-    assert candidates["sparse_spectrum"].all()
-    assert (candidates["review_priority"] == 1).all()
+    assert candidates.empty
 
 
 def test_same_formula_duplicate_is_label_ambiguity_not_hard_conflict() -> None:
@@ -364,7 +513,7 @@ def test_hard_evidence_ranks_before_higher_scoring_heuristics() -> None:
             spec_id=2,
             prec_mz=None,
             ace=-1.0,
-            peaks=[(20.0, 99.0), (20.0, 1.0)],
+            peaks=[(20.0, 99.0), (20.0, 0.5), (20.0, 0.5)],
         ),
         {10: (100.0, "C6H12O")},
     )
@@ -450,14 +599,37 @@ def test_cross_ce_comparison_spectra_exclude_the_primary_ce_bin() -> None:
             },
         ]
     )
-    candidates = pd.DataFrame(
-        {"spec_id": [1], "substantial_cross_ce_orphan_intensity": [True]}
-    )
+    candidates = pd.DataFrame({"spec_id": [1], "substantial_cross_ce_orphan_intensity": [True]})
 
     comparisons = collect_cross_ce_comparison_spectra(spec_df, candidates)
 
     assert [row["spec_id"] for row in comparisons[1]] == [2, 3]
     assert [row["ce_value"] for row in comparisons[1]] == [20.0, 30.0]
+
+
+def test_cross_ce_comparison_spectra_use_one_per_bin_and_cap_panels() -> None:
+    rows = [{"spec_id": 1, "dset_spec_id": "nist-1", "ace": 50.0, "peaks": [(50.0, 1.0)]}]
+    rows.extend(
+        {
+            "spec_id": idx + 2,
+            "dset_spec_id": f"nist-{idx + 2}",
+            "ace": float(idx),
+            "peaks": [(60.0 + idx, 1.0)],
+        }
+        for idx in range(15)
+    )
+    rows.append(
+        {"spec_id": 100, "dset_spec_id": "duplicate-ce", "ace": 10.0, "peaks": [(90.0, 1.0)]}
+    )
+    spec_df = _signal_spec_df(rows)
+    spec_df["spec_id"] = spec_df["spec_id"].astype(object)
+    candidates = pd.DataFrame({"spec_id": [1], "substantial_cross_ce_orphan_intensity": [True]})
+
+    comparisons = collect_cross_ce_comparison_spectra(spec_df, candidates)[1]
+
+    assert len(comparisons) == 11
+    assert len({row["ce_value"] for row in comparisons}) == 11
+    assert all(row["n_other_ce_bins_available"] == 15 for row in comparisons)
 
 
 def test_cross_ce_plot_sequence_inserts_target_by_collision_energy() -> None:
@@ -589,6 +761,24 @@ def test_uwpr_signal_requires_consensus_across_dag_audits(tmp_path: Path) -> Non
     assert not bool(row["substantial_uwpr_contaminant_only_intensity"])
 
 
+def test_uwpr_undecidable_source_abstains_from_consensus(tmp_path: Path) -> None:
+    spec_df = _signal_spec_df([{"spec_id": 1, "peaks": [(59.0, 8.0), (100.0, 2.0)]}])
+    review_df = pd.DataFrame({"spec_id": [1]})
+    d3_fp = tmp_path / "d3.csv"
+    d4_fp = tmp_path / "d4.csv"
+    pd.DataFrame({"spec_id": [1], "peak_mz": [59.0], "feasibility": ["contaminant_only"]}).to_csv(
+        d3_fp, index=False
+    )
+    pd.DataFrame({"spec_id": [1], "peak_mz": [59.0], "feasibility": ["missing_metadata"]}).to_csv(
+        d4_fp, index=False
+    )
+
+    row = add_uwpr_signals(spec_df, review_df, [d3_fp, d4_fp]).iloc[0]
+
+    assert row["uwpr_contaminant_only_intensity_fraction"] == pytest.approx(0.8)
+    assert bool(row["substantial_uwpr_contaminant_only_intensity"])
+
+
 def test_collect_uwpr_matches_requires_consensus_across_sources(tmp_path: Path) -> None:
     d3_fp = tmp_path / "d3.csv"
     d4_fp = tmp_path / "d4.csv"
@@ -638,21 +828,19 @@ def test_collect_uwpr_annotations_separates_d3_and_additional_d4(tmp_path: Path)
 
     assert annotations == {
         1: {
-            "d3_d4_dag": [50.0],
-            "d4_only_dag": [75.0],
+            "d3_dag": [50.0],
+            "d4_additional_dag": [75.0],
             "uwpr_contaminant": [100.0],
         }
     }
 
 
-def test_collect_uwpr_annotations_labels_d3_only_regression(tmp_path: Path) -> None:
+def test_collect_uwpr_annotations_skips_disagreement_only_rows(tmp_path: Path) -> None:
     d3_fp = tmp_path / "d3.csv"
     d4_fp = tmp_path / "d4.csv"
     columns = ["spec_id", "peak_mz", "feasibility"]
     pd.DataFrame([[1, 50.0, "dag_feasible"]], columns=columns).to_csv(d3_fp, index=False)
-    pd.DataFrame([[1, 50.0, "contaminant_only"]], columns=columns).to_csv(
-        d4_fp, index=False
-    )
+    pd.DataFrame([[1, 50.0, "contaminant_only"]], columns=columns).to_csv(d4_fp, index=False)
     candidates = pd.DataFrame(
         {
             "spec_id": [1],
@@ -663,7 +851,7 @@ def test_collect_uwpr_annotations_labels_d3_only_regression(tmp_path: Path) -> N
 
     annotations = collect_uwpr_peak_annotations([d3_fp, d4_fp], candidates)
 
-    assert annotations == {1: {"d3_only_dag": [50.0]}}
+    assert annotations == {}
 
 
 def test_write_review_pdf_creates_summary_and_spectrum_pages(tmp_path: Path) -> None:
