@@ -684,19 +684,24 @@ def _is_contaminant_only_consensus(labels: Iterable[str | None]) -> bool:
 def collect_uwpr_peak_annotations(
     feasibility_paths: Sequence[str | os.PathLike[str]],
     candidates: pd.DataFrame,
-) -> dict[int, dict[str, list[float]]]:
-    """Collect D3, additional-D4, and unanimous-contaminant peak labels."""
+) -> dict[int, dict[str, object]]:
+    """Collect DAG labels and contaminant formulas for annotated UWPR peaks."""
     needs_annotations = candidates["substantial_uwpr_contaminant_only_intensity"].astype(bool)
     flagged_ids = set(candidates.loc[needs_annotations, "spec_id"].astype(int))
     if not flagged_ids or not feasibility_paths:
         return {}
 
     labels_by_source: list[dict[tuple[int, float], str]] = []
+    contaminant_formulas_by_key: dict[tuple[int, float], set[str]] = {}
     for path in feasibility_paths:
         source_labels: dict[tuple[int, float], str] = {}
+        available_columns = set(pd.read_csv(path, nrows=0).columns)
+        usecols = ["spec_id", "peak_mz", "feasibility"]
+        if "cont_formula" in available_columns:
+            usecols.append("cont_formula")
         for chunk in pd.read_csv(
             path,
-            usecols=["spec_id", "peak_mz", "feasibility"],
+            usecols=usecols,
             chunksize=500_000,
         ):
             hits = chunk[chunk["spec_id"].isin(flagged_ids)]
@@ -707,9 +712,12 @@ def collect_uwpr_peak_annotations(
                 if previous is not None and previous != label:
                     raise ValueError(f"UWPR feasibility CSV has conflicting labels: {path}")
                 source_labels[key] = label
+                formula = getattr(row, "cont_formula", None)
+                if isinstance(formula, str) and formula:
+                    contaminant_formulas_by_key.setdefault(key, set()).add(formula)
         labels_by_source.append(source_labels)
 
-    annotations: dict[int, dict[str, list[float]]] = {}
+    annotations: dict[int, dict[str, object]] = {}
     all_keys = set().union(*(source.keys() for source in labels_by_source))
     d3_feasible = {key for key in all_keys if labels_by_source[0].get(key) == "dag_feasible"}
     d4_additional = (
@@ -733,10 +741,17 @@ def collect_uwpr_peak_annotations(
     ):
         for spec_id, peak_mz in keys:
             annotations.setdefault(spec_id, {}).setdefault(label, []).append(peak_mz)
-    return {
-        spec_id: {label: sorted(mzs) for label, mzs in labels.items()}
-        for spec_id, labels in annotations.items()
-    }
+    for spec_id, peak_mz in contaminants:
+        formulas = contaminant_formulas_by_key.get((spec_id, peak_mz), set())
+        if formulas:
+            annotations.setdefault(spec_id, {}).setdefault("uwpr_formula_by_mz", {})[peak_mz] = (
+                "/".join(sorted(formulas))
+            )
+    for labels in annotations.values():
+        for label in ("d3_dag", "d4_additional_dag", "uwpr_contaminant"):
+            if label in labels:
+                labels[label] = sorted(labels[label])
+    return annotations
 
 
 def collect_uwpr_contaminant_matches(
@@ -1489,7 +1504,7 @@ def _plot_pdf_spectrum(
     title: str,
     color: str,
     x_max: float | None = None,
-    peak_annotations: dict[str, list[float]] | None = None,
+    peak_annotations: dict[str, object] | None = None,
     precursor_mz: float | None = None,
 ) -> None:
     """Draw one full-width PDF spectrum axis."""
@@ -1505,7 +1520,10 @@ def _plot_pdf_spectrum(
             "d4_additional_dag": ("#7b4ab5", "D4+ DAG"),
             "uwpr_contaminant": ("#e07a19", "UWPR"),
         }
+        formula_by_mz = (peak_annotations or {}).get("uwpr_formula_by_mz", {})
         for annotation, target_mzs in (peak_annotations or {}).items():
+            if annotation == "uwpr_formula_by_mz":
+                continue
             annotation_color, annotation_label = annotation_styles[annotation]
             for target_mz in target_mzs:
                 matched = np.flatnonzero(np.abs(mzs - target_mz) <= 1.0e-4)
@@ -1519,10 +1537,15 @@ def _plot_pdf_spectrum(
                     color=annotation_color,
                     linewidth=2.0,
                 )
+                peak_label = annotation_label
+                if annotation == "uwpr_contaminant" and isinstance(formula_by_mz, dict):
+                    formula = formula_by_mz.get(float(target_mz))
+                    if formula:
+                        peak_label = f"{annotation_label} {formula}"
                 axis.text(
                     mzs[peak_idx],
                     min(float(normalized[peak_idx]) + 0.025, 1.02),
-                    annotation_label,
+                    peak_label,
                     color=annotation_color,
                     fontsize=6,
                     rotation=90,
@@ -1707,7 +1730,7 @@ def write_review_pdf(
     smiles_by_mol_id: dict[int, str] | None = None,
     cross_ce_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
     same_ce_replicates_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
-    uwpr_annotations_by_spec_id: dict[int, dict[str, list[float]]] | None = None,
+    uwpr_annotations_by_spec_id: dict[int, dict[str, object]] | None = None,
     dag_wrecall_by_spec_id: dict[int, dict[str, float]] | None = None,
     formula_conflict_comparisons_by_spec_id: dict[int, list[dict[str, object]]] | None = None,
 ) -> None:

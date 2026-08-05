@@ -126,6 +126,24 @@ def test_pdf_spectrum_marks_and_includes_precursor_mz() -> None:
     plt.close(figure)
 
 
+def test_pdf_spectrum_labels_uwpr_peak_with_contaminant_formula() -> None:
+    figure, axis = plt.subplots()
+
+    _plot_pdf_spectrum(
+        axis,
+        [(59.0, 1.0)],
+        "test",
+        "#2457a6",
+        peak_annotations={
+            "uwpr_contaminant": [59.0],
+            "uwpr_formula_by_mz": {59.0: "CH3CN"},
+        },
+    )
+
+    assert any(label.get_text() == "UWPR CH3CN" for label in axis.texts)
+    plt.close(figure)
+
+
 def test_dag_wrecall_gate_only_marks_high_coverage_soft_spectral_evidence() -> None:
     candidates = pd.DataFrame(
         {
@@ -926,20 +944,20 @@ def test_collect_uwpr_matches_requires_consensus_across_sources(tmp_path: Path) 
 def test_collect_uwpr_annotations_separates_d3_and_additional_d4(tmp_path: Path) -> None:
     d3_fp = tmp_path / "d3.csv"
     d4_fp = tmp_path / "d4.csv"
-    columns = ["spec_id", "peak_mz", "feasibility"]
+    columns = ["spec_id", "peak_mz", "feasibility", "cont_formula"]
     pd.DataFrame(
         [
-            [1, 50.0, "dag_feasible"],
-            [1, 75.0, "contaminant_only"],
-            [1, 100.0, "contaminant_only"],
+            [1, 50.0, "dag_feasible", "C2H6O"],
+            [1, 75.0, "contaminant_only", "C3H8O"],
+            [1, 100.0, "contaminant_only", "CH3CN"],
         ],
         columns=columns,
     ).to_csv(d3_fp, index=False)
     pd.DataFrame(
         [
-            [1, 50.0, "dag_feasible"],
-            [1, 75.0, "dag_feasible"],
-            [1, 100.0, "contaminant_only"],
+            [1, 50.0, "dag_feasible", "C2H6O"],
+            [1, 75.0, "dag_feasible", "C3H8O"],
+            [1, 100.0, "contaminant_only", "HCN"],
         ],
         columns=columns,
     ).to_csv(d4_fp, index=False)
@@ -954,6 +972,7 @@ def test_collect_uwpr_annotations_separates_d3_and_additional_d4(tmp_path: Path)
             "d3_dag": [50.0],
             "d4_additional_dag": [75.0],
             "uwpr_contaminant": [100.0],
+            "uwpr_formula_by_mz": {100.0: "CH3CN/HCN"},
         }
     }
 

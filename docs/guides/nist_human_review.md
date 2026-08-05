@@ -40,9 +40,10 @@ For `replicate_consensus_disagreement`, every valid same-CE peer used by the con
 is plotted on the candidate page.
 For `substantial_uwpr_contaminant_only_intensity`, D3 `dag_feasible` peaks are green and labeled
 `D3 DAG`, peaks that become feasible only in D4 are purple and labeled `D4+ DAG`, and peaks called
-`contaminant_only` by every source returning a decision are orange and labeled `UWPR`; undecidable
-sources abstain. Only the orange consensus category supports bad-data priority; DAG-feasible
-matches are context.
+`contaminant_only` by every source returning a decision are orange and labeled `UWPR` followed by
+the matched contaminant formula (multiple formulas are separated by `/`); undecidable sources
+abstain. Only the orange consensus category supports bad-data priority; DAG-feasible matches are
+context.
 For `duplicate_spectrum_formula_conflict`, the grid plots the exact duplicate partners selected by
 the shared 11-panel budget and labels each molecule ID, formula, adduct, and recorded and computed
 precursor m/z. The header structure strip shows at most four molecules and reports the total when
