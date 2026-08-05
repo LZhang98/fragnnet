@@ -1,6 +1,6 @@
 # NIST suspicious-spectrum human review
 
-> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-08-03
+> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-08-04
 >
 > How to run the suspicious-spectrum review queue.
 
@@ -33,7 +33,9 @@ higher collision energy, using NCE for FT spectra when available and ACE otherwi
 last. Each candidate remains separately highlighted and labeled. Mirror, same-CE replicate, and
 cross-CE comparison pages remain dedicated to one candidate so their evidence panels stay
 unambiguous. Dedicated pages show at most 11 total comparison panels; formula conflicts are kept
-first, followed by same-CE replicates and then other-CE spectra.
+in the first plot block, followed by same-CE replicates and then other-CE spectra, but the panel
+budget is shared round-robin so no available evidence type disappears. Headers report how many
+comparison panels were shown.
 For `replicate_consensus_disagreement`, every valid same-CE peer used by the consensus calculation
 is plotted on the candidate page.
 For `substantial_uwpr_contaminant_only_intensity`, D3 `dag_feasible` peaks are green and labeled
@@ -41,8 +43,10 @@ For `substantial_uwpr_contaminant_only_intensity`, D3 `dag_feasible` peaks are g
 `contaminant_only` by every source returning a decision are orange and labeled `UWPR`; undecidable
 sources abstain. Only the orange consensus category supports bad-data priority; DAG-feasible
 matches are context.
-For `duplicate_spectrum_formula_conflict`, the grid plots every exact duplicate partner and labels
-its molecule ID, formula, adduct, recorded and computed precursor m/z, and molecular structure. The
+For `duplicate_spectrum_formula_conflict`, the grid plots the exact duplicate partners selected by
+the shared 11-panel budget and labels each molecule ID, formula, adduct, and recorded and computed
+precursor m/z. The header structure strip shows at most four molecules and reports the total when
+more structures are available. The
 comparison uses a mirror plot with the primary spectrum upward, the conflicting assignment
 downward, and their cosine similarity in the title. The page labels the primary record `REVIEW
 TARGET` and its comparison `CONFLICTING ASSIGNMENT`; these roles are relative to that page and do
@@ -58,12 +62,15 @@ values differ more substantially.
 Every plotted spectrum title reports D3 and D4 `wRecall`, the fraction of its observed intensity
 matched by the corresponding DAG under the instrument-specific m/z tolerance. The default D3
 wRecall build is the same MBFS build used by `uwpr_feasibility.py`, so green D3 peak annotations
-and the displayed D3 score use one DAG definition.
+and the displayed D3 score use one DAG definition. Because the DAG score table has validated
+tolerances only for FT and QTOF spectra, other instrument types display `n/a` instead of a
+potentially misleading low score. A missing DAG directory also yields `n/a`; it does not prevent
+the CSV from being written.
 Candidates with D3 or D4 `wRecall >= 0.75` are marked `dag_wrecall_gated` when they have only
-soft spectral evidence. They remain in the CSV for auditing but are omitted from HTML/PDF review.
-Hard conflicts, record-integrity, metadata-completeness/consistency, and label-ambiguity evidence
-are exempt because DAG explainability cannot refute those defects. Low or unavailable D3/D4
-`wRecall` does not create a bad-data reason.
+replicate-consensus, cross-CE-orphan, and/or contaminant-library evidence. They remain in the CSV
+for auditing but are omitted from HTML/PDF review. Hard evidence and every other reason are exempt
+because DAG explainability cannot refute those defects. An unknown future evidence family defaults
+to exempt. Low or unavailable D3/D4 `wRecall` does not create a bad-data reason.
 The PDF defaults to `[M+H]+`, `[M-H]-`, `[M+Na]+`, `[M+K]+`, `[M+Cl]-`, and `[M]+`; change the list
 with `--pdf_prec_types` and the limit with `--max_pdf_spectra`.
 
@@ -116,7 +123,9 @@ The shared mass-shift table includes precursor-specific neutral-loss shifts. For
 `+2i` isotope-selected precursors are excluded from this simple monoisotopic check and require an
 isotope-envelope calculation. NIST's precursor m/z is normally theoretical, so a precursor
 mismatch is a low-weight integrity/regression guard for label or structure inconsistency rather
-than evidence of measurement mass accuracy.
+than evidence of measurement mass accuracy. It is evaluated only for FT and QTOF spectra;
+lower-resolution instrument classes are skipped instead of being judged with a high-resolution
+tolerance.
 
 ## Review flag glossary
 
@@ -130,9 +139,9 @@ than evidence of measurement mass accuracy.
   the molecule table.
 - `empty_spectrum` — **Hard:** The spectrum contains no peaks.
 - `precursor_mass_mismatch` — **Heuristic:** Precursor m/z differs from exact molecular mass plus
-  the canonicalized adduct shift beyond instrument tolerance. Because NIST precursor m/z is
-  normally theoretical, this is an integrity/regression guard for label or structure
-  inconsistency, not a measured-mass-quality test.
+  the canonicalized adduct shift beyond instrument tolerance for an FT or QTOF spectrum. Because
+  NIST precursor m/z is normally theoretical, this is an integrity/regression guard for label or
+  structure inconsistency, not a measured-mass-quality test.
 - `missing_precursor_mz` — **Heuristic:** No finite precursor m/z is available, so precursor-based
   checks cannot run.
 - `substantial_intensity_above_precursor` — **Heuristic:** At least 5% of total intensity lies more

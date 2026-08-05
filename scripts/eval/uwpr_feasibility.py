@@ -153,6 +153,13 @@ def main() -> None:
     n_no_prec = hits["prec_type"].isna().sum()
     if n_no_prec:
         log.warning("%d rows had no prec_type after join (spec_id not in spec_df)", n_no_prec)
+    if hits.empty:
+        hits["feasibility"] = pd.Series(index=hits.index, dtype=object)
+        hits.to_csv(args.out_csv, index=False)
+        log.warning(
+            "No UWPR hits remain after dataset scoping; saved an empty result to %s", args.out_csv
+        )
+        return
 
     is_compressed = _detect_is_compressed(args.frag_dp, int(hits["mol_id"].iloc[0]))
     worker = functools.partial(

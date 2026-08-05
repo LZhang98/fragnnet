@@ -110,9 +110,9 @@ REVIEW_FLAG_GLOSSARY = {
     "precursor_mass_mismatch": (
         "Heuristic",
         "The recorded precursor m/z differs from exact molecular mass plus the canonicalized "
-        "adduct shift by more than the instrument tolerance. NIST precursor m/z is usually "
-        "theoretical, so this is an integrity/regression guard for label or structure "
-        "inconsistency, not a measured-mass-quality test.",
+        "adduct shift by more than the instrument tolerance for an FT or QTOF spectrum. NIST "
+        "precursor m/z is usually theoretical, so this is an integrity/regression guard for "
+        "label or structure inconsistency, not a measured-mass-quality test.",
     ),
     "missing_precursor_mz": (
         "Heuristic",
@@ -203,6 +203,7 @@ DAG_WRECALL_REVIEW_CUTOFF = 0.75
 MAX_OTHER_CE_PDF_PANELS = 11
 MAX_GROUPED_PDF_PANELS = 12
 MAX_DEDICATED_COMPARISON_PANELS = 11
+MAX_PDF_STRUCTURE_IMAGES = 4
 DEFAULT_PDF_PRECURSOR_TYPES = [
     "[M+H]+",
     "[M-H]-",
@@ -539,6 +540,7 @@ def collect_cross_ce_comparison_spectra(
                 "dset_spec_id": row.dset_spec_id,
                 "ce_source": str(row.ce_source),
                 "ce_value": float(row.ce_value),
+                "inst_type": row.inst_type,
                 "prec_mz": getattr(row, "prec_mz", math.nan),
                 "peaks": row.peaks,
                 "n_other_ce_bins_available": n_available_bins,
@@ -610,6 +612,7 @@ def collect_same_ce_replicate_spectra(
                 "dset_spec_id": row.dset_spec_id,
                 "ace": row.ace,
                 "nce": row.nce,
+                "inst_type": row.inst_type,
                 "prec_mz": getattr(row, "prec_mz", math.nan),
                 "peaks": row.peaks,
             }
@@ -657,6 +660,7 @@ def collect_formula_conflict_comparison_spectra(
                 "prec_type": row.prec_type,
                 "ace": row.ace,
                 "nce": row.nce,
+                "inst_type": row.inst_type,
                 "prec_mz": row.prec_mz,
                 "expected_prec_mz": row.expected_prec_mz,
                 "peaks": peaks_by_spec_id[int(row.spec_id)],
@@ -838,14 +842,21 @@ def collect_dag_weighted_recall(
         return {}
 
     sample_mol_id = int(scoped["mol_id"].iloc[0])
-    is_compressed_by_label = {
-        label: _detect_is_compressed(dag_path, sample_mol_id)
-        for label, dag_path in dag_paths.items()
-    }
+    active_dag_paths: dict[str, str] = {}
+    is_compressed_by_label: dict[str, bool] = {}
+    for label, dag_path in dag_paths.items():
+        try:
+            is_compressed_by_label[label] = _detect_is_compressed(dag_path, sample_mol_id)
+        except FileNotFoundError as error:
+            log.warning("Skipping %s wRecall: %s", label, error)
+            continue
+        active_dag_paths[label] = dag_path
+    if not active_dag_paths:
+        return {}
     mol_inputs = [(int(mol_id), group) for mol_id, group in scoped.groupby("mol_id")]
     worker = functools.partial(
         _dag_weighted_recall_for_mol,
-        dag_paths=dag_paths,
+        dag_paths=active_dag_paths,
         is_compressed_by_label=is_compressed_by_label,
     )
     per_mol = data_utils.par_apply(
@@ -874,20 +885,33 @@ def apply_dag_wrecall_review_gate(
             )
         )
     gated["dag_wrecall_max"] = gated[["dag_wrecall_d3", "dag_wrecall_d4"]].max(axis=1, skipna=True)
-    non_spectral_families = {
-        "record_integrity",
-        "metadata_completeness",
-        "metadata_consistency",
-        "label_ambiguity",
+    gateable_families = {
+        "replicate_consensus",
+        "cross_ce_orphans",
+        "contaminant_library",
+    }
+    gateable_reasons = {
+        "replicate_consensus_disagreement",
+        "substantial_cross_ce_orphan_intensity",
+        "substantial_uwpr_contaminant_only_intensity",
     }
     evidence_families = (
         gated["evidence_families"]
         .fillna("")
         .map(lambda value: set(filter(None, str(value).split(";"))))
     )
-    gated["dag_wrecall_gate_exempt"] = gated["has_hard_evidence"].astype(
-        bool
-    ) | evidence_families.map(lambda families: bool(families & non_spectral_families))
+    review_reasons = (
+        gated["review_reasons"]
+        .fillna("")
+        .map(lambda value: set(filter(None, str(value).split(";"))))
+    )
+    gated["dag_wrecall_gate_exempt"] = (
+        gated["has_hard_evidence"].astype(bool)
+        | evidence_families.map(
+            lambda families: not families or not families.issubset(gateable_families)
+        )
+        | review_reasons.map(lambda reasons: not reasons or not reasons.issubset(gateable_reasons))
+    )
     gated["dag_wrecall_gated"] = ~gated["dag_wrecall_gate_exempt"] & gated["dag_wrecall_max"].ge(
         DAG_WRECALL_REVIEW_CUTOFF
     )
@@ -1294,7 +1318,10 @@ def _spectrum_svg(
 
 
 def write_review_html(
-    candidates: pd.DataFrame, peaks_by_spec_id: dict[int, Sequence[Sequence[float]]], out_fp: str
+    candidates: pd.DataFrame,
+    peaks_by_spec_id: dict[int, Sequence[Sequence[float]]],
+    out_fp: str,
+    n_wrecall_gated: int = 0,
 ) -> None:
     """Write a visual companion to the editable review CSV."""
     cards = []
@@ -1331,7 +1358,9 @@ padding:12px}}h2{{font-size:16px}}dt{{font-weight:bold;margin-top:10px}}svg{{wid
 background:#fafafa}}</style></head>
 <body><h1>NIST suspicious-spectrum review</h1>
 <p>Use the companion CSV to record keep/exclude/needs_followup decisions. Priority is a triage
-score, not a bad-data probability.</p><h2>Review flag glossary</h2><dl>{glossary}</dl>
+score, not a bad-data probability. This HTML omits {n_wrecall_gated:,} soft spectral candidates
+with D3 or D4 wRecall at or above {DAG_WRECALL_REVIEW_CUTOFF:.2f}; they remain in the CSV with
+<code>dag_wrecall_gated=true</code>.</p><h2>Review flag glossary</h2><dl>{glossary}</dl>
 {"".join(cards)}</body></html>"""
     os.makedirs(os.path.dirname(out_fp) or ".", exist_ok=True)
     with open(out_fp, "w", encoding="utf-8") as handle:
@@ -1356,9 +1385,12 @@ def _pdf_mz(row: object, name: str) -> str:
 
 def _pdf_wrecall(
     spec_id: int,
+    inst_type: object,
     dag_wrecall_by_spec_id: dict[int, dict[str, float]],
 ) -> str:
     """Format D3 and D4 intensity-weighted recall for one spectrum."""
+    if inst_type not in INSTRUMENT_TOLERANCE:
+        return "wRecall D3=n/a | D4=n/a"
     values = dag_wrecall_by_spec_id.get(spec_id, {})
     d3 = values.get("D3", math.nan)
     d4 = values.get("D4", math.nan)
@@ -1641,6 +1673,32 @@ def _pdf_candidate_ce_sort_key(row: object) -> tuple[bool, float, int]:
     return not math.isfinite(ce_value), ce_value, int(row.spec_id)
 
 
+def _select_dedicated_comparisons(
+    formula_conflicts: list[dict[str, object]],
+    same_ce_replicates: list[dict[str, object]],
+    cross_ce_comparisons: list[dict[str, object]],
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+]:
+    """Share the fixed panel budget without hiding an available evidence type."""
+    sources = [formula_conflicts, same_ce_replicates, cross_ce_comparisons]
+    selected: list[list[dict[str, object]]] = [[], [], []]
+    while sum(map(len, selected)) < MAX_DEDICATED_COMPARISON_PANELS:
+        added = False
+        for source, destination in zip(sources, selected, strict=True):
+            if len(destination) >= len(source):
+                continue
+            destination.append(source[len(destination)])
+            added = True
+            if sum(map(len, selected)) == MAX_DEDICATED_COMPARISON_PANELS:
+                break
+        if not added:
+            break
+    return selected[0], selected[1], selected[2]
+
+
 def write_review_pdf(
     candidates: pd.DataFrame,
     peaks_by_spec_id: dict[int, Sequence[Sequence[float]]],
@@ -1694,8 +1752,9 @@ def write_review_pdf(
             "Priority is a triage score, not a probability of bad data. Review the molecular "
             "assignment, precursor/adduct/polarity, same-CE replicates, adjacent collision "
             "energies, and evidence fields before choosing keep, exclude, or needs_followup. "
-            "Peak-level DAG feasibility is supporting context; soft-only candidates with D3 "
-            "or D4 wRecall at or above 0.75 are omitted from visual review but retained in CSV."
+            "Peak-level DAG feasibility is supporting context; candidates containing only "
+            "replicate, cross-CE-orphan, and/or contaminant-library evidence with D3 or D4 "
+            "wRecall at or above 0.75 are omitted from visual review but retained in CSV."
         )
         fig.text(0.12, 0.74, summary, fontsize=14, linespacing=1.7, va="top")
         fig.text(
@@ -1788,16 +1847,28 @@ def write_review_pdf(
                 for axis, grouped_row in zip(plot_axes, page_rows, strict=False):
                     grouped_spec_id = int(grouped_row.spec_id)
                     reason = str(grouped_row.review_reasons).replace(";", "; ")
-                    _plot_pdf_spectrum(
-                        axis,
-                        peaks_by_spec_id.get(grouped_spec_id, []),
+                    title = (
                         f"REVIEW TARGET | Priority {grouped_row.review_priority} | "
                         f"spec {grouped_spec_id} | NIST {grouped_row.dset_spec_id} | "
                         f"{_pdf_ce_label(grouped_row)}\n"
-                        f"{_pdf_wrecall(grouped_spec_id, dag_wrecall_by_spec_id)} | "
+                        f"{_pdf_wrecall(grouped_spec_id, grouped_row.inst_type, dag_wrecall_by_spec_id)} | "
                         f"prec m/z recorded={_pdf_mz(grouped_row, 'prec_mz')}, "
                         f"computed={_pdf_mz(grouped_row, 'expected_prec_mz')}\n"
-                        f"{reason}",
+                        f"{reason}"
+                    )
+                    title = "\n".join(
+                        textwrap.fill(
+                            line,
+                            90,
+                            break_long_words=False,
+                            break_on_hyphens=False,
+                        )
+                        for line in title.splitlines()
+                    )
+                    _plot_pdf_spectrum(
+                        axis,
+                        peaks_by_spec_id.get(grouped_spec_id, []),
+                        title,
                         "#2457a6",
                         shared_x_max,
                         uwpr_annotations_by_spec_id.get(grouped_spec_id, {}),
@@ -1847,23 +1918,28 @@ def write_review_pdf(
             row = page_rows[0]
             spec_id = int(row.spec_id)
             mol_id = int(row.mol_id)
-            formula_conflicts = (
+            all_formula_conflicts = (
                 formula_conflict_comparisons_by_spec_id.get(spec_id, [])
                 if bool(row.duplicate_spectrum_formula_conflict)
                 else []
-            )[:MAX_DEDICATED_COMPARISON_PANELS]
-            remaining_comparison_panels = MAX_DEDICATED_COMPARISON_PANELS - len(formula_conflicts)
-            same_ce_replicates = (
+            )
+            all_same_ce_replicates = (
                 same_ce_replicates_by_spec_id.get(spec_id, [])
                 if bool(row.replicate_consensus_disagreement)
                 else []
-            )[:remaining_comparison_panels]
-            remaining_comparison_panels -= len(same_ce_replicates)
-            cross_ce_comparisons = (
+            )
+            all_cross_ce_comparisons = (
                 cross_ce_comparisons_by_spec_id.get(spec_id, [])
                 if bool(row.substantial_cross_ce_orphan_intensity)
                 else []
-            )[:remaining_comparison_panels]
+            )
+            formula_conflicts, same_ce_replicates, cross_ce_comparisons = (
+                _select_dedicated_comparisons(
+                    all_formula_conflicts,
+                    all_same_ce_replicates,
+                    all_cross_ce_comparisons,
+                )
+            )
             comparisons = formula_conflicts + same_ce_replicates + cross_ce_comparisons
             n_plots = 1 + len(comparisons)
             ncols = 2
@@ -1919,7 +1995,7 @@ def write_review_pdf(
                             spectrum["peaks"],
                             f"REVIEW TARGET — CROSS-CE ORPHAN | Priority "
                             f"{row.review_priority} | spec {spec_id} | {ce_label}\n"
-                            f"{_pdf_wrecall(spec_id, dag_wrecall_by_spec_id)} | "
+                            f"{_pdf_wrecall(spec_id, row.inst_type, dag_wrecall_by_spec_id)} | "
                             f"CE bins shown={spectrum['n_other_ce_bins_shown']}/"
                             f"{spectrum['n_other_ce_bins_available']} | {reason}",
                             "#2457a6",
@@ -1937,7 +2013,7 @@ def write_review_pdf(
                             spectrum["peaks"],
                             f"OTHER CE | {ce_label} | spec {spectrum['spec_id']} | "
                             f"NIST {spectrum['dset_spec_id']}\n"
-                            f"{_pdf_wrecall(int(spectrum['spec_id']), dag_wrecall_by_spec_id)}",
+                            f"{_pdf_wrecall(int(spectrum['spec_id']), row.inst_type, dag_wrecall_by_spec_id)}",
                             "#b04a35",
                             shared_x_max,
                             precursor_mz=_pdf_precursor_mz(spectrum),
@@ -1949,7 +2025,7 @@ def write_review_pdf(
                     primary_peaks,
                     f"REVIEW TARGET | Priority {row.review_priority} | spec {spec_id} | "
                     f"{_pdf_ce_label(row)}\n"
-                    f"{_pdf_wrecall(spec_id, dag_wrecall_by_spec_id)} | {reason}",
+                    f"{_pdf_wrecall(spec_id, row.inst_type, dag_wrecall_by_spec_id)} | {reason}",
                     "#2457a6",
                     shared_x_max,
                     uwpr_annotations_by_spec_id.get(spec_id, {}),
@@ -1968,7 +2044,7 @@ def write_review_pdf(
                     f"cos={float(comparison['cosine_similarity']):.4f}\n"
                     "EXACT DUPLICATE, DIFFERENT FORMULA | "
                     f"{comparison['formula']} | {comparison['prec_type']}\n"
-                    f"{_pdf_wrecall(int(comparison['spec_id']), dag_wrecall_by_spec_id)} | "
+                    f"{_pdf_wrecall(int(comparison['spec_id']), comparison.get('inst_type', row.inst_type), dag_wrecall_by_spec_id)} | "
                     f"prec m/z recorded={_pdf_mz_value(comparison['prec_mz'])}, "
                     f"computed={_pdf_mz_value(comparison['expected_prec_mz'])}",
                     shared_x_max,
@@ -1983,7 +2059,7 @@ def write_review_pdf(
                     "SAME-CE REPLICATE | "
                     f"spec {comparison['spec_id']} | NIST {comparison['dset_spec_id']} | "
                     f"{_pdf_ce_label(comparison)}\n"
-                    f"{_pdf_wrecall(int(comparison['spec_id']), dag_wrecall_by_spec_id)}",
+                    f"{_pdf_wrecall(int(comparison['spec_id']), comparison.get('inst_type', row.inst_type), dag_wrecall_by_spec_id)}",
                     "#6f4a8e",
                     shared_x_max,
                     precursor_mz=_pdf_precursor_mz(comparison),
@@ -2003,6 +2079,16 @@ def write_review_pdf(
                 f"orphan={_pdf_metric(row, 'cross_ce_orphan_intensity_fraction')} | "
                 f"contaminant={_pdf_metric(row, 'uwpr_contaminant_only_intensity_fraction')}"
             )
+            if all_cross_ce_comparisons:
+                metadata += (
+                    "\ncross-CE display uses one representative per CE bin (lowest spec_id); "
+                    f"shown={len(cross_ce_comparisons)}/{len(all_cross_ce_comparisons)} bins"
+                )
+            if all_formula_conflicts:
+                metadata += (
+                    f"\nformula-conflict panels shown={len(formula_conflicts)}/"
+                    f"{len(all_formula_conflicts)}"
+                )
             header_axis.text(
                 0.01,
                 0.96,
@@ -2022,8 +2108,19 @@ def write_review_pdf(
                         f"CONFLICT spec {comparison['spec_id']}",
                         _mol_image_array(smiles_by_mol_id.get(int(comparison["mol_id"]))),
                     )
-                    for comparison in formula_conflicts
+                    for comparison in formula_conflicts[: MAX_PDF_STRUCTURE_IMAGES - 1]
                 )
+                n_structure_entries = 1 + len(all_formula_conflicts)
+                if n_structure_entries > len(structure_entries):
+                    header_axis.text(
+                        0.985,
+                        0.02,
+                        f"structures shown={len(structure_entries)}/{n_structure_entries}",
+                        transform=header_axis.transAxes,
+                        ha="right",
+                        va="bottom",
+                        fontsize=6,
+                    )
                 structure_width = 0.43 / len(structure_entries)
                 for structure_idx, (label, image) in enumerate(structure_entries):
                     structure_axis = header_axis.inset_axes(
@@ -2199,7 +2296,12 @@ def main() -> None:
         }
     if args.out_html:
         html_candidates = visual_candidates.head(args.max_html_spectra)
-        write_review_html(html_candidates, peaks_by_spec_id, args.out_html)
+        write_review_html(
+            html_candidates,
+            peaks_by_spec_id,
+            args.out_html,
+            n_wrecall_gated=n_wrecall_gated,
+        )
         log.info("Saved visual review report to %s", args.out_html)
     if args.out_pdf:
         pdf_candidates = pdf_queue.head(args.max_pdf_spectra)
@@ -2224,12 +2326,17 @@ def main() -> None:
                 for comparisons in comparisons_by_spec_id.values()
                 for comparison in comparisons
             )
-        dag_wrecall_by_spec_id = collect_dag_weighted_recall(
-            spec_df,
-            pdf_plot_spec_ids,
-            {"D3": args.d3_frag_dp, "D4": args.d4_frag_dp},
-            n_jobs=args.dag_n_jobs,
-        )
+        dag_wrecall_by_spec_id = candidate_dag_wrecall.copy()
+        missing_pdf_wrecall_ids = pdf_plot_spec_ids - set(dag_wrecall_by_spec_id)
+        if missing_pdf_wrecall_ids:
+            dag_wrecall_by_spec_id.update(
+                collect_dag_weighted_recall(
+                    spec_df,
+                    missing_pdf_wrecall_ids,
+                    {"D3": args.d3_frag_dp, "D4": args.d4_frag_dp},
+                    n_jobs=args.dag_n_jobs,
+                )
+            )
         wanted_mol_ids = set(pdf_candidates["mol_id"])
         wanted_mol_ids.update(
             int(comparison["mol_id"])

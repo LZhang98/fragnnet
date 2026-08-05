@@ -31,7 +31,9 @@ from nist_bad_data_review import (  # noqa: E402
     _group_pdf_candidate_pages,
     _ordered_cross_ce_spectra,
     _pdf_shared_x_max,
+    _pdf_wrecall,
     _plot_pdf_spectrum,
+    _select_dedicated_comparisons,
     add_cross_ce_orphan_signals,
     add_replicate_consensus_signals,
     add_uwpr_signals,
@@ -39,13 +41,16 @@ from nist_bad_data_review import (  # noqa: E402
     apply_dag_wrecall_review_gate,
     canonicalize_prec_type,
     collect_cross_ce_comparison_spectra,
+    collect_dag_weighted_recall,
     collect_formula_conflict_comparison_spectra,
     collect_same_ce_replicate_spectra,
     collect_uwpr_contaminant_matches,
     collect_uwpr_peak_annotations,
     finalize_review_queue,
+    write_review_html,
     write_review_pdf,
 )
+from uwpr_feasibility import main as uwpr_feasibility_main  # noqa: E402
 
 
 def test_every_review_flag_has_a_glossary_entry() -> None:
@@ -76,6 +81,38 @@ def test_dag_weighted_recall_uses_observed_intensity() -> None:
     assert wrecall == pytest.approx(0.25)
 
 
+def test_missing_dag_directories_leave_wrecall_unavailable(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    spec_df = pd.DataFrame(
+        {
+            "spec_id": [1],
+            "mol_id": [10],
+            "prec_type": ["[M+H]+"],
+            "inst_type": ["FT"],
+            "peaks": [[(20.0, 1.0)]],
+        }
+    )
+
+    recalls = collect_dag_weighted_recall(
+        spec_df,
+        {1},
+        {"D3": str(tmp_path / "missing-d3"), "D4": str(tmp_path / "missing-d4")},
+        n_jobs=1,
+    )
+
+    assert recalls == {}
+    assert "Skipping D3 wRecall" in caplog.text
+    assert "Skipping D4 wRecall" in caplog.text
+
+
+def test_pdf_wrecall_is_not_reported_for_unvalidated_instrument_tolerance() -> None:
+    recalls = {1: {"D3": 0.02, "D4": 0.03}}
+
+    assert _pdf_wrecall(1, "IT", recalls) == "wRecall D3=n/a | D4=n/a"
+    assert _pdf_wrecall(1, "FT", recalls) == "wRecall D3=0.020 | D4=0.030"
+
+
 def test_pdf_spectrum_marks_and_includes_precursor_mz() -> None:
     row = SimpleNamespace(prec_mz=100.0, expected_prec_mz=99.9)
     x_max = _pdf_shared_x_max([[(20.0, 1.0)]], [row])
@@ -92,8 +129,8 @@ def test_pdf_spectrum_marks_and_includes_precursor_mz() -> None:
 def test_dag_wrecall_gate_only_marks_high_coverage_soft_spectral_evidence() -> None:
     candidates = pd.DataFrame(
         {
-            "spec_id": [1, 2, 3, 4, 5, 6, 7],
-            "has_hard_evidence": [False, False, False, False, False, True, False],
+            "spec_id": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "has_hard_evidence": [False, False, False, False, False, True, False, False, False],
             "evidence_families": [
                 "cross_ce_orphans",
                 "cross_ce_orphans",
@@ -102,6 +139,19 @@ def test_dag_wrecall_gate_only_marks_high_coverage_soft_spectral_evidence() -> N
                 "cross_ce_orphans",
                 "record_integrity",
                 "metadata_completeness",
+                "",
+                "cross_ce_orphans;record_integrity",
+            ],
+            "review_reasons": [
+                "substantial_cross_ce_orphan_intensity",
+                "substantial_cross_ce_orphan_intensity",
+                "substantial_uwpr_contaminant_only_intensity",
+                "substantial_cross_ce_orphan_intensity",
+                "substantial_cross_ce_orphan_intensity",
+                "polarity_mismatch",
+                "missing_precursor_mz",
+                "substantial_intensity_above_precursor;duplicate_peak_mz",
+                "substantial_cross_ce_orphan_intensity;polarity_mismatch",
             ],
         }
     )
@@ -113,15 +163,19 @@ def test_dag_wrecall_gate_only_marks_high_coverage_soft_spectral_evidence() -> N
         5: {"D3": 0.1, "D4": 0.2},
         6: {"D3": 0.99, "D4": 0.99},
         7: {"D3": 0.99, "D4": 0.99},
+        8: {"D3": 0.99, "D4": 0.99},
+        9: {"D3": 0.99, "D4": 0.99},
     }
 
     gated = apply_dag_wrecall_review_gate(candidates, recalls)
 
-    assert gated["spec_id"].tolist() == [1, 2, 3, 4, 5, 6, 7]
+    assert gated["spec_id"].tolist() == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert gated["dag_wrecall_gated"].tolist() == [
         False,
         True,
         True,
+        False,
+        False,
         False,
         False,
         False,
@@ -135,11 +189,80 @@ def test_dag_wrecall_gate_only_marks_high_coverage_soft_spectral_evidence() -> N
         False,
         True,
         True,
+        True,
+        True,
     ]
     assert gated["dag_wrecall_d3"].iloc[0] == pytest.approx(0.749)
     assert gated["dag_wrecall_d4"].iloc[0] == pytest.approx(0.01)
     assert gated["dag_wrecall_max"].iloc[0] == pytest.approx(0.749)
     assert pd.isna(gated["dag_wrecall_max"].iloc[3])
+
+
+def test_dedicated_comparison_budget_keeps_every_available_evidence_type() -> None:
+    conflicts = [{"spec_id": spec_id} for spec_id in range(1, 12)]
+    cross_ce = [{"spec_id": 20}, {"spec_id": 21}]
+
+    selected_conflicts, selected_replicates, selected_cross_ce = _select_dedicated_comparisons(
+        conflicts, [], cross_ce
+    )
+
+    assert selected_replicates == []
+    assert len(selected_conflicts) + len(selected_cross_ce) == 11
+    assert [row["spec_id"] for row in selected_cross_ce] == [20, 21]
+
+
+def test_html_discloses_wrecall_gated_candidates(tmp_path: Path) -> None:
+    out_fp = tmp_path / "review.html"
+
+    write_review_html(pd.DataFrame(), {}, str(out_fp), n_wrecall_gated=12)
+
+    html_text = out_fp.read_text(encoding="utf-8")
+    assert "omits 12 soft spectral candidates" in html_text
+    assert "dag_wrecall_gated=true" in html_text
+
+
+def test_uwpr_feasibility_writes_empty_scoped_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hits_fp = tmp_path / "hits.csv"
+    spec_fp = tmp_path / "spec_df.pkl"
+    out_fp = tmp_path / "feasibility.csv"
+    pd.DataFrame(
+        {
+            "spec_id": [1],
+            "mol_id": [10],
+            "peak_mz": [50.0],
+            "ion_mode": ["P"],
+        }
+    ).to_csv(hits_fp, index=False)
+    pd.DataFrame(
+        {
+            "spec_id": [2],
+            "dset": ["nist20_hr"],
+            "prec_type": ["[M+H]+"],
+        }
+    ).to_pickle(spec_fp)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "uwpr_feasibility.py",
+            "--hits_csv",
+            str(hits_fp),
+            "--spec_fp",
+            str(spec_fp),
+            "--out_csv",
+            str(out_fp),
+            "--dsets",
+            "nist20_hr",
+        ],
+    )
+
+    uwpr_feasibility_main()
+
+    result = pd.read_csv(out_fp)
+    assert result.empty
+    assert "feasibility" in result.columns
 
 
 def test_pdf_pages_group_same_molecule_adduct_and_instrument() -> None:
