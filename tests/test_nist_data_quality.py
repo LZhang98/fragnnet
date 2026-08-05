@@ -17,6 +17,7 @@ EVAL_SCRIPTS_DP = Path(__file__).parents[1] / "scripts" / "eval"
 sys.path.insert(0, str(EVAL_SCRIPTS_DP))
 
 import dag_oracle_scores  # noqa: E402
+import nist_bad_data_review  # noqa: E402
 from dag_oracle_scores import (  # noqa: E402
     _allowed_formula_idxs,
     _detect_is_compressed,
@@ -141,6 +142,24 @@ def test_pdf_spectrum_labels_uwpr_peak_with_contaminant_formula() -> None:
     )
 
     assert any(label.get_text() == "UWPR CH3CN" for label in axis.texts)
+    plt.close(figure)
+
+
+def test_pdf_spectrum_colors_uwpr_above_precursor_red() -> None:
+    figure, axis = plt.subplots()
+
+    _plot_pdf_spectrum(
+        axis,
+        [(59.0, 1.0), (120.0, 0.5)],
+        "test",
+        "#2457a6",
+        peak_annotations={"uwpr_contaminant": [59.0, 120.0]},
+        precursor_mz=100.0,
+    )
+
+    uwpr_labels = {float(label.get_position()[0]): label.get_color() for label in axis.texts}
+    assert uwpr_labels[59.0] == "#e07a19"
+    assert uwpr_labels[120.0] == "#c43b3b"
     plt.close(figure)
 
 
@@ -748,7 +767,7 @@ def test_cross_ce_comparison_spectra_exclude_the_primary_ce_bin() -> None:
     assert [row["ce_value"] for row in comparisons[1]] == [20.0, 30.0]
 
 
-def test_cross_ce_comparison_spectra_use_one_per_bin_and_cap_panels() -> None:
+def test_cross_ce_comparison_spectra_include_every_spectrum_in_each_bin() -> None:
     rows = [{"spec_id": 1, "dset_spec_id": "nist-1", "ace": 50.0, "peaks": [(50.0, 1.0)]}]
     rows.extend(
         {
@@ -768,9 +787,9 @@ def test_cross_ce_comparison_spectra_use_one_per_bin_and_cap_panels() -> None:
 
     comparisons = collect_cross_ce_comparison_spectra(spec_df, candidates)[1]
 
-    assert len(comparisons) == 11
-    assert len({row["ce_value"] for row in comparisons}) == 11
-    assert all(row["n_other_ce_bins_available"] == 15 for row in comparisons)
+    assert len(comparisons) == 16
+    assert [row["spec_id"] for row in comparisons if row["ce_value"] == 10.0] == [12, 100]
+    assert all(row["n_other_ce_spectra_available"] == 16 for row in comparisons)
 
 
 def test_cross_ce_plot_sequence_inserts_target_by_collision_energy() -> None:
@@ -1006,3 +1025,114 @@ def test_write_review_pdf_creates_summary_and_spectrum_pages(tmp_path: Path) -> 
 
     assert out_fp.read_bytes().startswith(b"%PDF")
     assert out_fp.stat().st_size > 1_000
+
+
+def test_cross_ce_pdf_highlights_siblings_that_are_review_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [
+        _review_row(spec_id=1, dset_spec_id="nist-1", ace=10.0),
+        _review_row(
+            spec_id=2,
+            dset_spec_id="nist-2",
+            ace=20.0,
+            peaks=[(21.0, 1.0), (41.0, 1.0), (61.0, 1.0)],
+        ),
+    ]
+    records = [analyze_spectrum(row, {10: (100.0, "C6H12O")}) for row in rows]
+    for record in records:
+        record["substantial_cross_ce_orphan_intensity"] = False
+        record["substantial_uwpr_contaminant_only_intensity"] = False
+    records[0]["substantial_cross_ce_orphan_intensity"] = True
+    records[1]["substantial_uwpr_contaminant_only_intensity"] = True
+    candidates = finalize_review_queue(pd.DataFrame(records))
+    plotted: list[tuple[str, dict[str, object] | None]] = []
+    original_plot = nist_bad_data_review._plot_pdf_spectrum
+
+    def capture_plot(
+        axis: object,
+        peaks: object,
+        title: str,
+        color: str,
+        x_max: float | None = None,
+        peak_annotations: dict[str, object] | None = None,
+        precursor_mz: float | None = None,
+    ) -> None:
+        plotted.append((title, peak_annotations))
+        original_plot(axis, peaks, title, color, x_max, peak_annotations, precursor_mz)
+
+    monkeypatch.setattr(nist_bad_data_review, "_plot_pdf_spectrum", capture_plot)
+    write_review_pdf(
+        candidates,
+        {row.spec_id: row.peaks for row in rows},
+        str(tmp_path / "review.pdf"),
+        cross_ce_comparisons_by_spec_id={
+            1: [
+                {
+                    "spec_id": 2,
+                    "dset_spec_id": "nist-2",
+                    "ce_source": "ace",
+                    "ce_value": 20.0,
+                    "inst_type": "FT",
+                    "prec_mz": 101.007276,
+                    "peaks": rows[1].peaks,
+                }
+            ]
+        },
+        uwpr_annotations_by_spec_id={
+            2: {"uwpr_contaminant": [21.0], "uwpr_formula_by_mz": {21.0: "CH3CN"}}
+        },
+    )
+
+    sibling_plots = [plot for plot in plotted if "OTHER CE" in plot[0]]
+    assert len(sibling_plots) == 1
+    assert "REVIEW CANDIDATE — OTHER CE" in sibling_plots[0][0]
+    assert "substantial_uwpr_contaminant_only_intensity" in sibling_plots[0][0]
+    assert sibling_plots[0][1]["uwpr_formula_by_mz"] == {21.0: "CH3CN"}
+
+
+def test_cross_ce_pdf_paginates_without_dropping_spectra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = _review_row(spec_id=1, dset_spec_id="nist-1", ace=50.0)
+    record = analyze_spectrum(row, {10: (100.0, "C6H12O")})
+    record["substantial_cross_ce_orphan_intensity"] = True
+    candidates = finalize_review_queue(pd.DataFrame([record]))
+    comparisons = [
+        {
+            "spec_id": spec_id,
+            "dset_spec_id": f"nist-{spec_id}",
+            "ce_source": "ace",
+            "ce_value": float(spec_id),
+            "inst_type": "FT",
+            "prec_mz": 101.007276,
+            "peaks": [(20.0 + spec_id, 1.0)],
+            "n_other_ce_spectra_available": 13,
+        }
+        for spec_id in range(2, 15)
+    ]
+    plotted_titles: list[str] = []
+    original_plot = nist_bad_data_review._plot_pdf_spectrum
+
+    def capture_plot(
+        axis: object,
+        peaks: object,
+        title: str,
+        color: str,
+        x_max: float | None = None,
+        peak_annotations: dict[str, object] | None = None,
+        precursor_mz: float | None = None,
+    ) -> None:
+        plotted_titles.append(title)
+        original_plot(axis, peaks, title, color, x_max, peak_annotations, precursor_mz)
+
+    monkeypatch.setattr(nist_bad_data_review, "_plot_pdf_spectrum", capture_plot)
+    write_review_pdf(
+        candidates,
+        {1: row.peaks},
+        str(tmp_path / "review.pdf"),
+        cross_ce_comparisons_by_spec_id={1: comparisons},
+    )
+
+    assert sum("REVIEW TARGET — CROSS-CE ORPHAN" in title for title in plotted_titles) == 2
+    assert sum("OTHER CE" in title for title in plotted_titles) == 13

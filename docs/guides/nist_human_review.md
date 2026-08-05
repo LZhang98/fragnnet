@@ -22,10 +22,14 @@ The HTML and PDF default to the top 500 ranked candidates. Each PDF review page 
 two-column CE-spectrum grid as `plot_ce_trend_anomaly_groups.py`, with a shared header and molecular
 structure. The header reports recorded precursor m/z, computed precursor m/z, and precursor error
 in ppm when the precursor type is supported. When `substantial_cross_ce_orphan_intensity` is
-present, the grid plots one representative spectrum per other collision-energy bin, capped at the
-11 nearest bins. Those panels are sorted from low to high using the detector-selected NCE or ACE
-value, with the review target inserted at its corresponding CE and highlighted with a pale
-background and border.
+present, the grid plots every sibling spectrum at the other collision energies. Those panels are
+sorted from low to high using the detector-selected NCE or ACE value, then by spectrum ID within
+one CE, with the review target inserted at its corresponding CE and highlighted with a pale
+background and border. Pages are continued after 11 comparison panels, and the review target is
+repeated on each continuation page.
+An other-CE panel that is independently present in the review queue is labeled
+`REVIEW CANDIDATE — OTHER CE`, shows its own review reasons and UWPR formula annotations, and
+receives the same highlight; an unflagged contextual sibling remains labeled `OTHER CE`.
 Cross-CE panels fill each column from top to bottom before continuing in the next column.
 Candidates sharing molecule ID, precursor type, and instrument type are packed onto the same page,
 up to 12 panels, when none requires a dedicated comparison layout. They are ordered from lower to
@@ -41,9 +45,10 @@ is plotted on the candidate page.
 For `substantial_uwpr_contaminant_only_intensity`, D3 `dag_feasible` peaks are green and labeled
 `D3 DAG`, peaks that become feasible only in D4 are purple and labeled `D4+ DAG`, and peaks called
 `contaminant_only` by every source returning a decision are orange and labeled `UWPR` followed by
-the matched contaminant formula (multiple formulas are separated by `/`); undecidable sources
-abstain. Only the orange consensus category supports bad-data priority; DAG-feasible matches are
-context.
+the matched contaminant formula (multiple formulas are separated by `/`). A contaminant-matched
+peak above the recorded or computed precursor m/z is red instead of orange; undecidable sources
+abstain. Only this contaminant-consensus category supports bad-data priority; DAG-feasible matches
+are context.
 For `duplicate_spectrum_formula_conflict`, the grid plots the exact duplicate partners selected by
 the shared 11-panel budget and labels each molecule ID, formula, adduct, and recorded and computed
 precursor m/z. The header structure strip shows at most four molecules and reports the total when

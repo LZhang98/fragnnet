@@ -521,19 +521,7 @@ def collect_cross_ce_comparison_spectra(
             & scoped["ce_bin"].notna()
             & scoped["ce_bin"].ne(primary["ce_bin"])
         ].sort_values(["ce_bin", "spec_id"])
-        representatives = siblings.drop_duplicates("ce_bin").copy()
-        n_available_bins = len(representatives)
-        if n_available_bins > MAX_OTHER_CE_PDF_PANELS:
-            representatives["ce_distance"] = (
-                representatives["ce_bin"] - float(primary["ce_bin"])
-            ).abs()
-            representatives["spec_sort_id"] = pd.to_numeric(
-                representatives["spec_id"], errors="raise"
-            )
-            representatives = representatives.nsmallest(
-                MAX_OTHER_CE_PDF_PANELS,
-                ["ce_distance", "ce_bin", "spec_sort_id"],
-            ).sort_values(["ce_bin", "spec_sort_id"])
+        n_available_spectra = len(siblings)
         comparisons[spec_id] = [
             {
                 "spec_id": int(row.spec_id),
@@ -543,9 +531,9 @@ def collect_cross_ce_comparison_spectra(
                 "inst_type": row.inst_type,
                 "prec_mz": getattr(row, "prec_mz", math.nan),
                 "peaks": row.peaks,
-                "n_other_ce_bins_available": n_available_bins,
+                "n_other_ce_spectra_available": n_available_spectra,
             }
-            for row in representatives.itertuples(index=False)
+            for row in siblings.itertuples(index=False)
         ]
     return comparisons
 
@@ -566,9 +554,9 @@ def _ordered_cross_ce_spectra(
         "prec_mz": getattr(row, "prec_mz", math.nan),
         "expected_prec_mz": getattr(row, "expected_prec_mz", math.nan),
         "peaks": primary_peaks,
-        "n_other_ce_bins_shown": len(comparisons),
-        "n_other_ce_bins_available": int(
-            comparisons[0].get("n_other_ce_bins_available", len(comparisons))
+        "n_other_ce_spectra_shown": len(comparisons),
+        "n_other_ce_spectra_available": int(
+            comparisons[0].get("n_other_ce_spectra_available", len(comparisons))
         ),
     }
     siblings = [dict(comparison, is_review_target=False) for comparison in comparisons]
@@ -1530,11 +1518,18 @@ def _plot_pdf_spectrum(
                 if len(matched) == 0:
                     continue
                 peak_idx = int(matched[0])
+                peak_color = annotation_color
+                if (
+                    annotation == "uwpr_contaminant"
+                    and precursor_mz is not None
+                    and float(mzs[peak_idx]) > precursor_mz
+                ):
+                    peak_color = "#c43b3b"
                 axis.vlines(
                     mzs[peak_idx],
                     0.0,
                     normalized[peak_idx],
-                    color=annotation_color,
+                    color=peak_color,
                     linewidth=2.0,
                 )
                 peak_label = annotation_label
@@ -1546,7 +1541,7 @@ def _plot_pdf_spectrum(
                     mzs[peak_idx],
                     min(float(normalized[peak_idx]) + 0.025, 1.02),
                     peak_label,
-                    color=annotation_color,
+                    color=peak_color,
                     fontsize=6,
                     rotation=90,
                     ha="center",
@@ -1824,14 +1819,70 @@ def write_review_pdf(
         rows = list(
             candidates[candidates["spec_id"].isin(peaks_by_spec_id)].itertuples(index=False)
         )
+        candidate_by_spec_id = {int(row.spec_id): row for row in rows}
         candidate_pages = _group_pdf_candidate_pages(
             rows,
             formula_conflict_comparisons_by_spec_id,
             same_ce_replicates_by_spec_id,
             cross_ce_comparisons_by_spec_id,
         )
-        page_number = 0
+        render_pages: list[
+            tuple[
+                list[object],
+                tuple[
+                    list[dict[str, object]],
+                    list[dict[str, object]],
+                    list[dict[str, object]],
+                ]
+                | None,
+            ]
+        ] = []
         for page_rows in candidate_pages:
+            if len(page_rows) != 1:
+                render_pages.append((page_rows, None))
+                continue
+            page_row = page_rows[0]
+            page_spec_id = int(page_row.spec_id)
+            all_formula_conflicts = (
+                formula_conflict_comparisons_by_spec_id.get(page_spec_id, [])
+                if bool(page_row.duplicate_spectrum_formula_conflict)
+                else []
+            )
+            all_same_ce_replicates = (
+                same_ce_replicates_by_spec_id.get(page_spec_id, [])
+                if bool(page_row.replicate_consensus_disagreement)
+                else []
+            )
+            all_cross_ce_comparisons = (
+                cross_ce_comparisons_by_spec_id.get(page_spec_id, [])
+                if bool(page_row.substantial_cross_ce_orphan_intensity)
+                else []
+            )
+            first_page = _select_dedicated_comparisons(
+                all_formula_conflicts,
+                all_same_ce_replicates,
+                all_cross_ce_comparisons,
+            )
+            render_pages.append((page_rows, first_page))
+            shown_cross_ce_ids = {int(item["spec_id"]) for item in first_page[2]}
+            remaining_cross_ce = [
+                item
+                for item in all_cross_ce_comparisons
+                if int(item["spec_id"]) not in shown_cross_ce_ids
+            ]
+            for start in range(0, len(remaining_cross_ce), MAX_OTHER_CE_PDF_PANELS):
+                render_pages.append(
+                    (
+                        page_rows,
+                        (
+                            [],
+                            [],
+                            remaining_cross_ce[start : start + MAX_OTHER_CE_PDF_PANELS],
+                        ),
+                    )
+                )
+        page_number = 0
+        for page_rows, comparison_override in render_pages:
             page_number += 1
             if len(page_rows) > 1:
                 first_row = page_rows[0]
@@ -1956,13 +2007,16 @@ def write_review_pdf(
                 if bool(row.substantial_cross_ce_orphan_intensity)
                 else []
             )
-            formula_conflicts, same_ce_replicates, cross_ce_comparisons = (
-                _select_dedicated_comparisons(
-                    all_formula_conflicts,
-                    all_same_ce_replicates,
-                    all_cross_ce_comparisons,
+            if comparison_override is None:
+                formula_conflicts, same_ce_replicates, cross_ce_comparisons = (
+                    _select_dedicated_comparisons(
+                        all_formula_conflicts,
+                        all_same_ce_replicates,
+                        all_cross_ce_comparisons,
+                    )
                 )
-            )
+            else:
+                formula_conflicts, same_ce_replicates, cross_ce_comparisons = comparison_override
             comparisons = formula_conflicts + same_ce_replicates + cross_ce_comparisons
             n_plots = 1 + len(comparisons)
             ncols = 2
@@ -2019,8 +2073,8 @@ def write_review_pdf(
                             f"REVIEW TARGET — CROSS-CE ORPHAN | Priority "
                             f"{row.review_priority} | spec {spec_id} | {ce_label}\n"
                             f"{_pdf_wrecall(spec_id, row.inst_type, dag_wrecall_by_spec_id)} | "
-                            f"CE bins shown={spectrum['n_other_ce_bins_shown']}/"
-                            f"{spectrum['n_other_ce_bins_available']} | {reason}",
+                            f"CE spectra shown={spectrum['n_other_ce_spectra_shown']}/"
+                            f"{spectrum['n_other_ce_spectra_available']} | {reason}",
                             "#2457a6",
                             shared_x_max,
                             uwpr_annotations_by_spec_id.get(spec_id, {}),
@@ -2031,16 +2085,40 @@ def write_review_pdf(
                             spine.set_color("#d18b00")
                             spine.set_linewidth(1.8)
                     else:
+                        sibling_spec_id = int(spectrum["spec_id"])
+                        sibling_candidate = candidate_by_spec_id.get(sibling_spec_id)
+                        if sibling_candidate is None:
+                            sibling_title = (
+                                f"OTHER CE | {ce_label} | spec {sibling_spec_id} | "
+                                f"NIST {spectrum['dset_spec_id']}\n"
+                                f"{_pdf_wrecall(sibling_spec_id, row.inst_type, dag_wrecall_by_spec_id)}"
+                            )
+                        else:
+                            sibling_reason = str(sibling_candidate.review_reasons).replace(
+                                ";", "; "
+                            )
+                            sibling_title = (
+                                "REVIEW CANDIDATE — OTHER CE | "
+                                f"Priority {sibling_candidate.review_priority} | "
+                                f"{ce_label} | spec {sibling_spec_id} | "
+                                f"NIST {spectrum['dset_spec_id']}\n"
+                                f"{_pdf_wrecall(sibling_spec_id, row.inst_type, dag_wrecall_by_spec_id)} | "
+                                f"{sibling_reason}"
+                            )
                         _plot_pdf_spectrum(
                             axis,
                             spectrum["peaks"],
-                            f"OTHER CE | {ce_label} | spec {spectrum['spec_id']} | "
-                            f"NIST {spectrum['dset_spec_id']}\n"
-                            f"{_pdf_wrecall(int(spectrum['spec_id']), row.inst_type, dag_wrecall_by_spec_id)}",
+                            sibling_title,
                             "#b04a35",
                             shared_x_max,
+                            uwpr_annotations_by_spec_id.get(sibling_spec_id, {}),
                             precursor_mz=_pdf_precursor_mz(spectrum),
                         )
+                        if sibling_candidate is not None:
+                            axis.set_facecolor("#fff6cf")
+                            for spine in axis.spines.values():
+                                spine.set_color("#d18b00")
+                                spine.set_linewidth(1.8)
                 comparison_axes = iter(plot_axes[len(cross_ce_spectra) :])
             else:
                 _plot_pdf_spectrum(
@@ -2104,8 +2182,9 @@ def write_review_pdf(
             )
             if all_cross_ce_comparisons:
                 metadata += (
-                    "\ncross-CE display uses one representative per CE bin (lowest spec_id); "
-                    f"shown={len(cross_ce_comparisons)}/{len(all_cross_ce_comparisons)} bins"
+                    "\ncross-CE display includes every sibling spectrum; "
+                    f"shown on this page={len(cross_ce_comparisons)}/"
+                    f"{len(all_cross_ce_comparisons)} spectra"
                 )
             if all_formula_conflicts:
                 metadata += (
