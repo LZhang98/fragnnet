@@ -88,13 +88,22 @@ class DynamicLengthDataLoader:
 def test_seed_dataloader_refreshes_lightning_cached_batch_count():
     batch_sampler = RecordingBatchSampler()
     train_dataloader = RecordingDataLoader(batch_sampler, num_batches=17)
+    limits = [4]
+    combined_loader = types.SimpleNamespace(
+        limits=limits, _iterator=types.SimpleNamespace(limits=limits)
+    )
+    data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(dag_size_curriculum=True),
         train_dl_seeds=torch.tensor([10, 11, 12, 13]),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
-            fit_loop=types.SimpleNamespace(max_batches=4),
+            fit_loop=types.SimpleNamespace(
+                _combined_loader=combined_loader,
+                _data_fetcher=data_fetcher,
+                max_batches=4,
+            ),
             val_check_interval=1.0,
             val_check_batch=4,
         ),
@@ -105,6 +114,9 @@ def test_seed_dataloader_refreshes_lightning_cached_batch_count():
     assert batch_sampler.precompute_calls == 1
     assert batch_sampler.epochs == [2]
     assert batch_sampler.generator.initial_seed() == 12
+    assert module.trainer.fit_loop._combined_loader.limits == [17]
+    assert module.trainer.fit_loop._combined_loader._iterator.limits == [17]
+    data_fetcher.reset.assert_called_once_with()
     assert module.trainer.fit_loop.max_batches == 17
     assert module.trainer.val_check_batch == 17
 
@@ -112,13 +124,18 @@ def test_seed_dataloader_refreshes_lightning_cached_batch_count():
 def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
     batch_sampler = RecordingBatchSampler()
     train_dataloader = RecordingDataLoader(batch_sampler, num_batches=40)
+    data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=30,
         hparams=types.SimpleNamespace(dag_size_curriculum=True),
         train_dl_seeds=torch.arange(31),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
-            fit_loop=types.SimpleNamespace(max_batches=10),
+            fit_loop=types.SimpleNamespace(
+                _combined_loader=types.SimpleNamespace(limits=[10]),
+                _data_fetcher=data_fetcher,
+                max_batches=10,
+            ),
             val_check_interval=0.5,
             val_check_batch=5,
         ),
@@ -129,6 +146,8 @@ def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
     assert batch_sampler.precompute_calls == 1
     assert batch_sampler.epochs == [30]
     assert batch_sampler.generator.initial_seed() == 30
+    assert module.trainer.fit_loop._combined_loader.limits == [40]
+    data_fetcher.reset.assert_called_once_with()
     assert module.trainer.fit_loop.max_batches == 40
     assert module.trainer.val_check_batch == 20
 
@@ -136,13 +155,18 @@ def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
 def test_seed_dataloader_advances_outer_curriculum_sampler_at_epoch_99():
     batch_sampler = GrowingCurriculumBatchSampler()
     train_dataloader = DynamicLengthDataLoader(batch_sampler)
+    data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=99,
         hparams=types.SimpleNamespace(dag_size_curriculum=True),
         train_dl_seeds=torch.arange(100),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
-            fit_loop=types.SimpleNamespace(max_batches=25),
+            fit_loop=types.SimpleNamespace(
+                _combined_loader=types.SimpleNamespace(limits=[25]),
+                _data_fetcher=data_fetcher,
+                max_batches=25,
+            ),
             val_check_interval=1.0,
             val_check_batch=25,
         ),
@@ -152,6 +176,8 @@ def test_seed_dataloader_advances_outer_curriculum_sampler_at_epoch_99():
 
     assert batch_sampler.epochs == [99]
     assert batch_sampler.num_batches == 100
+    assert module.trainer.fit_loop._combined_loader.limits == [100]
+    data_fetcher.reset.assert_called_once_with()
     assert module.trainer.fit_loop.max_batches == 100
     assert module.trainer.val_check_batch == 100
 
@@ -165,7 +191,11 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
         train_dl_seeds=torch.tensor([10, 11, 12]),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
-            fit_loop=types.SimpleNamespace(max_batches=10),
+            fit_loop=types.SimpleNamespace(
+                _combined_loader=types.SimpleNamespace(limits=[10]),
+                _data_fetcher=types.SimpleNamespace(reset=MagicMock()),
+                max_batches=10,
+            ),
             val_check_interval=1.0,
             val_check_batch=10,
         ),
@@ -175,6 +205,8 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
 
     assert batch_sampler.precompute_calls == 1
     assert batch_sampler.epochs == []
+    assert module.trainer.fit_loop._combined_loader.limits == [10]
+    module.trainer.fit_loop._data_fetcher.reset.assert_not_called()
     assert module.trainer.fit_loop.max_batches == 10
     assert module.trainer.val_check_batch == 10
 

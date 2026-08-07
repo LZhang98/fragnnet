@@ -2232,7 +2232,11 @@ class SpectrumPL(L.LightningModule):
 
             # Lightning caches these before set_epoch and this hook run, including on resume.
             num_batches = len(train_dataloader)
-            self.trainer.fit_loop.max_batches = num_batches
+            fit_loop = self.trainer.fit_loop
+            # Mutate in place because the active CombinedLoader iterator holds this list.
+            fit_loop._combined_loader.limits[0] = num_batches
+            fit_loop._data_fetcher.reset()
+            fit_loop.max_batches = num_batches
             if not isinstance(self.trainer.val_check_interval, int):
                 self.trainer.val_check_batch = max(
                     1, int(num_batches * self.trainer.val_check_interval)
