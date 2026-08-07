@@ -2154,8 +2154,6 @@ class SpectrumPL(L.LightningModule):
         self.train_results = None
         self._reset_running_metrics("train")
         self.train_counter = 0
-        # seed dataloader
-        # self._seed_dataloader(self.current_epoch+1)
 
     def on_validation_epoch_end(self):
         if not self.trainer.sanity_checking:
@@ -2232,6 +2230,15 @@ class SpectrumPL(L.LightningModule):
                 obj.generator = generator
             if hasattr(obj, "_pre_compute_batches"):
                 obj._pre_compute_batches()
+
+        if self.hparams.dag_size_curriculum:
+            # Lightning caches these before set_epoch and this hook run, including on resume.
+            num_batches = len(train_dataloader)
+            self.trainer.fit_loop.max_batches = num_batches
+            if not isinstance(self.trainer.val_check_interval, int):
+                self.trainer.val_check_batch = max(
+                    1, int(num_batches * self.trainer.val_check_interval)
+                )
 
     def on_save_checkpoint(self, checkpoint):
         # rng

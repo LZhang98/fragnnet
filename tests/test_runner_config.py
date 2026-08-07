@@ -16,6 +16,10 @@ def _base_config(**overrides) -> dict:
         "automatic_optimization": False,
         "dynamic_batch_sampler_mode": "frag_node",
         "dynamic_batch_sampler_max": 1000,
+        "dag_size_curriculum": False,
+        "dag_size_curriculum_start_fraction": 0.25,
+        "dag_size_curriculum_epochs": 10,
+        "max_epochs": 100,
         "simple_group_sampler": False,
         "simple_group_sampler_type": "adduct_inst_type",
     }
@@ -70,6 +74,46 @@ class TestValidateSamplerConfig:
                 _base_config(
                     dynamic_batch_sampler=True,
                     dual_group_dynamic_batch_sampler=True,
+                )
+            )
+
+    def test_dag_size_curriculum_valid_config_passes(self):
+        validate_sampler_config(_base_config(dag_size_curriculum=True))
+
+    def test_dag_size_curriculum_requires_dynamic_sampler(self):
+        with pytest.raises(ValueError, match="requires dynamic_batch_sampler"):
+            validate_sampler_config(
+                _base_config(dynamic_batch_sampler=False, dag_size_curriculum=True)
+            )
+
+    def test_dag_size_curriculum_rejects_automatic_optimization(self):
+        with pytest.raises(ValueError, match="automatic optimization"):
+            validate_sampler_config(
+                _base_config(dag_size_curriculum=True, automatic_optimization=True)
+            )
+
+    @pytest.mark.parametrize("max_epochs", [1, 10])
+    def test_dag_size_curriculum_must_reach_full_dataset(self, max_epochs):
+        with pytest.raises(ValueError, match="less than max_epochs"):
+            validate_sampler_config(_base_config(dag_size_curriculum=True, max_epochs=max_epochs))
+
+    @pytest.mark.parametrize("start_fraction", [0, -0.1, 1.1, None])
+    def test_dag_size_curriculum_rejects_invalid_start_fraction(self, start_fraction):
+        with pytest.raises(ValueError, match="start_fraction"):
+            validate_sampler_config(
+                _base_config(
+                    dag_size_curriculum=True,
+                    dag_size_curriculum_start_fraction=start_fraction,
+                )
+            )
+
+    @pytest.mark.parametrize("curriculum_epochs", [0, -1, 1.5, None])
+    def test_dag_size_curriculum_rejects_invalid_epochs(self, curriculum_epochs):
+        with pytest.raises(ValueError, match="curriculum_epochs"):
+            validate_sampler_config(
+                _base_config(
+                    dag_size_curriculum=True,
+                    dag_size_curriculum_epochs=curriculum_epochs,
                 )
             )
 

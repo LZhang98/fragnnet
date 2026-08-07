@@ -24,6 +24,7 @@ from fragnnet.dataset import (
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
+from fragnnet.dataset.data_sampler import validate_dag_size_curriculum
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
@@ -193,6 +194,9 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 skip_too_big=True,
                 return_batch_at=return_batch_at,
                 sampler=sampler,
+                dag_size_curriculum=config_d["dag_size_curriculum"],
+                dag_size_curriculum_start_fraction=config_d["dag_size_curriculum_start_fraction"],
+                dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
             )
         else:
             batch_sampler = SpecMolFragDynamicBatchSampler(
@@ -292,6 +296,19 @@ def validate_sampler_config(config_d: dict) -> None:
             )
         if config_d["dynamic_batch_sampler_max"] is None:
             raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+
+    if config_d["dag_size_curriculum"]:
+        if not config_d["dynamic_batch_sampler"]:
+            raise ValueError("DAG-size curriculum requires dynamic_batch_sampler=True")
+        validate_dag_size_curriculum(
+            config_d["dag_size_curriculum_start_fraction"],
+            config_d["dag_size_curriculum_epochs"],
+        )
+        if (
+            config_d["max_epochs"] > 0
+            and config_d["dag_size_curriculum_epochs"] >= config_d["max_epochs"]
+        ):
+            raise ValueError("dag_size_curriculum_epochs must be less than max_epochs")
 
     if config_d["dual_group_dynamic_batch_sampler"]:
         if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
@@ -656,12 +673,8 @@ def init_run(
         # this will call train_dataloader and val_dataloader before every epoch
         # not sure why this fixed our problem but it works
         trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
-        # val_check_interval=1.0 (default) converts to a step count = len(train_dl).
-        # With a dynamic batch sampler, len(train_dl) varies per epoch (different random
-        # sample mixes → different fragment counts → different number of packed batches).
-        # If Lightning caches the step count from the first epoch, val misses epoch ends
-        # in later epochs. check_val_every_n_epoch=1 switches to epoch-boundary triggering
-        # and guarantees val always runs at the end of every epoch.
+        # Use per-epoch batch indices for validation checks. DAG curriculum training also
+        # refreshes Lightning's cached train/validation batch counts after sampler updates.
         trainer_param_d["check_val_every_n_epoch"] = 1
 
     trainer = L.Trainer(**trainer_param_d)

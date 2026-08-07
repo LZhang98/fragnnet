@@ -9,6 +9,7 @@ Includes:
 """
 
 import logging
+import math
 from collections.abc import Iterator
 
 import numpy as np
@@ -17,6 +18,23 @@ from torch.utils.data import BatchSampler, Sampler, WeightedRandomSampler
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def validate_dag_size_curriculum(start_fraction: float, curriculum_epochs: int) -> None:
+    """Validate DAG-size curriculum schedule values."""
+    if (
+        isinstance(start_fraction, bool)
+        or not isinstance(start_fraction, (int, float))
+        or not 0 < start_fraction <= 1
+    ):
+        raise ValueError("dag_size_curriculum_start_fraction must be in (0, 1]")
+    if (
+        isinstance(curriculum_epochs, bool)
+        or not isinstance(curriculum_epochs, int)
+        or curriculum_epochs <= 0
+    ):
+        raise ValueError("dag_size_curriculum_epochs must be a positive integer")
+
 
 #####################################################
 # Batch Samplers
@@ -38,6 +56,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         num_samples: int | None = None,
         return_batch_at: int = 0,
         sampler: Sampler | None = None,
+        dag_size_curriculum: bool = False,
+        dag_size_curriculum_start_fraction: float = 0.25,
+        dag_size_curriculum_epochs: int = 10,
     ) -> None:
         """Initialize dynamic batch sampler.
 
@@ -49,6 +70,10 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             num_samples (Optional[int]): Number of samples to draw (default: all)
             return_batch_at (int): Return batch every N samples for gradient accumulation
             sampler (Optional[Sampler]): Base sampler (e.g., RandomSampler, GroupSampler)
+            dag_size_curriculum: Progressively admit samples by fragment DAG node count.
+            dag_size_curriculum_start_fraction: Fraction of the smallest DAG samples
+                eligible at epoch zero.
+            dag_size_curriculum_epochs: Epoch at which all DAG sizes become eligible.
 
         Raises:
             ValueError: If max_num <= 0 or limited_by not in ['frag_node', 'frag_edge']
@@ -58,6 +83,11 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         if limited_by not in ["frag_node", "frag_edge"]:
             raise ValueError(
                 f"`limited_by` choice should be either 'frag_node' or 'frag_edge' (got '{limited_by}')."
+            )
+        if dag_size_curriculum:
+            validate_dag_size_curriculum(
+                dag_size_curriculum_start_fraction,
+                dag_size_curriculum_epochs,
             )
 
         if num_samples is None:
@@ -69,6 +99,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         self._skip_too_big = skip_too_big
         self._max_sampling_step = num_samples
         self._return_batch_at = return_batch_at
+        self._dag_size_curriculum = dag_size_curriculum
+        self._dag_size_curriculum_start_fraction = dag_size_curriculum_start_fraction
+        self._dag_size_curriculum_epochs = dag_size_curriculum_epochs
         self._batches = []
         self._data_meta = []  # becomes np.ndarray (N, 2) after _pre_load_batches
         self.sampler = sampler
@@ -87,6 +120,20 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         self._epoch = 0
         self._pre_load_batches()
         self._pre_compute_batches()
+
+    def _curriculum_node_limit(self) -> int | None:
+        """Return the largest eligible DAG node count for the current epoch."""
+        if not self._dag_size_curriculum or len(self._data_meta) == 0:
+            return None
+
+        progress = min(self._epoch / self._dag_size_curriculum_epochs, 1.0)
+        fraction = (
+            self._dag_size_curriculum_start_fraction
+            + (1.0 - self._dag_size_curriculum_start_fraction) * progress
+        )
+        node_counts = self._data_meta[:, 0]
+        target_count = min(len(node_counts), max(1, math.ceil(len(node_counts) * fraction)))
+        return int(np.partition(node_counts, target_count - 1)[target_count - 1])
 
     def _pre_load_batches(self):
         """Pre-load and cache frag graph metadata (nodes, edges) for each sample.
@@ -170,6 +217,20 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
         # limited index to _max_sampling_step
         indices = indices[: self._max_sampling_step]
+
+        curriculum_node_limit = self._curriculum_node_limit()
+        if curriculum_node_limit is not None:
+            sampled_count = len(indices)
+            eligible = self._data_meta[indices.numpy(), 0] <= curriculum_node_limit
+            indices = indices[th.from_numpy(eligible)]
+            logger.info(
+                "[SpecMolFragDynamicBatchSampler] DAG curriculum epoch %d: "
+                "%d/%d sampled items eligible at <= %d fragment nodes",
+                self._epoch,
+                len(indices),
+                sampled_count,
+                curriculum_node_limit,
+            )
 
         # Cache this to avoid string comparison per iteration
         limited_by_idx = 0 if self._limited_by == "frag_node" else 1

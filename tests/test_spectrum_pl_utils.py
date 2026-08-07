@@ -27,11 +27,103 @@ if "fragnnet.frag.multi_cut_bfs" not in sys.modules:
     sys.modules["fragnnet.frag.multi_cut_bfs"] = _m
 
 from fragnnet.pl_model.spectrum_pl import (  # noqa: E402
+    SpectrumPL,
     get_split_fn,
     list_to_batch_tensor,
     primary_ce_to_batch,
     ragged_to_batch,
 )
+
+
+class RecordingBatchSampler:
+    """Minimal batch sampler recording seeded recomputations."""
+
+    def __init__(self):
+        self.generator = None
+        self.precompute_calls = 0
+
+    def _pre_compute_batches(self):
+        self.precompute_calls += 1
+
+
+class RecordingDataLoader:
+    """Minimal dataloader with a configurable batch count."""
+
+    def __init__(self, batch_sampler, num_batches):
+        self.batch_sampler = batch_sampler
+        self.num_batches = num_batches
+
+    def __len__(self):
+        return self.num_batches
+
+
+def test_seed_dataloader_refreshes_lightning_cached_batch_count():
+    batch_sampler = RecordingBatchSampler()
+    train_dataloader = RecordingDataLoader(batch_sampler, num_batches=17)
+    module = types.SimpleNamespace(
+        current_epoch=2,
+        hparams=types.SimpleNamespace(dag_size_curriculum=True),
+        train_dl_seeds=torch.tensor([10, 11, 12, 13]),
+        trainer=types.SimpleNamespace(
+            train_dataloader=train_dataloader,
+            fit_loop=types.SimpleNamespace(max_batches=4),
+            val_check_interval=1.0,
+            val_check_batch=4,
+        ),
+    )
+
+    SpectrumPL._seed_dataloader(module, 2)
+
+    assert batch_sampler.precompute_calls == 1
+    assert batch_sampler.generator.initial_seed() == 12
+    assert module.trainer.fit_loop.max_batches == 17
+    assert module.trainer.val_check_batch == 17
+
+
+def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
+    batch_sampler = RecordingBatchSampler()
+    train_dataloader = RecordingDataLoader(batch_sampler, num_batches=40)
+    module = types.SimpleNamespace(
+        current_epoch=30,
+        hparams=types.SimpleNamespace(dag_size_curriculum=True),
+        train_dl_seeds=torch.arange(31),
+        trainer=types.SimpleNamespace(
+            train_dataloader=train_dataloader,
+            fit_loop=types.SimpleNamespace(max_batches=10),
+            val_check_interval=0.5,
+            val_check_batch=5,
+        ),
+    )
+
+    SpectrumPL._seed_dataloader(module, 30)
+
+    assert batch_sampler.precompute_calls == 1
+    assert batch_sampler.generator.initial_seed() == 30
+    assert module.trainer.fit_loop.max_batches == 40
+    assert module.trainer.val_check_batch == 20
+
+
+def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
+    batch_sampler = RecordingBatchSampler()
+    train_dataloader = RecordingDataLoader(batch_sampler, num_batches=40)
+    module = types.SimpleNamespace(
+        current_epoch=2,
+        hparams=types.SimpleNamespace(dag_size_curriculum=False),
+        train_dl_seeds=torch.tensor([10, 11, 12]),
+        trainer=types.SimpleNamespace(
+            train_dataloader=train_dataloader,
+            fit_loop=types.SimpleNamespace(max_batches=10),
+            val_check_interval=1.0,
+            val_check_batch=10,
+        ),
+    )
+
+    SpectrumPL._seed_dataloader(module, 2)
+
+    assert batch_sampler.precompute_calls == 1
+    assert module.trainer.fit_loop.max_batches == 10
+    assert module.trainer.val_check_batch == 10
+
 
 # ===========================================================================
 # get_split_fn

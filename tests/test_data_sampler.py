@@ -189,6 +189,94 @@ class TestSpecMolFragDynamicBatchSampler:
         batches2 = list(sampler)
         assert batches1 == batches2
 
+    def test_dag_size_curriculum_progressively_adds_larger_dags(self):
+        ds = FakeDataset([(10, 1), (20, 1), (30, 1), (40, 1)])
+        sampler = SpecMolFragDynamicBatchSampler(
+            data_source=ds,
+            max_num=100,
+            limited_by="frag_node",
+            dag_size_curriculum=True,
+            dag_size_curriculum_start_fraction=0.25,
+            dag_size_curriculum_epochs=2,
+        )
+
+        assert [idx for batch in sampler for idx in batch] == [0]
+
+        sampler.set_epoch(1)
+        assert [idx for batch in sampler for idx in batch] == [0, 1, 2]
+
+        sampler.set_epoch(2)
+        assert [idx for batch in sampler for idx in batch] == [0, 1, 2, 3]
+
+    def test_dag_size_curriculum_includes_tied_node_counts(self):
+        ds = FakeDataset([(10, 1), (10, 1), (20, 1), (30, 1)])
+        sampler = SpecMolFragDynamicBatchSampler(
+            data_source=ds,
+            max_num=100,
+            limited_by="frag_node",
+            dag_size_curriculum=True,
+            dag_size_curriculum_start_fraction=0.25,
+            dag_size_curriculum_epochs=2,
+        )
+
+        assert [idx for batch in sampler for idx in batch] == [0, 1]
+
+    def test_dag_size_curriculum_filters_non_default_sampler_output(self):
+        ds = FakeDataset([(40, 1), (10, 1), (20, 1), (30, 1)])
+        sampler = SpecMolFragDynamicBatchSampler(
+            data_source=ds,
+            max_num=100,
+            limited_by="frag_node",
+            sampler=[3, 1, 2, 0],
+            dag_size_curriculum=True,
+            dag_size_curriculum_start_fraction=0.25,
+            dag_size_curriculum_epochs=2,
+        )
+
+        assert [idx for batch in sampler for idx in batch] == [1]
+        sampler.set_epoch(1)
+        assert [idx for batch in sampler for idx in batch] == [3, 1, 2]
+
+    def test_disabled_dag_size_curriculum_leaves_batching_unchanged(self):
+        ds = FakeDataset([(10, 1), (20, 1), (30, 1), (40, 1)])
+        sampler = SpecMolFragDynamicBatchSampler(
+            data_source=ds,
+            max_num=100,
+            limited_by="frag_node",
+            sampler=[3, 1, 2, 0],
+            dag_size_curriculum=False,
+        )
+
+        assert [idx for batch in sampler for idx in batch] == [3, 1, 2, 0]
+        sampler.set_epoch(10)
+        assert [idx for batch in sampler for idx in batch] == [3, 1, 2, 0]
+
+    @pytest.mark.parametrize("start_fraction", [0, -0.1, 1.1, True, None])
+    def test_dag_size_curriculum_rejects_invalid_start_fraction(self, start_fraction):
+        ds = FakeDataset([(10, 1)])
+
+        with pytest.raises(ValueError, match="start_fraction"):
+            SpecMolFragDynamicBatchSampler(
+                data_source=ds,
+                max_num=100,
+                limited_by="frag_node",
+                dag_size_curriculum=True,
+                dag_size_curriculum_start_fraction=start_fraction,
+            )
+
+    @pytest.mark.parametrize("curriculum_epochs", [0, -1, 1.5, True, None])
+    def test_dag_size_curriculum_rejects_invalid_epochs(self, curriculum_epochs):
+        ds = FakeDataset([(10, 1)])
+
+        with pytest.raises(ValueError, match="curriculum_epochs"):
+            SpecMolFragDynamicBatchSampler(
+                data_source=ds,
+                max_num=100,
+                limited_by="frag_node",
+                dag_size_curriculum=True,
+                dag_size_curriculum_epochs=curriculum_epochs,
+            )
+
     def test_dynamic_batch_sampler_skip_too_big(self):
         """Test skip_too_big flag."""
         data_list = [
