@@ -2217,21 +2217,19 @@ class SpectrumPL(L.LightningModule):
         train_dataloader = self.trainer.train_dataloader
         batch_sampler = train_dataloader.batch_sampler
 
-        # Seed generator and recompute batches on whichever object(s) own them.
-        # Walk inner sampler first (so nested pre_compute runs before outer),
-        # then the batch_sampler itself. Works for SpecMolFragDynamicBatchSampler
-        # (nested sampler owns generator), DualGroupDynamicBatchSampler (owns its
-        # own generator), and standard BatchSampler (nested sampler may own generator).
+        # Seed generators on whichever object owns them.
         inner = getattr(batch_sampler, "sampler", None)
         for obj in [inner, batch_sampler]:
             if obj is None:
                 continue
             if hasattr(obj, "generator"):
                 obj.generator = generator
-            if hasattr(obj, "_pre_compute_batches"):
-                obj._pre_compute_batches()
 
         if self.hparams.dag_size_curriculum:
+            # Lightning advances only dataloader.sampler and batch_sampler.sampler;
+            # curriculum state belongs to the outer dynamic batch sampler.
+            batch_sampler.set_epoch(seed)
+
             # Lightning caches these before set_epoch and this hook run, including on resume.
             num_batches = len(train_dataloader)
             self.trainer.fit_loop.max_batches = num_batches
@@ -2239,6 +2237,11 @@ class SpectrumPL(L.LightningModule):
                 self.trainer.val_check_batch = max(
                     1, int(num_batches * self.trainer.val_check_interval)
                 )
+        else:
+            # Preserve existing recomputation behavior for non-curriculum samplers.
+            for obj in [inner, batch_sampler]:
+                if obj is not None and hasattr(obj, "_pre_compute_batches"):
+                    obj._pre_compute_batches()
 
     def on_save_checkpoint(self, checkpoint):
         # rng

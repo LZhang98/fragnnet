@@ -41,6 +41,11 @@ class RecordingBatchSampler:
     def __init__(self):
         self.generator = None
         self.precompute_calls = 0
+        self.epochs = []
+
+    def set_epoch(self, epoch):
+        self.epochs.append(epoch)
+        self._pre_compute_batches()
 
     def _pre_compute_batches(self):
         self.precompute_calls += 1
@@ -55,6 +60,29 @@ class RecordingDataLoader:
 
     def __len__(self):
         return self.num_batches
+
+
+class GrowingCurriculumBatchSampler(RecordingBatchSampler):
+    """Batch sampler that expands from an epoch-zero subset to the full data."""
+
+    def __init__(self):
+        super().__init__()
+        self.num_batches = 25
+
+    def set_epoch(self, epoch):
+        super().set_epoch(epoch)
+        if epoch >= 10:
+            self.num_batches = 100
+
+
+class DynamicLengthDataLoader:
+    """Dataloader whose length follows its batch sampler."""
+
+    def __init__(self, batch_sampler):
+        self.batch_sampler = batch_sampler
+
+    def __len__(self):
+        return self.batch_sampler.num_batches
 
 
 def test_seed_dataloader_refreshes_lightning_cached_batch_count():
@@ -75,6 +103,7 @@ def test_seed_dataloader_refreshes_lightning_cached_batch_count():
     SpectrumPL._seed_dataloader(module, 2)
 
     assert batch_sampler.precompute_calls == 1
+    assert batch_sampler.epochs == [2]
     assert batch_sampler.generator.initial_seed() == 12
     assert module.trainer.fit_loop.max_batches == 17
     assert module.trainer.val_check_batch == 17
@@ -98,9 +127,33 @@ def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
     SpectrumPL._seed_dataloader(module, 30)
 
     assert batch_sampler.precompute_calls == 1
+    assert batch_sampler.epochs == [30]
     assert batch_sampler.generator.initial_seed() == 30
     assert module.trainer.fit_loop.max_batches == 40
     assert module.trainer.val_check_batch == 20
+
+
+def test_seed_dataloader_advances_outer_curriculum_sampler_at_epoch_99():
+    batch_sampler = GrowingCurriculumBatchSampler()
+    train_dataloader = DynamicLengthDataLoader(batch_sampler)
+    module = types.SimpleNamespace(
+        current_epoch=99,
+        hparams=types.SimpleNamespace(dag_size_curriculum=True),
+        train_dl_seeds=torch.arange(100),
+        trainer=types.SimpleNamespace(
+            train_dataloader=train_dataloader,
+            fit_loop=types.SimpleNamespace(max_batches=25),
+            val_check_interval=1.0,
+            val_check_batch=25,
+        ),
+    )
+
+    SpectrumPL._seed_dataloader(module, 99)
+
+    assert batch_sampler.epochs == [99]
+    assert batch_sampler.num_batches == 100
+    assert module.trainer.fit_loop.max_batches == 100
+    assert module.trainer.val_check_batch == 100
 
 
 def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
@@ -121,6 +174,7 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
     SpectrumPL._seed_dataloader(module, 2)
 
     assert batch_sampler.precompute_calls == 1
+    assert batch_sampler.epochs == []
     assert module.trainer.fit_loop.max_batches == 10
     assert module.trainer.val_check_batch == 10
 
