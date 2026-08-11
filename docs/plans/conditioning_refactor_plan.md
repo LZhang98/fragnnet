@@ -122,3 +122,12 @@ re-ranking-capable and non-redundant.
 - **Thin strata** ([M+Cl]⁻, IT, [M+Na]⁺) have few spectra; a richer combined context
   conditioner can memorize them. The shared-parameter combined embedding is the safer form vs.
   separate per-stratum modules.
+
+## Fragment-head gate follow-up
+
+With `context_insert_location: mol,mlp`, the nonlinear formula MLP already provides
+fragment-specific context responses. The separate
+[`fragment_context_gate_experiment_plan.md`](fragment_context_gate_experiment_plan.md) first tests
+that existing route with a zero-code `mol` versus `mol,mlp` ablation. A final-logit multiplicative
+replacement is considered only after a positive result, as an ordering/optimization experiment—not
+as new fragment × context capacity.
