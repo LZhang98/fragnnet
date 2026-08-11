@@ -52,6 +52,9 @@ The main problem is choosing and ranking intensities over candidates already in 
 Therefore, the next budget goes to reproducibility, objective alignment, regularization, and direct
 ranking supervision—not larger encoders, more CE-depth machinery, or generic DAG expansion.
 
+The measured global base-mass and adjacent-CE ranking experiment is specified in
+[`global_fragment_intensity_ranking_experiment_plan.md`](global_fragment_intensity_ranking_experiment_plan.md).
+
 **Immediate priority:** localize the ranking error using the local `9t63zils` baseline checkpoint.
 This is read-only, requires no new training, and determines which later intervention is correctly
 aimed. Run `4ews8j6f` is retained above as the measured oracle-decomposition reference, but its
