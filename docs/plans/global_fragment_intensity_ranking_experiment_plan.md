@@ -8,9 +8,15 @@
 > add a set-level competition head only if the supervised target has held-out signal that the flat
 > scorer cannot realize.
 
-## Decision
+For the smallest first training experiment, use
+[`ft_contender_pair_minimal_training_plan.md`](ft_contender_pair_minimal_training_plan.md). It tests
+only the high-confidence FT switch-pair KL on the unchanged flat GINE-1 model. The document below is
+the complete research plan and supplies later targets, controls, and escalation paths; they are not
+all part of the minimal first run.
 
-The first experiment is:
+## Full-plan decision
+
+The complete loss-only experiment is:
 
 ```text
 matched flat GINE-1
