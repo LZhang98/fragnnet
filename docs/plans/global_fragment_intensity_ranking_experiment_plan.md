@@ -10,9 +10,10 @@
 
 For the smallest first training experiment, use
 [`ft_contender_pair_minimal_training_plan.md`](ft_contender_pair_minimal_training_plan.md). It tests
-only the high-confidence FT soft pairwise loss on the unchanged flat GINE-1 model. The document
-below is the complete research plan and supplies later targets, controls, and escalation paths;
-they are not all part of the minimal first run.
+only the high-confidence FT soft pairwise loss on the unchanged flat GINE-1 model, using bounded
+cache-free context batching and a sampler-only control. The document below is the complete research
+plan and supplies later targets, controls, and escalation paths; they are not all part of the
+minimal first run.
 
 ## Full-plan decision
 
@@ -98,10 +99,10 @@ Both targets use one matching contract shared with the primary spectrum loss and
 - summed predicted probability for all candidates matching one mass group.
 
 If two observed peaks overlap under the instrument tolerance, merge them before identifying the
-winner. If one candidate matches multiple merged observed groups, fail the builder: the mass groups
-are not disjoint under the stated contract.
+winner. If one candidate matches multiple merged observed groups, skip and count the transition.
+Fail setup only when the audited ambiguity rate exceeds the declared threshold.
 
-The builder must distinguish:
+The runtime audit must distinguish:
 
 ```text
 raw DAG support      candidate mass exists before model scoring
@@ -129,7 +130,8 @@ model-versus-observed cosine. Under independent additive errors, replicate-to-re
 is approximately the square of single-observation reliability. Compare the model and replicate
 statistics only on the identical double-replicated transition cohort with a paired
 molecule-cluster bootstrap. If their paired difference is indistinguishable from zero, the apparent
-directional defect may be replicate noise: stop the contender-pair line before building a cache.
+directional defect may be replicate noise: stop the contender-pair line before changing batching or
+implementing the loss.
 Do not transport the replicate estimate to a different cohort or instrument.
 
 The provisional validation cohort gives:
@@ -242,10 +244,11 @@ not create quadratic duplicates.
 
 ### Replicate consensus
 
-For every mass group and CE level, average normalized observed intensity across same-CE replicates.
-Record the fraction of replicates whose A-versus-B ordering agrees with the replicate-mean
-consensus. Do not assign singleton endpoints agreement `1.0`. Instead, construct one frozen
-training-only reliability table:
+For every mass group and CE level, average normalized observed intensity across the same-CE
+replicates selected in the current bounded context window. The reliability audit separately uses
+all training replicates. Record the fraction whose A-versus-B ordering agrees with the full
+replicate-mean consensus. Do not assign singleton endpoints agreement `1.0`. Instead, construct one
+frozen training-only reliability table:
 
 1. Bin replicated endpoints by `(instrument, adduct, c_pair-confidence bin)` using initial fixed
    edges `{0.0, 0.2, 0.4, 0.6, 0.8, 1.0}`.
@@ -256,11 +259,18 @@ training-only reliability table:
    singleton, set `r_endpoint` to the frozen lower-bound value for its bin. This value is a
    conservative reliability weight, not a calibrated correctness probability.
 4. Require `min(r_low, r_high)` to pass a training-frozen threshold; `0.7` is the initial audit
-   candidate. Store the table, bin edges, pooling decisions, counts, and intervals in cache metadata
-   and apply them unchanged to validation.
+   candidate. Record the table, bin edges, pooling decisions, counts, intervals, and checksum with
+   the run, and apply the frozen table unchanged to validation.
+
+For singleton transfer, stratify replicated contexts by replication rate within each adequately
+covered instrument/adduct/confidence bin. Report molecule-cluster intervals for agreement
+differences. If strata differ by more than `0.05`, or the adverse interval excludes zero, do not
+admit singleton targets from that bin. A singleton's `r_endpoint` is a per-bin constant, not
+endpoint-specific evidence; its reliability floor therefore acts as an additional confidence-bin
+eligibility rule.
 
 Report singleton and replicated coverage and outcomes separately. The double-replicated cohort
-remains the identified measurement-noise audit, but the primary soft `gamma = 1` training cache may
+remains the identified measurement-noise audit, but the primary soft `gamma = 1` online target may
 include reliability-qualified singletons. Target sharpening remains unavailable for a population
 whose replicate gate is unresolved.
 
@@ -321,12 +331,13 @@ the frozen detection-limit floor, rather than exponentiating very small values d
 
 The named `mass_matching_contract` is the instrument-relative tolerance and minimum-m/z floor from
 `inst_type_loss_tol`, using the same strict boundary comparison as the spectrum loss. Freeze it for
-observed-peak merging, support checks, cache construction, training-time alias resolution, and
-evaluation. Aggregate aliases in log space and define the A-versus-B logit:
+observed-peak merging, support checks, online target construction, prediction alias resolution,
+and evaluation. Aggregate predicted peak-intensity log probabilities after isotope/peak expansion,
+not formula-selection probabilities, and define the A-versus-B logit:
 
 ```text
-log_P_e(A) = logsumexp(log_probability_i for i matching A)
-log_P_e(B) = logsumexp(log_probability_i for i matching B)
+log_P_e(A) = logsumexp(log_peak_intensity_i for candidates matching A)
+log_P_e(B) = logsumexp(log_peak_intensity_i for candidates matching B)
 d_e = log_P_e(A) - log_P_e(B)
 ```
 
@@ -353,25 +364,18 @@ For transition `t` in molecular context `c`, use the raw weight:
 a_t = min(c_pair_low, c_pair_high) * r_endpoint_low * r_endpoint_high
 ```
 
-Let `R_t,e` be the replicate count at endpoint `e`. Give each endpoint replicate the fixed cache
-weight
+Let `R_t,e` be the selected endpoint replicate count and compute this online endpoint weight:
 
 ```text
-omega_t,e,r = a_t / (2 * R_t,e * sum(a_u for u in eligible transitions of c)).
+omega_t,e,r = a_t / (2 * R_t,e * sum(a_u for eligible transitions u in c))
 ```
 
-Every context then has total cached pair weight one in the complete cache, and endpoint or replicate
-multiplicity cannot duplicate a transition's influence. The unchanged baseline
-`simple_group_sampler` still controls inclusion probability, so the v1 training estimand is the
-existing sampler-weighted distribution with context normalization—not an equal-context or
-natural-spectrum average. Cache weights must not be described as undoing sampler selection.
-
-In training, sum `omega_t,e,r * BCEWithLogits(...)` over the eligible cache entries present and
-divide once by the total batch spectrum count, including ineligible spectra. Do not renormalize by
-the eligible count or batch weight. Log eligible count, summed auxiliary weight, and
-auxiliary-to-primary gradient norm per batch. Any later sampler change requires a sampler-only
-control. Do not weight by CE gap in v1; adjacent gaps already reflect the available acquisition
-grid, and gap weighting would favor particular datasets and instruments.
+For a minibatch of `B` spectra, including ineligible spectra, sum
+`omega_t,e,r * ell_t,e` over present entries and divide once by `B`. Do not renormalize over only
+eligible endpoints, transitions, contexts, or batch auxiliary weight: that would make effective
+loss strength depend on batch composition. Log eligible entries, summed auxiliary weight, and
+auxiliary-to-primary fragment-logit gradient norm. Do not weight by CE gap in v1; adjacent gaps
+already reflect the acquisition grid.
 
 For the first FT arm, confidence is also an eligibility condition, not only a multiplier. Before
 training, use the training-split replicate audit to freeze a minimum
@@ -394,51 +398,38 @@ which is the two-candidate InfoNCE/cross-entropy term at prediction temperature 
 add a second contender-pair InfoNCE loss, mixing weight, or prediction temperature in v1. Those
 would reparameterize target hardness and logit scale without adding a distinct supervision signal.
 
-The two endpoint terms can train independently after the offline cache fixes their shared
-transition identity. Joint endpoint batching is not required for the real-target v1 arm. Preserve
-`transition_id` and `is_switch` so evaluation can reconstruct paired metrics and compare all-pair
-training with a switch-only ablation.
+Mathematically, endpoint BCE would be self-contained if A, B, and `q_obs` were materialized at
+setup. V1 nevertheless co-locates endpoints because it constructs those targets online and keeps
+one batching contract for later cross-CE losses. Treat the sampler and its matched control as an
+explicit infrastructure cost, not as a mathematical requirement of BCE. Preserve runtime
+`transition_id` and `is_switch` for paired evaluation.
 
-## Phase 1 — Build and audit the targets
+## Phase 1 — Add bounded context batching and audit online targets
 
-Implement `scripts/eval/build_global_ranking_targets.py`. Emit one cache containing every train and
-validation spectrum ID, including spectra with zero eligible groups.
+Do not implement `build_global_ranking_targets.py` and do not persist per-spectrum targets. Add
+`CEContextDynamicBatchSampler` using the exact contract in the minimal plan:
 
-The cache schema is:
+- select contexts with the baseline inverse-spectrum-count weighting, preserving the intent of
+  approximately five spectra per group per epoch;
+- choose deterministic rotating consecutive CE windows rather than enumerating complete ladders;
+- enforce a hard `ce_context_max_spectra_per_batch` cap;
+- use existing `dynamic_batch_sampler_max` as the sole fragment-edge budget;
+- shrink over-budget windows only at outer CE levels, never through a supervised adjacent pair;
+- exclude and count a two-level transition that still exceeds the edge budget;
+- use rotating-tail drop and equal atomic-window counts for equal DDP optimizer steps.
 
-```text
-version
-spec_ids
-top_base_mass
-top_confidence
-top_eligible
-ce_pair_spec_group_ptr
-ce_pair_transition_ids
-ce_pair_mass_a
-ce_pair_mass_b
-ce_pair_q_obs             # two positive entries per endpoint
-ce_pair_endpoint_confidence  # unweighted A-vs-B c_pair at both endpoints
-ce_pair_endpoint_reliability # observed replicate agreement or frozen singleton proxy
-ce_pair_endpoint_replicate_count
-ce_pair_endpoint_ce       # exact model CE values needed by the CE-swap control
-ce_pair_is_switch
-ce_pair_group_weights    # fixed omega_t,e,r after context/endpoint/replicate normalization
-stats
-metadata                 # matching, LOD, reliability table, population, split, DAG/input fingerprints
-```
+Construct consensus, switch identity, A/B, `q_obs`, and weights online under `torch.no_grad()`.
+Prediction aggregation and BCE remain differentiable. Build only the small training reliability
+calibration table at setup, broadcast it, and record its checksum.
 
-`ce_pair_q_obs` always stores the observed, detection-limit-floored ratios at `gamma = 1`. The
-training loss applies `softmax(gamma * log(q_obs))` at runtime. Target sharpness and its runtime
-confidence mask do not change the cache contents and are not part of the target-cache fingerprint;
-they remain explicit run hyperparameters recorded with the checkpoint. This permits a gamma pilot
-to reuse exactly the same observed target cache.
+The resulting estimand is the inverse-group-weighted distribution of bounded consecutive CE
+windows with deterministic coverage rotation. It is not the original sampler distribution or the
+natural spectrum distribution. Require the weight-zero sampler control, and retain sequential
+natural-distribution validation.
 
-The metadata fingerprints the named mass-matching contract, including the instrument map,
-relative/absolute convention, minimum-m/z floor, and strict boundary rule. Mass values are target
-identifiers, not floating lookup keys. The loader must resolve each cached
-mass through the same tolerance matcher used by the builder and fail if the match set changes.
-Prefer storing resolved candidate formula indices plus the mass for audit when dataset indices are
-stable and fingerprinted.
+If observed mass groups are non-disjoint under the matching contract, skip and count the affected
+transition. Fail setup only when the audited skipped fraction exceeds `0.1%`; do not turn one late
+pathological example into a runtime training crash.
 
 ### Required audit
 
@@ -462,11 +453,14 @@ Report separately for train and validation:
 - retained counts, ceiling coverage, and change-vector distributions above each candidate
   minimum-confidence threshold;
 - maximum groups per spectrum and per molecular context;
+- replicated-context agreement by replication-rate stratum and singleton-transfer exclusions;
+- context-window coverage, dropped levels/transitions, cap utilization, and edge-budget exclusions;
 - train/validation target and acquisition-stratum drift;
 - the fraction of transition endpoints where A or B maps to multiple candidates;
+- the fraction skipped for non-disjoint observed mass groups;
 - the fraction removed by every eligibility rule.
 
-### Builder verification
+### Online-construction verification
 
 - deterministic output for a fixed seed and inputs;
 - no train-derived statistic is refit on validation;
@@ -477,14 +471,18 @@ Report separately for train and validation:
 - near-tied winners have low weight at `gamma = 1` and are excluded by the runtime confidence floor
   in every `gamma > 1` arm;
 - same-CE replicates are aggregated before adjacent transitions are built;
+- context selection retains inverse-group-size balancing;
+- every retained window respects the spectrum and edge budgets and contains complete transitions;
+- DDP ranks execute equal optimizer-step counts and rotating-tail exclusions are reported;
 - singleton endpoint reliability comes only from the frozen training-split calibration table;
+- singleton transfer fails closed in bins with replication-rate-stratum disagreement;
 - only adjacent CE levels are paired;
 - every `is_switch` pair reverses the consensus winner from A to B;
 - every stable pair keeps A as the consensus winner and selects B by the frozen challenger rule;
 - both endpoint `q_obs` vectors are positive and sum to one;
-- mass aliases aggregate probability rather than assigning a node label;
+- mass aliases aggregate predicted peak intensity rather than assigning a node or formula label;
 - context-normalized weights prevent long CE series from dominating;
-- cache and dataset fingerprints are checked before training;
+- grouping metadata and reliability checksums agree across workers and resume;
 - zero-group batches return zero auxiliary loss without error.
 
 ## Phase 2 — Measurement gates before training
@@ -506,8 +504,8 @@ tabular inference, pass `--min_intensity 0`; prediction filtering is not a train
 - replicated-only and singleton-inclusive counts are reported separately, and the replicated cohort
   remains large enough for the predeclared noise-floor comparison even though it is not required to
   meet the training-count threshold by itself;
-- stable-winner and switch-pair coverage are both reported rather than assuming the cache grows by
-  the inverse provisional switch rate;
+- stable-winner and switch-pair coverage are both reported rather than assuming the retained set
+  grows by the inverse provisional switch rate;
 - no single molecule contributes more than 1% of final contender-pair weight.
 
 If coverage fails, fix candidate generation or narrow the declared target population before adding
@@ -599,14 +597,15 @@ Proceed only if:
 Add explicit required config keys to `config/template.yml`:
 
 ```yaml
-global_ranking_target_fp: null
+ce_context_batching: false
+ce_context_max_spectra_per_batch: 16
 global_top_rank_loss_weight: 0.0
 global_top_rank_temperature: 0.1
 global_top_rank_margin: 0.0
 ce_pair_loss_weight: 0.0
 ce_pair_target_gamma: 1.0
-ce_pair_min_endpoint_confidence: 0.0
-ce_pair_min_endpoint_reliability: 0.0
+ce_pair_min_endpoint_confidence: null
+ce_pair_min_endpoint_reliability: null
 ce_pair_subset: switches
 ce_pair_eligible_inst_types: [FT]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
@@ -614,30 +613,31 @@ ce_pair_shuffle_targets: false
 ce_pair_swap_ce_control: false
 ```
 
-No model or experiment hyperparameter may use a fallback default. A positive loss weight requires a
-target path and matching cache metadata. For the first FT experiment, a positive
-`ce_pair_loss_weight` also requires the frozen nonzero confidence and reliability floors, exact
-switch-only subset, and FT `[M+H]+`/`[M-H]-` population selected by the Phase 1 audit; `0.0` is valid
-only when the pair loss is disabled or for an explicitly declared diagnostic ablation.
+No model or experiment hyperparameter may use a fallback default. A positive pair-loss weight
+requires context batching and must fail setup if either confidence or reliability floor is null. It
+also requires the exact switch-only subset and FT `[M+H]+`/`[M-H]-` population selected by the
+Phase 1 audit. There is no target path or target fingerprint.
 
 ### Phase 3a: minimal first arm
 
 The authoritative first experiment is the minimal plan: FT `[M+H]+`/`[M-H]-`, switch-only,
-`gamma = 1`, and the unchanged baseline sampler. Do not add stable anchors, global-top loss,
-balanced transition sampling, CE swapping, or another architecture in this stage.
+`gamma = 1`, online targets, and bounded context batching. Do not add stable anchors, global-top
+loss, CE swapping, or another architecture in this stage.
 
-Run identical seeds, sampler budget, and primary loss:
+On a fixed subset, measure the unscaled auxiliary-to-primary fragment-logit gradient-norm ratio
+`g`. Derive `lambda_weak = 0.05 / g` and `lambda_medium = 0.20 / g`, then run identical seeds,
+sampler, model, optimizer-step budget, and optimization:
 
-| Arm | Pair weight | Purpose |
-| --- | ---: | --- |
-| control | `0` | matched flat GINE-1 |
-| pair-low | `0.01` | weak switch-only auxiliary gradient |
-| pair-high | `0.1` | stronger switch-only auxiliary gradient |
+| Arm | Context sampler | Pair weight | Intended initial gradient ratio |
+| --- | :---: | ---: | ---: |
+| original control | no | `0` | `0` |
+| sampler control | yes | `0` | `0` |
+| pair-weak | yes | `lambda_weak` | approximately `5%` |
+| pair-medium | yes | `lambda_medium` | approximately `20%` |
 
-Choose one nonzero weight from the one-seed pilot, then compare it with the control over three
-matched seeds. Run the shuffled switch-pair control at the selected weight only after the real arm
-passes the promotion criteria. This stage changes one training factor and keeps the baseline
-sampler distribution fixed.
+Log the realized ratio throughout training. Choose one nonzero weight from the one-seed pilot, then
+compare it with the sampler control over three matched seeds. Use the original control to report the
+net deployable effect. Run the online shuffled switch-pair control only after the real arm passes.
 
 ### Phase 3b: conditional expanded matrix
 
@@ -654,9 +654,11 @@ Report stable-anchor and winner-switch losses and metrics separately for every a
 pooled all-pair improvement as the go criterion: low-magnitude stable anchors can serve a
 regularization role while having no recoverable directional headroom.
 
-For each newly activated real loss, select from weights `{0.01, 0.1}` in a one-seed pilot using
-held-out ranking metrics, then run only the selected comparison for three seeds. Do not launch the
-table as a single matrix or combine stable anchors with balanced sampling in the same first test.
+For each newly activated real loss, measure its unscaled auxiliary-to-primary fragment-logit
+gradient ratio on a fixed subset and derive weak and medium pilot weights targeting approximately
+`5%` and `20%`. Select using held-out ranking metrics, then run only the selected comparison for
+three seeds. Do not launch the table as a single matrix or combine stable anchors with balanced
+sampling in the same first test.
 
 Select the contender-pair loss weight with `ce_pair_target_gamma = 1.0` and the frozen eligibility
 floor. Only after Gate 2 passes, and only if the soft target improves endpoint calibration without
@@ -993,35 +995,44 @@ target matrix and optimum as row-wise spectrum CE; it is an explicit optimizatio
 coherent per-mass CE profiles, not a new source of labels. Compare inside- and outside-contender
 errors and gradient norms to detect simple duplication of the primary loss.
 
-This objective requires every prediction in an atomic window to remain in the same autograd graph.
-The shipped
-`GroupSampler` globally reshuffles its sampled group members, and
-`SpecMolFragDynamicBatchSampler` only repacks that stream by graph size. The
-`DualGroupDynamicBatchSampler` can co-locate some adduct-plus-molecule samples but does not guarantee
-an ordered instrument-specific ladder. Therefore add a ladder-aware atomic batch item or sampler:
+This objective reuses the `CEContextDynamicBatchSampler` already introduced for Target B, but
+changes its online target from adjacent A/B endpoints to deterministic ladder windows:
 
 - use the deterministic windows of two to four consecutive CE levels defined above;
-- never split an atomic window across minibatches; window-boundary adjacent steps remain explicitly
-  outside this target;
-- pack complete windows under the existing fragment-edge budget;
-- preserve ladder ID, exact CE order, transition IDs, and replicate provenance;
+- select contexts with the same inverse-group-size weighting used by the baseline `GroupSampler`,
+  rather than enumerating every spectrum-rich ladder every epoch;
+- apply a hard `ce_context_max_spectra_per_batch` cap: include one spectrum per retained level, then
+  allocate remaining replicate slots round-robin with deterministic epoch rotation;
+- treat the existing `dynamic_batch_sampler_max` fragment-edge limit as the sole memory authority;
+  do not add a second edge-budget key;
+- if a window exceeds that edge budget, remove outer CE levels while retaining complete adjacent
+  transitions; if even a two-level transition is over budget, exclude and count it rather than
+  emitting an over-budget batch;
+- never split a retained supervised transition across minibatches, and report dropped levels,
+  excluded transitions, and window-boundary transitions;
+- preserve runtime ladder ID, exact CE order, transition IDs, and replicate provenance;
 - keep contender aggregation sparse in the already-produced peak list; after aggregation the loss
   is `O(L * k)` and needs no dense peak-by-peak or mass-by-mass matrix.
+
+For DDP, construct the ordered atomic-window list deterministically, drop the rotating tail needed
+to make its length divisible by world size, and shard equal counts across ranks. Every rank must
+execute the same number of optimizer steps; rotate the dropped tail by epoch and report its
+coverage. Match trajectory and sampler-only control arms on optimizer steps, not epochs or nominal
+contexts.
 
 When activated, add explicit required configuration rather than fallback defaults:
 
 ```yaml
-ce_trajectory_target_fp: null
 ce_trajectory_loss_weight: 0.0
 ce_trajectory_top_k: 5
 ce_trajectory_max_levels: 4
 ```
 
-The target cache stores window/context pointers, ordered spectrum IDs and exact CE values,
-contender masses, `Q[e,m]`, level reliability and provenance, mass/window/context weights, the
-partition algorithm version, and the shared mass/LOD/data fingerprints. Builder tests cover window
-sizes, no duplicated endpoints, boundary-transition accounting, weight sums, singleton-proxy
-provenance, missing support, empty windows, and deterministic output.
+Construct contender masses, `Q[e,m]`, level reliability, and mass/window/context weights online
+under `torch.no_grad()`. Tests cover window sizes, no duplicated endpoints, boundary-transition
+accounting, weight sums, singleton-proxy provenance, missing support, empty windows, and
+deterministic output, edge-budget fallback, hard spectrum cap, and equal DDP step counts. No
+trajectory target artifact is written.
 
 Activate this only if endpoint pair or top-k supervision improves absolute contender ranking while
 held-out CE-profile or change-vector behavior remains deficient. Include a control that keeps the
@@ -1042,8 +1053,9 @@ gains; improvement only on the constructed window loss is insufficient.
 ### Recommended activation order
 
 1. Run Phase 3a exactly as declared: switch-only soft `BCEWithLogits` at `gamma = 1`, FT
-   `[M+H]+`/`[M-H]-`, and the unchanged sampler. Confirm the selected weight over three seeds, then
-   run the shuffled switch-target control.
+   `[M+H]+`/`[M-H]-`, online targets, and bounded context batching. Compare with the weight-zero
+   sampler control, confirm the selected weight over three seeds, then run the shuffled target
+   control.
 2. If switch gains increase stable false switches, add high-confidence stable anchors as the only
    change. If eligible switches are instead too diluted, test transition-balanced sampling with a
    weight-zero sampler-only control; do not add anchors and sampling together.
@@ -1053,11 +1065,11 @@ gains; improvement only on the constructed window loss is insufficient.
 4. If endpoint identity is confused, test 2-by-2 CE assignment; if response direction remains weak,
    test cosine change-vector matching instead. Do not add uniform gain unless Gate 3b supports it.
 5. If pair supervision improves top-1 narrowly but top-k ordering or spectrum cosine remains weak,
-   test the top-k contender-set KL without changing batching. If absolute contender ranking then
-   improves but response direction remains weak, run Alternative J0 before building ladder batching.
-   Only after J0 passes should CE-axis mass-trajectory conditioning be tested with a sampler-only
-   control. Test a separate ladder-delta arm only if trajectory calibration improves while adjacent
-   direction remains deficient.
+   test online top-k contender-set KL using the same bounded batching. If absolute contender ranking
+   then improves but response direction remains weak, run Alternative J0. Only after J0 passes
+   should CE-axis mass-trajectory conditioning reuse the sampler with its weight-zero control. Test
+   a separate ladder-delta arm only if trajectory calibration improves while adjacent direction
+   remains deficient.
 6. If the correct loss fits training transitions but held-out identities remain wrong, use the
    structural switch audit to decide whether to test the structured CE-response basis: prioritize
    it for recurrent parent-to-descendant handoffs, and deprioritize it for unrelated-branch switches.
@@ -1090,19 +1102,20 @@ Track:
 - base accuracy by NCE, instrument, mode, adduct, and molecule-size quartile;
 - adjacent-switch recall and both-endpoint accuracy;
 - stable-pair retention accuracy, false-switch rate, and all-pair versus switch-only results;
-- endpoint two-mass `KL(q_obs || p)` and `TV(q_obs, p)`, always evaluated against the stored
+- endpoint two-mass `KL(q_obs || p)` and `TV(q_obs, p)`, always evaluated against the observed
   `gamma = 1` observed ratios regardless of the training gamma, reported separately for stable and
   switching pairs;
 - matched-peak Spearman and predicted-minus-observed entropy;
 - formula retrieval, including correct- and wrong-candidate scores;
 - training versus validation ranking loss and accuracy;
 - results on observed-replicate versus singleton-proxy reliability targets;
-- eligible count, summed auxiliary weight, and auxiliary-to-primary gradient norm under the
-  unchanged sampler, with natural-distribution validation reported separately.
+- eligible count, summed auxiliary weight, and auxiliary-to-primary gradient norm under bounded
+  context batching, with the weight-zero sampler control and natural-distribution validation
+  reported separately.
 
 The training-target BCE at `gamma > 1` may be logged as an optimization diagnostic, but it must be
 named separately and cannot be used for cross-arm comparison or promotion. Cross-arm endpoint KL
-is always computed against the stored observed ratios at `gamma = 1`.
+is always computed against the observed ratios at `gamma = 1`.
 
 Promote only when:
 
@@ -1139,21 +1152,22 @@ coverage rather than forcing the ranking head to solve an unrealizable target.
 ## Implementation sequence
 
 0. Run the model-free replicate floors and freeze the eligible instrument/adduct population.
-1. Build and audit `build_global_ranking_targets.py`.
-2. Add focused tests for mass aggregation, ties, support, replicate consensus, adjacency,
-   stable-challenger selection, pair confidence, structural relation, CE swapping, and context
-   weighting.
+1. Implement and audit bounded `CEContextDynamicBatchSampler` plus its weight-zero control.
+2. Add focused tests for inverse-group selection, CE-window rotation, caps, edge fallback, equal
+   DDP steps, mass aggregation, peak-intensity alias selection, ambiguous-group skipping, support,
+   replicate consensus, singleton transfer, adjacency, pair confidence, fixed `/B` normalization,
+   and online context weighting.
 3. Implement the peak-mass top-margin and endpoint soft pairwise `BCEWithLogits` loss; retain
    two-mass KL as an evaluation metric.
-4. Add explicit configuration keys and cache validation.
+4. Add explicit cache-free configuration keys and reliability/checkpoint validation.
 5. Run the four offline-oracle controls.
-6. Run loss-only training arms.
-7. If pair gains are top-1-only, implement the sparse top-k contender-set KL without changing the
-   sampler.
+6. Calibrate auxiliary weights from fragment-logit gradient norms, then run the original control,
+   sampler control, and online loss arms matched on optimizer steps.
+7. If pair gains are top-1-only, implement sparse online top-k contender-set KL with the same
+   bounded context sampler.
 8. If contender ranking improves but CE direction remains weak, run Alternative J0. Only if it
-   passes, implement the deterministic atomic windows, mass-trajectory conditional loss, and
-   sampler-only control. Compare a separate ladder-delta arm only if trajectory calibration
-   improves but adjacent direction does not.
+   passes, reuse the bounded sampler for mass-trajectory conditional loss. Compare a separate
+   ladder-delta arm only if trajectory calibration improves but adjacent direction does not.
 9. Implement the competition head only if Phase 4 is activated by the loss-only diagnostics.
 
 ## Relationship to existing work
