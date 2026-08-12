@@ -309,6 +309,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
         self,
         data_source,
         max_num: int,
+        ce_key_by_inst: dict[str, str],
         limited_by: str = "frag_edge",
         spectra_per_context: int = 5,
         return_batch_at: int = 0,
@@ -316,9 +317,10 @@ class CEContextDynamicBatchSampler(BatchSampler):
     ) -> None:
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
-        if limited_by not in ("frag_node", "frag_edge"):
+        if limited_by != "frag_edge":
             raise ValueError(
-                f"`limited_by` must be 'frag_node' or 'frag_edge' (got '{limited_by}')."
+                "CE context batching requires limited_by='frag_edge' "
+                f"(got '{limited_by}')."
             )
         if not isinstance(spectra_per_context, int) or spectra_per_context < 2:
             raise ValueError("spectra_per_context must be an integer >= 2")
@@ -330,6 +332,13 @@ class CEContextDynamicBatchSampler(BatchSampler):
             raise ValueError("CE context batching requires a dataset with spec_df and ce_key")
         if data_source.ce_key is None:
             raise ValueError("CE context batching requires an enabled collision-energy feature")
+        if not isinstance(ce_key_by_inst, dict) or not ce_key_by_inst:
+            raise ValueError("ce_key_by_inst must be a non-empty instrument-to-CE mapping")
+        if any(
+            not isinstance(inst_type, str) or ce_key not in {"nce", "ace"}
+            for inst_type, ce_key in ce_key_by_inst.items()
+        ):
+            raise ValueError("ce_key_by_inst values must be 'nce' or 'ace'")
 
         if th.distributed.is_available() and th.distributed.is_initialized():
             world_size = th.distributed.get_world_size()
@@ -341,6 +350,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
         self.data_source = data_source
         self._max_num = max_num
         self._limited_by = limited_by
+        self._ce_key_by_inst = ce_key_by_inst
         self._spectra_per_context = spectra_per_context
         self._return_batch_at = return_batch_at
         self._seed = seed
@@ -376,15 +386,50 @@ class CEContextDynamicBatchSampler(BatchSampler):
     ) -> tuple[list[tuple[tuple[float, tuple[int, ...]], ...]], dict[str, int]]:
         """Build eligible single-mode contexts and count excluded spectra."""
         spec_df = self.data_source.spec_df
+        missing_columns = {"group_id", "inst_type"}.difference(spec_df.columns)
+        if missing_columns:
+            raise ValueError(
+                "CE context batching requires spec_df columns "
+                f"{sorted(missing_columns)}"
+            )
+        inst_types = set(spec_df["inst_type"].astype(str))
+        unmapped_inst_types = inst_types.difference(self._ce_key_by_inst)
+        if unmapped_inst_types:
+            raise ValueError(
+                "ce_key_by_inst has no CE key for instrument types "
+                f"{sorted(unmapped_inst_types)}"
+            )
+        missing_ce_columns = {
+            self._ce_key_by_inst[inst_type] for inst_type in inst_types
+        }.difference(spec_df.columns)
+        if missing_ce_columns:
+            raise ValueError(
+                "CE context batching requires configured CE columns "
+                f"{sorted(missing_ce_columns)}"
+            )
         if hasattr(self.data_source, "get_frag_mode_stats"):
             frag_modes = self.data_source.get_frag_mode_stats()
         else:
             frag_modes = ["unknown"] * len(spec_df)
 
         modes_by_group: dict[object, set[str]] = {}
+        inst_types_by_group: dict[object, set[str]] = {}
         for idx in range(len(spec_df)):
             group_id = spec_df.iloc[idx]["group_id"]
             modes_by_group.setdefault(group_id, set()).add(str(frag_modes[idx]))
+            inst_types_by_group.setdefault(group_id, set()).add(
+                str(spec_df.iloc[idx]["inst_type"])
+            )
+        mixed_inst_groups = {
+            group_id
+            for group_id, group_inst_types in inst_types_by_group.items()
+            if len(group_inst_types) > 1
+        }
+        if mixed_inst_groups:
+            raise ValueError(
+                "CE context batching requires one instrument type per group_id; "
+                f"found mixed instruments in {len(mixed_inst_groups)} groups"
+            )
         mixed_groups = {
             group_id for group_id, modes in modes_by_group.items() if len(modes) > 1
         }
@@ -398,7 +443,9 @@ class CEContextDynamicBatchSampler(BatchSampler):
             if group_id in mixed_groups:
                 mixed_mode_spectra += 1
                 continue
-            ce_value = self._ce_value(row[self.data_source.ce_key])
+            inst_type = str(row["inst_type"])
+            ce_key = self._ce_key_by_inst[inst_type]
+            ce_value = self._ce_value(row[ce_key])
             if ce_value is None:
                 missing_ce_spectra += 1
                 continue
@@ -433,22 +480,22 @@ class CEContextDynamicBatchSampler(BatchSampler):
     def _select_window(
         self,
         levels: tuple[tuple[float, tuple[int, ...]], ...],
-        context_offset: int,
+        context_idx: int,
     ) -> list[int] | None:
         """Select one complete consecutive window under the edge budget."""
-        size_col = 0 if self._limited_by == "frag_node" else 1
         level_count = min(len(levels), self._spectra_per_context)
         start_count = len(levels) - level_count + 1
-        start = (self._epoch + context_offset) % start_count
+        rotation = self._epoch + context_idx
+        start = rotation % start_count
         retained = levels[start : start + level_count]
 
-        remove_left = (self._epoch + context_offset) % 2 == 0
+        remove_left = rotation % 2 == 0
         while len(retained) >= 2:
             selected = [
-                indices[(self._epoch + context_offset) % len(indices)]
+                indices[rotation % len(indices)]
                 for _, indices in retained
             ]
-            if int(self._data_meta[selected, size_col].sum()) <= self._max_num:
+            if int(self._data_meta[selected, 1].sum()) <= self._max_num:
                 return selected
             if len(retained) == 2:
                 return None
@@ -467,19 +514,18 @@ class CEContextDynamicBatchSampler(BatchSampler):
 
         windows = []
         oversized_windows = 0
-        for context_offset, context_idx in enumerate(order):
-            window = self._select_window(self._contexts[context_idx], context_offset)
+        for context_idx in order:
+            window = self._select_window(self._contexts[context_idx], context_idx)
             if window is None:
                 oversized_windows += 1
             else:
                 windows.append(window)
 
-        size_col = 0 if self._limited_by == "frag_node" else 1
         batches: list[list[int]] = []
         batch: list[int] = []
         batch_size = 0
         for window in windows:
-            window_size = int(self._data_meta[window, size_col].sum())
+            window_size = int(self._data_meta[window, 1].sum())
             exceeds_edges = batch and batch_size + window_size > self._max_num
             exceeds_spectra = (
                 batch

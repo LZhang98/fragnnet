@@ -235,9 +235,9 @@ Group spectra by:
 (molecule, precursor type, instrument type, fragmentation mode)
 ```
 
-Within a context, order distinct energy levels by the filled NCE value actually supplied to the
-model. Record whether that value was raw NCE or converted from ACE. Conversion is monotonic within
-the fixed context, so it preserves adjacent ordering.
+Within a context, order distinct energy levels by the configured instrument-specific CE value
+(`nce` for FT and `ace` for QTOF by default). Record which CE field defines each context's
+ordering.
 
 Work at CE-level consensus before forming transitions. Replicate spectra at the same energy must
 not create quadratic duplicates.

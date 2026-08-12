@@ -194,6 +194,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 batch_sampler = CEContextDynamicBatchSampler(
                     ds,
                     max_num=config_d["dynamic_batch_sampler_max"],
+                    ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
                     limited_by=config_d["dynamic_batch_sampler_mode"],
                     spectra_per_context=config_d["ce_context_spectra_per_context"],
                     return_batch_at=return_batch_at,
@@ -322,6 +323,11 @@ def validate_sampler_config(config_d: dict) -> None:
     if config_d["batch_sampler_type"] == "ce_context":
         if not config_d["dynamic_batch_sampler"]:
             raise ValueError("batch_sampler_type='ce_context' requires dynamic_batch_sampler=True")
+        if config_d["dynamic_batch_sampler_mode"] != "frag_edge":
+            raise ValueError(
+                "batch_sampler_type='ce_context' requires "
+                "dynamic_batch_sampler_mode='frag_edge'"
+            )
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
         if config_d["devices"] != 1:
@@ -329,6 +335,14 @@ def validate_sampler_config(config_d: dict) -> None:
         spectra_per_context = config_d["ce_context_spectra_per_context"]
         if not isinstance(spectra_per_context, int) or spectra_per_context < 2:
             raise ValueError("ce_context_spectra_per_context must be an integer >= 2")
+        ce_key_by_inst = config_d["ce_context_ce_key_by_inst"]
+        if not isinstance(ce_key_by_inst, dict) or not ce_key_by_inst:
+            raise ValueError("ce_context_ce_key_by_inst must be a non-empty mapping")
+        if any(
+            not isinstance(inst_type, str) or ce_key not in {"nce", "ace"}
+            for inst_type, ce_key in ce_key_by_inst.items()
+        ):
+            raise ValueError("ce_context_ce_key_by_inst values must be 'nce' or 'ace'")
 
     if config_d["dag_size_curriculum"]:
         if not config_d["dynamic_batch_sampler"]:

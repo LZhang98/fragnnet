@@ -18,6 +18,7 @@ def _base_config(**overrides) -> dict:
         "dynamic_batch_sampler_max": 1000,
         "batch_sampler_type": "spec_mol_frag",
         "ce_context_spectra_per_context": 5,
+        "ce_context_ce_key_by_inst": {"FT": "nce", "QTOF": "ace"},
         "devices": 1,
         "dag_size_curriculum": False,
         "dag_size_curriculum_start_fraction": 0.25,
@@ -84,8 +85,18 @@ class TestValidateSamplerConfig:
         validate_sampler_config(
             _base_config(
                 batch_sampler_type="ce_context",
+                dynamic_batch_sampler_mode="frag_edge",
             )
         )
+
+    def test_ce_context_batch_sampler_requires_frag_edge_budget(self):
+        with pytest.raises(ValueError, match="dynamic_batch_sampler_mode='frag_edge'"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_node",
+                )
+            )
 
     def test_ce_context_batch_sampler_requires_dynamic_sampler(self):
         with pytest.raises(ValueError, match="requires dynamic_batch_sampler"):
@@ -101,7 +112,22 @@ class TestValidateSamplerConfig:
             validate_sampler_config(
                 _base_config(
                     batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
                     ce_context_spectra_per_context=1,
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "ce_key_by_inst",
+        [None, {}, {"FT": "invalid"}, {1: "nce"}],
+    )
+    def test_ce_context_batch_sampler_rejects_invalid_ce_mapping(self, ce_key_by_inst):
+        with pytest.raises(ValueError, match="ce_context_ce_key_by_inst"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_context_ce_key_by_inst=ce_key_by_inst,
                 )
             )
 
@@ -110,6 +136,7 @@ class TestValidateSamplerConfig:
             validate_sampler_config(
                 _base_config(
                     batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
                     devices=2,
                 )
             )

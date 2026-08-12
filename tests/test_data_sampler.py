@@ -113,6 +113,8 @@ class CEContextDataset:
 class TestCEContextDynamicBatchSampler:
     """Tests for the minimal single-GPU CE context sampler."""
 
+    CE_KEY_BY_INST = {"FT": "nce", "QTOF": "ace"}
+
     @staticmethod
     def _row(mol_id, nce, frag_mode="HCD"):
         return {
@@ -130,6 +132,7 @@ class TestCEContextDynamicBatchSampler:
         sampler = CEContextDynamicBatchSampler(
             ds,
             max_num=10,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
             spectra_per_context=3,
         )
 
@@ -137,10 +140,66 @@ class TestCEContextDynamicBatchSampler:
         sampler.set_epoch(1)
         assert list(sampler) == [[1, 2, 3]]
 
+    def test_context_shuffle_does_not_cancel_window_rotation(self):
+        rows = []
+        for mol_id in range(2):
+            rows.extend(self._row(mol_id, ce) for ce in range(6))
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=100,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            spectra_per_context=5,
+            seed=0,
+        )
+
+        epoch_windows = []
+        for epoch in (0, 1):
+            sampler.set_epoch(epoch)
+            selected = [idx for batch in sampler for idx in batch]
+            epoch_windows.append(
+                [ds.spec_df.iloc[idx]["nce"][0] for idx in selected if idx < 6]
+            )
+
+        assert epoch_windows == [[0, 1, 2, 3, 4], [1, 2, 3, 4, 5]]
+
+    def test_orders_qtof_context_by_configured_ace(self):
+        rows = [
+            {**self._row(1, 30), "inst_type": "QTOF", "ace": [10.0]},
+            {**self._row(1, 10), "inst_type": "QTOF", "ace": [20.0]},
+            {**self._row(1, 20), "inst_type": "QTOF", "ace": [30.0]},
+        ]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
+
+        assert list(sampler) == [[0, 1, 2]]
+
+    def test_requires_fragment_edge_budget(self):
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = CEContextDataset(rows, [(1, 100), (1, 100)])
+
+        with pytest.raises(ValueError, match="limited_by='frag_edge'"):
+            CEContextDynamicBatchSampler(
+                ds,
+                max_num=10,
+                ce_key_by_inst=self.CE_KEY_BY_INST,
+                limited_by="frag_node",
+            )
+
     def test_takes_one_spectrum_per_level_up_to_five(self):
         rows = [self._row(1, ce) for ce in (10, 20, 30, 40, 50, 60)]
         ds = CEContextDataset(rows, [(1, 1)] * len(rows))
-        sampler = CEContextDynamicBatchSampler(ds, max_num=20, spectra_per_context=5)
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=20,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            spectra_per_context=5,
+        )
 
         batch = list(sampler)[0]
         assert len(batch) == 5
@@ -152,6 +211,7 @@ class TestCEContextDynamicBatchSampler:
         sampler = CEContextDynamicBatchSampler(
             ds,
             max_num=8,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
             limited_by="frag_edge",
             spectra_per_context=3,
         )
@@ -163,7 +223,12 @@ class TestCEContextDynamicBatchSampler:
     def test_drops_two_level_window_over_budget(self):
         rows = [self._row(1, 10), self._row(1, 20)]
         ds = CEContextDataset(rows, [(1, 6), (1, 6)])
-        sampler = CEContextDynamicBatchSampler(ds, max_num=10, limited_by="frag_edge")
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            limited_by="frag_edge",
+        )
 
         assert list(sampler) == []
         assert sampler.stats["oversized_windows"] == 1
@@ -176,7 +241,11 @@ class TestCEContextDynamicBatchSampler:
             self._row(1, 20, "CID"),
         ]
         ds = CEContextDataset(rows, [(1, 1)] * len(rows))
-        sampler = CEContextDynamicBatchSampler(ds, max_num=20)
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=20,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
 
         assert list(sampler) == []
         assert sampler.stats["mixed_mode_spectra"] == 4
@@ -189,7 +258,11 @@ class TestCEContextDynamicBatchSampler:
             self._row(3, -1),
         ]
         ds = CEContextDataset(rows, [(1, 1)] * len(rows))
-        sampler = CEContextDynamicBatchSampler(ds, max_num=10)
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
 
         assert sampler.stats["total_spectra"] == 4
         assert sampler.stats["missing_ce_spectra"] == 1
@@ -203,9 +276,15 @@ class TestCEContextDynamicBatchSampler:
             rows.extend([self._row(mol_id, 10), self._row(mol_id, 20)])
         ds = CEContextDataset(rows, [(1, 1)] * len(rows))
 
-        first = CEContextDynamicBatchSampler(ds, max_num=2, seed=11)
-        repeated = CEContextDynamicBatchSampler(ds, max_num=2, seed=11)
-        second = CEContextDynamicBatchSampler(ds, max_num=2, seed=29)
+        first = CEContextDynamicBatchSampler(
+            ds, max_num=2, ce_key_by_inst=self.CE_KEY_BY_INST, seed=11
+        )
+        repeated = CEContextDynamicBatchSampler(
+            ds, max_num=2, ce_key_by_inst=self.CE_KEY_BY_INST, seed=11
+        )
+        second = CEContextDynamicBatchSampler(
+            ds, max_num=2, ce_key_by_inst=self.CE_KEY_BY_INST, seed=29
+        )
 
         assert list(first) == list(repeated)
         assert list(first) != list(second)
@@ -216,7 +295,11 @@ class TestCEContextDynamicBatchSampler:
         monkeypatch.setenv("WORLD_SIZE", "2")
 
         with pytest.raises(ValueError, match="single-GPU"):
-            CEContextDynamicBatchSampler(ds, max_num=10)
+            CEContextDynamicBatchSampler(
+                ds,
+                max_num=10,
+                ce_key_by_inst=self.CE_KEY_BY_INST,
+            )
 
 # Tests for SpecMolFragDynamicBatchSampler
 # ============================================================================

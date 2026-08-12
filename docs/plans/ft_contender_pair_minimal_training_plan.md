@@ -71,7 +71,8 @@ context per epoch.
 
 For each selected context:
 
-1. sort distinct CE levels by the filled NCE value supplied to the model;
+1. sort distinct CE levels by the configured instrument-specific CE value (`nce` for FT and
+   `ace` for QTOF by default);
 2. select a consecutive CE window containing at least two levels;
 3. rotate the window start deterministically by epoch so every adjacent transition is eventually
    covered;
