@@ -2225,9 +2225,9 @@ class SpectrumPL(L.LightningModule):
             if hasattr(obj, "generator"):
                 obj.generator = generator
 
-        if self.hparams.dag_size_curriculum:
+        if self.hparams.dag_size_curriculum or self.hparams.batch_sampler_type == "ce_context":
             # Lightning advances only dataloader.sampler and batch_sampler.sampler;
-            # curriculum state belongs to the outer dynamic batch sampler.
+            # curriculum and CE-window state belong to the outer batch sampler.
             batch_sampler.set_epoch(seed)
 
             # Lightning caches these before set_epoch and this hook run, including on resume.

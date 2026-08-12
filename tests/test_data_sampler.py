@@ -5,12 +5,14 @@ Tests for batch samplers, group samplers, and dynamic batch sampling strategies.
 
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 import torch as th
 from torch.utils.data import DataLoader, RandomSampler
 
 # Load data_sampler directly to avoid package-level import side-effects
 from fragnnet.dataset import (
+    CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GreedyInferenceBatchSampler,
@@ -93,7 +95,129 @@ class DS2:
         return {"frag_pyg": SimpleNamespace(num_nodes=nodes, num_edges=edges)}
 
 
-# ============================================================================
+class CEContextDataset:
+    """Metadata-only dataset for CE context sampler tests."""
+
+    def __init__(self, rows, sizes):
+        self.spec_df = pd.DataFrame(rows)
+        self.ce_key = "nce"
+        self.precom_meta_info = sizes
+
+    def __len__(self):
+        return len(self.spec_df)
+
+    def get_frag_mode_stats(self):
+        return self.spec_df["frag_mode"].fillna("unknown").astype(str).tolist()
+
+
+class TestCEContextDynamicBatchSampler:
+    """Tests for the minimal single-GPU CE context sampler."""
+
+    @staticmethod
+    def _row(mol_id, nce, frag_mode="HCD"):
+        return {
+            "group_id": mol_id,
+            "mol_id": mol_id,
+            "prec_type": "[M+H]+",
+            "inst_type": "FT",
+            "frag_mode": frag_mode,
+            "nce": [float(nce)],
+        }
+
+    def test_rotates_consecutive_ce_window_by_epoch(self):
+        rows = [self._row(1, ce) for ce in (10, 20, 30, 40)]
+        ds = CEContextDataset(rows, [(1, 1)] * 4)
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10,
+            spectra_per_context=3,
+        )
+
+        assert list(sampler) == [[0, 1, 2]]
+        sampler.set_epoch(1)
+        assert list(sampler) == [[1, 2, 3]]
+
+    def test_takes_one_spectrum_per_level_up_to_five(self):
+        rows = [self._row(1, ce) for ce in (10, 20, 30, 40, 50, 60)]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(ds, max_num=20, spectra_per_context=5)
+
+        batch = list(sampler)[0]
+        assert len(batch) == 5
+        assert len({ds.spec_df.iloc[idx]["nce"][0] for idx in batch}) == 5
+
+    def test_shrinks_outer_levels_without_splitting_transition(self):
+        rows = [self._row(1, ce) for ce in (10, 20, 30)]
+        ds = CEContextDataset(rows, [(1, 4), (1, 4), (1, 4)])
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=8,
+            limited_by="frag_edge",
+            spectra_per_context=3,
+        )
+
+        batch = list(sampler)[0]
+        assert len(batch) == 2
+        assert sum(ds.precom_meta_info[idx][1] for idx in batch) <= 8
+
+    def test_drops_two_level_window_over_budget(self):
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = CEContextDataset(rows, [(1, 6), (1, 6)])
+        sampler = CEContextDynamicBatchSampler(ds, max_num=10, limited_by="frag_edge")
+
+        assert list(sampler) == []
+        assert sampler.stats["oversized_windows"] == 1
+
+    def test_excludes_mixed_fragmentation_mode_group(self):
+        rows = [
+            self._row(1, 10, "HCD"),
+            self._row(1, 20, "HCD"),
+            self._row(1, 10, "CID"),
+            self._row(1, 20, "CID"),
+        ]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(ds, max_num=20)
+
+        assert list(sampler) == []
+        assert sampler.stats["mixed_mode_spectra"] == 4
+
+    def test_reports_missing_and_single_level_spectrum_exclusions(self):
+        rows = [
+            self._row(1, 10),
+            self._row(1, 20),
+            self._row(2, 10),
+            self._row(3, -1),
+        ]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(ds, max_num=10)
+
+        assert sampler.stats["total_spectra"] == 4
+        assert sampler.stats["missing_ce_spectra"] == 1
+        assert sampler.stats["single_level_spectra"] == 1
+        assert sampler.stats["eligible_spectra"] == 2
+        assert sampler.stats["selected_spectra"] == 2
+
+    def test_explicit_seed_changes_context_order(self):
+        rows = []
+        for mol_id in range(6):
+            rows.extend([self._row(mol_id, 10), self._row(mol_id, 20)])
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+
+        first = CEContextDynamicBatchSampler(ds, max_num=2, seed=11)
+        repeated = CEContextDynamicBatchSampler(ds, max_num=2, seed=11)
+        second = CEContextDynamicBatchSampler(ds, max_num=2, seed=29)
+
+        assert list(first) == list(repeated)
+        assert list(first) != list(second)
+
+    def test_rejects_multi_gpu_v1(self, monkeypatch):
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        monkeypatch.setenv("WORLD_SIZE", "2")
+
+        with pytest.raises(ValueError, match="single-GPU"):
+            CEContextDynamicBatchSampler(ds, max_num=10)
+
 # Tests for SpecMolFragDynamicBatchSampler
 # ============================================================================
 

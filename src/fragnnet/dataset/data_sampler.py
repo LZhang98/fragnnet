@@ -3,6 +3,7 @@ Data samplers for spectrum-molecule-fragment datasets.
 
 Includes:
 - SpecMolFragDynamicBatchSampler: Dynamic batching to avoid OOM
+- CEContextDynamicBatchSampler: Keep bounded adjacent-CE windows together
 - GreedyInferenceBatchSampler: Simple greedy sequential batching for inference
 - GroupSampler: Sample K specs per group_id
 - get_group_sampler: WeightedRandomSampler factory
@@ -10,6 +11,7 @@ Includes:
 
 import logging
 import math
+import os
 from collections.abc import Iterator
 
 import numpy as np
@@ -297,6 +299,226 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         Returns:
             int: Number of batches
         """
+        return len(self._batches)
+
+
+class CEContextDynamicBatchSampler(BatchSampler):
+    """Pack bounded adjacent-CE windows for the single-GPU v1 experiment."""
+
+    def __init__(
+        self,
+        data_source,
+        max_num: int,
+        limited_by: str = "frag_edge",
+        spectra_per_context: int = 5,
+        return_batch_at: int = 0,
+        seed: int = 0,
+    ) -> None:
+        if not isinstance(max_num, int) or max_num <= 0:
+            raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
+        if limited_by not in ("frag_node", "frag_edge"):
+            raise ValueError(
+                f"`limited_by` must be 'frag_node' or 'frag_edge' (got '{limited_by}')."
+            )
+        if not isinstance(spectra_per_context, int) or spectra_per_context < 2:
+            raise ValueError("spectra_per_context must be an integer >= 2")
+        if not isinstance(return_batch_at, int) or return_batch_at < 0:
+            raise ValueError("return_batch_at must be a non-negative integer")
+        if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+            raise ValueError("seed must be a non-negative integer")
+        if not hasattr(data_source, "spec_df") or not hasattr(data_source, "ce_key"):
+            raise ValueError("CE context batching requires a dataset with spec_df and ce_key")
+        if data_source.ce_key is None:
+            raise ValueError("CE context batching requires an enabled collision-energy feature")
+
+        if th.distributed.is_available() and th.distributed.is_initialized():
+            world_size = th.distributed.get_world_size()
+        else:
+            world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        if world_size != 1:
+            raise ValueError("CE context batching v1 supports single-GPU training only")
+
+        self.data_source = data_source
+        self._max_num = max_num
+        self._limited_by = limited_by
+        self._spectra_per_context = spectra_per_context
+        self._return_batch_at = return_batch_at
+        self._seed = seed
+        self._epoch = 0
+        self._data_meta = self._load_size_metadata()
+        self._contexts, self._coverage_stats = self._load_context_metadata()
+        self.stats: dict[str, int | float] = {}
+        self._batches: list[list[int]] = []
+        self._pre_compute_batches()
+
+    @staticmethod
+    def _ce_value(raw_ce) -> float | None:
+        """Return the mean valid CE used for ordering, or ``None`` if missing."""
+        values = np.asarray(raw_ce, dtype=np.float64).reshape(-1)
+        values = values[np.isfinite(values) & (values >= 0)]
+        if len(values) == 0:
+            return None
+        return round(float(values.mean()), 6)
+
+    def _load_size_metadata(self) -> np.ndarray:
+        """Load per-spectrum fragment node/edge counts once."""
+        metadata = []
+        for idx in range(len(self.data_source)):
+            if hasattr(self.data_source, "precom_meta_info"):
+                metadata.append(self.data_source.precom_meta_info[idx])
+            else:
+                data = self.data_source[idx]
+                metadata.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
+        return np.asarray(metadata, dtype=np.int64).reshape(-1, 2)
+
+    def _load_context_metadata(
+        self,
+    ) -> tuple[list[tuple[tuple[float, tuple[int, ...]], ...]], dict[str, int]]:
+        """Build eligible single-mode contexts and count excluded spectra."""
+        spec_df = self.data_source.spec_df
+        if hasattr(self.data_source, "get_frag_mode_stats"):
+            frag_modes = self.data_source.get_frag_mode_stats()
+        else:
+            frag_modes = ["unknown"] * len(spec_df)
+
+        modes_by_group: dict[object, set[str]] = {}
+        for idx in range(len(spec_df)):
+            group_id = spec_df.iloc[idx]["group_id"]
+            modes_by_group.setdefault(group_id, set()).add(str(frag_modes[idx]))
+        mixed_groups = {
+            group_id for group_id, modes in modes_by_group.items() if len(modes) > 1
+        }
+
+        contexts: dict[object, dict[float, list[int]]] = {}
+        mixed_mode_spectra = 0
+        missing_ce_spectra = 0
+        for idx in range(len(spec_df)):
+            row = spec_df.iloc[idx]
+            group_id = row["group_id"]
+            if group_id in mixed_groups:
+                mixed_mode_spectra += 1
+                continue
+            ce_value = self._ce_value(row[self.data_source.ce_key])
+            if ce_value is None:
+                missing_ce_spectra += 1
+                continue
+            contexts.setdefault(group_id, {}).setdefault(ce_value, []).append(idx)
+
+        eligible_contexts = []
+        single_level_spectra = 0
+        for levels in contexts.values():
+            if len(levels) < 2:
+                single_level_spectra += sum(len(indices) for indices in levels.values())
+                continue
+            eligible_contexts.append(
+                tuple(
+                    (ce, tuple(sorted(indices)))
+                    for ce, indices in sorted(levels.items())
+                )
+            )
+
+        coverage_stats = {
+            "total_spectra": len(spec_df),
+            "mixed_mode_spectra": mixed_mode_spectra,
+            "missing_ce_spectra": missing_ce_spectra,
+            "single_level_spectra": single_level_spectra,
+            "eligible_spectra": sum(
+                len(indices)
+                for context in eligible_contexts
+                for _, indices in context
+            ),
+        }
+        return eligible_contexts, coverage_stats
+
+    def _select_window(
+        self,
+        levels: tuple[tuple[float, tuple[int, ...]], ...],
+        context_offset: int,
+    ) -> list[int] | None:
+        """Select one complete consecutive window under the edge budget."""
+        size_col = 0 if self._limited_by == "frag_node" else 1
+        level_count = min(len(levels), self._spectra_per_context)
+        start_count = len(levels) - level_count + 1
+        start = (self._epoch + context_offset) % start_count
+        retained = levels[start : start + level_count]
+
+        remove_left = (self._epoch + context_offset) % 2 == 0
+        while len(retained) >= 2:
+            selected = [
+                indices[(self._epoch + context_offset) % len(indices)]
+                for _, indices in retained
+            ]
+            if int(self._data_meta[selected, size_col].sum()) <= self._max_num:
+                return selected
+            if len(retained) == 2:
+                return None
+            retained = retained[1:] if remove_left else retained[:-1]
+            remove_left = not remove_left
+        return None
+
+    def _pre_compute_batches(self) -> None:
+        """Select and greedily pack atomic context windows for one epoch."""
+        generator = th.Generator().manual_seed(self._seed + self._epoch)
+        order = (
+            th.randperm(len(self._contexts), generator=generator).tolist()
+            if self._contexts
+            else []
+        )
+
+        windows = []
+        oversized_windows = 0
+        for context_offset, context_idx in enumerate(order):
+            window = self._select_window(self._contexts[context_idx], context_offset)
+            if window is None:
+                oversized_windows += 1
+            else:
+                windows.append(window)
+
+        size_col = 0 if self._limited_by == "frag_node" else 1
+        batches: list[list[int]] = []
+        batch: list[int] = []
+        batch_size = 0
+        for window in windows:
+            window_size = int(self._data_meta[window, size_col].sum())
+            exceeds_edges = batch and batch_size + window_size > self._max_num
+            exceeds_spectra = (
+                batch
+                and self._return_batch_at > 0
+                and len(batch) + len(window) > self._return_batch_at
+            )
+            if exceeds_edges or exceeds_spectra:
+                batches.append(batch)
+                batch = []
+                batch_size = 0
+            batch.extend(window)
+            batch_size += window_size
+        if batch:
+            batches.append(batch)
+
+        selected_spectra = sum(len(window) for window in windows)
+        self._batches = batches
+        self.stats = {
+            **self._coverage_stats,
+            "eligible_contexts": len(self._contexts),
+            "emitted_windows": len(windows),
+            "oversized_windows": oversized_windows,
+            "selected_spectra": selected_spectra,
+            "selected_spectra_fraction": selected_spectra
+            / max(1, self._coverage_stats["total_spectra"]),
+            "batches": len(batches),
+            "sampler_seed": self._seed,
+        }
+        logger.info("[CEContextDynamicBatchSampler] %s", self.stats)
+
+    def set_epoch(self, epoch: int) -> None:
+        """Rotate CE windows and replicate choice deterministically."""
+        self._epoch = int(epoch)
+        self._pre_compute_batches()
+
+    def __iter__(self) -> Iterator[list[int]]:
+        yield from self._batches
+
+    def __len__(self) -> int:
         return len(self._batches)
 
 

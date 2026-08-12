@@ -409,16 +409,18 @@ explicit infrastructure cost, not as a mathematical requirement of BCE. Preserve
 Do not implement `build_global_ranking_targets.py` and do not persist per-spectrum targets. Add
 `CEContextDynamicBatchSampler` using the exact contract in the minimal plan:
 
-- select contexts with the baseline inverse-spectrum-count weighting, preserving the intent of
-  approximately five spectra per group per epoch;
+- exclude and count mixed HCD/CID groups in v1;
+- select at most five CE levels from each eligible single-mode group;
 - choose deterministic rotating consecutive CE windows rather than enumerating complete ladders;
-- enforce a hard `ce_context_max_spectra_per_batch` cap;
 - use existing `dynamic_batch_sampler_max` as the sole fragment-edge budget;
 - shrink over-budget windows only at outer CE levels, never through a supervised adjacent pair;
 - exclude and count a two-level transition that still exceeds the edge budget;
-- use rotating-tail drop and equal atomic-window counts for equal DDP optimizer steps.
+- reject multi-GPU execution in v1;
+- seed window ordering from the explicit run seed;
+- report total, mixed-mode, missing-CE, single-level, eligible, selected, and oversized counts.
 
-Construct consensus, switch identity, A/B, `q_obs`, and weights online under `torch.no_grad()`.
+Construct switch identity, A/B, `q_obs`, and weights from the selected spectra online under
+`torch.no_grad()`.
 Prediction aggregation and BCE remain differentiable. Build only the small training reliability
 calibration table at setup, broadcast it, and record its checksum.
 
@@ -470,10 +472,10 @@ Report separately for train and validation:
 - unsupported base masses create no top-ranking gradient;
 - near-tied winners have low weight at `gamma = 1` and are excluded by the runtime confidence floor
   in every `gamma > 1` arm;
-- same-CE replicates are aggregated before adjacent transitions are built;
-- context selection retains inverse-group-size balancing;
+- each retained CE level contains one selected spectrum in v1;
+- mixed-mode groups are excluded and counted;
 - every retained window respects the spectrum and edge budgets and contains complete transitions;
-- DDP ranks execute equal optimizer-step counts and rotating-tail exclusions are reported;
+- multi-GPU execution fails setup in v1;
 - singleton endpoint reliability comes only from the frozen training-split calibration table;
 - singleton transfer fails closed in bins with replication-rate-stratum disagreement;
 - only adjacent CE levels are paired;
@@ -597,8 +599,8 @@ Proceed only if:
 Add explicit required config keys to `config/template.yml`:
 
 ```yaml
-ce_context_batching: false
-ce_context_max_spectra_per_batch: 16
+batch_sampler_type: ce_context
+ce_context_spectra_per_context: 5
 global_top_rank_loss_weight: 0.0
 global_top_rank_temperature: 0.1
 global_top_rank_margin: 0.0
@@ -999,10 +1001,7 @@ This objective reuses the `CEContextDynamicBatchSampler` already introduced for 
 changes its online target from adjacent A/B endpoints to deterministic ladder windows:
 
 - use the deterministic windows of two to four consecutive CE levels defined above;
-- select contexts with the same inverse-group-size weighting used by the baseline `GroupSampler`,
-  rather than enumerating every spectrum-rich ladder every epoch;
-- apply a hard `ce_context_max_spectra_per_batch` cap: include one spectrum per retained level, then
-  allocate remaining replicate slots round-robin with deterministic epoch rotation;
+- exclude mixed-mode groups and select one spectrum from each retained CE level;
 - treat the existing `dynamic_batch_sampler_max` fragment-edge limit as the sole memory authority;
   do not add a second edge-budget key;
 - if a window exceeds that edge budget, remove outer CE levels while retaining complete adjacent
@@ -1014,11 +1013,8 @@ changes its online target from adjacent A/B endpoints to deterministic ladder wi
 - keep contender aggregation sparse in the already-produced peak list; after aggregation the loss
   is `O(L * k)` and needs no dense peak-by-peak or mass-by-mass matrix.
 
-For DDP, construct the ordered atomic-window list deterministically, drop the rotating tail needed
-to make its length divisible by world size, and shard equal counts across ranks. Every rank must
-execute the same number of optimizer steps; rotate the dropped tail by epoch and report its
-coverage. Match trajectory and sampler-only control arms on optimizer steps, not epochs or nominal
-contexts.
+The trajectory experiment remains single-GPU while it reuses the v1 context sampler. Match
+trajectory and sampler-only control arms on optimizer steps, not epochs or nominal contexts.
 
 When activated, add explicit required configuration rather than fallback defaults:
 
@@ -1031,7 +1027,7 @@ ce_trajectory_max_levels: 4
 Construct contender masses, `Q[e,m]`, level reliability, and mass/window/context weights online
 under `torch.no_grad()`. Tests cover window sizes, no duplicated endpoints, boundary-transition
 accounting, weight sums, singleton-proxy provenance, missing support, empty windows, and
-deterministic output, edge-budget fallback, hard spectrum cap, and equal DDP step counts. No
+deterministic output, edge-budget fallback, five-level windows, and single-GPU rejection. No
 trajectory target artifact is written.
 
 Activate this only if endpoint pair or top-k supervision improves absolute contender ranking while
@@ -1153,10 +1149,10 @@ coverage rather than forcing the ranking head to solve an unrealizable target.
 
 0. Run the model-free replicate floors and freeze the eligible instrument/adduct population.
 1. Implement and audit bounded `CEContextDynamicBatchSampler` plus its weight-zero control.
-2. Add focused tests for inverse-group selection, CE-window rotation, caps, edge fallback, equal
-   DDP steps, mass aggregation, peak-intensity alias selection, ambiguous-group skipping, support,
-   replicate consensus, singleton transfer, adjacency, pair confidence, fixed `/B` normalization,
-   and online context weighting.
+2. Add focused tests for mixed-mode exclusion, CE-window rotation, the five-level limit, edge
+   fallback, single-GPU rejection, mass aggregation, peak-intensity alias selection,
+   ambiguous-group skipping, support, singleton reliability, adjacency, pair confidence, fixed
+   `/B` normalization, and online context weighting.
 3. Implement the peak-mass top-margin and endpoint soft pairwise `BCEWithLogits` loss; retain
    two-mass KL as an evaluation metric.
 4. Add explicit cache-free configuration keys and reliability/checkpoint validation.

@@ -57,17 +57,17 @@ the pair loss.
 
 ## `CEContextDynamicBatchSampler`
 
-Online target construction requires the relevant CE levels in one autograd graph. Add a bounded
-context sampler over:
+The selected cache-free implementation co-locates relevant CE levels in one autograd graph. Add a
+bounded context sampler over:
 
 ```text
 (molecule, precursor type, instrument type, fragmentation mode)
 ```
 
-The sampler must preserve the baseline's deliberate group balancing. Select contexts with the same
-inverse-spectrum-count weighting used by `simple_group_sampler`, targeting approximately five
-spectra per group per epoch. Do not enumerate every spectrum from every long ladder: that would
-reverse the current balancing and over-weight spectrum-rich contexts.
+For v1, require each `group_id` to contain exactly one fragmentation mode. Exclude and count mixed
+HCD/CID groups rather than adding a second allocation policy.
+`ce_context_spectra_per_context: 5` is the maximum number of CE levels selected from each eligible
+context per epoch.
 
 For each selected context:
 
@@ -75,9 +75,11 @@ For each selected context:
 2. select a consecutive CE window containing at least two levels;
 3. rotate the window start deterministically by epoch so every adjacent transition is eventually
    covered;
-4. include one spectrum from every retained level, then allocate remaining replicate slots
-   round-robin with deterministic epoch rotation;
-5. enforce `ce_context_max_spectra_per_batch` as a hard per-context limit.
+4. include one spectrum from every retained level, with deterministic replicate rotation;
+5. select at most five CE levels per context under the initial baseline configuration.
+
+The online `q_e` is therefore a single-replicate target. Replicate information enters through the
+frozen all-training-replicate reliability table, not through in-batch consensus.
 
 Use the existing `dynamic_batch_sampler_max` fragment-edge budget as the sole memory authority; do
 not add `ce_context_max_frag_edges`. If a window is over budget, remove outer CE levels while
@@ -85,40 +87,27 @@ retaining complete adjacent transitions. If even a two-level transition is over 
 count it. Never emit an over-budget batch, silently truncate one endpoint of a supervised
 transition, or use “emit alone” as an OOM fallback.
 
-The batch carries grouping metadata, not persistent supervision:
+The loss reconstructs contexts from the ordinary batch `group_id` and CE fields; the sampler adds
+no persistent target metadata. V1 is single-GPU only and fails setup when `devices != 1`.
 
-```text
-ce_context_ptr
-ce_level_ptr
-ce_level_value
-ce_level_spec_indices
-```
-
-The collator validates CE order, context boundaries, the hard spectrum cap, the edge budget, and at
-least one selected spectrum per retained level.
-
-### DDP and training-budget contract
-
-Construct the epoch's atomic-window list deterministically. Drop the rotating tail needed to make
-its length divisible by world size, then shard equal window counts across ranks. Every rank executes
-the same number of optimizer steps; rotate and report dropped-window coverage across epochs.
+### Training-budget contract
 
 Match the sampler control and pair arms on optimizer steps, not epochs or nominal spectra seen.
 Also report spectra, contexts, and eligible transitions seen so the changed training estimand stays
-visible.
+visible. Sampler audit output includes total spectra, mixed-mode spectra, missing-CE spectra,
+single-level spectra, eligible contexts/spectra, selected spectra, and oversized windows.
 
-The new estimand is the inverse-group-weighted distribution of bounded consecutive CE windows,
-with deterministic coverage rotation. It is not the natural spectrum distribution. Retain a
-sequential validation loader for primary metrics; the grouped validation loader is diagnostic only.
+The new estimand is bounded consecutive CE windows from eligible single-mode groups. It is not the
+natural spectrum distribution. Retain a sequential validation loader for primary metrics.
 
 ## Online target construction
 
 Inside the loss under `torch.no_grad()`:
 
-1. merge observed peaks within each selected same-CE replicate group;
-2. average normalized observed intensities across selected same-CE replicates;
+1. collect the one selected spectrum within each CE level;
+2. use its normalized observed intensity directly;
 3. form adjacent transitions within each retained ordered window;
-4. retain transitions whose consensus base mass changes;
+4. retain transitions whose selected observed base mass changes;
 5. set `A` to the lower-CE winner and `B` to the higher-CE winner;
 6. require A and B to have raw-DAG support at both endpoints;
 7. compute the endpoint targets and confidence/reliability weights.
@@ -204,8 +193,8 @@ auxiliary-to-primary fragment-logit gradient ratio.
 ## Minimal implementation
 
 1. Choose the matched CE baseline.
-2. Implement the bounded context sampler and weight-zero sampler control. Verify inverse-group
-   selection, CE-window rotation, caps, edge fallback, and equal-step DDP behavior.
+2. Implement the bounded single-GPU context sampler and weight-zero sampler control. Verify
+   mixed-mode exclusion, CE-window rotation, the five-level limit, and edge fallback.
 3. Implement online target construction and the training-only reliability audit. Emit reports, not
    target artifacts.
 4. Apply the coverage gate: at least `5,000` retained training switches, at least `500` validation
@@ -218,8 +207,8 @@ auxiliary-to-primary fragment-logit gradient ratio.
 Required configuration is explicit and cache-free:
 
 ```yaml
-ce_context_batching: false
-ce_context_max_spectra_per_batch: 16
+batch_sampler_type: ce_context
+ce_context_spectra_per_context: 5
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
 ce_pair_min_endpoint_reliability: null

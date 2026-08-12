@@ -595,8 +595,10 @@ finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights duri
 # Additional Training Options
 # ============================================================================
 dynamic_batch_sampler: False
+batch_sampler_type: spec_mol_frag  # [spec_mol_frag, ce_context]
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
+ce_context_spectra_per_context: 5
 # Curriculum learning: begin at a whole-dataset node-count quantile and linearly
 # add larger DAGs. At dag_size_curriculum_epochs, the full training set is eligible.
 dag_size_curriculum: False

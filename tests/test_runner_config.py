@@ -16,6 +16,9 @@ def _base_config(**overrides) -> dict:
         "automatic_optimization": False,
         "dynamic_batch_sampler_mode": "frag_node",
         "dynamic_batch_sampler_max": 1000,
+        "batch_sampler_type": "spec_mol_frag",
+        "ce_context_spectra_per_context": 5,
+        "devices": 1,
         "dag_size_curriculum": False,
         "dag_size_curriculum_start_fraction": 0.25,
         "dag_size_curriculum_epochs": 10,
@@ -76,6 +79,44 @@ class TestValidateSamplerConfig:
                     dual_group_dynamic_batch_sampler=True,
                 )
             )
+
+    def test_ce_context_batch_sampler_valid_config_passes(self):
+        validate_sampler_config(
+            _base_config(
+                batch_sampler_type="ce_context",
+            )
+        )
+
+    def test_ce_context_batch_sampler_requires_dynamic_sampler(self):
+        with pytest.raises(ValueError, match="requires dynamic_batch_sampler"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=False,
+                    batch_sampler_type="ce_context",
+                )
+            )
+
+    def test_ce_context_batch_sampler_rejects_small_window(self):
+        with pytest.raises(ValueError, match="ce_context_spectra_per_context"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    ce_context_spectra_per_context=1,
+                )
+            )
+
+    def test_ce_context_batch_sampler_rejects_multiple_devices(self):
+        with pytest.raises(ValueError, match="devices=1"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    devices=2,
+                )
+            )
+
+    def test_invalid_batch_sampler_type_raises(self):
+        with pytest.raises(ValueError, match="batch_sampler_type"):
+            validate_sampler_config(_base_config(batch_sampler_type="invalid"))
 
     def test_dag_size_curriculum_valid_config_passes(self):
         validate_sampler_config(_base_config(dag_size_curriculum=True))

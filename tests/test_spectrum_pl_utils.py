@@ -95,7 +95,9 @@ def test_seed_dataloader_refreshes_lightning_cached_batch_count():
     data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=2,
-        hparams=types.SimpleNamespace(dag_size_curriculum=True),
+        hparams=types.SimpleNamespace(
+            dag_size_curriculum=True, batch_sampler_type="spec_mol_frag"
+        ),
         train_dl_seeds=torch.tensor([10, 11, 12, 13]),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
@@ -127,7 +129,9 @@ def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
     data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=30,
-        hparams=types.SimpleNamespace(dag_size_curriculum=True),
+        hparams=types.SimpleNamespace(
+            dag_size_curriculum=True, batch_sampler_type="spec_mol_frag"
+        ),
         train_dl_seeds=torch.arange(31),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
@@ -158,7 +162,9 @@ def test_seed_dataloader_advances_outer_curriculum_sampler_at_epoch_99():
     data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=99,
-        hparams=types.SimpleNamespace(dag_size_curriculum=True),
+        hparams=types.SimpleNamespace(
+            dag_size_curriculum=True, batch_sampler_type="spec_mol_frag"
+        ),
         train_dl_seeds=torch.arange(100),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
@@ -187,7 +193,9 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
     train_dataloader = RecordingDataLoader(batch_sampler, num_batches=40)
     module = types.SimpleNamespace(
         current_epoch=2,
-        hparams=types.SimpleNamespace(dag_size_curriculum=False),
+        hparams=types.SimpleNamespace(
+            dag_size_curriculum=False, batch_sampler_type="spec_mol_frag"
+        ),
         train_dl_seeds=torch.tensor([10, 11, 12]),
         trainer=types.SimpleNamespace(
             train_dataloader=train_dataloader,
@@ -209,6 +217,35 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
     module.trainer.fit_loop._data_fetcher.reset.assert_not_called()
     assert module.trainer.fit_loop.max_batches == 10
     assert module.trainer.val_check_batch == 10
+
+
+def test_seed_dataloader_advances_ce_context_sampler():
+    batch_sampler = RecordingBatchSampler()
+    train_dataloader = RecordingDataLoader(batch_sampler, num_batches=17)
+    data_fetcher = types.SimpleNamespace(reset=MagicMock())
+    module = types.SimpleNamespace(
+        current_epoch=2,
+        hparams=types.SimpleNamespace(
+            dag_size_curriculum=False, batch_sampler_type="ce_context"
+        ),
+        train_dl_seeds=torch.tensor([10, 11, 12]),
+        trainer=types.SimpleNamespace(
+            train_dataloader=train_dataloader,
+            fit_loop=types.SimpleNamespace(
+                _combined_loader=types.SimpleNamespace(limits=[4]),
+                _data_fetcher=data_fetcher,
+                max_batches=4,
+            ),
+            val_check_interval=1.0,
+            val_check_batch=4,
+        ),
+    )
+
+    SpectrumPL._seed_dataloader(module, 2)
+
+    assert batch_sampler.epochs == [2]
+    assert module.trainer.fit_loop._combined_loader.limits == [17]
+    data_fetcher.reset.assert_called_once_with()
 
 
 # ===========================================================================

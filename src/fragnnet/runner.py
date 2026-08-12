@@ -18,6 +18,7 @@ from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
+    CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GroupSampler,
@@ -151,7 +152,9 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if split == "train":
         # Choose sampler for training
-        if config_d["group_sampler"]:
+        if config_d["batch_sampler_type"] == "ce_context":
+            sampler = None
+        elif config_d["group_sampler"]:
             sampler = GroupSampler(
                 ds,
                 sample_k=config_d["group_sampler_max_per_group"],
@@ -187,17 +190,29 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         else:
             return_batch_at = config_d["eval_batch_size"]
         if split == "train":
-            batch_sampler = SpecMolFragDynamicBatchSampler(
-                ds,
-                max_num=config_d["dynamic_batch_sampler_max"],
-                limited_by=config_d["dynamic_batch_sampler_mode"],
-                skip_too_big=True,
-                return_batch_at=return_batch_at,
-                sampler=sampler,
-                dag_size_curriculum=config_d["dag_size_curriculum"],
-                dag_size_curriculum_start_fraction=config_d["dag_size_curriculum_start_fraction"],
-                dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
-            )
+            if config_d["batch_sampler_type"] == "ce_context":
+                batch_sampler = CEContextDynamicBatchSampler(
+                    ds,
+                    max_num=config_d["dynamic_batch_sampler_max"],
+                    limited_by=config_d["dynamic_batch_sampler_mode"],
+                    spectra_per_context=config_d["ce_context_spectra_per_context"],
+                    return_batch_at=return_batch_at,
+                    seed=config_d["seed"],
+                )
+            else:
+                batch_sampler = SpecMolFragDynamicBatchSampler(
+                    ds,
+                    max_num=config_d["dynamic_batch_sampler_max"],
+                    limited_by=config_d["dynamic_batch_sampler_mode"],
+                    skip_too_big=True,
+                    return_batch_at=return_batch_at,
+                    sampler=sampler,
+                    dag_size_curriculum=config_d["dag_size_curriculum"],
+                    dag_size_curriculum_start_fraction=config_d[
+                        "dag_size_curriculum_start_fraction"
+                    ],
+                    dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
+                )
         else:
             batch_sampler = SpecMolFragDynamicBatchSampler(
                 ds,
@@ -296,6 +311,24 @@ def validate_sampler_config(config_d: dict) -> None:
             )
         if config_d["dynamic_batch_sampler_max"] is None:
             raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+
+    valid_batch_sampler_types = {"spec_mol_frag", "ce_context"}
+    if config_d["batch_sampler_type"] not in valid_batch_sampler_types:
+        raise ValueError(
+            "batch_sampler_type must be one of "
+            f"{sorted(valid_batch_sampler_types)} (got '{config_d['batch_sampler_type']}')"
+        )
+
+    if config_d["batch_sampler_type"] == "ce_context":
+        if not config_d["dynamic_batch_sampler"]:
+            raise ValueError("batch_sampler_type='ce_context' requires dynamic_batch_sampler=True")
+        if config_d["dag_size_curriculum"]:
+            raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
+        if config_d["devices"] != 1:
+            raise ValueError("batch_sampler_type='ce_context' v1 requires devices=1")
+        spectra_per_context = config_d["ce_context_spectra_per_context"]
+        if not isinstance(spectra_per_context, int) or spectra_per_context < 2:
+            raise ValueError("ce_context_spectra_per_context must be an integer >= 2")
 
     if config_d["dag_size_curriculum"]:
         if not config_d["dynamic_batch_sampler"]:
