@@ -617,20 +617,23 @@ class FraGNNetPL(SpectrumPL):
 
         inst_types = sorted(self.hparams.spec_params["inst_types"])
         prec_types = sorted(self.hparams.spec_params["prec_types"])
-        eligible_inst_idxs = th.tensor(
-            [
-                inst_types.index(inst_type)
-                for inst_type in self.hparams.ce_pair_eligible_inst_types
-            ],
-            dtype=th.long,
-        )
-        eligible_prec_idxs = th.tensor(
-            [
-                prec_types.index(prec_type)
-                for prec_type in self.hparams.ce_pair_eligible_prec_types
-            ],
-            dtype=th.long,
-        )
+        eligible_inst_idxs = th.empty(0, dtype=th.long)
+        eligible_prec_idxs = th.empty(0, dtype=th.long)
+        if self.hparams.ce_pair_loss_weight != 0.0:
+            eligible_inst_idxs = th.tensor(
+                [
+                    inst_types.index(inst_type)
+                    for inst_type in self.hparams.ce_pair_eligible_inst_types
+                ],
+                dtype=th.long,
+            )
+            eligible_prec_idxs = th.tensor(
+                [
+                    prec_types.index(prec_type)
+                    for prec_type in self.hparams.ce_pair_eligible_prec_types
+                ],
+                dtype=th.long,
+            )
 
         def _loss_fn(
             true_mzs,
@@ -760,14 +763,15 @@ class FraGNNetPL(SpectrumPL):
                         true_mzs=kwargs["ce_pair_true_mzs"],
                         true_ints=kwargs["ce_pair_true_ints"],
                         true_batch_idxs=kwargs["ce_pair_true_batch_idxs"],
-                        pred_mzs=pred_mzs,
-                        pred_logprobs=pred_logprobs,
-                        pred_batch_idxs=pred_batch_idxs,
+                        pred_mzs=kwargs["ce_pair_pred_mzs"],
+                        pred_logprobs=kwargs["ce_pair_pred_logprobs"],
+                        pred_batch_idxs=kwargs["ce_pair_pred_batch_idxs"],
                         group_ids=kwargs["group_id"].reshape(-1),
                         ce_values=kwargs["ce_pair_ce_values"],
                         eligible_samples=eligible_samples,
                         batch_size=batch_size,
                         min_endpoint_confidence=self.hparams.ce_pair_min_endpoint_confidence,
+                        min_contender_relative_intensity=self.hparams.target_rel_ints_thresh,
                         tol_per_sample=tol_per_sample,
                         min_mz_per_sample=min_mz_per_sample,
                     )

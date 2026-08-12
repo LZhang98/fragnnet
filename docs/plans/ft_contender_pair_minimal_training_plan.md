@@ -1,9 +1,9 @@
 # Minimal FT contender-pair training plan
 
 > **Status:** PROPOSED — CACHE-FREE CONTEXT-BATCHED IMPLEMENTATION
-> &nbsp;·&nbsp; **Updated:** 2026-08-11
+> &nbsp;·&nbsp; **Updated:** 2026-08-12
 >
-> Add one online auxiliary loss to the existing flat GINE-1 model. Do not change the model
+> Add one online auxiliary loss to the existing NodeMLP model. Do not change the model
 > architecture or write a persistent ranking-target cache.
 
 ## Goal
@@ -14,14 +14,14 @@ Test the smallest loss that directly addresses the measured FT failure:
 > but moves intensity toward the wrong masses.
 
 The experiment asks whether explicit supervision of the two observed winner masses improves
-held-out spectra beyond a matched flat GINE-1 baseline.
+held-out spectra beyond a matched NodeMLP baseline.
 
 ## V1 decision
 
 Train:
 
 ```text
-selected flat GINE-1 CE baseline
+selected NodeMLP CE baseline
 + existing whole-spectrum cross-entropy
 + online high-confidence FT soft pairwise ranking
 ```
@@ -40,20 +40,13 @@ The ordinary spectrum loss still trains every peak. Stable transitions remain a 
 an auxiliary target: their lowest-change quartile has essentially no measured headroom
 (`+0.002 [-0.097, 0.098]`).
 
-## Baseline 0 — choose the CE representation
+## Baseline 0 — fixed NodeMLP
 
-First compare the two already-defined, otherwise matched baselines:
-
-| Config | CE representation |
-| --- | --- |
-| [`..._gine1.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_gine1.yml) | independent rounded CE tokens |
-| [`..._gine1_ce_lin.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_gine1_ce_lin.yml) | affine projection of normalized continuous CE |
-
-The `lin` arm makes neighboring CE values begin nearby instead of as unrelated lookup tokens.
-Model width, insertion locations, output scaling, sampler, and optimization stay matched. Run one
-seed first and confirm a promising result over three seeds. If `lin` does not improve held-out
-behavior without harming QTOF or IT, keep `embed_clamped`; do not combine an unproven CE change with
-the pair loss.
+Use the existing
+[`fraggnn_d3_ma_mi_nist20_amolc_all.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml)
+NodeMLP configuration as the baseline. Keep its `embed_clamped` CE embedding, molecule insertion,
+and CE output scaler unchanged. Do not gate the pair-loss experiment on a GINE-1 or continuous-CE
+ablation; either would change the model at the same time as the supervision test.
 
 ## `CEContextDynamicBatchSampler`
 
@@ -164,7 +157,9 @@ Implementation status: the cache-free online switch BCE mechanics are implemente
 `ce_pair_loss_weight`, including adjacent-CE grouping, confidence filtering, expanded predicted
 peak support at both endpoints, and predicted peak-alias aggregation. Until the detection-limit and singleton
 reliability audits are frozen, the implementation retains only endpoints where both contenders are
-observed; this prevents an unobserved contender from being silently converted into a hard target.
+observed and each reaches the configured `target_rel_ints_thresh` fraction of the endpoint base
+peak. This temporary explicit floor prevents an unobserved or trace contender from being silently
+converted into a hard target; replace it with the audited detection-limit floor before promotion.
 This restricted cohort is suitable for the mechanics/overfit check, not the promotion pilot.
 
 Use the same FT mass-matching boundary as `inst_type_loss_tol`: a candidate at mass `m` matches when
@@ -228,6 +223,7 @@ ce_context_spectra_per_context: 5
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
 ce_pair_min_endpoint_reliability: null  # reserved until the replicate audit is wired
+target_rel_ints_thresh: 0.01  # temporary contender floor; freeze from the audit before promotion
 ce_pair_subset: switches
 ce_pair_eligible_inst_types: [FT]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
@@ -254,7 +250,7 @@ lambda_medium = 0.20 / g
 
 | Arm | Context sampler | Pair weight | Purpose |
 | --- | :---: | ---: | --- |
-| original control | no | `0` | historical matched GINE-1 |
+| original control | no | `0` | historical matched NodeMLP |
 | sampler control | yes | `0` | isolate batching and estimand changes |
 | pair-weak | yes | `lambda_weak` | approximately 5% initial gradient ratio |
 | pair-medium | yes | `lambda_medium` | approximately 20% initial gradient ratio |
@@ -304,7 +300,9 @@ Only after v1:
 2. add online top-k contender KL if the wrong argmax remains outside `{A,B}`;
 3. run the trajectory redundancy gate if ranking improves but CE direction stays weak;
 4. reuse the bounded context sampler for trajectory KL only if that gate passes;
-5. add model capacity only when the useful loss fits training windows but fails to generalize.
+5. validate synthetic three-level stepped targets against real stepped spectra, then test one
+   rotating consecutive stepped window per context as a separate NodeMLP arm if that gate passes;
+6. add model capacity only when the useful loss fits training windows but fails to generalize.
 
 The context gate is not the next default: existing `context_insert_location: mol,mlp` already gives
 the fragment scorer nonlinear fragment-by-context conditioning.

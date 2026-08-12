@@ -32,6 +32,7 @@ def _base_config(**overrides) -> dict:
         "ce_pair_subset": "switches",
         "ce_pair_eligible_inst_types": ["FT"],
         "ce_pair_eligible_prec_types": ["[M+H]+"],
+        "target_rel_ints_thresh": 0.01,
         "train_sample_weight": "none",
         "inst_type_loss_tol": {"FT": {"rel": 1.0e-5, "min_mz": 200.0}},
         "spec_params": {
@@ -193,6 +194,19 @@ class TestValidateSamplerConfig:
                     batch_sampler_type="ce_context",
                     dynamic_batch_sampler_mode="frag_edge",
                     ce_pair_loss_weight=0.1,
+                )
+            )
+
+    @pytest.mark.parametrize("contender_floor", [0.0, -0.1, 1.0, None])
+    def test_ce_pair_loss_requires_positive_contender_floor(self, contender_floor):
+        with pytest.raises(ValueError, match="target_rel_ints_thresh"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_pair_loss_weight=0.1,
+                    ce_pair_min_endpoint_confidence=0.2,
+                    target_rel_ints_thresh=contender_floor,
                 )
             )
 

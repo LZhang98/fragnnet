@@ -1,7 +1,7 @@
 # Global fragment intensity ranking experiment plan
 
 > **Status:** PROPOSED — FINDINGS MEASURED; TARGETS AND LOSS NOT IMPLEMENTED
-> &nbsp;·&nbsp; **Updated:** 2026-08-11
+> &nbsp;·&nbsp; **Updated:** 2026-08-12
 >
 > Train the model to select the correct high-intensity fragment globally and to follow reliable
 > winner changes across collision energy. Start with peak-mass losses on the existing flat head;
@@ -10,7 +10,7 @@
 
 For the smallest first training experiment, use
 [`ft_contender_pair_minimal_training_plan.md`](ft_contender_pair_minimal_training_plan.md). It tests
-only the high-confidence FT soft pairwise loss on the unchanged flat GINE-1 model, using bounded
+only the high-confidence FT soft pairwise loss on the unchanged NodeMLP model, using bounded
 cache-free context batching and a sampler-only control. The document below is the complete research
 plan and supplies later targets, controls, and escalation paths; they are not all part of the
 minimal first run.
@@ -20,7 +20,7 @@ minimal first run.
 The complete loss-only experiment is:
 
 ```text
-matched flat GINE-1
+matched NodeMLP
 + ordinary spectrum cross-entropy
 + confidence-weighted global base-mass ranking
 + confidence-weighted adjacent-CE contender-pair supervision
@@ -85,8 +85,8 @@ The provisional NodeMLP validation analysis found:
   contender pairs as anchors rather than training only on reversals;
 - adding CE directly at `mol,mlp` changed performance very little.
 
-These are provisional because the checkpoint is NodeMLP and the inference export applied
-`min_peak_int=1.0`. Repeat every gate below on an unfiltered matched GINE-1 export.
+These are provisional because the inference export applied `min_peak_int=1.0`. Repeat every gate
+below on an unfiltered matched NodeMLP export.
 
 ## Shared peak-mass contract
 
@@ -145,7 +145,7 @@ Thus the kill criterion does not fire for FT on a valid cohort-matched compariso
 training arm, however, freeze the eligible population to FT `[M+H]+` and `[M-H]-`: their paired
 directional gaps clear zero. FT `[M+Na]+` remains excluded because its interval crosses zero, and
 FT `[M+Cl]-` remains excluded because it is below the coverage threshold. Admit another adduct only
-if the matched GINE-1 audit passes the same predeclared gate; “FT-only” by itself is not a complete
+if the matched NodeMLP audit passes the same predeclared gate; “FT-only” by itself is not a complete
 population definition. The full-cohort
 model value of 0.593 is not used in this decision because the double-replicated subset is easier.
 The approximate independent-error correction gives \(\sqrt{0.885}=0.941\) for single-observation
@@ -493,13 +493,12 @@ Report separately for train and validation:
 
 ## Phase 2 — Measurement gates before training
 
-Gates 1, 3, and 4 use the reproduced matched flat GINE-1 checkpoint and an unfiltered prediction
+Gates 1, 3, and 4 use the reproduced matched NodeMLP checkpoint and an unfiltered prediction
 export. Gate 2 is model-free and uses the Step 0 replicate analysis.
 The control config is
-[`fraggnn_d3_ma_mi_nist20_amolc_all_gine1.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_gine1.yml).
-Relative to the current NodeMLP baseline it changes only the fragment encoder to one-layer
-bidirectional GINE and switches dynamic batching from node count to a 100,000-edge budget. For
-tabular inference, pass `--min_intensity 0`; prediction filtering is not a training hyperparameter.
+[`fraggnn_d3_ma_mi_nist20_amolc_all.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
+All data, feature, head, and optimization settings remain fixed. For tabular inference, pass
+`--min_intensity 0`; prediction filtering is not a training hyperparameter.
 
 ### Gate 1: realizable coverage
 
@@ -576,7 +575,7 @@ Do not estimate this gain by dividing cosine by the reported TV variation ratio:
 least-squares gain use L2 geometry, whereas TV is L1-derived. If \(\alpha^*\leq 1\), uniform CE
 residual amplification and response-temperature fixes are ruled out for that stratum; the remaining
 problem is response direction or contender identity. A stratum-specific magnitude intervention is
-eligible only when the matched GINE-1 interval supports \(\alpha^*>1\).
+eligible only when the matched NodeMLP interval supports \(\alpha^*>1\).
 
 ### Gate 4: offline oracle specificity
 
@@ -609,6 +608,7 @@ global_top_rank_loss_weight: 0.0
 global_top_rank_temperature: 0.1
 global_top_rank_margin: 0.0
 ce_pair_loss_weight: 0.0
+target_rel_ints_thresh: 0.01  # temporary contender floor pending the detection-limit audit
 ce_pair_target_gamma: 1.0
 ce_pair_min_endpoint_confidence: null
 ce_pair_min_endpoint_reliability: null
@@ -1049,6 +1049,47 @@ and mass outside `C`, stratified by window length, switch/stable status, adduct,
 proxy endpoint reliability. Promotion still requires natural-distribution spectrum and ranking
 gains; improvement only on the constructed window loss is insufficient.
 
+### Alternative K: synthetic stepped-CE mixup
+
+Use the model's existing variable-length CE input to create training-only stepped acquisitions from
+observed single-CE ladders. Begin with consecutive three-level windows from one fixed
+`(molecule, precursor, instrument, fragmentation mode)` context, for example `[10,20,30]` and
+`[20,30,40]`; do not begin with sparse combinations such as `[10,30,50]`.
+
+Mass-align the three observed spectra with the instrument tolerance, L1-normalize each spectrum,
+average intensities in linear space, and renormalize. For equal weights,
+
+\[
+q_{10,20,30}=\frac{q_{10}+q_{20}+q_{30}}{3},\qquad
+q_{20,30,40}=\frac{q_{20}+q_{30}+q_{40}}{3}.
+\]
+
+The overlapping-window difference exposes a whole-spectrum CE direction:
+
+\[
+q_{20,30,40}-q_{10,20,30}=\frac{q_{40}-q_{10}}{3}.
+\]
+
+Pass the exact three-value CE list to NodeMLP. The unchanged model pools the three learned CE
+embeddings and separately consumes continuous `(mean, std, valid)` statistics through its CE
+output scaler. This augmentation therefore supervises all peaks and the existing stepped-input
+path; it is not another winner-only loss.
+
+Before training, validate the target construction against real stepped spectra that have matched
+single-CE spectra in the same context. Compare the real stepped spectrum with the equal-weight
+synthetic mixture and with the center-CE spectrum. Proceed only when the mixture has a positive
+molecule-clustered paired improvement over the center-CE control. Independently normalized library
+spectra lack total-ion-current and dwell-time information, so equal averaging is an augmentation,
+not an assumed physical reconstruction.
+
+If the gate passes, retain every original spectrum and sample at most one rotating synthetic
+three-level window per eligible context per epoch. Match optimizer steps to the unaugmented control
+and report how often every CE level is reused, so middle energies are not silently overweighted.
+Run synthetic stepped mixup first as a separate NodeMLP arm with pair-loss weight zero; only combine
+it with contender-pair supervision after both arms independently improve natural single-CE
+validation. Construct the virtual spectra online or ephemerally and write no persistent target
+cache.
+
 ### Recommended activation order
 
 1. Run Phase 3a exactly as declared: switch-only soft `BCEWithLogits` at `gamma = 1`, FT
@@ -1069,14 +1110,15 @@ gains; improvement only on the constructed window loss is insufficient.
    should CE-axis mass-trajectory conditioning reuse the sampler with its weight-zero control. Test
    a separate ladder-delta arm only if trajectory calibration improves while adjacent direction
    remains deficient.
-6. If the correct loss fits training transitions but held-out identities remain wrong, use the
+6. If broader all-peak CE behavior remains weak, run Alternative K's real-stepped reconstruction
+   gate. If it passes, test the sampled synthetic stepped arm separately from pair supervision.
+7. If the correct loss fits training transitions but held-out identities remain wrong, use the
    structural switch audit to decide whether to test the structured CE-response basis: prioritize
    it for recurrent parent-to-descendant handoffs, and deprioritize it for unrelated-branch switches.
-7. If target coverage or reproducibility is the bottleneck, revise the frozen reliability model
-   before a
-   teacher. Use a trajectory teacher only when simpler aggregation is inadequate.
-8. Test the censored visibility factorization only after a visibility audit.
-9. Move to the Phase 4 competition head only when the remaining failure specifically requires
+8. If target coverage or reproducibility is the bottleneck, revise the frozen reliability model
+   before using a teacher. Use a trajectory teacher only when simpler aggregation is inadequate.
+9. Test the censored visibility factorization only after a visibility audit.
+10. Move to the Phase 4 competition head only when the remaining failure specifically requires
    comparing the candidate set, rather than another CE-response target.
 
 ### Ideas not prioritized

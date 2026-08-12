@@ -2109,6 +2109,7 @@ def ce_switch_pair_bce(
     eligible_samples: th.Tensor,
     batch_size: int,
     min_endpoint_confidence: float,
+    min_contender_relative_intensity: float,
     tol_per_sample: th.Tensor,
     min_mz_per_sample: th.Tensor,
 ) -> tuple[th.Tensor, th.Tensor]:
@@ -2139,29 +2140,50 @@ def ce_switch_pair_bce(
     tol_cpu = tol_per_sample.detach().cpu()
     min_mz_cpu = min_mz_per_sample.detach().cpu()
 
+    true_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
+    for peak_idx, sample_idx in enumerate(true_batch_idxs_cpu.tolist()):
+        true_index_lists[sample_idx].append(peak_idx)
+    true_indices_by_sample = [
+        th.tensor(indices, dtype=th.long) for indices in true_index_lists
+    ]
+    pred_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
+    for peak_idx, sample_idx in enumerate(pred_batch_idxs_cpu.tolist()):
+        pred_index_lists[sample_idx].append(peak_idx)
+    pred_indices_by_sample = [
+        th.tensor(indices, dtype=th.long) for indices in pred_index_lists
+    ]
+
     def _matches(mzs: th.Tensor, mass: float, sample_idx: int) -> th.Tensor:
         tolerance = float(tol_cpu[sample_idx]) * max(mass, float(min_mz_cpu[sample_idx]))
         return th.abs(mzs - mass) < tolerance
 
     def _observed_groups(sample_idx: int) -> list[tuple[float, float]]:
         """Merge raw observed aliases before ranking their summed intensities."""
-        sample_mask = true_batch_idxs_cpu == sample_idx
-        mzs = true_mzs_cpu[sample_mask]
-        ints = true_ints_cpu[sample_mask]
+        sample_indices = true_indices_by_sample[sample_idx]
+        mzs = true_mzs_cpu[sample_indices]
+        ints = true_ints_cpu[sample_indices]
         order = th.argsort(mzs)
         groups: list[list[tuple[float, float]]] = []
+        group_upper_bounds: list[tuple[float, float]] = []
         for mz, intensity in zip(mzs[order].tolist(), ints[order].tolist()):
-            matching = [
-                group_idx
-                for group_idx, group in enumerate(groups)
-                if _matches(th.tensor([mz]), group[0][0], sample_idx).item()
-            ]
-            if len(matching) > 1:
-                return []
-            if matching:
-                groups[matching[0]].append((mz, intensity))
+            tolerance = float(tol_cpu[sample_idx]) * max(
+                mz, float(min_mz_cpu[sample_idx])
+            )
+            upper_bound = mz + tolerance
+            if groups and mz < group_upper_bounds[-1][1]:
+                if len(groups) > 1 and mz < group_upper_bounds[-2][1]:
+                    return []
+                if mz >= group_upper_bounds[-1][0]:
+                    return []
+                groups[-1].append((mz, intensity))
+                min_upper, max_upper = group_upper_bounds[-1]
+                group_upper_bounds[-1] = (
+                    min(min_upper, upper_bound),
+                    max(max_upper, upper_bound),
+                )
             else:
                 groups.append([(mz, intensity)])
+                group_upper_bounds.append((upper_bound, upper_bound))
         return [
             (
                 sum(mz * intensity for mz, intensity in group)
@@ -2172,9 +2194,6 @@ def ce_switch_pair_bce(
             if sum(intensity for _, intensity in group) > 0
         ]
 
-    observed_by_sample = {
-        sample_idx: _observed_groups(sample_idx) for sample_idx in range(batch_size)
-    }
     context_transitions: dict[int, list[tuple]] = {}
     with th.no_grad():
         for group_id in th.unique(group_ids_cpu).tolist():
@@ -2183,6 +2202,10 @@ def ce_switch_pair_bce(
             ).flatten()
             if sample_idxs.numel() < 2:
                 continue
+            observed_by_sample = {
+                int(sample_idx): _observed_groups(int(sample_idx))
+                for sample_idx in sample_idxs.tolist()
+            }
             order = th.argsort(ce_values_cpu[sample_idxs])
             sample_idxs = sample_idxs[order]
             transitions = []
@@ -2219,6 +2242,12 @@ def ce_switch_pair_bce(
                     if int_a <= 0 or int_b <= 0:
                         valid = False
                         break
+                    max_intensity = max(group[1] for group in groups)
+                    if min(int_a, int_b) < (
+                        min_contender_relative_intensity * max_intensity
+                    ):
+                        valid = False
+                        break
                     total = int_a + int_b
                     confidence = abs(int_a - int_b) / max(int_a, int_b)
                     if confidence < min_endpoint_confidence:
@@ -2227,9 +2256,7 @@ def ce_switch_pair_bce(
                     endpoint_data.append((endpoint, int_a / total, confidence))
                 if valid:
                     for endpoint in (low, high):
-                        endpoint_pred_idxs = th.nonzero(
-                            pred_batch_idxs_cpu == endpoint, as_tuple=False
-                        ).flatten()
+                        endpoint_pred_idxs = pred_indices_by_sample[endpoint]
                         mzs = pred_mzs_cpu[endpoint_pred_idxs]
                         match_a = endpoint_pred_idxs[_matches(mzs, mass_a, endpoint)]
                         match_b = endpoint_pred_idxs[_matches(mzs, mass_b, endpoint)]
@@ -2245,14 +2272,30 @@ def ce_switch_pair_bce(
             if transitions:
                 context_transitions[int(group_id)] = transitions
 
+    match_indices = [
+        match
+        for transitions in context_transitions.values()
+        for _, endpoint_data in transitions
+        for _, _, _, match_a, match_b in endpoint_data
+        for match in (match_a, match_b)
+    ]
+    flat_match_indices = (
+        th.cat(match_indices).to(pred_logprobs.device)
+        if match_indices
+        else th.empty(0, dtype=th.long, device=pred_logprobs.device)
+    )
+    match_offset = 0
     for transitions in context_transitions.values():
         weight_sum = sum(transition[0] for transition in transitions)
         for weight, endpoint_data in transitions:
             for endpoint, target_a, _, match_a, match_b in endpoint_data:
-                match_a = match_a.to(pred_logprobs.device)
-                match_b = match_b.to(pred_logprobs.device)
-                log_prob_a = th.logsumexp(pred_logprobs[match_a], dim=0)
-                log_prob_b = th.logsumexp(pred_logprobs[match_b], dim=0)
+                match_a_end = match_offset + match_a.numel()
+                device_match_a = flat_match_indices[match_offset:match_a_end]
+                match_b_end = match_a_end + match_b.numel()
+                device_match_b = flat_match_indices[match_a_end:match_b_end]
+                match_offset = match_b_end
+                log_prob_a = th.logsumexp(pred_logprobs[device_match_a], dim=0)
+                log_prob_b = th.logsumexp(pred_logprobs[device_match_b], dim=0)
                 endpoint_weight = weight / (2.0 * weight_sum)
                 losses[endpoint] = losses[endpoint] + endpoint_weight * (
                     F.binary_cross_entropy_with_logits(

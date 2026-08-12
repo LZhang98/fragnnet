@@ -366,6 +366,16 @@ def validate_sampler_config(config_d: dict) -> None:
             )
         if not 0.0 < confidence <= 1.0:
             raise ValueError("ce_pair_min_endpoint_confidence must be in (0, 1]")
+        contender_floor = config_d["target_rel_ints_thresh"]
+        if (
+            not isinstance(contender_floor, (int, float))
+            or isinstance(contender_floor, bool)
+            or not 0.0 < contender_floor < 1.0
+        ):
+            raise ValueError(
+                "ce_pair_loss_weight > 0 requires target_rel_ints_thresh in (0, 1) "
+                "as the temporary observed-contender floor"
+            )
         if config_d["ce_pair_min_endpoint_reliability"] is not None:
             raise ValueError(
                 "ce_pair_min_endpoint_reliability is reserved until the replicate "

@@ -38,6 +38,7 @@ def _ce_switch_inputs() -> dict:
         "eligible_samples": th.tensor([True, True]),
         "batch_size": 2,
         "min_endpoint_confidence": 0.2,
+        "min_contender_relative_intensity": 0.01,
         "tol_per_sample": th.tensor([1.0e-5, 1.0e-5]),
         "min_mz_per_sample": th.tensor([200.0, 200.0]),
     }
@@ -110,6 +111,15 @@ class TestCESwitchPairBCE:
         assert eligible.sum() == 0
         assert th.equal(loss, th.zeros_like(loss))
 
+    def test_trace_contender_below_relative_floor_is_not_hardened(self):
+        inputs = _ce_switch_inputs()
+        inputs["true_ints"] = th.tensor([1.0, 5.0e-4, 5.0e-4, 1.0])
+
+        loss, eligible = ce_switch_pair_bce(**inputs)
+
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+
     def test_observed_aliases_are_merged_before_winner_selection(self):
         inputs = _ce_switch_inputs()
         inputs["true_mzs"] = th.tensor(
@@ -117,6 +127,34 @@ class TestCESwitchPairBCE:
         )
         inputs["true_ints"] = th.tensor([0.3, 0.3, 0.4, 0.3, 0.7])
         inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
+
+        loss, eligible = ce_switch_pair_bce(**inputs)
+
+        assert eligible.tolist() == [1.0, 1.0]
+        assert loss.sum() > 0
+
+    def test_non_disjoint_observed_aliases_skip_transition(self):
+        inputs = _ce_switch_inputs()
+        inputs["true_mzs"] = th.tensor(
+            [100.0, 100.0015, 100.003, 200.0, 100.0, 200.0]
+        )
+        inputs["true_ints"] = th.tensor([0.4, 0.3, 0.2, 0.1, 0.3, 0.7])
+        inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 0, 1, 1])
+
+        loss, eligible = ce_switch_pair_bce(**inputs)
+
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+
+    def test_sparse_rows_need_not_be_contiguous_by_sample(self):
+        inputs = _ce_switch_inputs()
+        true_order = th.tensor([0, 2, 1, 3])
+        pred_order = th.tensor([0, 2, 1, 3])
+        for key in ("true_mzs", "true_ints", "true_batch_idxs"):
+            inputs[key] = inputs[key][true_order]
+        for key in ("pred_mzs", "pred_logprobs", "pred_batch_idxs"):
+            inputs[key] = inputs[key][pred_order]
+        inputs["pred_logprobs"].retain_grad()
 
         loss, eligible = ce_switch_pair_bce(**inputs)
 

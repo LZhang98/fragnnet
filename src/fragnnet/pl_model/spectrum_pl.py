@@ -156,13 +156,30 @@ def select_context_ce_values(
     """Select the sampler's configured CE axis for every spectrum."""
     ce_by_key = {}
     for ce_key in set(ce_key_by_inst.values()):
-        ce_by_key[ce_key] = scatter_reduce(
-            batch[f"spec_{ce_key}"],
-            batch[f"spec_{ce_key}_batch_idxs"],
-            reduce="mean",
+        values = batch[f"spec_{ce_key}"]
+        batch_idxs = batch[f"spec_{ce_key}_batch_idxs"]
+        valid = th.isfinite(values) & (values >= 0)
+        value_sums = scatter_reduce(
+            th.where(valid, values, 0.0),
+            batch_idxs,
+            reduce="sum",
             dim_size=batch_size,
             include_self=False,
         )
+        valid_counts = scatter_reduce(
+            valid.to(values.dtype),
+            batch_idxs,
+            reduce="sum",
+            dim_size=batch_size,
+            include_self=False,
+        )
+        mean_values = value_sums / valid_counts.clamp(min=1)
+        mean_values = th.where(
+            valid_counts > 0,
+            th.round(mean_values * 1.0e6) / 1.0e6,
+            th.full_like(mean_values, float("nan")),
+        )
+        ce_by_key[ce_key] = mean_values
     inst_idxs = batch["spec_inst_type"].reshape(-1)
     ce_values = ce_by_key[next(iter(ce_by_key))].new_full(
         (batch_size,), float("nan")
@@ -1307,6 +1324,9 @@ class SpectrumPL(L.LightningModule):
                     "ce_pair_true_mzs": true_mzs,
                     "ce_pair_true_ints": true_ints,
                     "ce_pair_true_batch_idxs": true_batch_idxs,
+                    "ce_pair_pred_mzs": pred_mzs,
+                    "ce_pair_pred_logprobs": pred_logprobs,
+                    "ce_pair_pred_batch_idxs": pred_batch_idxs,
                     "ce_pair_ce_values": ce_values,
                     "group_id": batch["group_id"],
                     "spec_inst_type": batch["spec_inst_type"],

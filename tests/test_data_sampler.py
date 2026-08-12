@@ -173,6 +173,42 @@ class TestCEContextDynamicBatchSampler:
             [[0], [1, 2, 3, 4, 5]],
         ]
 
+    def test_short_context_is_never_split_by_boundary_rotation(self):
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            spectra_per_context=5,
+        )
+
+        for epoch in range(10):
+            sampler.set_epoch(epoch)
+            assert list(sampler) == [[0, 1]]
+
+    def test_interleaves_chunks_from_different_contexts(self):
+        rows = []
+        for mol_id in range(2):
+            rows.extend(self._row(mol_id, ce) for ce in range(6))
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=100,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            spectra_per_context=2,
+            return_batch_at=100,
+            seed=0,
+        )
+
+        batches = list(sampler)
+        mixed_context_batches = [
+            batch
+            for batch in batches
+            if len({ds.spec_df.iloc[idx]["group_id"] for idx in batch}) > 1
+        ]
+        assert len(mixed_context_batches) >= 3
+
     def test_orders_qtof_context_by_configured_ace(self):
         rows = [
             {**self._row(1, 30), "inst_type": "QTOF", "ace": [10.0]},

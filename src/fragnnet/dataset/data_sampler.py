@@ -12,6 +12,7 @@ Includes:
 import logging
 import math
 import os
+from collections import deque
 from collections.abc import Iterator
 
 import numpy as np
@@ -512,7 +513,11 @@ class CEContextDynamicBatchSampler(BatchSampler):
 
         # Rotate chunk boundaries without wrapping the ordered CE axis. A short
         # prefix is allowed; it still receives the ordinary spectrum loss.
-        boundary_offset = rotation % self._spectra_per_context
+        boundary_offset = (
+            rotation % self._spectra_per_context
+            if len(primary) > self._spectra_per_context
+            else 0
+        )
         level_chunks = []
         if boundary_offset:
             level_chunks.append(primary[:boundary_offset])
@@ -568,6 +573,22 @@ class CEContextDynamicBatchSampler(BatchSampler):
                 oversized_spectra += 1
             else:
                 atoms.append((group_id, [idx]))
+
+        # Contexts can contribute several chunks. Interleave them so the
+        # no-repeated-context rule below does not create mostly singleton batches.
+        atoms_by_group: dict[object, list[list[int]]] = {}
+        for group_id, atom in atoms:
+            atoms_by_group.setdefault(group_id, []).append(atom)
+        pending_groups = deque(
+            (group_id, deque(group_atoms))
+            for group_id, group_atoms in atoms_by_group.items()
+        )
+        atoms = []
+        while pending_groups:
+            group_id, group_atoms = pending_groups.popleft()
+            atoms.append((group_id, group_atoms.popleft()))
+            if group_atoms:
+                pending_groups.append((group_id, group_atoms))
 
         batches: list[list[int]] = []
         batch: list[int] = []
