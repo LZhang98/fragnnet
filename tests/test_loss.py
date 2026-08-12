@@ -14,6 +14,7 @@ import torch as th
 from fragnnet.model.loss import (
     _compute_pair_ce_hun,
     _compute_pair_jss_hun,
+    ce_switch_pair_bce,
     get_pairwise_cossim,
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
@@ -22,6 +23,105 @@ from fragnnet.model.loss import (
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
+
+
+def _ce_switch_inputs() -> dict:
+    return {
+        "true_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
+        "true_ints": th.tensor([0.8, 0.2, 0.3, 0.7]),
+        "true_batch_idxs": th.tensor([0, 0, 1, 1]),
+        "pred_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
+        "pred_logprobs": th.log(th.tensor([0.6, 0.4, 0.4, 0.6])).requires_grad_(),
+        "pred_batch_idxs": th.tensor([0, 0, 1, 1]),
+        "group_ids": th.tensor([7, 7]),
+        "ce_values": th.tensor([20.0, 30.0]),
+        "eligible_samples": th.tensor([True, True]),
+        "batch_size": 2,
+        "min_endpoint_confidence": 0.2,
+        "tol_per_sample": th.tensor([1.0e-5, 1.0e-5]),
+        "min_mz_per_sample": th.tensor([200.0, 200.0]),
+    }
+
+
+class TestCESwitchPairBCE:
+    def test_soft_targets_and_gradients(self):
+        inputs = _ce_switch_inputs()
+        loss, eligible = ce_switch_pair_bce(**inputs)
+
+        expected_low = 0.5 * th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.6 / 0.4)), th.tensor(0.8)
+        )
+        expected_high = 0.5 * th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.3)
+        )
+        assert eligible.tolist() == [1.0, 1.0]
+        assert th.allclose(loss, th.stack([expected_low, expected_high]))
+
+        loss.sum().backward()
+        gradients = inputs["pred_logprobs"].grad
+        assert gradients is not None
+        assert gradients[0] < 0 < gradients[1]
+        assert gradients[2] > 0 > gradients[3]
+
+    def test_prediction_aliases_are_aggregated(self):
+        inputs = _ce_switch_inputs()
+        inputs["pred_mzs"] = th.tensor([100.0, 100.001, 200.0, 100.0, 200.0])
+        inputs["pred_logprobs"] = th.log(
+            th.tensor([0.3, 0.3, 0.4, 0.4, 0.6])
+        ).requires_grad_()
+        inputs["pred_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
+
+        loss, eligible = ce_switch_pair_bce(**inputs)
+
+        expected_low = 0.5 * th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.6 / 0.4)), th.tensor(0.8)
+        )
+        assert eligible.tolist() == [1.0, 1.0]
+        assert th.allclose(loss[0], expected_low)
+
+    def test_non_switch_and_missing_support_return_zero(self):
+        inputs = _ce_switch_inputs()
+        inputs["true_ints"] = th.tensor([0.8, 0.2, 0.7, 0.3])
+        loss, eligible = ce_switch_pair_bce(**inputs)
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+
+        inputs = _ce_switch_inputs()
+        inputs["pred_mzs"] = th.tensor([100.0, 200.0, 100.0])
+        inputs["pred_logprobs"] = th.log(th.tensor([0.6, 0.4, 1.0])).requires_grad_()
+        inputs["pred_batch_idxs"] = th.tensor([0, 0, 1])
+        loss, eligible = ce_switch_pair_bce(**inputs)
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+
+    def test_confidence_floor_filters_transition(self):
+        inputs = _ce_switch_inputs()
+        inputs["min_endpoint_confidence"] = 0.8
+        loss, eligible = ce_switch_pair_bce(**inputs)
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+
+    def test_unobserved_contender_is_not_hardened(self):
+        inputs = _ce_switch_inputs()
+        inputs["true_mzs"] = th.tensor([100.0, 100.0, 200.0])
+        inputs["true_ints"] = th.tensor([1.0, 0.3, 0.7])
+        inputs["true_batch_idxs"] = th.tensor([0, 1, 1])
+        loss, eligible = ce_switch_pair_bce(**inputs)
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+
+    def test_observed_aliases_are_merged_before_winner_selection(self):
+        inputs = _ce_switch_inputs()
+        inputs["true_mzs"] = th.tensor(
+            [100.0, 100.001, 200.0, 100.0, 200.0]
+        )
+        inputs["true_ints"] = th.tensor([0.3, 0.3, 0.4, 0.3, 0.7])
+        inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
+
+        loss, eligible = ce_switch_pair_bce(**inputs)
+
+        assert eligible.tolist() == [1.0, 1.0]
+        assert loss.sum() > 0
 
 
 class TestPairwiseCossim:

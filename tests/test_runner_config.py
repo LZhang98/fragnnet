@@ -18,7 +18,7 @@ def _base_config(**overrides) -> dict:
         "dynamic_batch_sampler_max": 1000,
         "batch_sampler_type": "spec_mol_frag",
         "ce_context_spectra_per_context": 5,
-        "ce_context_ce_key_by_inst": {"FT": "nce", "QTOF": "ace"},
+        "ce_context_ce_key_by_inst": {"FT": "nce", "QTOF": "ace", "IT": "nce"},
         "devices": 1,
         "dag_size_curriculum": False,
         "dag_size_curriculum_start_fraction": 0.25,
@@ -26,6 +26,18 @@ def _base_config(**overrides) -> dict:
         "max_epochs": 100,
         "simple_group_sampler": False,
         "simple_group_sampler_type": "adduct_inst_type",
+        "ce_pair_loss_weight": 0.0,
+        "ce_pair_min_endpoint_confidence": None,
+        "ce_pair_min_endpoint_reliability": None,
+        "ce_pair_subset": "switches",
+        "ce_pair_eligible_inst_types": ["FT"],
+        "ce_pair_eligible_prec_types": ["[M+H]+"],
+        "train_sample_weight": "none",
+        "inst_type_loss_tol": {"FT": {"rel": 1.0e-5, "min_mz": 200.0}},
+        "spec_params": {
+            "inst_types": ["FT", "QTOF", "IT"],
+            "prec_types": ["[M+H]+", "[M-H]-"],
+        },
     }
     cfg.update(overrides)
     return cfg
@@ -141,9 +153,101 @@ class TestValidateSamplerConfig:
                 )
             )
 
+    def test_ce_context_batch_sampler_requires_all_configured_instruments(self):
+        with pytest.raises(ValueError, match="missing configured instrument types"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_context_ce_key_by_inst={"FT": "nce", "QTOF": "ace"},
+                )
+            )
+
     def test_invalid_batch_sampler_type_raises(self):
         with pytest.raises(ValueError, match="batch_sampler_type"):
             validate_sampler_config(_base_config(batch_sampler_type="invalid"))
+
+    def test_ce_pair_loss_valid_config_passes(self):
+        validate_sampler_config(
+            _base_config(
+                batch_sampler_type="ce_context",
+                dynamic_batch_sampler_mode="frag_edge",
+                ce_pair_loss_weight=0.1,
+                ce_pair_min_endpoint_confidence=0.2,
+            )
+        )
+
+    def test_ce_pair_loss_requires_context_sampler(self):
+        with pytest.raises(ValueError, match="batch_sampler_type='ce_context'"):
+            validate_sampler_config(
+                _base_config(
+                    ce_pair_loss_weight=0.1,
+                    ce_pair_min_endpoint_confidence=0.2,
+                )
+            )
+
+    def test_ce_pair_loss_requires_confidence_threshold(self):
+        with pytest.raises(ValueError, match="ce_pair_min_endpoint_confidence"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_pair_loss_weight=0.1,
+                )
+            )
+
+    @pytest.mark.parametrize("confidence", [0.0, -0.1, 1.1])
+    def test_ce_pair_loss_rejects_invalid_confidence(self, confidence):
+        with pytest.raises(ValueError, match="ce_pair_min_endpoint_confidence"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_pair_loss_weight=0.1,
+                    ce_pair_min_endpoint_confidence=confidence,
+                )
+            )
+
+    def test_ce_pair_loss_rejects_unimplemented_reliability_threshold(self):
+        with pytest.raises(ValueError, match="reliability table is implemented"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_pair_loss_weight=0.1,
+                    ce_pair_min_endpoint_confidence=0.2,
+                    ce_pair_min_endpoint_reliability=0.7,
+                )
+            )
+
+    @pytest.mark.parametrize("tolerance_by_inst", [None, {}, {"QTOF": {}}])
+    def test_ce_pair_loss_requires_eligible_instrument_tolerance(self, tolerance_by_inst):
+        with pytest.raises(ValueError, match="define every ce_pair_eligible_inst_type"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_pair_loss_weight=0.1,
+                    ce_pair_min_endpoint_confidence=0.2,
+                    inst_type_loss_tol=tolerance_by_inst,
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "tolerance",
+        [{}, {"rel": 1.0e-5}, {"rel": 0.0, "min_mz": 200.0}],
+    )
+    def test_ce_pair_loss_rejects_invalid_eligible_tolerance(self, tolerance):
+        with pytest.raises(ValueError, match="inst_type_loss_tol"):
+            validate_sampler_config(
+                _base_config(
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="frag_edge",
+                    ce_pair_loss_weight=0.1,
+                    ce_pair_min_endpoint_confidence=0.2,
+                    inst_type_loss_tol={"FT": tolerance},
+                )
+            )
 
     def test_dag_size_curriculum_valid_config_passes(self):
         validate_sampler_config(_base_config(dag_size_curriculum=True))

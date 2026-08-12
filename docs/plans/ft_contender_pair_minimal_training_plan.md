@@ -66,18 +66,21 @@ bounded context sampler over:
 
 For v1, require each `group_id` to contain exactly one fragmentation mode. Exclude and count mixed
 HCD/CID groups rather than adding a second allocation policy.
-`ce_context_spectra_per_context: 5` is the maximum number of CE levels selected from each eligible
-context per epoch.
+`ce_context_spectra_per_context: 5` is the maximum number of distinct CE levels from one context
+kept together as an atomic chunk. It is not an epoch-level sampling cap: every spectrum that fits
+the ordinary fragment-edge budget is emitted exactly once per epoch.
 
 For each selected context:
 
 1. sort distinct CE levels by the configured instrument-specific CE value (`nce` for FT and
    `ace` for QTOF by default);
-2. select a consecutive CE window containing at least two levels;
-3. rotate the window start deterministically by epoch so every adjacent transition is eventually
-   covered;
-4. include one spectrum from every retained level, with deterministic replicate rotation;
-5. select at most five CE levels per context under the initial baseline configuration.
+2. partition the complete ordered ladder into consecutive chunks of at most five levels;
+3. rotate chunk boundaries deterministically by epoch so boundary-crossing adjacent transitions
+   are eventually co-located;
+4. use one rotating replicate from every level in the pair-capable chunks;
+5. emit remaining same-CE replicates as primary-loss-only singleton chunks;
+6. emit mixed-mode, missing-CE, and single-level spectra as primary-loss-only singletons rather
+   than deleting them from the epoch.
 
 TODO: Revisit the instrument-specific CE-ordering policy before expanding this experiment. The
 current `FT -> nce` and `QTOF -> ace` mapping reflects each instrument's native CE convention, but
@@ -88,23 +91,22 @@ The online `q_e` is therefore a single-replicate target. Replicate information e
 frozen all-training-replicate reliability table, not through in-batch consensus.
 
 Use the existing `dynamic_batch_sampler_max` fragment-edge budget as the sole memory authority; do
-not add `ce_context_max_frag_edges`. If a window is over budget, remove outer CE levels while
-retaining complete adjacent transitions. If even a two-level transition is over budget, exclude and
-count it. Never emit an over-budget batch, silently truncate one endpoint of a supervised
-transition, or use “emit alone” as an OOM fallback.
+not add `ce_context_max_frag_edges`. Split an over-budget chunk at a consecutive CE boundary until
+it fits. Exclude and count only an individual spectrum that exceeds the budget by itself. Never
+emit an over-budget batch or drop a fitting spectrum to preserve a pair.
 
 The loss reconstructs contexts from the ordinary batch `group_id` and CE fields; the sampler adds
 no persistent target metadata. V1 is single-GPU only and fails setup when `devices != 1`.
 
 ### Training-budget contract
 
-Match the sampler control and pair arms on optimizer steps, not epochs or nominal spectra seen.
-Also report spectra, contexts, and eligible transitions seen so the changed training estimand stays
-visible. Sampler audit output includes total spectra, mixed-mode spectra, missing-CE spectra,
-single-level spectra, eligible contexts/spectra, selected spectra, and oversized windows.
+Match the sampler control and pair arms on optimizer steps and report spectra, contexts, and
+eligible transitions seen. Sampler audit output includes total spectra, mixed-mode spectra,
+missing-CE spectra, single-level spectra, eligible contexts/spectra, emitted spectra, and
+individually oversized spectra.
 
-The new estimand is bounded consecutive CE windows from eligible single-mode groups. It is not the
-natural spectrum distribution. Retain a sequential validation loader for primary metrics.
+The sampler preserves full epoch coverage while changing batch composition to bounded consecutive
+CE chunks. Retain a sequential validation loader for primary metrics.
 
 ## Online target construction
 
@@ -158,6 +160,13 @@ audit candidates, not schema defaults or validation-tuned values.
 
 ## Pair loss
 
+Implementation status: the cache-free online switch BCE mechanics are implemented behind
+`ce_pair_loss_weight`, including adjacent-CE grouping, confidence filtering, expanded predicted
+peak support at both endpoints, and predicted peak-alias aggregation. Until the detection-limit and singleton
+reliability audits are frozen, the implementation retains only endpoints where both contenders are
+observed; this prevents an unobserved contender from being silently converted into a hard target.
+This restricted cohort is suitable for the mechanics/overfit check, not the promotion pilot.
+
 Use the same FT mass-matching boundary as `inst_type_loss_tol`: a candidate at mass `m` matches when
 its absolute error is strictly below `1.0e-5 * max(m, 200.0)` Da. Apply it to observed merging,
 support, prediction aggregation, and evaluation.
@@ -193,14 +202,15 @@ L = L_spectrum_ce + lambda_pair * L_pair
 Keep the fixed `/B` denominator. Do not average over only eligible endpoints, transitions,
 contexts, or auxiliary weight: that makes effective `lambda_pair` depend on variable batch
 composition. Return differentiable zero for no eligible transition. Log eligible entries, summed
-weight, selected/available context spectra, dropped levels/transitions, and the
+weight, pair-capable/primary-only spectra, chunk-boundary transitions, and the
 auxiliary-to-primary fragment-logit gradient ratio.
 
 ## Minimal implementation
 
 1. Choose the matched CE baseline.
 2. Implement the bounded single-GPU context sampler and weight-zero sampler control. Verify
-   mixed-mode exclusion, CE-window rotation, the five-level limit, and edge fallback.
+   full epoch coverage, primary-only fallback spectra, CE-boundary rotation, the five-level chunk
+   limit, and edge-budget splitting.
 3. Implement online target construction and the training-only reliability audit. Emit reports, not
    target artifacts.
 4. Apply the coverage gate: at least `5,000` retained training switches, at least `500` validation
@@ -217,15 +227,17 @@ batch_sampler_type: ce_context
 ce_context_spectra_per_context: 5
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
-ce_pair_min_endpoint_reliability: null
+ce_pair_min_endpoint_reliability: null  # reserved until the replicate audit is wired
 ce_pair_subset: switches
 ce_pair_eligible_inst_types: [FT]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 ```
 
 Do not add a second edge-budget key. Existing configs need a compatibility path for new required
-keys; training code must not supply fallback hyperparameters. A positive pair-loss weight must fail
-setup when either threshold is null.
+keys; training code must not supply fallback hyperparameters. In the mechanics-only implementation,
+a positive pair-loss weight requires a non-null confidence threshold and rejects a non-null
+reliability threshold because the reliability table is not wired yet. Before the promotion pilot,
+replace that guard with the audited reliability lookup and require both thresholds.
 
 ## Run matrix
 

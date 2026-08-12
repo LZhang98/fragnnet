@@ -32,7 +32,28 @@ from fragnnet.pl_model.spectrum_pl import (  # noqa: E402
     list_to_batch_tensor,
     primary_ce_to_batch,
     ragged_to_batch,
+    select_context_ce_values,
 )
+
+
+def test_select_context_ce_values_uses_per_instrument_axis():
+    batch = {
+        "spec_nce": torch.tensor([20.0, 30.0]),
+        "spec_nce_batch_idxs": torch.tensor([0, 1]),
+        "spec_ace": torch.tensor([15.0, 45.0]),
+        "spec_ace_batch_idxs": torch.tensor([0, 1]),
+        # sorted instrument order is FT, QTOF
+        "spec_inst_type": torch.tensor([0, 1]),
+    }
+
+    result = select_context_ce_values(
+        batch,
+        batch_size=2,
+        inst_types=["QTOF", "FT"],
+        ce_key_by_inst={"FT": "nce", "QTOF": "ace"},
+    )
+
+    assert torch.equal(result, torch.tensor([20.0, 45.0]))
 
 
 class RecordingBatchSampler:

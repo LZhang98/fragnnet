@@ -3,7 +3,7 @@ Data samplers for spectrum-molecule-fragment datasets.
 
 Includes:
 - SpecMolFragDynamicBatchSampler: Dynamic batching to avoid OOM
-- CEContextDynamicBatchSampler: Keep bounded adjacent-CE windows together
+- CEContextDynamicBatchSampler: Full-coverage bounded adjacent-CE batching
 - GreedyInferenceBatchSampler: Simple greedy sequential batching for inference
 - GroupSampler: Sample K specs per group_id
 - get_group_sampler: WeightedRandomSampler factory
@@ -303,7 +303,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 
 class CEContextDynamicBatchSampler(BatchSampler):
-    """Pack bounded adjacent-CE windows for the single-GPU v1 experiment."""
+    """Pack full-coverage, bounded adjacent-CE chunks for single-GPU training."""
 
     def __init__(
         self,
@@ -356,7 +356,9 @@ class CEContextDynamicBatchSampler(BatchSampler):
         self._seed = seed
         self._epoch = 0
         self._data_meta = self._load_size_metadata()
-        self._contexts, self._coverage_stats = self._load_context_metadata()
+        self._contexts, self._fallback_indices, self._coverage_stats = (
+            self._load_context_metadata()
+        )
         self.stats: dict[str, int | float] = {}
         self._batches: list[list[int]] = []
         self._pre_compute_batches()
@@ -383,8 +385,12 @@ class CEContextDynamicBatchSampler(BatchSampler):
 
     def _load_context_metadata(
         self,
-    ) -> tuple[list[tuple[tuple[float, tuple[int, ...]], ...]], dict[str, int]]:
-        """Build eligible single-mode contexts and count excluded spectra."""
+    ) -> tuple[
+        list[tuple[object, tuple[tuple[float, tuple[int, ...]], ...]]],
+        list[tuple[object, int]],
+        dict[str, int],
+    ]:
+        """Build pair-capable contexts and primary-loss-only fallback spectra."""
         spec_df = self.data_source.spec_df
         missing_columns = {"group_id", "inst_type"}.difference(spec_df.columns)
         if missing_columns:
@@ -435,6 +441,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
         }
 
         contexts: dict[object, dict[float, list[int]]] = {}
+        fallback_indices: list[tuple[object, int]] = []
         mixed_mode_spectra = 0
         missing_ce_spectra = 0
         for idx in range(len(spec_df)):
@@ -442,25 +449,35 @@ class CEContextDynamicBatchSampler(BatchSampler):
             group_id = row["group_id"]
             if group_id in mixed_groups:
                 mixed_mode_spectra += 1
+                fallback_indices.append((group_id, idx))
                 continue
             inst_type = str(row["inst_type"])
             ce_key = self._ce_key_by_inst[inst_type]
             ce_value = self._ce_value(row[ce_key])
             if ce_value is None:
                 missing_ce_spectra += 1
+                fallback_indices.append((group_id, idx))
                 continue
             contexts.setdefault(group_id, {}).setdefault(ce_value, []).append(idx)
 
         eligible_contexts = []
         single_level_spectra = 0
-        for levels in contexts.values():
+        for group_id, levels in contexts.items():
             if len(levels) < 2:
                 single_level_spectra += sum(len(indices) for indices in levels.values())
+                fallback_indices.extend(
+                    (group_id, idx)
+                    for indices in levels.values()
+                    for idx in indices
+                )
                 continue
             eligible_contexts.append(
-                tuple(
-                    (ce, tuple(sorted(indices)))
-                    for ce, indices in sorted(levels.items())
+                (
+                    group_id,
+                    tuple(
+                        (ce, tuple(sorted(indices)))
+                        for ce, indices in sorted(levels.items())
+                    ),
                 )
             )
 
@@ -471,40 +488,61 @@ class CEContextDynamicBatchSampler(BatchSampler):
             "single_level_spectra": single_level_spectra,
             "eligible_spectra": sum(
                 len(indices)
-                for context in eligible_contexts
+                for _, context in eligible_contexts
                 for _, indices in context
             ),
         }
-        return eligible_contexts, coverage_stats
+        return eligible_contexts, fallback_indices, coverage_stats
 
-    def _select_window(
+    def _context_atoms(
         self,
         levels: tuple[tuple[float, tuple[int, ...]], ...],
         context_idx: int,
-    ) -> list[int] | None:
-        """Select one complete consecutive window under the edge budget."""
-        level_count = min(len(levels), self._spectra_per_context)
-        start_count = len(levels) - level_count + 1
+    ) -> tuple[list[list[int]], int]:
+        """Partition every context spectrum into bounded consecutive atoms."""
         rotation = self._epoch + context_idx
-        start = rotation % start_count
-        retained = levels[start : start + level_count]
+        primary = []
+        replicate_singletons = []
+        for _, indices in levels:
+            primary_pos = rotation % len(indices)
+            primary.append(indices[primary_pos])
+            replicate_singletons.extend(
+                idx for pos, idx in enumerate(indices) if pos != primary_pos
+            )
 
-        remove_left = rotation % 2 == 0
-        while len(retained) >= 2:
-            selected = [
-                indices[rotation % len(indices)]
-                for _, indices in retained
-            ]
-            if int(self._data_meta[selected, 1].sum()) <= self._max_num:
-                return selected
-            if len(retained) == 2:
-                return None
-            retained = retained[1:] if remove_left else retained[:-1]
-            remove_left = not remove_left
-        return None
+        # Rotate chunk boundaries without wrapping the ordered CE axis. A short
+        # prefix is allowed; it still receives the ordinary spectrum loss.
+        boundary_offset = rotation % self._spectra_per_context
+        level_chunks = []
+        if boundary_offset:
+            level_chunks.append(primary[:boundary_offset])
+        level_chunks.extend(
+            primary[start : start + self._spectra_per_context]
+            for start in range(boundary_offset, len(primary), self._spectra_per_context)
+        )
+
+        atoms = []
+        oversized_spectra = 0
+        for chunk in [*level_chunks, *[[idx] for idx in replicate_singletons]]:
+            atom = []
+            atom_edges = 0
+            for idx in chunk:
+                edges = int(self._data_meta[idx, 1])
+                if edges > self._max_num:
+                    oversized_spectra += 1
+                    continue
+                if atom and atom_edges + edges > self._max_num:
+                    atoms.append(atom)
+                    atom = []
+                    atom_edges = 0
+                atom.append(idx)
+                atom_edges += edges
+            if atom:
+                atoms.append(atom)
+        return atoms, oversized_spectra
 
     def _pre_compute_batches(self) -> None:
-        """Select and greedily pack atomic context windows for one epoch."""
+        """Partition all spectra and greedily pack atomic context chunks."""
         generator = th.Generator().manual_seed(self._seed + self._epoch)
         order = (
             th.randperm(len(self._contexts), generator=generator).tolist()
@@ -512,42 +550,56 @@ class CEContextDynamicBatchSampler(BatchSampler):
             else []
         )
 
-        windows = []
-        oversized_windows = 0
+        atoms: list[tuple[object, list[int]]] = []
+        oversized_spectra = 0
         for context_idx in order:
-            window = self._select_window(self._contexts[context_idx], context_idx)
-            if window is None:
-                oversized_windows += 1
+            group_id, levels = self._contexts[context_idx]
+            context_atoms, context_oversized = self._context_atoms(levels, context_idx)
+            atoms.extend((group_id, atom) for atom in context_atoms)
+            oversized_spectra += context_oversized
+        fallback_order = (
+            th.randperm(len(self._fallback_indices), generator=generator).tolist()
+            if self._fallback_indices
+            else []
+        )
+        for fallback_idx in fallback_order:
+            group_id, idx = self._fallback_indices[fallback_idx]
+            if int(self._data_meta[idx, 1]) > self._max_num:
+                oversized_spectra += 1
             else:
-                windows.append(window)
+                atoms.append((group_id, [idx]))
 
         batches: list[list[int]] = []
         batch: list[int] = []
         batch_size = 0
-        for window in windows:
-            window_size = int(self._data_meta[window, 1].sum())
-            exceeds_edges = batch and batch_size + window_size > self._max_num
+        batch_groups: set[object] = set()
+        for group_id, atom in atoms:
+            atom_size = int(self._data_meta[atom, 1].sum())
+            repeats_context = batch and group_id in batch_groups
+            exceeds_edges = batch and batch_size + atom_size > self._max_num
             exceeds_spectra = (
                 batch
                 and self._return_batch_at > 0
-                and len(batch) + len(window) > self._return_batch_at
+                and len(batch) + len(atom) > self._return_batch_at
             )
-            if exceeds_edges or exceeds_spectra:
+            if repeats_context or exceeds_edges or exceeds_spectra:
                 batches.append(batch)
                 batch = []
                 batch_size = 0
-            batch.extend(window)
-            batch_size += window_size
+                batch_groups = set()
+            batch.extend(atom)
+            batch_size += atom_size
+            batch_groups.add(group_id)
         if batch:
             batches.append(batch)
 
-        selected_spectra = sum(len(window) for window in windows)
+        selected_spectra = sum(len(atom) for _, atom in atoms)
         self._batches = batches
         self.stats = {
             **self._coverage_stats,
             "eligible_contexts": len(self._contexts),
-            "emitted_windows": len(windows),
-            "oversized_windows": oversized_windows,
+            "emitted_chunks": len(atoms),
+            "oversized_spectra": oversized_spectra,
             "selected_spectra": selected_spectra,
             "selected_spectra_fraction": selected_spectra
             / max(1, self._coverage_stats["total_spectra"]),
@@ -557,7 +609,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
         logger.info("[CEContextDynamicBatchSampler] %s", self.stats)
 
     def set_epoch(self, epoch: int) -> None:
-        """Rotate CE windows and replicate choice deterministically."""
+        """Rotate CE chunk boundaries and primary replicate choice."""
         self._epoch = int(epoch)
         self._pre_compute_batches()
 

@@ -414,24 +414,24 @@ Do not implement `build_global_ranking_targets.py` and do not persist per-spectr
 `CEContextDynamicBatchSampler` using the exact contract in the minimal plan:
 
 - exclude and count mixed HCD/CID groups in v1;
-- select at most five CE levels from each eligible single-mode group;
-- choose deterministic rotating consecutive CE windows rather than enumerating complete ladders;
+- cover every fitting training spectrum once per epoch;
+- partition complete ladders into deterministic rotating consecutive chunks of at most five CE
+  levels;
 - use existing `dynamic_batch_sampler_max` as the sole fragment-edge budget;
-- shrink over-budget windows only at outer CE levels, never through a supervised adjacent pair;
-- exclude and count a two-level transition that still exceeds the edge budget;
+- split over-budget chunks at consecutive CE boundaries;
+- exclude and count only an individually oversized spectrum;
 - reject multi-GPU execution in v1;
 - seed window ordering from the explicit run seed;
 - report total, mixed-mode, missing-CE, single-level, eligible, selected, and oversized counts.
 
-Construct switch identity, A/B, `q_obs`, and weights from the selected spectra online under
+Construct switch identity, A/B, `q_obs`, and weights from pair-capable chunks online under
 `torch.no_grad()`.
 Prediction aggregation and BCE remain differentiable. Build only the small training reliability
 calibration table at setup, broadcast it, and record its checksum.
 
-The resulting estimand is the inverse-group-weighted distribution of bounded consecutive CE
-windows with deterministic coverage rotation. It is not the original sampler distribution or the
-natural spectrum distribution. Require the weight-zero sampler control, and retain sequential
-natural-distribution validation.
+The sampler preserves the full training-spectrum population while changing batch composition to
+bounded consecutive CE chunks with deterministic boundary rotation. Require the weight-zero
+sampler control, and retain sequential natural-distribution validation.
 
 If observed mass groups are non-disjoint under the matching contract, skip and count the affected
 transition. Fail setup only when the audited skipped fraction exceeds `0.1%`; do not turn one late
@@ -460,7 +460,7 @@ Report separately for train and validation:
   minimum-confidence threshold;
 - maximum groups per spectrum and per molecular context;
 - replicated-context agreement by replication-rate stratum and singleton-transfer exclusions;
-- context-window coverage, dropped levels/transitions, cap utilization, and edge-budget exclusions;
+- context-chunk coverage, boundary transitions, cap utilization, and individually oversized spectra;
 - train/validation target and acquisition-stratum drift;
 - the fraction of transition endpoints where A or B maps to multiple candidates;
 - the fraction skipped for non-disjoint observed mass groups;
@@ -1005,14 +1005,13 @@ This objective reuses the `CEContextDynamicBatchSampler` already introduced for 
 changes its online target from adjacent A/B endpoints to deterministic ladder windows:
 
 - use the deterministic windows of two to four consecutive CE levels defined above;
-- exclude mixed-mode groups and select one spectrum from each retained CE level;
+- exclude mixed-mode spectra from this auxiliary objective while retaining them for the primary
+  spectrum loss, and use one rotating spectrum from each CE level in a pair-capable chunk;
 - treat the existing `dynamic_batch_sampler_max` fragment-edge limit as the sole memory authority;
   do not add a second edge-budget key;
-- if a window exceeds that edge budget, remove outer CE levels while retaining complete adjacent
-  transitions; if even a two-level transition is over budget, exclude and count it rather than
-  emitting an over-budget batch;
-- never split a retained supervised transition across minibatches, and report dropped levels,
-  excluded transitions, and window-boundary transitions;
+- if a window exceeds that edge budget, split it at a consecutive CE boundary; exclude and count
+  only a spectrum that exceeds the edge budget by itself;
+- report transitions moved across chunk boundaries by the spectrum and edge caps;
 - preserve runtime ladder ID, exact CE order, transition IDs, and replicate provenance;
 - keep contender aggregation sparse in the already-produced peak list; after aggregation the loss
   is `O(L * k)` and needs no dense peak-by-peak or mass-by-mass matrix.
@@ -1153,8 +1152,8 @@ coverage rather than forcing the ranking head to solve an unrealizable target.
 
 0. Run the model-free replicate floors and freeze the eligible instrument/adduct population.
 1. Implement and audit bounded `CEContextDynamicBatchSampler` plus its weight-zero control.
-2. Add focused tests for mixed-mode exclusion, CE-window rotation, the five-level limit, edge
-   fallback, single-GPU rejection, mass aggregation, peak-intensity alias selection,
+2. Add focused tests for full coverage, primary-only fallback spectra, CE-boundary rotation, the
+   five-level chunk limit, edge splitting, single-GPU rejection, mass aggregation, peak-intensity alias selection,
    ambiguous-group skipping, support, singleton reliability, adjacency, pair confidence, fixed
    `/B` normalization, and online context weighting.
 3. Implement the peak-mass top-margin and endpoint soft pairwise `BCEWithLogits` loss; retain

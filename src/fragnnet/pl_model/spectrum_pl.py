@@ -147,6 +147,32 @@ def primary_ce_to_batch(
     return ce_primary
 
 
+def select_context_ce_values(
+    batch: dict,
+    batch_size: int,
+    inst_types: list[str],
+    ce_key_by_inst: dict[str, str],
+) -> th.Tensor:
+    """Select the sampler's configured CE axis for every spectrum."""
+    ce_by_key = {}
+    for ce_key in set(ce_key_by_inst.values()):
+        ce_by_key[ce_key] = scatter_reduce(
+            batch[f"spec_{ce_key}"],
+            batch[f"spec_{ce_key}_batch_idxs"],
+            reduce="mean",
+            dim_size=batch_size,
+            include_self=False,
+        )
+    inst_idxs = batch["spec_inst_type"].reshape(-1)
+    ce_values = ce_by_key[next(iter(ce_by_key))].new_full(
+        (batch_size,), float("nan")
+    )
+    for inst_idx, inst_type in enumerate(sorted(inst_types)):
+        ce_key = ce_key_by_inst[inst_type]
+        ce_values[inst_idxs == inst_idx] = ce_by_key[ce_key][inst_idxs == inst_idx]
+    return ce_values
+
+
 class SpectrumPL(L.LightningModule):
     """
     Base PyTorch LightningModule for spectrum prediction.
@@ -1268,6 +1294,25 @@ class SpectrumPL(L.LightningModule):
         if tol_per_sample is not None:
             train_d["tol_per_sample"] = tol_per_sample
             train_d["min_mz_per_sample"] = min_mz_per_sample
+        if self.hparams.ce_pair_loss_weight != 0.0:
+            ce_values = select_context_ce_values(
+                batch=batch,
+                batch_size=int(batch_size),
+                inst_types=self.hparams.spec_params["inst_types"],
+                ce_key_by_inst=self.hparams.ce_context_ce_key_by_inst,
+            )
+            train_d.update(
+                {
+                    "ce_pair_enabled": split == "train",
+                    "ce_pair_true_mzs": true_mzs,
+                    "ce_pair_true_ints": true_ints,
+                    "ce_pair_true_batch_idxs": true_batch_idxs,
+                    "ce_pair_ce_values": ce_values,
+                    "group_id": batch["group_id"],
+                    "spec_inst_type": batch["spec_inst_type"],
+                    "spec_prec_type": batch["spec_prec_type"],
+                }
+            )
 
         loss_d = self.loss_fn(**train_d)
         loss = loss_d["loss"]

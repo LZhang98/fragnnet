@@ -452,6 +452,15 @@ joint_normalized_entropy_weight: 0.0
 pairwise_cosine_loss_weight: 0.0 
 pairwise_jss_loss_weight: 0.0
 pairwise_cross_entropy_loss_weight: 0.0
+# Online adjacent-CE base-winner supervision. The v1 loss is training-only and
+# requires batch_sampler_type: ce_context when enabled.
+ce_pair_loss_weight: 0.0
+ce_pair_min_endpoint_confidence: null
+# Reserved for the replicate audit; non-null values fail until the table is wired.
+ce_pair_min_endpoint_reliability: null
+ce_pair_subset: switches
+ce_pair_eligible_inst_types: [FT]
+ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 # cross-matrix JSS contrastive: JSS-sqrt(real_i, pred_j), InfoNCE row-wise
 cross_jss_contrastive_loss_weight: 0.0
 cross_jss_contrastive_temperature: 0.07
@@ -602,6 +611,7 @@ ce_context_spectra_per_context: 5
 ce_context_ce_key_by_inst:
   FT: nce
   QTOF: ace
+  IT: nce
 # Curriculum learning: begin at a whole-dataset node-count quantile and linearly
 # add larger DAGs. At dag_size_curriculum_epochs, the full training set is eligible.
 dag_size_curriculum: False

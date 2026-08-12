@@ -126,7 +126,7 @@ class TestCEContextDynamicBatchSampler:
             "nce": [float(nce)],
         }
 
-    def test_rotates_consecutive_ce_window_by_epoch(self):
+    def test_rotates_chunk_boundaries_without_dropping_levels(self):
         rows = [self._row(1, ce) for ce in (10, 20, 30, 40)]
         ds = CEContextDataset(rows, [(1, 1)] * 4)
         sampler = CEContextDynamicBatchSampler(
@@ -136,9 +136,9 @@ class TestCEContextDynamicBatchSampler:
             spectra_per_context=3,
         )
 
-        assert list(sampler) == [[0, 1, 2]]
+        assert list(sampler) == [[0, 1, 2], [3]]
         sampler.set_epoch(1)
-        assert list(sampler) == [[1, 2, 3]]
+        assert list(sampler) == [[0], [1, 2, 3]]
 
     def test_context_shuffle_does_not_cancel_window_rotation(self):
         rows = []
@@ -153,15 +153,25 @@ class TestCEContextDynamicBatchSampler:
             seed=0,
         )
 
-        epoch_windows = []
+        epoch_chunks = []
         for epoch in (0, 1):
             sampler.set_epoch(epoch)
-            selected = [idx for batch in sampler for idx in batch]
-            epoch_windows.append(
-                [ds.spec_df.iloc[idx]["nce"][0] for idx in selected if idx < 6]
+            epoch_chunks.append(
+                [
+                    [
+                        ds.spec_df.iloc[idx]["nce"][0]
+                        for idx in batch
+                        if idx < 6
+                    ]
+                    for batch in sampler
+                    if any(idx < 6 for idx in batch)
+                ]
             )
 
-        assert epoch_windows == [[0, 1, 2, 3, 4], [1, 2, 3, 4, 5]]
+        assert epoch_chunks == [
+            [[0, 1, 2, 3, 4], [5]],
+            [[0], [1, 2, 3, 4, 5]],
+        ]
 
     def test_orders_qtof_context_by_configured_ace(self):
         rows = [
@@ -220,7 +230,7 @@ class TestCEContextDynamicBatchSampler:
         assert len(batch) == 2
         assert sum(ds.precom_meta_info[idx][1] for idx in batch) <= 8
 
-    def test_drops_two_level_window_over_budget(self):
+    def test_splits_over_budget_pair_without_dropping_spectra(self):
         rows = [self._row(1, 10), self._row(1, 20)]
         ds = CEContextDataset(rows, [(1, 6), (1, 6)])
         sampler = CEContextDynamicBatchSampler(
@@ -230,10 +240,10 @@ class TestCEContextDynamicBatchSampler:
             limited_by="frag_edge",
         )
 
-        assert list(sampler) == []
-        assert sampler.stats["oversized_windows"] == 1
+        assert list(sampler) == [[0], [1]]
+        assert sampler.stats["oversized_spectra"] == 0
 
-    def test_excludes_mixed_fragmentation_mode_group(self):
+    def test_mixed_fragmentation_mode_group_still_trains_primary_loss(self):
         rows = [
             self._row(1, 10, "HCD"),
             self._row(1, 20, "HCD"),
@@ -247,7 +257,8 @@ class TestCEContextDynamicBatchSampler:
             ce_key_by_inst=self.CE_KEY_BY_INST,
         )
 
-        assert list(sampler) == []
+        assert sorted(idx for batch in sampler for idx in batch) == [0, 1, 2, 3]
+        assert all(len(batch) == 1 for batch in sampler)
         assert sampler.stats["mixed_mode_spectra"] == 4
 
     def test_reports_missing_and_single_level_spectrum_exclusions(self):
@@ -268,7 +279,39 @@ class TestCEContextDynamicBatchSampler:
         assert sampler.stats["missing_ce_spectra"] == 1
         assert sampler.stats["single_level_spectra"] == 1
         assert sampler.stats["eligible_spectra"] == 2
-        assert sampler.stats["selected_spectra"] == 2
+        assert sampler.stats["selected_spectra"] == 4
+        assert sampler.stats["selected_spectra_fraction"] == 1.0
+
+    def test_emits_replicates_once_without_same_context_co_batching(self):
+        rows = [
+            self._row(1, 10),
+            self._row(1, 10),
+            self._row(1, 20),
+            self._row(1, 20),
+        ]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=20,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
+
+        batches = list(sampler)
+        assert sorted(idx for batch in batches for idx in batch) == list(range(4))
+        assert sum(len(batch) == 2 for batch in batches) == 1
+        assert sum(len(batch) == 1 for batch in batches) == 2
+
+    def test_drops_only_individually_oversized_spectra(self):
+        rows = [self._row(1, 10), self._row(1, 20), self._row(1, 30)]
+        ds = CEContextDataset(rows, [(1, 4), (1, 11), (1, 4)])
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
+
+        assert sorted(idx for batch in sampler for idx in batch) == [0, 2]
+        assert sampler.stats["oversized_spectra"] == 1
 
     def test_explicit_seed_changes_context_order(self):
         rows = []

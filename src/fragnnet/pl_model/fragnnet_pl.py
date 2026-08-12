@@ -15,6 +15,7 @@ import os
 
 from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import (
+    ce_switch_pair_bce,
     get_cross_jss_contrastive,
     get_edge_loss_fn,
     get_pairwise_cossim,
@@ -396,6 +397,10 @@ class FraGNNetPL(SpectrumPL):
             self.hparams.pairwise_cross_entropy_loss_weight,
         )
         _add_if_active(
+            ["ce_pair_loss", "ce_pair_eligible_endpoints"],
+            self.hparams.ce_pair_loss_weight,
+        )
+        _add_if_active(
             [f"cross_jss_contrastive_{self.hparams.mz_bin_res}"],
             self.hparams.cross_jss_contrastive_loss_weight,
         )
@@ -610,6 +615,23 @@ class FraGNNetPL(SpectrumPL):
 
         self._setup_loss_names()
 
+        inst_types = sorted(self.hparams.spec_params["inst_types"])
+        prec_types = sorted(self.hparams.spec_params["prec_types"])
+        eligible_inst_idxs = th.tensor(
+            [
+                inst_types.index(inst_type)
+                for inst_type in self.hparams.ce_pair_eligible_inst_types
+            ],
+            dtype=th.long,
+        )
+        eligible_prec_idxs = th.tensor(
+            [
+                prec_types.index(prec_type)
+                for prec_type in self.hparams.ce_pair_eligible_prec_types
+            ],
+            dtype=th.long,
+        )
+
         def _loss_fn(
             true_mzs,
             true_logprobs,
@@ -654,6 +676,7 @@ class FraGNNetPL(SpectrumPL):
             **kwargs,
         ):
             loss_d = {}
+            batch_size = int(kwargs["batch_size"])
             tol_per_sample = kwargs.get("tol_per_sample")
             min_mz_per_sample = kwargs.get("min_mz_per_sample")
 
@@ -723,6 +746,34 @@ class FraGNNetPL(SpectrumPL):
 
             loss = self.hparams.primary_loss_weight * primary_loss
             loss_d["primary_loss"] = primary_loss
+
+            if self.hparams.ce_pair_loss_weight != 0.0:
+                pair_loss = pred_logprobs.new_zeros(batch_size)
+                eligible_endpoints = pred_logprobs.new_zeros(batch_size)
+                if kwargs["ce_pair_enabled"]:
+                    inst_idxs = kwargs["spec_inst_type"].reshape(-1)
+                    prec_idxs = kwargs["spec_prec_type"].reshape(-1)
+                    eligible_samples = th.isin(
+                        inst_idxs, eligible_inst_idxs.to(inst_idxs.device)
+                    ) & th.isin(prec_idxs, eligible_prec_idxs.to(prec_idxs.device))
+                    pair_loss, eligible_endpoints = ce_switch_pair_bce(
+                        true_mzs=kwargs["ce_pair_true_mzs"],
+                        true_ints=kwargs["ce_pair_true_ints"],
+                        true_batch_idxs=kwargs["ce_pair_true_batch_idxs"],
+                        pred_mzs=pred_mzs,
+                        pred_logprobs=pred_logprobs,
+                        pred_batch_idxs=pred_batch_idxs,
+                        group_ids=kwargs["group_id"].reshape(-1),
+                        ce_values=kwargs["ce_pair_ce_values"],
+                        eligible_samples=eligible_samples,
+                        batch_size=batch_size,
+                        min_endpoint_confidence=self.hparams.ce_pair_min_endpoint_confidence,
+                        tol_per_sample=tol_per_sample,
+                        min_mz_per_sample=min_mz_per_sample,
+                    )
+                loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
+                loss_d["ce_pair_loss"] = pair_loss
+                loss_d["ce_pair_eligible_endpoints"] = eligible_endpoints
 
             if self.hparams.loss_type != "cross_entropy" and "spec_ce" in self.loss_names:
                 ios_ce, oos_ce, _, _ = sparse_ce_fn(

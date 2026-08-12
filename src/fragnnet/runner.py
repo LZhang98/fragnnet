@@ -325,8 +325,7 @@ def validate_sampler_config(config_d: dict) -> None:
             raise ValueError("batch_sampler_type='ce_context' requires dynamic_batch_sampler=True")
         if config_d["dynamic_batch_sampler_mode"] != "frag_edge":
             raise ValueError(
-                "batch_sampler_type='ce_context' requires "
-                "dynamic_batch_sampler_mode='frag_edge'"
+                "batch_sampler_type='ce_context' requires dynamic_batch_sampler_mode='frag_edge'"
             )
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
@@ -343,6 +342,72 @@ def validate_sampler_config(config_d: dict) -> None:
             for inst_type, ce_key in ce_key_by_inst.items()
         ):
             raise ValueError("ce_context_ce_key_by_inst values must be 'nce' or 'ace'")
+        missing_inst_types = set(config_d["spec_params"]["inst_types"]).difference(ce_key_by_inst)
+        if missing_inst_types:
+            raise ValueError(
+                "ce_context_ce_key_by_inst is missing configured instrument types "
+                f"{sorted(missing_inst_types)}"
+            )
+
+    pair_weight = config_d["ce_pair_loss_weight"]
+    if (
+        not isinstance(pair_weight, (int, float))
+        or isinstance(pair_weight, bool)
+        or pair_weight < 0
+    ):
+        raise ValueError("ce_pair_loss_weight must be a non-negative number")
+    if pair_weight > 0:
+        if config_d["batch_sampler_type"] != "ce_context":
+            raise ValueError("ce_pair_loss_weight > 0 requires batch_sampler_type='ce_context'")
+        confidence = config_d["ce_pair_min_endpoint_confidence"]
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+            raise ValueError(
+                "ce_pair_min_endpoint_confidence must be set when ce_pair_loss_weight > 0"
+            )
+        if not 0.0 < confidence <= 1.0:
+            raise ValueError("ce_pair_min_endpoint_confidence must be in (0, 1]")
+        if config_d["ce_pair_min_endpoint_reliability"] is not None:
+            raise ValueError(
+                "ce_pair_min_endpoint_reliability is reserved until the replicate "
+                "reliability table is implemented"
+            )
+        if config_d["ce_pair_subset"] != "switches":
+            raise ValueError("CE pair loss v1 supports ce_pair_subset='switches' only")
+        if config_d["train_sample_weight"] != "none":
+            raise ValueError("CE pair loss v1 requires train_sample_weight='none'")
+        inst_types = set(config_d["spec_params"]["inst_types"])
+        prec_types = set(config_d["spec_params"]["prec_types"])
+        if not config_d["ce_pair_eligible_inst_types"] or not set(
+            config_d["ce_pair_eligible_inst_types"]
+        ).issubset(inst_types):
+            raise ValueError("ce_pair_eligible_inst_types must be configured instrument types")
+        if not config_d["ce_pair_eligible_prec_types"] or not set(
+            config_d["ce_pair_eligible_prec_types"]
+        ).issubset(prec_types):
+            raise ValueError("ce_pair_eligible_prec_types must be configured precursor types")
+        tolerance_by_inst = config_d["inst_type_loss_tol"]
+        eligible_inst_types = set(config_d["ce_pair_eligible_inst_types"])
+        if not isinstance(tolerance_by_inst, dict) or not eligible_inst_types.issubset(
+            tolerance_by_inst
+        ):
+            raise ValueError("inst_type_loss_tol must define every ce_pair_eligible_inst_type")
+        for inst_type in eligible_inst_types:
+            tolerance = tolerance_by_inst[inst_type]
+            if not isinstance(tolerance, dict) or set(tolerance) != {"rel", "min_mz"}:
+                raise ValueError(
+                    "Each eligible inst_type_loss_tol entry must define rel and min_mz"
+                )
+            if (
+                not isinstance(tolerance["rel"], (int, float))
+                or isinstance(tolerance["rel"], bool)
+                or tolerance["rel"] <= 0
+                or not isinstance(tolerance["min_mz"], (int, float))
+                or isinstance(tolerance["min_mz"], bool)
+                or tolerance["min_mz"] <= 0
+            ):
+                raise ValueError(
+                    "Eligible inst_type_loss_tol rel and min_mz must be positive numbers"
+                )
 
     if config_d["dag_size_curriculum"]:
         if not config_d["dynamic_batch_sampler"]:
