@@ -79,6 +79,11 @@ For each selected context:
 4. include one spectrum from every retained level, with deterministic replicate rotation;
 5. select at most five CE levels per context under the initial baseline configuration.
 
+TODO: Revisit the instrument-specific CE-ordering policy before expanding this experiment. The
+current `FT -> nce` and `QTOF -> ace` mapping reflects each instrument's native CE convention, but
+it should be re-audited against filled/converted values and the intended definition of adjacent CE
+transitions. Keep the mapping explicit and frozen within each experiment in the meantime.
+
 The online `q_e` is therefore a single-replicate target. Replicate information enters through the
 frozen all-training-replicate reliability table, not through in-batch consensus.
 

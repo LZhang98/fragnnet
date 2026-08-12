@@ -239,6 +239,10 @@ Within a context, order distinct energy levels by the configured instrument-spec
 (`nce` for FT and `ace` for QTOF by default). Record which CE field defines each context's
 ordering.
 
+TODO: Revisit this instrument-specific CE-ordering policy before expanding the experiment. The
+current mapping follows native instrument conventions, but adjacency under filled or converted CE
+values still needs an explicit audit. Until then, record and freeze the mapping per experiment.
+
 Work at CE-level consensus before forming transitions. Replicate spectra at the same energy must
 not create quadratic duplicates.
 
