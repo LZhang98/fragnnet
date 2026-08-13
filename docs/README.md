@@ -51,6 +51,7 @@ roadmap. It links the analyses that justify each item.
 | [cc_corruption_probe_finding.md](findings/cc_corruption_probe_finding.md) | **CLOSED.** Fragment identity *is* used (cos 0.82 → 0.61 under mask randomization) — the gap is comparative scoring, not features. |
 | [ce_extent_headroom_finding.md](findings/ce_extent_headroom_finding.md) | **CLOSED NULL.** No headroom in the CE → "mass moves deeper" prior. Read before building any CE-conditioned module. |
 | [fragment_intensity_ranking_findings.md](findings/fragment_intensity_ranking_findings.md) | Complementary-cut supervision is a soft negative under current weighting; global base-peak and CE-dependent ranking are the larger measured bottlenecks. |
+| [dominant_peak_outcome_decomposition.md](findings/dominant_peak_outcome_decomposition.md) | Base-peak failure is **7:1 ranking, not DAG coverage** (36.7% under-ranked vs 5.2% unexplained). Misses are one neutral loss away and biased to under-fragmentation. Resolves the `min_peak_int` ambiguity. |
 
 ## plans/
 

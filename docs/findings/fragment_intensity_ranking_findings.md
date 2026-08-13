@@ -111,6 +111,12 @@ their model cosine is 0.578.
 default `min_peak_int=1.0` filter, so this category mixes DAG coverage failures with candidates to
 which the model assigned effectively zero intensity.
 
+**Resolved 2026-08-12** in
+[`dominant_peak_outcome_decomposition.md`](dominant_peak_outcome_decomposition.md), which
+reclassifies against the unfiltered DAG support on the NIST20 test export: the 6.8% splits into
+5.2% genuinely outside the DAG and 0.8% DAG-covered but predicted below the export floor. The
+ranking-versus-coverage ratio is therefore ~7:1, not the 84%/16% the export-only split implied.
+
 ## Collision energy changes the winner, but the model misses the transition
 
 Within each `(molecule, adduct, instrument, fragmentation mode)` context, the lowest and highest
