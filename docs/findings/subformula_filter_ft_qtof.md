@@ -1,4 +1,4 @@
-# Instrument Dependence of 5 ppm Subformula Filtering
+# 5 ppm Subformula Filtering on NIST20-HR
 
 > **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-13
 >
@@ -34,7 +34,7 @@ The source was `data/proc/nist20/spec_df.pkl`, restricted to `dset == nist20_hr`
 No sampling was used. Empty spectra were counted after filtering and then dropped from the output
 count. The run was stats-only, so it did not write a duplicate cleaned spectrum table.
 
-## Fixed 5 ppm results
+## 5 ppm results
 
 | Precursor | Instrument | Spectra | Peaks retained by 20 ppm merge | Peaks retained by 5 ppm subformula filter | Intensity retained by subformula filter | Empty after subformula filter | Base peak retained |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -47,21 +47,22 @@ Across all four groups, 20 ppm merging retained 99.94% of peak records and 100% 
 intensity. It produced no empty spectra and retained the base peak in every spectrum. The merge is
 therefore a low-impact cleanup operation on this population.
 
-The universal 5 ppm subformula filter is strongly instrument-dependent even within NIST20-HR:
+The 5 ppm subformula filter is strongly instrument-dependent even within NIST20-HR:
 
 - FT retains about 84% of peak records and 90–91% of intensity. Although substantially more
   aggressive than merging, most dominant signal survives.
 - QTOF retains only 24–25% of peak records and about 23% of intensity. About one-quarter of QTOF
   spectra become empty, and the original base peak survives in only 22%.
 
-## FraGNNet instrument-tolerance results
+## Supplemental FraGNNet instrument-tolerance comparison
 
 The census was repeated with the exact evaluation-time matching contract:
 
 - FT: `10 ppm × max(observed m/z, 200)`, giving a minimum ±0.002 Da window.
 - QTOF: `20 ppm × max(observed m/z, 750)`, giving a minimum ±0.015 Da window.
 
-Only the subformula matching tolerance changed. Peak merging remained fixed at 20 ppm, and the
+This is a separate comparison and is not the 5 ppm result above. Only the subformula matching
+tolerance changed. Peak merging remained fixed at 20 ppm, and the
 precursor-bounded formula, adduct, removable-hydrogen, and RDBE rules were unchanged.
 
 | Precursor | Instrument | Peaks: fixed 5 ppm | Peaks: instrument tolerance | Intensity: fixed 5 ppm | Intensity: instrument tolerance | Empty: fixed 5 ppm | Empty: instrument tolerance | Base peak: instrument tolerance |
@@ -82,7 +83,7 @@ as a simple 20 ppm result.
 
 ## Conclusion
 
-Use of 20 ppm peak merging is supported for both FT and QTOF in this dataset. A universal 5 ppm
+Use of 20 ppm peak merging is supported for both FT and QTOF in NIST20-HR. The 5 ppm
 subformula filter is **not supported**, particularly for QTOF. FraGNNet's instrument tolerance
 largely resolves the loss for all four NIST20-HR groups: they retain 97–98.5% of intensity and
 98.9–99.8% of base peaks. The fixed 5 ppm QTOF result remains poor, but the instrument-tolerance
