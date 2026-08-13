@@ -65,7 +65,7 @@ This is a separate comparison and is not the 5 ppm result above. Only the subfor
 tolerance changed. Peak merging remained fixed at 20 ppm, and the
 precursor-bounded formula, adduct, removable-hydrogen, and RDBE rules were unchanged.
 
-| Precursor | Instrument | Peaks: fixed 5 ppm | Peaks: instrument tolerance | Intensity: fixed 5 ppm | Intensity: instrument tolerance | Empty: fixed 5 ppm | Empty: instrument tolerance | Base peak: instrument tolerance |
+| Precursor | Instrument | Peaks: 5 ppm | Peaks: instrument tolerance | Intensity: 5 ppm | Intensity: instrument tolerance | Empty: 5 ppm | Empty: instrument tolerance | Base peak: instrument tolerance |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `[M+H]+` | FT | 83.90% | **91.07%** | 90.27% | **97.11%** | 0.68% | **0.00%** | 98.96% |
 | `[M+H]+` | QTOF | 25.23% | **96.63%** | 23.37% | **98.53%** | 24.25% | **0.03%** | 98.93% |
@@ -74,7 +74,7 @@ precursor-bounded formula, adduct, removable-hydrogen, and RDBE rules were uncha
 
 Across all four groups, instrument-tolerance filtering retained 91.45% of peak records, 97.46% of
 total intensity, and the base peak in 99.20% of spectra. Only 18 of 434,917 spectra (0.004%) became
-empty, compared with 10,452 (2.40%) under fixed 5 ppm.
+empty, compared with 10,452 (2.40%) under 5 ppm.
 
 The QTOF recovery is driven in large part by its low-mass floor. Below m/z 750, the matching window
 is ±0.015 Da rather than literal 20 ppm; at m/z 100 this is equivalent to 150 ppm. The improvement
@@ -86,7 +86,7 @@ as a simple 20 ppm result.
 Use of 20 ppm peak merging is supported for both FT and QTOF in NIST20-HR. The 5 ppm
 subformula filter is **not supported**, particularly for QTOF. FraGNNet's instrument tolerance
 largely resolves the loss for all four NIST20-HR groups: they retain 97–98.5% of intensity and
-98.9–99.8% of base peaks. The fixed 5 ppm QTOF result remains poor, but the instrument-tolerance
+98.9–99.8% of base peaks. The 5 ppm QTOF result remains poor, but the instrument-tolerance
 floor recovers it for this high-resolution subset.
 
 ## DAG coverage at FraGNNet instrument tolerance
