@@ -419,6 +419,79 @@ def validate_sampler_config(config_d: dict) -> None:
                     "Eligible inst_type_loss_tol rel and min_mz must be positive numbers"
                 )
 
+    precursor_pair_weight = config_d["precursor_pair_loss_weight"]
+    if (
+        not isinstance(precursor_pair_weight, (int, float))
+        or isinstance(precursor_pair_weight, bool)
+        or precursor_pair_weight < 0
+    ):
+        raise ValueError("precursor_pair_loss_weight must be a non-negative number")
+    if precursor_pair_weight > 0:
+        spec_params = config_d["spec_params"]
+        if not spec_params["nce"] and not spec_params["ace"]:
+            raise ValueError(
+                "precursor_pair_loss_weight > 0 requires spec_params.nce or "
+                "spec_params.ace so NCE metadata is loaded"
+            )
+        if spec_params["merge"]:
+            raise ValueError(
+                "precursor_pair_loss_weight > 0 requires unmerged spectra"
+            )
+        nce_min = config_d["precursor_pair_nce_min"]
+        nce_max = config_d["precursor_pair_nce_max"]
+        if (
+            not isinstance(nce_min, (int, float))
+            or isinstance(nce_min, bool)
+            or not isinstance(nce_max, (int, float))
+            or isinstance(nce_max, bool)
+            or nce_min < 0
+            or nce_max <= nce_min
+        ):
+            raise ValueError("precursor_pair_nce_min/max must define a non-negative interval")
+        absent_floor = config_d["precursor_pair_absent_intensity_floor"]
+        if (
+            not isinstance(absent_floor, (int, float))
+            or isinstance(absent_floor, bool)
+            or not 0.0 <= absent_floor < 1.0
+        ):
+            raise ValueError("precursor_pair_absent_intensity_floor must be in [0, 1)")
+        inst_types = set(config_d["spec_params"]["inst_types"])
+        prec_types = set(config_d["spec_params"]["prec_types"])
+        eligible_inst_types = set(config_d["precursor_pair_eligible_inst_types"])
+        eligible_prec_types = set(config_d["precursor_pair_eligible_prec_types"])
+        if not eligible_inst_types or not eligible_inst_types.issubset(inst_types):
+            raise ValueError(
+                "precursor_pair_eligible_inst_types must be configured instrument types"
+            )
+        if not eligible_prec_types or not eligible_prec_types.issubset(prec_types):
+            raise ValueError(
+                "precursor_pair_eligible_prec_types must be configured precursor types"
+            )
+        tolerance_by_inst = config_d["inst_type_loss_tol"]
+        if not isinstance(tolerance_by_inst, dict) or not eligible_inst_types.issubset(
+            tolerance_by_inst
+        ):
+            raise ValueError(
+                "inst_type_loss_tol must define every precursor-pair eligible instrument"
+            )
+        for inst_type in eligible_inst_types:
+            tolerance = tolerance_by_inst[inst_type]
+            if not isinstance(tolerance, dict) or set(tolerance) != {"rel", "min_mz"}:
+                raise ValueError(
+                    "Each precursor-pair eligible tolerance must define rel and min_mz"
+                )
+            if (
+                not isinstance(tolerance["rel"], (int, float))
+                or isinstance(tolerance["rel"], bool)
+                or tolerance["rel"] <= 0
+                or not isinstance(tolerance["min_mz"], (int, float))
+                or isinstance(tolerance["min_mz"], bool)
+                or tolerance["min_mz"] <= 0
+            ):
+                raise ValueError(
+                    "Precursor-pair eligible tolerance rel and min_mz must be positive numbers"
+                )
+
     if config_d["dag_size_curriculum"]:
         if not config_d["dynamic_batch_sampler"]:
             raise ValueError("DAG-size curriculum requires dynamic_batch_sampler=True")

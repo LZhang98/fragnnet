@@ -116,6 +116,28 @@ def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
     assert filtered == []
 
 
+def test_qtof_instrument_tolerance_uses_0p015_da_low_mass_floor():
+    theoretical_mz = (
+        clean_spectra.chem_utils.formula_mass("CH4")
+        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    )
+    observed_peak = (theoretical_mz + 0.01, 10.0)
+
+    fixed_5ppm = clean_spectra.filter_subformula_peaks(
+        [observed_peak], "CH4", "[M+H]+", tolerance_ppm=5.0
+    )
+    qtof_inst_tol = clean_spectra.filter_subformula_peaks(
+        [observed_peak],
+        "CH4",
+        "[M+H]+",
+        tolerance_ppm=20.0,
+        tolerance_min_mz=750.0,
+    )
+
+    assert fixed_5ppm == []
+    assert qtof_inst_tol == [observed_peak]
+
+
 def test_cleanup_options_are_independent_and_can_drop_empty_spectra():
     spec_df = pd.DataFrame(
         {
@@ -209,6 +231,20 @@ def test_select_instrument_types_focuses_on_ft_and_qtof():
     selected = clean_spectra.select_instrument_types(spec_df, ["FT", "QTOF"])
 
     assert selected["spec_id"].tolist() == [0, 1]
+
+
+def test_select_dsets_focuses_on_requested_source_dataset():
+    spec_df = pd.DataFrame(
+        {
+            "spec_id": [0, 1, 2],
+            "dset": ["nist20_hr", "mona23", "nist20_hr"],
+            "peaks": [[], [], []],
+        }
+    )
+
+    selected = clean_spectra.select_dsets(spec_df, ["nist20_hr"])
+
+    assert selected["spec_id"].tolist() == [0, 2]
 
 
 def test_select_supported_formula_spectra_reports_exclusions():

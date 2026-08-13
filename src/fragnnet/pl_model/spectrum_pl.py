@@ -1333,6 +1333,24 @@ class SpectrumPL(L.LightningModule):
                     "spec_prec_type": batch["spec_prec_type"],
                 }
             )
+        if self.hparams.precursor_pair_loss_weight != 0.0:
+            nce_values = primary_ce_to_batch(
+                batch["spec_nce"], batch.get("spec_nce_batch_idxs"), int(batch_size)
+            )
+            train_d.update(
+                {
+                    "precursor_pair_true_mzs": true_mzs,
+                    "precursor_pair_true_ints": true_ints,
+                    "precursor_pair_true_batch_idxs": true_batch_idxs,
+                    "precursor_pair_pred_mzs": pred_mzs,
+                    "precursor_pair_pred_logprobs": pred_logprobs,
+                    "precursor_pair_pred_batch_idxs": pred_batch_idxs,
+                    "precursor_pair_nce_values": nce_values,
+                    "spec_prec_mz": batch["spec_prec_mz"],
+                    "spec_inst_type": batch["spec_inst_type"],
+                    "spec_prec_type": batch["spec_prec_type"],
+                }
+            )
 
         loss_d = self.loss_fn(**train_d)
         loss = loss_d["loss"]

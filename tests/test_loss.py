@@ -19,10 +19,95 @@ from fragnnet.model.loss import (
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
     get_pairwise_jss_sim_hun,
+    precursor_contender_bce,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
+
+
+def _precursor_pair_inputs() -> dict:
+    return {
+        "true_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
+        "true_ints": th.tensor([0.8, 0.2, 0.3, 0.7]),
+        "true_batch_idxs": th.tensor([0, 0, 1, 1]),
+        "pred_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
+        "pred_logprobs": th.log(th.tensor([0.6, 0.4, 0.4, 0.6])).requires_grad_(),
+        "pred_batch_idxs": th.tensor([0, 0, 1, 1]),
+        "precursor_mzs": th.tensor([200.0, 200.0]),
+        "nce_values": th.tensor([10.0, 15.0]),
+        "eligible_samples": th.tensor([True, True]),
+        "batch_size": 2,
+        "nce_min": 0.0,
+        "nce_max": 20.0,
+        "absent_intensity_floor": 0.01,
+        "tol_per_sample": th.tensor([1.0e-5, 1.0e-5]),
+        "min_mz_per_sample": th.tensor([200.0, 200.0]),
+    }
+
+
+class TestPrecursorContenderBCE:
+    def test_includes_fragment_and_precursor_winners_with_soft_targets(self):
+        inputs = _precursor_pair_inputs()
+
+        loss, eligible, precursor_wins = precursor_contender_bce(**inputs)
+
+        expected_first = th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.2)
+        )
+        expected_second = th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.6 / 0.4)), th.tensor(0.7)
+        )
+        assert eligible.tolist() == [1.0, 1.0]
+        assert precursor_wins.tolist() == [0.0, 1.0]
+        assert th.allclose(loss, th.stack([expected_first, expected_second]))
+
+        loss.sum().backward()
+        assert inputs["pred_logprobs"].grad is not None
+
+    def test_uses_floor_for_unobserved_precursor(self):
+        inputs = _precursor_pair_inputs()
+        inputs["true_mzs"] = th.tensor([100.0, 100.0, 200.0])
+        inputs["true_ints"] = th.tensor([1.0, 0.3, 0.7])
+        inputs["true_batch_idxs"] = th.tensor([0, 1, 1])
+
+        loss, eligible, precursor_wins = precursor_contender_bce(**inputs)
+
+        expected = th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.01 / 1.01)
+        )
+        assert eligible.tolist() == [1.0, 1.0]
+        assert precursor_wins.tolist() == [0.0, 1.0]
+        assert th.allclose(loss[0], expected)
+
+    def test_skips_high_ce_and_unsupported_contenders(self):
+        inputs = _precursor_pair_inputs()
+        inputs["nce_values"] = th.tensor([20.0, 15.0])
+        inputs["pred_mzs"] = th.tensor([100.0, 200.0, 200.0])
+        inputs["pred_logprobs"] = th.log(th.tensor([0.6, 0.4, 1.0])).requires_grad_()
+        inputs["pred_batch_idxs"] = th.tensor([0, 0, 1])
+
+        loss, eligible, precursor_wins = precursor_contender_bce(**inputs)
+
+        assert eligible.sum() == 0
+        assert th.equal(loss, th.zeros_like(loss))
+        assert th.equal(precursor_wins, th.zeros_like(precursor_wins))
+
+    def test_selects_strongest_supported_nonprecursor(self):
+        inputs = _precursor_pair_inputs()
+        inputs["true_mzs"] = th.tensor([50.0, 100.0, 200.0, 100.0, 200.0])
+        inputs["true_ints"] = th.tensor([0.7, 0.2, 0.1, 0.3, 0.7])
+        inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
+        # Sample 0 has no predicted support at the strongest non-precursor (50 Da),
+        # so the supported 100-Da peak is the contender.
+
+        loss, eligible, _ = precursor_contender_bce(**inputs)
+
+        expected = th.nn.functional.binary_cross_entropy_with_logits(
+            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.1 / 0.3)
+        )
+        assert eligible.tolist() == [1.0, 1.0]
+        assert th.allclose(loss[0], expected)
 
 
 def _ce_switch_inputs() -> dict:

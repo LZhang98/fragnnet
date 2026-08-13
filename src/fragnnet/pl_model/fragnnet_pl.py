@@ -22,6 +22,7 @@ from fragnnet.model.loss import (
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
     get_sparse_cross_entropy_fn,
+    precursor_contender_bce,
     sparse_conditional_entropy_fn,
     sparse_cosine_distance_binned,
     sparse_cosine_distance_hungarian,
@@ -401,6 +402,14 @@ class FraGNNetPL(SpectrumPL):
             self.hparams.ce_pair_loss_weight,
         )
         _add_if_active(
+            [
+                "precursor_pair_loss",
+                "precursor_pair_eligible",
+                "precursor_pair_true_precursor_wins",
+            ],
+            self.hparams.precursor_pair_loss_weight,
+        )
+        _add_if_active(
             [f"cross_jss_contrastive_{self.hparams.mz_bin_res}"],
             self.hparams.cross_jss_contrastive_loss_weight,
         )
@@ -634,6 +643,23 @@ class FraGNNetPL(SpectrumPL):
                 ],
                 dtype=th.long,
             )
+        precursor_pair_inst_idxs = th.empty(0, dtype=th.long)
+        precursor_pair_prec_idxs = th.empty(0, dtype=th.long)
+        if self.hparams.precursor_pair_loss_weight != 0.0:
+            precursor_pair_inst_idxs = th.tensor(
+                [
+                    inst_types.index(inst_type)
+                    for inst_type in self.hparams.precursor_pair_eligible_inst_types
+                ],
+                dtype=th.long,
+            )
+            precursor_pair_prec_idxs = th.tensor(
+                [
+                    prec_types.index(prec_type)
+                    for prec_type in self.hparams.precursor_pair_eligible_prec_types
+                ],
+                dtype=th.long,
+            )
 
         def _loss_fn(
             true_mzs,
@@ -778,6 +804,38 @@ class FraGNNetPL(SpectrumPL):
                 loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
                 loss_d["ce_pair_loss"] = pair_loss
                 loss_d["ce_pair_eligible_endpoints"] = eligible_endpoints
+
+            if self.hparams.precursor_pair_loss_weight != 0.0:
+                inst_idxs = kwargs["spec_inst_type"].reshape(-1)
+                prec_idxs = kwargs["spec_prec_type"].reshape(-1)
+                eligible_samples = th.isin(
+                    inst_idxs, precursor_pair_inst_idxs.to(inst_idxs.device)
+                ) & th.isin(prec_idxs, precursor_pair_prec_idxs.to(prec_idxs.device))
+                precursor_pair_loss, precursor_pair_eligible, true_precursor_wins = (
+                    precursor_contender_bce(
+                        true_mzs=kwargs["precursor_pair_true_mzs"],
+                        true_ints=kwargs["precursor_pair_true_ints"],
+                        true_batch_idxs=kwargs["precursor_pair_true_batch_idxs"],
+                        pred_mzs=kwargs["precursor_pair_pred_mzs"],
+                        pred_logprobs=kwargs["precursor_pair_pred_logprobs"],
+                        pred_batch_idxs=kwargs["precursor_pair_pred_batch_idxs"],
+                        precursor_mzs=kwargs["spec_prec_mz"],
+                        nce_values=kwargs["precursor_pair_nce_values"],
+                        eligible_samples=eligible_samples,
+                        batch_size=batch_size,
+                        nce_min=self.hparams.precursor_pair_nce_min,
+                        nce_max=self.hparams.precursor_pair_nce_max,
+                        absent_intensity_floor=(
+                            self.hparams.precursor_pair_absent_intensity_floor
+                        ),
+                        tol_per_sample=tol_per_sample,
+                        min_mz_per_sample=min_mz_per_sample,
+                    )
+                )
+                loss = loss + self.hparams.precursor_pair_loss_weight * precursor_pair_loss
+                loss_d["precursor_pair_loss"] = precursor_pair_loss
+                loss_d["precursor_pair_eligible"] = precursor_pair_eligible
+                loss_d["precursor_pair_true_precursor_wins"] = true_precursor_wins
 
             if self.hparams.loss_type != "cross_entropy" and "spec_ce" in self.loss_names:
                 ios_ce, oos_ce, _, _ = sparse_ce_fn(

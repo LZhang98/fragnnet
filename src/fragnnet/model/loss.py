@@ -2305,3 +2305,176 @@ def ce_switch_pair_bce(
                 )
                 eligible_endpoints[endpoint] += 1
     return losses, eligible_endpoints
+
+
+def precursor_contender_bce(
+    true_mzs: th.Tensor,
+    true_ints: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_logprobs: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    precursor_mzs: th.Tensor,
+    nce_values: th.Tensor,
+    eligible_samples: th.Tensor,
+    batch_size: int,
+    nce_min: float,
+    nce_max: float,
+    absent_intensity_floor: float,
+    tol_per_sample: th.Tensor,
+    min_mz_per_sample: th.Tensor,
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Supervise precursor versus the strongest supported non-precursor peak.
+
+    For each eligible low-CE spectrum, the target is the observed soft intensity
+    ratio between the precursor and the strongest observed non-precursor mass
+    present in prediction support. Predicted aliases within instrument tolerance
+    are aggregated before applying binary cross entropy to the log-intensity
+    difference.
+    """
+    losses = pred_logprobs.new_zeros(batch_size)
+    eligible_pairs = pred_logprobs.new_zeros(batch_size)
+    precursor_wins = pred_logprobs.new_zeros(batch_size)
+    if batch_size == 0:
+        return losses, eligible_pairs, precursor_wins
+
+    # 1. Move target discovery to CPU while retaining GPU prediction indices for gradients.
+    true_mzs_cpu = true_mzs.detach().cpu()
+    true_ints_cpu = true_ints.detach().cpu()
+    true_batch_idxs_cpu = true_batch_idxs.detach().cpu()
+    pred_mzs_cpu = pred_mzs.detach().cpu()
+    pred_batch_idxs_cpu = pred_batch_idxs.detach().cpu()
+    precursor_mzs_cpu = precursor_mzs.detach().cpu().reshape(-1)
+    nce_values_cpu = nce_values.detach().cpu().reshape(-1)
+    eligible_samples_cpu = eligible_samples.detach().cpu().reshape(-1)
+    tol_cpu = tol_per_sample.detach().cpu().reshape(-1)
+    min_mz_cpu = min_mz_per_sample.detach().cpu().reshape(-1)
+
+    true_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
+    for peak_idx, sample_idx in enumerate(true_batch_idxs_cpu.tolist()):
+        true_index_lists[sample_idx].append(peak_idx)
+    true_indices_by_sample = [
+        th.tensor(indices, dtype=th.long) for indices in true_index_lists
+    ]
+    pred_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
+    for peak_idx, sample_idx in enumerate(pred_batch_idxs_cpu.tolist()):
+        pred_index_lists[sample_idx].append(peak_idx)
+    pred_indices_by_sample = [
+        th.tensor(indices, dtype=th.long) for indices in pred_index_lists
+    ]
+
+    def _matches(mzs: th.Tensor, mass: float, sample_idx: int) -> th.Tensor:
+        tolerance = float(tol_cpu[sample_idx]) * max(
+            mass, float(min_mz_cpu[sample_idx])
+        )
+        return th.abs(mzs - mass) < tolerance
+
+    def _observed_groups(sample_idx: int) -> list[tuple[float, float]]:
+        """Merge mutually unambiguous observed aliases at instrument tolerance."""
+        indices = true_indices_by_sample[sample_idx]
+        mzs = true_mzs_cpu[indices]
+        ints = true_ints_cpu[indices]
+        order = th.argsort(mzs)
+        groups: list[list[tuple[float, float]]] = []
+        upper_bounds: list[tuple[float, float]] = []
+        for mz, intensity in zip(mzs[order].tolist(), ints[order].tolist()):
+            tolerance = float(tol_cpu[sample_idx]) * max(
+                mz, float(min_mz_cpu[sample_idx])
+            )
+            upper_bound = mz + tolerance
+            if groups and mz < upper_bounds[-1][1]:
+                if len(groups) > 1 and mz < upper_bounds[-2][1]:
+                    return []
+                if mz >= upper_bounds[-1][0]:
+                    return []
+                groups[-1].append((mz, intensity))
+                low, high = upper_bounds[-1]
+                upper_bounds[-1] = (min(low, upper_bound), max(high, upper_bound))
+            else:
+                groups.append([(mz, intensity)])
+                upper_bounds.append((upper_bound, upper_bound))
+        return [
+            (
+                sum(mz * intensity for mz, intensity in group)
+                / sum(intensity for _, intensity in group),
+                sum(intensity for _, intensity in group),
+            )
+            for group in groups
+            if sum(intensity for _, intensity in group) > 0
+        ]
+
+    # 2. Select one observed precursor/fragment comparison per eligible spectrum.
+    pair_data: list[tuple[int, float, th.Tensor, th.Tensor, bool]] = []
+    for sample_idx in range(batch_size):
+        nce = float(nce_values_cpu[sample_idx])
+        if (
+            not bool(eligible_samples_cpu[sample_idx])
+            or not math.isfinite(nce)
+            or nce < nce_min
+            or nce >= nce_max
+        ):
+            continue
+        groups = _observed_groups(sample_idx)
+        pred_indices = pred_indices_by_sample[sample_idx]
+        if not groups or pred_indices.numel() == 0:
+            continue
+        pred_sample_mzs = pred_mzs_cpu[pred_indices]
+        precursor_mz = float(precursor_mzs_cpu[sample_idx])
+        pred_precursor = pred_indices[_matches(pred_sample_mzs, precursor_mz, sample_idx)]
+        if pred_precursor.numel() == 0:
+            continue
+
+        precursor_groups = [
+            group
+            for group in groups
+            if bool(_matches(th.tensor([group[0]]), precursor_mz, sample_idx).item())
+        ]
+        if len(precursor_groups) > 1:
+            continue
+        base_intensity = max(intensity for _, intensity in groups)
+        precursor_intensity = (
+            precursor_groups[0][1]
+            if precursor_groups
+            else absent_intensity_floor * base_intensity
+        )
+
+        contender = None
+        pred_contender = None
+        for mass, intensity in sorted(groups, key=lambda group: group[1], reverse=True):
+            if bool(_matches(th.tensor([mass]), precursor_mz, sample_idx).item()):
+                continue
+            matches = pred_indices[_matches(pred_sample_mzs, mass, sample_idx)]
+            if matches.numel() > 0 and not th.isin(matches, pred_precursor).any():
+                contender = (mass, intensity)
+                pred_contender = matches
+                break
+        if contender is None or pred_contender is None:
+            continue
+
+        contender_intensity = contender[1]
+        target_precursor = precursor_intensity / (
+            precursor_intensity + contender_intensity
+        )
+        pair_data.append(
+            (
+                sample_idx,
+                target_precursor,
+                pred_precursor,
+                pred_contender,
+                precursor_intensity > contender_intensity,
+            )
+        )
+
+    # 3. Gather selected aliases on-device and compute the differentiable pair loss.
+    for sample_idx, target, precursor_idxs, contender_idxs, precursor_win in pair_data:
+        precursor_idxs = precursor_idxs.to(pred_logprobs.device)
+        contender_idxs = contender_idxs.to(pred_logprobs.device)
+        pred_delta = th.logsumexp(pred_logprobs[precursor_idxs], dim=0) - th.logsumexp(
+            pred_logprobs[contender_idxs], dim=0
+        )
+        losses[sample_idx] = F.binary_cross_entropy_with_logits(
+            pred_delta, pred_logprobs.new_tensor(target)
+        )
+        eligible_pairs[sample_idx] = 1.0
+        precursor_wins[sample_idx] = float(precursor_win)
+    return losses, eligible_pairs, precursor_wins

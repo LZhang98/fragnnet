@@ -25,6 +25,11 @@ PRECURSOR_TYPE_ALIASES = {
     "[M+H3N+H]+": "[M+NH4]+",
 }
 
+INSTRUMENT_TOLERANCES = {
+    "FT": {"relative": 1.0e-5, "min_mz": 200.0},
+    "QTOF": {"relative": 2.0e-5, "min_mz": 750.0},
+}
+
 
 def ppm_error(observed_mz: float, theoretical_mz: float) -> float:
     """Return the absolute mass error in parts per million."""
@@ -113,6 +118,7 @@ def filter_subformula_peaks(
     formula: str,
     precursor_type: str,
     tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
 ) -> list[tuple[float, float]]:
     """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula."""
     if tolerance_ppm <= 0:
@@ -129,7 +135,8 @@ def filter_subformula_peaks(
         candidate_idxs = [insertion_idx - 1, insertion_idx]
         if any(
             0 <= idx < len(candidate_masses)
-            and ppm_error(mz, float(candidate_masses[idx])) <= tolerance_ppm
+            and abs(mz - float(candidate_masses[idx]))
+            <= tolerance_ppm * 1e-6 * max(mz, tolerance_min_mz)
             for idx in candidate_idxs
         ):
             filtered.append((float(peak[0]), float(peak[1])))
@@ -269,6 +276,21 @@ def select_instrument_types(
     return selected_df.reset_index(drop=True)
 
 
+def select_dsets(
+    spec_df: pd.DataFrame,
+    dsets: list[str] | None,
+) -> pd.DataFrame:
+    """Select requested source datasets without changing spectrum identifiers."""
+    if dsets is None:
+        return spec_df
+    if "dset" not in spec_df:
+        raise ValueError("spec_df must contain dset when --dsets is used")
+    selected_df = spec_df[spec_df["dset"].isin(dsets)].copy()
+    if selected_df.empty:
+        raise ValueError(f"No spectra found for datasets: {dsets}")
+    return selected_df.reset_index(drop=True)
+
+
 def select_supported_formula_spectra(
     spec_df: pd.DataFrame,
     mol_df: pd.DataFrame,
@@ -299,6 +321,7 @@ def clean_spectra(
     filter_by_subformula: bool,
     subformula_ppm: float,
     drop_empty_spectra: bool,
+    use_instrument_tolerance: bool = False,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -309,6 +332,7 @@ def clean_spectra(
         filter_by_subformula,
         subformula_ppm,
         drop_empty_spectra,
+        use_instrument_tolerance,
     )
     return cleaned_df
 
@@ -321,11 +345,14 @@ def clean_spectra_with_stats(
     filter_by_subformula: bool,
     subformula_ppm: float,
     drop_empty_spectra: bool,
+    use_instrument_tolerance: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
     required_spec_columns = {"peaks"}
     if filter_by_subformula:
         required_spec_columns.update({"mol_id", "prec_type"})
+        if use_instrument_tolerance:
+            required_spec_columns.add("inst_type")
     missing_spec_columns = required_spec_columns - set(spec_df.columns)
     if missing_spec_columns:
         raise ValueError(f"spec_df is missing required columns: {sorted(missing_spec_columns)}")
@@ -338,6 +365,7 @@ def clean_spectra_with_stats(
             "merge_ppm": merge_ppm,
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
+            "subformula_instrument_tolerance": use_instrument_tolerance,
             "drop_empty_spectra": drop_empty_spectra,
         },
         "input": summarize_spectra(spec_df),
@@ -374,12 +402,36 @@ def clean_spectra_with_stats(
     # 3. Retain only peaks explained by a feasible molecular subformula.
     if filter_by_subformula:
         before_subformula_filter = result.copy()
-        filtered_peaks = (
-            filter_subformula_peaks(peaks, formula, precursor_type, subformula_ppm)
-            for peaks, formula, precursor_type in zip(
-                result["peaks"], formulas, result["prec_type"], strict=True
+        if use_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No subformula instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            filtered_peaks = (
+                filter_subformula_peaks(
+                    peaks,
+                    formula,
+                    precursor_type,
+                    INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
+                    INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                )
+                for peaks, formula, precursor_type, instrument_type in zip(
+                    result["peaks"],
+                    formulas,
+                    result["prec_type"],
+                    result["inst_type"],
+                    strict=True,
+                )
             )
-        )
+        else:
+            filtered_peaks = (
+                filter_subformula_peaks(peaks, formula, precursor_type, subformula_ppm)
+                for peaks, formula, precursor_type in zip(
+                    result["peaks"], formulas, result["prec_type"], strict=True
+                )
+            )
         result.loc[:, "peaks"] = pd.Series(filtered_peaks, index=result.index, dtype=object)
         stats["after_subformula_filter"] = summarize_spectra(result)
         stats["subformula_retention"] = summarize_retention(before_subformula_filter, result)
@@ -428,6 +480,11 @@ def parse_args() -> argparse.Namespace:
         help="Only process these instrument types, e.g. FT QTOF",
     )
     parser.add_argument(
+        "--dsets",
+        nargs="+",
+        help="Only process these source datasets, e.g. nist20_hr",
+    )
+    parser.add_argument(
         "--stats-only",
         action="store_true",
         help="Calculate statistics without writing a cleaned spectrum pickle",
@@ -449,6 +506,11 @@ def parse_args() -> argparse.Namespace:
         help="Keep only peaks matching precursor-compatible molecular subformulas",
     )
     parser.add_argument("--subformula-ppm", type=float, default=5.0)
+    parser.add_argument(
+        "--subformula-inst-tol",
+        action="store_true",
+        help="Use FraGNNet FT/QTOF tolerance and m/z floors instead of --subformula-ppm",
+    )
     parser.add_argument(
         "--drop-empty-spectra",
         action="store_true",
@@ -473,7 +535,8 @@ def main() -> None:
         raise ValueError("--output-fp must differ from --spec-fp")
 
     source_spec_df = pd.read_pickle(args.spec_fp)
-    spec_df = select_precursor_types(source_spec_df, args.precursor_types)
+    spec_df = select_dsets(source_spec_df, args.dsets)
+    spec_df = select_precursor_types(spec_df, args.precursor_types)
     spec_df = select_instrument_types(spec_df, args.instrument_types)
     mol_df = pd.read_pickle(args.mol_fp) if args.mol_fp is not None else pd.DataFrame()
     selected_spectra = len(spec_df)
@@ -488,10 +551,12 @@ def main() -> None:
         filter_by_subformula=args.filter_subformula_peaks,
         subformula_ppm=args.subformula_ppm,
         drop_empty_spectra=args.drop_empty_spectra,
+        use_instrument_tolerance=args.subformula_inst_tol,
     )
     stats["selection"] = {
         "precursor_types": args.precursor_types,
         "instrument_types": args.instrument_types,
+        "dsets": args.dsets,
         "source_spectra": len(source_spec_df),
         "selected_spectra": selected_spectra,
         "processed_spectra": len(spec_df),

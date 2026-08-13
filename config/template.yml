@@ -461,6 +461,14 @@ ce_pair_min_endpoint_reliability: null
 ce_pair_subset: switches
 ce_pair_eligible_inst_types: [FT]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
+# Within-spectrum low-CE precursor-versus-strongest-supported-fragment supervision.
+precursor_pair_loss_weight: 0.0
+precursor_pair_nce_min: 0.0
+precursor_pair_nce_max: 20.0
+# Relative to the observed base peak; used when no precursor peak is observed.
+precursor_pair_absent_intensity_floor: 0.01
+precursor_pair_eligible_inst_types: [FT]
+precursor_pair_eligible_prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
 # cross-matrix JSS contrastive: JSS-sqrt(real_i, pred_j), InfoNCE row-wise
 cross_jss_contrastive_loss_weight: 0.0
 cross_jss_contrastive_temperature: 0.07

@@ -32,10 +32,19 @@ def _base_config(**overrides) -> dict:
         "ce_pair_subset": "switches",
         "ce_pair_eligible_inst_types": ["FT"],
         "ce_pair_eligible_prec_types": ["[M+H]+"],
+        "precursor_pair_loss_weight": 0.0,
+        "precursor_pair_nce_min": 0.0,
+        "precursor_pair_nce_max": 20.0,
+        "precursor_pair_absent_intensity_floor": 0.01,
+        "precursor_pair_eligible_inst_types": ["FT"],
+        "precursor_pair_eligible_prec_types": ["[M+H]+"],
         "target_rel_ints_thresh": 0.01,
         "train_sample_weight": "none",
         "inst_type_loss_tol": {"FT": {"rel": 1.0e-5, "min_mz": 200.0}},
         "spec_params": {
+            "merge": False,
+            "nce": True,
+            "ace": False,
             "inst_types": ["FT", "QTOF", "IT"],
             "prec_types": ["[M+H]+", "[M-H]-"],
         },
@@ -259,6 +268,59 @@ class TestValidateSamplerConfig:
                     dynamic_batch_sampler_mode="frag_edge",
                     ce_pair_loss_weight=0.1,
                     ce_pair_min_endpoint_confidence=0.2,
+                    inst_type_loss_tol={"FT": tolerance},
+                )
+            )
+
+    def test_precursor_pair_loss_valid_config_passes(self):
+        validate_sampler_config(_base_config(precursor_pair_loss_weight=0.1))
+
+    @pytest.mark.parametrize(
+        "spec_params_override, error",
+        [
+            ({"nce": False, "ace": False}, "requires spec_params.nce or spec_params.ace"),
+            ({"merge": True}, "requires unmerged spectra"),
+        ],
+    )
+    def test_precursor_pair_loss_rejects_missing_per_spectrum_nce(
+        self, spec_params_override, error
+    ):
+        config = _base_config(precursor_pair_loss_weight=0.1)
+        config["spec_params"].update(spec_params_override)
+
+        with pytest.raises(ValueError, match=error):
+            validate_sampler_config(config)
+
+    @pytest.mark.parametrize("nce_interval", [(-1.0, 20.0), (20.0, 20.0), (30.0, 20.0)])
+    def test_precursor_pair_loss_rejects_invalid_nce_interval(self, nce_interval):
+        with pytest.raises(ValueError, match="precursor_pair_nce_min/max"):
+            validate_sampler_config(
+                _base_config(
+                    precursor_pair_loss_weight=0.1,
+                    precursor_pair_nce_min=nce_interval[0],
+                    precursor_pair_nce_max=nce_interval[1],
+                )
+            )
+
+    @pytest.mark.parametrize("absent_floor", [-0.1, 1.0, None])
+    def test_precursor_pair_loss_rejects_invalid_absent_floor(self, absent_floor):
+        with pytest.raises(ValueError, match="precursor_pair_absent_intensity_floor"):
+            validate_sampler_config(
+                _base_config(
+                    precursor_pair_loss_weight=0.1,
+                    precursor_pair_absent_intensity_floor=absent_floor,
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "tolerance",
+        [{}, {"rel": 1.0e-5}, {"rel": 0.0, "min_mz": 200.0}],
+    )
+    def test_precursor_pair_loss_rejects_invalid_tolerance(self, tolerance):
+        with pytest.raises(ValueError, match="tolerance"):
+            validate_sampler_config(
+                _base_config(
+                    precursor_pair_loss_weight=0.1,
                     inst_type_loss_tol={"FT": tolerance},
                 )
             )
