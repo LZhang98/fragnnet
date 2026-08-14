@@ -1,6 +1,6 @@
 # One-Pass Bond-Break Probability — Direct Fragment Generation Plan
 
-> **Status:** PROPOSED — NOT STARTED &nbsp;·&nbsp; **Updated:** 2026-08-14
+> **Status:** IN PROGRESS — STAGE 1 IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-14
 >
 > Replace fixed-depth D3/D4 fragment enumeration at inference with one molecular
 > encoding pass, independent bond-break probabilities, top-K cut-mask search,
@@ -119,6 +119,53 @@ specified in advance. When `M` is nonempty, track the actual cut count from
 `M XOR flips`; the number of flips is not necessarily the number of broken
 bonds.
 
+#### Why the heap enumeration is exact
+
+The Bernoulli logit is the log-odds of breaking a bond:
+
+```
+l_b = log(p_b / (1 - p_b))
+```
+
+If `l_b > 0`, the MAP decision is broken and changing it to intact changes the
+mask log probability by `-l_b`. If `l_b <= 0`, the MAP decision is intact and
+changing it to broken changes the log probability by `l_b`. In both cases a
+flip subtracts `abs(l_b)`. Independence makes the penalties additive, so every
+mask `C` can be written uniquely as the MAP mask XOR a flip set `S`, with:
+
+```
+log P(C) = log P(M) - sum_{b in S} abs(l_b)
+```
+
+Ranking masks by decreasing probability is therefore the same problem as
+ranking subsets of the sorted nonnegative flip costs
+`d_0 <= d_1 <= ... <= d_(B-1)` by increasing subset sum.
+
+The subset-sum search starts at `{0}`. For a subset whose largest sorted-cost
+position is `i`, it creates two children:
+
+```
+append:   S union {i + 1}
+replace:  (S without {i}) union {i + 1}
+```
+
+This tree contains every nonempty subset exactly once. For any subset with
+largest position `j`, its unique parent is obtained by removing `j` when it
+also contains `j - 1`; otherwise its parent is obtained by replacing `j` with
+`j - 1`. Append increases cost by `d_(i+1)`, and replace increases cost by
+`d_(i+1) - d_i`; both are nonnegative because the costs are sorted.
+
+The min-heap holds the current tree frontier. Since descendants cannot be
+cheaper than their ancestors, removing the cheapest frontier entry yields the
+next globally smallest subset sum and therefore the next globally most
+probable cut mask. An unseen cheaper subset cannot be skipped: an unexpanded
+ancestor on its path would be no more expensive and would already be present
+in the heap.
+
+This guarantee depends on the independent-bond factorization. Pairwise or
+higher-order bond interactions generally make flip penalties non-additive, so
+this subset-sum heap would no longer provide exact probability order.
+
 ## 3. Translate a cut mask into fragments
 
 For every selected mask `C`:
@@ -219,6 +266,12 @@ Recommended inputs are:
 - precursor/adduct type, polarity, collision energy, instrument, and
   fragmentation mode when available.
 
+Represent atom/component and boundary-bond/component membership as sparse index
+pairs and pool with `index_add`; do not materialize a
+`num_components x num_batch_atoms` boolean matrix. When components from several
+cut masks are batched, carry a required component-to-cut-mask group index so
+charge retention is normalized independently inside every cut mask.
+
 The initial categorical output is the cross product of:
 
 - ion mode: CRF and, when enabled, CMF;
@@ -313,10 +366,23 @@ alone can lock into initially incorrect bonds.
 
 ## 8. Implementation stages and verification gates
 
-### Stage 1 — Probability translator, no learned model
+### Stage 1 — Probability translator, no learned model — IMPLEMENTED 2026-08-14
 
 Implement a standalone top-K mask enumerator and mask-to-ion translator using
 provided synthetic bond, atom-charge, and H-transfer logits.
+
+Implemented the model-independent portion in
+`src/fragnnet/frag/bond_mask_generator.py`: lazy exact mask ranking, bounded
+top-K collection, connected-component translation, and truncated fragment
+marginal aggregation. `tests/test_bond_mask_generator.py` verifies the ranking
+against brute force through eight bonds and covers unrestricted cut counts,
+ring cuts, duplicate marginal paths, extreme logits, and input validation.
+Charge retention and H-transfer remain Stage 2/3 work.
+
+Bond endpoints use PyG's `(2, num_bonds)` layout across the learned head and
+translator. The initial mask budget may be extended when high-ranked masks only
+open rings or duplicate previously generated atom subsets, with a separate hard
+enumeration cap.
 
 Verify:
 
@@ -332,6 +398,14 @@ Verify:
 Add the one-pass molecular encoder, endpoint bond baseline, optional line-graph
 bond GNN, and atom charge-affinity head.
 
+**Partial implementation, 2026-08-14:**
+`src/fragnnet/model/bond_fragment_heads.py` now contains the symmetric endpoint
+bond baseline, atom charge-affinity head, differentiable selected-mask
+log-probability evaluation, component charge competition, and component/boundary
+pooling. Charge competition is segmented by cut mask, and all component pooling
+uses sparse membership pairs. Molecular-encoder, dataset, and training-loop
+integration remain.
+
 Verify:
 
 - bond predictions are invariant to endpoint ordering;
@@ -342,6 +416,11 @@ Verify:
 ### Stage 3 — H-transfer / ion-mode head
 
 Add component/complement/boundary pooling and the joint categorical head.
+
+**Partial implementation, 2026-08-14:** the same module contains the joint
+ion-mode/H-transfer head and masked channel normalization. Construction of the
+per-adduct chemical validity mask and exact conversion of valid channels through
+the CRF/CMF formula tables remain.
 
 Verify:
 
