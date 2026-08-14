@@ -1,11 +1,14 @@
 # Dominant-peak outcome decomposition: ranking headroom vs unexplained fragments
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-12
+> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-13
 >
 > Base-peak failure is ~7:1 a ranking problem, not a DAG-coverage problem. At K=1, 36.7% of
 > spectra have the true base peak available in the prediction but ranked below something else,
 > against 5.2% where the DAG cannot reach it at all. Resolves the `min_peak_int` ambiguity left
 > open by [`fragment_intensity_ranking_findings.md`](fragment_intensity_ranking_findings.md).
+>
+> Companion proposed work: the
+> [ion × collision-energy matrix experiment plan](../plans/ion_collision_energy_matrix_experiment_plan.md).
 
 **Date:** 2026-08-12
 **Script:** `scripts/eval/dominant_peak_diagnostic.py`
@@ -60,7 +63,7 @@ correction moves 0.8 pp at K=1 and 5.1 pp at K=10 out of `no_dag` and into `zero
 
 At K=1 the model headroom (`under_ranked` + `zero_pred` = 37.5%) exceeds the DAG headroom (5.2%) by
 **7.2×**. The DAG reaches the true base peak in **94.8%** of spectra; the model ranks it #1 in only
-**61.0%** of those.
+**60.4%** of those.
 
 **The hit rate does not improve with more room.** As K goes 1 → 10, DAG coverage falls 94.8% → 82.9%
 while the model hit rate stays flat at 0.555–0.601. The model is not exploiting the coverage it
@@ -83,14 +86,15 @@ Of the 35,262 base peaks that are present but out-ranked:
 
 ## It is not global under-fragmentation — it is a low-CE precursor over-call
 
-57.3% of wrong base peaks sit at higher m/z than the true one, which looks like under-fragmentation.
-It is not, on two controls:
+57.3% of all-instrument **under-ranked** base-peak misses sit at higher m/z than the true one, which
+looks like under-fragmentation. It is not, on two controls:
 
 1. **Chance is not 50%.** Only **47.0%** of a spectrum's DAG candidate m/z lie above its true base
    peak (n=4,000 audited), so the unbiased rate is 47%, not 50%.
-2. **The bias is entirely a low-CE effect.** The higher-m/z share of FT misses runs 0.785 (NCE
-   0–20) → 0.626 → 0.559 → 0.520 → 0.513 → 0.510 → **0.491** (NCE 120–200). Above NCE ~80 it is at
-   or below the 47% chance rate.
+2. **The bias is entirely a low-CE effect.** Among under-ranked FT misses, the higher-m/z share runs
+   0.785 (NCE 0–20) → 0.626 → 0.559 → 0.520 → 0.513 → 0.510 → **0.491** (NCE 120–200). Above NCE
+   ~80 it is 0.513, 0.510, and 0.491: approaching the 47.0% candidate-set chance rate, but remaining
+   above it in every quoted bin.
 
 Intensity-weighted mean m/z agrees: predicted minus true is **+26.8 Da (7.6% of the precursor) at
 NCE 0–20** and within ±1.4 Da for every bin above NCE 60. This reproduces the shape of
@@ -99,22 +103,22 @@ already correct; only the *argmax* is biased, and only at low energy.
 
 The mechanism is a precursor default. FT, base peak:
 
-| NCE | true base = precursor | predicted base = precursor | over-call | hit |
-|---|---|---|---|---|
-| 0–20 | 0.712 | 0.827 | **+0.116** | 0.781 |
-| 20–40 | 0.304 | 0.367 | +0.062 | 0.640 |
-| 40–60 | 0.156 | 0.189 | +0.033 | 0.574 |
-| 60–80 | 0.047 | 0.057 | +0.009 | 0.501 |
-| 120–200 | 0.001 | 0.003 | +0.002 | 0.381 |
+| NCE      | true base = precursor | predicted base = precursor | over-call        | hit   |
+| -------- | --------------------- | -------------------------- | ---------------- | ----- |
+| 0–20    | 0.712                 | 0.827                      | **+0.116** | 0.781 |
+| 20–40   | 0.304                 | 0.367                      | +0.062           | 0.640 |
+| 40–60   | 0.156                 | 0.189                      | +0.033           | 0.574 |
+| 60–80   | 0.047                 | 0.057                      | +0.009           | 0.501 |
+| 120–200 | 0.001                 | 0.003                      | +0.002           | 0.381 |
 
 The over-call is roughly a constant **×1.2 multiplicative overshoot** on the precursor at every
 energy; it is large in absolute terms only where the base rate is large. Conditioning on it splits
 the low-CE performance completely:
 
-| NCE 0–20 | hit | n |
-|---|---|---|
-| true base peak **is** the precursor | **0.951** | 7,078 |
-| true base peak is **not** the precursor | **0.362** | 2,869 |
+| NCE 0–20                                    | hit             | n     |
+| -------------------------------------------- | --------------- | ----- |
+| true base peak**is** the precursor     | **0.951** | 7,078 |
+| true base peak is**not** the precursor | **0.362** | 2,869 |
 
 **The model is playing the population prior "the precursor survives at low CE".** That is right 71%
 of the time and it collects nearly all of it (95.1%); it fails two thirds of the remainder.
@@ -130,11 +134,11 @@ selected only by calibration-half cosine.
 
 Held-out evaluation half (n=4,935):
 
-| precursor log-bias | precursor-winner hit | non-precursor-winner hit | overall base hit | precursor calibration gap | mean m/z error (Da) | cosine |
-|---:|---:|---:|---:|---:|---:|---:|
-| **0.0** | **0.953** | 0.376 | **0.777** | +0.120 | +3.21 | **0.878** |
-| 0.2 | 0.925 | 0.422 | 0.772 | +0.081 | -0.48 | 0.877 |
-| 0.6 | 0.846 | 0.503 | 0.742 | -0.005 | -7.94 | 0.863 |
+| precursor log-bias | precursor-winner hit | non-precursor-winner hit | overall base hit | precursor calibration gap | mean m/z error (Da) |          cosine |
+| -----------------: | -------------------: | -----------------------: | ---------------: | ------------------------: | ------------------: | --------------: |
+|      **0.0** |      **0.953** |                    0.376 |  **0.777** |                    +0.120 |               +3.21 | **0.878** |
+|                0.2 |                0.925 |                    0.422 |            0.772 |                    +0.081 |               -0.48 |           0.877 |
+|                0.6 |                0.846 |                    0.503 |            0.742 |                    -0.005 |               -7.94 |           0.863 |
 
 Calibration cosine selected **`b = 0.0`**. A bias large enough to close the precursor-frequency
 gap improves the non-precursor minority only by sacrificing correctly predicted precursor winners,
@@ -235,6 +239,13 @@ hiding a large pool of DAG-covered-but-discarded dominant peaks.
    precursor-versus-supported-contender target instead.
 4. **Do not spend on DAG expansion for the base peak.** 5.2% at K=1 is the entire available prize,
    and it is concentrated in benzopyrans/coumarins/isoflavonoids and NCE > 100.
+
+## Companion experiment plan
+
+The proposed ion × collision-energy matrix work lives in
+[`ion_collision_energy_matrix_experiment_plan.md`](../plans/ion_collision_energy_matrix_experiment_plan.md).
+V1 keeps training sparse and uses the matrix as its diagnostic contract; V2 joint multi-CE decoding
+is gated on a positive matched V1 result.
 
 ## Caveats
 

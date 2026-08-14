@@ -81,6 +81,30 @@ is ±0.015 Da rather than literal 20 ppm; at m/z 100 this is equivalent to 150 p
 therefore validates use of FraGNNet's established evaluation contract, but should not be described
 as a simple 20 ppm result.
 
+### Human review after instrument-tolerance filtering
+
+The repository's existing suspicious-spectrum detector was run on all 434,917 spectra after
+FraGNNet instrument-tolerance subformula filtering. Empty filtered spectra were retained for this
+step so the detector could flag them directly.
+
+The detector wrote **4,007 candidates (0.921%)** to its audit CSV. Its D3/D4 weighted-recall gate
+marked 599 soft-only candidates as sufficiently DAG-explainable and omitted them from visual
+review, leaving **3,408 spectra (0.784%)** for human review.
+
+| Precursor | Instrument | Detector candidates | Human-review queue after DAG gate |
+|---|---:|---:|---:|
+| `[M+H]+` | FT | 2,278 | 1,942 (0.678%) |
+| `[M+H]+` | QTOF | 65 | 12 (0.049%) |
+| `[M-H]-` | FT | 1,638 | 1,443 (1.188%) |
+| `[M-H]-` | QTOF | 26 | 11 (0.458%) |
+| **All** | **FT + QTOF** | **4,007** | **3,408 (0.784%)** |
+
+Among the 3,408 ungated candidates, the most frequent reasons were
+`single_peak_dominates` (3,059), `substantial_uwpr_contaminant_only_intensity` (198),
+`duplicate_spectrum_structure_ambiguity` (113), `substantial_cross_ce_orphan_intensity` (23),
+and `empty_spectrum` (18). Reasons are not mutually exclusive. The review score is triage, not an
+automatic exclusion decision.
+
 ## Conclusion
 
 Use of 20 ppm peak merging is supported for both FT and QTOF in NIST20-HR. The 5 ppm
@@ -183,6 +207,29 @@ python preproc_scripts/clean_spectra.py \
   --drop-empty-spectra
 ```
 
+Human-review queue after instrument-tolerance filtering. This filtering run deliberately omits
+`--drop-empty-spectra` so the review detector sees empty results:
+
+```bash
+python preproc_scripts/clean_spectra.py \
+  --spec-fp data/proc/nist20/spec_df.pkl \
+  --mol-fp data/proc/nist20/mol_df.pkl \
+  --output-fp /tmp/nist20hr_mh_ft_qtof_inst_tol_filtered.pkl \
+  --stats-fp /tmp/nist20hr_mh_ft_qtof_inst_tol_filtered_stats.json \
+  --skip-unsupported-formulas \
+  --dsets nist20_hr \
+  --precursor-types "[M+H]+" "[M-H]-" \
+  --instrument-types FT QTOF \
+  --merge-peaks --merge-ppm 20 \
+  --filter-subformula-peaks --subformula-inst-tol
+
+python scripts/eval/nist_bad_data_review.py \
+  --spec_fp /tmp/nist20hr_mh_ft_qtof_inst_tol_filtered.pkl \
+  --mol_fp data/proc/nist20/mol_df.pkl \
+  --dsets nist20_hr \
+  --out_csv /tmp/nist20hr_mh_ft_qtof_inst_tol_human_review.csv
+```
+
 DAG coverage summary (uses the existing oracle output and counts missing DAG files as zero):
 
 - Oracle input: `data/eval/oracle_cos_nist20_default/oracle_cos_default.csv`
@@ -194,3 +241,5 @@ NIST20-HR-only reports:
 - `/tmp/nist20hr_mh_ft_qtof_cleanup_stats.json`
 - `/tmp/nist20hr_mh_ft_qtof_merge_stats.json`
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_stats.json`
+- `/tmp/nist20hr_mh_ft_qtof_inst_tol_filtered_stats.json`
+- `/tmp/nist20hr_mh_ft_qtof_inst_tol_human_review.csv`
