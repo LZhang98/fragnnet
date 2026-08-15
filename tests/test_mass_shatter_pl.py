@@ -12,7 +12,7 @@ from fragnnet.pl_model import MassShatterPL, SpectrumPL
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
-def _build_pl() -> tuple[MassShatterPL, dict]:
+def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
     template_path = Path(__file__).parents[1] / "config" / "template.yml"
     with template_path.open() as template_file:
         config = yaml.safe_load(template_file)
@@ -25,6 +25,7 @@ def _build_pl() -> tuple[MassShatterPL, dict]:
         mass_shatter_max_masks=2,
         mass_shatter_max_h_transfer=1,
     )
+    config.update(config_overrides)
     return MassShatterPL(**config), config
 
 
@@ -86,3 +87,23 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])
     assert actual["selected_mask_count"].tolist() == [2.0]
     assert actual["component_pathway_count"].tolist() == [4.0]
+
+
+def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
+    model, _ = _build_pl(auxiliary_scores=["wrecall", "wprecision"])
+
+    actual = model.metric_fn(
+        true_mzs=th.tensor([100.0, 200.0, 400.0]),
+        true_ints=th.tensor([0.6, 0.4, 1.0]),
+        true_batch_idxs=th.tensor([0, 0, 1]),
+        pred_mzs=th.tensor([100.0, 400.0, 500.0]),
+        pred_ints=th.tensor([0.7, 0.8, 0.2]),
+        pred_batch_idxs=th.tensor([0, 1, 1]),
+        true_prec_mzs=th.tensor([600.0, 600.0]),
+        split="val",
+    )
+
+    assert th.isfinite(actual["wrecall"]).all()
+    assert th.isfinite(actual["wprecision"]).all()
+    assert actual["wrecall"].tolist() == pytest.approx([0.6, 1.0])
+    assert actual["wprecision"].tolist() == pytest.approx([0.7, 0.8])

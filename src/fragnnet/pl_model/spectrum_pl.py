@@ -707,10 +707,10 @@ class SpectrumPL(L.LightningModule):
 
             if compute_match_mzs:
                 batch_true_ints = ragged_to_batch(
-                    true_ints, true_batch_idxs, pad_value=float("inf")
+                    true_ints, true_batch_idxs, pad_value=0
                 )
                 batch_pred_ints = ragged_to_batch(
-                    pred_ints, pred_batch_idxs, pad_value=float("inf")
+                    pred_ints, pred_batch_idxs, pad_value=0
                 )
                 batch_true_mzs = ragged_to_batch(true_mzs, true_batch_idxs, pad_value=float("inf"))
                 batch_pred_mzs = ragged_to_batch(pred_mzs, pred_batch_idxs, pad_value=float("inf"))
