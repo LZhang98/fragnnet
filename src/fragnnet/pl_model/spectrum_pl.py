@@ -181,9 +181,7 @@ def select_context_ce_values(
         )
         ce_by_key[ce_key] = mean_values
     inst_idxs = batch["spec_inst_type"].reshape(-1)
-    ce_values = ce_by_key[next(iter(ce_by_key))].new_full(
-        (batch_size,), float("nan")
-    )
+    ce_values = ce_by_key[next(iter(ce_by_key))].new_full((batch_size,), float("nan"))
     for inst_idx, inst_type in enumerate(sorted(inst_types)):
         ce_key = ce_key_by_inst[inst_type]
         ce_values[inst_idxs == inst_idx] = ce_by_key[ce_key][inst_idxs == inst_idx]
@@ -706,12 +704,8 @@ class SpectrumPL(L.LightningModule):
                 sqrt_batched_pred_ints_r = get_ints_transform_func("sqrt")(batched_pred_ints_r)
 
             if compute_match_mzs:
-                batch_true_ints = ragged_to_batch(
-                    true_ints, true_batch_idxs, pad_value=0
-                )
-                batch_pred_ints = ragged_to_batch(
-                    pred_ints, pred_batch_idxs, pad_value=0
-                )
+                batch_true_ints = ragged_to_batch(true_ints, true_batch_idxs, pad_value=0)
+                batch_pred_ints = ragged_to_batch(pred_ints, pred_batch_idxs, pad_value=0)
                 batch_true_mzs = ragged_to_batch(true_mzs, true_batch_idxs, pad_value=float("inf"))
                 batch_pred_mzs = ragged_to_batch(pred_mzs, pred_batch_idxs, pad_value=float("inf"))
                 batch_match_mask = calculate_match_mzs(
