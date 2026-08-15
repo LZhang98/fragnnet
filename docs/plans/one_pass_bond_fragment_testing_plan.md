@@ -23,7 +23,7 @@ comparisons, invariants, gradients, and integration behavior are stronger gates.
 
 As of 2026-08-14:
 
-- full repository suite: 2,000 passed, 14 skipped, 2 expected failures;
+- full repository suite: 2,010 passed, 14 skipped, 2 expected failures;
 - focused bond-fragment suite: 58 passed;
 - statement coverage: mask generator 98%, neural heads 82%, combined 89%;
 - branch coverage: mask generator 96%, neural heads 74%, combined 84%;
@@ -32,6 +32,16 @@ As of 2026-08-14:
   completed the core sparse operations in approximately 0.06 seconds;
 - a 100-bond, 500-mask generation smoke test completed in approximately
   0.075 seconds.
+- MASShatter's two-molecule forward conserves selected probability plus OOS
+  probability per molecule and backpropagates into the precursor encoder, bond,
+  charge, ion/H, and context heads;
+- the production training entry point completed a one-batch CPU epoch with a
+  finite, nonzero in-set sparse cross-entropy loss after forced single-cut
+  exploration was enabled;
+- a deterministic 30-update fixed-batch overfit reduced sparse CE from 6.49 to
+  -0.81 (the Gaussian density objective can be negative);
+- training diagnostics now report target candidate weighted recall, retained
+  exact-mask probability, actual selected-mask count, and component pathways.
 
 Timing results are local observations, not portable pass/fail thresholds.
 

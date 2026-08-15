@@ -297,6 +297,25 @@ def pool_boundary_bond_embeddings(
     )
 
 
+def pool_complement_embeddings(
+    atom_embeddings: th.Tensor,
+    complement_atom_indices: th.Tensor,
+    component_indices: th.Tensor,
+    *,
+    num_components: int,
+    reduction: Literal["sum", "mean"] = "mean",
+) -> th.Tensor:
+    """Pool atoms outside each component, allowing an empty precursor complement."""
+    return _pool_indexed_embeddings(
+        atom_embeddings,
+        complement_atom_indices,
+        component_indices,
+        num_components=num_components,
+        reduction=reduction,
+        require_nonempty=False,
+    )
+
+
 def _segment_logsumexp(
     values: th.Tensor,
     segment_indices: th.Tensor,

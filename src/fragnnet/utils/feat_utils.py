@@ -146,9 +146,11 @@ class MolGraph:
                 atom_feat.extend(fn(atom))
             atom_feats.append(atom_feat)
 
-        atom_feats = np.array(atom_feats)
-        bond_feats = np.array(bond_feats)
-        bond_tuples = np.array(bond_tuples)
+        atom_feats = np.asarray(atom_feats).reshape(
+            len(atom_feats), self.num_atom_feats - self.pe_embed_k
+        )
+        bond_feats = np.asarray(bond_feats).reshape(len(bond_feats), self.num_bond_feats)
+        bond_tuples = np.asarray(bond_tuples, dtype=np.int64).reshape(-1, 2)
 
         # Add doubles
         if bigraph:
@@ -210,6 +212,32 @@ class MolGraph:
             x=th.from_numpy(atom_feats).float(),
             edge_index=th.from_numpy(bond_inds).long().transpose(1, 0),
             edge_attr=th.from_numpy(bond_feats).float(),
+        )
+
+        # Keep one entry per chemical bond alongside the possibly bidirectional
+        # message-passing edges. PyG increments ``*_index`` attributes by the
+        # atom offset when batching, so these endpoints remain valid globally.
+        num_chemical_bonds = mol.GetNumBonds()
+        g.chemical_bond_index = g.edge_index[:, :num_chemical_bonds].clone()
+        g.chemical_bond_attr = g.edge_attr[:num_chemical_bonds].clone()
+        g.atom_atomic_numbers = th.tensor(
+            [atom.GetAtomicNum() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        g.atom_hydrogen_counts = th.tensor(
+            [atom.GetTotalNumHs() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        g.atom_formal_charges = th.tensor(
+            [atom.GetFormalCharge() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        g.atom_monoisotopic_masses = th.tensor(
+            [
+                Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atom.GetAtomicNum())
+                for atom in mol.GetAtoms()
+            ],
+            dtype=th.float64,
         )
 
         if self.pe_embed_k > 0:

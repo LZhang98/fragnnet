@@ -1,6 +1,6 @@
 # MASShatter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IN PROGRESS — STAGE 1 IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-14
+> **Status:** IN PROGRESS — FIRST TRAINABLE SLICE IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-14
 >
 > Replace fixed-depth D3/D4 fragment enumeration at inference with one molecular
 > encoding pass, independent bond-break probabilities, top-K cut-mask search,
@@ -444,13 +444,16 @@ Verify:
 Add the one-pass molecular encoder, endpoint bond baseline, optional line-graph
 bond GNN, and atom charge-affinity head.
 
-**Partial implementation, 2026-08-14:**
+**Initial integration implemented, 2026-08-14:**
 `src/fragnnet/model/bond_fragment_heads.py` now contains the symmetric endpoint
 bond baseline, atom charge-affinity head, differentiable selected-mask
 log-probability evaluation, component charge competition, and component/boundary
 pooling. Charge competition is segmented by cut mask, and all component pooling
-uses sparse membership pairs. Molecular-encoder, dataset, and training-loop
-integration remain.
+uses sparse membership pairs. `MassShatterModel` reuses FraGNNet's molecular GNN
+as an unpooled `precursor_encoder`; molecular PyG graphs now carry canonical
+chemical bonds and atom chemistry fields. `MassShatterPL` uses `SpecMolDataset`
+and `SpectrumPL` rather than the D3/D4 dataset and training wrapper. The optional
+line-graph bond GNN remains an ablation.
 
 Verify:
 
@@ -463,10 +466,11 @@ Verify:
 
 Add component/complement/boundary pooling and the joint categorical head.
 
-**Partial implementation, 2026-08-14:** the same module contains the joint
-ion-mode/H-transfer head and masked channel normalization. Construction of the
-per-adduct chemical validity mask and exact conversion of valid channels through
-the CRF/CMF formula tables remain.
+**Initial integration implemented, 2026-08-14:** the same module contains the
+joint ion-mode/H-transfer head and masked channel normalization. MASShatter now
+constructs per-adduct chemical-validity masks and monoisotopic CRF/CMF masses,
+including explicit H-transfer channels. Isotope envelopes remain out of scope
+for the first training slice.
 
 Verify:
 
@@ -481,6 +485,23 @@ Verify:
 Return a flat fragment-ion batch containing atom masks, cut-mask provenance,
 formula/mass, generation log probability, charge probability, ion-mode/H-transfer
 probability, and combined log probability. Do not require DAG depth or DAG edges.
+
+**Initial integration implemented, 2026-08-14:** sparse mask/component batching
+preserves `(molecule, cut mask, component)` provenance and emits
+`pred_mzs`, `pred_logprobs`, `pred_batch_idxs`, and truncated OOS probability for
+`SpectrumPL`. Training uses the same sparse cross-entropy implementation as
+FraGNNet. Empty and all single-bond masks are forced exploration candidates in
+addition to learned top-K masks, preventing the zero-signal random-initialization
+failure observed with deterministic top-K alone. Consequently, `max_masks` is
+the learned ranking budget; the actual count can be larger by the single-bond
+exploration set and is logged explicitly.
+
+The first production-shaped configuration is
+`config/nist20_merged_inchikey/mass_shatter/s0.yml`: K=100, CRF/CMF channels,
+H-transfer range -4 through +4, and FraGNNet's sparse Gaussian cross-entropy.
+Training logs intensity-weighted candidate recall, retained exact-mask
+probability, selected mask count, and component pathway count so support errors
+can be separated from probability-allocation errors.
 
 Verify at matched candidate budgets against D3 and D4:
 

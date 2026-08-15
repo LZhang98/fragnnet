@@ -187,13 +187,25 @@ ann_params:
 # ============================================================================
 # Model Architecture
 # ============================================================================
-model_type: frag_gnn  # Model type: ["frag_gnn", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
+model_type: frag_gnn  # Model type: ["frag_gnn", "mass_shatter", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
 num_depth: 5  # Maximum fragmentation depth for DAG
 num_hs: 4  # Number of hydrogen transfer options
 num_elements: 17  # Number of elements including H (16 heavy: 13 base + As + B + Hg + Sn + Pb)
 int_embedder: abs-sines  # Integer embedder type: ["linear", "abs-sines", "sinusoidal"]
 int_embedder_tight: False  # Use tight integer range for embeddings
 output_formula_str: False  # Output formula as string (slower but useful for debugging)
+
+# MASShatter: one-pass bond-set fragmentation. Candidate identities are selected
+# on CPU; their probabilities are recomputed from live logits for gradients.
+mass_shatter_max_masks: 100
+mass_shatter_include_single_bond_cuts: True
+mass_shatter_max_h_transfer: 4
+mass_shatter_include_cmf: True
+mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
+mass_shatter_context_dim: 64
+mass_shatter_metadata_embedding_dim: 16
+mass_shatter_head_hidden_dim: 256
+mass_shatter_head_dropout: 0.0
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

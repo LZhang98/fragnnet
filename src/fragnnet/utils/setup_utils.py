@@ -8,6 +8,7 @@ from fragnnet.pl_model import (
     GNNPL,
     MCESPL,
     FraGNNetPL,
+    MassShatterPL,
     NeimsPL,
     PrecursorPL,
     SpectrumMolClipPL,
@@ -28,6 +29,8 @@ def get_model_cls(model_type: str) -> type:
     """
     if model_type in ["frag_gnn", "fraggnet"]:
         model_cls = FraGNNetPL
+    elif model_type == "mass_shatter":
+        model_cls = MassShatterPL
     elif model_type == "neims":
         model_cls = NeimsPL
     elif model_type == "iceberg_gen":
@@ -78,6 +81,7 @@ def get_dataset_cls(model_type: str) -> type:
         "gnn",
         "clip",
         "spec_mol_clip_pretraining",
+        "mass_shatter",
     ]:
         dataset_cls = SpecMolDataset
     elif model_type == "mces_pretraining":
