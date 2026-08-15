@@ -3,7 +3,7 @@
 > **Status:** IN PROGRESS &nbsp;·&nbsp; **Updated:** 2026-08-14
 >
 > This document tracks verification only. Model architecture and probability
-> semantics remain in `directional_bond_break_probability_plan.md`.
+> semantics remain in `masshatter_plan.md`.
 
 ## 1. Scope
 

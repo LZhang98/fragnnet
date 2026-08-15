@@ -1,6 +1,6 @@
 # MASShatter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IN PROGRESS — FIRST TRAINABLE SLICE IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-14
+> **Status:** IN PROGRESS — FIRST TRAINABLE SLICE IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-15
 >
 > Replace fixed-depth D3/D4 fragment enumeration at inference with one molecular
 > encoding pass, independent bond-break probabilities, top-K cut-mask search,
@@ -400,7 +400,59 @@ receive no gradient. A fully latent cold start therefore needs an exploration
 mechanism such as tempered sampling or stochastic masks; deterministic top-K
 alone can lock into initially incorrect bonds.
 
-### 7.2 Loss and evaluation units
+### 7.2 Mixed top-K exploration plan
+
+During training, split the learned mask budget `K` between deterministic
+exploitation and stochastic exploration:
+
+\[
+\mathcal{C}_{train}=
+\operatorname{TopK}_{K_{exploit}}(P_\theta)
+\cup
+\operatorname{Sample}_{K_{explore}}(P_{\theta,T}),
+\qquad K_{exploit}+K_{explore}=K.
+\]
+
+Start with `K_explore = floor(0.25 * K)`. Draw complete masks from the current
+independent Bernoulli bond distribution with proposal temperature `T`; discard
+duplicates of deterministic, sampled, and forced masks. Bound the number of
+sampling attempts, then fill any unoccupied exploration slots with the next
+highest-ranked unseen masks so the learned-mask budget remains fixed. The empty
+mask and all single-bond masks remain forced candidates outside `K`, consistent
+with the current implementation, and the actual total candidate count remains
+logged.
+
+Temperature changes only which masks are proposed. Recompute every retained
+mask's log probability from the original, untempered live logits so downstream
+probabilities preserve their existing meaning and gradients. Mask selection
+remains detached and non-differentiable: this phase broadens candidate support
+but is not policy-gradient RL.
+
+Use mixed selection only for training. Validation, test, and prediction use the
+existing deterministic exact top-K path. Add explicit required configuration
+entries for the exploration-mask count and proposal temperature to the template
+and every MASShatter configuration; do not introduce fallback defaults.
+
+Implement and verify in this order:
+
+1. Add seeded, per-precursor stochastic mask proposals and deterministic
+   deduplication/refill to candidate construction.
+2. Test that the exact exploitation masks are always retained, the learned-mask
+   count is bounded by `K`, forced masks remain present, fixed seeds reproduce
+   training candidates, and evaluation is seed-independent.
+3. Verify that retained mask log probabilities still backpropagate through the
+   original logits and that proposal temperature does not alter those values.
+4. Compare deterministic top-K against mixed top-K at matched actual mask and
+   component budgets. Report candidate peak recall, intensity-weighted recall,
+   cosine/JSS, unique fragments, runtime, memory, and variability across at
+   least three seeds.
+
+Adopt mixed selection only if it improves held-out candidate coverage and final
+spectrum metrics without relying on a larger realized candidate budget. If it
+only increases duplicate or low-value masks, test a diversity-aware proposal
+before considering a sequential or RL policy.
+
+### 7.3 Loss and evaluation units
 
 - Split by molecule or scaffold, never by spectrum alone.
 - Aggregate all latent explanations of the same observed peak with `logsumexp`;
@@ -528,6 +580,9 @@ higher-recall reference, not an inference dependency.
 3. **Independent bonds cannot express concerted chemistry.** Correlated ring
    release and rearrangements may need pairwise factors. Do not add them until
    the independent baseline identifies a measurable failure class.
+   The larger limitation remains that independent bond probabilities cannot learn
+   correlations between cuts; an autoregressive or sequential policy would address
+   that later.
 4. **Static charge sites are an approximation.** Mobile-proton behavior can
    relocate charge after cleavage. Component/complement context in the
    H-transfer head helps, but the atom charge-affinity head may still need a
