@@ -1,4 +1,4 @@
-# One-Pass Bond-Break Probability — Direct Fragment Generation Plan
+# MASShatter — One-Pass Bond-Set Fragmentation Plan
 
 > **Status:** IN PROGRESS — STAGE 1 IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-14
 >
@@ -12,6 +12,11 @@ Predict a break probability for every molecular bond in one model pass and
 translate the highest-probability bond-cut masks directly into a flat set of
 charged fragment-ion candidates. Generation is controlled by probability and a
 candidate budget, not by a fixed fragmentation depth.
+
+The model's canonical public name is **MASShatter**. Code uses
+`MassShatterModel`, `MassShatterPL`, and `model_type: mass_shatter`; generic
+bond-mask and neural-head utilities retain descriptive names because they are
+reusable components rather than the complete model.
 
 ```
 precursor molecular graph
@@ -305,6 +310,47 @@ New-heavy-bond-forming rearrangements remain out of scope. An H-transfer head ca
 change formula/mass, but it cannot make a disconnected atom mask into a product
 that requires a new C-C, C-N, or C-O bond.
 
+### 5.1 H-transfer probability normalization
+
+For every charged component, the head returns logits with shape:
+
+```
+(num_components, num_ion_modes, 2 * max_h_transfer + 1)
+```
+
+With CRF and CMF enabled and `max_h_transfer = 4`, this gives 18 raw channels:
+the cross product of two ion modes and `delta_H = [-4, ..., 0, ..., +4]`.
+`delta_H = 0` is the no-transfer outcome, so a separate binary H-transfer gate
+is unnecessary.
+
+Apply the chemical-validity mask before flattening the mode/H axes and taking
+one softmax per component:
+
+```
+log P(mode, delta_H | F, C, charged, context)
+  = log_softmax(mask_invalid(joint_logits))[mode, delta_H]
+```
+
+Thus the probabilities of all valid `(mode, delta_H)` outcomes sum to one for
+each charged component. Do not normalize H-transfer independently of ion mode
+or multiply it by a second transfer/no-transfer probability.
+
+The probability of one complete latent pathway is:
+
+```
+log P(path)
+  = log P(C)
+  + log P_charge(F | C, precursor_type)
+  + log P(mode, delta_H | F, C, charged, context)
+```
+
+For example, a cut-mask probability of `0.08`, charge-retention probability of
+`0.70`, and conditional `(CRF, delta_H=+1)` probability of `0.25` give a pathway
+probability of `0.014`. If another retained cut mask produces the same final ion
+with probability `0.006`, its marginal ion probability is `0.020`. Perform this
+sum with `logsumexp`, as specified below, rather than adding raw probabilities
+in the implementation.
+
 ## 6. Complete fragment-ion probability
 
 For ion candidate `(F, mode, delta_H)`, marginalize over retained cut masks:
@@ -393,7 +439,7 @@ Verify:
 - stable behavior for probabilities near 0 and 1;
 - CPU determinism and bounded memory at `K=500`.
 
-### Stage 2 — Bond and charge heads
+### Stage 2 — MASShatter bond and charge heads
 
 Add the one-pass molecular encoder, endpoint bond baseline, optional line-graph
 bond GNN, and atom charge-affinity head.
