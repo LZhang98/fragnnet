@@ -96,6 +96,15 @@ This project supports dynamic batching to avoid OOM and a formula-based hard-neg
 - `dynamic_batch_sampler_max` (int): maximum number of nodes/edges per batch used by dynamic samplers.
 - `formula_hard_negative_min_specs_per_formula` (int): minimum spectra per formula required for formula-based grouping; formulas with fewer spectra are skipped.
 
+### MASShatter bond-size curriculum
+
+MASShatter can train first on smaller precursor molecules, ranked by heavy-bond count,
+then linearly expand the eligible training set. Validation always uses the full split.
+Set `bond_size_curriculum: True`, `bond_size_curriculum_start_fraction: 0.25`, and
+`bond_size_curriculum_epochs: 20` to use the recommended 25%-to-full schedule. It
+requires fixed-size, non-grouped training batches and must reach the full dataset
+before `max_epochs`.
+
 Notes:
 - `FormulaHardNegativeDynamicBatchSampler` groups spectra by molecular formula then builds dynamic batches that respect the chosen `limited_by` metric (nodes or edges). See `FormulaHardNegativeDynamicBatchSampler` and `SpecMolFragDynamicBatchSampler` in [src/fragnnet/dataset/data_sampler.py](src/fragnnet/dataset/data_sampler.py).
 - The runner enforces valid modes (`frag_node` or `frag_edge`). See the config checks in [src/fragnnet/runner.py](src/fragnnet/runner.py).

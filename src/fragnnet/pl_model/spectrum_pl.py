@@ -2302,10 +2302,17 @@ class SpectrumPL(L.LightningModule):
             if hasattr(obj, "generator"):
                 obj.generator = generator
 
-        if self.hparams.dag_size_curriculum or self.hparams.batch_sampler_type == "ce_context":
-            # Lightning advances only dataloader.sampler and batch_sampler.sampler;
-            # curriculum and CE-window state belong to the outer batch sampler.
-            batch_sampler.set_epoch(seed)
+        if (
+            self.hparams.dag_size_curriculum
+            or self.hparams.bond_size_curriculum
+            or self.hparams.batch_sampler_type == "ce_context"
+        ):
+            # Advance the sampler owning curriculum or CE-window state before Lightning
+            # reads the epoch's batch count.
+            epoch_sampler = batch_sampler if hasattr(batch_sampler, "set_epoch") else inner
+            if epoch_sampler is None or not hasattr(epoch_sampler, "set_epoch"):
+                raise RuntimeError("curriculum sampler does not support set_epoch")
+            epoch_sampler.set_epoch(seed)
 
             # Lightning caches these before set_epoch and this hook run, including on resume.
             num_batches = len(train_dataloader)

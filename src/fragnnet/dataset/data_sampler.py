@@ -39,6 +39,81 @@ def validate_dag_size_curriculum(start_fraction: float, curriculum_epochs: int) 
         raise ValueError("dag_size_curriculum_epochs must be a positive integer")
 
 
+def validate_bond_size_curriculum(start_fraction: float, curriculum_epochs: int) -> None:
+    """Validate precursor-bond-count curriculum schedule values."""
+    if (
+        isinstance(start_fraction, bool)
+        or not isinstance(start_fraction, (int, float))
+        or not 0 < start_fraction <= 1
+    ):
+        raise ValueError("bond_size_curriculum_start_fraction must be in (0, 1]")
+    if (
+        isinstance(curriculum_epochs, bool)
+        or not isinstance(curriculum_epochs, int)
+        or curriculum_epochs <= 0
+    ):
+        raise ValueError("bond_size_curriculum_epochs must be a positive integer")
+
+
+class BondCountCurriculumSampler(Sampler[int]):
+    """Randomly sample the smallest precursor molecules first by heavy-bond count."""
+
+    def __init__(
+        self,
+        data_source,
+        start_fraction: float = 0.25,
+        curriculum_epochs: int = 20,
+        generator: th.Generator | None = None,
+    ) -> None:
+        validate_bond_size_curriculum(start_fraction, curriculum_epochs)
+        if not hasattr(data_source, "spec_df") or not hasattr(data_source, "mol_df"):
+            raise TypeError(
+                "BondCountCurriculumSampler requires spec_df and mol_df on the dataset"
+            )
+
+        mol_ids = data_source.spec_df["mol_id"].to_numpy()
+        bond_counts = data_source.mol_df.loc[mol_ids, "num_bonds"].to_numpy()
+        if not np.isfinite(bond_counts).all():
+            raise ValueError("bond-size curriculum requires finite mol_df.num_bonds values")
+
+        self.data_source = data_source
+        self.bond_counts = np.asarray(bond_counts, dtype=np.int32)
+        self.start_fraction = start_fraction
+        self.curriculum_epochs = curriculum_epochs
+        self.generator = generator
+        self._epoch = 0
+
+    def _bond_count_limit(self) -> int | None:
+        if len(self.bond_counts) == 0:
+            return None
+        progress = min(self._epoch / self.curriculum_epochs, 1.0)
+        fraction = self.start_fraction + (1.0 - self.start_fraction) * progress
+        target_count = min(
+            len(self.bond_counts),
+            max(1, math.ceil(len(self.bond_counts) * fraction)),
+        )
+        return int(np.partition(self.bond_counts, target_count - 1)[target_count - 1])
+
+    def _eligible_indices(self) -> np.ndarray:
+        bond_count_limit = self._bond_count_limit()
+        if bond_count_limit is None:
+            return np.empty(0, dtype=np.int64)
+        return np.flatnonzero(self.bond_counts <= bond_count_limit)
+
+    def set_epoch(self, epoch: int) -> None:
+        self._epoch = epoch
+
+    def __iter__(self) -> Iterator[int]:
+        eligible_indices = self._eligible_indices()
+        if len(eligible_indices) == 0:
+            return iter(())
+        order = th.randperm(len(eligible_indices), generator=self.generator).tolist()
+        return iter(eligible_indices[order].tolist())
+
+    def __len__(self) -> int:
+        return len(self._eligible_indices())
+
+
 #####################################################
 # Batch Samplers
 #####################################################

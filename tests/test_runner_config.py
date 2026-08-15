@@ -23,9 +23,14 @@ def _base_config(**overrides) -> dict:
         "dag_size_curriculum": False,
         "dag_size_curriculum_start_fraction": 0.25,
         "dag_size_curriculum_epochs": 10,
+        "bond_size_curriculum": False,
+        "bond_size_curriculum_start_fraction": 0.25,
+        "bond_size_curriculum_epochs": 20,
         "max_epochs": 100,
+        "group_sampler": False,
         "simple_group_sampler": False,
         "simple_group_sampler_type": "adduct_inst_type",
+        "formula_prec_type_group_sampler": False,
         "ce_pair_loss_weight": 0.0,
         "ce_pair_min_endpoint_confidence": None,
         "ce_pair_min_endpoint_reliability": None,
@@ -362,6 +367,28 @@ class TestValidateSamplerConfig:
                 _base_config(
                     dag_size_curriculum=True,
                     dag_size_curriculum_epochs=curriculum_epochs,
+                )
+            )
+
+    def test_bond_size_curriculum_valid_config_passes(self):
+        validate_sampler_config(
+            _base_config(
+                dynamic_batch_sampler=False,
+                bond_size_curriculum=True,
+            )
+        )
+
+    def test_bond_size_curriculum_rejects_dynamic_batching(self):
+        with pytest.raises(ValueError, match="requires fixed-size batching"):
+            validate_sampler_config(_base_config(bond_size_curriculum=True))
+
+    def test_bond_size_curriculum_rejects_formula_prec_type_group_sampler(self):
+        with pytest.raises(ValueError, match="does not support group samplers"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=False,
+                    bond_size_curriculum=True,
+                    formula_prec_type_group_sampler=True,
                 )
             )
 

@@ -2,6 +2,7 @@ import importlib
 
 from .base_dataset import BaseDataset
 from .data_sampler import (
+    BondCountCurriculumSampler,
     CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
@@ -24,6 +25,7 @@ def __getattr__(name: str):
 
 __all__ = [
     "BaseDataset",
+    "BondCountCurriculumSampler",
     "CEContextDynamicBatchSampler",
     "DualGroupDynamicBatchSampler",
     "FormulaPrecTypeGroupSampler",

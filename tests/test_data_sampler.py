@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, RandomSampler
 
 # Load data_sampler directly to avoid package-level import side-effects
 from fragnnet.dataset import (
+    BondCountCurriculumSampler,
     CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
@@ -66,6 +67,17 @@ class FakeDataset:
     def __getitem__(self, idx):
         nodes, edges = self.sizes[idx]
         return {"frag_pyg": SimpleNamespace(num_nodes=nodes, num_edges=edges)}
+
+
+class BondCountDataset:
+    """Minimal dataset exposing the tabular fields used by the bond curriculum."""
+
+    def __init__(self, bond_counts):
+        self.spec_df = pd.DataFrame({"mol_id": range(len(bond_counts))})
+        self.mol_df = pd.DataFrame({"num_bonds": bond_counts}, index=range(len(bond_counts)))
+
+    def __len__(self):
+        return len(self.spec_df)
 
 
 class DummyDataset:
@@ -379,6 +391,45 @@ class TestCEContextDynamicBatchSampler:
                 max_num=10,
                 ce_key_by_inst=self.CE_KEY_BY_INST,
             )
+
+# Tests for BondCountCurriculumSampler
+# =========================================================================
+
+
+class TestBondCountCurriculumSampler:
+    def test_progressively_adds_larger_molecules(self):
+        sampler = BondCountCurriculumSampler(
+            BondCountDataset([2, 3, 5, 8]),
+            start_fraction=0.25,
+            curriculum_epochs=2,
+            generator=th.Generator().manual_seed(1),
+        )
+
+        assert set(sampler) == {0}
+        sampler.set_epoch(1)
+        assert set(sampler) == {0, 1, 2}
+        sampler.set_epoch(2)
+        assert set(sampler) == {0, 1, 2, 3}
+
+    def test_includes_tied_bond_counts(self):
+        sampler = BondCountCurriculumSampler(
+            BondCountDataset([2, 2, 3, 8]),
+            start_fraction=0.25,
+            curriculum_epochs=2,
+        )
+
+        assert set(sampler) == {0, 1}
+        assert len(sampler) == 2
+
+    @pytest.mark.parametrize("start_fraction", [0, -0.1, 1.1, True, None])
+    def test_rejects_invalid_start_fraction(self, start_fraction):
+        with pytest.raises(ValueError, match="bond_size_curriculum_start_fraction"):
+            BondCountCurriculumSampler(
+                BondCountDataset([2]),
+                start_fraction=start_fraction,
+                curriculum_epochs=2,
+            )
+
 
 # Tests for SpecMolFragDynamicBatchSampler
 # ============================================================================

@@ -18,6 +18,7 @@ from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
+    BondCountCurriculumSampler,
     CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
@@ -25,7 +26,10 @@ from fragnnet.dataset import (
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
-from fragnnet.dataset.data_sampler import validate_dag_size_curriculum
+from fragnnet.dataset.data_sampler import (
+    validate_bond_size_curriculum,
+    validate_dag_size_curriculum,
+)
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
@@ -173,6 +177,13 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 sample_k=config_d["formula_prec_type_group_sampler_max_per_group"],
                 key_formula="formula",
                 key_adduct="prec_type",
+                generator=generator,
+            )
+        elif config_d["bond_size_curriculum"]:
+            sampler = BondCountCurriculumSampler(
+                ds,
+                start_fraction=config_d["bond_size_curriculum_start_fraction"],
+                curriculum_epochs=config_d["bond_size_curriculum_epochs"],
                 generator=generator,
             )
         else:
@@ -504,6 +515,25 @@ def validate_sampler_config(config_d: dict) -> None:
             and config_d["dag_size_curriculum_epochs"] >= config_d["max_epochs"]
         ):
             raise ValueError("dag_size_curriculum_epochs must be less than max_epochs")
+
+    if config_d["bond_size_curriculum"]:
+        if config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
+            raise ValueError("Bond-size curriculum requires fixed-size batching")
+        if (
+            config_d["group_sampler"]
+            or config_d["simple_group_sampler"]
+            or config_d["formula_prec_type_group_sampler"]
+        ):
+            raise ValueError("Bond-size curriculum does not support group samplers")
+        validate_bond_size_curriculum(
+            config_d["bond_size_curriculum_start_fraction"],
+            config_d["bond_size_curriculum_epochs"],
+        )
+        if (
+            config_d["max_epochs"] > 0
+            and config_d["bond_size_curriculum_epochs"] >= config_d["max_epochs"]
+        ):
+            raise ValueError("bond_size_curriculum_epochs must be less than max_epochs")
 
     if config_d["dual_group_dynamic_batch_sampler"]:
         if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
