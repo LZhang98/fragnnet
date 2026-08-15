@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 import torch as th
@@ -181,6 +182,8 @@ class MassShatterModel(nn.Module):
         ace_mean: float,
         ace_std: float,
         max_masks: int,
+        explore_masks: int,
+        exploration_temperature: float,
         include_single_bond_cuts: bool,
         max_h_transfer: int,
         include_cmf: bool,
@@ -189,6 +192,16 @@ class MassShatterModel(nn.Module):
         super().__init__()
         if max_masks <= 0 or max_h_transfer < 0:
             raise ValueError("max_masks must be positive and max_h_transfer nonnegative")
+        if explore_masks < 0 or explore_masks >= max_masks:
+            raise ValueError(
+                "explore_masks must be nonnegative and smaller than max_masks, "
+                f"got {explore_masks} and {max_masks}"
+            )
+        if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
+            raise ValueError(
+                "exploration_temperature must be positive, "
+                f"got {exploration_temperature}"
+            )
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
 
@@ -199,6 +212,8 @@ class MassShatterModel(nn.Module):
         if missing_precursors:
             raise ValueError(f"unsupported precursor types: {sorted(missing_precursors)}")
         self.max_masks = max_masks
+        self.explore_masks = explore_masks
+        self.exploration_temperature = exploration_temperature
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
         self.include_cmf = include_cmf
@@ -467,6 +482,8 @@ class MassShatterModel(nn.Module):
             mol_pyg.batch,
             mol_pyg.ptr,
             max_masks=self.max_masks,
+            explore_masks=self.explore_masks if self.training else 0,
+            exploration_temperature=self.exploration_temperature,
             include_single_bond_cuts=self.include_single_bond_cuts,
         )
         num_components = candidates.num_components

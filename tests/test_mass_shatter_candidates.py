@@ -1,5 +1,6 @@
 """Tests for sparse MASShatter cut-mask/component batching."""
 
+import pytest
 import torch as th
 
 from fragnnet.frag.mass_shatter_candidates import build_mass_shatter_candidates
@@ -13,6 +14,8 @@ def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
         atom_batch_indices=th.tensor([0, 0, 1, 1], dtype=th.long),
         atom_ptr=th.tensor([0, 2, 4], dtype=th.long),
         max_masks=2,
+        explore_masks=0,
+        exploration_temperature=1.0,
         include_single_bond_cuts=True,
     )
 
@@ -39,6 +42,8 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
         atom_batch_indices=th.tensor([0], dtype=th.long),
         atom_ptr=th.tensor([0, 1], dtype=th.long),
         max_masks=100,
+        explore_masks=0,
+        exploration_temperature=1.0,
         include_single_bond_cuts=True,
     )
 
@@ -56,9 +61,76 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
         atom_batch_indices=th.zeros(4, dtype=th.long),
         atom_ptr=th.tensor([0, 4], dtype=th.long),
         max_masks=1,
+        explore_masks=0,
+        exploration_temperature=1.0,
         include_single_bond_cuts=True,
     )
 
     # MAP all-cut mask + forced empty mask + each of the three single cuts.
     assert candidates.mask_log_probabilities.shape[0] == 5
     assert sorted(candidates.component_cut_counts.unique().tolist()) == [0, 1, 3]
+
+
+def test_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
+    kwargs = {
+        "bond_logits": th.tensor([2.0, 0.7, -0.4, -1.3]),
+        "chemical_bond_index": th.tensor(
+            [[0, 1, 2, 3], [1, 2, 3, 4]], dtype=th.long
+        ),
+        "atom_batch_indices": th.zeros(5, dtype=th.long),
+        "atom_ptr": th.tensor([0, 5], dtype=th.long),
+        "max_masks": 4,
+        "explore_masks": 2,
+        "exploration_temperature": 1.0,
+        "include_single_bond_cuts": False,
+    }
+
+    first = build_mass_shatter_candidates(
+        **kwargs,
+        generator=th.Generator().manual_seed(17),
+    )
+    second = build_mass_shatter_candidates(
+        **kwargs,
+        generator=th.Generator().manual_seed(17),
+    )
+
+    # Four learned masks plus the forced empty mask outside the learned budget.
+    assert first.mask_log_probabilities.shape == (5,)
+    assert th.equal(first.mask_log_probabilities, second.mask_log_probabilities)
+
+    logits = kwargs["bond_logits"]
+    expected_map_log_probability = (
+        th.nn.functional.logsigmoid(logits[:2]).sum()
+        + th.nn.functional.logsigmoid(-logits[2:]).sum()
+    )
+    expected_second_log_probability = (
+        th.nn.functional.logsigmoid(logits[:3]).sum()
+        + th.nn.functional.logsigmoid(-logits[3])
+    )
+    assert th.isclose(first.mask_log_probabilities[0], expected_map_log_probability)
+    assert th.isclose(first.mask_log_probabilities[1], expected_second_log_probability)
+    assert first.mask_log_probabilities.unique().numel() == 5
+
+
+def test_mixed_top_k_validates_exploration_parameters() -> None:
+    common_kwargs = {
+        "bond_logits": th.tensor([0.0]),
+        "chemical_bond_index": th.tensor([[0], [1]], dtype=th.long),
+        "atom_batch_indices": th.zeros(2, dtype=th.long),
+        "atom_ptr": th.tensor([0, 2], dtype=th.long),
+        "max_masks": 2,
+        "include_single_bond_cuts": False,
+    }
+
+    with pytest.raises(ValueError, match="explore_masks"):
+        build_mass_shatter_candidates(
+            **common_kwargs,
+            explore_masks=2,
+            exploration_temperature=1.0,
+        )
+    with pytest.raises(ValueError, match="exploration_temperature"):
+        build_mass_shatter_candidates(
+            **common_kwargs,
+            explore_masks=1,
+            exploration_temperature=0.0,
+        )

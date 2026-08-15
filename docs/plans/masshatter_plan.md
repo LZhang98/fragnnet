@@ -402,6 +402,11 @@ alone can lock into initially incorrect bonds.
 
 ### 7.2 Mixed top-K exploration plan
 
+**Implemented 2026-08-15.** MASShatter uses mixed selection only while the model
+is training; validation, test, and prediction retain exact deterministic top-K.
+The template sets `mass_shatter_explore_masks: 0`; mixed selection is opt-in for
+training configurations that explicitly set a positive exploration-mask count.
+
 During training, split the learned mask budget `K` between deterministic
 exploitation and stochastic exploration:
 
@@ -430,8 +435,9 @@ but is not policy-gradient RL.
 
 Use mixed selection only for training. Validation, test, and prediction use the
 existing deterministic exact top-K path. Add explicit required configuration
-entries for the exploration-mask count and proposal temperature to the template
-and every MASShatter configuration; do not introduce fallback defaults.
+entries `mass_shatter_explore_masks` and
+`mass_shatter_exploration_temperature` to the template and every MASShatter
+configuration; do not introduce fallback defaults.
 
 Implement and verify in this order:
 
@@ -451,6 +457,48 @@ Adopt mixed selection only if it improves held-out candidate coverage and final
 spectrum metrics without relying on a larger realized candidate budget. If it
 only increases duplicate or low-value masks, test a diversity-aware proposal
 before considering a sequential or RL policy.
+
+### 7.2.1 Candidate-selection performance plan
+
+**Observed 2026-08-15.** The initial L40S runs report 11--16% GPU utilization
+and 4--22 GiB allocated VRAM. The immediate configuration change doubles the
+physical training batch while preserving the effective batch of 128: use
+`16 * 8` for 256-mask runs and `8 * 16` for the 512-mask control. Selected-mask
+probability scoring is also batched, rather than allocating and scoring one
+GPU boolean mask at a time.
+
+The remaining bottleneck is exact candidate selection: each precursor's live
+bond logits and endpoints are copied to CPU, then Python heap enumeration and
+connected-component translation run independently for every selected mask.
+Do not cache logits or mask probabilities: they change every optimization step
+and must retain their gradient. Optimize the static topology work instead.
+
+1. **Topology cache first.** Cache
+   `(molecule_id, broken_bond_tuple) -> component atom memberships and boundary
+   bond indices` in a bounded LRU cache. Prepopulate the empty and single-bond
+   masks, which are forced candidates on every visit. Cache values remain CPU
+   Python/index data; construct the final sparse device tensors once per batch.
+   Record cache hit rate, entries, and bytes. Validate cached and uncached
+   candidates have identical sparse indices and mask log probabilities.
+2. **Profile before a native implementation.** Measure separate wall time for
+   device-to-host transfer, top-K enumeration, component translation, cache
+   lookup, sparse-tensor construction, forward/backward, and data loading. Run
+   the profile at the production 256 and 512 budgets with the larger batches.
+   Adopt each optimization only if examples/second improves at unchanged mask
+   budget and coverage.
+3. **Native CPU path if topology work remains dominant.** Port the exact
+   heap/subset-sum enumeration and union-find component translation together to
+   a PyTorch C++ extension. This avoids Python loop overhead while preserving
+   the exact independent-Bernoulli ordering. Cython is a viable fallback for
+   the same CPU routines, but it does not integrate device tensors as cleanly
+   and cannot remove the synchronization point.
+4. **GPU path only after the above gate.** A GPU candidate generator requires a
+   custom CUDA/Triton implementation for variable-size K-best subset selection
+   and masked connected components; there is no built-in PyTorch equivalent.
+   Keep the exact CPU path as the reference oracle and require identical masks
+   on small graphs. A tensorized approximate selector is a separate modeling
+   change and must be evaluated for coverage/calibration, not presented as a
+   transparent acceleration.
 
 ### 7.3 Loss and evaluation units
 

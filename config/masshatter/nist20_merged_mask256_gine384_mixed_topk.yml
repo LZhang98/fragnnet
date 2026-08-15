@@ -1,0 +1,105 @@
+wandb_name: nist20_merged_mask256_gine384_mixed_topk
+wandb_group: nist20_mass_shatter_l40s
+wandb_tags:
+  - mass_shatter
+  - vulcan_l40s
+  - masks_256
+  - gine384
+  - mixed_topk
+  - explore_64
+
+seed: 397623
+
+# 1. Keep the data identical to the deterministic top-K baseline.
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  preprocess: True
+mol_params:
+  preprocess: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_ring_size
+    - a_num_hs
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+    - b_ring
+    - b_conj
+
+# 2. Use 192 exact top-ranked masks plus 64 stochastic masks during training.
+# Validation, test, and prediction remain deterministic exact top-K with K=256.
+model_type: mass_shatter
+mol_gnn_type: GINE
+mol_hidden_size: 384
+mol_num_layers: 5
+mol_normalization: batch
+mol_dropout: 0.1
+mass_shatter_max_masks: 256
+mass_shatter_explore_masks: 64
+mass_shatter_exploration_temperature: 1.0
+mass_shatter_include_single_bond_cuts: True
+mass_shatter_max_h_transfer: 4
+mass_shatter_include_cmf: True
+mass_shatter_charge_pooling: logsumexp
+mass_shatter_context_dim: 128
+mass_shatter_metadata_embedding_dim: 32
+mass_shatter_head_hidden_dim: 512
+mass_shatter_head_dropout: 0.1
+
+# 3. Preserve the objective and use memory-safe loss chunks.
+loss_type: cross_entropy
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 1
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+
+# 4. Match the deterministic baseline's batch and optimization settings.
+dynamic_batch_sampler: False
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 16
+eval_batch_size: 4
+accumulate_grad_batches: 8
+automatic_optimization: True
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: False
+
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: True
+min_epochs: 60
+max_epochs: 100
+debug_overfit: False
+compile: False
+pl_enable_progress_bar: True
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+  - cos_sim
+  - recall
+  - wrecall
+eval_mz_bin_res:
+  - 0.01

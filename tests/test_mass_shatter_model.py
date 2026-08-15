@@ -5,6 +5,7 @@ import torch as th
 from rdkit import Chem
 from torch_geometric.data import Batch
 
+import fragnnet.model.mass_shatter_model as mass_shatter_model_module
 from fragnnet.model.mass_shatter_model import MassShatterModel
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import formula_to_peak_mzs
@@ -49,6 +50,8 @@ def _build_model(batch: Batch) -> MassShatterModel:
         ace_mean=20.0,
         ace_std=15.0,
         max_masks=2,
+        explore_masks=1,
+        exploration_temperature=1.0,
         include_single_bond_cuts=True,
         max_h_transfer=1,
         include_cmf=True,
@@ -98,6 +101,38 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["retained_mask_probability"].tolist() == pytest.approx(
         predicted_mass.tolist(), abs=2e-6
     )
+
+
+def test_mass_shatter_uses_mixed_masks_only_during_training(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = _build_batch()
+    model = _build_model(batch)
+    observed_explore_masks: list[int] = []
+    build_candidates = mass_shatter_model_module.build_mass_shatter_candidates
+
+    def capture_explore_masks(*args: object, **kwargs: object) -> object:
+        observed_explore_masks.append(int(kwargs["explore_masks"]))
+        return build_candidates(*args, **kwargs)
+
+    monkeypatch.setattr(
+        mass_shatter_model_module,
+        "build_mass_shatter_candidates",
+        capture_explore_masks,
+    )
+    forward_kwargs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([20.0, 40.0]),
+    }
+
+    model.train()
+    model(**forward_kwargs)
+    model.eval()
+    with th.no_grad():
+        model(**forward_kwargs)
+
+    assert observed_explore_masks == [1, 0]
 
 
 def test_mass_shatter_spectrum_loss_reaches_encoder_and_all_heads() -> None:

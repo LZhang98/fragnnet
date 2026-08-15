@@ -57,6 +57,10 @@ class MassShatterPL(SpectrumPL):
             ace_mean=self.hparams.ace_mean,
             ace_std=self.hparams.ace_std,
             max_masks=self.hparams.mass_shatter_max_masks,
+            explore_masks=self.hparams.mass_shatter_explore_masks,
+            exploration_temperature=(
+                self.hparams.mass_shatter_exploration_temperature
+            ),
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             include_cmf=self.hparams.mass_shatter_include_cmf,

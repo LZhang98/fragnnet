@@ -23,6 +23,7 @@ def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
         oos_tolerance_multiple=1,
         gaussian_renormalize=True,
         mass_shatter_max_masks=2,
+        mass_shatter_explore_masks=1,
         mass_shatter_max_h_transfer=1,
     )
     config.update(config_overrides)

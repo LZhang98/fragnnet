@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import torch as th
@@ -9,6 +10,7 @@ import torch.nn.functional as F
 
 from fragnnet.frag.bond_mask_generator import (
     RankedCutMask,
+    iter_ranked_cut_masks,
     top_k_cut_masks,
     translate_cut_masks,
 )
@@ -47,7 +49,10 @@ def build_mass_shatter_candidates(
     atom_ptr: th.Tensor,
     *,
     max_masks: int,
+    explore_masks: int,
+    exploration_temperature: float,
     include_single_bond_cuts: bool,
+    generator: th.Generator | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
@@ -67,6 +72,16 @@ def build_mass_shatter_candidates(
         raise ValueError("atom_ptr must be a torch.long CSR pointer")
     if max_masks <= 0:
         raise ValueError(f"max_masks must be positive, got {max_masks}")
+    if explore_masks < 0 or explore_masks >= max_masks:
+        raise ValueError(
+            "explore_masks must be nonnegative and smaller than max_masks, "
+            f"got {explore_masks} and {max_masks}"
+        )
+    if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
+        raise ValueError(
+            "exploration_temperature must be positive, "
+            f"got {exploration_temperature}"
+        )
 
     device = bond_logits.device
     num_molecules = atom_ptr.numel() - 1
@@ -86,8 +101,8 @@ def build_mass_shatter_candidates(
             raise ValueError("a chemical bond cannot connect different molecules")
         bond_batch_indices = left_batch
 
-    mask_log_probabilities: list[th.Tensor] = []
     mask_batch_indices: list[int] = []
+    mask_bond_indices: list[list[int]] = []
     component_mask_indices: list[int] = []
     component_batch_indices: list[int] = []
     component_cut_counts: list[int] = []
@@ -115,20 +130,63 @@ def build_mass_shatter_candidates(
         local_endpoints_cpu = local_endpoints.detach().cpu()
         global_bond_indices = molecule_bond_indices.detach().cpu().tolist()
         detached_logits = molecule_logits.detach().cpu().tolist()
+        exploit_masks = max_masks - explore_masks
         ranked_masks = list(
             top_k_cut_masks(
                 detached_logits,
-                max_masks,
+                exploit_masks,
                 include_empty=True,
             )
         )
         selected_bond_sets = {ranked_mask.broken_bond_indices for ranked_mask in ranked_masks}
-        exploration_bond_sets = [()]
+        forced_bond_sets = [()]
         if include_single_bond_cuts:
-            exploration_bond_sets.extend(
+            forced_bond_sets.extend(
                 (bond_index,) for bond_index in range(len(detached_logits))
             )
-        for broken_bond_indices in exploration_bond_sets:
+        reserved_bond_sets = set(forced_bond_sets)
+
+        # 2. Sample unique masks from the tempered current policy.
+        proposal_probabilities = th.sigmoid(
+            molecule_logits.detach().cpu() / exploration_temperature
+        )
+        max_sampling_attempts = max(32, 8 * explore_masks)
+        sampled_count = 0
+        for _ in range(max_sampling_attempts):
+            if sampled_count == explore_masks or proposal_probabilities.numel() == 0:
+                break
+            sampled_cut_mask = th.rand(
+                proposal_probabilities.shape,
+                generator=generator,
+            ) < proposal_probabilities
+            broken_bond_indices = tuple(
+                th.nonzero(sampled_cut_mask, as_tuple=False).flatten().tolist()
+            )
+            if broken_bond_indices in selected_bond_sets | reserved_bond_sets:
+                continue
+            ranked_masks.append(
+                RankedCutMask(
+                    broken_bond_indices=broken_bond_indices,
+                    log_probability=0.0,
+                    log_probability_from_map=0.0,
+                )
+            )
+            selected_bond_sets.add(broken_bond_indices)
+            sampled_count += 1
+
+        # 3. Deterministically refill rejected or duplicate exploration draws.
+        if len(ranked_masks) < max_masks:
+            for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
+                broken_bond_indices = refill_mask.broken_bond_indices
+                if broken_bond_indices in selected_bond_sets | reserved_bond_sets:
+                    continue
+                ranked_masks.append(refill_mask)
+                selected_bond_sets.add(broken_bond_indices)
+                if len(ranked_masks) == max_masks:
+                    break
+
+        # 4. Append forced masks outside the learned proposal budget.
+        for broken_bond_indices in forced_bond_sets:
             if broken_bond_indices in selected_bond_sets:
                 continue
             ranked_masks.append(
@@ -145,23 +203,16 @@ def build_mass_shatter_candidates(
             bond_endpoints=local_endpoints_cpu.tolist(),
         )
 
-        # 2. Re-evaluate selected mask probabilities with live logits.
+        # 5. Record the selected masks; score every one together below.
         for translated_mask in translated_masks:
-            selected_mask = th.zeros(
-                molecule_logits.shape[0],
-                dtype=th.bool,
-                device=device,
-            )
-            if translated_mask.cut_mask.broken_bond_indices:
-                selected_mask[list(translated_mask.cut_mask.broken_bond_indices)] = True
-            mask_log_probability = th.where(
-                selected_mask,
-                F.logsigmoid(molecule_logits),
-                F.logsigmoid(-molecule_logits),
-            ).sum()
-            mask_index = len(mask_log_probabilities)
-            mask_log_probabilities.append(mask_log_probability)
+            mask_index = len(mask_batch_indices)
             mask_batch_indices.append(molecule_index)
+            mask_bond_indices.append(
+                [
+                    global_bond_indices[local_bond_index]
+                    for local_bond_index in translated_mask.cut_mask.broken_bond_indices
+                ]
+            )
 
             component_masks = translated_mask.component_atom_masks
             local_atom_components: dict[int, int] = {}
@@ -181,7 +232,7 @@ def build_mass_shatter_candidates(
                         complement_atom_indices.append(global_atom_index)
                         complement_component_indices.append(component_index)
 
-            # 3. Attach each truly separating cut bond to both adjacent components.
+            # 6. Attach each truly separating cut bond to both adjacent components.
             for local_bond_index in translated_mask.cut_mask.broken_bond_indices:
                 left = int(local_endpoints_cpu[0, local_bond_index])
                 right = int(local_endpoints_cpu[1, local_bond_index])
@@ -193,12 +244,44 @@ def build_mass_shatter_candidates(
                 boundary_bond_indices.extend([global_bond_index, global_bond_index])
                 boundary_component_indices.extend([left_component, right_component])
 
-    if not mask_log_probabilities:
+    if not mask_batch_indices:
         raise ValueError("candidate generation produced no cut masks")
 
+    # 7. Score every selected mask in one batched operation. A broken bond
+    # changes its contribution from logsigmoid(-logit) to logsigmoid(logit),
+    # whose difference is exactly logit.
+    mask_batch_indices_t = _long_tensor(mask_batch_indices, device)
+    base_log_probabilities = F.logsigmoid(-bond_logits)
+    molecule_log_probabilities = th.zeros(
+        num_molecules,
+        dtype=bond_logits.dtype,
+        device=device,
+    )
+    if bond_logits.numel() > 0:
+        molecule_log_probabilities.index_add_(
+            0,
+            bond_batch_indices,
+            base_log_probabilities,
+        )
+    mask_log_probabilities = molecule_log_probabilities[mask_batch_indices_t]
+    mask_indices = [
+        mask_index
+        for mask_index, bond_indices in enumerate(mask_bond_indices)
+        for _ in bond_indices
+    ]
+    broken_bond_indices = [
+        bond_index for bond_indices in mask_bond_indices for bond_index in bond_indices
+    ]
+    if broken_bond_indices:
+        mask_log_probabilities = mask_log_probabilities.index_add(
+            0,
+            _long_tensor(mask_indices, device),
+            bond_logits[_long_tensor(broken_bond_indices, device)],
+        )
+
     return MassShatterCandidateBatch(
-        mask_log_probabilities=th.stack(mask_log_probabilities),
-        mask_batch_indices=_long_tensor(mask_batch_indices, device),
+        mask_log_probabilities=mask_log_probabilities,
+        mask_batch_indices=mask_batch_indices_t,
         component_mask_indices=_long_tensor(component_mask_indices, device),
         component_batch_indices=_long_tensor(component_batch_indices, device),
         component_cut_counts=_long_tensor(component_cut_counts, device),

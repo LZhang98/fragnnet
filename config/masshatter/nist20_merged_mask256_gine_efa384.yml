@@ -44,6 +44,8 @@ mol_num_layers: 5
 mol_normalization: batch
 mol_dropout: 0.1
 mass_shatter_max_masks: 256
+mass_shatter_explore_masks: 0
+mass_shatter_exploration_temperature: 1.0
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True
@@ -71,9 +73,9 @@ group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-train_batch_size: 8
+train_batch_size: 16
 eval_batch_size: 4
-accumulate_grad_batches: 16
+accumulate_grad_batches: 8
 automatic_optimization: True
 gradient_clip_val: 5.0
 lr: 0.001
