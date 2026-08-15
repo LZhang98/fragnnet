@@ -3,7 +3,10 @@
 import pytest
 import torch as th
 
-from fragnnet.frag.mass_shatter_candidates import build_mass_shatter_candidates
+from fragnnet.frag.mass_shatter_candidates import (
+    MassShatterTopologyCache,
+    build_mass_shatter_candidates,
+)
 
 
 def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
@@ -134,3 +137,24 @@ def test_mixed_top_k_validates_exploration_parameters() -> None:
             explore_masks=1,
             exploration_temperature=0.0,
         )
+
+
+def test_topology_cache_reuses_static_component_translation() -> None:
+    cache = MassShatterTopologyCache(max_entries=10)
+    kwargs = {
+        "chemical_bond_index": th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        "atom_batch_indices": th.zeros(3, dtype=th.long),
+        "atom_ptr": th.tensor([0, 3], dtype=th.long),
+        "max_masks": 2,
+        "explore_masks": 0,
+        "exploration_temperature": 1.0,
+        "include_single_bond_cuts": True,
+        "topology_cache": cache,
+    }
+    first = build_mass_shatter_candidates(th.tensor([1.0, -1.0]), **kwargs)
+    second = build_mass_shatter_candidates(th.tensor([1.0, -1.0]), **kwargs)
+
+    assert th.equal(first.component_mask_indices, second.component_mask_indices)
+    assert th.equal(first.atom_indices, second.atom_indices)
+    assert cache.misses == 3
+    assert cache.hits == 3

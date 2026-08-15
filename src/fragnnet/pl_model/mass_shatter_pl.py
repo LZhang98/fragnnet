@@ -61,6 +61,7 @@ class MassShatterPL(SpectrumPL):
             exploration_temperature=(
                 self.hparams.mass_shatter_exploration_temperature
             ),
+            topology_cache_size=self.hparams.mass_shatter_topology_cache_size,
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             include_cmf=self.hparams.mass_shatter_include_cmf,
@@ -120,6 +121,7 @@ class MassShatterPL(SpectrumPL):
             retained_mask_probability: th.Tensor,
             selected_mask_count: th.Tensor,
             component_pathway_count: th.Tensor,
+            topology_cache_hit_rate: th.Tensor,
             **kwargs,
         ) -> dict[str, th.Tensor]:
             tolerance_per_sample = kwargs.get("tol_per_sample")
@@ -146,6 +148,7 @@ class MassShatterPL(SpectrumPL):
                 "retained_mask_probability": retained_mask_probability.detach(),
                 "selected_mask_count": selected_mask_count.detach().to(pred_logprobs),
                 "component_pathway_count": component_pathway_count.detach().to(pred_logprobs),
+                "topology_cache_hit_rate": topology_cache_hit_rate.detach(),
             }
 
             if self.hparams.ce_pair_loss_weight != 0.0:
@@ -195,6 +198,7 @@ class MassShatterPL(SpectrumPL):
             "retained_mask_probability",
             "selected_mask_count",
             "component_pathway_count",
+            "topology_cache_hit_rate",
         ]
         if self.hparams.ce_pair_loss_weight != 0.0:
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])

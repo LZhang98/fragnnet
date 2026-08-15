@@ -474,9 +474,10 @@ Do not cache logits or mask probabilities: they change every optimization step
 and must retain their gradient. Optimize the static topology work instead.
 
 1. **Topology cache first.** Cache
-   `(molecule_id, broken_bond_tuple) -> component atom memberships and boundary
-   bond indices` in a bounded LRU cache. Prepopulate the empty and single-bond
-   masks, which are forced candidates on every visit. Cache values remain CPU
+   `(molecule topology, broken_bond_tuple) -> component atom memberships` in a
+   bounded LRU cache. The empty and single-bond masks, which
+   are forced candidates on every visit, populate the cache on a molecule's
+   first visit. Cache values remain CPU
    Python/index data; construct the final sparse device tensors once per batch.
    Record cache hit rate, entries, and bytes. Validate cached and uncached
    candidates have identical sparse indices and mask log probabilities.

@@ -11,6 +11,7 @@ from torch_geometric.data import Batch
 
 from fragnnet.frag.mass_shatter_candidates import (
     MassShatterCandidateBatch,
+    MassShatterTopologyCache,
     build_mass_shatter_candidates,
 )
 from fragnnet.model.bond_fragment_heads import (
@@ -184,6 +185,7 @@ class MassShatterModel(nn.Module):
         max_masks: int,
         explore_masks: int,
         exploration_temperature: float,
+        topology_cache_size: int,
         include_single_bond_cuts: bool,
         max_h_transfer: int,
         include_cmf: bool,
@@ -199,9 +201,10 @@ class MassShatterModel(nn.Module):
             )
         if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
             raise ValueError(
-                "exploration_temperature must be positive, "
-                f"got {exploration_temperature}"
+                f"exploration_temperature must be positive, got {exploration_temperature}"
             )
+        if topology_cache_size <= 0:
+            raise ValueError("topology_cache_size must be positive")
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
 
@@ -214,6 +217,7 @@ class MassShatterModel(nn.Module):
         self.max_masks = max_masks
         self.explore_masks = explore_masks
         self.exploration_temperature = exploration_temperature
+        self.topology_cache = MassShatterTopologyCache(topology_cache_size)
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
         self.include_cmf = include_cmf
@@ -476,6 +480,8 @@ class MassShatterModel(nn.Module):
         )
 
         # 2. Select global masks and construct sparse component pathways.
+        cache_hits_before = self.topology_cache.hits
+        cache_misses_before = self.topology_cache.misses
         candidates = build_mass_shatter_candidates(
             bond_logits,
             mol_pyg.chemical_bond_index,
@@ -485,6 +491,21 @@ class MassShatterModel(nn.Module):
             explore_masks=self.explore_masks if self.training else 0,
             exploration_temperature=self.exploration_temperature,
             include_single_bond_cuts=self.include_single_bond_cuts,
+            topology_cache=self.topology_cache,
+        )
+        cache_lookups = (
+            self.topology_cache.hits
+            - cache_hits_before
+            + self.topology_cache.misses
+            - cache_misses_before
+        )
+        topology_cache_hit_rate = bond_logits.new_full(
+            (batch_size,),
+            (
+                0.0
+                if cache_lookups == 0
+                else (self.topology_cache.hits - cache_hits_before) / cache_lookups
+            ),
         )
         num_components = candidates.num_components
         fragment_embeddings = pool_component_embeddings(
@@ -575,4 +596,5 @@ class MassShatterModel(nn.Module):
             "retained_mask_probability": 1.0 - pred_oos_logprobs.exp(),
             "selected_mask_count": selected_mask_count,
             "component_pathway_count": component_pathway_count,
+            "topology_cache_hit_rate": topology_cache_hit_rate,
         }

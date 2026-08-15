@@ -200,6 +200,7 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 mass_shatter_max_masks: 100
 mass_shatter_explore_masks: 0  # Disabled by default; enable explicitly for mixed top-K training.
 mass_shatter_exploration_temperature: 1.0
+mass_shatter_topology_cache_size: 20000
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True

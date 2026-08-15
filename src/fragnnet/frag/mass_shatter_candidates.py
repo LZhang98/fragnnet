@@ -3,17 +3,59 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import torch as th
 import torch.nn.functional as F
 
 from fragnnet.frag.bond_mask_generator import (
+    CutMaskComponents,
     RankedCutMask,
+    connected_component_atom_masks,
     iter_ranked_cut_masks,
     top_k_cut_masks,
     translate_cut_masks,
 )
+
+
+class MassShatterTopologyCache:
+    """Bounded LRU cache for static cut-mask component translations."""
+
+    def __init__(self, max_entries: int) -> None:
+        if max_entries <= 0:
+            raise ValueError(f"max_entries must be positive, got {max_entries}")
+        self.max_entries = max_entries
+        self._entries: OrderedDict[
+            tuple[int, tuple[tuple[int, int], ...], tuple[int, ...]], tuple[int, ...]
+        ] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    def get_components(
+        self,
+        num_atoms: int,
+        bond_endpoints: tuple[tuple[int, int], ...],
+        broken_bond_indices: tuple[int, ...],
+    ) -> tuple[int, ...]:
+        """Return cached connected components for one static graph/cut mask."""
+        key = (num_atoms, bond_endpoints, broken_bond_indices)
+        components = self._entries.get(key)
+        if components is not None:
+            self._entries.move_to_end(key)
+            self.hits += 1
+            return components
+
+        self.misses += 1
+        components = connected_component_atom_masks(
+            num_atoms,
+            tuple(zip(*bond_endpoints)) if bond_endpoints else ((), ()),
+            broken_bond_indices,
+        )
+        self._entries[key] = components
+        if len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
+        return components
 
 
 @dataclass(frozen=True)
@@ -53,6 +95,7 @@ def build_mass_shatter_candidates(
     exploration_temperature: float,
     include_single_bond_cuts: bool,
     generator: th.Generator | None = None,
+    topology_cache: MassShatterTopologyCache | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
@@ -197,11 +240,25 @@ def build_mass_shatter_candidates(
                 )
             )
             selected_bond_sets.add(broken_bond_indices)
-        translated_masks = translate_cut_masks(
-            ranked_masks,
-            num_atoms=num_atoms,
-            bond_endpoints=local_endpoints_cpu.tolist(),
-        )
+        if topology_cache is None:
+            translated_masks = translate_cut_masks(
+                ranked_masks,
+                num_atoms=num_atoms,
+                bond_endpoints=local_endpoints_cpu.tolist(),
+            )
+        else:
+            local_bond_endpoints = tuple(zip(*local_endpoints_cpu.tolist()))
+            translated_masks = tuple(
+                CutMaskComponents(
+                    cut_mask=ranked_mask,
+                    component_atom_masks=topology_cache.get_components(
+                        num_atoms,
+                        local_bond_endpoints,
+                        ranked_mask.broken_bond_indices,
+                    ),
+                )
+                for ranked_mask in ranked_masks
+            )
 
         # 5. Record the selected masks; score every one together below.
         for translated_mask in translated_masks:

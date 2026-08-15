@@ -54,10 +54,11 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         pred_logprobs=pred_logprobs,
         pred_batch_idxs=pred_batch_indices,
         pred_oos_logprobs=pred_oos_logprobs,
-        retained_mask_probability=th.tensor([0.8]),
-        selected_mask_count=th.tensor([2]),
-        component_pathway_count=th.tensor([4]),
-        batch_size=1,
+            retained_mask_probability=th.tensor([0.8]),
+            selected_mask_count=th.tensor([2]),
+            component_pathway_count=th.tensor([4]),
+            topology_cache_hit_rate=th.tensor([0.5]),
+            batch_size=1,
     )
     sparse_ce_fn = get_sparse_cross_entropy_fn(
         dist=config["output_distribution"],
