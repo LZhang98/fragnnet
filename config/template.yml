@@ -209,6 +209,7 @@ mass_shatter_context_dim: 64
 mass_shatter_metadata_embedding_dim: 16
 mass_shatter_head_hidden_dim: 256
 mass_shatter_head_dropout: 0.0
+mass_shatter_bond_num_layers: 0  # 0: endpoint baseline; >0: alternating bond/atom updates.
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

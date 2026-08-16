@@ -6,6 +6,7 @@ from rdkit import Chem
 from torch_geometric.data import Batch
 
 import fragnnet.model.mass_shatter_model as mass_shatter_model_module
+from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.mass_shatter_model import MassShatterModel
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import formula_to_peak_mzs
@@ -26,7 +27,7 @@ def _build_batch() -> Batch:
     )
 
 
-def _build_model(batch: Batch) -> MassShatterModel:
+def _build_model(batch: Batch, *, bond_num_layers: int = 0) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
         node_feature_dim=batch.x.shape[1],
@@ -40,6 +41,7 @@ def _build_model(batch: Batch) -> MassShatterModel:
         metadata_embedding_dim=4,
         head_hidden_dim=12,
         head_dropout=0.0,
+        bond_num_layers=bond_num_layers,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -58,6 +60,13 @@ def _build_model(batch: Batch) -> MassShatterModel:
         include_cmf=True,
         charge_pooling="logsumexp",
     )
+
+
+def test_mass_shatter_selects_bond_focused_head() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, bond_num_layers=2)
+
+    assert isinstance(model.bond_break_head, BondFocusedBreakHead)
 
 
 def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> None:
@@ -156,6 +165,28 @@ def test_mass_shatter_spectrum_loss_reaches_encoder_and_all_heads() -> None:
         model.charge_head.head[0].weight,
         model.ion_hydrogen_head.head[0].weight,
         model.context_encoder.projector[0].weight,
+    ]
+    for parameter in parameters:
+        assert parameter.grad is not None
+        assert th.isfinite(parameter.grad).all()
+        assert parameter.grad.abs().sum() > 0
+
+
+def test_mass_shatter_spectrum_loss_reaches_bond_focused_layers() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, bond_num_layers=2)
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([25.0, 35.0]),
+    )
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    parameters = [
+        model.bond_break_head.bond_project[0].weight,
+        model.bond_break_head.atom_updates[0][0].weight,
+        model.bond_break_head.bond_updates[0][0].weight,
     ]
     for parameter in parameters:
         assert parameter.grad is not None

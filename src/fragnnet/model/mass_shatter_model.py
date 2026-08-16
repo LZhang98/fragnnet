@@ -16,6 +16,7 @@ from fragnnet.frag.mass_shatter_candidates import (
 )
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
+    BondFocusedBreakHead,
     EndpointBondBreakHead,
     JointIonHydrogenHead,
     component_charge_log_probabilities,
@@ -172,6 +173,7 @@ class MassShatterModel(nn.Module):
         metadata_embedding_dim: int,
         head_hidden_dim: int,
         head_dropout: float,
+        bond_num_layers: int,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -204,6 +206,8 @@ class MassShatterModel(nn.Module):
             )
         if topology_cache_size <= 0:
             raise ValueError("topology_cache_size must be positive")
+        if bond_num_layers < 0:
+            raise ValueError("bond_num_layers must be nonnegative")
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
 
@@ -246,13 +250,24 @@ class MassShatterModel(nn.Module):
             ace_mean=ace_mean,
             ace_std=ace_std,
         )
-        self.bond_break_head = EndpointBondBreakHead(
-            precursor_hidden_dim,
-            edge_feature_dim,
-            context_dim,
-            head_hidden_dim,
-            head_dropout,
-        )
+        if bond_num_layers == 0:
+            self.bond_break_head = EndpointBondBreakHead(
+                precursor_hidden_dim,
+                edge_feature_dim,
+                context_dim,
+                head_hidden_dim,
+                head_dropout,
+            )
+        else:
+            self.bond_break_head = BondFocusedBreakHead(
+                atom_embedding_dim=precursor_hidden_dim,
+                bond_feature_dim=edge_feature_dim,
+                context_dim=context_dim,
+                bond_state_dim=precursor_hidden_dim,
+                head_hidden_dim=head_hidden_dim,
+                num_layers=bond_num_layers,
+                dropout=head_dropout,
+            )
         self.charge_head = AtomChargeAffinityHead(
             precursor_hidden_dim,
             context_dim,

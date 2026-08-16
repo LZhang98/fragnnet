@@ -7,8 +7,10 @@ import torch as th
 import yaml
 
 from fragnnet.dataset import SpecMolDataset
+from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
+from fragnnet.utils.script_utils import get_config_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -34,6 +36,26 @@ def test_mass_shatter_registration_uses_spectrum_only_dataset() -> None:
     assert get_model_cls("mass_shatter") is MassShatterPL
     assert get_dataset_cls("mass_shatter") is SpecMolDataset
     assert issubclass(MassShatterPL, SpectrumPL)
+
+
+def test_mass_shatter_pl_builds_configured_bond_focused_head() -> None:
+    model, _ = _build_pl(mass_shatter_bond_num_layers=2)
+
+    assert isinstance(model.model.bond_break_head, BondFocusedBreakHead)
+
+
+def test_legacy_mass_shatter_checkpoint_config_uses_endpoint_head(
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "legacy.ckpt"
+    th.save(
+        {"hyper_parameters": {"model_type": "mass_shatter"}},
+        checkpoint_path,
+    )
+
+    config = get_config_from_ckpt(str(checkpoint_path))
+
+    assert config["mass_shatter_bond_num_layers"] == 0
 
 
 def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> None:

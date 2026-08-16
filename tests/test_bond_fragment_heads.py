@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
+    BondFocusedBreakHead,
     EndpointBondBreakHead,
     JointIonHydrogenHead,
     component_charge_log_probabilities,
@@ -85,6 +86,69 @@ def test_bond_break_head_requires_configured_context() -> None:
             th.randn(2, 4),
             th.tensor([[0], [1]], dtype=th.long),
         )
+
+
+def test_bond_focused_head_is_endpoint_invariant_and_backpropagates() -> None:
+    th.manual_seed(23)
+    head = BondFocusedBreakHead(
+        atom_embedding_dim=8,
+        bond_feature_dim=3,
+        context_dim=2,
+        bond_state_dim=8,
+        head_hidden_dim=8,
+        num_layers=2,
+        dropout=0.0,
+    )
+    atom_embeddings = th.randn(5, 8, requires_grad=True)
+    bond_features = th.randn(3, 3, requires_grad=True)
+    context = th.randn(2, 2, requires_grad=True)
+    endpoints = th.tensor([[0, 1, 3], [1, 2, 4]])
+    bond_batch_indices = th.tensor([0, 0, 1])
+
+    forward_logits = head(
+        atom_embeddings,
+        endpoints,
+        bond_features,
+        context=context,
+        bond_batch_indices=bond_batch_indices,
+    )
+    reverse_logits = head(
+        atom_embeddings,
+        endpoints.flip(0),
+        bond_features,
+        context=context,
+        bond_batch_indices=bond_batch_indices,
+    )
+
+    assert th.allclose(forward_logits, reverse_logits)
+    forward_logits.sum().backward()
+    assert atom_embeddings.grad is not None
+    assert bond_features.grad is not None
+    assert context.grad is not None
+
+
+def test_bond_focused_head_communicates_only_between_adjacent_bonds() -> None:
+    th.manual_seed(29)
+    head = BondFocusedBreakHead(
+        atom_embedding_dim=6,
+        bond_feature_dim=2,
+        context_dim=0,
+        bond_state_dim=6,
+        head_hidden_dim=6,
+        num_layers=2,
+        dropout=0.0,
+    ).eval()
+    atom_embeddings = th.randn(5, 6)
+    endpoints = th.tensor([[0, 1, 3], [1, 2, 4]])
+    bond_features = th.randn(3, 2)
+    perturbed_features = bond_features.clone()
+    perturbed_features[0] += 5.0
+
+    baseline = head(atom_embeddings, endpoints, bond_features)
+    perturbed = head(atom_embeddings, endpoints, perturbed_features)
+
+    assert not th.isclose(baseline[1], perturbed[1])
+    assert th.isclose(baseline[2], perturbed[2])
 
 
 def test_atom_charge_affinity_head_shape() -> None:

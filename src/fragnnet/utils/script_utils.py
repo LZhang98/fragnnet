@@ -357,6 +357,12 @@ def get_config_from_ckpt(
 
     print(">> Extracting config from checkpoint hparams")
     config_d = get_pl_hparams(ckpt)
+    if (
+        config_d["model_type"] == "mass_shatter"
+        and "mass_shatter_bond_num_layers" not in config_d
+    ):
+        print(">> Migrating legacy MASShatter config: using endpoint bond head")
+        config_d["mass_shatter_bond_num_layers"] = 0
 
     # Override with custom config if provided
     if custom_fp is not None:

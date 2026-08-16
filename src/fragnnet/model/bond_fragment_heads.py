@@ -145,6 +145,181 @@ class EndpointBondBreakHead(nn.Module):
         return self.head(th.cat(features, dim=-1)).squeeze(-1)
 
 
+class BondFocusedBreakHead(nn.Module):
+    """Score cleavage after alternating bond-to-atom and atom-to-bond updates.
+
+    Chemical bonds maintain explicit hidden states. Pooling those states at
+    their endpoint atoms is equivalent to line-graph message passing: bonds
+    communicate exactly when they share an atom. Symmetric endpoint features
+    preserve invariance to the orientation of ``bond_endpoints``.
+    """
+
+    def __init__(
+        self,
+        atom_embedding_dim: int,
+        bond_feature_dim: int,
+        context_dim: int,
+        bond_state_dim: int,
+        head_hidden_dim: int,
+        num_layers: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        if min(atom_embedding_dim, bond_state_dim, head_hidden_dim) <= 0:
+            raise ValueError("atom, bond-state, and head dimensions must be positive")
+        if bond_feature_dim < 0 or context_dim < 0:
+            raise ValueError("bond feature and context dimensions must be nonnegative")
+        if num_layers <= 0:
+            raise ValueError("num_layers must be positive")
+        if dropout < 0.0 or dropout > 1.0:
+            raise ValueError(f"dropout must be in [0, 1], got {dropout}")
+
+        self.atom_embedding_dim = atom_embedding_dim
+        self.bond_feature_dim = bond_feature_dim
+        self.context_dim = context_dim
+        self.bond_state_dim = bond_state_dim
+        self.num_layers = num_layers
+        self.atom_project = nn.Linear(atom_embedding_dim, bond_state_dim)
+        self.bond_project = nn.Sequential(
+            nn.Linear(
+                2 * atom_embedding_dim + bond_feature_dim + context_dim,
+                bond_state_dim,
+            ),
+            nn.SiLU(),
+            nn.LayerNorm(bond_state_dim),
+        )
+        self.atom_updates = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(2 * bond_state_dim, bond_state_dim),
+                    nn.SiLU(),
+                    nn.Dropout(dropout),
+                    nn.Linear(bond_state_dim, bond_state_dim),
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.bond_updates = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(3 * bond_state_dim, bond_state_dim),
+                    nn.SiLU(),
+                    nn.Dropout(dropout),
+                    nn.Linear(bond_state_dim, bond_state_dim),
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.atom_norms = nn.ModuleList(
+            [nn.LayerNorm(bond_state_dim) for _ in range(num_layers)]
+        )
+        self.bond_norms = nn.ModuleList(
+            [nn.LayerNorm(bond_state_dim) for _ in range(num_layers)]
+        )
+        self.head = _build_head(
+            bond_state_dim + context_dim,
+            head_hidden_dim,
+            1,
+            dropout,
+        )
+
+    def forward(
+        self,
+        atom_embeddings: th.Tensor,
+        bond_endpoints: th.Tensor,
+        bond_features: th.Tensor | None = None,
+        *,
+        context: th.Tensor | None = None,
+        bond_batch_indices: th.Tensor | None = None,
+    ) -> th.Tensor:
+        """Return one endpoint-order-invariant logit per chemical bond."""
+        if atom_embeddings.ndim != 2 or atom_embeddings.shape[1] != self.atom_embedding_dim:
+            raise ValueError(
+                "atom_embeddings must have shape "
+                f"(num_atoms, {self.atom_embedding_dim}), got {atom_embeddings.shape}"
+            )
+        if bond_endpoints.ndim != 2 or bond_endpoints.shape[0] != 2:
+            raise ValueError("bond_endpoints must have shape (2, num_bonds)")
+        if bond_endpoints.dtype != th.long:
+            raise ValueError("bond_endpoints must have dtype torch.long")
+        num_bonds = bond_endpoints.shape[1]
+        if num_bonds > 0:
+            _validate_tensor_condition(
+                ((bond_endpoints >= 0) & (bond_endpoints < atom_embeddings.shape[0])).all(),
+                "bond_endpoints references a missing atom embedding",
+            )
+        if self.bond_feature_dim == 0:
+            if bond_features is not None:
+                raise ValueError("bond_features were provided but bond_feature_dim is zero")
+        elif (
+            bond_features is None
+            or bond_features.ndim != 2
+            or bond_features.shape != (num_bonds, self.bond_feature_dim)
+        ):
+            raise ValueError(
+                "bond_features must have shape "
+                f"({num_bonds}, {self.bond_feature_dim})"
+            )
+
+        expanded_context = _validate_context(
+            context,
+            bond_batch_indices,
+            context_dim=self.context_dim,
+            num_items=num_bonds,
+            name="bond",
+        )
+        left = atom_embeddings[bond_endpoints[0]]
+        right = atom_embeddings[bond_endpoints[1]]
+        initial_bond_features = [left + right, th.abs(left - right)]
+        if bond_features is not None:
+            initial_bond_features.append(bond_features)
+        if expanded_context is not None:
+            initial_bond_features.append(expanded_context)
+        atom_states = self.atom_project(atom_embeddings)
+        bond_states = self.bond_project(th.cat(initial_bond_features, dim=-1))
+
+        # 1. Alternate line-graph-equivalent bond/atom message passing.
+        endpoint_indices = bond_endpoints.flatten()
+        endpoint_counts = atom_states.new_zeros(atom_states.shape[0]).index_add(
+            0,
+            endpoint_indices,
+            atom_states.new_ones(2 * num_bonds),
+        )
+        for atom_update, bond_update, atom_norm, bond_norm in zip(
+            self.atom_updates,
+            self.bond_updates,
+            self.atom_norms,
+            self.bond_norms,
+        ):
+            endpoint_bond_states = th.cat([bond_states, bond_states], dim=0)
+            atom_messages = atom_states.new_zeros(atom_states.shape).index_add(
+                0,
+                endpoint_indices,
+                endpoint_bond_states,
+            )
+            atom_messages = atom_messages / endpoint_counts.clamp(min=1).unsqueeze(1)
+            atom_states = atom_norm(
+                atom_states + atom_update(th.cat([atom_states, atom_messages], dim=1))
+            )
+            left_state = atom_states[bond_endpoints[0]]
+            right_state = atom_states[bond_endpoints[1]]
+            bond_messages = th.cat(
+                [
+                    bond_states,
+                    left_state + right_state,
+                    th.abs(left_state - right_state),
+                ],
+                dim=1,
+            )
+            bond_states = bond_norm(bond_states + bond_update(bond_messages))
+
+        # 2. Condition the final cleavage score on acquisition context.
+        head_features = [bond_states]
+        if expanded_context is not None:
+            head_features.append(expanded_context)
+        return self.head(th.cat(head_features, dim=1)).squeeze(-1)
+
+
 class AtomChargeAffinityHead(nn.Module):
     """Predict one charge-affinity logit per precursor atom."""
 

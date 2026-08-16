@@ -47,6 +47,7 @@ class MassShatterPL(SpectrumPL):
             metadata_embedding_dim=self.hparams.mass_shatter_metadata_embedding_dim,
             head_hidden_dim=self.hparams.mass_shatter_head_hidden_dim,
             head_dropout=self.hparams.mass_shatter_head_dropout,
+            bond_num_layers=self.hparams.mass_shatter_bond_num_layers,
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,

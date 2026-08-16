@@ -553,8 +553,16 @@ pooling. Charge competition is segmented by cut mask, and all component pooling
 uses sparse membership pairs. `MassShatterModel` reuses FraGNNet's molecular GNN
 as an unpooled `precursor_encoder`; molecular PyG graphs now carry canonical
 chemical bonds and atom chemistry fields. `MassShatterPL` uses `SpecMolDataset`
-and `SpectrumPL` rather than the D3/D4 dataset and training wrapper. The optional
-line-graph bond GNN remains an ablation.
+and `SpectrumPL` rather than the D3/D4 dataset and training wrapper.
+
+**Bond-focused ablation implemented, 2026-08-16:** setting
+`mass_shatter_bond_num_layers` above zero replaces only the endpoint cleavage
+head with explicit bond states and alternating bond-to-atom/atom-to-bond
+updates. Bonds communicate when they share an atom, without materializing a
+line graph, and endpoint-order invariance is preserved. A value of zero keeps
+the original endpoint baseline. The charge/ion heads and independent-Bernoulli
+top-K mask ranking remain unchanged. The controlled K256 GINE-EFA experiment is
+`config/masshatter/nist20_merged_mask256_gine_efa384_bond2.yml`.
 
 **Architecture direction from the initial W&B runs, 2026-08-16:** increasing
 the atom-centered GINE encoder from 256/4 layers to 384/5 layers did not improve
