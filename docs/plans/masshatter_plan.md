@@ -556,6 +556,21 @@ chemical bonds and atom chemistry fields. `MassShatterPL` uses `SpecMolDataset`
 and `SpectrumPL` rather than the D3/D4 dataset and training wrapper. The optional
 line-graph bond GNN remains an ablation.
 
+**Architecture direction from the initial W&B runs, 2026-08-16:** increasing
+the atom-centered GINE encoder from 256/4 layers to 384/5 layers did not improve
+validation cosine, while GINE-EFA reached the best observed score and converged
+in fewer epochs. Mixed-mask exploration improved candidate weighted recall but
+did not improve cosine. These results favor a more bond-focused encoder over a
+larger generic atom transformer. The next controlled architecture experiment
+should maintain explicit learned bond states, update adjacent bonds through a
+line graph or edge-aware attention, alternate atom-to-bond and bond-to-atom
+updates, and condition bond attention on acquisition context. Keep the current
+independent-Bernoulli mask ranking and the charge/ion heads unchanged for this
+comparison so any gain can be attributed to the bond representation. Only if
+that model improves held-out results should correlated multi-bond scoring be
+tested; pairwise or autoregressive cut dependencies change the exact top-K
+semantics and are a separate, higher-risk experiment.
+
 Verify:
 
 - bond predictions are invariant to endpoint ordering;
