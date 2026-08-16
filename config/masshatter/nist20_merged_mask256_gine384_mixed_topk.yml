@@ -69,13 +69,13 @@ loss_batch_size: 1
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 
-# 4. Match the deterministic baseline's batch and optimization settings.
+# 4. Increase physical and effective batch size for the L40S experiment.
 dynamic_batch_sampler: False
 group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-train_batch_size: 16
+train_batch_size: 32
 eval_batch_size: 4
 accumulate_grad_batches: 8
 automatic_optimization: True
