@@ -122,6 +122,13 @@ class MassShatterPL(SpectrumPL):
             selected_mask_count: th.Tensor,
             component_pathway_count: th.Tensor,
             topology_cache_hit_rate: th.Tensor,
+            candidate_input_transfer_batch_ms: th.Tensor,
+            candidate_mask_selection_batch_ms: th.Tensor,
+            candidate_topology_batch_ms: th.Tensor,
+            candidate_assembly_batch_ms: th.Tensor,
+            candidate_output_transfer_batch_ms: th.Tensor,
+            candidate_total_batch_ms: th.Tensor,
+            candidate_total_molecule_ms: th.Tensor,
             **kwargs,
         ) -> dict[str, th.Tensor]:
             tolerance_per_sample = kwargs.get("tol_per_sample")
@@ -149,6 +156,13 @@ class MassShatterPL(SpectrumPL):
                 "selected_mask_count": selected_mask_count.detach().to(pred_logprobs),
                 "component_pathway_count": component_pathway_count.detach().to(pred_logprobs),
                 "topology_cache_hit_rate": topology_cache_hit_rate.detach(),
+                "candidate_input_transfer_batch_ms": (candidate_input_transfer_batch_ms.detach()),
+                "candidate_mask_selection_batch_ms": (candidate_mask_selection_batch_ms.detach()),
+                "candidate_topology_batch_ms": candidate_topology_batch_ms.detach(),
+                "candidate_assembly_batch_ms": candidate_assembly_batch_ms.detach(),
+                "candidate_output_transfer_batch_ms": (candidate_output_transfer_batch_ms.detach()),
+                "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
+                "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
             }
 
             if self.hparams.ce_pair_loss_weight != 0.0:
@@ -199,6 +213,13 @@ class MassShatterPL(SpectrumPL):
             "selected_mask_count",
             "component_pathway_count",
             "topology_cache_hit_rate",
+            "candidate_input_transfer_batch_ms",
+            "candidate_mask_selection_batch_ms",
+            "candidate_topology_batch_ms",
+            "candidate_assembly_batch_ms",
+            "candidate_output_transfer_batch_ms",
+            "candidate_total_batch_ms",
+            "candidate_total_molecule_ms",
         ]
         if self.hparams.ce_pair_loss_weight != 0.0:
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])

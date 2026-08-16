@@ -58,6 +58,13 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
             selected_mask_count=th.tensor([2]),
             component_pathway_count=th.tensor([4]),
             topology_cache_hit_rate=th.tensor([0.5]),
+            candidate_input_transfer_batch_ms=th.tensor([1.0]),
+            candidate_mask_selection_batch_ms=th.tensor([2.0]),
+            candidate_topology_batch_ms=th.tensor([3.0]),
+            candidate_assembly_batch_ms=th.tensor([4.0]),
+            candidate_output_transfer_batch_ms=th.tensor([5.0]),
+            candidate_total_batch_ms=th.tensor([15.0]),
+            candidate_total_molecule_ms=th.tensor([15.0]),
             batch_size=1,
     )
     sparse_ce_fn = get_sparse_cross_entropy_fn(
@@ -89,6 +96,7 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])
     assert actual["selected_mask_count"].tolist() == [2.0]
     assert actual["component_pathway_count"].tolist() == [4.0]
+    assert actual["candidate_total_batch_ms"].tolist() == [15.0]
 
 
 def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:

@@ -79,6 +79,8 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["retained_mask_probability"].shape == (2,)
     assert output["selected_mask_count"].tolist() == [4, 2]
     assert output["component_pathway_count"].tolist() == [8, 3]
+    assert output["candidate_total_batch_ms"].shape == (2,)
+    assert output["candidate_total_molecule_ms"].min() >= 0.0
     protonated_ethanol_mz = formula_to_peak_mzs(
         "C2H6O",
         "[M+H]+",

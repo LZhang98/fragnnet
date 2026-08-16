@@ -278,6 +278,92 @@ def pool_component_embeddings(
     )
 
 
+def pool_component_and_complement_embeddings(
+    atom_embeddings: th.Tensor,
+    atom_indices: th.Tensor,
+    atom_component_indices: th.Tensor,
+    component_batch_indices: th.Tensor,
+    atom_batch_indices: th.Tensor,
+    *,
+    num_components: int,
+    num_molecules: int,
+    reduction: Literal["sum", "mean"] = "mean",
+) -> tuple[th.Tensor, th.Tensor]:
+    """Pool components and derive their complements from precursor totals.
+
+    Every component belongs to one precursor, so its complement sum is the
+    precursor sum minus the component sum. This avoids materializing the much
+    larger complement-atom/component membership relation.
+    """
+    if atom_embeddings.ndim != 2:
+        raise ValueError("atom_embeddings must be a matrix")
+    if atom_indices.ndim != 1 or atom_component_indices.shape != atom_indices.shape:
+        raise ValueError("atom_indices and atom_component_indices must be matching vectors")
+    if atom_indices.dtype != th.long or atom_component_indices.dtype != th.long:
+        raise ValueError("atom and component membership indices must have dtype torch.long")
+    if component_batch_indices.shape != (num_components,):
+        raise ValueError("component_batch_indices must contain one index per component")
+    if atom_batch_indices.shape != (atom_embeddings.shape[0],):
+        raise ValueError("atom_batch_indices must contain one index per atom")
+    if component_batch_indices.dtype != th.long or atom_batch_indices.dtype != th.long:
+        raise ValueError("batch indices must have dtype torch.long")
+    if num_components < 0 or num_molecules < 0:
+        raise ValueError("component and molecule counts must be nonnegative")
+    if reduction not in {"sum", "mean"}:
+        raise ValueError(f"unknown component pooling reduction: {reduction}")
+    if atom_indices.numel() > 0:
+        _validate_tensor_condition(
+            ((atom_indices >= 0) & (atom_indices < atom_embeddings.shape[0])).all(),
+            "atom_indices references a missing atom embedding",
+        )
+        _validate_tensor_condition(
+            ((atom_component_indices >= 0) & (atom_component_indices < num_components)).all(),
+            "atom_component_indices references a missing component",
+        )
+    if num_components > 0:
+        _validate_tensor_condition(
+            ((component_batch_indices >= 0) & (component_batch_indices < num_molecules)).all(),
+            "component_batch_indices references a missing molecule",
+        )
+
+    component_sums = atom_embeddings.new_zeros(
+        (num_components, atom_embeddings.shape[1])
+    ).index_add(0, atom_component_indices, atom_embeddings[atom_indices])
+    component_sizes = th.zeros(
+        num_components,
+        dtype=th.long,
+        device=atom_embeddings.device,
+    ).index_add(0, atom_component_indices, th.ones_like(atom_component_indices))
+    _validate_tensor_condition(
+        (component_sizes > 0).all(),
+        "every component must contain at least one atom",
+    )
+
+    precursor_sums = atom_embeddings.new_zeros((num_molecules, atom_embeddings.shape[1])).index_add(
+        0, atom_batch_indices, atom_embeddings
+    )
+    precursor_sizes = th.zeros(
+        num_molecules,
+        dtype=th.long,
+        device=atom_embeddings.device,
+    ).index_add(0, atom_batch_indices, th.ones_like(atom_batch_indices))
+    complement_sizes = precursor_sizes[component_batch_indices] - component_sizes
+    complement_sums = precursor_sums[component_batch_indices] - component_sums
+    complement_sums = th.where(
+        (complement_sizes > 0).unsqueeze(1),
+        complement_sums,
+        th.zeros_like(complement_sums),
+    )
+
+    if reduction == "sum":
+        return component_sums, complement_sums
+    component_means = component_sums / component_sizes.to(component_sums).unsqueeze(1)
+    complement_means = complement_sums / complement_sizes.clamp(min=1).to(
+        complement_sums
+    ).unsqueeze(1)
+    return component_means, complement_means
+
+
 def pool_boundary_bond_embeddings(
     bond_embeddings: th.Tensor,
     boundary_bond_indices: th.Tensor,

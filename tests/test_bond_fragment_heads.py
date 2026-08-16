@@ -17,6 +17,7 @@ from fragnnet.model.bond_fragment_heads import (
     cut_mask_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
     pool_boundary_bond_embeddings,
+    pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
 
@@ -261,6 +262,59 @@ def test_pool_component_embeddings_mean() -> None:
 
     assert th.allclose(pooled, th.tensor([[2.0, 3.0], [8.0, 10.0]]))
     pooled.sum().backward()
+    assert embeddings.grad is not None
+
+
+@pytest.mark.parametrize("reduction", ["sum", "mean"])
+def test_joint_component_and_complement_pooling_matches_dense_reference(
+    reduction: Literal["sum", "mean"],
+) -> None:
+    embeddings = th.tensor(
+        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]],
+        requires_grad=True,
+    )
+    atom_batch_indices = th.tensor([0, 0, 1, 1])
+    component_batch_indices = th.tensor([0, 0, 1, 1])
+    memberships = [[0], [1], [2, 3], [3]]
+    atom_indices = th.tensor([atom for atoms in memberships for atom in atoms])
+    atom_component_indices = th.tensor(
+        [component for component, atoms in enumerate(memberships) for _ in atoms]
+    )
+
+    components, complements = pool_component_and_complement_embeddings(
+        embeddings,
+        atom_indices,
+        atom_component_indices,
+        component_batch_indices,
+        atom_batch_indices,
+        num_components=4,
+        num_molecules=2,
+        reduction=reduction,
+    )
+
+    expected_components = []
+    expected_complements = []
+    for component_index, atoms in enumerate(memberships):
+        molecule_atoms = th.nonzero(
+            atom_batch_indices == component_batch_indices[component_index]
+        ).flatten()
+        complement_atoms = molecule_atoms[~th.isin(molecule_atoms, th.tensor(atoms))]
+        component_values = embeddings[atoms]
+        complement_values = embeddings[complement_atoms]
+        if reduction == "sum":
+            expected_components.append(component_values.sum(dim=0))
+            expected_complements.append(complement_values.sum(dim=0))
+        else:
+            expected_components.append(component_values.mean(dim=0))
+            expected_complements.append(
+                complement_values.mean(dim=0)
+                if complement_values.shape[0] > 0
+                else th.zeros_like(embeddings[0])
+            )
+
+    assert th.allclose(components, th.stack(expected_components))
+    assert th.allclose(complements, th.stack(expected_complements))
+    (components.sum() + complements.sum()).backward()
     assert embeddings.grad is not None
 
 

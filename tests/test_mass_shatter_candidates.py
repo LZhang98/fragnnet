@@ -53,8 +53,28 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
     assert candidates.mask_log_probabilities.tolist() == [0.0]
     assert candidates.component_mask_indices.tolist() == [0]
     assert candidates.atom_indices.tolist() == [0]
-    assert candidates.complement_atom_indices.numel() == 0
     assert candidates.boundary_bond_indices.numel() == 0
+    assert candidates.timings.total_ms >= 0.0
+
+
+def test_candidate_membership_supports_more_than_64_atoms() -> None:
+    num_atoms = 70
+    candidates = build_mass_shatter_candidates(
+        th.full((num_atoms - 1,), -1.0),
+        chemical_bond_index=th.tensor(
+            [range(num_atoms - 1), range(1, num_atoms)],
+            dtype=th.long,
+        ),
+        atom_batch_indices=th.zeros(num_atoms, dtype=th.long),
+        atom_ptr=th.tensor([0, num_atoms], dtype=th.long),
+        max_masks=1,
+        explore_masks=0,
+        exploration_temperature=1.0,
+        include_single_bond_cuts=False,
+    )
+
+    assert candidates.atom_indices.tolist() == list(range(num_atoms))
+    assert candidates.atom_component_indices.tolist() == [0] * num_atoms
 
 
 def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:

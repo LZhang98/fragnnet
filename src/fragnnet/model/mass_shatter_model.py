@@ -21,8 +21,7 @@ from fragnnet.model.bond_fragment_heads import (
     component_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
     pool_boundary_bond_embeddings,
-    pool_complement_embeddings,
-    pool_component_embeddings,
+    pool_component_and_complement_embeddings,
 )
 from fragnnet.model.nn_blocks import GNN
 from fragnnet.utils.formula_utils import (
@@ -508,17 +507,14 @@ class MassShatterModel(nn.Module):
             ),
         )
         num_components = candidates.num_components
-        fragment_embeddings = pool_component_embeddings(
+        fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
             atom_embeddings,
             candidates.atom_indices,
             candidates.atom_component_indices,
+            candidates.component_batch_indices,
+            mol_pyg.batch,
             num_components=num_components,
-        )
-        complement_embeddings = pool_complement_embeddings(
-            atom_embeddings,
-            candidates.complement_atom_indices,
-            candidates.complement_component_indices,
-            num_components=num_components,
+            num_molecules=batch_size,
         )
         chemical_bond_embeddings = (
             atom_embeddings[mol_pyg.chemical_bond_index[0]]
@@ -586,6 +582,19 @@ class MassShatterModel(nn.Module):
             candidates.component_batch_indices,
             minlength=batch_size,
         )
+        candidate_timing_values = {
+            "candidate_input_transfer_batch_ms": candidates.timings.input_transfer_ms,
+            "candidate_mask_selection_batch_ms": candidates.timings.mask_selection_ms,
+            "candidate_topology_batch_ms": candidates.timings.topology_ms,
+            "candidate_assembly_batch_ms": candidates.timings.assembly_ms,
+            "candidate_output_transfer_batch_ms": candidates.timings.output_transfer_ms,
+            "candidate_total_batch_ms": candidates.timings.total_ms,
+            "candidate_total_molecule_ms": candidates.timings.total_ms / batch_size,
+        }
+        candidate_timing_tensors = {
+            name: bond_logits.new_full((batch_size,), value)
+            for name, value in candidate_timing_values.items()
+        }
         return {
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,
@@ -597,4 +606,5 @@ class MassShatterModel(nn.Module):
             "selected_mask_count": selected_mask_count,
             "component_pathway_count": component_pathway_count,
             "topology_cache_hit_rate": topology_cache_hit_rate,
+            **candidate_timing_tensors,
         }
