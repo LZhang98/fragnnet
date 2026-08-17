@@ -400,7 +400,14 @@ receive no gradient. A fully latent cold start therefore needs an exploration
 mechanism such as tempered sampling or stochastic masks; deterministic top-K
 alone can lock into initially incorrect bonds.
 
-### 7.2 Additive bounded-cardinality exploration
+### 7.2 Additive bounded-cardinality support augmentation
+
+This mechanism is **stochastic support augmentation**: it broadens the candidate
+set the spectrum loss can assign probability to. It is not importance sampling,
+it does not estimate the full mask marginal, and retained masks carry no
+correction weight. Its proposal distribution has no tractable per-mask
+likelihood, which constrains any policy built on top of it — see
+[masshatter_rl_exploration_plan.md](masshatter_rl_exploration_plan.md).
 
 **Implemented 2026-08-16.** The default `bounded_additive` mode preserves all
 `mass_shatter_max_masks` deterministic masks and adds up to
