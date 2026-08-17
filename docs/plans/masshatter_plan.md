@@ -171,6 +171,46 @@ This guarantee depends on the independent-bond factorization. Pairwise or
 higher-order bond interactions generally make flip penalties non-additive, so
 this subset-sum heap would no longer provide exact probability order.
 
+#### Worked example
+
+Consider three bonds with logits:
+
+```
+bond:          0       1       2
+logit:       2.0    -1.0     0.2
+MAP state:   cut   intact     cut
+flip cost:   2.0     1.0     0.2
+```
+
+The MAP mask is therefore `{0, 2}`. Its log probability is:
+
+```
+log P({0, 2})
+  = log sigmoid(2.0) + log sigmoid(1.0) + log sigmoid(0.2)
+  = -1.0383
+```
+
+After sorting, the flip positions are bond 2 at cost `0.2`, bond 1 at cost
+`1.0`, and bond 0 at cost `2.0`. A flip toggles the corresponding MAP state;
+it does not always mean cutting a bond. For example, flipping bond 2 changes it
+from cut to intact, while flipping bond 1 changes it from intact to cut.
+
+The resulting masks begin in this exact order:
+
+| Rank | Flipped bonds | Total flip cost | Resulting cut mask | Log probability |
+|------|---------------|----------------:|--------------------|----------------:|
+| 1 | none | 0.0 | `{0, 2}` | -1.0383 |
+| 2 | `{2}` | 0.2 | `{0}` | -1.2383 |
+| 3 | `{1}` | 1.0 | `{0, 1, 2}` | -2.0383 |
+| 4 | `{1, 2}` | 1.2 | `{0, 1}` | -2.2383 |
+| 5 | `{0}` | 2.0 | `{2}` | -3.0383 |
+
+For the heap mechanics, after `{2}` is removed from the heap, its two children
+are `{2, 1}` with cost `1.2` (append) and `{1}` with cost `1.0` (replace).
+The min-heap removes `{1}` next because `1.0 < 1.2`, which gives the third mask
+above. Continuing the same two-child expansion enumerates all remaining masks
+by increasing total flip cost. `top_k_cut_masks` simply stops after `K` masks.
+
 ## 3. Translate a cut mask into fragments
 
 For every selected mask `C`:
