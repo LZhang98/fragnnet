@@ -12,22 +12,37 @@ from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import formula_to_peak_mzs
 
 
-def _build_batch() -> Batch:
+def _build_batch(smiles: tuple[str, ...] = ("CCO", "CO")) -> Batch:
     return Batch.from_data_list(
         [
             get_mol_graph(
-                Chem.MolFromSmiles(smiles),
+                Chem.MolFromSmiles(molecule_smiles),
                 ["a_onehot", "a_degree"],
                 ["b_degree"],
                 0,
                 True,
             )
-            for smiles in ["CCO", "CO"]
+            for molecule_smiles in smiles
         ]
     )
 
 
-def _build_model(batch: Batch, *, bond_num_layers: int = 0) -> MassShatterModel:
+def _build_model(
+    batch: Batch,
+    *,
+    bond_num_layers: int = 0,
+    explore_masks: int = 0,
+    max_masks: int = 2,
+    exploration_cut_count_weights: tuple[float, ...] = (
+        0.0,
+        0.0,
+        0.35,
+        0.30,
+        0.20,
+        0.10,
+        0.05,
+    ),
+) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
         node_feature_dim=batch.x.shape[1],
@@ -51,11 +66,13 @@ def _build_model(batch: Batch, *, bond_num_layers: int = 0) -> MassShatterModel:
         nce_std=10.0,
         ace_mean=20.0,
         ace_std=15.0,
-            max_masks=2,
-            explore_masks=1,
-            exploration_temperature=1.0,
-            topology_cache_size=20,
-            include_single_bond_cuts=True,
+        max_masks=max_masks,
+        explore_masks=explore_masks,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=exploration_cut_count_weights,
+        topology_cache_size=20,
+        include_single_bond_cuts=True,
         max_h_transfer=1,
         include_cmf=True,
         charge_pooling="logsumexp",
@@ -87,6 +104,8 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert th.isfinite(output["pred_logprobs"]).all()
     assert output["retained_mask_probability"].shape == (2,)
     assert output["selected_mask_count"].tolist() == [4, 2]
+    assert output["exploration_mask_count"].tolist() == [0.0, 0.0]
+    assert output["exploration_mean_cut_count"].tolist() == [0.0, 0.0]
     assert output["component_pathway_count"].tolist() == [8, 3]
     assert output["candidate_total_batch_ms"].shape == (2,)
     assert output["candidate_total_molecule_ms"].min() >= 0.0
@@ -115,11 +134,34 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     )
 
 
+def test_mass_shatter_forward_conserves_probability_with_bounded_exploration() -> None:
+    batch = _build_batch(("CCCCC",))
+    model = _build_model(
+        batch,
+        max_masks=1,
+        explore_masks=2,
+        exploration_cut_count_weights=(0.0, 0.0, 1.0),
+    )
+    model.train()
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([20.0]),
+    )
+
+    assert output["exploration_mask_count"].tolist() == [2.0]
+    assert output["exploration_mean_cut_count"].tolist() == [2.0]
+    predicted_mass = output["pred_logprobs"].exp().sum()
+    total_mass = predicted_mass + output["pred_oos_logprobs"].exp().sum()
+    assert total_mass.item() == pytest.approx(1.0, abs=2e-6)
+
+
 def test_mass_shatter_uses_mixed_masks_only_during_training(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     batch = _build_batch()
-    model = _build_model(batch)
+    model = _build_model(batch, explore_masks=1)
     observed_explore_masks: list[int] = []
     build_candidates = mass_shatter_model_module.build_mass_shatter_candidates
 

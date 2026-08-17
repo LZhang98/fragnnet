@@ -82,7 +82,9 @@ def main() -> None:
             *inputs,
             max_masks=args.max_masks,
             explore_masks=0,
+            exploration_mode="bounded_additive",
             exploration_temperature=1.0,
+            exploration_cut_count_weights=(0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05),
             include_single_bond_cuts=True,
         )
         if device.type == "cuda":

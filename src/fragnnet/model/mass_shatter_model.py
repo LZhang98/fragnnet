@@ -185,7 +185,9 @@ class MassShatterModel(nn.Module):
         ace_std: float,
         max_masks: int,
         explore_masks: int,
+        exploration_mode: str,
         exploration_temperature: float,
+        exploration_cut_count_weights: Sequence[float],
         topology_cache_size: int,
         include_single_bond_cuts: bool,
         max_h_transfer: int,
@@ -195,14 +197,30 @@ class MassShatterModel(nn.Module):
         super().__init__()
         if max_masks <= 0 or max_h_transfer < 0:
             raise ValueError("max_masks must be positive and max_h_transfer nonnegative")
-        if explore_masks < 0 or explore_masks >= max_masks:
+        if explore_masks < 0:
+            raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
+        if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
+            raise ValueError(f"unknown exploration mode: {exploration_mode}")
+        if exploration_mode == "bernoulli_replace" and explore_masks >= max_masks:
             raise ValueError(
-                "explore_masks must be nonnegative and smaller than max_masks, "
+                "bernoulli_replace requires explore_masks smaller than max_masks, "
                 f"got {explore_masks} and {max_masks}"
             )
         if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
             raise ValueError(
                 f"exploration_temperature must be positive, got {exploration_temperature}"
+            )
+        cut_count_weights = tuple(float(weight) for weight in exploration_cut_count_weights)
+        if (
+            len(cut_count_weights) < 3
+            or any(not math.isfinite(weight) or weight < 0.0 for weight in cut_count_weights)
+            or cut_count_weights[0] != 0.0
+            or cut_count_weights[1] != 0.0
+            or sum(cut_count_weights[2:]) <= 0.0
+        ):
+            raise ValueError(
+                "exploration_cut_count_weights must contain nonnegative weights indexed by "
+                "cut count, with zero weights for 0/1 cuts and positive mass above 1"
             )
         if topology_cache_size <= 0:
             raise ValueError("topology_cache_size must be positive")
@@ -219,7 +237,9 @@ class MassShatterModel(nn.Module):
             raise ValueError(f"unsupported precursor types: {sorted(missing_precursors)}")
         self.max_masks = max_masks
         self.explore_masks = explore_masks
+        self.exploration_mode = exploration_mode
         self.exploration_temperature = exploration_temperature
+        self.exploration_cut_count_weights = cut_count_weights
         self.topology_cache = MassShatterTopologyCache(topology_cache_size)
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
@@ -503,7 +523,9 @@ class MassShatterModel(nn.Module):
             mol_pyg.ptr,
             max_masks=self.max_masks,
             explore_masks=self.explore_masks if self.training else 0,
+            exploration_mode=self.exploration_mode,
             exploration_temperature=self.exploration_temperature,
+            exploration_cut_count_weights=self.exploration_cut_count_weights,
             include_single_bond_cuts=self.include_single_bond_cuts,
             topology_cache=self.topology_cache,
         )
@@ -619,6 +641,8 @@ class MassShatterModel(nn.Module):
             "atom_charge_logits": atom_charge_logits,
             "retained_mask_probability": 1.0 - pred_oos_logprobs.exp(),
             "selected_mask_count": selected_mask_count,
+            "exploration_mask_count": candidates.exploration_mask_count,
+            "exploration_mean_cut_count": candidates.exploration_mean_cut_count,
             "component_pathway_count": component_pathway_count,
             "topology_cache_hit_rate": topology_cache_hit_rate,
             **candidate_timing_tensors,

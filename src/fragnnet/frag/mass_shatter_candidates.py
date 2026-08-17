@@ -86,6 +86,8 @@ class MassShatterCandidateBatch:
     atom_component_indices: th.Tensor
     boundary_bond_indices: th.Tensor
     boundary_component_indices: th.Tensor
+    exploration_mask_count: th.Tensor
+    exploration_mean_cut_count: th.Tensor
     timings: MassShatterCandidateTimings
 
     @property
@@ -131,7 +133,9 @@ def build_mass_shatter_candidates(
     *,
     max_masks: int,
     explore_masks: int,
+    exploration_mode: str,
     exploration_temperature: float,
+    exploration_cut_count_weights: Sequence[float],
     include_single_bond_cuts: bool,
     generator: th.Generator | None = None,
     topology_cache: MassShatterTopologyCache | None = None,
@@ -154,13 +158,29 @@ def build_mass_shatter_candidates(
         raise ValueError("atom_ptr must be a torch.long CSR pointer")
     if max_masks <= 0:
         raise ValueError(f"max_masks must be positive, got {max_masks}")
-    if explore_masks < 0 or explore_masks >= max_masks:
+    if explore_masks < 0:
+        raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
+    if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
+        raise ValueError(f"unknown exploration mode: {exploration_mode}")
+    if exploration_mode == "bernoulli_replace" and explore_masks >= max_masks:
         raise ValueError(
-            "explore_masks must be nonnegative and smaller than max_masks, "
+            "bernoulli_replace requires explore_masks smaller than max_masks, "
             f"got {explore_masks} and {max_masks}"
         )
     if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
         raise ValueError(f"exploration_temperature must be positive, got {exploration_temperature}")
+    cut_count_weights = tuple(float(weight) for weight in exploration_cut_count_weights)
+    if (
+        len(cut_count_weights) < 3
+        or any(not math.isfinite(weight) or weight < 0.0 for weight in cut_count_weights)
+        or cut_count_weights[0] != 0.0
+        or cut_count_weights[1] != 0.0
+        or sum(cut_count_weights[2:]) <= 0.0
+    ):
+        raise ValueError(
+            "exploration_cut_count_weights must contain nonnegative weights indexed by "
+            "cut count, with zero weights for 0/1 cuts and positive mass above 1"
+        )
 
     total_start = perf_counter()
     device = bond_logits.device
@@ -228,6 +248,8 @@ def build_mass_shatter_candidates(
     atom_component_index_chunks: list[np.ndarray] = []
     boundary_bond_indices: list[int] = []
     boundary_component_indices: list[int] = []
+    exploration_mask_counts: list[int] = []
+    exploration_mean_cut_counts: list[float] = []
     mask_selection_ms = 0.0
     topology_ms = 0.0
     assembly_ms = 0.0
@@ -247,7 +269,11 @@ def build_mass_shatter_candidates(
             tuple(chemical_bond_rows[row][index] - atom_start for index in global_bond_indices)
             for row in range(2)
         )
-        exploit_masks = max_masks - explore_masks
+        exploit_masks = (
+            max_masks - explore_masks
+            if exploration_mode == "bernoulli_replace"
+            else max_masks
+        )
         ranked_masks = list(
             top_k_cut_masks(
                 detached_logits,
@@ -260,14 +286,16 @@ def build_mass_shatter_candidates(
         if include_single_bond_cuts:
             forced_bond_sets.extend((bond_index,) for bond_index in range(len(detached_logits)))
         reserved_bond_sets = set(forced_bond_sets)
+        unavailable_bond_sets = selected_bond_sets | reserved_bond_sets
 
-        # Sample unique masks from the tempered current policy.
-        if explore_masks > 0:
+        sampled_count = 0
+        sampled_cut_count = 0
+        if explore_masks > 0 and exploration_mode == "bernoulli_replace":
+            # Legacy complete-mask Bernoulli exploration retained for old runs.
             proposal_probabilities = th.sigmoid(
                 bond_logits_cpu[global_bond_indices] / exploration_temperature
             )
             max_sampling_attempts = max(32, 8 * explore_masks)
-            sampled_count = 0
             for _ in range(max_sampling_attempts):
                 if sampled_count == explore_masks or proposal_probabilities.numel() == 0:
                     break
@@ -281,7 +309,7 @@ def build_mass_shatter_candidates(
                 broken_bond_indices = tuple(
                     th.nonzero(sampled_cut_mask, as_tuple=False).flatten().tolist()
                 )
-                if broken_bond_indices in selected_bond_sets | reserved_bond_sets:
+                if broken_bond_indices in unavailable_bond_sets:
                     continue
                 ranked_masks.append(
                     RankedCutMask(
@@ -291,18 +319,93 @@ def build_mass_shatter_candidates(
                     )
                 )
                 selected_bond_sets.add(broken_bond_indices)
+                unavailable_bond_sets.add(broken_bond_indices)
                 sampled_count += 1
+                sampled_cut_count += len(broken_bond_indices)
 
-        # Deterministically refill rejected or duplicate exploration draws.
-        if len(ranked_masks) < max_masks:
+        # Preserve the historical fixed total budget for legacy experiments.
+        if exploration_mode == "bernoulli_replace" and len(ranked_masks) < max_masks:
             for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
                 broken_bond_indices = refill_mask.broken_bond_indices
-                if broken_bond_indices in selected_bond_sets | reserved_bond_sets:
+                if broken_bond_indices in unavailable_bond_sets:
                     continue
                 ranked_masks.append(refill_mask)
                 selected_bond_sets.add(broken_bond_indices)
+                unavailable_bond_sets.add(broken_bond_indices)
                 if len(ranked_masks) == max_masks:
                     break
+
+        if explore_masks > 0 and exploration_mode == "bounded_additive":
+            # Draw a cut count first, then sample that many distinct bonds with
+            # Gumbel top-k. This keeps cardinality independent of molecule size.
+            valid_weight_count = min(len(cut_count_weights), len(detached_logits) + 1)
+            valid_weights = th.tensor(
+                cut_count_weights[:valid_weight_count],
+                dtype=bond_logits_cpu.dtype,
+            )
+            if valid_weights.sum() > 0.0:
+                supported_cut_counts = {
+                    cut_count
+                    for cut_count, weight in enumerate(valid_weights.tolist())
+                    if weight > 0.0
+                }
+                proposal_space_size = sum(
+                    math.comb(len(detached_logits), cut_count)
+                    for cut_count in supported_cut_counts
+                )
+                unavailable_proposal_count = sum(
+                    len(bond_set) in supported_cut_counts
+                    for bond_set in unavailable_bond_sets
+                )
+                target_sample_count = min(
+                    explore_masks,
+                    proposal_space_size - unavailable_proposal_count,
+                )
+                max_sampling_attempts = max(32, 8 * explore_masks)
+                proposal_logits = (
+                    bond_logits_cpu[global_bond_indices] / exploration_temperature
+                )
+                for _ in range(max_sampling_attempts):
+                    if sampled_count == target_sample_count:
+                        break
+                    cut_count = int(
+                        th.multinomial(
+                            valid_weights,
+                            num_samples=1,
+                            generator=generator,
+                        ).item()
+                    )
+                    uniform = th.rand(
+                        proposal_logits.shape,
+                        generator=generator,
+                    ).clamp_(min=th.finfo(proposal_logits.dtype).tiny, max=1.0 - 1e-7)
+                    gumbel_noise = -th.log(-th.log(uniform))
+                    broken_bond_indices = tuple(
+                        sorted(
+                            th.topk(
+                                proposal_logits + gumbel_noise,
+                                k=cut_count,
+                            ).indices.tolist()
+                        )
+                    )
+                    if broken_bond_indices in unavailable_bond_sets:
+                        continue
+                    ranked_masks.append(
+                        RankedCutMask(
+                            broken_bond_indices=broken_bond_indices,
+                            log_probability=0.0,
+                            log_probability_from_map=0.0,
+                        )
+                    )
+                    selected_bond_sets.add(broken_bond_indices)
+                    unavailable_bond_sets.add(broken_bond_indices)
+                    sampled_count += 1
+                    sampled_cut_count += cut_count
+
+        exploration_mask_counts.append(sampled_count)
+        exploration_mean_cut_counts.append(
+            sampled_cut_count / sampled_count if sampled_count > 0 else 0.0
+        )
 
         # Append forced masks outside the learned proposal budget.
         for broken_bond_indices in forced_bond_sets:
@@ -475,6 +578,16 @@ def build_mass_shatter_candidates(
         atom_component_indices=atom_component_indices_t,
         boundary_bond_indices=boundary_bond_indices_t,
         boundary_component_indices=boundary_component_indices_t,
+        exploration_mask_count=th.tensor(
+            exploration_mask_counts,
+            dtype=bond_logits.dtype,
+            device=device,
+        ),
+        exploration_mean_cut_count=th.tensor(
+            exploration_mean_cut_counts,
+            dtype=bond_logits.dtype,
+            device=device,
+        ),
         timings=MassShatterCandidateTimings(
             input_transfer_ms=input_transfer_ms,
             mask_selection_ms=mask_selection_ms,

@@ -56,6 +56,7 @@ def test_legacy_mass_shatter_checkpoint_config_uses_endpoint_head(
     config = get_config_from_ckpt(str(checkpoint_path))
 
     assert config["mass_shatter_bond_num_layers"] == 0
+    assert config["mass_shatter_exploration_mode"] == "bernoulli_replace"
 
 
 def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> None:
@@ -78,6 +79,8 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         pred_oos_logprobs=pred_oos_logprobs,
             retained_mask_probability=th.tensor([0.8]),
             selected_mask_count=th.tensor([2]),
+            exploration_mask_count=th.tensor([1]),
+            exploration_mean_cut_count=th.tensor([3.0]),
             component_pathway_count=th.tensor([4]),
             topology_cache_hit_rate=th.tensor([0.5]),
             candidate_input_transfer_batch_ms=th.tensor([1.0]),
@@ -117,6 +120,8 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     assert actual["candidate_wrecall"].tolist() == pytest.approx([0.6])
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])
     assert actual["selected_mask_count"].tolist() == [2.0]
+    assert actual["exploration_mask_count"].tolist() == [1.0]
+    assert actual["exploration_mean_cut_count"].tolist() == [3.0]
     assert actual["component_pathway_count"].tolist() == [4.0]
     assert actual["candidate_total_batch_ms"].tolist() == [15.0]
 
@@ -139,3 +144,24 @@ def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
     assert th.isfinite(actual["wprecision"]).all()
     assert actual["wrecall"].tolist() == pytest.approx([0.6, 1.0])
     assert actual["wprecision"].tolist() == pytest.approx([0.7, 0.8])
+
+
+def test_exploration_cut_count_mean_excludes_molecules_without_samples() -> None:
+    model, _ = _build_pl()
+    model.metric_names = {"exploration_mean_cut_count"}
+    model.auxiliary_metric_names = set()
+    model._reset_running_metrics("train")
+    model._accumulate_running_metrics(
+        {
+            "exploration_mean_cut_count": th.tensor([0.0, 2.0, 3.0]),
+            "exploration_mask_count": th.tensor([0.0, 1.0, 2.0]),
+            "spec_per_group": th.ones(3),
+            "spec_per_mol": th.ones(3),
+            "group_per_mol": th.ones(3),
+        },
+        "train",
+    )
+
+    mean_metrics, _ = model._reduce_running_metrics("train")
+
+    assert mean_metrics["exploration_mean_cut_count"].item() == pytest.approx(8.0 / 3.0)

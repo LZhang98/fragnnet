@@ -59,8 +59,12 @@ class MassShatterPL(SpectrumPL):
             ace_std=self.hparams.ace_std,
             max_masks=self.hparams.mass_shatter_max_masks,
             explore_masks=self.hparams.mass_shatter_explore_masks,
+            exploration_mode=self.hparams.mass_shatter_exploration_mode,
             exploration_temperature=(
                 self.hparams.mass_shatter_exploration_temperature
+            ),
+            exploration_cut_count_weights=(
+                self.hparams.mass_shatter_exploration_cut_count_weights
             ),
             topology_cache_size=self.hparams.mass_shatter_topology_cache_size,
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
@@ -121,6 +125,8 @@ class MassShatterPL(SpectrumPL):
             pred_oos_logprobs: th.Tensor,
             retained_mask_probability: th.Tensor,
             selected_mask_count: th.Tensor,
+            exploration_mask_count: th.Tensor,
+            exploration_mean_cut_count: th.Tensor,
             component_pathway_count: th.Tensor,
             topology_cache_hit_rate: th.Tensor,
             candidate_input_transfer_batch_ms: th.Tensor,
@@ -155,6 +161,10 @@ class MassShatterPL(SpectrumPL):
                 "candidate_wrecall": 1.0 - true_oos_logprobs.exp(),
                 "retained_mask_probability": retained_mask_probability.detach(),
                 "selected_mask_count": selected_mask_count.detach().to(pred_logprobs),
+                "exploration_mask_count": exploration_mask_count.detach().to(pred_logprobs),
+                "exploration_mean_cut_count": (
+                    exploration_mean_cut_count.detach().to(pred_logprobs)
+                ),
                 "component_pathway_count": component_pathway_count.detach().to(pred_logprobs),
                 "topology_cache_hit_rate": topology_cache_hit_rate.detach(),
                 "candidate_input_transfer_batch_ms": (candidate_input_transfer_batch_ms.detach()),
@@ -212,6 +222,8 @@ class MassShatterPL(SpectrumPL):
             "candidate_wrecall",
             "retained_mask_probability",
             "selected_mask_count",
+            "exploration_mask_count",
+            "exploration_mean_cut_count",
             "component_pathway_count",
             "topology_cache_hit_rate",
             "candidate_input_transfer_batch_ms",

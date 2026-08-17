@@ -400,44 +400,35 @@ receive no gradient. A fully latent cold start therefore needs an exploration
 mechanism such as tempered sampling or stochastic masks; deterministic top-K
 alone can lock into initially incorrect bonds.
 
-### 7.2 Mixed top-K exploration plan
+### 7.2 Additive bounded-cardinality exploration
 
-**Implemented 2026-08-15.** MASShatter uses mixed selection only while the model
-is training; validation, test, and prediction retain exact deterministic top-K.
-The template sets `mass_shatter_explore_masks: 0`; mixed selection is opt-in for
-training configurations that explicitly set a positive exploration-mask count.
+**Implemented 2026-08-16.** The default `bounded_additive` mode preserves all
+`mass_shatter_max_masks` deterministic masks and adds up to
+`mass_shatter_explore_masks` stochastic masks during training. Validation, test,
+and prediction retain exact deterministic top-K. Historical mixed-top-K configs
+explicitly select `bernoulli_replace` so their original replacement semantics
+remain reproducible.
 
-During training, split the learned mask budget `K` between deterministic
-exploitation and stochastic exploration:
-
-\[
-\mathcal{C}_{train}=
-\operatorname{TopK}_{K_{exploit}}(P_\theta)
-\cup
-\operatorname{Sample}_{K_{explore}}(P_{\theta,T}),
-\qquad K_{exploit}+K_{explore}=K.
-\]
-
-Start with `K_explore = floor(0.25 * K)`. Draw complete masks from the current
-independent Bernoulli bond distribution with proposal temperature `T`; discard
-duplicates of deterministic, sampled, and forced masks. Bound the number of
-sampling attempts, then fill any unoccupied exploration slots with the next
-highest-ranked unseen masks so the learned-mask budget remains fixed. The empty
-mask and all single-bond masks remain forced candidates outside `K`, consistent
-with the current implementation, and the actual total candidate count remains
+The bounded proposal separates how many bonds break from which bonds break. It
+first draws a cut count from
+`mass_shatter_exploration_cut_count_weights`, whose initial 2--6 distribution is
+35/30/20/10/5 percent. It then samples that many distinct bonds with Gumbel
+top-k over the temperature-scaled live bond logits. Empty and single-cut masks
+remain forced separately. Duplicates are rejected, unsuccessful exploration
+slots are not refilled, and the actual exploration count and mean cut count are
 logged.
 
-Temperature changes only which masks are proposed. Recompute every retained
-mask's log probability from the original, untempered live logits so downstream
-probabilities preserve their existing meaning and gradients. Mask selection
-remains detached and non-differentiable: this phase broadens candidate support
-but is not policy-gradient RL.
+Temperature changes only which bonds are proposed at a fixed sampled cut count.
+Every retained mask's log probability is recomputed from the original,
+untempered live logits so downstream probabilities preserve their existing
+meaning and gradients. Mask selection remains detached and non-differentiable:
+this phase broadens candidate support but is not policy-gradient RL.
 
-Use mixed selection only for training. Validation, test, and prediction use the
-existing deterministic exact top-K path. Add explicit required configuration
-entries `mass_shatter_explore_masks` and
-`mass_shatter_exploration_temperature` to the template and every MASShatter
-configuration; do not introduce fallback defaults.
+Use bounded selection only for training. Validation, test, and prediction use
+the existing deterministic exact top-K path. The deterministic control and
+matched K256+64 experiment are
+`config/masshatter/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3.yml` and
+`config/masshatter/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3_explore64.yml`.
 
 Implement and verify in this order:
 

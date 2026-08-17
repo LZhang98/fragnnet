@@ -47,6 +47,7 @@ mol_normalization: batch
 mol_dropout: 0.1
 mass_shatter_max_masks: 64
 mass_shatter_explore_masks: 16
+mass_shatter_exploration_mode: bernoulli_replace  # Preserve the historical 48+16 run.
 mass_shatter_exploration_temperature: 1.0
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4

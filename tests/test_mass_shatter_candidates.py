@@ -8,6 +8,8 @@ from fragnnet.frag.mass_shatter_candidates import (
     build_mass_shatter_candidates,
 )
 
+BOUNDED_CUT_COUNT_WEIGHTS = (0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05)
+
 
 def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
     logits = th.tensor([0.4, -0.7], requires_grad=True)
@@ -18,7 +20,9 @@ def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
         atom_ptr=th.tensor([0, 2, 4], dtype=th.long),
         max_masks=2,
         explore_masks=0,
+        exploration_mode="bounded_additive",
         exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -46,7 +50,9 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
         atom_ptr=th.tensor([0, 1], dtype=th.long),
         max_masks=100,
         explore_masks=0,
+        exploration_mode="bounded_additive",
         exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -69,7 +75,9 @@ def test_candidate_membership_supports_more_than_64_atoms() -> None:
         atom_ptr=th.tensor([0, num_atoms], dtype=th.long),
         max_masks=1,
         explore_masks=0,
+        exploration_mode="bounded_additive",
         exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
     )
 
@@ -85,7 +93,9 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
         atom_ptr=th.tensor([0, 4], dtype=th.long),
         max_masks=1,
         explore_masks=0,
+        exploration_mode="bounded_additive",
         exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -94,7 +104,7 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
     assert sorted(candidates.component_cut_counts.unique().tolist()) == [0, 1, 3]
 
 
-def test_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
+def test_legacy_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
     kwargs = {
         "bond_logits": th.tensor([2.0, 0.7, -0.4, -1.3]),
         "chemical_bond_index": th.tensor(
@@ -104,7 +114,9 @@ def test_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
         "atom_ptr": th.tensor([0, 5], dtype=th.long),
         "max_masks": 4,
         "explore_masks": 2,
+        "exploration_mode": "bernoulli_replace",
         "exploration_temperature": 1.0,
+        "exploration_cut_count_weights": BOUNDED_CUT_COUNT_WEIGHTS,
         "include_single_bond_cuts": False,
     }
 
@@ -133,9 +145,92 @@ def test_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
     assert th.isclose(first.mask_log_probabilities[0], expected_map_log_probability)
     assert th.isclose(first.mask_log_probabilities[1], expected_second_log_probability)
     assert first.mask_log_probabilities.unique().numel() == 5
+    assert first.exploration_mask_count.tolist() == [2.0]
 
 
-def test_mixed_top_k_validates_exploration_parameters() -> None:
+def test_bounded_exploration_is_additive_seeded_and_respects_cut_count() -> None:
+    kwargs = {
+        "bond_logits": th.linspace(-2.0, -3.0, 8),
+        "chemical_bond_index": th.tensor(
+            [range(8), range(1, 9)],
+            dtype=th.long,
+        ),
+        "atom_batch_indices": th.zeros(9, dtype=th.long),
+        "atom_ptr": th.tensor([0, 9], dtype=th.long),
+        "max_masks": 4,
+        "explore_masks": 3,
+        "exploration_mode": "bounded_additive",
+        "exploration_temperature": 1.0,
+        "exploration_cut_count_weights": (0.0, 0.0, 1.0),
+        "include_single_bond_cuts": False,
+    }
+
+    first = build_mass_shatter_candidates(
+        **kwargs,
+        generator=th.Generator().manual_seed(17),
+    )
+    second = build_mass_shatter_candidates(
+        **kwargs,
+        generator=th.Generator().manual_seed(17),
+    )
+    deterministic = build_mass_shatter_candidates(
+        **{**kwargs, "explore_masks": 0},
+        generator=th.Generator().manual_seed(17),
+    )
+
+    assert first.mask_log_probabilities.shape == (7,)
+    assert th.equal(first.mask_log_probabilities, second.mask_log_probabilities)
+    assert th.equal(
+        first.mask_log_probabilities[:4],
+        deterministic.mask_log_probabilities,
+    )
+    assert first.exploration_mask_count.tolist() == [3.0]
+    assert first.exploration_mean_cut_count.tolist() == [2.0]
+
+
+def test_bounded_exploration_does_not_refill_unavailable_slots() -> None:
+    candidates = build_mass_shatter_candidates(
+        bond_logits=th.tensor([-2.0, -3.0]),
+        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=1,
+        explore_masks=4,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=(0.0, 0.0, 1.0),
+        include_single_bond_cuts=False,
+        generator=th.Generator().manual_seed(17),
+    )
+
+    assert candidates.mask_log_probabilities.shape == (2,)
+    assert candidates.exploration_mask_count.tolist() == [1.0]
+    assert candidates.exploration_mean_cut_count.tolist() == [2.0]
+
+
+def test_bounded_exploration_skips_an_exhausted_proposal_space() -> None:
+    generator = th.Generator().manual_seed(17)
+    initial_generator_state = generator.get_state().clone()
+
+    candidates = build_mass_shatter_candidates(
+        bond_logits=th.tensor([-2.0, -3.0, -4.0]),
+        chemical_bond_index=th.tensor([[0, 1, 2], [1, 2, 3]], dtype=th.long),
+        atom_batch_indices=th.zeros(4, dtype=th.long),
+        atom_ptr=th.tensor([0, 4], dtype=th.long),
+        max_masks=256,
+        explore_masks=64,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=True,
+        generator=generator,
+    )
+
+    assert candidates.exploration_mask_count.tolist() == [0.0]
+    assert th.equal(generator.get_state(), initial_generator_state)
+
+
+def test_exploration_validates_parameters() -> None:
     common_kwargs = {
         "bond_logits": th.tensor([0.0]),
         "chemical_bond_index": th.tensor([[0], [1]], dtype=th.long),
@@ -149,13 +244,25 @@ def test_mixed_top_k_validates_exploration_parameters() -> None:
         build_mass_shatter_candidates(
             **common_kwargs,
             explore_masks=2,
+            exploration_mode="bernoulli_replace",
             exploration_temperature=1.0,
+            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         )
     with pytest.raises(ValueError, match="exploration_temperature"):
         build_mass_shatter_candidates(
             **common_kwargs,
             explore_masks=1,
+            exploration_mode="bounded_additive",
             exploration_temperature=0.0,
+            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        )
+    with pytest.raises(ValueError, match="cut_count_weights"):
+        build_mass_shatter_candidates(
+            **common_kwargs,
+            explore_masks=1,
+            exploration_mode="bounded_additive",
+            exploration_temperature=1.0,
+            exploration_cut_count_weights=(0.0, 1.0),
         )
 
 
@@ -167,7 +274,9 @@ def test_topology_cache_reuses_static_component_translation() -> None:
         "atom_ptr": th.tensor([0, 3], dtype=th.long),
         "max_masks": 2,
         "explore_masks": 0,
+        "exploration_mode": "bounded_additive",
         "exploration_temperature": 1.0,
+        "exploration_cut_count_weights": BOUNDED_CUT_COUNT_WEIGHTS,
         "include_single_bond_cuts": True,
         "topology_cache": cache,
     }

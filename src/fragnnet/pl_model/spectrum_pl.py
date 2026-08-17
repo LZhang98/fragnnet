@@ -1801,6 +1801,11 @@ class SpectrumPL(L.LightningModule):
         for metric_name in active_metric_names:
             metric = batch_results[metric_name]
             weights = sample_weights.to(dtype=metric.dtype, device=metric.device)
+            if metric_name == "exploration_mean_cut_count":
+                weights = weights * batch_results["exploration_mask_count"].to(
+                    dtype=metric.dtype,
+                    device=metric.device,
+                )
             metric_sum_w = weights.sum().detach()
             metric_sum_wx = (weights * metric).sum().detach()
             if metric_name in sum_w_d:
@@ -1829,10 +1834,16 @@ class SpectrumPL(L.LightningModule):
             if metric_name not in sum_w_d:
                 continue
             sum_w = sum_w_d[metric_name]
-            mean = sum_wx_d[metric_name] / sum_w
+            if metric_name == "exploration_mean_cut_count" and sum_w == 0:
+                mean = sum_wx_d[metric_name].new_zeros(())
+            else:
+                mean = sum_wx_d[metric_name] / sum_w
             mean_metrics[metric_name] = mean
             if report_metric_std:
-                var = sum_wx2_d[metric_name] / sum_w - mean.square()
+                if metric_name == "exploration_mean_cut_count" and sum_w == 0:
+                    var = sum_wx2_d[metric_name].new_zeros(())
+                else:
+                    var = sum_wx2_d[metric_name] / sum_w - mean.square()
                 std_metrics[metric_name] = th.sqrt(th.clamp(var, min=0.0))
         return mean_metrics, std_metrics
 

@@ -363,6 +363,20 @@ def get_config_from_ckpt(
     ):
         print(">> Migrating legacy MASShatter config: using endpoint bond head")
         config_d["mass_shatter_bond_num_layers"] = 0
+    if config_d["model_type"] == "mass_shatter":
+        if "mass_shatter_exploration_mode" not in config_d:
+            print(">> Migrating legacy MASShatter config: preserving Bernoulli exploration")
+            config_d["mass_shatter_exploration_mode"] = "bernoulli_replace"
+        if "mass_shatter_exploration_cut_count_weights" not in config_d:
+            config_d["mass_shatter_exploration_cut_count_weights"] = [
+                0.0,
+                0.0,
+                0.35,
+                0.30,
+                0.20,
+                0.10,
+                0.05,
+            ]
 
     # Override with custom config if provided
     if custom_fp is not None:
