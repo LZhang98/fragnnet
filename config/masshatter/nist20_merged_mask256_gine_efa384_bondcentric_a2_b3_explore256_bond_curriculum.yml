@@ -109,6 +109,5 @@ checkpoint_metric_mode: max
 auxiliary_scores:
   - cos_sim
   - recall
-  - wrecall
 eval_mz_bin_res:
   - 0.01

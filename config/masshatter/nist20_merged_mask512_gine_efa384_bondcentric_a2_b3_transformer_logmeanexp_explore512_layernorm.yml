@@ -93,7 +93,7 @@ simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
 train_batch_size: 32
-eval_batch_size: 32
+eval_batch_size: 4
 accumulate_grad_batches: 4
 automatic_optimization: True
 gradient_clip_val: 5.0
@@ -117,6 +117,5 @@ checkpoint_metric_mode: max
 auxiliary_scores:
   - cos_sim
   - recall
-  - wrecall
 eval_mz_bin_res:
   - 0.01
