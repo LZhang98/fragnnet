@@ -69,6 +69,16 @@ def main():
     parser.add_argument("--entity", default="frag-gnn")
     parser.add_argument("--project", default="frag-gnn")
     parser.add_argument(
+        "--group",
+        action="append",
+        help="Only process runs in this group (repeat for multiple groups)",
+    )
+    parser.add_argument(
+        "--delete-all-checkpoints",
+        action="store_true",
+        help="Delete every .ckpt file in the selected runs, including recent files",
+    )
+    parser.add_argument(
         "--recent-days",
         type=int,
         default=30,
@@ -76,11 +86,20 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.delete_all_checkpoints and not args.group:
+        parser.error("--delete-all-checkpoints requires at least one --group")
+
     mode = "DRY RUN MODE (SAFE)" if args.dry_run else "LIVE DELETE MODE"
-    print(f"{mode} (Protecting files < {args.recent_days} days old)")
+    checkpoint_scope = (
+        "Deleting all checkpoints, including recent files"
+        if args.delete_all_checkpoints
+        else f"Protecting files < {args.recent_days} days old"
+    )
+    print(f"{mode} ({checkpoint_scope})")
 
     api = wandb.Api()
-    runs = api.runs(f"{args.entity}/{args.project}")
+    filters = {"group": {"$in": args.group}} if args.group else None
+    runs = api.runs(f"{args.entity}/{args.project}", filters=filters)
 
     total_size_saved = 0
     total_files_deleted = 0
@@ -106,7 +125,7 @@ def main():
         best_ckpt_wandb_fp = None
         best_epoch = -1
 
-        delete_all_ckpts = should_delete_all_ckpts(run)
+        delete_all_ckpts = args.delete_all_checkpoints or should_delete_all_ckpts(run)
         if delete_all_ckpts:
             print(f"{i + 1}/{total_runs} Run {run.name[:50]}: Marked for ALL checkpoint deletion")
             best_ckpt_wandb_fp = None  # No checkpoint will be kept
@@ -139,7 +158,9 @@ def main():
         for file in files:
             if file.name.endswith(".ckpt") and file.name != best_ckpt_wandb_fp:
                 # Skip if file is recent
-                if is_file_recent(file, args.recent_days):
+                if not args.delete_all_checkpoints and is_file_recent(
+                    file, args.recent_days
+                ):
                     recent_files_skipped += 1
                     print(
                         f"{i + 1}/{total_runs} Run {run.name[:50]} {run.id} {file.name} ({file.size / (1024 * 1024):.1f} MB) [RECENT - SKIPPED]"
