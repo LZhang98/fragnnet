@@ -4,7 +4,7 @@ import pytest
 import torch as th
 
 from fragnnet.frag.mass_shatter_candidates import (
-    MassShatterTopologyCache,
+    MassShatterStaticGraph,
     build_mass_shatter_candidates,
 )
 
@@ -102,6 +102,68 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
     # MAP all-cut mask + forced empty mask + each of the three single cuts.
     assert candidates.mask_log_probabilities.shape[0] == 5
     assert sorted(candidates.component_cut_counts.unique().tolist()) == [0, 1, 3]
+
+
+def test_candidate_batch_applies_minimum_probability_only_to_top_k() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.tensor([2.0, 2.0]),
+        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=4,
+        min_mask_probability=0.5,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=False,
+    )
+
+    # The MAP mask passes; the otherwise low-probability empty mask remains forced.
+    assert candidates.mask_log_probabilities.shape == (2,)
+    assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
+
+
+def test_candidate_batch_rejects_threshold_above_map_probability() -> None:
+    with pytest.raises(ValueError, match="excludes every learned mask"):
+        build_mass_shatter_candidates(
+            th.zeros(4),
+            chemical_bond_index=th.tensor(
+                [[0, 1, 2, 3], [1, 2, 3, 4]], dtype=th.long
+            ),
+            atom_batch_indices=th.zeros(5, dtype=th.long),
+            atom_ptr=th.tensor([0, 5], dtype=th.long),
+            max_masks=4,
+            min_mask_probability=0.2,
+            explore_masks=0,
+            exploration_mode="bounded_additive",
+            exploration_temperature=1.0,
+            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+            include_single_bond_cuts=False,
+        )
+
+
+def test_legacy_refill_respects_minimum_probability() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.tensor([100.0, 100.0]),
+        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=4,
+        min_mask_probability=0.5,
+        explore_masks=2,
+        exploration_mode="bernoulli_replace",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=False,
+        generator=th.Generator().manual_seed(17),
+    )
+
+    # Exploration repeatedly proposes the MAP mask, and refill must not cross
+    # the threshold to restore the historical fixed budget.
+    assert candidates.mask_log_probabilities.shape == (2,)
+    assert candidates.exploration_mask_count.tolist() == [0.0]
+    assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
 
 
 def test_legacy_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
@@ -266,24 +328,27 @@ def test_exploration_validates_parameters() -> None:
         )
 
 
-def test_topology_cache_reuses_static_component_translation() -> None:
-    cache = MassShatterTopologyCache(max_entries=10)
-    kwargs = {
-        "chemical_bond_index": th.tensor([[0, 1], [1, 2]], dtype=th.long),
-        "atom_batch_indices": th.zeros(3, dtype=th.long),
-        "atom_ptr": th.tensor([0, 3], dtype=th.long),
-        "max_masks": 2,
-        "explore_masks": 0,
-        "exploration_mode": "bounded_additive",
-        "exploration_temperature": 1.0,
-        "exploration_cut_count_weights": BOUNDED_CUT_COUNT_WEIGHTS,
-        "include_single_bond_cuts": True,
-        "topology_cache": cache,
-    }
-    first = build_mass_shatter_candidates(th.tensor([1.0, -1.0]), **kwargs)
-    second = build_mass_shatter_candidates(th.tensor([1.0, -1.0]), **kwargs)
+def test_candidate_batch_accepts_static_cpu_graph_sidecar() -> None:
+    chemical_bond_index = th.tensor([[0, 1], [1, 2]], dtype=th.long)
+    atom_batch_indices = th.zeros(3, dtype=th.long)
+    atom_ptr = th.tensor([0, 3], dtype=th.long)
+    candidates = build_mass_shatter_candidates(
+        th.tensor([1.0, -1.0]),
+        chemical_bond_index=chemical_bond_index,
+        atom_batch_indices=atom_batch_indices,
+        atom_ptr=atom_ptr,
+        max_masks=2,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=True,
+        static_graph=MassShatterStaticGraph(
+            chemical_bond_index=chemical_bond_index,
+            atom_batch_indices=atom_batch_indices,
+            atom_ptr=atom_ptr,
+        ),
+    )
 
-    assert th.equal(first.component_mask_indices, second.component_mask_indices)
-    assert th.equal(first.atom_indices, second.atom_indices)
-    assert cache.misses == 3
-    assert cache.hits == 3
+    assert candidates.component_mask_indices.tolist() == [0, 0, 1, 2, 2]
+    assert candidates.atom_indices.tolist() == [0, 1, 2, 0, 1, 2, 0, 1, 2]

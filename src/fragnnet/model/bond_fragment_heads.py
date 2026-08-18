@@ -218,7 +218,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             "component_batch_indices references a missing molecule",
         )
 
-        # 1. Pack variable-sized molecular candidate sets into a padded batch.
+        # 1. Group similarly sized candidate sets to avoid padding every
+        # molecule to the largest precursor in the batch.
         order = th.argsort(component_batch_indices, stable=True)
         sorted_batch_indices = component_batch_indices[order]
         counts = th.bincount(sorted_batch_indices, minlength=batch_size)
@@ -226,35 +227,57 @@ class CandidateIntensityTransformerHead(nn.Module):
             (counts > 0).all(),
             "every molecule must contain at least one component token",
         )
-        offsets = counts.cumsum(0) - counts
-        positions = th.arange(tokens.shape[0], device=tokens.device) - offsets[
-            sorted_batch_indices
-        ]
-        max_components = int(counts.max().item())
-        padded_tokens = tokens.new_zeros((batch_size, max_components, tokens.shape[1]))
-        padded_tokens[sorted_batch_indices, positions] = tokens[order]
-        padding_mask = th.ones(
-            (batch_size, max_components),
-            dtype=th.bool,
-            device=tokens.device,
-        )
-        padding_mask[sorted_batch_indices, positions] = False
+        count_values = counts.tolist()
+        bucketed_molecules: dict[int, list[int]] = {}
+        for molecule_index, count in enumerate(count_values):
+            bucket_limit = 1 << (count - 1).bit_length()
+            bucketed_molecules.setdefault(bucket_limit, []).append(molecule_index)
 
-        # 2. Contextualize candidates through a fixed-size inducing set.
-        inducing_tokens = self.inducing_tokens.expand(batch_size, -1, -1)
-        for layer in self.layers:
-            padded_tokens, inducing_tokens = layer(
-                padded_tokens,
-                inducing_tokens,
-                padding_mask,
+        contextualized = tokens.new_empty(tokens.shape)
+        for bucket_limit, molecule_indices in bucketed_molecules.items():
+            molecule_index_tensor = th.tensor(
+                molecule_indices,
+                dtype=th.long,
+                device=tokens.device,
             )
+            token_mask = th.isin(sorted_batch_indices, molecule_index_tensor)
+            sorted_token_indices = th.nonzero(token_mask, as_tuple=False).flatten()
+            bucket_token_indices = order[sorted_token_indices]
+            bucket_batch_indices = sorted_batch_indices[sorted_token_indices]
+            local_batch_indices = th.searchsorted(
+                molecule_index_tensor,
+                bucket_batch_indices,
+            )
+            bucket_counts = counts[molecule_index_tensor]
+            offsets = bucket_counts.cumsum(0) - bucket_counts
+            positions = th.arange(
+                bucket_token_indices.shape[0],
+                device=tokens.device,
+            ) - offsets[local_batch_indices]
+            padded_tokens = tokens.new_zeros(
+                (len(molecule_indices), bucket_limit, tokens.shape[1])
+            )
+            padded_tokens[local_batch_indices, positions] = tokens[bucket_token_indices]
+            padding_mask = th.ones(
+                (len(molecule_indices), bucket_limit),
+                dtype=th.bool,
+                device=tokens.device,
+            )
+            padding_mask[local_batch_indices, positions] = False
 
-        contextualized_sorted = padded_tokens[sorted_batch_indices, positions]
-        return tokens.new_zeros(tokens.shape).index_copy(
-            0,
-            order,
-            contextualized_sorted,
-        )
+            # 2. Contextualize candidates through a fixed-size inducing set.
+            inducing_tokens = self.inducing_tokens.expand(len(molecule_indices), -1, -1)
+            for layer in self.layers:
+                padded_tokens, inducing_tokens = layer(
+                    padded_tokens,
+                    inducing_tokens,
+                    padding_mask,
+                )
+            contextualized[bucket_token_indices] = padded_tokens[
+                local_batch_indices,
+                positions,
+            ]
+        return contextualized
 
     def forward(
         self,

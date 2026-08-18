@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 import torch as th
 import yaml
+from torch_geometric.data import Batch, Data
 
 from fragnnet.dataset import SpecMolDataset
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
-from fragnnet.utils.script_utils import get_config_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -44,19 +44,27 @@ def test_mass_shatter_pl_builds_configured_bond_focused_head() -> None:
     assert isinstance(model.model.bond_break_head, BondFocusedBreakHead)
 
 
-def test_legacy_mass_shatter_checkpoint_config_uses_endpoint_head(
-    tmp_path: Path,
-) -> None:
-    checkpoint_path = tmp_path / "legacy.ckpt"
-    th.save(
-        {"hyper_parameters": {"model_type": "mass_shatter"}},
-        checkpoint_path,
+def test_mass_shatter_transfer_retains_static_graph_on_cpu() -> None:
+    model, _ = _build_pl()
+    mol_pyg = Batch.from_data_list(
+        [
+            Data(
+                x=th.ones((2, 1)),
+                chemical_bond_index=th.tensor([[0], [1]], dtype=th.long),
+            )
+        ]
     )
 
-    config = get_config_from_ckpt(str(checkpoint_path))
+    transferred = model.transfer_batch_to_device(
+        {"mol_pyg": mol_pyg},
+        th.device("cpu"),
+        0,
+    )
+    static_graph = transferred["mass_shatter_static_graph"]
 
-    assert config["mass_shatter_bond_num_layers"] == 0
-    assert config["mass_shatter_exploration_mode"] == "bernoulli_replace"
+    assert static_graph.chemical_bond_index.device.type == "cpu"
+    assert static_graph.atom_batch_indices.tolist() == [0, 0]
+    assert static_graph.atom_ptr.tolist() == [0, 2]
 
 
 def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> None:
@@ -82,7 +90,6 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
             exploration_mask_count=th.tensor([1]),
             exploration_mean_cut_count=th.tensor([3.0]),
             component_pathway_count=th.tensor([4]),
-            topology_cache_hit_rate=th.tensor([0.5]),
             candidate_input_transfer_batch_ms=th.tensor([1.0]),
             candidate_mask_selection_batch_ms=th.tensor([2.0]),
             candidate_topology_batch_ms=th.tensor([3.0]),

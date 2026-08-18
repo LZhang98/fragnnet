@@ -1,0 +1,122 @@
+wandb_name: nist20_merged_mask512_gine_efa384_bondcentric_a2_b3_transformer_logmeanexp_explore512_layernorm
+wandb_group: nist20_mass_shatter_l40s
+wandb_tags:
+  - mass_shatter
+  - vulcan_l40s
+  - masks_512
+  - explore_512
+  - bounded_additive
+  - gine_efa384
+  - bond_centric
+  - atom_layers_2
+  - bond_layers_3
+  - intensity_transformer
+  - charge_logmeanexp
+  - mol_layernorm
+
+seed: 397623
+
+# 1. Match the 512-mask transformer control data exactly.
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  preprocess: True
+mol_params:
+  preprocess: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_ring_size
+    - a_num_hs
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+    - b_ring
+    - b_conj
+
+# 2. Keep all 512 deterministic masks and add up to 512 bounded masks in training.
+# Validation, testing, and inference remain deterministic top-K with K=512.
+# The only change from the explore_512 arm is mol_normalization: batch -> layer.
+# BatchNorm normalizes over the 8 molecules in a micro-batch (accumulation does not
+# enlarge that window) and switches to running stats at eval, which shifts the bond
+# logits that drive the discrete top-K mask selection between train and eval.
+model_type: mass_shatter
+mol_gnn_type: GINE_EFA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: layer
+mol_dropout: 0.1
+mass_shatter_max_masks: 512
+mass_shatter_explore_masks: 512
+mass_shatter_exploration_temperature: 1.0
+mass_shatter_include_single_bond_cuts: True
+mass_shatter_max_h_transfer: 4
+mass_shatter_include_cmf: True
+mass_shatter_charge_pooling: logmeanexp
+mass_shatter_context_dim: 128
+mass_shatter_metadata_embedding_dim: 32
+mass_shatter_head_hidden_dim: 512
+mass_shatter_head_dropout: 0.1
+mass_shatter_bond_num_layers: 3
+mass_shatter_intensity_transformer_dim: 256
+mass_shatter_intensity_transformer_num_layers: 2
+mass_shatter_intensity_transformer_num_heads: 8
+mass_shatter_intensity_transformer_feedforward_dim: 512
+mass_shatter_intensity_transformer_num_inducing_points: 64
+mass_shatter_intensity_transformer_dropout: 0.1
+
+# 3. Keep the objective identical to the deterministic control.
+loss_type: cross_entropy
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 4
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+
+# 4. Retain effective batch 128 for a controlled exploration comparison.
+dynamic_batch_sampler: False
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 16
+eval_batch_size: 4
+accumulate_grad_batches: 8
+automatic_optimization: True
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: False
+
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: True
+min_epochs: 60
+max_epochs: 100
+debug_overfit: False
+compile: False
+pl_enable_progress_bar: True
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+  - cos_sim
+  - recall
+  - wrecall
+eval_mz_bin_res:
+  - 0.01

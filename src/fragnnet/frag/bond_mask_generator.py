@@ -182,17 +182,31 @@ def top_k_cut_masks(
     k: int,
     *,
     include_empty: bool = True,
+    min_probability: float = 0.0,
 ) -> tuple[RankedCutMask, ...]:
-    """Return at most ``k`` exact highest-probability cut masks."""
+    """Return at most ``k`` cut masks whose probability meets the minimum."""
     if k <= 0:
         raise ValueError(f"k must be positive, got {k}")
+    if not math.isfinite(min_probability) or not 0.0 <= min_probability <= 1.0:
+        raise ValueError(
+            f"min_probability must be finite and in [0, 1], got {min_probability}"
+        )
 
-    ranked_masks: list[RankedCutMask] = []
-    for cut_mask in iter_ranked_cut_masks(bond_logits, include_empty=include_empty):
-        ranked_masks.append(cut_mask)
-        if len(ranked_masks) == k:
-            break
-    return tuple(ranked_masks)
+    from fragnnet.frag.mass_shatter_core import top_k_cut_masks_raw
+
+    return tuple(
+        RankedCutMask(
+            broken_bond_indices=broken_bond_indices,
+            log_probability=log_probability,
+            log_probability_from_map=log_probability_from_map,
+        )
+        for broken_bond_indices, log_probability, log_probability_from_map in top_k_cut_masks_raw(
+            bond_logits,
+            k,
+            include_empty,
+            min_probability,
+        )
+    )
 
 
 def _connected_component_atom_masks(
@@ -200,34 +214,27 @@ def _connected_component_atom_masks(
     endpoints: tuple[tuple[int, int], ...],
     broken_bond_indices: Iterable[int],
 ) -> tuple[int, ...]:
-    broken = frozenset(int(index) for index in broken_bond_indices)
-    if any(index < 0 or index >= len(endpoints) for index in broken):
-        raise ValueError("broken_bond_indices contains an invalid bond index")
+    return _connected_component_atom_masks_many(
+        num_atoms,
+        endpoints,
+        [tuple(broken_bond_indices)],
+    )[0]
 
-    parents = list(range(num_atoms))
 
-    def find(atom: int) -> int:
-        while parents[atom] != atom:
-            parents[atom] = parents[parents[atom]]
-            atom = parents[atom]
-        return atom
+def _connected_component_atom_masks_many(
+    num_atoms: int,
+    endpoints: tuple[tuple[int, int], ...],
+    broken_bond_sets: list[tuple[int, ...]],
+) -> list[tuple[int, ...]]:
+    """Translate many masks in one compiled call."""
+    from fragnnet.frag.mass_shatter_core import connected_component_atom_masks_many
 
-    def union(left: int, right: int) -> None:
-        left_root = find(left)
-        right_root = find(right)
-        if left_root != right_root:
-            parents[right_root] = left_root
-
-    for bond_index, (left, right) in enumerate(endpoints):
-        if bond_index not in broken:
-            union(left, right)
-
-    component_masks: dict[int, int] = {}
-    for atom_index in range(num_atoms):
-        root = find(atom_index)
-        component_masks[root] = component_masks.get(root, 0) | (1 << atom_index)
-
-    return tuple(sorted(component_masks.values()))
+    endpoint_array = np.asarray(endpoints, dtype=np.int64).reshape(-1, 2)
+    return connected_component_atom_masks_many(
+        num_atoms,
+        endpoint_array,
+        broken_bond_sets,
+    )
 
 
 def connected_component_atom_masks(
@@ -258,16 +265,18 @@ def translate_cut_masks(
     if num_atoms <= 0:
         raise ValueError(f"num_atoms must be positive, got {num_atoms}")
     endpoints = _normalize_bond_endpoints(num_atoms, bond_endpoints)
+    cut_masks = tuple(cut_masks)
+    component_masks = _connected_component_atom_masks_many(
+        num_atoms,
+        endpoints,
+        [cut_mask.broken_bond_indices for cut_mask in cut_masks],
+    )
     return tuple(
         CutMaskComponents(
             cut_mask=cut_mask,
-            component_atom_masks=_connected_component_atom_masks(
-                num_atoms,
-                endpoints,
-                cut_mask.broken_bond_indices,
-            ),
+            component_atom_masks=masks,
         )
-        for cut_mask in cut_masks
+        for cut_mask, masks in zip(cut_masks, component_masks)
     )
 
 

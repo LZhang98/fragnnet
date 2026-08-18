@@ -12,6 +12,7 @@ from fragnnet.frag.bond_mask_generator import (
     aggregate_fragment_marginals,
     connected_component_atom_masks,
     generate_fragment_marginals,
+    iter_ranked_cut_masks,
     top_k_cut_masks,
     translate_cut_masks,
 )
@@ -63,6 +64,20 @@ def test_top_k_masks_can_exclude_empty_mask() -> None:
     assert all(mask.broken_bond_indices for mask in masks)
 
 
+def test_top_k_masks_respect_minimum_probability() -> None:
+    logits = [math.log(4.0), math.log(1.5)]
+    masks = top_k_cut_masks(logits, k=4, min_probability=0.2)
+
+    assert [mask.broken_bond_indices for mask in masks] == [(0, 1), (0,)]
+    assert [math.exp(mask.log_probability) for mask in masks] == pytest.approx([0.48, 0.32])
+
+
+@pytest.mark.parametrize("min_probability", [-0.1, 1.1, math.nan])
+def test_top_k_masks_reject_invalid_minimum_probability(min_probability: float) -> None:
+    with pytest.raises(ValueError, match="min_probability"):
+        top_k_cut_masks([0.0], k=1, min_probability=min_probability)
+
+
 def test_top_k_masks_are_stable_for_extreme_finite_logits() -> None:
     masks = top_k_cut_masks([-1000.0, 1000.0], k=4)
 
@@ -74,6 +89,15 @@ def test_top_k_masks_are_stable_for_extreme_finite_logits() -> None:
 def test_top_k_masks_reject_nonfinite_logits() -> None:
     with pytest.raises(ValueError, match="finite"):
         top_k_cut_masks([0.0, math.nan], k=2)
+
+
+def test_cython_top_k_preserves_tie_order() -> None:
+    expected = list(iter_ranked_cut_masks([0.0, 0.0, 0.0, 0.0]))
+    actual = top_k_cut_masks([0.0, 0.0, 0.0, 0.0], k=16)
+
+    assert [mask.broken_bond_indices for mask in actual] == [
+        mask.broken_bond_indices for mask in expected
+    ]
 
 
 def test_connected_components_for_chain_cuts() -> None:

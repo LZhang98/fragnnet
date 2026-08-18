@@ -124,6 +124,40 @@ def test_candidate_intensity_transformer_backpropagates() -> None:
     assert head.inducing_tokens.grad.abs().sum() > 0
 
 
+def test_candidate_intensity_transformer_buckets_ragged_padding() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+    ).eval()
+    observed_shapes: list[th.Size] = []
+    hook = head.layers[0].register_forward_pre_hook(
+        lambda _module, args: observed_shapes.append(args[0].shape)
+    )
+
+    contextualized = head._contextualize_by_molecule(
+        th.randn(25, 8),
+        th.tensor([0] * 2 + [1] * 3 + [2] * 20),
+        batch_size=3,
+    )
+    hook.remove()
+
+    assert contextualized.shape == (25, 8)
+    assert observed_shapes == [
+        th.Size([1, 2, 8]),
+        th.Size([1, 4, 8]),
+        th.Size([1, 32, 8]),
+    ]
+    assert sum(shape[0] * shape[1] for shape in observed_shapes) < 3 * 20
+
+
 def test_candidate_intensity_transformer_isolates_molecules() -> None:
     th.manual_seed(43)
     head = CandidateIntensityTransformerHead(

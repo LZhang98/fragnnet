@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from time import perf_counter
@@ -13,52 +12,20 @@ import torch as th
 import torch.nn.functional as F
 
 from fragnnet.frag.bond_mask_generator import (
-    CutMaskComponents,
     RankedCutMask,
-    connected_component_atom_masks,
     iter_ranked_cut_masks,
     top_k_cut_masks,
     translate_cut_masks,
 )
 
 
-class MassShatterTopologyCache:
-    """Bounded LRU cache for static cut-mask component translations."""
+@dataclass(frozen=True)
+class MassShatterStaticGraph:
+    """CPU graph indices retained across Lightning's device transfer."""
 
-    def __init__(self, max_entries: int) -> None:
-        if max_entries <= 0:
-            raise ValueError(f"max_entries must be positive, got {max_entries}")
-        self.max_entries = max_entries
-        self._entries: OrderedDict[
-            tuple[int, tuple[tuple[int, int], ...], tuple[int, ...]], tuple[int, ...]
-        ] = OrderedDict()
-        self.hits = 0
-        self.misses = 0
-
-    def get_components(
-        self,
-        num_atoms: int,
-        bond_endpoints: tuple[tuple[int, int], ...],
-        broken_bond_indices: tuple[int, ...],
-    ) -> tuple[int, ...]:
-        """Return cached connected components for one static graph/cut mask."""
-        key = (num_atoms, bond_endpoints, broken_bond_indices)
-        components = self._entries.get(key)
-        if components is not None:
-            self._entries.move_to_end(key)
-            self.hits += 1
-            return components
-
-        self.misses += 1
-        components = connected_component_atom_masks(
-            num_atoms,
-            tuple(zip(*bond_endpoints)) if bond_endpoints else ((), ()),
-            broken_bond_indices,
-        )
-        self._entries[key] = components
-        if len(self._entries) > self.max_entries:
-            self._entries.popitem(last=False)
-        return components
+    chemical_bond_index: th.Tensor
+    atom_batch_indices: th.Tensor
+    atom_ptr: th.Tensor
 
 
 @dataclass(frozen=True)
@@ -137,8 +104,9 @@ def build_mass_shatter_candidates(
     exploration_temperature: float,
     exploration_cut_count_weights: Sequence[float],
     include_single_bond_cuts: bool,
+    min_mask_probability: float = 0.0,
     generator: th.Generator | None = None,
-    topology_cache: MassShatterTopologyCache | None = None,
+    static_graph: MassShatterStaticGraph | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
@@ -158,6 +126,11 @@ def build_mass_shatter_candidates(
         raise ValueError("atom_ptr must be a torch.long CSR pointer")
     if max_masks <= 0:
         raise ValueError(f"max_masks must be positive, got {max_masks}")
+    if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
+        raise ValueError(
+            "min_mask_probability must be finite and in [0, 1], "
+            f"got {min_mask_probability}"
+        )
     if explore_masks < 0:
         raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
     if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
@@ -186,10 +159,14 @@ def build_mass_shatter_candidates(
     device = bond_logits.device
     num_bonds = bond_logits.numel()
 
-    # 1. Copy the dynamic logits and static graph indices once. Previously the
-    # per-molecule loop issued several synchronizing GPU-to-CPU copies.
+    # 1. Copy only dynamic logits when Lightning retained a CPU graph sidecar.
     input_transfer_start = perf_counter()
-    if device.type == "cpu":
+    if static_graph is not None:
+        chemical_bond_index_cpu = static_graph.chemical_bond_index
+        atom_batch_indices_cpu = static_graph.atom_batch_indices
+        atom_ptr_cpu = static_graph.atom_ptr
+        bond_logits_cpu = bond_logits.detach().cpu()
+    elif device.type == "cpu":
         bond_logits_cpu = bond_logits.detach()
         chemical_bond_index_cpu = chemical_bond_index.detach()
         atom_batch_indices_cpu = atom_batch_indices.detach()
@@ -279,8 +256,14 @@ def build_mass_shatter_candidates(
                 detached_logits,
                 exploit_masks,
                 include_empty=True,
+                min_probability=min_mask_probability,
             )
         )
+        if min_mask_probability > 0.0 and not ranked_masks:
+            raise ValueError(
+                "mass_shatter_min_mask_probability excludes every learned mask "
+                f"for precursor {molecule_index}"
+            )
         selected_bond_sets = {ranked_mask.broken_bond_indices for ranked_mask in ranked_masks}
         forced_bond_sets = [()]
         if include_single_bond_cuts:
@@ -325,7 +308,14 @@ def build_mass_shatter_candidates(
 
         # Preserve the historical fixed total budget for legacy experiments.
         if exploration_mode == "bernoulli_replace" and len(ranked_masks) < max_masks:
+            min_log_probability = (
+                math.log(min_mask_probability)
+                if min_mask_probability > 0.0
+                else -math.inf
+            )
             for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
+                if refill_mask.log_probability < min_log_probability:
+                    break
                 broken_bond_indices = refill_mask.broken_bond_indices
                 if broken_bond_indices in unavailable_bond_sets:
                     continue
@@ -336,17 +326,13 @@ def build_mass_shatter_candidates(
                     break
 
         if explore_masks > 0 and exploration_mode == "bounded_additive":
-            # Draw a cut count first, then sample that many distinct bonds with
-            # Gumbel top-k. This keeps cardinality independent of molecule size.
+            # Draw cardinalities and Gumbel top-k masks in one compiled call.
             valid_weight_count = min(len(cut_count_weights), len(detached_logits) + 1)
-            valid_weights = th.tensor(
-                cut_count_weights[:valid_weight_count],
-                dtype=bond_logits_cpu.dtype,
-            )
-            if valid_weights.sum() > 0.0:
+            valid_weights = cut_count_weights[:valid_weight_count]
+            if sum(valid_weights) > 0.0:
                 supported_cut_counts = {
                     cut_count
-                    for cut_count, weight in enumerate(valid_weights.tolist())
+                    for cut_count, weight in enumerate(valid_weights)
                     if weight > 0.0
                 }
                 proposal_space_size = sum(
@@ -361,46 +347,43 @@ def build_mass_shatter_candidates(
                     explore_masks,
                     proposal_space_size - unavailable_proposal_count,
                 )
-                max_sampling_attempts = max(32, 8 * explore_masks)
-                proposal_logits = (
-                    bond_logits_cpu[global_bond_indices] / exploration_temperature
-                )
-                for _ in range(max_sampling_attempts):
-                    if sampled_count == target_sample_count:
-                        break
-                    cut_count = int(
-                        th.multinomial(
-                            valid_weights,
-                            num_samples=1,
+                if target_sample_count > 0:
+                    from fragnnet.frag.mass_shatter_core import bounded_additive_masks_raw
+
+                    max_sampling_attempts = max(32, 8 * explore_masks)
+                    proposal_logits = [
+                        detached_logits[index] / exploration_temperature
+                        for index in range(len(detached_logits))
+                    ]
+                    sampler_seed = int(
+                        th.randint(
+                            0,
+                            2**63 - 1,
+                            (),
                             generator=generator,
+                            dtype=th.int64,
                         ).item()
                     )
-                    uniform = th.rand(
-                        proposal_logits.shape,
-                        generator=generator,
-                    ).clamp_(min=th.finfo(proposal_logits.dtype).tiny, max=1.0 - 1e-7)
-                    gumbel_noise = -th.log(-th.log(uniform))
-                    broken_bond_indices = tuple(
-                        sorted(
-                            th.topk(
-                                proposal_logits + gumbel_noise,
-                                k=cut_count,
-                            ).indices.tolist()
-                        )
+                    sampled_masks = bounded_additive_masks_raw(
+                        proposal_logits,
+                        valid_weights,
+                        unavailable_bond_sets,
+                        target_sample_count,
+                        max_sampling_attempts,
+                        sampler_seed,
                     )
-                    if broken_bond_indices in unavailable_bond_sets:
-                        continue
-                    ranked_masks.append(
-                        RankedCutMask(
-                            broken_bond_indices=broken_bond_indices,
-                            log_probability=0.0,
-                            log_probability_from_map=0.0,
+                    for broken_bond_indices in sampled_masks:
+                        ranked_masks.append(
+                            RankedCutMask(
+                                broken_bond_indices=broken_bond_indices,
+                                log_probability=0.0,
+                                log_probability_from_map=0.0,
+                            )
                         )
-                    )
-                    selected_bond_sets.add(broken_bond_indices)
-                    unavailable_bond_sets.add(broken_bond_indices)
-                    sampled_count += 1
-                    sampled_cut_count += cut_count
+                        selected_bond_sets.add(broken_bond_indices)
+                        unavailable_bond_sets.add(broken_bond_indices)
+                        sampled_count += 1
+                        sampled_cut_count += len(broken_bond_indices)
 
         exploration_mask_counts.append(sampled_count)
         exploration_mean_cut_counts.append(
@@ -423,25 +406,11 @@ def build_mass_shatter_candidates(
 
         # 3. Translate selected masks into connected components.
         topology_start = perf_counter()
-        if topology_cache is None:
-            translated_masks = translate_cut_masks(
-                ranked_masks,
-                num_atoms=num_atoms,
-                bond_endpoints=local_endpoints,
-            )
-        else:
-            local_bond_endpoints = tuple(zip(*local_endpoints))
-            translated_masks = tuple(
-                CutMaskComponents(
-                    cut_mask=ranked_mask,
-                    component_atom_masks=topology_cache.get_components(
-                        num_atoms,
-                        local_bond_endpoints,
-                        ranked_mask.broken_bond_indices,
-                    ),
-                )
-                for ranked_mask in ranked_masks
-            )
+        translated_masks = translate_cut_masks(
+            ranked_masks,
+            num_atoms=num_atoms,
+            bond_endpoints=local_endpoints,
+        )
         topology_ms += (perf_counter() - topology_start) * 1000.0
 
         # 4. Decode all component bitmasks for this molecule in compiled NumPy

@@ -198,11 +198,11 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 # MASShatter: one-pass bond-set fragmentation. Candidate identities are selected
 # on CPU; their probabilities are recomputed from live logits for gradients.
 mass_shatter_max_masks: 256
+mass_shatter_min_mask_probability: 0.0  # Minimum probability for deterministic top-k masks.
 mass_shatter_explore_masks: 0  # Additional training-only masks in bounded_additive mode.
 mass_shatter_exploration_mode: bounded_additive  # ["bounded_additive", "bernoulli_replace"]
 mass_shatter_exploration_temperature: 1.0
 mass_shatter_exploration_cut_count_weights: [0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05]
-mass_shatter_topology_cache_size: 20000
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True
