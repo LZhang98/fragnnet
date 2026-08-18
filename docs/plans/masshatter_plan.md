@@ -36,7 +36,8 @@ and may optionally supply warm-start labels, but they are not part of inference.
 ## Scope and non-goals
 
 - Generate candidates by deleting existing precursor bonds. The first version
-  does not model products that require forming a new heavy-atom bond.
+  does not model products that require forming a new heavy-atom bond. Section
+  6.1 specifies a planned template channel for their spectrum-level support.
 - Assume independent Bernoulli bond-breaking probabilities in the first
   version. Pairwise/concerted corrections are an ablation only after the
   independent model is measured.
@@ -416,6 +417,78 @@ The first comparison should test both:
 
 Retain the intensity head only if it gives a reproducible held-out improvement.
 
+### 6.1 Planned template channel for new-bond products
+
+Ring contractions and other rearrangements may form a new heavy-atom bond, so
+their product connectivity cannot be obtained from `components(G \ C)`. A
+general graph-edit decoder is not required to predict their formula, m/z, and
+intensity: bond formation changes connectivity but does not by itself change
+elemental composition. Represent a template product by its precursor atom mask
+even when those atoms are disconnected in the precursor graph.
+
+Reuse the existing SMARTS prepass conventions in
+`src/fragnnet/frag/smarts_prepass.py`:
+
+- `SmartsFragRule` already specifies cut bonds and merges disconnected
+  components into one fragment;
+- `NeutralLossRule` already represents a new-bond product as all precursor
+  atoms except the neutral-loss atoms;
+- validated all-carbon and heteroatom Retro-Diels--Alder SMIRKS are covered in
+  `tests/test_rearrangement_smarts.py`.
+
+Precompute template matches during molecular preprocessing rather than running
+RDKit SMARTS matching in the training hot path. Each match should retain:
+
+- the precursor bond indices deleted by the mechanism;
+- the product and complementary atom masks;
+- the reaction-rule identifier;
+- allowed or required `delta_H` values;
+- optionally, formed-bond endpoints for provenance and future structural use.
+
+Feed these atom partitions through the existing component/complement pooling,
+charge-retention, ion-mode/H-transfer, mass, and intensity heads. The first
+version does not need to materialize the new bond because no downstream model
+consumes product connectivity.
+
+Normal cleavage and a rearrangement can share the same deleted-bond mask. Do not
+append the rearrangement as an unrelated Bernoulli mask: that double-counts the
+mask probability and invalidates retained/out-of-support mass accounting.
+Instead introduce a mechanism variable `R`, including the ordinary connected-
+component outcome, and normalize mechanism logits within each retained cut
+mask:
+
+```
+P(path)
+  = P(C)
+    * P(R | C, precursor, context)
+    * P_charge(F | C, R, precursor_type)
+    * P(mode, delta_H | F, C, R, charged, context)
+```
+
+This preserves the independent-Bernoulli top-K proposal and its out-of-support
+probability while allowing the candidate/intensity model to choose between
+ordinary cleavage and template-defined atom partitions. Add a learned rule
+embedding to the mechanism, charge, and ion heads; do not give every matched
+template an unconditional probability floor.
+
+This extension predicts spectrum-level outcomes, not arbitrary product
+structures. Isomeric ring contractions with the same atom set and formula remain
+indistinguishable by m/z. If subsequent fragmentation depends on the newly
+formed connectivity, templates must provide those downstream products directly;
+a general sequential graph-edit model is a separate, substantially larger
+extension.
+
+Verify before adoption:
+
+- atom conservation, product/complement partitioning, and template
+  deduplication;
+- mechanism probabilities sum to one within each retained cut mask;
+- template candidates do not alter retained or out-of-support mask mass;
+- candidate and intensity-weighted recall improve on targeted rearrangement
+  classes at a matched realized candidate budget;
+- held-out cosine/JSS improve without increasing false candidates on molecules
+  where a SMARTS pattern matches but the rearrangement peak is absent.
+
 ## 7. Training supervision
 
 The difficult part is not top-K mask enumeration; it is identifying which bonds
@@ -703,8 +776,10 @@ higher-recall reference, not an inference dependency.
 6. **Mask probability is not peak intensity.** A small post-generation intensity
    head may be necessary, but it must not become another expensive per-fragment
    model without a measured benefit.
-7. **New-bond rearrangements are unreachable.** SMARTS/reaction templates or a
-   separate learned edit channel are required for those products.
+7. **New-bond rearrangements are unreachable in the current action space.** The
+   planned atom-mask/template mechanism in Section 6.1 can support their direct
+   spectrum-level products. Arbitrary product structures and subsequent
+   connectivity-dependent fragmentation still require a learned edit channel.
 8. **MAP masks with many `p_b > 0.5` are a calibration warning.** The K-best
    algorithm remains correct, but a heavily cut MAP state is chemically suspect
    and should be monitored explicitly.
