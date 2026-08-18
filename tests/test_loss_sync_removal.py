@@ -363,3 +363,175 @@ class TestSparseCEMatchesReference:
             ios, oos = run(lbs)
             assert th.allclose(ios, ios_ref, atol=1e-5), f"IOS mismatch at loss_batch_size={lbs}"
             assert th.allclose(oos, oos_ref, atol=1e-5), f"OOS mismatch at loss_batch_size={lbs}"
+
+    def test_peak_matching_is_padded_per_spectrum(self, batch_data, monkeypatch):
+        """Peak matching receives [batch, peaks] tensors, not flattened cross-spectrum peaks."""
+        import fragnnet.model.loss as loss_module
+
+        (batch_size, true_mzs, true_lp, true_bidxs,
+         pred_mzs, pred_lp, pred_bidxs, pred_oos) = batch_data
+        original_calculate_match_mzs = loss_module.calculate_match_mzs
+        input_shapes = []
+
+        def record_shapes(chunk_true_mzs, chunk_pred_mzs, **kwargs):
+            input_shapes.append((chunk_true_mzs.shape, chunk_pred_mzs.shape))
+            return original_calculate_match_mzs(chunk_true_mzs, chunk_pred_mzs, **kwargs)
+
+        monkeypatch.setattr(loss_module, "calculate_match_mzs", record_shapes)
+        sparse_cross_entropy_vec(
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
+        )
+
+        assert len(input_shapes) == batch_size // 4
+        assert all(len(true_shape) == 2 for true_shape, _ in input_shapes)
+        assert all(len(pred_shape) == 2 for _, pred_shape in input_shapes)
+        assert all(true_shape[0] <= 4 for true_shape, _ in input_shapes)
+        assert all(pred_shape[0] <= 4 for _, pred_shape in input_shapes)
+
+    def test_peak_rich_spectrum_is_split_from_small_spectra(self, monkeypatch):
+        """Padded chunks never exceed the corresponding flat Cartesian pair count."""
+        import fragnnet.model.loss as loss_module
+
+        peaks_true = [20, 1, 1, 1]
+        peaks_pred = [20, 1, 1, 1]
+        true_bidxs = _make_batch_idxs(peaks_true, th.device("cpu"))
+        pred_bidxs = _make_batch_idxs(peaks_pred, th.device("cpu"))
+        true_mzs = 100.0 + th.arange(sum(peaks_true), dtype=th.float32)
+        pred_mzs = 100.0 + th.arange(sum(peaks_pred), dtype=th.float32)
+        true_lp = th.zeros(sum(peaks_true))
+        pred_lp = th.zeros(sum(peaks_pred))
+        pred_oos = th.zeros(len(peaks_true))
+        original_calculate_match_mzs = loss_module.calculate_match_mzs
+        input_shapes = []
+
+        def record_shapes(chunk_true_mzs, chunk_pred_mzs, **kwargs):
+            input_shapes.append((chunk_true_mzs.shape, chunk_pred_mzs.shape))
+            return original_calculate_match_mzs(chunk_true_mzs, chunk_pred_mzs, **kwargs)
+
+        monkeypatch.setattr(loss_module, "calculate_match_mzs", record_shapes)
+        actual = sparse_cross_entropy_vec(
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            tolerance=1e-3,
+            relative=True,
+            tolerance_min_mz=100.0,
+            oos_tolerance_multiple=1,
+            gaussian_renormalize=True,
+            loss_batch_size=4,
+        )
+        expected = _reference_sparse_ce_vec(
+            true_mzs,
+            true_lp,
+            true_bidxs,
+            pred_mzs,
+            pred_lp,
+            pred_bidxs,
+            pred_oos,
+            1e-3,
+            True,
+            100.0,
+            1,
+            True,
+            4,
+            4,
+        )
+
+        assert input_shapes == [
+            (th.Size([1, 20]), th.Size([1, 20])),
+            (th.Size([3, 1]), th.Size([3, 1])),
+        ]
+        for actual_value, expected_value in zip(actual[:3], expected):
+            assert th.allclose(actual_value, expected_value)
+
+    def test_padded_layout_supplies_repeat_interleave_output_size(self, monkeypatch):
+        """Known output size avoids synchronizing CUDA counts inside repeat_interleave."""
+        import fragnnet.model.loss as loss_module
+
+        original_repeat_interleave = th.repeat_interleave
+        output_sizes = []
+
+        def record_output_size(*args, **kwargs):
+            output_sizes.append(kwargs.get("output_size"))
+            return original_repeat_interleave(*args, **kwargs)
+
+        monkeypatch.setattr(th, "repeat_interleave", record_output_size)
+        batch_idxs = th.tensor([0, 0, 2, 2, 2])
+        loss_module._build_padded_batch_layout(batch_idxs, batch_size=3)
+
+        assert output_sizes == [batch_idxs.numel()]
+
+    def test_padded_loss_matches_reference_gradients(self):
+        """Block-diagonal padding preserves loss gradients for variable peak counts."""
+        peaks_true = [2, 3, 1]
+        peaks_pred = [3, 2, 2]
+        true_bidxs = _make_batch_idxs(peaks_true, th.device("cpu"))
+        pred_bidxs = _make_batch_idxs(peaks_pred, th.device("cpu"))
+        true_mzs = th.tensor([100.0, 150.0, 200.0, 250.0, 400.0, 500.0])
+        pred_mzs = th.tensor([100.02, 149.95, 300.0, 200.1, 600.0, 500.2, 700.0])
+        true_lp_data = th.log(th.tensor([0.6, 0.4, 0.5, 0.3, 0.2, 1.0]))
+        pred_lp_data = th.log(th.tensor([0.5, 0.4, 0.1, 0.7, 0.3, 0.8, 0.2]))
+        pred_oos_data = th.log(th.tensor([0.1, 0.2, 0.15]))
+
+        def run(use_reference):
+            true_lp = true_lp_data.clone().requires_grad_()
+            pred_lp = pred_lp_data.clone().requires_grad_()
+            pred_oos = pred_oos_data.clone().requires_grad_()
+            if use_reference:
+                ios, oos, true_oos = _reference_sparse_ce_vec(
+                    true_mzs,
+                    true_lp,
+                    true_bidxs,
+                    pred_mzs,
+                    pred_lp,
+                    pred_bidxs,
+                    pred_oos,
+                    1e-3,
+                    True,
+                    100.0,
+                    1,
+                    True,
+                    3,
+                    3,
+                )
+            else:
+                ios, oos, true_oos, _ = sparse_cross_entropy_vec(
+                    true_mzs,
+                    true_lp,
+                    true_bidxs,
+                    pred_mzs,
+                    pred_lp,
+                    pred_bidxs,
+                    pred_oos,
+                    tolerance=1e-3,
+                    relative=True,
+                    tolerance_min_mz=100.0,
+                    oos_tolerance_multiple=1,
+                    gaussian_renormalize=True,
+                    loss_batch_size=3,
+                )
+            gradients = th.autograd.grad((ios + oos).sum(), (true_lp, pred_lp, pred_oos))
+            return ios, oos, true_oos, gradients
+
+        reference = run(use_reference=True)
+        padded = run(use_reference=False)
+        for actual, expected in zip(padded[:3], reference[:3]):
+            assert th.allclose(actual, expected, atol=1e-5)
+        for actual, expected in zip(padded[3], reference[3]):
+            assert th.allclose(actual, expected, atol=1e-5)

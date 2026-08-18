@@ -279,6 +279,98 @@ def sparse_cross_entropy_seq(
     return ios_ces, oos_ces, true_oos_logprobs, true_oos_entropies
 
 
+def _build_padded_batch_layout(
+    batch_idxs: th.Tensor,
+    batch_size: int,
+    assume_sorted: bool = False,
+    counts: th.Tensor | None = None,
+    max_count: int | None = None,
+) -> tuple[th.Tensor | None, th.Tensor, th.Tensor, int]:
+    """Build reusable indices for mapping flat ragged values to padded batch rows."""
+    if counts is None:
+        counts = th.bincount(batch_idxs, minlength=batch_size)
+    if max_count is None:
+        max_count = int(counts.max().item()) if counts.numel() > 0 else 0
+    valid = th.arange(max_count, device=batch_idxs.device).unsqueeze(0) < counts.unsqueeze(1)
+    if batch_idxs.numel() == 0 or max_count == 0:
+        return None, batch_idxs.new_empty(0), valid, max_count
+
+    sort_idx = None if assume_sorted else th.argsort(batch_idxs)
+    sorted_batch_idxs = batch_idxs if sort_idx is None else batch_idxs[sort_idx]
+    row_starts = th.cumsum(counts, dim=0) - counts
+    positions = th.arange(batch_idxs.numel(), device=batch_idxs.device) - th.repeat_interleave(
+        row_starts, counts, output_size=batch_idxs.numel()
+    )
+    padded_indices = sorted_batch_idxs * max_count + positions
+    return sort_idx, padded_indices, valid, max_count
+
+
+def _pad_flat_with_layout(
+    values: th.Tensor,
+    sort_idx: th.Tensor | None,
+    padded_indices: th.Tensor,
+    batch_size: int,
+    max_count: int,
+    pad_value: float,
+) -> th.Tensor:
+    """Apply a reusable padded-batch layout while preserving gradients to ``values``."""
+    padded = values.new_full((batch_size, max_count), pad_value)
+    if values.numel() == 0 or max_count == 0:
+        return padded
+    sorted_values = values if sort_idx is None else values[sort_idx]
+    padded.reshape(-1)[padded_indices] = sorted_values
+    return padded
+
+
+def _build_loss_chunks(
+    true_batch_cumsum: list[int],
+    pred_batch_cumsum: list[int],
+    loss_batch_size: int,
+) -> list[tuple[int, int]]:
+    """Build contiguous chunks whose padded pairs do not exceed flat Cartesian pairs."""
+    if loss_batch_size <= 0:
+        raise ValueError(f"loss_batch_size must be > 0, got {loss_batch_size}")
+
+    batch_size = len(true_batch_cumsum) - 1
+    chunks: list[tuple[int, int]] = []
+
+    for window_lower in range(0, batch_size, loss_batch_size):
+        window_upper = min(window_lower + loss_batch_size, batch_size)
+        lower = window_lower
+
+        while lower < window_upper:
+            upper = lower
+            max_true = 0
+            max_pred = 0
+            sum_true = 0
+            sum_pred = 0
+
+            while upper < window_upper:
+                true_count = true_batch_cumsum[upper + 1] - true_batch_cumsum[upper]
+                pred_count = pred_batch_cumsum[upper + 1] - pred_batch_cumsum[upper]
+                candidate_size = upper - lower + 1
+                candidate_max_true = max(max_true, true_count)
+                candidate_max_pred = max(max_pred, pred_count)
+                candidate_sum_true = sum_true + true_count
+                candidate_sum_pred = sum_pred + pred_count
+                padded_pairs = candidate_size * candidate_max_true * candidate_max_pred
+                flat_pairs = candidate_sum_true * candidate_sum_pred
+
+                if upper > lower and padded_pairs > flat_pairs:
+                    break
+
+                upper += 1
+                max_true = candidate_max_true
+                max_pred = candidate_max_pred
+                sum_true = candidate_sum_true
+                sum_pred = candidate_sum_pred
+
+            chunks.append((lower, upper))
+            lower = upper
+
+    return chunks
+
+
 def sparse_cross_entropy_vec(
     true_mzs: th.Tensor,
     true_logprobs: th.Tensor,
@@ -298,6 +390,10 @@ def sparse_cross_entropy_vec(
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
+
+    Each loss chunk is padded per spectrum before peak matching. Chunk boundaries
+    ensure the resulting ``[chunk, max_true_peaks, max_pred_peaks]`` pairwise tensors
+    are no larger than the Cartesian product of all flattened peaks in that chunk.
 
     Args:
         true_mzs: Ground truth m/z values.
@@ -320,24 +416,29 @@ def sparse_cross_entropy_vec(
         0., 1.: Placeholders for compatibility.
     """
 
-    # Set up types and constants
+    # 1. Set up types and constants.
     float_dtype = true_logprobs.dtype
     device = true_logprobs.device
     mask_value = LOG_ZERO(float_dtype)
     batch_size = int(th.max(true_batch_idxs).item() + 1)
 
-    # Calculate number of loss batches for memory efficiency
-    loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
-
+    # 2. Build spectrum-aligned slices for memory-bounded loss chunks.
     # Compute cumulative sum of counts for batch slicing.
     # .tolist() transfers batch_size+1 ints once, turning loop-body indexing into Python-int
     # slicing (no GPU→CPU sync per iteration). th.bincount is O(N) vs th.unique's O(N log N).
+    true_batch_counts = th.bincount(true_batch_idxs, minlength=batch_size)
+    pred_batch_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
     true_batch_cumsum: list[int] = th.cat(
-        [true_batch_idxs.new_zeros(1), th.bincount(true_batch_idxs, minlength=batch_size).cumsum(0)]
+        [true_batch_idxs.new_zeros(1), true_batch_counts.cumsum(0)]
     ).tolist()
     pred_batch_cumsum: list[int] = th.cat(
-        [pred_batch_idxs.new_zeros(1), th.bincount(pred_batch_idxs, minlength=batch_size).cumsum(0)]
+        [pred_batch_idxs.new_zeros(1), pred_batch_counts.cumsum(0)]
     ).tolist()
+    loss_chunks = _build_loss_chunks(
+        true_batch_cumsum,
+        pred_batch_cumsum,
+        loss_batch_size,
+    )
 
     # Precompute loop-invariant constants as Python scalars (avoids per-iteration tensor creation).
     _LOG_2PI = math.log(2 * math.pi)
@@ -348,7 +449,7 @@ def sparse_cross_entropy_vec(
     else:
         _log_trunc_factor = 0.0
 
-    # Initialize output tensors
+    # 3. Initialize outputs and per-peak tolerances.
     ios_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
     oos_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
     true_oos_logprobs = th.zeros(batch_size, dtype=float_dtype, device=device)
@@ -365,11 +466,9 @@ def sparse_cross_entropy_vec(
         tol_per_pred_peak = None
         min_mz_per_pred_peak = None
 
-    # Loop over loss batches for memory efficiency
-    for bl in range(loss_num_batches):
+    # 4. Evaluate padded, block-diagonal loss chunks.
+    for bl_lower, bl_upper in loss_chunks:
         # Compute batch slice indices (Python ints from .tolist() — no GPU sync)
-        bl_lower = bl * loss_batch_size
-        bl_upper = min((bl + 1) * loss_batch_size, batch_size)
         bl_true_lower = true_batch_cumsum[bl_lower]
         bl_true_upper = true_batch_cumsum[bl_upper]
         bl_pred_lower = pred_batch_cumsum[bl_lower]
@@ -407,71 +506,145 @@ def sparse_cross_entropy_vec(
             else None
         )
 
-        # Create mask for matching batch indices
-        bl_batch_mask = bl_true_batch_idxs.reshape(-1, 1) == bl_pred_batch_idxs.reshape(1, -1)
-        # Create mask for matching m/z values within tolerance
+        # Pad spectra independently so pairwise tensors have shape
+        # [batch, max_true_peaks, max_pred_peaks], without cross-spectrum pairs.
+        max_true_peaks = max(
+            true_batch_cumsum[index + 1] - true_batch_cumsum[index]
+            for index in range(bl_lower, bl_upper)
+        )
+        max_pred_peaks = max(
+            pred_batch_cumsum[index + 1] - pred_batch_cumsum[index]
+            for index in range(bl_lower, bl_upper)
+        )
+        true_sort_idx, true_padded_indices, bl_true_valid, max_true_peaks = (
+            _build_padded_batch_layout(
+                bl_true_batch_idxs,
+                bl_batch_size,
+                assume_sorted=True,
+                counts=true_batch_counts[bl_lower:bl_upper],
+                max_count=max_true_peaks,
+            )
+        )
+        pred_sort_idx, pred_padded_indices, bl_pred_valid, max_pred_peaks = (
+            _build_padded_batch_layout(
+                bl_pred_batch_idxs,
+                bl_batch_size,
+                assume_sorted=True,
+                counts=pred_batch_counts[bl_lower:bl_upper],
+                max_count=max_pred_peaks,
+            )
+        )
+        true_layout = (
+            true_sort_idx,
+            true_padded_indices,
+            bl_batch_size,
+            max_true_peaks,
+        )
+        pred_layout = (
+            pred_sort_idx,
+            pred_padded_indices,
+            bl_batch_size,
+            max_pred_peaks,
+        )
+        bl_true_mzs_padded = _pad_flat_with_layout(bl_true_mzs, *true_layout, pad_value=0.0)
+        bl_pred_mzs_padded = _pad_flat_with_layout(bl_pred_mzs, *pred_layout, pad_value=0.0)
+        bl_true_logprobs_padded = _pad_flat_with_layout(
+            bl_true_logprobs, *true_layout, pad_value=0.0
+        )
+        bl_pred_logprobs_padded = _pad_flat_with_layout(
+            bl_pred_logprobs, *pred_layout, pad_value=0.0
+        )
+
+        bl_tol_per_true_padded = None
+        bl_min_mz_per_true_padded = None
+        bl_tol_per_pred_padded = None
+        bl_min_mz_per_pred_padded = None
+        if bl_tol_per_true is not None:
+            bl_tol_per_true_padded = _pad_flat_with_layout(
+                bl_tol_per_true,
+                *true_layout,
+                pad_value=tolerance,
+            )
+            bl_min_mz_per_true_padded = _pad_flat_with_layout(
+                bl_min_mz_per_true,
+                *true_layout,
+                pad_value=tolerance_min_mz,
+            )
+            bl_tol_per_pred_padded = _pad_flat_with_layout(
+                bl_tol_per_pred,
+                *pred_layout,
+                pad_value=tolerance,
+            )
+            bl_min_mz_per_pred_padded = _pad_flat_with_layout(
+                bl_min_mz_per_pred,
+                *pred_layout,
+                pad_value=tolerance_min_mz,
+            )
+
+        # 5. Match peaks and compute Gaussian-mixture probabilities within each spectrum.
         bl_match_mask = calculate_match_mzs(
-            bl_true_mzs,
-            bl_pred_mzs,
+            bl_true_mzs_padded,
+            bl_pred_mzs_padded,
             tolerance=oos_tolerance_multiple * tolerance,
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
             tol_per_true=(
-                oos_tolerance_multiple * bl_tol_per_true if bl_tol_per_true is not None else None
+                oos_tolerance_multiple * bl_tol_per_true_padded
+                if bl_tol_per_true_padded is not None
+                else None
             ),
-            min_mz_per_true=bl_min_mz_per_true,
+            min_mz_per_true=bl_min_mz_per_true_padded,
         )
         bl_match_mask = th.as_tensor(bl_match_mask, device=device)
-        # Combine masks: only consider matches within same batch and within m/z tolerance
-        bl_both_mask = bl_batch_mask & bl_match_mask
-        del bl_batch_mask, bl_match_mask
+        bl_valid_pairs = bl_true_valid.unsqueeze(2) & bl_pred_valid.unsqueeze(1)
+        bl_both_mask = bl_valid_pairs & bl_match_mask
+        del bl_valid_pairs, bl_match_mask
 
-        # Mask for true peaks that have any matching prediction
-        bl_true_both_mask = th.any(bl_both_mask, dim=1)
+        bl_true_both_mask = th.any(bl_both_mask, dim=2)
 
-        # Compute Gaussian stds for predictions
         if relative:
-            if bl_tol_per_pred is not None:
-                bl_stds = th.maximum(bl_pred_mzs, bl_min_mz_per_pred) * bl_tol_per_pred
+            if bl_tol_per_pred_padded is not None:
+                bl_stds = (
+                    th.maximum(bl_pred_mzs_padded, bl_min_mz_per_pred_padded)
+                    * bl_tol_per_pred_padded
+                )
             else:
-                bl_stds = th.clamp(bl_pred_mzs, min=tolerance_min_mz) * tolerance
+                bl_stds = th.clamp(bl_pred_mzs_padded, min=tolerance_min_mz) * tolerance
         else:
-            bl_stds = tolerance * th.ones_like(bl_pred_mzs)
+            bl_stds = tolerance * th.ones_like(bl_pred_mzs_padded)
         bl_vars = bl_stds**2
 
-        # Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture).
-        # _LOG_2PI and _log_trunc_factor are Python scalars — no tensor allocation per iteration.
         bl_ios_log_probs = (
             -0.5
-            * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
-            / bl_vars.reshape(1, -1)
-            - 0.5 * (_LOG_2PI + th.log(bl_vars.reshape(1, -1)))
-            + bl_pred_logprobs.reshape(1, -1)
+            * (bl_true_mzs_padded.unsqueeze(2) - bl_pred_mzs_padded.unsqueeze(1)) ** 2
+            / bl_vars.unsqueeze(1)
+            - 0.5 * (_LOG_2PI + th.log(bl_vars.unsqueeze(1)))
+            + bl_pred_logprobs_padded.unsqueeze(1)
             - _log_trunc_factor
         )
-        # Mask out non-matching pairs with mask_value (large negative)
         bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).to(float_dtype) * mask_value
-        # Log-sum-exp over predictions for each true peak
-        bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=1)
+        bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=2)
 
-        # In-sample CE: scatter_reduce handles empty mask → zeros (no GPU sync needed).
-        bl_ios_ce = scatter_reduce(
-            (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
-            bl_true_batch_idxs[bl_true_both_mask],
-            "sum",
-            dim=0,
-            dim_size=bl_batch_size,
-            default=0.0,
+        # 6. Reduce padded peak losses back to one value per spectrum.
+        bl_ios_ce = th.sum(
+            th.where(
+                bl_true_both_mask,
+                -th.exp(bl_true_logprobs_padded) * bl_ios_log_probs,
+                th.zeros_like(bl_ios_log_probs),
+            ),
+            dim=1,
         )
         ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
-        # OOS logprobs for unmatched true peaks. scatter_logsumexp is empty-safe → LOG_ZERO.
-        # No GPU sync needed — the th.all() conditional has been removed.
-        bl_unmatched_mask = ~bl_true_both_mask
-        bl_true_oos_logprobs = scatter_logsumexp(
-            bl_true_logprobs[bl_unmatched_mask],
-            bl_true_batch_idxs[bl_unmatched_mask],
-            dim_size=bl_batch_size,
+        bl_unmatched_mask = bl_true_valid & ~bl_true_both_mask
+        bl_true_oos_logprobs = th.logsumexp(
+            bl_true_logprobs_padded + (~bl_unmatched_mask).to(float_dtype) * mask_value,
+            dim=1,
+        )
+        bl_true_oos_logprobs = th.where(
+            th.any(bl_unmatched_mask, dim=1),
+            bl_true_oos_logprobs,
+            th.full_like(bl_true_oos_logprobs, mask_value),
         )
         # Compute out-of-sample cross-entropy
         bl_oos_ce = -th.exp(bl_true_oos_logprobs) * bl_pred_oos_logprobs
@@ -549,21 +722,15 @@ def _pad_flat_by_batch(
     pad_value: float,
 ) -> tuple[th.Tensor, th.Tensor]:
     """Convert flat ragged values plus batch indices into a padded [B, N] tensor."""
-    counts = th.bincount(batch_idxs, minlength=batch_size)
-    max_count = int(counts.max().item()) if counts.numel() > 0 else 0
-    padded = values.new_full((batch_size, max_count), pad_value)
-    valid = th.arange(max_count, device=values.device).unsqueeze(0) < counts.unsqueeze(1)
-    if values.numel() == 0 or max_count == 0:
-        return padded, valid
-
-    sort_idx = th.argsort(batch_idxs)
-    sorted_batch_idxs = batch_idxs[sort_idx]
-    sorted_values = values[sort_idx]
-    row_starts = th.cumsum(counts, dim=0) - counts
-    positions = th.arange(values.numel(), device=values.device) - th.repeat_interleave(
-        row_starts, counts
+    sort_idx, padded_indices, valid, max_count = _build_padded_batch_layout(batch_idxs, batch_size)
+    padded = _pad_flat_with_layout(
+        values,
+        sort_idx,
+        padded_indices,
+        batch_size,
+        max_count,
+        pad_value,
     )
-    padded[sorted_batch_idxs, positions] = sorted_values
     return padded, valid
 
 
