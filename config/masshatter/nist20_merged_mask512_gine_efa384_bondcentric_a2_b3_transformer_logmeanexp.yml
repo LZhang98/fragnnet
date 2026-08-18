@@ -75,7 +75,7 @@ oos_loss: True
 gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
-loss_batch_size: 1
+loss_batch_size: 32
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 
@@ -85,9 +85,9 @@ group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-train_batch_size: 8
-eval_batch_size: 4
-accumulate_grad_batches: 16
+train_batch_size: 64
+eval_batch_size: 32
+accumulate_grad_batches: 2
 automatic_optimization: True
 gradient_clip_val: 5.0
 lr: 0.001
