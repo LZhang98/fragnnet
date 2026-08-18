@@ -299,6 +299,7 @@ class MassShatterModel(nn.Module):
         intensity_transformer_feedforward_dim: int,
         intensity_transformer_num_inducing_points: int,
         intensity_transformer_dropout: float,
+        use_mask_residuals: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -344,6 +345,8 @@ class MassShatterModel(nn.Module):
             intensity_transformer_num_inducing_points: Latent tokens used to keep
                 attention linear in the number of candidates.
             intensity_transformer_dropout: Dropout inside the candidate transformer.
+            use_mask_residuals: Whether transformer residuals may redistribute retained
+                probability between selected masks.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -432,6 +435,7 @@ class MassShatterModel(nn.Module):
         self.max_h_transfer = max_h_transfer
         self.include_cmf = include_cmf
         self.charge_pooling = charge_pooling
+        self.use_mask_residuals = use_mask_residuals
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
         # hydrogen transfers from -max_h_transfer to +max_h_transfer.
@@ -871,6 +875,8 @@ class MassShatterModel(nn.Module):
             num_masks=num_masks,
             context=context[candidates.component_batch_indices],
         )
+        if not self.use_mask_residuals:
+            mask_residuals = th.zeros_like(mask_residuals)
 
         # Reweight the masks: renormalize the corrected logits within each spectrum, then
         # rescale to the retained mass the Bernoulli enumeration originally held. The
@@ -935,6 +941,11 @@ class MassShatterModel(nn.Module):
             .expand_as(valid_channels)
             .flatten()[flat_valid]
         )
+        candidate_cut_counts = (
+            candidates.component_cut_counts[:, None, None]
+            .expand_as(valid_channels)
+            .flatten()[flat_valid]
+        )
         pred_oos_logprobs = self._oos_log_probabilities(candidates, batch_size)
         selected_mask_count = th.bincount(
             candidates.mask_batch_indices,
@@ -944,6 +955,30 @@ class MassShatterModel(nn.Module):
             candidates.component_batch_indices,
             minlength=batch_size,
         )
+        selected_mask_count_float = selected_mask_count.to(bond_logits)
+        component_pathway_count_float = component_pathway_count.to(bond_logits)
+        mean_mask_cut_count = bond_logits.new_zeros(batch_size).index_add(
+            0,
+            candidates.mask_batch_indices,
+            candidates.mask_cut_counts.to(bond_logits),
+        ) / selected_mask_count_float
+        mask_cut_fractions = {}
+        cut_count_buckets = {
+            "0": candidates.mask_cut_counts == 0,
+            "1": candidates.mask_cut_counts == 1,
+            "2": candidates.mask_cut_counts == 2,
+            "3": candidates.mask_cut_counts == 3,
+            "4plus": candidates.mask_cut_counts >= 4,
+        }
+        for bucket_name, bucket_mask in cut_count_buckets.items():
+            bucket_count = bond_logits.new_zeros(batch_size).index_add(
+                0,
+                candidates.mask_batch_indices,
+                bucket_mask.to(bond_logits),
+            )
+            mask_cut_fractions[f"mask_cut_fraction_{bucket_name}"] = (
+                bucket_count / selected_mask_count_float
+            )
         candidate_timing_values = {
             "candidate_input_transfer_batch_ms": candidates.timings.input_transfer_ms,
             "candidate_mask_selection_batch_ms": candidates.timings.mask_selection_ms,
@@ -964,6 +999,9 @@ class MassShatterModel(nn.Module):
             "pred_logprobs": pred_logprobs,
             "pred_batch_idxs": pred_batch_idxs,
             "pred_oos_logprobs": pred_oos_logprobs,
+            "candidate_mzs_by_cut": pred_mzs,
+            "candidate_batch_idxs_by_cut": pred_batch_idxs,
+            "candidate_cut_counts": candidate_cut_counts,
             "bond_break_logits": bond_logits,
             "atom_charge_logits": atom_charge_logits,
             "retained_mask_probability": 1.0 - pred_oos_logprobs.exp(),
@@ -971,5 +1009,13 @@ class MassShatterModel(nn.Module):
             "exploration_mask_count": candidates.exploration_mask_count,
             "exploration_mean_cut_count": candidates.exploration_mean_cut_count,
             "component_pathway_count": component_pathway_count,
+            "mean_mask_cut_count": mean_mask_cut_count,
+            "proposal_single_cut_fraction": candidates.proposal_single_cut_fraction,
+            "unique_component_count": candidates.unique_component_count,
+            "components_per_mask": component_pathway_count_float / selected_mask_count_float,
+            "unique_components_per_mask": (
+                candidates.unique_component_count / selected_mask_count_float
+            ),
+            **mask_cut_fractions,
             **candidate_timing_tensors,
         }

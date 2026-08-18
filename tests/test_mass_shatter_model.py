@@ -33,6 +33,7 @@ def _build_model(
     bond_num_layers: int = 0,
     explore_masks: int = 0,
     max_masks: int = 2,
+    use_mask_residuals: bool = True,
     exploration_cut_count_weights: tuple[float, ...] = (
         0.0,
         0.0,
@@ -63,6 +64,7 @@ def _build_model(
         intensity_transformer_feedforward_dim=32,
         intensity_transformer_num_inducing_points=4,
         intensity_transformer_dropout=0.0,
+        use_mask_residuals=use_mask_residuals,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -113,6 +115,15 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["exploration_mask_count"].tolist() == [0.0, 0.0]
     assert output["exploration_mean_cut_count"].tolist() == [0.0, 0.0]
     assert output["component_pathway_count"].tolist() == [8, 3]
+    assert output["components_per_mask"].tolist() == pytest.approx([2.0, 1.5])
+    assert th.all(output["unique_components_per_mask"] <= output["components_per_mask"])
+    cut_fraction_sum = sum(
+        output[f"mask_cut_fraction_{bucket}"]
+        for bucket in ("0", "1", "2", "3", "4plus")
+    )
+    assert cut_fraction_sum.tolist() == pytest.approx([1.0, 1.0])
+    assert output["candidate_mzs_by_cut"].shape == output["candidate_cut_counts"].shape
+    assert th.equal(output["candidate_batch_idxs_by_cut"], output["pred_batch_idxs"])
     assert output["candidate_total_batch_ms"].shape == (2,)
     assert output["candidate_total_molecule_ms"].min() >= 0.0
     protonated_ethanol_mz = formula_to_peak_mzs(
@@ -207,6 +218,44 @@ def test_mask_residual_reallocates_only_retained_probability(
     )
     shifted_total = shifted_mass + shifted["pred_oos_logprobs"].exp()
     assert shifted_total.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+
+
+def test_disabled_mask_residual_does_not_reallocate_probability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = _build_batch()
+    model = _build_model(batch, use_mask_residuals=False).eval()
+    forward_kwargs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([20.0, 40.0]),
+    }
+    original_intensity_forward = model.intensity_head.forward
+
+    with th.no_grad():
+        baseline = model(**forward_kwargs)
+
+    def shifted_intensity_forward(*args: object, **kwargs: object) -> tuple[th.Tensor, ...]:
+        component_residuals, mask_residuals, ion_h_logits = original_intensity_forward(
+            *args,
+            **kwargs,
+        )
+        return (
+            component_residuals,
+            th.linspace(
+                -1.0,
+                1.0,
+                mask_residuals.shape[0],
+                device=mask_residuals.device,
+            ),
+            ion_h_logits,
+        )
+
+    monkeypatch.setattr(model.intensity_head, "forward", shifted_intensity_forward)
+    with th.no_grad():
+        shifted = model(**forward_kwargs)
+
+    assert th.allclose(baseline["pred_logprobs"], shifted["pred_logprobs"])
 
 
 def test_mass_shatter_uses_mixed_masks_only_during_training(

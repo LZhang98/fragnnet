@@ -218,6 +218,7 @@ mass_shatter_intensity_transformer_num_heads: 8
 mass_shatter_intensity_transformer_feedforward_dim: 512
 mass_shatter_intensity_transformer_num_inducing_points: 64
 mass_shatter_intensity_transformer_dropout: 0.1
+mass_shatter_use_mask_residuals: True  # False keeps original proposal mask probabilities.
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

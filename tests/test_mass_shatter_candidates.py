@@ -28,9 +28,12 @@ def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
 
     assert candidates.mask_log_probabilities.shape == (4,)
     assert candidates.mask_batch_indices.tolist() == [0, 0, 1, 1]
+    assert candidates.mask_cut_counts.tolist() == [1, 0, 0, 1]
     assert candidates.component_mask_indices.tolist() == [0, 0, 1, 2, 3, 3]
     assert candidates.component_batch_indices.tolist() == [0, 0, 0, 1, 1, 1]
     assert candidates.component_cut_counts.tolist() == [1, 1, 0, 0, 1, 1]
+    assert candidates.proposal_single_cut_fraction.tolist() == pytest.approx([0.5, 0.5])
+    assert candidates.unique_component_count.tolist() == [3.0, 3.0]
 
     membership_batches = th.tensor([0, 0, 1, 1])[candidates.atom_indices]
     component_batches = candidates.component_batch_indices[candidates.atom_component_indices]

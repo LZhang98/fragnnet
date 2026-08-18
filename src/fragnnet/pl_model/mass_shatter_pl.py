@@ -24,6 +24,68 @@ from fragnnet.model import MassShatterModel
 from fragnnet.model.loss import ce_switch_pair_bce, get_sparse_cross_entropy_fn
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.utils.spec_utils import calculate_match_mzs
+
+_CUT_COUNT_BUCKETS = {
+    "0": lambda cut_counts: cut_counts == 0,
+    "1": lambda cut_counts: cut_counts == 1,
+    "2": lambda cut_counts: cut_counts == 2,
+    "3": lambda cut_counts: cut_counts == 3,
+    "4plus": lambda cut_counts: cut_counts >= 4,
+}
+
+
+def _candidate_coverage_by_cut_count(
+    *,
+    true_mzs: th.Tensor,
+    true_ints: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_batch_idxs: th.Tensor,
+    candidate_cut_counts: th.Tensor,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+) -> dict[str, th.Tensor]:
+    """Measure true-peak coverage using candidates from one cut-count bucket.
+
+    A true peak may be covered by multiple buckets, so the resulting recall values
+    describe each bucket's standalone support and are not additive.
+    """
+    batch_size = int(true_batch_idxs.max().item()) + 1
+    metrics = {
+        f"candidate_{metric}_cut_{bucket}": true_ints.new_zeros(batch_size)
+        for bucket in _CUT_COUNT_BUCKETS
+        for metric in ("recall", "wrecall")
+    }
+    for batch_index in range(batch_size):
+        true_mask = true_batch_idxs == batch_index
+        batch_true_mzs = true_mzs[true_mask]
+        batch_true_ints = true_ints[true_mask]
+        if batch_true_mzs.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no true peaks")
+        true_intensity = batch_true_ints.sum()
+        for bucket, select_bucket in _CUT_COUNT_BUCKETS.items():
+            candidate_mask = (candidate_batch_idxs == batch_index) & select_bucket(
+                candidate_cut_counts
+            )
+            if not candidate_mask.any():
+                continue
+            match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                candidate_mzs[candidate_mask],
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+            true_match_mask = match_mask.any(dim=1)
+            metrics[f"candidate_recall_cut_{bucket}"][batch_index] = true_match_mask.to(
+                batch_true_ints
+            ).mean()
+            metrics[f"candidate_wrecall_cut_{bucket}"][batch_index] = (
+                batch_true_ints * true_match_mask
+            ).sum() / true_intensity
+    return metrics
 
 
 class MassShatterPL(SpectrumPL):
@@ -94,6 +156,7 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_intensity_transformer_num_inducing_points
             ),
             intensity_transformer_dropout=(self.hparams.mass_shatter_intensity_transformer_dropout),
+            use_mask_residuals=self.hparams.mass_shatter_use_mask_residuals,
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
@@ -189,6 +252,16 @@ class MassShatterPL(SpectrumPL):
             exploration_mask_count: th.Tensor,
             exploration_mean_cut_count: th.Tensor,
             component_pathway_count: th.Tensor,
+            mean_mask_cut_count: th.Tensor,
+            proposal_single_cut_fraction: th.Tensor,
+            unique_component_count: th.Tensor,
+            components_per_mask: th.Tensor,
+            unique_components_per_mask: th.Tensor,
+            mask_cut_fraction_0: th.Tensor,
+            mask_cut_fraction_1: th.Tensor,
+            mask_cut_fraction_2: th.Tensor,
+            mask_cut_fraction_3: th.Tensor,
+            mask_cut_fraction_4plus: th.Tensor,
             candidate_input_transfer_batch_ms: th.Tensor,
             candidate_mask_selection_batch_ms: th.Tensor,
             candidate_topology_batch_ms: th.Tensor,
@@ -240,6 +313,20 @@ class MassShatterPL(SpectrumPL):
                     exploration_mean_cut_count.detach().to(pred_logprobs)
                 ),
                 "component_pathway_count": component_pathway_count.detach().to(pred_logprobs),
+                "mean_mask_cut_count": mean_mask_cut_count.detach().to(pred_logprobs),
+                "proposal_single_cut_fraction": (
+                    proposal_single_cut_fraction.detach().to(pred_logprobs)
+                ),
+                "unique_component_count": unique_component_count.detach().to(pred_logprobs),
+                "components_per_mask": components_per_mask.detach().to(pred_logprobs),
+                "unique_components_per_mask": (
+                    unique_components_per_mask.detach().to(pred_logprobs)
+                ),
+                "mask_cut_fraction_0": mask_cut_fraction_0.detach().to(pred_logprobs),
+                "mask_cut_fraction_1": mask_cut_fraction_1.detach().to(pred_logprobs),
+                "mask_cut_fraction_2": mask_cut_fraction_2.detach().to(pred_logprobs),
+                "mask_cut_fraction_3": mask_cut_fraction_3.detach().to(pred_logprobs),
+                "mask_cut_fraction_4plus": (mask_cut_fraction_4plus.detach().to(pred_logprobs)),
                 "candidate_input_transfer_batch_ms": (candidate_input_transfer_batch_ms.detach()),
                 "candidate_mask_selection_batch_ms": (candidate_mask_selection_batch_ms.detach()),
                 "candidate_topology_batch_ms": candidate_topology_batch_ms.detach(),
@@ -309,6 +396,16 @@ class MassShatterPL(SpectrumPL):
             "exploration_mask_count",
             "exploration_mean_cut_count",
             "component_pathway_count",
+            "mean_mask_cut_count",
+            "proposal_single_cut_fraction",
+            "unique_component_count",
+            "components_per_mask",
+            "unique_components_per_mask",
+            "mask_cut_fraction_0",
+            "mask_cut_fraction_1",
+            "mask_cut_fraction_2",
+            "mask_cut_fraction_3",
+            "mask_cut_fraction_4plus",
             "candidate_input_transfer_batch_ms",
             "candidate_mask_selection_batch_ms",
             "candidate_topology_batch_ms",
@@ -321,6 +418,46 @@ class MassShatterPL(SpectrumPL):
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
+
+    def _setup_metric_fns(self) -> None:
+        """Add validation candidate coverage broken down by mask cut count."""
+        super()._setup_metric_fns()
+        coverage_metric_names = {
+            f"candidate_{metric}_cut_{bucket}"
+            for bucket in _CUT_COUNT_BUCKETS
+            for metric in ("recall", "wrecall")
+        }
+        for metric_name in coverage_metric_names:
+            self.metric_min_max[metric_name] = None
+        self.auxiliary_metric_names.update(coverage_metric_names)
+        self.metric_names.update(coverage_metric_names)
+        self.extra_metric_args.extend(
+            [
+                "candidate_mzs_by_cut",
+                "candidate_batch_idxs_by_cut",
+                "candidate_cut_counts",
+            ]
+        )
+        base_metric_fn = self.metric_fn
+
+        def metric_fn(**kwargs: Any) -> dict[str, th.Tensor]:
+            metrics = base_metric_fn(**kwargs)
+            metrics.update(
+                _candidate_coverage_by_cut_count(
+                    true_mzs=kwargs["true_mzs"],
+                    true_ints=kwargs["true_ints"],
+                    true_batch_idxs=kwargs["true_batch_idxs"],
+                    candidate_mzs=kwargs["candidate_mzs_by_cut"],
+                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
+                    candidate_cut_counts=kwargs["candidate_cut_counts"],
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                )
+            )
+            return metrics
+
+        self.metric_fn = metric_fn
 
     def forward(self, **batch_kwargs) -> dict[str, th.Tensor]:
         """Select the MASShatter inputs from SpectrumPL's collated batch.

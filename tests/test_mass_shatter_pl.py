@@ -44,6 +44,12 @@ def test_mass_shatter_pl_builds_configured_bond_focused_head() -> None:
     assert isinstance(model.model.bond_break_head, BondFocusedBreakHead)
 
 
+def test_mass_shatter_pl_disables_mask_residuals_from_config() -> None:
+    model, _ = _build_pl(mass_shatter_use_mask_residuals=False)
+
+    assert not model.model.use_mask_residuals
+
+
 def test_mass_shatter_transfer_retains_static_graph_on_cpu() -> None:
     model, _ = _build_pl()
     mol_pyg = Batch.from_data_list(
@@ -85,19 +91,29 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         pred_logprobs=pred_logprobs,
         pred_batch_idxs=pred_batch_indices,
         pred_oos_logprobs=pred_oos_logprobs,
-            retained_mask_probability=th.tensor([0.8]),
-            selected_mask_count=th.tensor([2]),
-            exploration_mask_count=th.tensor([1]),
-            exploration_mean_cut_count=th.tensor([3.0]),
-            component_pathway_count=th.tensor([4]),
-            candidate_input_transfer_batch_ms=th.tensor([1.0]),
-            candidate_mask_selection_batch_ms=th.tensor([2.0]),
-            candidate_topology_batch_ms=th.tensor([3.0]),
-            candidate_assembly_batch_ms=th.tensor([4.0]),
-            candidate_output_transfer_batch_ms=th.tensor([5.0]),
-            candidate_total_batch_ms=th.tensor([15.0]),
-            candidate_total_molecule_ms=th.tensor([15.0]),
-            batch_size=1,
+        retained_mask_probability=th.tensor([0.8]),
+        selected_mask_count=th.tensor([2]),
+        exploration_mask_count=th.tensor([1]),
+        exploration_mean_cut_count=th.tensor([3.0]),
+        component_pathway_count=th.tensor([4]),
+        mean_mask_cut_count=th.tensor([2.0]),
+        proposal_single_cut_fraction=th.tensor([0.25]),
+        unique_component_count=th.tensor([3]),
+        components_per_mask=th.tensor([2.0]),
+        unique_components_per_mask=th.tensor([1.5]),
+        mask_cut_fraction_0=th.tensor([0.25]),
+        mask_cut_fraction_1=th.tensor([0.25]),
+        mask_cut_fraction_2=th.tensor([0.5]),
+        mask_cut_fraction_3=th.tensor([0.0]),
+        mask_cut_fraction_4plus=th.tensor([0.0]),
+        candidate_input_transfer_batch_ms=th.tensor([1.0]),
+        candidate_mask_selection_batch_ms=th.tensor([2.0]),
+        candidate_topology_batch_ms=th.tensor([3.0]),
+        candidate_assembly_batch_ms=th.tensor([4.0]),
+        candidate_output_transfer_batch_ms=th.tensor([5.0]),
+        candidate_total_batch_ms=th.tensor([15.0]),
+        candidate_total_molecule_ms=th.tensor([15.0]),
+        batch_size=1,
     )
     sparse_ce_fn = get_sparse_cross_entropy_fn(
         dist=config["output_distribution"],
@@ -130,6 +146,11 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     assert actual["exploration_mask_count"].tolist() == [1.0]
     assert actual["exploration_mean_cut_count"].tolist() == [3.0]
     assert actual["component_pathway_count"].tolist() == [4.0]
+    assert actual["mean_mask_cut_count"].tolist() == [2.0]
+    assert actual["proposal_single_cut_fraction"].tolist() == [0.25]
+    assert actual["unique_component_count"].tolist() == [3.0]
+    assert actual["components_per_mask"].tolist() == [2.0]
+    assert actual["unique_components_per_mask"].tolist() == [1.5]
     assert actual["candidate_total_batch_ms"].tolist() == [15.0]
 
 
@@ -143,6 +164,9 @@ def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
         pred_mzs=th.tensor([100.0, 400.0, 500.0]),
         pred_ints=th.tensor([0.7, 0.8, 0.2]),
         pred_batch_idxs=th.tensor([0, 1, 1]),
+        candidate_mzs_by_cut=th.tensor([100.0, 400.0, 500.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 1, 1]),
+        candidate_cut_counts=th.tensor([1, 2, 2]),
         true_prec_mzs=th.tensor([600.0, 600.0]),
         split="val",
     )
@@ -151,6 +175,10 @@ def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
     assert th.isfinite(actual["wprecision"]).all()
     assert actual["wrecall"].tolist() == pytest.approx([0.6, 1.0])
     assert actual["wprecision"].tolist() == pytest.approx([0.7, 0.8])
+    assert actual["candidate_recall_cut_1"].tolist() == pytest.approx([0.5, 0.0])
+    assert actual["candidate_wrecall_cut_1"].tolist() == pytest.approx([0.6, 0.0])
+    assert actual["candidate_recall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
+    assert actual["candidate_wrecall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
 
 
 def test_exploration_cut_count_mean_excludes_molecules_without_samples() -> None:

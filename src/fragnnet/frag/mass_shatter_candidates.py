@@ -46,6 +46,7 @@ class MassShatterCandidateBatch:
 
     mask_log_probabilities: th.Tensor
     mask_batch_indices: th.Tensor
+    mask_cut_counts: th.Tensor
     component_mask_indices: th.Tensor
     component_batch_indices: th.Tensor
     component_cut_counts: th.Tensor
@@ -55,6 +56,8 @@ class MassShatterCandidateBatch:
     boundary_component_indices: th.Tensor
     exploration_mask_count: th.Tensor
     exploration_mean_cut_count: th.Tensor
+    proposal_single_cut_fraction: th.Tensor
+    unique_component_count: th.Tensor
     timings: MassShatterCandidateTimings
 
     @property
@@ -218,6 +221,7 @@ def build_mass_shatter_candidates(
 
     mask_batch_indices: list[int] = []
     mask_bond_indices: list[list[int]] = []
+    mask_cut_counts: list[int] = []
     component_mask_indices: list[int] = []
     component_batch_indices: list[int] = []
     component_cut_counts: list[int] = []
@@ -227,6 +231,8 @@ def build_mass_shatter_candidates(
     boundary_component_indices: list[int] = []
     exploration_mask_counts: list[int] = []
     exploration_mean_cut_counts: list[float] = []
+    proposal_single_cut_fractions: list[float] = []
+    unique_component_counts: list[int] = []
     mask_selection_ms = 0.0
     topology_ms = 0.0
     assembly_ms = 0.0
@@ -389,6 +395,9 @@ def build_mass_shatter_candidates(
         exploration_mean_cut_counts.append(
             sampled_cut_count / sampled_count if sampled_count > 0 else 0.0
         )
+        proposal_single_cut_fractions.append(
+            sum(mask.cut_count == 1 for mask in ranked_masks) / len(ranked_masks)
+        )
 
         # Append forced masks outside the learned proposal budget.
         for broken_bond_indices in forced_bond_sets:
@@ -428,12 +437,14 @@ def build_mass_shatter_candidates(
                     for local_bond_index in translated_mask.cut_mask.broken_bond_indices
                 ]
             )
+            mask_cut_counts.append(translated_mask.cut_mask.cut_count)
             num_local_components = len(translated_mask.component_atom_masks)
             local_component_masks.extend(translated_mask.component_atom_masks)
             local_component_owners.extend([local_mask_index] * num_local_components)
             component_mask_indices.extend([mask_index] * num_local_components)
             component_batch_indices.extend([molecule_index] * num_local_components)
             component_cut_counts.extend([translated_mask.cut_mask.cut_count] * num_local_components)
+        unique_component_counts.append(len(set(local_component_masks)))
 
         local_component_indices, local_atom_indices = _unpack_component_memberships(
             local_component_masks,
@@ -487,6 +498,7 @@ def build_mass_shatter_candidates(
     (
         bond_batch_indices,
         mask_batch_indices_t,
+        mask_cut_counts_t,
         component_mask_indices_t,
         component_batch_indices_t,
         component_cut_counts_t,
@@ -500,6 +512,7 @@ def build_mass_shatter_candidates(
         (
             bond_batch_values,
             mask_batch_indices,
+            mask_cut_counts,
             component_mask_indices,
             component_batch_indices,
             component_cut_counts,
@@ -540,6 +553,7 @@ def build_mass_shatter_candidates(
     return MassShatterCandidateBatch(
         mask_log_probabilities=mask_log_probabilities,
         mask_batch_indices=mask_batch_indices_t,
+        mask_cut_counts=mask_cut_counts_t,
         component_mask_indices=component_mask_indices_t,
         component_batch_indices=component_batch_indices_t,
         component_cut_counts=component_cut_counts_t,
@@ -554,6 +568,16 @@ def build_mass_shatter_candidates(
         ),
         exploration_mean_cut_count=th.tensor(
             exploration_mean_cut_counts,
+            dtype=bond_logits.dtype,
+            device=device,
+        ),
+        proposal_single_cut_fraction=th.tensor(
+            proposal_single_cut_fractions,
+            dtype=bond_logits.dtype,
+            device=device,
+        ),
+        unique_component_count=th.tensor(
+            unique_component_counts,
             dtype=bond_logits.dtype,
             device=device,
         ),
