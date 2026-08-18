@@ -82,7 +82,7 @@ oos_loss: True
 gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
-loss_batch_size: 8
+loss_batch_size: 1
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 
