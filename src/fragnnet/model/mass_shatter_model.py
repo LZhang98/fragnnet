@@ -17,8 +17,9 @@ from fragnnet.frag.mass_shatter_candidates import (
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
+    CandidateIntensityTransformerHead,
     EndpointBondBreakHead,
-    JointIonHydrogenHead,
+    _segment_logsumexp,
     component_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
     pool_boundary_bond_embeddings,
@@ -174,6 +175,12 @@ class MassShatterModel(nn.Module):
         head_hidden_dim: int,
         head_dropout: float,
         bond_num_layers: int,
+        intensity_transformer_dim: int,
+        intensity_transformer_num_layers: int,
+        intensity_transformer_num_heads: int,
+        intensity_transformer_feedforward_dim: int,
+        intensity_transformer_num_inducing_points: int,
+        intensity_transformer_dropout: float,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -294,13 +301,17 @@ class MassShatterModel(nn.Module):
             head_hidden_dim,
             head_dropout,
         )
-        self.ion_hydrogen_head = JointIonHydrogenHead(
-            precursor_hidden_dim,
-            context_dim,
-            head_hidden_dim,
-            self.num_ion_modes,
-            self.num_h_shifts,
-            head_dropout,
+        self.intensity_head = CandidateIntensityTransformerHead(
+            fragment_embedding_dim=precursor_hidden_dim,
+            context_dim=context_dim,
+            model_dim=intensity_transformer_dim,
+            num_layers=intensity_transformer_num_layers,
+            num_heads=intensity_transformer_num_heads,
+            feedforward_dim=intensity_transformer_feedforward_dim,
+            num_inducing_points=intensity_transformer_num_inducing_points,
+            num_ion_modes=self.num_ion_modes,
+            num_h_shifts=self.num_h_shifts,
+            dropout=intensity_transformer_dropout,
         )
         self._setup_chemistry_buffers()
 
@@ -577,13 +588,57 @@ class MassShatterModel(nn.Module):
             candidates.component_mask_indices,
             pooling=self.charge_pooling,
         )
-        ion_h_logits = self.ion_hydrogen_head(
+        num_masks = candidates.mask_log_probabilities.shape[0]
+        component_sizes = th.bincount(
+            candidates.atom_component_indices,
+            minlength=num_components,
+        )
+        original_component_mask_log_probabilities = candidates.mask_log_probabilities[
+            candidates.component_mask_indices
+        ]
+        component_residuals, mask_residuals, ion_h_logits = self.intensity_head(
             fragment_embeddings,
             complement_embeddings,
             boundary_embeddings,
             candidates.component_cut_counts,
+            component_sizes,
+            charge_log_probabilities,
+            original_component_mask_log_probabilities,
+            candidates.component_batch_indices,
+            candidates.component_mask_indices,
+            batch_size=batch_size,
+            num_masks=num_masks,
             context=context[candidates.component_batch_indices],
         )
+
+        mask_logits = candidates.mask_log_probabilities + mask_residuals
+        original_retained_log_probabilities = _segment_logsumexp(
+            candidates.mask_log_probabilities,
+            candidates.mask_batch_indices,
+            batch_size,
+        )
+        mask_log_normalizers = _segment_logsumexp(
+            mask_logits,
+            candidates.mask_batch_indices,
+            batch_size,
+        )
+        mask_log_probabilities = (
+            mask_logits
+            - mask_log_normalizers[candidates.mask_batch_indices]
+            + original_retained_log_probabilities[candidates.mask_batch_indices]
+        )
+        component_mask_log_probabilities = mask_log_probabilities[
+            candidates.component_mask_indices
+        ]
+        component_charge_logits = charge_log_probabilities + component_residuals
+        component_log_normalizers = _segment_logsumexp(
+            component_charge_logits,
+            candidates.component_mask_indices,
+            num_masks,
+        )
+        charge_log_probabilities = component_charge_logits - component_log_normalizers[
+            candidates.component_mask_indices
+        ]
         ion_mzs, valid_channels = self._component_masses_and_valid_channels(
             mol_pyg,
             candidates,
@@ -596,8 +651,7 @@ class MassShatterModel(nn.Module):
 
         # 4. Flatten valid pathways into SpectrumPL's sparse prediction contract.
         component_log_probabilities = (
-            candidates.mask_log_probabilities[candidates.component_mask_indices]
-            + charge_log_probabilities
+            component_mask_log_probabilities + charge_log_probabilities
         )
         pathway_log_probabilities = (
             component_log_probabilities[:, None, None] + ion_h_log_probabilities

@@ -35,6 +35,327 @@ def _build_head(
     )
 
 
+class _InducedCandidateAttentionLayer(nn.Module):
+    """Exchange information between candidate tokens through a small latent set."""
+
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        feedforward_dim: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        self.latent_attention = nn.MultiheadAttention(
+            model_dim,
+            num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.candidate_attention = nn.MultiheadAttention(
+            model_dim,
+            num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.latent_attention_norm = nn.LayerNorm(model_dim)
+        self.latent_feedforward_norm = nn.LayerNorm(model_dim)
+        self.candidate_attention_norm = nn.LayerNorm(model_dim)
+        self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
+        self.latent_feedforward = self._build_feedforward(
+            model_dim,
+            feedforward_dim,
+            dropout,
+        )
+        self.candidate_feedforward = self._build_feedforward(
+            model_dim,
+            feedforward_dim,
+            dropout,
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    @staticmethod
+    def _build_feedforward(
+        model_dim: int,
+        feedforward_dim: int,
+        dropout: float,
+    ) -> nn.Sequential:
+        return nn.Sequential(
+            nn.Linear(model_dim, feedforward_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(feedforward_dim, model_dim),
+        )
+
+    def forward(
+        self,
+        candidate_tokens: th.Tensor,
+        inducing_tokens: th.Tensor,
+        candidate_padding_mask: th.Tensor,
+    ) -> tuple[th.Tensor, th.Tensor]:
+        latent_updates, _ = self.latent_attention(
+            inducing_tokens,
+            candidate_tokens,
+            candidate_tokens,
+            key_padding_mask=candidate_padding_mask,
+            need_weights=False,
+        )
+        inducing_tokens = self.latent_attention_norm(
+            inducing_tokens + self.dropout(latent_updates)
+        )
+        inducing_tokens = self.latent_feedforward_norm(
+            inducing_tokens + self.dropout(self.latent_feedforward(inducing_tokens))
+        )
+
+        candidate_updates, _ = self.candidate_attention(
+            candidate_tokens,
+            inducing_tokens,
+            inducing_tokens,
+            need_weights=False,
+        )
+        candidate_tokens = self.candidate_attention_norm(
+            candidate_tokens + self.dropout(candidate_updates)
+        )
+        candidate_tokens = self.candidate_feedforward_norm(
+            candidate_tokens + self.dropout(self.candidate_feedforward(candidate_tokens))
+        )
+        return candidate_tokens, inducing_tokens
+
+
+class CandidateIntensityTransformerHead(nn.Module):
+    """Contextualize a molecule's component candidates before intensity scoring.
+
+    Inducing tokens keep attention linear in the number of component pathways,
+    which is important when a molecule contributes thousands of candidates.
+    """
+
+    def __init__(
+        self,
+        fragment_embedding_dim: int,
+        context_dim: int,
+        model_dim: int,
+        num_layers: int,
+        num_heads: int,
+        feedforward_dim: int,
+        num_inducing_points: int,
+        num_ion_modes: int,
+        num_h_shifts: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        dimensions = (
+            fragment_embedding_dim,
+            model_dim,
+            num_layers,
+            num_heads,
+            feedforward_dim,
+            num_inducing_points,
+            num_ion_modes,
+            num_h_shifts,
+        )
+        if min(dimensions) <= 0:
+            raise ValueError("transformer dimensions and layer counts must be positive")
+        if context_dim < 0:
+            raise ValueError("context_dim must be nonnegative")
+        if model_dim % num_heads != 0:
+            raise ValueError("model_dim must be divisible by num_heads")
+        if dropout < 0.0 or dropout > 1.0:
+            raise ValueError(f"dropout must be in [0, 1], got {dropout}")
+
+        self.fragment_embedding_dim = fragment_embedding_dim
+        self.context_dim = context_dim
+        self.num_ion_modes = num_ion_modes
+        self.num_h_shifts = num_h_shifts
+        input_dim = 3 * fragment_embedding_dim + context_dim + 5
+        self.input_projection = nn.Sequential(
+            nn.Linear(input_dim, model_dim),
+            nn.SiLU(),
+            nn.LayerNorm(model_dim),
+        )
+        self.inducing_tokens = nn.Parameter(th.empty(1, num_inducing_points, model_dim))
+        nn.init.normal_(self.inducing_tokens, std=model_dim**-0.5)
+        self.layers = nn.ModuleList(
+            [
+                _InducedCandidateAttentionLayer(
+                    model_dim,
+                    num_heads,
+                    feedforward_dim,
+                    dropout,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.component_residual_head = nn.Linear(model_dim, 1)
+        nn.init.zeros_(self.component_residual_head.weight)
+        nn.init.zeros_(self.component_residual_head.bias)
+        self.mask_residual_head = nn.Linear(model_dim, 1)
+        nn.init.zeros_(self.mask_residual_head.weight)
+        nn.init.zeros_(self.mask_residual_head.bias)
+        self.ion_hydrogen_head = nn.Linear(
+            model_dim,
+            num_ion_modes * num_h_shifts,
+        )
+
+    def _contextualize_by_molecule(
+        self,
+        tokens: th.Tensor,
+        component_batch_indices: th.Tensor,
+        batch_size: int,
+    ) -> th.Tensor:
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if component_batch_indices.shape != (tokens.shape[0],):
+            raise ValueError("component_batch_indices must contain one index per token")
+        if component_batch_indices.dtype != th.long:
+            raise ValueError("component_batch_indices must have dtype torch.long")
+        if tokens.shape[0] == 0:
+            raise ValueError("at least one component token is required")
+        _validate_tensor_condition(
+            (
+                (component_batch_indices >= 0)
+                & (component_batch_indices < batch_size)
+            ).all(),
+            "component_batch_indices references a missing molecule",
+        )
+
+        # 1. Pack variable-sized molecular candidate sets into a padded batch.
+        order = th.argsort(component_batch_indices, stable=True)
+        sorted_batch_indices = component_batch_indices[order]
+        counts = th.bincount(sorted_batch_indices, minlength=batch_size)
+        _validate_tensor_condition(
+            (counts > 0).all(),
+            "every molecule must contain at least one component token",
+        )
+        offsets = counts.cumsum(0) - counts
+        positions = th.arange(tokens.shape[0], device=tokens.device) - offsets[
+            sorted_batch_indices
+        ]
+        max_components = int(counts.max().item())
+        padded_tokens = tokens.new_zeros((batch_size, max_components, tokens.shape[1]))
+        padded_tokens[sorted_batch_indices, positions] = tokens[order]
+        padding_mask = th.ones(
+            (batch_size, max_components),
+            dtype=th.bool,
+            device=tokens.device,
+        )
+        padding_mask[sorted_batch_indices, positions] = False
+
+        # 2. Contextualize candidates through a fixed-size inducing set.
+        inducing_tokens = self.inducing_tokens.expand(batch_size, -1, -1)
+        for layer in self.layers:
+            padded_tokens, inducing_tokens = layer(
+                padded_tokens,
+                inducing_tokens,
+                padding_mask,
+            )
+
+        contextualized_sorted = padded_tokens[sorted_batch_indices, positions]
+        return tokens.new_zeros(tokens.shape).index_copy(
+            0,
+            order,
+            contextualized_sorted,
+        )
+
+    def forward(
+        self,
+        fragment_embeddings: th.Tensor,
+        complement_embeddings: th.Tensor,
+        boundary_embeddings: th.Tensor,
+        cut_counts: th.Tensor,
+        component_sizes: th.Tensor,
+        charge_log_probabilities: th.Tensor,
+        mask_log_probabilities: th.Tensor,
+        component_batch_indices: th.Tensor,
+        component_mask_indices: th.Tensor,
+        *,
+        batch_size: int,
+        num_masks: int,
+        context: th.Tensor | None = None,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """Return component residuals, mask residuals, and joint ion/H logits."""
+        embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
+        num_components = fragment_embeddings.shape[0]
+        if any(
+            embedding.ndim != 2
+            or embedding.shape != (num_components, self.fragment_embedding_dim)
+            for embedding in embeddings
+        ):
+            raise ValueError(
+                "fragment, complement, and boundary embeddings must have matching "
+                f"shape (num_components, {self.fragment_embedding_dim})"
+            )
+        scalar_features = (
+            cut_counts,
+            component_sizes,
+            charge_log_probabilities,
+            mask_log_probabilities,
+        )
+        if any(feature.shape != (num_components,) for feature in scalar_features):
+            raise ValueError("candidate scalar features must contain one value per component")
+        if component_sizes.dtype != th.long:
+            raise ValueError("component_sizes must have dtype torch.long")
+        if component_mask_indices.shape != (num_components,):
+            raise ValueError("component_mask_indices must contain one index per component")
+        if component_mask_indices.dtype != th.long:
+            raise ValueError("component_mask_indices must have dtype torch.long")
+        if num_masks <= 0:
+            raise ValueError("num_masks must be positive")
+        _validate_tensor_condition(
+            ((component_mask_indices >= 0) & (component_mask_indices < num_masks)).all(),
+            "component_mask_indices references a missing mask",
+        )
+        mask_component_counts = th.bincount(
+            component_mask_indices,
+            minlength=num_masks,
+        )
+        _validate_tensor_condition(
+            (mask_component_counts > 0).all(),
+            "every mask must contain at least one component",
+        )
+        if self.context_dim == 0:
+            if context is not None:
+                raise ValueError("context was provided but context_dim is zero")
+        elif context is None or context.shape != (num_components, self.context_dim):
+            raise ValueError(
+                f"context must have shape ({num_components}, {self.context_dim})"
+            )
+
+        features = [*embeddings]
+        if context is not None:
+            features.append(context)
+        features.extend(
+            (
+                cut_counts.to(fragment_embeddings).unsqueeze(1),
+                th.log1p(component_sizes.to(fragment_embeddings)).unsqueeze(1),
+                th.log1p(
+                    mask_component_counts[component_mask_indices].to(fragment_embeddings)
+                ).unsqueeze(1),
+                charge_log_probabilities.to(fragment_embeddings).unsqueeze(1),
+                mask_log_probabilities.to(fragment_embeddings).unsqueeze(1),
+            )
+        )
+        tokens = self.input_projection(th.cat(features, dim=1))
+        tokens = self._contextualize_by_molecule(
+            tokens,
+            component_batch_indices,
+            batch_size,
+        )
+        component_residuals = self.component_residual_head(tokens).squeeze(1)
+        mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(
+            0,
+            component_mask_indices,
+            tokens,
+        )
+        mask_tokens = mask_token_sums / mask_component_counts.to(tokens).unsqueeze(1)
+        mask_residuals = self.mask_residual_head(mask_tokens).squeeze(1)
+        ion_hydrogen_logits = self.ion_hydrogen_head(tokens).reshape(
+            num_components,
+            self.num_ion_modes,
+            self.num_h_shifts,
+        )
+        return component_residuals, mask_residuals, ion_hydrogen_logits
+
+
 def _validate_context(
     context: th.Tensor | None,
     batch_indices: th.Tensor | None,
@@ -675,78 +996,6 @@ def component_charge_log_probabilities(
         num_components,
     )
     return component_logits - group_log_normalizers[component_group_indices]
-
-
-class JointIonHydrogenHead(nn.Module):
-    """Predict joint ion-mode and hydrogen-transfer logits per charged fragment."""
-
-    def __init__(
-        self,
-        fragment_embedding_dim: int,
-        context_dim: int,
-        hidden_dim: int,
-        num_ion_modes: int,
-        num_h_shifts: int,
-        dropout: float,
-    ) -> None:
-        super().__init__()
-        if fragment_embedding_dim <= 0 or context_dim < 0:
-            raise ValueError("fragment_embedding_dim must be positive and context_dim nonnegative")
-        if num_ion_modes <= 0 or num_h_shifts <= 0:
-            raise ValueError("num_ion_modes and num_h_shifts must be positive")
-        self.fragment_embedding_dim = fragment_embedding_dim
-        self.context_dim = context_dim
-        self.num_ion_modes = num_ion_modes
-        self.num_h_shifts = num_h_shifts
-        input_dim = 3 * fragment_embedding_dim + context_dim + 1
-        self.head = _build_head(
-            input_dim,
-            hidden_dim,
-            num_ion_modes * num_h_shifts,
-            dropout,
-        )
-
-    def forward(
-        self,
-        fragment_embeddings: th.Tensor,
-        complement_embeddings: th.Tensor,
-        boundary_embeddings: th.Tensor,
-        cut_counts: th.Tensor,
-        *,
-        context: th.Tensor | None = None,
-    ) -> th.Tensor:
-        """Return logits shaped ``(num_fragments, num_ion_modes, num_h_shifts)``."""
-        embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
-        if any(
-            embedding.ndim != 2
-            or embedding.shape[1] != self.fragment_embedding_dim
-            or embedding.shape[0] != fragment_embeddings.shape[0]
-            for embedding in embeddings
-        ):
-            raise ValueError(
-                "fragment, complement, and boundary embeddings must have matching "
-                f"shape (num_fragments, {self.fragment_embedding_dim})"
-            )
-        num_fragments = fragment_embeddings.shape[0]
-        if cut_counts.ndim != 1 or cut_counts.shape[0] != num_fragments:
-            raise ValueError("cut_counts must contain one value per fragment")
-        if self.context_dim == 0:
-            if context is not None:
-                raise ValueError("context was provided but context_dim is zero")
-        elif (
-            context is None
-            or context.ndim != 2
-            or context.shape != (num_fragments, self.context_dim)
-        ):
-            raise ValueError(
-                f"context must have shape ({num_fragments}, {self.context_dim})"
-            )
-
-        features = [*embeddings, cut_counts.to(fragment_embeddings).unsqueeze(-1)]
-        if context is not None:
-            features.append(context)
-        logits = self.head(th.cat(features, dim=-1))
-        return logits.reshape(num_fragments, self.num_ion_modes, self.num_h_shifts)
 
 
 def masked_ion_hydrogen_log_probabilities(

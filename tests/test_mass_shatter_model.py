@@ -57,6 +57,12 @@ def _build_model(
         head_hidden_dim=12,
         head_dropout=0.0,
         bond_num_layers=bond_num_layers,
+        intensity_transformer_dim=16,
+        intensity_transformer_num_layers=2,
+        intensity_transformer_num_heads=4,
+        intensity_transformer_feedforward_dim=32,
+        intensity_transformer_num_inducing_points=4,
+        intensity_transformer_dropout=0.0,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -157,6 +163,52 @@ def test_mass_shatter_forward_conserves_probability_with_bounded_exploration() -
     assert total_mass.item() == pytest.approx(1.0, abs=2e-6)
 
 
+def test_mask_residual_reallocates_only_retained_probability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = _build_batch()
+    model = _build_model(batch).eval()
+    forward_kwargs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([20.0, 40.0]),
+    }
+    original_intensity_forward = model.intensity_head.forward
+
+    with th.no_grad():
+        baseline = model(**forward_kwargs)
+
+    def shifted_intensity_forward(*args: object, **kwargs: object) -> tuple[th.Tensor, ...]:
+        component_residuals, mask_residuals, ion_h_logits = original_intensity_forward(
+            *args,
+            **kwargs,
+        )
+        mask_residuals = th.linspace(
+            -1.0,
+            1.0,
+            mask_residuals.shape[0],
+            device=mask_residuals.device,
+        )
+        return component_residuals, mask_residuals, ion_h_logits
+
+    monkeypatch.setattr(model.intensity_head, "forward", shifted_intensity_forward)
+    with th.no_grad():
+        shifted = model(**forward_kwargs)
+
+    assert not th.allclose(baseline["pred_logprobs"], shifted["pred_logprobs"])
+    assert th.allclose(
+        baseline["retained_mask_probability"],
+        shifted["retained_mask_probability"],
+    )
+    shifted_mass = th.zeros(2).index_add(
+        0,
+        shifted["pred_batch_idxs"],
+        shifted["pred_logprobs"].exp(),
+    )
+    shifted_total = shifted_mass + shifted["pred_oos_logprobs"].exp()
+    assert shifted_total.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+
+
 def test_mass_shatter_uses_mixed_masks_only_during_training(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -205,7 +257,11 @@ def test_mass_shatter_spectrum_loss_reaches_encoder_and_all_heads() -> None:
         model.precursor_encoder.input_project.weight,
         model.bond_break_head.head[0].weight,
         model.charge_head.head[0].weight,
-        model.ion_hydrogen_head.head[0].weight,
+        model.intensity_head.input_projection[0].weight,
+        model.intensity_head.layers[0].latent_attention.in_proj_weight,
+        model.intensity_head.component_residual_head.weight,
+        model.intensity_head.mask_residual_head.weight,
+        model.intensity_head.ion_hydrogen_head.weight,
         model.context_encoder.projector[0].weight,
     ]
     for parameter in parameters:

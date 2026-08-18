@@ -12,8 +12,8 @@ import torch.nn.functional as F
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
+    CandidateIntensityTransformerHead,
     EndpointBondBreakHead,
-    JointIonHydrogenHead,
     component_charge_log_probabilities,
     cut_mask_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
@@ -21,6 +21,155 @@ from fragnnet.model.bond_fragment_heads import (
     pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
+
+
+def test_candidate_intensity_transformer_is_permutation_equivariant() -> None:
+    th.manual_seed(41)
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=6,
+        context_dim=3,
+        model_dim=12,
+        num_layers=2,
+        num_heads=3,
+        feedforward_dim=24,
+        num_inducing_points=4,
+        num_ion_modes=2,
+        num_h_shifts=3,
+        dropout=0.0,
+    ).eval()
+    fragment_embeddings = th.randn(7, 6)
+    complement_embeddings = th.randn(7, 6)
+    boundary_embeddings = th.randn(7, 6)
+    cut_counts = th.tensor([1, 2, 1, 3, 2, 1, 2])
+    component_sizes = th.tensor([2, 3, 1, 4, 2, 1, 3])
+    charge_log_probabilities = th.randn(7)
+    mask_log_probabilities = th.randn(7)
+    component_batch_indices = th.tensor([0, 0, 0, 1, 1, 1, 1])
+    component_mask_indices = th.tensor([0, 0, 1, 2, 2, 3, 4])
+    context = th.randn(7, 3)
+    permutation = th.tensor([4, 1, 6, 0, 3, 2, 5])
+
+    outputs = head(
+        fragment_embeddings,
+        complement_embeddings,
+        boundary_embeddings,
+        cut_counts,
+        component_sizes,
+        charge_log_probabilities,
+        mask_log_probabilities,
+        component_batch_indices,
+        component_mask_indices,
+        batch_size=2,
+        num_masks=5,
+        context=context,
+    )
+    permuted_outputs = head(
+        fragment_embeddings[permutation],
+        complement_embeddings[permutation],
+        boundary_embeddings[permutation],
+        cut_counts[permutation],
+        component_sizes[permutation],
+        charge_log_probabilities[permutation],
+        mask_log_probabilities[permutation],
+        component_batch_indices[permutation],
+        component_mask_indices[permutation],
+        batch_size=2,
+        num_masks=5,
+        context=context[permutation],
+    )
+    inverse_permutation = th.argsort(permutation)
+
+    assert outputs[0].shape == (7,)
+    assert outputs[1].shape == (5,)
+    assert outputs[2].shape == (7, 2, 3)
+    assert th.allclose(outputs[0], permuted_outputs[0][inverse_permutation], atol=1e-6)
+    assert th.allclose(outputs[1], permuted_outputs[1], atol=1e-6)
+    assert th.allclose(outputs[2], permuted_outputs[2][inverse_permutation], atol=1e-6)
+
+
+def test_candidate_intensity_transformer_backpropagates() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=2,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        num_ion_modes=2,
+        num_h_shifts=3,
+        dropout=0.0,
+    )
+    fragment_embeddings = th.randn(5, 4, requires_grad=True)
+    outputs = head(
+        fragment_embeddings,
+        th.randn(5, 4),
+        th.randn(5, 4),
+        th.tensor([1, 2, 1, 2, 3]),
+        th.tensor([2, 3, 1, 2, 4]),
+        th.randn(5),
+        th.randn(5),
+        th.tensor([0, 0, 1, 1, 1]),
+        th.tensor([0, 0, 1, 2, 2]),
+        batch_size=2,
+        num_masks=3,
+        context=th.randn(5, 2),
+    )
+
+    sum(output.sum() for output in outputs).backward()
+
+    assert fragment_embeddings.grad is not None
+    assert th.isfinite(fragment_embeddings.grad).all()
+    assert head.inducing_tokens.grad is not None
+    assert head.inducing_tokens.grad.abs().sum() > 0
+
+
+def test_candidate_intensity_transformer_isolates_molecules() -> None:
+    th.manual_seed(43)
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+    ).eval()
+    fragment_embeddings = th.randn(5, 4)
+    complement_embeddings = th.randn(5, 4)
+    boundary_embeddings = th.randn(5, 4)
+    common_args = (
+        complement_embeddings,
+        boundary_embeddings,
+        th.tensor([1, 2, 1, 2, 3]),
+        th.tensor([2, 3, 1, 2, 4]),
+        th.randn(5),
+        th.randn(5),
+        th.tensor([0, 0, 1, 1, 1]),
+        th.tensor([0, 0, 1, 2, 2]),
+    )
+
+    baseline = head(
+        fragment_embeddings,
+        *common_args,
+        batch_size=2,
+        num_masks=3,
+    )
+    perturbed_embeddings = fragment_embeddings.clone()
+    perturbed_embeddings[2:] += 100.0
+    perturbed = head(
+        perturbed_embeddings,
+        *common_args,
+        batch_size=2,
+        num_masks=3,
+    )
+
+    assert th.allclose(baseline[0][:2], perturbed[0][:2])
+    assert th.allclose(baseline[1][0], perturbed[1][0])
+    assert th.allclose(baseline[2][:2], perturbed[2][:2])
 
 
 def test_bond_break_head_is_invariant_to_endpoint_order() -> None:
@@ -497,29 +646,6 @@ def test_sparse_component_operations_support_fullgraph_compile() -> None:
 
     assert pooled.shape == (2, 4)
     assert charge_log_probabilities.shape == (2,)
-
-
-def test_joint_ion_hydrogen_head_shape_and_gradient() -> None:
-    head = JointIonHydrogenHead(
-        fragment_embedding_dim=6,
-        context_dim=4,
-        hidden_dim=9,
-        num_ion_modes=2,
-        num_h_shifts=5,
-        dropout=0.0,
-    )
-    fragment_embeddings = th.randn(3, 6, requires_grad=True)
-    logits = head(
-        fragment_embeddings,
-        th.randn(3, 6),
-        th.randn(3, 6),
-        th.tensor([1, 2, 4]),
-        context=th.randn(3, 4),
-    )
-    logits.sum().backward()
-
-    assert logits.shape == (3, 2, 5)
-    assert fragment_embeddings.grad is not None
 
 
 def test_masked_ion_hydrogen_probabilities_zero_invalid_channels() -> None:

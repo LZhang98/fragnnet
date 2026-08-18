@@ -48,6 +48,24 @@ class MassShatterPL(SpectrumPL):
             head_hidden_dim=self.hparams.mass_shatter_head_hidden_dim,
             head_dropout=self.hparams.mass_shatter_head_dropout,
             bond_num_layers=self.hparams.mass_shatter_bond_num_layers,
+            intensity_transformer_dim=(
+                self.hparams.mass_shatter_intensity_transformer_dim
+            ),
+            intensity_transformer_num_layers=(
+                self.hparams.mass_shatter_intensity_transformer_num_layers
+            ),
+            intensity_transformer_num_heads=(
+                self.hparams.mass_shatter_intensity_transformer_num_heads
+            ),
+            intensity_transformer_feedforward_dim=(
+                self.hparams.mass_shatter_intensity_transformer_feedforward_dim
+            ),
+            intensity_transformer_num_inducing_points=(
+                self.hparams.mass_shatter_intensity_transformer_num_inducing_points
+            ),
+            intensity_transformer_dropout=(
+                self.hparams.mass_shatter_intensity_transformer_dropout
+            ),
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
