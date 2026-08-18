@@ -1,12 +1,14 @@
-wandb_name: nist20_merged_mask64_gine384_mixed_topk_local8g
+wandb_name: nist20_merged_mask64_transformer_cython_local8g
 wandb_group: nist20_mass_shatter_local
 wandb_tags:
   - mass_shatter
   - local_8gb
   - masks_64
-  - gine384
-  - mixed_topk
-  - explore_16
+  - gine_efa384
+  - transformer
+  - cython
+  - bounded_additive
+  - explore_64
 
 seed: 397623
 
@@ -37,18 +39,19 @@ mol_params:
     - b_ring
     - b_conj
 
-# 2. Use 48 exact top-ranked masks plus 16 stochastic masks during training.
-# Validation, test, and prediction remain deterministic exact top-K with K=64.
+# 2. Exercise compiled top-K, bounded exploration, topology, and transformer paths.
+# Training uses 64 exact masks plus up to 64 bounded masks; evaluation is top-K only.
 model_type: mass_shatter
-mol_gnn_type: GINE
+mol_gnn_type: GINE_EFA
 mol_hidden_size: 384
-mol_num_layers: 5
+mol_num_layers: 2
 mol_normalization: batch
 mol_dropout: 0.1
 mass_shatter_max_masks: 64
-mass_shatter_explore_masks: 16
-mass_shatter_exploration_mode: bernoulli_replace  # Preserve the historical 48+16 run.
+mass_shatter_explore_masks: 64
+mass_shatter_exploration_mode: bounded_additive
 mass_shatter_exploration_temperature: 1.0
+mass_shatter_exploration_cut_count_weights: [0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05]
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True
@@ -57,6 +60,13 @@ mass_shatter_context_dim: 128
 mass_shatter_metadata_embedding_dim: 32
 mass_shatter_head_hidden_dim: 512
 mass_shatter_head_dropout: 0.1
+mass_shatter_bond_num_layers: 3
+mass_shatter_intensity_transformer_dim: 256
+mass_shatter_intensity_transformer_num_layers: 2
+mass_shatter_intensity_transformer_num_heads: 8
+mass_shatter_intensity_transformer_feedforward_dim: 512
+mass_shatter_intensity_transformer_num_inducing_points: 64
+mass_shatter_intensity_transformer_dropout: 0.1
 
 # 3. Preserve the cluster objective with memory-safe loss chunks.
 loss_type: cross_entropy
@@ -66,19 +76,19 @@ oos_loss: True
 gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
-loss_batch_size: 1
+loss_batch_size: 8
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 
-# 4. Keep one molecule on the 8 GB GPU and recover effective batch 128.
+# 4. Use a conservative physical batch on the 7.6 GiB RTX 2070 SUPER.
 dynamic_batch_sampler: False
 group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-train_batch_size: 1
-eval_batch_size: 1
-accumulate_grad_batches: 128
+train_batch_size: 8
+eval_batch_size: 8
+accumulate_grad_batches: 16
 automatic_optimization: True
 gradient_clip_val: 5.0
 lr: 0.001
@@ -87,7 +97,7 @@ lr_schedule: False
 
 accelerator: gpu
 devices: 1
-num_workers: 4
+num_workers: 2
 precision: 32
 use_tensor_float32: True
 min_epochs: 60
