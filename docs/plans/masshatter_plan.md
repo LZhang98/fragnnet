@@ -495,7 +495,9 @@ weighted recall.
 Reference configurations:
 
 - `config/masshatter/nist20_ma_mi_unmerged_unique512_gine_efa384_bondcentric_a2_b3_transformer_full_context_no_mask_residual.yml`
+- `config/masshatter/nist20_ma_mi_unmerged_unique512_gine_efa384_bondcentric_a2_b3_transformer_full_context_mask_residual.yml`
 - `config/masshatter/nist20_merged_unique512_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_no_mask_residual.yml`
+- `config/masshatter/nist20_merged_unique512_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_mask_residual.yml`
 
 ### 6.2 Planned template channel for new-bond products
 
