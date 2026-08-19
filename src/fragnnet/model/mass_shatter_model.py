@@ -42,6 +42,7 @@ from fragnnet.model.bond_fragment_heads import (
     pool_boundary_bond_embeddings,
     pool_component_and_complement_embeddings,
 )
+from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN
 from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,
@@ -102,8 +103,8 @@ class MassShatterContextEncoder(nn.Module):
     """Encode acquisition metadata once per spectrum.
 
     Categorical metadata (precursor adduct, instrument, fragmentation mode) is
-    embedded, continuous collision energies are standardized, and the concatenation
-    is projected to a single conditioning vector that every downstream head reuses.
+    embedded; collision energies are either standardized scalars or learned vectors;
+    and the concatenation is projected to one conditioning vector reused by every head.
     Instrument and fragmentation-mode embeddings are only created when the dataset
     declares those vocabularies; CE inputs are only consumed when enabled.
 
@@ -125,10 +126,15 @@ class MassShatterContextEncoder(nn.Module):
         num_fragmentation_modes: int,
         use_nce: bool,
         use_ace: bool,
+        int_embedder: str,
+        ce_insert_type: str,
+        ce_insert_size: int,
         metadata_embedding_dim: int,
         context_dim: int,
+        nce_max: float,
         nce_mean: float,
         nce_std: float,
+        ace_max: float,
         ace_mean: float,
         ace_std: float,
     ) -> None:
@@ -143,10 +149,16 @@ class MassShatterContextEncoder(nn.Module):
                 unknown/missing mode.
             use_nce: Feed normalized collision energy into the context.
             use_ace: Feed absolute collision energy into the context.
+            int_embedder: Integer featurizer used for learned CE embeddings.
+            ce_insert_type: ``embed`` or ``embed_clamped`` enables learned CE
+                embeddings; other modes retain the standardized scalar input.
+            ce_insert_size: Width of each learned CE embedding.
             metadata_embedding_dim: Width of each categorical embedding.
             context_dim: Width of the emitted conditioning vector.
+            nce_max: Largest NCE represented by the learned embedding.
             nce_mean: Mean used to standardize NCE.
             nce_std: Standard deviation used to standardize NCE.
+            ace_max: Largest ACE represented by the learned embedding.
             ace_mean: Mean used to standardize ACE.
             ace_std: Standard deviation used to standardize ACE.
 
@@ -158,15 +170,43 @@ class MassShatterContextEncoder(nn.Module):
             raise ValueError("num_precursor_types must be positive")
         if metadata_embedding_dim <= 0 or context_dim <= 0:
             raise ValueError("context dimensions must be positive")
+        if ce_insert_type not in {"id", "lin", "embed", "embed_clamped", "bin"}:
+            raise ValueError(f"unknown CE insertion type: {ce_insert_type}")
+        if ce_insert_size <= 0:
+            raise ValueError("ce_insert_size must be positive")
         if nce_std <= 0.0 or ace_std <= 0.0:
             raise ValueError("CE standard deviations must be positive")
+        if nce_max <= 0.0 or ace_max <= 0.0:
+            raise ValueError("CE maxima must be positive")
 
         self.use_nce = use_nce
         self.use_ace = use_ace
+        self.ce_insert_type = ce_insert_type
+        self.ce_insert_size = ce_insert_size
+        self.nce_max = nce_max
         self.nce_mean = nce_mean
         self.nce_std = nce_std
+        self.ace_max = ace_max
         self.ace_mean = ace_mean
         self.ace_std = ace_std
+        self.use_ce_embedding = ce_insert_type in {"embed", "embed_clamped"}
+        self.nce_embedding = None
+        self.ace_embedding = None
+        if self.use_ce_embedding:
+            nce_count = int(nce_max) + int(ce_insert_type == "embed")
+            ace_count = int(ace_max) + int(ce_insert_type == "embed")
+            if use_nce:
+                nce_embedder = get_embedder(int_embedder, max_count_int=nce_count)
+                self.nce_embedding = nn.Sequential(
+                    nce_embedder,
+                    nn.Linear(nce_embedder.num_dim, ce_insert_size),
+                )
+            if use_ace:
+                ace_embedder = get_embedder(int_embedder, max_count_int=ace_count)
+                self.ace_embedding = nn.Sequential(
+                    ace_embedder,
+                    nn.Linear(ace_embedder.num_dim, ce_insert_size),
+                )
         self.precursor_embedding = nn.Embedding(
             num_precursor_types,
             metadata_embedding_dim,
@@ -181,10 +221,11 @@ class MassShatterContextEncoder(nn.Module):
             if num_fragmentation_modes > 0
             else None
         )
-        # Feature width: adduct embedding, one scalar per enabled CE channel, plus one
-        # embedding for each optional categorical field that was actually created.
+        # Feature width: adduct embedding, one scalar or learned vector per enabled CE
+        # channel, plus each optional categorical embedding that was actually created.
         input_dim = metadata_embedding_dim
-        input_dim += int(use_nce) + int(use_ace)
+        ce_feature_dim = ce_insert_size if self.use_ce_embedding else 1
+        input_dim += ce_feature_dim * (int(use_nce) + int(use_ace))
         input_dim += metadata_embedding_dim * int(self.instrument_embedding is not None)
         input_dim += metadata_embedding_dim * int(self.fragmentation_mode_embedding is not None)
         self.projector = nn.Sequential(
@@ -192,6 +233,42 @@ class MassShatterContextEncoder(nn.Module):
             nn.SiLU(),
             nn.Linear(context_dim, context_dim),
         )
+
+    def _embed_ce_values(
+        self,
+        values: th.Tensor,
+        batch_indices: th.Tensor | None,
+        batch_size: int,
+        max_value: float,
+        embedding: nn.Module,
+    ) -> th.Tensor:
+        """Embed each CE reading, then mean-pool readings by spectrum."""
+        values = values.reshape(-1)
+        if batch_indices is None:
+            if values.shape[0] != batch_size:
+                raise ValueError("one CE value per spectrum is required without batch indices")
+            batch_indices = th.arange(batch_size, device=values.device)
+        else:
+            batch_indices = batch_indices.reshape(-1)
+            if batch_indices.shape != values.shape or batch_indices.dtype != th.long:
+                raise ValueError("CE batch indices must be a matching torch.long vector")
+
+        upper_bound = int(max_value) - int(self.ce_insert_type == "embed_clamped")
+        embedding_indices = values.clamp(min=-1, max=upper_bound).round().long().unsqueeze(1)
+        embedded_values = embedding(embedding_indices)
+        sums = embedded_values.new_zeros(batch_size, self.ce_insert_size).index_add(
+            0,
+            batch_indices,
+            embedded_values,
+        )
+        counts = embedded_values.new_zeros(batch_size).index_add(
+            0,
+            batch_indices,
+            th.ones_like(values, dtype=embedded_values.dtype),
+        )
+        if not bool((counts > 0).all()):
+            raise ValueError("every spectrum must have at least one CE value")
+        return sums / counts.unsqueeze(1)
 
     def forward(
         self,
@@ -244,13 +321,35 @@ class MassShatterContextEncoder(nn.Module):
         if self.use_nce:
             if nce is None:
                 raise ValueError("NCE values are required by the configured context")
-            mean_nce = _mean_values_by_batch(nce, nce_batch_indices, batch_size)
-            features.append(((mean_nce - self.nce_mean) / self.nce_std).unsqueeze(1))
+            if self.nce_embedding is None:
+                mean_nce = _mean_values_by_batch(nce, nce_batch_indices, batch_size)
+                features.append(((mean_nce - self.nce_mean) / self.nce_std).unsqueeze(1))
+            else:
+                features.append(
+                    self._embed_ce_values(
+                        nce,
+                        nce_batch_indices,
+                        batch_size,
+                        self.nce_max,
+                        self.nce_embedding,
+                    )
+                )
         if self.use_ace:
             if ace is None:
                 raise ValueError("ACE values are required by the configured context")
-            mean_ace = _mean_values_by_batch(ace, ace_batch_indices, batch_size)
-            features.append(((mean_ace - self.ace_mean) / self.ace_std).unsqueeze(1))
+            if self.ace_embedding is None:
+                mean_ace = _mean_values_by_batch(ace, ace_batch_indices, batch_size)
+                features.append(((mean_ace - self.ace_mean) / self.ace_std).unsqueeze(1))
+            else:
+                features.append(
+                    self._embed_ce_values(
+                        ace,
+                        ace_batch_indices,
+                        batch_size,
+                        self.ace_max,
+                        self.ace_embedding,
+                    )
+                )
         return self.projector(th.cat(features, dim=1))
 
 
@@ -303,10 +402,15 @@ class MassShatterModel(nn.Module):
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
+        int_embedder: str,
+        ce_insert_type: str,
+        ce_insert_size: int,
         use_nce: bool,
         use_ace: bool,
+        nce_max: float,
         nce_mean: float,
         nce_std: float,
+        ace_max: float,
         ace_mean: float,
         ace_std: float,
         max_masks: int,
@@ -351,10 +455,15 @@ class MassShatterModel(nn.Module):
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
             fragmentation_modes: Fragmentation-mode vocabulary; empty disables it.
+            int_embedder: Integer featurizer used by learned CE embeddings.
+            ce_insert_type: CE representation type; ``embed`` enables learned vectors.
+            ce_insert_size: Width of each learned CE embedding.
             use_nce: Condition on normalized collision energy.
             use_ace: Condition on absolute collision energy.
+            nce_max: Largest NCE represented by the learned embedding.
             nce_mean: Mean used to standardize NCE.
             nce_std: Standard deviation used to standardize NCE.
+            ace_max: Largest ACE represented by the learned embedding.
             ace_mean: Mean used to standardize ACE.
             ace_std: Standard deviation used to standardize ACE.
             max_masks: Cut masks kept per precursor.
@@ -457,10 +566,15 @@ class MassShatterModel(nn.Module):
             num_fragmentation_modes=len(fragmentation_modes),
             use_nce=use_nce,
             use_ace=use_ace,
+            int_embedder=int_embedder,
+            ce_insert_type=ce_insert_type,
+            ce_insert_size=ce_insert_size,
             metadata_embedding_dim=metadata_embedding_dim,
             context_dim=context_dim,
+            nce_max=nce_max,
             nce_mean=nce_mean,
             nce_std=nce_std,
+            ace_max=ace_max,
             ace_mean=ace_mean,
             ace_std=ace_std,
         )

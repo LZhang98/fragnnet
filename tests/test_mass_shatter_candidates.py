@@ -66,8 +66,10 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
     assert candidates.timings.total_ms >= 0.0
 
 
-def test_candidate_membership_supports_more_than_64_atoms() -> None:
-    num_atoms = 70
+@pytest.mark.parametrize("num_atoms", [256, 257])
+def test_candidate_membership_supports_four_compiled_words_and_fallback(
+    num_atoms: int,
+) -> None:
     candidates = build_mass_shatter_candidates(
         th.full((num_atoms - 1,), -1.0),
         chemical_bond_index=th.tensor(
@@ -105,6 +107,65 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
     # MAP all-cut mask + forced empty mask + each of the three single cuts.
     assert candidates.mask_log_probabilities.shape[0] == 5
     assert sorted(candidates.component_cut_counts.unique().tolist()) == [0, 1, 3]
+
+
+def test_candidate_batch_preserves_vectorized_boundary_order() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.tensor([2.0, 2.0, 2.0]),
+        chemical_bond_index=th.tensor(
+            [[0, 1, 2], [1, 2, 0]],
+            dtype=th.long,
+        ),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=1,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=True,
+    )
+
+    assert candidates.mask_batch_indices.tolist() == [0, 0, 0, 0, 0]
+    assert candidates.mask_cut_counts.tolist() == [3, 0, 1, 1, 1]
+    assert candidates.component_mask_indices.tolist() == [0, 0, 0, 1, 2, 3, 4]
+    assert candidates.component_cut_counts.tolist() == [3, 3, 3, 0, 1, 1, 1]
+    assert candidates.atom_indices.tolist() == [
+        0,
+        1,
+        2,
+        0,
+        1,
+        2,
+        0,
+        1,
+        2,
+        0,
+        1,
+        2,
+        0,
+        1,
+        2,
+    ]
+    assert candidates.atom_component_indices.tolist() == [
+        0,
+        1,
+        2,
+        3,
+        3,
+        3,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        6,
+        6,
+        6,
+    ]
+    assert candidates.boundary_bond_indices.tolist() == [0, 0, 1, 1, 2, 2]
+    assert candidates.boundary_component_indices.tolist() == [0, 1, 1, 2, 2, 0]
 
 
 def test_candidate_batch_applies_minimum_probability_only_to_top_k() -> None:

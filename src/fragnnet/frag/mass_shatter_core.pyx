@@ -25,6 +25,7 @@ import numpy as np
 
 cimport numpy as cnp
 from libc.math cimport exp, fabs, isfinite, log, log1p
+from libc.stdint cimport uint64_t
 from libc.stdlib cimport free, malloc
 from libc.string cimport memset
 
@@ -351,6 +352,57 @@ cdef inline Py_ssize_t _find_root(Py_ssize_t* parents, Py_ssize_t atom) noexcept
         parents[atom] = parents[parents[atom]]
         atom = parents[atom]
     return atom
+
+
+def unpack_component_memberships_raw(
+    list component_atom_masks,
+    Py_ssize_t num_atoms,
+    Py_ssize_t expected_memberships,
+):
+    """Decode up-to-four-word component masks into flat membership arrays.
+
+    The caller groups components by cut mask, so the returned component indices
+    preserve that input order and atoms remain ascending within each component.
+    """
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] component_indices
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] atom_indices
+    cdef Py_ssize_t component_index, atom_index, bit_index, word_index
+    cdef Py_ssize_t cursor = 0
+    cdef Py_ssize_t word_atom_count
+    cdef uint64_t atom_mask
+    cdef object atom_mask_object
+
+    if num_atoms <= 0 or num_atoms > 256:
+        raise ValueError("num_atoms must be in [1, 256]")
+    if expected_memberships < 0:
+        raise ValueError("expected_memberships must be nonnegative")
+    component_indices = np.empty(expected_memberships, dtype=np.int64)
+    atom_indices = np.empty(expected_memberships, dtype=np.int64)
+
+    for component_index in range(len(component_atom_masks)):
+        atom_mask_object = component_atom_masks[component_index]
+        if atom_mask_object < 0 or atom_mask_object >> num_atoms:
+            raise ValueError("component atom mask references an invalid atom")
+        for word_index in range((num_atoms + 63) // 64):
+            atom_mask = (
+                atom_mask_object >> (word_index * 64)
+            ) & 0xffffffffffffffff
+            word_atom_count = num_atoms - word_index * 64
+            if word_atom_count > 64:
+                word_atom_count = 64
+            for bit_index in range(word_atom_count):
+                if atom_mask & (1ULL << bit_index):
+                    if cursor == expected_memberships:
+                        raise ValueError(
+                            "component masks contain too many atom memberships"
+                        )
+                    atom_index = word_index * 64 + bit_index
+                    component_indices[cursor] = component_index
+                    atom_indices[cursor] = atom_index
+                    cursor += 1
+    if cursor != expected_memberships:
+        raise ValueError("component masks do not partition every atom exactly once")
+    return component_indices, atom_indices
 
 
 def connected_component_atom_masks_many(

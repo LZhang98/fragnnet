@@ -10,8 +10,8 @@ import torch.nn.functional as F
 
 
 def _validate_tensor_condition(condition: th.Tensor, message: str) -> None:
-    """Raise on invalid tensor data without breaking compiled forward graphs."""
-    if th.compiler.is_compiling():
+    """Validate tensor data without synchronizing CUDA after every check."""
+    if th.compiler.is_compiling() or condition.device.type == "cuda":
         th._assert_async(condition, message)
     elif not bool(condition):
         raise ValueError(message)

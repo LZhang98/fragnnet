@@ -67,22 +67,33 @@ class MassShatterCandidateBatch:
 
 
 def _packed_long_tensors(
-    values: Sequence[Sequence[int] | np.ndarray | th.Tensor],
+    values: Sequence[Sequence[int] | np.ndarray],
     device: th.device,
 ) -> tuple[th.Tensor, ...]:
     """Create all candidate index tensors with one host-to-device transfer."""
-    cpu_tensors = tuple(th.as_tensor(value, dtype=th.long, device="cpu") for value in values)
-    sizes = tuple(tensor.numel() for tensor in cpu_tensors)
-    packed_cpu = th.cat(cpu_tensors) if sum(sizes) > 0 else th.empty(0, dtype=th.long)
-    packed = packed_cpu.to(device=device)
+    cpu_arrays = tuple(np.asarray(value, dtype=np.int64).reshape(-1) for value in values)
+    sizes = tuple(array.size for array in cpu_arrays)
+    packed_array = (
+        np.concatenate(cpu_arrays) if sum(sizes) > 0 else np.empty(0, dtype=np.int64)
+    )
+    packed = th.from_numpy(packed_array).to(device=device)
     return tuple(packed.split(sizes))
 
 
 def _unpack_component_memberships(
     component_atom_masks: Sequence[int],
     num_atoms: int,
+    expected_memberships: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Decode Python bitmasks through NumPy's compiled unpack/nonzero kernels."""
+    """Decode component bitmasks into flat component/atom membership arrays."""
+    if num_atoms <= 256:
+        from fragnnet.frag.mass_shatter_core import unpack_component_memberships_raw
+
+        return unpack_component_memberships_raw(
+            list(component_atom_masks),
+            num_atoms,
+            expected_memberships,
+        )
     byte_width = (num_atoms + 7) // 8
     packed = np.frombuffer(
         b"".join(
@@ -92,6 +103,8 @@ def _unpack_component_memberships(
     ).reshape(len(component_atom_masks), byte_width)
     membership = np.unpackbits(packed, axis=1, bitorder="little")[:, :num_atoms]
     component_indices, atom_indices = np.nonzero(membership)
+    if component_indices.size != expected_memberships:
+        raise ValueError("component masks do not partition every atom exactly once")
     return component_indices, atom_indices
 
 
@@ -219,16 +232,17 @@ def build_mass_shatter_candidates(
         bond_indices_by_molecule[molecule_index].append(bond_index)
     detached_logits_all = bond_logits_cpu.tolist()
 
-    mask_batch_indices: list[int] = []
-    mask_bond_indices: list[list[int]] = []
-    mask_cut_counts: list[int] = []
-    component_mask_indices: list[int] = []
-    component_batch_indices: list[int] = []
-    component_cut_counts: list[int] = []
+    mask_batch_index_chunks: list[np.ndarray] = []
+    mask_cut_count_chunks: list[np.ndarray] = []
+    mask_index_chunks: list[np.ndarray] = []
+    broken_bond_index_chunks: list[np.ndarray] = []
+    component_mask_index_chunks: list[np.ndarray] = []
+    component_batch_index_chunks: list[np.ndarray] = []
+    component_cut_count_chunks: list[np.ndarray] = []
     atom_index_chunks: list[np.ndarray] = []
     atom_component_index_chunks: list[np.ndarray] = []
-    boundary_bond_indices: list[int] = []
-    boundary_component_indices: list[int] = []
+    boundary_bond_index_chunks: list[np.ndarray] = []
+    boundary_component_index_chunks: list[np.ndarray] = []
     exploration_mask_counts: list[int] = []
     exploration_mean_cut_counts: list[float] = []
     proposal_single_cut_fractions: list[float] = []
@@ -236,6 +250,8 @@ def build_mass_shatter_candidates(
     mask_selection_ms = 0.0
     topology_ms = 0.0
     assembly_ms = 0.0
+    num_masks_so_far = 0
+    num_components_so_far = 0
 
     # 2. Select and translate masks independently for each precursor.
     for molecule_index in range(num_molecules):
@@ -425,30 +441,54 @@ def build_mass_shatter_candidates(
         # 4. Decode all component bitmasks for this molecule in compiled NumPy
         # kernels, then derive boundary membership from the dense local map.
         assembly_start = perf_counter()
-        component_start = len(component_mask_indices)
-        local_component_masks: list[int] = []
-        local_component_owners: list[int] = []
-        for local_mask_index, translated_mask in enumerate(translated_masks):
-            mask_index = len(mask_batch_indices)
-            mask_batch_indices.append(molecule_index)
-            mask_bond_indices.append(
-                [
-                    global_bond_indices[local_bond_index]
-                    for local_bond_index in translated_mask.cut_mask.broken_bond_indices
-                ]
-            )
-            mask_cut_counts.append(translated_mask.cut_mask.cut_count)
-            num_local_components = len(translated_mask.component_atom_masks)
-            local_component_masks.extend(translated_mask.component_atom_masks)
-            local_component_owners.extend([local_mask_index] * num_local_components)
-            component_mask_indices.extend([mask_index] * num_local_components)
-            component_batch_indices.extend([molecule_index] * num_local_components)
-            component_cut_counts.extend([translated_mask.cut_mask.cut_count] * num_local_components)
+        mask_start = num_masks_so_far
+        component_start = num_components_so_far
+        num_local_masks = len(translated_masks)
+        local_mask_indices = np.arange(
+            mask_start,
+            mask_start + num_local_masks,
+            dtype=np.int64,
+        )
+        local_cut_counts = np.fromiter(
+            (translated_mask.cut_mask.cut_count for translated_mask in translated_masks),
+            dtype=np.int64,
+            count=num_local_masks,
+        )
+        local_component_counts = np.fromiter(
+            (len(translated_mask.component_atom_masks) for translated_mask in translated_masks),
+            dtype=np.int64,
+            count=num_local_masks,
+        )
+        local_component_masks = [
+            component_mask
+            for translated_mask in translated_masks
+            for component_mask in translated_mask.component_atom_masks
+        ]
+        local_component_owners = np.repeat(
+            np.arange(num_local_masks, dtype=np.int64),
+            local_component_counts,
+        )
+        mask_batch_index_chunks.append(
+            np.full(num_local_masks, molecule_index, dtype=np.int64)
+        )
+        mask_cut_count_chunks.append(local_cut_counts)
+        component_mask_index_chunks.append(
+            np.repeat(local_mask_indices, local_component_counts)
+        )
+        component_batch_index_chunks.append(
+            np.full(len(local_component_masks), molecule_index, dtype=np.int64)
+        )
+        component_cut_count_chunks.append(
+            np.repeat(local_cut_counts, local_component_counts)
+        )
+        num_masks_so_far += num_local_masks
+        num_components_so_far += len(local_component_masks)
         unique_component_counts.append(len(set(local_component_masks)))
 
         local_component_indices, local_atom_indices = _unpack_component_memberships(
             local_component_masks,
             num_atoms,
+            num_local_masks * num_atoms,
         )
         global_component_indices = local_component_indices + component_start
         atom_index_chunks.append(local_atom_indices + atom_start)
@@ -457,41 +497,75 @@ def build_mass_shatter_candidates(
             (len(translated_masks), num_atoms),
             dtype=np.int64,
         )
-        component_owners = np.asarray(local_component_owners, dtype=np.int64)[
-            local_component_indices
-        ]
+        component_owners = local_component_owners[local_component_indices]
         mask_atom_components[
             component_owners,
             local_atom_indices,
         ] = global_component_indices
+        local_broken_bond_indices = np.fromiter(
+            (
+                local_bond_index
+                for translated_mask in translated_masks
+                for local_bond_index in translated_mask.cut_mask.broken_bond_indices
+            ),
+            dtype=np.int64,
+            count=int(local_cut_counts.sum()),
+        )
+        local_broken_bond_owners = np.repeat(
+            np.arange(num_local_masks, dtype=np.int64),
+            local_cut_counts,
+        )
+        global_bond_indices_array = np.asarray(global_bond_indices, dtype=np.int64)
+        global_broken_bond_indices = global_bond_indices_array[
+            local_broken_bond_indices
+        ]
+        mask_index_chunks.append(local_mask_indices[local_broken_bond_owners])
+        broken_bond_index_chunks.append(global_broken_bond_indices)
 
-        for local_mask_index, translated_mask in enumerate(translated_masks):
-            # Attach each truly separating cut bond to both adjacent components.
-            for local_bond_index in translated_mask.cut_mask.broken_bond_indices:
-                left = local_endpoints[0][local_bond_index]
-                right = local_endpoints[1][local_bond_index]
-                left_component = int(mask_atom_components[local_mask_index, left])
-                right_component = int(mask_atom_components[local_mask_index, right])
-                if left_component == right_component:
-                    continue
-                global_bond_index = global_bond_indices[local_bond_index]
-                boundary_bond_indices.extend([global_bond_index, global_bond_index])
-                boundary_component_indices.extend([left_component, right_component])
+        if local_broken_bond_indices.size > 0:
+            local_endpoints_array = np.asarray(local_endpoints, dtype=np.int64)
+            left_components = mask_atom_components[
+                local_broken_bond_owners,
+                local_endpoints_array[0, local_broken_bond_indices],
+            ]
+            right_components = mask_atom_components[
+                local_broken_bond_owners,
+                local_endpoints_array[1, local_broken_bond_indices],
+            ]
+            separating = left_components != right_components
+            separating_global_bonds = global_broken_bond_indices[separating]
+            boundary_bond_index_chunks.append(
+                np.repeat(separating_global_bonds, 2)
+            )
+            boundary_component_index_chunks.append(
+                np.column_stack(
+                    (left_components[separating], right_components[separating])
+                ).reshape(-1)
+            )
         assembly_ms += (perf_counter() - assembly_start) * 1000.0
 
-    if not mask_batch_indices:
+    if num_masks_so_far == 0:
         raise ValueError("candidate generation produced no cut masks")
 
+    mask_batch_indices = np.concatenate(mask_batch_index_chunks)
+    mask_cut_counts = np.concatenate(mask_cut_count_chunks)
+    component_mask_indices = np.concatenate(component_mask_index_chunks)
+    component_batch_indices = np.concatenate(component_batch_index_chunks)
+    component_cut_counts = np.concatenate(component_cut_count_chunks)
     atom_indices = np.concatenate(atom_index_chunks)
     atom_component_indices = np.concatenate(atom_component_index_chunks)
-    mask_indices = [
-        mask_index
-        for mask_index, bond_indices in enumerate(mask_bond_indices)
-        for _ in bond_indices
-    ]
-    broken_bond_indices = [
-        bond_index for bond_indices in mask_bond_indices for bond_index in bond_indices
-    ]
+    boundary_bond_indices = (
+        np.concatenate(boundary_bond_index_chunks)
+        if boundary_bond_index_chunks
+        else np.empty(0, dtype=np.int64)
+    )
+    boundary_component_indices = (
+        np.concatenate(boundary_component_index_chunks)
+        if boundary_component_index_chunks
+        else np.empty(0, dtype=np.int64)
+    )
+    mask_indices = np.concatenate(mask_index_chunks)
+    broken_bond_indices = np.concatenate(broken_bond_index_chunks)
 
     # 5. Materialize every long index through one packed host-to-device copy.
     output_transfer_start = perf_counter()

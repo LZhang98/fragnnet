@@ -34,6 +34,8 @@ def _build_model(
     explore_masks: int = 0,
     max_masks: int = 2,
     use_mask_residuals: bool = True,
+    ce_insert_type: str = "id",
+    ce_insert_size: int = 6,
     exploration_cut_count_weights: tuple[float, ...] = (
         0.0,
         0.0,
@@ -68,10 +70,15 @@ def _build_model(
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
+        int_embedder="abs-sines",
+        ce_insert_type=ce_insert_type,
+        ce_insert_size=ce_insert_size,
         use_nce=True,
         use_ace=False,
+        nce_max=200.0,
         nce_mean=30.0,
         nce_std=10.0,
+        ace_max=100.0,
         ace_mean=20.0,
         ace_std=15.0,
         max_masks=max_masks,
@@ -92,6 +99,52 @@ def test_mass_shatter_selects_bond_focused_head() -> None:
     model = _build_model(batch, bond_num_layers=2)
 
     assert isinstance(model.bond_break_head, BondFocusedBreakHead)
+
+
+def test_mass_shatter_embeds_each_ce_before_pooling_merged_spectra() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, ce_insert_type="embed", ce_insert_size=6).eval()
+    encoder = model.context_encoder
+    nce = th.tensor([20.0, 40.0, 60.0])
+    nce_batch_indices = th.tensor([0, 0, 1])
+
+    assert encoder.nce_embedding is not None
+    assert encoder.projector[0].in_features == 4 + 6
+    embedded = encoder.nce_embedding(nce.round().long().unsqueeze(1))
+    expected_ce = th.stack(((embedded[0] + embedded[1]) / 2.0, embedded[2]))
+    expected = encoder.projector(
+        th.cat((encoder.precursor_embedding(th.tensor([0, 1])), expected_ce), dim=1)
+    )
+    actual = encoder(
+        batch_size=2,
+        precursor_types=th.tensor([0, 1]),
+        instrument_types=None,
+        fragmentation_modes=None,
+        nce=nce,
+        nce_batch_indices=nce_batch_indices,
+        ace=None,
+        ace_batch_indices=None,
+    )
+
+    assert th.allclose(actual, expected)
+
+
+def test_mass_shatter_spectrum_loss_reaches_ce_embedding() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, ce_insert_type="embed")
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([25.0, 35.0]),
+    )
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    assert model.context_encoder.nce_embedding is not None
+    projection = model.context_encoder.nce_embedding[1].weight
+    assert projection.grad is not None
+    assert th.isfinite(projection.grad).all()
+    assert projection.grad.abs().sum() > 0
 
 
 def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> None:
