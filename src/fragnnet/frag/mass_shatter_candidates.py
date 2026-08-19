@@ -15,7 +15,6 @@ from fragnnet.frag.bond_mask_generator import (
     RankedCutMask,
     iter_ranked_cut_masks,
     top_k_cut_masks,
-    translate_cut_masks,
 )
 
 
@@ -78,34 +77,6 @@ def _packed_long_tensors(
     )
     packed = th.from_numpy(packed_array).to(device=device)
     return tuple(packed.split(sizes))
-
-
-def _unpack_component_memberships(
-    component_atom_masks: Sequence[int],
-    num_atoms: int,
-    expected_memberships: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Decode component bitmasks into flat component/atom membership arrays."""
-    if num_atoms <= 256:
-        from fragnnet.frag.mass_shatter_core import unpack_component_memberships_raw
-
-        return unpack_component_memberships_raw(
-            list(component_atom_masks),
-            num_atoms,
-            expected_memberships,
-        )
-    byte_width = (num_atoms + 7) // 8
-    packed = np.frombuffer(
-        b"".join(
-            int(mask).to_bytes(byte_width, byteorder="little") for mask in component_atom_masks
-        ),
-        dtype=np.uint8,
-    ).reshape(len(component_atom_masks), byte_width)
-    membership = np.unpackbits(packed, axis=1, bitorder="little")[:, :num_atoms]
-    component_indices, atom_indices = np.nonzero(membership)
-    if component_indices.size != expected_memberships:
-        raise ValueError("component masks do not partition every atom exactly once")
-    return component_indices, atom_indices
 
 
 def build_mass_shatter_candidates(
@@ -253,7 +224,7 @@ def build_mass_shatter_candidates(
     num_masks_so_far = 0
     num_components_so_far = 0
 
-    # 2. Select and translate masks independently for each precursor.
+    # 2. Select and assemble masks independently for each precursor.
     for molecule_index in range(num_molecules):
         atom_start = atom_ptr_values[molecule_index]
         atom_end = atom_ptr_values[molecule_index + 1]
@@ -268,53 +239,223 @@ def build_mass_shatter_candidates(
             tuple(chemical_bond_rows[row][index] - atom_start for index in global_bond_indices)
             for row in range(2)
         )
-        exploit_masks = (
-            max_masks - explore_masks
-            if exploration_mode == "bernoulli_replace"
-            else max_masks
-        )
-        ranked_masks = list(
-            top_k_cut_masks(
-                detached_logits,
-                exploit_masks,
-                include_empty=True,
-                min_probability=min_mask_probability,
-            )
-        )
-        if min_mask_probability > 0.0 and not ranked_masks:
-            raise ValueError(
-                "mass_shatter_min_mask_probability excludes every learned mask "
-                f"for precursor {molecule_index}"
-            )
-        selected_bond_sets = {ranked_mask.broken_bond_indices for ranked_mask in ranked_masks}
-        forced_bond_sets = [()]
-        if include_single_bond_cuts:
-            forced_bond_sets.extend((bond_index,) for bond_index in range(len(detached_logits)))
-        reserved_bond_sets = set(forced_bond_sets)
-        unavailable_bond_sets = selected_bond_sets | reserved_bond_sets
+        if explore_masks == 0:
+            # The production Transformer path stays numeric from exact top-k
+            # selection through topology assembly. Only forced empty/single
+            # masks are appended here, in their historical order.
+            from fragnnet.frag.mass_shatter_core import top_k_cut_masks_csr_raw
 
-        sampled_count = 0
-        sampled_cut_count = 0
-        if explore_masks > 0 and exploration_mode == "bernoulli_replace":
-            # Legacy complete-mask Bernoulli exploration retained for old runs.
-            proposal_probabilities = th.sigmoid(
-                bond_logits_cpu[global_bond_indices] / exploration_temperature
+            (
+                local_mask_ptr,
+                local_broken_bonds,
+                _,
+                _,
+            ) = top_k_cut_masks_csr_raw(
+                detached_logits,
+                max_masks,
+                True,
+                min_mask_probability,
             )
-            max_sampling_attempts = max(32, 8 * explore_masks)
-            for _ in range(max_sampling_attempts):
-                if sampled_count == explore_masks or proposal_probabilities.numel() == 0:
-                    break
-                sampled_cut_mask = (
-                    th.rand(
-                        proposal_probabilities.shape,
-                        generator=generator,
+            learned_mask_count = local_mask_ptr.size - 1
+            if min_mask_probability > 0.0 and learned_mask_count == 0:
+                raise ValueError(
+                    "mass_shatter_min_mask_probability excludes every learned mask "
+                    f"for precursor {molecule_index}"
+                )
+
+            learned_cut_counts = np.diff(local_mask_ptr)
+            proposal_single_cut_fractions.append(
+                float(np.count_nonzero(learned_cut_counts == 1)) / learned_mask_count
+            )
+            exploration_mask_counts.append(0)
+            exploration_mean_cut_counts.append(0.0)
+
+            extra_cut_counts: list[int] = []
+            extra_bonds: list[int] = []
+            if not np.any(learned_cut_counts == 0):
+                extra_cut_counts.append(0)
+            if include_single_bond_cuts:
+                selected_single_bonds = np.zeros(len(detached_logits), dtype=np.bool_)
+                for mask_index in np.flatnonzero(learned_cut_counts == 1):
+                    selected_single_bonds[
+                        local_broken_bonds[local_mask_ptr[mask_index]]
+                    ] = True
+                for bond_index in np.flatnonzero(~selected_single_bonds):
+                    extra_cut_counts.append(1)
+                    extra_bonds.append(int(bond_index))
+            if extra_cut_counts:
+                local_mask_ptr = np.concatenate(
+                    (
+                        local_mask_ptr,
+                        local_mask_ptr[-1]
+                        + np.cumsum(extra_cut_counts, dtype=np.int64),
                     )
-                    < proposal_probabilities
                 )
-                broken_bond_indices = tuple(
-                    th.nonzero(sampled_cut_mask, as_tuple=False).flatten().tolist()
+                if extra_bonds:
+                    local_broken_bonds = np.concatenate(
+                        (local_broken_bonds, np.asarray(extra_bonds, dtype=np.int64))
+                    )
+            broken_mask_input: object = (local_mask_ptr, local_broken_bonds)
+            num_local_masks = local_mask_ptr.size - 1
+        else:
+            exploit_masks = (
+                max_masks - explore_masks
+                if exploration_mode == "bernoulli_replace"
+                else max_masks
+            )
+            ranked_masks = list(
+                top_k_cut_masks(
+                    detached_logits,
+                    exploit_masks,
+                    include_empty=True,
+                    min_probability=min_mask_probability,
                 )
-                if broken_bond_indices in unavailable_bond_sets:
+            )
+            if min_mask_probability > 0.0 and not ranked_masks:
+                raise ValueError(
+                    "mass_shatter_min_mask_probability excludes every learned mask "
+                    f"for precursor {molecule_index}"
+                )
+            selected_bond_sets = {
+                ranked_mask.broken_bond_indices for ranked_mask in ranked_masks
+            }
+            forced_bond_sets = [()]
+            if include_single_bond_cuts:
+                forced_bond_sets.extend(
+                    (bond_index,) for bond_index in range(len(detached_logits))
+                )
+            reserved_bond_sets = set(forced_bond_sets)
+            unavailable_bond_sets = selected_bond_sets | reserved_bond_sets
+
+            sampled_count = 0
+            sampled_cut_count = 0
+            if exploration_mode == "bernoulli_replace":
+                # Legacy complete-mask Bernoulli exploration retained for old runs.
+                proposal_probabilities = th.sigmoid(
+                    bond_logits_cpu[global_bond_indices] / exploration_temperature
+                )
+                max_sampling_attempts = max(32, 8 * explore_masks)
+                for _ in range(max_sampling_attempts):
+                    if sampled_count == explore_masks or proposal_probabilities.numel() == 0:
+                        break
+                    sampled_cut_mask = (
+                        th.rand(
+                            proposal_probabilities.shape,
+                            generator=generator,
+                        )
+                        < proposal_probabilities
+                    )
+                    broken_bond_indices = tuple(
+                        th.nonzero(sampled_cut_mask, as_tuple=False).flatten().tolist()
+                    )
+                    if broken_bond_indices in unavailable_bond_sets:
+                        continue
+                    ranked_masks.append(
+                        RankedCutMask(
+                            broken_bond_indices=broken_bond_indices,
+                            log_probability=0.0,
+                            log_probability_from_map=0.0,
+                        )
+                    )
+                    selected_bond_sets.add(broken_bond_indices)
+                    unavailable_bond_sets.add(broken_bond_indices)
+                    sampled_count += 1
+                    sampled_cut_count += len(broken_bond_indices)
+
+            # Preserve the historical fixed total budget for legacy experiments.
+            if exploration_mode == "bernoulli_replace" and len(ranked_masks) < max_masks:
+                min_log_probability = (
+                    math.log(min_mask_probability)
+                    if min_mask_probability > 0.0
+                    else -math.inf
+                )
+                for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
+                    if refill_mask.log_probability < min_log_probability:
+                        break
+                    broken_bond_indices = refill_mask.broken_bond_indices
+                    if broken_bond_indices in unavailable_bond_sets:
+                        continue
+                    ranked_masks.append(refill_mask)
+                    selected_bond_sets.add(broken_bond_indices)
+                    unavailable_bond_sets.add(broken_bond_indices)
+                    if len(ranked_masks) == max_masks:
+                        break
+
+            if exploration_mode == "bounded_additive":
+                # Draw cardinalities and Gumbel top-k masks in one compiled call.
+                valid_weight_count = min(
+                    len(cut_count_weights), len(detached_logits) + 1
+                )
+                valid_weights = cut_count_weights[:valid_weight_count]
+                if sum(valid_weights) > 0.0:
+                    supported_cut_counts = {
+                        cut_count
+                        for cut_count, weight in enumerate(valid_weights)
+                        if weight > 0.0
+                    }
+                    proposal_space_size = sum(
+                        math.comb(len(detached_logits), cut_count)
+                        for cut_count in supported_cut_counts
+                    )
+                    unavailable_proposal_count = sum(
+                        len(bond_set) in supported_cut_counts
+                        for bond_set in unavailable_bond_sets
+                    )
+                    target_sample_count = min(
+                        explore_masks,
+                        proposal_space_size - unavailable_proposal_count,
+                    )
+                    if target_sample_count > 0:
+                        from fragnnet.frag.mass_shatter_core import (
+                            bounded_additive_masks_raw,
+                        )
+
+                        max_sampling_attempts = max(32, 8 * explore_masks)
+                        proposal_logits = [
+                            detached_logits[index] / exploration_temperature
+                            for index in range(len(detached_logits))
+                        ]
+                        sampler_seed = int(
+                            th.randint(
+                                0,
+                                2**63 - 1,
+                                (),
+                                generator=generator,
+                                dtype=th.int64,
+                            ).item()
+                        )
+                        sampled_masks = bounded_additive_masks_raw(
+                            proposal_logits,
+                            valid_weights,
+                            unavailable_bond_sets,
+                            target_sample_count,
+                            max_sampling_attempts,
+                            sampler_seed,
+                        )
+                        for broken_bond_indices in sampled_masks:
+                            ranked_masks.append(
+                                RankedCutMask(
+                                    broken_bond_indices=broken_bond_indices,
+                                    log_probability=0.0,
+                                    log_probability_from_map=0.0,
+                                )
+                            )
+                            selected_bond_sets.add(broken_bond_indices)
+                            unavailable_bond_sets.add(broken_bond_indices)
+                            sampled_count += 1
+                            sampled_cut_count += len(broken_bond_indices)
+
+            exploration_mask_counts.append(sampled_count)
+            exploration_mean_cut_counts.append(
+                sampled_cut_count / sampled_count if sampled_count > 0 else 0.0
+            )
+            proposal_single_cut_fractions.append(
+                sum(mask.cut_count == 1 for mask in ranked_masks) / len(ranked_masks)
+            )
+
+            # Append forced masks outside the learned proposal budget.
+            for broken_bond_indices in forced_bond_sets:
+                if broken_bond_indices in selected_bond_sets:
                     continue
                 ranked_masks.append(
                     RankedCutMask(
@@ -324,229 +465,67 @@ def build_mass_shatter_candidates(
                     )
                 )
                 selected_bond_sets.add(broken_bond_indices)
-                unavailable_bond_sets.add(broken_bond_indices)
-                sampled_count += 1
-                sampled_cut_count += len(broken_bond_indices)
-
-        # Preserve the historical fixed total budget for legacy experiments.
-        if exploration_mode == "bernoulli_replace" and len(ranked_masks) < max_masks:
-            min_log_probability = (
-                math.log(min_mask_probability)
-                if min_mask_probability > 0.0
-                else -math.inf
-            )
-            for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
-                if refill_mask.log_probability < min_log_probability:
-                    break
-                broken_bond_indices = refill_mask.broken_bond_indices
-                if broken_bond_indices in unavailable_bond_sets:
-                    continue
-                ranked_masks.append(refill_mask)
-                selected_bond_sets.add(broken_bond_indices)
-                unavailable_bond_sets.add(broken_bond_indices)
-                if len(ranked_masks) == max_masks:
-                    break
-
-        if explore_masks > 0 and exploration_mode == "bounded_additive":
-            # Draw cardinalities and Gumbel top-k masks in one compiled call.
-            valid_weight_count = min(len(cut_count_weights), len(detached_logits) + 1)
-            valid_weights = cut_count_weights[:valid_weight_count]
-            if sum(valid_weights) > 0.0:
-                supported_cut_counts = {
-                    cut_count
-                    for cut_count, weight in enumerate(valid_weights)
-                    if weight > 0.0
-                }
-                proposal_space_size = sum(
-                    math.comb(len(detached_logits), cut_count)
-                    for cut_count in supported_cut_counts
-                )
-                unavailable_proposal_count = sum(
-                    len(bond_set) in supported_cut_counts
-                    for bond_set in unavailable_bond_sets
-                )
-                target_sample_count = min(
-                    explore_masks,
-                    proposal_space_size - unavailable_proposal_count,
-                )
-                if target_sample_count > 0:
-                    from fragnnet.frag.mass_shatter_core import bounded_additive_masks_raw
-
-                    max_sampling_attempts = max(32, 8 * explore_masks)
-                    proposal_logits = [
-                        detached_logits[index] / exploration_temperature
-                        for index in range(len(detached_logits))
-                    ]
-                    sampler_seed = int(
-                        th.randint(
-                            0,
-                            2**63 - 1,
-                            (),
-                            generator=generator,
-                            dtype=th.int64,
-                        ).item()
-                    )
-                    sampled_masks = bounded_additive_masks_raw(
-                        proposal_logits,
-                        valid_weights,
-                        unavailable_bond_sets,
-                        target_sample_count,
-                        max_sampling_attempts,
-                        sampler_seed,
-                    )
-                    for broken_bond_indices in sampled_masks:
-                        ranked_masks.append(
-                            RankedCutMask(
-                                broken_bond_indices=broken_bond_indices,
-                                log_probability=0.0,
-                                log_probability_from_map=0.0,
-                            )
-                        )
-                        selected_bond_sets.add(broken_bond_indices)
-                        unavailable_bond_sets.add(broken_bond_indices)
-                        sampled_count += 1
-                        sampled_cut_count += len(broken_bond_indices)
-
-        exploration_mask_counts.append(sampled_count)
-        exploration_mean_cut_counts.append(
-            sampled_cut_count / sampled_count if sampled_count > 0 else 0.0
-        )
-        proposal_single_cut_fractions.append(
-            sum(mask.cut_count == 1 for mask in ranked_masks) / len(ranked_masks)
-        )
-
-        # Append forced masks outside the learned proposal budget.
-        for broken_bond_indices in forced_bond_sets:
-            if broken_bond_indices in selected_bond_sets:
-                continue
-            ranked_masks.append(
-                RankedCutMask(
-                    broken_bond_indices=broken_bond_indices,
-                    log_probability=0.0,
-                    log_probability_from_map=0.0,
-                )
-            )
-            selected_bond_sets.add(broken_bond_indices)
+            broken_mask_input = [
+                ranked_mask.broken_bond_indices for ranked_mask in ranked_masks
+            ]
+            num_local_masks = len(ranked_masks)
         mask_selection_ms += (perf_counter() - selection_start) * 1000.0
 
-        # 3. Translate selected masks into connected components.
-        topology_start = perf_counter()
-        translated_masks = translate_cut_masks(
-            ranked_masks,
-            num_atoms=num_atoms,
-            bond_endpoints=local_endpoints,
-        )
-        topology_ms += (perf_counter() - topology_start) * 1000.0
+        # 3. Build connected components and every flat candidate index without
+        # materializing Python dicts, arbitrary-width bitmasks, or dataclasses.
+        from fragnnet.frag.mass_shatter_core import build_component_arrays_raw
 
-        # 4. Decode all component bitmasks for this molecule in compiled NumPy
-        # kernels, then derive boundary membership from the dense local map.
-        assembly_start = perf_counter()
         mask_start = num_masks_so_far
         component_start = num_components_so_far
-        num_local_masks = len(translated_masks)
-        local_mask_indices = np.arange(
+        (
+            local_cut_counts,
+            local_component_mask_indices,
+            local_component_cut_counts,
+            local_atom_indices,
+            local_atom_component_indices,
+            local_mask_indices,
+            local_broken_bond_indices,
+            local_boundary_bond_indices,
+            local_boundary_component_indices,
+            num_local_components,
+            unique_component_count,
+            local_topology_ms,
+            local_assembly_ms,
+        ) = build_component_arrays_raw(
+            num_atoms,
+            np.asarray(local_endpoints, dtype=np.int64).T,
+            broken_mask_input,
+            global_bond_indices,
+            atom_start,
             mask_start,
-            mask_start + num_local_masks,
-            dtype=np.int64,
+            component_start,
         )
-        local_cut_counts = np.fromiter(
-            (translated_mask.cut_mask.cut_count for translated_mask in translated_masks),
-            dtype=np.int64,
-            count=num_local_masks,
-        )
-        local_component_counts = np.fromiter(
-            (len(translated_mask.component_atom_masks) for translated_mask in translated_masks),
-            dtype=np.int64,
-            count=num_local_masks,
-        )
-        local_component_masks = [
-            component_mask
-            for translated_mask in translated_masks
-            for component_mask in translated_mask.component_atom_masks
-        ]
-        local_component_owners = np.repeat(
-            np.arange(num_local_masks, dtype=np.int64),
-            local_component_counts,
-        )
+        topology_ms += local_topology_ms
+        assembly_ms += local_assembly_ms
         mask_batch_index_chunks.append(
             np.full(num_local_masks, molecule_index, dtype=np.int64)
         )
         mask_cut_count_chunks.append(local_cut_counts)
-        component_mask_index_chunks.append(
-            np.repeat(local_mask_indices, local_component_counts)
-        )
+        component_mask_index_chunks.append(local_component_mask_indices)
         component_batch_index_chunks.append(
-            np.full(len(local_component_masks), molecule_index, dtype=np.int64)
+            np.full(num_local_components, molecule_index, dtype=np.int64)
         )
-        component_cut_count_chunks.append(
-            np.repeat(local_cut_counts, local_component_counts)
-        )
+        component_cut_count_chunks.append(local_component_cut_counts)
+        atom_index_chunks.append(local_atom_indices)
+        atom_component_index_chunks.append(local_atom_component_indices)
+        mask_index_chunks.append(local_mask_indices)
+        broken_bond_index_chunks.append(local_broken_bond_indices)
+        if local_boundary_bond_indices.size > 0:
+            boundary_bond_index_chunks.append(local_boundary_bond_indices)
+            boundary_component_index_chunks.append(local_boundary_component_indices)
         num_masks_so_far += num_local_masks
-        num_components_so_far += len(local_component_masks)
-        unique_component_counts.append(len(set(local_component_masks)))
-
-        local_component_indices, local_atom_indices = _unpack_component_memberships(
-            local_component_masks,
-            num_atoms,
-            num_local_masks * num_atoms,
-        )
-        global_component_indices = local_component_indices + component_start
-        atom_index_chunks.append(local_atom_indices + atom_start)
-        atom_component_index_chunks.append(global_component_indices)
-        mask_atom_components = np.empty(
-            (len(translated_masks), num_atoms),
-            dtype=np.int64,
-        )
-        component_owners = local_component_owners[local_component_indices]
-        mask_atom_components[
-            component_owners,
-            local_atom_indices,
-        ] = global_component_indices
-        local_broken_bond_indices = np.fromiter(
-            (
-                local_bond_index
-                for translated_mask in translated_masks
-                for local_bond_index in translated_mask.cut_mask.broken_bond_indices
-            ),
-            dtype=np.int64,
-            count=int(local_cut_counts.sum()),
-        )
-        local_broken_bond_owners = np.repeat(
-            np.arange(num_local_masks, dtype=np.int64),
-            local_cut_counts,
-        )
-        global_bond_indices_array = np.asarray(global_bond_indices, dtype=np.int64)
-        global_broken_bond_indices = global_bond_indices_array[
-            local_broken_bond_indices
-        ]
-        mask_index_chunks.append(local_mask_indices[local_broken_bond_owners])
-        broken_bond_index_chunks.append(global_broken_bond_indices)
-
-        if local_broken_bond_indices.size > 0:
-            local_endpoints_array = np.asarray(local_endpoints, dtype=np.int64)
-            left_components = mask_atom_components[
-                local_broken_bond_owners,
-                local_endpoints_array[0, local_broken_bond_indices],
-            ]
-            right_components = mask_atom_components[
-                local_broken_bond_owners,
-                local_endpoints_array[1, local_broken_bond_indices],
-            ]
-            separating = left_components != right_components
-            separating_global_bonds = global_broken_bond_indices[separating]
-            boundary_bond_index_chunks.append(
-                np.repeat(separating_global_bonds, 2)
-            )
-            boundary_component_index_chunks.append(
-                np.column_stack(
-                    (left_components[separating], right_components[separating])
-                ).reshape(-1)
-            )
-        assembly_ms += (perf_counter() - assembly_start) * 1000.0
+        num_components_so_far += num_local_components
+        unique_component_counts.append(unique_component_count)
 
     if num_masks_so_far == 0:
         raise ValueError("candidate generation produced no cut masks")
 
+    # 4. Concatenate the per-precursor numeric chunks into one CPU batch.
     mask_batch_indices = np.concatenate(mask_batch_index_chunks)
     mask_cut_counts = np.concatenate(mask_cut_count_chunks)
     component_mask_indices = np.concatenate(component_mask_index_chunks)

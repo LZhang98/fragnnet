@@ -58,7 +58,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_atoms", type=int, default=20)
-    parser.add_argument("--max_masks", type=int, default=256)
+    parser.add_argument("--max_masks", type=int, default=1024)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     args = parser.parse_args()
