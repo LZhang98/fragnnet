@@ -113,6 +113,12 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         unique_component_count=th.tensor([3]),
         components_per_mask=th.tensor([2.0]),
         unique_components_per_mask=th.tensor([1.5]),
+        latent_pathways_per_unique_fragment=th.tensor([4.0 / 3.0]),
+        unique_fragment_target_fill_fraction=th.tensor([0.75]),
+        unique_fragment_target_reached=th.tensor([0.0]),
+        unique_fragment_effective_count=th.tensor([2.5]),
+        unique_fragment_top1_mass_fraction=th.tensor([0.6]),
+        duplicate_pathway_probability_fraction=th.tensor([0.2]),
         productive_mask_fraction=th.tensor([0.5]),
         duplicate_component_pathway_fraction=th.tensor([0.25]),
         mask_cut_fraction_0=th.tensor([0.25]),
@@ -165,6 +171,12 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     assert actual["unique_component_count"].tolist() == [3.0]
     assert actual["components_per_mask"].tolist() == [2.0]
     assert actual["unique_components_per_mask"].tolist() == [1.5]
+    assert actual["latent_pathways_per_unique_fragment"].tolist() == pytest.approx([4.0 / 3.0])
+    assert actual["unique_fragment_target_fill_fraction"].tolist() == [0.75]
+    assert actual["unique_fragment_target_reached"].tolist() == [0.0]
+    assert actual["unique_fragment_effective_count"].tolist() == [2.5]
+    assert actual["unique_fragment_top1_mass_fraction"].tolist() == pytest.approx([0.6])
+    assert actual["duplicate_pathway_probability_fraction"].tolist() == pytest.approx([0.2])
     assert actual["productive_mask_fraction"].tolist() == [0.5]
     assert actual["duplicate_component_pathway_fraction"].tolist() == [0.25]
     assert actual["candidate_total_batch_ms"].tolist() == [15.0]

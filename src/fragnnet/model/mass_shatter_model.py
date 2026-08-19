@@ -987,6 +987,9 @@ class MassShatterModel(nn.Module):
             atom_embeddings[mol_pyg.chemical_bond_index[0]]
             + atom_embeddings[mol_pyg.chemical_bond_index[1]]
         ) / 2.0
+        unique_fragment_effective_count = bond_logits.new_zeros(batch_size)
+        unique_fragment_top1_mass_fraction = bond_logits.new_zeros(batch_size)
+        duplicate_pathway_probability_fraction = bond_logits.new_zeros(batch_size)
 
         if self.unique_fragment_mode:
             (
@@ -1016,6 +1019,29 @@ class MassShatterModel(nn.Module):
                 candidates.component_unique_indices,
                 num_fragments,
             )
+            best_pathway_log_probabilities = component_log_probabilities.new_full(
+                (num_fragments,),
+                -th.inf,
+            ).scatter_reduce(
+                0,
+                candidates.component_unique_indices,
+                component_log_probabilities,
+                reduce="amax",
+                include_self=True,
+            )
+            retained_fragment_log_probability = _segment_logsumexp(
+                fragment_log_probabilities,
+                fragment_batch_indices,
+                batch_size,
+            )
+            best_pathway_log_probability = _segment_logsumexp(
+                best_pathway_log_probabilities,
+                fragment_batch_indices,
+                batch_size,
+            )
+            duplicate_pathway_probability_fraction = (
+                -th.expm1(best_pathway_log_probability - retained_fragment_log_probability)
+            ).clamp(min=0.0, max=1.0)
             fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
                 atom_embeddings,
                 fragment_atom_indices,
@@ -1071,6 +1097,30 @@ class MassShatterModel(nn.Module):
                 corrected_fragment_logits
                 - fragment_log_normalizers[fragment_batch_indices]
                 + retained_log_probabilities[fragment_batch_indices]
+            )
+            normalized_fragment_log_probabilities = (
+                fragment_log_probabilities - retained_log_probabilities[fragment_batch_indices]
+            )
+            normalized_fragment_probabilities = normalized_fragment_log_probabilities.exp()
+            unique_fragment_entropy = bond_logits.new_zeros(batch_size).index_add(
+                0,
+                fragment_batch_indices,
+                -normalized_fragment_probabilities * normalized_fragment_log_probabilities,
+            )
+            unique_fragment_effective_count = unique_fragment_entropy.exp()
+            unique_fragment_top1_mass_fraction = (
+                normalized_fragment_log_probabilities.new_full(
+                    (batch_size,),
+                    -th.inf,
+                )
+                .scatter_reduce(
+                    0,
+                    fragment_batch_indices,
+                    normalized_fragment_log_probabilities,
+                    reduce="amax",
+                    include_self=True,
+                )
+                .exp()
             )
             ion_mzs, valid_channels = self._fragment_masses_and_valid_channels(
                 mol_pyg,
@@ -1212,6 +1262,7 @@ class MassShatterModel(nn.Module):
         )
         selected_mask_count_float = selected_mask_count.to(bond_logits)
         component_pathway_count_float = component_pathway_count.to(bond_logits)
+        unique_component_count_float = candidates.unique_component_count.to(bond_logits)
         productive_mask_indices = th.unique(
             candidates.component_mask_indices[candidates.unique_representative_component_indices]
         )
@@ -1280,11 +1331,25 @@ class MassShatterModel(nn.Module):
             "unique_component_count": candidates.unique_component_count,
             "components_per_mask": component_pathway_count_float / selected_mask_count_float,
             "unique_components_per_mask": (
-                candidates.unique_component_count / selected_mask_count_float
+                unique_component_count_float / selected_mask_count_float
             ),
+            "latent_pathways_per_unique_fragment": (
+                component_pathway_count_float / unique_component_count_float
+            ),
+            "unique_fragment_target_fill_fraction": (
+                unique_component_count_float / self.max_masks
+            ).clamp(max=1.0)
+            * float(self.unique_fragment_mode),
+            "unique_fragment_target_reached": (
+                (unique_component_count_float >= self.max_masks).to(bond_logits)
+                * float(self.unique_fragment_mode)
+            ),
+            "unique_fragment_effective_count": unique_fragment_effective_count,
+            "unique_fragment_top1_mass_fraction": (unique_fragment_top1_mass_fraction),
+            "duplicate_pathway_probability_fraction": (duplicate_pathway_probability_fraction),
             "productive_mask_fraction": (productive_mask_count / selected_mask_count_float),
             "duplicate_component_pathway_fraction": (
-                1.0 - candidates.unique_component_count / component_pathway_count_float
+                1.0 - unique_component_count_float / component_pathway_count_float
             ),
             **mask_cut_fractions,
             **candidate_timing_tensors,

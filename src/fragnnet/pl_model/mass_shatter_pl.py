@@ -264,6 +264,12 @@ class MassShatterPL(SpectrumPL):
             unique_component_count: th.Tensor,
             components_per_mask: th.Tensor,
             unique_components_per_mask: th.Tensor,
+            latent_pathways_per_unique_fragment: th.Tensor,
+            unique_fragment_target_fill_fraction: th.Tensor,
+            unique_fragment_target_reached: th.Tensor,
+            unique_fragment_effective_count: th.Tensor,
+            unique_fragment_top1_mass_fraction: th.Tensor,
+            duplicate_pathway_probability_fraction: th.Tensor,
             productive_mask_fraction: th.Tensor,
             duplicate_component_pathway_fraction: th.Tensor,
             mask_cut_fraction_0: th.Tensor,
@@ -330,6 +336,24 @@ class MassShatterPL(SpectrumPL):
                 "components_per_mask": components_per_mask.detach().to(pred_logprobs),
                 "unique_components_per_mask": (
                     unique_components_per_mask.detach().to(pred_logprobs)
+                ),
+                "latent_pathways_per_unique_fragment": (
+                    latent_pathways_per_unique_fragment.detach().to(pred_logprobs)
+                ),
+                "unique_fragment_target_fill_fraction": (
+                    unique_fragment_target_fill_fraction.detach().to(pred_logprobs)
+                ),
+                "unique_fragment_target_reached": (
+                    unique_fragment_target_reached.detach().to(pred_logprobs)
+                ),
+                "unique_fragment_effective_count": (
+                    unique_fragment_effective_count.detach().to(pred_logprobs)
+                ),
+                "unique_fragment_top1_mass_fraction": (
+                    unique_fragment_top1_mass_fraction.detach().to(pred_logprobs)
+                ),
+                "duplicate_pathway_probability_fraction": (
+                    duplicate_pathway_probability_fraction.detach().to(pred_logprobs)
                 ),
                 "productive_mask_fraction": (productive_mask_fraction.detach().to(pred_logprobs)),
                 "duplicate_component_pathway_fraction": (
@@ -414,6 +438,12 @@ class MassShatterPL(SpectrumPL):
             "unique_component_count",
             "components_per_mask",
             "unique_components_per_mask",
+            "latent_pathways_per_unique_fragment",
+            "unique_fragment_target_fill_fraction",
+            "unique_fragment_target_reached",
+            "unique_fragment_effective_count",
+            "unique_fragment_top1_mass_fraction",
+            "duplicate_pathway_probability_fraction",
             "productive_mask_fraction",
             "duplicate_component_pathway_fraction",
             "mask_cut_fraction_0",

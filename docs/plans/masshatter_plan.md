@@ -469,7 +469,8 @@ the unique-fragment ion head.
 Configuration:
 
 - `mass_shatter_unique_fragment_mode: True` makes `mass_shatter_max_masks` the
-  requested unique-fragment token budget.
+  requested unique-fragment token target. The final complete mask can add several
+  new atom sets, so the realized token count can slightly exceed the target.
 - `mass_shatter_max_enumerated_masks` bounds learned latent-mask enumeration. Empty
   and single-cut masks retain their established outside-budget support semantics.
 - The first controlled experiments keep both values at 512. Increasing latent masks
@@ -478,10 +479,18 @@ Configuration:
   the bond/charge model fixes fragment mass and the transformer only allocates ion/H
   channels.
 
-The implementation logs `productive_mask_fraction` and
-`duplicate_component_pathway_fraction` alongside mask, pathway, and unique-fragment
-counts. These metrics distinguish a support shortage from a redundancy problem and
-must be reported with runtime and candidate weighted recall.
+The implementation logs count-based utilization (`productive_mask_fraction`,
+`duplicate_component_pathway_fraction`, and
+`latent_pathways_per_unique_fragment`), target status
+(`unique_fragment_target_fill_fraction` and `unique_fragment_target_reached`), and
+probability-aware concentration (`unique_fragment_effective_count`,
+`unique_fragment_top1_mass_fraction`, and
+`duplicate_pathway_probability_fraction`). The last metric is the fraction of
+retained fragment probability contributed beyond the single best pathway for each
+atom set; unlike duplicate counts, it shows whether marginalizing redundant pathways
+materially changes the predicted distribution. These metrics distinguish a support
+shortage from a redundancy problem and must be reported with runtime and candidate
+weighted recall.
 
 Reference configurations:
 

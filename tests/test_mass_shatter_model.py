@@ -314,6 +314,27 @@ def test_unique_fragment_mode_keeps_batched_marginals_separate() -> None:
         (output["duplicate_component_pathway_fraction"] >= 0.0)
         & (output["duplicate_component_pathway_fraction"] < 1.0)
     ).all()
+    assert (output["latent_pathways_per_unique_fragment"] >= 1.0).all()
+    assert (
+        (output["unique_fragment_target_fill_fraction"] > 0.0)
+        & (output["unique_fragment_target_fill_fraction"] <= 1.0)
+    ).all()
+    assert (
+        (output["unique_fragment_target_reached"] == 0.0)
+        | (output["unique_fragment_target_reached"] == 1.0)
+    ).all()
+    assert (
+        (output["unique_fragment_effective_count"] >= 1.0)
+        & (output["unique_fragment_effective_count"] <= output["unique_component_count"] + 1e-5)
+    ).all()
+    assert (
+        (output["unique_fragment_top1_mass_fraction"] > 0.0)
+        & (output["unique_fragment_top1_mass_fraction"] <= 1.0)
+    ).all()
+    assert (
+        (output["duplicate_pathway_probability_fraction"] >= 0.0)
+        & (output["duplicate_pathway_probability_fraction"] <= 1.0)
+    ).all()
 
 
 def test_mass_shatter_forward_conserves_probability_with_bounded_exploration() -> None:
