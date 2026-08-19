@@ -140,6 +140,16 @@ class FraGNNetPL(SpectrumPL):
             ion_channel_factorized=self.hparams.get("ion_channel_factorized", False),
             ion_channel_adduct_gated=self.hparams.get("ion_channel_adduct_gated", False),
             ion_channel_rank=self.hparams.get("ion_channel_rank", 32),
+            frag_competition=self.hparams.frag_competition,
+            frag_competition_top_k=self.hparams.frag_competition_top_k,
+            frag_competition_hidden_dim=self.hparams.frag_competition_hidden_dim,
+            frag_competition_layers=self.hparams.frag_competition_layers,
+            frag_competition_heads=self.hparams.frag_competition_heads,
+            frag_competition_dropout=self.hparams.frag_competition_dropout,
+            frag_competition_detach_encoder=(
+                self.hparams.frag_competition_detach_encoder
+            ),
+            frag_competition_max_delta=self.hparams.frag_competition_max_delta,
         )
 
         self._check_ce_params()

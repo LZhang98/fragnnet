@@ -1,8 +1,7 @@
 ## Weights and Biases Sweeps
 
-W&B sweep definitions live in this directory. The corresponding base training configs
-live under `config/sweeps/` and are passed to `scripts/run_wandb_sweep.py` with
-`--custom_fp`.
+W&B sweep definitions live in this directory. Their corresponding base training configs
+are listed below and passed to `scripts/run_wandb_sweep.py` with `--custom_fp`.
 
 | Sweep definition | Base training config | Purpose |
 |---|---|---|
@@ -10,6 +9,7 @@ live under `config/sweeps/` and are passed to `scripts/run_wandb_sweep.py` with
 | [nist20_d3_ma_mi_sweep_2.yml](./nist20_d3_ma_mi_sweep_2.yml) | `config/sweeps/nist20_d3_ma_mi_2.yml` | Follow-up NIST20 D3 MA/MI sweep over hidden sizes, dropout, LR, weight decay, and node entropy |
 | [nist20_d3_ma_mi_sweep_sqrt.yml](./nist20_d3_ma_mi_sweep_sqrt.yml) | `config/sweeps/nist20_d3_ma_mi_sqrt.yml` | NIST20 D3 MA/MI sweep using sqrt-bin evaluation setup |
 | [nist20_d3_ma_mi_focused_sweep.yml](./nist20_d3_ma_mi_focused_sweep.yml) | `config/sweeps/nist20_d3_ma_mi_focused.yml` | Focused follow-up sweep for molecular encoder width (`256/384/512`) and safer architecture defaults |
+| [nist20_d3_ma_mi_frag_competition_sweep.yml](./nist20_d3_ma_mi_frag_competition_sweep.yml) | `config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_frag_competition.yml` | Head-only sweep over fragment top-K, transformer width, and dropout |
 
 Older merged-data benchmark sweeps are under [merged/](./merged/).
 

@@ -153,6 +153,40 @@ ff_output_map_size: 256  # Low-rank approximation
 ff_output_activation: relu
 ```
 
+### FraGNNet Top-K Fragment Competition
+
+FraGNNet can refine its strongest predicted fragments with a transformer before joint
+normalization and formula aggregation. Ranking uses each fragment's aggregate valid-channel
+logit independently for each spectrum. The transformer receives fragment features, the base
+fragment score, and acquisition context, then predicts one scalar residual shared across that
+fragment's valid ion/H channels. This changes competition between fragments without disturbing
+the base model's relative channel distribution within a fragment.
+
+```yaml
+frag_competition: True
+frag_competition_top_k: 128
+frag_competition_hidden_dim: 64
+frag_competition_layers: 2
+frag_competition_heads: 4
+frag_competition_dropout: 0.1
+frag_competition_detach_encoder: True
+frag_competition_max_delta: 5.0
+```
+
+`frag_competition: False` disables the path. The residual output layer is initialized to zero, so
+enabling the transformer on a baseline checkpoint initially preserves its predictions. Fragments
+outside the selected top-K retain their base logits and remain in the predicted support. Top-K
+selection is non-differentiable. Shared encoder features, base scores, and context are detached by
+default to keep the residual branch from destabilizing the base model; the transformer itself
+still trains normally. This path currently requires `mlp_output_format: formula`.
+
+The runnable production experiment is
+[`fraggnn_d3_ma_mi_nist20_amolc_all_frag_competition.yml`](exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_frag_competition.yml).
+Its paired control is
+[`fraggnn_d3_ma_mi_nist20_amolc_all_ce_perfrag_feats.yml`](exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_ce_perfrag_feats.yml),
+and the head-only K/width/dropout grid is defined in
+[`nist20_d3_ma_mi_frag_competition_sweep.yml`](../sweep/nist20_d3_ma_mi_frag_competition_sweep.yml).
+
 ### Target Spectrum Filtering
 
 These options are top-level model hyperparameters handled in `SpectrumPL.preproc_spec()`.

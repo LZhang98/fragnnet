@@ -282,6 +282,17 @@ candidate_ion_checkpoint: True  # Checkpoint candidate chunks during training to
 ion_channel_factorized: False  # Cheap alternative: keep per-node H logits and add a low-rank learned H/CMF-channel residual
 ion_channel_adduct_gated: False  # Adduct-conditioned variant: gate the low-rank node factor by spec_prec_type for a node x channel x adduct residual (mutually exclusive with ion_channel_factorized)
 ion_channel_rank: 32
+# Rank fragments by their aggregate real-channel logits, then use a context-conditioned
+# transformer to add one residual shared by every valid channel of each selected fragment.
+frag_competition: False
+frag_competition_top_k: 128
+frag_competition_hidden_dim: 64
+frag_competition_layers: 2
+frag_competition_heads: 4
+frag_competition_dropout: 0.1
+# Detaching shared-model inputs avoids unstable gradients from the competition transformer.
+frag_competition_detach_encoder: True
+frag_competition_max_delta: 5.0
 mlp_hidden_size: 256  # Hidden dimension for MLP layers
 mlp_dropout: 0.0  # Dropout rate for MLP
 mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]

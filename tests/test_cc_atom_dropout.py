@@ -35,6 +35,7 @@ def _build_model(
     candidate_ion_head: bool = False,
     ion_channel_factorized: bool = False,
     ion_channel_adduct_gated: bool = False,
+    frag_competition: bool = False,
 ) -> FraGNNetModel:
     if frag_node_feats is None:
         frag_node_feats = FRAG_NODE_FEATS
@@ -114,6 +115,14 @@ def _build_model(
         ion_channel_factorized=ion_channel_factorized,
         ion_channel_adduct_gated=ion_channel_adduct_gated,
         ion_channel_rank=4,
+        frag_competition=frag_competition,
+        frag_competition_top_k=8,
+        frag_competition_hidden_dim=16,
+        frag_competition_layers=1,
+        frag_competition_heads=4,
+        frag_competition_dropout=0.0,
+        frag_competition_detach_encoder=True,
+        frag_competition_max_delta=5.0,
     )
 
 
@@ -334,3 +343,37 @@ class TestIonChannelFactorizedForward:
         ]
         assert grads
         assert any(th.isfinite(g).all() and th.any(g != 0) for g in grads)
+
+
+class TestFragmentCompetitionForward:
+    def test_zero_initialized_transformer_preserves_loaded_baseline(self) -> None:
+        th.manual_seed(17)
+        baseline = _build_model(cc_atom_dropout=0.0)
+        competition = _build_model(
+            cc_atom_dropout=0.0,
+            frag_competition=True,
+        )
+        competition.load_state_dict(baseline.state_dict(), strict=False)
+        baseline.eval()
+        competition.eval()
+        kwargs = _forward_kwargs()
+
+        with th.no_grad():
+            baseline_out = baseline(**kwargs)
+            competition_out = competition(**kwargs)
+
+        assert th.equal(baseline_out["pred_logprobs"], competition_out["pred_logprobs"])
+
+    def test_transformer_residual_head_receives_gradients(self) -> None:
+        model = _build_model(
+            cc_atom_dropout=0.0,
+            frag_competition=True,
+        )
+        model.train()
+        out = model(**_forward_kwargs())
+        (-out["pred_logprobs"].mean()).backward()
+
+        grad = model.frag_competition_head.residual_head.weight.grad
+        assert grad is not None
+        assert th.isfinite(grad).all()
+        assert th.any(grad != 0)

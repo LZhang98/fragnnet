@@ -24,6 +24,7 @@ from fragnnet.model.base_model import (
     StratumScaler,
 )
 from fragnnet.model.form_embedder import get_embedder
+from fragnnet.model.fragment_competition import TopKFragmentTransformer
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
@@ -142,6 +143,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ion_channel_factorized: bool = False,
         ion_channel_adduct_gated: bool = False,
         ion_channel_rank: int = 32,
+        frag_competition: bool = False,
+        frag_competition_top_k: int = 128,
+        frag_competition_hidden_dim: int = 64,
+        frag_competition_layers: int = 2,
+        frag_competition_heads: int = 4,
+        frag_competition_dropout: float = 0.1,
+        frag_competition_detach_encoder: bool = True,
+        frag_competition_max_delta: float = 5.0,
     ):
         # nn.Module init
         super().__init__()
@@ -479,6 +488,32 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # feature); the readout MLP then learns an arbitrary node x set interaction instead of
             # the fixed elementwise shift that 'subtract'/'add' apply.
             mlp_input_dim += self.frag_pool_out_size
+
+        if frag_competition:
+            if self.mlp_output_format != "formula":
+                raise ValueError("frag_competition requires mlp_output_format='formula'")
+            if self.context_embedding:
+                competition_context_dim = context_embedding_dim
+            else:
+                competition_context_dim = (
+                    (self.ce_embed_dim if self.ce_insert_locations else 0)
+                    + (prec_insert_size if prec_insert_location != "none" else 0)
+                    + (inst_insert_size if inst_insert_location != "none" else 0)
+                    + (frag_mode_insert_size if frag_mode_insert_location != "none" else 0)
+                )
+            self.frag_competition_head = TopKFragmentTransformer(
+                fragment_dim=mlp_input_dim,
+                context_dim=competition_context_dim,
+                top_k=frag_competition_top_k,
+                hidden_dim=frag_competition_hidden_dim,
+                num_layers=frag_competition_layers,
+                num_heads=frag_competition_heads,
+                dropout=frag_competition_dropout,
+                max_delta=frag_competition_max_delta,
+                detach_inputs=frag_competition_detach_encoder,
+            )
+        else:
+            self.frag_competition_head = None
 
         self.candidate_ion_head = candidate_ion_head
         self.candidate_ion_formula_features = candidate_ion_formula_features
@@ -1880,6 +1915,43 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 bias_per_depth = self.depth_ce_bias_layer(ce_embed)            # (batch, num_depth+1)
                 per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
                 frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)
+            if self.frag_competition_head is not None:
+                competition_real_mask = frag_joint_mask.reshape(
+                    batch_frag_num_nodes, self.mlp_output_dim
+                ).bool()
+                if include_cmf:
+                    crf_width = 2 * self.num_hs + 1
+                    formula_idxs_2d = frag_joint_formula_idxs.reshape(
+                        batch_frag_num_nodes, self.mlp_output_dim
+                    )
+                    cmf_dhn0_null = (
+                        formula_idxs_2d[:, crf_width + 1 :]
+                        == frag_node_offsets.unsqueeze(1)
+                    )
+                    competition_real_mask = competition_real_mask & ~F.pad(
+                        cmf_dhn0_null, (crf_width + 1, 0)
+                    )
+                if self.context_embedding:
+                    competition_context = context_embed
+                else:
+                    competition_context_parts = [
+                        embed
+                        for embed in (ce_embed, prec_embed, inst_embed, frag_mode_embed)
+                        if embed is not None
+                    ]
+                    competition_context = (
+                        th.cat(competition_context_parts, dim=1)
+                        if competition_context_parts
+                        else None
+                    )
+                frag_joint_logits = self.frag_competition_head(
+                    frag_joint_logits,
+                    frag_embed,
+                    frag_node_batch_idxs,
+                    competition_real_mask,
+                    competition_context,
+                    batch_size=frag_formula_sizes.shape[0],
+                )
             if include_cmf:
                 # CMF Δh≠0 channels (columns crf_width+1..) that map to NULL should not
                 # consume probability mass before softmax.  This is always the case for
