@@ -1,6 +1,6 @@
 # MASShatter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IN PROGRESS — FIRST TRAINABLE SLICE IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-15
+> **Status:** IN PROGRESS — UNIQUE-FRAGMENT PATHWAY MARGINALIZATION IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-19
 >
 > Replace fixed-depth D3/D4 fragment enumeration at inference with one molecular
 > encoding pass, independent bond-break probabilities, top-K cut-mask search,
@@ -37,7 +37,7 @@ and may optionally supply warm-start labels, but they are not part of inference.
 
 - Generate candidates by deleting existing precursor bonds. The first version
   does not model products that require forming a new heavy-atom bond. Section
-  6.1 specifies a planned template channel for their spectrum-level support.
+  6.2 specifies a planned template channel for their spectrum-level support.
 - Assume independent Bernoulli bond-breaking probabilities in the first
   version. Pairwise/concerted corrections are an ablation only after the
   independent model is measured.
@@ -417,7 +417,78 @@ The first comparison should test both:
 
 Retain the intensity head only if it gives a reproducible held-out improvement.
 
-### 6.1 Planned template channel for new-bond products
+### 6.1 Unique-fragment pathway marginalization — IMPLEMENTED 2026-08-19
+
+The original pathway-token implementation sent every component occurrence from
+every retained cut mask through the intensity transformer. This is probabilistically
+valid but computationally wasteful: many masks produce the same precursor atom set
+through spectator cuts, redundant ring openings, or cuts confined to the neutral
+complement. Those occurrences must contribute probability, but they do not need
+separate learned fragment representations.
+
+Unique-fragment mode separates **latent component pathways** from **fragment
+tokens**:
+
+1. Enumerate the probability-ranked cut masks and their connected components.
+2. Assign every component occurrence a unique ID determined only by its precursor
+   atom set. Record the first occurrence as its canonical representative.
+3. Pool atom charge-affinity logits once per unique atom set, broadcast that score
+   back to every component occurrence, and normalize charge retention among the
+   sibling components of each mask.
+4. Marginalize all charged occurrences of the same atom set:
+
+   ```
+   log P(F)
+     = logsumexp_{C: F in components(G \ C)}
+         [log P(C) + log P_charge(F | C, precursor_type)]
+   ```
+
+5. Run component/complement/boundary pooling and the intensity transformer once per
+   unique atom set. The joint ion-mode/H-transfer probabilities are conditioned on
+   this marginalized fragment probability.
+
+The charge score can be reused because it is computed from the fragment's atoms and
+their context-conditioned embeddings; only its normalization changes with the
+sibling components present in a particular mask. The normalization therefore still
+models competition for charge within each cleavage event, while `logsumexp` preserves
+the probability contributed by every retained pathway.
+
+The canonical cut count of a unique fragment is the number of precursor bonds that
+cross its atom-set boundary. It is not the total cut count of an arbitrary parent
+mask: spectator cuts in the neutral complement must not make a simple fragment look
+like a high-cut fragment.
+
+This is not a direct atom-mask or fixed-query fragment decoder. Fragment identities
+remain chemically derived from latent bond-cleavage events, there is no Hungarian
+matching or fragment-label supervision, arbitrary cut cardinalities remain possible,
+and the unenumerated Bernoulli mask mass remains the explicit OOS probability. Mask
+selection is still detached top-K, but the spectrum loss backpropagates through the
+live probabilities of every selected mask, the per-mask charge normalization, and
+the unique-fragment ion head.
+
+Configuration:
+
+- `mass_shatter_unique_fragment_mode: True` makes `mass_shatter_max_masks` the
+  requested unique-fragment token budget.
+- `mass_shatter_max_enumerated_masks` bounds learned latent-mask enumeration. Empty
+  and single-cut masks retain their established outside-budget support semantics.
+- The first controlled experiments keep both values at 512. Increasing latent masks
+  without a proportional gain in unique fragments is deliberately avoided.
+- `mass_shatter_use_mask_residuals: False` gives the cleanest probabilistic ablation:
+  the bond/charge model fixes fragment mass and the transformer only allocates ion/H
+  channels.
+
+The implementation logs `productive_mask_fraction` and
+`duplicate_component_pathway_fraction` alongside mask, pathway, and unique-fragment
+counts. These metrics distinguish a support shortage from a redundancy problem and
+must be reported with runtime and candidate weighted recall.
+
+Reference configurations:
+
+- `config/masshatter/nist20_ma_mi_unmerged_unique512_gine_efa384_bondcentric_a2_b3_transformer_full_context_no_mask_residual.yml`
+- `config/masshatter/nist20_merged_unique512_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_no_mask_residual.yml`
+
+### 6.2 Planned template channel for new-bond products
 
 Ring contractions and other rearrangements may form a new heavy-atom bond, so
 their product connectivity cannot be obtained from `components(G \ C)`. A
@@ -731,6 +802,13 @@ failure observed with deterministic top-K alone. Consequently, `max_masks` is
 the learned ranking budget; the actual count can be larger by the single-bond
 exploration set and is logged explicitly.
 
+**Unique-fragment integration implemented, 2026-08-19:** compiled topology assembly
+now records component-to-unique-atom-set mappings and canonical representatives.
+Charge affinity is evaluated once per unique atom set, normalized per latent mask,
+and marginalized across duplicate pathways before the intensity transformer. This
+removes duplicate transformer tokens without discarding their probability mass or
+changing OOS semantics.
+
 The first production-shaped configuration is
 `config/nist20_merged_inchikey/mass_shatter/s0.yml`: K=100, CRF/CMF channels,
 H-transfer range -4 through +4, and FraGNNet's sparse Gaussian cross-entropy.
@@ -777,7 +855,7 @@ higher-recall reference, not an inference dependency.
    head may be necessary, but it must not become another expensive per-fragment
    model without a measured benefit.
 7. **New-bond rearrangements are unreachable in the current action space.** The
-   planned atom-mask/template mechanism in Section 6.1 can support their direct
+   planned atom-mask/template mechanism in Section 6.2 can support their direct
    spectrum-level products. Arbitrary product structures and subsequent
    connectivity-dependent fragmentation still require a learned edit channel.
 8. **MAP masks with many `p_b > 0.5` are a calibration warning.** The K-best

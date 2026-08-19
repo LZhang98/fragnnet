@@ -76,7 +76,7 @@ roadmap. It links the analyses that justify each item.
 | [ion_collision_energy_matrix_experiment_plan.md](plans/ion_collision_energy_matrix_experiment_plan.md) | Ion × CE diagnostics plus a proposed sparse full-trajectory loss compared with the shipped precursor and adjacent-switch losses; V2 joint decoding is gated on V1. |
 | [fragment_context_gate_experiment_plan.md](plans/fragment_context_gate_experiment_plan.md) | Zero-code `mol` versus `mol,mlp` context-routing ablation; final-logit gate is conditional on a positive result. |
 | [classyfire_atom_pretraining_plan.md](plans/classyfire_atom_pretraining_plan.md) | Pretrain a transferable encoder on ClassyFire labels; no annotations needed at inference. |
-| [masshatter_plan.md](plans/masshatter_plan.md) | MASShatter: rank global bond-cut masks and charged fragment-ion outcomes without a depth-limited fragmentation tree. |
+| [masshatter_plan.md](plans/masshatter_plan.md) | MASShatter: rank global bond-cut masks, marginalize duplicate latent pathways into unique-fragment tokens, and predict charged fragment-ion outcomes without a depth-limited fragmentation tree. |
 | [masshatter_rl_exploration_plan.md](plans/masshatter_rl_exploration_plan.md) | Staged exploration/policy options for MASShatter, gated on a rank-migration diagnostic; records why cheap importance sampling and REINFORCE are both blocked by an intractable proposal likelihood. |
 
 ### Closed — read before reviving
