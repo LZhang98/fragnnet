@@ -59,6 +59,8 @@ class MassShatterCandidateBatch:
     exploration_mean_cut_count: th.Tensor
     proposal_single_cut_fraction: th.Tensor
     unique_component_count: th.Tensor
+    component_counts: tuple[int, ...]
+    unique_component_counts: tuple[int, ...]
     timings: MassShatterCandidateTimings
 
     @property
@@ -247,6 +249,7 @@ def build_mass_shatter_candidates(
     exploration_mask_counts: list[int] = []
     exploration_mean_cut_counts: list[float] = []
     proposal_single_cut_fractions: list[float] = []
+    component_counts: list[int] = []
     unique_component_counts: list[int] = []
     mask_selection_ms = 0.0
     topology_ms = 0.0
@@ -657,6 +660,7 @@ def build_mass_shatter_candidates(
         num_masks_so_far += num_local_masks
         num_components_so_far += num_local_components
         num_unique_components_so_far += unique_component_count
+        component_counts.append(num_local_components)
         unique_component_counts.append(unique_component_count)
 
     if num_masks_so_far == 0:
@@ -783,6 +787,8 @@ def build_mass_shatter_candidates(
             dtype=bond_logits.dtype,
             device=device,
         ),
+        component_counts=tuple(component_counts),
+        unique_component_counts=tuple(unique_component_counts),
         timings=MassShatterCandidateTimings(
             input_transfer_ms=input_transfer_ms,
             mask_selection_ms=mask_selection_ms,

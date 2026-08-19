@@ -43,6 +43,7 @@ def _candidate_coverage_by_cut_count(
     candidate_mzs: th.Tensor,
     candidate_batch_idxs: th.Tensor,
     candidate_cut_counts: th.Tensor,
+    batch_size: int,
     tolerance: float,
     relative: bool,
     tolerance_min_mz: float,
@@ -52,7 +53,6 @@ def _candidate_coverage_by_cut_count(
     A true peak may be covered by multiple buckets, so the resulting recall values
     describe each bucket's standalone support and are not additive.
     """
-    batch_size = int(true_batch_idxs.max().item()) + 1
     metrics = {
         f"candidate_{metric}_cut_{bucket}": true_ints.new_zeros(batch_size)
         for bucket in _CUT_COUNT_BUCKETS
@@ -69,8 +69,6 @@ def _candidate_coverage_by_cut_count(
             candidate_mask = (candidate_batch_idxs == batch_index) & select_bucket(
                 candidate_cut_counts
             )
-            if not candidate_mask.any():
-                continue
             match_mask = calculate_match_mzs(
                 batch_true_mzs,
                 candidate_mzs[candidate_mask],
@@ -495,6 +493,7 @@ class MassShatterPL(SpectrumPL):
                     candidate_mzs=kwargs["candidate_mzs_by_cut"],
                     candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
                     candidate_cut_counts=kwargs["candidate_cut_counts"],
+                    batch_size=kwargs["true_prec_mzs"].shape[0],
                     tolerance=self.tolerance,
                     relative=self.relative,
                     tolerance_min_mz=self.tolerance_min_mz,

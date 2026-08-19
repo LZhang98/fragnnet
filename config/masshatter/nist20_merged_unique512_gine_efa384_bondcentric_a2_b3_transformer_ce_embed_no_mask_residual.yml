@@ -101,7 +101,7 @@ simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
 train_batch_size: 64
-eval_batch_size: 4
+eval_batch_size: 32
 accumulate_grad_batches: 2
 automatic_optimization: True
 gradient_clip_val: 5.0

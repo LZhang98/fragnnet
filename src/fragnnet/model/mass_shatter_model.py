@@ -42,6 +42,7 @@ from fragnnet.model.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     EndpointBondBreakHead,
     _segment_logsumexp,
+    _validate_tensor_condition,
     component_charge_log_probabilities,
     latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
@@ -100,8 +101,10 @@ def _mean_values_by_batch(
         batch_indices,
         th.ones_like(values),
     )
-    if not bool((counts > 0).all()):
-        raise ValueError("every spectrum must have at least one CE value")
+    _validate_tensor_condition(
+        (counts > 0).all(),
+        "every spectrum must have at least one CE value",
+    )
     return sums / counts
 
 
@@ -272,8 +275,10 @@ class MassShatterContextEncoder(nn.Module):
             batch_indices,
             th.ones_like(values, dtype=embedded_values.dtype),
         )
-        if not bool((counts > 0).all()):
-            raise ValueError("every spectrum must have at least one CE value")
+        _validate_tensor_condition(
+            (counts > 0).all(),
+            "every spectrum must have at least one CE value",
+        )
         return sums / counts.unsqueeze(1)
 
     def forward(
@@ -1000,12 +1005,15 @@ class MassShatterModel(nn.Module):
                 boundary_fragment_indices,
                 fragment_cut_counts,
             ) = self._unique_component_memberships(candidates)
+            num_fragments = candidates.num_unique_components
             charge_log_probabilities = latent_pathway_charge_log_probabilities(
                 atom_charge_logits,
                 fragment_atom_indices,
                 atom_fragment_indices,
                 candidates.component_unique_indices,
                 candidates.component_mask_indices,
+                num_unique_components=num_fragments,
+                num_masks=num_masks,
                 pooling=self.charge_pooling,
             )
             # 3a. Sum every charged pathway that produces the same precursor atom set.
@@ -1013,7 +1021,6 @@ class MassShatterModel(nn.Module):
                 candidates.mask_log_probabilities[candidates.component_mask_indices]
                 + charge_log_probabilities
             )
-            num_fragments = candidates.num_unique_components
             fragment_log_probabilities = _segment_logsumexp(
                 component_log_probabilities,
                 candidates.component_unique_indices,
@@ -1079,6 +1086,7 @@ class MassShatterModel(nn.Module):
                 batch_size=batch_size,
                 num_masks=num_fragments,
                 context=context[fragment_batch_indices],
+                component_counts=candidates.unique_component_counts,
             )
             if not self.use_mask_residuals:
                 fragment_residuals = th.zeros_like(fragment_residuals)
@@ -1177,6 +1185,7 @@ class MassShatterModel(nn.Module):
                 batch_size=batch_size,
                 num_masks=num_masks,
                 context=context[fragment_batch_indices],
+                component_counts=candidates.component_counts,
             )
             if not self.use_mask_residuals:
                 mask_residuals = th.zeros_like(mask_residuals)

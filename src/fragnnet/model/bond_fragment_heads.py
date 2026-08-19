@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 import torch as th
@@ -199,6 +200,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         tokens: th.Tensor,
         component_batch_indices: th.Tensor,
         batch_size: int,
+        component_counts: Sequence[int] | None = None,
     ) -> th.Tensor:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -217,12 +219,31 @@ class CandidateIntensityTransformerHead(nn.Module):
         # molecule to the largest precursor in the batch.
         order = th.argsort(component_batch_indices, stable=True)
         sorted_batch_indices = component_batch_indices[order]
-        counts = th.bincount(sorted_batch_indices, minlength=batch_size)
+        actual_counts = th.bincount(sorted_batch_indices, minlength=batch_size)
+        if component_counts is None:
+            counts = actual_counts
+            count_values = counts.tolist()
+        else:
+            count_values = [int(count) for count in component_counts]
+            if len(count_values) != batch_size:
+                raise ValueError("component_counts must contain one count per molecule")
+            if any(count <= 0 for count in count_values):
+                raise ValueError("every component count must be positive")
+            if sum(count_values) != tokens.shape[0]:
+                raise ValueError("component_counts must sum to the number of tokens")
+            counts = th.tensor(
+                count_values,
+                dtype=th.long,
+                device=tokens.device,
+            )
+            _validate_tensor_condition(
+                (actual_counts == counts).all(),
+                "component_counts do not match component_batch_indices",
+            )
         _validate_tensor_condition(
             (counts > 0).all(),
             "every molecule must contain at least one component token",
         )
-        count_values = counts.tolist()
         bucketed_molecules: dict[int, list[int]] = {}
         for molecule_index, count in enumerate(count_values):
             bucket_limit = 1 << (count - 1).bit_length()
@@ -290,6 +311,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         batch_size: int,
         num_masks: int,
         context: th.Tensor | None = None,
+        component_counts: Sequence[int] | None = None,
     ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
         """Return component residuals, mask residuals, and joint ion/H logits."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -355,6 +377,7 @@ class CandidateIntensityTransformerHead(nn.Module):
             tokens,
             component_batch_indices,
             batch_size,
+            component_counts,
         )
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(
@@ -1009,6 +1032,8 @@ def latent_pathway_charge_log_probabilities(
     pathway_unique_component_indices: th.Tensor,
     pathway_mask_indices: th.Tensor,
     *,
+    num_unique_components: int,
+    num_masks: int,
     pooling: Literal["logsumexp", "logmeanexp"] = "logsumexp",
 ) -> th.Tensor:
     """Normalize charge retention per mask while scoring each atom set once.
@@ -1040,8 +1065,8 @@ def latent_pathway_charge_log_probabilities(
     if pathway_unique_component_indices.numel() == 0:
         raise ValueError("at least one component pathway is required")
 
-    num_unique_components = int(pathway_unique_component_indices.max().item()) + 1
-    num_masks = int(pathway_mask_indices.max().item()) + 1
+    if num_unique_components <= 0 or num_masks <= 0:
+        raise ValueError("unique-component and mask counts must be positive")
     _validate_tensor_condition(
         ((unique_atom_indices >= 0) & (unique_atom_indices < atom_charge_logits.shape[0])).all(),
         "unique_atom_indices references a missing atom charge logit",

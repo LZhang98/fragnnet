@@ -205,7 +205,7 @@ def sparse_cross_entropy_seq(
     """
 
     mask_value = LOG_ZERO(true_logprobs.dtype)
-    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    batch_size = pred_oos_logprobs.shape[0]
     # ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
     ios_ces = th.zeros(batch_size, dtype=true_logprobs.dtype, device=true_logprobs.device)
     oos_ces = th.zeros(batch_size, dtype=true_logprobs.dtype, device=true_logprobs.device)
@@ -420,7 +420,7 @@ def sparse_cross_entropy_vec(
     float_dtype = true_logprobs.dtype
     device = true_logprobs.device
     mask_value = LOG_ZERO(float_dtype)
-    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    batch_size = pred_oos_logprobs.shape[0]
 
     # 2. Build spectrum-aligned slices for memory-bounded loss chunks.
     # Compute cumulative sum of counts for batch slicing.
@@ -428,12 +428,17 @@ def sparse_cross_entropy_vec(
     # slicing (no GPU→CPU sync per iteration). th.bincount is O(N) vs th.unique's O(N log N).
     true_batch_counts = th.bincount(true_batch_idxs, minlength=batch_size)
     pred_batch_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
-    true_batch_cumsum: list[int] = th.cat(
-        [true_batch_idxs.new_zeros(1), true_batch_counts.cumsum(0)]
+    packed_batch_cumsums = th.cat(
+        (
+            true_batch_idxs.new_zeros(1),
+            true_batch_counts.cumsum(0),
+            pred_batch_idxs.new_zeros(1),
+            pred_batch_counts.cumsum(0),
+        )
     ).tolist()
-    pred_batch_cumsum: list[int] = th.cat(
-        [pred_batch_idxs.new_zeros(1), pred_batch_counts.cumsum(0)]
-    ).tolist()
+    cumsum_size = batch_size + 1
+    true_batch_cumsum: list[int] = packed_batch_cumsums[:cumsum_size]
+    pred_batch_cumsum: list[int] = packed_batch_cumsums[cumsum_size:]
     loss_chunks = _build_loss_chunks(
         true_batch_cumsum,
         pred_batch_cumsum,

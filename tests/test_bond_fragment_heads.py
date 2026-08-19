@@ -143,14 +143,23 @@ def test_candidate_intensity_transformer_buckets_ragged_padding() -> None:
         lambda _module, args: observed_shapes.append(args[0].shape)
     )
 
+    tokens = th.randn(25, 8)
+    component_batch_indices = th.tensor([0] * 2 + [1] * 3 + [2] * 20)
     contextualized = head._contextualize_by_molecule(
-        th.randn(25, 8),
-        th.tensor([0] * 2 + [1] * 3 + [2] * 20),
+        tokens,
+        component_batch_indices,
         batch_size=3,
+        component_counts=(2, 3, 20),
     )
     hook.remove()
+    fallback = head._contextualize_by_molecule(
+        tokens,
+        component_batch_indices,
+        batch_size=3,
+    )
 
     assert contextualized.shape == (25, 8)
+    assert th.allclose(contextualized, fallback)
     assert observed_shapes == [
         th.Size([1, 2, 8]),
         th.Size([1, 4, 8]),
@@ -476,6 +485,8 @@ def test_latent_pathway_charge_probabilities_match_expanded_components(
         atom_unique_indices,
         pathway_unique_indices,
         pathway_mask_indices,
+        num_unique_components=3,
+        num_masks=2,
         pooling=pooling,
     )
     expanded_memberships = [unique_memberships[index] for index in pathway_unique_indices.tolist()]
