@@ -100,9 +100,7 @@ class _InducedCandidateAttentionLayer(nn.Module):
             key_padding_mask=candidate_padding_mask,
             need_weights=False,
         )
-        inducing_tokens = self.latent_attention_norm(
-            inducing_tokens + self.dropout(latent_updates)
-        )
+        inducing_tokens = self.latent_attention_norm(inducing_tokens + self.dropout(latent_updates))
         inducing_tokens = self.latent_feedforward_norm(
             inducing_tokens + self.dropout(self.latent_feedforward(inducing_tokens))
         )
@@ -211,10 +209,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         if tokens.shape[0] == 0:
             raise ValueError("at least one component token is required")
         _validate_tensor_condition(
-            (
-                (component_batch_indices >= 0)
-                & (component_batch_indices < batch_size)
-            ).all(),
+            ((component_batch_indices >= 0) & (component_batch_indices < batch_size)).all(),
             "component_batch_indices references a missing molecule",
         )
 
@@ -250,13 +245,14 @@ class CandidateIntensityTransformerHead(nn.Module):
             )
             bucket_counts = counts[molecule_index_tensor]
             offsets = bucket_counts.cumsum(0) - bucket_counts
-            positions = th.arange(
-                bucket_token_indices.shape[0],
-                device=tokens.device,
-            ) - offsets[local_batch_indices]
-            padded_tokens = tokens.new_zeros(
-                (len(molecule_indices), bucket_limit, tokens.shape[1])
+            positions = (
+                th.arange(
+                    bucket_token_indices.shape[0],
+                    device=tokens.device,
+                )
+                - offsets[local_batch_indices]
             )
+            padded_tokens = tokens.new_zeros((len(molecule_indices), bucket_limit, tokens.shape[1]))
             padded_tokens[local_batch_indices, positions] = tokens[bucket_token_indices]
             padding_mask = th.ones(
                 (len(molecule_indices), bucket_limit),
@@ -299,8 +295,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
         if any(
-            embedding.ndim != 2
-            or embedding.shape != (num_components, self.fragment_embedding_dim)
+            embedding.ndim != 2 or embedding.shape != (num_components, self.fragment_embedding_dim)
             for embedding in embeddings
         ):
             raise ValueError(
@@ -339,9 +334,7 @@ class CandidateIntensityTransformerHead(nn.Module):
             if context is not None:
                 raise ValueError("context was provided but context_dim is zero")
         elif context is None or context.shape != (num_components, self.context_dim):
-            raise ValueError(
-                f"context must have shape ({num_components}, {self.context_dim})"
-            )
+            raise ValueError(f"context must have shape ({num_components}, {self.context_dim})")
 
         features = [*embeddings]
         if context is not None:
@@ -467,8 +460,7 @@ class EndpointBondBreakHead(nn.Module):
             or bond_features.shape != (num_bonds, self.bond_feature_dim)
         ):
             raise ValueError(
-                "bond_features must have shape "
-                f"({num_bonds}, {self.bond_feature_dim})"
+                f"bond_features must have shape ({num_bonds}, {self.bond_feature_dim})"
             )
 
         expanded_context = _validate_context(
@@ -554,12 +546,8 @@ class BondFocusedBreakHead(nn.Module):
                 for _ in range(num_layers)
             ]
         )
-        self.atom_norms = nn.ModuleList(
-            [nn.LayerNorm(bond_state_dim) for _ in range(num_layers)]
-        )
-        self.bond_norms = nn.ModuleList(
-            [nn.LayerNorm(bond_state_dim) for _ in range(num_layers)]
-        )
+        self.atom_norms = nn.ModuleList([nn.LayerNorm(bond_state_dim) for _ in range(num_layers)])
+        self.bond_norms = nn.ModuleList([nn.LayerNorm(bond_state_dim) for _ in range(num_layers)])
         self.head = _build_head(
             bond_state_dim + context_dim,
             head_hidden_dim,
@@ -601,8 +589,7 @@ class BondFocusedBreakHead(nn.Module):
             or bond_features.shape != (num_bonds, self.bond_feature_dim)
         ):
             raise ValueError(
-                "bond_features must have shape "
-                f"({num_bonds}, {self.bond_feature_dim})"
+                f"bond_features must have shape ({num_bonds}, {self.bond_feature_dim})"
             )
 
         expanded_context = _validate_context(
@@ -979,17 +966,11 @@ def component_charge_log_probabilities(
             "atom_indices references a missing atom charge logit",
         )
         _validate_tensor_condition(
-            (
-                (atom_component_indices >= 0)
-                & (atom_component_indices < num_components)
-            ).all(),
+            ((atom_component_indices >= 0) & (atom_component_indices < num_components)).all(),
             "atom_component_indices references a missing component",
         )
     _validate_tensor_condition(
-        (
-            (component_group_indices >= 0)
-            & (component_group_indices < num_components)
-        ).all(),
+        ((component_group_indices >= 0) & (component_group_indices < num_components)).all(),
         "component_group_indices references an invalid group",
     )
     component_sizes = th.zeros(
@@ -1019,6 +1000,103 @@ def component_charge_log_probabilities(
         num_components,
     )
     return component_logits - group_log_normalizers[component_group_indices]
+
+
+def latent_pathway_charge_log_probabilities(
+    atom_charge_logits: th.Tensor,
+    unique_atom_indices: th.Tensor,
+    atom_unique_component_indices: th.Tensor,
+    pathway_unique_component_indices: th.Tensor,
+    pathway_mask_indices: th.Tensor,
+    *,
+    pooling: Literal["logsumexp", "logmeanexp"] = "logsumexp",
+) -> th.Tensor:
+    """Normalize charge retention per mask while scoring each atom set once.
+
+    Multiple cut masks can produce the same component atom set. Its unnormalized
+    charge-affinity logit is identical in every occurrence, so this function pools
+    atom logits once per unique component, broadcasts those logits to the latent
+    component pathways, and only then normalizes among each mask's components.
+    """
+    if atom_charge_logits.ndim != 1:
+        raise ValueError("atom_charge_logits must be one-dimensional")
+    if (
+        unique_atom_indices.ndim != 1
+        or atom_unique_component_indices.shape != unique_atom_indices.shape
+    ):
+        raise ValueError(
+            "unique_atom_indices and atom_unique_component_indices must be matching vectors"
+        )
+    index_tensors = (
+        unique_atom_indices,
+        atom_unique_component_indices,
+        pathway_unique_component_indices,
+        pathway_mask_indices,
+    )
+    if any(index.dtype != th.long or index.ndim != 1 for index in index_tensors):
+        raise ValueError("all membership and pathway indices must be torch.long vectors")
+    if pathway_unique_component_indices.shape != pathway_mask_indices.shape:
+        raise ValueError("pathway unique-component and mask indices must match")
+    if pathway_unique_component_indices.numel() == 0:
+        raise ValueError("at least one component pathway is required")
+
+    num_unique_components = int(pathway_unique_component_indices.max().item()) + 1
+    num_masks = int(pathway_mask_indices.max().item()) + 1
+    _validate_tensor_condition(
+        ((unique_atom_indices >= 0) & (unique_atom_indices < atom_charge_logits.shape[0])).all(),
+        "unique_atom_indices references a missing atom charge logit",
+    )
+    _validate_tensor_condition(
+        (
+            (atom_unique_component_indices >= 0)
+            & (atom_unique_component_indices < num_unique_components)
+        ).all(),
+        "atom_unique_component_indices references a missing unique component",
+    )
+    _validate_tensor_condition(
+        (
+            (pathway_unique_component_indices >= 0)
+            & (pathway_unique_component_indices < num_unique_components)
+        ).all(),
+        "pathway_unique_component_indices references a missing unique component",
+    )
+    _validate_tensor_condition(
+        ((pathway_mask_indices >= 0) & (pathway_mask_indices < num_masks)).all(),
+        "pathway_mask_indices references a missing mask",
+    )
+    if pooling not in {"logsumexp", "logmeanexp"}:
+        raise ValueError(f"unknown charge pooling mode: {pooling}")
+
+    unique_component_sizes = th.zeros(
+        num_unique_components,
+        dtype=th.long,
+        device=atom_unique_component_indices.device,
+    ).index_add(
+        0,
+        atom_unique_component_indices,
+        th.ones_like(atom_unique_component_indices),
+    )
+    _validate_tensor_condition(
+        (unique_component_sizes > 0).all(),
+        "every unique component must contain at least one atom",
+    )
+    unique_component_logits = _segment_logsumexp(
+        atom_charge_logits[unique_atom_indices],
+        atom_unique_component_indices,
+        num_unique_components,
+    )
+    if pooling == "logmeanexp":
+        unique_component_logits = unique_component_logits - th.log(
+            unique_component_sizes.to(dtype=unique_component_logits.dtype)
+        )
+
+    pathway_logits = unique_component_logits[pathway_unique_component_indices]
+    mask_log_normalizers = _segment_logsumexp(
+        pathway_logits,
+        pathway_mask_indices,
+        num_masks,
+    )
+    return pathway_logits - mask_log_normalizers[pathway_mask_indices]
 
 
 def masked_ion_hydrogen_log_probabilities(

@@ -677,6 +677,10 @@ def build_component_arrays_raw(
     cdef cnp.int64_t[::1] component_mask_indices
     cdef cnp.ndarray[cnp.int64_t, ndim=1] component_cut_counts_array
     cdef cnp.int64_t[::1] component_cut_counts
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] component_unique_indices_array
+    cdef cnp.int64_t[::1] component_unique_indices
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] unique_representative_components_array
+    cdef cnp.int64_t[::1] unique_representative_components
     cdef cnp.ndarray[cnp.int64_t, ndim=1] atom_indices_array
     cdef cnp.int64_t[::1] atom_indices
     cdef cnp.ndarray[cnp.int64_t, ndim=1] atom_component_indices_array
@@ -886,6 +890,14 @@ def build_component_arrays_raw(
             raise MemoryError("unable to allocate fused MASShatter assembly buffers")
         memset(hash_slots, 0xff, table_size * sizeof(Py_ssize_t))
 
+        component_unique_indices_array = np.empty(component_cursor, dtype=np.int64)
+        unique_representative_components_array = np.empty(
+            component_cursor,
+            dtype=np.int64,
+        )
+        component_unique_indices = component_unique_indices_array
+        unique_representative_components = unique_representative_components_array
+
         unique_component_count = 0
         for component in range(component_cursor):
             signature_hash = 1469598103934665603ULL
@@ -908,7 +920,13 @@ def build_component_arrays_raw(
                 slot = (slot + 1) & (table_size - 1)
             if hash_slots[slot] < 0:
                 hash_slots[slot] = component
+                component_unique_indices[component] = unique_component_count
+                unique_representative_components[unique_component_count] = component
                 unique_component_count += 1
+            else:
+                component_unique_indices[component] = component_unique_indices[
+                    existing_component
+                ]
 
         component_mask_indices_array = np.empty(component_cursor, dtype=np.int64)
         component_cut_counts_array = np.empty(component_cursor, dtype=np.int64)
@@ -999,6 +1017,8 @@ def build_component_arrays_raw(
         unique_component_count,
         topology_ms,
         assembly_ms,
+        component_unique_indices_array,
+        unique_representative_components_array[:unique_component_count],
     )
 
 

@@ -254,6 +254,21 @@ def test_fused_component_arrays_count_multiword_components_exactly() -> None:
     assert actual[10] == 5
 
 
+def test_fused_component_arrays_maps_duplicate_paths_to_first_representative() -> None:
+    actual = build_component_arrays_raw(
+        3,
+        np.asarray([(0, 1), (1, 2)], dtype=np.int64),
+        [(), (0,), (0, 1)],
+        np.asarray([0, 1], dtype=np.int64),
+        0,
+        0,
+        0,
+    )
+
+    assert actual[13].tolist() == [0, 1, 2, 1, 3, 4]
+    assert actual[14].tolist() == [0, 1, 2, 4, 5]
+
+
 def test_fused_component_arrays_match_legacy_above_256_atoms() -> None:
     num_atoms = 257
     bond_endpoints = np.asarray(

@@ -33,6 +33,8 @@ def _build_model(
     bond_num_layers: int = 0,
     explore_masks: int = 0,
     max_masks: int = 2,
+    unique_fragment_mode: bool = False,
+    max_enumerated_masks: int | None = None,
     use_mask_residuals: bool = True,
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
@@ -82,6 +84,8 @@ def _build_model(
         ace_mean=20.0,
         ace_std=15.0,
         max_masks=max_masks,
+        unique_fragment_mode=unique_fragment_mode,
+        max_enumerated_masks=(max_masks if max_enumerated_masks is None else max_enumerated_masks),
         min_mask_probability=0.0,
         explore_masks=explore_masks,
         exploration_mode="bounded_additive",
@@ -171,8 +175,7 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["components_per_mask"].tolist() == pytest.approx([2.0, 1.5])
     assert th.all(output["unique_components_per_mask"] <= output["components_per_mask"])
     cut_fraction_sum = sum(
-        output[f"mask_cut_fraction_{bucket}"]
-        for bucket in ("0", "1", "2", "3", "4plus")
+        output[f"mask_cut_fraction_{bucket}"] for bucket in ("0", "1", "2", "3", "4plus")
     )
     assert cut_fraction_sum.tolist() == pytest.approx([1.0, 1.0])
     assert output["candidate_mzs_by_cut"].shape == output["candidate_cut_counts"].shape
@@ -202,6 +205,115 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["retained_mask_probability"].tolist() == pytest.approx(
         predicted_mass.tolist(), abs=2e-6
     )
+
+
+def test_unique_fragment_mode_marginalizes_paths_and_uses_boundary_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = _build_batch(("C1CC1",))
+    model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+        use_mask_residuals=False,
+    ).eval()
+    transformer_token_counts: list[int] = []
+    original_intensity_forward = model.intensity_head.forward
+
+    def capture_token_count(*args: object, **kwargs: object) -> tuple[th.Tensor, ...]:
+        fragment_embeddings = args[0]
+        assert isinstance(fragment_embeddings, th.Tensor)
+        transformer_token_counts.append(fragment_embeddings.shape[0])
+        return original_intensity_forward(*args, **kwargs)
+
+    monkeypatch.setattr(model.intensity_head, "forward", capture_token_count)
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([20.0]),
+    )
+
+    unique_count = int(output["unique_component_count"].sum().item())
+    pathway_count = int(output["component_pathway_count"].sum().item())
+    assert transformer_token_counts == [unique_count]
+    assert unique_count < pathway_count
+    # A cyclopropane atom set has at most two precursor boundary bonds even when
+    # its parent pathway contains all three cuts.
+    assert output["candidate_cut_counts"].max().item() == 2
+
+    predicted_mass = output["pred_logprobs"].exp().sum()
+    total_mass = predicted_mass + output["pred_oos_logprobs"].exp().sum()
+    assert total_mass.item() == pytest.approx(1.0, abs=2e-6)
+
+
+def test_unique_fragment_spectrum_loss_reaches_bond_charge_and_ion_heads() -> None:
+    batch = _build_batch(("CCCO",))
+    model = _build_model(
+        batch,
+        max_masks=5,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_mask_residuals=False,
+    )
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([25.0]),
+    )
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    parameters = [
+        model.precursor_encoder.input_project.weight,
+        model.bond_break_head.head[0].weight,
+        model.charge_head.head[0].weight,
+        model.intensity_head.input_projection[0].weight,
+        model.intensity_head.ion_hydrogen_head.weight,
+        model.context_encoder.projector[0].weight,
+    ]
+    for parameter in parameters:
+        assert parameter.grad is not None
+        assert th.isfinite(parameter.grad).all()
+        assert parameter.grad.abs().sum() > 0
+
+
+def test_unique_fragment_mode_keeps_batched_marginals_separate() -> None:
+    batch = _build_batch(("C1CC1", "CCCO"))
+    model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+        use_mask_residuals=False,
+    ).eval()
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([20.0, 25.0]),
+        spec_nce_batch_idxs=th.tensor([0, 1]),
+    )
+
+    predicted_mass = th.zeros(2).index_add(
+        0,
+        output["pred_batch_idxs"],
+        output["pred_logprobs"].exp(),
+    )
+    assert predicted_mass.tolist() == pytest.approx(
+        output["retained_mask_probability"].tolist(),
+        abs=2e-6,
+    )
+    assert (predicted_mass + output["pred_oos_logprobs"].exp()).tolist() == pytest.approx(
+        [1.0, 1.0], abs=2e-6
+    )
+    assert (
+        (output["productive_mask_fraction"] > 0.0) & (output["productive_mask_fraction"] <= 1.0)
+    ).all()
+    assert (
+        (output["duplicate_component_pathway_fraction"] >= 0.0)
+        & (output["duplicate_component_pathway_fraction"] < 1.0)
+    ).all()
 
 
 def test_mass_shatter_forward_conserves_probability_with_bounded_exploration() -> None:

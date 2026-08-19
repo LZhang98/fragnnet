@@ -50,6 +50,18 @@ def test_mass_shatter_pl_disables_mask_residuals_from_config() -> None:
     assert not model.model.use_mask_residuals
 
 
+def test_mass_shatter_pl_builds_unique_fragment_mode_from_config() -> None:
+    model, _ = _build_pl(
+        mass_shatter_max_masks=4,
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_max_enumerated_masks=16,
+        mass_shatter_explore_masks=0,
+    )
+
+    assert model.model.unique_fragment_mode
+    assert model.model.max_enumerated_masks == 16
+
+
 def test_mass_shatter_transfer_retains_static_graph_on_cpu() -> None:
     model, _ = _build_pl()
     mol_pyg = Batch.from_data_list(
@@ -101,6 +113,8 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         unique_component_count=th.tensor([3]),
         components_per_mask=th.tensor([2.0]),
         unique_components_per_mask=th.tensor([1.5]),
+        productive_mask_fraction=th.tensor([0.5]),
+        duplicate_component_pathway_fraction=th.tensor([0.25]),
         mask_cut_fraction_0=th.tensor([0.25]),
         mask_cut_fraction_1=th.tensor([0.25]),
         mask_cut_fraction_2=th.tensor([0.5]),
@@ -151,6 +165,8 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     assert actual["unique_component_count"].tolist() == [3.0]
     assert actual["components_per_mask"].tolist() == [2.0]
     assert actual["unique_components_per_mask"].tolist() == [1.5]
+    assert actual["productive_mask_fraction"].tolist() == [0.5]
+    assert actual["duplicate_component_pathway_fraction"].tolist() == [0.25]
     assert actual["candidate_total_batch_ms"].tolist() == [15.0]
 
 

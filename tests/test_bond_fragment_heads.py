@@ -16,6 +16,7 @@ from fragnnet.model.bond_fragment_heads import (
     EndpointBondBreakHead,
     component_charge_log_probabilities,
     cut_mask_log_probabilities,
+    latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
     pool_boundary_bond_embeddings,
     pool_component_and_complement_embeddings,
@@ -371,9 +372,7 @@ def test_component_charge_probabilities_normalize_per_cut_mask() -> None:
         component_group_indices=th.tensor([0, 0, 1, 1]),
     )
 
-    assert th.exp(log_probabilities).tolist() == pytest.approx(
-        [0.5, 0.5, 0.25, 0.75]
-    )
+    assert th.exp(log_probabilities).tolist() == pytest.approx([0.5, 0.5, 0.25, 0.75])
     log_probabilities.sum().backward()
     assert atom_logits.grad is not None
     assert th.isfinite(atom_logits.grad).all()
@@ -442,9 +441,7 @@ def test_grouped_charge_probabilities_match_dense_reference(
         component_group_indices,
         pooling=pooling,
     )
-    component_logits = th.stack(
-        [th.logsumexp(atom_logits[atoms], dim=0) for atoms in memberships]
-    )
+    component_logits = th.stack([th.logsumexp(atom_logits[atoms], dim=0) for atoms in memberships])
     if pooling == "logmeanexp":
         component_logits = component_logits - th.log(
             th.tensor([len(atoms) for atoms in memberships], dtype=atom_logits.dtype)
@@ -453,6 +450,42 @@ def test_grouped_charge_probabilities_match_dense_reference(
     for group_index in component_group_indices.unique():
         group_mask = component_group_indices == group_index
         expected[group_mask] = th.log_softmax(component_logits[group_mask], dim=0)
+
+    assert th.allclose(actual, expected)
+    actual.sum().backward()
+    assert atom_logits.grad is not None
+    assert th.isfinite(atom_logits.grad).all()
+
+
+@pytest.mark.parametrize("pooling", ["logsumexp", "logmeanexp"])
+def test_latent_pathway_charge_probabilities_match_expanded_components(
+    pooling: Literal["logsumexp", "logmeanexp"],
+) -> None:
+    atom_logits = th.tensor([0.2, -0.4, 1.1], requires_grad=True)
+    unique_memberships = ((0, 1), (2,), (0,))
+    pathway_unique_indices = th.tensor([0, 1, 0, 2])
+    pathway_mask_indices = th.tensor([0, 0, 1, 1])
+    unique_atom_indices = th.tensor([atom for atoms in unique_memberships for atom in atoms])
+    atom_unique_indices = th.tensor(
+        [unique for unique, atoms in enumerate(unique_memberships) for _ in atoms]
+    )
+
+    actual = latent_pathway_charge_log_probabilities(
+        atom_logits,
+        unique_atom_indices,
+        atom_unique_indices,
+        pathway_unique_indices,
+        pathway_mask_indices,
+        pooling=pooling,
+    )
+    expanded_memberships = [unique_memberships[index] for index in pathway_unique_indices.tolist()]
+    expected = component_charge_log_probabilities(
+        atom_logits,
+        th.tensor([atom for atoms in expanded_memberships for atom in atoms]),
+        th.tensor([pathway for pathway, atoms in enumerate(expanded_memberships) for _ in atoms]),
+        pathway_mask_indices,
+        pooling=pooling,
+    )
 
     assert th.allclose(actual, expected)
     actual.sum().backward()

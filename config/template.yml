@@ -198,6 +198,8 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 # MASShatter: one-pass bond-set fragmentation. Candidate identities are selected
 # on CPU; their probabilities are recomputed from live logits for gradients.
 mass_shatter_max_masks: 256
+mass_shatter_unique_fragment_mode: False  # True makes max_masks a unique atom-set target.
+mass_shatter_max_enumerated_masks: 256  # Unique mode's latent-mask cap; must be >= max_masks.
 mass_shatter_min_mask_probability: 0.0  # Minimum probability for deterministic top-k masks.
 mass_shatter_explore_masks: 0  # Additional training-only masks in bounded_additive mode.
 mass_shatter_exploration_mode: bounded_additive  # ["bounded_additive", "bernoulli_replace"]

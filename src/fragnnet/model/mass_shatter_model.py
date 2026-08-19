@@ -3,11 +3,16 @@
 Unlike the DAG-based FraGNNet path, MASShatter never enumerates fragments ahead of
 time. A single GNN pass over the intact precursor produces one break logit per
 chemical bond; those independent Bernoulli logits define a distribution over all
-``2 ** num_bonds`` cut masks, from which only the top ``max_masks`` are materialized.
+``2 ** num_bonds`` cut masks, from which only a probability-ranked prefix is materialized.
 Each retained mask is cut into connected components, and every component is expanded
 into the ion channels it could plausibly produce (charge retention vs charge
 migration, plus +/- hydrogen transfers). The resulting sparse
 (m/z, log-probability, batch index) triples are what ``SpectrumPL`` consumes.
+
+The optional unique-fragment path treats masks as latent events: enumeration
+continues until a target number of distinct atom sets is reached, charge retention is
+normalized inside each mask, and duplicate component pathways are marginalized with
+``logsumexp`` before intensity scoring.
 
 The probability of an observed pathway therefore factorizes as::
 
@@ -38,6 +43,7 @@ from fragnnet.model.bond_fragment_heads import (
     EndpointBondBreakHead,
     _segment_logsumexp,
     component_charge_log_probabilities,
+    latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
     pool_boundary_bond_embeddings,
     pool_component_and_complement_embeddings,
@@ -360,8 +366,8 @@ class MassShatterModel(nn.Module):
 
     1. Encode the intact precursor with one GNN pass and score every chemical bond
        with an independent break logit.
-    2. Rank whole cut masks by their Bernoulli probability, keep the top
-       ``max_masks``, and cut each into connected components.
+    2. Rank whole cut masks by their Bernoulli probability and cut each into connected
+       components. Optionally continue until ``max_masks`` unique atom sets are found.
     3. Score which component keeps the charge, then which ion mode / hydrogen-transfer
        channel that component emits; a transformer over a molecule's candidate set
        supplies residual corrections so components compete with one another.
@@ -369,6 +375,8 @@ class MassShatterModel(nn.Module):
 
     Attributes:
         max_masks: Number of cut masks materialized per precursor.
+        unique_fragment_mode: Whether ``max_masks`` is a unique atom-set target.
+        max_enumerated_masks: Safety cap for unique-fragment mask enumeration.
         min_mask_probability: Masks below this probability are dropped.
         explore_masks: Number of random exploration masks added during training.
         max_h_transfer: Largest hydrogen transfer (in either direction) per fragment.
@@ -414,6 +422,8 @@ class MassShatterModel(nn.Module):
         ace_mean: float,
         ace_std: float,
         max_masks: int,
+        unique_fragment_mode: bool,
+        max_enumerated_masks: int,
         min_mask_probability: float,
         explore_masks: int,
         exploration_mode: str,
@@ -467,6 +477,10 @@ class MassShatterModel(nn.Module):
             ace_mean: Mean used to standardize ACE.
             ace_std: Standard deviation used to standardize ACE.
             max_masks: Cut masks kept per precursor.
+            unique_fragment_mode: Treat ``max_masks`` as a unique-fragment target and
+                marginalize duplicate component pathways before intensity scoring.
+            max_enumerated_masks: Safety cap on latent masks considered while filling
+                the unique-fragment target.
             min_mask_probability: Probability floor below which a ranked mask is
                 dropped; its mass falls into the out-of-support bucket.
             explore_masks: Random masks injected during training only.
@@ -491,10 +505,17 @@ class MassShatterModel(nn.Module):
         super().__init__()
         if max_masks <= 0 or max_h_transfer < 0:
             raise ValueError("max_masks must be positive and max_h_transfer nonnegative")
+        if max_enumerated_masks <= 0:
+            raise ValueError("max_enumerated_masks must be positive")
+        if unique_fragment_mode and max_enumerated_masks < max_masks:
+            raise ValueError(
+                "max_enumerated_masks must be at least max_masks in unique-fragment mode"
+            )
+        if unique_fragment_mode and explore_masks > 0:
+            raise ValueError("unique_fragment_mode does not support exploration masks")
         if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
             raise ValueError(
-                "min_mask_probability must be finite and in [0, 1], "
-                f"got {min_mask_probability}"
+                f"min_mask_probability must be finite and in [0, 1], got {min_mask_probability}"
             )
         if explore_masks < 0:
             raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
@@ -535,6 +556,8 @@ class MassShatterModel(nn.Module):
         if missing_precursors:
             raise ValueError(f"unsupported precursor types: {sorted(missing_precursors)}")
         self.max_masks = max_masks
+        self.unique_fragment_mode = unique_fragment_mode
+        self.max_enumerated_masks = max_enumerated_masks
         self.min_mask_probability = min_mask_probability
         self.explore_masks = explore_masks
         self.exploration_mode = exploration_mode
@@ -694,28 +717,31 @@ class MassShatterModel(nn.Module):
             ),
         )
 
-    def _component_masses_and_valid_channels(
+    def _fragment_masses_and_valid_channels(
         self,
         mol_pyg: Batch,
-        candidates: MassShatterCandidateBatch,
+        atom_indices: th.Tensor,
+        atom_fragment_indices: th.Tensor,
+        fragment_batch_indices: th.Tensor,
+        num_fragments: int,
         precursor_type_indices: th.Tensor,
     ) -> tuple[th.Tensor, th.Tensor]:
-        """Translate component atom sets into monoisotopic ion channels.
+        """Translate fragment atom sets into monoisotopic ion channels.
 
         Args:
             mol_pyg: Batched precursor graphs carrying the per-atom chemistry fields.
-            candidates: Sparse component pathways selected for this batch.
+            atom_indices: Atom index for every sparse fragment membership.
+            atom_fragment_indices: Fragment index for every membership.
+            fragment_batch_indices: Spectrum index for every fragment.
+            num_fragments: Number of fragment atom sets.
             precursor_type_indices: Adduct index per spectrum, shape ``(batch_size,)``.
 
         Returns:
             Tuple of ``(ion_mzs, valid_channels)``, both shaped
-            ``(num_components, num_ion_modes, num_h_shifts)``. ``valid_channels`` is
+            ``(num_fragments, num_ion_modes, num_h_shifts)``. ``valid_channels`` is
             False wherever a channel would need more atoms of some element than the
             component actually contains (or a CMF channel the adduct does not define).
         """
-        num_components = candidates.num_components
-        atom_indices = candidates.atom_indices
-        component_indices = candidates.atom_component_indices
         atom_masses = mol_pyg.atom_monoisotopic_masses
         atom_hydrogens = mol_pyg.atom_hydrogen_counts
         atom_charges = mol_pyg.atom_formal_charges
@@ -729,14 +755,14 @@ class MassShatterModel(nn.Module):
             + atom_hydrogens.to(atom_masses) * H_MASS
             - atom_charges.to(atom_masses) * ELECTRON_MASS
         )
-        component_masses = atom_masses.new_zeros(num_components).index_add(
+        component_masses = atom_masses.new_zeros(num_fragments).index_add(
             0,
-            component_indices,
+            atom_fragment_indices,
             per_atom_neutral_mass[atom_indices],
         )
 
         component_counts = th.zeros(
-            (num_components, self.required_atomic_numbers.numel()),
+            (num_fragments, self.required_atomic_numbers.numel()),
             dtype=th.long,
             device=atom_indices.device,
         )
@@ -748,9 +774,9 @@ class MassShatterModel(nn.Module):
             values = (membership_atomic_numbers == atomic_number).long()
             if atomic_number == 1:
                 values = values + membership_hydrogens
-            component_counts[:, column].index_add_(0, component_indices, values)
+            component_counts[:, column].index_add_(0, atom_fragment_indices, values)
 
-        component_precursor_types = precursor_type_indices[candidates.component_batch_indices]
+        component_precursor_types = precursor_type_indices[fragment_batch_indices]
         h_shifts = th.arange(
             -self.max_h_transfer,
             self.max_h_transfer + 1,
@@ -792,32 +818,53 @@ class MassShatterModel(nn.Module):
         return th.stack(mz_channels, dim=1), th.stack(valid_channels, dim=1)
 
     @staticmethod
-    def _oos_log_probabilities(
+    def _unique_component_memberships(
         candidates: MassShatterCandidateBatch,
-        batch_size: int,
-    ) -> th.Tensor:
-        """Return the log probability mass left in the un-enumerated masks.
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        """Return canonical sparse memberships for one token per atom subset.
 
-        Only ``max_masks`` of the ``2 ** num_bonds`` masks are materialized, so the
-        selected probabilities do not sum to one. The remainder, ``log(1 - retained)``,
-        is handed to the loss as the out-of-support bucket. Clamping keeps the log
-        finite when the retained mass rounds to exactly one.
-
-        Args:
-            candidates: Sparse component pathways selected for this batch.
-            batch_size: Number of spectra in the batch.
-
-        Returns:
-            Out-of-support log probabilities of shape ``(batch_size,)``.
+        The compiled candidate builder records the first component pathway that
+        produced each atom set. Membership and boundary tensors from that
+        representative are canonical: spectator cuts cannot alter either the atoms
+        retained by the fragment or the precursor bonds crossing its boundary.
         """
-        selected_probabilities = candidates.mask_log_probabilities.exp()
-        retained_mass = selected_probabilities.new_zeros(batch_size).index_add(
-            0,
-            candidates.mask_batch_indices,
-            selected_probabilities,
+        representatives = candidates.unique_representative_component_indices
+        num_unique_components = candidates.num_unique_components
+        if num_unique_components == 0:
+            raise ValueError("candidate generation produced no unique components")
+
+        representative_to_unique = representatives.new_full(
+            (candidates.num_components,),
+            -1,
         )
-        eps = th.finfo(retained_mass.dtype).eps
-        return th.log1p(-retained_mass.clamp(max=1.0 - eps))
+        representative_to_unique[representatives] = th.arange(
+            num_unique_components,
+            dtype=th.long,
+            device=representatives.device,
+        )
+
+        atom_unique_indices = representative_to_unique[candidates.atom_component_indices]
+        atom_keep = atom_unique_indices >= 0
+        unique_atom_indices = candidates.atom_indices[atom_keep]
+        atom_unique_indices = atom_unique_indices[atom_keep]
+
+        boundary_unique_indices = representative_to_unique[candidates.boundary_component_indices]
+        boundary_keep = boundary_unique_indices >= 0
+        unique_boundary_bond_indices = candidates.boundary_bond_indices[boundary_keep]
+        boundary_unique_indices = boundary_unique_indices[boundary_keep]
+        boundary_counts = th.bincount(
+            boundary_unique_indices,
+            minlength=num_unique_components,
+        )
+        unique_batch_indices = candidates.component_batch_indices[representatives]
+        return (
+            unique_batch_indices,
+            unique_atom_indices,
+            atom_unique_indices,
+            unique_boundary_bond_indices,
+            boundary_unique_indices,
+            boundary_counts,
+        )
 
     def forward(
         self,
@@ -923,116 +970,207 @@ class MassShatterModel(nn.Module):
             exploration_temperature=self.exploration_temperature,
             exploration_cut_count_weights=self.exploration_cut_count_weights,
             include_single_bond_cuts=self.include_single_bond_cuts,
+            max_unique_components=(self.max_masks if self.unique_fragment_mode else None),
+            max_enumerated_masks=(self.max_enumerated_masks if self.unique_fragment_mode else None),
             static_graph=static_graph,
         )
-        # Describe every component three ways: the atoms it kept, the atoms it lost
-        # (its complement within the precursor), and the bonds that were cut to make it.
-        num_components = candidates.num_components
-        fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
-            atom_embeddings,
-            candidates.atom_indices,
-            candidates.atom_component_indices,
-            candidates.component_batch_indices,
-            mol_pyg.batch,
-            num_components=num_components,
-            num_molecules=batch_size,
-        )
-        # Averaging the endpoints keeps the bond embedding invariant to endpoint order.
-        chemical_bond_embeddings = (
-            atom_embeddings[mol_pyg.chemical_bond_index[0]]
-            + atom_embeddings[mol_pyg.chemical_bond_index[1]]
-        ) / 2.0
-        boundary_embeddings = pool_boundary_bond_embeddings(
-            chemical_bond_embeddings,
-            candidates.boundary_bond_indices,
-            candidates.boundary_component_indices,
-            num_components=num_components,
-        )
 
-        # 3. Score charge retention and conditional ion/H-transfer outcomes.
+        # 3. Score charge retention. In unique-fragment mode, masks remain latent
+        # pathways and are marginalized before the expensive candidate transformer.
         atom_charge_logits = self.charge_head(
             atom_embeddings,
             context=context,
             atom_batch_indices=mol_pyg.batch,
         )
-        # Pool atom charge affinities into a per-component score, normalized across the
-        # sibling components of the same mask: exactly one of them carries the charge.
-        charge_log_probabilities = component_charge_log_probabilities(
-            atom_charge_logits,
-            candidates.atom_indices,
-            candidates.atom_component_indices,
-            candidates.component_mask_indices,
-            pooling=self.charge_pooling,
-        )
         num_masks = candidates.mask_log_probabilities.shape[0]
-        component_sizes = th.bincount(
-            candidates.atom_component_indices,
-            minlength=num_components,
-        )
-        original_component_mask_log_probabilities = candidates.mask_log_probabilities[
-            candidates.component_mask_indices
-        ]
-        # The transformer sees a molecule's whole candidate set at once, so it can move
-        # probability between competing masks and between siblings inside a mask. It
-        # returns additive corrections in log space, never absolute probabilities.
-        component_residuals, mask_residuals, ion_h_logits = self.intensity_head(
-            fragment_embeddings,
-            complement_embeddings,
-            boundary_embeddings,
-            candidates.component_cut_counts,
-            component_sizes,
-            charge_log_probabilities,
-            original_component_mask_log_probabilities,
-            candidates.component_batch_indices,
-            candidates.component_mask_indices,
-            batch_size=batch_size,
-            num_masks=num_masks,
-            context=context[candidates.component_batch_indices],
-        )
-        if not self.use_mask_residuals:
-            mask_residuals = th.zeros_like(mask_residuals)
+        chemical_bond_embeddings = (
+            atom_embeddings[mol_pyg.chemical_bond_index[0]]
+            + atom_embeddings[mol_pyg.chemical_bond_index[1]]
+        ) / 2.0
 
-        # Reweight the masks: renormalize the corrected logits within each spectrum, then
-        # rescale to the retained mass the Bernoulli enumeration originally held. The
-        # residuals therefore redistribute probability among selected masks without
-        # changing how much mass is out of support (see ``_oos_log_probabilities``).
-        mask_logits = candidates.mask_log_probabilities + mask_residuals
-        original_retained_log_probabilities = _segment_logsumexp(
-            candidates.mask_log_probabilities,
-            candidates.mask_batch_indices,
-            batch_size,
-        )
-        mask_log_normalizers = _segment_logsumexp(
-            mask_logits,
-            candidates.mask_batch_indices,
-            batch_size,
-        )
-        mask_log_probabilities = (
-            mask_logits
-            - mask_log_normalizers[candidates.mask_batch_indices]
-            + original_retained_log_probabilities[candidates.mask_batch_indices]
-        )
-        component_mask_log_probabilities = mask_log_probabilities[
-            candidates.component_mask_indices
-        ]
-        # Same treatment one level down: corrected charge scores are renormalized over
-        # the sibling components of each mask, which stay a proper distribution.
-        component_charge_logits = charge_log_probabilities + component_residuals
-        component_log_normalizers = _segment_logsumexp(
-            component_charge_logits,
-            candidates.component_mask_indices,
-            num_masks,
-        )
-        charge_log_probabilities = component_charge_logits - component_log_normalizers[
-            candidates.component_mask_indices
-        ]
-        ion_mzs, valid_channels = self._component_masses_and_valid_channels(
-            mol_pyg,
-            candidates,
-            precursor_type_indices,
-        )
+        if self.unique_fragment_mode:
+            (
+                fragment_batch_indices,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                fragment_boundary_bond_indices,
+                boundary_fragment_indices,
+                fragment_cut_counts,
+            ) = self._unique_component_memberships(candidates)
+            charge_log_probabilities = latent_pathway_charge_log_probabilities(
+                atom_charge_logits,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                candidates.component_unique_indices,
+                candidates.component_mask_indices,
+                pooling=self.charge_pooling,
+            )
+            # 3a. Sum every charged pathway that produces the same precursor atom set.
+            component_log_probabilities = (
+                candidates.mask_log_probabilities[candidates.component_mask_indices]
+                + charge_log_probabilities
+            )
+            num_fragments = candidates.num_unique_components
+            fragment_log_probabilities = _segment_logsumexp(
+                component_log_probabilities,
+                candidates.component_unique_indices,
+                num_fragments,
+            )
+            fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
+                atom_embeddings,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                fragment_batch_indices,
+                mol_pyg.batch,
+                num_components=num_fragments,
+                num_molecules=batch_size,
+            )
+            boundary_embeddings = pool_boundary_bond_embeddings(
+                chemical_bond_embeddings,
+                fragment_boundary_bond_indices,
+                boundary_fragment_indices,
+                num_components=num_fragments,
+            )
+            fragment_sizes = th.bincount(
+                atom_fragment_indices,
+                minlength=num_fragments,
+            )
+            fragment_indices = th.arange(
+                num_fragments,
+                dtype=th.long,
+                device=fragment_log_probabilities.device,
+            )
+            _, fragment_residuals, ion_h_logits = self.intensity_head(
+                fragment_embeddings,
+                complement_embeddings,
+                boundary_embeddings,
+                fragment_cut_counts,
+                fragment_sizes,
+                th.zeros_like(fragment_log_probabilities),
+                fragment_log_probabilities,
+                fragment_batch_indices,
+                fragment_indices,
+                batch_size=batch_size,
+                num_masks=num_fragments,
+                context=context[fragment_batch_indices],
+            )
+            if not self.use_mask_residuals:
+                fragment_residuals = th.zeros_like(fragment_residuals)
+            retained_log_probabilities = _segment_logsumexp(
+                fragment_log_probabilities,
+                fragment_batch_indices,
+                batch_size,
+            )
+            corrected_fragment_logits = fragment_log_probabilities + fragment_residuals
+            fragment_log_normalizers = _segment_logsumexp(
+                corrected_fragment_logits,
+                fragment_batch_indices,
+                batch_size,
+            )
+            fragment_log_probabilities = (
+                corrected_fragment_logits
+                - fragment_log_normalizers[fragment_batch_indices]
+                + retained_log_probabilities[fragment_batch_indices]
+            )
+            ion_mzs, valid_channels = self._fragment_masses_and_valid_channels(
+                mol_pyg,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                fragment_batch_indices,
+                num_fragments,
+                precursor_type_indices,
+            )
+        else:
+            # 3b. Legacy pathway-token model: contextualize every component occurrence.
+            charge_log_probabilities = component_charge_log_probabilities(
+                atom_charge_logits,
+                candidates.atom_indices,
+                candidates.atom_component_indices,
+                candidates.component_mask_indices,
+                pooling=self.charge_pooling,
+            )
+            num_fragments = candidates.num_components
+            fragment_batch_indices = candidates.component_batch_indices
+            fragment_cut_counts = candidates.component_cut_counts
+            fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
+                atom_embeddings,
+                candidates.atom_indices,
+                candidates.atom_component_indices,
+                fragment_batch_indices,
+                mol_pyg.batch,
+                num_components=num_fragments,
+                num_molecules=batch_size,
+            )
+            boundary_embeddings = pool_boundary_bond_embeddings(
+                chemical_bond_embeddings,
+                candidates.boundary_bond_indices,
+                candidates.boundary_component_indices,
+                num_components=num_fragments,
+            )
+            fragment_sizes = th.bincount(
+                candidates.atom_component_indices,
+                minlength=num_fragments,
+            )
+            original_component_mask_log_probabilities = candidates.mask_log_probabilities[
+                candidates.component_mask_indices
+            ]
+            component_residuals, mask_residuals, ion_h_logits = self.intensity_head(
+                fragment_embeddings,
+                complement_embeddings,
+                boundary_embeddings,
+                fragment_cut_counts,
+                fragment_sizes,
+                charge_log_probabilities,
+                original_component_mask_log_probabilities,
+                fragment_batch_indices,
+                candidates.component_mask_indices,
+                batch_size=batch_size,
+                num_masks=num_masks,
+                context=context[fragment_batch_indices],
+            )
+            if not self.use_mask_residuals:
+                mask_residuals = th.zeros_like(mask_residuals)
+
+            mask_logits = candidates.mask_log_probabilities + mask_residuals
+            retained_log_probabilities = _segment_logsumexp(
+                candidates.mask_log_probabilities,
+                candidates.mask_batch_indices,
+                batch_size,
+            )
+            mask_log_normalizers = _segment_logsumexp(
+                mask_logits,
+                candidates.mask_batch_indices,
+                batch_size,
+            )
+            mask_log_probabilities = (
+                mask_logits
+                - mask_log_normalizers[candidates.mask_batch_indices]
+                + retained_log_probabilities[candidates.mask_batch_indices]
+            )
+            component_charge_logits = charge_log_probabilities + component_residuals
+            component_log_normalizers = _segment_logsumexp(
+                component_charge_logits,
+                candidates.component_mask_indices,
+                num_masks,
+            )
+            charge_log_probabilities = (
+                component_charge_logits
+                - component_log_normalizers[candidates.component_mask_indices]
+            )
+            fragment_log_probabilities = (
+                mask_log_probabilities[candidates.component_mask_indices] + charge_log_probabilities
+            )
+            ion_mzs, valid_channels = self._fragment_masses_and_valid_channels(
+                mol_pyg,
+                candidates.atom_indices,
+                candidates.atom_component_indices,
+                fragment_batch_indices,
+                num_fragments,
+                precursor_type_indices,
+            )
+
         # Chemically impossible channels are masked out before the softmax, so each
-        # component spends all of its probability on channels it can actually produce.
+        # fragment spends all of its probability on channels it can actually produce.
         ion_h_log_probabilities = masked_ion_hydrogen_log_probabilities(
             ion_h_logits,
             valid_channels,
@@ -1040,27 +1178,30 @@ class MassShatterModel(nn.Module):
 
         # 4. Flatten valid pathways into SpectrumPL's sparse prediction contract.
         # Chain rule in log space: P(mask) * P(charge | mask) * P(ion mode, H | component).
-        component_log_probabilities = (
-            component_mask_log_probabilities + charge_log_probabilities
-        )
         pathway_log_probabilities = (
-            component_log_probabilities[:, None, None] + ion_h_log_probabilities
+            fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
         )
         # Drop the masked-out channels; what survives is one flat peak list per batch.
         flat_valid = valid_channels.flatten()
         pred_mzs = ion_mzs.flatten()[flat_valid]
         pred_logprobs = pathway_log_probabilities.flatten()[flat_valid]
         pred_batch_idxs = (
-            candidates.component_batch_indices[:, None, None]
-            .expand_as(valid_channels)
-            .flatten()[flat_valid]
+            fragment_batch_indices[:, None, None].expand_as(valid_channels).flatten()[flat_valid]
         )
         candidate_cut_counts = (
-            candidates.component_cut_counts[:, None, None]
-            .expand_as(valid_channels)
-            .flatten()[flat_valid]
+            fragment_cut_counts[:, None, None].expand_as(valid_channels).flatten()[flat_valid]
         )
-        pred_oos_logprobs = self._oos_log_probabilities(candidates, batch_size)
+        selected_mask_probabilities = candidates.mask_log_probabilities.exp()
+        retained_mask_probability = bond_logits.new_zeros(batch_size).index_add(
+            0,
+            candidates.mask_batch_indices,
+            selected_mask_probabilities,
+        )
+        pred_oos_logprobs = th.log1p(
+            -retained_mask_probability.clamp(
+                max=1.0 - th.finfo(retained_mask_probability.dtype).eps
+            )
+        )
         selected_mask_count = th.bincount(
             candidates.mask_batch_indices,
             minlength=batch_size,
@@ -1071,11 +1212,22 @@ class MassShatterModel(nn.Module):
         )
         selected_mask_count_float = selected_mask_count.to(bond_logits)
         component_pathway_count_float = component_pathway_count.to(bond_logits)
-        mean_mask_cut_count = bond_logits.new_zeros(batch_size).index_add(
+        productive_mask_indices = th.unique(
+            candidates.component_mask_indices[candidates.unique_representative_component_indices]
+        )
+        productive_mask_count = bond_logits.new_zeros(batch_size).index_add(
             0,
-            candidates.mask_batch_indices,
-            candidates.mask_cut_counts.to(bond_logits),
-        ) / selected_mask_count_float
+            candidates.mask_batch_indices[productive_mask_indices],
+            th.ones_like(productive_mask_indices, dtype=bond_logits.dtype),
+        )
+        mean_mask_cut_count = (
+            bond_logits.new_zeros(batch_size).index_add(
+                0,
+                candidates.mask_batch_indices,
+                candidates.mask_cut_counts.to(bond_logits),
+            )
+            / selected_mask_count_float
+        )
         mask_cut_fractions = {}
         cut_count_buckets = {
             "0": candidates.mask_cut_counts == 0,
@@ -1118,7 +1270,7 @@ class MassShatterModel(nn.Module):
             "candidate_cut_counts": candidate_cut_counts,
             "bond_break_logits": bond_logits,
             "atom_charge_logits": atom_charge_logits,
-            "retained_mask_probability": 1.0 - pred_oos_logprobs.exp(),
+            "retained_mask_probability": retained_mask_probability,
             "selected_mask_count": selected_mask_count,
             "exploration_mask_count": candidates.exploration_mask_count,
             "exploration_mean_cut_count": candidates.exploration_mean_cut_count,
@@ -1129,6 +1281,10 @@ class MassShatterModel(nn.Module):
             "components_per_mask": component_pathway_count_float / selected_mask_count_float,
             "unique_components_per_mask": (
                 candidates.unique_component_count / selected_mask_count_float
+            ),
+            "productive_mask_fraction": (productive_mask_count / selected_mask_count_float),
+            "duplicate_component_pathway_fraction": (
+                1.0 - candidates.unique_component_count / component_pathway_count_float
             ),
             **mask_cut_fractions,
             **candidate_timing_tensors,

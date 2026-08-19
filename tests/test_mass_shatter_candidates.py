@@ -109,6 +109,35 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
     assert sorted(candidates.component_cut_counts.unique().tolist()) == [0, 1, 3]
 
 
+def test_unique_component_budget_continues_past_unproductive_ring_masks() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.tensor([-2.0, -2.0, -2.0]),
+        chemical_bond_index=th.tensor(
+            [[0, 1, 2], [1, 2, 0]],
+            dtype=th.long,
+        ),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=2,
+        max_unique_components=3,
+        max_enumerated_masks=8,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=True,
+    )
+
+    # Empty + all single-ring cuts yield only the intact atom set, so selection
+    # must continue to a two-cut mask to obtain the requested unique fragments.
+    assert candidates.mask_cut_counts.tolist() == [0, 1, 1, 1, 2]
+    assert candidates.unique_component_count.tolist() == [3.0]
+    assert candidates.num_unique_components == 3
+    assert candidates.component_unique_indices.max().item() == 2
+    assert candidates.unique_representative_component_indices.numel() == 3
+    assert candidates.mask_log_probabilities.exp().sum().item() <= 1.0 + 1e-7
+
+
 def test_candidate_batch_preserves_vectorized_boundary_order() -> None:
     candidates = build_mass_shatter_candidates(
         th.tensor([2.0, 2.0, 2.0]),

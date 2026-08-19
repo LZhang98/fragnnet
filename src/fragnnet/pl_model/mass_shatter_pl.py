@@ -172,6 +172,8 @@ class MassShatterPL(SpectrumPL):
             ace_mean=self.hparams.ace_mean,
             ace_std=self.hparams.ace_std,
             max_masks=self.hparams.mass_shatter_max_masks,
+            unique_fragment_mode=self.hparams.mass_shatter_unique_fragment_mode,
+            max_enumerated_masks=(self.hparams.mass_shatter_max_enumerated_masks),
             min_mask_probability=self.hparams.mass_shatter_min_mask_probability,
             explore_masks=self.hparams.mass_shatter_explore_masks,
             exploration_mode=self.hparams.mass_shatter_exploration_mode,
@@ -262,6 +264,8 @@ class MassShatterPL(SpectrumPL):
             unique_component_count: th.Tensor,
             components_per_mask: th.Tensor,
             unique_components_per_mask: th.Tensor,
+            productive_mask_fraction: th.Tensor,
+            duplicate_component_pathway_fraction: th.Tensor,
             mask_cut_fraction_0: th.Tensor,
             mask_cut_fraction_1: th.Tensor,
             mask_cut_fraction_2: th.Tensor,
@@ -326,6 +330,10 @@ class MassShatterPL(SpectrumPL):
                 "components_per_mask": components_per_mask.detach().to(pred_logprobs),
                 "unique_components_per_mask": (
                     unique_components_per_mask.detach().to(pred_logprobs)
+                ),
+                "productive_mask_fraction": (productive_mask_fraction.detach().to(pred_logprobs)),
+                "duplicate_component_pathway_fraction": (
+                    duplicate_component_pathway_fraction.detach().to(pred_logprobs)
                 ),
                 "mask_cut_fraction_0": mask_cut_fraction_0.detach().to(pred_logprobs),
                 "mask_cut_fraction_1": mask_cut_fraction_1.detach().to(pred_logprobs),
@@ -406,6 +414,8 @@ class MassShatterPL(SpectrumPL):
             "unique_component_count",
             "components_per_mask",
             "unique_components_per_mask",
+            "productive_mask_fraction",
+            "duplicate_component_pathway_fraction",
             "mask_cut_fraction_0",
             "mask_cut_fraction_1",
             "mask_cut_fraction_2",
