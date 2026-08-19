@@ -77,7 +77,6 @@ roadmap. It links the analyses that justify each item.
 | [fragment_context_gate_experiment_plan.md](plans/fragment_context_gate_experiment_plan.md) | Zero-code `mol` versus `mol,mlp` context-routing ablation; final-logit gate is conditional on a positive result. |
 | [classyfire_atom_pretraining_plan.md](plans/classyfire_atom_pretraining_plan.md) | Pretrain a transferable encoder on ClassyFire labels; no annotations needed at inference. |
 | [masshatter_plan.md](plans/masshatter_plan.md) | MASShatter: rank global bond-cut masks, marginalize duplicate latent pathways into unique-fragment tokens, and predict charged fragment-ion outcomes without a depth-limited fragmentation tree. |
-| [masshatter_rl_exploration_plan.md](plans/masshatter_rl_exploration_plan.md) | Staged exploration/policy options for MASShatter, gated on a rank-migration diagnostic; records why cheap importance sampling and REINFORCE are both blocked by an intractable proposal likelihood. |
 
 ### Closed — read before reviving
 
@@ -86,6 +85,7 @@ roadmap. It links the analyses that justify each item.
 | [fluxmpnn_plan.md](plans/fluxmpnn_plan.md) | Stage 0 gate GREEN, but conserved DAG flow trained null-to-harmful and the learned β collapsed to a bond-type lookup (72% self-explained, 18% of real branching). Unsupervised competition line **dead**. |
 | [bond_breakability_mask_plan.md](plans/bond_breakability_mask_plan.md) | **Stopped 2026-07-03** — 30.28% edge reduction but only 1.50% node reduction, and nodeMLP (nodes) is the cost driver. Its bucket table survives as the source of truth for `BUCKET_LOSS_RANK`. |
 | [dag_fanout_cap_plan.md](plans/dag_fanout_cap_plan.md) | Right mechanism, wrong ranking — the hand-mined table lost to the learned radius-1/2 scorer. |
+| [masshatter_rl_exploration_plan.md](plans/masshatter_rl_exploration_plan.md) | **Superseded 2026-08-19** — R0 moved into the main support diagnostics, R1 changes the objective, R2/R3 retain the independent inference scorer, and R4 is replaced by the main plan's normalized canonical autoregressive path. |
 | [dag_bond_radius_env_plan.md](plans/dag_bond_radius_env_plan.md) | Confirmed the learned scorer (held-out AUC 0.884); prototype and integration folded into the tractability plan. |
 | [false_peak_loss_plan.md](plans/false_peak_loss_plan.md) | **Closed null** — `log1p_huber` is harmful above lambda=0.1. Cited by the two loss sweeps in `slurm_scripts/`. |
 | [metal_support_tier1.md](plans/metal_support_tier1.md) | **Landed** — shipped in `utils/frag_utils.py` and `utils/data_utils.py`. |

@@ -1,17 +1,33 @@
 # MASShatter Exploration and Policy-Learning Plan
 
-> **Status:** PROPOSED &nbsp;·&nbsp; **Updated:** 2026-08-17
+> **Status:** SUPERSEDED 2026-08-19 &nbsp;·&nbsp; **Updated:** 2026-08-19
 >
-> Staged options for improving MASShatter cut-mask exploration, gated on a
-> migration diagnostic that has not yet been run. Nothing below is implemented.
+> Historical analysis only; nothing below was implemented. The active successor is
+> the support decision gate, Bernoulli-mixture probe, and canonical autoregressive
+> design in [masshatter_plan.md](masshatter_plan.md) Section 6.1.2.
 
-## Why this doc exists
+## Why this doc is retained
 
 [masshatter_plan.md](masshatter_plan.md) §7.2 implemented `bounded_additive`
 stochastic mask proposals and left open whether a sequential or RL policy should
 follow. This doc records the staged options, the gate each one must pass, and
 two mathematical constraints that rule out the cheap versions of the first two
 stages.
+
+The plan is superseded as an execution roadmap:
+
+- R0's support/allocation question is absorbed by the main plan's oracle-coverage
+  and minimum-explaining-cut diagnostics.
+- R1 changes the objective to full-tail marginal estimation, which is not the
+  current model objective.
+- R2 and R3 may broaden training support but retain the independent inference
+  scorer, so they do not remove the correlated-cut/downward-closure constraint.
+- R4 duplicates the main plan's canonical autoregressive replacement; PPO is not a
+  prerequisite for that normalized model.
+
+The likelihood and estimator analysis below remains useful historical rationale.
+Do not execute the staged order without reopening the plan against the newer main
+plan decision gate.
 
 **The premise is not yet established.** The Stage 2 note in the main plan
 records that mixed-mask exploration improved candidate weighted recall but not
@@ -162,8 +178,11 @@ The only path that addresses main-plan §9.3, correlated/concerted cleavage:
 condition bond `k` on the bonds already broken, trained with PPO against the
 spectrum reward.
 
-- Breaks exact top-K. The §2.1 proof depends on additive flip penalties, so this
-  forces beam search and gives up calibrated mask marginals.
+- Breaks the cheap exact top-K heap. The §2.1 proof depends on additive flip
+  penalties, so practical enumeration requires approximate beam or best-first
+  search. A canonical policy normalized over the next admissible bond plus `STOP`
+  still assigns an exact probability to each emitted cut set, preserving normalized
+  retained/OOS mass even though search recall is approximate.
 - ICEBERG precedent exists, but its autoregressive atom removal is the mechanism
   MASShatter was designed to avoid.
 - Do not open until R2/R3 show that mask support, not scoring, limits cosine.
@@ -180,7 +199,7 @@ spectrum reward.
 | Cost | Selection is already the CPU bottleneck (main plan §7.2.1); a learned proposal adds a device round trip per step |
 | Reporting | Stratify by cut count — policies preferentially find high-cut masks, which §9.2 already flags as mis-calibrated |
 
-## Recommended order
+## Historical recommended order — do not execute
 
 1. R0 rank migration, plus the terminology fix.
 2. R2 only if R0 shows migration, built on a tractable proposal from the start.
@@ -191,7 +210,8 @@ spectrum reward.
 ## Related
 
 - [masshatter_plan.md](masshatter_plan.md) — §2.1 exact top-K, §3 truncated
-  marginal, §7.2 support augmentation, §9 open risks.
+  marginal, §6.1.2 active correlated-cut decision path, §7.2 support augmentation,
+  and §9 open risks.
 - `src/fragnnet/frag/mass_shatter_candidates.py` — proposal and rejection loop.
 - `src/fragnnet/pl_model/mass_shatter_pl.py` — `candidate_wrecall` logging.
 - `config/masshatter/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3.yml`
