@@ -47,6 +47,8 @@ def _candidate_coverage_by_cut_count(
     tolerance: float,
     relative: bool,
     tolerance_min_mz: float,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> dict[str, th.Tensor]:
     """Measure true-peak coverage using candidates from one cut-count bucket.
 
@@ -56,8 +58,10 @@ def _candidate_coverage_by_cut_count(
     metrics = {
         f"candidate_{metric}_cut_{bucket}": true_ints.new_zeros(batch_size)
         for bucket in _CUT_COUNT_BUCKETS
-        for metric in ("recall", "wrecall")
+        for metric in ("recall", "wrecall", "precision")
     }
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     for batch_index in range(batch_size):
         true_mask = true_batch_idxs == batch_index
         batch_true_mzs = true_mzs[true_mask]
@@ -69,13 +73,26 @@ def _candidate_coverage_by_cut_count(
             candidate_mask = (candidate_batch_idxs == batch_index) & select_bucket(
                 candidate_cut_counts
             )
-            match_mask = calculate_match_mzs(
-                batch_true_mzs,
-                candidate_mzs[candidate_mask],
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            )
+            if tol_per_sample is None:
+                match_mask = calculate_match_mzs(
+                    batch_true_mzs,
+                    candidate_mzs[candidate_mask],
+                    tolerance=tolerance,
+                    relative=relative,
+                    tolerance_min_mz=tolerance_min_mz,
+                )
+            else:
+                tol_per_true = tol_per_sample[batch_index] * th.maximum(
+                    batch_true_mzs,
+                    min_mz_per_sample[batch_index],
+                )
+                match_mask = calculate_match_mzs(
+                    batch_true_mzs,
+                    candidate_mzs[candidate_mask],
+                    tolerance=0.0,
+                    relative=False,
+                    tol_per_true=tol_per_true,
+                )
             true_match_mask = match_mask.any(dim=1)
             metrics[f"candidate_recall_cut_{bucket}"][batch_index] = true_match_mask.to(
                 batch_true_ints
@@ -83,6 +100,11 @@ def _candidate_coverage_by_cut_count(
             metrics[f"candidate_wrecall_cut_{bucket}"][batch_index] = (
                 batch_true_ints * true_match_mask
             ).sum() / true_intensity
+            candidate_match_mask = match_mask.any(dim=0)
+            if candidate_match_mask.numel() > 0:
+                metrics[f"candidate_precision_cut_{bucket}"][batch_index] = (
+                    candidate_match_mask.to(batch_true_ints).mean()
+                )
     return metrics
 
 
@@ -468,7 +490,7 @@ class MassShatterPL(SpectrumPL):
         coverage_metric_names = {
             f"candidate_{metric}_cut_{bucket}"
             for bucket in _CUT_COUNT_BUCKETS
-            for metric in ("recall", "wrecall")
+            for metric in ("recall", "wrecall", "precision")
         }
         for metric_name in coverage_metric_names:
             self.metric_min_max[metric_name] = None
@@ -481,10 +503,20 @@ class MassShatterPL(SpectrumPL):
                 "candidate_cut_counts",
             ]
         )
+        if self.inst_tol_lookup is not None:
+            self.batch_metric_args.add("spec_inst_type")
         base_metric_fn = self.metric_fn
 
         def metric_fn(**kwargs: Any) -> dict[str, th.Tensor]:
             metrics = base_metric_fn(**kwargs)
+            tol_per_sample = None
+            min_mz_per_sample = None
+            spec_inst_type = kwargs.get("spec_inst_type")
+            if spec_inst_type is not None and self.inst_tol_lookup is not None:
+                inst_type_idxs = spec_inst_type.reshape(-1)
+                dtype = kwargs["true_mzs"].dtype
+                tol_per_sample = self.inst_tol_lookup[inst_type_idxs].to(dtype=dtype)
+                min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs].to(dtype=dtype)
             metrics.update(
                 _candidate_coverage_by_cut_count(
                     true_mzs=kwargs["true_mzs"],
@@ -497,6 +529,8 @@ class MassShatterPL(SpectrumPL):
                     tolerance=self.tolerance,
                     relative=self.relative,
                     tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
             )
             return metrics

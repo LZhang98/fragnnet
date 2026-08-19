@@ -11,6 +11,7 @@ from fragnnet.dataset import SpecMolDataset
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
+from fragnnet.pl_model.mass_shatter_pl import _candidate_coverage_by_cut_count
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -205,8 +206,31 @@ def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
     assert actual["wprecision"].tolist() == pytest.approx([0.7, 0.8])
     assert actual["candidate_recall_cut_1"].tolist() == pytest.approx([0.5, 0.0])
     assert actual["candidate_wrecall_cut_1"].tolist() == pytest.approx([0.6, 0.0])
+    assert actual["candidate_precision_cut_1"].tolist() == pytest.approx([1.0, 0.0])
     assert actual["candidate_recall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_wrecall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
+    assert actual["candidate_precision_cut_2"].tolist() == pytest.approx([0.0, 0.5])
+
+
+def test_candidate_coverage_by_cut_count_uses_per_instrument_tolerance() -> None:
+    actual = _candidate_coverage_by_cut_count(
+        true_mzs=th.tensor([100.0, 100.0]),
+        true_ints=th.tensor([1.0, 1.0]),
+        true_batch_idxs=th.tensor([0, 1]),
+        candidate_mzs=th.tensor([100.01, 100.01]),
+        candidate_batch_idxs=th.tensor([0, 1]),
+        candidate_cut_counts=th.tensor([3, 3]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+        tol_per_sample=th.tensor([1.0e-5, 2.0e-5]),
+        min_mz_per_sample=th.tensor([200.0, 750.0]),
+    )
+
+    assert actual["candidate_recall_cut_3"].tolist() == pytest.approx([0.0, 1.0])
+    assert actual["candidate_wrecall_cut_3"].tolist() == pytest.approx([0.0, 1.0])
+    assert actual["candidate_precision_cut_3"].tolist() == pytest.approx([0.0, 1.0])
 
 
 def test_exploration_cut_count_mean_excludes_molecules_without_samples() -> None:
