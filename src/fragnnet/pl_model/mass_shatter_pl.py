@@ -51,7 +51,7 @@ def _candidate_coverage_by_cut_count(
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
 ) -> dict[str, th.Tensor]:
-    """Measure true-peak coverage using candidates from one cut-count bucket.
+    """Measure overall and cut-bucket true-peak coverage from candidate masses.
 
     A true peak may be covered by multiple buckets, so the resulting recall values
     describe each bucket's standalone support and are not additive.
@@ -61,6 +61,7 @@ def _candidate_coverage_by_cut_count(
         for bucket in _CUT_COUNT_BUCKETS
         for metric in ("recall", "wrecall", "precision")
     }
+    metrics["candidate_recall"] = true_ints.new_zeros(batch_size)
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     for batch_index in range(batch_size):
@@ -70,6 +71,30 @@ def _candidate_coverage_by_cut_count(
         if batch_true_mzs.numel() == 0:
             raise ValueError(f"spectrum {batch_index} has no true peaks")
         true_intensity = batch_true_ints.sum()
+        batch_candidate_mzs = candidate_mzs[candidate_batch_idxs == batch_index]
+        if tol_per_sample is None:
+            all_match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+        else:
+            tol_per_true = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            all_match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=tol_per_true,
+            )
+        metrics["candidate_recall"][batch_index] = all_match_mask.any(dim=1).to(
+            batch_true_ints
+        ).mean()
         for bucket, select_bucket in _CUT_COUNT_BUCKETS.items():
             candidate_mask = (candidate_batch_idxs == batch_index) & select_bucket(
                 candidate_cut_counts
@@ -178,6 +203,11 @@ class MassShatterPL(SpectrumPL):
             ),
             intensity_transformer_dropout=(self.hparams.mass_shatter_intensity_transformer_dropout),
             use_mask_residuals=self.hparams.mass_shatter_use_mask_residuals,
+            use_base_probability_feature=(not self.hparams.mass_shatter_proposal_anchored),
+            return_base_spectrum=(
+                self.hparams.mass_shatter_log_base_ce
+                or self.hparams.mass_shatter_base_ce_weight > 0.0
+            ),
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
@@ -203,11 +233,6 @@ class MassShatterPL(SpectrumPL):
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             include_cmf=self.hparams.mass_shatter_include_cmf,
-            use_base_probability_feature=(not self.hparams.mass_shatter_proposal_anchored),
-            return_base_spectrum=(
-                self.hparams.mass_shatter_log_base_ce
-                or self.hparams.mass_shatter_base_ce_weight > 0.0
-            ),
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
         )
         self._check_ce_params()
@@ -233,6 +258,23 @@ class MassShatterPL(SpectrumPL):
         # Predictions are exact monoisotopic m/z values, so targets stay unbinned and
         # are matched against predictions by instrument tolerance instead.
         self.binned_loss = False
+        if (
+            not math.isfinite(self.hparams.mass_shatter_base_ce_weight)
+            or self.hparams.mass_shatter_base_ce_weight < 0.0
+        ):
+            raise ValueError("mass_shatter_base_ce_weight must be finite and nonnegative")
+        if (
+            self.hparams.mass_shatter_proposal_anchored
+            and self.hparams.mass_shatter_base_ce_weight == 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_anchored requires a positive "
+                "mass_shatter_base_ce_weight"
+            )
+        base_ce_enabled = (
+            self.hparams.mass_shatter_log_base_ce
+            or self.hparams.mass_shatter_base_ce_weight > 0.0
+        )
         sparse_ce_fn = get_sparse_cross_entropy_fn(
             dist=self.hparams.output_distribution,
             vectorized=self.hparams.loss_vectorized,
@@ -258,23 +300,6 @@ class MassShatterPL(SpectrumPL):
                     instrument_types.index(instrument_type)
                     for instrument_type in self.hparams.ce_pair_eligible_inst_types
                 ],
-        if (
-            not math.isfinite(self.hparams.mass_shatter_base_ce_weight)
-            or self.hparams.mass_shatter_base_ce_weight < 0.0
-        ):
-            raise ValueError("mass_shatter_base_ce_weight must be finite and nonnegative")
-        if (
-            self.hparams.mass_shatter_proposal_anchored
-            and self.hparams.mass_shatter_base_ce_weight == 0.0
-        ):
-            raise ValueError(
-                "mass_shatter_proposal_anchored requires a positive "
-                "mass_shatter_base_ce_weight"
-            )
-        base_ce_enabled = (
-            self.hparams.mass_shatter_log_base_ce
-            or self.hparams.mass_shatter_base_ce_weight > 0.0
-        )
                 dtype=th.long,
             )
             eligible_precursor_indices = th.tensor(
@@ -432,6 +457,18 @@ class MassShatterPL(SpectrumPL):
                 "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
                 "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
             }
+            if base_ce_enabled:
+                base_spec_ce = base_ios_ce + base_oos_ce
+                loss_values.update(
+                    {
+                        "base_ios_ce": base_ios_ce,
+                        "base_oos_ce": base_oos_ce,
+                        "base_spec_ce": base_spec_ce,
+                        "base_primary_loss": base_primary_loss,
+                        "base_ce_gain": base_spec_ce.detach()
+                        - (ios_ce + oos_ce).detach(),
+                    }
+                )
 
             if self.hparams.ce_pair_loss_weight != 0.0:
                 # The term is train-only (SpectrumPL sets ``ce_pair_enabled``), but the
@@ -457,18 +494,6 @@ class MassShatterPL(SpectrumPL):
                     # SpectrumPL passes through without the filtering and intensity
                     # transform applied to the tensors the primary CE consumes.
                     pair_loss, eligible_endpoints = ce_switch_pair_bce(
-            if base_ce_enabled:
-                base_spec_ce = base_ios_ce + base_oos_ce
-                loss_values.update(
-                    {
-                        "base_ios_ce": base_ios_ce,
-                        "base_oos_ce": base_oos_ce,
-                        "base_spec_ce": base_spec_ce,
-                        "base_primary_loss": base_primary_loss,
-                        "base_ce_gain": base_spec_ce.detach()
-                        - (ios_ce + oos_ce).detach(),
-                    }
-                )
                         true_mzs=kwargs["ce_pair_true_mzs"],
                         true_ints=kwargs["ce_pair_true_ints"],
                         true_batch_idxs=kwargs["ce_pair_true_batch_idxs"],
@@ -533,17 +558,28 @@ class MassShatterPL(SpectrumPL):
         ]
         if self.hparams.ce_pair_loss_weight != 0.0:
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
+        if base_ce_enabled:
+            loss_names.extend(
+                [
+                    "base_ios_ce",
+                    "base_oos_ce",
+                    "base_spec_ce",
+                    "base_primary_loss",
+                    "base_ce_gain",
+                ]
+            )
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
 
     def _setup_metric_fns(self) -> None:
-        """Add validation candidate coverage broken down by mask cut count."""
+        """Add overall and cut-bucket validation candidate coverage."""
         super()._setup_metric_fns()
         coverage_metric_names = {
             f"candidate_{metric}_cut_{bucket}"
             for bucket in _CUT_COUNT_BUCKETS
             for metric in ("recall", "wrecall", "precision")
         }
+        coverage_metric_names.add("candidate_recall")
         for metric_name in coverage_metric_names:
             self.metric_min_max[metric_name] = None
         self.auxiliary_metric_names.update(coverage_metric_names)
@@ -558,16 +594,6 @@ class MassShatterPL(SpectrumPL):
         if self.inst_tol_lookup is not None:
             self.batch_metric_args.add("spec_inst_type")
         base_metric_fn = self.metric_fn
-        if base_ce_enabled:
-            loss_names.extend(
-                [
-                    "base_ios_ce",
-                    "base_oos_ce",
-                    "base_spec_ce",
-                    "base_primary_loss",
-                    "base_ce_gain",
-                ]
-            )
 
         def metric_fn(**kwargs: Any) -> dict[str, th.Tensor]:
             metrics = base_metric_fn(**kwargs)
