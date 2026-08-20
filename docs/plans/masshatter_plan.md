@@ -969,7 +969,7 @@ Use bounded selection only for training. Validation, test, and prediction use
 the existing deterministic exact top-K path. The deterministic control and
 matched K256+64 experiment are
 `config/masshatter/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3.yml` and
-`config/masshatter/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3_explore64.yml`.
+`config/masshatter/explore/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3_explore64.yml`.
 
 Implement and verify in this order:
 
