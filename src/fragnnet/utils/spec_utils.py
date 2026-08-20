@@ -658,6 +658,46 @@ def calculate_match_mzs(
     raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
 
 
+def calculate_match_mz_reductions(
+    true_mzs: th.Tensor,
+    pred_mzs: th.Tensor,
+    tolerance: float = 1e-5,
+    relative: bool = True,
+    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
+    pred_mz_divisor: bool = False,
+    tol_per_true: th.Tensor | None = None,
+    min_mz_per_true: th.Tensor | None = None,
+    chunk_size: int = 1024,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Return whether each true and predicted m/z has any match.
+
+    Predicted peaks are processed in chunks so recall and precision metrics do
+    not materialize the full floating-point true-by-predicted difference tensor.
+    The returned tensors have the same shapes as ``true_mzs`` and ``pred_mzs``.
+    """
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+
+    true_match_mask = th.zeros_like(true_mzs, dtype=th.bool)
+    pred_match_mask = th.zeros_like(pred_mzs, dtype=th.bool)
+    for start in range(0, pred_mzs.shape[-1], chunk_size):
+        stop = min(start + chunk_size, pred_mzs.shape[-1])
+        match_mask = calculate_match_mzs(
+            true_mzs,
+            pred_mzs[..., start:stop],
+            tolerance=tolerance,
+            relative=relative,
+            tolerance_min_mz=tolerance_min_mz,
+            pred_mz_divisor=pred_mz_divisor,
+            tol_per_true=tol_per_true,
+            min_mz_per_true=min_mz_per_true,
+        )
+        true_match_mask |= match_mask.any(dim=-1)
+        pred_match_mask[..., start:stop] = match_mask.any(dim=-2)
+
+    return true_match_mask, pred_match_mask
+
+
 def cos_sim_helper(
     true_bin_idxs,
     true_bin_ints,

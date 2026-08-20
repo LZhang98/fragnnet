@@ -37,6 +37,7 @@ from fragnnet.utils.spec_utils import (
     batched_l1_normalize,
     batched_mf1000_normalize,
     batched_rel_filter_func,
+    calculate_match_mz_reductions,
     calculate_match_mzs,
     cos_sim_helper,
     get_ints_transform_func,
@@ -354,6 +355,7 @@ class SpectrumPL(L.LightningModule):
         if len(self.hparams.auxiliary_scores) > 0:
             assert self.hparams.sparse_cosine_similarity
         compute_match_mzs = False
+        compute_full_match_mzs = False
         compute_rounded_match_mzs = False
         compute_bin_specs = False
         compute_entropies = False
@@ -472,6 +474,7 @@ class SpectrumPL(L.LightningModule):
                         self.auxiliary_metric_names.add(fname)
                 compute_rounded_match_mzs = True
                 compute_match_mzs = True
+                compute_full_match_mzs = True
             elif metric_name == "jss_hun":
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:
@@ -708,15 +711,26 @@ class SpectrumPL(L.LightningModule):
                 batch_pred_ints = ragged_to_batch(pred_ints, pred_batch_idxs, pad_value=0)
                 batch_true_mzs = ragged_to_batch(true_mzs, true_batch_idxs, pad_value=float("inf"))
                 batch_pred_mzs = ragged_to_batch(pred_mzs, pred_batch_idxs, pad_value=float("inf"))
-                batch_match_mask = calculate_match_mzs(
-                    batch_true_mzs,
-                    batch_pred_mzs,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                )
-                batch_true_match_mask = batch_match_mask.max(-1).values
-                batch_pred_match_mask = batch_match_mask.max(-2).values
+                if compute_full_match_mzs:
+                    batch_match_mask = calculate_match_mzs(
+                        batch_true_mzs,
+                        batch_pred_mzs,
+                        tolerance=self.tolerance,
+                        relative=self.relative,
+                        tolerance_min_mz=self.tolerance_min_mz,
+                    )
+                    batch_true_match_mask = batch_match_mask.max(-1).values
+                    batch_pred_match_mask = batch_match_mask.max(-2).values
+                else:
+                    batch_true_match_mask, batch_pred_match_mask = (
+                        calculate_match_mz_reductions(
+                            batch_true_mzs,
+                            batch_pred_mzs,
+                            tolerance=self.tolerance,
+                            relative=self.relative,
+                            tolerance_min_mz=self.tolerance_min_mz,
+                        )
+                    )
             if compute_rounded_match_mzs:
                 batch_true_mzs_r = ragged_to_batch(
                     true_mzs_r, true_batch_idxs_r, pad_value=float("inf")
