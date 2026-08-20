@@ -468,13 +468,16 @@ the unique-fragment ion head.
 
 Configuration:
 
-- `mass_shatter_unique_fragment_mode: True` makes `mass_shatter_max_masks` the
-  requested unique-fragment token target. The final complete mask can add several
+- `mass_shatter_unique_fragment_mode: True` uses
+  `mass_shatter_unique_fragment_target` as the requested unique-fragment token
+  target. The final complete mask can add several
   new atom sets, so the realized token count can slightly exceed the target.
-- `mass_shatter_max_enumerated_masks` bounds learned latent-mask enumeration. Empty
+- `mass_shatter_ranked_mask_budget` bounds learned latent-mask enumeration. Empty
   and single-cut masks retain their established outside-budget support semantics.
-- The first controlled experiments keep both values at 512. Increasing latent masks
-  without a proportional gain in unique fragments is deliberately avoided.
+- `mass_shatter_selected_mask_limit` is the hard selected-mask limit when unique
+  fragment mode is disabled.
+- The first controlled experiments keep both unique-mode values at 512. Increasing
+  latent masks without a proportional gain in unique fragments is deliberately avoided.
 - `mass_shatter_use_mask_residuals: False` gives the cleanest probabilistic ablation:
   the bond/charge model fixes fragment mass and the transformer only allocates ion/H
   channels.
@@ -941,7 +944,7 @@ likelihood, so it is not a foundation for the active correlated-cut work. The
 likelihood and estimator analysis; Section 6.1.2 defines the current decision path.
 
 **Implemented 2026-08-16.** The default `bounded_additive` mode preserves all
-`mass_shatter_max_masks` deterministic masks and adds up to
+`mass_shatter_selected_mask_limit` deterministic masks and adds up to
 `mass_shatter_explore_masks` stochastic masks during training. Validation, test,
 and prediction retain exact deterministic top-K. Historical mixed-top-K configs
 explicitly select `bernoulli_replace` so their original replacement semantics

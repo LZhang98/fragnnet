@@ -1,7 +1,8 @@
 """Evaluate one MASShatter checkpoint at several candidate-mask budgets.
 
-The model weights and dataset stay fixed. Only ``mass_shatter_max_masks`` changes,
-so the output isolates the quality/runtime/memory tradeoff of a larger candidate set.
+The model weights and dataset stay fixed. Only the active selected-mask limit or
+unique-fragment target changes, so the output isolates the quality/runtime/memory
+tradeoff of a larger candidate set.
 
 Example:
     python scripts/eval/mass_shatter_mask_budget_sweep.py \
@@ -224,6 +225,7 @@ def init_wandb_run(
     config_d: dict[str, Any],
     checkpoint_fp: str,
     mask_budget: int,
+    budget_key: str,
 ) -> Any | None:
     """Create one W&B run per budget, or return None when logging is disabled."""
     if args.wandb_mode == "disabled":
@@ -246,7 +248,7 @@ def init_wandb_run(
         config={
             "source_checkpoint": os.path.abspath(checkpoint_fp),
             "source_wandb_run_id": args.wandb_run_id,
-            "mass_shatter_max_masks": mask_budget,
+            budget_key: mask_budget,
             "eval_split": args.eval_split,
             "batch_cutoff": args.batch_cutoff,
         },
@@ -273,6 +275,11 @@ def main() -> None:
     config_d = load_config(args.template_fp, args.custom_fp, args.override)
     if config_d["model_type"] != "mass_shatter":
         raise ValueError(f"Expected model_type=mass_shatter, got {config_d['model_type']}")
+    budget_key = (
+        "mass_shatter_unique_fragment_target"
+        if config_d["mass_shatter_unique_fragment_mode"]
+        else "mass_shatter_selected_mask_limit"
+    )
     config_d = apply_inference_config(
         config_d,
         disable_preproc=True,
@@ -291,14 +298,20 @@ def main() -> None:
     rows: list[dict[str, Any]] = []
     for mask_budget in mask_budgets:
         budget_config = copy.deepcopy(config_d)
-        budget_config["mass_shatter_max_masks"] = mask_budget
+        budget_config[budget_key] = mask_budget
         # The vectorized sparse loss otherwise builds cross-sample peak-pair matrices.
         budget_config["loss_batch_size"] = 1
-        logger.info("Evaluating checkpoint with mass_shatter_max_masks=%d", mask_budget)
+        logger.info("Evaluating checkpoint with %s=%d", budget_key, mask_budget)
         model = init_model_from_ckpt(checkpoint_fp, budget_config, device)
         wandb_run = None
         try:
-            wandb_run = init_wandb_run(args, budget_config, checkpoint_fp, mask_budget)
+            wandb_run = init_wandb_run(
+                args,
+                budget_config,
+                checkpoint_fp,
+                mask_budget,
+                budget_key,
+            )
             result = evaluate_budget(
                 model=model,
                 dataloader=dataloader,
@@ -309,7 +322,7 @@ def main() -> None:
                 batch_cutoff=args.batch_cutoff,
             )
             row = {
-                "mass_shatter_max_masks": mask_budget,
+                budget_key: mask_budget,
                 "eval_split": args.eval_split,
                 "checkpoint": os.path.abspath(checkpoint_fp),
                 **result,

@@ -25,7 +25,9 @@ def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
         sparse_cosine_similarity=True,
         oos_tolerance_multiple=1,
         gaussian_renormalize=True,
-        mass_shatter_max_masks=2,
+        mass_shatter_selected_mask_limit=2,
+        mass_shatter_unique_fragment_target=2,
+        mass_shatter_ranked_mask_budget=2,
         mass_shatter_explore_masks=1,
         mass_shatter_max_h_transfer=1,
     )
@@ -51,6 +53,16 @@ def test_mass_shatter_pl_disables_mask_residuals_from_config() -> None:
     assert not model.model.use_mask_residuals
 
 
+def test_mass_shatter_pl_uses_selected_mask_limit_in_non_unique_mode() -> None:
+    model, _ = _build_pl(
+        mass_shatter_selected_mask_limit=3,
+        mass_shatter_unique_fragment_target=7,
+        mass_shatter_ranked_mask_budget=9,
+    )
+
+    assert model.model.max_masks == 3
+
+
 def test_mass_shatter_pl_builds_variant_b_from_config() -> None:
     model, _ = _build_pl(
         mass_shatter_proposal_anchored=True,
@@ -73,13 +85,14 @@ def test_proposal_anchored_requires_base_ce_supervision() -> None:
 
 def test_mass_shatter_pl_builds_unique_fragment_mode_from_config() -> None:
     model, _ = _build_pl(
-        mass_shatter_max_masks=4,
+        mass_shatter_unique_fragment_target=4,
         mass_shatter_unique_fragment_mode=True,
-        mass_shatter_max_enumerated_masks=16,
+        mass_shatter_ranked_mask_budget=16,
         mass_shatter_explore_masks=0,
     )
 
     assert model.model.unique_fragment_mode
+    assert model.model.max_masks == 4
     assert model.model.max_enumerated_masks == 16
 
 

@@ -222,9 +222,13 @@ class MassShatterPL(SpectrumPL):
             ace_max=self.hparams.ace_max,
             ace_mean=self.hparams.ace_mean,
             ace_std=self.hparams.ace_std,
-            max_masks=self.hparams.mass_shatter_max_masks,
+            max_masks=(
+                self.hparams.mass_shatter_unique_fragment_target
+                if self.hparams.mass_shatter_unique_fragment_mode
+                else self.hparams.mass_shatter_selected_mask_limit
+            ),
             unique_fragment_mode=self.hparams.mass_shatter_unique_fragment_mode,
-            max_enumerated_masks=(self.hparams.mass_shatter_max_enumerated_masks),
+            max_enumerated_masks=self.hparams.mass_shatter_ranked_mask_budget,
             min_mask_probability=self.hparams.mass_shatter_min_mask_probability,
             explore_masks=self.hparams.mass_shatter_explore_masks,
             exploration_mode=self.hparams.mass_shatter_exploration_mode,
