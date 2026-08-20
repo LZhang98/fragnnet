@@ -1,0 +1,24 @@
+entity: frag-gnn
+project: frag-gnn
+program: scripts/run_wandb_sweep.py
+method: grid
+name: masshatter_merged_u256_budget_proposal_anchor
+description: >
+  Six-run merged-spectrum MASShatter grid at unique-fragment target 256.
+  Compare ranked-mask budgets 256 and 2048 while sweeping the base-only
+  proposal CE weight over 0.1, 0.2, and 0.3.
+metric:
+  goal: maximize
+  name: val_cos_sim_0.01_epoch/mean
+
+parameters:
+  mass_shatter_unique_fragment_target:
+    value: 256
+  mass_shatter_ranked_mask_budget:
+    values: [256, 2048]
+  mass_shatter_base_ce_weight:
+    values: [0.1, 0.2, 0.3]
+  mass_shatter_proposal_anchored:
+    value: true
+  max_epochs:
+    value: 200
