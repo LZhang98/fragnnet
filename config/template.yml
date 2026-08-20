@@ -221,6 +221,16 @@ mass_shatter_intensity_transformer_feedforward_dim: 512
 mass_shatter_intensity_transformer_num_inducing_points: 64
 mass_shatter_intensity_transformer_dropout: 0.1
 mass_shatter_use_mask_residuals: True  # False keeps original proposal mask probabilities.
+# Proposal-anchored mode keeps base-plus-residual scoring but hides the base
+# fragment probability from the transformer, closing the direct cancellation path.
+# It requires mass_shatter_base_ce_weight > 0 so the proposer remains supervised.
+mass_shatter_proposal_anchored: False
+# Compute and log pre-residual spectrum CE when its loss weight is zero. This is
+# diagnostics-only; a positive base CE weight enables the computation automatically.
+mass_shatter_log_base_ce: False
+# Auxiliary pre-residual sparse-CE coefficient. Use 0.0 for no training effect;
+# proposal-anchored experiments should start in the 0.1--0.3 range.
+mass_shatter_base_ce_weight: 0.0
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

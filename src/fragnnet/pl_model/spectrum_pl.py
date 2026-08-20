@@ -1277,6 +1277,7 @@ class SpectrumPL(L.LightningModule):
         pred_logprobs = pred_d.pop("pred_logprobs")
         pred_batch_idxs = pred_d.pop("pred_batch_idxs")
         pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
+        base_pred_logprobs = pred_d.pop("base_pred_logprobs", None)
         train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
             pred_mzs,
             pred_logprobs,
@@ -1286,6 +1287,17 @@ class SpectrumPL(L.LightningModule):
             log_in=True,
             log_out=True,
         )
+        train_base_pred_logprobs = None
+        if base_pred_logprobs is not None:
+            _, train_base_pred_logprobs, _ = self.preproc_spec(
+                pred_mzs,
+                base_pred_logprobs,
+                pred_batch_idxs,
+                train=True,
+                pred=True,
+                log_in=True,
+                log_out=True,
+            )
 
         # Build per-sample tolerance tensors when inst_type_loss_tol is configured.
         # Each sample gets the (rel, min_mz) pair for its instrument type, looked up from
@@ -1316,6 +1328,8 @@ class SpectrumPL(L.LightningModule):
             "batch_size": batch_size,
             **pred_d,
         }
+        if train_base_pred_logprobs is not None:
+            train_d["base_pred_logprobs"] = train_base_pred_logprobs
         if tol_per_sample is not None:
             train_d["tol_per_sample"] = tol_per_sample
             train_d["min_mz_per_sample"] = min_mz_per_sample

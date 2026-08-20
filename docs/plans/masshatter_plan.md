@@ -588,6 +588,72 @@ restricting useful corrections and may exchange accuracy for structure. The
 base-only auxiliary loss instead preserves the corrected predictor's freedom while
 independently supervising the proposal model.
 
+#### Current implementation priority: repair the factorization, do not replace it
+
+MASShatter remains one jointly trained end-to-end model. Separating formation from
+detected intensity means giving the existing heads distinct responsibilities and
+losses inside the same forward/backward pass; it does not mean training a generator,
+materializing its outputs, and training a second intensity model afterward.
+
+The current retained-shape calculation is:
+
+```
+log P_final(i)
+  = log R + log_softmax_i(l_i + r_i)
+```
+
+where `l_i` is the base fragment log probability from the bond/charge path, `r_i`
+is the intensity-transformer residual, and `R` is the base model's total retained
+mass. This factorization has a useful inductive bias: formation probability remains
+a structural prior and the transformer learns a comparative correction. The problem
+is not the addition itself; it is that the transformer receives `l_i` directly and
+the base path has no standalone shape objective.
+
+The primary change is therefore the minimal repaired model:
+
+```
+r_i = IntensityTransformer(structure_i, complement_i, boundary_i, context)
+log P_final(i) = log R + log_softmax_i(l_i + r_i)
+L = L_final + lambda_base * L_base_only
+```
+
+Use one shared precursor encoder, one online candidate-generation pass, one combined
+loss, and one optimizer. Remove `l_i` only from the transformer's input features;
+do not remove it from the final base-plus-residual score. This closes the direct
+cancellation route while preserving the independent-bond prior in the final
+prediction. The auxiliary loss prevents the residual from starving the proposer
+even if other structural features let it infer part of the base ranking.
+Top-K membership remains discrete and detached, so this is jointly trained
+end-to-end but not differentiable through the candidate identities themselves.
+
+A fully separated conditional-intensity variant is a stronger ablation:
+
+```
+log P_separated(i) = log R + log_softmax_i(s_i)
+```
+
+It is cleanly identifiable, but it discards relative formation probability after
+enumeration and gives the transformer a free within-support allocation. That trades
+away a structural regularizer and is not the default implementation path.
+
+Run the matched comparison in this order:
+
+1. **A — current control:** base probability is an input feature and the final score
+   is `l_i + r_i`, with no base-only CE.
+2. **B — primary repaired model:** remove the probability input, retain `l_i + r_i`,
+   and add base-only CE with `lambda_base` initially in `0.1`--`0.3`.
+3. **C — full-separation ablation:** use absolute structural intensity logits `s_i`
+   for retained shape, while keeping the same retained/OOS mass and base-only loss.
+
+Keep mask limits, realized candidate budgets, transformer capacity, optimizer,
+training schedule, and seeds matched. Compare final cosine/JSS, base-only spectrum
+metrics, deterministic candidate weighted recall, retained/OOS calibration, bond
+logit sign and ranking diagnostics, and gradient magnitude reaching the bond head.
+Adopt B if it improves the base predictor and proposer diagnostics without a
+reproducible final-metric regression. Adopt C only if it beats B on held-out final
+metrics without reducing candidate coverage, base-only competence, or OOS
+calibration.
+
 ### 6.1.2 Independent-mask downward closure and correlated-cut support
 
 The residual shortcut composes with a separate expressivity constraint in the

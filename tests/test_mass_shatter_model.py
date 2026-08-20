@@ -36,6 +36,8 @@ def _build_model(
     unique_fragment_mode: bool = False,
     max_enumerated_masks: int | None = None,
     use_mask_residuals: bool = True,
+    use_base_probability_feature: bool = True,
+    return_base_spectrum: bool = False,
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
     exploration_cut_count_weights: tuple[float, ...] = (
@@ -69,6 +71,8 @@ def _build_model(
         intensity_transformer_num_inducing_points=4,
         intensity_transformer_dropout=0.0,
         use_mask_residuals=use_mask_residuals,
+        use_base_probability_feature=use_base_probability_feature,
+        return_base_spectrum=return_base_spectrum,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -204,6 +208,39 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert total_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
     assert output["retained_mask_probability"].tolist() == pytest.approx(
         predicted_mass.tolist(), abs=2e-6
+    )
+
+
+@pytest.mark.parametrize("unique_fragment_mode", [False, True])
+def test_mass_shatter_returns_normalized_pre_residual_spectrum(
+    unique_fragment_mode: bool,
+) -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=unique_fragment_mode,
+        max_enumerated_masks=8,
+        use_base_probability_feature=False,
+        return_base_spectrum=True,
+    )
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([20.0, 40.0]),
+    )
+
+    base_mass = th.zeros(2).index_add(
+        0,
+        output["pred_batch_idxs"],
+        output["base_pred_logprobs"].exp(),
+    )
+    assert not model.intensity_head.use_base_probability_feature
+    assert output["base_pred_logprobs"].shape == output["pred_logprobs"].shape
+    assert base_mass.tolist() == pytest.approx(
+        output["retained_mask_probability"].tolist(),
+        abs=2e-6,
     )
 
 

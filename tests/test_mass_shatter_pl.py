@@ -51,6 +51,26 @@ def test_mass_shatter_pl_disables_mask_residuals_from_config() -> None:
     assert not model.model.use_mask_residuals
 
 
+def test_mass_shatter_pl_builds_variant_b_from_config() -> None:
+    model, _ = _build_pl(
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_log_base_ce=True,
+        mass_shatter_base_ce_weight=0.2,
+    )
+
+    assert not model.model.intensity_head.use_base_probability_feature
+    assert model.model.return_base_spectrum
+    assert "base_spec_ce" in model.loss_names
+
+
+def test_proposal_anchored_requires_base_ce_supervision() -> None:
+    with pytest.raises(ValueError, match="requires a positive"):
+        _build_pl(
+            mass_shatter_proposal_anchored=True,
+            mass_shatter_base_ce_weight=0.0,
+        )
+
+
 def test_mass_shatter_pl_builds_unique_fragment_mode_from_config() -> None:
     model, _ = _build_pl(
         mass_shatter_max_masks=4,
@@ -87,12 +107,17 @@ def test_mass_shatter_transfer_retains_static_graph_on_cpu() -> None:
 
 
 def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> None:
-    model, config = _build_pl()
+    model, config = _build_pl(
+        mass_shatter_log_base_ce=True,
+        mass_shatter_base_ce_weight=0.2,
+        oos_loss=True,
+    )
     true_mzs = th.tensor([100.0, 150.0])
     true_logprobs = th.log(th.tensor([0.6, 0.4]))
     true_batch_indices = th.tensor([0, 0], dtype=th.long)
     pred_mzs = th.tensor([100.0, 180.0])
     pred_logprobs = th.log(th.tensor([0.5, 0.3]))
+    base_pred_logprobs = th.log(th.tensor([0.3, 0.5])).requires_grad_()
     pred_batch_indices = th.tensor([0, 0], dtype=th.long)
     pred_oos_logprobs = th.log(th.tensor([0.2]))
 
@@ -102,6 +127,7 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         true_batch_idxs=true_batch_indices,
         pred_mzs=pred_mzs,
         pred_logprobs=pred_logprobs,
+        base_pred_logprobs=base_pred_logprobs,
         pred_batch_idxs=pred_batch_indices,
         pred_oos_logprobs=pred_oos_logprobs,
         retained_mask_probability=th.tensor([0.8]),
@@ -156,10 +182,29 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         pred_batch_indices,
         pred_oos_logprobs,
     )
+    expected_base_ios, expected_base_oos, _, _ = sparse_ce_fn(
+        true_mzs,
+        true_logprobs,
+        true_batch_indices,
+        pred_mzs,
+        base_pred_logprobs,
+        pred_batch_indices,
+        pred_oos_logprobs,
+    )
 
     assert th.allclose(actual["ios_ce"], expected_ios)
     assert th.allclose(actual["oos_ce"], expected_oos)
     assert th.allclose(actual["spec_ce"], expected_ios + expected_oos)
+    assert th.allclose(actual["base_ios_ce"], expected_base_ios)
+    assert th.allclose(actual["base_oos_ce"], expected_base_oos)
+    assert th.allclose(actual["base_spec_ce"], expected_base_ios + expected_base_oos)
+    assert th.allclose(
+        actual["loss"],
+        expected_ios + expected_oos + 0.2 * (expected_base_ios + expected_base_oos),
+    )
+    actual["loss"].sum().backward()
+    assert base_pred_logprobs.grad is not None
+    assert base_pred_logprobs.grad.abs().sum() > 0.0
     assert th.allclose(actual["candidate_wrecall"], 1.0 - expected_true_oos.exp())
     assert actual["candidate_wrecall"].tolist() == pytest.approx([0.6])
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])

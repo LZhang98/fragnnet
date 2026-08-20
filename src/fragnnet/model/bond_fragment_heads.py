@@ -140,6 +140,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_ion_modes: int,
         num_h_shifts: int,
         dropout: float,
+        use_base_probability_feature: bool,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -165,7 +166,10 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.context_dim = context_dim
         self.num_ion_modes = num_ion_modes
         self.num_h_shifts = num_h_shifts
-        input_dim = 3 * fragment_embedding_dim + context_dim + 5
+        self.use_base_probability_feature = use_base_probability_feature
+        input_dim = 3 * fragment_embedding_dim + context_dim + 3
+        if use_base_probability_feature:
+            input_dim += 2
         self.input_projection = nn.Sequential(
             nn.Linear(input_dim, model_dim),
             nn.SiLU(),
@@ -368,10 +372,15 @@ class CandidateIntensityTransformerHead(nn.Module):
                 th.log1p(
                     mask_component_counts[component_mask_indices].to(fragment_embeddings)
                 ).unsqueeze(1),
-                charge_log_probabilities.to(fragment_embeddings).unsqueeze(1),
-                mask_log_probabilities.to(fragment_embeddings).unsqueeze(1),
             )
         )
+        if self.use_base_probability_feature:
+            features.extend(
+                (
+                    charge_log_probabilities.to(fragment_embeddings).unsqueeze(1),
+                    mask_log_probabilities.to(fragment_embeddings).unsqueeze(1),
+                )
+            )
         tokens = self.input_projection(th.cat(features, dim=1))
         tokens = self._contextualize_by_molecule(
             tokens,

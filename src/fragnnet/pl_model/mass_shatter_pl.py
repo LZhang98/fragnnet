@@ -15,6 +15,7 @@ three model-specific pieces:
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import torch as th
@@ -202,6 +203,11 @@ class MassShatterPL(SpectrumPL):
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             include_cmf=self.hparams.mass_shatter_include_cmf,
+            use_base_probability_feature=(not self.hparams.mass_shatter_proposal_anchored),
+            return_base_spectrum=(
+                self.hparams.mass_shatter_log_base_ce
+                or self.hparams.mass_shatter_base_ce_weight > 0.0
+            ),
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
         )
         self._check_ce_params()
@@ -252,6 +258,23 @@ class MassShatterPL(SpectrumPL):
                     instrument_types.index(instrument_type)
                     for instrument_type in self.hparams.ce_pair_eligible_inst_types
                 ],
+        if (
+            not math.isfinite(self.hparams.mass_shatter_base_ce_weight)
+            or self.hparams.mass_shatter_base_ce_weight < 0.0
+        ):
+            raise ValueError("mass_shatter_base_ce_weight must be finite and nonnegative")
+        if (
+            self.hparams.mass_shatter_proposal_anchored
+            and self.hparams.mass_shatter_base_ce_weight == 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_anchored requires a positive "
+                "mass_shatter_base_ce_weight"
+            )
+        base_ce_enabled = (
+            self.hparams.mass_shatter_log_base_ce
+            or self.hparams.mass_shatter_base_ce_weight > 0.0
+        )
                 dtype=th.long,
             )
             eligible_precursor_indices = th.tensor(
@@ -330,7 +353,24 @@ class MassShatterPL(SpectrumPL):
             )
             primary_loss = ios_ce + oos_ce if self.hparams.oos_loss else ios_ce
             loss = self.hparams.primary_loss_weight * primary_loss
-            # Everything past "primary_loss" is monitoring only, so it is detached:
+            if base_ce_enabled:
+                base_pred_logprobs = kwargs["base_pred_logprobs"]
+                base_ios_ce, base_oos_ce, _, _ = sparse_ce_fn(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    base_pred_logprobs,
+                    pred_batch_idxs,
+                    pred_oos_logprobs,
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
+                base_primary_loss = (
+                    base_ios_ce + base_oos_ce if self.hparams.oos_loss else base_ios_ce
+                )
+                loss = loss + self.hparams.mass_shatter_base_ce_weight * base_primary_loss
+            # The candidate-generation values below are monitoring only and detached:
             # candidate_wrecall is how much true intensity the enumerated masks could
             # explain at all (the ceiling on this batch), retained_mask_probability is
             # how much of the Bernoulli mask distribution survived truncation, and the
@@ -417,6 +457,18 @@ class MassShatterPL(SpectrumPL):
                     # SpectrumPL passes through without the filtering and intensity
                     # transform applied to the tensors the primary CE consumes.
                     pair_loss, eligible_endpoints = ce_switch_pair_bce(
+            if base_ce_enabled:
+                base_spec_ce = base_ios_ce + base_oos_ce
+                loss_values.update(
+                    {
+                        "base_ios_ce": base_ios_ce,
+                        "base_oos_ce": base_oos_ce,
+                        "base_spec_ce": base_spec_ce,
+                        "base_primary_loss": base_primary_loss,
+                        "base_ce_gain": base_spec_ce.detach()
+                        - (ios_ce + oos_ce).detach(),
+                    }
+                )
                         true_mzs=kwargs["ce_pair_true_mzs"],
                         true_ints=kwargs["ce_pair_true_ints"],
                         true_batch_idxs=kwargs["ce_pair_true_batch_idxs"],
@@ -506,6 +558,16 @@ class MassShatterPL(SpectrumPL):
         if self.inst_tol_lookup is not None:
             self.batch_metric_args.add("spec_inst_type")
         base_metric_fn = self.metric_fn
+        if base_ce_enabled:
+            loss_names.extend(
+                [
+                    "base_ios_ce",
+                    "base_oos_ce",
+                    "base_spec_ce",
+                    "base_primary_loss",
+                    "base_ce_gain",
+                ]
+            )
 
         def metric_fn(**kwargs: Any) -> dict[str, th.Tensor]:
             metrics = base_metric_fn(**kwargs)

@@ -412,6 +412,8 @@ class MassShatterModel(nn.Module):
         intensity_transformer_num_inducing_points: int,
         intensity_transformer_dropout: float,
         use_mask_residuals: bool,
+        use_base_probability_feature: bool,
+        return_base_spectrum: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -466,6 +468,10 @@ class MassShatterModel(nn.Module):
             intensity_transformer_dropout: Dropout inside the candidate transformer.
             use_mask_residuals: Whether transformer residuals may redistribute retained
                 probability between selected masks.
+            use_base_probability_feature: Whether the candidate transformer receives
+                the pre-residual charge and mask/fragment log probabilities as inputs.
+            return_base_spectrum: Whether to return pre-residual spectrum log
+                probabilities for the base-only CE diagnostic or auxiliary loss.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -573,6 +579,7 @@ class MassShatterModel(nn.Module):
         self.include_cmf = include_cmf
         self.charge_pooling = charge_pooling
         self.use_mask_residuals = use_mask_residuals
+        self.return_base_spectrum = return_base_spectrum
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
         # hydrogen transfers from -max_h_transfer to +max_h_transfer.
@@ -643,6 +650,7 @@ class MassShatterModel(nn.Module):
             num_ion_modes=self.num_ion_modes,
             num_h_shifts=self.num_h_shifts,
             dropout=intensity_transformer_dropout,
+            use_base_probability_feature=use_base_probability_feature,
         )
         self._setup_chemistry_buffers()
 
@@ -1026,6 +1034,7 @@ class MassShatterModel(nn.Module):
                 candidates.component_unique_indices,
                 num_fragments,
             )
+            base_fragment_log_probabilities = fragment_log_probabilities
             best_pathway_log_probabilities = component_log_probabilities.new_full(
                 (num_fragments,),
                 -th.inf,
@@ -1172,6 +1181,9 @@ class MassShatterModel(nn.Module):
             original_component_mask_log_probabilities = candidates.mask_log_probabilities[
                 candidates.component_mask_indices
             ]
+            base_fragment_log_probabilities = (
+                original_component_mask_log_probabilities + charge_log_probabilities
+            )
             component_residuals, mask_residuals, ion_h_logits = self.intensity_head(
                 fragment_embeddings,
                 complement_embeddings,
@@ -1239,6 +1251,9 @@ class MassShatterModel(nn.Module):
         # Chain rule in log space: P(mask) * P(charge | mask) * P(ion mode, H | component).
         pathway_log_probabilities = (
             fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
+        )
+        base_pathway_log_probabilities = (
+            base_fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
         )
         # Drop the masked-out channels; what survives is one flat peak list per batch.
         flat_valid = valid_channels.flatten()
@@ -1320,7 +1335,7 @@ class MassShatterModel(nn.Module):
             name: bond_logits.new_full((batch_size,), value)
             for name, value in candidate_timing_values.items()
         }
-        return {
+        output = {
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,
             "pred_batch_idxs": pred_batch_idxs,
@@ -1363,3 +1378,6 @@ class MassShatterModel(nn.Module):
             **mask_cut_fractions,
             **candidate_timing_tensors,
         }
+        if self.return_base_spectrum:
+            output["base_pred_logprobs"] = base_pathway_log_probabilities.flatten()[flat_valid]
+        return output

@@ -80,6 +80,11 @@ mass_shatter_intensity_transformer_feedforward_dim: 512
 mass_shatter_intensity_transformer_num_inducing_points: 64
 mass_shatter_intensity_transformer_dropout: 0.1
 mass_shatter_use_mask_residuals: True
+# Variant A: preserve the original probability feature and log base CE without
+# adding it to the training objective.
+mass_shatter_proposal_anchored: False
+mass_shatter_log_base_ce: True
+mass_shatter_base_ce_weight: 0.0
 
 # 3. Keep the objective identical to the no-residual paired control.
 loss_type: cross_entropy

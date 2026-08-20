@@ -37,6 +37,7 @@ def test_candidate_intensity_transformer_is_permutation_equivariant() -> None:
         num_ion_modes=2,
         num_h_shifts=3,
         dropout=0.0,
+        use_base_probability_feature=True,
     ).eval()
     fragment_embeddings = th.randn(7, 6)
     complement_embeddings = th.randn(7, 6)
@@ -100,6 +101,7 @@ def test_candidate_intensity_transformer_backpropagates() -> None:
         num_ion_modes=2,
         num_h_shifts=3,
         dropout=0.0,
+        use_base_probability_feature=True,
     )
     fragment_embeddings = th.randn(5, 4, requires_grad=True)
     outputs = head(
@@ -125,6 +127,55 @@ def test_candidate_intensity_transformer_backpropagates() -> None:
     assert head.inducing_tokens.grad.abs().sum() > 0
 
 
+def test_candidate_intensity_transformer_can_exclude_base_probability_feature() -> None:
+    th.manual_seed(42)
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=False,
+    ).eval()
+    common_features = (
+        th.randn(4, 4),
+        th.randn(4, 4),
+        th.randn(4, 4),
+        th.tensor([1, 2, 1, 2]),
+        th.tensor([2, 3, 1, 2]),
+    )
+    component_batch_indices = th.tensor([0, 0, 0, 0])
+    component_mask_indices = th.tensor([0, 0, 1, 2])
+
+    baseline = head(
+        *common_features,
+        th.zeros(4),
+        th.zeros(4),
+        component_batch_indices,
+        component_mask_indices,
+        batch_size=1,
+        num_masks=3,
+    )
+    perturbed = head(
+        *common_features,
+        th.tensor([100.0, 10.0, -10.0, -100.0]),
+        th.tensor([-100.0, -10.0, 10.0, 100.0]),
+        component_batch_indices,
+        component_mask_indices,
+        batch_size=1,
+        num_masks=3,
+    )
+
+    assert head.input_projection[0].in_features == 3 * 4 + 3
+    for baseline_output, perturbed_output in zip(baseline, perturbed, strict=True):
+        assert th.allclose(baseline_output, perturbed_output)
+
+
 def test_candidate_intensity_transformer_buckets_ragged_padding() -> None:
     head = CandidateIntensityTransformerHead(
         fragment_embedding_dim=4,
@@ -137,6 +188,7 @@ def test_candidate_intensity_transformer_buckets_ragged_padding() -> None:
         num_ion_modes=1,
         num_h_shifts=3,
         dropout=0.0,
+        use_base_probability_feature=True,
     ).eval()
     observed_shapes: list[th.Size] = []
     hook = head.layers[0].register_forward_pre_hook(
@@ -181,6 +233,7 @@ def test_candidate_intensity_transformer_isolates_molecules() -> None:
         num_ion_modes=1,
         num_h_shifts=3,
         dropout=0.0,
+        use_base_probability_feature=True,
     ).eval()
     fragment_embeddings = th.randn(5, 4)
     complement_embeddings = th.randn(5, 4)
