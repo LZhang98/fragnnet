@@ -1,5 +1,7 @@
 """End-to-end tests for the first trainable MASShatter model slice."""
 
+from dataclasses import replace
+
 import pytest
 import torch as th
 from rdkit import Chem
@@ -8,6 +10,7 @@ from torch_geometric.data import Batch
 import fragnnet.model.mass_shatter_model as mass_shatter_model_module
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.mass_shatter_model import MassShatterModel
+from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import formula_to_peak_mzs
 
@@ -39,6 +42,7 @@ def _build_model(
     use_base_probability_feature: bool = True,
     return_base_spectrum: bool = False,
     detach_base_ion_h: bool = False,
+    proposal_selection_only: bool = False,
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
     exploration_cut_count_weights: tuple[float, ...] = (
@@ -75,6 +79,7 @@ def _build_model(
         use_base_probability_feature=use_base_probability_feature,
         return_base_spectrum=return_base_spectrum,
         detach_base_ion_h=detach_base_ion_h,
+        proposal_selection_only=proposal_selection_only,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -293,6 +298,139 @@ def test_detached_base_ion_h_preserves_values_and_isolates_intensity_gradients()
     assert _parameter_gradient_sum(detached_model.intensity_head) == 0.0
     assert _parameter_gradient_sum(detached_model.bond_break_head) > 0.0
     assert _parameter_gradient_sum(detached_model.charge_head) > 0.0
+
+
+def test_selection_only_intensity_ignores_proposal_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = _build_batch(("CCCO",))
+    model = _build_model(
+        batch,
+        max_masks=5,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+    ).eval()
+    model_inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0]),
+        "spec_nce": th.tensor([25.0]),
+    }
+    with th.no_grad():
+        baseline = model(**model_inputs)
+
+    build_candidates = mass_shatter_model_module.build_mass_shatter_candidates
+
+    def lower_selected_mask_probabilities(*args: object, **kwargs: object) -> object:
+        candidates = build_candidates(*args, **kwargs)
+        offsets = th.linspace(
+            -1.0,
+            -0.2,
+            candidates.mask_log_probabilities.numel(),
+            device=candidates.mask_log_probabilities.device,
+        )
+        return replace(
+            candidates,
+            mask_log_probabilities=candidates.mask_log_probabilities + offsets,
+        )
+
+    monkeypatch.setattr(
+        mass_shatter_model_module,
+        "build_mass_shatter_candidates",
+        lower_selected_mask_probabilities,
+    )
+    with th.no_grad():
+        shifted = model(**model_inputs)
+
+    baseline_conditional = baseline["pred_logprobs"] - th.logsumexp(
+        baseline["pred_logprobs"], dim=0
+    )
+    shifted_conditional = shifted["pred_logprobs"] - th.logsumexp(
+        shifted["pred_logprobs"], dim=0
+    )
+    assert th.equal(baseline["pred_mzs"], shifted["pred_mzs"])
+    assert th.allclose(baseline_conditional, shifted_conditional, atol=1e-6, rtol=0.0)
+    assert not th.allclose(
+        baseline["retained_mask_probability"],
+        shifted["retained_mask_probability"],
+    )
+    shifted_total = shifted["pred_logprobs"].exp().sum() + shifted[
+        "pred_oos_logprobs"
+    ].exp().sum()
+    assert shifted_total.item() == pytest.approx(1.0, abs=2e-6)
+
+
+def test_selection_only_primary_spectrum_does_not_update_proposal_heads() -> None:
+    batch = _build_batch(("CCCO",))
+    model = _build_model(
+        batch,
+        max_masks=5,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+    )
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([25.0]),
+    )
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    assert _parameter_gradient_sum(model.bond_break_head) == 0.0
+    assert _parameter_gradient_sum(model.charge_head) == 0.0
+    assert _parameter_gradient_sum(model.precursor_encoder) > 0.0
+    assert _parameter_gradient_sum(model.context_encoder) > 0.0
+    assert _parameter_gradient_sum(model.intensity_head) > 0.0
+    assert output["proposal_candidate_mzs"].shape == output[
+        "proposal_candidate_fragment_idxs"
+    ].shape
+    assert output["proposal_fragment_logprobs"].shape == output[
+        "proposal_fragment_batch_idxs"
+    ].shape
+
+
+def test_selection_only_proposal_loss_updates_only_proposal_heads() -> None:
+    batch = _build_batch(("CCCO",))
+    model = _build_model(
+        batch,
+        max_masks=5,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+    )
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([25.0]),
+    )
+    fragmented_candidate_index = output["candidate_cut_counts"].argmax().reshape(1)
+    true_mz = output["proposal_candidate_mzs"][fragmented_candidate_index].detach()
+    proposal_ios_loss, proposal_oos_loss = _proposal_coverage_loss(
+        true_mzs=true_mz,
+        true_logprobs=th.zeros(1),
+        true_batch_idxs=th.zeros(1, dtype=th.long),
+        candidate_mzs=output["proposal_candidate_mzs"],
+        candidate_fragment_idxs=output["proposal_candidate_fragment_idxs"],
+        fragment_logprobs=output["proposal_fragment_logprobs"],
+        fragment_batch_idxs=output["proposal_fragment_batch_idxs"],
+        proposal_oos_logprobs=output["proposal_pred_oos_logprobs"],
+        batch_size=1,
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    (proposal_ios_loss + proposal_oos_loss).sum().backward()
+
+    assert _parameter_gradient_sum(model.bond_break_head) > 0.0
+    assert _parameter_gradient_sum(model.charge_head) > 0.0
+    assert _parameter_gradient_sum(model.precursor_encoder) == 0.0
+    assert _parameter_gradient_sum(model.context_encoder) == 0.0
+    assert _parameter_gradient_sum(model.intensity_head) == 0.0
 
 
 def test_unique_fragment_mode_marginalizes_paths_and_uses_boundary_counts(

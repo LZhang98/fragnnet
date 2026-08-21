@@ -392,6 +392,25 @@ with probability `0.006`, its marginal ion probability is `0.020`. Perform this
 sum with `logsumexp`, as specified below, rather than adding raw probabilities
 in the implementation.
 
+### 5.2 TODO — H-transfer range ablation
+
+The current production range is `delta_H in [-4, +4]`, which gives 18 CRF/CMF
+channels per fragment. Run a matched ablation with
+`mass_shatter_max_h_transfer` in `{4, 6, 7}`:
+
+- `4`: 18 channels (`-4` through `+4`, crossed with CRF/CMF)
+- `6`: 26 channels (`-6` through `+6`, crossed with CRF/CMF)
+- `7`: 30 channels (`-7` through `+7`, crossed with CRF/CMF)
+
+Hold the architecture, candidate budget, loss weights, and training schedule
+fixed. Compare instrument-tolerance cosine/JSS, candidate recall/wRecall and
+precision, active-channel count, probability/intensity by `abs(delta_H)`, and
+runtime/memory. Do not select the range using 0.1 Da-binned metrics. Adopt the
+smallest range that improves held-out instrument-tolerance cosine or wRecall
+without degrading precision or calibration. Treat GLACIER's published `-6`
+through `+6` range as action-space context, not evidence that MASShatter needs
+the same range.
+
 ## 6. Complete fragment-ion probability
 
 For ion candidate `(F, mode, delta_H)`, marginalize over retained cut masks:
@@ -658,6 +677,32 @@ diagnostics without a reproducible final-metric regression; do not treat it as t
 complete architectural repair. Retain C only as an ablation if it beats B on held-out
 final metrics without reducing candidate coverage, base-only competence, or OOS
 calibration. The combined target in Section 6.1.2 remains the adoption candidate.
+
+#### Full-separation V1 implementation (2026-08-21)
+
+The opt-in `mass_shatter_proposal_selection_only` path implements arm C without
+changing candidate generation. Bond-mask ranking, charge scoring, unique-fragment
+deduplication, and the ranked-mask budget remain unchanged. After selection, the
+candidate transformer owns the relative retained-fragment distribution:
+
+```
+log P_final(i) = stopgrad(log R) + log_softmax_i(s_i)
+P_final(OOS)   = 1 - stopgrad(R)
+```
+
+Proposal probabilities therefore affect candidate membership and the forward value
+of the retained/OOS gate, but receive no primary-spectrum gradient. A separate
+intensity-weighted support loss trains the bond/charge proposer. For each true peak,
+it sums the base probability of every unique fragment with at least one valid ion
+channel inside the instrument tolerance. Each fragment is counted once per peak,
+regardless of how many CRF/CMF or `delta_H` channels match, and the loss uses no
+learned ion/H probability. Proposal inputs are detached from the shared precursor
+and context encoders in V1, so proposal gradients update only the bond and charge
+heads; the final spectrum trains the shared encoders and candidate transformer.
+
+Reference configuration:
+
+- `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
 
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 

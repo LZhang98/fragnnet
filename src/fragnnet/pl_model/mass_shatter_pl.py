@@ -134,6 +134,114 @@ def _candidate_coverage_by_cut_count(
     return metrics
 
 
+def _proposal_coverage_loss(
+    *,
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_fragment_idxs: th.Tensor,
+    fragment_logprobs: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    proposal_oos_logprobs: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Train proposal coverage without assigning probability to ion/H channels.
+
+    Every unique fragment is counted at most once for a true peak, even when several
+    of its valid CRF/CMF or hydrogen-transfer channels match that peak. This makes the
+    proposal objective depend on reachable support rather than the number or learned
+    probability of ion/H channels.
+    """
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    if candidate_mzs.shape != candidate_fragment_idxs.shape:
+        raise ValueError("proposal candidate masses and fragment indices must align")
+    if fragment_logprobs.shape != fragment_batch_idxs.shape:
+        raise ValueError("proposal fragment probabilities and batch indices must align")
+    if proposal_oos_logprobs.shape != (batch_size,):
+        raise ValueError("proposal OOS probabilities must contain one value per spectrum")
+
+    ios_loss = fragment_logprobs.new_zeros(batch_size)
+    oos_loss = fragment_logprobs.new_zeros(batch_size)
+    for batch_index in range(batch_size):
+        true_mask = true_batch_idxs == batch_index
+        batch_true_mzs = true_mzs[true_mask]
+        batch_true_probabilities = true_logprobs[true_mask].exp()
+        batch_fragment_indices = th.where(fragment_batch_idxs == batch_index)[0]
+        if batch_true_mzs.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no true peaks")
+        if batch_fragment_indices.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no proposed fragments")
+
+        first_fragment_index = batch_fragment_indices[0]
+        if not th.equal(
+            batch_fragment_indices,
+            th.arange(
+                first_fragment_index,
+                first_fragment_index + batch_fragment_indices.numel(),
+                device=batch_fragment_indices.device,
+            ),
+        ):
+            raise ValueError("proposal fragments must be contiguous within each spectrum")
+        candidate_mask = fragment_batch_idxs[candidate_fragment_idxs] == batch_index
+        batch_candidate_mzs = candidate_mzs[candidate_mask]
+        local_fragment_indices = (
+            candidate_fragment_idxs[candidate_mask] - first_fragment_index
+        )
+        if tol_per_sample is None:
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+        else:
+            per_peak_tolerance = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=per_peak_tolerance,
+            )
+
+        fragment_match_counts = fragment_logprobs.new_zeros(
+            (batch_true_mzs.numel(), batch_fragment_indices.numel())
+        )
+        fragment_match_counts.scatter_add_(
+            1,
+            local_fragment_indices.reshape(1, -1).expand(batch_true_mzs.numel(), -1),
+            channel_match.to(fragment_match_counts),
+        )
+        fragment_match = fragment_match_counts > 0
+        true_peak_covered = fragment_match.any(dim=1)
+        batch_fragment_logprobs = fragment_logprobs[batch_fragment_indices]
+        peak_log_coverage = th.logsumexp(
+            batch_fragment_logprobs.reshape(1, -1).masked_fill(~fragment_match, -th.inf),
+            dim=1,
+        )
+        ios_loss[batch_index] = th.where(
+            true_peak_covered,
+            -batch_true_probabilities * peak_log_coverage,
+            th.zeros_like(peak_log_coverage),
+        ).sum()
+        oos_loss[batch_index] = (
+            -batch_true_probabilities[~true_peak_covered].sum()
+            * proposal_oos_logprobs[batch_index]
+        )
+    return ios_loss, oos_loss
+
+
 class MassShatterPL(SpectrumPL):
     """Train MASShatter with SpectrumPL and FraGNNet's CE-pair objective.
 
@@ -209,6 +317,7 @@ class MassShatterPL(SpectrumPL):
                 or self.hparams.mass_shatter_base_ce_weight > 0.0
             ),
             detach_base_ion_h=self.hparams.mass_shatter_detach_base_ion_h,
+            proposal_selection_only=self.hparams.mass_shatter_proposal_selection_only,
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
@@ -269,13 +378,46 @@ class MassShatterPL(SpectrumPL):
         ):
             raise ValueError("mass_shatter_base_ce_weight must be finite and nonnegative")
         if (
-            self.hparams.mass_shatter_proposal_anchored
-            and self.hparams.mass_shatter_base_ce_weight == 0.0
+            not math.isfinite(self.hparams.mass_shatter_proposal_loss_weight)
+            or self.hparams.mass_shatter_proposal_loss_weight < 0.0
+        ):
+            raise ValueError("mass_shatter_proposal_loss_weight must be finite and nonnegative")
+        if (
+            self.hparams.mass_shatter_proposal_selection_only
+            and self.hparams.mass_shatter_proposal_loss_weight == 0.0
         ):
             raise ValueError(
-                "mass_shatter_proposal_anchored requires a positive "
-                "mass_shatter_base_ce_weight"
+                "mass_shatter_proposal_selection_only requires a positive "
+                "mass_shatter_proposal_loss_weight"
             )
+        if (
+            not self.hparams.mass_shatter_proposal_selection_only
+            and self.hparams.mass_shatter_proposal_loss_weight != 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_loss_weight is only supported when "
+                "mass_shatter_proposal_selection_only is true"
+            )
+        if (
+            self.hparams.mass_shatter_proposal_selection_only
+            and self.hparams.mass_shatter_base_ce_weight != 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_selection_only uses the H-independent proposal loss; "
+                "set mass_shatter_base_ce_weight to 0"
+            )
+        if (
+            self.hparams.mass_shatter_proposal_anchored
+            and self.hparams.mass_shatter_base_ce_weight == 0.0
+            and not (
+                self.hparams.mass_shatter_proposal_selection_only
+                and self.hparams.mass_shatter_proposal_loss_weight > 0.0
+            )
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_anchored requires a positive proposal supervision loss"
+            )
+        proposal_loss_enabled = self.hparams.mass_shatter_proposal_loss_weight > 0.0
         base_ce_enabled = (
             self.hparams.mass_shatter_log_base_ce
             or self.hparams.mass_shatter_base_ce_weight > 0.0
@@ -366,6 +508,7 @@ class MassShatterPL(SpectrumPL):
             """
             tolerance_per_sample = kwargs.get("tol_per_sample")
             minimum_mz_per_sample = kwargs.get("min_mz_per_sample")
+            batch_size = int(kwargs["batch_size"])
             # Peaks are matched by instrument tolerance. ``ios_ce`` scores the matched
             # true peaks against the predicted pathways; ``oos_ce`` charges the true
             # intensity that no predicted m/z covers against the model's own declared
@@ -383,6 +526,29 @@ class MassShatterPL(SpectrumPL):
             )
             primary_loss = ios_ce + oos_ce if self.hparams.oos_loss else ios_ce
             loss = self.hparams.primary_loss_weight * primary_loss
+            if proposal_loss_enabled:
+                proposal_ios_loss, proposal_oos_loss = _proposal_coverage_loss(
+                    true_mzs=true_mzs,
+                    true_logprobs=true_logprobs,
+                    true_batch_idxs=true_batch_idxs,
+                    candidate_mzs=kwargs["proposal_candidate_mzs"],
+                    candidate_fragment_idxs=kwargs["proposal_candidate_fragment_idxs"],
+                    fragment_logprobs=kwargs["proposal_fragment_logprobs"],
+                    fragment_batch_idxs=kwargs["proposal_fragment_batch_idxs"],
+                    proposal_oos_logprobs=kwargs["proposal_pred_oos_logprobs"],
+                    batch_size=batch_size,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
+                proposal_loss = (
+                    proposal_ios_loss + proposal_oos_loss
+                    if self.hparams.oos_loss
+                    else proposal_ios_loss
+                )
+                loss = loss + self.hparams.mass_shatter_proposal_loss_weight * proposal_loss
             if base_ce_enabled:
                 base_pred_logprobs = kwargs["base_pred_logprobs"]
                 base_ios_ce, base_oos_ce, _, _ = sparse_ce_fn(
@@ -462,6 +628,14 @@ class MassShatterPL(SpectrumPL):
                 "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
                 "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
             }
+            if proposal_loss_enabled:
+                loss_values.update(
+                    {
+                        "proposal_ios_loss": proposal_ios_loss,
+                        "proposal_oos_loss": proposal_oos_loss,
+                        "proposal_loss": proposal_loss,
+                    }
+                )
             if base_ce_enabled:
                 base_spec_ce = base_ios_ce + base_oos_ce
                 loss_values.update(
@@ -563,6 +737,10 @@ class MassShatterPL(SpectrumPL):
         ]
         if self.hparams.ce_pair_loss_weight != 0.0:
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
+        if proposal_loss_enabled:
+            loss_names.extend(
+                ["proposal_ios_loss", "proposal_oos_loss", "proposal_loss"]
+            )
         if base_ce_enabled:
             loss_names.extend(
                 [

@@ -235,6 +235,13 @@ mass_shatter_base_ce_weight: 0.0
 # Prevent base-only CE from updating the shared candidate transformer through its
 # ion/H probabilities. False preserves the behavior of existing runs.
 mass_shatter_detach_base_ion_h: False
+# V1 retrieval/ranking separation. True keeps the existing proposal generator
+# for candidate selection, but removes proposal probabilities from relative peak
+# intensity. The final spectrum retains only a detached retained/OOS gate.
+mass_shatter_proposal_selection_only: False
+# Intensity-weighted proposal-support loss. It counts each unique fragment once
+# per matched true peak, regardless of how many CRF/CMF or delta-H channels match.
+mass_shatter_proposal_loss_weight: 0.0
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

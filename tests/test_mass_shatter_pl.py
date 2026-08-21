@@ -1,5 +1,6 @@
 """Integration tests for MASShatter's SpectrumPL training wrapper."""
 
+import math
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,10 @@ from fragnnet.dataset import SpecMolDataset
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
-from fragnnet.pl_model.mass_shatter_pl import _candidate_coverage_by_cut_count
+from fragnnet.pl_model.mass_shatter_pl import (
+    _candidate_coverage_by_cut_count,
+    _proposal_coverage_loss,
+)
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -33,6 +37,41 @@ def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
     )
     config.update(config_overrides)
     return MassShatterPL(**config), config
+
+
+def _loss_diagnostics() -> dict[str, th.Tensor]:
+    return {
+        "retained_mask_probability": th.tensor([0.8]),
+        "selected_mask_count": th.tensor([2]),
+        "exploration_mask_count": th.tensor([0]),
+        "exploration_mean_cut_count": th.tensor([0.0]),
+        "component_pathway_count": th.tensor([4]),
+        "mean_mask_cut_count": th.tensor([2.0]),
+        "proposal_single_cut_fraction": th.tensor([0.25]),
+        "unique_component_count": th.tensor([2]),
+        "components_per_mask": th.tensor([2.0]),
+        "unique_components_per_mask": th.tensor([1.0]),
+        "latent_pathways_per_unique_fragment": th.tensor([2.0]),
+        "unique_fragment_target_fill_fraction": th.tensor([1.0]),
+        "unique_fragment_target_reached": th.tensor([1.0]),
+        "unique_fragment_effective_count": th.tensor([1.8]),
+        "unique_fragment_top1_mass_fraction": th.tensor([0.6]),
+        "duplicate_pathway_probability_fraction": th.tensor([0.2]),
+        "productive_mask_fraction": th.tensor([1.0]),
+        "duplicate_component_pathway_fraction": th.tensor([0.5]),
+        "mask_cut_fraction_0": th.tensor([0.0]),
+        "mask_cut_fraction_1": th.tensor([0.5]),
+        "mask_cut_fraction_2": th.tensor([0.5]),
+        "mask_cut_fraction_3": th.tensor([0.0]),
+        "mask_cut_fraction_4plus": th.tensor([0.0]),
+        "candidate_input_transfer_batch_ms": th.tensor([1.0]),
+        "candidate_mask_selection_batch_ms": th.tensor([2.0]),
+        "candidate_topology_batch_ms": th.tensor([3.0]),
+        "candidate_assembly_batch_ms": th.tensor([4.0]),
+        "candidate_output_transfer_batch_ms": th.tensor([5.0]),
+        "candidate_total_batch_ms": th.tensor([15.0]),
+        "candidate_total_molecule_ms": th.tensor([15.0]),
+    }
 
 
 def test_mass_shatter_registration_uses_spectrum_only_dataset() -> None:
@@ -84,12 +123,94 @@ def test_mass_shatter_pl_detaches_base_ion_h_from_config() -> None:
     assert model.model.detach_base_ion_h
 
 
+def test_mass_shatter_pl_builds_proposal_selection_only_from_config() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_explore_masks=0,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+    )
+
+    assert model.model.proposal_selection_only
+    assert "proposal_loss" in model.loss_names
+
+
+def test_proposal_selection_only_requires_its_own_supervision() -> None:
+    with pytest.raises(ValueError, match="requires a positive"):
+        _build_pl(
+            mass_shatter_unique_fragment_mode=True,
+            mass_shatter_explore_masks=0,
+            mass_shatter_proposal_anchored=True,
+            mass_shatter_proposal_selection_only=True,
+            mass_shatter_proposal_loss_weight=0.0,
+        )
+
+
 def test_proposal_anchored_requires_base_ce_supervision() -> None:
     with pytest.raises(ValueError, match="requires a positive"):
         _build_pl(
             mass_shatter_proposal_anchored=True,
             mass_shatter_base_ce_weight=0.0,
         )
+
+
+def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
+    fragment_logprobs = th.log(th.tensor([0.4, 0.3], requires_grad=True))
+    ios_loss, oos_loss = _proposal_coverage_loss(
+        true_mzs=th.tensor([100.0]),
+        true_logprobs=th.tensor([0.0]),
+        true_batch_idxs=th.tensor([0]),
+        candidate_mzs=th.tensor([100.0, 100.0, 200.0]),
+        candidate_fragment_idxs=th.tensor([0, 0, 1]),
+        fragment_logprobs=fragment_logprobs,
+        fragment_batch_idxs=th.tensor([0, 0]),
+        proposal_oos_logprobs=th.log(th.tensor([0.3])),
+        batch_size=1,
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    assert ios_loss.tolist() == pytest.approx([-math.log(0.4)])
+    assert oos_loss.tolist() == pytest.approx([0.0])
+
+
+def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_explore_masks=0,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+    )
+    proposal_fragment_probabilities = th.tensor([0.4, 0.3], requires_grad=True)
+    proposal_fragment_logprobs = th.log(proposal_fragment_probabilities)
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0]),
+        true_logprobs=th.tensor([0.0]),
+        true_batch_idxs=th.tensor([0]),
+        pred_mzs=th.tensor([100.0, 200.0]),
+        pred_logprobs=th.log(th.tensor([0.8, 0.1])),
+        pred_batch_idxs=th.tensor([0, 0]),
+        pred_oos_logprobs=th.log(th.tensor([0.1])),
+        proposal_candidate_mzs=th.tensor([100.0, 100.0, 200.0]),
+        proposal_candidate_fragment_idxs=th.tensor([0, 0, 1]),
+        proposal_fragment_logprobs=proposal_fragment_logprobs,
+        proposal_fragment_batch_idxs=th.tensor([0, 0]),
+        proposal_pred_oos_logprobs=th.log(th.tensor([0.3])),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+
+    assert actual["proposal_ios_loss"].tolist() == pytest.approx([-math.log(0.4)])
+    assert actual["proposal_oos_loss"].tolist() == pytest.approx([0.0])
+    assert actual["loss"].tolist() == pytest.approx(
+        (actual["primary_loss"] + 0.1 * actual["proposal_loss"]).tolist()
+    )
+    actual["loss"].sum().backward()
+    assert proposal_fragment_probabilities.grad is not None
+    assert proposal_fragment_probabilities.grad.abs().sum() > 0.0
 
 
 def test_mass_shatter_pl_builds_unique_fragment_mode_from_config() -> None:
