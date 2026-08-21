@@ -46,6 +46,7 @@ def _build_model(
     learned_oos: bool = False,
     learned_oos_initial_probability: float = 0.1,
     separate_proposal_encoder: bool = False,
+    precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
     exploration_cut_count_weights: tuple[float, ...] = (
@@ -64,7 +65,8 @@ def _build_model(
         edge_feature_dim=batch.edge_attr.shape[1],
         precursor_hidden_dim=16,
         precursor_num_layers=2,
-        precursor_gnn_type="GINE",
+        precursor_num_heads=4,
+        precursor_gnn_type=precursor_gnn_type,
         precursor_normalization="layer",
         precursor_dropout=0.0,
         context_dim=8,
@@ -222,6 +224,20 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["retained_mask_probability"].tolist() == pytest.approx(
         predicted_mass.tolist(), abs=2e-6
     )
+
+
+def test_mass_shatter_runs_with_graphormer_precursor_encoder() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, precursor_gnn_type="Graphormer")
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([20.0, 40.0]),
+    )
+
+    assert output["pred_mzs"].shape == output["pred_logprobs"].shape
+    assert th.isfinite(output["pred_logprobs"]).all()
 
 
 @pytest.mark.parametrize("unique_fragment_mode", [False, True])

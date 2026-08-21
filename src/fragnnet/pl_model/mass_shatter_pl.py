@@ -288,6 +288,7 @@ class MassShatterPL(SpectrumPL):
             edge_feature_dim=edge_feature_dim,
             precursor_hidden_dim=self.hparams.mol_hidden_size,
             precursor_num_layers=self.hparams.mol_num_layers,
+            precursor_num_heads=self.hparams.mol_num_heads,
             precursor_gnn_type=self.hparams.mol_gnn_type,
             precursor_normalization=self.hparams.mol_normalization,
             precursor_dropout=self.hparams.mol_dropout,

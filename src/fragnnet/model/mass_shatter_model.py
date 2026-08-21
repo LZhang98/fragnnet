@@ -398,6 +398,7 @@ class MassShatterModel(nn.Module):
         edge_feature_dim: int,
         precursor_hidden_dim: int,
         precursor_num_layers: int,
+        precursor_num_heads: int,
         precursor_gnn_type: str,
         precursor_normalization: str,
         precursor_dropout: float,
@@ -455,6 +456,7 @@ class MassShatterModel(nn.Module):
             precursor_hidden_dim: Hidden width of the precursor GNN; also the width of
                 the pooled fragment/complement/boundary embeddings.
             precursor_num_layers: Number of message-passing layers.
+            precursor_num_heads: Number of molecular-attention heads.
             precursor_gnn_type: GNN cell name understood by :class:`GNN`.
             precursor_normalization: Normalization used inside the GNN.
             precursor_dropout: Dropout inside the GNN.
@@ -630,6 +632,7 @@ class MassShatterModel(nn.Module):
             gnn_type=precursor_gnn_type,
             normalization=precursor_normalization,
             dropout=precursor_dropout,
+            num_heads=precursor_num_heads,
         )
         self.proposal_encoder = (
             GNN(
@@ -640,6 +643,7 @@ class MassShatterModel(nn.Module):
                 gnn_type=precursor_gnn_type,
                 normalization=precursor_normalization,
                 dropout=precursor_dropout,
+                num_heads=precursor_num_heads,
             )
             if separate_proposal_encoder
             else None
