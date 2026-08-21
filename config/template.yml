@@ -230,8 +230,11 @@ mass_shatter_proposal_anchored: False
 # diagnostics-only; a positive base CE weight enables the computation automatically.
 mass_shatter_log_base_ce: False
 # Auxiliary pre-residual sparse-CE coefficient. Use 0.0 for no training effect;
-# proposal-anchored experiments should start in the 0.1--0.3 range.
+# fixed weights above 0.1 reduced held-out cosine in the first matched sweeps.
 mass_shatter_base_ce_weight: 0.0
+# Prevent base-only CE from updating the shared candidate transformer through its
+# ion/H probabilities. False preserves the behavior of existing runs.
+mass_shatter_detach_base_ion_h: False
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

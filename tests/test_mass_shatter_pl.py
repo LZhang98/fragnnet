@@ -75,6 +75,15 @@ def test_mass_shatter_pl_builds_variant_b_from_config() -> None:
     assert "base_spec_ce" in model.loss_names
 
 
+def test_mass_shatter_pl_detaches_base_ion_h_from_config() -> None:
+    model, _ = _build_pl(
+        mass_shatter_log_base_ce=True,
+        mass_shatter_detach_base_ion_h=True,
+    )
+
+    assert model.model.detach_base_ion_h
+
+
 def test_proposal_anchored_requires_base_ce_supervision() -> None:
     with pytest.raises(ValueError, match="requires a positive"):
         _build_pl(

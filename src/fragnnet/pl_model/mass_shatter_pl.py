@@ -208,6 +208,7 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_log_base_ce
                 or self.hparams.mass_shatter_base_ce_weight > 0.0
             ),
+            detach_base_ion_h=self.hparams.mass_shatter_detach_base_ion_h,
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,

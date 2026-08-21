@@ -38,6 +38,7 @@ def _build_model(
     use_mask_residuals: bool = True,
     use_base_probability_feature: bool = True,
     return_base_spectrum: bool = False,
+    detach_base_ion_h: bool = False,
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
     exploration_cut_count_weights: tuple[float, ...] = (
@@ -73,6 +74,7 @@ def _build_model(
         use_mask_residuals=use_mask_residuals,
         use_base_probability_feature=use_base_probability_feature,
         return_base_spectrum=return_base_spectrum,
+        detach_base_ion_h=detach_base_ion_h,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -242,6 +244,55 @@ def test_mass_shatter_returns_normalized_pre_residual_spectrum(
         output["retained_mask_probability"].tolist(),
         abs=2e-6,
     )
+
+
+def _parameter_gradient_sum(module: th.nn.Module) -> float:
+    return sum(
+        parameter.grad.abs().sum().item()
+        for parameter in module.parameters()
+        if parameter.grad is not None
+    )
+
+
+def test_detached_base_ion_h_preserves_values_and_isolates_intensity_gradients() -> None:
+    batch = _build_batch()
+    attached_model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+        use_base_probability_feature=False,
+        return_base_spectrum=True,
+        detach_base_ion_h=False,
+    )
+    detached_model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+        use_base_probability_feature=False,
+        return_base_spectrum=True,
+        detach_base_ion_h=True,
+    )
+    model_inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([20.0, 40.0]),
+    }
+
+    attached_output = attached_model(**model_inputs)
+    detached_output = detached_model(**model_inputs)
+
+    assert th.equal(attached_output["base_pred_logprobs"], detached_output["base_pred_logprobs"])
+    assert th.equal(attached_output["pred_logprobs"], detached_output["pred_logprobs"])
+
+    (-attached_output["base_pred_logprobs"].mean()).backward()
+    (-detached_output["base_pred_logprobs"].mean()).backward()
+
+    assert _parameter_gradient_sum(attached_model.intensity_head) > 0.0
+    assert _parameter_gradient_sum(detached_model.intensity_head) == 0.0
+    assert _parameter_gradient_sum(detached_model.bond_break_head) > 0.0
+    assert _parameter_gradient_sum(detached_model.charge_head) > 0.0
 
 
 def test_unique_fragment_mode_marginalizes_paths_and_uses_boundary_counts(

@@ -414,6 +414,7 @@ class MassShatterModel(nn.Module):
         use_mask_residuals: bool,
         use_base_probability_feature: bool,
         return_base_spectrum: bool,
+        detach_base_ion_h: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -472,6 +473,9 @@ class MassShatterModel(nn.Module):
                 the pre-residual charge and mask/fragment log probabilities as inputs.
             return_base_spectrum: Whether to return pre-residual spectrum log
                 probabilities for the base-only CE diagnostic or auxiliary loss.
+            detach_base_ion_h: Whether the pre-residual spectrum treats the shared
+                ion/H probabilities as constants, preventing base-only CE gradients
+                from entering the candidate intensity transformer through that head.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -580,6 +584,7 @@ class MassShatterModel(nn.Module):
         self.charge_pooling = charge_pooling
         self.use_mask_residuals = use_mask_residuals
         self.return_base_spectrum = return_base_spectrum
+        self.detach_base_ion_h = detach_base_ion_h
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
         # hydrogen transfers from -max_h_transfer to +max_h_transfer.
@@ -1252,8 +1257,13 @@ class MassShatterModel(nn.Module):
         pathway_log_probabilities = (
             fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
         )
+        base_ion_h_log_probabilities = (
+            ion_h_log_probabilities.detach()
+            if self.detach_base_ion_h
+            else ion_h_log_probabilities
+        )
         base_pathway_log_probabilities = (
-            base_fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
+            base_fragment_log_probabilities[:, None, None] + base_ion_h_log_probabilities
         )
         # Drop the masked-out channels; what survives is one flat peak list per batch.
         flat_valid = valid_channels.flatten()
