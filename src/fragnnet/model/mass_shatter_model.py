@@ -419,6 +419,7 @@ class MassShatterModel(nn.Module):
         proposal_selection_only: bool,
         learned_oos: bool,
         learned_oos_initial_probability: float,
+        separate_proposal_encoder: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -488,6 +489,8 @@ class MassShatterModel(nn.Module):
                 retained-versus-OOS gate instead of using the detached proposal mass.
             learned_oos_initial_probability: Initial OOS probability emitted by the
                 learned gate before its candidate-set weights have trained.
+            separate_proposal_encoder: Whether bond/charge proposal scoring uses an
+                independent molecular GNN trained by proposal supervision.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -551,6 +554,8 @@ class MassShatterModel(nn.Module):
             raise ValueError("proposal_selection_only requires intensity residuals")
         if learned_oos and not proposal_selection_only:
             raise ValueError("learned_oos requires proposal_selection_only")
+        if separate_proposal_encoder and not proposal_selection_only:
+            raise ValueError("separate_proposal_encoder requires proposal_selection_only")
         if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
             raise ValueError(
                 f"min_mask_probability must be finite and in [0, 1], got {min_mask_probability}"
@@ -610,6 +615,7 @@ class MassShatterModel(nn.Module):
         self.detach_base_ion_h = detach_base_ion_h
         self.proposal_selection_only = proposal_selection_only
         self.learned_oos = learned_oos
+        self.separate_proposal_encoder = separate_proposal_encoder
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
         # hydrogen transfers from -max_h_transfer to +max_h_transfer.
@@ -624,6 +630,19 @@ class MassShatterModel(nn.Module):
             gnn_type=precursor_gnn_type,
             normalization=precursor_normalization,
             dropout=precursor_dropout,
+        )
+        self.proposal_encoder = (
+            GNN(
+                node_feats_size=node_feature_dim,
+                edge_feats_size=edge_feature_dim,
+                hidden_size=precursor_hidden_dim,
+                num_layers=precursor_num_layers,
+                gnn_type=precursor_gnn_type,
+                normalization=precursor_normalization,
+                dropout=precursor_dropout,
+            )
+            if separate_proposal_encoder
+            else None
         )
         self.context_encoder = MassShatterContextEncoder(
             num_precursor_types=len(self.precursor_types),
@@ -991,12 +1010,19 @@ class MassShatterModel(nn.Module):
         # ``chemical_bond_index`` is the undirected single-entry-per-bond view of the
         # graph (``edge_index`` is directed), so either endpoint identifies the molecule.
         bond_batch_indices = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]
-        # In selection-only mode, proposal supervision owns the bond/charge heads but
-        # does not update the shared precursor/context encoders. The live embeddings
-        # remain available to the intensity path below.
-        proposal_atom_embeddings = (
-            atom_embeddings.detach() if self.proposal_selection_only else atom_embeddings
-        )
+        # V1/V2 detach proposal inputs from the intensity encoder. V3 instead learns
+        # an independent molecular representation from proposal supervision.
+        if self.proposal_encoder is None:
+            proposal_atom_embeddings = (
+                atom_embeddings.detach() if self.proposal_selection_only else atom_embeddings
+            )
+        else:
+            proposal_atom_embeddings = self.proposal_encoder(
+                mol_pyg.x,
+                mol_pyg.batch,
+                mol_pyg.edge_index,
+                mol_pyg.edge_attr,
+            )
         proposal_context = context.detach() if self.proposal_selection_only else context
         bond_logits = self.bond_break_head(
             proposal_atom_embeddings,

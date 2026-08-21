@@ -727,6 +727,29 @@ Matched V2 configuration:
 
 - `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_learned_oos.yml`
 
+#### V3 separate proposal encoder ablation (2026-08-21)
+
+V3 tests whether the detached shared molecular representation is still misaligned
+with proposal ranking. With `mass_shatter_separate_proposal_encoder`, bond and charge
+heads consume an independent GNN representation instead of detached intensity-GNN
+embeddings:
+
+```
+Proposal GNN  -> bond/charge heads -> candidate support -> L_proposal
+Intensity GNN -> candidate transformer + ion/H + OOS     -> L_spectrum
+```
+
+The acquisition context remains shared but detached on the proposal path. Candidate
+generation, V2's learned OOS gate, and the H-independent proposal-support loss are
+unchanged. Thus proposal loss updates the proposal GNN and bond/charge heads, while
+the primary spectrum loss updates the intensity GNN and candidate transformer. Run
+this as one targeted V2 U256/E4096 ablation rather than another full grid.
+
+Reference configuration:
+
+- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_learned_oos_separate_proposal_encoder_inst_tol.yml`
+- `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_learned_oos_separate_proposal_encoder.yml`
+
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 
 Three matched merged-spectrum grid sweeps varied

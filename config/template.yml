@@ -247,6 +247,9 @@ mass_shatter_proposal_loss_weight: 0.0
 mass_shatter_learned_oos: False
 # Starting OOS probability before the V2 gate learns candidate-dependent weights.
 mass_shatter_learned_oos_initial_probability: 0.1
+# V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
+# Only supported with proposal-selection-only mode.
+mass_shatter_separate_proposal_encoder: False
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

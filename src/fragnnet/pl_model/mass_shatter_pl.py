@@ -322,6 +322,9 @@ class MassShatterPL(SpectrumPL):
             learned_oos_initial_probability=(
                 self.hparams.mass_shatter_learned_oos_initial_probability
             ),
+            separate_proposal_encoder=(
+                self.hparams.mass_shatter_separate_proposal_encoder
+            ),
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
