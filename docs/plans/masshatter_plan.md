@@ -591,7 +591,7 @@ restricting useful corrections and may exchange accuracy for structure. The
 base-only auxiliary loss instead preserves the corrected predictor's freedom while
 independently supervising the proposal model.
 
-#### Current implementation priority: repair the factorization, do not replace it
+#### Defect 1 implementation: repair the residual factorization
 
 MASShatter remains one jointly trained end-to-end model. Separating formation from
 detected intensity means giving the existing heads distinct responsibilities and
@@ -644,7 +644,8 @@ Run the matched comparison in this order:
 1. **A — current control:** base probability is an input feature and the final score
    is `l_i + r_i`, with no base-only CE.
 2. **B — primary repaired model:** remove the probability input, retain `l_i + r_i`,
-   and add base-only CE with `lambda_base` initially in `0.1`--`0.3`.
+   and add base-only CE. The initial fixed-weight range `0.1`--`0.3` has now shown
+   a dose-dependent final-metric regression; use the revised experiment below.
 3. **C — full-separation ablation:** use absolute structural intensity logits `s_i`
    for retained shape, while keeping the same retained/OOS mass and base-only loss.
 
@@ -652,12 +653,100 @@ Keep mask limits, realized candidate budgets, transformer capacity, optimizer,
 training schedule, and seeds matched. Compare final cosine/JSS, base-only spectrum
 metrics, deterministic candidate weighted recall, retained/OOS calibration, bond
 logit sign and ranking diagnostics, and gradient magnitude reaching the bond head.
-Adopt B if it improves the base predictor and proposer diagnostics without a
-reproducible final-metric regression. Adopt C only if it beats B on held-out final
-metrics without reducing candidate coverage, base-only competence, or OOS
-calibration.
+Advance B as the Defect 1 arm if it improves the base predictor and proposer
+diagnostics without a reproducible final-metric regression; do not treat it as the
+complete architectural repair. Retain C only as an ablation if it beats B on held-out
+final metrics without reducing candidate coverage, base-only competence, or OOS
+calibration. The combined target in Section 6.1.2 remains the adoption candidate.
+
+#### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
+
+Three matched merged-spectrum grid sweeps varied
+`mass_shatter_base_ce_weight` over `0.1`, `0.2`, and `0.3` for unique-fragment
+targets 128, 256, and 512:
+
+- W&B sweep `o6gsdyvv`: U128, ranked-mask budgets 256 and 2048;
+- W&B sweep `9pmv90u1`: U256, ranked-mask budgets 256 and 2048;
+- W&B sweep `4wdysag2`: U512, ranked-mask budgets 512 and 2048.
+
+At the lower mask budget, mean best validation cosine decreased monotonically:
+
+| Fixed base-CE weight | Mean best validation cosine |
+| -------------------: | --------------------------: |
+|                  0.1 |                     0.72846 |
+|                  0.2 |                     0.72626 |
+|                  0.3 |                     0.72231 |
+
+The `0.3` mean contains two completed runs and the U512 run at epoch 121. At the
+2048-mask budget, the mature `0.1` and `0.2` arms showed the same ordering:
+`0.73240` versus `0.73044`. Those six arms crashed late at epochs 117--176, so the
+comparison uses their best checkpoint metric rather than successful completion. The
+2048-mask `0.3` arms were still too immature to compare.
+
+This is not a pure support regression. At mask budget 2048, increasing the weight
+from `0.1` to `0.2` raised mean candidate recall from `0.7064` to `0.7156` and mean
+candidate weighted recall from `0.8927` to `0.9007`, while mean best cosine fell by
+`0.00196`. The auxiliary objective therefore improves candidate inclusion but harms
+the final probability allocation. The sweeps have no `0.0` arm, and a matched
+proposal-anchored zero-weight run was not found; they establish that more weight is
+harmful over `0.1`--`0.3`, not that disabling the auxiliary term is optimal.
+
+The most plausible mechanism is gradient interference, because the implemented
+base-only loss is not proposer-only. `base_pred_logprobs` combines the base
+fragment probabilities with the same `ion_h_log_probabilities` produced by the
+candidate intensity transformer for the final spectrum. Its gradient therefore
+updates the shared transformer trunk and ion/H head as well as the bond, charge,
+and precursor paths. Meanwhile, proposal anchoring removes the base probabilities
+from the transformer's input even though the final score remains `l_i + r_i`, so
+the residual must correct a moving base offset that it cannot observe directly.
+Consistent with this interpretation, the U128/256 validation base-to-final CE gain
+shrinks from `0.3666` at weight `0.1` to `0.3226` at `0.2` and `0.2972` at `0.3`.
+The raw weighted base-loss magnitude also grows from roughly 8% of the primary-loss
+magnitude at `0.1` to 25% at `0.3`; this is not a gradient-norm estimate, but it
+shows that the nominally auxiliary term is not negligible.
+
+Revise the Defect 1 experiments in this order:
+
+1. **Isolate the shared-head gradient.** In the base-spectrum branch only, use
+   `ion_h_log_probabilities.detach()`. This preserves the base-CE value and its
+   gradients to the bond/charge proposal while preventing it from training the
+   candidate transformer through the shared ion/H prediction. Compare fixed `0.1`
+   with and without the detach at matched seed and budget. Advance the change only
+   if the candidate recall gain remains and final cosine recovers.
+2. **Measure gradient conflict directly.** On matched batches, log gradient norms
+   and cosine similarity between `L_final` and `L_base_only` for the bond head,
+   charge head, precursor encoder, candidate-transformer trunk, residual head, and
+   ion/H head. The working hypothesis is alignment in the proposer and conflict in
+   shared intensity parameters; do not redesign the shared encoder without this
+   attribution.
+3. **Reduce late-training pressure.** Compare fixed `0.1` with a warm-up schedule
+   that starts at `0.1` and decays to a small positive floor. Proposal-anchored setup
+   currently rejects an exact zero weight, so an exact-zero endpoint requires an
+   explicit compatibility change rather than a silent config edit.
+4. **Search below the observed boundary.** Test `0.01`, `0.025`, `0.05`, and `0.1`
+   after the shared-head ablation. Include an exact `0.0` control only after defining
+   how the anchored proposer remains supervised. The present evidence makes `0.2`
+   and `0.3` poor default choices.
+5. **Control support through selection.** Compare ranked-mask budget and a calibrated
+   minimum mask-probability threshold at matched realized candidate count. Candidate
+   support is a selection problem; do not use a stronger full-spectrum auxiliary loss
+   as the primary recall knob if budget or thresholding can recover the same support
+   without disturbing intensity gradients.
+6. **Escalate to a fully proposer-local objective only if needed.** If detaching ion/H
+   is insufficient, block base-loss gradients into the shared precursor encoder and
+   train only the bond/charge proposal parameters, or replace full-spectrum base CE
+   with an explicit candidate-ranking objective. This is a larger change and needs
+   its own matched control because it changes which representation learns proposal
+   information.
 
 ### 6.1.2 Independent-mask downward closure and correlated-cut support
+
+**Implementation priority:** treat this as the second half of the same architectural
+repair, not as a contingency that Variant B can make unnecessary. Variant B restores
+supervision to the proposal distribution, but no loss can make an independent
+Bernoulli distribution express positive cleavage synergy. Conversely, a correlated
+proposal does not stop the residual from cancelling proposal scores. Evaluate the two
+changes separately for attribution, then combine them for the repaired model.
 
 The residual shortcut composes with a separate expressivity constraint in the
 independent Bernoulli mask model. For two cut sets `T` and `S` with `T` a strict
@@ -732,8 +821,61 @@ independent ranking limits which correlated masks reach the candidate set
 The two remedies are complementary. Base-only auxiliary CE cannot make an
 independent distribution express correlated cuts. A correlated proposal model does
 not by itself prevent a downstream residual from cancelling its selected-mask
-scores. If correlated support is binding, combine a richer cut-set distribution
-with the anti-cancellation changes in Section 6.1.1.
+scores. The repaired target therefore combines a richer cut-set distribution with
+the anti-cancellation changes in Section 6.1.1; the remaining gate determines adoption,
+not whether the two defects can substitute for one another.
+
+#### Combined target design: accountable grouped proposal plus residual scorer
+
+The target architecture fixes both failure modes in one jointly trained model. Partition
+the precursor bonds into free bonds `F` and fused ring systems `G`. Free bonds retain
+Bernoulli factors; each ring system emits exactly one categorical choice from its
+precomputed admissible cut patterns plus `uncut`:
+
+```
+P_base(S | x)
+  = product_{b in F} Bernoulli(1[b in S]; p_b)
+    * product_{g in G} Categorical(choice_g(S); pi_g)
+```
+
+This distribution is exactly normalized because every bond belongs to one group and
+every group is normalized. Its exact factored top-K is not downward-closed in individual
+bond cuts: a multi-bond ring option is one categorical choice and may outrank all of its
+single-bond subsets. The selected masks still pass through the existing charge and
+duplicate-pathway marginalization to produce base fragment log probabilities `l_i` and
+retained mass `R`.
+
+The intensity transformer receives structure, complement, boundary, size, cut-count,
+and experiment context, but receives neither mask nor charge/fragment proposal log
+probabilities. It emits comparative residuals `r_i`:
+
+```
+log P_base_fragment(i) = log R + log_softmax_i(l_i)
+log P_final(i)         = log R + log_softmax_i(l_i + r_i)
+P(OOS)                 = 1 - R
+
+L = L_final + lambda_base * L_base_only
+```
+
+`L_base_only` uses the same peak matching and retained/OOS accounting as `L_final`.
+It makes the grouped bond/option and charge proposal a competent standalone spectrum
+predictor, while `L_final` preserves the useful base-plus-residual structural prior.
+Top-K identities remain discrete, but selected-mask probabilities are recomputed from
+live logits, so both losses update the proposal scores that determine later top-K sets.
+
+The ablation sequence should isolate and then combine the repairs:
+
+1. Independent proposal with the original probability-aware residual (current control).
+2. Independent proposal with proposal anchoring and base-only CE (Defect 1 only).
+3. Grouped proposal with the original residual interface (Defect 2 only; diagnostic).
+4. **Combined target:** grouped proposal, proposal-anchored residual, and base-only CE.
+
+Compare all arms at matched realized mask and unique-fragment budgets. Adoption requires
+the combined target to improve correlated-cut candidate coverage and base-only competence
+without regressing final held-out spectrum metrics or retained/OOS calibration. The
+ring-system grouping, option head, and reference factored top-K implementation exist and
+are tested, but are not yet wired into MASShatter candidate generation; therefore the
+live model currently implements arm 2, not arm 4.
 
 #### Pre-implementation decision gate
 
@@ -832,6 +974,20 @@ with live probabilities and retain the Section 6.1.1 base-only supervision (or a
 equivalent proposer objective), so candidate-specific gradients reach the
 autoregressive head. Missing beam paths still receive no spectrum gradient.
 
+#### Fourth replacement: ring-system-factored cut distribution
+
+Correlated cleavage is confined to ring systems by graph topology: a minimal
+disconnecting cut in an acyclic region is always a single bond, and generally
+`|C| = 1 + (independent cycles crossed)`. That bounds where a correlated model is
+needed at all, and admits a product-of-groups distribution — free bonds stay
+Bernoulli, each fused ring system gets a categorical over precomputed cut patterns
+— which keeps both exact normalization and *exact* top-K, unlike the mixture union
+and fixed-width beam above. Both of its gates have now run: the support is affordable
+only when restricted to minimal two-component cuts, and the decision gate on this
+section resolves against independence (20.5% of DAG-explained intensity needs three or
+more cuts, 84% of it ring-crossing). See
+[masshatter_ring_system_cut_factorization.md](masshatter_ring_system_cut_factorization.md).
+
 A same-ring/radius-2 pairwise Ising correction is chemically targeted, but it
 requires a partition function for normalized mask probabilities and loses the cheap
 exact top-K heap. Hold it until the cut-depth diagnostic and mixture probe justify
@@ -897,6 +1053,51 @@ indistinguishable by m/z. If subsequent fragmentation depends on the newly
 formed connectivity, templates must provide those downstream products directly;
 a general sequential graph-edit model is a separate, substantially larger
 extension.
+
+#### 6.2.1 Measured scope of the channel (2026-08-19)
+
+How much this channel must carry, measured against `src/fragnnet/frag/smarts_prepass.py`:
+
+| | pure bond deletion | requires a new bond |
+|---|---|---|
+| `FRAG_RULES` (16) | 1 — `morphinan_ring_cleavage` | 15 |
+| `NL_RULES` (8) | 0 | 8 |
+
+The discriminator is a non-empty `merge_outer_map_nums`: the rule cuts into three
+components and merges two outer ones. So **23 of 24 rules belong to this channel** —
+xanthone, furanocoumarin/psoralen, anthraquinone, benzopyranone, phenoxazine, the
+desoxymorphinans, the crf1x eliminations, and every neutral-loss rule. They are outside
+the action space of *any* cut-set distribution, not merely outside a particular one, so
+no change to the mask model (independent, mixture, autoregressive, or the ring-system
+factorization) reaches them.
+
+`morphinan_ring_cleavage` is the exception and needs no template: it is a pure four-bond
+deletion into two components, and in 39/39 matching NIST20 molecules its cut set is
+already an admissible ring-system cut pattern. Ordinary enumeration can reach it given a
+cut-set model that admits correlated four-bond cuts.
+
+**Expected coverage gain is small, and this should temper the channel's priority.**
+Classifying every DAG explanation by whether its atom set is connected in the precursor,
+then taking the cheapest *connected* explanation per observed peak (1,500 molecules,
+23.6k spectra, 0.01 Da matching): peaks whose **only** compatible explanation is a
+disconnected atom set carry **0.11%** of observed intensity. The reference DAG is
+`smpTrue`, so prepass products are already in that explanation set — this is not a
+measure of the prepass being absent.
+
+Read it as: template products are almost always m/z-degenerate with some connected
+fragment. The channel's value is therefore in getting the *assignment* right where a
+connected explanation is coincidental, and in downstream fragmentation from correct
+connectivity — not in raw m/z coverage. An adoption case resting on recall alone is
+unlikely to clear a meaningful bar; the verification list below should weight
+false-candidate rate and per-class intensity accuracy over aggregate recall.
+
+Note also that `P(R | C, precursor, context)` above is the general form of an idea reached
+independently from the ring-system side, where an option becomes a `(cut pattern,
+assembly)` pair. The mechanism-variable formulation here is strictly more general: it
+applies to free-bond cuts and to `NeutralLossRule` products whose deleted-bond set is not
+a ring-system pattern at all. Prefer it. See
+[masshatter_ring_system_cut_factorization.md](masshatter_ring_system_cut_factorization.md)
+§9 for the measurements and §9.3 for the narrower variant.
 
 Verify before adoption:
 
