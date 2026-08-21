@@ -242,6 +242,11 @@ mass_shatter_proposal_selection_only: False
 # Intensity-weighted proposal-support loss. It counts each unique fragment once
 # per matched true peak, regardless of how many CRF/CMF or delta-H channels match.
 mass_shatter_proposal_loss_weight: 0.0
+# V2 gate: predict retained-versus-OOS mass from the contextualized candidate set.
+# This is only supported with proposal-selection-only mode.
+mass_shatter_learned_oos: False
+# Starting OOS probability before the V2 gate learns candidate-dependent weights.
+mass_shatter_learned_oos_initial_probability: 0.1
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining

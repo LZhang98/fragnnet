@@ -704,6 +704,29 @@ Reference configuration:
 
 - `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
 
+#### Full-separation V2 learned OOS gate (2026-08-21)
+
+V2 keeps V1's proposal selection, detached proposal inputs, H-independent support
+loss, and candidate-intensity factorization. It replaces only the detached proposal
+retained/OOS gate with a scalar predicted from the mean-pooled contextualized
+candidate tokens:
+
+```
+g = sigmoid(OOSHead(mean(candidate_tokens)))
+log P_final(i) = log(1 - g) + log_softmax_i(s_i)
+log P_final(OOS) = log(g)
+```
+
+The OOS head is zero-weight initialized with a configurable initial probability, so
+it begins as a constant gate and learns candidate-dependent corrections from the
+primary spectrum loss. Proposal OOS remains live only inside the proposal-support
+loss and base-spectrum diagnostic. This isolates whether V1 is limited by proposal
+calibration after candidate selection; it does not repair missing candidate support.
+
+Matched V2 configuration:
+
+- `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_learned_oos.yml`
+
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 
 Three matched merged-spectrum grid sweeps varied

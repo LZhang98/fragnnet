@@ -318,6 +318,10 @@ class MassShatterPL(SpectrumPL):
             ),
             detach_base_ion_h=self.hparams.mass_shatter_detach_base_ion_h,
             proposal_selection_only=self.hparams.mass_shatter_proposal_selection_only,
+            learned_oos=self.hparams.mass_shatter_learned_oos,
+            learned_oos_initial_probability=(
+                self.hparams.mass_shatter_learned_oos_initial_probability
+            ),
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
@@ -558,7 +562,7 @@ class MassShatterPL(SpectrumPL):
                     pred_mzs,
                     base_pred_logprobs,
                     pred_batch_idxs,
-                    pred_oos_logprobs,
+                    kwargs.get("base_pred_oos_logprobs", pred_oos_logprobs),
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Literal
 
@@ -141,6 +142,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_h_shifts: int,
         dropout: float,
         use_base_probability_feature: bool,
+        predict_oos: bool = False,
+        initial_oos_probability: float = 0.1,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -161,12 +164,17 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("model_dim must be divisible by num_heads")
         if dropout < 0.0 or dropout > 1.0:
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
+        if not math.isfinite(initial_oos_probability) or not (
+            0.0 < initial_oos_probability < 1.0
+        ):
+            raise ValueError("initial_oos_probability must be finite and in (0, 1)")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
         self.num_ion_modes = num_ion_modes
         self.num_h_shifts = num_h_shifts
         self.use_base_probability_feature = use_base_probability_feature
+        self.predict_oos = predict_oos
         input_dim = 3 * fragment_embedding_dim + context_dim + 3
         if use_base_probability_feature:
             input_dim += 2
@@ -198,6 +206,13 @@ class CandidateIntensityTransformerHead(nn.Module):
             model_dim,
             num_ion_modes * num_h_shifts,
         )
+        self.oos_head = nn.Linear(model_dim, 1) if predict_oos else None
+        if self.oos_head is not None:
+            nn.init.zeros_(self.oos_head.weight)
+            nn.init.constant_(
+                self.oos_head.bias,
+                math.log(initial_oos_probability / (1.0 - initial_oos_probability)),
+            )
 
     def _contextualize_by_molecule(
         self,
@@ -316,8 +331,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_masks: int,
         context: th.Tensor | None = None,
         component_counts: Sequence[int] | None = None,
-    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
-        """Return component residuals, mask residuals, and joint ion/H logits."""
+    ) -> tuple[th.Tensor, ...]:
+        """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
         if any(
@@ -401,7 +416,21 @@ class CandidateIntensityTransformerHead(nn.Module):
             self.num_ion_modes,
             self.num_h_shifts,
         )
-        return component_residuals, mask_residuals, ion_hydrogen_logits
+        outputs = (component_residuals, mask_residuals, ion_hydrogen_logits)
+        if self.oos_head is None:
+            return outputs
+
+        token_sums = tokens.new_zeros((batch_size, tokens.shape[1])).index_add(
+            0,
+            component_batch_indices,
+            tokens,
+        )
+        token_counts = th.bincount(
+            component_batch_indices,
+            minlength=batch_size,
+        ).to(tokens)
+        molecule_tokens = token_sums / token_counts.unsqueeze(1)
+        return (*outputs, self.oos_head(molecule_tokens).squeeze(1))
 
 
 def _validate_context(

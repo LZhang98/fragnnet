@@ -43,6 +43,8 @@ def _build_model(
     return_base_spectrum: bool = False,
     detach_base_ion_h: bool = False,
     proposal_selection_only: bool = False,
+    learned_oos: bool = False,
+    learned_oos_initial_probability: float = 0.1,
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
     exploration_cut_count_weights: tuple[float, ...] = (
@@ -80,6 +82,8 @@ def _build_model(
         return_base_spectrum=return_base_spectrum,
         detach_base_ion_h=detach_base_ion_h,
         proposal_selection_only=proposal_selection_only,
+        learned_oos=learned_oos,
+        learned_oos_initial_probability=learned_oos_initial_probability,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
         fragmentation_modes=[],
@@ -390,6 +394,38 @@ def test_selection_only_primary_spectrum_does_not_update_proposal_heads() -> Non
     assert output["proposal_fragment_logprobs"].shape == output[
         "proposal_fragment_batch_idxs"
     ].shape
+
+
+def test_learned_oos_owns_retained_gate_without_updating_proposal_heads() -> None:
+    batch = _build_batch(("CCCO",))
+    model = _build_model(
+        batch,
+        max_masks=5,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        learned_oos=True,
+        learned_oos_initial_probability=0.2,
+    )
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([25.0]),
+    )
+
+    predicted_total = output["pred_logprobs"].exp().sum() + output[
+        "pred_oos_logprobs"
+    ].exp().sum()
+    assert output["pred_oos_logprobs"].exp().item() == pytest.approx(0.2, abs=1e-6)
+    assert predicted_total.item() == pytest.approx(1.0, abs=2e-6)
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    assert model.intensity_head.oos_head is not None
+    assert _parameter_gradient_sum(model.intensity_head.oos_head) > 0.0
+    assert _parameter_gradient_sum(model.bond_break_head) == 0.0
+    assert _parameter_gradient_sum(model.charge_head) == 0.0
 
 
 def test_selection_only_proposal_loss_updates_only_proposal_heads() -> None:

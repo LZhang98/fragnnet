@@ -136,6 +136,22 @@ def test_mass_shatter_pl_builds_proposal_selection_only_from_config() -> None:
     assert "proposal_loss" in model.loss_names
 
 
+def test_mass_shatter_pl_builds_learned_oos_v2_from_config() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_explore_masks=0,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_learned_oos=True,
+        mass_shatter_learned_oos_initial_probability=0.2,
+    )
+
+    assert model.model.learned_oos
+    assert model.model.intensity_head.oos_head is not None
+    assert model.model.intensity_head.oos_head.bias.sigmoid().item() == pytest.approx(0.2)
+
+
 def test_proposal_selection_only_requires_its_own_supervision() -> None:
     with pytest.raises(ValueError, match="requires a positive"):
         _build_pl(
