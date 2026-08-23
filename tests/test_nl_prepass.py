@@ -10,9 +10,14 @@ Verifies that:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from rdkit import Chem
 
-from fragnnet.frag.smarts_prepass import NL_RULES, _apply_nl_prepass
+from fragnnet.frag.smarts_prepass import (
+    NL_RULES,
+    NeutralLossRule,
+    _apply_nl_prepass,
+)
 from fragnnet.utils.frag_utils import (
     _inject_nl_masks_into_dag,
     compute_dags,
@@ -89,6 +94,40 @@ class TestNLRulesCompile:
         results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
         names = [NL_RULES[ridx].name for _, ridx in results]
         assert "n_nitramine_n2o" not in names
+
+    def test_rule_requires_exactly_one_mask_mapping_direction(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            NeutralLossRule(
+                name="missing_maps",
+                reactant_smarts="[C:1]-[O:2]",
+                nl_map_nums=[],
+                nl_mass=None,
+            )
+        with pytest.raises(ValueError, match="exactly one"):
+            NeutralLossRule(
+                name="ambiguous_maps",
+                reactant_smarts="[C:1]-[O:2]",
+                nl_map_nums=[1],
+                nl_mass=12.0,
+                product_map_nums=[2],
+            )
+
+    def test_explicit_product_maps_select_a_small_diagnostic_ion(self):
+        rule = NeutralLossRule(
+            name="oxygen_product",
+            reactant_smarts="[C:1]-[O:2]-[N:3]",
+            nl_map_nums=[],
+            nl_mass=None,
+            product_map_nums=[2],
+        )
+        mol = Chem.MolFromSmiles("CON")
+
+        results = _apply_nl_prepass([rule], mol, mol.GetNumAtoms())
+
+        assert len(results) == 1
+        product_mask, rule_index = results[0]
+        assert rule_index == 0
+        assert np.flatnonzero(product_mask).tolist() == [1]
 
 
 # ---------------------------------------------------------------------------

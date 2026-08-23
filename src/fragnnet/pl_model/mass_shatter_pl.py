@@ -17,11 +17,17 @@ from __future__ import annotations
 
 import logging
 import math
+from functools import lru_cache
 from typing import Any
 
 import torch as th
+from rdkit import Chem
 
 from fragnnet.frag.mass_shatter_candidates import MassShatterStaticGraph
+from fragnnet.frag.mass_shatter_templates import (
+    MassShatterTemplate,
+    build_mass_shatter_templates,
+)
 from fragnnet.model import MassShatterModel
 from fragnnet.model.loss import ce_switch_pair_bce, get_sparse_cross_entropy_fn
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
@@ -37,6 +43,17 @@ _CUT_COUNT_BUCKETS = {
 }
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=100_000)
+def _cached_mass_shatter_templates(
+    smiles: str,
+) -> tuple[MassShatterTemplate, ...]:
+    """Match SMARTS once per unique molecule, outside the model hot path."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError(f"invalid molecule SMILES for SMARTS matching: {smiles}")
+    return build_mass_shatter_templates(mol)
 
 
 def _candidate_coverage_by_cut_count(
@@ -369,6 +386,7 @@ class MassShatterPL(SpectrumPL):
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             include_cmf=self.hparams.mass_shatter_include_cmf,
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
+            use_smarts_templates=self.hparams.mass_shatter_smarts_templates,
         )
         self._check_ce_params()
 
@@ -855,6 +873,14 @@ class MassShatterPL(SpectrumPL):
             chemical_bond_index=mol_pyg.chemical_bond_index,
             atom_batch_indices=mol_pyg.batch,
             atom_ptr=mol_pyg.ptr,
+            smarts_templates=(
+                tuple(
+                    _cached_mass_shatter_templates(str(smiles))
+                    for smiles in batch["mol_smiles"]
+                )
+                if self.hparams.mass_shatter_smarts_templates
+                else None
+            ),
         )
         transferred = super().transfer_batch_to_device(batch, device, dataloader_idx)
         transferred["mass_shatter_static_graph"] = static_graph

@@ -39,6 +39,7 @@ roadmap. It links the analyses that justify each item.
 | [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Canonical note on isotope-peak cleanup for training. |
 | [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |
 | [rearrangement_smarts.md](reference/rearrangement_smarts.md) | Literature survey + SMARTS validation for gas-phase rearrangements. |
+| [masshatter_smarts_rules.md](reference/masshatter_smarts_rules.md) | MASShatter-specific allowlist, literature additions, exclusions, and validation gate. |
 | [fragnnet_pl_memory_review.md](reference/fragnnet_pl_memory_review.md) | GPU/CPU memory pressure points in the training loop. |
 
 ## findings/ — measured results

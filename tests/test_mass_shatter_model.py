@@ -8,6 +8,8 @@ from rdkit import Chem
 from torch_geometric.data import Batch
 
 import fragnnet.model.mass_shatter_model as mass_shatter_model_module
+from fragnnet.frag.mass_shatter_candidates import MassShatterStaticGraph
+from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.mass_shatter_model import MassShatterModel
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
@@ -56,6 +58,9 @@ def _build_model(
         0.10,
         0.05,
     ),
+    use_smarts_templates: bool = False,
+    precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
+    fragmentation_modes: tuple[str, ...] = (),
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -84,9 +89,9 @@ def _build_model(
         detach_base_ion_h=detach_base_ion_h,
         proposal_selection_only=proposal_selection_only,
         separate_proposal_encoder=separate_proposal_encoder,
-        precursor_types=["[M+H]+", "[M-H]-"],
+        precursor_types=precursor_types,
         instrument_types=[],
-        fragmentation_modes=[],
+        fragmentation_modes=fragmentation_modes,
         int_embedder="abs-sines",
         ce_insert_type=ce_insert_type,
         ce_insert_size=ce_insert_size,
@@ -110,6 +115,7 @@ def _build_model(
         max_h_transfer=1,
         include_cmf=True,
         charge_pooling="logsumexp",
+        use_smarts_templates=use_smarts_templates,
     )
 
 
@@ -217,6 +223,91 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     )
     assert predicted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
     assert "pred_oos_logprobs" not in output
+
+
+@pytest.mark.parametrize("unique_fragment_mode", [False, True])
+def test_mass_shatter_smarts_mechanisms_preserve_probability_and_train_head(
+    unique_fragment_mode: bool,
+) -> None:
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    batch = _build_batch((smiles,))
+    model = _build_model(
+        batch,
+        max_masks=4 if unique_fragment_mode else 1,
+        unique_fragment_mode=unique_fragment_mode,
+        max_enumerated_masks=8,
+        use_smarts_templates=True,
+    )
+    static_graph = MassShatterStaticGraph(
+        chemical_bond_index=batch.chemical_bond_index,
+        atom_batch_indices=batch.batch,
+        atom_ptr=batch.ptr,
+        smarts_templates=((build_mass_shatter_templates(Chem.MolFromSmiles(smiles))),),
+    )
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([25.0]),
+        static_graph=static_graph,
+    )
+
+    total_probability = output["pred_logprobs"].exp().sum()
+    assert total_probability.item() == pytest.approx(1.0, abs=2e-6)
+    (-output["pred_logprobs"].mean()).backward()
+    assert model.mechanism_head is not None
+    assert model.mechanism_head.rule_embedding.weight.grad is not None
+
+
+def test_mass_shatter_filters_templates_by_adduct_and_fragmentation_mode() -> None:
+    smiles = ("COC(=O)c1ccccc1", "COc1ccc(C(=O)F)cc1")
+    batch = _build_batch(smiles)
+    model = _build_model(
+        batch,
+        use_smarts_templates=True,
+        precursor_types=("[M+H]+", "[M]+"),
+        fragmentation_modes=("CID", "EI"),
+    )
+    templates = tuple(
+        build_mass_shatter_templates(Chem.MolFromSmiles(molecule_smiles))
+        for molecule_smiles in smiles
+    )
+
+    eligible = model._eligible_smarts_templates(
+        templates,
+        precursor_type_indices=th.tensor([0, 1]),
+        fragmentation_mode_indices=th.tensor([0, 1]),
+    )
+    wrong_mode = model._eligible_smarts_templates(
+        templates,
+        precursor_type_indices=th.tensor([0, 1]),
+        fragmentation_mode_indices=th.tensor([0, 0]),
+    )
+
+    assert "methyl_benzoate_co2_transfer" in {template.rule_name for template in eligible[0]}
+    assert "anisoyl_fluoride_co_f_transfer" in {template.rule_name for template in eligible[1]}
+    assert "anisoyl_fluoride_co_f_transfer" not in {
+        template.rule_name for template in wrong_mode[1]
+    }
+
+
+def test_mass_shatter_excludes_ei_only_rule_without_mode_metadata() -> None:
+    smiles = "COc1ccc(C(=O)F)cc1"
+    batch = _build_batch((smiles,))
+    model = _build_model(
+        batch,
+        use_smarts_templates=True,
+        precursor_types=("[M]+",),
+    )
+    templates = (build_mass_shatter_templates(Chem.MolFromSmiles(smiles)),)
+
+    eligible = model._eligible_smarts_templates(
+        templates,
+        precursor_type_indices=th.tensor([0]),
+        fragmentation_mode_indices=None,
+    )
+
+    assert "anisoyl_fluoride_co_f_transfer" not in {template.rule_name for template in eligible[0]}
 
 
 def test_mass_shatter_runs_with_graphormer_precursor_encoder() -> None:

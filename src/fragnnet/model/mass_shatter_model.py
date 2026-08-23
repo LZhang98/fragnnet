@@ -37,6 +37,11 @@ from fragnnet.frag.mass_shatter_candidates import (
     MassShatterStaticGraph,
     build_mass_shatter_candidates,
 )
+from fragnnet.frag.mass_shatter_templates import (
+    MASS_SHATTER_NUM_RULES,
+    MassShatterTemplate,
+    filter_mass_shatter_templates,
+)
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
@@ -107,6 +112,41 @@ def _mean_values_by_batch(
         "every spectrum must have at least one CE value",
     )
     return sums / counts
+
+
+class SmartsMechanismHead(nn.Module):
+    """Choose ordinary versus SMARTS assembly within one retained cut mask."""
+
+    def __init__(
+        self,
+        bond_embedding_dim: int,
+        context_dim: int,
+        hidden_dim: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        num_rule_indices = 1 + MASS_SHATTER_NUM_RULES
+        self.rule_embedding = nn.Embedding(num_rule_indices, context_dim)
+        self.scorer = nn.Sequential(
+            nn.Linear(bond_embedding_dim + 2 * context_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(
+        self,
+        boundary_embeddings: th.Tensor,
+        rule_indices: th.Tensor,
+        context: th.Tensor,
+    ) -> th.Tensor:
+        """Return one unnormalized mechanism logit per mechanism."""
+        return self.scorer(
+            th.cat(
+                (boundary_embeddings, self.rule_embedding(rule_indices), context),
+                dim=1,
+            )
+        ).squeeze(1)
 
 
 class MassShatterContextEncoder(nn.Module):
@@ -445,6 +485,7 @@ class MassShatterModel(nn.Module):
         max_h_transfer: int,
         include_cmf: bool,
         charge_pooling: str,
+        use_smarts_templates: bool,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -522,6 +563,8 @@ class MassShatterModel(nn.Module):
             include_cmf: Emit the charge-migration ion channel alongside CRF.
             charge_pooling: ``logsumexp`` treats every atom as a potential charge site
                 (favoring large components); ``logmeanexp`` removes that size prior.
+            use_smarts_templates: Add matched SMARTS rearrangements as alternative
+                assembly mechanisms within their corresponding cut masks.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -588,6 +631,7 @@ class MassShatterModel(nn.Module):
         self.precursor_types = tuple(sorted(precursor_types))
         if not self.precursor_types:
             raise ValueError("precursor_types must not be empty")
+        self.fragmentation_modes = tuple(sorted(fragmentation_modes))
         missing_precursors = set(self.precursor_types) - PREC_TYPE_TO_MASS_DIFF.keys()
         if missing_precursors:
             raise ValueError(f"unsupported precursor types: {sorted(missing_precursors)}")
@@ -603,6 +647,7 @@ class MassShatterModel(nn.Module):
         self.max_h_transfer = max_h_transfer
         self.include_cmf = include_cmf
         self.charge_pooling = charge_pooling
+        self.use_smarts_templates = use_smarts_templates
         self.use_mask_residuals = use_mask_residuals
         self.return_base_spectrum = return_base_spectrum
         self.detach_base_ion_h = detach_base_ion_h
@@ -641,7 +686,7 @@ class MassShatterModel(nn.Module):
         self.context_encoder = MassShatterContextEncoder(
             num_precursor_types=len(self.precursor_types),
             num_instrument_types=len(instrument_types),
-            num_fragmentation_modes=len(fragmentation_modes),
+            num_fragmentation_modes=len(self.fragmentation_modes),
             use_nce=use_nce,
             use_ace=use_ace,
             int_embedder=int_embedder,
@@ -681,6 +726,16 @@ class MassShatterModel(nn.Module):
             context_dim,
             head_hidden_dim,
             head_dropout,
+        )
+        self.mechanism_head = (
+            SmartsMechanismHead(
+                precursor_hidden_dim,
+                context_dim,
+                head_hidden_dim,
+                head_dropout,
+            )
+            if use_smarts_templates
+            else None
         )
         self.intensity_head = CandidateIntensityTransformerHead(
             fragment_embedding_dim=precursor_hidden_dim,
@@ -875,6 +930,42 @@ class MassShatterModel(nn.Module):
             valid_channels.append(cmf_valid)
         return th.stack(mz_channels, dim=1), th.stack(valid_channels, dim=1)
 
+    def _eligible_smarts_templates(
+        self,
+        templates_by_molecule: tuple[tuple[MassShatterTemplate, ...], ...],
+        precursor_type_indices: th.Tensor,
+        fragmentation_mode_indices: th.Tensor | None,
+    ) -> tuple[tuple[MassShatterTemplate, ...], ...]:
+        """Apply literature-supported adduct and fragmentation-mode guards."""
+        precursor_indices = precursor_type_indices.detach().cpu().reshape(-1).tolist()
+        if len(templates_by_molecule) != len(precursor_indices):
+            raise ValueError("SMARTS templates must contain one sequence per precursor")
+
+        fragmentation_modes: list[str | None] = [None] * len(precursor_indices)
+        if fragmentation_mode_indices is not None and self.fragmentation_modes:
+            mode_indices = fragmentation_mode_indices.detach().cpu().reshape(-1).tolist()
+            if len(mode_indices) != len(precursor_indices):
+                raise ValueError("fragmentation modes must contain one index per precursor")
+            fragmentation_modes = [
+                self.fragmentation_modes[index]
+                if 0 <= index < len(self.fragmentation_modes)
+                else None
+                for index in mode_indices
+            ]
+
+        return tuple(
+            filter_mass_shatter_templates(
+                templates,
+                precursor_type=self.precursor_types[precursor_index],
+                fragmentation_mode=fragmentation_mode,
+            )
+            for templates, precursor_index, fragmentation_mode in zip(
+                templates_by_molecule,
+                precursor_indices,
+                fragmentation_modes,
+            )
+        )
+
     @staticmethod
     def _unique_component_memberships(
         candidates: MassShatterCandidateBatch,
@@ -1029,6 +1120,19 @@ class MassShatterModel(nn.Module):
         # Mask identities are picked from detached logits on CPU; the returned log
         # probabilities are recomputed from the live logits, so gradients still reach
         # every cut/intact bond decision. Exploration masks are training-only.
+        smarts_templates: tuple[tuple[MassShatterTemplate, ...], ...] = tuple(
+            () for _ in range(batch_size)
+        )
+        if (
+            self.use_smarts_templates
+            and static_graph is not None
+            and static_graph.smarts_templates is not None
+        ):
+            smarts_templates = self._eligible_smarts_templates(
+                static_graph.smarts_templates,
+                precursor_type_indices,
+                spec_frag_mode,
+            )
         candidates = build_mass_shatter_candidates(
             bond_logits,
             mol_pyg.chemical_bond_index,
@@ -1044,6 +1148,7 @@ class MassShatterModel(nn.Module):
             max_unique_components=(self.max_masks if self.unique_fragment_mode else None),
             max_enumerated_masks=(self.max_enumerated_masks if self.unique_fragment_mode else None),
             static_graph=static_graph,
+            smarts_templates=smarts_templates,
         )
 
         # 3. Score charge retention. In unique-fragment mode, masks remain latent
@@ -1058,6 +1163,34 @@ class MassShatterModel(nn.Module):
             atom_embeddings[mol_pyg.chemical_bond_index[0]]
             + atom_embeddings[mol_pyg.chemical_bond_index[1]]
         ) / 2.0
+        if self.mechanism_head is None:
+            mechanism_log_probabilities = bond_logits.new_zeros(
+                candidates.num_mechanisms
+            )
+        else:
+            mechanism_boundary_embeddings = pool_boundary_bond_embeddings(
+                chemical_bond_embeddings,
+                candidates.mechanism_boundary_bond_indices,
+                candidates.boundary_mechanism_indices,
+                num_components=candidates.num_mechanisms,
+            )
+            mechanism_batch_indices = candidates.mask_batch_indices[
+                candidates.mechanism_mask_indices
+            ]
+            mechanism_logits = self.mechanism_head(
+                mechanism_boundary_embeddings,
+                candidates.mechanism_rule_indices,
+                context[mechanism_batch_indices],
+            )
+            mechanism_log_normalizers = _segment_logsumexp(
+                mechanism_logits,
+                candidates.mechanism_mask_indices,
+                num_masks,
+            )
+            mechanism_log_probabilities = (
+                mechanism_logits
+                - mechanism_log_normalizers[candidates.mechanism_mask_indices]
+            )
         unique_fragment_effective_count = bond_logits.new_zeros(batch_size)
         unique_fragment_top1_mass_fraction = bond_logits.new_zeros(batch_size)
         duplicate_pathway_probability_fraction = bond_logits.new_zeros(batch_size)
@@ -1076,14 +1209,15 @@ class MassShatterModel(nn.Module):
                 fragment_atom_indices,
                 atom_fragment_indices,
                 candidates.component_unique_indices,
-                candidates.component_mask_indices,
+                candidates.component_mechanism_indices,
                 num_unique_components=num_fragments,
-                num_masks=num_masks,
+                num_masks=candidates.num_mechanisms,
                 pooling=self.charge_pooling,
             )
             # 3a. Sum every charged pathway that produces the same precursor atom set.
             component_log_probabilities = (
                 candidates.mask_log_probabilities[candidates.component_mask_indices]
+                + mechanism_log_probabilities[candidates.component_mechanism_indices]
                 + charge_log_probabilities
             )
             fragment_log_probabilities = _segment_logsumexp(
@@ -1215,7 +1349,7 @@ class MassShatterModel(nn.Module):
                 atom_charge_logits,
                 candidates.atom_indices,
                 candidates.atom_component_indices,
-                candidates.component_mask_indices,
+                candidates.component_mechanism_indices,
                 pooling=self.charge_pooling,
             )
             num_fragments = candidates.num_components
@@ -1243,8 +1377,13 @@ class MassShatterModel(nn.Module):
             original_component_mask_log_probabilities = candidates.mask_log_probabilities[
                 candidates.component_mask_indices
             ]
+            component_mechanism_log_probabilities = mechanism_log_probabilities[
+                candidates.component_mechanism_indices
+            ]
             base_fragment_log_probabilities = (
-                original_component_mask_log_probabilities + charge_log_probabilities
+                original_component_mask_log_probabilities
+                + component_mechanism_log_probabilities
+                + charge_log_probabilities
             )
             intensity_outputs = self.intensity_head(
                 fragment_embeddings,
@@ -1252,7 +1391,7 @@ class MassShatterModel(nn.Module):
                 boundary_embeddings,
                 fragment_cut_counts,
                 fragment_sizes,
-                charge_log_probabilities,
+                charge_log_probabilities + component_mechanism_log_probabilities,
                 original_component_mask_log_probabilities,
                 fragment_batch_indices,
                 candidates.component_mask_indices,
@@ -1287,15 +1426,17 @@ class MassShatterModel(nn.Module):
             component_charge_logits = charge_log_probabilities + component_residuals
             component_log_normalizers = _segment_logsumexp(
                 component_charge_logits,
-                candidates.component_mask_indices,
-                num_masks,
+                candidates.component_mechanism_indices,
+                candidates.num_mechanisms,
             )
             charge_log_probabilities = (
                 component_charge_logits
-                - component_log_normalizers[candidates.component_mask_indices]
+                - component_log_normalizers[candidates.component_mechanism_indices]
             )
             fragment_log_probabilities = (
-                mask_log_probabilities[candidates.component_mask_indices] + charge_log_probabilities
+                mask_log_probabilities[candidates.component_mask_indices]
+                + component_mechanism_log_probabilities
+                + charge_log_probabilities
             )
             ion_mzs, valid_channels = self._fragment_masses_and_valid_channels(
                 mol_pyg,

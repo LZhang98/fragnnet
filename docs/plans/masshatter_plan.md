@@ -1077,7 +1077,21 @@ requires a partition function for normalized mask probabilities and loses the ch
 exact top-K heap. Hold it until the cut-depth diagnostic and mixture probe justify
 the extra inference machinery.
 
-### 6.2 Planned template channel for new-bond products
+### 6.2 Template channel for new-bond products
+
+Implemented as an opt-in MASShatter path with
+`mass_shatter_smarts_templates: True`. SMARTS matches are cached once per unique
+molecule, matching template cut sets are retained with their exact Bernoulli mask
+probability, and a learned mechanism head normalizes ordinary versus template
+assembly within each mask.
+
+MASShatter owns the allowlists in `mass_shatter_templates.py`; it does not consume
+`FRAG_RULES`/`NL_RULES` wholesale. The initial registry excludes broad `crf12_*`
+and `crf13_2` patterns as well as pure bond-deletion and topology-redundant rules.
+Shared rule objects provide the original validated SMARTS definitions. New
+MASShatter-only literature rules are defined beside the allowlist so adding them
+does not change the BFS preprocessing registry. Membership and the original compact
+rule indices remain stable for MASShatter experiments.
 
 Ring contractions and other rearrangements may form a new heavy-atom bond, so
 their product connectivity cannot be obtained from `components(G \ C)`. A
@@ -1091,8 +1105,9 @@ Reuse the existing SMARTS prepass conventions in
 
 - `SmartsFragRule` already specifies cut bonds and merges disconnected
   components into one fragment;
-- `NeutralLossRule` already represents a new-bond product as all precursor
-  atoms except the neutral-loss atoms;
+- `NeutralLossRule` represents a new-bond product either as all precursor atoms
+  except mapped neutral-loss atoms or as explicitly mapped product atoms for a
+  small diagnostic ion with a variable complement;
 - validated all-carbon and heteroatom Retro-Diels--Alder SMIRKS are covered in
   `tests/test_rearrangement_smarts.py`.
 

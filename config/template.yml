@@ -210,6 +210,7 @@ mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True
 mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
+mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
 mass_shatter_context_dim: 64
 mass_shatter_metadata_embedding_dim: 16
 mass_shatter_head_hidden_dim: 256

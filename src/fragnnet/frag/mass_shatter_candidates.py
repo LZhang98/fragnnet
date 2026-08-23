@@ -6,6 +6,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch as th
@@ -17,6 +18,9 @@ from fragnnet.frag.bond_mask_generator import (
     top_k_cut_masks,
 )
 
+if TYPE_CHECKING:
+    from fragnnet.frag.mass_shatter_templates import MassShatterTemplate
+
 
 @dataclass(frozen=True)
 class MassShatterStaticGraph:
@@ -25,6 +29,7 @@ class MassShatterStaticGraph:
     chemical_bond_index: th.Tensor
     atom_batch_indices: th.Tensor
     atom_ptr: th.Tensor
+    smarts_templates: tuple[tuple[MassShatterTemplate, ...], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -46,7 +51,12 @@ class MassShatterCandidateBatch:
     mask_log_probabilities: th.Tensor
     mask_batch_indices: th.Tensor
     mask_cut_counts: th.Tensor
+    mechanism_mask_indices: th.Tensor
+    mechanism_rule_indices: th.Tensor
+    mechanism_boundary_bond_indices: th.Tensor
+    boundary_mechanism_indices: th.Tensor
     component_mask_indices: th.Tensor
+    component_mechanism_indices: th.Tensor
     component_batch_indices: th.Tensor
     component_cut_counts: th.Tensor
     component_unique_indices: th.Tensor
@@ -67,6 +77,11 @@ class MassShatterCandidateBatch:
     def num_components(self) -> int:
         """Return the number of retained component pathways."""
         return int(self.component_mask_indices.shape[0])
+
+    @property
+    def num_mechanisms(self) -> int:
+        """Return the number of ordinary and SMARTS mechanisms."""
+        return int(self.mechanism_mask_indices.shape[0])
 
     @property
     def num_unique_components(self) -> int:
@@ -105,6 +120,7 @@ def build_mass_shatter_candidates(
     max_enumerated_masks: int | None = None,
     generator: th.Generator | None = None,
     static_graph: MassShatterStaticGraph | None = None,
+    smarts_templates: Sequence[Sequence[MassShatterTemplate]] | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
@@ -209,6 +225,10 @@ def build_mass_shatter_candidates(
     input_transfer_ms = (perf_counter() - input_transfer_start) * 1000.0
 
     num_molecules = atom_ptr_cpu.numel() - 1
+    if smarts_templates is None and static_graph is not None:
+        smarts_templates = static_graph.smarts_templates
+    if smarts_templates is not None and len(smarts_templates) != num_molecules:
+        raise ValueError("smarts_templates must contain one sequence per precursor")
     atom_ptr_values = atom_ptr_cpu.tolist()
     if atom_batch_indices.numel() != atom_ptr_values[-1]:
         raise ValueError("atom_ptr does not describe atom_batch_indices")
@@ -237,7 +257,12 @@ def build_mass_shatter_candidates(
     mask_cut_count_chunks: list[np.ndarray] = []
     mask_index_chunks: list[np.ndarray] = []
     broken_bond_index_chunks: list[np.ndarray] = []
+    mechanism_mask_index_chunks: list[np.ndarray] = []
+    mechanism_rule_index_chunks: list[np.ndarray] = []
+    mechanism_boundary_bond_index_chunks: list[np.ndarray] = []
+    boundary_mechanism_index_chunks: list[np.ndarray] = []
     component_mask_index_chunks: list[np.ndarray] = []
+    component_mechanism_index_chunks: list[np.ndarray] = []
     component_batch_index_chunks: list[np.ndarray] = []
     component_cut_count_chunks: list[np.ndarray] = []
     component_unique_index_chunks: list[np.ndarray] = []
@@ -255,6 +280,7 @@ def build_mass_shatter_candidates(
     topology_ms = 0.0
     assembly_ms = 0.0
     num_masks_so_far = 0
+    num_mechanisms_so_far = 0
     num_components_so_far = 0
     num_unique_components_so_far = 0
 
@@ -273,6 +299,21 @@ def build_mass_shatter_candidates(
             tuple(chemical_bond_rows[row][index] - atom_start for index in global_bond_indices)
             for row in range(2)
         )
+        molecule_templates = (
+            tuple(smarts_templates[molecule_index])
+            if smarts_templates is not None
+            else ()
+        )
+        template_bond_sets = [
+            tuple(template.broken_bond_indices) for template in molecule_templates
+        ]
+        forced_bond_sets = [()]
+        if include_single_bond_cuts:
+            forced_bond_sets.extend(
+                (bond_index,) for bond_index in range(len(detached_logits))
+            )
+        forced_bond_sets.extend(template_bond_sets)
+        forced_bond_sets = list(dict.fromkeys(forced_bond_sets))
         if explore_masks == 0:
             # The production Transformer path stays numeric from exact top-k
             # selection through topology assembly. Only forced empty/single
@@ -311,26 +352,24 @@ def build_mass_shatter_candidates(
                 # Put the required low-cut masks first and remove their ranked
                 # duplicates. A prefix can then be stopped at the unique-fragment
                 # target without ever dropping the intact or single-cut support.
-                forced_cut_counts = np.concatenate(
-                    (
-                        np.zeros(1, dtype=np.int64),
-                        np.ones(
-                            len(detached_logits) if include_single_bond_cuts else 0,
-                            dtype=np.int64,
-                        ),
-                    )
+                forced_cut_counts = np.asarray(
+                    [len(bond_set) for bond_set in forced_bond_sets],
+                    dtype=np.int64,
                 )
-                forced_bonds = (
-                    np.arange(len(detached_logits), dtype=np.int64)
-                    if include_single_bond_cuts
-                    else np.empty(0, dtype=np.int64)
+                forced_bonds = np.asarray(
+                    [bond for bond_set in forced_bond_sets for bond in bond_set],
+                    dtype=np.int64,
                 )
-                minimum_ranked_cut_count = 2 if include_single_bond_cuts else 1
-                keep_ranked_masks = learned_cut_counts >= minimum_ranked_cut_count
-                keep_ranked_bonds = np.repeat(
-                    keep_ranked_masks,
-                    learned_cut_counts,
+                forced_bond_set_lookup = set(forced_bond_sets)
+                ranked_bond_sets = [
+                    tuple(local_broken_bonds[local_mask_ptr[index] : local_mask_ptr[index + 1]])
+                    for index in range(learned_mask_count)
+                ]
+                keep_ranked_masks = np.asarray(
+                    [bond_set not in forced_bond_set_lookup for bond_set in ranked_bond_sets],
+                    dtype=np.bool_,
                 )
+                keep_ranked_bonds = np.repeat(keep_ranked_masks, learned_cut_counts)
                 retained_ranked_cut_counts = learned_cut_counts[keep_ranked_masks]
                 retained_ranked_bonds = local_broken_bonds[keep_ranked_bonds]
                 combined_cut_counts = np.concatenate(
@@ -349,17 +388,15 @@ def build_mass_shatter_candidates(
             else:
                 extra_cut_counts: list[int] = []
                 extra_bonds: list[int] = []
-                if not np.any(learned_cut_counts == 0):
-                    extra_cut_counts.append(0)
-                if include_single_bond_cuts:
-                    selected_single_bonds = np.zeros(len(detached_logits), dtype=np.bool_)
-                    for mask_index in np.flatnonzero(learned_cut_counts == 1):
-                        selected_single_bonds[
-                            local_broken_bonds[local_mask_ptr[mask_index]]
-                        ] = True
-                    for bond_index in np.flatnonzero(~selected_single_bonds):
-                        extra_cut_counts.append(1)
-                        extra_bonds.append(int(bond_index))
+                selected_bond_sets = {
+                    tuple(local_broken_bonds[local_mask_ptr[index] : local_mask_ptr[index + 1]])
+                    for index in range(learned_mask_count)
+                }
+                for bond_set in forced_bond_sets:
+                    if bond_set in selected_bond_sets:
+                        continue
+                    extra_cut_counts.append(len(bond_set))
+                    extra_bonds.extend(bond_set)
                 if extra_cut_counts:
                     local_mask_ptr = np.concatenate(
                         (
@@ -374,6 +411,15 @@ def build_mass_shatter_candidates(
                         )
             broken_mask_input: object = (local_mask_ptr, local_broken_bonds)
             num_local_masks = local_mask_ptr.size - 1
+            selected_local_bond_sets = [
+                tuple(
+                    int(bond)
+                    for bond in local_broken_bonds[
+                        local_mask_ptr[index] : local_mask_ptr[index + 1]
+                    ]
+                )
+                for index in range(num_local_masks)
+            ]
         else:
             exploit_masks = (
                 max_masks - explore_masks
@@ -396,11 +442,6 @@ def build_mass_shatter_candidates(
             selected_bond_sets = {
                 ranked_mask.broken_bond_indices for ranked_mask in ranked_masks
             }
-            forced_bond_sets = [()]
-            if include_single_bond_cuts:
-                forced_bond_sets.extend(
-                    (bond_index,) for bond_index in range(len(detached_logits))
-                )
             reserved_bond_sets = set(forced_bond_sets)
             unavailable_bond_sets = selected_bond_sets | reserved_bond_sets
 
@@ -546,6 +587,7 @@ def build_mass_shatter_candidates(
                 ranked_mask.broken_bond_indices for ranked_mask in ranked_masks
             ]
             num_local_masks = len(ranked_masks)
+            selected_local_bond_sets = list(broken_mask_input)
         mask_selection_ms += (perf_counter() - selection_start) * 1000.0
 
         # 3. Build connected components and every flat candidate index without
@@ -633,13 +675,179 @@ def build_mass_shatter_candidates(
             unique_component_count = len(
                 local_unique_representative_component_indices
             )
+        selected_local_bond_sets = selected_local_bond_sets[:num_local_masks]
+
+        # Each cut mask always has one ordinary connected-component mechanism.
+        # SMARTS matches add alternative atom partitions under that same mask;
+        # they never create a second copy of the mask probability.
+        mechanism_start = num_mechanisms_so_far
+        local_mechanism_mask_indices = np.arange(
+            mask_start,
+            mask_start + num_local_masks,
+            dtype=np.int64,
+        )
+        local_mechanism_rule_indices = np.zeros(num_local_masks, dtype=np.int64)
+        local_component_mechanism_indices = (
+            local_component_mask_indices - mask_start + mechanism_start
+        )
+        local_mechanism_boundary_bond_indices = local_broken_bond_indices.copy()
+        local_boundary_mechanism_indices = (
+            local_mask_indices - mask_start + mechanism_start
+        )
+
+        if molecule_templates:
+            bond_set_to_mask = {
+                bond_set: mask_start + local_index
+                for local_index, bond_set in enumerate(selected_local_bond_sets)
+            }
+            component_atoms: dict[int, list[int]] = {
+                component_start + index: [] for index in range(num_local_components)
+            }
+            for atom_index, component_index in zip(
+                local_atom_indices.tolist(),
+                local_atom_component_indices.tolist(),
+            ):
+                component_atoms[component_index].append(atom_index)
+            atom_set_to_unique = {
+                tuple(atoms): int(local_component_unique_indices[component_index - component_start])
+                for component_index, atoms in component_atoms.items()
+            }
+
+            extra_mechanism_masks: list[int] = []
+            extra_mechanism_rules: list[int] = []
+            extra_mechanism_boundary_bonds: list[int] = []
+            extra_boundary_mechanisms: list[int] = []
+            extra_component_masks: list[int] = []
+            extra_component_mechanisms: list[int] = []
+            extra_component_cut_counts: list[int] = []
+            extra_component_unique_indices: list[int] = []
+            extra_atom_indices: list[int] = []
+            extra_atom_component_indices: list[int] = []
+            extra_boundary_bonds: list[int] = []
+            extra_boundary_components: list[int] = []
+            extra_representatives: list[int] = []
+
+            for template in molecule_templates:
+                mask_index = bond_set_to_mask.get(tuple(template.broken_bond_indices))
+                if mask_index is None:
+                    continue
+                mechanism_index = (
+                    mechanism_start + num_local_masks + len(extra_mechanism_masks)
+                )
+                extra_mechanism_masks.append(mask_index)
+                extra_mechanism_rules.append(template.rule_index)
+                for local_bond_index in template.broken_bond_indices:
+                    extra_mechanism_boundary_bonds.append(
+                        global_bond_indices[local_bond_index]
+                    )
+                    extra_boundary_mechanisms.append(mechanism_index)
+
+                for component in template.components:
+                    component_index = (
+                        component_start + num_local_components + len(extra_component_masks)
+                    )
+                    global_atoms = tuple(atom_start + atom for atom in component)
+                    unique_index = atom_set_to_unique.get(global_atoms)
+                    if unique_index is None:
+                        unique_index = unique_component_count
+                        unique_component_count += 1
+                        atom_set_to_unique[global_atoms] = unique_index
+                        # Representatives are molecule-local; component_start is
+                        # added once when the chunk is appended.
+                        extra_representatives.append(component_index - component_start)
+                    extra_component_masks.append(mask_index)
+                    extra_component_mechanisms.append(mechanism_index)
+                    extra_component_cut_counts.append(len(template.broken_bond_indices))
+                    extra_component_unique_indices.append(unique_index)
+                    extra_atom_indices.extend(global_atoms)
+                    extra_atom_component_indices.extend(
+                        [component_index] * len(global_atoms)
+                    )
+                    for local_bond_index in template.broken_bond_indices:
+                        extra_boundary_bonds.append(global_bond_indices[local_bond_index])
+                        extra_boundary_components.append(component_index)
+
+            if extra_mechanism_masks:
+                local_mechanism_mask_indices = np.concatenate(
+                    (local_mechanism_mask_indices, np.asarray(extra_mechanism_masks))
+                )
+                local_mechanism_rule_indices = np.concatenate(
+                    (local_mechanism_rule_indices, np.asarray(extra_mechanism_rules))
+                )
+                local_mechanism_boundary_bond_indices = np.concatenate(
+                    (
+                        local_mechanism_boundary_bond_indices,
+                        np.asarray(extra_mechanism_boundary_bonds, dtype=np.int64),
+                    )
+                )
+                local_boundary_mechanism_indices = np.concatenate(
+                    (
+                        local_boundary_mechanism_indices,
+                        np.asarray(extra_boundary_mechanisms, dtype=np.int64),
+                    )
+                )
+                local_component_mask_indices = np.concatenate(
+                    (local_component_mask_indices, np.asarray(extra_component_masks))
+                )
+                local_component_mechanism_indices = np.concatenate(
+                    (
+                        local_component_mechanism_indices,
+                        np.asarray(extra_component_mechanisms),
+                    )
+                )
+                local_component_cut_counts = np.concatenate(
+                    (
+                        local_component_cut_counts,
+                        np.asarray(extra_component_cut_counts),
+                    )
+                )
+                local_component_unique_indices = np.concatenate(
+                    (
+                        local_component_unique_indices,
+                        np.asarray(extra_component_unique_indices),
+                    )
+                )
+                local_atom_indices = np.concatenate(
+                    (local_atom_indices, np.asarray(extra_atom_indices))
+                )
+                local_atom_component_indices = np.concatenate(
+                    (
+                        local_atom_component_indices,
+                        np.asarray(extra_atom_component_indices),
+                    )
+                )
+                local_boundary_bond_indices = np.concatenate(
+                    (local_boundary_bond_indices, np.asarray(extra_boundary_bonds))
+                )
+                local_boundary_component_indices = np.concatenate(
+                    (
+                        local_boundary_component_indices,
+                        np.asarray(extra_boundary_components),
+                    )
+                )
+                local_unique_representative_component_indices = np.concatenate(
+                    (
+                        local_unique_representative_component_indices,
+                        np.asarray(extra_representatives, dtype=np.int64),
+                    )
+                )
+                num_local_components += len(extra_component_masks)
+
         topology_ms += local_topology_ms
         assembly_ms += local_assembly_ms
         mask_batch_index_chunks.append(
             np.full(num_local_masks, molecule_index, dtype=np.int64)
         )
         mask_cut_count_chunks.append(local_cut_counts)
+        mechanism_mask_index_chunks.append(local_mechanism_mask_indices)
+        mechanism_rule_index_chunks.append(local_mechanism_rule_indices)
+        if local_mechanism_boundary_bond_indices.size > 0:
+            mechanism_boundary_bond_index_chunks.append(
+                local_mechanism_boundary_bond_indices
+            )
+            boundary_mechanism_index_chunks.append(local_boundary_mechanism_indices)
         component_mask_index_chunks.append(local_component_mask_indices)
+        component_mechanism_index_chunks.append(local_component_mechanism_indices)
         component_batch_index_chunks.append(
             np.full(num_local_components, molecule_index, dtype=np.int64)
         )
@@ -658,6 +866,7 @@ def build_mass_shatter_candidates(
             boundary_bond_index_chunks.append(local_boundary_bond_indices)
             boundary_component_index_chunks.append(local_boundary_component_indices)
         num_masks_so_far += num_local_masks
+        num_mechanisms_so_far += local_mechanism_mask_indices.size
         num_components_so_far += num_local_components
         num_unique_components_so_far += unique_component_count
         component_counts.append(num_local_components)
@@ -669,7 +878,20 @@ def build_mass_shatter_candidates(
     # 4. Concatenate the per-precursor numeric chunks into one CPU batch.
     mask_batch_indices = np.concatenate(mask_batch_index_chunks)
     mask_cut_counts = np.concatenate(mask_cut_count_chunks)
+    mechanism_mask_indices = np.concatenate(mechanism_mask_index_chunks)
+    mechanism_rule_indices = np.concatenate(mechanism_rule_index_chunks)
+    mechanism_boundary_bond_indices = (
+        np.concatenate(mechanism_boundary_bond_index_chunks)
+        if mechanism_boundary_bond_index_chunks
+        else np.empty(0, dtype=np.int64)
+    )
+    boundary_mechanism_indices = (
+        np.concatenate(boundary_mechanism_index_chunks)
+        if boundary_mechanism_index_chunks
+        else np.empty(0, dtype=np.int64)
+    )
     component_mask_indices = np.concatenate(component_mask_index_chunks)
+    component_mechanism_indices = np.concatenate(component_mechanism_index_chunks)
     component_batch_indices = np.concatenate(component_batch_index_chunks)
     component_cut_counts = np.concatenate(component_cut_count_chunks)
     component_unique_indices = np.concatenate(component_unique_index_chunks)
@@ -697,7 +919,12 @@ def build_mass_shatter_candidates(
         bond_batch_indices,
         mask_batch_indices_t,
         mask_cut_counts_t,
+        mechanism_mask_indices_t,
+        mechanism_rule_indices_t,
+        mechanism_boundary_bond_indices_t,
+        boundary_mechanism_indices_t,
         component_mask_indices_t,
+        component_mechanism_indices_t,
         component_batch_indices_t,
         component_cut_counts_t,
         component_unique_indices_t,
@@ -713,7 +940,12 @@ def build_mass_shatter_candidates(
             bond_batch_values,
             mask_batch_indices,
             mask_cut_counts,
+            mechanism_mask_indices,
+            mechanism_rule_indices,
+            mechanism_boundary_bond_indices,
+            boundary_mechanism_indices,
             component_mask_indices,
+            component_mechanism_indices,
             component_batch_indices,
             component_cut_counts,
             component_unique_indices,
@@ -756,7 +988,12 @@ def build_mass_shatter_candidates(
         mask_log_probabilities=mask_log_probabilities,
         mask_batch_indices=mask_batch_indices_t,
         mask_cut_counts=mask_cut_counts_t,
+        mechanism_mask_indices=mechanism_mask_indices_t,
+        mechanism_rule_indices=mechanism_rule_indices_t,
+        mechanism_boundary_bond_indices=mechanism_boundary_bond_indices_t,
+        boundary_mechanism_indices=boundary_mechanism_indices_t,
         component_mask_indices=component_mask_indices_t,
+        component_mechanism_indices=component_mechanism_indices_t,
         component_batch_indices=component_batch_indices_t,
         component_cut_counts=component_cut_counts_t,
         component_unique_indices=component_unique_indices_t,

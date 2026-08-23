@@ -467,16 +467,28 @@ class NeutralLossRule:
         name: Rule identifier for logging.
         reactant_smarts: SMARTS pattern.  All mapped atoms use 1-based map numbers.
         nl_map_nums: Map numbers of the atoms that leave as the neutral loss.
-            The product mask = all atoms minus these.
+            The product mask = all atoms minus these. Mutually exclusive with
+            ``product_map_nums``.
         nl_mass: Exact monoisotopic neutral-loss mass (Da), for documentation.
+            ``None`` when the complementary neutral has variable composition.
         min_num_atoms: Minimum molecule heavy-atom count for early exit.
+        product_map_nums: Map numbers of the atoms retained in the product. This
+            supports diagnostic small ions whose complementary neutral includes
+            an arbitrarily substituted group and therefore cannot be enumerated
+            with a fixed list of map numbers.
     """
 
     name: str
     reactant_smarts: str
     nl_map_nums: list[int]
-    nl_mass: float
+    nl_mass: float | None
     min_num_atoms: int = 0
+    product_map_nums: list[int] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Require exactly one direction for constructing the product mask."""
+        if bool(self.nl_map_nums) == bool(self.product_map_nums):
+            raise ValueError("exactly one of nl_map_nums and product_map_nums must be populated")
 
 
 NL_RULES: list[NeutralLossRule] = [
@@ -821,11 +833,12 @@ def _apply_nl_prepass(
     """Apply neutral-loss rules to the root molecule.
 
     For each rule, matches the reactant SMARTS against *mol* and returns a
-    product atom mask that excludes the neutral-loss atoms.  Because the
-    product requires new bond formation, the retained atoms may be disconnected
-    in the original graph; H-count estimation adds excess H's at the free
-    valences.  The correct formula therefore lands at a negative H-shift
-    (see :class:`NeutralLossRule` docstring).
+    product atom mask. Most rules construct it by excluding mapped neutral-loss
+    atoms; diagnostic-small-ion rules instead provide the mapped product atoms
+    directly. Because the product requires new bond formation, the retained
+    atoms may be disconnected in the original graph; H-count estimation adds
+    excess H's at the free valences. The correct formula therefore lands at a
+    negative H-shift (see :class:`NeutralLossRule` docstring).
 
     Args:
         rules: List of :class:`NeutralLossRule` to apply.
@@ -835,8 +848,8 @@ def _apply_nl_prepass(
     Returns:
         List of ``(product_mask, rule_idx)`` tuples.  *product_mask* is a
         ``(num_nodes,)`` uint8 array with 1 for retained atoms and 0 for
-        neutral-loss atoms.  Duplicate NL atom sets (same atoms lost via
-        different SMARTS embeddings) are deduplicated.
+        neutral-loss atoms. Duplicate product atom sets from different SMARTS
+        embeddings are deduplicated.
     """
     results: list[tuple[np.ndarray, int]] = []
     for rule_idx, rule in enumerate(rules):
@@ -850,25 +863,30 @@ def _apply_nl_prepass(
             map_num = patt.GetAtomWithIdx(q_idx).GetAtomMapNum()
             if map_num != 0:
                 q_idx_to_map[q_idx] = map_num
-        seen_nl_sets: set[frozenset] = set()
+        seen_product_sets: set[frozenset[int]] = set()
         for match in mol.GetSubstructMatches(patt):
             map_to_mol: dict[int, int] = {m: match[q] for q, m in q_idx_to_map.items()}
-            nl_atoms: set[int] = set()
+            selected_map_nums = rule.product_map_nums or rule.nl_map_nums
+            selected_atoms: set[int] = set()
             valid = True
-            for nl_map in rule.nl_map_nums:
-                mol_idx = map_to_mol.get(nl_map)
+            for map_num in selected_map_nums:
+                mol_idx = map_to_mol.get(map_num)
                 if mol_idx is None:
                     valid = False
                     break
-                nl_atoms.add(mol_idx)
+                selected_atoms.add(mol_idx)
             if not valid:
                 continue
-            nl_key = frozenset(nl_atoms)
-            if nl_key in seen_nl_sets:
+            if rule.product_map_nums:
+                product_atoms = selected_atoms
+            else:
+                product_atoms = set(range(num_nodes)) - selected_atoms
+            product_key = frozenset(product_atoms)
+            if product_key in seen_product_sets:
                 continue
-            seen_nl_sets.add(nl_key)
-            product_mask = np.ones(num_nodes, dtype=MASK_DTYPE)
-            for idx in nl_atoms:
-                product_mask[idx] = 0
+            seen_product_sets.add(product_key)
+            product_mask = np.zeros(num_nodes, dtype=MASK_DTYPE)
+            for idx in product_atoms:
+                product_mask[idx] = 1
             results.append((product_mask, rule_idx))
     return results

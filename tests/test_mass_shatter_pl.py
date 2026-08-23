@@ -3,9 +3,11 @@
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch as th
 import yaml
+from rdkit import Chem
 from torch_geometric.data import Batch, Data
 
 from fragnnet.dataset import SpecMolDataset
@@ -277,6 +279,37 @@ def test_mass_shatter_transfer_retains_static_graph_on_cpu() -> None:
     assert static_graph.chemical_bond_index.device.type == "cpu"
     assert static_graph.atom_batch_indices.tolist() == [0, 0]
     assert static_graph.atom_ptr.tolist() == [0, 2]
+
+
+def test_mass_shatter_transfer_precomputes_smarts_templates_when_enabled() -> None:
+    model, _ = _build_pl(mass_shatter_smarts_templates=True)
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    mol = Chem.MolFromSmiles(smiles)
+    chemical_bond_index = th.tensor(
+        [
+            [bond.GetBeginAtomIdx() for bond in mol.GetBonds()],
+            [bond.GetEndAtomIdx() for bond in mol.GetBonds()],
+        ],
+        dtype=th.long,
+    )
+    mol_pyg = Batch.from_data_list(
+        [
+            Data(
+                x=th.ones((mol.GetNumAtoms(), 1)),
+                chemical_bond_index=chemical_bond_index,
+            )
+        ]
+    )
+
+    transferred = model.transfer_batch_to_device(
+        {"mol_pyg": mol_pyg, "mol_smiles": np.asarray([smiles])},
+        th.device("cpu"),
+        0,
+    )
+
+    templates = transferred["mass_shatter_static_graph"].smarts_templates
+    assert templates is not None
+    assert any(template.rule_name == "sulfoxide_so_loss" for template in templates[0])
 
 
 def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() -> None:
