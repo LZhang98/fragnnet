@@ -237,16 +237,11 @@ mass_shatter_base_ce_weight: 0.0
 mass_shatter_detach_base_ion_h: False
 # V1 retrieval/ranking separation. True keeps the existing proposal generator
 # for candidate selection, but removes proposal probabilities from relative peak
-# intensity. The final spectrum retains only a detached retained/OOS gate.
+# intensity. The final spectrum is normalized over the selected candidates.
 mass_shatter_proposal_selection_only: False
 # Intensity-weighted proposal-support loss. It counts each unique fragment once
 # per matched true peak, regardless of how many CRF/CMF or delta-H channels match.
 mass_shatter_proposal_loss_weight: 0.0
-# V2 gate: predict retained-versus-OOS mass from the contextualized candidate set.
-# This is only supported with proposal-selection-only mode.
-mass_shatter_learned_oos: False
-# Starting OOS probability before the V2 gate learns candidate-dependent weights.
-mass_shatter_learned_oos_initial_probability: 0.1
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
@@ -551,8 +546,10 @@ edge_h_transfer_loss_fn: linear
 edge_entropy_weight: 0.0
 edge_normalized_entropy_weight: 0.0
 mask_null_formula: True
+# DAG-based models only; MASShatter has no OOS class.
 predict_oos: False
 oos_tolerance_multiple: -1
+# DAG-based models only; ignored by MASShatter's candidate-conditional loss.
 oos_loss: False
 null_loss: False
 null_loss_weight: 1.0

@@ -43,8 +43,6 @@ def _build_model(
     return_base_spectrum: bool = False,
     detach_base_ion_h: bool = False,
     proposal_selection_only: bool = False,
-    learned_oos: bool = False,
-    learned_oos_initial_probability: float = 0.1,
     separate_proposal_encoder: bool = False,
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
@@ -85,8 +83,6 @@ def _build_model(
         return_base_spectrum=return_base_spectrum,
         detach_base_ion_h=detach_base_ion_h,
         proposal_selection_only=proposal_selection_only,
-        learned_oos=learned_oos,
-        learned_oos_initial_probability=learned_oos_initial_probability,
         separate_proposal_encoder=separate_proposal_encoder,
         precursor_types=["[M+H]+", "[M-H]-"],
         instrument_types=[],
@@ -219,11 +215,8 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
         output["pred_batch_idxs"],
         output["pred_logprobs"].exp(),
     )
-    total_mass = predicted_mass + output["pred_oos_logprobs"].exp()
-    assert total_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
-    assert output["retained_mask_probability"].tolist() == pytest.approx(
-        predicted_mass.tolist(), abs=2e-6
-    )
+    assert predicted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+    assert "pred_oos_logprobs" not in output
 
 
 def test_mass_shatter_runs_with_graphormer_precursor_encoder() -> None:
@@ -267,10 +260,7 @@ def test_mass_shatter_returns_normalized_pre_residual_spectrum(
     )
     assert not model.intensity_head.use_base_probability_feature
     assert output["base_pred_logprobs"].shape == output["pred_logprobs"].shape
-    assert base_mass.tolist() == pytest.approx(
-        output["retained_mask_probability"].tolist(),
-        abs=2e-6,
-    )
+    assert base_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
 
 
 def _parameter_gradient_sum(module: th.nn.Module) -> float:
@@ -377,10 +367,7 @@ def test_selection_only_intensity_ignores_proposal_shape(
         baseline["retained_mask_probability"],
         shifted["retained_mask_probability"],
     )
-    shifted_total = shifted["pred_logprobs"].exp().sum() + shifted[
-        "pred_oos_logprobs"
-    ].exp().sum()
-    assert shifted_total.item() == pytest.approx(1.0, abs=2e-6)
+    assert shifted["pred_logprobs"].exp().sum().item() == pytest.approx(1.0, abs=2e-6)
 
 
 def test_selection_only_primary_spectrum_does_not_update_proposal_heads() -> None:
@@ -414,7 +401,7 @@ def test_selection_only_primary_spectrum_does_not_update_proposal_heads() -> Non
     ].shape
 
 
-def test_learned_oos_owns_retained_gate_without_updating_proposal_heads() -> None:
+def test_selection_only_spectrum_has_no_oos_gate() -> None:
     batch = _build_batch(("CCCO",))
     model = _build_model(
         batch,
@@ -423,8 +410,6 @@ def test_learned_oos_owns_retained_gate_without_updating_proposal_heads() -> Non
         max_enumerated_masks=16,
         use_base_probability_feature=False,
         proposal_selection_only=True,
-        learned_oos=True,
-        learned_oos_initial_probability=0.2,
     )
     output = model(
         mol_pyg=batch,
@@ -432,16 +417,12 @@ def test_learned_oos_owns_retained_gate_without_updating_proposal_heads() -> Non
         spec_nce=th.tensor([25.0]),
     )
 
-    predicted_total = output["pred_logprobs"].exp().sum() + output[
-        "pred_oos_logprobs"
-    ].exp().sum()
-    assert output["pred_oos_logprobs"].exp().item() == pytest.approx(0.2, abs=1e-6)
-    assert predicted_total.item() == pytest.approx(1.0, abs=2e-6)
+    assert "pred_oos_logprobs" not in output
+    assert output["pred_logprobs"].exp().sum().item() == pytest.approx(1.0, abs=2e-6)
+    assert model.intensity_head.oos_head is None
 
     (-output["pred_logprobs"].mean()).backward()
 
-    assert model.intensity_head.oos_head is not None
-    assert _parameter_gradient_sum(model.intensity_head.oos_head) > 0.0
     assert _parameter_gradient_sum(model.bond_break_head) == 0.0
     assert _parameter_gradient_sum(model.charge_head) == 0.0
 
@@ -454,7 +435,6 @@ def test_separate_proposal_encoder_isolates_both_objectives() -> None:
         "max_enumerated_masks": 16,
         "use_base_probability_feature": False,
         "proposal_selection_only": True,
-        "learned_oos": True,
         "separate_proposal_encoder": True,
     }
     model_inputs = {
@@ -476,7 +456,7 @@ def test_separate_proposal_encoder_isolates_both_objectives() -> None:
     proposal_model = _build_model(batch, **model_kwargs)
     proposal_output = proposal_model(**model_inputs)
     fragmented_candidate_index = proposal_output["candidate_cut_counts"].argmax().reshape(1)
-    proposal_ios_loss, proposal_oos_loss = _proposal_coverage_loss(
+    proposal_loss = _proposal_coverage_loss(
         true_mzs=proposal_output["proposal_candidate_mzs"][
             fragmented_candidate_index
         ].detach(),
@@ -486,13 +466,12 @@ def test_separate_proposal_encoder_isolates_both_objectives() -> None:
         candidate_fragment_idxs=proposal_output["proposal_candidate_fragment_idxs"],
         fragment_logprobs=proposal_output["proposal_fragment_logprobs"],
         fragment_batch_idxs=proposal_output["proposal_fragment_batch_idxs"],
-        proposal_oos_logprobs=proposal_output["proposal_pred_oos_logprobs"],
         batch_size=1,
         tolerance=1e-5,
         relative=True,
         tolerance_min_mz=200.0,
     )
-    (proposal_ios_loss + proposal_oos_loss).sum().backward()
+    proposal_loss.sum().backward()
 
     assert proposal_model.proposal_encoder is not None
     assert _parameter_gradient_sum(proposal_model.proposal_encoder) > 0.0
@@ -520,7 +499,7 @@ def test_selection_only_proposal_loss_updates_only_proposal_heads() -> None:
     )
     fragmented_candidate_index = output["candidate_cut_counts"].argmax().reshape(1)
     true_mz = output["proposal_candidate_mzs"][fragmented_candidate_index].detach()
-    proposal_ios_loss, proposal_oos_loss = _proposal_coverage_loss(
+    proposal_loss = _proposal_coverage_loss(
         true_mzs=true_mz,
         true_logprobs=th.zeros(1),
         true_batch_idxs=th.zeros(1, dtype=th.long),
@@ -528,14 +507,13 @@ def test_selection_only_proposal_loss_updates_only_proposal_heads() -> None:
         candidate_fragment_idxs=output["proposal_candidate_fragment_idxs"],
         fragment_logprobs=output["proposal_fragment_logprobs"],
         fragment_batch_idxs=output["proposal_fragment_batch_idxs"],
-        proposal_oos_logprobs=output["proposal_pred_oos_logprobs"],
         batch_size=1,
         tolerance=1e-5,
         relative=True,
         tolerance_min_mz=200.0,
     )
 
-    (proposal_ios_loss + proposal_oos_loss).sum().backward()
+    proposal_loss.sum().backward()
 
     assert _parameter_gradient_sum(model.bond_break_head) > 0.0
     assert _parameter_gradient_sum(model.charge_head) > 0.0
@@ -580,8 +558,7 @@ def test_unique_fragment_mode_marginalizes_paths_and_uses_boundary_counts(
     assert output["candidate_cut_counts"].max().item() == 2
 
     predicted_mass = output["pred_logprobs"].exp().sum()
-    total_mass = predicted_mass + output["pred_oos_logprobs"].exp().sum()
-    assert total_mass.item() == pytest.approx(1.0, abs=2e-6)
+    assert predicted_mass.item() == pytest.approx(1.0, abs=2e-6)
 
 
 def test_unique_fragment_spectrum_loss_reaches_bond_charge_and_ion_heads() -> None:
@@ -637,13 +614,7 @@ def test_unique_fragment_mode_keeps_batched_marginals_separate() -> None:
         output["pred_batch_idxs"],
         output["pred_logprobs"].exp(),
     )
-    assert predicted_mass.tolist() == pytest.approx(
-        output["retained_mask_probability"].tolist(),
-        abs=2e-6,
-    )
-    assert (predicted_mass + output["pred_oos_logprobs"].exp()).tolist() == pytest.approx(
-        [1.0, 1.0], abs=2e-6
-    )
+    assert predicted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
     assert (
         (output["productive_mask_fraction"] > 0.0) & (output["productive_mask_fraction"] <= 1.0)
     ).all()
@@ -693,8 +664,7 @@ def test_mass_shatter_forward_conserves_probability_with_bounded_exploration() -
     assert output["exploration_mask_count"].tolist() == [2.0]
     assert output["exploration_mean_cut_count"].tolist() == [2.0]
     predicted_mass = output["pred_logprobs"].exp().sum()
-    total_mass = predicted_mass + output["pred_oos_logprobs"].exp().sum()
-    assert total_mass.item() == pytest.approx(1.0, abs=2e-6)
+    assert predicted_mass.item() == pytest.approx(1.0, abs=2e-6)
 
 
 def test_mask_residual_reallocates_only_retained_probability(
@@ -739,8 +709,7 @@ def test_mask_residual_reallocates_only_retained_probability(
         shifted["pred_batch_idxs"],
         shifted["pred_logprobs"].exp(),
     )
-    shifted_total = shifted_mass + shifted["pred_oos_logprobs"].exp()
-    assert shifted_total.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+    assert shifted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
 
 
 def test_disabled_mask_residual_does_not_reallocate_probability(

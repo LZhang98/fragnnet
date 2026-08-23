@@ -14,12 +14,13 @@ continues until a target number of distinct atom sets is reached, charge retenti
 normalized inside each mask, and duplicate component pathways are marginalized with
 ``logsumexp`` before intensity scoring.
 
-The probability of an observed pathway therefore factorizes as::
+The conditional probability of an enumerated pathway therefore factorizes as::
 
-    P(mask) * P(component keeps the charge | mask) * P(ion mode, H shift | component)
+    P(mask | enumerated) * P(component keeps the charge | mask)
+    * P(ion mode, H shift | component)
 
-with the mass of the un-enumerated masks reported separately as
-``pred_oos_logprobs`` (out-of-support).
+The final spectrum is normalized over the candidates generated for that precursor.
+Unmatched observed peaks are candidate-coverage diagnostics, not a predicted class.
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ from collections.abc import Sequence
 
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
 from torch_geometric.data import Batch
 
 from fragnnet.frag.mass_shatter_candidates import (
@@ -418,8 +418,6 @@ class MassShatterModel(nn.Module):
         return_base_spectrum: bool,
         detach_base_ion_h: bool,
         proposal_selection_only: bool,
-        learned_oos: bool,
-        learned_oos_initial_probability: float,
         separate_proposal_encoder: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
@@ -485,12 +483,7 @@ class MassShatterModel(nn.Module):
                 from entering the candidate intensity transformer through that head.
             proposal_selection_only: Whether proposal probabilities only choose the
                 retained unique-fragment set. The final retained shape then comes from
-                the intensity transformer alone, while the detached proposal retains
-                ownership of the retained-versus-OOS mass split.
-            learned_oos: Whether the candidate transformer also predicts the final
-                retained-versus-OOS gate instead of using the detached proposal mass.
-            learned_oos_initial_probability: Initial OOS probability emitted by the
-                learned gate before its candidate-set weights have trained.
+                the intensity transformer alone.
             separate_proposal_encoder: Whether bond/charge proposal scoring uses an
                 independent molecular GNN trained by proposal supervision.
             precursor_types: Supported adduct strings; sorted and used as the label
@@ -514,7 +507,7 @@ class MassShatterModel(nn.Module):
             max_enumerated_masks: Safety cap on latent masks considered while filling
                 the unique-fragment target.
             min_mask_probability: Probability floor below which a ranked mask is
-                dropped; its mass falls into the out-of-support bucket.
+                dropped before the selected candidates are renormalized.
             explore_masks: Random masks injected during training only.
             exploration_mode: ``bernoulli_replace`` swaps exploration masks in for the
                 weakest ranked masks; ``bounded_additive`` appends them.
@@ -554,8 +547,6 @@ class MassShatterModel(nn.Module):
             )
         if proposal_selection_only and not use_mask_residuals:
             raise ValueError("proposal_selection_only requires intensity residuals")
-        if learned_oos and not proposal_selection_only:
-            raise ValueError("learned_oos requires proposal_selection_only")
         if separate_proposal_encoder and not proposal_selection_only:
             raise ValueError("separate_proposal_encoder requires proposal_selection_only")
         if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
@@ -616,7 +607,6 @@ class MassShatterModel(nn.Module):
         self.return_base_spectrum = return_base_spectrum
         self.detach_base_ion_h = detach_base_ion_h
         self.proposal_selection_only = proposal_selection_only
-        self.learned_oos = learned_oos
         self.separate_proposal_encoder = separate_proposal_encoder
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
@@ -704,8 +694,8 @@ class MassShatterModel(nn.Module):
             num_h_shifts=self.num_h_shifts,
             dropout=intensity_transformer_dropout,
             use_base_probability_feature=use_base_probability_feature,
-            predict_oos=learned_oos,
-            initial_oos_probability=learned_oos_initial_probability,
+            predict_oos=False,
+            initial_oos_probability=0.1,
         )
         self._setup_chemistry_buffers()
 
@@ -968,7 +958,6 @@ class MassShatterModel(nn.Module):
             Dictionary with the sparse prediction contract plus diagnostics:
             - "pred_mzs"/"pred_logprobs"/"pred_batch_idxs": one entry per valid
               (component, ion mode, H shift) pathway, shape ``(num_pathways,)``.
-            - "pred_oos_logprobs": un-enumerated mask mass, shape ``(batch_size,)``.
             - "bond_break_logits"/"atom_charge_logits": raw head outputs.
             - remaining keys: per-spectrum counters and candidate-generation timings.
 
@@ -1072,8 +1061,6 @@ class MassShatterModel(nn.Module):
         unique_fragment_effective_count = bond_logits.new_zeros(batch_size)
         unique_fragment_top1_mass_fraction = bond_logits.new_zeros(batch_size)
         duplicate_pathway_probability_fraction = bond_logits.new_zeros(batch_size)
-        learned_oos_logits = None
-
         if self.unique_fragment_mode:
             (
                 fragment_batch_indices,
@@ -1104,7 +1091,15 @@ class MassShatterModel(nn.Module):
                 candidates.component_unique_indices,
                 num_fragments,
             )
-            base_fragment_log_probabilities = fragment_log_probabilities
+            proposal_log_normalizers = _segment_logsumexp(
+                fragment_log_probabilities,
+                fragment_batch_indices,
+                batch_size,
+            )
+            base_fragment_log_probabilities = (
+                fragment_log_probabilities
+                - proposal_log_normalizers[fragment_batch_indices]
+            )
             best_pathway_log_probabilities = component_log_probabilities.new_full(
                 (num_fragments,),
                 -th.inf,
@@ -1168,25 +1163,8 @@ class MassShatterModel(nn.Module):
                 component_counts=candidates.unique_component_counts,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
-            if self.learned_oos:
-                learned_oos_logits = intensity_outputs[3]
             if not self.use_mask_residuals:
                 fragment_residuals = th.zeros_like(fragment_residuals)
-            retained_log_probabilities = _segment_logsumexp(
-                fragment_log_probabilities,
-                fragment_batch_indices,
-                batch_size,
-            )
-            if self.learned_oos:
-                if learned_oos_logits is None:
-                    raise RuntimeError("the learned OOS head did not return logits")
-                final_retained_log_probabilities = F.logsigmoid(-learned_oos_logits)
-            else:
-                final_retained_log_probabilities = (
-                    retained_log_probabilities.detach()
-                    if self.proposal_selection_only
-                    else retained_log_probabilities
-                )
             corrected_fragment_logits = (
                 fragment_residuals
                 if self.proposal_selection_only
@@ -1200,12 +1178,8 @@ class MassShatterModel(nn.Module):
             fragment_log_probabilities = (
                 corrected_fragment_logits
                 - fragment_log_normalizers[fragment_batch_indices]
-                + final_retained_log_probabilities[fragment_batch_indices]
             )
-            normalized_fragment_log_probabilities = (
-                fragment_log_probabilities
-                - final_retained_log_probabilities[fragment_batch_indices]
-            )
+            normalized_fragment_log_probabilities = fragment_log_probabilities
             normalized_fragment_probabilities = normalized_fragment_log_probabilities.exp()
             unique_fragment_entropy = bond_logits.new_zeros(batch_size).index_add(
                 0,
@@ -1297,6 +1271,10 @@ class MassShatterModel(nn.Module):
                 candidates.mask_batch_indices,
                 batch_size,
             )
+            base_fragment_log_probabilities = (
+                base_fragment_log_probabilities
+                - retained_log_probabilities[fragment_batch_indices]
+            )
             mask_log_normalizers = _segment_logsumexp(
                 mask_logits,
                 candidates.mask_batch_indices,
@@ -1305,7 +1283,6 @@ class MassShatterModel(nn.Module):
             mask_log_probabilities = (
                 mask_logits
                 - mask_log_normalizers[candidates.mask_batch_indices]
-                + retained_log_probabilities[candidates.mask_batch_indices]
             )
             component_charge_logits = charge_log_probabilities + component_residuals
             component_log_normalizers = _segment_logsumexp(
@@ -1365,21 +1342,6 @@ class MassShatterModel(nn.Module):
             candidates.mask_batch_indices,
             selected_mask_probabilities,
         )
-        proposal_pred_oos_logprobs = th.log1p(
-            -retained_mask_probability.clamp(
-                max=1.0 - th.finfo(retained_mask_probability.dtype).eps
-            )
-        )
-        if self.learned_oos:
-            if learned_oos_logits is None:
-                raise RuntimeError("the learned OOS head did not return logits")
-            pred_oos_logprobs = F.logsigmoid(learned_oos_logits)
-        else:
-            pred_oos_logprobs = (
-                proposal_pred_oos_logprobs.detach()
-                if self.proposal_selection_only
-                else proposal_pred_oos_logprobs
-            )
         selected_mask_count = th.bincount(
             candidates.mask_batch_indices,
             minlength=batch_size,
@@ -1443,7 +1405,6 @@ class MassShatterModel(nn.Module):
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,
             "pred_batch_idxs": pred_batch_idxs,
-            "pred_oos_logprobs": pred_oos_logprobs,
             "candidate_mzs_by_cut": pred_mzs,
             "candidate_batch_idxs_by_cut": pred_batch_idxs,
             "candidate_cut_counts": candidate_cut_counts,
@@ -1484,7 +1445,6 @@ class MassShatterModel(nn.Module):
         }
         if self.return_base_spectrum:
             output["base_pred_logprobs"] = base_pathway_log_probabilities.flatten()[flat_valid]
-            output["base_pred_oos_logprobs"] = proposal_pred_oos_logprobs
         if self.proposal_selection_only:
             proposal_fragment_indices = (
                 th.arange(num_fragments, device=fragment_batch_indices.device)
@@ -1498,7 +1458,6 @@ class MassShatterModel(nn.Module):
                     "proposal_candidate_fragment_idxs": proposal_fragment_indices,
                     "proposal_fragment_logprobs": base_fragment_log_probabilities,
                     "proposal_fragment_batch_idxs": fragment_batch_indices,
-                    "proposal_pred_oos_logprobs": proposal_pred_oos_logprobs,
                 }
             )
         return output

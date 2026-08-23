@@ -136,7 +136,7 @@ def test_mass_shatter_pl_builds_proposal_selection_only_from_config() -> None:
     assert "proposal_loss" in model.loss_names
 
 
-def test_mass_shatter_pl_builds_learned_oos_v2_from_config() -> None:
+def test_mass_shatter_ignores_legacy_oos_config() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
         mass_shatter_explore_masks=0,
@@ -147,9 +147,13 @@ def test_mass_shatter_pl_builds_learned_oos_v2_from_config() -> None:
         mass_shatter_learned_oos_initial_probability=0.2,
     )
 
-    assert model.model.learned_oos
-    assert model.model.intensity_head.oos_head is not None
-    assert model.model.intensity_head.oos_head.bias.sigmoid().item() == pytest.approx(0.2)
+    assert not model.hparams.predict_oos
+    assert not model.hparams.oos_loss
+    assert not model.hparams.mass_shatter_learned_oos
+    assert "true_oos_prob" not in model.hparams.auxiliary_scores
+    assert "true_oos_e" not in model.hparams.auxiliary_scores
+    assert model.model.intensity_head.oos_head is None
+    assert "oos_ce" not in model.loss_names
 
 
 def test_mass_shatter_pl_builds_separate_proposal_encoder_from_config() -> None:
@@ -159,7 +163,6 @@ def test_mass_shatter_pl_builds_separate_proposal_encoder_from_config() -> None:
         mass_shatter_proposal_anchored=True,
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_loss_weight=0.1,
-        mass_shatter_learned_oos=True,
         mass_shatter_separate_proposal_encoder=True,
     )
 
@@ -189,7 +192,7 @@ def test_proposal_anchored_requires_base_ce_supervision() -> None:
 
 def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
     fragment_logprobs = th.log(th.tensor([0.4, 0.3], requires_grad=True))
-    ios_loss, oos_loss = _proposal_coverage_loss(
+    coverage_loss = _proposal_coverage_loss(
         true_mzs=th.tensor([100.0]),
         true_logprobs=th.tensor([0.0]),
         true_batch_idxs=th.tensor([0]),
@@ -197,15 +200,13 @@ def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
         candidate_fragment_idxs=th.tensor([0, 0, 1]),
         fragment_logprobs=fragment_logprobs,
         fragment_batch_idxs=th.tensor([0, 0]),
-        proposal_oos_logprobs=th.log(th.tensor([0.3])),
         batch_size=1,
         tolerance=1e-5,
         relative=True,
         tolerance_min_mz=200.0,
     )
 
-    assert ios_loss.tolist() == pytest.approx([-math.log(0.4)])
-    assert oos_loss.tolist() == pytest.approx([0.0])
+    assert coverage_loss.tolist() == pytest.approx([-math.log(0.4)])
 
 
 def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None:
@@ -225,18 +226,15 @@ def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None
         pred_mzs=th.tensor([100.0, 200.0]),
         pred_logprobs=th.log(th.tensor([0.8, 0.1])),
         pred_batch_idxs=th.tensor([0, 0]),
-        pred_oos_logprobs=th.log(th.tensor([0.1])),
         proposal_candidate_mzs=th.tensor([100.0, 100.0, 200.0]),
         proposal_candidate_fragment_idxs=th.tensor([0, 0, 1]),
         proposal_fragment_logprobs=proposal_fragment_logprobs,
         proposal_fragment_batch_idxs=th.tensor([0, 0]),
-        proposal_pred_oos_logprobs=th.log(th.tensor([0.3])),
         batch_size=1,
         **_loss_diagnostics(),
     )
 
-    assert actual["proposal_ios_loss"].tolist() == pytest.approx([-math.log(0.4)])
-    assert actual["proposal_oos_loss"].tolist() == pytest.approx([0.0])
+    assert actual["proposal_loss"].tolist() == pytest.approx([-math.log(0.4)])
     assert actual["loss"].tolist() == pytest.approx(
         (actual["primary_loss"] + 0.1 * actual["proposal_loss"]).tolist()
     )
@@ -281,7 +279,7 @@ def test_mass_shatter_transfer_retains_static_graph_on_cpu() -> None:
     assert static_graph.atom_ptr.tolist() == [0, 2]
 
 
-def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> None:
+def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() -> None:
     model, config = _build_pl(
         mass_shatter_log_base_ce=True,
         mass_shatter_base_ce_weight=0.2,
@@ -294,8 +292,6 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
     pred_logprobs = th.log(th.tensor([0.5, 0.3]))
     base_pred_logprobs = th.log(th.tensor([0.3, 0.5])).requires_grad_()
     pred_batch_indices = th.tensor([0, 0], dtype=th.long)
-    pred_oos_logprobs = th.log(th.tensor([0.2]))
-
     actual = model.loss_fn(
         true_mzs=true_mzs,
         true_logprobs=true_logprobs,
@@ -304,7 +300,6 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         pred_logprobs=pred_logprobs,
         base_pred_logprobs=base_pred_logprobs,
         pred_batch_idxs=pred_batch_indices,
-        pred_oos_logprobs=pred_oos_logprobs,
         retained_mask_probability=th.tensor([0.8]),
         selected_mask_count=th.tensor([2]),
         exploration_mask_count=th.tensor([1]),
@@ -348,39 +343,36 @@ def test_mass_shatter_primary_loss_matches_fragnnet_sparse_cross_entropy() -> No
         pm_tolerance_multiple=config["pm_tolerance_multiple"],
         loss_batch_size=config["loss_batch_size"],
     )
-    expected_ios, expected_oos, expected_true_oos, _ = sparse_ce_fn(
+    expected_spec_ce, _, expected_unmatched, _ = sparse_ce_fn(
         true_mzs,
         true_logprobs,
         true_batch_indices,
         pred_mzs,
         pred_logprobs,
         pred_batch_indices,
-        pred_oos_logprobs,
+        th.zeros(1),
     )
-    expected_base_ios, expected_base_oos, _, _ = sparse_ce_fn(
+    expected_base_spec_ce, _, _, _ = sparse_ce_fn(
         true_mzs,
         true_logprobs,
         true_batch_indices,
         pred_mzs,
         base_pred_logprobs,
         pred_batch_indices,
-        pred_oos_logprobs,
+        th.zeros(1),
     )
 
-    assert th.allclose(actual["ios_ce"], expected_ios)
-    assert th.allclose(actual["oos_ce"], expected_oos)
-    assert th.allclose(actual["spec_ce"], expected_ios + expected_oos)
-    assert th.allclose(actual["base_ios_ce"], expected_base_ios)
-    assert th.allclose(actual["base_oos_ce"], expected_base_oos)
-    assert th.allclose(actual["base_spec_ce"], expected_base_ios + expected_base_oos)
+    assert th.allclose(actual["spec_ce"], expected_spec_ce)
+    assert th.allclose(actual["base_spec_ce"], expected_base_spec_ce)
+    assert "oos_ce" not in actual
     assert th.allclose(
         actual["loss"],
-        expected_ios + expected_oos + 0.2 * (expected_base_ios + expected_base_oos),
+        expected_spec_ce + 0.2 * expected_base_spec_ce,
     )
     actual["loss"].sum().backward()
     assert base_pred_logprobs.grad is not None
     assert base_pred_logprobs.grad.abs().sum() > 0.0
-    assert th.allclose(actual["candidate_wrecall"], 1.0 - expected_true_oos.exp())
+    assert th.allclose(actual["candidate_wrecall"], 1.0 - expected_unmatched.exp())
     assert actual["candidate_wrecall"].tolist() == pytest.approx([0.6])
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])
     assert actual["selected_mask_count"].tolist() == [2.0]

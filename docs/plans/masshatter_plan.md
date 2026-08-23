@@ -18,6 +18,14 @@ The model's canonical public name is **MASShatter**. Code uses
 bond-mask and neural-head utilities retain descriptive names because they are
 reusable components rather than the complete model.
 
+### Candidate-conditional spectrum correction (2026-08-23)
+
+MASShatter has no fixed fragmentation DAG and therefore does not predict an OOS
+class. Its generated ion probabilities are normalized over the selected candidate
+set. Observed intensity unmatched by those candidates is reported only through
+candidate coverage metrics. Earlier retained/OOS designs documented below are
+historical and are superseded by this correction; legacy OOS config keys are ignored.
+
 ```
 precursor molecular graph
   -> atom/bond GNN embeddings (one pass)
