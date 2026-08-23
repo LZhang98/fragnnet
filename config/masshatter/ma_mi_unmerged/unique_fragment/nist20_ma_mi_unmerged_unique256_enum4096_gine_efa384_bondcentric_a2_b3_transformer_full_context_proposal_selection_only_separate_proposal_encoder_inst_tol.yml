@@ -1,4 +1,4 @@
-wandb_name: nist20_ma_mi_unmerged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_learned_oos_inst_tol
+wandb_name: nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_separate_proposal_encoder_inst_tol
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:
   - mass_shatter
@@ -6,7 +6,7 @@ wandb_tags:
   - nist20_ma_mi
   - unmerged
   - unique_fragments_256
-  - max_enumerated_masks_1024
+  - max_enumerated_masks_4096
   - pathway_marginalization
   - deterministic
   - instrument_tolerance
@@ -22,8 +22,8 @@ wandb_tags:
   - frag_mode_embed
   - proposal_selection_only
   - proposal_loss_0.1
-  - learned_oos
-  - learned_oos_initial_0.1
+  - candidate_conditional
+  - separate_proposal_encoder
   - charge_logsumexp
 
 seed: 397623
@@ -71,9 +71,8 @@ mol_params:
     - b_ring
     - b_conj
 
-# 2. Search up to 1024 masks for 256 unique fragments. Proposal
-# probabilities select support; the intensity transformer owns retained shape and
-# candidate transformer also owns the learned retained-versus-OOS gate.
+# 2. Match the U256/E4096 candidate-conditional control, except bond and charge
+# proposal scoring use an independent molecular GNN.
 model_type: mass_shatter
 mol_gnn_type: GINE_EFA
 mol_hidden_size: 384
@@ -84,7 +83,7 @@ ce_insert_type: embed
 ce_insert_size: 32
 mass_shatter_unique_fragment_target: 256
 mass_shatter_unique_fragment_mode: True
-mass_shatter_ranked_mask_budget: 1024
+mass_shatter_ranked_mask_budget: 4096
 mass_shatter_explore_masks: 0
 mass_shatter_exploration_temperature: 1.0
 mass_shatter_include_single_bond_cuts: True
@@ -109,14 +108,12 @@ mass_shatter_base_ce_weight: 0.0
 mass_shatter_detach_base_ion_h: True
 mass_shatter_proposal_selection_only: True
 mass_shatter_proposal_loss_weight: 0.1
-mass_shatter_learned_oos: True
-mass_shatter_learned_oos_initial_probability: 0.1
+mass_shatter_separate_proposal_encoder: True
 
 # 3. Train final spectral intensity and H-independent proposal support separately.
 loss_type: cross_entropy
-predict_oos: True
-oos_tolerance_multiple: 1
-oos_loss: True
+predict_oos: False
+oos_loss: False
 gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
@@ -166,4 +163,3 @@ auxiliary_scores:
   - wprecision
 eval_mz_bin_res:
   - 0.01
-

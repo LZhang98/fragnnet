@@ -686,77 +686,62 @@ complete architectural repair. Retain C only as an ablation if it beats B on hel
 final metrics without reducing candidate coverage, base-only competence, or OOS
 calibration. The combined target in Section 6.1.2 remains the adoption candidate.
 
-#### Full-separation V1 implementation (2026-08-21)
+#### Proposal-selection implementation (corrected 2026-08-23)
 
-The opt-in `mass_shatter_proposal_selection_only` path implements arm C without
-changing candidate generation. Bond-mask ranking, charge scoring, unique-fragment
-deduplication, and the ranked-mask budget remain unchanged. After selection, the
-candidate transformer owns the relative retained-fragment distribution:
-
-```
-log P_final(i) = stopgrad(log R) + log_softmax_i(s_i)
-P_final(OOS)   = 1 - stopgrad(R)
-```
-
-Proposal probabilities therefore affect candidate membership and the forward value
-of the retained/OOS gate, but receive no primary-spectrum gradient. A separate
-intensity-weighted support loss trains the bond/charge proposer. For each true peak,
-it sums the base probability of every unique fragment with at least one valid ion
-channel inside the instrument tolerance. Each fragment is counted once per peak,
-regardless of how many CRF/CMF or `delta_H` channels match, and the loss uses no
-learned ion/H probability. Proposal inputs are detached from the shared precursor
-and context encoders in V1, so proposal gradients update only the bond and charge
-heads; the final spectrum trains the shared encoders and candidate transformer.
-
-Reference configuration:
-
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
-
-#### Full-separation V2 learned OOS gate (2026-08-21)
-
-V2 keeps V1's proposal selection, detached proposal inputs, H-independent support
-loss, and candidate-intensity factorization. It replaces only the detached proposal
-retained/OOS gate with a scalar predicted from the mean-pooled contextualized
-candidate tokens:
+The opt-in `mass_shatter_proposal_selection_only` path separates candidate retrieval
+from conditional intensity without changing candidate generation. Bond-mask ranking,
+charge scoring, unique-fragment deduplication, and the ranked-mask budget remain
+unchanged. After selection, the candidate transformer owns the distribution over the
+generated candidates:
 
 ```
-g = sigmoid(OOSHead(mean(candidate_tokens)))
-log P_final(i) = log(1 - g) + log_softmax_i(s_i)
-log P_final(OOS) = log(g)
+log P_final(i | selected candidates) = log_softmax_i(s_i)
 ```
 
-The OOS head is zero-weight initialized with a configurable initial probability, so
-it begins as a constant gate and learns candidate-dependent corrections from the
-primary spectrum loss. Proposal OOS remains live only inside the proposal-support
-loss and base-spectrum diagnostic. This isolates whether V1 is limited by proposal
-calibration after candidate selection; it does not repair missing candidate support.
+Proposal probabilities therefore affect candidate membership but receive no primary
+spectrum-loss gradient. A separate intensity-weighted support loss trains the
+bond/charge proposer. For each true peak, it sums the normalized base probability of
+every unique fragment with at least one valid ion channel inside the instrument
+tolerance. Each fragment is counted once per peak, regardless of how many CRF/CMF or
+`delta_H` channels match, and the loss uses no learned ion/H probability. Proposal
+inputs are detached from the shared precursor and context encoders, so proposal
+gradients update only the bond and charge heads; the final spectrum trains the shared
+precursor encoder and candidate transformer.
 
-Matched V2 configuration:
+The earlier learned-OOS experiment is retired. MASShatter has no fixed fragmentation
+DAG and no identifiable OOS class: unenumerated mask probability is not unexplained
+spectral intensity, and multiple masks can produce the same fragment. The former V2
+configs were therefore removed rather than retained as meaningful ablations.
 
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_learned_oos.yml`
+Reference configurations:
 
-#### V3 separate proposal encoder ablation (2026-08-21)
+- merged U256/E1024: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
+- unmerged U256/E4096: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
 
-V3 tests whether the detached shared molecular representation is still misaligned
-with proposal ranking. With `mass_shatter_separate_proposal_encoder`, bond and charge
-heads consume an independent GNN representation instead of detached intensity-GNN
-embeddings:
+#### Separate proposal encoder ablation (2026-08-23)
+
+This ablation tests whether the detached intensity-GNN representation is misaligned
+with proposal ranking. With `mass_shatter_separate_proposal_encoder`, the bond and
+charge heads consume an independent GNN representation:
 
 ```
 Proposal GNN  -> bond/charge heads -> candidate support -> L_proposal
-Intensity GNN -> candidate transformer + ion/H + OOS     -> L_spectrum
+Intensity GNN -> candidate transformer + ion/H          -> L_spectrum
 ```
 
 The acquisition context remains shared but detached on the proposal path. Candidate
-generation, V2's learned OOS gate, and the H-independent proposal-support loss are
-unchanged. Thus proposal loss updates the proposal GNN and bond/charge heads, while
-the primary spectrum loss updates the intensity GNN and candidate transformer. Run
-this as one targeted V2 U256/E4096 ablation rather than another full grid.
+generation and the H-independent proposal-support loss are identical to the
+single-encoder control. Thus proposal loss updates the proposal GNN and bond/charge
+heads, while primary spectrum loss updates the intensity GNN and candidate
+transformer. Each comparison changes only
+`mass_shatter_separate_proposal_encoder`, apart from run names, tags, and comments.
 
-Reference configuration:
+Matched experiment pairs:
 
-- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_learned_oos_separate_proposal_encoder_inst_tol.yml`
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_learned_oos_separate_proposal_encoder.yml`
+- merged control: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
+- merged separate encoder: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_separate_proposal_encoder.yml`
+- unmerged control: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
+- unmerged separate encoder: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_separate_proposal_encoder_inst_tol.yml`
 
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 

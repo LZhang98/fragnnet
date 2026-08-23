@@ -22,7 +22,7 @@ wandb_tags:
   - frag_mode_embed
   - proposal_selection_only
   - proposal_loss_0.1
-  - detached_retained_oos
+  - candidate_conditional
   - charge_logsumexp
 
 seed: 397623
@@ -70,9 +70,8 @@ mol_params:
     - b_ring
     - b_conj
 
-# 2. Search up to 4096 masks for 256 unique fragments. Proposal
-# probabilities select support; the intensity transformer owns retained shape and
-# detached proposal mass supplies the retained-versus-OOS gate.
+# 2. Search up to 4096 masks for 256 unique fragments. Proposal probabilities
+# select support; the candidate transformer owns the conditional intensity shape.
 model_type: mass_shatter
 mol_gnn_type: GINE_EFA
 mol_hidden_size: 384
@@ -108,14 +107,11 @@ mass_shatter_base_ce_weight: 0.0
 mass_shatter_detach_base_ion_h: True
 mass_shatter_proposal_selection_only: True
 mass_shatter_proposal_loss_weight: 0.1
-mass_shatter_learned_oos: False
-mass_shatter_learned_oos_initial_probability: 0.1
 
 # 3. Train final spectral intensity and H-independent proposal support separately.
 loss_type: cross_entropy
-predict_oos: True
-oos_tolerance_multiple: 1
-oos_loss: True
+predict_oos: False
+oos_loss: False
 gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
@@ -165,4 +161,3 @@ auxiliary_scores:
   - wprecision
 eval_mz_bin_res:
   - 0.01
-
