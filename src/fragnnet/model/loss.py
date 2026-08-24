@@ -387,6 +387,7 @@ def sparse_cross_entropy_vec(
     loss_batch_size: int,
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
+    dist: str = "gaussian",
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
@@ -409,6 +410,9 @@ def sparse_cross_entropy_vec(
         oos_tolerance_multiple: Multiplier for OOS tolerance.
         gaussian_renormalize: Whether to renormalize Gaussian.
         loss_batch_size: Batch size for loss computation.
+        dist: Output distribution. ``"gaussian"`` weights each matched candidate by a
+            Gaussian m/z density; ``"peak_marginal"`` aggregates matched candidate
+            log-probabilities with a hard tolerance window and no density term.
 
     Returns:
         ios_ce: In-sample cross-entropy per batch.
@@ -447,7 +451,13 @@ def sparse_cross_entropy_vec(
 
     # Precompute loop-invariant constants as Python scalars (avoids per-iteration tensor creation).
     _LOG_2PI = math.log(2 * math.pi)
-    if gaussian_renormalize:
+    if dist not in ("gaussian", "peak_marginal"):
+        raise ValueError(
+            f"Distribution '{dist}' not implemented. "
+            "Supported distributions: 'gaussian', 'peak_marginal'."
+        )
+    use_gaussian = dist == "gaussian"
+    if gaussian_renormalize and use_gaussian:
         if oos_tolerance_multiple <= 0:
             raise ValueError(f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}")
         _log_trunc_factor: float = math.log(math.erf(oos_tolerance_multiple / math.sqrt(2)))
@@ -607,26 +617,33 @@ def sparse_cross_entropy_vec(
 
         bl_true_both_mask = th.any(bl_both_mask, dim=2)
 
-        if relative:
-            if bl_tol_per_pred_padded is not None:
-                bl_stds = (
-                    th.maximum(bl_pred_mzs_padded, bl_min_mz_per_pred_padded)
-                    * bl_tol_per_pred_padded
-                )
+        if use_gaussian:
+            if relative:
+                if bl_tol_per_pred_padded is not None:
+                    bl_stds = (
+                        th.maximum(bl_pred_mzs_padded, bl_min_mz_per_pred_padded)
+                        * bl_tol_per_pred_padded
+                    )
+                else:
+                    bl_stds = th.clamp(bl_pred_mzs_padded, min=tolerance_min_mz) * tolerance
             else:
-                bl_stds = th.clamp(bl_pred_mzs_padded, min=tolerance_min_mz) * tolerance
-        else:
-            bl_stds = tolerance * th.ones_like(bl_pred_mzs_padded)
-        bl_vars = bl_stds**2
+                bl_stds = tolerance * th.ones_like(bl_pred_mzs_padded)
+            bl_vars = bl_stds**2
 
-        bl_ios_log_probs = (
-            -0.5
-            * (bl_true_mzs_padded.unsqueeze(2) - bl_pred_mzs_padded.unsqueeze(1)) ** 2
-            / bl_vars.unsqueeze(1)
-            - 0.5 * (_LOG_2PI + th.log(bl_vars.unsqueeze(1)))
-            + bl_pred_logprobs_padded.unsqueeze(1)
-            - _log_trunc_factor
-        )
+            bl_ios_log_probs = (
+                -0.5
+                * (bl_true_mzs_padded.unsqueeze(2) - bl_pred_mzs_padded.unsqueeze(1)) ** 2
+                / bl_vars.unsqueeze(1)
+                - 0.5 * (_LOG_2PI + th.log(bl_vars.unsqueeze(1)))
+                + bl_pred_logprobs_padded.unsqueeze(1)
+                - _log_trunc_factor
+            )
+        else:
+            # Peak-marginal: every candidate inside the tolerance window contributes its
+            # full log-probability, with no m/z density weighting.
+            bl_ios_log_probs = bl_pred_logprobs_padded.unsqueeze(1).expand(
+                -1, bl_true_mzs_padded.shape[1], -1
+            )
         bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).to(float_dtype) * mask_value
         bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=2)
 
@@ -682,9 +699,10 @@ def get_sparse_cross_entropy_fn(
         raise NotImplementedError(msg)
 
     if vectorized:
-        if dist != "gaussian":
-            msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
-            raise NotImplementedError(msg)
+        # The window multiple is distribution-specific, matching the sequential path.
+        vec_tolerance_multiple = (
+            oos_tolerance_multiple if dist == "gaussian" else pm_tolerance_multiple
+        )
 
         def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
             return sparse_cross_entropy_vec(
@@ -692,12 +710,14 @@ def get_sparse_cross_entropy_fn(
                 tolerance=tolerance,
                 relative=relative,
                 tolerance_min_mz=tolerance_min_mz,
-                oos_tolerance_multiple=oos_tolerance_multiple,
+                oos_tolerance_multiple=vec_tolerance_multiple,
                 gaussian_renormalize=gaussian_renormalize,
                 loss_batch_size=loss_batch_size,
                 tol_per_sample=tol_per_sample,
                 min_mz_per_sample=min_mz_per_sample,
+                dist=dist,
             )
+
     else:
         if dist == "gaussian":
             tolerance_multiple = oos_tolerance_multiple

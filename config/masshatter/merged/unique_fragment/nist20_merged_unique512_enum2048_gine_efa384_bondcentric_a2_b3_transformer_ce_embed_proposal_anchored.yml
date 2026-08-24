@@ -133,3 +133,9 @@ auxiliary_scores:
   - recall
 eval_mz_bin_res:
   - 0.01
+
+# Per-instrument loss tolerance. QTOF floors at 0.015 Da to cover NIST23 floor-truncated
+# m/z; FT stays at 10 ppm. FT-only configs are numerically unaffected.
+inst_type_loss_tol:
+  FT: {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}
