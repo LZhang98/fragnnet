@@ -7,6 +7,7 @@ specialized layers for molecular and spectra.
 - GNN: Generic wrapper for different types of Graph Neural Networks (e.g., GINE, MPNN, GAT, GGNN).
 - GINE: Graph Isomorphism Network with Edge Features.
 - GINE_EFA: GINE augmented with per-graph EFA linear global attention.
+- GINE_GRAPHORMER: GINE augmented with structurally biased global softmax attention.
 - Graphormer: Global molecular attention with degree, distance, and bond biases.
 - MPNN: Neural Message Passing for Quantum Chemistry.
 - GAT: Graph Attention Networks (v1 and v2).
@@ -171,6 +172,15 @@ class GNN(nn.Module):
                 dropout=self.dropout,
                 normalization=self.normalization,
                 **kwargs,
+            )
+        elif self.gnn_type == "GINE_GRAPHORMER":
+            self.gnn = GINEGraphormer(
+                hidden_size=self.hidden_size,
+                edge_feats_size=self.edge_feats_size,
+                num_layers=self.num_layers,
+                dropout=self.dropout,
+                normalization=self.normalization,
+                num_heads=kwargs["num_heads"],
             )
         elif self.gnn_type == "GINE_GATED":
             self.gnn = GatedGINE(
@@ -571,6 +581,119 @@ class Graphormer(nn.Module):
             dense_x = layer(dense_x, attention_bias, padding_mask)
         atom_states = self.output_norm(dense_x[:, 1:])
         return atom_states[valid_atoms]
+
+
+class GINEGraphormer(Graphormer):
+    """Interleave local GINE updates with structurally biased global attention.
+
+    Each layer first updates flat atom states through real chemical bonds, then
+    applies one Graphormer attention/FFN layer using degree, shortest-path, and
+    multi-hop bond-path encodings. Structural attention biases are built once per
+    forward pass and reused by every layer.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        edge_feats_size: int,
+        num_layers: int,
+        dropout: float,
+        normalization: str,
+        num_heads: int,
+    ) -> None:
+        super().__init__(
+            hidden_size=hidden_size,
+            edge_feats_size=edge_feats_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            normalization=normalization,
+            num_heads=num_heads,
+        )
+        self.local_edge_transform = nn.Linear(edge_feats_size, hidden_size)
+        self.local_layers = nn.ModuleList(
+            [
+                pyg.nn.conv.GINEConv(
+                    nn=nn.Sequential(
+                        nn.Linear(hidden_size, hidden_size),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size, hidden_size),
+                    ),
+                    eps=0.0,
+                    edge_dim=None,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.local_norms = nn.ModuleList(
+            [nn.LayerNorm(hidden_size) for _ in range(num_layers)]
+        )
+        self.local_dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
+
+    def forward(
+        self,
+        x: th.Tensor,
+        batch_index: th.Tensor,
+        edge_index: th.Tensor,
+        edge_attr: th.Tensor,
+    ) -> th.Tensor:
+        """Return one locally and globally contextualized state per atom."""
+        if x.shape[0] == 0:
+            return x
+        if batch_index.shape != (x.shape[0],):
+            raise ValueError("batch_index must contain one graph index per atom")
+        if not th.all(batch_index[1:] >= batch_index[:-1]):
+            raise ValueError("GINE_GRAPHORMER requires atoms grouped by graph")
+        if edge_index.shape[0] != 2 or edge_attr.shape[0] != edge_index.shape[1]:
+            raise ValueError("edge_index and edge_attr must describe the same directed bonds")
+        if not th.equal(batch_index[edge_index[0]], batch_index[edge_index[1]]):
+            raise ValueError("GINE_GRAPHORMER received a bond connecting two batched graphs")
+
+        # 1. Build graph structure once and initialize topology-aware atom states.
+        dense_x, valid_atoms = pyg.utils.to_dense_batch(x, batch_index)
+        batch_size, max_nodes, _ = dense_x.shape
+        in_degree = th.bincount(edge_index[1], minlength=x.shape[0]).clamp_max(self.max_degree)
+        out_degree = th.bincount(edge_index[0], minlength=x.shape[0]).clamp_max(self.max_degree)
+        atom_states = (
+            x + self.in_degree_embedding(in_degree) + self.out_degree_embedding(out_degree)
+        )
+        structural_bias = self._structural_attention_bias(
+            batch_index,
+            edge_index,
+            edge_attr,
+            max_nodes,
+        )
+        attention_bias = structural_bias.new_zeros(
+            (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
+        )
+        attention_bias[:, :, 1:, 1:] = structural_bias
+        attention_bias[:, :, 0, 1:] = self.graph_token_bias.view(1, -1, 1)
+        attention_bias[:, :, 1:, 0] = self.graph_token_bias.view(1, -1, 1)
+        padding_mask = th.cat(
+            (
+                th.zeros((batch_size, 1), dtype=th.bool, device=x.device),
+                ~valid_atoms,
+            ),
+            dim=1,
+        )
+        graph_tokens = self.graph_token.expand(batch_size, -1, -1)
+        local_edge_attr = self.local_edge_transform(edge_attr)
+
+        # 2. Alternate one real-bond GINE update with one global Graphormer layer.
+        for local_layer, local_norm, local_dropout, global_layer in zip(
+            self.local_layers,
+            self.local_norms,
+            self.local_dropouts,
+            self.layers,
+        ):
+            local_out = local_layer(atom_states, edge_index, local_edge_attr)
+            atom_states = atom_states + F.relu(local_dropout(local_norm(local_out)))
+            dense_atoms, _ = pyg.utils.to_dense_batch(atom_states, batch_index)
+            dense_states = th.cat((graph_tokens, dense_atoms), dim=1)
+            dense_states = global_layer(dense_states, attention_bias, padding_mask)
+            graph_tokens = dense_states[:, :1]
+            atom_states = dense_states[:, 1:][valid_atoms]
+
+        return self.output_norm(atom_states)
 
 
 class GINE(nn.Module):

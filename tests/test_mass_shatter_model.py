@@ -340,9 +340,12 @@ def test_mass_shatter_excludes_ei_only_rule_without_mode_metadata() -> None:
     assert "anisoyl_fluoride_co_f_transfer" not in {template.rule_name for template in eligible[0]}
 
 
-def test_mass_shatter_runs_with_graphormer_precursor_encoder() -> None:
+@pytest.mark.parametrize("precursor_gnn_type", ["Graphormer", "GINE_GRAPHORMER"])
+def test_mass_shatter_runs_with_graphormer_precursor_encoder(
+    precursor_gnn_type: str,
+) -> None:
     batch = _build_batch()
-    model = _build_model(batch, precursor_gnn_type="Graphormer")
+    model = _build_model(batch, precursor_gnn_type=precursor_gnn_type)
 
     output = model(
         mol_pyg=batch,

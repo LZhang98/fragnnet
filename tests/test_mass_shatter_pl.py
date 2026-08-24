@@ -13,6 +13,7 @@ from torch_geometric.data import Batch, Data
 from fragnnet.dataset import SpecMolDataset
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.model.nn_blocks import GINEGraphormer
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
 from fragnnet.pl_model.mass_shatter_pl import (
     _candidate_coverage_by_cut_count,
@@ -86,6 +87,19 @@ def test_mass_shatter_pl_builds_configured_bond_focused_head() -> None:
     model, _ = _build_pl(mass_shatter_bond_num_layers=2)
 
     assert isinstance(model.model.bond_break_head, BondFocusedBreakHead)
+
+
+def test_mass_shatter_pl_builds_gine_graphormer_backbone() -> None:
+    model, _ = _build_pl(
+        mol_gnn_type="GINE_GRAPHORMER",
+        mol_normalization="layer",
+        mol_hidden_size=16,
+        mol_num_layers=2,
+        mol_num_heads=4,
+        mass_shatter_bond_num_layers=2,
+    )
+
+    assert isinstance(model.model.precursor_encoder.gnn, GINEGraphormer)
 
 
 def test_mass_shatter_pl_disables_mask_residuals_from_config() -> None:
