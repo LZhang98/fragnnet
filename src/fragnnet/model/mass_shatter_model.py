@@ -424,6 +424,8 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: Whether ``max_masks`` is a unique atom-set target.
         max_enumerated_masks: Safety cap for unique-fragment mask enumeration.
         min_mask_probability: Masks below this probability are dropped.
+        min_mask_relative_probability: Masks below this fraction of the MAP mask
+            probability are dropped.
         explore_masks: Number of random exploration masks added during training.
         max_h_transfer: Largest hydrogen transfer (in either direction) per fragment.
         include_cmf: Whether the charge-migration ion channel is emitted.
@@ -477,6 +479,7 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: bool,
         max_enumerated_masks: int,
         min_mask_probability: float,
+        min_mask_relative_probability: float,
         explore_masks: int,
         exploration_mode: str,
         exploration_temperature: float,
@@ -549,6 +552,8 @@ class MassShatterModel(nn.Module):
                 the unique-fragment target.
             min_mask_probability: Probability floor below which a ranked mask is
                 dropped before the selected candidates are renormalized.
+            min_mask_relative_probability: MAP-relative probability floor below which
+                a ranked mask is dropped before candidate assembly.
             explore_masks: Random masks injected during training only.
             exploration_mode: ``bernoulli_replace`` swaps exploration masks in for the
                 weakest ranked masks; ``bounded_additive`` appends them.
@@ -596,6 +601,14 @@ class MassShatterModel(nn.Module):
             raise ValueError(
                 f"min_mask_probability must be finite and in [0, 1], got {min_mask_probability}"
             )
+        if (
+            not math.isfinite(min_mask_relative_probability)
+            or not 0.0 <= min_mask_relative_probability <= 1.0
+        ):
+            raise ValueError(
+                "min_mask_relative_probability must be finite and in [0, 1], "
+                f"got {min_mask_relative_probability}"
+            )
         if explore_masks < 0:
             raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
         if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
@@ -639,6 +652,7 @@ class MassShatterModel(nn.Module):
         self.unique_fragment_mode = unique_fragment_mode
         self.max_enumerated_masks = max_enumerated_masks
         self.min_mask_probability = min_mask_probability
+        self.min_mask_relative_probability = min_mask_relative_probability
         self.explore_masks = explore_masks
         self.exploration_mode = exploration_mode
         self.exploration_temperature = exploration_temperature
@@ -1140,6 +1154,7 @@ class MassShatterModel(nn.Module):
             mol_pyg.ptr,
             max_masks=self.max_masks,
             min_mask_probability=self.min_mask_probability,
+            min_mask_relative_probability=self.min_mask_relative_probability,
             explore_masks=self.explore_masks if self.training else 0,
             exploration_mode=self.exploration_mode,
             exploration_temperature=self.exploration_temperature,

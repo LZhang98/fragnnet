@@ -72,10 +72,32 @@ def test_top_k_masks_respect_minimum_probability() -> None:
     assert [math.exp(mask.log_probability) for mask in masks] == pytest.approx([0.48, 0.32])
 
 
+def test_top_k_masks_respect_map_relative_probability() -> None:
+    logits = [math.log(4.0), math.log(1.5)]
+    masks = top_k_cut_masks(logits, k=4, min_relative_probability=0.3)
+
+    assert [mask.broken_bond_indices for mask in masks] == [(0, 1), (0,)]
+    assert [math.exp(mask.log_probability_from_map) for mask in masks] == pytest.approx(
+        [1.0, 2.0 / 3.0]
+    )
+
+
 @pytest.mark.parametrize("min_probability", [-0.1, 1.1, math.nan])
 def test_top_k_masks_reject_invalid_minimum_probability(min_probability: float) -> None:
     with pytest.raises(ValueError, match="min_probability"):
         top_k_cut_masks([0.0], k=1, min_probability=min_probability)
+
+
+@pytest.mark.parametrize("min_relative_probability", [-0.1, 1.1, math.nan])
+def test_top_k_masks_reject_invalid_relative_probability(
+    min_relative_probability: float,
+) -> None:
+    with pytest.raises(ValueError, match="min_relative_probability"):
+        top_k_cut_masks(
+            [0.0],
+            k=1,
+            min_relative_probability=min_relative_probability,
+        )
 
 
 def test_top_k_masks_are_stable_for_extreme_finite_logits() -> None:

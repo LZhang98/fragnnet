@@ -118,6 +118,12 @@ def test_mass_shatter_pl_uses_selected_mask_limit_in_non_unique_mode() -> None:
     assert model.model.max_masks == 3
 
 
+def test_mass_shatter_pl_uses_map_relative_mask_probability() -> None:
+    model, _ = _build_pl(mass_shatter_min_mask_relative_probability=0.05)
+
+    assert model.model.min_mask_relative_probability == pytest.approx(0.05)
+
+
 def test_mass_shatter_pl_builds_variant_b_from_config() -> None:
     model, _ = _build_pl(
         mass_shatter_proposal_anchored=True,

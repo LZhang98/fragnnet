@@ -378,6 +378,9 @@ class MassShatterPL(SpectrumPL):
             unique_fragment_mode=self.hparams.mass_shatter_unique_fragment_mode,
             max_enumerated_masks=self.hparams.mass_shatter_ranked_mask_budget,
             min_mask_probability=self.hparams.mass_shatter_min_mask_probability,
+            min_mask_relative_probability=(
+                self.hparams.mass_shatter_min_mask_relative_probability
+            ),
             explore_masks=self.hparams.mass_shatter_explore_masks,
             exploration_mode=self.hparams.mass_shatter_exploration_mode,
             exploration_temperature=(self.hparams.mass_shatter_exploration_temperature),

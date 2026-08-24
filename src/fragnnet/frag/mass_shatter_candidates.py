@@ -116,6 +116,7 @@ def build_mass_shatter_candidates(
     exploration_cut_count_weights: Sequence[float],
     include_single_bond_cuts: bool,
     min_mask_probability: float = 0.0,
+    min_mask_relative_probability: float = 0.0,
     max_unique_components: int | None = None,
     max_enumerated_masks: int | None = None,
     generator: th.Generator | None = None,
@@ -129,7 +130,8 @@ def build_mass_shatter_candidates(
     gradient to every selected cut/intact bond decision. When
     ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
-    number of distinct atom sets.
+    number of distinct atom sets. Probability floors apply only to learned ranked
+    masks; required intact and single-cut masks remain forced.
     """
     if bond_logits.ndim != 1:
         raise ValueError("bond_logits must be one-dimensional")
@@ -161,6 +163,14 @@ def build_mass_shatter_candidates(
         raise ValueError(
             "min_mask_probability must be finite and in [0, 1], "
             f"got {min_mask_probability}"
+        )
+    if (
+        not math.isfinite(min_mask_relative_probability)
+        or not 0.0 <= min_mask_relative_probability <= 1.0
+    ):
+        raise ValueError(
+            "min_mask_relative_probability must be finite and in [0, 1], "
+            f"got {min_mask_relative_probability}"
         )
     if explore_masks < 0:
         raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
@@ -332,6 +342,7 @@ def build_mass_shatter_candidates(
                 else max_masks,
                 True,
                 min_mask_probability,
+                min_mask_relative_probability,
             )
             learned_mask_count = local_mask_ptr.size - 1
             if min_mask_probability > 0.0 and learned_mask_count == 0:
@@ -432,6 +443,7 @@ def build_mass_shatter_candidates(
                     exploit_masks,
                     include_empty=True,
                     min_probability=min_mask_probability,
+                    min_relative_probability=min_mask_relative_probability,
                 )
             )
             if min_mask_probability > 0.0 and not ranked_masks:
@@ -487,8 +499,17 @@ def build_mass_shatter_candidates(
                     if min_mask_probability > 0.0
                     else -math.inf
                 )
+                min_relative_log_probability = (
+                    math.log(min_mask_relative_probability)
+                    if min_mask_relative_probability > 0.0
+                    else -math.inf
+                )
                 for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
-                    if refill_mask.log_probability < min_log_probability:
+                    if (
+                        refill_mask.log_probability < min_log_probability
+                        or refill_mask.log_probability_from_map
+                        < min_relative_log_probability
+                    ):
                         break
                     broken_bond_indices = refill_mask.broken_bond_indices
                     if broken_bond_indices in unavailable_bond_sets:

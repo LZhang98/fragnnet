@@ -302,6 +302,7 @@ def top_k_cut_masks_csr_raw(
     Py_ssize_t k,
     bint include_empty=True,
     double min_probability=0.0,
+    double min_relative_probability=0.0,
 ):
     """Return exact top-k Bernoulli masks as numeric CSR arrays.
 
@@ -355,7 +356,7 @@ def top_k_cut_masks_csr_raw(
     cdef Py_ssize_t output_count = 0, cut_count, total_broken = 0, cursor = 0
     cdef double logit, cost, map_log_probability = 0.0
     cdef double total_penalty, next_cost, candidate_log_probability
-    cdef double replacement_penalty, min_log_probability
+    cdef double replacement_penalty, min_log_probability, min_relative_log_probability
     cdef object node_capacity_object
 
     if k <= 0:
@@ -364,7 +365,21 @@ def top_k_cut_masks_csr_raw(
         raise ValueError(
             f"min_probability must be finite and in [0, 1], got {min_probability}"
         )
+    if (
+        not isfinite(min_relative_probability)
+        or min_relative_probability < 0.0
+        or min_relative_probability > 1.0
+    ):
+        raise ValueError(
+            "min_relative_probability must be finite and in [0, 1], "
+            f"got {min_relative_probability}"
+        )
     min_log_probability = log(min_probability) if min_probability > 0.0 else -float("inf")
+    min_relative_log_probability = (
+        log(min_relative_probability)
+        if min_relative_probability > 0.0
+        else -float("inf")
+    )
 
     logits_array = np.ascontiguousarray(bond_logits, dtype=np.float64)
     if logits_array.ndim != 1:
@@ -504,7 +519,10 @@ def top_k_cut_masks_csr_raw(
             )
             total_penalty = node_penalties[node]
             candidate_log_probability = map_log_probability - total_penalty
-            if candidate_log_probability < min_log_probability:
+            if (
+                candidate_log_probability < min_log_probability
+                or -total_penalty < min_relative_log_probability
+            ):
                 break
 
             node_length = node_lengths[node]
@@ -602,6 +620,7 @@ def top_k_cut_masks_raw(
     Py_ssize_t k,
     bint include_empty=True,
     double min_probability=0.0,
+    double min_relative_probability=0.0,
 ):
     """Return legacy tuples materialized from the numeric top-k kernel."""
     cdef object mask_ptr, broken_bonds, log_probabilities, relative_probabilities
@@ -618,6 +637,7 @@ def top_k_cut_masks_raw(
         k,
         include_empty,
         min_probability,
+        min_relative_probability,
     )
     for mask in range(log_probabilities.shape[0]):
         start = mask_ptr[mask]

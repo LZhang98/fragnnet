@@ -217,6 +217,50 @@ def test_candidate_batch_applies_minimum_probability_only_to_top_k() -> None:
     assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
 
 
+def test_candidate_batch_applies_map_relative_probability_only_to_top_k() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.tensor([2.0, 2.0]),
+        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=4,
+        min_mask_relative_probability=0.5,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=False,
+    )
+
+    # Only the MAP mask passes; the below-threshold empty mask remains forced.
+    assert candidates.mask_log_probabilities.shape == (2,)
+    assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
+
+
+def test_map_relative_probability_can_stop_below_unique_fragment_target() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.full((4,), 2.0),
+        chemical_bond_index=th.tensor(
+            [[0, 1, 2, 3], [1, 2, 3, 4]],
+            dtype=th.long,
+        ),
+        atom_batch_indices=th.zeros(5, dtype=th.long),
+        atom_ptr=th.tensor([0, 5], dtype=th.long),
+        max_masks=8,
+        min_mask_relative_probability=0.5,
+        max_unique_components=8,
+        max_enumerated_masks=8,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=False,
+    )
+
+    assert candidates.mask_log_probabilities.shape == (2,)
+    assert candidates.unique_component_count.tolist() == [6.0]
+
+
 def test_candidate_batch_rejects_threshold_above_map_probability() -> None:
     with pytest.raises(ValueError, match="excludes every learned mask"):
         build_mass_shatter_candidates(
@@ -254,6 +298,27 @@ def test_legacy_refill_respects_minimum_probability() -> None:
 
     # Exploration repeatedly proposes the MAP mask, and refill must not cross
     # the threshold to restore the historical fixed budget.
+    assert candidates.mask_log_probabilities.shape == (2,)
+    assert candidates.exploration_mask_count.tolist() == [0.0]
+    assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
+
+
+def test_legacy_refill_respects_map_relative_probability() -> None:
+    candidates = build_mass_shatter_candidates(
+        th.tensor([100.0, 100.0]),
+        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=4,
+        min_mask_relative_probability=0.5,
+        explore_masks=2,
+        exploration_mode="bernoulli_replace",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=False,
+        generator=th.Generator().manual_seed(17),
+    )
+
     assert candidates.mask_log_probabilities.shape == (2,)
     assert candidates.exploration_mask_count.tolist() == [0.0]
     assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]

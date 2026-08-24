@@ -202,6 +202,7 @@ mass_shatter_selected_mask_limit: 256  # Non-unique mode: maximum selected cut m
 mass_shatter_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
 mass_shatter_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; must be >= the target.
 mass_shatter_min_mask_probability: 0.0  # Minimum probability for deterministic top-k masks.
+mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
 mass_shatter_explore_masks: 0  # Additional training-only masks in bounded_additive mode.
 mass_shatter_exploration_mode: bounded_additive  # ["bounded_additive", "bernoulli_replace"]
 mass_shatter_exploration_temperature: 1.0

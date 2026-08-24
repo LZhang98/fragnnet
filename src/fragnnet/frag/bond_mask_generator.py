@@ -183,13 +183,22 @@ def top_k_cut_masks(
     *,
     include_empty: bool = True,
     min_probability: float = 0.0,
+    min_relative_probability: float = 0.0,
 ) -> tuple[RankedCutMask, ...]:
-    """Return at most ``k`` cut masks whose probability meets the minimum."""
+    """Return at most ``k`` masks meeting absolute and MAP-relative floors."""
     if k <= 0:
         raise ValueError(f"k must be positive, got {k}")
     if not math.isfinite(min_probability) or not 0.0 <= min_probability <= 1.0:
         raise ValueError(
             f"min_probability must be finite and in [0, 1], got {min_probability}"
+        )
+    if (
+        not math.isfinite(min_relative_probability)
+        or not 0.0 <= min_relative_probability <= 1.0
+    ):
+        raise ValueError(
+            "min_relative_probability must be finite and in [0, 1], "
+            f"got {min_relative_probability}"
         )
 
     from fragnnet.frag.mass_shatter_core import top_k_cut_masks_raw
@@ -205,6 +214,7 @@ def top_k_cut_masks(
             k,
             include_empty,
             min_probability,
+            min_relative_probability,
         )
     )
 
