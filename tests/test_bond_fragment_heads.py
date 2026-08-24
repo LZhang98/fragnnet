@@ -590,6 +590,42 @@ def test_latent_pathway_charge_probabilities_match_expanded_components(
     assert th.isfinite(atom_logits.grad).all()
 
 
+@pytest.mark.skipif(
+    not th.cuda.is_available() or not th.cuda.is_bf16_supported(),
+    reason="CUDA BF16 not available",
+)
+def test_latent_pathway_charge_probabilities_support_cuda_bfloat16_autocast() -> None:
+    atom_logits = th.tensor(
+        [0.2, -0.4, 1.1],
+        device="cuda",
+        dtype=th.bfloat16,
+        requires_grad=True,
+    )
+
+    with th.autocast(device_type="cuda", dtype=th.bfloat16):
+        actual = latent_pathway_charge_log_probabilities(
+            atom_logits,
+            unique_atom_indices=th.tensor([0, 1, 2, 0], device="cuda"),
+            atom_unique_component_indices=th.tensor([0, 0, 1, 2], device="cuda"),
+            pathway_unique_component_indices=th.tensor([0, 1, 0, 2], device="cuda"),
+            pathway_mask_indices=th.tensor([0, 0, 1, 1], device="cuda"),
+            num_unique_components=3,
+            num_masks=2,
+        )
+        loss = -actual.mean()
+    loss.backward()
+
+    mask_indices = th.tensor([0, 0, 1, 1], device="cuda")
+    mask_probabilities = actual.exp().new_zeros(2).index_add(
+        0,
+        mask_indices,
+        actual.exp(),
+    )
+    assert mask_probabilities.tolist() == pytest.approx([1.0, 1.0], abs=2e-3)
+    assert atom_logits.grad is not None
+    assert th.isfinite(atom_logits.grad).all()
+
+
 def test_component_charge_probabilities_reject_invalid_group_index() -> None:
     with pytest.raises(ValueError, match="invalid group"):
         component_charge_log_probabilities(

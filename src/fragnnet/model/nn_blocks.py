@@ -491,12 +491,15 @@ class Graphormer(nn.Module):
             max_nodes,
         )
         spatial_bias = self.spatial_embedding(distances)
+        encoded_edges = self.edge_bias(edge_attr)
+        bias_dtype = th.promote_types(spatial_bias.dtype, encoded_edges.dtype)
+        spatial_bias = spatial_bias.to(dtype=bias_dtype)
+        encoded_edges = encoded_edges.to(dtype=bias_dtype)
         direct_edge_bias = spatial_bias.new_zeros(
             (distances.shape[0], max_nodes, max_nodes, self.num_heads)
         )
         source, target = edge_index
         edge_graphs = batch_index[source]
-        encoded_edges = self.edge_bias(edge_attr)
         for head_index in range(self.num_heads):
             direct_edge_bias[..., head_index].index_put_(
                 (

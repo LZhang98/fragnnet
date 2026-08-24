@@ -1315,10 +1315,13 @@ class MassShatterModel(nn.Module):
             )
             normalized_fragment_log_probabilities = fragment_log_probabilities
             normalized_fragment_probabilities = normalized_fragment_log_probabilities.exp()
-            unique_fragment_entropy = bond_logits.new_zeros(batch_size).index_add(
+            fragment_entropy_terms = (
+                -normalized_fragment_probabilities * normalized_fragment_log_probabilities
+            )
+            unique_fragment_entropy = fragment_entropy_terms.new_zeros(batch_size).index_add(
                 0,
                 fragment_batch_indices,
-                -normalized_fragment_probabilities * normalized_fragment_log_probabilities,
+                fragment_entropy_terms,
             )
             unique_fragment_effective_count = unique_fragment_entropy.exp()
             unique_fragment_top1_mass_fraction = (
@@ -1478,7 +1481,7 @@ class MassShatterModel(nn.Module):
             fragment_cut_counts[:, None, None].expand_as(valid_channels).flatten()[flat_valid]
         )
         selected_mask_probabilities = candidates.mask_log_probabilities.exp()
-        retained_mask_probability = bond_logits.new_zeros(batch_size).index_add(
+        retained_mask_probability = selected_mask_probabilities.new_zeros(batch_size).index_add(
             0,
             candidates.mask_batch_indices,
             selected_mask_probabilities,

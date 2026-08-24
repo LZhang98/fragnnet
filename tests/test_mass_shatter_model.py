@@ -225,6 +225,36 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert "pred_oos_logprobs" not in output
 
 
+@pytest.mark.skipif(
+    not th.cuda.is_available() or not th.cuda.is_bf16_supported(),
+    reason="CUDA BF16 not available",
+)
+def test_mass_shatter_supports_cuda_bfloat16_autocast() -> None:
+    batch = _build_batch(("C1CC1", "CCCO")).to("cuda")
+    model = _build_model(
+        batch,
+        bond_num_layers=2,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+    ).cuda()
+
+    with th.autocast(device_type="cuda", dtype=th.bfloat16):
+        output = model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0, 0], device="cuda"),
+            spec_nce=th.tensor([20.0, 25.0], device="cuda"),
+        )
+        loss = -output["pred_logprobs"].mean()
+    loss.backward()
+
+    assert th.isfinite(output["pred_logprobs"]).all()
+    assert th.isfinite(output["unique_fragment_effective_count"]).all()
+    assert th.isfinite(output["retained_mask_probability"]).all()
+    assert model.charge_head.head[0].weight.grad is not None
+    assert th.isfinite(model.charge_head.head[0].weight.grad).all()
+
+
 @pytest.mark.parametrize("unique_fragment_mode", [False, True])
 def test_mass_shatter_smarts_mechanisms_preserve_probability_and_train_head(
     unique_fragment_mode: bool,
@@ -449,9 +479,7 @@ def test_selection_only_intensity_ignores_proposal_shape(
     baseline_conditional = baseline["pred_logprobs"] - th.logsumexp(
         baseline["pred_logprobs"], dim=0
     )
-    shifted_conditional = shifted["pred_logprobs"] - th.logsumexp(
-        shifted["pred_logprobs"], dim=0
-    )
+    shifted_conditional = shifted["pred_logprobs"] - th.logsumexp(shifted["pred_logprobs"], dim=0)
     assert th.equal(baseline["pred_mzs"], shifted["pred_mzs"])
     assert th.allclose(baseline_conditional, shifted_conditional, atol=1e-6, rtol=0.0)
     assert not th.allclose(
@@ -484,12 +512,12 @@ def test_selection_only_primary_spectrum_does_not_update_proposal_heads() -> Non
     assert _parameter_gradient_sum(model.precursor_encoder) > 0.0
     assert _parameter_gradient_sum(model.context_encoder) > 0.0
     assert _parameter_gradient_sum(model.intensity_head) > 0.0
-    assert output["proposal_candidate_mzs"].shape == output[
-        "proposal_candidate_fragment_idxs"
-    ].shape
-    assert output["proposal_fragment_logprobs"].shape == output[
-        "proposal_fragment_batch_idxs"
-    ].shape
+    assert (
+        output["proposal_candidate_mzs"].shape == output["proposal_candidate_fragment_idxs"].shape
+    )
+    assert (
+        output["proposal_fragment_logprobs"].shape == output["proposal_fragment_batch_idxs"].shape
+    )
 
 
 def test_selection_only_spectrum_has_no_oos_gate() -> None:
@@ -548,9 +576,7 @@ def test_separate_proposal_encoder_isolates_both_objectives() -> None:
     proposal_output = proposal_model(**model_inputs)
     fragmented_candidate_index = proposal_output["candidate_cut_counts"].argmax().reshape(1)
     proposal_loss = _proposal_coverage_loss(
-        true_mzs=proposal_output["proposal_candidate_mzs"][
-            fragmented_candidate_index
-        ].detach(),
+        true_mzs=proposal_output["proposal_candidate_mzs"][fragmented_candidate_index].detach(),
         true_logprobs=th.zeros(1),
         true_batch_idxs=th.zeros(1, dtype=th.long),
         candidate_mzs=proposal_output["proposal_candidate_mzs"],

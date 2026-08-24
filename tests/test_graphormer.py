@@ -47,6 +47,23 @@ def test_graphormer_returns_one_state_per_atom_and_backpropagates() -> None:
     assert edge_attr.grad is not None and edge_attr.grad.abs().sum() > 0
 
 
+def test_graphormer_supports_cpu_bfloat16_autocast() -> None:
+    x, batch_index, edge_index, edge_attr = _two_graph_batch()
+    x.requires_grad_()
+    edge_attr.requires_grad_()
+    model = _encoder()
+
+    with th.autocast(device_type="cpu", dtype=th.bfloat16):
+        output = model(x, batch_index, edge_index, edge_attr)
+        loss = output.square().sum()
+    loss.backward()
+
+    assert output.shape == (5, 16)
+    assert th.isfinite(output).all()
+    assert x.grad is not None and th.isfinite(x.grad).all()
+    assert edge_attr.grad is not None and th.isfinite(edge_attr.grad).all()
+
+
 def test_graphormer_batched_graphs_match_independent_encoding() -> None:
     x, batch_index, edge_index, edge_attr = _two_graph_batch()
     model = _encoder().eval()

@@ -990,7 +990,7 @@ def _segment_logsumexp(
         include_self=True,
     )
     shifted_exponentials = th.exp(values - maxima[segment_indices])
-    sums = values.new_zeros(num_segments).index_add(
+    sums = shifted_exponentials.new_zeros(num_segments).index_add(
         0,
         segment_indices,
         shifted_exponentials,
