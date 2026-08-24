@@ -51,6 +51,7 @@ def mog_log_prob(
     variances: th.Tensor,
     log_weights: th.Tensor,
     log_trunc_factors: th.Tensor,
+    match_mask: th.Tensor | None = None,
 ) -> th.Tensor:
     """Mixture of Gaussian
         We are modeling each peaks are mixture of guassian for given set of fragments
@@ -60,6 +61,9 @@ def mog_log_prob(
         variances (_type_): b_variances
         log_weights (_type_): b_pred_logprobs
         log_trunc_factors (_type_): b_log_trunc_factors
+        match_mask: Optional [T, P] boolean mask. When given, only candidates inside a
+            true peak's tolerance window contribute to its mixture, matching
+            ``sparse_cross_entropy_vec``. ``None`` leaves the mixture untruncated.
 
     Returns:
         _type_: _description_
@@ -75,6 +79,10 @@ def mog_log_prob(
         2 * th.pi * variances
     )
     normal_log_probs = normal_log_probs - log_trunc_factors
+    if match_mask is not None:
+        normal_log_probs = normal_log_probs + LOG_ZERO(normal_log_probs.dtype) * (
+            ~match_mask
+        ).to(normal_log_probs.dtype)
     # [B]
     log_probs = th.logsumexp(normal_log_probs + log_weights, dim=1)
     return log_probs
@@ -107,7 +115,29 @@ def mog_ce_fn(
         )
     else:
         b_log_trunc_factors = th.zeros_like(b_pred_mzs)
-    b_logprobs = mog_log_prob(b_true_mzs, b_pred_mzs, b_vars, b_pred_logprobs, b_log_trunc_factors)
+    # A negative multiple means "no truncation": every true peak counts as in-support and
+    # the mixture spans all candidates. A positive multiple defines a real tolerance window,
+    # so the mixture must be truncated to it -- otherwise ``gaussian_renormalize`` corrects
+    # for a truncation that never happened, and this path disagrees with the vectorized one.
+    if tolerance_multiple > 0:
+        b_match_mask = calculate_match_mzs(
+            b_true_mzs,
+            b_pred_mzs,
+            tolerance=tolerance * tolerance_multiple,
+            relative=relative,
+            tolerance_min_mz=tolerance_min_mz,
+        )
+        b_match_mask = th.as_tensor(b_match_mask, device=b_pred_logprobs.device)
+    else:
+        b_match_mask = None
+    b_logprobs = mog_log_prob(
+        b_true_mzs,
+        b_pred_mzs,
+        b_vars,
+        b_pred_logprobs,
+        b_log_trunc_factors,
+        match_mask=b_match_mask,
+    )
 
     return b_logprobs
 

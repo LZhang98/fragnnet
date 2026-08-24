@@ -60,14 +60,19 @@ def _multi_spectrum_inputs() -> tuple:
     true_ints = th.tensor([0.6, 0.4, 0.25, 0.5, 0.25], dtype=th.float32)
     true_logprobs = th.log(true_ints)
     true_batch_idxs = th.tensor([0, 0, 1, 2, 2], dtype=th.long)
+    # 300.005 and 500.009 sit at ~1.7 sigma: inside the Gaussian's reach but outside the
+    # tolerance window, so they discriminate a truncated mixture from an untruncated one.
     pred_mzs = th.tensor(
-        [150.0005, 300.002, 412.0, 301.5, 301.502, 499.999, 520.25, 900.0],
+        [150.0005, 300.002, 300.005, 412.0, 301.5, 301.502, 499.999, 500.009, 520.25, 900.0],
         dtype=th.float32,
     )
     pred_logprobs = th.log(
-        th.tensor([0.3, 0.4, 0.3, 0.7, 0.3, 0.45, 0.35, 0.2], dtype=th.float32)
+        th.tensor(
+            [0.25, 0.3, 0.2, 0.25, 0.7, 0.3, 0.4, 0.15, 0.3, 0.15],
+            dtype=th.float32,
+        )
     )
-    pred_batch_idxs = th.tensor([0, 0, 0, 1, 1, 2, 2, 2], dtype=th.long)
+    pred_batch_idxs = th.tensor([0, 0, 0, 0, 1, 1, 2, 2, 2, 2], dtype=th.long)
     pred_oos_logprobs = th.log(th.tensor([0.01, 0.02, 0.03], dtype=th.float32))
     return (
         true_mzs,
@@ -215,3 +220,35 @@ def test_per_sample_tolerance_matching_the_global_is_a_no_op(dist: str) -> None:
     )
     for scalar_value, per_sample_value in zip(scalar[:3], per_sample[:3], strict=True):
         assert th.allclose(scalar_value, per_sample_value, atol=1e-5)
+
+
+def test_sequential_gaussian_truncates_at_the_tolerance_window() -> None:
+    """A candidate outside the window contributes nothing, in either implementation.
+
+    ``mog_ce_fn`` previously summed over every candidate while still applying the
+    ``gaussian_renormalize`` truncation correction, so it disagreed with
+    ``sparse_cross_entropy_vec`` for candidates in the 1-3 sigma band.
+    """
+    true_mzs = th.tensor([300.0], dtype=th.float32)
+    true_logprobs = th.tensor([0.0], dtype=th.float32)
+    true_batch_idxs = th.tensor([0], dtype=th.long)
+    # Tolerance at m/z 300 is 0.003 Da; 300.005 is ~1.7 sigma away and out of window.
+    in_window_only = th.tensor([300.0], dtype=th.float32)
+    with_outsider = th.tensor([300.0, 300.005], dtype=th.float32)
+    oos = th.tensor([math.log(1e-6)], dtype=th.float32)
+
+    def run(vectorized: bool, pred_mzs: th.Tensor, pred_probs: list[float]) -> float:
+        return _make_fn("gaussian", vectorized=vectorized)(
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            th.log(th.tensor(pred_probs, dtype=th.float32)),
+            th.zeros(len(pred_probs), dtype=th.long),
+            oos,
+        )[0].item()
+
+    for vectorized in (True, False):
+        assert run(vectorized, in_window_only, [0.5]) == pytest.approx(
+            run(vectorized, with_outsider, [0.5, 0.5]), abs=1e-5
+        )
