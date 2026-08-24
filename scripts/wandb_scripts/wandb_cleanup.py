@@ -98,8 +98,11 @@ def main():
     print(f"{mode} ({checkpoint_scope})")
 
     api = wandb.Api()
-    filters = {"group": {"$in": args.group}} if args.group else None
-    runs = api.runs(f"{args.entity}/{args.project}", filters=filters)
+    path = f"{args.entity}/{args.project}"
+    if args.group:
+        runs = api.runs(path, filters={"group": {"$in": args.group}})
+    else:
+        runs = api.runs(path)
 
     total_size_saved = 0
     total_files_deleted = 0
