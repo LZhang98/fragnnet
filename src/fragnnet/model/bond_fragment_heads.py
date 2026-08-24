@@ -546,9 +546,11 @@ class BondFocusedBreakHead(nn.Module):
     """Score cleavage after alternating bond-to-atom and atom-to-bond updates.
 
     Chemical bonds maintain explicit hidden states. Pooling those states at
-    their endpoint atoms is equivalent to line-graph message passing: bonds
-    communicate exactly when they share an atom. Symmetric endpoint features
-    preserve invariance to the orientation of ``bond_endpoints``.
+    their endpoint atoms gives mean-field line-graph-style propagation: bonds
+    communicate when they share an atom, but only through a degree-normalized
+    incident-bond mean rather than learned neighbour-specific messages.
+    Symmetric endpoint features preserve invariance to the orientation of
+    ``bond_endpoints``.
     """
 
     def __init__(
@@ -670,7 +672,7 @@ class BondFocusedBreakHead(nn.Module):
         atom_states = self.atom_project(atom_embeddings)
         bond_states = self.bond_project(th.cat(initial_bond_features, dim=-1))
 
-        # 1. Alternate line-graph-equivalent bond/atom message passing.
+        # 1. Alternate mean-field bond/atom message passing through shared endpoints.
         endpoint_indices = bond_endpoints.flatten()
         endpoint_counts = atom_states.new_zeros(atom_states.shape[0]).index_add(
             0,

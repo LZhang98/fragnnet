@@ -1,6 +1,6 @@
 # MASShatter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IN PROGRESS — UNIQUE-FRAGMENT PATHWAY MARGINALIZATION IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-19
+> **Status:** IN PROGRESS — UNIQUE-FRAGMENT PATHWAY MARGINALIZATION IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-23
 >
 > Replace fixed-depth D3/D4 fragment enumeration at inference with one molecular
 > encoding pass, independent bond-break probabilities, top-K cut-mask search,
@@ -80,6 +80,300 @@ includes precursor/adduct type, polarity, collision energy, instrument, and
 fragmentation mode. If one candidate set must be shared across spectra, keep the
 bond head molecule-only and apply experimental conditioning in the charge,
 H-transfer, and intensity heads instead.
+
+### 1.1 Shared dual atom-bond backbone proposal (2026-08-23)
+
+> **Status:** PROPOSED — not implemented or validated. The current
+> `GINE_EFA + BondFocusedBreakHead` remains the control.
+
+The representative `a2_b3` configs currently use two different stages:
+
+```
+mol_num_layers: 2
+  -> two GINE_EFA atom-encoder blocks
+
+mass_shatter_bond_num_layers: 3
+  -> three alternating bond -> atom -> bond refinement blocks inside
+     BondFocusedBreakHead
+```
+
+`mass_shatter_bond_num_layers` therefore does not count bond-only layers. Each
+block pools bond states into their endpoint atoms, updates the temporary atom
+states, and then updates each bond from its two endpoints. The final bond states
+are consumed by the cleavage MLP and then discarded. The temporary atom states
+are also local to the head. In particular:
+
+- charge scoring receives the atom encoder output, not the bond-refined atoms;
+- fragment and complement embeddings pool the atom encoder output;
+- boundary embeddings pool the average of the two endpoint atom embeddings,
+  not the explicit refined bond state;
+- the intensity transformer therefore has no direct path from the refined bond
+  representation.
+
+The proposed change is to promote this temporary atom/bond refinement into a
+shared encoder that returns both representations. In the first shared-local arm,
+the coupled blocks **stack on top of the unchanged two-layer GINE_EFA atom
+encoder**; they do not replace it:
+
+```
+                         molecular structure
+                                  |
+                     +------------+------------+
+                     |                         |
+                     v                         v
+                atom states A0            bond states B0
+                     |                         |
+                     +---- coupled block 1 ----+
+                     +---- coupled block 2 ----+
+                     +---- coupled block 3 ----+
+                     |                         |
+                     v                         v
+              final atoms A3             final bonds B3
+                |         |                 |        |
+                |         |                 |        +-> boundary pooling
+                |         |                 +----------> cleavage scoring
+                |         +-> fragment/complement pooling
+                +-----------> charge scoring
+```
+
+Initialize the streams from the existing atom-backbone output:
+
+```
+A_enc = GINE_EFA_2(atom_features, directed_bonds, bond_features)
+A0 = AtomProjection(A_enc)
+
+B0 = BondProjection(
+    bond_features,
+    A_enc[u] + A_enc[v],
+    abs(A_enc[u] - A_enc[v]),
+)
+```
+
+This definition keeps the control's atom encoder fixed and changes only whether
+the coupled atom/bond states become reusable outputs. Replacing GINE_EFA with an
+interleaved dual encoder is a later arm and must not be folded into this first
+comparison.
+
+For each coupled block:
+
+1. pool incident bond states into their endpoint atoms;
+2. update atom states with a residual connection and normalization;
+3. update each bond from its state and the symmetric endpoint summaries
+   `A[u] + A[v]` and `abs(A[u] - A[v])`;
+4. optionally apply a graph-scoped global mixer independently to atoms and
+   bonds;
+5. retain both outputs for the next block.
+
+The symmetric endpoint summaries preserve invariance to the stored orientation
+of an undirected chemical bond. Explicit line-graph materialization is not
+required to reach the same one-hop bond neighbourhood, but the current endpoint
+pool is only **mean-field line-graph-style propagation**, not general line-graph
+message passing. A bond receives a degree-normalized mean of incident bond
+states, including itself, rather than a learned message from each neighbouring
+bond. It therefore cannot represent neighbour-specific bond-pair interactions.
+Shared-atom and bond-pair attention biases are proposed later precisely to add
+that missing distinction.
+
+The target design keeps acquisition context in the task heads rather than in the
+shared structural encoder:
+
+```
+break_logit[e] = BreakMLP(B3[e], experiment_context)
+charge_logit[v] = ChargeMLP(A3[v], experiment_context)
+
+fragment_embedding   = pool(A3 over fragment atoms)
+complement_embedding = pool(A3 over complement atoms)
+boundary_embedding   = pool(B3 over cut bonds)
+```
+
+This preserves the existing `proposal_selection_only` separation. When no
+separate proposal encoder is configured, detach both `A3` and `B3` before the
+proposal heads while leaving the live states available to the intensity path.
+When `separate_proposal_encoder` is enabled, that encoder must also return its
+own atom and bond states.
+
+Removing context from `B0` is a behavioral change, not a free refactor: the
+current `BondFocusedBreakHead.bond_project` consumes acquisition context before
+all three refinement blocks. The shared-local experiment must include a matched
+arm that retains context in `B0`; only a measured context-in-backbone versus
+context-in-head comparison can justify the molecule-only target design.
+
+Sharing also changes gradient routing under `proposal_selection_only`. Today the
+temporary bond stream is trained through the proposal objective (weight `0.1` in
+the representative proposal-selection configs), while the intensity path never
+uses it. Once live `B3` supplies boundary embeddings, the spectrum intensity loss
+also trains the bond representation and may dominate the smaller proposal term.
+This is a substantive multi-objective optimization change. The first shared
+experiment must therefore include:
+
+- a matched `mass_shatter_proposal_loss_weight: 0.1` arm;
+- a stop-gradient boundary arm using `B3.detach()` in the intensity path, so the
+  proposal-only and joint-gradient representations can be compared at identical
+  forward features;
+- gradient-norm or loss-scale reporting for the proposal and intensity paths;
+- a proposal-loss reweighting control if joint training degrades bond ranking.
+
+Do not attribute a null shared-encoder result to the representation until this
+gradient-routing control has ruled out proposal-signal dilution.
+
+The direct bond-state boundary representation is the clearest downstream reason
+to share the encoder. A fragment boundary is defined by the cut bonds, whereas
+the current endpoint average can represent the adjacent atoms but cannot retain
+an independently refined state for each broken bond.
+
+#### 1.1.1 Global mixer: EFA is an ablation, not the default choice
+
+The current EFA implementation uses normalized `ELU(x) + 1` kernel attention.
+For `N` tokens, `H` heads, and head dimension `D`, its leading attention cost is:
+
+```
+EFA:              O(N * H * D^2)
+softmax attention: O(N^2 * H * D)
+```
+
+With the common width 384 and four heads, `D = 96`; the arithmetic crossover is
+therefore around 96 tokens per branch. This crossover is outside nearly the
+entire NIST20 distribution. A full-table measurement of all 35,025 rows in
+`data/proc/nist20/mol_df.pkl` gives:
+
+| tokens per molecule | Median | p90 | p99 | Max | Fraction above 96 |
+|---|---:|---:|---:|---:|---:|
+| atoms | 20 | 44 | 82 | 186 | 0.445% |
+| bonds | 21 | 47 | 87 | 195 | 0.725% |
+
+At the median, the leading EFA contraction is about 4.6--4.8 times the leading
+exact-attention contraction (`D/N`), before accounting for kernel quality. EFA's
+asymptotic FLOP advantage is therefore not realized for more than 99% of either
+branch. Actual latency must still be profiled because optimized kernels and
+padding affect wall-clock performance, but the token distribution puts the
+burden of proof on EFA rather than softmax.
+
+The current EFA implementation also has a first-order transient-memory cost. It
+materializes both `KV_nodes` and `KV_node` with shape `(N, H, D, D)`. For a
+representative batch of about 3,000 atom tokens at `H = 4`, `D = 96`, each tensor
+is about 422 MiB in FP32 (211 MiB in BF16), so the pair reaches about 844 MiB in
+FP32 during one EFA call. Non-reentrant activation checkpointing prevents all
+layer intermediates from simply accumulating for backward, but the same large
+allocation is still required transiently in the forward call and its backward
+recomputation. A bond EFA branch repeats approximately the same work and
+allocation because the bond count closely tracks the atom count; its exact peak
+depends on whether the branches execute sequentially. By comparison, per-graph
+softmax attention padded near 90--96 tokens is only on the order of tens of MiB
+for 128 graphs before other attention intermediates. Measure allocated and
+reserved CUDA peaks for the complete model rather than estimating total model
+memory from one tensor alone.
+
+More importantly, kernel factorization does not naturally admit an arbitrary
+learned bias for every token pair without giving up its linear form. That makes
+the current EFA a weak match for the main representational idea in Graphormer and
+the Dual Graph Transformer: put molecular topology and structure directly into
+the attention score. Useful atom-pair and bond-pair biases include:
+
+- shortest-path distance in the atom or bond graph;
+- multi-hop bond or intervening-atom features;
+- direct incidence or shared-atom relation;
+- ring membership and relative ring position;
+- optional geometric distance or angle encodings when reliable coordinates are
+  available.
+
+The first global dual model should therefore use structurally biased softmax
+attention. EFA remains a required matched ablation and a scalability fallback if
+the measured token distribution or memory profile justifies it. This follows the
+local-message-passing + structural-encoding + global-attention decomposition in
+[GraphGPS](https://openreview.net/pdf?id=lMMaNf6oxKM), while the pairwise bias
+choice follows [Graphormer](https://proceedings.neurips.cc/paper_files/paper/2021/hash/f1c1592588411002af340cbaedd6fc33-Abstract.html)
+and the molecular dual representation follows the
+[Dual Graph Transformer](https://www.nature.com/articles/s41467-026-75005-9).
+
+The atom-side structural-softmax implementation is **already present** and must
+be reused rather than rebuilt. `Graphormer` in
+`src/fragnnet/model/nn_blocks.py` supplies
+degree, shortest-path, and up-to-five-hop edge-path attention biases. MASShatter
+already has merged and MA/MI-unmerged `graphormer512x5` unique-fragment configs.
+Those configs use an atom-only Graphormer with
+`mass_shatter_bond_num_layers: 0`; they establish an existing performance
+reference, although their width 512, depth 5, and endpoint head are not a
+parameter-matched dual-backbone ablation. The genuinely missing components are:
+
+- explicit reusable bond-stream outputs;
+- bond-graph structural attention and its pairwise biases;
+- controlled atom/bond cross-stream fusion;
+- a matched-width/depth comparison against the existing atom Graphormer.
+
+A bounded first structural-attention design is:
+
+```
+block 1: local atom <-> bond update
+block 2: local update + biased atom attention + biased bond attention
+block 3: local update + biased atom attention + biased bond attention
+```
+
+Global attention in every block is not a requirement. The local-only first block
+retains a chemical neighbourhood prior and limits cost before global mixing.
+
+#### 1.1.2 Ordered implementation and ablation sequence
+
+Do not implement the complete dual transformer first. Advance in the following
+order, keeping candidate enumeration, losses, context, data splits, and realized
+candidate budgets fixed:
+
+1. **Current control:** `GINE_EFA + BondFocusedBreakHead`; endpoint-average
+   boundary features.
+2. **Refactor-equivalence check:** extract the current refinement blocks so they
+   return `A3, B3`, but preserve the current logits and do not consume those
+   states downstream. Require numerical parity before training a changed model.
+3. **Shared-local dual encoder:** stack those blocks on the unchanged two-layer
+   GINE_EFA output, use a small context-conditioned cleavage MLP, and replace the
+   endpoint-average boundary feature with `B3`. Run the context-location and
+   stop-gradient/proposal-weight controls defined above. In the first sub-arm,
+   keep charge and fragment/complement pooling on the original GINE_EFA atom
+   output so `B3` boundary reuse is the only downstream representation change.
+   Promote `A3` to those consumers only in a second sub-arm. Add no global mixer.
+4. **Existing atom-Graphormer reference:** evaluate the already configured
+   `graphormer512x5` endpoint-head model, then construct a matched-width/depth
+   atom-Graphormer control. Do not attribute its atom-side structural biases to a
+   newly implemented dual model.
+5. **Bond-EFA arm:** add graph-scoped EFA over `B` after each selected coupled
+   block while leaving the atom side fixed.
+6. **Unbiased bond-softmax arm:** replace bond EFA with ordinary graph-scoped
+   softmax attention without bond-pair structural bias, again leaving the atom
+   side fixed.
+7. **Structural dual-softmax arm:** reuse the existing Graphormer atom branch and
+   add the missing shortest-path, shared-atom, multi-hop, and ring biases to the
+   bond attention scores.
+8. **Fully interleaved dual model:** move local atom GINE, local bond updates,
+   global atom attention, global bond attention, and cross-stream fusion into the
+   same repeated block only if the preceding structural-softmax arm wins.
+
+Arms 5--7 answer separate questions: whether global bond communication helps,
+whether exact softmax improves on kernel attention, and whether any softmax gain
+actually comes from molecular structural bias. Arms 2--3 prevent atom-backbone,
+context-location, and gradient-routing changes from being hidden inside that
+comparison.
+
+#### 1.1.3 Evaluation and stop gates
+
+Compare every arm at both matched hidden width and reported total parameter
+count; these answer different practical questions. Report:
+
+- final held-out spectrum similarity under the standard instrument-tolerance
+  evaluation;
+- bond ranking and productive-mask recall at matched selected-mask budgets;
+- unique-fragment candidate coverage and oracle spectrum score;
+- base-peak accuracy and matched-peak ranking diagnostics;
+- training throughput, inference latency, and peak GPU memory;
+- results by molecule atom count, bond count, adduct, collision energy, and
+  fragmentation mode.
+
+Use the same three seeds and paired evaluation contract as the canonical model
+improvement plan. A one-seed run may reject a clear failure but may not promote
+the backbone.
+
+Stop the line when the shared-local encoder fails to improve either bond/mask
+ranking or final spectrum quality: global attention should not be added merely
+because it is architecturally appealing. Prefer EFA over structural softmax only
+when it preserves the validated accuracy gain and materially improves measured
+throughput or memory on the actual molecule-size distribution.
 
 ## 2. Probability of a complete cut mask
 
