@@ -373,6 +373,39 @@ def test_bond_focused_head_is_endpoint_invariant_and_backpropagates() -> None:
     assert context.grad is not None
 
 
+@pytest.mark.skipif(not th.cuda.is_available(), reason="CUDA not available")
+def test_bond_focused_head_supports_cuda_bfloat16_autocast() -> None:
+    head = BondFocusedBreakHead(
+        atom_embedding_dim=8,
+        bond_feature_dim=3,
+        context_dim=2,
+        bond_state_dim=8,
+        head_hidden_dim=8,
+        num_layers=2,
+        dropout=0.0,
+    ).cuda()
+    atom_embeddings = th.randn(5, 8, device="cuda", requires_grad=True)
+    bond_features = th.randn(3, 3, device="cuda", requires_grad=True)
+    context = th.randn(2, 2, device="cuda", requires_grad=True)
+    endpoints = th.tensor([[0, 1, 3], [1, 2, 4]], device="cuda")
+    bond_batch_indices = th.tensor([0, 0, 1], device="cuda")
+
+    with th.autocast(device_type="cuda", dtype=th.bfloat16):
+        logits = head(
+            atom_embeddings,
+            endpoints,
+            bond_features,
+            context=context,
+            bond_batch_indices=bond_batch_indices,
+        )
+    logits.sum().backward()
+
+    assert logits.shape == (3,)
+    assert atom_embeddings.grad is not None
+    assert bond_features.grad is not None
+    assert context.grad is not None
+
+
 def test_bond_focused_head_communicates_only_between_adjacent_bonds() -> None:
     th.manual_seed(29)
     head = BondFocusedBreakHead(

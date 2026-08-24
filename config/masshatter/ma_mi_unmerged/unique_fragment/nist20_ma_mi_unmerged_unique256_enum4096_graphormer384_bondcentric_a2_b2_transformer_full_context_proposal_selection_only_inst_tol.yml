@@ -1,4 +1,4 @@
-wandb_name: nist20_ma_mi_unmerged_unique256_enum4096_graphormer384_bondcentric_a2_b2_transformer_full_context_proposal_selection_only_inst_tol_bf16
+wandb_name: nist20_ma_mi_unmerged_unique256_enum4096_graphormer384_bondcentric_a2_b2_transformer_full_context_proposal_selection_only_inst_tol
 wandb_group: nist20_mass_shatter_fir_h100_40gb
 wandb_tags:
   - mass_shatter
@@ -25,7 +25,7 @@ wandb_tags:
   - proposal_loss_0.1
   - candidate_conditional
   - charge_logsumexp
-  - bf16_mixed
+  - fp32
 
 seed: 397623
 
@@ -131,7 +131,7 @@ inst_type_loss_tol:
   FT: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
-# 4. Keep the optimization and BF16 training settings fixed between backbones.
+# 4. Keep the optimization and FP32 training settings fixed between backbones.
 dynamic_batch_sampler: False
 group_sampler: False
 simple_group_sampler: False
@@ -149,7 +149,7 @@ lr_schedule: False
 accelerator: gpu
 devices: 1
 num_workers: 6
-precision: bf16-mixed
+precision: 32
 use_tensor_float32: True
 min_epochs: 60
 max_epochs: 100

@@ -671,6 +671,11 @@ class BondFocusedBreakHead(nn.Module):
             initial_bond_features.append(expanded_context)
         atom_states = self.atom_project(atom_embeddings)
         bond_states = self.bond_project(th.cat(initial_bond_features, dim=-1))
+        # CUDA autocast may keep the normalized bond states in FP32 while the
+        # direct atom projection is BF16. Aggregation requires matching dtypes.
+        state_dtype = th.promote_types(atom_states.dtype, bond_states.dtype)
+        atom_states = atom_states.to(dtype=state_dtype)
+        bond_states = bond_states.to(dtype=state_dtype)
 
         # 1. Alternate mean-field bond/atom message passing through shared endpoints.
         endpoint_indices = bond_endpoints.flatten()
