@@ -115,25 +115,22 @@ shared encoder that returns both representations. In the first shared-local arm,
 the coupled blocks **stack on top of the unchanged two-layer GINE_EFA atom
 encoder**; they do not replace it:
 
+The diagram below is the **target design after the staged sub-arms**, not the
+first Arm 3 comparison. That first sub-arm still routes `A_enc` rather than `A3`
+to charge and fragment/complement pooling.
+
 ```
-                         molecular structure
-                                  |
-                     +------------+------------+
-                     |                         |
-                     v                         v
-                atom states A0            bond states B0
-                     |                         |
-                     +---- coupled block 1 ----+
-                     +---- coupled block 2 ----+
-                     +---- coupled block 3 ----+
-                     |                         |
-                     v                         v
-              final atoms A3             final bonds B3
-                |         |                 |        |
-                |         |                 |        +-> boundary pooling
-                |         |                 +----------> cleavage scoring
-                |         +-> fragment/complement pooling
-                +-----------> charge scoring
+atom features -> GINE_EFA x2 -> A_enc -> AtomProjection -> A0 --+
+                                  |                              |
+                                  | endpoint summaries           |
+bond features --------------------+-> BondProjection -> B0 ------+
+                                                                 |
+                                      coupled blocks 1--3 <-------+
+                                             |             |
+                                             v             v
+                                            A3            B3
+                                          /    \          /   \
+                                    charge   fragment  break  boundary
 ```
 
 Initialize the streams from the existing atom-backbone output:
@@ -186,11 +183,25 @@ complement_embedding = pool(A3 over complement atoms)
 boundary_embedding   = pool(B3 over cut bonds)
 ```
 
-This preserves the existing `proposal_selection_only` separation. When no
-separate proposal encoder is configured, detach both `A3` and `B3` before the
-proposal heads while leaving the live states available to the intensity path.
-When `separate_proposal_encoder` is enabled, that encoder must also return its
-own atom and bond states.
+This preserves the existing `proposal_selection_only` separation only when
+`separate_proposal_encoder: False`: detach both `A3` and `B3` before the proposal
+heads while leaving the live states available to the intensity path.
+
+Arm 3 is **not defined for `separate_proposal_encoder: True`**. That option makes
+the proposal and intensity encoders fully disjoint. A bond state produced only by
+the proposal encoder cannot also provide the live intensity boundary embedding,
+so such a run would silently lose the arm's main motivation and retain the
+endpoint-average boundary on the intensity side.
+
+If the single shared encoder wins and gradient interference still motivates
+separation, test a later explicit **dual-separate** arm: the intensity encoder
+gets its own coupled atom/bond stack `(A_int, B_int)`, and the proposal encoder
+gets a second disjoint stack `(A_prop, B_prop)`. `B_int` supplies boundary
+features; `B_prop` supplies break logits. This roughly doubles the added coupled
+backbone cost and must be reported as a distinct architecture, not as the shared
+Arm 3. Until that follow-up is justified, separate-proposal configs retain their
+current endpoint-average intensity boundaries and are excluded from the Arm 3
+comparison.
 
 Removing context from `B0` is a behavioral change, not a free refactor: the
 current `BondFocusedBreakHead.bond_project` consumes acquisition context before
@@ -234,7 +245,8 @@ softmax attention: O(N^2 * H * D)
 With the common width 384 and four heads, `D = 96`; the arithmetic crossover is
 therefore around 96 tokens per branch. This crossover is outside nearly the
 entire NIST20 distribution. A full-table measurement of all 35,025 rows in
-`data/proc/nist20/mol_df.pkl` gives:
+`data/proc/nist20/mol_df.pkl` gives the following molecular-graph token counts
+(heavy atoms only; implicit hydrogens are not graph nodes):
 
 | tokens per molecule | Median | p90 | p99 | Max | Fraction above 96 |
 |---|---:|---:|---:|---:|---:|
@@ -251,11 +263,12 @@ burden of proof on EFA rather than softmax.
 The current EFA implementation also has a first-order transient-memory cost. It
 materializes both `KV_nodes` and `KV_node` with shape `(N, H, D, D)`. For a
 representative batch of about 3,000 atom tokens at `H = 4`, `D = 96`, each tensor
-is about 422 MiB in FP32 (211 MiB in BF16), so the pair reaches about 844 MiB in
-FP32 during one EFA call. Non-reentrant activation checkpointing prevents all
-layer intermediates from simply accumulating for backward, but the same large
-allocation is still required transiently in the forward call and its backward
-recomputation. A bond EFA branch repeats approximately the same work and
+is about 422 MiB in FP32, so the pair reaches about 844 MiB during one EFA call.
+FP32 is the operative estimate: the MASShatter configs use `precision: 32`.
+Non-reentrant activation checkpointing is unconditional in the EFA path and
+prevents all layer intermediates from simply accumulating for backward, but the
+same large allocation is still required transiently in the forward call and its
+backward recomputation. A bond EFA branch repeats approximately the same work and
 allocation because the bond count closely tracks the atom count; its exact peak
 depends on whether the branches execute sequentially. By comparison, per-graph
 softmax attention padded near 90--96 tokens is only on the order of tens of MiB
@@ -329,6 +342,7 @@ candidate budgets fixed:
    keep charge and fragment/complement pooling on the original GINE_EFA atom
    output so `B3` boundary reuse is the only downstream representation change.
    Promote `A3` to those consumers only in a second sub-arm. Add no global mixer.
+   This arm requires `separate_proposal_encoder: False`.
 4. **Existing atom-Graphormer reference:** evaluate the already configured
    `graphormer512x5` endpoint-head model, then construct a matched-width/depth
    atom-Graphormer control. Do not attribute its atom-side structural biases to a
@@ -344,6 +358,10 @@ candidate budgets fixed:
 8. **Fully interleaved dual model:** move local atom GINE, local bond updates,
    global atom attention, global bond attention, and cross-stream fusion into the
    same repeated block only if the preceding structural-softmax arm wins.
+9. **Dual-separate follow-up, only if needed:** after a shared encoder wins, give
+   the intensity and proposal paths disjoint coupled atom/bond stacks and compare
+   against the matching separate-encoder control at reported parameter count and
+   memory. Do not include this cost-doubled design in the initial Arm 3 test.
 
 Arms 5--7 answer separate questions: whether global bond communication helps,
 whether exact softmax improves on kernel attention, and whether any softmax gain
