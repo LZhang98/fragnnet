@@ -264,7 +264,8 @@ The current EFA implementation also has a first-order transient-memory cost. It
 materializes both `KV_nodes` and `KV_node` with shape `(N, H, D, D)`. For a
 representative batch of about 3,000 atom tokens at `H = 4`, `D = 96`, each tensor
 is about 422 MiB in FP32, so the pair reaches about 844 MiB during one EFA call.
-FP32 is the operative estimate: the MASShatter configs use `precision: 32`.
+FP32 is the operative estimate for the control configs summarized here; BF16 is
+kept as a separate, explicitly tagged precision ablation rather than assumed.
 Non-reentrant activation checkpointing is unconditional in the EFA path and
 prevents all layer intermediates from simply accumulating for backward, but the
 same large allocation is still required transiently in the forward call and its
