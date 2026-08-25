@@ -1,4 +1,4 @@
-wandb_name: nist20_merged_unique256_enum4096_gine_graphormer384_bondcentric_a2_b2_transformer_ce_embed_proposal_selection_only
+wandb_name: nist20_merged_unique256_enum4096_gine_graphormer384_bondcentric_a2_b2_transformer_ce_embed_proposal_selection_only_maprel001
 wandb_group: nist20_mass_shatter_fir_h100_40gb
 wandb_tags:
   - mass_shatter
@@ -7,6 +7,7 @@ wandb_tags:
   - merged
   - unique_fragments_256
   - max_enumerated_masks_4096
+  - map_relative_probability_0.01
   - pathway_marginalization
   - deterministic
   - matched_width_depth_a2_b2
@@ -70,6 +71,7 @@ ce_insert_size: 32
 mass_shatter_unique_fragment_target: 256
 mass_shatter_unique_fragment_mode: True
 mass_shatter_ranked_mask_budget: 4096
+mass_shatter_min_mask_relative_probability: 0.01
 mass_shatter_explore_masks: 0
 mass_shatter_exploration_temperature: 1.0
 mass_shatter_include_single_bond_cuts: True
