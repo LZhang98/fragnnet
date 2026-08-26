@@ -23,6 +23,7 @@ from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GroupSampler,
+    MassShatterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
@@ -197,11 +198,23 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if config_d["dynamic_batch_sampler"]:
         if split == "train":
-            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+            return_batch_at = config_d["train_batch_size"]
+            if not config_d["automatic_optimization"]:
+                return_batch_at *= config_d["accumulate_grad_batches"]
         else:
             return_batch_at = config_d["eval_batch_size"]
-        if split == "train":
-            if config_d["batch_sampler_type"] == "ce_context":
+        if config_d["batch_sampler_type"] == "ce_context":
+            if config_d["model_type"] == "mass_shatter":
+                batch_sampler = MassShatterCEContextDynamicBatchSampler(
+                    ds,
+                    max_num=config_d["dynamic_batch_sampler_max"],
+                    ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
+                    spectra_per_context=config_d["ce_context_spectra_per_context"],
+                    return_batch_at=return_batch_at,
+                    seed=config_d["seed"],
+                    skip_too_big=split == "train",
+                )
+            else:
                 batch_sampler = CEContextDynamicBatchSampler(
                     ds,
                     max_num=config_d["dynamic_batch_sampler_max"],
@@ -210,21 +223,22 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                     spectra_per_context=config_d["ce_context_spectra_per_context"],
                     return_batch_at=return_batch_at,
                     seed=config_d["seed"],
+                    skip_too_big=split == "train",
                 )
-            else:
-                batch_sampler = SpecMolFragDynamicBatchSampler(
-                    ds,
-                    max_num=config_d["dynamic_batch_sampler_max"],
-                    limited_by=config_d["dynamic_batch_sampler_mode"],
-                    skip_too_big=True,
-                    return_batch_at=return_batch_at,
-                    sampler=sampler,
-                    dag_size_curriculum=config_d["dag_size_curriculum"],
-                    dag_size_curriculum_start_fraction=config_d[
-                        "dag_size_curriculum_start_fraction"
-                    ],
-                    dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
-                )
+        elif split == "train":
+            batch_sampler = SpecMolFragDynamicBatchSampler(
+                ds,
+                max_num=config_d["dynamic_batch_sampler_max"],
+                limited_by=config_d["dynamic_batch_sampler_mode"],
+                skip_too_big=True,
+                return_batch_at=return_batch_at,
+                sampler=sampler,
+                dag_size_curriculum=config_d["dag_size_curriculum"],
+                dag_size_curriculum_start_fraction=config_d[
+                    "dag_size_curriculum_start_fraction"
+                ],
+                dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
+            )
         else:
             batch_sampler = SpecMolFragDynamicBatchSampler(
                 ds,
@@ -309,17 +323,48 @@ def validate_sampler_config(config_d: dict) -> None:
         )
 
     if config_d["dynamic_batch_sampler"]:
-        if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
-            raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
-        if config_d["automatic_optimization"]:
+        dynamic_model_types = {"frag_gnn", "fragnnet"}
+        if config_d["batch_sampler_type"] == "ce_context":
+            dynamic_model_types.add("mass_shatter")
+        if config_d["model_type"] not in dynamic_model_types:
+            raise ValueError(
+                "Dynamic batch sampler supports frag_gnn/fragnnet, plus mass_shatter "
+                "with ce_context; got model_type "
+                f"'{config_d['model_type']}'"
+            )
+        automatic_ce_mass_shatter = (
+            config_d["automatic_optimization"]
+            and config_d["model_type"] == "mass_shatter"
+            and config_d["batch_sampler_type"] == "ce_context"
+        )
+        if (
+            config_d["model_type"] == "mass_shatter"
+            and config_d["batch_sampler_type"] == "ce_context"
+            and not config_d["automatic_optimization"]
+        ):
+            raise ValueError(
+                "mass_shatter with ce_context requires automatic_optimization=True"
+            )
+        if config_d["automatic_optimization"] and not automatic_ce_mass_shatter:
             raise ValueError(
                 f"Dynamic batch sampler cannot be used with automatic optimization "
                 f"(got automatic_optimization={config_d['automatic_optimization']})"
             )
-        if config_d["dynamic_batch_sampler_mode"] not in ["frag_node", "frag_edge"]:
+        if config_d["dynamic_batch_sampler_mode"] not in [
+            "frag_node",
+            "frag_edge",
+            "mol_edge",
+        ]:
             raise ValueError(
-                f"Dynamic batch sampler only supports frag_node or frag_edge mode "
+                "Dynamic batch sampler only supports frag_node, frag_edge, or mol_edge mode "
                 f"(got '{config_d['dynamic_batch_sampler_mode']}')"
+            )
+        if config_d["dynamic_batch_sampler_mode"] == "mol_edge" and not (
+            config_d["model_type"] == "mass_shatter"
+            and config_d["batch_sampler_type"] == "ce_context"
+        ):
+            raise ValueError(
+                "dynamic_batch_sampler_mode='mol_edge' requires mass_shatter with ce_context"
             )
         if config_d["dynamic_batch_sampler_max"] is None:
             raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
@@ -334,9 +379,13 @@ def validate_sampler_config(config_d: dict) -> None:
     if config_d["batch_sampler_type"] == "ce_context":
         if not config_d["dynamic_batch_sampler"]:
             raise ValueError("batch_sampler_type='ce_context' requires dynamic_batch_sampler=True")
-        if config_d["dynamic_batch_sampler_mode"] != "frag_edge":
+        required_mode = (
+            "mol_edge" if config_d["model_type"] == "mass_shatter" else "frag_edge"
+        )
+        if config_d["dynamic_batch_sampler_mode"] != required_mode:
             raise ValueError(
-                "batch_sampler_type='ce_context' requires dynamic_batch_sampler_mode='frag_edge'"
+                "batch_sampler_type='ce_context' requires dynamic_batch_sampler_mode="
+                f"'{required_mode}' for model_type='{config_d['model_type']}'"
             )
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
@@ -358,6 +407,37 @@ def validate_sampler_config(config_d: dict) -> None:
             raise ValueError(
                 "ce_context_ce_key_by_inst is missing configured instrument types "
                 f"{sorted(missing_inst_types)}"
+            )
+
+    share_proposal = config_d["mass_shatter_share_proposal_across_ev"]
+    if not isinstance(share_proposal, bool):
+        raise ValueError("mass_shatter_share_proposal_across_ev must be boolean")
+    if share_proposal:
+        if config_d["model_type"] != "mass_shatter":
+            raise ValueError(
+                "mass_shatter_share_proposal_across_ev requires model_type='mass_shatter'"
+            )
+        if config_d["batch_sampler_type"] != "ce_context":
+            raise ValueError(
+                "mass_shatter_share_proposal_across_ev requires batch_sampler_type='ce_context'"
+            )
+
+    cross_ev_weight = config_d["cross_ev_fragment_loss_weight"]
+    if (
+        not isinstance(cross_ev_weight, (int, float))
+        or isinstance(cross_ev_weight, bool)
+        or cross_ev_weight < 0
+    ):
+        raise ValueError("cross_ev_fragment_loss_weight must be a non-negative number")
+    if cross_ev_weight > 0:
+        if not share_proposal:
+            raise ValueError(
+                "cross_ev_fragment_loss_weight > 0 requires "
+                "mass_shatter_share_proposal_across_ev=True"
+            )
+        if not config_d["mass_shatter_unique_fragment_mode"]:
+            raise ValueError(
+                "cross_ev_fragment_loss_weight > 0 requires mass_shatter_unique_fragment_mode=True"
             )
 
     pair_weight = config_d["ce_pair_loss_weight"]

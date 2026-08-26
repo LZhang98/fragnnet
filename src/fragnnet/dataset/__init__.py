@@ -8,6 +8,7 @@ from .data_sampler import (
     FormulaPrecTypeGroupSampler,
     GreedyInferenceBatchSampler,
     GroupSampler,
+    MassShatterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "FormulaPrecTypeGroupSampler",
     "GreedyInferenceBatchSampler",
     "GroupSampler",
+    "MassShatterCEContextDynamicBatchSampler",
     "SpecMolFragDynamicBatchSampler",
     "get_group_sampler",
     "MCESDataset",

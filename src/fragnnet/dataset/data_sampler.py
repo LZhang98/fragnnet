@@ -4,6 +4,7 @@ Data samplers for spectrum-molecule-fragment datasets.
 Includes:
 - SpecMolFragDynamicBatchSampler: Dynamic batching to avoid OOM
 - CEContextDynamicBatchSampler: Full-coverage bounded adjacent-CE batching
+- MassShatterCEContextDynamicBatchSampler: Adjacent-CE batching by molecular edges
 - GreedyInferenceBatchSampler: Simple greedy sequential batching for inference
 - GroupSampler: Sample K specs per group_id
 - get_group_sampler: WeightedRandomSampler factory
@@ -379,7 +380,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 
 class CEContextDynamicBatchSampler(BatchSampler):
-    """Pack full-coverage, bounded adjacent-CE chunks for single-GPU training."""
+    """Pack adjacent-CE chunks using fragment-DAG edge budgets."""
+
+    size_mode = "frag_edge"
 
     def __init__(
         self,
@@ -390,12 +393,13 @@ class CEContextDynamicBatchSampler(BatchSampler):
         spectra_per_context: int = 5,
         return_batch_at: int = 0,
         seed: int = 0,
+        skip_too_big: bool = True,
     ) -> None:
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
-        if limited_by != "frag_edge":
+        if limited_by != self.size_mode:
             raise ValueError(
-                "CE context batching requires limited_by='frag_edge' "
+                f"CE context batching requires limited_by='{self.size_mode}' "
                 f"(got '{limited_by}')."
             )
         if not isinstance(spectra_per_context, int) or spectra_per_context < 2:
@@ -404,6 +408,8 @@ class CEContextDynamicBatchSampler(BatchSampler):
             raise ValueError("return_batch_at must be a non-negative integer")
         if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
             raise ValueError("seed must be a non-negative integer")
+        if not isinstance(skip_too_big, bool):
+            raise ValueError("skip_too_big must be boolean")
         if not hasattr(data_source, "spec_df") or not hasattr(data_source, "ce_key"):
             raise ValueError("CE context batching requires a dataset with spec_df and ce_key")
         if data_source.ce_key is None:
@@ -425,11 +431,11 @@ class CEContextDynamicBatchSampler(BatchSampler):
 
         self.data_source = data_source
         self._max_num = max_num
-        self._limited_by = limited_by
         self._ce_key_by_inst = ce_key_by_inst
         self._spectra_per_context = spectra_per_context
         self._return_batch_at = return_batch_at
         self._seed = seed
+        self._skip_too_big = skip_too_big
         self._epoch = 0
         self._data_meta = self._load_size_metadata()
         self._contexts, self._fallback_indices, self._coverage_stats = (
@@ -449,7 +455,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
         return round(float(values.mean()), 6)
 
     def _load_size_metadata(self) -> np.ndarray:
-        """Load per-spectrum fragment node/edge counts once."""
+        """Load per-spectrum fragment-DAG node/edge counts once."""
         metadata = []
         for idx in range(len(self.data_source)):
             if hasattr(self.data_source, "precom_meta_info"):
@@ -610,6 +616,12 @@ class CEContextDynamicBatchSampler(BatchSampler):
                 edges = int(self._data_meta[idx, 1])
                 if edges > self._max_num:
                     oversized_spectra += 1
+                    if atom:
+                        atoms.append(atom)
+                        atom = []
+                        atom_edges = 0
+                    if not self._skip_too_big:
+                        atoms.append([idx])
                     continue
                 if atom and atom_edges + edges > self._max_num:
                     atoms.append(atom)
@@ -646,6 +658,8 @@ class CEContextDynamicBatchSampler(BatchSampler):
             group_id, idx = self._fallback_indices[fallback_idx]
             if int(self._data_meta[idx, 1]) > self._max_num:
                 oversized_spectra += 1
+                if not self._skip_too_big:
+                    atoms.append((group_id, [idx]))
             else:
                 atoms.append((group_id, [idx]))
 
@@ -702,7 +716,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
             "batches": len(batches),
             "sampler_seed": self._seed,
         }
-        logger.info("[CEContextDynamicBatchSampler] %s", self.stats)
+        logger.info("[%s] %s", type(self).__name__, self.stats)
 
     def set_epoch(self, epoch: int) -> None:
         """Rotate CE chunk boundaries and primary replicate choice."""
@@ -714,6 +728,51 @@ class CEContextDynamicBatchSampler(BatchSampler):
 
     def __len__(self) -> int:
         return len(self._batches)
+
+
+class MassShatterCEContextDynamicBatchSampler(CEContextDynamicBatchSampler):
+    """Pack adjacent-CE MASShatter spectra using molecular graph edges.
+
+    This sampler never reads fragment-DAG graphs or precomputed DAG size metadata.
+    """
+
+    size_mode = "mol_edge"
+
+    def __init__(
+        self,
+        data_source,
+        max_num: int,
+        ce_key_by_inst: dict[str, str],
+        spectra_per_context: int = 5,
+        return_batch_at: int = 0,
+        seed: int = 0,
+        skip_too_big: bool = True,
+    ) -> None:
+        super().__init__(
+            data_source=data_source,
+            max_num=max_num,
+            ce_key_by_inst=ce_key_by_inst,
+            limited_by=self.size_mode,
+            spectra_per_context=spectra_per_context,
+            return_batch_at=return_batch_at,
+            seed=seed,
+            skip_too_big=skip_too_big,
+        )
+
+    def _load_size_metadata(self) -> np.ndarray:
+        """Load molecular graph node/edge counts once per molecule."""
+        metadata = []
+        mol_sizes = {}
+        for idx in range(len(self.data_source)):
+            mol_id = self.data_source.spec_df.iloc[idx]["mol_id"]
+            if mol_id not in mol_sizes:
+                if hasattr(self.data_source, "mol_datas"):
+                    graph = self.data_source.mol_datas[mol_id]["mol_pyg"]
+                else:
+                    graph = self.data_source[idx]["mol_pyg"]
+                mol_sizes[mol_id] = (graph.num_nodes, graph.num_edges)
+            metadata.append(mol_sizes[mol_id])
+        return np.asarray(metadata, dtype=np.int64).reshape(-1, 2)
 
 
 class GreedyInferenceBatchSampler(BatchSampler):

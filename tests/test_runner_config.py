@@ -1,8 +1,12 @@
 """Tests for runner config validation helpers."""
 
+from types import SimpleNamespace
+
+import pandas as pd
 import pytest
 
-from fragnnet.runner import validate_sampler_config
+from fragnnet.dataset import MassShatterCEContextDynamicBatchSampler
+from fragnnet.runner import init_dataloader, validate_sampler_config
 
 
 def _base_config(**overrides) -> dict:
@@ -37,6 +41,9 @@ def _base_config(**overrides) -> dict:
         "ce_pair_subset": "switches",
         "ce_pair_eligible_inst_types": ["FT"],
         "ce_pair_eligible_prec_types": ["[M+H]+"],
+        "cross_ev_fragment_loss_weight": 0.0,
+        "mass_shatter_share_proposal_across_ev": False,
+        "mass_shatter_unique_fragment_mode": False,
         "precursor_pair_loss_weight": 0.0,
         "precursor_pair_nce_min": 0.0,
         "precursor_pair_nce_max": 20.0,
@@ -59,6 +66,109 @@ def _base_config(**overrides) -> dict:
 
 
 class TestValidateSamplerConfig:
+    def test_mass_shatter_shared_proposal_cross_ev_config_passes(self):
+        validate_sampler_config(
+            _base_config(
+                model_type="mass_shatter",
+                batch_sampler_type="ce_context",
+                dynamic_batch_sampler_mode="mol_edge",
+                automatic_optimization=True,
+                mass_shatter_share_proposal_across_ev=True,
+                mass_shatter_unique_fragment_mode=True,
+                cross_ev_fragment_loss_weight=0.1,
+            )
+        )
+
+    def test_mass_shatter_ce_context_requires_automatic_optimization(self):
+        with pytest.raises(ValueError, match="automatic_optimization=True"):
+            validate_sampler_config(
+                _base_config(
+                    model_type="mass_shatter",
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="mol_edge",
+                    automatic_optimization=False,
+                )
+            )
+
+    def test_mol_edge_requires_mass_shatter_ce_context(self):
+        with pytest.raises(ValueError, match="mol_edge.*mass_shatter.*ce_context"):
+            validate_sampler_config(_base_config(dynamic_batch_sampler_mode="mol_edge"))
+
+    def test_mass_shatter_ce_context_uses_same_sampler_for_validation(self):
+        class EvalDataset:
+            split = "val"
+            ce_key = "nce"
+            spec_df = pd.DataFrame(
+                [
+                    {
+                        "group_id": 1,
+                        "mol_id": 1,
+                        "inst_type": "FT",
+                        "nce": [10.0],
+                    },
+                    {
+                        "group_id": 1,
+                        "mol_id": 1,
+                        "inst_type": "FT",
+                        "nce": [20.0],
+                    },
+                ]
+            )
+            mol_datas = {
+                1: {"mol_pyg": SimpleNamespace(num_nodes=4, num_edges=6)}
+            }
+
+            def __len__(self):
+                return len(self.spec_df)
+
+            @staticmethod
+            def get_collate_fn():
+                return lambda samples: samples
+
+        config = _base_config(
+            model_type="mass_shatter",
+            batch_sampler_type="ce_context",
+            dynamic_batch_sampler_mode="mol_edge",
+            dynamic_batch_sampler_max=5,
+            automatic_optimization=True,
+            num_workers=0,
+            pin_memory=False,
+            accelerator="cpu",
+            eval_batch_size=2,
+            seed=1,
+        )
+
+        dataloader = init_dataloader(EvalDataset(), config)
+
+        assert isinstance(
+            dataloader.batch_sampler,
+            MassShatterCEContextDynamicBatchSampler,
+        )
+        assert list(dataloader.batch_sampler) == [[0], [1]]
+
+    def test_mass_shatter_shared_proposal_requires_context_batches(self):
+        with pytest.raises(ValueError, match="ce_context"):
+            validate_sampler_config(
+                _base_config(
+                    model_type="mass_shatter",
+                    dynamic_batch_sampler_mode="mol_edge",
+                    mass_shatter_share_proposal_across_ev=True,
+                )
+            )
+
+    def test_cross_ev_fragment_loss_requires_unique_fragments(self):
+        with pytest.raises(ValueError, match="unique_fragment_mode"):
+            validate_sampler_config(
+                _base_config(
+                    model_type="mass_shatter",
+                    batch_sampler_type="ce_context",
+                    dynamic_batch_sampler_mode="mol_edge",
+                    automatic_optimization=True,
+                    mass_shatter_share_proposal_across_ev=True,
+                    cross_ev_fragment_loss_weight=0.1,
+                )
+            )
+
     def test_missing_dual_group_key_raises(self):
         """Old configs without dual_group_dynamic_batch_sampler should fail fast."""
         cfg = _base_config()
@@ -84,7 +194,7 @@ class TestValidateSamplerConfig:
         validate_sampler_config(_base_config(dynamic_batch_sampler_mode="frag_edge"))
 
     def test_invalid_mode_raises(self):
-        with pytest.raises(ValueError, match="frag_node or frag_edge"):
+        with pytest.raises(ValueError, match="frag_node, frag_edge, or mol_edge"):
             validate_sampler_config(_base_config(dynamic_batch_sampler_mode="invalid_mode"))
 
     def test_non_frag_gnn_model_raises(self):

@@ -400,6 +400,7 @@ class MassShatterContextEncoder(nn.Module):
         nce_batch_indices: th.Tensor | None,
         ace: th.Tensor | None,
         ace_batch_indices: th.Tensor | None,
+        include_collision_energy: bool = True,
     ) -> th.Tensor:
         """Return one conditioning vector per spectrum.
 
@@ -438,9 +439,12 @@ class MassShatterContextEncoder(nn.Module):
                 raise ValueError("fragmentation_modes are required by the configured context")
             features.append(self.fragmentation_mode_embedding(fragmentation_modes.reshape(-1)))
         if self.use_nce:
-            if nce is None:
+            if not include_collision_energy:
+                ce_width = self.ce_insert_size if self.use_ce_embedding else 1
+                features.append(features[0].new_zeros((batch_size, ce_width)))
+            elif nce is None:
                 raise ValueError("NCE values are required by the configured context")
-            if self.nce_embedding is None:
+            elif self.nce_embedding is None:
                 mean_nce = _mean_values_by_batch(nce, nce_batch_indices, batch_size)
                 features.append(((mean_nce - self.nce_mean) / self.nce_std).unsqueeze(1))
             else:
@@ -454,9 +458,12 @@ class MassShatterContextEncoder(nn.Module):
                     )
                 )
         if self.use_ace:
-            if ace is None:
+            if not include_collision_energy:
+                ce_width = self.ce_insert_size if self.use_ce_embedding else 1
+                features.append(features[0].new_zeros((batch_size, ce_width)))
+            elif ace is None:
                 raise ValueError("ACE values are required by the configured context")
-            if self.ace_embedding is None:
+            elif self.ace_embedding is None:
                 mean_ace = _mean_values_by_batch(ace, ace_batch_indices, batch_size)
                 features.append(((mean_ace - self.ace_mean) / self.ace_std).unsqueeze(1))
             else:
@@ -530,6 +537,7 @@ class MassShatterModel(nn.Module):
         detach_base_ion_h: bool,
         proposal_selection_only: bool,
         separate_proposal_encoder: bool,
+        share_proposal_across_ev: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
         fragmentation_modes: Sequence[str],
@@ -603,6 +611,8 @@ class MassShatterModel(nn.Module):
                 the intensity transformer alone.
             separate_proposal_encoder: Whether bond/charge proposal scoring uses an
                 independent molecular GNN trained by proposal supervision.
+            share_proposal_across_ev: Run the proposal encoder and heads once for all
+                spectra in the same acquisition group, without collision-energy input.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -744,6 +754,7 @@ class MassShatterModel(nn.Module):
         self.detach_base_ion_h = detach_base_ion_h
         self.proposal_selection_only = proposal_selection_only
         self.separate_proposal_encoder = separate_proposal_encoder
+        self.share_proposal_across_ev = share_proposal_across_ev
         self.proposal_num_mixtures = proposal_num_mixtures
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
@@ -1121,6 +1132,116 @@ class MassShatterModel(nn.Module):
             boundary_counts,
         )
 
+    @staticmethod
+    def _shared_proposal_layout(
+        mol_pyg: Batch,
+        group_ids: th.Tensor,
+    ) -> dict[str, th.Tensor]:
+        """Compact repeated precursor graphs and map proposal outputs back."""
+        batch_size = int(mol_pyg.ptr.numel() - 1)
+        group_ids = group_ids.reshape(-1)
+        if group_ids.shape[0] != batch_size:
+            raise ValueError("proposal_group_ids must contain one id per spectrum")
+
+        # 1. Build stable first-occurrence group indices.
+        _, sorted_inverse = th.unique(group_ids, sorted=True, return_inverse=True)
+        num_shared = int(sorted_inverse.max().item()) + 1
+        spectrum_indices = th.arange(batch_size, device=group_ids.device)
+        first_by_sorted_group = spectrum_indices.new_full((num_shared,), batch_size).scatter_reduce(
+            0,
+            sorted_inverse,
+            spectrum_indices,
+            reduce="amin",
+            include_self=True,
+        )
+        sorted_group_order = th.argsort(first_by_sorted_group)
+        sorted_to_stable = th.empty_like(sorted_group_order)
+        sorted_to_stable[sorted_group_order] = th.arange(num_shared, device=group_ids.device)
+        spectrum_to_shared = sorted_to_stable[sorted_inverse]
+        representatives = first_by_sorted_group[sorted_group_order]
+
+        # 2. Compact representative atom graphs.
+        atom_counts = mol_pyg.ptr[1:] - mol_pyg.ptr[:-1]
+        shared_atom_counts = atom_counts[representatives]
+        _validate_tensor_condition(
+            (atom_counts == shared_atom_counts[spectrum_to_shared]).all(),
+            "all spectra in a proposal group must have identical atom counts",
+        )
+        shared_atom_ptr = th.cat((shared_atom_counts.new_zeros(1), shared_atom_counts.cumsum(0)))
+        atom_indices = th.arange(mol_pyg.x.shape[0], device=mol_pyg.x.device)
+        atom_local_indices = atom_indices - mol_pyg.ptr[mol_pyg.batch]
+        atom_to_shared = shared_atom_ptr[spectrum_to_shared[mol_pyg.batch]] + atom_local_indices
+        representative_atom_mask = th.isin(mol_pyg.batch, representatives)
+        representative_atom_indices = atom_indices[representative_atom_mask]
+        old_to_compact_atom = atom_indices.new_full((atom_indices.numel(),), -1)
+        old_to_compact_atom[representative_atom_indices] = th.arange(
+            representative_atom_indices.numel(), device=atom_indices.device
+        )
+        representative_edge_mask = representative_atom_mask[mol_pyg.edge_index[0]]
+        shared_edge_index = old_to_compact_atom[mol_pyg.edge_index[:, representative_edge_mask]]
+        shared_atom_batch = th.repeat_interleave(
+            th.arange(num_shared, device=group_ids.device),
+            shared_atom_counts,
+        )
+
+        # 3. Compact the single-entry chemical-bond view and build its fan-out map.
+        bond_batch = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]
+        bond_counts = th.bincount(bond_batch, minlength=batch_size)
+        shared_bond_counts = bond_counts[representatives]
+        _validate_tensor_condition(
+            (bond_counts == shared_bond_counts[spectrum_to_shared]).all(),
+            "all spectra in a proposal group must have identical bond counts",
+        )
+        shared_bond_ptr = th.cat((shared_bond_counts.new_zeros(1), shared_bond_counts.cumsum(0)))
+        bond_indices = th.arange(bond_batch.numel(), device=bond_batch.device)
+        bond_ptr = th.cat((bond_counts.new_zeros(1), bond_counts.cumsum(0)))
+        bond_local_indices = bond_indices - bond_ptr[bond_batch]
+        bond_to_shared = shared_bond_ptr[spectrum_to_shared[bond_batch]] + bond_local_indices
+        representative_bond_mask = th.isin(bond_batch, representatives)
+        shared_chemical_bond_index = old_to_compact_atom[
+            mol_pyg.chemical_bond_index[:, representative_bond_mask]
+        ]
+        shared_bond_batch = th.repeat_interleave(
+            th.arange(num_shared, device=group_ids.device),
+            shared_bond_counts,
+        )
+
+        # Sharing is only valid for repeated views of the exact same precursor graph.
+        _validate_tensor_condition(
+            (mol_pyg.x == mol_pyg.x[representative_atom_indices][atom_to_shared]).all(),
+            "all spectra in a proposal group must have identical atom features",
+        )
+        _validate_tensor_condition(
+            (
+                mol_pyg.chemical_bond_attr
+                == mol_pyg.chemical_bond_attr[representative_bond_mask][bond_to_shared]
+            ).all(),
+            "all spectra in a proposal group must have identical bond features",
+        )
+        local_bond_index = mol_pyg.chemical_bond_index - mol_pyg.ptr[bond_batch].unsqueeze(0)
+        shared_local_bond_index = (
+            shared_chemical_bond_index
+            - shared_atom_ptr[shared_bond_batch].unsqueeze(0)
+        )
+        _validate_tensor_condition(
+            (local_bond_index == shared_local_bond_index[:, bond_to_shared]).all(),
+            "all spectra in a proposal group must have identical bond topology",
+        )
+
+        return {
+            "representatives": representatives,
+            "spectrum_to_shared": spectrum_to_shared,
+            "representative_atom_indices": representative_atom_indices,
+            "atom_to_shared": atom_to_shared,
+            "shared_atom_batch": shared_atom_batch,
+            "representative_edge_mask": representative_edge_mask,
+            "shared_edge_index": shared_edge_index,
+            "representative_bond_mask": representative_bond_mask,
+            "bond_to_shared": bond_to_shared,
+            "shared_chemical_bond_index": shared_chemical_bond_index,
+            "shared_bond_batch": shared_bond_batch,
+        }
+
     def forward(
         self,
         *,
@@ -1133,6 +1254,7 @@ class MassShatterModel(nn.Module):
         spec_ace: th.Tensor | None = None,
         spec_ace_batch_idxs: th.Tensor | None = None,
         static_graph: MassShatterStaticGraph | None = None,
+        proposal_group_ids: th.Tensor | None = None,
     ) -> dict[str, th.Tensor]:
         """Generate a sparse monoisotopic spectrum for every precursor.
 
@@ -1190,47 +1312,148 @@ class MassShatterModel(nn.Module):
             ace_batch_indices=spec_ace_batch_idxs,
         )
 
-        # 1. Encode the intact precursor once and score every chemical bond.
-        atom_embeddings = self.precursor_encoder(
-            mol_pyg.x,
-            mol_pyg.batch,
-            mol_pyg.edge_index,
-            mol_pyg.edge_attr,
-        )
-        # ``chemical_bond_index`` is the undirected single-entry-per-bond view of the
-        # graph (``edge_index`` is directed), so either endpoint identifies the molecule.
-        bond_batch_indices = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]
-        # V1/V2 detach proposal inputs from the intensity encoder. V3 instead learns
-        # an independent molecular representation from proposal supervision.
-        if self.proposal_encoder is None:
-            proposal_atom_embeddings = (
-                atom_embeddings.detach() if self.proposal_selection_only else atom_embeddings
+        # 1. Encode each intact precursor once and score every chemical bond.
+        layout = None
+        if self.share_proposal_across_ev:
+            if proposal_group_ids is None:
+                raise ValueError("share_proposal_across_ev requires proposal_group_ids")
+            layout = self._shared_proposal_layout(mol_pyg, proposal_group_ids)
+            shared_atom_indices = layout["representative_atom_indices"]
+            shared_atom_embeddings = self.precursor_encoder(
+                mol_pyg.x[shared_atom_indices],
+                layout["shared_atom_batch"],
+                layout["shared_edge_index"],
+                mol_pyg.edge_attr[layout["representative_edge_mask"]],
             )
+            atom_embeddings = shared_atom_embeddings[layout["atom_to_shared"]]
         else:
-            proposal_atom_embeddings = self.proposal_encoder(
+            atom_embeddings = self.precursor_encoder(
                 mol_pyg.x,
                 mol_pyg.batch,
                 mol_pyg.edge_index,
                 mol_pyg.edge_attr,
             )
-        proposal_context = context.detach() if self.proposal_selection_only else context
-        bond_logits = self.bond_break_head(
-            proposal_atom_embeddings,
-            mol_pyg.chemical_bond_index,
-            mol_pyg.chemical_bond_attr,
-            context=proposal_context,
-            bond_batch_indices=bond_batch_indices,
-        )
-        mixture_log_weights = (
-            self.proposal_mixture_head(
-                proposal_atom_embeddings,
-                mol_pyg.batch,
-                proposal_context,
-                batch_size=batch_size,
+        # ``chemical_bond_index`` is the undirected single-entry-per-bond view of the
+        # graph (``edge_index`` is directed), so either endpoint identifies the molecule.
+        bond_batch_indices = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]
+        if self.share_proposal_across_ev:
+            assert layout is not None
+            representatives = layout["representatives"]
+            spectrum_to_shared = layout["spectrum_to_shared"]
+            _validate_tensor_condition(
+                (
+                    precursor_type_indices
+                    == precursor_type_indices[representatives][spectrum_to_shared]
+                ).all(),
+                "all spectra in a proposal group must have the same precursor type",
             )
-            if self.proposal_mixture_head is not None
-            else None
-        )
+            if spec_inst_type is not None:
+                _validate_tensor_condition(
+                    (
+                        spec_inst_type.reshape(-1)
+                        == spec_inst_type.reshape(-1)[representatives][spectrum_to_shared]
+                    ).all(),
+                    "all spectra in a proposal group must have the same instrument type",
+                )
+            if spec_frag_mode is not None:
+                _validate_tensor_condition(
+                    (
+                        spec_frag_mode.reshape(-1)
+                        == spec_frag_mode.reshape(-1)[representatives][spectrum_to_shared]
+                    ).all(),
+                    "all spectra in a proposal group must have the same fragmentation mode",
+                )
+            shared_context = self.context_encoder(
+                batch_size=representatives.numel(),
+                precursor_types=precursor_type_indices[representatives],
+                instrument_types=(
+                    None if spec_inst_type is None else spec_inst_type[representatives]
+                ),
+                fragmentation_modes=(
+                    None if spec_frag_mode is None else spec_frag_mode[representatives]
+                ),
+                nce=None,
+                nce_batch_indices=None,
+                ace=None,
+                ace_batch_indices=None,
+                include_collision_energy=False,
+            )
+            shared_atom_indices = layout["representative_atom_indices"]
+            if self.proposal_encoder is None:
+                shared_proposal_atom_embeddings = atom_embeddings[shared_atom_indices]
+                if self.proposal_selection_only:
+                    shared_proposal_atom_embeddings = shared_proposal_atom_embeddings.detach()
+            else:
+                shared_proposal_atom_embeddings = self.proposal_encoder(
+                    mol_pyg.x[shared_atom_indices],
+                    layout["shared_atom_batch"],
+                    layout["shared_edge_index"],
+                    mol_pyg.edge_attr[layout["representative_edge_mask"]],
+                )
+            shared_proposal_context = (
+                shared_context.detach() if self.proposal_selection_only else shared_context
+            )
+            shared_bond_logits = self.bond_break_head(
+                shared_proposal_atom_embeddings,
+                layout["shared_chemical_bond_index"],
+                mol_pyg.chemical_bond_attr[layout["representative_bond_mask"]],
+                context=shared_proposal_context,
+                bond_batch_indices=layout["shared_bond_batch"],
+            )
+            bond_logits = shared_bond_logits[layout["bond_to_shared"]]
+            shared_atom_charge_logits = self.charge_head(
+                shared_proposal_atom_embeddings,
+                context=shared_proposal_context,
+                atom_batch_indices=layout["shared_atom_batch"],
+            )
+            atom_charge_logits = shared_atom_charge_logits[layout["atom_to_shared"]]
+            if self.proposal_mixture_head is None:
+                mixture_log_weights = None
+            else:
+                shared_mixture_log_weights = self.proposal_mixture_head(
+                    shared_proposal_atom_embeddings,
+                    layout["shared_atom_batch"],
+                    shared_proposal_context,
+                    batch_size=representatives.numel(),
+                )
+                mixture_log_weights = shared_mixture_log_weights[spectrum_to_shared]
+        else:
+            # V1/V2 detach proposal inputs from the intensity encoder. V3 instead learns
+            # an independent molecular representation from proposal supervision.
+            if self.proposal_encoder is None:
+                proposal_atom_embeddings = (
+                    atom_embeddings.detach() if self.proposal_selection_only else atom_embeddings
+                )
+            else:
+                proposal_atom_embeddings = self.proposal_encoder(
+                    mol_pyg.x,
+                    mol_pyg.batch,
+                    mol_pyg.edge_index,
+                    mol_pyg.edge_attr,
+                )
+            proposal_context = context.detach() if self.proposal_selection_only else context
+            bond_logits = self.bond_break_head(
+                proposal_atom_embeddings,
+                mol_pyg.chemical_bond_index,
+                mol_pyg.chemical_bond_attr,
+                context=proposal_context,
+                bond_batch_indices=bond_batch_indices,
+            )
+            mixture_log_weights = (
+                self.proposal_mixture_head(
+                    proposal_atom_embeddings,
+                    mol_pyg.batch,
+                    proposal_context,
+                    batch_size=batch_size,
+                )
+                if self.proposal_mixture_head is not None
+                else None
+            )
+            atom_charge_logits = self.charge_head(
+                proposal_atom_embeddings,
+                context=proposal_context,
+                atom_batch_indices=mol_pyg.batch,
+            )
 
         # 2. Select global masks and construct sparse component pathways.
         # Mask identities are picked from detached logits on CPU; the returned log
@@ -1271,11 +1494,6 @@ class MassShatterModel(nn.Module):
 
         # 3. Score charge retention. In unique-fragment mode, masks remain latent
         # pathways and are marginalized before the expensive candidate transformer.
-        atom_charge_logits = self.charge_head(
-            proposal_atom_embeddings,
-            context=proposal_context,
-            atom_batch_indices=mol_pyg.batch,
-        )
         num_masks = candidates.mask_log_probabilities.shape[0]
         chemical_bond_embeddings = (
             atom_embeddings[mol_pyg.chemical_bond_index[0]]
@@ -1726,8 +1944,8 @@ class MassShatterModel(nn.Module):
         }
         if self.return_base_spectrum:
             output["base_pred_logprobs"] = base_pathway_log_probabilities.flatten()[flat_valid]
-        if self.proposal_selection_only:
-            proposal_fragment_indices = (
+        if self.unique_fragment_mode:
+            fragment_candidate_indices = (
                 th.arange(num_fragments, device=fragment_batch_indices.device)
                 .reshape(-1, 1, 1)
                 .expand_as(valid_channels)
@@ -1735,8 +1953,17 @@ class MassShatterModel(nn.Module):
             )
             output.update(
                 {
+                    "cross_ev_candidate_mzs": pred_mzs,
+                    "cross_ev_candidate_fragment_idxs": fragment_candidate_indices,
+                    "cross_ev_fragment_logprobs": fragment_log_probabilities,
+                    "cross_ev_fragment_batch_idxs": fragment_batch_indices,
+                }
+            )
+        if self.proposal_selection_only:
+            output.update(
+                {
                     "proposal_candidate_mzs": pred_mzs,
-                    "proposal_candidate_fragment_idxs": proposal_fragment_indices,
+                    "proposal_candidate_fragment_idxs": fragment_candidate_indices,
                     "proposal_fragment_logprobs": base_fragment_log_probabilities,
                     "proposal_fragment_batch_idxs": fragment_batch_indices,
                 }

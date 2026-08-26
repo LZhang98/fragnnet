@@ -30,7 +30,7 @@ from fragnnet.frag.mass_shatter_templates import (
 )
 from fragnnet.model import MassShatterModel
 from fragnnet.model.loss import ce_switch_pair_bce, get_sparse_cross_entropy_fn
-from fragnnet.pl_model.spectrum_pl import SpectrumPL
+from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
@@ -253,6 +253,131 @@ def _proposal_coverage_loss(
     return coverage_loss
 
 
+def _cross_ev_fragment_delta_loss(
+    *,
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_fragment_idxs: th.Tensor,
+    fragment_logprobs: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    group_ids: th.Tensor,
+    ce_values: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Match the predicted and observed probability change of shared fragments."""
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    group_ids = group_ids.reshape(-1)
+    ce_values = ce_values.reshape(-1)
+    if group_ids.shape != (batch_size,) or ce_values.shape != (batch_size,):
+        raise ValueError("group_ids and ce_values must contain one value per spectrum")
+
+    # 1. Convert observed peak probabilities into atom-fragment targets. When one
+    # peak aliases several fragments, split its mass evenly to keep targets normalized.
+    targets: list[th.Tensor] = []
+    target_available: list[th.Tensor] = []
+    predictions: list[th.Tensor] = []
+    for batch_index in range(batch_size):
+        fragment_indices = th.where(fragment_batch_idxs == batch_index)[0]
+        if fragment_indices.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no proposed fragments")
+        first_fragment_index = fragment_indices[0]
+        if not th.equal(
+            fragment_indices,
+            th.arange(
+                first_fragment_index,
+                first_fragment_index + fragment_indices.numel(),
+                device=fragment_indices.device,
+            ),
+        ):
+            raise ValueError("shared fragments must be contiguous within each spectrum")
+
+        true_mask = true_batch_idxs == batch_index
+        batch_true_mzs = true_mzs[true_mask]
+        batch_true_probabilities = true_logprobs[true_mask].exp()
+        candidate_mask = fragment_batch_idxs[candidate_fragment_idxs] == batch_index
+        batch_candidate_mzs = candidate_mzs[candidate_mask]
+        local_fragment_indices = candidate_fragment_idxs[candidate_mask] - first_fragment_index
+        if tol_per_sample is None:
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+        else:
+            per_peak_tolerance = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=per_peak_tolerance,
+            )
+        fragment_match_counts = fragment_logprobs.new_zeros(
+            (batch_true_mzs.numel(), fragment_indices.numel())
+        )
+        fragment_match_counts.scatter_add_(
+            1,
+            local_fragment_indices.reshape(1, -1).expand(batch_true_mzs.numel(), -1),
+            channel_match.to(fragment_match_counts),
+        )
+        fragment_match = fragment_match_counts > 0
+        aliases_per_peak = fragment_match.sum(dim=1, keepdim=True).clamp_min(1)
+        assignments = fragment_match.to(fragment_logprobs) / aliases_per_peak
+        target = (batch_true_probabilities[:, None] * assignments).sum(dim=0)
+        # Compare the distribution among covered fragments, not the amount of the
+        # spectrum covered by the proposal set. Otherwise changing coverage across CE
+        # introduces a uniform bias into every observed fragment delta.
+        target_total = target.sum()
+        target_available.append(target_total > 0)
+        target = target / target_total.clamp_min(th.finfo(target.dtype).tiny)
+        targets.append(target)
+        predictions.append(fragment_logprobs[fragment_indices].exp())
+
+    # 2. Compare adjacent-energy deltas for the same local fragment identity.
+    losses = fragment_logprobs.new_zeros(batch_size)
+    eligible_endpoints = fragment_logprobs.new_zeros(batch_size)
+    endpoint_counts = fragment_logprobs.new_zeros(batch_size)
+    for group_id in th.unique(group_ids).tolist():
+        sample_indices = th.where(group_ids == group_id)[0]
+        if sample_indices.numel() < 2:
+            continue
+        sample_indices = sample_indices[th.argsort(ce_values[sample_indices])]
+        for low_tensor, high_tensor in zip(sample_indices[:-1], sample_indices[1:]):
+            low = int(low_tensor.item())
+            high = int(high_tensor.item())
+            if targets[low].shape != targets[high].shape:
+                raise ValueError("shared proposal spectra must contain the same fragment count")
+            if not bool((target_available[low] & target_available[high]).item()):
+                continue
+            active = (targets[low] + targets[high]) > 0
+            if not active.any():
+                continue
+            predicted_delta = predictions[high][active] - predictions[low][active]
+            observed_delta = targets[high][active] - targets[low][active]
+            pair_loss = (predicted_delta - observed_delta).square().mean()
+            losses[low] = losses[low] + 0.5 * pair_loss
+            losses[high] = losses[high] + 0.5 * pair_loss
+            endpoint_counts[low] += 1
+            endpoint_counts[high] += 1
+            eligible_endpoints[low] = 1
+            eligible_endpoints[high] = 1
+    losses = losses / endpoint_counts.clamp_min(1)
+    return losses, eligible_endpoints
+
+
 class MassShatterPL(SpectrumPL):
     """Train MASShatter with SpectrumPL and FraGNNet's CE-pair objective.
 
@@ -360,6 +485,7 @@ class MassShatterPL(SpectrumPL):
             separate_proposal_encoder=(
                 self.hparams.mass_shatter_separate_proposal_encoder
             ),
+            share_proposal_across_ev=self.hparams.mass_shatter_share_proposal_across_ev,
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
@@ -464,6 +590,20 @@ class MassShatterPL(SpectrumPL):
                 "mass_shatter_proposal_anchored requires a positive proposal supervision loss"
             )
         proposal_loss_enabled = self.hparams.mass_shatter_proposal_loss_weight > 0.0
+        cross_ev_fragment_loss_enabled = self.hparams.cross_ev_fragment_loss_weight > 0.0
+        if (
+            not math.isfinite(self.hparams.cross_ev_fragment_loss_weight)
+            or self.hparams.cross_ev_fragment_loss_weight < 0.0
+        ):
+            raise ValueError("cross_ev_fragment_loss_weight must be finite and nonnegative")
+        if cross_ev_fragment_loss_enabled and not (
+            self.hparams.mass_shatter_unique_fragment_mode
+            and self.hparams.mass_shatter_share_proposal_across_ev
+        ):
+            raise ValueError(
+                "cross_ev_fragment_loss_weight requires unique-fragment mode and "
+                "mass_shatter_share_proposal_across_ev"
+            )
         base_ce_enabled = (
             self.hparams.mass_shatter_log_base_ce
             or self.hparams.mass_shatter_base_ce_weight > 0.0
@@ -590,6 +730,30 @@ class MassShatterPL(SpectrumPL):
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
                 loss = loss + self.hparams.mass_shatter_proposal_loss_weight * proposal_loss
+            if cross_ev_fragment_loss_enabled:
+                cross_ev_fragment_loss = pred_logprobs.new_zeros(batch_size)
+                cross_ev_fragment_endpoints = pred_logprobs.new_zeros(batch_size)
+                if "cross_ev_group_ids" in kwargs:
+                    cross_ev_fragment_loss, cross_ev_fragment_endpoints = (
+                        _cross_ev_fragment_delta_loss(
+                            true_mzs=true_mzs,
+                            true_logprobs=true_logprobs,
+                            true_batch_idxs=true_batch_idxs,
+                            candidate_mzs=kwargs["cross_ev_candidate_mzs"],
+                            candidate_fragment_idxs=kwargs["cross_ev_candidate_fragment_idxs"],
+                            fragment_logprobs=kwargs["cross_ev_fragment_logprobs"],
+                            fragment_batch_idxs=kwargs["cross_ev_fragment_batch_idxs"],
+                            group_ids=kwargs["cross_ev_group_ids"],
+                            ce_values=kwargs["cross_ev_ce_values"],
+                            batch_size=batch_size,
+                            tolerance=self.tolerance,
+                            relative=self.relative,
+                            tolerance_min_mz=self.tolerance_min_mz,
+                            tol_per_sample=tolerance_per_sample,
+                            min_mz_per_sample=minimum_mz_per_sample,
+                        )
+                    )
+                loss = loss + self.hparams.cross_ev_fragment_loss_weight * cross_ev_fragment_loss
             if base_ce_enabled:
                 base_pred_logprobs = kwargs["base_pred_logprobs"]
                 base_spec_ce, _, _, _ = sparse_ce_fn(
@@ -676,6 +840,9 @@ class MassShatterPL(SpectrumPL):
             }
             if proposal_loss_enabled:
                 loss_values["proposal_loss"] = proposal_loss
+            if cross_ev_fragment_loss_enabled:
+                loss_values["cross_ev_fragment_loss"] = cross_ev_fragment_loss
+                loss_values["cross_ev_fragment_endpoints"] = cross_ev_fragment_endpoints
             if base_ce_enabled:
                 loss_values.update(
                     {
@@ -777,6 +944,8 @@ class MassShatterPL(SpectrumPL):
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
         if proposal_loss_enabled:
             loss_names.append("proposal_loss")
+        if cross_ev_fragment_loss_enabled:
+            loss_names.extend(["cross_ev_fragment_loss", "cross_ev_fragment_endpoints"])
         if base_ce_enabled:
             loss_names.extend(
                 [
@@ -856,7 +1025,7 @@ class MassShatterPL(SpectrumPL):
         Returns:
             The model's sparse prediction dictionary, forwarded unchanged.
         """
-        return self.model(
+        output = self.model(
             mol_pyg=batch_kwargs["mol_pyg"],
             spec_prec_type=batch_kwargs["spec_prec_type"],
             spec_inst_type=batch_kwargs.get("spec_inst_type"),
@@ -866,7 +1035,34 @@ class MassShatterPL(SpectrumPL):
             spec_ace=batch_kwargs.get("spec_ace"),
             spec_ace_batch_idxs=batch_kwargs.get("spec_ace_batch_idxs"),
             static_graph=batch_kwargs.get("mass_shatter_static_graph"),
+            proposal_group_ids=(
+                batch_kwargs.get("group_id")
+                if self.hparams.mass_shatter_share_proposal_across_ev
+                else None
+            ),
         )
+        cross_ev_enabled = self.hparams.cross_ev_fragment_loss_weight != 0.0 and self.training
+        if cross_ev_enabled:
+            output.update(
+                {
+                    "cross_ev_group_ids": batch_kwargs["group_id"],
+                    "cross_ev_ce_values": select_context_ce_values(
+                        batch=batch_kwargs,
+                        batch_size=int(batch_kwargs["batch_size"]),
+                        inst_types=self.hparams.spec_params["inst_types"],
+                        ce_key_by_inst=self.hparams.ce_context_ce_key_by_inst,
+                    ),
+                }
+            )
+        else:
+            for key in (
+                "cross_ev_candidate_mzs",
+                "cross_ev_candidate_fragment_idxs",
+                "cross_ev_fragment_logprobs",
+                "cross_ev_fragment_batch_idxs",
+            ):
+                output.pop(key, None)
+        return output
 
     def transfer_batch_to_device(
         self,

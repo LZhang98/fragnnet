@@ -249,6 +249,9 @@ mass_shatter_proposal_loss_weight: 0.0
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
+# Reuse one CE-independent proposal pass for spectra from the same acquisition
+# group. Requires CE-context batching; the intensity transformer remains CE-aware.
+mass_shatter_share_proposal_across_ev: False
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining
@@ -516,6 +519,9 @@ ce_pair_min_endpoint_reliability: null
 ce_pair_subset: switches
 ce_pair_eligible_inst_types: [FT]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
+# Same-fragment adjacent-eV delta supervision for MASShatter. Requires shared
+# proposals, unique-fragment mode, and CE-context batches.
+cross_ev_fragment_loss_weight: 0.0
 # Within-spectrum low-CE precursor-versus-strongest-supported-fragment supervision.
 precursor_pair_loss_weight: 0.0
 precursor_pair_nce_min: 0.0

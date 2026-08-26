@@ -48,6 +48,7 @@ def _build_model(
     detach_base_ion_h: bool = False,
     proposal_selection_only: bool = False,
     separate_proposal_encoder: bool = False,
+    share_proposal_across_ev: bool = False,
     intensity_atom_decoder_num_layers: int = 0,
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
@@ -94,6 +95,7 @@ def _build_model(
         detach_base_ion_h=detach_base_ion_h,
         proposal_selection_only=proposal_selection_only,
         separate_proposal_encoder=separate_proposal_encoder,
+        share_proposal_across_ev=share_proposal_across_ev,
         precursor_types=precursor_types,
         instrument_types=[],
         fragmentation_modes=fragmentation_modes,
@@ -176,6 +178,70 @@ def test_mass_shatter_spectrum_loss_reaches_ce_embedding() -> None:
     assert projection.grad is not None
     assert th.isfinite(projection.grad).all()
     assert projection.grad.abs().sum() > 0
+
+
+def test_mass_shatter_shares_one_ce_independent_proposal_pass() -> None:
+    batch = _build_batch(("CCCO",) * 5)
+    model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=12,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        separate_proposal_encoder=True,
+        share_proposal_across_ev=True,
+    ).eval()
+    precursor_batch_sizes = []
+    proposal_batch_sizes = []
+
+    def record_precursor_batch(_module, args, _output):
+        precursor_batch_sizes.append(int(args[1].max().item()) + 1)
+
+    def record_proposal_batch(_module, args, _output):
+        proposal_batch_sizes.append(int(args[1].max().item()) + 1)
+
+    assert model.proposal_encoder is not None
+    precursor_hook = model.precursor_encoder.register_forward_hook(record_precursor_batch)
+    proposal_hook = model.proposal_encoder.register_forward_hook(record_proposal_batch)
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.zeros(5, dtype=th.long),
+        spec_nce=th.tensor([10.0, 20.0, 30.0, 40.0, 50.0]),
+        proposal_group_ids=th.full((5,), 17),
+    )
+    precursor_hook.remove()
+    proposal_hook.remove()
+
+    bond_count = batch.chemical_bond_index.shape[1] // 5
+    assert precursor_batch_sizes == [1]
+    assert proposal_batch_sizes == [1]
+    first_bond_logits = output["bond_break_logits"][:bond_count]
+    for spectrum_index in range(1, 5):
+        start = spectrum_index * bond_count
+        assert th.allclose(
+            first_bond_logits,
+            output["bond_break_logits"][start : start + bond_count],
+        )
+    assert output["cross_ev_fragment_batch_idxs"].unique().tolist() == list(range(5))
+
+
+def test_mass_shatter_rejects_mismatched_graphs_in_shared_group() -> None:
+    batch = _build_batch(("CCCC", "CCCO"))
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        max_enumerated_masks=12,
+        share_proposal_across_ev=True,
+    ).eval()
+
+    with pytest.raises(ValueError, match="identical atom features"):
+        model(
+            mol_pyg=batch,
+            spec_prec_type=th.zeros(2, dtype=th.long),
+            spec_nce=th.tensor([10.0, 20.0]),
+            proposal_group_ids=th.zeros(2, dtype=th.long),
+        )
 
 
 def test_mass_shatter_spectrum_loss_reaches_masked_atom_decoder() -> None:

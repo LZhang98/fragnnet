@@ -18,6 +18,7 @@ from fragnnet.dataset import (
     FormulaPrecTypeGroupSampler,
     GreedyInferenceBatchSampler,
     GroupSampler,
+    MassShatterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
 )
 
@@ -248,6 +249,44 @@ class TestCEContextDynamicBatchSampler:
                 ce_key_by_inst=self.CE_KEY_BY_INST,
                 limited_by="frag_node",
             )
+
+    def test_supports_molecular_edge_budget_for_mass_shatter(self):
+        class MolContextDataset(CEContextDataset):
+            calls = 0
+
+            def __getitem__(self, index):
+                self.calls += 1
+                return {
+                    "mol_pyg": SimpleNamespace(
+                        num_nodes=4,
+                        num_edges=self.precom_meta_info[index][1],
+                    )
+                }
+
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = MolContextDataset(rows, [(4, 3), (4, 3)])
+        sampler = MassShatterCEContextDynamicBatchSampler(
+            ds,
+            max_num=6,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
+
+        assert list(sampler) == [[0, 1]]
+        assert ds.calls == 1
+
+    def test_keeps_oversized_spectra_as_singletons_for_evaluation(self):
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = CEContextDataset(rows, [(4, 7), (4, 1)])
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=5,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            skip_too_big=False,
+        )
+
+        assert list(sampler) == [[0], [1]]
+        assert sampler.stats["oversized_spectra"] == 1
+        assert sampler.stats["selected_spectra"] == 2
 
     def test_takes_one_spectrum_per_level_up_to_five(self):
         rows = [self._row(1, ce) for ce in (10, 20, 30, 40, 50, 60)]

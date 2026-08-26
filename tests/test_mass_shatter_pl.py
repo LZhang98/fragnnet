@@ -17,6 +17,7 @@ from fragnnet.model.nn_blocks import GINEGraphormer
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
 from fragnnet.pl_model.mass_shatter_pl import (
     _candidate_coverage_by_cut_count,
+    _cross_ev_fragment_delta_loss,
     _proposal_coverage_loss,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -196,6 +197,44 @@ def test_mass_shatter_pl_builds_separate_proposal_encoder_from_config() -> None:
     assert model.model.proposal_encoder is not model.model.precursor_encoder
 
 
+def test_mass_shatter_eval_forward_omits_cross_ev_training_context(monkeypatch) -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_explore_masks=0,
+        mass_shatter_share_proposal_across_ev=True,
+        cross_ev_fragment_loss_weight=0.1,
+    )
+    monkeypatch.setattr(
+        model.model,
+        "forward",
+        lambda **_kwargs: {
+            "pred_mzs": th.tensor([100.0]),
+            "pred_logprobs": th.tensor([0.0]),
+            "pred_batch_idxs": th.tensor([0]),
+            "cross_ev_candidate_mzs": th.tensor([100.0]),
+            "cross_ev_candidate_fragment_idxs": th.tensor([0]),
+            "cross_ev_fragment_logprobs": th.tensor([0.0]),
+            "cross_ev_fragment_batch_idxs": th.tensor([0]),
+        },
+    )
+    model.eval()
+
+    output = model.forward(
+        mol_pyg=None,
+        spec_prec_type=th.tensor([0]),
+        batch_size=1,
+        group_id=th.tensor([7]),
+    )
+
+    assert "cross_ev_enabled" not in output
+    assert "cross_ev_group_ids" not in output
+    assert "cross_ev_ce_values" not in output
+    assert "cross_ev_candidate_mzs" not in output
+    assert "cross_ev_candidate_fragment_idxs" not in output
+    assert "cross_ev_fragment_logprobs" not in output
+    assert "cross_ev_fragment_batch_idxs" not in output
+
+
 def test_proposal_selection_only_requires_its_own_supervision() -> None:
     with pytest.raises(ValueError, match="requires a positive"):
         _build_pl(
@@ -232,6 +271,74 @@ def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
     )
 
     assert coverage_loss.tolist() == pytest.approx([-math.log(0.4)])
+
+
+def test_cross_ev_fragment_delta_loss_tracks_observed_change() -> None:
+    fragment_probabilities = th.tensor([0.7, 0.3, 0.4, 0.6], requires_grad=True)
+    loss, eligible = _cross_ev_fragment_delta_loss(
+        true_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        true_logprobs=th.log(th.tensor([0.8, 0.2, 0.3, 0.7])),
+        true_batch_idxs=th.tensor([0, 0, 1, 1]),
+        candidate_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        candidate_fragment_idxs=th.tensor([0, 1, 2, 3]),
+        fragment_logprobs=fragment_probabilities.log(),
+        fragment_batch_idxs=th.tensor([0, 0, 1, 1]),
+        group_ids=th.tensor([9, 9]),
+        ce_values=th.tensor([20.0, 40.0]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    expected_pair_loss = ((th.tensor([-0.3, 0.3]) - th.tensor([-0.5, 0.5])) ** 2).mean()
+    assert eligible.tolist() == [1.0, 1.0]
+    assert th.allclose(loss, th.full((2,), 0.5 * expected_pair_loss))
+    loss.sum().backward()
+    assert fragment_probabilities.grad is not None
+    assert fragment_probabilities.grad.abs().sum() > 0
+
+
+def test_cross_ev_fragment_delta_loss_normalizes_proposal_coverage() -> None:
+    loss, eligible = _cross_ev_fragment_delta_loss(
+        true_mzs=th.tensor([100.0, 900.0, 100.0, 200.0]),
+        true_logprobs=th.log(th.tensor([0.8, 0.2, 0.3, 0.7])),
+        true_batch_idxs=th.tensor([0, 0, 1, 1]),
+        candidate_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        candidate_fragment_idxs=th.tensor([0, 1, 2, 3]),
+        fragment_logprobs=th.log(th.tensor([0.999, 0.001, 0.299, 0.701])),
+        fragment_batch_idxs=th.tensor([0, 0, 1, 1]),
+        group_ids=th.tensor([9, 9]),
+        ce_values=th.tensor([20.0, 40.0]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    assert eligible.tolist() == [1.0, 1.0]
+    assert th.allclose(loss, th.zeros(2), atol=1.0e-10)
+
+
+def test_cross_ev_fragment_delta_loss_skips_missing_coverage_endpoint() -> None:
+    loss, eligible = _cross_ev_fragment_delta_loss(
+        true_mzs=th.tensor([900.0, 100.0]),
+        true_logprobs=th.zeros(2),
+        true_batch_idxs=th.tensor([0, 1]),
+        candidate_mzs=th.tensor([100.0, 100.0]),
+        candidate_fragment_idxs=th.tensor([0, 1]),
+        fragment_logprobs=th.zeros(2),
+        fragment_batch_idxs=th.tensor([0, 1]),
+        group_ids=th.tensor([9, 9]),
+        ce_values=th.tensor([20.0, 40.0]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    assert eligible.tolist() == [0.0, 0.0]
+    assert loss.tolist() == [0.0, 0.0]
 
 
 def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None:
