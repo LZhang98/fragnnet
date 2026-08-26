@@ -252,6 +252,10 @@ mass_shatter_separate_proposal_encoder: False
 # Reuse one CE-independent proposal pass for spectra from the same acquisition
 # group. Requires CE-context batching; the intensity transformer remains CE-aware.
 mass_shatter_share_proposal_across_ev: False
+# Use MASShatter's molecular-edge CE-context batch sampler.
+mass_shatter_batch_sampler: False
+# Maximum summed directed molecular edges per MASShatter CE-context batch.
+mass_shatter_batch_sampler_max: null
 
 # ============================================================================
 # Spectrum-Molecule CLIP Pretraining
@@ -511,7 +515,7 @@ pairwise_cosine_loss_weight: 0.0
 pairwise_jss_loss_weight: 0.0
 pairwise_cross_entropy_loss_weight: 0.0
 # Online adjacent-CE base-winner supervision. The v1 loss is training-only and
-# requires batch_sampler_type: ce_context when enabled.
+# requires either CE-context batch sampler when enabled.
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
 # Reserved for the replicate audit; non-null values fail until the table is wired.

@@ -2345,6 +2345,7 @@ class SpectrumPL(L.LightningModule):
             self.hparams.dag_size_curriculum
             or self.hparams.bond_size_curriculum
             or self.hparams.batch_sampler_type == "ce_context"
+            or self.hparams.mass_shatter_batch_sampler
         ):
             # Advance the sampler owning curriculum or CE-window state before Lightning
             # reads the epoch's batch count.

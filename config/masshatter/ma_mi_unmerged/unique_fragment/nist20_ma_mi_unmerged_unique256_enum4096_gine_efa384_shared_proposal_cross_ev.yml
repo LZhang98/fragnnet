@@ -92,6 +92,8 @@ mass_shatter_proposal_selection_only: True
 mass_shatter_proposal_loss_weight: 0.1
 mass_shatter_separate_proposal_encoder: True
 mass_shatter_share_proposal_across_ev: True
+mass_shatter_batch_sampler: True
+mass_shatter_batch_sampler_max: 8192
 
 loss_type: cross_entropy
 predict_oos: False
@@ -109,10 +111,6 @@ inst_type_loss_tol:
 
 # Keep adjacent CE spectra together. The graph budget counts directed molecular
 # edges; tune it downward if the first run approaches the device memory limit.
-dynamic_batch_sampler: True
-batch_sampler_type: ce_context
-dynamic_batch_sampler_mode: mol_edge
-dynamic_batch_sampler_max: 8192
 ce_context_spectra_per_context: 5
 ce_context_ce_key_by_inst:
   FT: nce

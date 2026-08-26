@@ -134,7 +134,10 @@ def test_seed_dataloader_refreshes_lightning_cached_batch_count():
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(
-            dag_size_curriculum=True, bond_size_curriculum=False, batch_sampler_type="spec_mol_frag"
+            dag_size_curriculum=True,
+            bond_size_curriculum=False,
+            batch_sampler_type="spec_mol_frag",
+            mass_shatter_batch_sampler=False,
         ),
         train_dl_seeds=torch.tensor([10, 11, 12, 13]),
         trainer=types.SimpleNamespace(
@@ -168,7 +171,10 @@ def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
     module = types.SimpleNamespace(
         current_epoch=30,
         hparams=types.SimpleNamespace(
-            dag_size_curriculum=True, bond_size_curriculum=False, batch_sampler_type="spec_mol_frag"
+            dag_size_curriculum=True,
+            bond_size_curriculum=False,
+            batch_sampler_type="spec_mol_frag",
+            mass_shatter_batch_sampler=False,
         ),
         train_dl_seeds=torch.arange(31),
         trainer=types.SimpleNamespace(
@@ -201,7 +207,10 @@ def test_seed_dataloader_advances_outer_curriculum_sampler_at_epoch_99():
     module = types.SimpleNamespace(
         current_epoch=99,
         hparams=types.SimpleNamespace(
-            dag_size_curriculum=True, bond_size_curriculum=False, batch_sampler_type="spec_mol_frag"
+            dag_size_curriculum=True,
+            bond_size_curriculum=False,
+            batch_sampler_type="spec_mol_frag",
+            mass_shatter_batch_sampler=False,
         ),
         train_dl_seeds=torch.arange(100),
         trainer=types.SimpleNamespace(
@@ -232,7 +241,10 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(
-            dag_size_curriculum=False, bond_size_curriculum=False, batch_sampler_type="spec_mol_frag"
+            dag_size_curriculum=False,
+            bond_size_curriculum=False,
+            batch_sampler_type="spec_mol_frag",
+            mass_shatter_batch_sampler=False,
         ),
         train_dl_seeds=torch.tensor([10, 11, 12]),
         trainer=types.SimpleNamespace(
@@ -257,14 +269,24 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
     assert module.trainer.val_check_batch == 10
 
 
-def test_seed_dataloader_advances_ce_context_sampler():
+@pytest.mark.parametrize(
+    ("batch_sampler_type", "mass_shatter_batch_sampler"),
+    [("ce_context", False), ("spec_mol_frag", True)],
+)
+def test_seed_dataloader_advances_ce_context_sampler(
+    batch_sampler_type,
+    mass_shatter_batch_sampler,
+):
     batch_sampler = RecordingBatchSampler()
     train_dataloader = RecordingDataLoader(batch_sampler, num_batches=17)
     data_fetcher = types.SimpleNamespace(reset=MagicMock())
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(
-            dag_size_curriculum=False, bond_size_curriculum=False, batch_sampler_type="ce_context"
+            dag_size_curriculum=False,
+            bond_size_curriculum=False,
+            batch_sampler_type=batch_sampler_type,
+            mass_shatter_batch_sampler=mass_shatter_batch_sampler,
         ),
         train_dl_seeds=torch.tensor([10, 11, 12]),
         trainer=types.SimpleNamespace(

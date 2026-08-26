@@ -273,6 +273,7 @@ class TestCEContextDynamicBatchSampler:
 
         assert list(sampler) == [[0, 1]]
         assert ds.calls == 1
+        assert not isinstance(sampler, CEContextDynamicBatchSampler)
 
     def test_keeps_oversized_spectra_as_singletons_for_evaluation(self):
         rows = [self._row(1, 10), self._row(1, 20)]

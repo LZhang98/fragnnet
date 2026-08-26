@@ -379,17 +379,14 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         return len(self._batches)
 
 
-class CEContextDynamicBatchSampler(BatchSampler):
-    """Pack adjacent-CE chunks using fragment-DAG edge budgets."""
-
-    size_mode = "frag_edge"
+class _CEContextBatchSamplerBase(BatchSampler):
+    """Shared adjacent-CE grouping and bounded packing behavior."""
 
     def __init__(
         self,
         data_source,
         max_num: int,
         ce_key_by_inst: dict[str, str],
-        limited_by: str = "frag_edge",
         spectra_per_context: int = 5,
         return_batch_at: int = 0,
         seed: int = 0,
@@ -397,11 +394,6 @@ class CEContextDynamicBatchSampler(BatchSampler):
     ) -> None:
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
-        if limited_by != self.size_mode:
-            raise ValueError(
-                f"CE context batching requires limited_by='{self.size_mode}' "
-                f"(got '{limited_by}')."
-            )
         if not isinstance(spectra_per_context, int) or spectra_per_context < 2:
             raise ValueError("spectra_per_context must be an integer >= 2")
         if not isinstance(return_batch_at, int) or return_batch_at < 0:
@@ -455,15 +447,7 @@ class CEContextDynamicBatchSampler(BatchSampler):
         return round(float(values.mean()), 6)
 
     def _load_size_metadata(self) -> np.ndarray:
-        """Load per-spectrum fragment-DAG node/edge counts once."""
-        metadata = []
-        for idx in range(len(self.data_source)):
-            if hasattr(self.data_source, "precom_meta_info"):
-                metadata.append(self.data_source.precom_meta_info[idx])
-            else:
-                data = self.data_source[idx]
-                metadata.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
-        return np.asarray(metadata, dtype=np.int64).reshape(-1, 2)
+        raise NotImplementedError
 
     def _load_context_metadata(
         self,
@@ -730,13 +714,52 @@ class CEContextDynamicBatchSampler(BatchSampler):
         return len(self._batches)
 
 
-class MassShatterCEContextDynamicBatchSampler(CEContextDynamicBatchSampler):
+class CEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
+    """Pack adjacent-CE spectra using fragment-DAG edge budgets."""
+
+    def __init__(
+        self,
+        data_source,
+        max_num: int,
+        ce_key_by_inst: dict[str, str],
+        limited_by: str = "frag_edge",
+        spectra_per_context: int = 5,
+        return_batch_at: int = 0,
+        seed: int = 0,
+        skip_too_big: bool = True,
+    ) -> None:
+        if limited_by != "frag_edge":
+            raise ValueError(
+                "CE context batching requires limited_by='frag_edge' "
+                f"(got '{limited_by}')."
+            )
+        super().__init__(
+            data_source=data_source,
+            max_num=max_num,
+            ce_key_by_inst=ce_key_by_inst,
+            spectra_per_context=spectra_per_context,
+            return_batch_at=return_batch_at,
+            seed=seed,
+            skip_too_big=skip_too_big,
+        )
+
+    def _load_size_metadata(self) -> np.ndarray:
+        """Load per-spectrum fragment-DAG node/edge counts once."""
+        metadata = []
+        for idx in range(len(self.data_source)):
+            if hasattr(self.data_source, "precom_meta_info"):
+                metadata.append(self.data_source.precom_meta_info[idx])
+            else:
+                data = self.data_source[idx]
+                metadata.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
+        return np.asarray(metadata, dtype=np.int64).reshape(-1, 2)
+
+
+class MassShatterCEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
     """Pack adjacent-CE MASShatter spectra using molecular graph edges.
 
     This sampler never reads fragment-DAG graphs or precomputed DAG size metadata.
     """
-
-    size_mode = "mol_edge"
 
     def __init__(
         self,
@@ -752,7 +775,6 @@ class MassShatterCEContextDynamicBatchSampler(CEContextDynamicBatchSampler):
             data_source=data_source,
             max_num=max_num,
             ce_key_by_inst=ce_key_by_inst,
-            limited_by=self.size_mode,
             spectra_per_context=spectra_per_context,
             return_batch_at=return_batch_at,
             seed=seed,
