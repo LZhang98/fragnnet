@@ -344,6 +344,9 @@ class MassShatterPL(SpectrumPL):
             intensity_transformer_num_inducing_points=(
                 self.hparams.mass_shatter_intensity_transformer_num_inducing_points
             ),
+            intensity_atom_decoder_num_layers=(
+                self.hparams.mass_shatter_intensity_atom_decoder_num_layers
+            ),
             intensity_transformer_dropout=(self.hparams.mass_shatter_intensity_transformer_dropout),
             use_mask_residuals=self.hparams.mass_shatter_use_mask_residuals,
             use_base_probability_feature=(not self.hparams.mass_shatter_proposal_anchored),

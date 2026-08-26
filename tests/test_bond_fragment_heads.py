@@ -34,6 +34,7 @@ def test_candidate_intensity_transformer_is_permutation_equivariant() -> None:
         num_heads=3,
         feedforward_dim=24,
         num_inducing_points=4,
+        atom_decoder_num_layers=0,
         num_ion_modes=2,
         num_h_shifts=3,
         dropout=0.0,
@@ -98,6 +99,7 @@ def test_candidate_intensity_transformer_backpropagates() -> None:
         num_heads=2,
         feedforward_dim=16,
         num_inducing_points=3,
+        atom_decoder_num_layers=0,
         num_ion_modes=2,
         num_h_shifts=3,
         dropout=0.0,
@@ -127,6 +129,88 @@ def test_candidate_intensity_transformer_backpropagates() -> None:
     assert head.inducing_tokens.grad.abs().sum() > 0
 
 
+def test_candidate_intensity_transformer_masks_fragment_atom_attention() -> None:
+    th.manual_seed(44)
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        atom_decoder_num_layers=1,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+    ).eval()
+    tokens = th.randn(2, 8)
+    atom_embeddings = th.randn(4, 4)
+    atom_indices = th.tensor([0, 1, 2, 3])
+    atom_fragment_indices = th.tensor([0, 0, 1, 1])
+
+    baseline = head._refine_from_fragment_atoms(
+        tokens,
+        atom_embeddings,
+        atom_indices,
+        atom_fragment_indices,
+    )
+    perturbed_atoms = atom_embeddings.clone()
+    perturbed_atoms[2:] += 100.0
+    perturbed = head._refine_from_fragment_atoms(
+        tokens,
+        perturbed_atoms,
+        atom_indices,
+        atom_fragment_indices,
+    )
+
+    assert th.allclose(baseline[0], perturbed[0], atol=1e-6)
+    assert not th.allclose(baseline[1], perturbed[1])
+
+
+def test_candidate_intensity_transformer_atom_decoder_backpropagates() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        atom_decoder_num_layers=1,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+    )
+    atom_embeddings = th.randn(6, 4, requires_grad=True)
+    outputs = head(
+        th.randn(5, 4),
+        th.randn(5, 4),
+        th.randn(5, 4),
+        th.tensor([1, 2, 1, 2, 3]),
+        th.tensor([2, 1, 1, 1, 1]),
+        th.randn(5),
+        th.randn(5),
+        th.tensor([0, 0, 1, 1, 1]),
+        th.tensor([0, 0, 1, 2, 2]),
+        batch_size=2,
+        num_masks=3,
+        atom_embeddings=atom_embeddings,
+        atom_indices=th.arange(6),
+        atom_fragment_indices=th.tensor([0, 0, 1, 2, 3, 4]),
+    )
+
+    sum(output.sum() for output in outputs).backward()
+
+    assert atom_embeddings.grad is not None
+    assert th.isfinite(atom_embeddings.grad).all()
+    assert atom_embeddings.grad.abs().sum() > 0
+    assert head.atom_decoder is not None
+    assert head.atom_decoder.layers[0].multihead_attn.in_proj_weight.grad is not None
+
+
 def test_candidate_intensity_transformer_can_exclude_base_probability_feature() -> None:
     th.manual_seed(42)
     head = CandidateIntensityTransformerHead(
@@ -137,6 +221,7 @@ def test_candidate_intensity_transformer_can_exclude_base_probability_feature() 
         num_heads=2,
         feedforward_dim=16,
         num_inducing_points=3,
+        atom_decoder_num_layers=0,
         num_ion_modes=1,
         num_h_shifts=3,
         dropout=0.0,
@@ -185,6 +270,7 @@ def test_candidate_intensity_transformer_buckets_ragged_padding() -> None:
         num_heads=2,
         feedforward_dim=16,
         num_inducing_points=3,
+        atom_decoder_num_layers=0,
         num_ion_modes=1,
         num_h_shifts=3,
         dropout=0.0,
@@ -230,6 +316,7 @@ def test_candidate_intensity_transformer_isolates_molecules() -> None:
         num_heads=2,
         feedforward_dim=16,
         num_inducing_points=3,
+        atom_decoder_num_layers=0,
         num_ion_modes=1,
         num_h_shifts=3,
         dropout=0.0,

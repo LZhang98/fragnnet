@@ -138,6 +138,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_heads: int,
         feedforward_dim: int,
         num_inducing_points: int,
+        atom_decoder_num_layers: int,
         num_ion_modes: int,
         num_h_shifts: int,
         dropout: float,
@@ -158,6 +159,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         )
         if min(dimensions) <= 0:
             raise ValueError("transformer dimensions and layer counts must be positive")
+        if atom_decoder_num_layers < 0:
+            raise ValueError("atom_decoder_num_layers must be nonnegative")
         if context_dim < 0:
             raise ValueError("context_dim must be nonnegative")
         if model_dim % num_heads != 0:
@@ -175,6 +178,25 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.num_h_shifts = num_h_shifts
         self.use_base_probability_feature = use_base_probability_feature
         self.predict_oos = predict_oos
+        self.atom_projection: nn.Module | None = None
+        self.atom_decoder: nn.TransformerDecoder | None = None
+        if atom_decoder_num_layers > 0:
+            self.atom_projection = (
+                nn.Identity()
+                if fragment_embedding_dim == model_dim
+                else nn.Linear(fragment_embedding_dim, model_dim)
+            )
+            atom_decoder_layer = nn.TransformerDecoderLayer(
+                d_model=model_dim,
+                nhead=num_heads,
+                dim_feedforward=feedforward_dim,
+                dropout=dropout,
+                batch_first=True,
+            )
+            self.atom_decoder = nn.TransformerDecoder(
+                atom_decoder_layer,
+                num_layers=atom_decoder_num_layers,
+            )
         input_dim = 3 * fragment_embedding_dim + context_dim + 3
         if use_base_probability_feature:
             input_dim += 2
@@ -213,6 +235,71 @@ class CandidateIntensityTransformerHead(nn.Module):
                 self.oos_head.bias,
                 math.log(initial_oos_probability / (1.0 - initial_oos_probability)),
             )
+
+    def _refine_from_fragment_atoms(
+        self,
+        tokens: th.Tensor,
+        atom_embeddings: th.Tensor | None,
+        atom_indices: th.Tensor | None,
+        atom_fragment_indices: th.Tensor | None,
+    ) -> th.Tensor:
+        """Let each fragment token attend only to atoms inside that fragment."""
+        if self.atom_decoder is None:
+            return tokens
+        if atom_embeddings is None or atom_indices is None or atom_fragment_indices is None:
+            raise ValueError(
+                "atom embeddings and fragment memberships are required when "
+                "atom_decoder_num_layers is positive"
+            )
+        if atom_embeddings.ndim != 2 or atom_embeddings.shape[1] != self.fragment_embedding_dim:
+            raise ValueError(
+                f"atom_embeddings must have shape (num_atoms, {self.fragment_embedding_dim})"
+            )
+        if atom_indices.ndim != 1 or atom_fragment_indices.shape != atom_indices.shape:
+            raise ValueError("atom membership indices must be matching one-dimensional tensors")
+        if atom_indices.dtype != th.long or atom_fragment_indices.dtype != th.long:
+            raise ValueError("atom membership indices must have dtype torch.long")
+        _validate_tensor_condition(
+            ((atom_indices >= 0) & (atom_indices < atom_embeddings.shape[0])).all(),
+            "atom_indices references a missing atom embedding",
+        )
+        _validate_tensor_condition(
+            ((atom_fragment_indices >= 0) & (atom_fragment_indices < tokens.shape[0])).all(),
+            "atom_fragment_indices references a missing fragment token",
+        )
+
+        # Pack each fragment's member atoms into its own attention memory. This is
+        # equivalent to a dense molecule memory with a fragment-membership mask, but
+        # avoids storing masked non-member atoms for every fragment.
+        counts = th.bincount(atom_fragment_indices, minlength=tokens.shape[0])
+        _validate_tensor_condition(
+            (counts > 0).all(),
+            "every fragment token must contain at least one atom",
+        )
+        order = th.argsort(atom_fragment_indices, stable=True)
+        sorted_fragment_indices = atom_fragment_indices[order]
+        offsets = counts.cumsum(0) - counts
+        positions = th.arange(order.shape[0], device=order.device) - offsets[
+            sorted_fragment_indices
+        ]
+        max_atoms = int(counts.max().item())
+        memory = tokens.new_zeros((tokens.shape[0], max_atoms, tokens.shape[1]))
+        if self.atom_projection is None:
+            raise RuntimeError("atom projection is missing for the configured atom decoder")
+        memory[sorted_fragment_indices, positions] = self.atom_projection(
+            atom_embeddings[atom_indices[order]]
+        )
+        memory_padding_mask = th.ones(
+            (tokens.shape[0], max_atoms),
+            dtype=th.bool,
+            device=tokens.device,
+        )
+        memory_padding_mask[sorted_fragment_indices, positions] = False
+        return self.atom_decoder(
+            tgt=tokens.unsqueeze(1),
+            memory=memory,
+            memory_key_padding_mask=memory_padding_mask,
+        ).squeeze(1)
 
     def _contextualize_by_molecule(
         self,
@@ -331,6 +418,9 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_masks: int,
         context: th.Tensor | None = None,
         component_counts: Sequence[int] | None = None,
+        atom_embeddings: th.Tensor | None = None,
+        atom_indices: th.Tensor | None = None,
+        atom_fragment_indices: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -397,6 +487,12 @@ class CandidateIntensityTransformerHead(nn.Module):
                 )
             )
         tokens = self.input_projection(th.cat(features, dim=1))
+        tokens = self._refine_from_fragment_atoms(
+            tokens,
+            atom_embeddings,
+            atom_indices,
+            atom_fragment_indices,
+        )
         tokens = self._contextualize_by_molecule(
             tokens,
             component_batch_indices,

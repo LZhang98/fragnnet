@@ -454,6 +454,7 @@ class MassShatterModel(nn.Module):
         intensity_transformer_num_heads: int,
         intensity_transformer_feedforward_dim: int,
         intensity_transformer_num_inducing_points: int,
+        intensity_atom_decoder_num_layers: int,
         intensity_transformer_dropout: float,
         use_mask_residuals: bool,
         use_base_probability_feature: bool,
@@ -515,6 +516,8 @@ class MassShatterModel(nn.Module):
             intensity_transformer_feedforward_dim: Feed-forward width per layer.
             intensity_transformer_num_inducing_points: Latent tokens used to keep
                 attention linear in the number of candidates.
+            intensity_atom_decoder_num_layers: Masked fragment-to-atom cross-attention
+                layers applied before candidate-set interaction. Zero disables them.
             intensity_transformer_dropout: Dropout inside the candidate transformer.
             use_mask_residuals: Whether transformer residuals may redistribute retained
                 probability between selected masks.
@@ -759,6 +762,7 @@ class MassShatterModel(nn.Module):
             num_heads=intensity_transformer_num_heads,
             feedforward_dim=intensity_transformer_feedforward_dim,
             num_inducing_points=intensity_transformer_num_inducing_points,
+            atom_decoder_num_layers=intensity_atom_decoder_num_layers,
             num_ion_modes=self.num_ion_modes,
             num_h_shifts=self.num_h_shifts,
             dropout=intensity_transformer_dropout,
@@ -1310,6 +1314,9 @@ class MassShatterModel(nn.Module):
                 num_masks=num_fragments,
                 context=context[fragment_batch_indices],
                 component_counts=candidates.unique_component_counts,
+                atom_embeddings=atom_embeddings,
+                atom_indices=fragment_atom_indices,
+                atom_fragment_indices=atom_fragment_indices,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             if not self.use_mask_residuals:
@@ -1417,6 +1424,9 @@ class MassShatterModel(nn.Module):
                 num_masks=num_masks,
                 context=context[fragment_batch_indices],
                 component_counts=candidates.component_counts,
+                atom_embeddings=atom_embeddings,
+                atom_indices=candidates.atom_indices,
+                atom_fragment_indices=candidates.atom_component_indices,
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             if not self.use_mask_residuals:

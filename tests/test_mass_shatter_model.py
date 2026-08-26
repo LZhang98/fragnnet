@@ -47,6 +47,7 @@ def _build_model(
     detach_base_ion_h: bool = False,
     proposal_selection_only: bool = False,
     separate_proposal_encoder: bool = False,
+    intensity_atom_decoder_num_layers: int = 0,
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
@@ -83,6 +84,7 @@ def _build_model(
         intensity_transformer_num_heads=4,
         intensity_transformer_feedforward_dim=32,
         intensity_transformer_num_inducing_points=4,
+        intensity_atom_decoder_num_layers=intensity_atom_decoder_num_layers,
         intensity_transformer_dropout=0.0,
         use_mask_residuals=use_mask_residuals,
         use_base_probability_feature=use_base_probability_feature,
@@ -172,6 +174,25 @@ def test_mass_shatter_spectrum_loss_reaches_ce_embedding() -> None:
     assert projection.grad is not None
     assert th.isfinite(projection.grad).all()
     assert projection.grad.abs().sum() > 0
+
+
+def test_mass_shatter_spectrum_loss_reaches_masked_atom_decoder() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, intensity_atom_decoder_num_layers=1)
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([25.0, 35.0]),
+    )
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    decoder = model.intensity_head.atom_decoder
+    assert decoder is not None
+    cross_attention = decoder.layers[0].multihead_attn.in_proj_weight
+    assert cross_attention.grad is not None
+    assert th.isfinite(cross_attention.grad).all()
+    assert cross_attention.grad.abs().sum() > 0
 
 
 def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> None:
