@@ -61,7 +61,7 @@ for index in "${!CONFIGS[@]}"; do
         --script_dp "${SCRIPT_DIR}" \
         --job_dp "${JOB_DIR}" \
         --gpu_profile vulcan:l40s \
-        --time 12:00:00 \
+        --time 3:00:00 \
         --cc_account aip-rgreiner \
         --script_kwargs w=online c="${CONFIGS[index]}" \
         --no_submit=True
