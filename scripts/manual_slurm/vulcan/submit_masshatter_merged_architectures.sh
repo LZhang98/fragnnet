@@ -3,7 +3,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PYTHON_BIN=/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python
 SCRIPT_DIR="${REPO_ROOT}/slurm_scripts/masshatter_l40s"
 JOB_DIR="${REPO_ROOT}/jobs"
 
@@ -31,10 +30,7 @@ CONFIGS=(
 
 cd "${REPO_ROOT}"
 
-if [[ ! -x "${PYTHON_BIN}" ]]; then
-    echo "Configured Python interpreter not found: ${PYTHON_BIN}" >&2
-    exit 1
-fi
+
 if ! command -v sbatch >/dev/null 2>&1; then
     echo "sbatch is not available; run this script from a Vulcan login node." >&2
     exit 1
@@ -54,7 +50,7 @@ done
 
 # 2. Generate all Vulcan L40S job scripts.
 for index in "${!CONFIGS[@]}"; do
-    "${PYTHON_BIN}" scripts/setup_job_cc.py \
+    python scripts/setup_job_cc.py \
         --job_name "${JOB_NAMES[index]}" \
         --python_script_fp scripts/run_pl_model_fit.py \
         --frag_gnn_dp "${REPO_ROOT}" \
