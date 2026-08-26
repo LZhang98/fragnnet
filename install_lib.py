@@ -51,22 +51,31 @@ def cuda_version_libcuda():
 def detect_cuda_version(force_cuda=None):
 	if force_cuda:
 		return force_cuda
-	return cuda_version_nvcc() or cuda_version_libcuda()
+	detected_version = cuda_version_nvcc() or cuda_version_libcuda()
+	if detected_version and int(detected_version) >= 121:
+		print(f"CUDA {detected_version} detected; using the supported CUDA 12.1 PyTorch build.")
+		return "121"
+	return detected_version
 
-def pip_install(packages, index_url=None, find_links=None):
+def pip_install(packages, index_url=None, find_links=None, force_reinstall=False):
 	cmd = [sys.executable, "-m", "pip", "install"] + packages
 	if index_url:
-		cmd += ["--extra-index-url", index_url]
+		cmd += ["--index-url", index_url]
 	if find_links:
 		cmd += ["-f", find_links]
+	if force_reinstall:
+		cmd += ["--force-reinstall"]
 	subprocess.check_call(cmd)
 
 def install_all(cuda_version):
+	# pytorch_lightning 2.1.2 still imports pkg_resources.
+	pip_install(["setuptools<81"])
 	if cuda_version == "121":
 		print("Installing PyTorch 2.1.0 with CUDA 12.1...")
 		pip_install(
 			["torch==2.1.0"],
-			index_url="https://download.pytorch.org/whl/cu121"
+			index_url="https://download.pytorch.org/whl/cu121",
+			force_reinstall=True
 		)
   		# pip install "pytorch_lightning==2.1.2"
 		pip_install(["pytorch_lightning==2.1.2"])
@@ -88,7 +97,8 @@ def install_all(cuda_version):
 		print("Installing PyTorch 2.1.0 with CUDA 11.8...")
 		pip_install(
 			["torch==2.1.0"],
-			index_url="https://download.pytorch.org/whl/cu118"
+			index_url="https://download.pytorch.org/whl/cu118",
+			force_reinstall=True
 		)
 		# pip install "pytorch_lightning==2.1.2"
 		pip_install(["pytorch_lightning==2.1.2"])
@@ -110,7 +120,8 @@ def install_all(cuda_version):
 		print("Installing CPU version of PyTorch 2.1.0...")
 		pip_install(
 			["torch==2.1.0"],
-			index_url="https://download.pytorch.org/whl/cpu"
+			index_url="https://download.pytorch.org/whl/cpu",
+			force_reinstall=True
 		)
 		pip_install(["pytorch_lightning==2.1.2", "torch_geometric==2.4.0", "dgl==1.0.4"])
 		# pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
