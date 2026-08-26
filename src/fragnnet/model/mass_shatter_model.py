@@ -1,9 +1,11 @@
 """MASShatter: one-pass bond-set fragmentation spectrum prediction.
 
 Unlike the DAG-based FraGNNet path, MASShatter never enumerates fragments ahead of
-time. A single GNN pass over the intact precursor produces one break logit per
-chemical bond; those independent Bernoulli logits define a distribution over all
-``2 ** num_bonds`` cut masks, from which only a probability-ranked prefix is materialized.
+time. A single GNN pass over the intact precursor produces one or more Bernoulli
+break-logit fields over the chemical bonds. Multiple fields are marginalized through
+normalized molecule-level mixture weights, preserving a distribution over all
+``2 ** num_bonds`` cut masks while allowing correlated cleavage regimes. Only a
+probability-ranked prefix is materialized.
 Each retained mask is cut into connected components, and every component is expanded
 into the ion channels it could plausibly produce (charge retention vs charge
 migration, plus +/- hydrogen transfers). The resulting sparse
@@ -30,6 +32,7 @@ from collections.abc import Sequence
 
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 from torch_geometric.data import Batch
 
 from fragnnet.frag.mass_shatter_candidates import (
@@ -112,6 +115,70 @@ def _mean_values_by_batch(
         "every spectrum must have at least one CE value",
     )
     return sums / counts
+
+
+class BernoulliMixtureWeightHead(nn.Module):
+    """Predict molecule-level log weights for latent Bernoulli proposal modes."""
+
+    def __init__(
+        self,
+        atom_embedding_dim: int,
+        context_dim: int,
+        hidden_dim: int,
+        num_mixtures: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        if min(atom_embedding_dim, hidden_dim, num_mixtures) <= 0:
+            raise ValueError("mixture-head dimensions must be positive")
+        if context_dim < 0:
+            raise ValueError("context_dim must be nonnegative")
+        if dropout < 0.0 or dropout > 1.0:
+            raise ValueError(f"dropout must be in [0, 1], got {dropout}")
+        self.atom_embedding_dim = atom_embedding_dim
+        self.context_dim = context_dim
+        self.num_mixtures = num_mixtures
+        self.head = nn.Sequential(
+            nn.Linear(atom_embedding_dim + context_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_mixtures),
+        )
+
+    def forward(
+        self,
+        atom_embeddings: th.Tensor,
+        atom_batch_indices: th.Tensor,
+        context: th.Tensor,
+        *,
+        batch_size: int,
+    ) -> th.Tensor:
+        """Return normalized log mixture weights with shape ``(batch_size, M)``."""
+        if atom_embeddings.ndim != 2 or atom_embeddings.shape[1] != self.atom_embedding_dim:
+            raise ValueError(
+                f"atom_embeddings must have shape (num_atoms, {self.atom_embedding_dim})"
+            )
+        if atom_batch_indices.shape != (atom_embeddings.shape[0],):
+            raise ValueError("atom_batch_indices must contain one index per atom")
+        if atom_batch_indices.dtype != th.long:
+            raise ValueError("atom_batch_indices must have dtype torch.long")
+        atom_sums = atom_embeddings.new_zeros(
+            (batch_size, self.atom_embedding_dim)
+        ).index_add(0, atom_batch_indices, atom_embeddings)
+        atom_counts = th.bincount(atom_batch_indices, minlength=batch_size).to(atom_embeddings)
+        _validate_tensor_condition(
+            (atom_counts > 0).all(),
+            "every molecule must contain at least one atom",
+        )
+        molecule_embeddings = atom_sums / atom_counts.unsqueeze(1)
+        if context.shape != (batch_size, self.context_dim):
+            raise ValueError(
+                f"context must have shape ({batch_size}, {self.context_dim})"
+            )
+        return F.log_softmax(
+            self.head(th.cat([molecule_embeddings, context], dim=1)),
+            dim=1,
+        )
 
 
 class SmartsMechanismHead(nn.Module):
@@ -449,6 +516,7 @@ class MassShatterModel(nn.Module):
         head_hidden_dim: int,
         head_dropout: float,
         bond_num_layers: int,
+        proposal_num_mixtures: int,
         intensity_transformer_dim: int,
         intensity_transformer_num_layers: int,
         intensity_transformer_num_heads: int,
@@ -510,6 +578,8 @@ class MassShatterModel(nn.Module):
             bond_num_layers: Bond-refinement layers; 0 selects the cheap
                 :class:`EndpointBondBreakHead`, otherwise
                 :class:`BondFocusedBreakHead`.
+            proposal_num_mixtures: Number of latent normalized Bernoulli mask models.
+                One recovers the original independent proposal exactly.
             intensity_transformer_dim: Model width of the candidate transformer.
             intensity_transformer_num_layers: Depth of the candidate transformer.
             intensity_transformer_num_heads: Attention heads per layer.
@@ -639,6 +709,10 @@ class MassShatterModel(nn.Module):
             )
         if bond_num_layers < 0:
             raise ValueError("bond_num_layers must be nonnegative")
+        if proposal_num_mixtures <= 0:
+            raise ValueError("proposal_num_mixtures must be positive")
+        if proposal_num_mixtures > 1 and explore_masks > 0:
+            raise ValueError("Bernoulli proposal mixtures do not support exploration masks")
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
 
@@ -670,6 +744,7 @@ class MassShatterModel(nn.Module):
         self.detach_base_ion_h = detach_base_ion_h
         self.proposal_selection_only = proposal_selection_only
         self.separate_proposal_encoder = separate_proposal_encoder
+        self.proposal_num_mixtures = proposal_num_mixtures
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
         # hydrogen transfers from -max_h_transfer to +max_h_transfer.
@@ -727,6 +802,7 @@ class MassShatterModel(nn.Module):
                 context_dim,
                 head_hidden_dim,
                 head_dropout,
+                num_mixtures=proposal_num_mixtures,
             )
         else:
             self.bond_break_head = BondFocusedBreakHead(
@@ -737,7 +813,19 @@ class MassShatterModel(nn.Module):
                 head_hidden_dim=head_hidden_dim,
                 num_layers=bond_num_layers,
                 dropout=head_dropout,
+                num_mixtures=proposal_num_mixtures,
             )
+        self.proposal_mixture_head = (
+            BernoulliMixtureWeightHead(
+                atom_embedding_dim=precursor_hidden_dim,
+                context_dim=context_dim,
+                hidden_dim=head_hidden_dim,
+                num_mixtures=proposal_num_mixtures,
+                dropout=head_dropout,
+            )
+            if proposal_num_mixtures > 1
+            else None
+        )
         self.charge_head = AtomChargeAffinityHead(
             precursor_hidden_dim,
             context_dim,
@@ -1133,6 +1221,16 @@ class MassShatterModel(nn.Module):
             context=proposal_context,
             bond_batch_indices=bond_batch_indices,
         )
+        mixture_log_weights = (
+            self.proposal_mixture_head(
+                proposal_atom_embeddings,
+                mol_pyg.batch,
+                proposal_context,
+                batch_size=batch_size,
+            )
+            if self.proposal_mixture_head is not None
+            else None
+        )
 
         # 2. Select global masks and construct sparse component pathways.
         # Mask identities are picked from detached logits on CPU; the returned log
@@ -1168,6 +1266,7 @@ class MassShatterModel(nn.Module):
             max_enumerated_masks=(self.max_enumerated_masks if self.unique_fragment_mode else None),
             static_graph=static_graph,
             smarts_templates=smarts_templates,
+            mixture_log_weights=mixture_log_weights,
         )
 
         # 3. Score charge retention. In unique-fragment mode, masks remain latent
@@ -1570,6 +1669,15 @@ class MassShatterModel(nn.Module):
             name: bond_logits.new_full((batch_size,), value)
             for name, value in candidate_timing_values.items()
         }
+        logged_mixture_log_weights = (
+            mixture_log_weights
+            if mixture_log_weights is not None
+            else bond_logits.new_zeros((batch_size, 1))
+        )
+        mixture_weights = logged_mixture_log_weights.exp()
+        proposal_mixture_entropy = -(
+            mixture_weights * logged_mixture_log_weights
+        ).sum(dim=1)
         output = {
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,
@@ -1578,6 +1686,10 @@ class MassShatterModel(nn.Module):
             "candidate_batch_idxs_by_cut": pred_batch_idxs,
             "candidate_cut_counts": candidate_cut_counts,
             "bond_break_logits": bond_logits,
+            "proposal_mixture_log_weights": logged_mixture_log_weights,
+            "proposal_mixture_entropy": proposal_mixture_entropy,
+            "proposal_mixture_effective_count": proposal_mixture_entropy.exp(),
+            "proposal_mixture_top1_weight": mixture_weights.max(dim=1).values,
             "atom_charge_logits": atom_charge_logits,
             "retained_mask_probability": retained_mask_probability,
             "selected_mask_count": selected_mask_count,

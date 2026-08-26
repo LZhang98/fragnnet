@@ -103,6 +103,73 @@ def _packed_long_tensors(
     return tuple(packed.split(sizes))
 
 
+def _top_mixture_bond_sets(
+    logits: np.ndarray,
+    mixture_log_weights: np.ndarray,
+    limit: int,
+    min_probability: float,
+    min_relative_probability: float,
+) -> list[tuple[int, ...]]:
+    """Return a deduplicated pool ranked by exact Bernoulli-mixture probability."""
+    from fragnnet.frag.mass_shatter_core import top_k_cut_masks_csr_raw
+
+    bond_set_pool: set[tuple[int, ...]] = set()
+    for mixture_index in range(logits.shape[1]):
+        mask_ptr, broken_bonds, _, _ = top_k_cut_masks_csr_raw(
+            logits[:, mixture_index].tolist(),
+            limit,
+            True,
+            0.0,
+            0.0,
+        )
+        bond_set_pool.update(
+            tuple(int(index) for index in broken_bonds[mask_ptr[i] : mask_ptr[i + 1]])
+            for i in range(mask_ptr.size - 1)
+        )
+
+    bond_sets = sorted(bond_set_pool)
+    intact_log_probabilities = -np.logaddexp(0.0, logits).sum(axis=0)
+    component_log_probabilities = np.broadcast_to(
+        intact_log_probabilities,
+        (len(bond_sets), logits.shape[1]),
+    ).copy()
+    cut_counts = np.asarray([len(bond_set) for bond_set in bond_sets], dtype=np.int64)
+    flat_bond_indices = np.asarray(
+        [bond_index for bond_set in bond_sets for bond_index in bond_set],
+        dtype=np.int64,
+    )
+    if flat_bond_indices.size > 0:
+        np.add.at(
+            component_log_probabilities,
+            np.repeat(np.arange(len(bond_sets)), cut_counts),
+            logits[flat_bond_indices],
+        )
+    mixture_log_probabilities = np.logaddexp.reduce(
+        mixture_log_weights + component_log_probabilities,
+        axis=1,
+    )
+    scored_bond_sets = list(zip(mixture_log_probabilities.tolist(), bond_sets))
+    scored_bond_sets.sort(key=lambda item: (-item[0], item[1]))
+    if not scored_bond_sets:
+        return []
+
+    minimum_log_probability = (
+        math.log(min_probability) if min_probability > 0.0 else -math.inf
+    )
+    minimum_relative_log_probability = (
+        math.log(min_relative_probability)
+        if min_relative_probability > 0.0
+        else -math.inf
+    )
+    map_log_probability = scored_bond_sets[0][0]
+    return [
+        bond_set
+        for log_probability, bond_set in scored_bond_sets
+        if log_probability >= minimum_log_probability
+        and log_probability - map_log_probability >= minimum_relative_log_probability
+    ][:limit]
+
+
 def build_mass_shatter_candidates(
     bond_logits: th.Tensor,
     chemical_bond_index: th.Tensor,
@@ -122,19 +189,26 @@ def build_mass_shatter_candidates(
     generator: th.Generator | None = None,
     static_graph: MassShatterStaticGraph | None = None,
     smarts_templates: Sequence[Sequence[MassShatterTemplate]] | None = None,
+    mixture_log_weights: th.Tensor | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
-    Mask identities are deliberately selected from detached logits. Their log
-    probabilities are then recomputed from the original logits, preserving the
-    gradient to every selected cut/intact bond decision. When
+    Mask identities are deliberately selected from detached logits. Their exact
+    Bernoulli or Bernoulli-mixture log probabilities are then recomputed from the
+    original logits, preserving gradients to every selected cut/intact decision and
+    latent mixture weight. When
     ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
     number of distinct atom sets. Probability floors apply only to learned ranked
     masks; required intact and single-cut masks remain forced.
     """
-    if bond_logits.ndim != 1:
-        raise ValueError("bond_logits must be one-dimensional")
+    if bond_logits.ndim not in {1, 2}:
+        raise ValueError("bond_logits must have shape (num_bonds,) or (num_bonds, mixtures)")
+    if bond_logits.ndim == 2 and bond_logits.shape[1] < 2:
+        raise ValueError("two-dimensional bond_logits must contain at least two mixtures")
+    num_mixtures = 1 if bond_logits.ndim == 1 else bond_logits.shape[1]
+    if num_mixtures <= 0:
+        raise ValueError("bond_logits must contain at least one mixture")
     if chemical_bond_index.shape != (2, bond_logits.shape[0]):
         raise ValueError("chemical_bond_index must have shape (2, num_chemical_bonds)")
     if chemical_bond_index.dtype != th.long:
@@ -174,6 +248,12 @@ def build_mass_shatter_candidates(
         )
     if explore_masks < 0:
         raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
+    if num_mixtures == 1 and mixture_log_weights is not None:
+        raise ValueError("mixture_log_weights must be omitted for one Bernoulli component")
+    if num_mixtures > 1 and mixture_log_weights is None:
+        raise ValueError("mixture_log_weights are required for multiple Bernoulli components")
+    if num_mixtures > 1 and explore_masks > 0:
+        raise ValueError("Bernoulli mixtures do not support exploration masks")
     if max_unique_components is not None and explore_masks > 0:
         raise ValueError("unique-component enumeration does not support exploration masks")
     if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
@@ -200,7 +280,7 @@ def build_mass_shatter_candidates(
 
     total_start = perf_counter()
     device = bond_logits.device
-    num_bonds = bond_logits.numel()
+    num_bonds = bond_logits.shape[0]
 
     # 1. Copy only dynamic logits when Lightning retained a CPU graph sidecar.
     input_transfer_start = perf_counter()
@@ -235,6 +315,28 @@ def build_mass_shatter_candidates(
     input_transfer_ms = (perf_counter() - input_transfer_start) * 1000.0
 
     num_molecules = atom_ptr_cpu.numel() - 1
+    if mixture_log_weights is not None:
+        if mixture_log_weights.shape != (num_molecules, num_mixtures):
+            raise ValueError(
+                "mixture_log_weights must have shape (num_molecules, num_mixtures)"
+            )
+        mixture_log_weights_cpu = mixture_log_weights.detach().to(
+            device="cpu",
+            dtype=th.float64,
+        )
+        mixture_log_normalizers = np.logaddexp.reduce(
+            mixture_log_weights_cpu.numpy(),
+            axis=1,
+        )
+        if not np.isfinite(mixture_log_weights_cpu.numpy()).all() or not np.allclose(
+            mixture_log_normalizers,
+            0.0,
+            atol=1e-6,
+            rtol=0.0,
+        ):
+            raise ValueError("mixture_log_weights must be finite and log-normalized")
+    else:
+        mixture_log_weights_cpu = None
     if smarts_templates is None and static_graph is not None:
         smarts_templates = static_graph.smarts_templates
     if smarts_templates is not None and len(smarts_templates) != num_molecules:
@@ -304,7 +406,15 @@ def build_mass_shatter_candidates(
 
         selection_start = perf_counter()
         global_bond_indices = bond_indices_by_molecule[molecule_index]
-        detached_logits = [detached_logits_all[index] for index in global_bond_indices]
+        local_logits = np.asarray(
+            [detached_logits_all[index] for index in global_bond_indices],
+            dtype=np.float64,
+        )
+        if num_mixtures == 1:
+            detached_logits = local_logits.reshape(-1).tolist()
+        else:
+            local_logits = local_logits.reshape(-1, num_mixtures)
+            detached_logits = []
         local_endpoints = tuple(
             tuple(chemical_bond_rows[row][index] - atom_start for index in global_bond_indices)
             for row in range(2)
@@ -330,20 +440,48 @@ def build_mass_shatter_candidates(
             # masks are appended here, in their historical order.
             from fragnnet.frag.mass_shatter_core import top_k_cut_masks_csr_raw
 
-            (
-                local_mask_ptr,
-                local_broken_bonds,
-                _,
-                _,
-            ) = top_k_cut_masks_csr_raw(
-                detached_logits,
+            learned_mask_limit = (
                 max_enumerated_masks
                 if max_unique_components is not None
-                else max_masks,
-                True,
-                min_mask_probability,
-                min_mask_relative_probability,
+                else max_masks
             )
+            if num_mixtures == 1:
+                (
+                    local_mask_ptr,
+                    local_broken_bonds,
+                    _,
+                    _,
+                ) = top_k_cut_masks_csr_raw(
+                    detached_logits,
+                    learned_mask_limit,
+                    True,
+                    min_mask_probability,
+                    min_mask_relative_probability,
+                )
+            else:
+                if mixture_log_weights_cpu is None:
+                    raise RuntimeError("mixture weights disappeared during mask selection")
+                mixture_bond_sets = _top_mixture_bond_sets(
+                    local_logits,
+                    mixture_log_weights_cpu[molecule_index].numpy(),
+                    learned_mask_limit,
+                    min_mask_probability,
+                    min_mask_relative_probability,
+                )
+                mixture_cut_counts = np.asarray(
+                    [len(bond_set) for bond_set in mixture_bond_sets],
+                    dtype=np.int64,
+                )
+                local_mask_ptr = np.concatenate(
+                    (
+                        np.zeros(1, dtype=np.int64),
+                        np.cumsum(mixture_cut_counts, dtype=np.int64),
+                    )
+                )
+                local_broken_bonds = np.asarray(
+                    [bond for bond_set in mixture_bond_sets for bond in bond_set],
+                    dtype=np.int64,
+                )
             learned_mask_count = local_mask_ptr.size - 1
             if min_mask_probability > 0.0 and learned_mask_count == 0:
                 raise ValueError(
@@ -987,7 +1125,7 @@ def build_mass_shatter_candidates(
     # whose difference is exactly logit.
     base_log_probabilities = F.logsigmoid(-bond_logits)
     molecule_log_probabilities = th.zeros(
-        num_molecules,
+        (num_molecules,) if num_mixtures == 1 else (num_molecules, num_mixtures),
         dtype=bond_logits.dtype,
         device=device,
     )
@@ -1003,6 +1141,14 @@ def build_mass_shatter_candidates(
             0,
             mask_indices_t,
             bond_logits[broken_bond_indices_t],
+        )
+    if num_mixtures > 1:
+        if mixture_log_weights is None:
+            raise RuntimeError("mixture weights disappeared during probability evaluation")
+        mask_log_probabilities = th.logsumexp(
+            mask_log_probabilities
+            + mixture_log_weights[mask_batch_indices_t],
+            dim=1,
         )
 
     return MassShatterCandidateBatch(

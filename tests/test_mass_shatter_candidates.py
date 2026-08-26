@@ -66,6 +66,59 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
     assert candidates.timings.total_ms >= 0.0
 
 
+def test_bernoulli_mixture_is_normalized_and_backpropagates() -> None:
+    bond_logits = th.tensor(
+        [[2.0, -2.0], [-2.0, 2.0]],
+        requires_grad=True,
+    )
+    mixture_logits = th.tensor([[0.4, -0.3]], requires_grad=True)
+    mixture_log_weights = th.log_softmax(mixture_logits, dim=1)
+    candidates = build_mass_shatter_candidates(
+        bond_logits,
+        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
+        atom_batch_indices=th.zeros(3, dtype=th.long),
+        atom_ptr=th.tensor([0, 3], dtype=th.long),
+        max_masks=4,
+        explore_masks=0,
+        exploration_mode="bounded_additive",
+        exploration_temperature=1.0,
+        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+        include_single_bond_cuts=False,
+        mixture_log_weights=mixture_log_weights,
+    )
+
+    assert candidates.mask_log_probabilities.shape == (4,)
+    all_masks = th.tensor(
+        [[False, False], [True, False], [False, True], [True, True]],
+    )
+    component_log_probabilities = th.where(
+        all_masks[:, :, None],
+        th.nn.functional.logsigmoid(bond_logits)[None],
+        th.nn.functional.logsigmoid(-bond_logits)[None],
+    ).sum(dim=1)
+    expected_log_probabilities = th.logsumexp(
+        component_log_probabilities + mixture_log_weights,
+        dim=1,
+    )
+    assert th.allclose(
+        candidates.mask_log_probabilities.sort().values,
+        expected_log_probabilities.sort().values,
+        atol=1e-6,
+    )
+    assert candidates.mask_log_probabilities.exp().sum().item() == pytest.approx(
+        1.0,
+        abs=1e-6,
+    )
+    weights = th.arange(1, 5, dtype=th.float)
+    (weights * candidates.mask_log_probabilities).sum().backward()
+    assert bond_logits.grad is not None
+    assert mixture_logits.grad is not None
+    assert th.isfinite(bond_logits.grad).all()
+    assert th.isfinite(mixture_logits.grad).all()
+    assert bond_logits.grad.abs().sum() > 0
+    assert mixture_logits.grad.abs().sum() > 0
+
+
 @pytest.mark.parametrize("num_atoms", [256, 257])
 def test_candidate_membership_supports_four_compiled_words_and_fallback(
     num_atoms: int,

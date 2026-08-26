@@ -36,6 +36,7 @@ def _build_model(
     batch: Batch,
     *,
     bond_num_layers: int = 0,
+    proposal_num_mixtures: int = 1,
     explore_masks: int = 0,
     max_masks: int = 2,
     unique_fragment_mode: bool = False,
@@ -79,6 +80,7 @@ def _build_model(
         head_hidden_dim=12,
         head_dropout=0.0,
         bond_num_layers=bond_num_layers,
+        proposal_num_mixtures=proposal_num_mixtures,
         intensity_transformer_dim=16,
         intensity_transformer_num_layers=2,
         intensity_transformer_num_heads=4,
@@ -193,6 +195,45 @@ def test_mass_shatter_spectrum_loss_reaches_masked_atom_decoder() -> None:
     assert cross_attention.grad is not None
     assert th.isfinite(cross_attention.grad).all()
     assert cross_attention.grad.abs().sum() > 0
+
+
+def test_selection_only_proposal_loss_reaches_bernoulli_mixture() -> None:
+    batch = _build_batch(("CCCO",))
+    model = _build_model(
+        batch,
+        max_masks=5,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        proposal_num_mixtures=2,
+    )
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0]),
+        spec_nce=th.tensor([25.0]),
+    )
+
+    assert output["bond_break_logits"].shape[1] == 2
+    assert th.allclose(
+        output["proposal_mixture_log_weights"].exp().sum(dim=1),
+        th.ones(1),
+        atol=1e-6,
+    )
+    (-output["proposal_fragment_logprobs"][0]).backward()
+
+    mixture_head = model.proposal_mixture_head
+    assert mixture_head is not None
+    mixture_output = mixture_head.head[-1]
+    assert isinstance(mixture_output, th.nn.Linear)
+    assert mixture_output.weight.grad is not None
+    assert th.isfinite(mixture_output.weight.grad).all()
+    assert mixture_output.weight.grad.abs().sum() > 0
+    bond_output = model.bond_break_head.head[-1]
+    assert isinstance(bond_output, th.nn.Linear)
+    assert bond_output.weight.grad is not None
+    assert th.isfinite(bond_output.weight.grad).all()
+    assert bond_output.weight.grad.abs().sum() > 0
 
 
 def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> None:

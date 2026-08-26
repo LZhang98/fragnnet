@@ -396,5 +396,11 @@ class TestTautomerCanonicalization:
         assert mol is not None and not (isinstance(mol, float) and np.isnan(mol))
 
 
+def test_rdkit_ml_standardize_neutralizes_phosphorus_oxide() -> None:
+    mol = du.mol_from_smiles("CCCC[P+](O)(O)[O-]")
+
+    assert du.mol_to_smiles(mol) == "CCCCP(=O)(O)O"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

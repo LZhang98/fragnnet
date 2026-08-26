@@ -51,6 +51,9 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
         "component_pathway_count": th.tensor([4]),
         "mean_mask_cut_count": th.tensor([2.0]),
         "proposal_single_cut_fraction": th.tensor([0.25]),
+        "proposal_mixture_entropy": th.tensor([0.6]),
+        "proposal_mixture_effective_count": th.tensor([1.8]),
+        "proposal_mixture_top1_weight": th.tensor([0.7]),
         "unique_component_count": th.tensor([2]),
         "components_per_mask": th.tensor([2.0]),
         "unique_components_per_mask": th.tensor([1.0]),
@@ -360,6 +363,9 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         component_pathway_count=th.tensor([4]),
         mean_mask_cut_count=th.tensor([2.0]),
         proposal_single_cut_fraction=th.tensor([0.25]),
+        proposal_mixture_entropy=th.tensor([0.6]),
+        proposal_mixture_effective_count=th.tensor([1.8]),
+        proposal_mixture_top1_weight=th.tensor([0.7]),
         unique_component_count=th.tensor([3]),
         components_per_mask=th.tensor([2.0]),
         unique_components_per_mask=th.tensor([1.5]),
@@ -434,6 +440,9 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
     assert actual["component_pathway_count"].tolist() == [4.0]
     assert actual["mean_mask_cut_count"].tolist() == [2.0]
     assert actual["proposal_single_cut_fraction"].tolist() == [0.25]
+    assert actual["proposal_mixture_entropy"].tolist() == pytest.approx([0.6])
+    assert actual["proposal_mixture_effective_count"].tolist() == pytest.approx([1.8])
+    assert actual["proposal_mixture_top1_weight"].tolist() == pytest.approx([0.7])
     assert actual["unique_component_count"].tolist() == [3.0]
     assert actual["components_per_mask"].tolist() == [2.0]
     assert actual["unique_components_per_mask"].tolist() == [1.5]

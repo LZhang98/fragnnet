@@ -331,6 +331,7 @@ class MassShatterPL(SpectrumPL):
             head_hidden_dim=self.hparams.mass_shatter_head_hidden_dim,
             head_dropout=self.hparams.mass_shatter_head_dropout,
             bond_num_layers=self.hparams.mass_shatter_bond_num_layers,
+            proposal_num_mixtures=self.hparams.mass_shatter_proposal_num_mixtures,
             intensity_transformer_dim=(self.hparams.mass_shatter_intensity_transformer_dim),
             intensity_transformer_num_layers=(
                 self.hparams.mass_shatter_intensity_transformer_num_layers
@@ -520,6 +521,9 @@ class MassShatterPL(SpectrumPL):
             component_pathway_count: th.Tensor,
             mean_mask_cut_count: th.Tensor,
             proposal_single_cut_fraction: th.Tensor,
+            proposal_mixture_entropy: th.Tensor,
+            proposal_mixture_effective_count: th.Tensor,
+            proposal_mixture_top1_weight: th.Tensor,
             unique_component_count: th.Tensor,
             components_per_mask: th.Tensor,
             unique_components_per_mask: th.Tensor,
@@ -620,6 +624,15 @@ class MassShatterPL(SpectrumPL):
                 "mean_mask_cut_count": mean_mask_cut_count.detach().to(pred_logprobs),
                 "proposal_single_cut_fraction": (
                     proposal_single_cut_fraction.detach().to(pred_logprobs)
+                ),
+                "proposal_mixture_entropy": (
+                    proposal_mixture_entropy.detach().to(pred_logprobs)
+                ),
+                "proposal_mixture_effective_count": (
+                    proposal_mixture_effective_count.detach().to(pred_logprobs)
+                ),
+                "proposal_mixture_top1_weight": (
+                    proposal_mixture_top1_weight.detach().to(pred_logprobs)
                 ),
                 "unique_component_count": unique_component_count.detach().to(pred_logprobs),
                 "components_per_mask": components_per_mask.detach().to(pred_logprobs),
@@ -733,6 +746,9 @@ class MassShatterPL(SpectrumPL):
             "component_pathway_count",
             "mean_mask_cut_count",
             "proposal_single_cut_fraction",
+            "proposal_mixture_entropy",
+            "proposal_mixture_effective_count",
+            "proposal_mixture_top1_weight",
             "unique_component_count",
             "components_per_mask",
             "unique_components_per_mask",

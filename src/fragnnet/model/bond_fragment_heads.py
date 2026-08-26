@@ -569,17 +569,21 @@ class EndpointBondBreakHead(nn.Module):
         context_dim: int,
         hidden_dim: int,
         dropout: float,
+        num_mixtures: int = 1,
     ) -> None:
         super().__init__()
         if atom_embedding_dim <= 0:
             raise ValueError("atom_embedding_dim must be positive")
         if bond_feature_dim < 0 or context_dim < 0:
             raise ValueError("bond_feature_dim and context_dim must be nonnegative")
+        if num_mixtures <= 0:
+            raise ValueError("num_mixtures must be positive")
         self.atom_embedding_dim = atom_embedding_dim
         self.bond_feature_dim = bond_feature_dim
         self.context_dim = context_dim
+        self.num_mixtures = num_mixtures
         input_dim = 2 * atom_embedding_dim + bond_feature_dim + context_dim
-        self.head = _build_head(input_dim, hidden_dim, 1, dropout)
+        self.head = _build_head(input_dim, hidden_dim, num_mixtures, dropout)
 
     def forward(
         self,
@@ -590,7 +594,7 @@ class EndpointBondBreakHead(nn.Module):
         context: th.Tensor | None = None,
         bond_batch_indices: th.Tensor | None = None,
     ) -> th.Tensor:
-        """Return independent Bernoulli logits with shape ``(num_bonds,)``."""
+        """Return one Bernoulli logit per bond and latent mixture."""
         if atom_embeddings.ndim != 2 or atom_embeddings.shape[1] != self.atom_embedding_dim:
             raise ValueError(
                 "atom_embeddings must have shape "
@@ -635,7 +639,8 @@ class EndpointBondBreakHead(nn.Module):
             features.append(bond_features)
         if expanded_context is not None:
             features.append(expanded_context)
-        return self.head(th.cat(features, dim=-1)).squeeze(-1)
+        logits = self.head(th.cat(features, dim=-1))
+        return logits.squeeze(-1) if self.num_mixtures == 1 else logits
 
 
 class BondFocusedBreakHead(nn.Module):
@@ -658,6 +663,7 @@ class BondFocusedBreakHead(nn.Module):
         head_hidden_dim: int,
         num_layers: int,
         dropout: float,
+        num_mixtures: int = 1,
     ) -> None:
         super().__init__()
         if min(atom_embedding_dim, bond_state_dim, head_hidden_dim) <= 0:
@@ -666,6 +672,8 @@ class BondFocusedBreakHead(nn.Module):
             raise ValueError("bond feature and context dimensions must be nonnegative")
         if num_layers <= 0:
             raise ValueError("num_layers must be positive")
+        if num_mixtures <= 0:
+            raise ValueError("num_mixtures must be positive")
         if dropout < 0.0 or dropout > 1.0:
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
 
@@ -674,6 +682,7 @@ class BondFocusedBreakHead(nn.Module):
         self.context_dim = context_dim
         self.bond_state_dim = bond_state_dim
         self.num_layers = num_layers
+        self.num_mixtures = num_mixtures
         self.atom_project = nn.Linear(atom_embedding_dim, bond_state_dim)
         self.bond_project = nn.Sequential(
             nn.Linear(
@@ -710,7 +719,7 @@ class BondFocusedBreakHead(nn.Module):
         self.head = _build_head(
             bond_state_dim + context_dim,
             head_hidden_dim,
-            1,
+            num_mixtures,
             dropout,
         )
 
@@ -812,7 +821,8 @@ class BondFocusedBreakHead(nn.Module):
         head_features = [bond_states]
         if expanded_context is not None:
             head_features.append(expanded_context)
-        return self.head(th.cat(head_features, dim=1)).squeeze(-1)
+        logits = self.head(th.cat(head_features, dim=1))
+        return logits.squeeze(-1) if self.num_mixtures == 1 else logits
 
 
 class AtomChargeAffinityHead(nn.Module):
