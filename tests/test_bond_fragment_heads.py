@@ -149,6 +149,9 @@ def test_candidate_intensity_transformer_masks_fragment_atom_attention() -> None
     atom_embeddings = th.randn(4, 4)
     atom_indices = th.tensor([0, 1, 2, 3])
     atom_fragment_indices = th.tensor([0, 0, 1, 1])
+    assert head.atom_decoder_gate is not None
+    with th.no_grad():
+        head.atom_decoder_gate.fill_(1.0)
 
     baseline = head._refine_from_fragment_atoms(
         tokens,
@@ -169,6 +172,40 @@ def test_candidate_intensity_transformer_masks_fragment_atom_attention() -> None
     assert not th.allclose(baseline[1], perturbed[1])
 
 
+def test_candidate_intensity_atom_decoder_starts_as_identity() -> None:
+    th.manual_seed(45)
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        atom_decoder_num_layers=4,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+    ).eval()
+    tokens = th.randn(3, 8)
+
+    refined = head._refine_from_fragment_atoms(
+        tokens,
+        th.randn(5, 4),
+        th.arange(5),
+        th.tensor([0, 0, 1, 2, 2]),
+    )
+
+    assert head.atom_decoder_gate is not None
+    assert head.atom_decoder_gate.item() == 0.0
+    assert th.equal(refined, tokens)
+    weights = th.arange(refined.numel(), dtype=refined.dtype).reshape_as(refined)
+    (refined * weights).sum().backward()
+    assert head.atom_decoder_gate.grad is not None
+    assert head.atom_decoder_gate.grad.abs() > 0
+
+
 def test_candidate_intensity_transformer_atom_decoder_backpropagates() -> None:
     head = CandidateIntensityTransformerHead(
         fragment_embedding_dim=4,
@@ -185,6 +222,9 @@ def test_candidate_intensity_transformer_atom_decoder_backpropagates() -> None:
         use_base_probability_feature=True,
     )
     atom_embeddings = th.randn(6, 4, requires_grad=True)
+    assert head.atom_decoder_gate is not None
+    with th.no_grad():
+        head.atom_decoder_gate.fill_(1.0)
     outputs = head(
         th.randn(5, 4),
         th.randn(5, 4),

@@ -180,6 +180,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.predict_oos = predict_oos
         self.atom_projection: nn.Module | None = None
         self.atom_decoder: nn.TransformerDecoder | None = None
+        self.atom_decoder_gate: nn.Parameter | None = None
         if atom_decoder_num_layers > 0:
             self.atom_projection = (
                 nn.Identity()
@@ -197,6 +198,7 @@ class CandidateIntensityTransformerHead(nn.Module):
                 atom_decoder_layer,
                 num_layers=atom_decoder_num_layers,
             )
+            self.atom_decoder_gate = nn.Parameter(th.zeros(()))
         input_dim = 3 * fragment_embedding_dim + context_dim + 3
         if use_base_probability_feature:
             input_dim += 2
@@ -295,11 +297,14 @@ class CandidateIntensityTransformerHead(nn.Module):
             device=tokens.device,
         )
         memory_padding_mask[sorted_fragment_indices, positions] = False
-        return self.atom_decoder(
+        refined_tokens = self.atom_decoder(
             tgt=tokens.unsqueeze(1),
             memory=memory,
             memory_key_padding_mask=memory_padding_mask,
         ).squeeze(1)
+        if self.atom_decoder_gate is None:
+            raise RuntimeError("atom decoder gate is missing for the configured atom decoder")
+        return tokens + self.atom_decoder_gate * (refined_tokens - tokens)
 
     def _contextualize_by_molecule(
         self,

@@ -247,6 +247,10 @@ def test_mass_shatter_rejects_mismatched_graphs_in_shared_group() -> None:
 def test_mass_shatter_spectrum_loss_reaches_masked_atom_decoder() -> None:
     batch = _build_batch()
     model = _build_model(batch, intensity_atom_decoder_num_layers=1)
+    gate = model.intensity_head.atom_decoder_gate
+    assert gate is not None
+    with th.no_grad():
+        gate.fill_(1.0)
     output = model(
         mol_pyg=batch,
         spec_prec_type=th.tensor([0, 1]),
