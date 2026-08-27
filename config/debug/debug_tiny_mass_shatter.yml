@@ -91,5 +91,6 @@ upload_checkpoints: false
 disable_checkpoints: true
 auxiliary_scores:
   - cos_sim
+  - precision
 eval_mz_bin_res:
   - 0.01
