@@ -163,7 +163,7 @@ spectra should not be discarded solely because they contain unmatched peaks.
 Full subformula census:
 
 ```bash
-python preproc_scripts/clean_spectra.py \
+python -m fragnnet.utils.clean_spectra \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --stats-fp /tmp/nist20hr_mh_ft_qtof_cleanup_stats.json \
@@ -180,7 +180,7 @@ python preproc_scripts/clean_spectra.py \
 Grouped merge-only control:
 
 ```bash
-python preproc_scripts/clean_spectra.py \
+python -m fragnnet.utils.clean_spectra \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --stats-fp /tmp/nist20hr_mh_ft_qtof_merge_stats.json \
   --stats-only \
@@ -193,7 +193,7 @@ python preproc_scripts/clean_spectra.py \
 FraGNNet instrument-tolerance census:
 
 ```bash
-python preproc_scripts/clean_spectra.py \
+python -m fragnnet.utils.clean_spectra \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --stats-fp /tmp/nist20hr_mh_ft_qtof_inst_tol_stats.json \
@@ -211,7 +211,7 @@ Human-review queue after instrument-tolerance filtering. This filtering run deli
 `--drop-empty-spectra` so the review detector sees empty results:
 
 ```bash
-python preproc_scripts/clean_spectra.py \
+python -m fragnnet.utils.clean_spectra \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --output-fp /tmp/nist20hr_mh_ft_qtof_inst_tol_filtered.pkl \

@@ -17,6 +17,28 @@ from tqdm import tqdm
 from fragnnet.utils.formula_utils import ELECTRON_MASS, MASS, NEUTRON_MASS
 from fragnnet.utils.misc_utils import none_or_nan, np_temp_seed
 
+VALID_ELEMENTS = (
+    "C",
+    "N",
+    "P",
+    "O",
+    "S",
+    "Si",
+    "I",
+    "H",
+    "Cl",
+    "F",
+    "Br",
+    "B",
+    "Se",
+    "Fe",
+    "Co",
+    "As",
+    "Na",
+    "K",
+)
+ELEMENT_TO_MASS = {element: MASS(element) for element in VALID_ELEMENTS}
+
 # don't do expesive import in runtime
 if TYPE_CHECKING:
     pass

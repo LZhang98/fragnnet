@@ -1,13 +1,7 @@
-import importlib.util
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
-SCRIPT_FP = Path(__file__).parents[1] / "preproc_scripts" / "clean_spectra.py"
-SPEC = importlib.util.spec_from_file_location("clean_spectra", SCRIPT_FP)
-clean_spectra = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(clean_spectra)
+from fragnnet.utils import clean_spectra, data_utils
 
 
 def test_merge_peaks_uses_intensity_weighted_centroid():
@@ -46,7 +40,7 @@ def test_merge_only_does_not_require_molecule_metadata():
 
 
 def test_filter_subformula_peaks_keeps_only_mass_matches():
-    carbon_ion_mz = clean_spectra.chem_utils.formula_mass("C") - clean_spectra.chem_utils.ELECTRON_MASS
+    carbon_ion_mz = data_utils.formula_to_mass("C") - data_utils.ELECTRON_MASS
     peaks = [(carbon_ion_mz + 4e-5, 10.0), (50.0, 5.0)]
 
     filtered = clean_spectra.filter_subformula_peaks(
@@ -68,8 +62,8 @@ def test_filter_subformula_peaks_keeps_only_mass_matches():
     ],
 )
 def test_filter_subformula_peaks_applies_adduct_mass_shift(precursor_type, mass_shift):
-    ion_mz = clean_spectra.chem_utils.formula_mass("CH4") + mass_shift
-    neutral_mz = clean_spectra.chem_utils.formula_mass("CH4")
+    ion_mz = data_utils.formula_to_mass("CH4") + mass_shift
+    neutral_mz = data_utils.formula_to_mass("CH4")
     peaks = [(ion_mz, 10.0), (neutral_mz, 5.0)]
 
     filtered = clean_spectra.filter_subformula_peaks(
@@ -86,7 +80,7 @@ def test_filter_subformula_peaks_accepts_nist_dehydration_adduct_alias():
     normalized_type = "[M-H2O+H]+"
     nist_type = "[M+H-H2O]+"
     ion_mz = (
-        clean_spectra.chem_utils.formula_mass("CH4O")
+        data_utils.formula_to_mass("CH4O")
         + clean_spectra.PREC_TYPE_TO_MASS_DIFF[normalized_type]
     )
 
@@ -102,7 +96,7 @@ def test_filter_subformula_peaks_accepts_nist_dehydration_adduct_alias():
 
 def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
     impossible_mz = (
-        clean_spectra.chem_utils.formula_mass("C")
+        data_utils.formula_to_mass("C")
         + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
     )
 
@@ -118,7 +112,7 @@ def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
 
 def test_qtof_instrument_tolerance_uses_0p015_da_low_mass_floor():
     theoretical_mz = (
-        clean_spectra.chem_utils.formula_mass("CH4")
+        data_utils.formula_to_mass("CH4")
         + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
     observed_peak = (theoretical_mz + 0.01, 10.0)

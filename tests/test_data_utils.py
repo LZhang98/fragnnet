@@ -19,6 +19,15 @@ class TestNormalizeInts:
         assert norm == [pytest.approx(1 / 6), pytest.approx(2 / 6), pytest.approx(3 / 6)]
 
 
+class TestFormulaMass:
+    """Tests for formula mass data used by subformula filtering."""
+
+    def test_formula_to_mass_uses_supported_monoisotopic_masses(self):
+        expected_mass = du.ELEMENT_TO_MASS["C"] + 4 * du.ELEMENT_TO_MASS["H"]
+
+        assert du.formula_to_mass("CH4") == pytest.approx(expected_mass)
+
+
 class TestSplitSmiles:
     """Tests for split_smiles tokenizer."""
 
