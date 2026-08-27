@@ -1490,6 +1490,11 @@ class MassShatterModel(nn.Module):
             static_graph=static_graph,
             smarts_templates=smarts_templates,
             mixture_log_weights=mixture_log_weights,
+            candidate_group_ids=(
+                layout["spectrum_to_shared"]
+                if layout is not None and (not self.training or self.explore_masks == 0)
+                else None
+            ),
         )
 
         # 3. Score charge retention. In unique-fragment mode, masks remain latent

@@ -563,3 +563,71 @@ def test_candidate_batch_accepts_static_cpu_graph_sidecar() -> None:
 
     assert candidates.component_mask_indices.tolist() == [0, 0, 1, 2, 2]
     assert candidates.atom_indices.tolist() == [0, 1, 2, 0, 1, 2, 0, 1, 2]
+
+
+def test_shared_candidate_groups_match_repeated_construction_and_gradients() -> None:
+    chemical_bond_index = th.tensor(
+        [[0, 1, 2, 4, 5, 6], [1, 2, 3, 5, 6, 7]],
+        dtype=th.long,
+    )
+    atom_batch_indices = th.tensor([0] * 4 + [1] * 4, dtype=th.long)
+    atom_ptr = th.tensor([0, 4, 8], dtype=th.long)
+    common_kwargs = {
+        "chemical_bond_index": chemical_bond_index,
+        "atom_batch_indices": atom_batch_indices,
+        "atom_ptr": atom_ptr,
+        "max_masks": 4,
+        "max_unique_components": 6,
+        "max_enumerated_masks": 8,
+        "explore_masks": 0,
+        "exploration_mode": "bounded_additive",
+        "exploration_temperature": 1.0,
+        "exploration_cut_count_weights": BOUNDED_CUT_COUNT_WEIGHTS,
+        "include_single_bond_cuts": True,
+    }
+    repeated_logits = th.tensor(
+        [0.8, -0.4, 0.2, 0.8, -0.4, 0.2],
+        requires_grad=True,
+    )
+    shared_logits = repeated_logits.detach().clone().requires_grad_(True)
+
+    repeated = build_mass_shatter_candidates(repeated_logits, **common_kwargs)
+    shared = build_mass_shatter_candidates(
+        shared_logits,
+        **common_kwargs,
+        candidate_group_ids=th.tensor([19, 19], dtype=th.long),
+    )
+
+    for name, expected in vars(repeated).items():
+        if name == "timings":
+            continue
+        actual = getattr(shared, name)
+        if isinstance(expected, th.Tensor):
+            assert th.equal(actual, expected), name
+        else:
+            assert actual == expected, name
+
+    weights = th.arange(1, repeated.mask_log_probabilities.numel() + 1)
+    (repeated.mask_log_probabilities * weights).sum().backward()
+    (shared.mask_log_probabilities * weights).sum().backward()
+    assert th.equal(shared_logits.grad, repeated_logits.grad)
+
+
+def test_shared_candidate_groups_reject_different_logits() -> None:
+    with pytest.raises(ValueError, match="identical proposal logits"):
+        build_mass_shatter_candidates(
+            th.tensor([0.8, -0.4, 0.8, -0.3]),
+            chemical_bond_index=th.tensor(
+                [[0, 1, 3, 4], [1, 2, 4, 5]],
+                dtype=th.long,
+            ),
+            atom_batch_indices=th.tensor([0, 0, 0, 1, 1, 1], dtype=th.long),
+            atom_ptr=th.tensor([0, 3, 6], dtype=th.long),
+            max_masks=4,
+            explore_masks=0,
+            exploration_mode="bounded_additive",
+            exploration_temperature=1.0,
+            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
+            include_single_bond_cuts=True,
+            candidate_group_ids=th.tensor([5, 5], dtype=th.long),
+        )

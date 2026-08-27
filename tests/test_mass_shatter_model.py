@@ -180,7 +180,11 @@ def test_mass_shatter_spectrum_loss_reaches_ce_embedding() -> None:
     assert projection.grad.abs().sum() > 0
 
 
-def test_mass_shatter_shares_one_ce_independent_proposal_pass() -> None:
+def test_mass_shatter_shares_one_ce_independent_proposal_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fragnnet.frag import mass_shatter_core
+
     batch = _build_batch(("CCCO",) * 5)
     model = _build_model(
         batch,
@@ -194,6 +198,20 @@ def test_mass_shatter_shares_one_ce_independent_proposal_pass() -> None:
     ).eval()
     precursor_batch_sizes = []
     proposal_batch_sizes = []
+    topology_call_count = 0
+
+    original_build_component_arrays = mass_shatter_core.build_component_arrays_raw
+
+    def record_topology_call(*args, **kwargs):
+        nonlocal topology_call_count
+        topology_call_count += 1
+        return original_build_component_arrays(*args, **kwargs)
+
+    monkeypatch.setattr(
+        mass_shatter_core,
+        "build_component_arrays_raw",
+        record_topology_call,
+    )
 
     def record_precursor_batch(_module, args, _output):
         precursor_batch_sizes.append(int(args[1].max().item()) + 1)
@@ -216,6 +234,7 @@ def test_mass_shatter_shares_one_ce_independent_proposal_pass() -> None:
     bond_count = batch.chemical_bond_index.shape[1] // 5
     assert precursor_batch_sizes == [1]
     assert proposal_batch_sizes == [1]
+    assert topology_call_count == 1
     first_bond_logits = output["bond_break_logits"][:bond_count]
     for spectrum_index in range(1, 5):
         start = spectrum_index * bond_count

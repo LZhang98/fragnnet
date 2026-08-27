@@ -89,6 +89,39 @@ class MassShatterCandidateBatch:
         return int(self.unique_representative_component_indices.shape[0])
 
 
+@dataclass(frozen=True)
+class _RankedMaskCache:
+    """Learned masks shared by repeated collision-energy views."""
+
+    logits: np.ndarray
+    mixture_log_weights: np.ndarray | None
+    mask_ptr: np.ndarray
+    broken_bonds: np.ndarray
+
+
+@dataclass(frozen=True)
+class _TopologyCache:
+    """Molecule-local component arrays shared by repeated graph views."""
+
+    num_atoms: int
+    endpoints: tuple[tuple[int, ...], tuple[int, ...]]
+    mask_ptr: np.ndarray
+    broken_bonds: np.ndarray
+    cut_counts: np.ndarray
+    component_mask_indices: np.ndarray
+    component_cut_counts: np.ndarray
+    atom_indices: np.ndarray
+    atom_component_indices: np.ndarray
+    mask_indices: np.ndarray
+    broken_bond_indices: np.ndarray
+    boundary_bond_indices: np.ndarray
+    boundary_component_indices: np.ndarray
+    num_components: int
+    unique_component_count: int
+    component_unique_indices: np.ndarray
+    unique_representative_component_indices: np.ndarray
+
+
 def _packed_long_tensors(
     values: Sequence[Sequence[int] | np.ndarray],
     device: th.device,
@@ -190,13 +223,17 @@ def build_mass_shatter_candidates(
     static_graph: MassShatterStaticGraph | None = None,
     smarts_templates: Sequence[Sequence[MassShatterTemplate]] | None = None,
     mixture_log_weights: th.Tensor | None = None,
+    candidate_group_ids: th.Tensor | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
     Mask identities are deliberately selected from detached logits. Their exact
     Bernoulli or Bernoulli-mixture log probabilities are then recomputed from the
     original logits, preserving gradients to every selected cut/intact decision and
-    latent mixture weight. When
+    latent mixture weight. When ``candidate_group_ids`` is provided, repeated
+    collision-energy views with the same group id reuse exact ranked masks and
+    connected-component topology while retaining separate differentiable
+    probabilities and output candidates. When
     ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
     number of distinct atom sets. Probability floors apply only to learned ranked
@@ -256,6 +293,8 @@ def build_mass_shatter_candidates(
         raise ValueError("Bernoulli mixtures do not support exploration masks")
     if max_unique_components is not None and explore_masks > 0:
         raise ValueError("unique-component enumeration does not support exploration masks")
+    if candidate_group_ids is not None and explore_masks > 0:
+        raise ValueError("candidate_group_ids does not support exploration masks")
     if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
         raise ValueError(f"unknown exploration mode: {exploration_mode}")
     if exploration_mode == "bernoulli_replace" and explore_masks >= max_masks:
@@ -312,9 +351,19 @@ def build_mass_shatter_candidates(
         atom_batch_indices_cpu = packed_graph_cpu[chemical_bond_end:atom_batch_end]
         atom_ptr_cpu = packed_graph_cpu[atom_batch_end:]
         bond_logits_cpu = bond_logits.detach().cpu()
-    input_transfer_ms = (perf_counter() - input_transfer_start) * 1000.0
-
     num_molecules = atom_ptr_cpu.numel() - 1
+    if candidate_group_ids is None:
+        candidate_group_values = None
+    else:
+        if (
+            candidate_group_ids.shape != (num_molecules,)
+            or candidate_group_ids.dtype != th.long
+        ):
+            raise ValueError(
+                "candidate_group_ids must be a torch.long vector with one id per molecule"
+            )
+        candidate_group_values = candidate_group_ids.detach().cpu().tolist()
+    input_transfer_ms = (perf_counter() - input_transfer_start) * 1000.0
     if mixture_log_weights is not None:
         if mixture_log_weights.shape != (num_molecules, num_mixtures):
             raise ValueError(
@@ -395,6 +444,8 @@ def build_mass_shatter_candidates(
     num_mechanisms_so_far = 0
     num_components_so_far = 0
     num_unique_components_so_far = 0
+    ranked_mask_cache: dict[int, _RankedMaskCache] = {}
+    topology_cache: dict[int, _TopologyCache] = {}
 
     # 2. Select and assemble masks independently for each precursor.
     for molecule_index in range(num_molecules):
@@ -403,6 +454,11 @@ def build_mass_shatter_candidates(
         num_atoms = atom_end - atom_start
         if num_atoms <= 0:
             raise ValueError("every precursor must contain at least one atom")
+        candidate_group = (
+            None
+            if candidate_group_values is None
+            else int(candidate_group_values[molecule_index])
+        )
 
         selection_start = perf_counter()
         global_bond_indices = bond_indices_by_molecule[molecule_index]
@@ -445,13 +501,37 @@ def build_mass_shatter_candidates(
                 if max_unique_components is not None
                 else max_masks
             )
-            if num_mixtures == 1:
-                (
-                    local_mask_ptr,
-                    local_broken_bonds,
-                    _,
-                    _,
-                ) = top_k_cut_masks_csr_raw(
+            cached_ranked_masks = (
+                None
+                if candidate_group is None
+                else ranked_mask_cache.get(candidate_group)
+            )
+            local_mixture_log_weights = (
+                None
+                if mixture_log_weights_cpu is None
+                else mixture_log_weights_cpu[molecule_index].numpy()
+            )
+            if cached_ranked_masks is not None:
+                if not np.array_equal(cached_ranked_masks.logits, local_logits) or (
+                    cached_ranked_masks.mixture_log_weights is None
+                ) != (local_mixture_log_weights is None):
+                    raise ValueError(
+                        "candidate_group_ids can only group identical proposal logits"
+                    )
+                if (
+                    local_mixture_log_weights is not None
+                    and not np.array_equal(
+                        cached_ranked_masks.mixture_log_weights,
+                        local_mixture_log_weights,
+                    )
+                ):
+                    raise ValueError(
+                        "candidate_group_ids can only group identical mixture weights"
+                    )
+                local_mask_ptr = cached_ranked_masks.mask_ptr
+                local_broken_bonds = cached_ranked_masks.broken_bonds
+            elif num_mixtures == 1:
+                local_mask_ptr, local_broken_bonds, _, _ = top_k_cut_masks_csr_raw(
                     detached_logits,
                     learned_mask_limit,
                     True,
@@ -481,6 +561,17 @@ def build_mass_shatter_candidates(
                 local_broken_bonds = np.asarray(
                     [bond for bond_set in mixture_bond_sets for bond in bond_set],
                     dtype=np.int64,
+                )
+            if cached_ranked_masks is None and candidate_group is not None:
+                ranked_mask_cache[candidate_group] = _RankedMaskCache(
+                    logits=local_logits.copy(),
+                    mixture_log_weights=(
+                        None
+                        if local_mixture_log_weights is None
+                        else local_mixture_log_weights.copy()
+                    ),
+                    mask_ptr=local_mask_ptr.copy(),
+                    broken_bonds=local_broken_bonds.copy(),
                 )
             learned_mask_count = local_mask_ptr.size - 1
             if min_mask_probability > 0.0 and learned_mask_count == 0:
@@ -774,31 +865,127 @@ def build_mass_shatter_candidates(
 
         mask_start = num_masks_so_far
         component_start = num_components_so_far
-        (
-            local_cut_counts,
-            local_component_mask_indices,
-            local_component_cut_counts,
-            local_atom_indices,
-            local_atom_component_indices,
-            local_mask_indices,
-            local_broken_bond_indices,
-            local_boundary_bond_indices,
-            local_boundary_component_indices,
-            num_local_components,
-            unique_component_count,
-            local_topology_ms,
-            local_assembly_ms,
-            local_component_unique_indices,
-            local_unique_representative_component_indices,
-        ) = build_component_arrays_raw(
-            num_atoms,
-            np.asarray(local_endpoints, dtype=np.int64).T,
-            broken_mask_input,
-            global_bond_indices,
-            atom_start,
-            mask_start,
-            component_start,
+        cached_topology = (
+            None if candidate_group is None else topology_cache.get(candidate_group)
         )
+        if cached_topology is None:
+            (
+                local_cut_counts,
+                local_component_mask_indices,
+                local_component_cut_counts,
+                local_atom_indices,
+                local_atom_component_indices,
+                local_mask_indices,
+                local_broken_bond_indices,
+                local_boundary_bond_indices,
+                local_boundary_component_indices,
+                num_local_components,
+                unique_component_count,
+                local_topology_ms,
+                local_assembly_ms,
+                local_component_unique_indices,
+                local_unique_representative_component_indices,
+            ) = build_component_arrays_raw(
+                num_atoms,
+                np.asarray(local_endpoints, dtype=np.int64).T,
+                broken_mask_input,
+                global_bond_indices,
+                atom_start,
+                mask_start,
+                component_start,
+            )
+            if candidate_group is not None:
+                if not isinstance(broken_mask_input, tuple):
+                    raise RuntimeError("shared candidate masks must use CSR arrays")
+                global_to_local_bond = {
+                    int(global_index): local_index
+                    for local_index, global_index in enumerate(global_bond_indices)
+                }
+                local_broken_output = np.asarray(
+                    [
+                        global_to_local_bond[int(global_index)]
+                        for global_index in local_broken_bond_indices
+                    ],
+                    dtype=np.int64,
+                )
+                local_boundary_output = np.asarray(
+                    [
+                        global_to_local_bond[int(global_index)]
+                        for global_index in local_boundary_bond_indices
+                    ],
+                    dtype=np.int64,
+                )
+                topology_cache[candidate_group] = _TopologyCache(
+                    num_atoms=num_atoms,
+                    endpoints=local_endpoints,
+                    mask_ptr=broken_mask_input[0].copy(),
+                    broken_bonds=broken_mask_input[1].copy(),
+                    cut_counts=local_cut_counts.copy(),
+                    component_mask_indices=(
+                        local_component_mask_indices - mask_start
+                    ),
+                    component_cut_counts=local_component_cut_counts.copy(),
+                    atom_indices=local_atom_indices - atom_start,
+                    atom_component_indices=(
+                        local_atom_component_indices - component_start
+                    ),
+                    mask_indices=local_mask_indices - mask_start,
+                    broken_bond_indices=local_broken_output,
+                    boundary_bond_indices=local_boundary_output,
+                    boundary_component_indices=(
+                        local_boundary_component_indices - component_start
+                    ),
+                    num_components=num_local_components,
+                    unique_component_count=unique_component_count,
+                    component_unique_indices=local_component_unique_indices.copy(),
+                    unique_representative_component_indices=(
+                        local_unique_representative_component_indices.copy()
+                    ),
+                )
+        else:
+            if not isinstance(broken_mask_input, tuple):
+                raise RuntimeError("shared candidate masks must use CSR arrays")
+            if (
+                cached_topology.num_atoms != num_atoms
+                or cached_topology.endpoints != local_endpoints
+                or not np.array_equal(cached_topology.mask_ptr, broken_mask_input[0])
+                or not np.array_equal(
+                    cached_topology.broken_bonds,
+                    broken_mask_input[1],
+                )
+            ):
+                raise ValueError(
+                    "candidate_group_ids can only group identical molecular topology"
+                )
+            remap_start = perf_counter()
+            global_bond_array = np.asarray(global_bond_indices, dtype=np.int64)
+            local_cut_counts = cached_topology.cut_counts
+            local_component_mask_indices = (
+                cached_topology.component_mask_indices + mask_start
+            )
+            local_component_cut_counts = cached_topology.component_cut_counts
+            local_atom_indices = cached_topology.atom_indices + atom_start
+            local_atom_component_indices = (
+                cached_topology.atom_component_indices + component_start
+            )
+            local_mask_indices = cached_topology.mask_indices + mask_start
+            local_broken_bond_indices = global_bond_array[
+                cached_topology.broken_bond_indices
+            ]
+            local_boundary_bond_indices = global_bond_array[
+                cached_topology.boundary_bond_indices
+            ]
+            local_boundary_component_indices = (
+                cached_topology.boundary_component_indices + component_start
+            )
+            num_local_components = cached_topology.num_components
+            unique_component_count = cached_topology.unique_component_count
+            local_component_unique_indices = cached_topology.component_unique_indices
+            local_unique_representative_component_indices = (
+                cached_topology.unique_representative_component_indices
+            )
+            local_topology_ms = 0.0
+            local_assembly_ms = (perf_counter() - remap_start) * 1000.0
         if (
             max_unique_components is not None
             and unique_component_count > max_unique_components
