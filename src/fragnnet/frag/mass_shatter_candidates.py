@@ -509,15 +509,30 @@ def build_mass_shatter_candidates(
                     [bond for bond_set in forced_bond_sets for bond in bond_set],
                     dtype=np.int64,
                 )
-                forced_bond_set_lookup = set(forced_bond_sets)
-                ranked_bond_sets = [
-                    tuple(local_broken_bonds[local_mask_ptr[index] : local_mask_ptr[index + 1]])
-                    for index in range(learned_mask_count)
-                ]
-                keep_ranked_masks = np.asarray(
-                    [bond_set not in forced_bond_set_lookup for bond_set in ranked_bond_sets],
-                    dtype=np.bool_,
-                )
+                if molecule_templates:
+                    forced_bond_set_lookup = set(forced_bond_sets)
+                    ranked_bond_sets = [
+                        tuple(
+                            local_broken_bonds[
+                                local_mask_ptr[index] : local_mask_ptr[index + 1]
+                            ]
+                        )
+                        for index in range(learned_mask_count)
+                    ]
+                    keep_ranked_masks = np.asarray(
+                        [
+                            bond_set not in forced_bond_set_lookup
+                            for bond_set in ranked_bond_sets
+                        ],
+                        dtype=np.bool_,
+                    )
+                else:
+                    # Without SMARTS templates, forced masks are exactly the empty
+                    # mask and, when requested, every single cut. Remove their ranked
+                    # duplicates by cardinality instead of materializing thousands of
+                    # Python tuples per precursor.
+                    maximum_forced_cut_count = 1 if len(forced_bond_sets) > 1 else 0
+                    keep_ranked_masks = learned_cut_counts > maximum_forced_cut_count
                 keep_ranked_bonds = np.repeat(keep_ranked_masks, learned_cut_counts)
                 retained_ranked_cut_counts = learned_cut_counts[keep_ranked_masks]
                 retained_ranked_bonds = local_broken_bonds[keep_ranked_bonds]
@@ -560,15 +575,19 @@ def build_mass_shatter_candidates(
                         )
             broken_mask_input: object = (local_mask_ptr, local_broken_bonds)
             num_local_masks = local_mask_ptr.size - 1
-            selected_local_bond_sets = [
-                tuple(
-                    int(bond)
-                    for bond in local_broken_bonds[
-                        local_mask_ptr[index] : local_mask_ptr[index + 1]
-                    ]
-                )
-                for index in range(num_local_masks)
-            ]
+            selected_local_bond_sets = (
+                [
+                    tuple(
+                        int(bond)
+                        for bond in local_broken_bonds[
+                            local_mask_ptr[index] : local_mask_ptr[index + 1]
+                        ]
+                    )
+                    for index in range(num_local_masks)
+                ]
+                if molecule_templates
+                else None
+            )
         else:
             exploit_masks = (
                 max_masks - explore_masks
@@ -834,7 +853,8 @@ def build_mass_shatter_candidates(
             unique_component_count = len(
                 local_unique_representative_component_indices
             )
-        selected_local_bond_sets = selected_local_bond_sets[:num_local_masks]
+        if selected_local_bond_sets is not None:
+            selected_local_bond_sets = selected_local_bond_sets[:num_local_masks]
 
         # Each cut mask always has one ordinary connected-component mechanism.
         # SMARTS matches add alternative atom partitions under that same mask;
@@ -855,6 +875,8 @@ def build_mass_shatter_candidates(
         )
 
         if molecule_templates:
+            if selected_local_bond_sets is None:
+                raise RuntimeError("selected bond sets disappeared for SMARTS templates")
             bond_set_to_mask = {
                 bond_set: mask_start + local_index
                 for local_index, bond_set in enumerate(selected_local_bond_sets)
