@@ -1,0 +1,64 @@
+# Inference data.
+spec_fp: data/proc/plastchem/spec_df.pkl
+mol_fp: data/proc/plastchem/mol_df.pkl
+frag_dp: data/frag/nist20_d3/dags
+
+# FraGNNet model settings.
+frag_params:
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: True
+  preprocess: True
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  preprocess: True
+mol_params:
+  preprocess: True
+num_depth: 3
+frag_gnn_type: NodeMLP
+ce_insert_location: mlp
+ce_insert_merge: True
+ce_insert_type: embed
+mol_pool_type: mean
+frag_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 256
+mol_dropout: 0.2
+frag_hidden_size: 256
+frag_normalization: graph
+frag_embed_combine: avg
+frag_pool_combine: subtract
+frag_dropout: 0.1
+mlp_normalization: layer
+mlp_hidden_size: 64
+mlp_dropout: 0.2
+
+# loss stuff
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+sparse_cosine_similarity: True
+skip_extra_losses: True
+auxiliary_scores:
+  - cos_sim
+eval_mz_bin_res:
+  - 0.01
+
+# inference stuff
+inference:
+  ckpt_fp: tmp_ckpt/model-epoch=007.ckpt # TODO: change this after training completes
+  device: cuda:0
+  batch_size: 32
+  num_workers: 7
+  split: predict_only
+  batch_cutoff: 1000000
+  output_fp: data/inference/nist20_scaffold_fragnnet_d3_s0.pkl
+  output_subset:
+    - pred_mzs
+    - pred_logprobs
+    - pred_batch_idxs
+    - pred_formula_logprobs
+    - pred_formula_batch_idxs

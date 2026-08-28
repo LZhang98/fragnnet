@@ -1,8 +1,10 @@
 import copy
 import os
+import argparse
 
 import pandas as pd
 import torch as th
+import yaml
 
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.pl_model import FragGNNPL
@@ -171,6 +173,55 @@ class FraGNNetInference:
 		)
 		return vals
 
+	@classmethod
+	def from_config(cls, config_fp: str):
+		"""Initialize FraGNNet inference from one config file."""
+		with open(config_fp, "r") as config_file:
+			config = yaml.load(config_file, Loader=yaml.FullLoader) or {}
+		inference_config = config.pop("inference", {})
+		template_fp = inference_config.pop("template_fp", "config/template.yml")
+		ckpt_fp = inference_config.pop("ckpt_fp")
+		config_d = load_config(template_fp, None)
+		config_d = deep_update(config_d, config)
+		return cls.from_checkpoint(
+			ckpt_fp=ckpt_fp,
+			config_d=config_d,
+			device=inference_config.get("device"),
+			eval_batch_size=inference_config.get("batch_size"),
+			num_workers=inference_config.get("num_workers"),
+		)
 
-# Backward-compatible alias.
-FragNNetInference = FraGNNetInference
+
+def main():
+	parser = argparse.ArgumentParser(description="Run FraGNNet inference from one YAML config.")
+	parser.add_argument("config_fp", type=str, help="Inference YAML configuration path.")
+	args = parser.parse_args()
+
+	with open(args.config_fp, "r") as config_file:
+		config = yaml.load(config_file, Loader=yaml.FullLoader) or {}
+	inference_config = config.get("inference", {})
+	engine = FraGNNetInference.from_config(args.config_fp)
+	split = inference_config.get("split", "predict_only")
+	data_kwargs = {}
+	if split == "predict_only":
+		data_kwargs = {
+			"spec_df": pd.read_pickle(config["spec_fp"]),
+			"mol_df": pd.read_pickle(config["mol_fp"]),
+		}
+	vals = engine.run(
+		split=split,
+		**data_kwargs,
+		frag_dp=config.get("frag_dp"),
+		batch_cutoff=inference_config.get("batch_cutoff", int(1e6)),
+		output_subset=set(inference_config["output_subset"]) if inference_config.get("output_subset") else None,
+	)
+	output_fp = inference_config.get("output_fp")
+	if output_fp is None:
+		raise ValueError("inference.output_fp is required when running the inference script.")
+	os.makedirs(os.path.dirname(output_fp) or ".", exist_ok=True)
+	th.save(vals, output_fp)
+
+
+if __name__ == "__main__":
+	main()
+

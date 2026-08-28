@@ -467,6 +467,17 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	trainer = pl.Trainer(**trainer_param_d)
 
+	if not config_d["disable_checkpoints"] and config_d.get("checkpoint_save_initial", False) and not is_resume:
+		initial_ckpt_fp = os.path.join(ckpt_dp, "model-epoch=000-untrained.ckpt")
+		th.save(
+			{
+				"state_dict": model.state_dict(),
+				"hyper_parameters": dict(model.hparams),
+				"epoch": 0,
+			},
+			initial_ckpt_fp,
+		)
+
 	# set determinism
 	th.use_deterministic_algorithms(config_d["deterministic"],warn_only=True)
 
