@@ -17,7 +17,7 @@ DEFAULT_INST_TYPES = ["FT"]
 DEFAULT_FRAG_MODES = ["HCD"]
 DEFAULT_ION_MODES = ["P"]
 DEFAULT_NCE_VALUES = [20.0, 40.0, 60.0]
-SUPPORTED_ELEMENTS = set(frag_utils.ELEMENTS)
+SUPPORTED_ELEMENTS = set(frag_utils.ELEMENT_TO_VE)
 
 def load_spec_params(config_fp):
 	if config_fp is None:
@@ -76,6 +76,15 @@ def make_mol_df(smiles_input):
 	mol_df["smiles"] = data_utils.par_apply_series(mol_df["mol"], data_utils.mol_to_smiles)
 	mol_df = mol_df.dropna(subset=["mol", "smiles"])
 	mol_df = mol_df.drop_duplicates(subset=["smiles"]).sort_values("smiles").reset_index(drop=True)
+	initial_count = len(mol_df)
+	mol_df = mol_df.loc[
+		mol_df["mol"].apply(
+			lambda mol: all(atom.GetSymbol() in SUPPORTED_ELEMENTS for atom in mol.GetAtoms())
+		)
+	]
+	mol_df = mol_df.loc[mol_df["mol"].apply(data_utils.mol_to_num_bonds) > 0]
+	print(f"> removed {initial_count - len(mol_df)} molecules with unsupported atoms or no bonds")
+	mol_df = mol_df.reset_index(drop=True)
 	mol_df["mol_id"] = np.arange(mol_df.shape[0])
 	mol_df["inchikey_s"] = data_utils.par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
 	mol_df["scaffold"] = data_utils.par_apply_series(mol_df["mol"], data_utils.get_murcko_scaffold)
@@ -88,21 +97,6 @@ def make_mol_df(smiles_input):
 	mol_df["charge"] = data_utils.par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
 	mol_df["single_mol"] = data_utils.par_apply_series(mol_df["mol"], data_utils.check_single_mol)
 	mol_df["num_radicals"] = data_utils.par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
-
-    # filter out mols that don't satisfy requirements
-	a = len(mol_df)
-	print(f"> total number of molecules: {len(mol_df)}")
-	mol_df = mol_df.loc[mol_df['num_bonds'] > 0] # no bonds to break
-	b = len(mol_df)
-	print(f"> removed {a - b} molecules with 0 bonds")
-	mol_df = mol_df.loc[
-		mol_df["mol"].apply(
-			lambda mol: all(atom.GetSymbol() in SUPPORTED_ELEMENTS for atom in mol.GetAtoms())
-		)
-	]   # unsupported atoms in FraGNNet's vocabulary
-	c = len(mol_df)
-	print(f"> removed {b - c} molecules with unsupported atoms")
-	mol_df = mol_df.reset_index(drop=True)
 	return mol_df
 
 
