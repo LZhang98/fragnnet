@@ -68,6 +68,9 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
         "mask_cut_fraction_1": th.tensor([0.5]),
         "mask_cut_fraction_2": th.tensor([0.5]),
         "mask_cut_fraction_3": th.tensor([0.0]),
+        "mask_cut_fraction_4": th.tensor([0.0]),
+        "mask_cut_fraction_5": th.tensor([0.0]),
+        "mask_cut_fraction_6plus": th.tensor([0.0]),
         "mask_cut_fraction_4plus": th.tensor([0.0]),
         "candidate_input_transfer_batch_ms": th.tensor([1.0]),
         "candidate_mask_selection_batch_ms": th.tensor([2.0]),
@@ -601,6 +604,9 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         mask_cut_fraction_1=th.tensor([0.25]),
         mask_cut_fraction_2=th.tensor([0.5]),
         mask_cut_fraction_3=th.tensor([0.0]),
+        mask_cut_fraction_4=th.tensor([0.0]),
+        mask_cut_fraction_5=th.tensor([0.0]),
+        mask_cut_fraction_6plus=th.tensor([0.0]),
         mask_cut_fraction_4plus=th.tensor([0.0]),
         candidate_input_transfer_batch_ms=th.tensor([1.0]),
         candidate_mask_selection_batch_ms=th.tensor([2.0]),
@@ -723,3 +729,30 @@ def test_candidate_coverage_by_cut_count_uses_per_instrument_tolerance() -> None
     assert actual["candidate_recall_cut_3"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_wrecall_cut_3"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_precision_cut_3"].tolist() == pytest.approx([0.0, 1.0])
+
+
+def test_candidate_coverage_by_cut_count_reports_deep_cut_buckets() -> None:
+    actual = _candidate_coverage_by_cut_count(
+        true_mzs=th.tensor([100.0, 200.0, 300.0, 400.0]),
+        true_ints=th.tensor([0.1, 0.2, 0.3, 0.4]),
+        true_batch_idxs=th.zeros(4, dtype=th.long),
+        candidate_mzs=th.tensor([100.0, 200.0, 300.0, 400.0]),
+        candidate_batch_idxs=th.zeros(4, dtype=th.long),
+        candidate_cut_counts=th.tensor([4, 5, 6, 7]),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+    )
+
+    assert actual["candidate_recall_cut_4"].item() == pytest.approx(0.25)
+    assert actual["candidate_wrecall_cut_4"].item() == pytest.approx(0.1)
+    assert actual["candidate_precision_cut_4"].item() == pytest.approx(1.0)
+    assert actual["candidate_recall_cut_5"].item() == pytest.approx(0.25)
+    assert actual["candidate_wrecall_cut_5"].item() == pytest.approx(0.2)
+    assert actual["candidate_precision_cut_5"].item() == pytest.approx(1.0)
+    assert actual["candidate_recall_cut_6plus"].item() == pytest.approx(0.5)
+    assert actual["candidate_wrecall_cut_6plus"].item() == pytest.approx(0.7)
+    assert actual["candidate_precision_cut_6plus"].item() == pytest.approx(1.0)
+    assert actual["candidate_recall_cut_4plus"].item() == pytest.approx(1.0)
+    assert actual["candidate_wrecall_cut_4plus"].item() == pytest.approx(1.0)

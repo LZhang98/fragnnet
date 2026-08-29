@@ -42,6 +42,9 @@ _CUT_COUNT_BUCKETS = {
     "1": lambda cut_counts: cut_counts == 1,
     "2": lambda cut_counts: cut_counts == 2,
     "3": lambda cut_counts: cut_counts == 3,
+    "4": lambda cut_counts: cut_counts == 4,
+    "5": lambda cut_counts: cut_counts == 5,
+    "6plus": lambda cut_counts: cut_counts >= 6,
     "4plus": lambda cut_counts: cut_counts >= 4,
 }
 
@@ -845,6 +848,9 @@ class MassShatterPL(SpectrumPL):
             mask_cut_fraction_1: th.Tensor,
             mask_cut_fraction_2: th.Tensor,
             mask_cut_fraction_3: th.Tensor,
+            mask_cut_fraction_4: th.Tensor,
+            mask_cut_fraction_5: th.Tensor,
+            mask_cut_fraction_6plus: th.Tensor,
             mask_cut_fraction_4plus: th.Tensor,
             candidate_input_transfer_batch_ms: th.Tensor,
             candidate_mask_selection_batch_ms: th.Tensor,
@@ -1056,6 +1062,11 @@ class MassShatterPL(SpectrumPL):
                 "mask_cut_fraction_1": mask_cut_fraction_1.detach().to(prediction_reference),
                 "mask_cut_fraction_2": mask_cut_fraction_2.detach().to(prediction_reference),
                 "mask_cut_fraction_3": mask_cut_fraction_3.detach().to(prediction_reference),
+                "mask_cut_fraction_4": mask_cut_fraction_4.detach().to(prediction_reference),
+                "mask_cut_fraction_5": mask_cut_fraction_5.detach().to(prediction_reference),
+                "mask_cut_fraction_6plus": (
+                    mask_cut_fraction_6plus.detach().to(prediction_reference)
+                ),
                 "mask_cut_fraction_4plus": (
                     mask_cut_fraction_4plus.detach().to(prediction_reference)
                 ),
@@ -1162,6 +1173,9 @@ class MassShatterPL(SpectrumPL):
             "mask_cut_fraction_1",
             "mask_cut_fraction_2",
             "mask_cut_fraction_3",
+            "mask_cut_fraction_4",
+            "mask_cut_fraction_5",
+            "mask_cut_fraction_6plus",
             "mask_cut_fraction_4plus",
             "candidate_input_transfer_batch_ms",
             "candidate_mask_selection_batch_ms",

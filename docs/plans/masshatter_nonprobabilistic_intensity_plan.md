@@ -269,6 +269,96 @@ initialization. Use the median ratio across calibration batches rather than one 
 record the calibration sample IDs, seed, coefficient, and resulting per-batch ratios before full
 runs; do not launch a broad weight sweep initially.
 
+## Proposal-architecture gate for unmerged spectra
+
+Select and freeze the proposal architecture before comparing intensity objectives. Unmerged
+spectra require collision-energy-specific intensity predictions, but a proposal set shared across
+collision energies must spend one fixed candidate budget on the union of fragments needed by every
+energy. That can impose a support ceiling which no intensity objective can repair. Conversely, a
+second full molecular GNN cleanly isolates the proposal objective but may add unnecessary parameters
+if detached features from the intensity trunk are already sufficient.
+
+Run the following gate with the canonical anchor's existing probability output and primary loss.
+Keep its data split, preprocessing, batch construction, optimizer, candidate budget, and paired
+seeds fixed. These P labels are separate from intensity arms A--G below.
+
+| Gate | Proposal support | Molecular GNNs | Proposal context | Question answered |
+|---|---|---:|---|---|
+| P0 | shared across CE | 2 | CE-independent | Current shared-support reference |
+| P1 | per CE | 2 | existing detached CE context | Does shared support limit unmerged prediction? |
+| P2 | per CE | 1 | existing detached CE context | Can detached shared features replace the second GNN? |
+| P3 | per CE | 1 | detached context plus proposal CE adapter | Can a small CE adapter recover any P2 recall loss? |
+
+### P0 to P1: isolate collision-energy-specific support
+
+Change only `mass_shatter_share_proposal_across_ev` from True to False. Keep
+`mass_shatter_separate_proposal_encoder: True` so this comparison does not mix support sharing with
+encoder sharing. Report the per-spectrum candidate budget and total candidate-generation cost per
+molecule; per-CE top-k selection performs more total selection work than one shared top-k set even
+when the per-spectrum budget is identical.
+
+Measure overall and per-CE candidate weighted recall, recall of peaks unique to one CE, candidate-set
+overlap between adjacent energies, and an oracle spectral-similarity ceiling obtained by assigning
+the best target-consistent intensities available on the selected support. Also report learned
+spectral similarity, proposal loss, parameter count, peak memory, throughput, and the gradient-clip
+diagnostics required below.
+
+Promote P1 if it improves CE-specific recall or the oracle support ceiling beyond paired-seed
+variation. If P1 does not improve the oracle, do not add proposal complexity to address an intensity
+failure. If the oracle is strong but learned similarity is weak, investigate the intensity head or
+objective instead.
+
+### P1 to P2: remove the second molecular GNN
+
+With per-CE proposals fixed, change only
+`mass_shatter_separate_proposal_encoder` from True to False. The intended gradient ownership is:
+
+```text
+intensity loss -> molecular GNN + context encoder + intensity head
+proposal loss  -> detached molecular/context features + proposal heads
+```
+
+Adopt P2 if candidate recall and the oracle support ceiling remain within a predeclared
+non-inferiority margin derived from paired-seed variation. Do not accept the parameter reduction if
+it materially lowers the support ceiling. Record parameter count, peak memory, and throughput so
+the accuracy/resource tradeoff is explicit.
+
+### P2 to P3: add a proposal CE adapter only if measured recall requires it
+
+Do not implement P3 unless P2 loses CE-specific candidate recall relative to P1. Add a small
+proposal-only residual adapter rather than another molecular GNN:
+
+```text
+proposal_context = stopgrad(intensity_context)
+                 + proposal_ce_adapter(stopgrad(intensity_context), raw_acquisition_features)
+```
+
+The raw acquisition features include normalized collision energy, instrument type, fragmentation
+mode, and precursor/adduct type. Initialize the adapter's final projection to zero so P3 initially
+reproduces P2. Proposal loss may train the adapter and proposal heads, but it must not update the
+molecular GNN, context encoder, or intensity head. Promote P3 only if it recovers the recall or
+oracle-ceiling loss observed between P1 and P2; otherwise retain P1 or test a smaller proposal GNN
+as a separate, explicitly justified follow-up.
+
+Add focused autograd tests if P3 is implemented:
+
+1. Proposal loss gives gradients to the adapter and enabled proposal heads, and none to the
+   molecular GNN, context encoder, or intensity head.
+2. Intensity loss gives gradients to the molecular GNN, context encoder, and intensity head, and
+   none to the adapter or proposal heads.
+3. A zero-initialized adapter reproduces P2 proposal scores on a fixed batch.
+4. Different collision energies for the same molecule can produce different candidate rankings.
+
+Candidate selection uses a discrete top-k boundary, so also track candidate-set overlap across
+epochs and adjacent energies. High churn can make intensity training noisy even when mean recall is
+acceptable. Track the independent-output dead-candidate diagnostic later in A--G separately; it is
+an intensity-head property, not a reason to alter this proposal gate.
+
+The gate ends by recording one winning proposal architecture and its fully resolved configuration.
+Use that exact architecture and candidate budget in every intensity arm below. If gradient clipping
+differs materially across P gates, either freeze the winning proposer during A--G or apply the same
+branch-specific clipping policy to every intensity arm and rerun its control.
+
 ## Experimental arms
 
 Use the same candidate-generation architecture, data split, preprocessing, batch construction, and

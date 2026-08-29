@@ -363,9 +363,16 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["components_per_mask"].tolist() == pytest.approx([2.0, 1.5])
     assert th.all(output["unique_components_per_mask"] <= output["components_per_mask"])
     cut_fraction_sum = sum(
-        output[f"mask_cut_fraction_{bucket}"] for bucket in ("0", "1", "2", "3", "4plus")
+        output[f"mask_cut_fraction_{bucket}"]
+        for bucket in ("0", "1", "2", "3", "4", "5", "6plus")
     )
     assert cut_fraction_sum.tolist() == pytest.approx([1.0, 1.0])
+    assert th.allclose(
+        output["mask_cut_fraction_4plus"],
+        output["mask_cut_fraction_4"]
+        + output["mask_cut_fraction_5"]
+        + output["mask_cut_fraction_6plus"],
+    )
     assert output["candidate_mzs_by_cut"].shape == output["candidate_cut_counts"].shape
     assert th.equal(output["candidate_batch_idxs_by_cut"], output["pred_batch_idxs"])
     assert output["candidate_total_batch_ms"].shape == (2,)

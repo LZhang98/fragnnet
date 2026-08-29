@@ -1846,6 +1846,9 @@ class MassShatterModel(nn.Module):
             "1": candidates.mask_cut_counts == 1,
             "2": candidates.mask_cut_counts == 2,
             "3": candidates.mask_cut_counts == 3,
+            "4": candidates.mask_cut_counts == 4,
+            "5": candidates.mask_cut_counts == 5,
+            "6plus": candidates.mask_cut_counts >= 6,
             "4plus": candidates.mask_cut_counts >= 4,
         }
         for bucket_name, bucket_mask in cut_count_buckets.items():
