@@ -29,6 +29,7 @@ INSTRUMENT_TOLERANCES = {
     "FT": {"relative": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"relative": 2.0e-5, "min_mz": 750.0},
 }
+MERGE_METHODS = ("common_overlap", "naive_centroid")
 
 
 def ppm_error(observed_mz: float, theoretical_mz: float) -> float:
@@ -40,8 +41,15 @@ def merge_peaks(
     peaks: list[tuple[float, float]],
     tolerance_ppm: float,
     tolerance_min_mz: float = 0.0,
+    require_common_tolerance_overlap: bool = False,
 ) -> list[tuple[float, float]]:
-    """Merge peaks against an intensity-weighted cluster centroid."""
+    """Merge peaks and represent each cluster by its intensity-weighted centroid.
+
+    When ``require_common_tolerance_overlap`` is true, every peak defines a
+    ``m/z +/- tolerance`` interval and a peak joins the current cluster only if
+    all cluster intervals retain a common intersection. Otherwise, use the
+    naive-centroid method and compare each peak with the moving centroid.
+    """
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
     if tolerance_min_mz < 0:
@@ -58,14 +66,33 @@ def merge_peaks(
 
     merged = []
     cluster = [sorted_peaks[0]]
+    first_mz = sorted_peaks[0][0]
+    first_tolerance_da = tolerance_ppm * 1e-6 * max(first_mz, tolerance_min_mz)
+    overlap_lower = first_mz - first_tolerance_da
+    overlap_upper = first_mz + first_tolerance_da
     for peak in sorted_peaks[1:]:
-        centroid = _cluster_centroid(cluster)
-        tolerance_da = tolerance_ppm * 1e-6 * max(centroid, tolerance_min_mz)
-        if abs(peak[0] - centroid) <= tolerance_da:
+        peak_tolerance_da = tolerance_ppm * 1e-6 * max(peak[0], tolerance_min_mz)
+        peak_lower = peak[0] - peak_tolerance_da
+        peak_upper = peak[0] + peak_tolerance_da
+        if require_common_tolerance_overlap:
+            should_merge = peak_lower <= overlap_upper and peak_upper >= overlap_lower
+        else:
+            centroid = _cluster_centroid(cluster)
+            centroid_tolerance_da = tolerance_ppm * 1e-6 * max(
+                centroid, tolerance_min_mz
+            )
+            should_merge = abs(peak[0] - centroid) <= centroid_tolerance_da
+
+        if should_merge:
             cluster.append(peak)
+            if require_common_tolerance_overlap:
+                overlap_lower = max(overlap_lower, peak_lower)
+                overlap_upper = min(overlap_upper, peak_upper)
         else:
             merged.append((_cluster_centroid(cluster), sum(item[1] for item in cluster)))
             cluster = [peak]
+            overlap_lower = peak_lower
+            overlap_upper = peak_upper
     merged.append((_cluster_centroid(cluster), sum(item[1] for item in cluster)))
     return merged
 
@@ -330,6 +357,7 @@ def clean_spectra(
     drop_empty_spectra: bool,
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
+    merge_method: str | None = None,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -342,6 +370,7 @@ def clean_spectra(
         drop_empty_spectra,
         use_instrument_tolerance,
         use_merge_instrument_tolerance,
+        merge_method,
     )
     return cleaned_df
 
@@ -356,8 +385,17 @@ def clean_spectra_with_stats(
     drop_empty_spectra: bool,
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
+    merge_method: str | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
+    if merge_method is None:
+        merge_method = (
+            "common_overlap" if use_merge_instrument_tolerance else "naive_centroid"
+        )
+    if merge_method not in MERGE_METHODS:
+        raise ValueError(
+            f"merge_method must be one of {MERGE_METHODS}, got {merge_method!r}"
+        )
     required_spec_columns = {"peaks"}
     if filter_by_subformula:
         required_spec_columns.update({"mol_id", "prec_type"})
@@ -376,6 +414,7 @@ def clean_spectra_with_stats(
             "merge_peaks": merge_peak_signals,
             "merge_ppm": merge_ppm,
             "merge_instrument_tolerance": use_merge_instrument_tolerance,
+            "merge_method": merge_method if merge_peak_signals else None,
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
             "subformula_instrument_tolerance": use_instrument_tolerance,
@@ -393,7 +432,7 @@ def clean_spectra_with_stats(
             raise ValueError(f"No molecular formula found for mol_id values: {missing_ids[:10]}")
         formulas = result["mol_id"].map(formula_by_mol_id)
 
-    # 2. Merge peaks within the requested centroid-based tolerance.
+    # 2. Group nearby peaks and replace each group with its intensity-weighted centroid.
     if merge_peak_signals:
         before_merge = result.copy()
         if use_merge_instrument_tolerance:
@@ -403,13 +442,16 @@ def clean_spectra_with_stats(
                     "No merge instrument tolerance for: "
                     f"{sorted(unsupported_instruments)}"
                 )
+            use_common_overlap = merge_method == "common_overlap"
+            tolerance_multiplier = 1.0 if use_common_overlap else 2.0
             merged_peaks = (
                 merge_peaks(
                     peaks,
-                    tolerance_ppm=2.0
+                    tolerance_ppm=tolerance_multiplier
                     * INSTRUMENT_TOLERANCES[instrument_type]["relative"]
                     * 1e6,
                     tolerance_min_mz=INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                    require_common_tolerance_overlap=use_common_overlap,
                 )
                 for peaks, instrument_type in zip(
                     result["peaks"], result["inst_type"], strict=True
@@ -420,7 +462,9 @@ def clean_spectra_with_stats(
             )
         else:
             result.loc[:, "peaks"] = result["peaks"].apply(
-                merge_peaks, tolerance_ppm=merge_ppm
+                merge_peaks,
+                tolerance_ppm=merge_ppm,
+                require_common_tolerance_overlap=merge_method == "common_overlap",
             )
         stats["after_merge"] = summarize_spectra(result)
         stats["merge_retention"] = summarize_retention(before_merge, result)
@@ -541,7 +585,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--merge-inst-tol",
         action="store_true",
-        help="Merge at twice the FraGNNet FT/QTOF tolerance instead of --merge-ppm",
+        help="Merge peaks using FraGNNet FT/QTOF tolerances instead of --merge-ppm",
+    )
+    parser.add_argument(
+        "--merge-method",
+        choices=MERGE_METHODS,
+        default=None,
+        help=(
+            "Peak grouping rule. Defaults to naive_centroid with --merge-ppm and "
+            "common_overlap "
+            "with --merge-inst-tol"
+        ),
     )
     parser.add_argument(
         "--filter-subformula-peaks",
@@ -596,6 +650,7 @@ def main() -> None:
         drop_empty_spectra=args.drop_empty_spectra,
         use_instrument_tolerance=args.subformula_inst_tol,
         use_merge_instrument_tolerance=args.merge_inst_tol,
+        merge_method=args.merge_method,
     )
     stats["selection"] = {
         "precursor_types": args.precursor_types,

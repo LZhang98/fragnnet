@@ -1,6 +1,6 @@
 # 5 ppm Subformula Filtering on NIST20-HR
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-13
+> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-29
 >
 > NIST20-HR-only census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
 
@@ -20,6 +20,47 @@ The two operations were evaluated separately because they test different assumpt
 
 The subformula result therefore measures the **combined effect** of the 5 ppm window, precursor
 element budget, adduct model, and RDBE rule. It does not isolate RDBE as the cause of rejection.
+
+### Instrument-tolerance centroid definition
+
+With `--merge-inst-tol --merge-method common_overlap` (the default for instrument tolerance), each
+observed peak defines an instrument-tolerance interval
+
+\[
+[m_i - T_i,\; m_i + T_i],
+\qquad
+T_i = r_{\mathrm{inst}}\max(m_i, m_{\min,\mathrm{inst}}).
+\]
+
+A peak joins the current cluster only while every interval in that cluster has a common
+intersection:
+
+\[
+\max_i(m_i-T_i) \le \min_i(m_i+T_i).
+\]
+
+For two peaks with approximately equal tolerances, this allows a separation up to `2 * T`; it
+does not compare later peaks with `2 * T` around a moving centroid. The cluster-wide intersection
+prevents transitive chaining and centroid drift from joining peaks that cannot share one true m/z.
+
+The merged peak uses the standard intensity-weighted centroid and summed intensity:
+
+\[
+m_{\mathrm{centroid}} = \frac{\sum_i I_i m_i}{\sum_i I_i},
+\qquad
+I_{\mathrm{centroid}} = \sum_i I_i.
+\]
+
+The same grouping rule is available with a fixed ppm radius, for example
+`--merge-ppm 20 --merge-method common_overlap`. In that case every interval has a ±20 ppm radius,
+so two equal-mass-scale peaks can be separated by up to approximately 40 ppm. The fixed
+`--merge-ppm` path defaults to the `naive_centroid` method when `--merge-method` is
+omitted.
+
+To select the `naive_centroid` method with instrument tolerance, use
+`--merge-inst-tol --merge-method naive_centroid`. It compares each new peak with the moving
+intensity-weighted centroid using `2 * T`. Both methods use the same intensity-weighted output
+centroid and summed intensity; the flag changes only cluster membership.
 
 ## Population
 
@@ -114,6 +155,21 @@ largely resolves the loss for all four NIST20-HR groups: they retain 97–98.5% 
 floor recovers it for this high-resolution subset.
 
 ## DAG coverage at FraGNNet instrument tolerance
+
+DAG coverage is evaluated separately from spectrum cleaning. For the D3/H4 and D4/H4 comparison,
+set `--max_h_transfer 4` explicitly and leave CMF enabled (the default). The resulting candidate
+support is the union of charge-migration-fragment (CMF) and standard direct-charge-retention ions.
+Pass `--no_cmf` only for a standard-ion-only ablation:
+
+```bash
+python scripts/eval/dag_oracle_scores.py \
+  --frag_dp data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags \
+  --frag_dp data/frag/nist20_ma_mi_d4_h4_isoFalse_smpFalse/dags \
+  --frag_dp_labels d3_h4 d4_h4 \
+  --spec_fp <cleaned-spec-df.pkl> \
+  --split all \
+  --max_h_transfer 4
+```
 
 The existing NIST20 DAG oracle was summarized for the NIST20-HR `[M+H]+`/`[M-H]-` × FT/QTOF scope. The
 coverage tier is `1_above_prec`, and the matching tolerance is FraGNNet's instrument tolerance
