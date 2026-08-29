@@ -248,8 +248,10 @@ mass_shatter_proposal_loss_weight: 0.0
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
-# Reuse one CE-independent proposal pass for spectra from the same acquisition
-# group. Requires CE-context batching; the intensity transformer remains CE-aware.
+# Experimental ablation: reuse one CE-independent proposal pass for spectra from the
+# same acquisition group and supervise it against their merged target. This inherits
+# the observed CE-distribution bias; keep False for the main model. Requires CE-context
+# batching; the intensity transformer and primary spectrum loss remain CE-aware.
 mass_shatter_share_proposal_across_ev: False
 # Use MASShatter's molecular-edge CE-context batch sampler.
 mass_shatter_batch_sampler: False

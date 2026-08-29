@@ -19,6 +19,7 @@ from fragnnet.pl_model.mass_shatter_pl import (
     _candidate_coverage_by_cut_count,
     _cross_ev_fragment_delta_loss,
     _proposal_coverage_loss,
+    _shared_group_proposal_coverage_loss,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
@@ -267,6 +268,30 @@ def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
     assert coverage_loss.tolist() == pytest.approx([-math.log(0.4)])
 
 
+def test_shared_group_proposal_loss_uses_merged_group_target() -> None:
+    shared_fragment_probabilities = th.tensor([0.6, 0.4], requires_grad=True)
+    loss = _shared_group_proposal_coverage_loss(
+        true_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        true_logprobs=th.log(th.tensor([0.8, 0.2, 0.3, 0.7])),
+        true_batch_idxs=th.tensor([0, 0, 1, 1]),
+        candidate_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        candidate_fragment_idxs=th.tensor([0, 1, 2, 3]),
+        fragment_logprobs=shared_fragment_probabilities.log().repeat(2),
+        fragment_batch_idxs=th.tensor([0, 0, 1, 1]),
+        group_ids=th.tensor([9, 9]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    expected = -0.55 * math.log(0.6) - 0.45 * math.log(0.4)
+    assert loss.tolist() == pytest.approx([expected, expected])
+    loss.mean().backward()
+    assert shared_fragment_probabilities.grad is not None
+    assert shared_fragment_probabilities.grad.abs().sum() > 0.0
+
+
 def test_cross_ev_fragment_delta_loss_tracks_observed_change() -> None:
     fragment_probabilities = th.tensor([0.7, 0.3, 0.4, 0.6], requires_grad=True)
     loss, eligible = _cross_ev_fragment_delta_loss(
@@ -366,6 +391,35 @@ def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None
     actual["loss"].sum().backward()
     assert proposal_fragment_probabilities.grad is not None
     assert proposal_fragment_probabilities.grad.abs().sum() > 0.0
+
+
+def test_shared_selection_only_loss_routes_through_merged_group_target() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_share_proposal_across_ev=True,
+    )
+    shared_fragment_probabilities = th.tensor([0.6, 0.4], requires_grad=True)
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        true_logprobs=th.log(th.tensor([0.8, 0.2, 0.3, 0.7])),
+        true_batch_idxs=th.tensor([0, 0, 1, 1]),
+        pred_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        pred_logprobs=th.log(th.tensor([0.5, 0.5, 0.5, 0.5])),
+        pred_batch_idxs=th.tensor([0, 0, 1, 1]),
+        proposal_candidate_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        proposal_candidate_fragment_idxs=th.tensor([0, 1, 2, 3]),
+        proposal_fragment_logprobs=shared_fragment_probabilities.log().repeat(2),
+        proposal_fragment_batch_idxs=th.tensor([0, 0, 1, 1]),
+        proposal_group_ids=th.tensor([9, 9]),
+        batch_size=2,
+        **_loss_diagnostics(),
+    )
+
+    expected = -0.55 * math.log(0.6) - 0.45 * math.log(0.4)
+    assert actual["proposal_loss"].tolist() == pytest.approx([expected, expected])
 
 
 def test_mass_shatter_pl_builds_unique_fragment_mode_from_config() -> None:

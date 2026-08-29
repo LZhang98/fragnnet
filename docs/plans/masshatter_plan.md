@@ -81,6 +81,32 @@ fragmentation mode. If one candidate set must be shared across spectra, keep the
 bond head molecule-only and apply experimental conditioning in the charge,
 H-transfer, and intensity heads instead.
 
+### Shared proposals across collision energies (2026-08-29)
+
+> **Status:** EXPERIMENTAL ABLATION — do not use as the default model.
+
+`mass_shatter_share_proposal_across_ev` reuses one CE-independent proposal for
+spectra in the same acquisition group. Its proposal loss is evaluated against a
+merged group target, while the primary intensity loss remains CE-specific. This
+removes mutually inconsistent per-spectrum supervision from the shared proposal,
+but it does not remove bias from the observed CE distribution.
+
+The merged target gives every observed spectrum equal total intensity. Consequently,
+densely sampled CE regions contribute more proposal mass than rare CE regions. With
+a fixed candidate budget, the shared support is therefore optimized for the empirical
+CE distribution and may omit fragments that are important only at uncommon low or
+high energies. The current per-spectrum loss interface also fans the group proposal
+loss back to every member; with `train_sample_weight: none`, groups containing more CE
+spectra receive more total proposal weight. Both effects can make aggregate validation
+metrics look acceptable while reducing robustness under a shifted CE distribution.
+
+Keep `mass_shatter_share_proposal_across_ev: False` as the mainline setting and retain
+CE conditioning in the proposal heads. If proposal computation must be reduced, prefer
+sharing the expensive molecular encoder while applying a small CE-conditioned proposal
+head. A CE-balanced merged target—binning CE and weighting occupied bins equally—is a
+useful controlled ablation, but it still imposes CE-independent candidate support and
+must be evaluated by CE bin and under CE-distribution shift.
+
 ### 1.1 Shared dual atom-bond backbone proposal (2026-08-23)
 
 > **Status:** PROPOSED — not implemented or validated. The current

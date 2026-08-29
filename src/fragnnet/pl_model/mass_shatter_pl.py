@@ -253,6 +253,136 @@ def _proposal_coverage_loss(
     return coverage_loss
 
 
+def _shared_group_proposal_coverage_loss(
+    *,
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_fragment_idxs: th.Tensor,
+    fragment_logprobs: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    group_ids: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> th.Tensor:
+    """Supervise one shared proposal against one merged target per group.
+
+    Each preprocessed spectrum contributes unit total intensity to its group. Exact
+    duplicate m/z values are summed, matching dataset-level spectrum merging, and the
+    result is normalized before proposal coverage is evaluated. Candidate tensors are
+    compacted to the first spectrum in each group because shared proposals repeat the
+    same fragment set for every group member.
+    """
+    group_ids = group_ids.reshape(-1)
+    if group_ids.shape != (batch_size,):
+        raise ValueError("proposal_group_ids must contain one id per spectrum")
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+
+    # 1. Map arbitrary group ids to stable first-occurrence indices.
+    _, sorted_inverse = th.unique(group_ids, sorted=True, return_inverse=True)
+    num_groups = int(sorted_inverse.max().item()) + 1
+    spectrum_indices = th.arange(batch_size, device=group_ids.device)
+    first_by_sorted_group = spectrum_indices.new_full((num_groups,), batch_size).scatter_reduce(
+        0,
+        sorted_inverse,
+        spectrum_indices,
+        reduce="amin",
+        include_self=True,
+    )
+    sorted_group_order = th.argsort(first_by_sorted_group)
+    sorted_to_stable = th.empty_like(sorted_group_order)
+    sorted_to_stable[sorted_group_order] = th.arange(num_groups, device=group_ids.device)
+    spectrum_to_group = sorted_to_stable[sorted_inverse]
+    representatives = first_by_sorted_group[sorted_group_order]
+
+    # 2. Merge exact-mass peaks after assigning every spectrum to its group.
+    true_group_idxs = spectrum_to_group[true_batch_idxs]
+    merged_mzs = []
+    merged_probabilities = []
+    merged_batch_idxs = []
+    for group_index in range(num_groups):
+        group_mask = true_group_idxs == group_index
+        group_mzs, inverse = th.unique(
+            true_mzs[group_mask],
+            sorted=True,
+            return_inverse=True,
+        )
+        group_probabilities = true_logprobs.new_zeros(group_mzs.shape)
+        group_probabilities.scatter_add_(0, inverse, true_logprobs[group_mask].exp())
+        group_probabilities = group_probabilities / group_probabilities.sum()
+        merged_mzs.append(group_mzs)
+        merged_probabilities.append(group_probabilities)
+        merged_batch_idxs.append(
+            th.full(
+                group_mzs.shape,
+                group_index,
+                dtype=th.long,
+                device=true_batch_idxs.device,
+            )
+        )
+
+    # 3. Keep one copy of the repeated shared candidates per group.
+    compact_candidate_mzs = []
+    compact_candidate_fragment_idxs = []
+    compact_fragment_logprobs = []
+    compact_fragment_batch_idxs = []
+    fragment_offset = 0
+    for group_index, representative in enumerate(representatives):
+        fragment_indices = th.where(fragment_batch_idxs == representative)[0]
+        if fragment_indices.numel() == 0:
+            raise ValueError(f"shared proposal group {group_index} has no fragments")
+        first_fragment_index = fragment_indices[0]
+        if not th.equal(
+            fragment_indices,
+            th.arange(
+                first_fragment_index,
+                first_fragment_index + fragment_indices.numel(),
+                device=fragment_indices.device,
+            ),
+        ):
+            raise ValueError("proposal fragments must be contiguous within each spectrum")
+        candidate_mask = fragment_batch_idxs[candidate_fragment_idxs] == representative
+        compact_candidate_mzs.append(candidate_mzs[candidate_mask])
+        compact_candidate_fragment_idxs.append(
+            candidate_fragment_idxs[candidate_mask] - first_fragment_index + fragment_offset
+        )
+        compact_fragment_logprobs.append(fragment_logprobs[fragment_indices])
+        compact_fragment_batch_idxs.append(
+            th.full(
+                fragment_indices.shape,
+                group_index,
+                dtype=th.long,
+                device=fragment_batch_idxs.device,
+            )
+        )
+        fragment_offset += fragment_indices.numel()
+
+    group_losses = _proposal_coverage_loss(
+        true_mzs=th.cat(merged_mzs),
+        true_logprobs=th.cat(merged_probabilities).log(),
+        true_batch_idxs=th.cat(merged_batch_idxs),
+        candidate_mzs=th.cat(compact_candidate_mzs),
+        candidate_fragment_idxs=th.cat(compact_candidate_fragment_idxs),
+        fragment_logprobs=th.cat(compact_fragment_logprobs),
+        fragment_batch_idxs=th.cat(compact_fragment_batch_idxs),
+        batch_size=num_groups,
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
+        tol_per_sample=(None if tol_per_sample is None else tol_per_sample[representatives]),
+        min_mz_per_sample=(
+            None if min_mz_per_sample is None else min_mz_per_sample[representatives]
+        ),
+    )
+    return group_losses[spectrum_to_group]
+
+
 def _cross_ev_fragment_delta_loss(
     *,
     true_mzs: th.Tensor,
@@ -711,21 +841,28 @@ class MassShatterPL(SpectrumPL):
             primary_loss = spectrum_ce
             loss = self.hparams.primary_loss_weight * primary_loss
             if proposal_loss_enabled:
-                proposal_loss = _proposal_coverage_loss(
-                    true_mzs=true_mzs,
-                    true_logprobs=true_logprobs,
-                    true_batch_idxs=true_batch_idxs,
-                    candidate_mzs=kwargs["proposal_candidate_mzs"],
-                    candidate_fragment_idxs=kwargs["proposal_candidate_fragment_idxs"],
-                    fragment_logprobs=kwargs["proposal_fragment_logprobs"],
-                    fragment_batch_idxs=kwargs["proposal_fragment_batch_idxs"],
-                    batch_size=batch_size,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                    tol_per_sample=tolerance_per_sample,
-                    min_mz_per_sample=minimum_mz_per_sample,
-                )
+                proposal_loss_kwargs = {
+                    "true_mzs": true_mzs,
+                    "true_logprobs": true_logprobs,
+                    "true_batch_idxs": true_batch_idxs,
+                    "candidate_mzs": kwargs["proposal_candidate_mzs"],
+                    "candidate_fragment_idxs": kwargs["proposal_candidate_fragment_idxs"],
+                    "fragment_logprobs": kwargs["proposal_fragment_logprobs"],
+                    "fragment_batch_idxs": kwargs["proposal_fragment_batch_idxs"],
+                    "batch_size": batch_size,
+                    "tolerance": self.tolerance,
+                    "relative": self.relative,
+                    "tolerance_min_mz": self.tolerance_min_mz,
+                    "tol_per_sample": tolerance_per_sample,
+                    "min_mz_per_sample": minimum_mz_per_sample,
+                }
+                if self.hparams.mass_shatter_share_proposal_across_ev:
+                    proposal_loss = _shared_group_proposal_coverage_loss(
+                        **proposal_loss_kwargs,
+                        group_ids=kwargs["proposal_group_ids"],
+                    )
+                else:
+                    proposal_loss = _proposal_coverage_loss(**proposal_loss_kwargs)
                 loss = loss + self.hparams.mass_shatter_proposal_loss_weight * proposal_loss
             if cross_ev_fragment_loss_enabled:
                 cross_ev_fragment_loss = pred_logprobs.new_zeros(batch_size)
@@ -1038,6 +1175,11 @@ class MassShatterPL(SpectrumPL):
                 else None
             ),
         )
+        if (
+            self.hparams.mass_shatter_share_proposal_across_ev
+            and self.hparams.mass_shatter_proposal_loss_weight > 0.0
+        ):
+            output["proposal_group_ids"] = batch_kwargs["group_id"]
         cross_ev_enabled = self.hparams.cross_ev_fragment_loss_weight != 0.0 and self.training
         if cross_ev_enabled:
             output.update(
