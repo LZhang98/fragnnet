@@ -356,8 +356,6 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
             np.arange(num_bonds, dtype=np.int64),
         )
     )
-    generator = th.Generator().manual_seed(9183)
-    initial_generator_state = generator.get_state().clone()
     bond_logits = th.tensor(logits, dtype=th.float64, requires_grad=True)
     candidates = build_mass_shatter_candidates(
         bond_logits,
@@ -366,15 +364,9 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
         atom_ptr=th.tensor([0, num_atoms], dtype=th.long),
         max_masks=max_masks,
         min_mask_probability=min_mask_probability,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=include_single_bond_cuts,
-        generator=generator,
     )
 
-    assert th.equal(generator.get_state(), initial_generator_state)
     expected_mask_count = len(expected_masks)
     expected_component_batch_indices = np.zeros(
         expected_component_count,

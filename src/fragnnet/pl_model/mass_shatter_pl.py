@@ -507,14 +507,11 @@ class MassShatterPL(SpectrumPL):
             ),
             unique_fragment_mode=self.hparams.mass_shatter_unique_fragment_mode,
             max_enumerated_masks=self.hparams.mass_shatter_ranked_mask_budget,
+            mask_selection_threads=self.hparams.mass_shatter_mask_selection_threads,
             min_mask_probability=self.hparams.mass_shatter_min_mask_probability,
             min_mask_relative_probability=(
                 self.hparams.mass_shatter_min_mask_relative_probability
             ),
-            explore_masks=self.hparams.mass_shatter_explore_masks,
-            exploration_mode=self.hparams.mass_shatter_exploration_mode,
-            exploration_temperature=(self.hparams.mass_shatter_exploration_temperature),
-            exploration_cut_count_weights=(self.hparams.mass_shatter_exploration_cut_count_weights),
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             include_cmf=self.hparams.mass_shatter_include_cmf,

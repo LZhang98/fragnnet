@@ -1,11 +1,15 @@
 """Tests for sparse MASShatter cut-mask/component batching."""
 
+import numpy as np
 import pytest
 import torch as th
 
 from fragnnet.frag.mass_shatter_candidates import (
     MassShatterStaticGraph,
     build_mass_shatter_candidates,
+)
+from fragnnet.frag.mass_shatter_candidates import (
+    _top_mixture_bond_sets as _top_mixture_bond_sets_fn,
 )
 
 BOUNDED_CUT_COUNT_WEIGHTS = (0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05)
@@ -19,10 +23,6 @@ def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
         atom_batch_indices=th.tensor([0, 0, 1, 1], dtype=th.long),
         atom_ptr=th.tensor([0, 2, 4], dtype=th.long),
         max_masks=2,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -52,10 +52,6 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
         atom_batch_indices=th.tensor([0], dtype=th.long),
         atom_ptr=th.tensor([0, 1], dtype=th.long),
         max_masks=100,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -79,10 +75,6 @@ def test_bernoulli_mixture_is_normalized_and_backpropagates() -> None:
         atom_batch_indices=th.zeros(3, dtype=th.long),
         atom_ptr=th.tensor([0, 3], dtype=th.long),
         max_masks=4,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
         mixture_log_weights=mixture_log_weights,
     )
@@ -132,10 +124,6 @@ def test_candidate_membership_supports_four_compiled_words_and_fallback(
         atom_batch_indices=th.zeros(num_atoms, dtype=th.long),
         atom_ptr=th.tensor([0, num_atoms], dtype=th.long),
         max_masks=1,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
     )
 
@@ -150,10 +138,6 @@ def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
         atom_batch_indices=th.zeros(4, dtype=th.long),
         atom_ptr=th.tensor([0, 4], dtype=th.long),
         max_masks=1,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -174,10 +158,6 @@ def test_unique_component_budget_continues_past_unproductive_ring_masks() -> Non
         max_masks=2,
         max_unique_components=3,
         max_enumerated_masks=8,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -201,10 +181,6 @@ def test_candidate_batch_preserves_vectorized_boundary_order() -> None:
         atom_batch_indices=th.zeros(3, dtype=th.long),
         atom_ptr=th.tensor([0, 3], dtype=th.long),
         max_masks=1,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
     )
 
@@ -258,10 +234,6 @@ def test_candidate_batch_applies_minimum_probability_only_to_top_k() -> None:
         atom_ptr=th.tensor([0, 3], dtype=th.long),
         max_masks=4,
         min_mask_probability=0.5,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
     )
 
@@ -278,10 +250,6 @@ def test_candidate_batch_applies_map_relative_probability_only_to_top_k() -> Non
         atom_ptr=th.tensor([0, 3], dtype=th.long),
         max_masks=4,
         min_mask_relative_probability=0.5,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
     )
 
@@ -303,10 +271,6 @@ def test_map_relative_probability_can_stop_below_unique_fragment_target() -> Non
         min_mask_relative_probability=0.5,
         max_unique_components=8,
         max_enumerated_masks=8,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
     )
 
@@ -325,10 +289,6 @@ def test_candidate_batch_rejects_threshold_above_map_probability() -> None:
             atom_ptr=th.tensor([0, 5], dtype=th.long),
             max_masks=4,
             min_mask_probability=0.2,
-            explore_masks=0,
-            exploration_mode="bounded_additive",
-            exploration_temperature=1.0,
-            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
             include_single_bond_cuts=False,
         )
 
@@ -341,12 +301,7 @@ def test_legacy_refill_respects_minimum_probability() -> None:
         atom_ptr=th.tensor([0, 3], dtype=th.long),
         max_masks=4,
         min_mask_probability=0.5,
-        explore_masks=2,
-        exploration_mode="bernoulli_replace",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
-        generator=th.Generator().manual_seed(17),
     )
 
     # Exploration repeatedly proposes the MAP mask, and refill must not cross
@@ -364,179 +319,12 @@ def test_legacy_refill_respects_map_relative_probability() -> None:
         atom_ptr=th.tensor([0, 3], dtype=th.long),
         max_masks=4,
         min_mask_relative_probability=0.5,
-        explore_masks=2,
-        exploration_mode="bernoulli_replace",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
-        generator=th.Generator().manual_seed(17),
     )
 
     assert candidates.mask_log_probabilities.shape == (2,)
     assert candidates.exploration_mask_count.tolist() == [0.0]
     assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
-
-
-def test_legacy_mixed_top_k_retains_exploitation_and_is_seeded() -> None:
-    kwargs = {
-        "bond_logits": th.tensor([2.0, 0.7, -0.4, -1.3]),
-        "chemical_bond_index": th.tensor(
-            [[0, 1, 2, 3], [1, 2, 3, 4]], dtype=th.long
-        ),
-        "atom_batch_indices": th.zeros(5, dtype=th.long),
-        "atom_ptr": th.tensor([0, 5], dtype=th.long),
-        "max_masks": 4,
-        "explore_masks": 2,
-        "exploration_mode": "bernoulli_replace",
-        "exploration_temperature": 1.0,
-        "exploration_cut_count_weights": BOUNDED_CUT_COUNT_WEIGHTS,
-        "include_single_bond_cuts": False,
-    }
-
-    first = build_mass_shatter_candidates(
-        **kwargs,
-        generator=th.Generator().manual_seed(17),
-    )
-    second = build_mass_shatter_candidates(
-        **kwargs,
-        generator=th.Generator().manual_seed(17),
-    )
-
-    # Four learned masks plus the forced empty mask outside the learned budget.
-    assert first.mask_log_probabilities.shape == (5,)
-    assert th.equal(first.mask_log_probabilities, second.mask_log_probabilities)
-
-    logits = kwargs["bond_logits"]
-    expected_map_log_probability = (
-        th.nn.functional.logsigmoid(logits[:2]).sum()
-        + th.nn.functional.logsigmoid(-logits[2:]).sum()
-    )
-    expected_second_log_probability = (
-        th.nn.functional.logsigmoid(logits[:3]).sum()
-        + th.nn.functional.logsigmoid(-logits[3])
-    )
-    assert th.isclose(first.mask_log_probabilities[0], expected_map_log_probability)
-    assert th.isclose(first.mask_log_probabilities[1], expected_second_log_probability)
-    assert first.mask_log_probabilities.unique().numel() == 5
-    assert first.exploration_mask_count.tolist() == [2.0]
-
-
-def test_bounded_exploration_is_additive_seeded_and_respects_cut_count() -> None:
-    kwargs = {
-        "bond_logits": th.linspace(-2.0, -3.0, 8),
-        "chemical_bond_index": th.tensor(
-            [range(8), range(1, 9)],
-            dtype=th.long,
-        ),
-        "atom_batch_indices": th.zeros(9, dtype=th.long),
-        "atom_ptr": th.tensor([0, 9], dtype=th.long),
-        "max_masks": 4,
-        "explore_masks": 3,
-        "exploration_mode": "bounded_additive",
-        "exploration_temperature": 1.0,
-        "exploration_cut_count_weights": (0.0, 0.0, 1.0),
-        "include_single_bond_cuts": False,
-    }
-
-    first = build_mass_shatter_candidates(
-        **kwargs,
-        generator=th.Generator().manual_seed(17),
-    )
-    second = build_mass_shatter_candidates(
-        **kwargs,
-        generator=th.Generator().manual_seed(17),
-    )
-    deterministic = build_mass_shatter_candidates(
-        **{**kwargs, "explore_masks": 0},
-        generator=th.Generator().manual_seed(17),
-    )
-
-    assert first.mask_log_probabilities.shape == (7,)
-    assert th.equal(first.mask_log_probabilities, second.mask_log_probabilities)
-    assert th.equal(
-        first.mask_log_probabilities[:4],
-        deterministic.mask_log_probabilities,
-    )
-    assert first.exploration_mask_count.tolist() == [3.0]
-    assert first.exploration_mean_cut_count.tolist() == [2.0]
-
-
-def test_bounded_exploration_does_not_refill_unavailable_slots() -> None:
-    candidates = build_mass_shatter_candidates(
-        bond_logits=th.tensor([-2.0, -3.0]),
-        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
-        atom_batch_indices=th.zeros(3, dtype=th.long),
-        atom_ptr=th.tensor([0, 3], dtype=th.long),
-        max_masks=1,
-        explore_masks=4,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=(0.0, 0.0, 1.0),
-        include_single_bond_cuts=False,
-        generator=th.Generator().manual_seed(17),
-    )
-
-    assert candidates.mask_log_probabilities.shape == (2,)
-    assert candidates.exploration_mask_count.tolist() == [1.0]
-    assert candidates.exploration_mean_cut_count.tolist() == [2.0]
-
-
-def test_bounded_exploration_skips_an_exhausted_proposal_space() -> None:
-    generator = th.Generator().manual_seed(17)
-    initial_generator_state = generator.get_state().clone()
-
-    candidates = build_mass_shatter_candidates(
-        bond_logits=th.tensor([-2.0, -3.0, -4.0]),
-        chemical_bond_index=th.tensor([[0, 1, 2], [1, 2, 3]], dtype=th.long),
-        atom_batch_indices=th.zeros(4, dtype=th.long),
-        atom_ptr=th.tensor([0, 4], dtype=th.long),
-        max_masks=256,
-        explore_masks=64,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
-        include_single_bond_cuts=True,
-        generator=generator,
-    )
-
-    assert candidates.exploration_mask_count.tolist() == [0.0]
-    assert th.equal(generator.get_state(), initial_generator_state)
-
-
-def test_exploration_validates_parameters() -> None:
-    common_kwargs = {
-        "bond_logits": th.tensor([0.0]),
-        "chemical_bond_index": th.tensor([[0], [1]], dtype=th.long),
-        "atom_batch_indices": th.zeros(2, dtype=th.long),
-        "atom_ptr": th.tensor([0, 2], dtype=th.long),
-        "max_masks": 2,
-        "include_single_bond_cuts": False,
-    }
-
-    with pytest.raises(ValueError, match="explore_masks"):
-        build_mass_shatter_candidates(
-            **common_kwargs,
-            explore_masks=2,
-            exploration_mode="bernoulli_replace",
-            exploration_temperature=1.0,
-            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
-        )
-    with pytest.raises(ValueError, match="exploration_temperature"):
-        build_mass_shatter_candidates(
-            **common_kwargs,
-            explore_masks=1,
-            exploration_mode="bounded_additive",
-            exploration_temperature=0.0,
-            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
-        )
-    with pytest.raises(ValueError, match="cut_count_weights"):
-        build_mass_shatter_candidates(
-            **common_kwargs,
-            explore_masks=1,
-            exploration_mode="bounded_additive",
-            exploration_temperature=1.0,
-            exploration_cut_count_weights=(0.0, 1.0),
-        )
 
 
 def test_candidate_batch_accepts_static_cpu_graph_sidecar() -> None:
@@ -549,10 +337,6 @@ def test_candidate_batch_accepts_static_cpu_graph_sidecar() -> None:
         atom_batch_indices=atom_batch_indices,
         atom_ptr=atom_ptr,
         max_masks=2,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
         static_graph=MassShatterStaticGraph(
             chemical_bond_index=chemical_bond_index,
@@ -579,10 +363,6 @@ def test_shared_candidate_groups_match_repeated_construction_and_gradients() -> 
         "max_masks": 4,
         "max_unique_components": 6,
         "max_enumerated_masks": 8,
-        "explore_masks": 0,
-        "exploration_mode": "bounded_additive",
-        "exploration_temperature": 1.0,
-        "exploration_cut_count_weights": BOUNDED_CUT_COUNT_WEIGHTS,
         "include_single_bond_cuts": True,
     }
     repeated_logits = th.tensor(
@@ -624,10 +404,162 @@ def test_shared_candidate_groups_reject_different_logits() -> None:
             atom_batch_indices=th.tensor([0, 0, 0, 1, 1, 1], dtype=th.long),
             atom_ptr=th.tensor([0, 3, 6], dtype=th.long),
             max_masks=4,
-            explore_masks=0,
-            exploration_mode="bounded_additive",
-            exploration_temperature=1.0,
-            exploration_cut_count_weights=BOUNDED_CUT_COUNT_WEIGHTS,
             include_single_bond_cuts=True,
             candidate_group_ids=th.tensor([5, 5], dtype=th.long),
+        )
+
+
+def _mixture_bond_sets(ptr: np.ndarray, bonds: np.ndarray) -> list[tuple[int, ...]]:
+    """Expand a CSR mixture pool into bond-set tuples."""
+    return [tuple(int(b) for b in bonds[ptr[i] : ptr[i + 1]]) for i in range(ptr.size - 1)]
+
+
+def test_top_mixture_bond_sets_ranks_by_exact_mixture_probability() -> None:
+    # Two bonds, two components. Every one of the four bond sets is enumerable, so
+    # the exact mixture probability can be written out and compared term by term.
+    logits = np.array([[1.0, -2.0], [-0.5, 1.5]])
+    mixture_log_weights = np.log(np.array([0.25, 0.75]))
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0, 0.0)
+    bond_sets = _mixture_bond_sets(ptr, bonds)
+
+    assert sorted(bond_sets) == [(), (0,), (0, 1), (1,)]
+
+    log_sigmoid = lambda x: -np.logaddexp(0.0, -x)  # noqa: E731
+    expected = {}
+    for bond_set in [(), (0,), (0, 1), (1,)]:
+        per_component = np.zeros(2)
+        for bond in range(2):
+            chosen = bond in bond_set
+            per_component += log_sigmoid(logits[bond] if chosen else -logits[bond])
+        expected[bond_set] = np.logaddexp.reduce(mixture_log_weights + per_component)
+
+    ranked = sorted(expected, key=lambda s: (-expected[s], s))
+    assert bond_sets == ranked
+    # Probabilities are a normalized distribution over the full enumeration.
+    assert sum(np.exp(v) for v in expected.values()) == pytest.approx(1.0)
+
+
+def test_top_mixture_bond_sets_deduplicates_across_components() -> None:
+    # Identical components must produce identical top-k pools, so the union
+    # collapses to a single copy of every bond set.
+    logits = np.tile(np.array([[0.9], [-0.4], [0.2]]), (1, 2))
+    mixture_log_weights = np.log(np.array([0.5, 0.5]))
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 8, 0.0, 0.0)
+    bond_sets = _mixture_bond_sets(ptr, bonds)
+
+    assert len(bond_sets) == len(set(bond_sets)) == 8
+    # Bonds 0 and 2 carry positive logits, so the MAP mask cuts exactly those two.
+    assert bond_sets[0] == (0, 2)
+
+
+def test_top_mixture_bond_sets_limit_one_keeps_the_best_map_mask() -> None:
+    # A limit of one pools each component's MAP mask and keeps the more probable of
+    # the two. Component 1 cuts both bonds because both of its logits are positive.
+    logits = np.array([[0.3, 0.1], [-0.2, 0.4]])
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, np.log(np.array([0.5, 0.5])), 1, 0.0, 0.0)
+
+    assert _mixture_bond_sets(ptr, bonds) == [(0, 1)]
+
+
+def test_top_mixture_bond_sets_all_intact_pool_has_zero_width() -> None:
+    # Edge case: every component's MAP mask is empty, so the padded matrix carries no
+    # columns at all and the CSR pointer must still describe one zero-length bond set.
+    logits = np.array([[-1.0, -2.0], [-0.5, -1.5]])
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, np.log(np.array([0.5, 0.5])), 1, 0.0, 0.0)
+
+    assert ptr.tolist() == [0, 0]
+    assert bonds.size == 0
+    assert _mixture_bond_sets(ptr, bonds) == [()]
+
+
+def test_top_mixture_bond_sets_applies_probability_floors() -> None:
+    logits = np.array([[2.0, 2.0], [-3.0, -3.0]])
+    mixture_log_weights = np.log(np.array([0.5, 0.5]))
+    unfiltered, _ = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0, 0.0)
+    assert unfiltered.size - 1 == 4
+
+    # A relative floor of 0.5 keeps only masks within 2x of the MAP mask.
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0, 0.5)
+    assert _mixture_bond_sets(ptr, bonds) == [(0,)]
+
+
+def test_top_mixture_bond_sets_returns_int64_csr() -> None:
+    logits = np.array([[0.5, -0.5], [0.25, 0.75], [-1.0, 0.1]])
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, np.log(np.array([0.4, 0.6])), 6, 0.0, 0.0)
+
+    assert ptr.dtype == np.int64 and bonds.dtype == np.int64
+    assert ptr[0] == 0 and ptr[-1] == bonds.size
+    assert np.all(np.diff(ptr) >= 0)
+
+
+@pytest.mark.parametrize("mask_selection_threads", [2, 6])
+def test_threaded_mask_selection_matches_serial(mask_selection_threads: int) -> None:
+    """Threaded mixture selection must reproduce the serial candidates exactly."""
+    generator = th.Generator().manual_seed(11)
+    num_molecules, num_bonds_each, num_mixtures = 12, 6, 2
+    bond_logits = th.randn(num_bonds_each * num_molecules, num_mixtures, generator=generator)
+    mixture_log_weights = th.log_softmax(
+        th.randn(num_molecules, num_mixtures, generator=generator).double(),
+        dim=1,
+    )
+    left = [m * (num_bonds_each + 1) + b for m in range(num_molecules) for b in range(num_bonds_each)]
+    kwargs = {
+        "chemical_bond_index": th.tensor([left, [index + 1 for index in left]], dtype=th.long),
+        "atom_batch_indices": th.arange(num_molecules).repeat_interleave(num_bonds_each + 1),
+        "atom_ptr": th.arange(0, num_molecules * (num_bonds_each + 1) + 1, num_bonds_each + 1),
+        "max_masks": 8,
+        "include_single_bond_cuts": True,
+        "mixture_log_weights": mixture_log_weights,
+    }
+    serial = build_mass_shatter_candidates(bond_logits, mask_selection_threads=1, **kwargs)
+    threaded = build_mass_shatter_candidates(
+        bond_logits, mask_selection_threads=mask_selection_threads, **kwargs
+    )
+
+    assert th.equal(threaded.mask_batch_indices, serial.mask_batch_indices)
+    assert th.equal(threaded.mask_cut_counts, serial.mask_cut_counts)
+    assert th.equal(threaded.component_batch_indices, serial.component_batch_indices)
+    assert th.equal(threaded.atom_indices, serial.atom_indices)
+    assert th.equal(threaded.atom_component_indices, serial.atom_component_indices)
+    assert th.allclose(
+        threaded.mask_log_probabilities, serial.mask_log_probabilities, atol=0.0, rtol=0.0
+    )
+
+
+def test_threaded_mask_selection_shares_collision_energy_groups() -> None:
+    """Grouped collision-energy views stay shared when selection runs on threads."""
+    # Two molecules with identical logits in one group: the second must reuse the
+    # first's ranked masks rather than being recomputed by a worker thread.
+    logits = th.tensor([[0.8, -0.2], [-0.4, 0.6], [0.8, -0.2], [-0.4, 0.6]])
+    mixture_log_weights = th.log_softmax(th.tensor([[0.3, -0.3], [0.3, -0.3]]).double(), dim=1)
+    kwargs = {
+        "chemical_bond_index": th.tensor([[0, 1, 3, 4], [1, 2, 4, 5]], dtype=th.long),
+        "atom_batch_indices": th.tensor([0, 0, 0, 1, 1, 1], dtype=th.long),
+        "atom_ptr": th.tensor([0, 3, 6], dtype=th.long),
+        "max_masks": 4,
+        "include_single_bond_cuts": True,
+        "mixture_log_weights": mixture_log_weights,
+        "candidate_group_ids": th.tensor([3, 3], dtype=th.long),
+    }
+    serial = build_mass_shatter_candidates(logits, mask_selection_threads=1, **kwargs)
+    threaded = build_mass_shatter_candidates(logits, mask_selection_threads=4, **kwargs)
+
+    assert th.equal(threaded.mask_batch_indices, serial.mask_batch_indices)
+    assert th.equal(threaded.mask_cut_counts, serial.mask_cut_counts)
+    # Both views select the same number of masks, which is what sharing guarantees.
+    assert int((threaded.mask_batch_indices == 0).sum()) == int(
+        (threaded.mask_batch_indices == 1).sum()
+    )
+
+
+def test_mask_selection_threads_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="mask_selection_threads must be at least 1"):
+        build_mass_shatter_candidates(
+            th.tensor([0.4, -0.7]),
+            chemical_bond_index=th.tensor([[0, 2], [1, 3]], dtype=th.long),
+            atom_batch_indices=th.tensor([0, 0, 1, 1], dtype=th.long),
+            atom_ptr=th.tensor([0, 2, 4], dtype=th.long),
+            max_masks=2,
+            include_single_bond_cuts=True,
+            mask_selection_threads=0,
         )

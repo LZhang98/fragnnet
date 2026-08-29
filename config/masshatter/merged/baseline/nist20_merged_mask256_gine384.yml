@@ -43,8 +43,6 @@ mol_num_layers: 5
 mol_normalization: batch
 mol_dropout: 0.1
 mass_shatter_selected_mask_limit: 256
-mass_shatter_explore_masks: 0
-mass_shatter_exploration_temperature: 1.0
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True

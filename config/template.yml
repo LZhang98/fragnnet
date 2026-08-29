@@ -201,12 +201,11 @@ mass_shatter_unique_fragment_mode: False
 mass_shatter_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
 mass_shatter_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
 mass_shatter_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; must be >= the target.
+mass_shatter_mask_selection_threads: 4  # CPU threads for cut-mask selection; the kernel
+  # drops the GIL, so >1 is real parallelism and leaves selected masks unchanged. Best near
+  # the physical core count, minus what num_workers already uses. 1 disables threading.
 mass_shatter_min_mask_probability: 0.0  # Minimum probability for deterministic top-k masks.
 mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
-mass_shatter_explore_masks: 0  # Additional training-only masks in bounded_additive mode.
-mass_shatter_exploration_mode: bounded_additive  # ["bounded_additive", "bernoulli_replace"]
-mass_shatter_exploration_temperature: 1.0
-mass_shatter_exploration_cut_count_weights: [0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05]
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True

@@ -1195,3 +1195,593 @@ def connected_component_atom_masks_many(
         free(parents)
         free(broken)
     return results
+
+
+# --- Bernoulli-mixture mask pooling -------------------------------------------
+#
+# The mixture pool needs three primitives that the CSR kernel above does not
+# expose: enumeration that stops at bitsets instead of CSR, an order on bitsets
+# that matches Python tuple comparison, and a stable rank by mixture
+# probability. All three stay on raw pointers so the whole per-molecule body can
+# run under ``nogil`` and, once the build enables OpenMP, inside ``prange``.
+
+
+cdef inline bint _node_less_ptr(
+    Py_ssize_t left_node,
+    Py_ssize_t right_node,
+    double* node_penalties,
+    Py_ssize_t* node_lengths,
+    Py_ssize_t* node_positions,
+    Py_ssize_t position_stride,
+) noexcept nogil:
+    """Compare heap nodes by the legacy ``(penalty, flip_positions)`` key."""
+    cdef Py_ssize_t position
+    cdef Py_ssize_t left_length = node_lengths[left_node]
+    cdef Py_ssize_t right_length = node_lengths[right_node]
+    cdef Py_ssize_t shared_length = min(left_length, right_length)
+    cdef Py_ssize_t left_base = left_node * position_stride
+    cdef Py_ssize_t right_base = right_node * position_stride
+
+    if node_penalties[left_node] < node_penalties[right_node]:
+        return True
+    if node_penalties[left_node] > node_penalties[right_node]:
+        return False
+    for position in range(shared_length):
+        if node_positions[left_base + position] < node_positions[right_base + position]:
+            return True
+        if node_positions[left_base + position] > node_positions[right_base + position]:
+            return False
+    return left_length < right_length
+
+
+cdef inline void _heap_push_ptr(
+    Py_ssize_t node,
+    Py_ssize_t* heap,
+    Py_ssize_t* heap_size,
+    double* node_penalties,
+    Py_ssize_t* node_lengths,
+    Py_ssize_t* node_positions,
+    Py_ssize_t position_stride,
+) noexcept nogil:
+    cdef Py_ssize_t index = heap_size[0]
+    cdef Py_ssize_t parent
+
+    heap_size[0] += 1
+    while index > 0:
+        parent = (index - 1) // 2
+        if not _node_less_ptr(
+            node, heap[parent], node_penalties, node_lengths, node_positions, position_stride
+        ):
+            break
+        heap[index] = heap[parent]
+        index = parent
+    heap[index] = node
+
+
+cdef inline Py_ssize_t _heap_pop_ptr(
+    Py_ssize_t* heap,
+    Py_ssize_t* heap_size,
+    double* node_penalties,
+    Py_ssize_t* node_lengths,
+    Py_ssize_t* node_positions,
+    Py_ssize_t position_stride,
+) noexcept nogil:
+    cdef Py_ssize_t result = heap[0]
+    cdef Py_ssize_t last, index, left, right, child
+
+    heap_size[0] -= 1
+    if heap_size[0] == 0:
+        return result
+    last = heap[heap_size[0]]
+    index = 0
+    while True:
+        left = 2 * index + 1
+        if left >= heap_size[0]:
+            break
+        right = left + 1
+        child = left
+        if right < heap_size[0] and _node_less_ptr(
+            heap[right], heap[left], node_penalties, node_lengths, node_positions, position_stride
+        ):
+            child = right
+        if not _node_less_ptr(
+            heap[child], last, node_penalties, node_lengths, node_positions, position_stride
+        ):
+            break
+        heap[index] = heap[child]
+        index = child
+    heap[index] = last
+    return result
+
+
+cdef Py_ssize_t _enumerate_top_k_words(
+    double* logits,
+    Py_ssize_t num_bonds,
+    Py_ssize_t k,
+    Py_ssize_t word_count,
+    uint64_t* output_words,
+    double* scratch_costs,
+    Py_ssize_t* scratch_bonds,
+    uint64_t* scratch_map_words,
+    double* node_penalties,
+    Py_ssize_t* node_lengths,
+    Py_ssize_t* node_positions,
+    Py_ssize_t* heap,
+    Py_ssize_t node_capacity,
+) noexcept nogil:
+    """Write the exact top-k Bernoulli masks as bitsets and return how many.
+
+    Mirrors ``top_k_cut_masks_csr_raw`` with ``include_empty=True`` and no
+    probability floors, keeping the same accumulation order so the penalties and
+    tie-breaks stay bit-for-bit identical.
+    """
+    cdef Py_ssize_t index, insertion, position, word, bond, map_cut_count = 0
+    cdef Py_ssize_t node, node_count, node_length, last_position, next_position
+    cdef Py_ssize_t append_node, replacement_node, heap_size = 0
+    cdef Py_ssize_t output_count = 0, cut_count
+    cdef double logit, cost, map_log_probability = 0.0
+    cdef double total_penalty, next_cost, replacement_penalty
+    cdef Py_ssize_t insertion_bond
+
+    for word in range(word_count):
+        scratch_map_words[word] = 0
+    for index in range(num_bonds):
+        logit = logits[index]
+        if logit > 0.0:
+            scratch_map_words[index // 64] |= (<uint64_t>1) << (index % 64)
+            map_cut_count += 1
+        map_log_probability -= log1p(exp(-fabs(logit)))
+        scratch_costs[index] = fabs(logit)
+        scratch_bonds[index] = index
+
+    for index in range(1, num_bonds):
+        cost = scratch_costs[index]
+        insertion_bond = scratch_bonds[index]
+        insertion = index
+        while insertion > 0 and (
+            cost < scratch_costs[insertion - 1]
+            or (cost == scratch_costs[insertion - 1] and insertion_bond < scratch_bonds[insertion - 1])
+        ):
+            scratch_costs[insertion] = scratch_costs[insertion - 1]
+            scratch_bonds[insertion] = scratch_bonds[insertion - 1]
+            insertion -= 1
+        scratch_costs[insertion] = cost
+        scratch_bonds[insertion] = insertion_bond
+
+    for word in range(word_count):
+        output_words[word] = scratch_map_words[word]
+    output_count = 1
+    if num_bonds == 0 or output_count >= k:
+        return output_count
+
+    node_penalties[0] = scratch_costs[0]
+    node_lengths[0] = 1
+    node_positions[0] = 0
+    node_count = 1
+    _heap_push_ptr(0, heap, &heap_size, node_penalties, node_lengths, node_positions, num_bonds)
+
+    while heap_size > 0 and output_count < k:
+        node = _heap_pop_ptr(
+            heap, &heap_size, node_penalties, node_lengths, node_positions, num_bonds
+        )
+        total_penalty = node_penalties[node]
+        node_length = node_lengths[node]
+        cut_count = map_cut_count
+        for word in range(word_count):
+            output_words[output_count * word_count + word] = scratch_map_words[word]
+        for position in range(node_length):
+            bond = scratch_bonds[node_positions[node * num_bonds + position]]
+            output_words[output_count * word_count + bond // 64] ^= (<uint64_t>1) << (bond % 64)
+            if scratch_map_words[bond // 64] & ((<uint64_t>1) << (bond % 64)):
+                cut_count -= 1
+            else:
+                cut_count += 1
+        output_count += 1
+        if output_count == k:
+            break
+
+        last_position = node_positions[node * num_bonds + node_length - 1]
+        next_position = last_position + 1
+        if next_position >= num_bonds:
+            continue
+        next_cost = scratch_costs[next_position]
+        if node_count + 2 > node_capacity:
+            continue
+
+        append_node = node_count
+        node_count += 1
+        node_penalties[append_node] = total_penalty + next_cost
+        node_lengths[append_node] = node_length + 1
+        for position in range(node_length):
+            node_positions[append_node * num_bonds + position] = (
+                node_positions[node * num_bonds + position]
+            )
+        node_positions[append_node * num_bonds + node_length] = next_position
+        _heap_push_ptr(
+            append_node, heap, &heap_size, node_penalties, node_lengths, node_positions, num_bonds
+        )
+
+        replacement_node = node_count
+        node_count += 1
+        replacement_penalty = total_penalty - scratch_costs[last_position]
+        replacement_penalty = replacement_penalty + next_cost
+        node_penalties[replacement_node] = replacement_penalty
+        node_lengths[replacement_node] = node_length
+        for position in range(node_length - 1):
+            node_positions[replacement_node * num_bonds + position] = (
+                node_positions[node * num_bonds + position]
+            )
+        node_positions[replacement_node * num_bonds + node_length - 1] = next_position
+        _heap_push_ptr(
+            replacement_node, heap, &heap_size, node_penalties, node_lengths, node_positions,
+            num_bonds,
+        )
+
+    return output_count
+
+
+cdef inline int _compare_bitsets(
+    uint64_t* words,
+    Py_ssize_t left,
+    Py_ssize_t right,
+    Py_ssize_t word_count,
+) noexcept nogil:
+    """Order bitsets exactly as Python orders their sorted bond-index tuples.
+
+    Let bit ``k`` be the lowest bond the two sets disagree on; every smaller bond is
+    shared, so both tuples share that prefix and the owner of ``k`` continues with
+    ``k`` there. Which side sorts first then depends on the other side:
+
+    - the other side has no bond above ``k``, so it ends at the shared prefix and a
+      prefix sorts first -- ``(1, 2) < (1, 2, 3)``;
+    - the other side continues at some ``j > k``, and ``k < j`` puts the owner first
+      -- ``(1, 2) < (1, 3)``.
+    """
+    cdef Py_ssize_t word, tail
+    cdef uint64_t difference, lowest, above_mask, other_word
+    cdef bint owner_is_left, other_has_higher
+
+    for word in range(word_count):
+        difference = words[left * word_count + word] ^ words[right * word_count + word]
+        if difference == 0:
+            continue
+        # Isolate the lowest differing bit with the usual two's-complement trick.
+        lowest = difference & (~difference + 1)
+        owner_is_left = (words[left * word_count + word] & lowest) != 0
+        other_word = (
+            words[right * word_count + word]
+            if owner_is_left
+            else words[left * word_count + word]
+        )
+        # Everything strictly above the differing bit, within this word and beyond.
+        above_mask = ~(lowest | (lowest - 1))
+        other_has_higher = (other_word & above_mask) != 0
+        if not other_has_higher:
+            for tail in range(word + 1, word_count):
+                if (
+                    words[(right if owner_is_left else left) * word_count + tail]
+                ) != 0:
+                    other_has_higher = True
+                    break
+        if other_has_higher:
+            return -1 if owner_is_left else 1
+        return 1 if owner_is_left else -1
+    return 0
+
+
+cdef void _merge_sort_indices(
+    Py_ssize_t* order,
+    Py_ssize_t* scratch,
+    Py_ssize_t count,
+    double* keys,
+    uint64_t* words,
+    Py_ssize_t word_count,
+    bint by_probability,
+) noexcept nogil:
+    """Stable bottom-up merge sort of ``order``.
+
+    With ``by_probability`` the key is descending ``keys`` and stability keeps the
+    incoming lexicographic order as the tie-break; otherwise rows are ordered by
+    ``_compare_bitsets``.
+    """
+    cdef Py_ssize_t width = 1, left, middle, right, i, j, cursor
+    cdef Py_ssize_t* source = order
+    cdef Py_ssize_t* target = scratch
+    cdef Py_ssize_t* swap
+    cdef bint take_left
+
+    while width < count:
+        left = 0
+        while left < count:
+            middle = min(left + width, count)
+            right = min(left + 2 * width, count)
+            i = left
+            j = middle
+            cursor = left
+            while i < middle or j < right:
+                if i >= middle:
+                    take_left = False
+                elif j >= right:
+                    take_left = True
+                elif by_probability:
+                    # Strictly greater keeps equal keys in source order (stable).
+                    take_left = keys[source[i]] >= keys[source[j]]
+                else:
+                    take_left = _compare_bitsets(words, source[i], source[j], word_count) <= 0
+                if take_left:
+                    target[cursor] = source[i]
+                    i += 1
+                else:
+                    target[cursor] = source[j]
+                    j += 1
+                cursor += 1
+            left += 2 * width
+        swap = source
+        source = target
+        target = swap
+        width *= 2
+
+    if source != order:
+        for i in range(count):
+            order[i] = source[i]
+
+
+def top_mixture_bond_sets_raw(
+    double[:, ::1] logits,
+    double[::1] mixture_log_weights,
+    Py_ssize_t limit,
+    double min_probability,
+    double min_relative_probability,
+):
+    """Return the deduplicated Bernoulli-mixture mask pool as numeric CSR arrays.
+
+    Pools each component's exact top-k masks, deduplicates them, scores every
+    survivor under the full mixture, and ranks by descending probability with
+    lexicographic tie-breaks. The entire per-molecule body runs without the GIL.
+
+    Args:
+        logits: Per-bond cut logits of shape (num_bonds, num_mixtures).
+        mixture_log_weights: Log-normalized weights of shape (num_mixtures,).
+        limit: Maximum number of bond sets to return.
+        min_probability: Absolute mixture-probability floor; 0 disables.
+        min_relative_probability: Floor relative to the MAP mask; 0 disables.
+
+    Returns:
+        Tuple ``(mask_ptr, broken_bonds)`` of int64 CSR arrays.
+
+    Raises:
+        ValueError: If ``limit`` is not positive, the floors fall outside [0, 1],
+            or any logit or mixture weight is not finite.
+        MemoryError: If the per-molecule work buffers cannot be allocated.
+    """
+    cdef Py_ssize_t num_bonds = logits.shape[0]
+    cdef Py_ssize_t num_mixtures = logits.shape[1]
+    cdef Py_ssize_t word_count = (num_bonds + 63) // 64
+    cdef Py_ssize_t search_capacity, node_capacity, pool_capacity
+    cdef Py_ssize_t mixture_index, index, bond, word, cursor
+    cdef Py_ssize_t pool_count = 0, unique_count = 0, produced, selected_count
+    cdef double component_log_probability, mixture_log_probability
+    cdef double intact_log_probability, larger, smaller
+    cdef double map_log_probability, minimum_log, minimum_relative_log
+    cdef uint64_t* pool_words = NULL
+    cdef uint64_t* scratch_map_words = NULL
+    cdef double* mixture_logits = NULL
+    cdef double* scratch_costs = NULL
+    cdef double* node_penalties = NULL
+    cdef double* set_log_probabilities = NULL
+    cdef double* intact_log_probabilities = NULL
+    cdef Py_ssize_t* scratch_bonds = NULL
+    cdef Py_ssize_t* node_lengths = NULL
+    cdef Py_ssize_t* node_positions = NULL
+    cdef Py_ssize_t* heap = NULL
+    cdef Py_ssize_t* order = NULL
+    cdef Py_ssize_t* scratch_order = NULL
+    cdef Py_ssize_t* unique = NULL
+
+    if limit <= 0:
+        raise ValueError(f"limit must be positive, got {limit}")
+    if not isfinite(min_probability) or min_probability < 0.0 or min_probability > 1.0:
+        raise ValueError(
+            f"min_probability must be finite and in [0, 1], got {min_probability}"
+        )
+    if (
+        not isfinite(min_relative_probability)
+        or min_relative_probability < 0.0
+        or min_relative_probability > 1.0
+    ):
+        raise ValueError(
+            "min_relative_probability must be finite and in [0, 1], "
+            f"got {min_relative_probability}"
+        )
+    if mixture_log_weights.shape[0] != num_mixtures:
+        raise ValueError("mixture_log_weights must supply one weight per mixture")
+    for mixture_index in range(num_mixtures):
+        if not isfinite(mixture_log_weights[mixture_index]):
+            raise ValueError("mixture_log_weights must contain only finite values")
+    for index in range(num_bonds):
+        for mixture_index in range(num_mixtures):
+            if not isfinite(logits[index, mixture_index]):
+                raise ValueError("logits must contain only finite values")
+
+    # Cap the per-component heap by the reachable state space, matching the CSR
+    # kernel so a small molecule never allocates for an unreachable 2**num_bonds.
+    search_capacity = 1
+    for index in range(num_bonds):
+        if search_capacity >= limit:
+            search_capacity = limit
+            break
+        if search_capacity > limit // 2:
+            search_capacity = limit
+            break
+        search_capacity *= 2
+    if search_capacity > limit:
+        search_capacity = limit
+    node_capacity = 2 * search_capacity + 1
+    pool_capacity = num_mixtures * search_capacity
+
+    minimum_log = log(min_probability) if min_probability > 0.0 else -float("inf")
+    minimum_relative_log = (
+        log(min_relative_probability) if min_relative_probability > 0.0 else -float("inf")
+    )
+
+    pool_words = <uint64_t*>calloc(<size_t>(pool_capacity * max(word_count, 1)), sizeof(uint64_t))
+    scratch_map_words = <uint64_t*>calloc(<size_t>max(word_count, 1), sizeof(uint64_t))
+    mixture_logits = <double*>malloc(<size_t>max(num_bonds, 1) * sizeof(double))
+    scratch_costs = <double*>malloc(<size_t>max(num_bonds, 1) * sizeof(double))
+    scratch_bonds = <Py_ssize_t*>malloc(<size_t>max(num_bonds, 1) * sizeof(Py_ssize_t))
+    node_penalties = <double*>malloc(<size_t>node_capacity * sizeof(double))
+    node_lengths = <Py_ssize_t*>malloc(<size_t>node_capacity * sizeof(Py_ssize_t))
+    node_positions = <Py_ssize_t*>malloc(
+        <size_t>node_capacity * <size_t>max(num_bonds, 1) * sizeof(Py_ssize_t)
+    )
+    heap = <Py_ssize_t*>malloc(<size_t>(node_capacity + 1) * sizeof(Py_ssize_t))
+    set_log_probabilities = <double*>malloc(<size_t>pool_capacity * sizeof(double))
+    intact_log_probabilities = <double*>malloc(<size_t>num_mixtures * sizeof(double))
+    order = <Py_ssize_t*>malloc(<size_t>pool_capacity * sizeof(Py_ssize_t))
+    scratch_order = <Py_ssize_t*>malloc(<size_t>pool_capacity * sizeof(Py_ssize_t))
+    unique = <Py_ssize_t*>malloc(<size_t>pool_capacity * sizeof(Py_ssize_t))
+
+    if (
+        pool_words == NULL or scratch_map_words == NULL or mixture_logits == NULL
+        or scratch_costs == NULL or scratch_bonds == NULL or node_penalties == NULL
+        or node_lengths == NULL or node_positions == NULL or heap == NULL
+        or set_log_probabilities == NULL or intact_log_probabilities == NULL
+        or order == NULL or scratch_order == NULL or unique == NULL
+    ):
+        free(pool_words); free(scratch_map_words); free(mixture_logits)
+        free(scratch_costs); free(scratch_bonds); free(node_penalties)
+        free(node_lengths); free(node_positions); free(heap)
+        free(set_log_probabilities); free(intact_log_probabilities)
+        free(order); free(scratch_order); free(unique)
+        raise MemoryError("could not allocate mixture mask-pool buffers")
+
+    with nogil:
+        # 1. Pool each component's exact top-k masks as bitsets.
+        for mixture_index in range(num_mixtures):
+            for index in range(num_bonds):
+                mixture_logits[index] = logits[index, mixture_index]
+            produced = _enumerate_top_k_words(
+                mixture_logits,
+                num_bonds,
+                search_capacity,
+                word_count,
+                pool_words + pool_count * word_count,
+                scratch_costs,
+                scratch_bonds,
+                scratch_map_words,
+                node_penalties,
+                node_lengths,
+                node_positions,
+                heap,
+                node_capacity,
+            )
+            pool_count += produced
+
+        # 2. Sort lexicographically, then keep one representative per bitset. A
+        #    single component needs neither: its enumeration is already distinct and
+        #    already in descending-probability order, so the pool is taken as is.
+        if num_mixtures == 1:
+            for index in range(pool_count):
+                unique[index] = index
+            unique_count = pool_count
+        else:
+            for index in range(pool_count):
+                order[index] = index
+            _merge_sort_indices(
+                order, scratch_order, pool_count, set_log_probabilities, pool_words,
+                word_count, False,
+            )
+            for index in range(pool_count):
+                if (
+                    index == 0
+                    or _compare_bitsets(pool_words, order[index], order[index - 1], word_count)
+                    != 0
+                ):
+                    unique[unique_count] = order[index]
+                    unique_count += 1
+
+        # 3. Score each survivor: start from all-intact and swap in each cut
+        #    bond's logit, ascending, so the sum order matches the NumPy path.
+        for mixture_index in range(num_mixtures):
+            intact_log_probability = 0.0
+            for index in range(num_bonds):
+                # NumPy's logaddexp(0, x) == max(0, x) + log1p(exp(-|x|)); writing it
+                # out keeps large positive logits from overflowing exp().
+                larger = logits[index, mixture_index]
+                if larger > 0.0:
+                    intact_log_probability -= larger + log1p(exp(-larger))
+                else:
+                    intact_log_probability -= log1p(exp(larger))
+            intact_log_probabilities[mixture_index] = intact_log_probability
+
+        for index in range(unique_count):
+            mixture_log_probability = 0.0
+            for mixture_index in range(num_mixtures):
+                component_log_probability = intact_log_probabilities[mixture_index]
+                for bond in range(num_bonds):
+                    if pool_words[unique[index] * word_count + bond // 64] & (
+                        (<uint64_t>1) << (bond % 64)
+                    ):
+                        component_log_probability += logits[bond, mixture_index]
+                component_log_probability += mixture_log_weights[mixture_index]
+                if mixture_index == 0:
+                    mixture_log_probability = component_log_probability
+                else:
+                    # log-add-exp in NumPy's form: max + log1p(exp(min - max)).
+                    if mixture_log_probability >= component_log_probability:
+                        larger = mixture_log_probability
+                        smaller = component_log_probability
+                    else:
+                        larger = component_log_probability
+                        smaller = mixture_log_probability
+                    mixture_log_probability = larger + log1p(exp(smaller - larger))
+            set_log_probabilities[unique[index]] = mixture_log_probability
+
+        # 4. Rank by descending probability; the stable sort keeps step 2's
+        #    lexicographic order as the tie-break. One component is already ranked by
+        #    the enumeration itself, so it skips this too.
+        if num_mixtures > 1:
+            _merge_sort_indices(
+                unique, scratch_order, unique_count, set_log_probabilities, pool_words,
+                word_count, True,
+            )
+
+        # 5. Apply the probability floors relative to the MAP mask.
+        selected_count = 0
+        if unique_count > 0:
+            map_log_probability = set_log_probabilities[unique[0]]
+            for index in range(unique_count):
+                if selected_count >= limit:
+                    break
+                if (
+                    set_log_probabilities[unique[index]] >= minimum_log
+                    and set_log_probabilities[unique[index]] - map_log_probability
+                    >= minimum_relative_log
+                ):
+                    unique[selected_count] = unique[index]
+                    selected_count += 1
+
+    mask_ptr_array = np.empty(selected_count + 1, dtype=np.int64)
+    cdef cnp.int64_t[::1] mask_ptr = mask_ptr_array
+    cursor = 0
+    mask_ptr[0] = 0
+    for index in range(selected_count):
+        for bond in range(num_bonds):
+            if pool_words[unique[index] * word_count + bond // 64] & ((<uint64_t>1) << (bond % 64)):
+                cursor += 1
+        mask_ptr[index + 1] = cursor
+    broken_bonds_array = np.empty(cursor, dtype=np.int64)
+    cdef cnp.int64_t[::1] broken_bonds = broken_bonds_array
+    cursor = 0
+    for index in range(selected_count):
+        for bond in range(num_bonds):
+            if pool_words[unique[index] * word_count + bond // 64] & ((<uint64_t>1) << (bond % 64)):
+                broken_bonds[cursor] = bond
+                cursor += 1
+
+    free(pool_words); free(scratch_map_words); free(mixture_logits)
+    free(scratch_costs); free(scratch_bonds); free(node_penalties)
+    free(node_lengths); free(node_positions); free(heap)
+    free(set_log_probabilities); free(intact_log_probabilities)
+    free(order); free(scratch_order); free(unique)
+    return mask_ptr_array, broken_bonds_array

@@ -281,10 +281,6 @@ def test_new_rules_attach_to_candidate_masks_as_distinct_mechanisms(
         atom_batch_indices=th.zeros(mol.GetNumAtoms(), dtype=th.long),
         atom_ptr=th.tensor([0, mol.GetNumAtoms()], dtype=th.long),
         max_masks=1,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
         smarts_templates=(templates,),
     )
@@ -376,10 +372,6 @@ def test_mass_shatter_candidates_attach_template_as_mechanism_of_same_mask() -> 
         atom_batch_indices=th.zeros(mol.GetNumAtoms(), dtype=th.long),
         atom_ptr=th.tensor([0, mol.GetNumAtoms()], dtype=th.long),
         max_masks=1,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
         smarts_templates=(templates,),
     )
@@ -400,10 +392,6 @@ def test_no_templates_leave_one_ordinary_mechanism_per_mask() -> None:
         atom_batch_indices=th.zeros(2, dtype=th.long),
         atom_ptr=th.tensor([0, 2], dtype=th.long),
         max_masks=1,
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=False,
     )
 
@@ -438,10 +426,6 @@ def _batched_candidates(smiles_list: list[str], **kwargs):
         chemical_bond_index=th.tensor([begin, end], dtype=th.long),
         atom_batch_indices=th.tensor(batch, dtype=th.long),
         atom_ptr=th.tensor(ptr, dtype=th.long),
-        explore_masks=0,
-        exploration_mode="bounded_additive",
-        exploration_temperature=1.0,
-        exploration_cut_count_weights=_CUT_COUNT_WEIGHTS,
         include_single_bond_cuts=True,
         smarts_templates=templates,
         **kwargs,

@@ -36,7 +36,6 @@ def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
         mass_shatter_selected_mask_limit=2,
         mass_shatter_unique_fragment_target=2,
         mass_shatter_ranked_mask_budget=2,
-        mass_shatter_explore_masks=1,
         mass_shatter_max_h_transfer=1,
     )
     config.update(config_overrides)
@@ -152,7 +151,6 @@ def test_mass_shatter_pl_detaches_base_ion_h_from_config() -> None:
 def test_mass_shatter_pl_builds_proposal_selection_only_from_config() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
-        mass_shatter_explore_masks=0,
         mass_shatter_proposal_anchored=True,
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_loss_weight=0.1,
@@ -165,7 +163,6 @@ def test_mass_shatter_pl_builds_proposal_selection_only_from_config() -> None:
 def test_mass_shatter_ignores_legacy_oos_config() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
-        mass_shatter_explore_masks=0,
         mass_shatter_proposal_anchored=True,
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_loss_weight=0.1,
@@ -185,7 +182,6 @@ def test_mass_shatter_ignores_legacy_oos_config() -> None:
 def test_mass_shatter_pl_builds_separate_proposal_encoder_from_config() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
-        mass_shatter_explore_masks=0,
         mass_shatter_proposal_anchored=True,
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_loss_weight=0.1,
@@ -200,7 +196,6 @@ def test_mass_shatter_pl_builds_separate_proposal_encoder_from_config() -> None:
 def test_mass_shatter_eval_forward_omits_cross_ev_training_context(monkeypatch) -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
-        mass_shatter_explore_masks=0,
         mass_shatter_share_proposal_across_ev=True,
         cross_ev_fragment_loss_weight=0.1,
     )
@@ -239,7 +234,6 @@ def test_proposal_selection_only_requires_its_own_supervision() -> None:
     with pytest.raises(ValueError, match="requires a positive"):
         _build_pl(
             mass_shatter_unique_fragment_mode=True,
-            mass_shatter_explore_masks=0,
             mass_shatter_proposal_anchored=True,
             mass_shatter_proposal_selection_only=True,
             mass_shatter_proposal_loss_weight=0.0,
@@ -344,7 +338,6 @@ def test_cross_ev_fragment_delta_loss_skips_missing_coverage_endpoint() -> None:
 def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
-        mass_shatter_explore_masks=0,
         mass_shatter_proposal_anchored=True,
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_loss_weight=0.1,
@@ -380,7 +373,6 @@ def test_mass_shatter_pl_builds_unique_fragment_mode_from_config() -> None:
         mass_shatter_unique_fragment_target=4,
         mass_shatter_unique_fragment_mode=True,
         mass_shatter_ranked_mask_budget=16,
-        mass_shatter_explore_masks=0,
     )
 
     assert model.model.unique_fragment_mode
@@ -612,24 +604,3 @@ def test_candidate_coverage_by_cut_count_uses_per_instrument_tolerance() -> None
     assert actual["candidate_recall_cut_3"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_wrecall_cut_3"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_precision_cut_3"].tolist() == pytest.approx([0.0, 1.0])
-
-
-def test_exploration_cut_count_mean_excludes_molecules_without_samples() -> None:
-    model, _ = _build_pl()
-    model.metric_names = {"exploration_mean_cut_count"}
-    model.auxiliary_metric_names = set()
-    model._reset_running_metrics("train")
-    model._accumulate_running_metrics(
-        {
-            "exploration_mean_cut_count": th.tensor([0.0, 2.0, 3.0]),
-            "exploration_mask_count": th.tensor([0.0, 1.0, 2.0]),
-            "spec_per_group": th.ones(3),
-            "spec_per_mol": th.ones(3),
-            "group_per_mol": th.ones(3),
-        },
-        "train",
-    )
-
-    mean_metrics, _ = model._reduce_running_metrics("train")
-
-    assert mean_metrics["exploration_mean_cut_count"].item() == pytest.approx(8.0 / 3.0)

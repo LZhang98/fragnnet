@@ -497,10 +497,10 @@ class MassShatterModel(nn.Module):
         max_masks: Number of cut masks materialized per precursor.
         unique_fragment_mode: Whether ``max_masks`` is a unique atom-set target.
         max_enumerated_masks: Safety cap for unique-fragment mask enumeration.
+        mask_selection_threads: Worker threads used to select cut masks on CPU.
         min_mask_probability: Masks below this probability are dropped.
         min_mask_relative_probability: Masks below this fraction of the MAP mask
             probability are dropped.
-        explore_masks: Number of random exploration masks added during training.
         max_h_transfer: Largest hydrogen transfer (in either direction) per fragment.
         include_cmf: Whether the charge-migration ion channel is emitted.
         num_ion_modes: 2 with CMF enabled (CRF + CMF), otherwise 1.
@@ -555,12 +555,9 @@ class MassShatterModel(nn.Module):
         max_masks: int,
         unique_fragment_mode: bool,
         max_enumerated_masks: int,
+        mask_selection_threads: int = 1,
         min_mask_probability: float,
         min_mask_relative_probability: float,
-        explore_masks: int,
-        exploration_mode: str,
-        exploration_temperature: float,
-        exploration_cut_count_weights: Sequence[float],
         include_single_bond_cuts: bool,
         max_h_transfer: int,
         include_cmf: bool,
@@ -631,20 +628,15 @@ class MassShatterModel(nn.Module):
             max_masks: Cut masks kept per precursor.
             unique_fragment_mode: Treat ``max_masks`` as a unique-fragment target and
                 marginalize duplicate component pathways before intensity scoring.
+            mask_selection_threads: Worker threads used to select Bernoulli-mixture cut
+                masks. The selection kernel releases the GIL, so values above one give
+                real parallelism and leave the selected masks unchanged. Defaults to 1.
             max_enumerated_masks: Safety cap on latent masks considered while filling
                 the unique-fragment target.
             min_mask_probability: Probability floor below which a ranked mask is
                 dropped before the selected candidates are renormalized.
             min_mask_relative_probability: MAP-relative probability floor below which
                 a ranked mask is dropped before candidate assembly.
-            explore_masks: Random masks injected during training only.
-            exploration_mode: ``bernoulli_replace`` swaps exploration masks in for the
-                weakest ranked masks; ``bounded_additive`` appends them.
-            exploration_temperature: Temperature applied to bond logits when sampling
-                exploration masks.
-            exploration_cut_count_weights: Sampling weights indexed by cut count; the
-                0- and 1-cut entries must be zero because those masks are either the
-                intact precursor or already covered by the ranked enumeration.
             include_single_bond_cuts: Enumerate single-bond cuts in the ranked masks.
             max_h_transfer: Largest hydrogen transfer per fragment, in either
                 direction.
@@ -663,12 +655,12 @@ class MassShatterModel(nn.Module):
             raise ValueError("max_masks must be positive and max_h_transfer nonnegative")
         if max_enumerated_masks <= 0:
             raise ValueError("max_enumerated_masks must be positive")
+        if mask_selection_threads < 1:
+            raise ValueError("mask_selection_threads must be at least 1")
         if unique_fragment_mode and max_enumerated_masks < max_masks:
             raise ValueError(
                 "max_enumerated_masks must be at least max_masks in unique-fragment mode"
             )
-        if unique_fragment_mode and explore_masks > 0:
-            raise ValueError("unique_fragment_mode does not support exploration masks")
         if proposal_selection_only and not unique_fragment_mode:
             raise ValueError("proposal_selection_only requires unique_fragment_mode")
         if proposal_selection_only and use_base_probability_feature:
@@ -692,37 +684,10 @@ class MassShatterModel(nn.Module):
                 "min_mask_relative_probability must be finite and in [0, 1], "
                 f"got {min_mask_relative_probability}"
             )
-        if explore_masks < 0:
-            raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
-        if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
-            raise ValueError(f"unknown exploration mode: {exploration_mode}")
-        if exploration_mode == "bernoulli_replace" and explore_masks >= max_masks:
-            raise ValueError(
-                "bernoulli_replace requires explore_masks smaller than max_masks, "
-                f"got {explore_masks} and {max_masks}"
-            )
-        if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
-            raise ValueError(
-                f"exploration_temperature must be positive, got {exploration_temperature}"
-            )
-        cut_count_weights = tuple(float(weight) for weight in exploration_cut_count_weights)
-        if (
-            len(cut_count_weights) < 3
-            or any(not math.isfinite(weight) or weight < 0.0 for weight in cut_count_weights)
-            or cut_count_weights[0] != 0.0
-            or cut_count_weights[1] != 0.0
-            or sum(cut_count_weights[2:]) <= 0.0
-        ):
-            raise ValueError(
-                "exploration_cut_count_weights must contain nonnegative weights indexed by "
-                "cut count, with zero weights for 0/1 cuts and positive mass above 1"
-            )
         if bond_num_layers < 0:
             raise ValueError("bond_num_layers must be nonnegative")
         if proposal_num_mixtures <= 0:
             raise ValueError("proposal_num_mixtures must be positive")
-        if proposal_num_mixtures > 1 and explore_masks > 0:
-            raise ValueError("Bernoulli proposal mixtures do not support exploration masks")
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
 
@@ -738,12 +703,9 @@ class MassShatterModel(nn.Module):
         self.max_masks = max_masks
         self.unique_fragment_mode = unique_fragment_mode
         self.max_enumerated_masks = max_enumerated_masks
+        self.mask_selection_threads = mask_selection_threads
         self.min_mask_probability = min_mask_probability
         self.min_mask_relative_probability = min_mask_relative_probability
-        self.explore_masks = explore_masks
-        self.exploration_mode = exploration_mode
-        self.exploration_temperature = exploration_temperature
-        self.exploration_cut_count_weights = cut_count_weights
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
         self.include_cmf = include_cmf
@@ -1480,19 +1442,16 @@ class MassShatterModel(nn.Module):
             max_masks=self.max_masks,
             min_mask_probability=self.min_mask_probability,
             min_mask_relative_probability=self.min_mask_relative_probability,
-            explore_masks=self.explore_masks if self.training else 0,
-            exploration_mode=self.exploration_mode,
-            exploration_temperature=self.exploration_temperature,
-            exploration_cut_count_weights=self.exploration_cut_count_weights,
             include_single_bond_cuts=self.include_single_bond_cuts,
             max_unique_components=(self.max_masks if self.unique_fragment_mode else None),
             max_enumerated_masks=(self.max_enumerated_masks if self.unique_fragment_mode else None),
+            mask_selection_threads=self.mask_selection_threads,
             static_graph=static_graph,
             smarts_templates=smarts_templates,
             mixture_log_weights=mixture_log_weights,
             candidate_group_ids=(
                 layout["spectrum_to_shared"]
-                if layout is not None and (not self.training or self.explore_masks == 0)
+                if layout is not None
                 else None
             ),
         )

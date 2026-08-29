@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING
@@ -11,12 +12,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch as th
 import torch.nn.functional as F
-
-from fragnnet.frag.bond_mask_generator import (
-    RankedCutMask,
-    iter_ranked_cut_masks,
-    top_k_cut_masks,
-)
 
 if TYPE_CHECKING:
     from fragnnet.frag.mass_shatter_templates import MassShatterTemplate
@@ -90,16 +85,6 @@ class MassShatterCandidateBatch:
 
 
 @dataclass(frozen=True)
-class _RankedMaskCache:
-    """Learned masks shared by repeated collision-energy views."""
-
-    logits: np.ndarray
-    mixture_log_weights: np.ndarray | None
-    mask_ptr: np.ndarray
-    broken_bonds: np.ndarray
-
-
-@dataclass(frozen=True)
 class _TopologyCache:
     """Molecule-local component arrays shared by repeated graph views."""
 
@@ -142,65 +127,247 @@ def _top_mixture_bond_sets(
     limit: int,
     min_probability: float,
     min_relative_probability: float,
-) -> list[tuple[int, ...]]:
-    """Return a deduplicated pool ranked by exact Bernoulli-mixture probability."""
-    from fragnnet.frag.mass_shatter_core import top_k_cut_masks_csr_raw
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return a deduplicated CSR pool ranked by exact Bernoulli-mixture probability.
 
-    bond_set_pool: set[tuple[int, ...]] = set()
-    for mixture_index in range(logits.shape[1]):
-        mask_ptr, broken_bonds, _, _ = top_k_cut_masks_csr_raw(
-            logits[:, mixture_index].tolist(),
+    Pools each component's exact top-k masks, deduplicates them, scores every
+    survivor under the full mixture, and ranks by descending probability with
+    lexicographic tie-breaks. The work runs in a compiled kernel that holds no
+    Python state, so the per-molecule body executes without the GIL.
+
+    Args:
+        logits: Per-bond cut logits of shape (num_bonds, num_mixtures).
+        mixture_log_weights: Log-normalized mixture weights of shape (num_mixtures,).
+        limit: Maximum number of bond sets to return.
+        min_probability: Absolute mixture-probability floor; 0 disables.
+        min_relative_probability: Probability floor relative to the MAP mask; 0 disables.
+
+    Returns:
+        Tuple of ``(mask_ptr, broken_bonds)`` CSR arrays of dtype int64, where
+        ``mask_ptr`` has shape (num_selected + 1,) and ``broken_bonds`` holds the
+        concatenated cut bond indices. Bond sets are ordered by descending mixture
+        probability, ties broken by ascending lexicographic bond order.
+    """
+    from fragnnet.frag.mass_shatter_core import top_mixture_bond_sets_raw
+
+    return top_mixture_bond_sets_raw(
+        np.ascontiguousarray(logits, dtype=np.float64),
+        np.ascontiguousarray(mixture_log_weights, dtype=np.float64),
+        limit,
+        min_probability,
+        min_relative_probability,
+    )
+
+
+def _select_masks_batch(
+    logits_by_molecule: list[np.ndarray],
+    mixture_log_weights: np.ndarray | None,
+    candidate_group_values: list[int] | None,
+    limit: int,
+    min_probability: float,
+    min_relative_probability: float,
+    threads: int,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Select ranked cut masks for every precursor, sharing grouped views.
+
+    Repeated collision-energy views of one precursor carry the same proposal logits,
+    so only the first member of each ``candidate_group`` is selected and the rest
+    alias its arrays. Selection itself runs in a kernel that releases the GIL, so
+    ``threads`` above one is real parallelism and never changes the result.
+
+    Args:
+        logits_by_molecule: Per-precursor cut logits, each of shape
+            (num_bonds, num_mixtures).
+        mixture_log_weights: Log-normalized mixture weights of shape
+            (num_molecules, num_mixtures), or None for a single Bernoulli component.
+        candidate_group_values: One group id per precursor, or None when no views
+            are shared.
+        limit: Maximum ranked masks to select per precursor.
+        min_probability: Absolute mask-probability floor; 0 disables.
+        min_relative_probability: Floor relative to the MAP mask; 0 disables.
+        threads: Worker threads for selection. 1 selects inline.
+
+    Returns:
+        One ``(mask_ptr, broken_bonds)`` CSR pair per precursor. Grouped views share
+        the representative's arrays, which are never mutated downstream.
+
+    Raises:
+        ValueError: If precursors sharing a ``candidate_group`` disagree on their
+            proposal logits or mixture weights.
+    """
+    num_molecules = len(logits_by_molecule)
+
+    # 1. Pick one representative per group and check the rest agree with it. The
+    #    grouping contract is a precondition, so it is validated once here rather
+    #    than re-checked on every cache hit during assembly.
+    representatives: list[int] = []
+    representative_of: list[int] = [0] * num_molecules
+    if candidate_group_values is None:
+        representatives = list(range(num_molecules))
+        representative_of = representatives
+    else:
+        first_of_group: dict[int, int] = {}
+        for molecule_index in range(num_molecules):
+            group = candidate_group_values[molecule_index]
+            leader = first_of_group.get(group)
+            if leader is None:
+                first_of_group[group] = molecule_index
+                representatives.append(molecule_index)
+                representative_of[molecule_index] = molecule_index
+                continue
+            if not np.array_equal(
+                logits_by_molecule[leader], logits_by_molecule[molecule_index]
+            ):
+                raise ValueError(
+                    "candidate_group_ids can only group identical proposal logits"
+                )
+            if mixture_log_weights is not None and not np.array_equal(
+                mixture_log_weights[leader], mixture_log_weights[molecule_index]
+            ):
+                raise ValueError(
+                    "candidate_group_ids can only group identical mixture weights"
+                )
+            representative_of[molecule_index] = leader
+
+    # 2. A single Bernoulli component is the degenerate one-component mixture, so
+    #    both cases go through one kernel instead of two parallel code paths.
+    single_weight = np.zeros(1, dtype=np.float64)
+
+    def select(molecule_index: int) -> tuple[np.ndarray, np.ndarray]:
+        weights = (
+            single_weight
+            if mixture_log_weights is None
+            else mixture_log_weights[molecule_index]
+        )
+        return _top_mixture_bond_sets(
+            logits_by_molecule[molecule_index],
+            weights,
             limit,
-            True,
-            0.0,
-            0.0,
-        )
-        bond_set_pool.update(
-            tuple(int(index) for index in broken_bonds[mask_ptr[i] : mask_ptr[i + 1]])
-            for i in range(mask_ptr.size - 1)
+            min_probability,
+            min_relative_probability,
         )
 
-    bond_sets = sorted(bond_set_pool)
-    intact_log_probabilities = -np.logaddexp(0.0, logits).sum(axis=0)
-    component_log_probabilities = np.broadcast_to(
-        intact_log_probabilities,
-        (len(bond_sets), logits.shape[1]),
-    ).copy()
-    cut_counts = np.asarray([len(bond_set) for bond_set in bond_sets], dtype=np.int64)
-    flat_bond_indices = np.asarray(
-        [bond_index for bond_set in bond_sets for bond_index in bond_set],
-        dtype=np.int64,
-    )
-    if flat_bond_indices.size > 0:
-        np.add.at(
-            component_log_probabilities,
-            np.repeat(np.arange(len(bond_sets)), cut_counts),
-            logits[flat_bond_indices],
-        )
-    mixture_log_probabilities = np.logaddexp.reduce(
-        mixture_log_weights + component_log_probabilities,
-        axis=1,
-    )
-    scored_bond_sets = list(zip(mixture_log_probabilities.tolist(), bond_sets))
-    scored_bond_sets.sort(key=lambda item: (-item[0], item[1]))
-    if not scored_bond_sets:
-        return []
+    if threads > 1 and len(representatives) > 1:
+        with ThreadPoolExecutor(max_workers=threads) as pool:
+            selected = list(pool.map(select, representatives))
+    else:
+        selected = [select(molecule_index) for molecule_index in representatives]
 
-    minimum_log_probability = (
-        math.log(min_probability) if min_probability > 0.0 else -math.inf
-    )
-    minimum_relative_log_probability = (
-        math.log(min_relative_probability)
-        if min_relative_probability > 0.0
-        else -math.inf
-    )
-    map_log_probability = scored_bond_sets[0][0]
-    return [
-        bond_set
-        for log_probability, bond_set in scored_bond_sets
-        if log_probability >= minimum_log_probability
-        and log_probability - map_log_probability >= minimum_relative_log_probability
-    ][:limit]
+    by_representative = dict(zip(representatives, selected))
+    return [by_representative[representative_of[i]] for i in range(num_molecules)]
+
+
+def _merge_forced_masks(
+    local_mask_ptr: np.ndarray,
+    local_broken_bonds: np.ndarray,
+    forced_bond_sets: list[tuple[int, ...]],
+    learned_cut_counts: np.ndarray,
+    learned_mask_count: int,
+    molecule_templates: tuple,
+    unique_fragment_mode: bool,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Merge the always-required cut masks into a precursor's ranked selection.
+
+    Two policies, differing only in where the forced masks land:
+
+    - unique-fragment mode puts them first and drops their ranked duplicates, so a
+      prefix can be truncated at the unique-fragment target without ever losing the
+      intact or single-cut support;
+    - otherwise they are appended, and only those absent from the ranked selection.
+
+    Args:
+        local_mask_ptr: CSR pointer over the ranked masks.
+        local_broken_bonds: Concatenated cut bonds for the ranked masks.
+        forced_bond_sets: Required bond sets, deduplicated, in their historical order.
+        learned_cut_counts: Cut count per ranked mask.
+        learned_mask_count: Number of ranked masks.
+        molecule_templates: SMARTS templates matched for this precursor.
+        unique_fragment_mode: Whether unique-fragment enumeration is active.
+
+    Returns:
+        Tuple of ``(mask_ptr, broken_bonds, forced_mask_count)``, where
+        ``forced_mask_count`` is the number of forced masks placed at the front and is
+        zero outside unique-fragment mode.
+    """
+    forced_mask_count = 0
+    if unique_fragment_mode:
+        # Put the required low-cut masks first and remove their ranked
+        # duplicates. A prefix can then be stopped at the unique-fragment
+        # target without ever dropping the intact or single-cut support.
+        forced_cut_counts = np.asarray(
+            [len(bond_set) for bond_set in forced_bond_sets],
+            dtype=np.int64,
+        )
+        forced_bonds = np.asarray(
+            [bond for bond_set in forced_bond_sets for bond in bond_set],
+            dtype=np.int64,
+        )
+        if molecule_templates:
+            forced_bond_set_lookup = set(forced_bond_sets)
+            ranked_bond_sets = [
+                tuple(
+                    local_broken_bonds[
+                        local_mask_ptr[index] : local_mask_ptr[index + 1]
+                    ]
+                )
+                for index in range(learned_mask_count)
+            ]
+            keep_ranked_masks = np.asarray(
+                [
+                    bond_set not in forced_bond_set_lookup
+                    for bond_set in ranked_bond_sets
+                ],
+                dtype=np.bool_,
+            )
+        else:
+            # Without SMARTS templates, forced masks are exactly the empty
+            # mask and, when requested, every single cut. Remove their ranked
+            # duplicates by cardinality instead of materializing thousands of
+            # Python tuples per precursor.
+            maximum_forced_cut_count = 1 if len(forced_bond_sets) > 1 else 0
+            keep_ranked_masks = learned_cut_counts > maximum_forced_cut_count
+        keep_ranked_bonds = np.repeat(keep_ranked_masks, learned_cut_counts)
+        retained_ranked_cut_counts = learned_cut_counts[keep_ranked_masks]
+        retained_ranked_bonds = local_broken_bonds[keep_ranked_bonds]
+        combined_cut_counts = np.concatenate(
+            (forced_cut_counts, retained_ranked_cut_counts)
+        )
+        local_mask_ptr = np.concatenate(
+            (
+                np.zeros(1, dtype=np.int64),
+                np.cumsum(combined_cut_counts, dtype=np.int64),
+            )
+        )
+        local_broken_bonds = np.concatenate(
+            (forced_bonds, retained_ranked_bonds)
+        )
+        forced_mask_count = forced_cut_counts.size
+    else:
+        extra_cut_counts: list[int] = []
+        extra_bonds: list[int] = []
+        selected_bond_sets = {
+            tuple(local_broken_bonds[local_mask_ptr[index] : local_mask_ptr[index + 1]])
+            for index in range(learned_mask_count)
+        }
+        for bond_set in forced_bond_sets:
+            if bond_set in selected_bond_sets:
+                continue
+            extra_cut_counts.append(len(bond_set))
+            extra_bonds.extend(bond_set)
+        if extra_cut_counts:
+            local_mask_ptr = np.concatenate(
+                (
+                    local_mask_ptr,
+                    local_mask_ptr[-1]
+                    + np.cumsum(extra_cut_counts, dtype=np.int64),
+                )
+            )
+            if extra_bonds:
+                local_broken_bonds = np.concatenate(
+                    (local_broken_bonds, np.asarray(extra_bonds, dtype=np.int64))
+                )
+
+    return local_mask_ptr, local_broken_bonds, forced_mask_count
 
 
 def build_mass_shatter_candidates(
@@ -210,16 +377,12 @@ def build_mass_shatter_candidates(
     atom_ptr: th.Tensor,
     *,
     max_masks: int,
-    explore_masks: int,
-    exploration_mode: str,
-    exploration_temperature: float,
-    exploration_cut_count_weights: Sequence[float],
     include_single_bond_cuts: bool,
     min_mask_probability: float = 0.0,
     min_mask_relative_probability: float = 0.0,
     max_unique_components: int | None = None,
     max_enumerated_masks: int | None = None,
-    generator: th.Generator | None = None,
+    mask_selection_threads: int = 1,
     static_graph: MassShatterStaticGraph | None = None,
     smarts_templates: Sequence[Sequence[MassShatterTemplate]] | None = None,
     mixture_log_weights: th.Tensor | None = None,
@@ -233,8 +396,10 @@ def build_mass_shatter_candidates(
     latent mixture weight. When ``candidate_group_ids`` is provided, repeated
     collision-energy views with the same group id reuse exact ranked masks and
     connected-component topology while retaining separate differentiable
-    probabilities and output candidates. When
-    ``max_unique_components`` is set, deterministic enumeration continues up to
+    probabilities and output candidates. ``mask_selection_threads`` above one
+    selects the Bernoulli-mixture pools on a thread pool; the kernel releases the
+    GIL, so this is real parallelism and it leaves the selected masks unchanged.
+    When ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
     number of distinct atom sets. Probability floors apply only to learned ranked
     masks; required intact and single-cut masks remain forced.
@@ -256,6 +421,10 @@ def build_mass_shatter_candidates(
         raise ValueError("atom_ptr must be a torch.long CSR pointer")
     if max_masks <= 0:
         raise ValueError(f"max_masks must be positive, got {max_masks}")
+    if mask_selection_threads < 1:
+        raise ValueError(
+            f"mask_selection_threads must be at least 1, got {mask_selection_threads}"
+        )
     if max_unique_components is not None and max_unique_components <= 0:
         raise ValueError(
             "max_unique_components must be positive when enabled, "
@@ -283,39 +452,10 @@ def build_mass_shatter_candidates(
             "min_mask_relative_probability must be finite and in [0, 1], "
             f"got {min_mask_relative_probability}"
         )
-    if explore_masks < 0:
-        raise ValueError(f"explore_masks must be nonnegative, got {explore_masks}")
     if num_mixtures == 1 and mixture_log_weights is not None:
         raise ValueError("mixture_log_weights must be omitted for one Bernoulli component")
     if num_mixtures > 1 and mixture_log_weights is None:
         raise ValueError("mixture_log_weights are required for multiple Bernoulli components")
-    if num_mixtures > 1 and explore_masks > 0:
-        raise ValueError("Bernoulli mixtures do not support exploration masks")
-    if max_unique_components is not None and explore_masks > 0:
-        raise ValueError("unique-component enumeration does not support exploration masks")
-    if candidate_group_ids is not None and explore_masks > 0:
-        raise ValueError("candidate_group_ids does not support exploration masks")
-    if exploration_mode not in {"bernoulli_replace", "bounded_additive"}:
-        raise ValueError(f"unknown exploration mode: {exploration_mode}")
-    if exploration_mode == "bernoulli_replace" and explore_masks >= max_masks:
-        raise ValueError(
-            "bernoulli_replace requires explore_masks smaller than max_masks, "
-            f"got {explore_masks} and {max_masks}"
-        )
-    if not math.isfinite(exploration_temperature) or exploration_temperature <= 0.0:
-        raise ValueError(f"exploration_temperature must be positive, got {exploration_temperature}")
-    cut_count_weights = tuple(float(weight) for weight in exploration_cut_count_weights)
-    if (
-        len(cut_count_weights) < 3
-        or any(not math.isfinite(weight) or weight < 0.0 for weight in cut_count_weights)
-        or cut_count_weights[0] != 0.0
-        or cut_count_weights[1] != 0.0
-        or sum(cut_count_weights[2:]) <= 0.0
-    ):
-        raise ValueError(
-            "exploration_cut_count_weights must contain nonnegative weights indexed by "
-            "cut count, with zero weights for 0/1 cuts and positive mass above 1"
-        )
 
     total_start = perf_counter()
     device = bond_logits.device
@@ -444,10 +584,35 @@ def build_mass_shatter_candidates(
     num_mechanisms_so_far = 0
     num_components_so_far = 0
     num_unique_components_so_far = 0
-    ranked_mask_cache: dict[int, _RankedMaskCache] = {}
     topology_cache: dict[int, _TopologyCache] = {}
 
-    # 2. Select and assemble masks independently for each precursor.
+    # 2. Select every precursor's ranked masks up front. Selection depends only on
+    # the proposal logits, so hoisting it out of the assembly loop is what lets
+    # grouped views share one selection and lets the pool run threads across
+    # precursors.
+    learned_mask_limit = (
+        max_enumerated_masks if max_unique_components is not None else max_masks
+    )
+    logits_by_molecule = [
+        np.asarray(
+            [detached_logits_all[index] for index in bond_indices_by_molecule[molecule_index]],
+            dtype=np.float64,
+        ).reshape(-1, num_mixtures)
+        for molecule_index in range(num_molecules)
+    ]
+    selection_start = perf_counter()
+    selected_masks = _select_masks_batch(
+        logits_by_molecule,
+        None if mixture_log_weights_cpu is None else mixture_log_weights_cpu.numpy(),
+        candidate_group_values,
+        learned_mask_limit,
+        min_mask_probability,
+        min_mask_relative_probability,
+        mask_selection_threads,
+    )
+    mask_selection_ms += (perf_counter() - selection_start) * 1000.0
+
+    # 3. Select and assemble masks independently for each precursor.
     for molecule_index in range(num_molecules):
         atom_start = atom_ptr_values[molecule_index]
         atom_end = atom_ptr_values[molecule_index + 1]
@@ -462,15 +627,6 @@ def build_mass_shatter_candidates(
 
         selection_start = perf_counter()
         global_bond_indices = bond_indices_by_molecule[molecule_index]
-        local_logits = np.asarray(
-            [detached_logits_all[index] for index in global_bond_indices],
-            dtype=np.float64,
-        )
-        if num_mixtures == 1:
-            detached_logits = local_logits.reshape(-1).tolist()
-        else:
-            local_logits = local_logits.reshape(-1, num_mixtures)
-            detached_logits = []
         local_endpoints = tuple(
             tuple(chemical_bond_rows[row][index] - atom_start for index in global_bond_indices)
             for row in range(2)
@@ -484,379 +640,56 @@ def build_mass_shatter_candidates(
             tuple(template.broken_bond_indices) for template in molecule_templates
         ]
         forced_bond_sets = [()]
-        if include_single_bond_cuts:
+        # NOTE: single-bond cuts are forced only for a single Bernoulli component.
+        # Mixtures have never forced them -- the pre-refactor code derived the bond
+        # count from a list it left empty when num_mixtures > 1 -- and no shipped
+        # config combines the two, so the behavior is preserved rather than changed
+        # here. See docs/plans/masshatter_candidate_pathway_refactor.md.
+        if include_single_bond_cuts and num_mixtures == 1:
             forced_bond_sets.extend(
-                (bond_index,) for bond_index in range(len(detached_logits))
+                (bond_index,) for bond_index in range(len(global_bond_indices))
             )
         forced_bond_sets.extend(template_bond_sets)
         forced_bond_sets = list(dict.fromkeys(forced_bond_sets))
-        if explore_masks == 0:
-            # The production Transformer path stays numeric from exact top-k
-            # selection through topology assembly. Only forced empty/single
-            # masks are appended here, in their historical order.
-            from fragnnet.frag.mass_shatter_core import top_k_cut_masks_csr_raw
+        local_mask_ptr, local_broken_bonds = selected_masks[molecule_index]
+        learned_mask_count = local_mask_ptr.size - 1
+        if min_mask_probability > 0.0 and learned_mask_count == 0:
+            raise ValueError(
+                "mass_shatter_min_mask_probability excludes every learned mask "
+                f"for precursor {molecule_index}"
+            )
 
-            learned_mask_limit = (
-                max_enumerated_masks
-                if max_unique_components is not None
-                else max_masks
-            )
-            cached_ranked_masks = (
-                None
-                if candidate_group is None
-                else ranked_mask_cache.get(candidate_group)
-            )
-            local_mixture_log_weights = (
-                None
-                if mixture_log_weights_cpu is None
-                else mixture_log_weights_cpu[molecule_index].numpy()
-            )
-            if cached_ranked_masks is not None:
-                if not np.array_equal(cached_ranked_masks.logits, local_logits) or (
-                    cached_ranked_masks.mixture_log_weights is None
-                ) != (local_mixture_log_weights is None):
-                    raise ValueError(
-                        "candidate_group_ids can only group identical proposal logits"
-                    )
-                if (
-                    local_mixture_log_weights is not None
-                    and not np.array_equal(
-                        cached_ranked_masks.mixture_log_weights,
-                        local_mixture_log_weights,
-                    )
-                ):
-                    raise ValueError(
-                        "candidate_group_ids can only group identical mixture weights"
-                    )
-                local_mask_ptr = cached_ranked_masks.mask_ptr
-                local_broken_bonds = cached_ranked_masks.broken_bonds
-            elif num_mixtures == 1:
-                local_mask_ptr, local_broken_bonds, _, _ = top_k_cut_masks_csr_raw(
-                    detached_logits,
-                    learned_mask_limit,
-                    True,
-                    min_mask_probability,
-                    min_mask_relative_probability,
-                )
-            else:
-                if mixture_log_weights_cpu is None:
-                    raise RuntimeError("mixture weights disappeared during mask selection")
-                mixture_bond_sets = _top_mixture_bond_sets(
-                    local_logits,
-                    mixture_log_weights_cpu[molecule_index].numpy(),
-                    learned_mask_limit,
-                    min_mask_probability,
-                    min_mask_relative_probability,
-                )
-                mixture_cut_counts = np.asarray(
-                    [len(bond_set) for bond_set in mixture_bond_sets],
-                    dtype=np.int64,
-                )
-                local_mask_ptr = np.concatenate(
-                    (
-                        np.zeros(1, dtype=np.int64),
-                        np.cumsum(mixture_cut_counts, dtype=np.int64),
-                    )
-                )
-                local_broken_bonds = np.asarray(
-                    [bond for bond_set in mixture_bond_sets for bond in bond_set],
-                    dtype=np.int64,
-                )
-            if cached_ranked_masks is None and candidate_group is not None:
-                ranked_mask_cache[candidate_group] = _RankedMaskCache(
-                    logits=local_logits.copy(),
-                    mixture_log_weights=(
-                        None
-                        if local_mixture_log_weights is None
-                        else local_mixture_log_weights.copy()
-                    ),
-                    mask_ptr=local_mask_ptr.copy(),
-                    broken_bonds=local_broken_bonds.copy(),
-                )
-            learned_mask_count = local_mask_ptr.size - 1
-            if min_mask_probability > 0.0 and learned_mask_count == 0:
-                raise ValueError(
-                    "mass_shatter_min_mask_probability excludes every learned mask "
-                    f"for precursor {molecule_index}"
-                )
+        learned_cut_counts = np.diff(local_mask_ptr)
+        proposal_single_cut_fractions.append(
+            float(np.count_nonzero(learned_cut_counts == 1)) / learned_mask_count
+        )
+        exploration_mask_counts.append(0)
+        exploration_mean_cut_counts.append(0.0)
 
-            learned_cut_counts = np.diff(local_mask_ptr)
-            proposal_single_cut_fractions.append(
-                float(np.count_nonzero(learned_cut_counts == 1)) / learned_mask_count
-            )
-            exploration_mask_counts.append(0)
-            exploration_mean_cut_counts.append(0.0)
-
-            forced_mask_count = 0
-            if max_unique_components is not None:
-                # Put the required low-cut masks first and remove their ranked
-                # duplicates. A prefix can then be stopped at the unique-fragment
-                # target without ever dropping the intact or single-cut support.
-                forced_cut_counts = np.asarray(
-                    [len(bond_set) for bond_set in forced_bond_sets],
-                    dtype=np.int64,
-                )
-                forced_bonds = np.asarray(
-                    [bond for bond_set in forced_bond_sets for bond in bond_set],
-                    dtype=np.int64,
-                )
-                if molecule_templates:
-                    forced_bond_set_lookup = set(forced_bond_sets)
-                    ranked_bond_sets = [
-                        tuple(
-                            local_broken_bonds[
-                                local_mask_ptr[index] : local_mask_ptr[index + 1]
-                            ]
-                        )
-                        for index in range(learned_mask_count)
+        local_mask_ptr, local_broken_bonds, forced_mask_count = _merge_forced_masks(
+            local_mask_ptr,
+            local_broken_bonds,
+            forced_bond_sets,
+            learned_cut_counts,
+            learned_mask_count,
+            molecule_templates,
+            max_unique_components is not None,
+        )
+        broken_mask_input: object = (local_mask_ptr, local_broken_bonds)
+        num_local_masks = local_mask_ptr.size - 1
+        selected_local_bond_sets = (
+            [
+                tuple(
+                    int(bond)
+                    for bond in local_broken_bonds[
+                        local_mask_ptr[index] : local_mask_ptr[index + 1]
                     ]
-                    keep_ranked_masks = np.asarray(
-                        [
-                            bond_set not in forced_bond_set_lookup
-                            for bond_set in ranked_bond_sets
-                        ],
-                        dtype=np.bool_,
-                    )
-                else:
-                    # Without SMARTS templates, forced masks are exactly the empty
-                    # mask and, when requested, every single cut. Remove their ranked
-                    # duplicates by cardinality instead of materializing thousands of
-                    # Python tuples per precursor.
-                    maximum_forced_cut_count = 1 if len(forced_bond_sets) > 1 else 0
-                    keep_ranked_masks = learned_cut_counts > maximum_forced_cut_count
-                keep_ranked_bonds = np.repeat(keep_ranked_masks, learned_cut_counts)
-                retained_ranked_cut_counts = learned_cut_counts[keep_ranked_masks]
-                retained_ranked_bonds = local_broken_bonds[keep_ranked_bonds]
-                combined_cut_counts = np.concatenate(
-                    (forced_cut_counts, retained_ranked_cut_counts)
                 )
-                local_mask_ptr = np.concatenate(
-                    (
-                        np.zeros(1, dtype=np.int64),
-                        np.cumsum(combined_cut_counts, dtype=np.int64),
-                    )
-                )
-                local_broken_bonds = np.concatenate(
-                    (forced_bonds, retained_ranked_bonds)
-                )
-                forced_mask_count = forced_cut_counts.size
-            else:
-                extra_cut_counts: list[int] = []
-                extra_bonds: list[int] = []
-                selected_bond_sets = {
-                    tuple(local_broken_bonds[local_mask_ptr[index] : local_mask_ptr[index + 1]])
-                    for index in range(learned_mask_count)
-                }
-                for bond_set in forced_bond_sets:
-                    if bond_set in selected_bond_sets:
-                        continue
-                    extra_cut_counts.append(len(bond_set))
-                    extra_bonds.extend(bond_set)
-                if extra_cut_counts:
-                    local_mask_ptr = np.concatenate(
-                        (
-                            local_mask_ptr,
-                            local_mask_ptr[-1]
-                            + np.cumsum(extra_cut_counts, dtype=np.int64),
-                        )
-                    )
-                    if extra_bonds:
-                        local_broken_bonds = np.concatenate(
-                            (local_broken_bonds, np.asarray(extra_bonds, dtype=np.int64))
-                        )
-            broken_mask_input: object = (local_mask_ptr, local_broken_bonds)
-            num_local_masks = local_mask_ptr.size - 1
-            selected_local_bond_sets = (
-                [
-                    tuple(
-                        int(bond)
-                        for bond in local_broken_bonds[
-                            local_mask_ptr[index] : local_mask_ptr[index + 1]
-                        ]
-                    )
-                    for index in range(num_local_masks)
-                ]
-                if molecule_templates
-                else None
-            )
-        else:
-            exploit_masks = (
-                max_masks - explore_masks
-                if exploration_mode == "bernoulli_replace"
-                else max_masks
-            )
-            ranked_masks = list(
-                top_k_cut_masks(
-                    detached_logits,
-                    exploit_masks,
-                    include_empty=True,
-                    min_probability=min_mask_probability,
-                    min_relative_probability=min_mask_relative_probability,
-                )
-            )
-            if min_mask_probability > 0.0 and not ranked_masks:
-                raise ValueError(
-                    "mass_shatter_min_mask_probability excludes every learned mask "
-                    f"for precursor {molecule_index}"
-                )
-            selected_bond_sets = {
-                ranked_mask.broken_bond_indices for ranked_mask in ranked_masks
-            }
-            reserved_bond_sets = set(forced_bond_sets)
-            unavailable_bond_sets = selected_bond_sets | reserved_bond_sets
-
-            sampled_count = 0
-            sampled_cut_count = 0
-            if exploration_mode == "bernoulli_replace":
-                # Legacy complete-mask Bernoulli exploration retained for old runs.
-                proposal_probabilities = th.sigmoid(
-                    bond_logits_cpu[global_bond_indices] / exploration_temperature
-                )
-                max_sampling_attempts = max(32, 8 * explore_masks)
-                for _ in range(max_sampling_attempts):
-                    if sampled_count == explore_masks or proposal_probabilities.numel() == 0:
-                        break
-                    sampled_cut_mask = (
-                        th.rand(
-                            proposal_probabilities.shape,
-                            generator=generator,
-                        )
-                        < proposal_probabilities
-                    )
-                    broken_bond_indices = tuple(
-                        th.nonzero(sampled_cut_mask, as_tuple=False).flatten().tolist()
-                    )
-                    if broken_bond_indices in unavailable_bond_sets:
-                        continue
-                    ranked_masks.append(
-                        RankedCutMask(
-                            broken_bond_indices=broken_bond_indices,
-                            log_probability=0.0,
-                            log_probability_from_map=0.0,
-                        )
-                    )
-                    selected_bond_sets.add(broken_bond_indices)
-                    unavailable_bond_sets.add(broken_bond_indices)
-                    sampled_count += 1
-                    sampled_cut_count += len(broken_bond_indices)
-
-            # Preserve the historical fixed total budget for legacy experiments.
-            if exploration_mode == "bernoulli_replace" and len(ranked_masks) < max_masks:
-                min_log_probability = (
-                    math.log(min_mask_probability)
-                    if min_mask_probability > 0.0
-                    else -math.inf
-                )
-                min_relative_log_probability = (
-                    math.log(min_mask_relative_probability)
-                    if min_mask_relative_probability > 0.0
-                    else -math.inf
-                )
-                for refill_mask in iter_ranked_cut_masks(detached_logits, include_empty=True):
-                    if (
-                        refill_mask.log_probability < min_log_probability
-                        or refill_mask.log_probability_from_map
-                        < min_relative_log_probability
-                    ):
-                        break
-                    broken_bond_indices = refill_mask.broken_bond_indices
-                    if broken_bond_indices in unavailable_bond_sets:
-                        continue
-                    ranked_masks.append(refill_mask)
-                    selected_bond_sets.add(broken_bond_indices)
-                    unavailable_bond_sets.add(broken_bond_indices)
-                    if len(ranked_masks) == max_masks:
-                        break
-
-            if exploration_mode == "bounded_additive":
-                # Draw cardinalities and Gumbel top-k masks in one compiled call.
-                valid_weight_count = min(
-                    len(cut_count_weights), len(detached_logits) + 1
-                )
-                valid_weights = cut_count_weights[:valid_weight_count]
-                if sum(valid_weights) > 0.0:
-                    supported_cut_counts = {
-                        cut_count
-                        for cut_count, weight in enumerate(valid_weights)
-                        if weight > 0.0
-                    }
-                    proposal_space_size = sum(
-                        math.comb(len(detached_logits), cut_count)
-                        for cut_count in supported_cut_counts
-                    )
-                    unavailable_proposal_count = sum(
-                        len(bond_set) in supported_cut_counts
-                        for bond_set in unavailable_bond_sets
-                    )
-                    target_sample_count = min(
-                        explore_masks,
-                        proposal_space_size - unavailable_proposal_count,
-                    )
-                    if target_sample_count > 0:
-                        from fragnnet.frag.mass_shatter_core import (
-                            bounded_additive_masks_raw,
-                        )
-
-                        max_sampling_attempts = max(32, 8 * explore_masks)
-                        proposal_logits = [
-                            detached_logits[index] / exploration_temperature
-                            for index in range(len(detached_logits))
-                        ]
-                        sampler_seed = int(
-                            th.randint(
-                                0,
-                                2**63 - 1,
-                                (),
-                                generator=generator,
-                                dtype=th.int64,
-                            ).item()
-                        )
-                        sampled_masks = bounded_additive_masks_raw(
-                            proposal_logits,
-                            valid_weights,
-                            unavailable_bond_sets,
-                            target_sample_count,
-                            max_sampling_attempts,
-                            sampler_seed,
-                        )
-                        for broken_bond_indices in sampled_masks:
-                            ranked_masks.append(
-                                RankedCutMask(
-                                    broken_bond_indices=broken_bond_indices,
-                                    log_probability=0.0,
-                                    log_probability_from_map=0.0,
-                                )
-                            )
-                            selected_bond_sets.add(broken_bond_indices)
-                            unavailable_bond_sets.add(broken_bond_indices)
-                            sampled_count += 1
-                            sampled_cut_count += len(broken_bond_indices)
-
-            exploration_mask_counts.append(sampled_count)
-            exploration_mean_cut_counts.append(
-                sampled_cut_count / sampled_count if sampled_count > 0 else 0.0
-            )
-            proposal_single_cut_fractions.append(
-                sum(mask.cut_count == 1 for mask in ranked_masks) / len(ranked_masks)
-            )
-
-            # Append forced masks outside the learned proposal budget.
-            for broken_bond_indices in forced_bond_sets:
-                if broken_bond_indices in selected_bond_sets:
-                    continue
-                ranked_masks.append(
-                    RankedCutMask(
-                        broken_bond_indices=broken_bond_indices,
-                        log_probability=0.0,
-                        log_probability_from_map=0.0,
-                    )
-                )
-                selected_bond_sets.add(broken_bond_indices)
-            broken_mask_input = [
-                ranked_mask.broken_bond_indices for ranked_mask in ranked_masks
+                for index in range(num_local_masks)
             ]
-            num_local_masks = len(ranked_masks)
-            selected_local_bond_sets = list(broken_mask_input)
+            if molecule_templates
+            else None
+        )
         mask_selection_ms += (perf_counter() - selection_start) * 1000.0
 
         # 3. Build connected components and every flat candidate index without
@@ -895,8 +728,6 @@ def build_mass_shatter_candidates(
                 component_start,
             )
             if candidate_group is not None:
-                if not isinstance(broken_mask_input, tuple):
-                    raise RuntimeError("shared candidate masks must use CSR arrays")
                 global_to_local_bond = {
                     int(global_index): local_index
                     for local_index, global_index in enumerate(global_bond_indices)
@@ -943,8 +774,6 @@ def build_mass_shatter_candidates(
                     ),
                 )
         else:
-            if not isinstance(broken_mask_input, tuple):
-                raise RuntimeError("shared candidate masks must use CSR arrays")
             if (
                 cached_topology.num_atoms != num_atoms
                 or cached_topology.endpoints != local_endpoints
