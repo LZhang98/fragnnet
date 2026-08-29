@@ -47,8 +47,6 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
     return {
         "retained_mask_probability": th.tensor([0.8]),
         "selected_mask_count": th.tensor([2]),
-        "exploration_mask_count": th.tensor([0]),
-        "exploration_mean_cut_count": th.tensor([0.0]),
         "component_pathway_count": th.tensor([4]),
         "mean_mask_cut_count": th.tensor([2.0]),
         "proposal_single_cut_fraction": th.tensor([0.25]),
@@ -85,6 +83,77 @@ def test_mass_shatter_registration_uses_spectrum_only_dataset() -> None:
     assert get_model_cls("mass_shatter") is MassShatterPL
     assert get_dataset_cls("mass_shatter") is SpecMolDataset
     assert issubclass(MassShatterPL, SpectrumPL)
+
+
+def test_candidate_metric_wrapper_does_not_repeat_loss_wrecall() -> None:
+    model, _ = _build_pl(auxiliary_scores=[])
+    mzs = th.tensor([100.0])
+    intensities = th.tensor([1.0])
+    batch_indices = th.tensor([0])
+
+    metrics = model.metric_fn(
+        true_mzs=mzs,
+        true_ints=intensities,
+        true_logprobs=intensities.log(),
+        true_batch_idxs=batch_indices,
+        pred_mzs=mzs,
+        pred_ints=intensities,
+        pred_logprobs=intensities.log(),
+        pred_batch_idxs=batch_indices,
+        true_prec_mzs=th.tensor([200.0]),
+        split="val",
+        candidate_mzs_by_cut=mzs,
+        candidate_batch_idxs_by_cut=batch_indices,
+        candidate_cut_counts=th.tensor([1]),
+    )
+
+    assert "candidate_wrecall" not in metrics
+
+
+@pytest.mark.parametrize("matching", ["closest", "hungarian"])
+def test_independent_peak_list_loss_avoids_gaussian_ce(matching: str) -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=1.0,
+        mass_shatter_intensity_output="independent",
+        mass_shatter_peak_matching=matching,
+        mass_shatter_intensity_entropy_match_weight=0.1,
+        loss_type="cosine_distance",
+    )
+    true_mzs = th.tensor([100.0, 150.0])
+    true_intensities = th.tensor([0.75, 0.25])
+    pred_mzs = th.tensor([99.996, 100.004, 150.0])
+    pred_intensities = th.tensor([0.25, 0.5, 0.25], requires_grad=True)
+    true_batch_indices = th.zeros(2, dtype=th.long)
+    pred_batch_indices = th.zeros(3, dtype=th.long)
+
+    result = model.loss_fn(
+        true_mzs=true_mzs,
+        true_logprobs=true_intensities.log(),
+        true_intensities=true_intensities,
+        true_batch_idxs=true_batch_indices,
+        pred_mzs=pred_mzs,
+        pred_intensities=pred_intensities,
+        pred_batch_idxs=pred_batch_indices,
+        candidate_mzs_by_cut=pred_mzs,
+        candidate_batch_idxs_by_cut=pred_batch_indices,
+        candidate_cut_counts=th.tensor([1, 1, 2]),
+        proposal_candidate_mzs=pred_mzs,
+        proposal_candidate_fragment_idxs=th.tensor([0, 0, 1]),
+        proposal_fragment_logprobs=th.tensor([0.5, 0.5]).log(),
+        proposal_fragment_batch_idxs=th.tensor([0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+    result["loss"].sum().backward()
+
+    assert "spec_ce" not in result
+    assert "spec_peak_distance" in result
+    assert "spec_entropy_match" in result
+    assert pred_intensities.grad is not None
+    assert th.isfinite(pred_intensities.grad).all()
 
 
 def test_mass_shatter_pl_builds_configured_bond_focused_head() -> None:
@@ -511,8 +580,6 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         pred_batch_idxs=pred_batch_indices,
         retained_mask_probability=th.tensor([0.8]),
         selected_mask_count=th.tensor([2]),
-        exploration_mask_count=th.tensor([1]),
-        exploration_mean_cut_count=th.tensor([3.0]),
         component_pathway_count=th.tensor([4]),
         mean_mask_cut_count=th.tensor([2.0]),
         proposal_single_cut_fraction=th.tensor([0.25]),
@@ -588,8 +655,6 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
     assert actual["candidate_wrecall"].tolist() == pytest.approx([0.6])
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])
     assert actual["selected_mask_count"].tolist() == [2.0]
-    assert actual["exploration_mask_count"].tolist() == [1.0]
-    assert actual["exploration_mean_cut_count"].tolist() == [3.0]
     assert actual["component_pathway_count"].tolist() == [4.0]
     assert actual["mean_mask_cut_count"].tolist() == [2.0]
     assert actual["proposal_single_cut_fraction"].tolist() == [0.25]

@@ -1,10 +1,11 @@
 # MASShatter — Candidate-Generation Pathway Refactor
 
-> **Status:** LANDED &nbsp;·&nbsp; **Updated:** 2026-08-28
+> **Status:** LANDED &nbsp;·&nbsp; **Updated:** 2026-08-29
 >
 > All five layers implemented and verified behavior-identical on 72 configurations. Exploration
 > deleted. Selection is hoisted out of the assembly loop, `mixtures=1` now threads, and two latent
-> bugs surfaced (see Outcome). 2291 tests pass. Changes are uncommitted in the working tree.
+> bugs surfaced (see Outcome). Committed in `ebfb64ed`; the 2026-08-29 follow-up cleanup below is
+> uncommitted. 2304 tests pass.
 
 ## Why now
 
@@ -271,6 +272,7 @@ Landed 2026-08-28. Verified against a 72-configuration reference (mixtures 1/2/3
 × single-cuts on/off × grouped/ungrouped × three floor settings) comparing every tensor field of
 `MassShatterCandidateBatch`: **0 mismatches**. Plus the 1080-case mixture-kernel reference, a
 400-trial `M=1` equivalence gate, and an exhaustive tie-break check. Full suite 2291 passed.
+Committed in `ebfb64ed`. See **Follow-up cleanup** below for what the first pass left behind.
 
 ### Structure
 
@@ -324,6 +326,57 @@ Nine are under `config/masshatter/legacy/`; the tenth is
 `config/masshatter/merged/baseline/nist20_merged_mask64_gine384_mixed_topk_local8g.yml`, which is
 **not** in `legacy/` and is the config behind the most recent local wandb run — it needs an explicit
 decision.
+
+### Follow-up cleanup — 2026-08-29
+
+A review of the landed code found three loose ends from the Stage 1 removal list. The first two are
+now done; the third is a live decision.
+
+**Exploration diagnostics were still plumbed end to end.** `exploration_mask_count` and
+`exploration_mean_cut_count` survived as constants: the driver appended `0` and `0.0` per molecule,
+`build_mass_shatter_candidates` built two zero tensors and moved them to the model device every
+batch, and both were logged to wandb each epoch. `SpectrumPL` also still carried the
+exploration-only reduction — a weight multiplication in `_accumulate_running_metrics` and two
+`sum_w == 0` guards in `_reduce_running_metrics` — which by then could only ever see zero weight.
+All of it is removed: the two `MassShatterCandidateBatch` fields, the accumulators and tensors in
+[mass_shatter_candidates.py](../../src/fragnnet/frag/mass_shatter_candidates.py), the output-dict
+entries in [mass_shatter_model.py](../../src/fragnnet/model/mass_shatter_model.py), the `loss_fn`
+parameters, `loss_values` entries and `loss_names` in
+[mass_shatter_pl.py](../../src/fragnnet/pl_model/mass_shatter_pl.py), the special-case reduction in
+[spectrum_pl.py](../../src/fragnnet/pl_model/spectrum_pl.py), and the assertions in four test files.
+The metric reduction path is now uniform for every metric.
+
+**`bounded_additive_masks_raw` is gone** from
+[mass_shatter_core.pyx](../../src/fragnnet/frag/mass_shatter_core.pyx), together with the
+`_splitmix64` and `_uniform_open` PRNG helpers that existed only to feed its Gumbel top-k sampling
+— 172 lines, 1787 → 1615. Every remaining `cimport` is still used. The extension was rebuilt with
+`python setup.py build_ext --inplace`. The only surviving mentions of `bounded_additive` are the
+legacy config YAMLs, which already fail at load, and these docs.
+
+**Stage 1's config deprecation window was never built.** The four keys were removed from
+`config/template.yml` outright and `runner.validate_sampler_config` has no exploration check, so the
+10 configs listed under **Config keys** fail at `runner.py:61` with a bare `AssertionError` naming
+the four missing keys, not the intended "exploration has been retired" message. Loud but not
+self-explanatory. Either add the explicit error or drop the promise from Stage 1.
+
+Re-verified against the recompiled extension: exhaustive tie-break order for every subset of 1–8
+bonds under full probability ties, `M=1` exactness against brute-force enumeration over 300
+randomized cases (logits, limits, absolute and relative floors; 900 counting the pre-rebuild run),
+and the full suite at 2304 passed plus one failure,
+`test_data_utils.py::test_rdkit_ml_standardize_neutralizes_phosphorus_oxide`, which is pre-existing
+and unrelated (rdkit leaves `[P+][O-]` unneutralized).
+
+Two things this review could not check, worth knowing:
+
+- **None of the verification harnesses cited above are in the tree.** The 72-configuration
+  differential, the 1080-case mixture reference and the 400-trial `M=1` gate were scratch scripts,
+  so nothing protects the parity claim from a future regression. The tie-break and `M=1` exactness
+  checks are cheap and belong in `tests/`.
+- **`M > 1` selection is not globally exact when the pool is truncated.** Each component is
+  enumerated to its own top-k, then pooled and reranked, so a mask with high mixture probability
+  that is outside every component's top-k cannot be selected — measured at 1 case in 400 random
+  configurations with a tight `max_enumerated_masks`. Inherent to pool-then-rerank and unchanged by
+  this refactor; it disappears as the enumeration budget grows relative to `max_masks`.
 
 ## Related
 

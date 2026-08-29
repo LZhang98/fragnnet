@@ -98,7 +98,9 @@ Use this concrete boundary contract:
 
 - probability mode returns `pred_logprobs`, `pred_mzs`, and `pred_batch_idxs` exactly as today;
 - independent mode returns `pred_intensities`, `pred_mzs`, and `pred_batch_idxs`, where
-  `pred_intensities` is the normal-space Softplus output;
+  `pred_intensities` is a finite normal-space nonnegative tensor. Zero-valued peaks are valid at
+  this boundary; callers must not assume every entry is strictly positive merely because the first
+  head implementation uses Softplus;
 - `SpectrumPL._common_step` branches on the required `mass_shatter_intensity_output` value. The
   probability branch keeps the existing `log_in=True`, `log_out=True` preprocessing bit-for-bit;
   legacy CE consumes those tensors directly, while a new aligned loss receives normal-space copies
@@ -106,8 +108,10 @@ Use this concrete boundary contract:
   `pred_intensities` with `log_in=False` and `log_out=False` and sends those normal intensities to
   the new aligned losses;
 - the adapter may derive `safelog(pred_intensities)` under the semantically neutral local name
-  `pred_logintensities` when an existing evaluation utility requires log-space input. It must not
-  expose that tensor from the model as `pred_logprobs` or send it to Gaussian CE;
+  `pred_logintensities` when an existing evaluation utility requires log-space input. This is a
+  compatibility representation: zero becomes the configured finite log floor and must not be
+  expected to survive a `safelog`/`exp` round trip exactly. The adapter must not expose that tensor
+  from the model as `pred_logprobs` or send it to Gaussian CE;
 - evaluation always starts from normal-space intensity, applies the existing evaluation
   normalization, and may then construct `eval_pred_logprobs` solely for compatibility with current
   metric helpers.
@@ -128,11 +132,12 @@ construct a shared sparse support in two stages:
    for log intensities or `agg="sum"` for normal-space intensities. This 1e-4-Da rounding prevents
    floating-point summation order from splitting chemically identical masses; it is numerical
    exact-mass coalescing, not an instrument-resolution bin or a license to merge nearby formulas.
-2. Assign each coalesced predicted peak to its nearest observed peak inside that sample's configured
-   mass-error tolerance, using m/z distance only and deterministic tie breaking. Multiple predicted
-   peaks may map to the same observed peak and their intensities are summed. Retain unmatched
-   observed peaks as target-only coordinates and unmatched predicted peaks as prediction-only
-   coordinates.
+2. Compare two m/z-only correspondence rules inside each sample's configured mass-error tolerance:
+   `closest` assigns every predicted peak to its nearest observed peak with deterministic tie
+   breaking and sums many-to-one assignments; `hungarian` finds a minimum-total-m/z-distance
+   one-to-one assignment. Retain unmatched observed peaks as target-only coordinates and unmatched
+   predicted peaks as prediction-only coordinates in both modes. Predicted intensity must never
+   enter either assignment rule.
 
 Do not add bounded-diameter or resolution clustering in the first implementation. A physical
 peak-resolution merge requires a separately justified instrument rule; the existing loss tolerance
@@ -143,11 +148,12 @@ channel inside the matching tolerance remains a valid proposal target, with each
 counted once. Exact-mass coalescing happens only after fragments are expanded into observable ion/H
 peaks; it never merges structural fragment identities.
 
-This many-to-one alignment matches the current CE and proposal-loss convention that all compatible
-candidates may contribute to one observed peak, avoids an arbitrary losing fragment among
-near-degenerate candidates, and can be implemented with sorted/searchsorted tensor operations
-instead of a cubic assignment solve. It is not identical to the 0.01-Da evaluation metric because
-the boundaries differ, so both training-aligned and historical metrics must be logged.
+The `closest` alignment matches the current CE and proposal-loss convention that all compatible
+candidates may contribute to one observed peak and avoids an arbitrary losing fragment among
+near-degenerate candidates. The m/z-only Hungarian alternative tests whether one-to-one peak
+correspondence is preferable without allowing intensity to move the assignment as the head learns.
+Neither is identical to the 0.01-Da evaluation metric because the boundaries differ, so both
+training-aligned and historical metrics must be logged.
 
 The alignment is discrete and need not be differentiable with respect to m/z because MASShatter's
 predicted m/z values are fixed chemical outputs. The aligned union makes unmatched true peaks and
@@ -229,8 +235,10 @@ conventions of the existing sparse JSS calculation on the aligned peak union and
 `1 - JSS`. Do not use Gaussian matching or intensity-dependent correspondence.
 
 JSD interprets L1-normalized intensity shape as a distribution inside the loss. This does not
-require the model head to emit probabilities: independent Softplus scores remain the model output,
-and no likelihood or density over continuous m/z is introduced.
+require the model head to emit probabilities: independent nonnegative scores remain the model
+output, and no likelihood or density over continuous m/z is introduced. Individual zero entries
+are included using the standard `0 * log(0 / m) = 0` convention rather than being clamped to a
+positive pseudo-intensity.
 
 ### Entropy matching auxiliary
 
@@ -323,14 +331,15 @@ Declare the required hyperparameters in `config/template.yml`; do not use fallba
 
 ```yaml
 mass_shatter_intensity_output: probability  # [probability, independent]
+mass_shatter_peak_matching: closest  # [closest, hungarian]
 mass_shatter_intensity_entropy_match_weight: 0.0
 ```
 
 Use the existing required `loss_type` field rather than introducing a second MassShatter-specific
-loss selector. Extend its validated vocabulary with explicit many-to-one tolerance-aligned cosine
-and JSD values; do not reuse names whose existing FraGNNet behavior means binned or Hungarian loss.
-Initially reject independent output with cross entropy because CE assumes normalized mixture
-weights. Do not add a peak-merge hyperparameter in the first implementation.
+loss selector. For MASShatter, `cosine_distance` and `jss_distance` select the new direct peak-list
+implementations; `mass_shatter_peak_matching` selects their m/z-only correspondence. Initially
+reject independent output with cross entropy because CE assumes normalized mixture weights. Do not
+add a peak-merge hyperparameter in the first implementation.
 
 `MassShatterPL._setup_loss_fn` currently hard-raises for any `loss_type` other than `cross_entropy`
 and, in the same guard, requires `sparse_cosine_similarity` and `sum_ints`
@@ -388,21 +397,21 @@ explicitly updated to consume the normalized diagnostic copy with preserved sema
 ### 4. Add shared exact-mass aggregation and alignment
 
 Reuse `round_aggregate_peaks(decimals=4)` to coalesce numerical exact masses while preserving
-intensity gradients. Add one focused tensorized helper that assigns each predicted exact-mass group
-to its nearest observed peak within the existing global or per-instrument tolerance and sums all
-assigned predicted intensities. Matching must depend only on m/z. Build cosine, JSD, and entropy on
-that shared aligned union so they cannot silently use different correspondence rules. Do not use
-the existing Hungarian losses: their assignment scores depend on intensity, and their fallback
-executes cubic SciPy assignment work per spectrum on CPU. Return one primary loss and one entropy
-value per spectrum so `SpectrumPL` retains ownership of weighting and batch reduction.
+intensity gradients. Add one shared helper supporting `closest` many-to-one aggregation and
+minimum-distance Hungarian one-to-one matching within the existing global or per-instrument
+tolerance. Matching must depend only on m/z. Build cosine, JSD, and entropy on the resulting aligned
+union so they cannot silently use different correspondence rules. Do not reuse the existing
+Hungarian losses because their assignments depend on intensity. Return one primary loss and one
+entropy value per spectrum so `SpectrumPL` retains ownership of weighting and batch reduction.
 
 ### 5. Add JSD and entropy matching
 
 Reuse the numerical conventions of the existing `jss_helper` and `sparse_entropy_fn`, but keep the
-training helper differentiable with respect to independent intensities. Validate nonnegative finite
-intensities and a positive total intensity for both spectra before normalization. Apply the entropy
-weight with the same per-spectrum weighting and final batch reduction as the primary intensity
-loss.
+training helper differentiable with respect to independent intensities. Validate finite intensities,
+reject negative entries, and permit individual entries to equal zero. Require a positive total
+intensity for each whole spectrum before cosine or L1 normalization; an all-zero spectrum is a
+separate undefined edge case, not a reason to forbid zero-valued peaks. Apply the entropy weight
+with the same per-spectrum weighting and final batch reduction as the primary intensity loss.
 
 ### 6. Keep proposal supervision separate
 
@@ -411,13 +420,125 @@ fragment is absent from the selected candidate set still cannot provide a direct
 to that omitted fragment. Improving hard candidate retrieval requires supervision over a larger
 pre-selection candidate pool and is a separate plan.
 
+## Joint-training coupling risks
+
+Changing the intensity objective is not confined to the intensity path. Record the following
+mechanisms and their instrumentation before launching any arm; a silent shift in proposal training
+would otherwise be attributed to the intensity change. Which mechanisms apply depends on the
+anchor configuration, so resolve `mass_shatter_separate_proposal_encoder` and
+`mass_shatter_smarts_templates` for the recorded anchor before using this section.
+
+What is already isolated: `proposal_selection_only` detaches the proposal branch from the intensity
+path (`src/fragnnet/model/mass_shatter_model.py`, the `atom_embeddings.detach()` and
+`context.detach()` sites in both the shared and per-spectrum branches). The proposal loss therefore
+trains `bond_break_head`, `charge_head`, the mixture head when enabled, and `proposal_encoder`
+whenever `mass_shatter_separate_proposal_encoder` is True; the primary trains the molecular trunk,
+the context encoder, and the intensity head. The two terms have disjoint parameter supports. Under
+AdamW, rescaling the primary term therefore does not re-weight the joint objective the way it would
+with shared parameters, and `primary_loss_weight` / `mass_shatter_proposal_loss_weight` do not need
+retuning merely because the primary changed magnitude.
+
+Two configuration flags break that isolation and must be checked rather than assumed:
+
+- `mass_shatter_separate_proposal_encoder` determines whether a shared molecular representation
+  exists at all. It is True in several `proposal_selection_only` configs and unset (template default
+  False) in others, so it is a property of the anchor, not of the lead path.
+- `mass_shatter_smarts_templates` is False by default and unset in the current
+  `proposal_selection_only` configs. If it is enabled, `mechanism_head` consumes undetached
+  `chemical_bond_embeddings` and `context`, and mechanism log-probabilities enter the cut-mask
+  probabilities that proposal supervision trains. Proposal gradient would then reach the trunk and
+  context encoder, invalidating the disjoint-support claim above. Do not enable it inside a
+  controlled arm.
+
+The lead configs also set `mass_shatter_base_ce_weight`, `ce_pair_loss_weight`, and
+`cross_ev_fragment_loss_weight` to zero, so the auxiliary rejection guard in step 3 costs nothing on
+the lead path. It does block the `shared_proposal_cross_ev` direction until the cross-EV loss is
+adapted to a normalized diagnostic copy; that remains out of scope here.
+
+### Global-norm gradient clipping recouples the disjoint supports
+
+`gradient_clip_val: 5.0` with `gradient_clip_algorithm: norm` (`config/template.yml`) clips the
+global norm over all parameters, not per parameter group, and there is no branch-specific override.
+It rescales every gradient by one shared factor `c = min(1, 5.0 / total_norm)`, including the
+proposal branch that the primary loss never touches. The primary loss can therefore modulate the raw
+gradient scale reaching the proposal branch without sharing a single parameter with it. That
+mechanism is certain; its magnitude is not.
+
+Two things are hypotheses to measure, not consequences of the loss definitions. First, that a sparse
+Gaussian log-density primary saturates the clip on most steps. Second, that cosine and JSD stop
+saturating it. A bounded loss range does not imply smaller parameter gradients: normalization
+denominators, near-zero intensities, and the network Jacobian can all produce large gradients from a
+loss confined to `[0, 1]`. Both claims stand or fall on the measured pre-clip norms.
+
+The consequence is also weaker than a step-size change. Clipping changes the gradient handed to
+AdamW, but the parameter update does not scale by `1/c`, because Adam's first- and second-moment
+normalization approximately cancels a stable scale factor. What survives cancellation is:
+step-varying clip factors; optimizer state carried across transitions between clipped and unclipped
+regimes; the optimizer epsilon; and the changed balance against AdamW's decoupled weight decay
+(`optimizer: adamw`, `weight_decay: 0.01`). So the accurate statement is that the raw
+proposal-gradient scale changes, not that the proposal branch's effective learning rate rises by the
+previously applied clip factor.
+
+This is therefore a contingent effect. It is a practical problem only if clipping actually binds
+often **and** the clip factors differ materially between arms. If clipping is rare in every arm, the
+concern is minor and needs no mitigation. The diagnostics are decisive rather than merely
+informative: log the pre-clip global gradient norm, the clip-hit rate, the applied clip-factor
+distribution, and per-branch gradient and update norms in every arm, and compare against arm A
+before interpreting any recall difference. Only if the bind rates or clip factors separate
+materially is a mitigation warranted, in which case clip the two branches independently with a
+`configure_gradient_clipping` override rather than retuning loss weights.
+
+### Shared representation, only when the proposal encoder is not separate
+
+This subsection applies only when `mass_shatter_separate_proposal_encoder` is False. There, the
+proposal heads read the detached output of the molecular trunk, and the intensity loss is the sole
+signal training that trunk. Changing the objective changes the proposal heads' input features even
+though no proposal gradient path changed. Under that flag, candidate weighted recall and the
+proposal-loss curve are coupling diagnostics rather than confound checks, and a recall drop in D but
+not B is evidence that the output parameterization degraded the shared representation.
+
+When `mass_shatter_separate_proposal_encoder` is True, there is no shared molecular representation
+and that inference is invalid. A recall difference between arms would then point to the clipping
+and optimization coupling above, to stochastic variation, or to candidate-selection effects, and
+must not be read as representation damage. One narrow channel does persist in both settings: there
+is a single
+`context_encoder`, trained only by the primary loss, whose detached output feeds the proposal heads
+as `proposal_context`. That carries precursor, instrument, and fragmentation-mode conditioning
+rather than molecular structure, so treat it as a much weaker channel than the trunk, not as a
+substitute justification for the shared-representation reading.
+
+### Softplus gradient suppression on down-weighted candidates
+
+Independent mode makes the per-candidate gradient `dL/dz_i = dL/dp[c(i)] * sigmoid(z_i)`, so a
+candidate driven strongly negative receives vanishing gradient through its own output. The risk is
+slow recovery, not irreversible gradient death, and the plan should not overstate it:
+
+- a strongly negative softmax logit also has a vanishing Jacobian under cosine or JSD, so the
+  contrast is not softmax versus Softplus in general;
+- the sharp contrast is with sparse Gaussian CE specifically, where CE and log-softmax simplify
+  together and a correct class retains a strong restoring gradient regardless of how low its current
+  logit is;
+- parameters are shared across candidates and spectra, so a suppressed candidate's score can still
+  move through updates driven by other candidates;
+- collision-energy conditioning can produce different logits for the same fragment at different
+  energies, so suppression at one energy does not fix the score at another.
+
+The objective change compounds it in a separate way: sparse Gaussian CE makes a false candidate cost
+normalized mass taken from true peaks, whereas scale-invariant cosine lets it be zeroed locally at
+near-zero cost. The intensity head can then absorb poor selection rather than the representation
+learning to discriminate. The plan already treats `sigmoid(z)` as an initialization and cardinality
+effect during the fixed-batch overfit; the training-dynamics version is separate and must be tracked
+for the whole run, including the recovery rate of candidates that fall below the suppression
+threshold. The risk is largest under `mass_shatter_share_proposal_across_ev`, where one shared
+candidate set must serve several collision energies.
+
 ## Verification
 
 Add focused tests for these invariants:
 
 1. Legacy probability mode reproduces current `pred_logprobs` and sparse CE exactly.
-2. Independent mode emits finite, strictly nonnegative intensities for every valid channel and no
-   values for invalid channels.
+2. Independent mode emits finite, nonnegative intensities for every valid channel and no values for
+   invalid channels; the downstream contract and losses accept entries equal to zero.
 3. Independent intensities are not constrained to sum to one.
 4. Values that round to the same four-decimal m/z coalesce, and their intensities sum before each
    objective.
@@ -436,8 +557,8 @@ Add focused tests for these invariants:
     matching unchanged within tolerance.
 14. Gradients from each enabled loss reach the fragment score, ion/H score, intensity transformer,
     precursor encoder, and experiment context.
-15. A spectrum with zero predicted or true total intensity raises an explicit validation error or
-    follows one documented epsilon policy; it must not silently emit NaN.
+15. A spectrum with zero predicted or true total intensity raises an explicit validation error; it
+    must not silently emit NaN.
 16. Backpropagation through a many-to-one aligned coordinate gives finite, nonzero gradients to
     every contributing candidate logit on a deliberately non-optimal test spectrum.
 17. In a spectrum with at least one aligned peak, an unmatched predicted peak receives a finite
@@ -454,6 +575,11 @@ Add focused tests for these invariants:
 22. For finite positive test intensities above `log_min`, evaluation metrics computed directly agree
     with the same metrics computed after an explicit `safelog`/`exp` round trip within numerical
     tolerance.
+23. Mixed zero/nonzero predicted intensities produce finite cosine, JSD, and entropy values; zero
+    entries contribute exactly zero mass, while negative entries raise an explicit error.
+24. Independent mode leaves the proposal loss numerically identical to probability mode on a fixed
+    batch with fixed proposal-head parameters, confirming that the detach still isolates proposal
+    supervision from the intensity objective.
 
 Run the focused MassShatter model and Lightning suites after implementation. Run a one-batch CPU
 smoke test and a short fixed-batch overfit before launching the staged training runs.
@@ -480,6 +606,20 @@ Useful diagnostics already available or cheap to derive:
 - `cos_hun_inst_tol` and `jss_hun_inst_tol` as one-to-one secondary diagnostics;
 - predicted precision and the number/fraction of exact-mass groups carrying material intensity;
 - exact-mass group cardinality and its correlation with predicted intensity.
+
+Required in every arm for the coupling risks above, logged for the whole run rather than only during
+the fixed-batch overfit:
+
+- pre-clip global gradient norm and the fraction of steps where `gradient_clip_val` binds, plus the
+  distribution of the applied clip factor;
+- per-branch gradient and update norms, separating the proposal branch (`bond_break_head`,
+  `charge_head`, the mixture head, and `proposal_encoder` when it exists) from the trunk, context
+  encoder, and intensity head, so a scale change is attributed to the branch it occurred in;
+- the proposal-loss curve and candidate weighted recall read as coupling diagnostics, not only as
+  confound checks, so a proposal regression is attributed to the arm that caused it;
+- suppressed-candidate rate: the fraction of selected candidates whose `sigmoid(z)` falls below a
+  fixed threshold, tracked over epochs, together with the fraction that later recover above it, which
+  is what separates slow recovery from true gradient death.
 
 Do not use Gaussian CE slope, background calibration, background-bin entropy, or OOS mass as
 success criteria for the new intensity path.

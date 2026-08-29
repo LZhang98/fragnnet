@@ -1,9 +1,8 @@
 """PyTorch Lightning training wrapper for MASShatter.
 
-MASShatter emits sparse ``(pred_mzs, pred_logprobs, pred_batch_idxs)`` predictions
-normalized over its generated candidates. SpectrumPL's preprocessing, metric, and
-reduction machinery is otherwise reused unchanged. This module only supplies the
-three model-specific pieces:
+MASShatter emits either normalized sparse log-probabilities or independent sparse
+normal-space intensities. SpectrumPL's preprocessing, metric, and reduction machinery is
+otherwise reused unchanged. This module only supplies the three model-specific pieces:
 
 - :meth:`MassShatterPL._setup_model` maps flat hparams onto ``MassShatterModel``.
 - :meth:`MassShatterPL._setup_loss_fn` wraps the sparse cross entropy and the
@@ -29,7 +28,11 @@ from fragnnet.frag.mass_shatter_templates import (
     build_mass_shatter_templates,
 )
 from fragnnet.model import MassShatterModel
-from fragnnet.model.loss import ce_switch_pair_bce, get_sparse_cross_entropy_fn
+from fragnnet.model.loss import (
+    ce_switch_pair_bce,
+    get_sparse_cross_entropy_fn,
+    sparse_peak_list_loss,
+)
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.spec_utils import calculate_match_mzs
@@ -82,6 +85,7 @@ def _candidate_coverage_by_cut_count(
         for metric in ("recall", "wrecall", "precision")
     }
     metrics["candidate_recall"] = true_ints.new_zeros(batch_size)
+    metrics["candidate_wrecall"] = true_ints.new_zeros(batch_size)
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     for batch_index in range(batch_size):
@@ -115,6 +119,9 @@ def _candidate_coverage_by_cut_count(
         metrics["candidate_recall"][batch_index] = all_match_mask.any(dim=1).to(
             batch_true_ints
         ).mean()
+        metrics["candidate_wrecall"][batch_index] = (
+            batch_true_ints * all_match_mask.any(dim=1)
+        ).sum() / true_intensity
         for bucket, select_bucket in _CUT_COUNT_BUCKETS.items():
             candidate_mask = (candidate_batch_idxs == batch_index) & select_bucket(
                 candidate_cut_counts
@@ -604,6 +611,7 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_intensity_atom_decoder_num_layers
             ),
             intensity_transformer_dropout=(self.hparams.mass_shatter_intensity_transformer_dropout),
+            intensity_output=self.hparams.mass_shatter_intensity_output,
             use_mask_residuals=self.hparams.mass_shatter_use_mask_residuals,
             use_base_probability_feature=(not self.hparams.mass_shatter_proposal_anchored),
             return_base_spectrum=(
@@ -651,19 +659,51 @@ class MassShatterPL(SpectrumPL):
         self._check_ce_params()
 
     def _setup_loss_fn(self) -> None:
-        """Use FraGNNet's sparse CE and adjacent-CE switch supervision.
+        """Configure legacy CE or a direct clustered peak-list objective.
 
-        Builds ``self.loss_fn`` as a closure over the configured sparse cross entropy
-        and, when ``ce_pair_loss_weight`` is nonzero, the CE-switch BCE term. Also
-        registers the metric names so SpectrumPL logs MASShatter's candidate-generation
-        diagnostics alongside the losses.
+        Direct cosine/JSD losses use m/z-only closest or Hungarian correspondence and
+        never evaluate a Gaussian density. The legacy cross-entropy branch is retained
+        unchanged as the control. This method also registers candidate-generation
+        diagnostics and compatible auxiliary losses.
 
         Raises:
             ValueError: If the configured loss/spectrum options are outside the subset
                 this training path supports.
         """
-        if self.hparams.loss_type != "cross_entropy":
-            raise ValueError("the first MASShatter training path supports loss_type: cross_entropy")
+        accepted_loss_types = {"cross_entropy", "cosine_distance", "jss_distance"}
+        if self.hparams.loss_type not in accepted_loss_types:
+            raise ValueError(f"MASShatter loss_type must be one of {sorted(accepted_loss_types)}")
+        if self.hparams.mass_shatter_intensity_output not in {
+            "probability",
+            "independent",
+        }:
+            raise ValueError("mass_shatter_intensity_output must be probability or independent")
+        independent_output = self.hparams.mass_shatter_intensity_output == "independent"
+        if independent_output and self.hparams.loss_type == "cross_entropy":
+            raise ValueError("independent intensity output requires a direct spectral loss")
+        if self.hparams.loss_type != "cross_entropy" and (
+            self.hparams.mass_shatter_base_ce_weight != 0.0 or self.hparams.mass_shatter_log_base_ce
+        ):
+            raise ValueError("direct spectral losses do not support the base Gaussian CE")
+        if independent_output and (
+            self.hparams.mass_shatter_base_ce_weight != 0.0
+            or self.hparams.mass_shatter_log_base_ce
+            or self.hparams.ce_pair_loss_weight != 0.0
+            or self.hparams.precursor_pair_loss_weight != 0.0
+            or self.hparams.cross_ev_fragment_loss_weight != 0.0
+        ):
+            raise ValueError(
+                "independent intensity output does not support probability-based CE auxiliaries"
+            )
+        if self.hparams.mass_shatter_peak_matching not in {"closest", "hungarian"}:
+            raise ValueError("mass_shatter_peak_matching must be closest or hungarian")
+        if (
+            not math.isfinite(self.hparams.mass_shatter_intensity_entropy_match_weight)
+            or self.hparams.mass_shatter_intensity_entropy_match_weight < 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_intensity_entropy_match_weight must be finite and nonnegative"
+            )
         if not self.hparams.sparse_cosine_similarity or not self.hparams.sum_ints:
             raise ValueError("MASShatter requires sparse_cosine_similarity and sum_ints")
         if self.hparams.ce_pair_min_endpoint_reliability is not None:
@@ -735,17 +775,19 @@ class MassShatterPL(SpectrumPL):
             self.hparams.mass_shatter_log_base_ce
             or self.hparams.mass_shatter_base_ce_weight > 0.0
         )
-        sparse_ce_fn = get_sparse_cross_entropy_fn(
-            dist=self.hparams.output_distribution,
-            vectorized=self.hparams.loss_vectorized,
-            tolerance=self.tolerance,
-            relative=self.relative,
-            tolerance_min_mz=self.tolerance_min_mz,
-            oos_tolerance_multiple=1.0,
-            gaussian_renormalize=self.hparams.gaussian_renormalize,
-            pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
-            loss_batch_size=self.hparams.loss_batch_size,
-        )
+        sparse_ce_fn = None
+        if self.hparams.loss_type == "cross_entropy":
+            sparse_ce_fn = get_sparse_cross_entropy_fn(
+                dist=self.hparams.output_distribution,
+                vectorized=self.hparams.loss_vectorized,
+                tolerance=self.tolerance,
+                relative=self.relative,
+                tolerance_min_mz=self.tolerance_min_mz,
+                oos_tolerance_multiple=1.0,
+                gaussian_renormalize=self.hparams.gaussian_renormalize,
+                pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+                loss_batch_size=self.hparams.loss_batch_size,
+            )
 
         # The CE-pair term only applies to configured instrument/adduct combinations.
         # Translate those names into the sorted label indices the batch carries (the
@@ -779,12 +821,9 @@ class MassShatterPL(SpectrumPL):
             true_logprobs: th.Tensor,
             true_batch_idxs: th.Tensor,
             pred_mzs: th.Tensor,
-            pred_logprobs: th.Tensor,
             pred_batch_idxs: th.Tensor,
             retained_mask_probability: th.Tensor,
             selected_mask_count: th.Tensor,
-            exploration_mask_count: th.Tensor,
-            exploration_mean_cut_count: th.Tensor,
             component_pathway_count: th.Tensor,
             mean_mask_cut_count: th.Tensor,
             proposal_single_cut_fraction: th.Tensor,
@@ -824,22 +863,77 @@ class MassShatterPL(SpectrumPL):
             tolerance_per_sample = kwargs.get("tol_per_sample")
             minimum_mz_per_sample = kwargs.get("min_mz_per_sample")
             batch_size = int(kwargs["batch_size"])
-            # Reuse the sparse peak matcher with a neutral compatibility value for its
-            # DAG-only remainder input. MASShatter trains only on generated candidates;
-            # unmatched observed intensity is retained solely for coverage monitoring.
-            spectrum_ce, _, unmatched_true_logprobs, _ = sparse_ce_fn(
-                true_mzs,
-                true_logprobs,
-                true_batch_idxs,
-                pred_mzs,
-                pred_logprobs,
-                pred_batch_idxs,
-                pred_logprobs.new_zeros(batch_size),
-                tol_per_sample=tolerance_per_sample,
-                min_mz_per_sample=minimum_mz_per_sample,
-            )
-            primary_loss = spectrum_ce
+            pred_logprobs = kwargs.get("pred_logprobs")
+            pred_intensities = kwargs.get("pred_intensities")
+            if pred_intensities is None:
+                if pred_logprobs is None:
+                    raise ValueError("loss input is missing predicted intensity values")
+                pred_intensities = pred_logprobs.exp()
+            true_intensities = kwargs.get("true_intensities", true_logprobs.exp())
+            prediction_reference = pred_logprobs if pred_logprobs is not None else pred_intensities
+            spectrum_ce = None
+            entropy_match = None
+            if self.hparams.loss_type == "cross_entropy":
+                if pred_logprobs is None:
+                    raise ValueError("cross_entropy requires probability output")
+                if sparse_ce_fn is None:
+                    raise RuntimeError("sparse CE was not configured")
+                # The legacy control retains its Gaussian/peak-marginal behavior.
+                spectrum_ce, _, unmatched_true_logprobs, _ = sparse_ce_fn(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    pred_logprobs.new_zeros(batch_size),
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
+                primary_loss = spectrum_ce
+                candidate_wrecall = 1.0 - unmatched_true_logprobs.exp()
+            else:
+                objective = (
+                    "cosine" if self.hparams.loss_type == "cosine_distance" else "jensen_shannon"
+                )
+                primary_loss, entropy_match = sparse_peak_list_loss(
+                    true_mzs,
+                    true_intensities,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_intensities,
+                    pred_batch_idxs,
+                    objective=objective,
+                    matching=self.hparams.mass_shatter_peak_matching,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                    decimals=4,
+                )
+                coverage = _candidate_coverage_by_cut_count(
+                    true_mzs=true_mzs,
+                    true_ints=true_intensities,
+                    true_batch_idxs=true_batch_idxs,
+                    candidate_mzs=kwargs["candidate_mzs_by_cut"],
+                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
+                    candidate_cut_counts=kwargs["candidate_cut_counts"],
+                    batch_size=batch_size,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
+                candidate_wrecall = coverage["candidate_wrecall"]
             loss = self.hparams.primary_loss_weight * primary_loss
+            if entropy_match is not None:
+                loss = (
+                    loss
+                    + self.hparams.mass_shatter_intensity_entropy_match_weight
+                    * entropy_match
+                )
             if proposal_loss_enabled:
                 proposal_loss_kwargs = {
                     "true_mzs": true_mzs,
@@ -909,61 +1003,62 @@ class MassShatterPL(SpectrumPL):
             # how much of the Bernoulli mask distribution survived truncation, and the
             # counts/timings track the cost of candidate generation.
             loss_values = {
-                "spec_ce": spectrum_ce,
                 "primary_loss": primary_loss,
-                "candidate_wrecall": 1.0 - unmatched_true_logprobs.exp(),
+                "candidate_wrecall": candidate_wrecall,
                 "retained_mask_probability": retained_mask_probability.detach(),
-                "selected_mask_count": selected_mask_count.detach().to(pred_logprobs),
-                "exploration_mask_count": exploration_mask_count.detach().to(pred_logprobs),
-                "exploration_mean_cut_count": (
-                    exploration_mean_cut_count.detach().to(pred_logprobs)
+                "selected_mask_count": selected_mask_count.detach().to(prediction_reference),
+                "component_pathway_count": component_pathway_count.detach().to(
+                    prediction_reference
                 ),
-                "component_pathway_count": component_pathway_count.detach().to(pred_logprobs),
-                "mean_mask_cut_count": mean_mask_cut_count.detach().to(pred_logprobs),
+                "mean_mask_cut_count": mean_mask_cut_count.detach().to(prediction_reference),
                 "proposal_single_cut_fraction": (
-                    proposal_single_cut_fraction.detach().to(pred_logprobs)
+                    proposal_single_cut_fraction.detach().to(prediction_reference)
                 ),
                 "proposal_mixture_entropy": (
-                    proposal_mixture_entropy.detach().to(pred_logprobs)
+                    proposal_mixture_entropy.detach().to(prediction_reference)
                 ),
                 "proposal_mixture_effective_count": (
-                    proposal_mixture_effective_count.detach().to(pred_logprobs)
+                    proposal_mixture_effective_count.detach().to(prediction_reference)
                 ),
                 "proposal_mixture_top1_weight": (
-                    proposal_mixture_top1_weight.detach().to(pred_logprobs)
+                    proposal_mixture_top1_weight.detach().to(prediction_reference)
                 ),
-                "unique_component_count": unique_component_count.detach().to(pred_logprobs),
-                "components_per_mask": components_per_mask.detach().to(pred_logprobs),
+                "unique_component_count": unique_component_count.detach().to(prediction_reference),
+                "components_per_mask": components_per_mask.detach().to(prediction_reference),
                 "unique_components_per_mask": (
-                    unique_components_per_mask.detach().to(pred_logprobs)
+                    unique_components_per_mask.detach().to(prediction_reference)
                 ),
                 "latent_pathways_per_unique_fragment": (
-                    latent_pathways_per_unique_fragment.detach().to(pred_logprobs)
+                    latent_pathways_per_unique_fragment.detach().to(prediction_reference)
                 ),
                 "unique_fragment_target_fill_fraction": (
-                    unique_fragment_target_fill_fraction.detach().to(pred_logprobs)
+                    unique_fragment_target_fill_fraction.detach().to(prediction_reference)
                 ),
                 "unique_fragment_target_reached": (
-                    unique_fragment_target_reached.detach().to(pred_logprobs)
+                    unique_fragment_target_reached.detach().to(prediction_reference)
                 ),
                 "unique_fragment_effective_count": (
-                    unique_fragment_effective_count.detach().to(pred_logprobs)
+                    unique_fragment_effective_count.detach().to(prediction_reference)
                 ),
                 "unique_fragment_top1_mass_fraction": (
-                    unique_fragment_top1_mass_fraction.detach().to(pred_logprobs)
+                    unique_fragment_top1_mass_fraction.detach().to(prediction_reference)
                 ),
                 "duplicate_pathway_probability_fraction": (
-                    duplicate_pathway_probability_fraction.detach().to(pred_logprobs)
+                    duplicate_pathway_probability_fraction.detach().to(prediction_reference)
                 ),
-                "productive_mask_fraction": (productive_mask_fraction.detach().to(pred_logprobs)),
+                "productive_mask_fraction": (
+                    productive_mask_fraction.detach().to(prediction_reference)
+                ),
                 "duplicate_component_pathway_fraction": (
-                    duplicate_component_pathway_fraction.detach().to(pred_logprobs)
+                    duplicate_component_pathway_fraction.detach().to(prediction_reference)
                 ),
-                "mask_cut_fraction_0": mask_cut_fraction_0.detach().to(pred_logprobs),
-                "mask_cut_fraction_1": mask_cut_fraction_1.detach().to(pred_logprobs),
-                "mask_cut_fraction_2": mask_cut_fraction_2.detach().to(pred_logprobs),
-                "mask_cut_fraction_3": mask_cut_fraction_3.detach().to(pred_logprobs),
-                "mask_cut_fraction_4plus": (mask_cut_fraction_4plus.detach().to(pred_logprobs)),
+                "mask_cut_fraction_0": mask_cut_fraction_0.detach().to(prediction_reference),
+                "mask_cut_fraction_1": mask_cut_fraction_1.detach().to(prediction_reference),
+                "mask_cut_fraction_2": mask_cut_fraction_2.detach().to(prediction_reference),
+                "mask_cut_fraction_3": mask_cut_fraction_3.detach().to(prediction_reference),
+                "mask_cut_fraction_4plus": (
+                    mask_cut_fraction_4plus.detach().to(prediction_reference)
+                ),
                 "candidate_input_transfer_batch_ms": (candidate_input_transfer_batch_ms.detach()),
                 "candidate_mask_selection_batch_ms": (candidate_mask_selection_batch_ms.detach()),
                 "candidate_topology_batch_ms": candidate_topology_batch_ms.detach(),
@@ -972,6 +1067,11 @@ class MassShatterPL(SpectrumPL):
                 "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
                 "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
             }
+            if spectrum_ce is not None:
+                loss_values["spec_ce"] = spectrum_ce
+            else:
+                loss_values["spec_peak_distance"] = primary_loss
+                loss_values["spec_entropy_match"] = entropy_match
             if proposal_loss_enabled:
                 loss_values["proposal_loss"] = proposal_loss
             if cross_ev_fragment_loss_enabled:
@@ -1038,12 +1138,9 @@ class MassShatterPL(SpectrumPL):
         loss_names = [
             "loss",
             "primary_loss",
-            "spec_ce",
             "candidate_wrecall",
             "retained_mask_probability",
             "selected_mask_count",
-            "exploration_mask_count",
-            "exploration_mean_cut_count",
             "component_pathway_count",
             "mean_mask_cut_count",
             "proposal_single_cut_fraction",
@@ -1074,6 +1171,10 @@ class MassShatterPL(SpectrumPL):
             "candidate_total_batch_ms",
             "candidate_total_molecule_ms",
         ]
+        if self.hparams.loss_type == "cross_entropy":
+            loss_names.append("spec_ce")
+        else:
+            loss_names.extend(["spec_peak_distance", "spec_entropy_match"])
         if self.hparams.ce_pair_loss_weight != 0.0:
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
         if proposal_loss_enabled:
@@ -1125,22 +1226,24 @@ class MassShatterPL(SpectrumPL):
                 dtype = kwargs["true_mzs"].dtype
                 tol_per_sample = self.inst_tol_lookup[inst_type_idxs].to(dtype=dtype)
                 min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs].to(dtype=dtype)
-            metrics.update(
-                _candidate_coverage_by_cut_count(
-                    true_mzs=kwargs["true_mzs"],
-                    true_ints=kwargs["true_ints"],
-                    true_batch_idxs=kwargs["true_batch_idxs"],
-                    candidate_mzs=kwargs["candidate_mzs_by_cut"],
-                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
-                    candidate_cut_counts=kwargs["candidate_cut_counts"],
-                    batch_size=kwargs["true_prec_mzs"].shape[0],
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                    tol_per_sample=tol_per_sample,
-                    min_mz_per_sample=min_mz_per_sample,
-                )
+            coverage = _candidate_coverage_by_cut_count(
+                true_mzs=kwargs["true_mzs"],
+                true_ints=kwargs["true_ints"],
+                true_batch_idxs=kwargs["true_batch_idxs"],
+                candidate_mzs=kwargs["candidate_mzs_by_cut"],
+                candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
+                candidate_cut_counts=kwargs["candidate_cut_counts"],
+                batch_size=kwargs["true_prec_mzs"].shape[0],
+                tolerance=self.tolerance,
+                relative=self.relative,
+                tolerance_min_mz=self.tolerance_min_mz,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
+            # The loss path already emits this key; returning it here would collide
+            # when SpectrumPL merges validation/test auxiliary metrics.
+            coverage.pop("candidate_wrecall")
+            metrics.update(coverage)
             return metrics
 
         self.metric_fn = metric_fn

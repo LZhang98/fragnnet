@@ -14,6 +14,7 @@ Important binning assumption:
 import logging
 import math
 from collections.abc import Callable
+from typing import Literal
 
 import torch as th
 import torch.nn.functional as F
@@ -43,6 +44,240 @@ logger = logging.getLogger(__name__)
 # LOG_TRUNC_FACTOR = {
 #     i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
 # }
+
+
+def sparse_peak_list_loss(
+    true_mzs: th.Tensor,
+    true_intensities: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_intensities: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    *,
+    objective: Literal["cosine", "jensen_shannon"],
+    matching: Literal["closest", "hungarian"],
+    tolerance: float = 1e-5,
+    relative: bool = True,
+    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+    decimals: int = 4,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Compare sparse peak lists without an m/z probability density.
+
+    Peaks are first coalesced at numerical exact mass by rounding to ``decimals``.
+    Correspondence then depends only on m/z. ``closest`` assigns every predicted
+    peak to its nearest in-tolerance observed peak and permits many-to-one matches;
+    ``hungarian`` finds a minimum-distance one-to-one assignment. Unmatched peaks
+    from either spectrum remain in the loss support.
+
+    Args:
+        true_mzs: Observed m/z values in flat batch form.
+        true_intensities: Nonnegative observed intensities.
+        true_batch_idxs: Spectrum index for each observed peak.
+        pred_mzs: Predicted m/z values in flat batch form.
+        pred_intensities: Nonnegative predicted intensities. Individual zeros are
+            valid, but every complete spectrum must have positive total intensity.
+        pred_batch_idxs: Spectrum index for each predicted peak.
+        objective: Direct spectral objective.
+        matching: M/z-only correspondence rule.
+        tolerance: Relative or absolute matching tolerance.
+        relative: Interpret ``tolerance`` relative to observed m/z when true.
+        tolerance_min_mz: Floor used by relative tolerance.
+        tol_per_sample: Optional relative tolerance per spectrum.
+        min_mz_per_sample: Optional relative-tolerance floor per spectrum.
+        decimals: Decimal precision for numerical exact-mass coalescing.
+
+    Returns:
+        Two per-spectrum vectors: primary distance and squared entropy mismatch.
+    """
+    if objective not in {"cosine", "jensen_shannon"}:
+        raise ValueError(f"unknown peak-list objective: {objective}")
+    if matching not in {"closest", "hungarian"}:
+        raise ValueError(f"unknown peak-list matching mode: {matching}")
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    tensors = {
+        "true_mzs": true_mzs,
+        "true_intensities": true_intensities,
+        "true_batch_idxs": true_batch_idxs,
+        "pred_mzs": pred_mzs,
+        "pred_intensities": pred_intensities,
+        "pred_batch_idxs": pred_batch_idxs,
+    }
+    for name, tensor in tensors.items():
+        if tensor.ndim != 1:
+            raise ValueError(f"{name} must be one-dimensional")
+    if true_mzs.shape != true_intensities.shape or true_mzs.shape != true_batch_idxs.shape:
+        raise ValueError("observed peak tensors must have matching shapes")
+    if pred_mzs.shape != pred_intensities.shape or pred_mzs.shape != pred_batch_idxs.shape:
+        raise ValueError("predicted peak tensors must have matching shapes")
+    if true_batch_idxs.dtype != th.long or pred_batch_idxs.dtype != th.long:
+        raise ValueError("peak batch indices must have dtype torch.long")
+    if true_mzs.numel() == 0 or pred_mzs.numel() == 0:
+        raise ValueError("observed and predicted peak lists must not be empty")
+    if not bool(th.isfinite(true_intensities).all().item()) or not bool(
+        th.isfinite(pred_intensities).all().item()
+    ):
+        raise ValueError("peak intensities must be finite")
+    if bool((true_intensities < 0).any().item()) or bool((pred_intensities < 0).any().item()):
+        raise ValueError("peak intensities must be nonnegative")
+
+    true_mzs, true_intensities, true_batch_idxs = round_aggregate_peaks(
+        true_mzs,
+        true_intensities,
+        true_batch_idxs,
+        decimals=decimals,
+        agg="sum",
+    )
+    pred_mzs, pred_intensities, pred_batch_idxs = round_aggregate_peaks(
+        pred_mzs,
+        pred_intensities,
+        pred_batch_idxs,
+        decimals=decimals,
+        agg="sum",
+    )
+    batch_size = int(true_batch_idxs.max().item()) + 1
+    if pred_batch_idxs.min().item() < 0 or pred_batch_idxs.max().item() >= batch_size:
+        raise ValueError("predicted batch indices reference a missing observed spectrum")
+
+    primary_losses = true_intensities.new_empty(batch_size)
+    entropy_losses = true_intensities.new_empty(batch_size)
+    log_two = math.log(2.0)
+
+    for batch_index in range(batch_size):
+        true_mask = true_batch_idxs == batch_index
+        pred_mask = pred_batch_idxs == batch_index
+        batch_true_mzs = true_mzs[true_mask]
+        batch_true_intensities = true_intensities[true_mask]
+        batch_pred_mzs = pred_mzs[pred_mask]
+        batch_pred_intensities = pred_intensities[pred_mask]
+        if batch_true_mzs.numel() == 0 or batch_pred_mzs.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} must contain observed and predicted peaks")
+        if batch_true_intensities.sum().item() <= 0:
+            raise ValueError(f"observed spectrum {batch_index} has zero total intensity")
+        if batch_pred_intensities.sum().item() <= 0:
+            raise ValueError(f"predicted spectrum {batch_index} has zero total intensity")
+
+        if tol_per_sample is None:
+            match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                batch_pred_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+        else:
+            per_true_tolerance = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                batch_pred_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=per_true_tolerance,
+            )
+        match_mask = th.as_tensor(match_mask, dtype=th.bool, device=batch_true_mzs.device)
+        mass_distance = (batch_true_mzs[:, None] - batch_pred_mzs[None, :]).abs()
+
+        matched_true_indices = th.empty(
+            0,
+            dtype=th.long,
+            device=batch_true_mzs.device,
+        )
+        matched_pred_indices = th.empty(
+            0,
+            dtype=th.long,
+            device=batch_true_mzs.device,
+        )
+        if matching == "closest":
+            feasible_predictions = match_mask.any(dim=0)
+            if feasible_predictions.any():
+                feasible_distances = mass_distance[:, feasible_predictions].masked_fill(
+                    ~match_mask[:, feasible_predictions],
+                    th.inf,
+                )
+                matched_true_indices = feasible_distances.argmin(dim=0)
+                matched_pred_indices = th.where(feasible_predictions)[0]
+        elif match_mask.any():
+            # Invalid pairs receive a cost larger than every possible sum of valid
+            # distances, so assignment first maximizes valid cardinality and then
+            # minimizes total m/z distance. Intensities never enter this decision.
+            invalid_cost = (mass_distance.max().detach() + 1.0) * (min(match_mask.shape) + 1)
+            assignment_cost = mass_distance.masked_fill(~match_mask, invalid_cost)
+            row_indices, column_indices = linear_sum_assignment(
+                assignment_cost.detach(),
+                maximize=False,
+            )
+            valid_assignments = match_mask[row_indices, column_indices]
+            matched_true_indices = row_indices[valid_assignments]
+            matched_pred_indices = column_indices[valid_assignments]
+
+        pred_at_true = batch_pred_intensities.new_zeros(batch_true_intensities.shape)
+        if matched_pred_indices.numel() > 0:
+            pred_at_true = pred_at_true.index_add(
+                0,
+                matched_true_indices,
+                batch_pred_intensities[matched_pred_indices],
+            )
+        unmatched_predictions = th.ones(
+            batch_pred_intensities.shape,
+            dtype=th.bool,
+            device=batch_pred_intensities.device,
+        )
+        unmatched_predictions[matched_pred_indices] = False
+        aligned_pred = th.cat(
+            [pred_at_true, batch_pred_intensities[unmatched_predictions]],
+            dim=0,
+        )
+        aligned_true = th.cat(
+            [
+                batch_true_intensities,
+                batch_true_intensities.new_zeros(int(unmatched_predictions.sum().item())),
+            ],
+            dim=0,
+        )
+
+        if objective == "cosine":
+            cosine_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
+            if cosine_dtype in {th.float16, th.bfloat16}:
+                cosine_dtype = th.float32
+            cosine_pred = aligned_pred.to(dtype=cosine_dtype)
+            cosine_true = aligned_true.to(dtype=cosine_dtype)
+            similarity = th.dot(cosine_pred, cosine_true) / (
+                th.linalg.vector_norm(cosine_pred) * th.linalg.vector_norm(cosine_true)
+            )
+            primary_losses[batch_index] = 1.0 - similarity
+        else:
+            pred_distribution = aligned_pred / aligned_pred.sum()
+            true_distribution = aligned_true / aligned_true.sum()
+            mixture = 0.5 * (pred_distribution + true_distribution)
+
+            def x_log_x(values: th.Tensor) -> th.Tensor:
+                return values * values.clamp_min(th.finfo(values.dtype).tiny).log()
+
+            divergence = (
+                0.5 * x_log_x(pred_distribution).sum()
+                + 0.5 * x_log_x(true_distribution).sum()
+                - x_log_x(mixture).sum()
+            )
+            primary_losses[batch_index] = divergence / log_two
+
+        pred_distribution = aligned_pred / aligned_pred.sum()
+        true_distribution = aligned_true / aligned_true.sum()
+        pred_entropy = -(
+            pred_distribution
+            * pred_distribution.clamp_min(th.finfo(pred_distribution.dtype).tiny).log()
+        ).sum()
+        true_entropy = -(
+            true_distribution
+            * true_distribution.clamp_min(th.finfo(true_distribution.dtype).tiny).log()
+        ).sum()
+        entropy_losses[batch_index] = (pred_entropy - true_entropy).square()
+
+    return primary_losses, entropy_losses
 
 
 def mog_log_prob(

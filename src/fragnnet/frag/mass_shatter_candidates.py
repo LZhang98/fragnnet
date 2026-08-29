@@ -60,8 +60,6 @@ class MassShatterCandidateBatch:
     atom_component_indices: th.Tensor
     boundary_bond_indices: th.Tensor
     boundary_component_indices: th.Tensor
-    exploration_mask_count: th.Tensor
-    exploration_mean_cut_count: th.Tensor
     proposal_single_cut_fraction: th.Tensor
     unique_component_count: th.Tensor
     component_counts: tuple[int, ...]
@@ -572,8 +570,6 @@ def build_mass_shatter_candidates(
     atom_component_index_chunks: list[np.ndarray] = []
     boundary_bond_index_chunks: list[np.ndarray] = []
     boundary_component_index_chunks: list[np.ndarray] = []
-    exploration_mask_counts: list[int] = []
-    exploration_mean_cut_counts: list[float] = []
     proposal_single_cut_fractions: list[float] = []
     component_counts: list[int] = []
     unique_component_counts: list[int] = []
@@ -662,8 +658,6 @@ def build_mass_shatter_candidates(
         proposal_single_cut_fractions.append(
             float(np.count_nonzero(learned_cut_counts == 1)) / learned_mask_count
         )
-        exploration_mask_counts.append(0)
-        exploration_mean_cut_counts.append(0.0)
 
         local_mask_ptr, local_broken_bonds, forced_mask_count = _merge_forced_masks(
             local_mask_ptr,
@@ -1206,16 +1200,6 @@ def build_mass_shatter_candidates(
         atom_component_indices=atom_component_indices_t,
         boundary_bond_indices=boundary_bond_indices_t,
         boundary_component_indices=boundary_component_indices_t,
-        exploration_mask_count=th.tensor(
-            exploration_mask_counts,
-            dtype=bond_logits.dtype,
-            device=device,
-        ),
-        exploration_mean_cut_count=th.tensor(
-            exploration_mean_cut_counts,
-            dtype=bond_logits.dtype,
-            device=device,
-        ),
         proposal_single_cut_fraction=th.tensor(
             proposal_single_cut_fractions,
             dtype=bond_logits.dtype,

@@ -131,7 +131,7 @@ def test_candidate_membership_supports_four_compiled_words_and_fallback(
     assert candidates.atom_component_indices.tolist() == [0] * num_atoms
 
 
-def test_candidate_batch_forces_empty_and_single_cut_exploration() -> None:
+def test_candidate_batch_forces_empty_and_single_cut_masks() -> None:
     candidates = build_mass_shatter_candidates(
         th.tensor([2.0, 2.0, 2.0]),
         chemical_bond_index=th.tensor([[0, 1, 2], [1, 2, 3]], dtype=th.long),
@@ -304,10 +304,8 @@ def test_legacy_refill_respects_minimum_probability() -> None:
         include_single_bond_cuts=False,
     )
 
-    # Exploration repeatedly proposes the MAP mask, and refill must not cross
-    # the threshold to restore the historical fixed budget.
+    # Refill must not cross the threshold to restore the historical fixed budget.
     assert candidates.mask_log_probabilities.shape == (2,)
-    assert candidates.exploration_mask_count.tolist() == [0.0]
     assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
 
 
@@ -323,7 +321,6 @@ def test_legacy_refill_respects_map_relative_probability() -> None:
     )
 
     assert candidates.mask_log_probabilities.shape == (2,)
-    assert candidates.exploration_mask_count.tolist() == [0.0]
     assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
 
 

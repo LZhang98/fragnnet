@@ -405,8 +405,6 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
             bond_logits[th.from_numpy(expected_arrays[6])],
         )
     assert th.equal(candidates.mask_log_probabilities, expected_log_probabilities)
-    assert candidates.exploration_mask_count.tolist() == [0.0]
-    assert candidates.exploration_mean_cut_count.tolist() == [0.0]
     assert candidates.proposal_single_cut_fraction.tolist() == pytest.approx(
         [sum(len(mask) == 1 for mask in learned_masks) / len(learned_masks)]
     )

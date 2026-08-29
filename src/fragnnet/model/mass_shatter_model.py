@@ -8,8 +8,8 @@ normalized molecule-level mixture weights, preserving a distribution over all
 probability-ranked prefix is materialized.
 Each retained mask is cut into connected components, and every component is expanded
 into the ion channels it could plausibly produce (charge retention vs charge
-migration, plus +/- hydrogen transfers). The resulting sparse
-(m/z, log-probability, batch index) triples are what ``SpectrumPL`` consumes.
+migration, plus +/- hydrogen transfers). The resulting sparse prediction is either a
+legacy normalized log-probability spectrum or an independent nonnegative intensity spectrum.
 
 The optional unique-fragment path treats masks as latent events: enumeration
 continues until a target number of distinct atom sets is reached, charge retention is
@@ -531,6 +531,7 @@ class MassShatterModel(nn.Module):
         intensity_transformer_num_inducing_points: int,
         intensity_atom_decoder_num_layers: int,
         intensity_transformer_dropout: float,
+        intensity_output: str,
         use_mask_residuals: bool,
         use_base_probability_feature: bool,
         return_base_spectrum: bool,
@@ -594,6 +595,8 @@ class MassShatterModel(nn.Module):
             intensity_atom_decoder_num_layers: Masked fragment-to-atom cross-attention
                 layers applied before candidate-set interaction. Zero disables them.
             intensity_transformer_dropout: Dropout inside the candidate transformer.
+            intensity_output: ``"probability"`` for the normalized legacy spectrum or
+                ``"independent"`` for normal-space nonnegative pathway intensities.
             use_mask_residuals: Whether transformer residuals may redistribute retained
                 probability between selected masks.
             use_base_probability_feature: Whether the candidate transformer receives
@@ -670,6 +673,15 @@ class MassShatterModel(nn.Module):
             )
         if proposal_selection_only and not use_mask_residuals:
             raise ValueError("proposal_selection_only requires intensity residuals")
+        if intensity_output not in {"probability", "independent"}:
+            raise ValueError(f"unknown MASShatter intensity output: {intensity_output}")
+        if intensity_output == "independent" and not (
+            unique_fragment_mode and proposal_selection_only
+        ):
+            raise ValueError(
+                "independent intensity output requires unique-fragment mode and "
+                "proposal-selection-only mode"
+            )
         if separate_proposal_encoder and not proposal_selection_only:
             raise ValueError("separate_proposal_encoder requires proposal_selection_only")
         if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
@@ -712,6 +724,7 @@ class MassShatterModel(nn.Module):
         self.charge_pooling = charge_pooling
         self.use_smarts_templates = use_smarts_templates
         self.use_mask_residuals = use_mask_residuals
+        self.intensity_output = intensity_output
         self.return_base_spectrum = return_base_spectrum
         self.detach_base_ion_h = detach_base_ion_h
         self.proposal_selection_only = proposal_selection_only
@@ -1237,8 +1250,9 @@ class MassShatterModel(nn.Module):
 
         Returns:
             Dictionary with the sparse prediction contract plus diagnostics:
-            - "pred_mzs"/"pred_logprobs"/"pred_batch_idxs": one entry per valid
-              (component, ion mode, H shift) pathway, shape ``(num_pathways,)``.
+            - "pred_mzs"/"pred_batch_idxs" and exactly one of "pred_logprobs" or
+              "pred_intensities": one entry per valid (component, ion mode, H shift)
+              pathway, shape ``(num_pathways,)``.
             - "bond_break_logits"/"atom_charge_logits": raw head outputs.
             - remaining keys: per-spectrum counters and candidate-generation timings.
 
@@ -1756,8 +1770,8 @@ class MassShatterModel(nn.Module):
                 precursor_type_indices,
             )
 
-        # Chemically impossible channels are masked out before the softmax, so each
-        # fragment spends all of its probability on channels it can actually produce.
+        # Keep normalized copies for the probability output and diagnostics. The
+        # independent output below uses the raw fragment/channel scores instead.
         ion_h_log_probabilities = masked_ion_hydrogen_log_probabilities(
             ion_h_logits,
             valid_channels,
@@ -1780,6 +1794,13 @@ class MassShatterModel(nn.Module):
         flat_valid = valid_channels.flatten()
         pred_mzs = ion_mzs.flatten()[flat_valid]
         pred_logprobs = pathway_log_probabilities.flatten()[flat_valid]
+        pred_intensities = (
+            F.softplus(corrected_fragment_logits[:, None, None] + ion_h_logits).flatten()[
+                flat_valid
+            ]
+            if self.intensity_output == "independent"
+            else None
+        )
         pred_batch_idxs = (
             fragment_batch_indices[:, None, None].expand_as(valid_channels).flatten()[flat_valid]
         )
@@ -1862,7 +1883,6 @@ class MassShatterModel(nn.Module):
         ).sum(dim=1)
         output = {
             "pred_mzs": pred_mzs,
-            "pred_logprobs": pred_logprobs,
             "pred_batch_idxs": pred_batch_idxs,
             "candidate_mzs_by_cut": pred_mzs,
             "candidate_batch_idxs_by_cut": pred_batch_idxs,
@@ -1875,8 +1895,6 @@ class MassShatterModel(nn.Module):
             "atom_charge_logits": atom_charge_logits,
             "retained_mask_probability": retained_mask_probability,
             "selected_mask_count": selected_mask_count,
-            "exploration_mask_count": candidates.exploration_mask_count,
-            "exploration_mean_cut_count": candidates.exploration_mean_cut_count,
             "component_pathway_count": component_pathway_count,
             "mean_mask_cut_count": mean_mask_cut_count,
             "proposal_single_cut_fraction": candidates.proposal_single_cut_fraction,
@@ -1906,6 +1924,10 @@ class MassShatterModel(nn.Module):
             **mask_cut_fractions,
             **candidate_timing_tensors,
         }
+        if pred_intensities is None:
+            output["pred_logprobs"] = pred_logprobs
+        else:
+            output["pred_intensities"] = pred_intensities
         if self.return_base_spectrum:
             output["base_pred_logprobs"] = base_pathway_log_probabilities.flatten()[flat_valid]
         if self.unique_fragment_mode:

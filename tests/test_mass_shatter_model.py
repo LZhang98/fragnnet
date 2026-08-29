@@ -49,6 +49,7 @@ def _build_model(
     separate_proposal_encoder: bool = False,
     share_proposal_across_ev: bool = False,
     intensity_atom_decoder_num_layers: int = 0,
+    intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
@@ -79,6 +80,7 @@ def _build_model(
         intensity_transformer_num_inducing_points=4,
         intensity_atom_decoder_num_layers=intensity_atom_decoder_num_layers,
         intensity_transformer_dropout=0.0,
+        intensity_output=intensity_output,
         use_mask_residuals=use_mask_residuals,
         use_base_probability_feature=use_base_probability_feature,
         return_base_spectrum=return_base_spectrum,
@@ -164,6 +166,34 @@ def test_mass_shatter_spectrum_loss_reaches_ce_embedding() -> None:
     assert projection.grad is not None
     assert th.isfinite(projection.grad).all()
     assert projection.grad.abs().sum() > 0
+
+
+def test_mass_shatter_independent_output_returns_normal_space_intensities() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        intensity_output="independent",
+    )
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([25.0, 35.0]),
+    )
+
+    assert "pred_logprobs" not in output
+    assert "pred_intensities" in output
+    assert th.isfinite(output["pred_intensities"]).all()
+    assert (output["pred_intensities"] >= 0).all()
+    assert not th.allclose(
+        output["pred_intensities"].sum().reshape(1),
+        th.ones(1),
+    )
+
+    output["pred_intensities"].sum().backward()
+    assert model.intensity_head.ion_hydrogen_head.weight.grad is not None
 
 
 def test_mass_shatter_shares_one_ce_independent_proposal_pass(
@@ -329,8 +359,6 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert th.isfinite(output["pred_logprobs"]).all()
     assert output["retained_mask_probability"].shape == (2,)
     assert output["selected_mask_count"].tolist() == [4, 2]
-    assert output["exploration_mask_count"].tolist() == [0.0, 0.0]
-    assert output["exploration_mean_cut_count"].tolist() == [0.0, 0.0]
     assert output["component_pathway_count"].tolist() == [8, 3]
     assert output["components_per_mask"].tolist() == pytest.approx([2.0, 1.5])
     assert th.all(output["unique_components_per_mask"] <= output["components_per_mask"])

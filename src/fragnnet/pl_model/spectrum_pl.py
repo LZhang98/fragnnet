@@ -1271,22 +1271,41 @@ class SpectrumPL(L.LightningModule):
         train_true_mzs, train_true_logprobs, train_true_batch_idxs = self.preproc_spec(
             true_mzs, true_ints, true_batch_idxs, train=True, pred=False, log_in=False, log_out=True
         )
+        train_true_intensities = train_true_logprobs.exp()
         # forward pass and get predictions
         pred_d = self.forward(**batch)
         pred_mzs = pred_d.pop("pred_mzs")
-        pred_logprobs = pred_d.pop("pred_logprobs")
         pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_logprobs = pred_d.pop("pred_logprobs", None)
+        pred_intensities = pred_d.pop("pred_intensities", None)
+        if (pred_logprobs is None) == (pred_intensities is None):
+            raise ValueError(
+                "model output must contain exactly one of pred_logprobs or pred_intensities"
+            )
         pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
         base_pred_logprobs = pred_d.pop("base_pred_logprobs", None)
-        train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            train=True,
-            pred=True,
-            log_in=True,
-            log_out=True,
-        )
+        train_pred_logprobs = None
+        if pred_logprobs is not None:
+            train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
+                pred_mzs,
+                pred_logprobs,
+                pred_batch_idxs,
+                train=True,
+                pred=True,
+                log_in=True,
+                log_out=True,
+            )
+            train_pred_intensities = train_pred_logprobs.exp()
+        else:
+            train_pred_mzs, train_pred_intensities, train_pred_batch_idxs = self.preproc_spec(
+                pred_mzs,
+                pred_intensities,
+                pred_batch_idxs,
+                train=True,
+                pred=True,
+                log_in=False,
+                log_out=False,
+            )
         train_base_pred_logprobs = None
         if base_pred_logprobs is not None:
             _, train_base_pred_logprobs, _ = self.preproc_spec(
@@ -1320,20 +1339,25 @@ class SpectrumPL(L.LightningModule):
         train_d = {
             "true_mzs": train_true_mzs,
             "true_logprobs": train_true_logprobs,
+            "true_intensities": train_true_intensities,
             "true_batch_idxs": train_true_batch_idxs,
             "pred_mzs": train_pred_mzs,
-            "pred_logprobs": train_pred_logprobs,
+            "pred_intensities": train_pred_intensities,
             "pred_batch_idxs": train_pred_batch_idxs,
             "pred_oos_logprobs": pred_oos_logprobs,
             "batch_size": batch_size,
             **pred_d,
         }
+        if train_pred_logprobs is not None:
+            train_d["pred_logprobs"] = train_pred_logprobs
         if train_base_pred_logprobs is not None:
             train_d["base_pred_logprobs"] = train_base_pred_logprobs
         if tol_per_sample is not None:
             train_d["tol_per_sample"] = tol_per_sample
             train_d["min_mz_per_sample"] = min_mz_per_sample
         if self.hparams.ce_pair_loss_weight != 0.0:
+            if pred_logprobs is None:
+                raise ValueError("ce_pair_loss_weight requires probability output")
             ce_values = select_context_ce_values(
                 batch=batch,
                 batch_size=int(batch_size),
@@ -1356,6 +1380,8 @@ class SpectrumPL(L.LightningModule):
                 }
             )
         if self.hparams.precursor_pair_loss_weight != 0.0:
+            if pred_logprobs is None:
+                raise ValueError("precursor_pair_loss_weight requires probability output")
             nce_values = primary_ce_to_batch(
                 batch["spec_nce"], batch.get("spec_nce_batch_idxs"), int(batch_size)
             )
@@ -1414,11 +1440,15 @@ class SpectrumPL(L.LightningModule):
                 eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
                 eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
                     pred_mzs.detach(),
-                    pred_logprobs.detach(),
+                    (
+                        pred_logprobs.detach()
+                        if pred_logprobs is not None
+                        else pred_intensities.detach()
+                    ),
                     pred_batch_idxs.detach(),
                     train=False,
                     pred=True,
-                    log_in=True,
+                    log_in=pred_logprobs is not None,
                     log_out=False,
                 )
                 eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
@@ -1569,8 +1599,13 @@ class SpectrumPL(L.LightningModule):
 
         pred_d = self.forward(**batch)
         pred_mzs = pred_d.pop("pred_mzs")
-        pred_logprobs = pred_d.pop("pred_logprobs")
         pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_logprobs = pred_d.pop("pred_logprobs", None)
+        pred_intensities = pred_d.pop("pred_intensities", None)
+        if (pred_logprobs is None) == (pred_intensities is None):
+            raise ValueError(
+                "model output must contain exactly one of pred_logprobs or pred_intensities"
+            )
         pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
 
         with th.inference_mode():
@@ -1586,11 +1621,15 @@ class SpectrumPL(L.LightningModule):
             eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
             eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
                 pred_mzs.detach(),
-                pred_logprobs.detach(),
+                (
+                    pred_logprobs.detach()
+                    if pred_logprobs is not None
+                    else pred_intensities.detach()
+                ),
                 pred_batch_idxs.detach(),
                 train=False,
                 pred=True,
-                log_in=True,
+                log_in=pred_logprobs is not None,
                 log_out=False,
             )
             eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
@@ -1651,16 +1690,21 @@ class SpectrumPL(L.LightningModule):
         # forward pass and get predictions
         pred_d = self.forward(**batch)
         pred_mzs = pred_d.pop("pred_mzs")
-        pred_logprobs = pred_d.pop("pred_logprobs")
         pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_logprobs = pred_d.pop("pred_logprobs", None)
+        pred_intensities = pred_d.pop("pred_intensities", None)
+        if (pred_logprobs is None) == (pred_intensities is None):
+            raise ValueError(
+                "model output must contain exactly one of pred_logprobs or pred_intensities"
+            )
         pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
         eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
             pred_mzs,
-            pred_logprobs,
+            pred_logprobs if pred_logprobs is not None else pred_intensities,
             pred_batch_idxs,
             train=False,
             pred=True,
-            log_in=True,
+            log_in=pred_logprobs is not None,
             log_out=False,
         )
 
@@ -1829,11 +1873,6 @@ class SpectrumPL(L.LightningModule):
         for metric_name in active_metric_names:
             metric = batch_results[metric_name]
             weights = sample_weights.to(dtype=metric.dtype, device=metric.device)
-            if metric_name == "exploration_mean_cut_count":
-                weights = weights * batch_results["exploration_mask_count"].to(
-                    dtype=metric.dtype,
-                    device=metric.device,
-                )
             metric_sum_w = weights.sum().detach()
             metric_sum_wx = (weights * metric).sum().detach()
             if metric_name in sum_w_d:
@@ -1862,16 +1901,10 @@ class SpectrumPL(L.LightningModule):
             if metric_name not in sum_w_d:
                 continue
             sum_w = sum_w_d[metric_name]
-            if metric_name == "exploration_mean_cut_count" and sum_w == 0:
-                mean = sum_wx_d[metric_name].new_zeros(())
-            else:
-                mean = sum_wx_d[metric_name] / sum_w
+            mean = sum_wx_d[metric_name] / sum_w
             mean_metrics[metric_name] = mean
             if report_metric_std:
-                if metric_name == "exploration_mean_cut_count" and sum_w == 0:
-                    var = sum_wx2_d[metric_name].new_zeros(())
-                else:
-                    var = sum_wx2_d[metric_name] / sum_w - mean.square()
+                var = sum_wx2_d[metric_name] / sum_w - mean.square()
                 std_metrics[metric_name] = th.sqrt(th.clamp(var, min=0.0))
         return mean_metrics, std_metrics
 
