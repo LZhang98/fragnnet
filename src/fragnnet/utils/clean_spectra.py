@@ -36,10 +36,16 @@ def ppm_error(observed_mz: float, theoretical_mz: float) -> float:
     return abs(observed_mz - theoretical_mz) / theoretical_mz * 1e6
 
 
-def merge_peaks(peaks: list[tuple[float, float]], tolerance_ppm: float) -> list[tuple[float, float]]:
+def merge_peaks(
+    peaks: list[tuple[float, float]],
+    tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
+) -> list[tuple[float, float]]:
     """Merge peaks against an intensity-weighted cluster centroid."""
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
+    if tolerance_min_mz < 0:
+        raise ValueError("tolerance_min_mz must be nonnegative")
     if not peaks:
         return []
 
@@ -54,7 +60,8 @@ def merge_peaks(peaks: list[tuple[float, float]], tolerance_ppm: float) -> list[
     cluster = [sorted_peaks[0]]
     for peak in sorted_peaks[1:]:
         centroid = _cluster_centroid(cluster)
-        if ppm_error(peak[0], centroid) <= tolerance_ppm:
+        tolerance_da = tolerance_ppm * 1e-6 * max(centroid, tolerance_min_mz)
+        if abs(peak[0] - centroid) <= tolerance_da:
             cluster.append(peak)
         else:
             merged.append((_cluster_centroid(cluster), sum(item[1] for item in cluster)))
@@ -322,6 +329,7 @@ def clean_spectra(
     subformula_ppm: float,
     drop_empty_spectra: bool,
     use_instrument_tolerance: bool = False,
+    use_merge_instrument_tolerance: bool = False,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -333,6 +341,7 @@ def clean_spectra(
         subformula_ppm,
         drop_empty_spectra,
         use_instrument_tolerance,
+        use_merge_instrument_tolerance,
     )
     return cleaned_df
 
@@ -346,13 +355,16 @@ def clean_spectra_with_stats(
     subformula_ppm: float,
     drop_empty_spectra: bool,
     use_instrument_tolerance: bool = False,
+    use_merge_instrument_tolerance: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
     required_spec_columns = {"peaks"}
     if filter_by_subformula:
         required_spec_columns.update({"mol_id", "prec_type"})
-        if use_instrument_tolerance:
-            required_spec_columns.add("inst_type")
+    if (merge_peak_signals and use_merge_instrument_tolerance) or (
+        filter_by_subformula and use_instrument_tolerance
+    ):
+        required_spec_columns.add("inst_type")
     missing_spec_columns = required_spec_columns - set(spec_df.columns)
     if missing_spec_columns:
         raise ValueError(f"spec_df is missing required columns: {sorted(missing_spec_columns)}")
@@ -363,6 +375,7 @@ def clean_spectra_with_stats(
         "parameters": {
             "merge_peaks": merge_peak_signals,
             "merge_ppm": merge_ppm,
+            "merge_instrument_tolerance": use_merge_instrument_tolerance,
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
             "subformula_instrument_tolerance": use_instrument_tolerance,
@@ -380,10 +393,35 @@ def clean_spectra_with_stats(
             raise ValueError(f"No molecular formula found for mol_id values: {missing_ids[:10]}")
         formulas = result["mol_id"].map(formula_by_mol_id)
 
-    # 2. Merge peaks within the requested centroid-based ppm tolerance.
+    # 2. Merge peaks within the requested centroid-based tolerance.
     if merge_peak_signals:
         before_merge = result.copy()
-        result.loc[:, "peaks"] = result["peaks"].apply(merge_peaks, tolerance_ppm=merge_ppm)
+        if use_merge_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No merge instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            merged_peaks = (
+                merge_peaks(
+                    peaks,
+                    tolerance_ppm=2.0
+                    * INSTRUMENT_TOLERANCES[instrument_type]["relative"]
+                    * 1e6,
+                    tolerance_min_mz=INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                )
+                for peaks, instrument_type in zip(
+                    result["peaks"], result["inst_type"], strict=True
+                )
+            )
+            result.loc[:, "peaks"] = pd.Series(
+                merged_peaks, index=result.index, dtype=object
+            )
+        else:
+            result.loc[:, "peaks"] = result["peaks"].apply(
+                merge_peaks, tolerance_ppm=merge_ppm
+            )
         stats["after_merge"] = summarize_spectra(result)
         stats["merge_retention"] = summarize_retention(before_merge, result)
         if "prec_type" in result:
@@ -501,6 +539,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--merge-ppm", type=float, default=20.0)
     parser.add_argument(
+        "--merge-inst-tol",
+        action="store_true",
+        help="Merge at twice the FraGNNet FT/QTOF tolerance instead of --merge-ppm",
+    )
+    parser.add_argument(
         "--filter-subformula-peaks",
         action="store_true",
         help="Keep only peaks matching precursor-compatible molecular subformulas",
@@ -552,6 +595,7 @@ def main() -> None:
         subformula_ppm=args.subformula_ppm,
         drop_empty_spectra=args.drop_empty_spectra,
         use_instrument_tolerance=args.subformula_inst_tol,
+        use_merge_instrument_tolerance=args.merge_inst_tol,
     )
     stats["selection"] = {
         "precursor_types": args.precursor_types,

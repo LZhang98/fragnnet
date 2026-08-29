@@ -23,6 +23,40 @@ def test_merge_peaks_does_not_use_transitive_chaining():
     assert merged[1] == pytest.approx((100.0038, 1.0))
 
 
+def test_merge_peaks_applies_low_mass_tolerance_floor():
+    peaks = [(100.0, 1.0), (100.003, 1.0)]
+
+    merged = clean_spectra.merge_peaks(
+        peaks, tolerance_ppm=20.0, tolerance_min_mz=200.0
+    )
+
+    assert merged == pytest.approx([(100.0015, 2.0)])
+
+
+def test_merge_instrument_tolerance_uses_twice_each_instrument_tolerance():
+    peaks = [(100.0, 1.0), (100.01, 1.0)]
+    spec_df = pd.DataFrame(
+        {
+            "inst_type": ["FT", "QTOF"],
+            "peaks": [peaks, peaks],
+        }
+    )
+
+    cleaned = clean_spectra.clean_spectra(
+        spec_df,
+        pd.DataFrame(),
+        merge_peak_signals=True,
+        merge_ppm=20.0,
+        filter_by_subformula=False,
+        subformula_ppm=5.0,
+        drop_empty_spectra=False,
+        use_merge_instrument_tolerance=True,
+    )
+
+    assert cleaned.loc[0, "peaks"] == peaks
+    assert cleaned.loc[1, "peaks"] == pytest.approx([(100.005, 2.0)])
+
+
 def test_merge_only_does_not_require_molecule_metadata():
     spec_df = pd.DataFrame({"peaks": [[(100.0, 1.0), (100.001, 2.0)]]})
 
