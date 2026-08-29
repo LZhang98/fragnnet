@@ -612,7 +612,7 @@ def build_mass_shatter_candidates(
     )
     mask_selection_ms += (perf_counter() - selection_start) * 1000.0
 
-    # 3. Select and assemble masks independently for each precursor.
+    # 3. Merge forced masks and assemble candidates independently per precursor.
     for molecule_index in range(num_molecules):
         atom_start = atom_ptr_values[molecule_index]
         atom_end = atom_ptr_values[molecule_index + 1]
@@ -625,7 +625,6 @@ def build_mass_shatter_candidates(
             else int(candidate_group_values[molecule_index])
         )
 
-        selection_start = perf_counter()
         global_bond_indices = bond_indices_by_molecule[molecule_index]
         local_endpoints = tuple(
             tuple(chemical_bond_rows[row][index] - atom_start for index in global_bond_indices)
@@ -690,9 +689,7 @@ def build_mass_shatter_candidates(
             if molecule_templates
             else None
         )
-        mask_selection_ms += (perf_counter() - selection_start) * 1000.0
-
-        # 3. Build connected components and every flat candidate index without
+        # Build connected components and every flat candidate index without
         # materializing Python dicts, arbitrary-width bitmasks, or dataclasses.
         from fragnnet.frag.mass_shatter_core import build_component_arrays_raw
 

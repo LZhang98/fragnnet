@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import statistics
 import time
 
@@ -59,6 +60,8 @@ def main() -> None:
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_atoms", type=int, default=20)
     parser.add_argument("--max_masks", type=int, default=1024)
+    parser.add_argument("--num_mixtures", type=int, default=1)
+    parser.add_argument("--mask_selection_threads", type=int, default=1)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     args = parser.parse_args()
@@ -66,10 +69,30 @@ def main() -> None:
 
     if args.device == "cuda" and not th.cuda.is_available():
         raise RuntimeError("CUDA is not available")
+    if args.num_mixtures < 1:
+        raise ValueError("num_mixtures must be positive")
+    if args.mask_selection_threads < 1:
+        raise ValueError("mask_selection_threads must be positive")
     device = th.device(args.device)
 
     # 1. Build one deterministic workload matching the L40S mask budget.
-    inputs = build_chain_batch(args.batch_size, args.num_atoms, device)
+    bond_logits, chemical_bond_index, atom_batch_indices, atom_ptr = build_chain_batch(
+        args.batch_size,
+        args.num_atoms,
+        device,
+    )
+    mixture_log_weights = None
+    if args.num_mixtures > 1:
+        bond_logits = th.stack(
+            [bond_logits.roll(shifts=mixture) for mixture in range(args.num_mixtures)],
+            dim=1,
+        )
+        mixture_log_weights = th.full(
+            (args.batch_size, args.num_mixtures),
+            -math.log(args.num_mixtures),
+            dtype=th.float64,
+            device=device,
+        )
 
     # 2. Run repeated uncached candidate-generation passes.
     durations_ms: list[float] = []
@@ -79,13 +102,14 @@ def main() -> None:
             th.cuda.synchronize()
         start = time.perf_counter()
         candidates = build_mass_shatter_candidates(
-            *inputs,
+            bond_logits,
+            chemical_bond_index,
+            atom_batch_indices,
+            atom_ptr,
             max_masks=args.max_masks,
-            explore_masks=0,
-            exploration_mode="bounded_additive",
-            exploration_temperature=1.0,
-            exploration_cut_count_weights=(0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05),
             include_single_bond_cuts=True,
+            mask_selection_threads=args.mask_selection_threads,
+            mixture_log_weights=mixture_log_weights,
         )
         if device.type == "cuda":
             th.cuda.synchronize()
@@ -93,7 +117,13 @@ def main() -> None:
 
     # 3. Report end-to-end throughput and the final pass's phase profile.
     assert candidates is not None
-    LOGGER.info("device=%s durations_ms=%s", device, durations_ms)
+    LOGGER.info(
+        "device=%s mixtures=%d threads=%d durations_ms=%s",
+        device,
+        args.num_mixtures,
+        args.mask_selection_threads,
+        durations_ms,
+    )
     LOGGER.info("median_ms=%.3f", statistics.median(durations_ms))
     LOGGER.info(
         "masks=%d components=%d memberships=%d",
