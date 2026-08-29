@@ -1,6 +1,6 @@
 # DAG Oracle Ceiling on NIST20 (2026-07-08)
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-07-08
+> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-28
 >
 > Baseline d3 DAG ceiling = 0.937 cos_hun on NIST20 test. Model-free upper bound.
 
@@ -76,6 +76,43 @@ Ring-merge and d4 are tied on ceiling; ring-merge gets there without d4's combin
 blowup risk (a 1.3M-node outlier was observed at depth 4 on a 3,000-mol sample — see
 `[[project_bond_breakability_mask_plan]]`). SMARTS prepass barely moves anything
 (+0.0006), consistent with `[[feedback_prepass_rule_id]]`.
+
+### Provisional GLACIER coverage comparison
+
+GLACIER reports NIST'20 peak **coverage** alongside spectral similarity in Appendix G
+(Tables 15--17): for example, 0.887 for `[M+H]+` without contrastive finetuning and 0.843
+for positive+negative mode with contrastive finetuning. The paper states that NIST'20 uses
+0.1 Da binned spectra, but it does not define coverage in enough detail to establish a
+top-20 evaluation protocol.
+
+The released `ms-pred/analysis/spec_pred_eval.py` evaluator has a configurable
+`--max-peaks` argument whose **default** is 20. With that setting, it keeps the 20 strongest
+predicted bins and 20 strongest target bins and computes
+`|target bins intersect predicted bins| / |target bins|`. This establishes what the public
+evaluator does when invoked without an override; it does **not** establish that the reported
+paper runs used 20. The authors could have supplied another value (including a value large
+enough to retain all peaks), and no checked paper command or run metadata has yet confirmed
+the actual argument. Therefore, do not describe GLACIER's published coverage as "top-20
+coverage" without that additional provenance.
+
+As a protocol sensitivity check, applying the evaluator's default-20 behavior to the local
+NIST20 test split gives the following DAG oracle coverage:
+
+| Bin width | d3 oracle | d4 oracle |
+|---|---:|---:|
+| 0.01 Da | 0.7674 | 0.8203 |
+| 0.1 Da | 0.9334 | 0.9475 |
+
+These are candidate-support ceilings, not trained-model predictions. They are also not yet a
+strict comparison to GLACIER because the peak-count argument used for GLACIER's published
+numbers is unverified, and the 0.01 Da row is not the NIST'20 resolution reported by GLACIER.
+The safe conclusion is conditional: **if** the published GLACIER evaluation used the released
+default of 20 peaks, d3 already provides high support at 0.1 Da and ranking/intensity allocation
+is the more likely bottleneck. If GLACIER retained all peaks, the comparison must be recomputed
+under that protocol.
+
+Sources: [GLACIER paper](https://arxiv.org/html/2606.29161v1),
+[`spec_pred_eval.py`](https://github.com/coleygroup/ms-pred/blob/main/analysis/spec_pred_eval.py).
 
 ## Results — baseline DAG, all four tolerance conventions (full test split)
 
