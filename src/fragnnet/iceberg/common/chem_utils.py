@@ -1,16 +1,15 @@
 """chem_utils.py"""
 
 import re
-import numpy as np
-import pandas as pd
 from functools import reduce
 
+import numpy as np
+import pandas as pd
 import torch as th
 from rdkit import Chem
 from rdkit.Chem import Atom
-from rdkit.Chem.rdMolDescriptors import CalcMolFormula
 from rdkit.Chem.Descriptors import ExactMolWt
-from rdkit.Chem.MolStandardize import rdMolStandardize
+from rdkit.Chem.rdMolDescriptors import CalcMolFormula
 
 P_TBL = Chem.GetPeriodicTable()
 
@@ -54,9 +53,7 @@ ATOM_NUM_TO_ONEHOT[VALID_ATOM_NUM, th.arange(CHEM_ELEMENT_NUM)] = 1
 
 # Use Monoisotopic
 # VALID_MASSES = np.array([Atom(i).GetMass() for i in VALID_ELEMENTS])
-VALID_MONO_MASSES = np.array(
-    [P_TBL.GetMostCommonIsotopeMass(i) for i in VALID_ELEMENTS]
-)
+VALID_MONO_MASSES = np.array([P_TBL.GetMostCommonIsotopeMass(i) for i in VALID_ELEMENTS])
 CHEM_MASSES = VALID_MONO_MASSES[:, None]
 
 ELEMENT_VECTORS = np.eye(len(VALID_ELEMENTS))
@@ -68,9 +65,7 @@ ELEMENT_DIM = len(ELEMENT_VECTORS[0])
 
 # Reasonable normalization vector for elements
 # Estimated by max counts (+ 1 when zero)
-NORM_VEC_MASS = np.array(
-    [81, 19, 6, 34, 6, 6, 6, 158, 10, 17, 3, 1, 2, 1, 1, 2, 1, 1, 1471]
-)
+NORM_VEC_MASS = np.array([81, 19, 6, 34, 6, 6, 6, 158, 10, 17, 3, 1, 2, 1, 1, 2, 1, 1, 1471])
 
 NORM_VEC = np.array([81, 19, 6, 34, 6, 6, 6, 158, 10, 17, 3, 1, 2, 1, 1, 2, 1, 1])
 MAX_ATOM_CT = 160
@@ -117,6 +112,7 @@ ion2onehot_pos = {
     "[M+H-2H2O]+": 6,
 }
 
+
 def formula_to_dense(chem_formula: str) -> np.ndarray:
     """formula_to_dense.
 
@@ -127,7 +123,7 @@ def formula_to_dense(chem_formula: str) -> np.ndarray:
 
     """
     total_onehot = []
-    for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
+    for chem_symbol, num in re.findall(CHEM_FORMULA_SIZE, chem_formula):
         # Convert num to int
         num = 1 if num == "" else int(num)
         one_hot = element_to_position[chem_symbol].reshape(1, -1)
@@ -142,18 +138,20 @@ def formula_to_dense(chem_formula: str) -> np.ndarray:
 
     return dense_vec
 
+
 ion2delta_formula = {
     "[M+H]+": formula_to_dense("H"),
     "[M+Na]+": formula_to_dense("Na"),
     "[M+K]+": formula_to_dense("K"),
     "[M-H2O+H]+": -formula_to_dense("H") - formula_to_dense("O"),
     "[M+H-H2O]+": -formula_to_dense("H") - formula_to_dense("O"),
-    "[M+H3N+H]+": 4*formula_to_dense("H") + formula_to_dense("N"),
-    "[M+NH4]+": 4*formula_to_dense("H") + formula_to_dense("N"),
+    "[M+H3N+H]+": 4 * formula_to_dense("H") + formula_to_dense("N"),
+    "[M+NH4]+": 4 * formula_to_dense("H") + formula_to_dense("N"),
     "[M]+": formula_to_dense(""),
-    "[M-H4O2+H]+": -3*formula_to_dense("H") - 2*formula_to_dense("O"),
-    "[M+H-2H2O]+": -formula_to_dense("H") - 2*formula_to_dense("O"),
+    "[M-H4O2+H]+": -3 * formula_to_dense("H") - 2 * formula_to_dense("O"),
+    "[M+H-2H2O]+": -formula_to_dense("H") - 2 * formula_to_dense("O"),
 }
+
 
 def cross_sum(x, y):
     """cross_sum."""
@@ -173,8 +171,7 @@ def get_all_subsets(chem_formula: str) -> (np.ndarray, np.ndarray):
     non_zero = np.argwhere(dense_formula > 0).flatten()
 
     vectorized_formula = [
-        ELEMENT_VECTORS[nonzero_ind]
-        * np.arange(0, dense_formula[nonzero_ind] + 1)[:, None]
+        ELEMENT_VECTORS[nonzero_ind] * np.arange(0, dense_formula[nonzero_ind] + 1)[:, None]
         for nonzero_ind in non_zero
     ]
 
@@ -223,7 +220,7 @@ def formula_to_dense_mass(chem_formula: str) -> np.ndarray:
 
     """
     total_onehot = []
-    for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
+    for chem_symbol, num in re.findall(CHEM_FORMULA_SIZE, chem_formula):
         # Convert num to int
         num = 1 if num == "" else int(num)
         one_hot = element_to_position_mass[chem_symbol].reshape(1, -1)
@@ -259,7 +256,7 @@ def formula_to_dense_mass_norm(chem_formula: str) -> np.ndarray:
 def formula_mass(chem_formula: str) -> float:
     """get formula mass"""
     mass = 0
-    for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
+    for chem_symbol, num in re.findall(CHEM_FORMULA_SIZE, chem_formula):
         # Convert num to int
         num = 1 if num == "" else int(num)
         mass += ELEMENT_TO_MASS[chem_symbol] * num
@@ -462,7 +459,7 @@ def mass_from_smi(smi: str) -> float:
 
 def has_valid_els(chem_formula: str) -> bool:
     """has_valid_els"""
-    for (chem_symbol, num) in re.findall(CHEM_FORMULA_SIZE, chem_formula):
+    for chem_symbol, num in re.findall(CHEM_FORMULA_SIZE, chem_formula):
         if chem_symbol not in VALID_ELEMENTS:
             return False
     return True
