@@ -497,6 +497,8 @@ def build_component_arrays_raw(
     Py_ssize_t atom_offset,
     Py_ssize_t mask_offset,
     Py_ssize_t component_offset,
+    object max_unique_components=None,
+    Py_ssize_t forced_mask_count=0,
 ):
     """Build topology and flat candidate arrays without Python component objects.
 
@@ -547,6 +549,11 @@ def build_component_arrays_raw(
     cdef Py_ssize_t left_root, right_root, left_component, right_component
     cdef Py_ssize_t membership_cursor, boundary_cursor, table_size, slot
     cdef Py_ssize_t existing_component, unique_component_count, word, words
+    cdef Py_ssize_t unique_target = -1
+    cdef Py_ssize_t target_prefix_mask_count = 0
+    cdef Py_ssize_t processed_mask_count = 0
+    cdef Py_ssize_t retained_mask_count, retained_component_count
+    cdef Py_ssize_t retained_broken_count, retained_unique_count
     cdef Py_ssize_t* parents = NULL
     cdef Py_ssize_t* broken_epoch = NULL
     cdef Py_ssize_t* atom_roots = NULL
@@ -565,6 +572,13 @@ def build_component_arrays_raw(
     topology_start = perf_counter()
     if num_atoms <= 0:
         raise ValueError(f"num_atoms must be positive, got {num_atoms}")
+    if max_unique_components is not None:
+        unique_target = int(max_unique_components)
+        if unique_target <= 0:
+            raise ValueError(
+                "max_unique_components must be positive when enabled, "
+                f"got {unique_target}"
+            )
     endpoints_array = np.ascontiguousarray(bond_endpoints, dtype=np.int64)
     if endpoints_array.ndim != 2 or endpoints_array.shape[1] != 2:
         raise ValueError("bond_endpoints must have shape (num_bonds, 2)")
@@ -639,6 +653,12 @@ def build_component_arrays_raw(
     else:
         raise TypeError("broken_bond_sets must be a list or CSR tuple")
 
+    if forced_mask_count < 0 or forced_mask_count > num_masks:
+        raise ValueError(
+            "forced_mask_count must be in [0, num_masks], "
+            f"got {forced_mask_count} for {num_masks} masks"
+        )
+
     max_components = num_masks * num_atoms
     words = (num_atoms + 63) // 64
     labels_array = np.empty(max_components, dtype=np.int64)
@@ -647,6 +667,18 @@ def build_component_arrays_raw(
     labels = labels_array
     component_offsets = component_offsets_array
     component_sizes = component_sizes_array
+
+    table_size = 1
+    while table_size < 2 * max_components:
+        table_size <<= 1
+    hash_slots = <Py_ssize_t*>malloc(table_size * sizeof(Py_ssize_t))
+    component_unique_indices_array = np.empty(max_components, dtype=np.int64)
+    unique_representative_components_array = np.empty(
+        max_components,
+        dtype=np.int64,
+    )
+    component_unique_indices = component_unique_indices_array
+    unique_representative_components = unique_representative_components_array
 
     parents = <Py_ssize_t*>malloc(num_atoms * sizeof(Py_ssize_t))
     broken_epoch = <Py_ssize_t*>malloc(max(num_bonds, 1) * sizeof(Py_ssize_t))
@@ -662,6 +694,7 @@ def build_component_arrays_raw(
         or component_max == NULL
         or root_by_max == NULL
         or root_to_component == NULL
+        or hash_slots == NULL
         or signatures == NULL
     ):
         if parents != NULL:
@@ -676,12 +709,16 @@ def build_component_arrays_raw(
             free(root_by_max)
         if root_to_component != NULL:
             free(root_to_component)
+        if hash_slots != NULL:
+            free(hash_slots)
         if signatures != NULL:
             free(signatures)
         raise MemoryError("unable to allocate fused MASShatter topology buffers")
 
     memset(broken_epoch, 0xff, max(num_bonds, 1) * sizeof(Py_ssize_t))
+    memset(hash_slots, 0xff, table_size * sizeof(Py_ssize_t))
     component_cursor = 0
+    unique_component_count = 0
     component_offsets[0] = 0
     try:
         for mask in range(num_masks):
@@ -719,71 +756,106 @@ def build_component_arrays_raw(
                 labels[mask * num_atoms + atom] = component
                 component_sizes[component] += 1
                 signatures[component * words + atom // 64] |= 1ULL << (atom % 64)
+
+            # Deduplicate immediately so an unreachable suffix can skip both
+            # connectivity and all local-array materialization. Unique indices
+            # remain ordered by the first component occurrence.
+            for component in range(
+                component_cursor,
+                component_cursor + component_count,
+            ):
+                signature_hash = 1469598103934665603ULL
+                for word in range(words):
+                    signature_hash ^= signatures[component * words + word]
+                    signature_hash *= 1099511628211ULL
+                slot = <Py_ssize_t>(signature_hash & (table_size - 1))
+                while hash_slots[slot] >= 0:
+                    existing_component = hash_slots[slot]
+                    signatures_equal = True
+                    for word in range(words):
+                        if (
+                            signatures[existing_component * words + word]
+                            != signatures[component * words + word]
+                        ):
+                            signatures_equal = False
+                            break
+                    if signatures_equal:
+                        break
+                    slot = (slot + 1) & (table_size - 1)
+                if hash_slots[slot] < 0:
+                    hash_slots[slot] = component
+                    component_unique_indices[component] = unique_component_count
+                    unique_representative_components[unique_component_count] = component
+                    unique_component_count += 1
+                else:
+                    component_unique_indices[component] = component_unique_indices[
+                        existing_component
+                    ]
+
             component_cursor += component_count
             component_offsets[mask + 1] = component_cursor
+            processed_mask_count = mask + 1
+            if unique_target > 0:
+                if (
+                    target_prefix_mask_count == 0
+                    and unique_component_count >= unique_target
+                ):
+                    target_prefix_mask_count = processed_mask_count
+                # Reaching the target is insufficient: the legacy path only
+                # truncates if a later component overshoots it. Once that is
+                # proven, finish the forced prefix and stop scanning.
+                if (
+                    unique_component_count > unique_target
+                    and processed_mask_count >= forced_mask_count
+                ):
+                    break
+
+        retained_mask_count = processed_mask_count
+        if unique_target > 0 and unique_component_count > unique_target:
+            retained_mask_count = max(
+                target_prefix_mask_count,
+                forced_mask_count,
+            )
+        retained_component_count = component_offsets[retained_mask_count]
+        retained_broken_count = mask_ptr[retained_mask_count]
+        retained_unique_count = 0
+        while (
+            retained_unique_count < unique_component_count
+            and unique_representative_components[retained_unique_count]
+            < retained_component_count
+        ):
+            retained_unique_count += 1
+        component_cursor = retained_component_count
+        unique_component_count = retained_unique_count
         topology_ms = (perf_counter() - topology_start) * 1000.0
 
         assembly_start = perf_counter()
-        table_size = 1
-        while table_size < 2 * component_cursor:
-            table_size <<= 1
-        hash_slots = <Py_ssize_t*>malloc(table_size * sizeof(Py_ssize_t))
         membership_offsets = <Py_ssize_t*>malloc(
             (component_cursor + 1) * sizeof(Py_ssize_t)
         )
         membership_cursors = <Py_ssize_t*>malloc(
             max(component_cursor, 1) * sizeof(Py_ssize_t)
         )
-        if hash_slots == NULL or membership_offsets == NULL or membership_cursors == NULL:
+        if membership_offsets == NULL or membership_cursors == NULL:
             raise MemoryError("unable to allocate fused MASShatter assembly buffers")
-        memset(hash_slots, 0xff, table_size * sizeof(Py_ssize_t))
-
-        component_unique_indices_array = np.empty(component_cursor, dtype=np.int64)
-        unique_representative_components_array = np.empty(
-            component_cursor,
-            dtype=np.int64,
-        )
-        component_unique_indices = component_unique_indices_array
-        unique_representative_components = unique_representative_components_array
-
-        unique_component_count = 0
-        for component in range(component_cursor):
-            signature_hash = 1469598103934665603ULL
-            for word in range(words):
-                signature_hash ^= signatures[component * words + word]
-                signature_hash *= 1099511628211ULL
-            slot = <Py_ssize_t>(signature_hash & (table_size - 1))
-            while hash_slots[slot] >= 0:
-                existing_component = hash_slots[slot]
-                signatures_equal = True
-                for word in range(words):
-                    if (
-                        signatures[existing_component * words + word]
-                        != signatures[component * words + word]
-                    ):
-                        signatures_equal = False
-                        break
-                if signatures_equal:
-                    break
-                slot = (slot + 1) & (table_size - 1)
-            if hash_slots[slot] < 0:
-                hash_slots[slot] = component
-                component_unique_indices[component] = unique_component_count
-                unique_representative_components[unique_component_count] = component
-                unique_component_count += 1
-            else:
-                component_unique_indices[component] = component_unique_indices[
-                    existing_component
-                ]
 
         component_mask_indices_array = np.empty(component_cursor, dtype=np.int64)
         component_cut_counts_array = np.empty(component_cursor, dtype=np.int64)
-        atom_indices_array = np.empty(max_components, dtype=np.int64)
-        atom_component_indices_array = np.empty(max_components, dtype=np.int64)
-        mask_indices_array = np.empty(total_broken, dtype=np.int64)
-        broken_bond_indices_array = np.empty(total_broken, dtype=np.int64)
-        boundary_bond_indices_array = np.empty(2 * total_broken, dtype=np.int64)
-        boundary_component_indices_array = np.empty(2 * total_broken, dtype=np.int64)
+        atom_indices_array = np.empty(retained_mask_count * num_atoms, dtype=np.int64)
+        atom_component_indices_array = np.empty(
+            retained_mask_count * num_atoms,
+            dtype=np.int64,
+        )
+        mask_indices_array = np.empty(retained_broken_count, dtype=np.int64)
+        broken_bond_indices_array = np.empty(retained_broken_count, dtype=np.int64)
+        boundary_bond_indices_array = np.empty(
+            2 * retained_broken_count,
+            dtype=np.int64,
+        )
+        boundary_component_indices_array = np.empty(
+            2 * retained_broken_count,
+            dtype=np.int64,
+        )
         component_mask_indices = component_mask_indices_array
         component_cut_counts = component_cut_counts_array
         atom_indices = atom_indices_array
@@ -799,10 +871,10 @@ def build_component_arrays_raw(
                 membership_offsets[component] + component_sizes[component]
             )
             membership_cursors[component] = membership_offsets[component]
-        if membership_offsets[component_cursor] != max_components:
+        if membership_offsets[component_cursor] != retained_mask_count * num_atoms:
             raise ValueError("component labels do not partition every atom exactly once")
 
-        for mask in range(num_masks):
+        for mask in range(retained_mask_count):
             for component in range(component_offsets[mask], component_offsets[mask + 1]):
                 component_mask_indices[component] = mask_offset + mask
                 component_cut_counts[component] = cut_counts[mask]
@@ -815,7 +887,7 @@ def build_component_arrays_raw(
 
         cursor = 0
         boundary_cursor = 0
-        for mask in range(num_masks):
+        for mask in range(retained_mask_count):
             for item in range(mask_ptr[mask], mask_ptr[mask + 1]):
                 bond = local_broken[item]
                 mask_indices[cursor] = mask_offset + mask
@@ -852,9 +924,9 @@ def build_component_arrays_raw(
             free(membership_cursors)
 
     return (
-        cut_counts_array,
-        component_mask_indices_array,
-        component_cut_counts_array,
+        cut_counts_array[:retained_mask_count],
+        component_mask_indices_array[:component_cursor],
+        component_cut_counts_array[:component_cursor],
         atom_indices_array,
         atom_component_indices_array,
         mask_indices_array,
@@ -865,8 +937,9 @@ def build_component_arrays_raw(
         unique_component_count,
         topology_ms,
         assembly_ms,
-        component_unique_indices_array,
+        component_unique_indices_array[:component_cursor],
         unique_representative_components_array[:unique_component_count],
+        processed_mask_count,
     )
 
 

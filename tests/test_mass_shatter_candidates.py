@@ -4,15 +4,215 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.frag.mass_shatter_candidates import (
-    MassShatterStaticGraph,
-    build_mass_shatter_candidates,
-)
-from fragnnet.frag.mass_shatter_candidates import (
-    _top_mixture_bond_sets as _top_mixture_bond_sets_fn,
-)
+from fragnnet.frag import mass_shatter_candidates, mass_shatter_core
+
+MassShatterStaticGraph = mass_shatter_candidates.MassShatterStaticGraph
+_packed_long_chunk_tensors = mass_shatter_candidates._packed_long_chunk_tensors
+_merge_forced_masks = mass_shatter_candidates._merge_forced_masks
+_top_mixture_bond_sets_fn = mass_shatter_candidates._top_mixture_bond_sets
+build_mass_shatter_candidates = mass_shatter_candidates.build_mass_shatter_candidates
 
 BOUNDED_CUT_COUNT_WEIGHTS = (0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05)
+
+
+def _legacy_merge_forced_masks(
+    mask_ptr: np.ndarray,
+    broken_bonds: np.ndarray,
+    forced_bond_sets: list[tuple[int, ...]],
+    *,
+    has_templates: bool,
+    unique_fragment_mode: bool,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Reproduce the former all-mask materialization as a test oracle."""
+    learned_cut_counts = np.diff(mask_ptr)
+    learned_mask_count = learned_cut_counts.size
+    if unique_fragment_mode:
+        forced_cut_counts = np.asarray(
+            [len(bond_set) for bond_set in forced_bond_sets],
+            dtype=np.int64,
+        )
+        forced_bonds = np.asarray(
+            [bond for bond_set in forced_bond_sets for bond in bond_set],
+            dtype=np.int64,
+        )
+        if has_templates:
+            forced_lookup = set(forced_bond_sets)
+            ranked_bond_sets = [
+                tuple(broken_bonds[mask_ptr[index] : mask_ptr[index + 1]])
+                for index in range(learned_mask_count)
+            ]
+            keep_masks = np.asarray(
+                [bond_set not in forced_lookup for bond_set in ranked_bond_sets],
+                dtype=np.bool_,
+            )
+        else:
+            maximum_forced_cut_count = 1 if len(forced_bond_sets) > 1 else 0
+            keep_masks = learned_cut_counts > maximum_forced_cut_count
+        keep_bonds = np.repeat(keep_masks, learned_cut_counts)
+        combined_cut_counts = np.concatenate(
+            (forced_cut_counts, learned_cut_counts[keep_masks])
+        )
+        return (
+            np.concatenate(
+                (
+                    np.zeros(1, dtype=np.int64),
+                    np.cumsum(combined_cut_counts, dtype=np.int64),
+                )
+            ),
+            np.concatenate((forced_bonds, broken_bonds[keep_bonds])),
+            forced_cut_counts.size,
+        )
+
+    selected = {
+        tuple(broken_bonds[mask_ptr[index] : mask_ptr[index + 1]])
+        for index in range(learned_mask_count)
+    }
+    extra = [bond_set for bond_set in forced_bond_sets if bond_set not in selected]
+    if not extra:
+        return mask_ptr, broken_bonds, 0
+    extra_cut_counts = np.asarray([len(bond_set) for bond_set in extra], dtype=np.int64)
+    extra_bonds = np.asarray(
+        [bond for bond_set in extra for bond in bond_set],
+        dtype=np.int64,
+    )
+    return (
+        np.concatenate((mask_ptr, mask_ptr[-1] + np.cumsum(extra_cut_counts))),
+        np.concatenate((broken_bonds, extra_bonds)) if extra_bonds.size else broken_bonds,
+        0,
+    )
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_filtered_forced_merge_matches_full_materialization(seed: int) -> None:
+    rng = np.random.default_rng(29031 + seed)
+    num_bonds = 5
+    ranked_masks = [
+        tuple(index for index in range(num_bonds) if bits & (1 << index))
+        for bits in rng.permutation(1 << num_bonds)
+    ][: int(rng.integers(8, (1 << num_bonds) + 1))]
+    cut_counts = np.asarray([len(mask) for mask in ranked_masks], dtype=np.int64)
+    mask_ptr = np.concatenate(
+        (np.zeros(1, dtype=np.int64), np.cumsum(cut_counts, dtype=np.int64))
+    )
+    broken_bonds = np.asarray(
+        [bond for mask in ranked_masks for bond in mask],
+        dtype=np.int64,
+    )
+    base_forced = [()]
+    if bool(rng.integers(0, 2)):
+        base_forced.extend((bond,) for bond in range(num_bonds))
+    template_masks = [
+        ranked_masks[int(index)]
+        for index in rng.integers(0, len(ranked_masks), size=int(rng.integers(0, 6)))
+    ]
+    forced_bond_sets = list(dict.fromkeys([*base_forced, *template_masks]))
+    unique_fragment_mode = bool(rng.integers(0, 2))
+
+    expected = _legacy_merge_forced_masks(
+        mask_ptr,
+        broken_bonds,
+        forced_bond_sets,
+        has_templates=bool(template_masks),
+        unique_fragment_mode=unique_fragment_mode,
+    )
+    actual = _merge_forced_masks(
+        mask_ptr,
+        broken_bonds,
+        forced_bond_sets,
+        cut_counts,
+        len(ranked_masks),
+        len(base_forced),
+        unique_fragment_mode,
+    )
+
+    np.testing.assert_array_equal(actual[0], expected[0])
+    np.testing.assert_array_equal(actual[1], expected[1])
+    assert actual[2] == expected[2]
+
+
+def _full_build_then_slice_reference(*args: object) -> tuple[object, ...]:
+    """Run full topology and reproduce the removed driver-side slice."""
+    full = _ORIGINAL_BUILD_COMPONENT_ARRAYS(*args[:7])
+    target = args[7] if len(args) > 7 else None
+    forced_mask_count = int(args[8]) if len(args) > 8 else 0
+    if target is None or int(full[10]) <= int(target):
+        return (*full[:15], int(np.asarray(full[0]).size))
+
+    component_mask_indices = np.asarray(full[1])
+    atom_component_indices = np.asarray(full[4])
+    mask_indices = np.asarray(full[5])
+    boundary_component_indices = np.asarray(full[8])
+    representatives = np.asarray(full[14])
+    mask_offset = int(args[5])
+    component_offset = int(args[6])
+    target_component = int(representatives[int(target) - 1])
+    retained_mask_count = max(
+        int(component_mask_indices[target_component]) - mask_offset + 1,
+        forced_mask_count,
+    )
+    mask_end = mask_offset + retained_mask_count
+    component_count = int(np.searchsorted(component_mask_indices, mask_end))
+    component_end = component_offset + component_count
+    atom_end = int(np.searchsorted(atom_component_indices, component_end))
+    broken_end = int(np.searchsorted(mask_indices, mask_end))
+    boundary_keep = boundary_component_indices < component_end
+    representatives = representatives[representatives < component_count]
+    return (
+        np.asarray(full[0])[:retained_mask_count],
+        component_mask_indices[:component_count],
+        np.asarray(full[2])[:component_count],
+        np.asarray(full[3])[:atom_end],
+        atom_component_indices[:atom_end],
+        mask_indices[:broken_end],
+        np.asarray(full[6])[:broken_end],
+        np.asarray(full[7])[boundary_keep],
+        boundary_component_indices[boundary_keep],
+        component_count,
+        representatives.size,
+        full[11],
+        full[12],
+        np.asarray(full[13])[:component_count],
+        representatives,
+        int(np.asarray(full[0]).size),
+    )
+
+
+_ORIGINAL_BUILD_COMPONENT_ARRAYS = mass_shatter_core.build_component_arrays_raw
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_packed_chunk_assembly_matches_field_concatenation(seed: int) -> None:
+    rng = np.random.default_rng(7411 + seed)
+    fields: list[list[np.ndarray]] = []
+    expected: list[np.ndarray] = []
+    for _ in range(19):
+        chunks = [
+            rng.integers(-20, 40, size=int(rng.integers(0, 9)), dtype=np.int64)
+            for _ in range(int(rng.integers(0, 6)))
+        ]
+        fields.append(chunks)
+        expected.append(np.concatenate(chunks) if chunks else np.empty(0, dtype=np.int64))
+
+    actual, packing_ms, transfer_ms = _packed_long_chunk_tensors(
+        fields,
+        th.device("cpu"),
+    )
+
+    assert len(actual) == len(expected)
+    for actual_field, expected_field in zip(actual, expected, strict=True):
+        assert actual_field.dtype == th.long
+        np.testing.assert_array_equal(actual_field.numpy(), expected_field)
+    assert packing_ms >= 0.0
+    assert transfer_ms >= 0.0
+
+
+def test_packed_chunk_assembly_preserves_empty_fields_between_nonempty_fields() -> None:
+    actual, _, _ = _packed_long_chunk_tensors(
+        (([1, 2],), (), (np.asarray([3], dtype=np.int32),), ()),
+        th.device("cpu"),
+    )
+
+    assert [field.tolist() for field in actual] == [[1, 2], [], [3], []]
 
 
 def test_candidate_batch_keeps_molecules_and_masks_separate() -> None:
@@ -59,7 +259,10 @@ def test_candidate_batch_supports_bondless_precursor() -> None:
     assert candidates.component_mask_indices.tolist() == [0]
     assert candidates.atom_indices.tolist() == [0]
     assert candidates.boundary_bond_indices.numel() == 0
-    assert candidates.timings.total_ms >= 0.0
+    assert all(value >= 0.0 for value in vars(candidates.timings).values())
+    assert candidates.selected_mask_counts == (1,)
+    assert candidates.retained_mask_counts == (1,)
+    assert candidates.scanned_mask_counts == (1,)
 
 
 def test_bernoulli_mixture_is_normalized_and_backpropagates() -> None:
@@ -164,6 +367,9 @@ def test_unique_component_budget_continues_past_unproductive_ring_masks() -> Non
     # Empty + all single-ring cuts yield only the intact atom set, so selection
     # must continue to a two-cut mask to obtain the requested unique fragments.
     assert candidates.mask_cut_counts.tolist() == [0, 1, 1, 1, 2]
+    assert candidates.selected_mask_counts == (8,)
+    assert candidates.retained_mask_counts == (5,)
+    assert candidates.scanned_mask_counts == (6,)
     assert candidates.unique_component_count.tolist() == [3.0]
     assert candidates.num_unique_components == 3
     assert candidates.component_unique_indices.max().item() == 2
@@ -343,6 +549,64 @@ def test_shared_candidate_groups_match_repeated_construction_and_gradients() -> 
     assert th.equal(shared_logits.grad, repeated_logits.grad)
 
 
+def test_early_topology_candidate_fields_and_gradients_match_full_slice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chemical_bond_index = th.tensor(
+        [[0, 1, 2, 4, 5, 6], [1, 2, 3, 5, 6, 7]],
+        dtype=th.long,
+    )
+    atom_batch_indices = th.tensor([0] * 4 + [1] * 4, dtype=th.long)
+    atom_ptr = th.tensor([0, 4, 8], dtype=th.long)
+    kwargs = {
+        "chemical_bond_index": chemical_bond_index,
+        "atom_batch_indices": atom_batch_indices,
+        "atom_ptr": atom_ptr,
+        "max_masks": 4,
+        "max_unique_components": 4,
+        "max_enumerated_masks": 16,
+        "include_single_bond_cuts": True,
+        "candidate_group_ids": th.tensor([29, 29], dtype=th.long),
+    }
+    optimized_logits = th.tensor(
+        [0.9, -0.5, 0.25, 0.9, -0.5, 0.25],
+        requires_grad=True,
+    )
+    reference_logits = optimized_logits.detach().clone().requires_grad_(True)
+
+    optimized = build_mass_shatter_candidates(optimized_logits, **kwargs)
+    monkeypatch.setattr(
+        mass_shatter_core,
+        "build_component_arrays_raw",
+        _full_build_then_slice_reference,
+    )
+    reference = build_mass_shatter_candidates(reference_logits, **kwargs)
+
+    for name, expected in vars(reference).items():
+        if name in {"timings", "scanned_mask_counts"}:
+            continue
+        actual = getattr(optimized, name)
+        if isinstance(expected, th.Tensor):
+            assert th.equal(actual, expected), name
+        else:
+            assert actual == expected, name
+    assert all(
+        scanned <= selected
+        for scanned, selected in zip(
+            optimized.scanned_mask_counts,
+            optimized.selected_mask_counts,
+            strict=True,
+        )
+    )
+    assert optimized.scanned_mask_counts[0] < optimized.selected_mask_counts[0]
+    assert optimized.scanned_mask_counts[1] == optimized.scanned_mask_counts[0]
+
+    weights = th.linspace(0.5, 2.5, optimized.mask_log_probabilities.numel())
+    (optimized.mask_log_probabilities * weights).sum().backward()
+    (reference.mask_log_probabilities * weights).sum().backward()
+    assert th.equal(optimized_logits.grad, reference_logits.grad)
+
+
 def test_shared_candidate_groups_reject_different_logits() -> None:
     with pytest.raises(ValueError, match="identical proposal logits"):
         build_mass_shatter_candidates(
@@ -467,7 +731,9 @@ def test_threaded_mask_selection_matches_serial(mask_selection_threads: int) -> 
         th.randn(num_molecules, num_mixtures, generator=generator).double(),
         dim=1,
     )
-    left = [m * (num_bonds_each + 1) + b for m in range(num_molecules) for b in range(num_bonds_each)]
+    left = [
+        m * (num_bonds_each + 1) + b for m in range(num_molecules) for b in range(num_bonds_each)
+    ]
     kwargs = {
         "chemical_bond_index": th.tensor([left, [index + 1 for index in left]], dtype=th.long),
         "atom_batch_indices": th.arange(num_molecules).repeat_interleave(num_bonds_each + 1),

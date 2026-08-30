@@ -1,6 +1,29 @@
 # MASShatter — Topology and Assembly Performance Plan
 
-> **Status:** PROPOSED &nbsp;·&nbsp; **Added:** 2026-08-29
+> **Status:** IN PROGRESS &nbsp;·&nbsp; **Added:** 2026-08-29
+
+## Implementation progress
+
+- Stage 0's synthetic harness now supports unique targets, ranked-mask budgets, warm-up, the static
+  graph sidecar, SMARTS augmentation, grouped views, retained/scanned counts, transferred bytes,
+  and finer assembly timings. The canonical full-training-step gate still requires a CUDA training
+  run with the production DataLoader.
+- Stage 1 is implemented with exact overshoot-aware termination and grouped-cache reuse. Permanent
+  full-build-then-slice differentials cover raw arrays, complete candidate batches, and gradients.
+- Stage 3's single-fill packed host buffer is implemented and permanently compared with field-wise
+  concatenation. Its retention gate still requires the canonical CUDA training run.
+- SMARTS assembly now builds atom-set lookup entries only for unique representative components and
+  caches molecule-local bond/atom lookup data across grouped views. On the synthetic grouped chain
+  workload, SMARTS assembly fell from 273.15 ms to 27.47 ms at target 128 and from 1,141.44 ms to
+  120.50 ms when all 4,116 masks were retained; candidate totals improved by 2.83x and 3.56x,
+  respectively. These are CPU diagnostics, not substitutes for the canonical CUDA retention gate.
+- Forced-mask merging now uses cardinality for the base empty/single-cut prefix, examines only
+  ranked masks whose cut counts match genuinely additional SMARTS masks, and reuses merged CSR for
+  grouped views with the same forced signature. On the target-128 grouped workload this reduced
+  forced merging from 290.97 ms to 1.39 ms and candidate total from 386.93 ms to 96.83 ms. With all
+  masks retained, forced merging fell from 296.47 ms to 1.31 ms and candidate total from 699.16 ms
+  to 409.40 ms.
+- Stages 2, 4, and 5 remain gated and are not implemented.
 
 ## Why now
 
@@ -119,17 +142,23 @@ at the front of the mask CSR. For each mask, the compiled kernel will:
 2. Construct each component signature and look it up in the unique-component hash table
    immediately, preserving first-occurrence unique indices.
 3. Finish every component of the current mask.
-4. Stop only when the target has been reached and every forced mask has been processed.
+4. Record the first mask prefix that reaches the target, but continue scanning until a later
+   component proves the final unique count exceeds the target.
+5. Stop after that overshoot has been observed and every forced mask has been processed.
 
-The kernel returns `processed_mask_count`, which should equal the old path's
-`retained_mask_count`. The driver truncates the selected-mask CSR to that prefix and deletes the
-current full-topology-then-slice block. Finishing the target-reaching mask is required for parity:
-the current implementation retains all components and all newly encountered unique atom sets from
-that mask, even if the target is crossed partway through it. If the target is unreachable, the
-kernel processes all `selected_mask_count` masks exactly as today.
+The kernel returns `scanned_mask_count`; `retained_mask_count` is the length of its output mask
+arrays, and the candidate batch reports both. They can differ: the old path retains every selected
+mask when the reachable unique count equals the target exactly, and it
+truncates only when the final count exceeds the target. Therefore an online kernel cannot safely
+stop at equality. It scans through the first overshoot, then materializes only the previously
+recorded target/forced prefix. The driver deletes the current full-topology-then-slice block.
+Finishing the target-reaching mask is required for parity: the current implementation retains all
+components and all newly encountered unique atom sets from that mask, even if the target is crossed
+partway through it. If the target is unreachable or reached exactly without an overshoot, the
+kernel processes and retains all `selected_mask_count` masks exactly as today.
 
-`_TopologyCache` must store `processed_mask_count` and the corresponding prefix of `mask_ptr` and
-`broken_bonds`. A grouped member must reuse the representative's stopping point rather than derive
+`_TopologyCache` stores `scanned_mask_count` and the retained prefix of `mask_ptr` and
+`broken_bonds`. A grouped member reuses the representative's stopping point rather than deriving
 `num_local_masks` independently from its untruncated selection. Topology validation compares the
 same retained CSR prefix on cache hits.
 

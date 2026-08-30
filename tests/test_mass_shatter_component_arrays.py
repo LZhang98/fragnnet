@@ -116,16 +116,14 @@ def _assert_matches_legacy(
     mask_offset: int = 0,
     component_offset: int = 0,
 ) -> tuple[np.ndarray, ...]:
-    expected_arrays, expected_component_count, expected_unique_count = (
-        _legacy_component_arrays(
-            num_atoms,
-            bond_endpoints,
-            broken_bond_sets,
-            global_bond_indices,
-            atom_offset=atom_offset,
-            mask_offset=mask_offset,
-            component_offset=component_offset,
-        )
+    expected_arrays, expected_component_count, expected_unique_count = _legacy_component_arrays(
+        num_atoms,
+        bond_endpoints,
+        broken_bond_sets,
+        global_bond_indices,
+        atom_offset=atom_offset,
+        mask_offset=mask_offset,
+        component_offset=component_offset,
     )
     actual = build_component_arrays_raw(
         num_atoms,
@@ -148,6 +146,118 @@ def _assert_matches_legacy(
     return actual_arrays
 
 
+def _mask_csr(
+    broken_bond_sets: Sequence[Sequence[int]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pack test cut masks into the production CSR representation."""
+    cut_counts = np.asarray([len(mask) for mask in broken_bond_sets], dtype=np.int64)
+    mask_ptr = np.empty(len(broken_bond_sets) + 1, dtype=np.int64)
+    mask_ptr[0] = 0
+    np.cumsum(cut_counts, out=mask_ptr[1:])
+    broken_bonds = np.asarray(
+        [bond for mask in broken_bond_sets for bond in mask],
+        dtype=np.int64,
+    )
+    return mask_ptr, broken_bonds
+
+
+def _full_build_then_slice(
+    full: tuple[object, ...],
+    target: int,
+    forced_mask_count: int,
+    *,
+    mask_offset: int,
+    component_offset: int,
+) -> tuple[tuple[np.ndarray, ...], int, int]:
+    """Apply the removed Python truncation block as an exact test oracle."""
+    arrays = tuple(np.asarray(value) for value in full[:9])
+    component_count = int(full[9])
+    unique_count = int(full[10])
+    component_unique_indices = np.asarray(full[13])
+    representatives = np.asarray(full[14])
+    if unique_count <= target:
+        return (*arrays, component_unique_indices, representatives), component_count, unique_count
+
+    target_component = int(representatives[target - 1])
+    target_mask = int(arrays[1][target_component]) - mask_offset
+    retained_mask_count = max(target_mask + 1, forced_mask_count)
+    mask_end = mask_offset + retained_mask_count
+    component_count = int(np.searchsorted(arrays[1], mask_end))
+    component_end = component_offset + component_count
+    atom_end = int(np.searchsorted(arrays[4], component_end))
+    broken_end = int(np.searchsorted(arrays[5], mask_end))
+    boundary_keep = arrays[8] < component_end
+    representatives = representatives[representatives < component_count]
+    expected = (
+        arrays[0][:retained_mask_count],
+        arrays[1][:component_count],
+        arrays[2][:component_count],
+        arrays[3][:atom_end],
+        arrays[4][:atom_end],
+        arrays[5][:broken_end],
+        arrays[6][:broken_end],
+        arrays[7][boundary_keep],
+        arrays[8][boundary_keep],
+        component_unique_indices[:component_count],
+        representatives,
+    )
+    return expected, component_count, representatives.size
+
+
+def _assert_early_build_matches_full_slice(
+    num_atoms: int,
+    bond_endpoints: np.ndarray,
+    broken_bond_sets: Sequence[Sequence[int]],
+    target: int,
+    forced_mask_count: int,
+    *,
+    atom_offset: int = 0,
+    mask_offset: int = 0,
+    component_offset: int = 0,
+) -> tuple[object, ...]:
+    """Compare early topology against the prior full-build-then-slice path."""
+    mask_csr = _mask_csr(broken_bond_sets)
+    global_bond_indices = np.arange(
+        101,
+        101 + bond_endpoints.shape[0],
+        dtype=np.int64,
+    )
+    full = build_component_arrays_raw(
+        num_atoms,
+        bond_endpoints,
+        mask_csr,
+        global_bond_indices,
+        atom_offset,
+        mask_offset,
+        component_offset,
+    )
+    expected, expected_component_count, expected_unique_count = _full_build_then_slice(
+        full,
+        target,
+        forced_mask_count,
+        mask_offset=mask_offset,
+        component_offset=component_offset,
+    )
+    actual = build_component_arrays_raw(
+        num_atoms,
+        bond_endpoints,
+        mask_csr,
+        global_bond_indices,
+        atom_offset,
+        mask_offset,
+        component_offset,
+        target,
+        forced_mask_count,
+    )
+    actual_arrays = (*actual[:9], actual[13], actual[14])
+    for actual_array, expected_array in zip(actual_arrays, expected, strict=True):
+        np.testing.assert_array_equal(actual_array, expected_array)
+    assert actual[9] == expected_component_count
+    assert actual[10] == expected_unique_count
+    assert 1 <= actual[15] <= len(broken_bond_sets)
+    return actual
+
+
 @pytest.mark.parametrize("seed", range(8))
 def test_fused_component_arrays_match_legacy_on_random_multigraphs(seed: int) -> None:
     rng = np.random.default_rng(9183 + seed)
@@ -159,18 +269,12 @@ def test_fused_component_arrays_match_legacy_on_random_multigraphs(seed: int) ->
         size=(num_bonds, 2),
         dtype=np.int64,
     )
-    global_bond_indices = (
-        rng.permutation(num_bonds).astype(np.int64) * 3 + 11
-    )
+    global_bond_indices = rng.permutation(num_bonds).astype(np.int64) * 3 + 11
     broken_bond_sets: list[tuple[int, ...]] = [(), tuple(range(num_bonds))]
     for _ in range(10):
         cut_count = int(rng.integers(0, num_bonds + 1))
         broken_bond_sets.append(
-            tuple(
-                sorted(
-                    rng.choice(num_bonds, size=cut_count, replace=False).tolist()
-                )
-            )
+            tuple(sorted(rng.choice(num_bonds, size=cut_count, replace=False).tolist()))
         )
 
     _assert_matches_legacy(
@@ -302,6 +406,187 @@ def test_fused_component_arrays_match_legacy_above_256_atoms() -> None:
 
 
 @pytest.mark.parametrize(
+    ("target", "expected_retained", "expected_scanned"),
+    [
+        (1, 1, 2),
+        (2, 2, 2),
+        (3, 2, 4),
+        (4, 4, 4),
+        (5, 4, 4),
+        (6, 4, 4),
+    ],
+)
+def test_early_topology_matches_full_slice_across_budget_boundaries(
+    target: int,
+    expected_retained: int,
+    expected_scanned: int,
+) -> None:
+    endpoints = np.asarray([(0, 1), (1, 2), (2, 3)], dtype=np.int64)
+    masks = [(), (0,), (0,), (1,)]
+
+    actual = _assert_early_build_matches_full_slice(
+        4,
+        endpoints,
+        masks,
+        target,
+        0,
+        atom_offset=7,
+        mask_offset=11,
+        component_offset=13,
+    )
+
+    assert actual[0].size == expected_retained
+    assert actual[15] == expected_scanned
+
+
+@pytest.mark.parametrize("forced_mask_count", [2, 3, 4])
+def test_early_topology_finishes_forced_prefix(
+    forced_mask_count: int,
+) -> None:
+    endpoints = np.asarray([(0, 1), (1, 2), (2, 3)], dtype=np.int64)
+    masks = [(), (0,), (1,), (2,), (0, 2)]
+
+    actual = _assert_early_build_matches_full_slice(
+        4,
+        endpoints,
+        masks,
+        target=1,
+        forced_mask_count=forced_mask_count,
+    )
+
+    assert actual[0].size == forced_mask_count
+    assert actual[15] == forced_mask_count
+
+
+def test_early_topology_retains_all_masks_when_target_is_reached_exactly() -> None:
+    endpoints = np.asarray([(0, 1), (1, 2)], dtype=np.int64)
+    masks = [(), (), (0,), (0,)]
+
+    actual = _assert_early_build_matches_full_slice(
+        3,
+        endpoints,
+        masks,
+        target=3,
+        forced_mask_count=1,
+    )
+
+    assert actual[0].size == len(masks)
+    assert actual[15] == len(masks)
+
+
+def test_early_topology_handles_zero_bond_graph_and_duplicate_empty_masks() -> None:
+    actual = _assert_early_build_matches_full_slice(
+        1,
+        np.empty((0, 2), dtype=np.int64),
+        [(), (), ()],
+        target=1,
+        forced_mask_count=1,
+    )
+
+    assert actual[0].tolist() == [0, 0, 0]
+    assert actual[15] == 3
+
+
+def test_early_topology_preserves_redundant_ring_and_multigraph_boundaries() -> None:
+    endpoints = np.asarray(
+        [(0, 1), (0, 1), (1, 2), (2, 0)],
+        dtype=np.int64,
+    )
+    masks = [(), (0,), (1,), (0, 1), (2, 3), (0, 2, 3)]
+
+    _assert_early_build_matches_full_slice(
+        3,
+        endpoints,
+        masks,
+        target=2,
+        forced_mask_count=3,
+        atom_offset=5,
+        mask_offset=9,
+        component_offset=12,
+    )
+
+
+def test_early_topology_preserves_multiword_signatures_above_256_atoms() -> None:
+    num_atoms = 257
+    endpoints = np.asarray(
+        [(atom, atom + 1) for atom in range(num_atoms - 1)],
+        dtype=np.int64,
+    )
+    masks = [(), (255,), (255,), (128,), (64, 128, 255)]
+
+    actual = _assert_early_build_matches_full_slice(
+        num_atoms,
+        endpoints,
+        masks,
+        target=3,
+        forced_mask_count=1,
+        atom_offset=1000,
+        mask_offset=20,
+        component_offset=30,
+    )
+
+    assert 1000 + 256 in actual[3]
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_early_topology_matches_full_slice_on_random_multigraphs(seed: int) -> None:
+    rng = np.random.default_rng(48271 + seed)
+    num_atoms = int(rng.integers(1, 20))
+    num_bonds = int(rng.integers(0, 3 * num_atoms + 1))
+    endpoints = rng.integers(
+        0,
+        num_atoms,
+        size=(num_bonds, 2),
+        dtype=np.int64,
+    )
+    masks: list[tuple[int, ...]] = [()]
+    for _ in range(20):
+        cut_count = int(rng.integers(0, num_bonds + 1))
+        masks.append(tuple(sorted(rng.choice(num_bonds, size=cut_count, replace=False).tolist())))
+    target = int(rng.integers(1, num_atoms * 4 + 1))
+    forced_mask_count = int(rng.integers(0, len(masks) + 1))
+
+    _assert_early_build_matches_full_slice(
+        num_atoms,
+        endpoints,
+        masks,
+        target,
+        forced_mask_count,
+        atom_offset=17,
+        mask_offset=23,
+        component_offset=31,
+    )
+
+
+@pytest.mark.parametrize(
+    ("target", "forced_mask_count", "message"),
+    [
+        (0, 0, "max_unique_components must be positive"),
+        (-1, 0, "max_unique_components must be positive"),
+        (1, -1, "forced_mask_count must be in"),
+        (1, 3, "forced_mask_count must be in"),
+    ],
+)
+def test_early_topology_validates_budget_arguments(
+    target: int,
+    forced_mask_count: int,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_component_arrays_raw(
+            2,
+            np.asarray([(0, 1)], dtype=np.int64),
+            _mask_csr([(), (0,)]),
+            np.asarray([0], dtype=np.int64),
+            0,
+            0,
+            0,
+            target,
+            forced_mask_count,
+        )
+
+
+@pytest.mark.parametrize(
     (
         "logits",
         "max_masks",
@@ -338,13 +623,11 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
         forced_masks.extend((bond_index,) for bond_index in range(num_bonds))
     expected_masks.extend(mask for mask in forced_masks if mask not in selected_masks)
 
-    expected_arrays, expected_component_count, expected_unique_count = (
-        _legacy_component_arrays(
-            num_atoms,
-            bond_endpoints,
-            expected_masks,
-            np.arange(num_bonds, dtype=np.int64),
-        )
+    expected_arrays, expected_component_count, expected_unique_count = _legacy_component_arrays(
+        num_atoms,
+        bond_endpoints,
+        expected_masks,
+        np.arange(num_bonds, dtype=np.int64),
     )
     bond_logits = th.tensor(logits, dtype=th.float64, requires_grad=True)
     candidates = build_mass_shatter_candidates(
@@ -397,7 +680,5 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
     assert candidates.proposal_single_cut_fraction.tolist() == pytest.approx(
         [sum(len(mask) == 1 for mask in learned_masks) / len(learned_masks)]
     )
-    assert candidates.unique_component_count.tolist() == [
-        float(expected_unique_count)
-    ]
+    assert candidates.unique_component_count.tolist() == [float(expected_unique_count)]
     assert candidates.num_components == expected_component_count
