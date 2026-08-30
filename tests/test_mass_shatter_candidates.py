@@ -226,22 +226,6 @@ def test_candidate_batch_preserves_vectorized_boundary_order() -> None:
     assert candidates.boundary_component_indices.tolist() == [0, 1, 1, 2, 2, 0]
 
 
-def test_candidate_batch_applies_minimum_probability_only_to_top_k() -> None:
-    candidates = build_mass_shatter_candidates(
-        th.tensor([2.0, 2.0]),
-        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
-        atom_batch_indices=th.zeros(3, dtype=th.long),
-        atom_ptr=th.tensor([0, 3], dtype=th.long),
-        max_masks=4,
-        min_mask_probability=0.5,
-        include_single_bond_cuts=False,
-    )
-
-    # The MAP mask passes; the otherwise low-probability empty mask remains forced.
-    assert candidates.mask_log_probabilities.shape == (2,)
-    assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
-
-
 def test_candidate_batch_applies_map_relative_probability_only_to_top_k() -> None:
     candidates = build_mass_shatter_candidates(
         th.tensor([2.0, 2.0]),
@@ -276,37 +260,6 @@ def test_map_relative_probability_can_stop_below_unique_fragment_target() -> Non
 
     assert candidates.mask_log_probabilities.shape == (2,)
     assert candidates.unique_component_count.tolist() == [6.0]
-
-
-def test_candidate_batch_rejects_threshold_above_map_probability() -> None:
-    with pytest.raises(ValueError, match="excludes every learned mask"):
-        build_mass_shatter_candidates(
-            th.zeros(4),
-            chemical_bond_index=th.tensor(
-                [[0, 1, 2, 3], [1, 2, 3, 4]], dtype=th.long
-            ),
-            atom_batch_indices=th.zeros(5, dtype=th.long),
-            atom_ptr=th.tensor([0, 5], dtype=th.long),
-            max_masks=4,
-            min_mask_probability=0.2,
-            include_single_bond_cuts=False,
-        )
-
-
-def test_legacy_refill_respects_minimum_probability() -> None:
-    candidates = build_mass_shatter_candidates(
-        th.tensor([100.0, 100.0]),
-        chemical_bond_index=th.tensor([[0, 1], [1, 2]], dtype=th.long),
-        atom_batch_indices=th.zeros(3, dtype=th.long),
-        atom_ptr=th.tensor([0, 3], dtype=th.long),
-        max_masks=4,
-        min_mask_probability=0.5,
-        include_single_bond_cuts=False,
-    )
-
-    # Refill must not cross the threshold to restore the historical fixed budget.
-    assert candidates.mask_log_probabilities.shape == (2,)
-    assert candidates.component_cut_counts.tolist() == [2, 2, 2, 0]
 
 
 def test_legacy_refill_respects_map_relative_probability() -> None:
@@ -416,7 +369,7 @@ def test_top_mixture_bond_sets_ranks_by_exact_mixture_probability() -> None:
     # the exact mixture probability can be written out and compared term by term.
     logits = np.array([[1.0, -2.0], [-0.5, 1.5]])
     mixture_log_weights = np.log(np.array([0.25, 0.75]))
-    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0, 0.0)
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0)
     bond_sets = _mixture_bond_sets(ptr, bonds)
 
     assert sorted(bond_sets) == [(), (0,), (0, 1), (1,)]
@@ -441,7 +394,7 @@ def test_top_mixture_bond_sets_deduplicates_across_components() -> None:
     # collapses to a single copy of every bond set.
     logits = np.tile(np.array([[0.9], [-0.4], [0.2]]), (1, 2))
     mixture_log_weights = np.log(np.array([0.5, 0.5]))
-    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 8, 0.0, 0.0)
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 8, 0.0)
     bond_sets = _mixture_bond_sets(ptr, bonds)
 
     assert len(bond_sets) == len(set(bond_sets)) == 8
@@ -453,7 +406,12 @@ def test_top_mixture_bond_sets_limit_one_keeps_the_best_map_mask() -> None:
     # A limit of one pools each component's MAP mask and keeps the more probable of
     # the two. Component 1 cuts both bonds because both of its logits are positive.
     logits = np.array([[0.3, 0.1], [-0.2, 0.4]])
-    ptr, bonds = _top_mixture_bond_sets_fn(logits, np.log(np.array([0.5, 0.5])), 1, 0.0, 0.0)
+    ptr, bonds = _top_mixture_bond_sets_fn(
+        logits,
+        np.log(np.array([0.5, 0.5])),
+        1,
+        0.0,
+    )
 
     assert _mixture_bond_sets(ptr, bonds) == [(0, 1)]
 
@@ -462,27 +420,37 @@ def test_top_mixture_bond_sets_all_intact_pool_has_zero_width() -> None:
     # Edge case: every component's MAP mask is empty, so the padded matrix carries no
     # columns at all and the CSR pointer must still describe one zero-length bond set.
     logits = np.array([[-1.0, -2.0], [-0.5, -1.5]])
-    ptr, bonds = _top_mixture_bond_sets_fn(logits, np.log(np.array([0.5, 0.5])), 1, 0.0, 0.0)
+    ptr, bonds = _top_mixture_bond_sets_fn(
+        logits,
+        np.log(np.array([0.5, 0.5])),
+        1,
+        0.0,
+    )
 
     assert ptr.tolist() == [0, 0]
     assert bonds.size == 0
     assert _mixture_bond_sets(ptr, bonds) == [()]
 
 
-def test_top_mixture_bond_sets_applies_probability_floors() -> None:
+def test_top_mixture_bond_sets_applies_map_relative_probability_floor() -> None:
     logits = np.array([[2.0, 2.0], [-3.0, -3.0]])
     mixture_log_weights = np.log(np.array([0.5, 0.5]))
-    unfiltered, _ = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0, 0.0)
+    unfiltered, _ = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0)
     assert unfiltered.size - 1 == 4
 
     # A relative floor of 0.5 keeps only masks within 2x of the MAP mask.
-    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.0, 0.5)
+    ptr, bonds = _top_mixture_bond_sets_fn(logits, mixture_log_weights, 4, 0.5)
     assert _mixture_bond_sets(ptr, bonds) == [(0,)]
 
 
 def test_top_mixture_bond_sets_returns_int64_csr() -> None:
     logits = np.array([[0.5, -0.5], [0.25, 0.75], [-1.0, 0.1]])
-    ptr, bonds = _top_mixture_bond_sets_fn(logits, np.log(np.array([0.4, 0.6])), 6, 0.0, 0.0)
+    ptr, bonds = _top_mixture_bond_sets_fn(
+        logits,
+        np.log(np.array([0.4, 0.6])),
+        6,
+        0.0,
+    )
 
     assert ptr.dtype == np.int64 and bonds.dtype == np.int64
     assert ptr[0] == 0 and ptr[-1] == bonds.size

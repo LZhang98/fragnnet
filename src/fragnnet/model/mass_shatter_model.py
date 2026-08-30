@@ -117,6 +117,47 @@ def _mean_values_by_batch(
     return sums / counts
 
 
+def _relative_fragment_keep_mask(
+    fragment_log_probabilities: th.Tensor,
+    fragment_batch_indices: th.Tensor,
+    batch_size: int,
+    min_relative_probability: float,
+) -> th.Tensor:
+    """Select fragments whose proposal mass is within a ratio of the MAP fragment."""
+    if fragment_log_probabilities.shape != fragment_batch_indices.shape:
+        raise ValueError("fragment probabilities and batch indices must align")
+    if fragment_batch_indices.dtype != th.long:
+        raise ValueError("fragment batch indices must have dtype torch.long")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if (
+        not math.isfinite(min_relative_probability)
+        or not 0.0 <= min_relative_probability <= 1.0
+    ):
+        raise ValueError("min_relative_probability must be finite and in [0, 1]")
+    fragment_counts = th.bincount(fragment_batch_indices, minlength=batch_size)
+    _validate_tensor_condition(
+        (fragment_counts > 0).all(),
+        "every molecule must contain at least one fragment",
+    )
+    if min_relative_probability == 0.0:
+        return th.ones_like(fragment_log_probabilities, dtype=th.bool)
+    map_log_probabilities = fragment_log_probabilities.detach().new_full(
+        (batch_size,),
+        -th.inf,
+    ).scatter_reduce(
+        0,
+        fragment_batch_indices,
+        fragment_log_probabilities.detach(),
+        reduce="amax",
+        include_self=True,
+    )
+    return fragment_log_probabilities.detach() >= (
+        map_log_probabilities[fragment_batch_indices]
+        + math.log(min_relative_probability)
+    )
+
+
 class BernoulliMixtureWeightHead(nn.Module):
     """Predict molecule-level log weights for latent Bernoulli proposal modes."""
 
@@ -498,9 +539,10 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: Whether ``max_masks`` is a unique atom-set target.
         max_enumerated_masks: Safety cap for unique-fragment mask enumeration.
         mask_selection_threads: Worker threads used to select cut masks on CPU.
-        min_mask_probability: Masks below this probability are dropped.
         min_mask_relative_probability: Masks below this fraction of the MAP mask
             probability are dropped.
+        min_fragment_relative_probability: Unique fragments below this fraction of
+            the MAP marginalized fragment probability are dropped.
         max_h_transfer: Largest hydrogen transfer (in either direction) per fragment.
         include_cmf: Whether the charge-migration ion channel is emitted.
         num_ion_modes: 2 with CMF enabled (CRF + CMF), otherwise 1.
@@ -557,8 +599,8 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: bool,
         max_enumerated_masks: int,
         mask_selection_threads: int = 1,
-        min_mask_probability: float,
         min_mask_relative_probability: float,
+        min_fragment_relative_probability: float,
         include_single_bond_cuts: bool,
         max_h_transfer: int,
         include_cmf: bool,
@@ -636,10 +678,11 @@ class MassShatterModel(nn.Module):
                 real parallelism and leave the selected masks unchanged. Defaults to 1.
             max_enumerated_masks: Safety cap on latent masks considered while filling
                 the unique-fragment target.
-            min_mask_probability: Probability floor below which a ranked mask is
-                dropped before the selected candidates are renormalized.
             min_mask_relative_probability: MAP-relative probability floor below which
                 a ranked mask is dropped before candidate assembly.
+            min_fragment_relative_probability: MAP-relative probability floor below
+                which a marginalized unique fragment is dropped before intensity
+                scoring. Zero disables fragment pruning.
             include_single_bond_cuts: Enumerate single-bond cuts in the ranked masks.
             max_h_transfer: Largest hydrogen transfer per fragment, in either
                 direction.
@@ -684,10 +727,6 @@ class MassShatterModel(nn.Module):
             )
         if separate_proposal_encoder and not proposal_selection_only:
             raise ValueError("separate_proposal_encoder requires proposal_selection_only")
-        if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
-            raise ValueError(
-                f"min_mask_probability must be finite and in [0, 1], got {min_mask_probability}"
-            )
         if (
             not math.isfinite(min_mask_relative_probability)
             or not 0.0 <= min_mask_relative_probability <= 1.0
@@ -695,6 +734,18 @@ class MassShatterModel(nn.Module):
             raise ValueError(
                 "min_mask_relative_probability must be finite and in [0, 1], "
                 f"got {min_mask_relative_probability}"
+            )
+        if (
+            not math.isfinite(min_fragment_relative_probability)
+            or not 0.0 <= min_fragment_relative_probability <= 1.0
+        ):
+            raise ValueError(
+                "min_fragment_relative_probability must be finite and in [0, 1], "
+                f"got {min_fragment_relative_probability}"
+            )
+        if min_fragment_relative_probability > 0.0 and not unique_fragment_mode:
+            raise ValueError(
+                "min_fragment_relative_probability requires unique_fragment_mode"
             )
         if bond_num_layers < 0:
             raise ValueError("bond_num_layers must be nonnegative")
@@ -716,8 +767,8 @@ class MassShatterModel(nn.Module):
         self.unique_fragment_mode = unique_fragment_mode
         self.max_enumerated_masks = max_enumerated_masks
         self.mask_selection_threads = mask_selection_threads
-        self.min_mask_probability = min_mask_probability
         self.min_mask_relative_probability = min_mask_relative_probability
+        self.min_fragment_relative_probability = min_fragment_relative_probability
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
         self.include_cmf = include_cmf
@@ -1454,7 +1505,6 @@ class MassShatterModel(nn.Module):
             mol_pyg.batch,
             mol_pyg.ptr,
             max_masks=self.max_masks,
-            min_mask_probability=self.min_mask_probability,
             min_mask_relative_probability=self.min_mask_relative_probability,
             include_single_bond_cuts=self.include_single_bond_cuts,
             max_unique_components=(self.max_masks if self.unique_fragment_mode else None),
@@ -1508,6 +1558,10 @@ class MassShatterModel(nn.Module):
         unique_fragment_effective_count = bond_logits.new_zeros(batch_size)
         unique_fragment_top1_mass_fraction = bond_logits.new_zeros(batch_size)
         duplicate_pathway_probability_fraction = bond_logits.new_zeros(batch_size)
+        fragment_count_before_cutoff = bond_logits.new_zeros(batch_size)
+        fragment_count_after_cutoff = bond_logits.new_zeros(batch_size)
+        retained_fragment_probability = bond_logits.new_zeros(batch_size)
+        fragment_cutoff_pruned_fraction = bond_logits.new_zeros(batch_size)
         if self.unique_fragment_mode:
             (
                 fragment_batch_indices,
@@ -1571,6 +1625,59 @@ class MassShatterModel(nn.Module):
             duplicate_pathway_probability_fraction = (
                 -th.expm1(best_pathway_log_probability - retained_fragment_log_probability)
             ).clamp(min=0.0, max=1.0)
+
+            # Prune low-probability unique atom sets only after all duplicate
+            # pathways have been marginalized. The hard decision is detached, while
+            # probabilities for retained fragments stay live for proposal training.
+            fragment_keep = _relative_fragment_keep_mask(
+                fragment_log_probabilities,
+                fragment_batch_indices,
+                batch_size,
+                self.min_fragment_relative_probability,
+            )
+            fragment_count_before_cutoff = th.bincount(
+                fragment_batch_indices,
+                minlength=batch_size,
+            ).to(bond_logits)
+            fragment_count_after_cutoff = th.bincount(
+                fragment_batch_indices[fragment_keep],
+                minlength=batch_size,
+            ).to(bond_logits)
+            retained_fragment_probability = bond_logits.new_zeros(batch_size).index_add(
+                0,
+                fragment_batch_indices,
+                base_fragment_log_probabilities.exp() * fragment_keep.to(bond_logits),
+            )
+            fragment_cutoff_pruned_fraction = (
+                1.0 - fragment_count_after_cutoff / fragment_count_before_cutoff
+            )
+
+            old_to_new_fragment = fragment_keep.to(th.long).cumsum(0) - 1
+            old_to_new_fragment[~fragment_keep] = -1
+            atom_keep = fragment_keep[atom_fragment_indices]
+            fragment_atom_indices = fragment_atom_indices[atom_keep]
+            atom_fragment_indices = old_to_new_fragment[atom_fragment_indices[atom_keep]]
+            boundary_keep = fragment_keep[boundary_fragment_indices]
+            fragment_boundary_bond_indices = fragment_boundary_bond_indices[boundary_keep]
+            boundary_fragment_indices = old_to_new_fragment[
+                boundary_fragment_indices[boundary_keep]
+            ]
+            fragment_batch_indices = fragment_batch_indices[fragment_keep]
+            fragment_cut_counts = fragment_cut_counts[fragment_keep]
+            fragment_log_probabilities = fragment_log_probabilities[fragment_keep]
+            num_fragments = int(fragment_log_probabilities.shape[0])
+            retained_proposal_log_normalizers = _segment_logsumexp(
+                fragment_log_probabilities,
+                fragment_batch_indices,
+                batch_size,
+            )
+            base_fragment_log_probabilities = (
+                fragment_log_probabilities
+                - retained_proposal_log_normalizers[fragment_batch_indices]
+            )
+            retained_fragment_counts = tuple(
+                int(count) for count in fragment_count_after_cutoff.tolist()
+            )
             fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
                 atom_embeddings,
                 fragment_atom_indices,
@@ -1608,7 +1715,7 @@ class MassShatterModel(nn.Module):
                 batch_size=batch_size,
                 num_masks=num_fragments,
                 context=context[fragment_batch_indices],
-                component_counts=candidates.unique_component_counts,
+                component_counts=retained_fragment_counts,
                 atom_embeddings=atom_embeddings,
                 atom_indices=fragment_atom_indices,
                 atom_fragment_indices=atom_fragment_indices,
@@ -1902,6 +2009,10 @@ class MassShatterModel(nn.Module):
             "mean_mask_cut_count": mean_mask_cut_count,
             "proposal_single_cut_fraction": candidates.proposal_single_cut_fraction,
             "unique_component_count": candidates.unique_component_count,
+            "fragment_count_before_cutoff": fragment_count_before_cutoff,
+            "fragment_count_after_cutoff": fragment_count_after_cutoff,
+            "retained_fragment_probability": retained_fragment_probability,
+            "fragment_cutoff_pruned_fraction": fragment_cutoff_pruned_fraction,
             "components_per_mask": component_pathway_count_float / selected_mask_count_float,
             "unique_components_per_mask": (
                 unique_component_count_float / selected_mask_count_float

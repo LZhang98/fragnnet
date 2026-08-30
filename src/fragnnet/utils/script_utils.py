@@ -33,6 +33,7 @@ _LEGACY_MASS_SHATTER_HPARAMS = {
     "mass_shatter_peak_matching": "closest",
     "mass_shatter_intensity_entropy_match_weight": 0.0,
     "mass_shatter_proposal_barcode_target": False,
+    "mass_shatter_min_fragment_relative_probability": 0.0,
 }
 
 

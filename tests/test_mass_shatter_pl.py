@@ -54,6 +54,10 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
         "proposal_mixture_effective_count": th.tensor([1.8]),
         "proposal_mixture_top1_weight": th.tensor([0.7]),
         "unique_component_count": th.tensor([2]),
+        "fragment_count_before_cutoff": th.tensor([2]),
+        "fragment_count_after_cutoff": th.tensor([2]),
+        "retained_fragment_probability": th.tensor([1.0]),
+        "fragment_cutoff_pruned_fraction": th.tensor([0.0]),
         "components_per_mask": th.tensor([2.0]),
         "unique_components_per_mask": th.tensor([1.0]),
         "latent_pathways_per_unique_fragment": th.tensor([2.0]),
@@ -198,6 +202,20 @@ def test_mass_shatter_pl_uses_map_relative_mask_probability() -> None:
     model, _ = _build_pl(mass_shatter_min_mask_relative_probability=0.05)
 
     assert model.model.min_mask_relative_probability == pytest.approx(0.05)
+
+
+def test_mass_shatter_pl_uses_map_relative_fragment_probability() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_min_fragment_relative_probability=0.05,
+    )
+
+    assert model.model.min_fragment_relative_probability == pytest.approx(0.05)
+
+
+def test_fragment_probability_cutoff_requires_unique_fragment_mode() -> None:
+    with pytest.raises(ValueError, match="requires unique_fragment_mode"):
+        _build_pl(mass_shatter_min_fragment_relative_probability=0.05)
 
 
 def test_mass_shatter_pl_builds_variant_b_from_config() -> None:
@@ -673,6 +691,10 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         proposal_mixture_effective_count=th.tensor([1.8]),
         proposal_mixture_top1_weight=th.tensor([0.7]),
         unique_component_count=th.tensor([3]),
+        fragment_count_before_cutoff=th.tensor([3]),
+        fragment_count_after_cutoff=th.tensor([2]),
+        retained_fragment_probability=th.tensor([0.9]),
+        fragment_cutoff_pruned_fraction=th.tensor([1.0 / 3.0]),
         components_per_mask=th.tensor([2.0]),
         unique_components_per_mask=th.tensor([1.5]),
         latent_pathways_per_unique_fragment=th.tensor([4.0 / 3.0]),
@@ -751,6 +773,10 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
     assert actual["proposal_mixture_effective_count"].tolist() == pytest.approx([1.8])
     assert actual["proposal_mixture_top1_weight"].tolist() == pytest.approx([0.7])
     assert actual["unique_component_count"].tolist() == [3.0]
+    assert actual["fragment_count_before_cutoff"].tolist() == [3.0]
+    assert actual["fragment_count_after_cutoff"].tolist() == [2.0]
+    assert actual["retained_fragment_probability"].tolist() == pytest.approx([0.9])
+    assert actual["fragment_cutoff_pruned_fraction"].tolist() == pytest.approx([1.0 / 3.0])
     assert actual["components_per_mask"].tolist() == [2.0]
     assert actual["unique_components_per_mask"].tolist() == [1.5]
     assert actual["latent_pathways_per_unique_fragment"].tolist() == pytest.approx([4.0 / 3.0])

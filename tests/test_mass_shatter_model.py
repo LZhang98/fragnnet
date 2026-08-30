@@ -11,7 +11,10 @@ import fragnnet.model.mass_shatter_model as mass_shatter_model_module
 from fragnnet.frag.mass_shatter_candidates import MassShatterStaticGraph
 from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.mass_shatter_model import MassShatterModel
+from fragnnet.model.mass_shatter_model import (
+    MassShatterModel,
+    _relative_fragment_keep_mask,
+)
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import formula_to_peak_mzs
@@ -41,6 +44,7 @@ def _build_model(
     unique_fragment_mode: bool = False,
     max_enumerated_masks: int | None = None,
     min_mask_relative_probability: float = 0.0,
+    min_fragment_relative_probability: float = 0.0,
     use_mask_residuals: bool = True,
     use_base_probability_feature: bool = True,
     return_base_spectrum: bool = False,
@@ -105,8 +109,8 @@ def _build_model(
         max_masks=max_masks,
         unique_fragment_mode=unique_fragment_mode,
         max_enumerated_masks=(max_masks if max_enumerated_masks is None else max_enumerated_masks),
-        min_mask_probability=0.0,
         min_mask_relative_probability=min_mask_relative_probability,
+        min_fragment_relative_probability=min_fragment_relative_probability,
         include_single_bond_cuts=True,
         max_h_transfer=1,
         include_cmf=True,
@@ -120,6 +124,17 @@ def test_mass_shatter_selects_bond_focused_head() -> None:
     model = _build_model(batch, bond_num_layers=2)
 
     assert isinstance(model.bond_break_head, BondFocusedBreakHead)
+
+
+def test_relative_fragment_keep_mask_is_batched_and_map_relative() -> None:
+    keep = _relative_fragment_keep_mask(
+        th.log(th.tensor([0.6, 0.3, 0.1, 0.8, 0.2])),
+        th.tensor([0, 0, 0, 1, 1]),
+        batch_size=2,
+        min_relative_probability=0.25,
+    )
+
+    assert keep.tolist() == [True, True, False, True, True]
 
 
 def test_mass_shatter_embeds_each_ce_before_pooling_merged_spectra() -> None:
@@ -937,6 +952,52 @@ def test_unique_fragment_mode_keeps_batched_marginals_separate() -> None:
         (output["duplicate_pathway_probability_fraction"] >= 0.0)
         & (output["duplicate_pathway_probability_fraction"] <= 1.0)
     ).all()
+
+
+def test_fragment_probability_cutoff_filters_before_intensity_scoring() -> None:
+    batch = _build_batch(("C1CC1", "CCCO"))
+    model = _build_model(
+        batch,
+        max_masks=6,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        min_fragment_relative_probability=1.0,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+    ).eval()
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([20.0, 25.0]),
+    )
+
+    before = output["fragment_count_before_cutoff"]
+    after = output["fragment_count_after_cutoff"]
+    assert (before > 0).all()
+    assert ((after > 0) & (after <= before)).all()
+    assert (after < before).any()
+    assert th.allclose(
+        output["fragment_cutoff_pruned_fraction"],
+        1.0 - after / before,
+    )
+    assert (
+        (output["retained_fragment_probability"] > 0.0)
+        & (output["retained_fragment_probability"] <= 1.0)
+    ).all()
+
+    proposal_mass = th.zeros(2).index_add(
+        0,
+        output["proposal_fragment_batch_idxs"],
+        output["proposal_fragment_logprobs"].exp(),
+    )
+    predicted_mass = th.zeros(2).index_add(
+        0,
+        output["pred_batch_idxs"],
+        output["pred_logprobs"].exp(),
+    )
+    assert proposal_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+    assert predicted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
 
 
 def test_mask_residual_reallocates_only_retained_probability(

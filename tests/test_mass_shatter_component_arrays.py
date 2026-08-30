@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 
 import numpy as np
@@ -306,20 +305,18 @@ def test_fused_component_arrays_match_legacy_above_256_atoms() -> None:
     (
         "logits",
         "max_masks",
-        "min_mask_probability",
         "include_single_bond_cuts",
     ),
     [
-        ([0.0, 0.0, 0.0, 0.0], 5, 0.0, True),
-        ([math.log(4.0), math.log(1.5)], 4, 0.2, True),
-        ([2.0, 2.0, 2.0], 1, 0.0, True),
-        ([-2.0, -3.0, -4.0], 3, 0.0, False),
+        ([0.0, 0.0, 0.0, 0.0], 5, True),
+        ([1.0, 0.5], 4, True),
+        ([2.0, 2.0, 2.0], 1, True),
+        ([-2.0, -3.0, -4.0], 3, False),
     ],
 )
 def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
     logits: list[float],
     max_masks: int,
-    min_mask_probability: float,
     include_single_bond_cuts: bool,
 ) -> None:
     num_bonds = len(logits)
@@ -329,15 +326,8 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
         dtype=np.int64,
     )
 
-    min_log_probability = (
-        math.log(min_mask_probability)
-        if min_mask_probability > 0.0
-        else -math.inf
-    )
     learned_masks = []
     for ranked_mask in iter_ranked_cut_masks(logits, include_empty=True):
-        if ranked_mask.log_probability < min_log_probability:
-            break
         learned_masks.append(ranked_mask.broken_bond_indices)
         if len(learned_masks) == max_masks:
             break
@@ -363,7 +353,6 @@ def test_no_exploration_numeric_path_matches_legacy_selection_and_assembly(
         atom_batch_indices=th.zeros(num_atoms, dtype=th.long),
         atom_ptr=th.tensor([0, num_atoms], dtype=th.long),
         max_masks=max_masks,
-        min_mask_probability=min_mask_probability,
         include_single_bond_cuts=include_single_bond_cuts,
     )
 

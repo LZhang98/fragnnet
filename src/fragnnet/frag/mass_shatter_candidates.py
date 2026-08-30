@@ -123,7 +123,6 @@ def _top_mixture_bond_sets(
     logits: np.ndarray,
     mixture_log_weights: np.ndarray,
     limit: int,
-    min_probability: float,
     min_relative_probability: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return a deduplicated CSR pool ranked by exact Bernoulli-mixture probability.
@@ -137,7 +136,6 @@ def _top_mixture_bond_sets(
         logits: Per-bond cut logits of shape (num_bonds, num_mixtures).
         mixture_log_weights: Log-normalized mixture weights of shape (num_mixtures,).
         limit: Maximum number of bond sets to return.
-        min_probability: Absolute mixture-probability floor; 0 disables.
         min_relative_probability: Probability floor relative to the MAP mask; 0 disables.
 
     Returns:
@@ -152,7 +150,7 @@ def _top_mixture_bond_sets(
         np.ascontiguousarray(logits, dtype=np.float64),
         np.ascontiguousarray(mixture_log_weights, dtype=np.float64),
         limit,
-        min_probability,
+        0.0,
         min_relative_probability,
     )
 
@@ -162,7 +160,6 @@ def _select_masks_batch(
     mixture_log_weights: np.ndarray | None,
     candidate_group_values: list[int] | None,
     limit: int,
-    min_probability: float,
     min_relative_probability: float,
     threads: int,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
@@ -181,7 +178,6 @@ def _select_masks_batch(
         candidate_group_values: One group id per precursor, or None when no views
             are shared.
         limit: Maximum ranked masks to select per precursor.
-        min_probability: Absolute mask-probability floor; 0 disables.
         min_relative_probability: Floor relative to the MAP mask; 0 disables.
         threads: Worker threads for selection. 1 selects inline.
 
@@ -241,7 +237,6 @@ def _select_masks_batch(
             logits_by_molecule[molecule_index],
             weights,
             limit,
-            min_probability,
             min_relative_probability,
         )
 
@@ -376,7 +371,6 @@ def build_mass_shatter_candidates(
     *,
     max_masks: int,
     include_single_bond_cuts: bool,
-    min_mask_probability: float = 0.0,
     min_mask_relative_probability: float = 0.0,
     max_unique_components: int | None = None,
     max_enumerated_masks: int | None = None,
@@ -399,7 +393,7 @@ def build_mass_shatter_candidates(
     GIL, so this is real parallelism and it leaves the selected masks unchanged.
     When ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
-    number of distinct atom sets. Probability floors apply only to learned ranked
+    number of distinct atom sets. The probability floor applies only to learned ranked
     masks; required intact and single-cut masks remain forced.
     """
     if bond_logits.ndim not in {1, 2}:
@@ -436,11 +430,6 @@ def build_mass_shatter_candidates(
     if max_unique_components is not None and max_enumerated_masks is None:
         raise ValueError(
             "max_enumerated_masks is required when max_unique_components is enabled"
-        )
-    if not math.isfinite(min_mask_probability) or not 0.0 <= min_mask_probability <= 1.0:
-        raise ValueError(
-            "min_mask_probability must be finite and in [0, 1], "
-            f"got {min_mask_probability}"
         )
     if (
         not math.isfinite(min_mask_relative_probability)
@@ -602,7 +591,6 @@ def build_mass_shatter_candidates(
         None if mixture_log_weights_cpu is None else mixture_log_weights_cpu.numpy(),
         candidate_group_values,
         learned_mask_limit,
-        min_mask_probability,
         min_mask_relative_probability,
         mask_selection_threads,
     )
@@ -648,12 +636,6 @@ def build_mass_shatter_candidates(
         forced_bond_sets = list(dict.fromkeys(forced_bond_sets))
         local_mask_ptr, local_broken_bonds = selected_masks[molecule_index]
         learned_mask_count = local_mask_ptr.size - 1
-        if min_mask_probability > 0.0 and learned_mask_count == 0:
-            raise ValueError(
-                "mass_shatter_min_mask_probability excludes every learned mask "
-                f"for precursor {molecule_index}"
-            )
-
         learned_cut_counts = np.diff(local_mask_ptr)
         proposal_single_cut_fractions.append(
             float(np.count_nonzero(learned_cut_counts == 1)) / learned_mask_count

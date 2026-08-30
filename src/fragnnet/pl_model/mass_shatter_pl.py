@@ -660,9 +660,11 @@ class MassShatterPL(SpectrumPL):
             unique_fragment_mode=self.hparams.mass_shatter_unique_fragment_mode,
             max_enumerated_masks=self.hparams.mass_shatter_ranked_mask_budget,
             mask_selection_threads=self.hparams.mass_shatter_mask_selection_threads,
-            min_mask_probability=self.hparams.mass_shatter_min_mask_probability,
             min_mask_relative_probability=(
                 self.hparams.mass_shatter_min_mask_relative_probability
+            ),
+            min_fragment_relative_probability=(
+                self.hparams.mass_shatter_min_fragment_relative_probability
             ),
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
@@ -855,6 +857,10 @@ class MassShatterPL(SpectrumPL):
             proposal_mixture_effective_count: th.Tensor,
             proposal_mixture_top1_weight: th.Tensor,
             unique_component_count: th.Tensor,
+            fragment_count_before_cutoff: th.Tensor,
+            fragment_count_after_cutoff: th.Tensor,
+            retained_fragment_probability: th.Tensor,
+            fragment_cutoff_pruned_fraction: th.Tensor,
             components_per_mask: th.Tensor,
             unique_components_per_mask: th.Tensor,
             latent_pathways_per_unique_fragment: th.Tensor,
@@ -1052,6 +1058,18 @@ class MassShatterPL(SpectrumPL):
                     proposal_mixture_top1_weight.detach().to(prediction_reference)
                 ),
                 "unique_component_count": unique_component_count.detach().to(prediction_reference),
+                "fragment_count_before_cutoff": (
+                    fragment_count_before_cutoff.detach().to(prediction_reference)
+                ),
+                "fragment_count_after_cutoff": (
+                    fragment_count_after_cutoff.detach().to(prediction_reference)
+                ),
+                "retained_fragment_probability": (
+                    retained_fragment_probability.detach().to(prediction_reference)
+                ),
+                "fragment_cutoff_pruned_fraction": (
+                    fragment_cutoff_pruned_fraction.detach().to(prediction_reference)
+                ),
                 "components_per_mask": components_per_mask.detach().to(prediction_reference),
                 "unique_components_per_mask": (
                     unique_components_per_mask.detach().to(prediction_reference)
@@ -1181,6 +1199,10 @@ class MassShatterPL(SpectrumPL):
             "proposal_mixture_effective_count",
             "proposal_mixture_top1_weight",
             "unique_component_count",
+            "fragment_count_before_cutoff",
+            "fragment_count_after_cutoff",
+            "retained_fragment_probability",
+            "fragment_cutoff_pruned_fraction",
             "components_per_mask",
             "unique_components_per_mask",
             "latent_pathways_per_unique_fragment",

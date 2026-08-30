@@ -204,8 +204,8 @@ mass_shatter_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; mus
 mass_shatter_mask_selection_threads: 4  # CPU threads for cut-mask selection; the kernel
   # drops the GIL, so >1 is real parallelism and leaves selected masks unchanged. Best near
   # the physical core count, minus what num_workers already uses. 1 disables threading.
-mass_shatter_min_mask_probability: 0.0  # Minimum probability for deterministic top-k masks.
 mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
+mass_shatter_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 mass_shatter_include_cmf: True
