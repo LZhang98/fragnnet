@@ -321,6 +321,11 @@ def test_proposal_anchored_requires_base_ce_supervision() -> None:
         )
 
 
+def test_barcode_target_requires_proposal_supervision() -> None:
+    with pytest.raises(ValueError, match="requires a positive"):
+        _build_pl(mass_shatter_proposal_barcode_target=True)
+
+
 def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
     fragment_logprobs = th.log(th.tensor([0.4, 0.3], requires_grad=True))
     coverage_loss = _proposal_coverage_loss(
@@ -338,6 +343,36 @@ def test_proposal_coverage_loss_counts_each_fragment_once_per_peak() -> None:
     )
 
     assert coverage_loss.tolist() == pytest.approx([-math.log(0.4)])
+
+
+def test_proposal_coverage_loss_can_use_barcode_target_weights() -> None:
+    fragment_probabilities = th.tensor([0.8, 0.2])
+    common_kwargs = {
+        "true_mzs": th.tensor([100.0, 200.0]),
+        "true_logprobs": th.log(th.tensor([0.9, 0.1])),
+        "true_batch_idxs": th.tensor([0, 0]),
+        "candidate_mzs": th.tensor([100.0, 200.0]),
+        "candidate_fragment_idxs": th.tensor([0, 1]),
+        "fragment_logprobs": fragment_probabilities.log(),
+        "fragment_batch_idxs": th.tensor([0, 0]),
+        "batch_size": 1,
+        "tolerance": 1.0e-5,
+        "relative": True,
+        "tolerance_min_mz": 200.0,
+    }
+
+    intensity_weighted = _proposal_coverage_loss(**common_kwargs)
+    barcode_weighted = _proposal_coverage_loss(
+        **common_kwargs,
+        barcode_target=True,
+    )
+
+    assert intensity_weighted.tolist() == pytest.approx(
+        [-0.9 * math.log(0.8) - 0.1 * math.log(0.2)]
+    )
+    assert barcode_weighted.tolist() == pytest.approx(
+        [-0.5 * math.log(0.8) - 0.5 * math.log(0.2)]
+    )
 
 
 def test_shared_group_proposal_loss_uses_merged_group_target() -> None:
@@ -362,6 +397,27 @@ def test_shared_group_proposal_loss_uses_merged_group_target() -> None:
     loss.mean().backward()
     assert shared_fragment_probabilities.grad is not None
     assert shared_fragment_probabilities.grad.abs().sum() > 0.0
+
+
+def test_shared_group_proposal_loss_can_use_barcode_target() -> None:
+    loss = _shared_group_proposal_coverage_loss(
+        true_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        true_logprobs=th.log(th.tensor([0.8, 0.2, 0.3, 0.7])),
+        true_batch_idxs=th.tensor([0, 0, 1, 1]),
+        candidate_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        candidate_fragment_idxs=th.tensor([0, 1, 2, 3]),
+        fragment_logprobs=th.log(th.tensor([0.6, 0.4, 0.6, 0.4])),
+        fragment_batch_idxs=th.tensor([0, 0, 1, 1]),
+        group_ids=th.tensor([9, 9]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+        barcode_target=True,
+    )
+
+    expected = -0.5 * math.log(0.6) - 0.5 * math.log(0.4)
+    assert loss.tolist() == pytest.approx([expected, expected])
 
 
 def test_cross_ev_fragment_delta_loss_tracks_observed_change() -> None:
@@ -463,6 +519,33 @@ def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None
     actual["loss"].sum().backward()
     assert proposal_fragment_probabilities.grad is not None
     assert proposal_fragment_probabilities.grad.abs().sum() > 0.0
+
+
+def test_selection_only_loss_uses_barcode_proposal_target() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_proposal_barcode_target=True,
+    )
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0, 200.0]),
+        true_logprobs=th.log(th.tensor([0.9, 0.1])),
+        true_batch_idxs=th.tensor([0, 0]),
+        pred_mzs=th.tensor([100.0, 200.0]),
+        pred_logprobs=th.log(th.tensor([0.8, 0.2])),
+        pred_batch_idxs=th.tensor([0, 0]),
+        proposal_candidate_mzs=th.tensor([100.0, 200.0]),
+        proposal_candidate_fragment_idxs=th.tensor([0, 1]),
+        proposal_fragment_logprobs=th.log(th.tensor([0.8, 0.2])),
+        proposal_fragment_batch_idxs=th.tensor([0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+
+    expected = -0.5 * math.log(0.8) - 0.5 * math.log(0.2)
+    assert actual["proposal_loss"].tolist() == pytest.approx([expected])
 
 
 def test_shared_selection_only_loss_routes_through_merged_group_target() -> None:

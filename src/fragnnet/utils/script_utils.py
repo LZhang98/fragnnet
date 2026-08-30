@@ -32,11 +32,12 @@ _LEGACY_MASS_SHATTER_HPARAMS = {
     "mass_shatter_intensity_output": "probability",
     "mass_shatter_peak_matching": "closest",
     "mass_shatter_intensity_entropy_match_weight": 0.0,
+    "mass_shatter_proposal_barcode_target": False,
 }
 
 
 def _migrate_legacy_checkpoint_config(config_d: dict[str, Any]) -> None:
-    """Upgrade pre-independent-intensity MASShatter checkpoint hyperparameters."""
+    """Add missing MASShatter hyperparameters to legacy checkpoint configs."""
     if config_d["model_type"] != "mass_shatter":
         return
     missing_keys = [key for key in _LEGACY_MASS_SHATTER_HPARAMS if key not in config_d]

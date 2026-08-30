@@ -354,10 +354,19 @@ The metric reduction path is now uniform for every metric.
 legacy config YAMLs, which already fail at load, and these docs.
 
 **Stage 1's config deprecation window was never built.** The four keys were removed from
-`config/template.yml` outright and `runner.validate_sampler_config` has no exploration check, so the
-10 configs listed under **Config keys** fail at `runner.py:61` with a bare `AssertionError` naming
-the four missing keys, not the intended "exploration has been retired" message. Loud but not
-self-explanatory. Either add the explicit error or drop the promise from Stage 1.
+`config/template.yml` outright, so the 10 configs listed under **Config keys** fail at
+`runner.py:61`, inside `load_config`, with a bare `AssertionError` naming the missing keys. A check
+in `validate_sampler_config` would not fix this: `load_config` fails first, and sampler validation
+does not run until after `init_dataset`. The correct compatibility fix is a retired-key check in
+`load_config`, immediately before the unknown-key assertion, that raises a self-explanatory error
+without restoring dead keys to the active template.
+
+One active config still needs an owner decision before another run:
+`config/masshatter/merged/baseline/nist20_merged_mask64_gine384_mixed_topk_local8g.yml` requests 64
+`bounded_additive` exploration masks. Either archive it as a retired experiment or define a new
+deterministic replacement experiment; silently deleting the exploration settings would change the
+experiment represented by its name and history. Resolve that choice before starting the topology
+and assembly follow-up below.
 
 Re-verified against the recompiled extension: exhaustive tie-break order for every subset of 1–8
 bonds under full probability ties, `M=1` exactness against brute-force enumeration over 300
@@ -377,6 +386,12 @@ Two things this review could not check, worth knowing:
   that is outside every component's top-k cannot be selected — measured at 1 case in 400 random
   configurations with a tight `max_enumerated_masks`. Inherent to pool-then-rerank and unchanged by
   this refactor; it disappears as the enumeration budget grows relative to `max_masks`.
+
+## Proposed performance follow-up
+
+Topology and assembly optimization is not part of this landed refactor. Its measurement gates,
+abort criteria, and conditional implementation stages live in
+[masshatter_topology_assembly_performance_plan.md](masshatter_topology_assembly_performance_plan.md).
 
 ## Related
 

@@ -252,6 +252,9 @@ mass_shatter_proposal_selection_only: False
 # Intensity-weighted proposal-support loss. It counts each unique fragment once
 # per matched true peak, regardless of how many CRF/CMF or delta-H channels match.
 mass_shatter_proposal_loss_weight: 0.0
+# Give every retained target peak equal weight in the proposal-support loss. This
+# affects proposal ranking only; the primary spectrum loss remains intensity-aware.
+mass_shatter_proposal_barcode_target: False
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False

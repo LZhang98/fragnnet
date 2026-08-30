@@ -79,6 +79,7 @@ roadmap. It links the analyses that justify each item.
 | [classyfire_atom_pretraining_plan.md](plans/classyfire_atom_pretraining_plan.md) | Pretrain a transferable encoder on ClassyFire labels; no annotations needed at inference. |
 | [masshatter_plan.md](plans/masshatter_plan.md) | MASShatter: rank global bond-cut masks, marginalize duplicate latent pathways into unique-fragment tokens, and predict charged fragment-ion outcomes without a depth-limited fragmentation tree. |
 | [masshatter_candidate_pathway_refactor.md](plans/masshatter_candidate_pathway_refactor.md) | **LANDED.** 7 branches collapsed into 5 layers, exploration deleted, `mixtures=1` now threads. Surfaced two latent bugs. Read the `mask_selection_ms` semantics note before comparing timing metrics across runs, and the config note before running a `legacy/explore*` config. |
+| [masshatter_topology_assembly_performance_plan.md](plans/masshatter_topology_assembly_performance_plan.md) | Measurement-gated topology and assembly optimization for the three-hour MA/MI-unmerged constraint. Stage 0 can abort the work; every retained stage must improve end-to-end optimizer-step throughput. |
 | [masshatter_nonprobabilistic_intensity_plan.md](plans/masshatter_nonprobabilistic_intensity_plan.md) | Replace MASShatter's Gaussian probability-density intensity objective with tolerance-aligned peak-list cosine/JSD plus optional entropy matching, and test independent Softplus intensities against the candidate softmax. Intensity only; fragment proposal is unchanged. |
 
 ### Closed — read before reviving

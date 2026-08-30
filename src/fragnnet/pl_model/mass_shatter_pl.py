@@ -179,13 +179,15 @@ def _proposal_coverage_loss(
     tolerance_min_mz: float,
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
+    barcode_target: bool = False,
 ) -> th.Tensor:
     """Train proposal coverage without assigning probability to ion/H channels.
 
     Every unique fragment is counted at most once for a true peak, even when several
     of its valid CRF/CMF or hydrogen-transfer channels match that peak. This makes the
     proposal objective depend on reachable support rather than the number or learned
-    probability of ion/H channels.
+    probability of ion/H channels. When ``barcode_target`` is enabled, every retained
+    true peak contributes equally instead of being weighted by observed intensity.
     """
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
@@ -197,12 +199,19 @@ def _proposal_coverage_loss(
     for batch_index in range(batch_size):
         true_mask = true_batch_idxs == batch_index
         batch_true_mzs = true_mzs[true_mask]
-        batch_true_probabilities = true_logprobs[true_mask].exp()
         batch_fragment_indices = th.where(fragment_batch_idxs == batch_index)[0]
         if batch_true_mzs.numel() == 0:
             raise ValueError(f"spectrum {batch_index} has no true peaks")
         if batch_fragment_indices.numel() == 0:
             raise ValueError(f"spectrum {batch_index} has no proposed fragments")
+        batch_true_probabilities = (
+            true_logprobs.new_full(
+                batch_true_mzs.shape,
+                1.0 / batch_true_mzs.numel(),
+            )
+            if barcode_target
+            else true_logprobs[true_mask].exp()
+        )
 
         first_fragment_index = batch_fragment_indices[0]
         if not th.equal(
@@ -279,6 +288,7 @@ def _shared_group_proposal_coverage_loss(
     tolerance_min_mz: float,
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
+    barcode_target: bool = False,
 ) -> th.Tensor:
     """Supervise one shared proposal against one merged target per group.
 
@@ -389,6 +399,7 @@ def _shared_group_proposal_coverage_loss(
         min_mz_per_sample=(
             None if min_mz_per_sample is None else min_mz_per_sample[representatives]
         ),
+        barcode_target=barcode_target,
     )
     return group_losses[spectrum_to_group]
 
@@ -724,6 +735,16 @@ class MassShatterPL(SpectrumPL):
             or self.hparams.mass_shatter_proposal_loss_weight < 0.0
         ):
             raise ValueError("mass_shatter_proposal_loss_weight must be finite and nonnegative")
+        if not isinstance(self.hparams.mass_shatter_proposal_barcode_target, bool):
+            raise ValueError("mass_shatter_proposal_barcode_target must be boolean")
+        if (
+            self.hparams.mass_shatter_proposal_barcode_target
+            and self.hparams.mass_shatter_proposal_loss_weight == 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_barcode_target requires a positive "
+                "mass_shatter_proposal_loss_weight"
+            )
         if (
             self.hparams.mass_shatter_proposal_selection_only
             and self.hparams.mass_shatter_proposal_loss_weight == 0.0
@@ -955,6 +976,7 @@ class MassShatterPL(SpectrumPL):
                     "tolerance_min_mz": self.tolerance_min_mz,
                     "tol_per_sample": tolerance_per_sample,
                     "min_mz_per_sample": minimum_mz_per_sample,
+                    "barcode_target": self.hparams.mass_shatter_proposal_barcode_target,
                 }
                 if self.hparams.mass_shatter_share_proposal_across_ev:
                     proposal_loss = _shared_group_proposal_coverage_loss(
