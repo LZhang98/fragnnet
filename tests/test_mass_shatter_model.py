@@ -13,6 +13,8 @@ from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.mass_shatter_model import (
     MassShatterModel,
+    _cmf_duplicate_crf_shift,
+    _relative_channel_keep_mask,
     _relative_fragment_keep_mask,
 )
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
@@ -52,6 +54,11 @@ def _build_model(
     proposal_selection_only: bool = False,
     separate_proposal_encoder: bool = False,
     share_proposal_across_ev: bool = False,
+    separate_ion_mode_proposal_head: bool = False,
+    min_ion_mode_relative_probability: float = 0.0,
+    separate_ion_h_support_head: bool = False,
+    min_ion_h_relative_probability: float = 0.0,
+    apply_channel_selection_in_training: bool = False,
     intensity_atom_decoder_num_layers: int = 0,
     intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
@@ -92,6 +99,11 @@ def _build_model(
         proposal_selection_only=proposal_selection_only,
         separate_proposal_encoder=separate_proposal_encoder,
         share_proposal_across_ev=share_proposal_across_ev,
+        separate_ion_mode_proposal_head=separate_ion_mode_proposal_head,
+        min_ion_mode_relative_probability=min_ion_mode_relative_probability,
+        separate_ion_h_support_head=separate_ion_h_support_head,
+        min_ion_h_relative_probability=min_ion_h_relative_probability,
+        apply_channel_selection_in_training=apply_channel_selection_in_training,
         precursor_types=precursor_types,
         instrument_types=[],
         fragmentation_modes=fragmentation_modes,
@@ -135,6 +147,72 @@ def test_relative_fragment_keep_mask_is_batched_and_map_relative() -> None:
     )
 
     assert keep.tolist() == [True, True, False, True, True]
+
+
+def test_relative_channel_keep_mask_is_per_fragment() -> None:
+    logits = th.tensor([[[0.0, -1.0], [2.0, 1.0]], [[4.0, 3.0], [0.0, 0.0]]])
+    valid = th.tensor([[[True, True], [True, True]], [[True, True], [False, False]]])
+
+    keep = _relative_channel_keep_mask(logits, valid, 0.25)
+
+    assert keep.tolist() == [
+        [[False, False], [True, True]],
+        [[True, True], [False, False]],
+    ]
+    assert th.equal(_relative_channel_keep_mask(logits, valid, 0.0), valid)
+
+
+@pytest.mark.parametrize(
+    ("precursor_type", "duplicate_shift"),
+    [("[M+H]+", -1), ("[M-H]-", 1), ("[M+Na]+", None), ("[M+Cl]-", None)],
+)
+def test_cmf_duplicate_crf_shift_is_adduct_aware(
+    precursor_type: str,
+    duplicate_shift: int | None,
+) -> None:
+    assert _cmf_duplicate_crf_shift(precursor_type, 4) == duplicate_shift
+
+
+def test_cmf_validity_excludes_only_reachable_duplicates() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        precursor_types=("[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"),
+    )
+
+    assert dict(zip(model.precursor_types, model.cmf_precursor_valid.tolist())) == {
+        "[M+Cl]-": True,
+        "[M+H]+": False,
+        "[M+Na]+": True,
+        "[M-H]-": False,
+    }
+
+
+def test_signed_cmf_detection_preserves_legacy_crf_validity_buffers() -> None:
+    batch = _build_batch(("CC",))
+    model = _build_model(batch, precursor_types=("[M-H-CO2]-",))
+
+    assert model.required_atomic_numbers.tolist() == [1]
+    assert model.crf_formula_deltas.shape == (1, 1)
+    assert model.crf_formula_deltas.tolist() == [[1]]
+
+
+def test_negative_delta_adduct_does_not_empty_h_free_fragments() -> None:
+    batch = _build_batch(("FC(F)(F)F",))
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        precursor_types=("[M-H-H2O]-",),
+    ).eval()
+
+    with th.no_grad():
+        output = model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0]),
+            spec_nce=th.tensor([25.0]),
+        )
+
+    assert output["pred_mzs"].numel() > 0
 
 
 def test_mass_shatter_embeds_each_ce_before_pooling_merged_spectra() -> None:
@@ -1145,3 +1223,82 @@ def test_mass_shatter_requires_regenerated_graph_chemistry_fields() -> None:
             spec_prec_type=th.tensor([0, 1]),
             spec_nce=th.tensor([25.0, 35.0]),
         )
+
+
+def test_channel_selection_leaves_full_candidate_consumers_unchanged() -> None:
+    batch = _build_batch()
+    dense_model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+    ).eval()
+    sparse_model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        min_ion_h_relative_probability=1.0,
+    ).eval()
+    sparse_model.load_state_dict(dense_model.state_dict())
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+
+    with th.no_grad():
+        dense = dense_model(**inputs)
+        sparse = sparse_model(**inputs)
+
+    assert sparse["pred_mzs"].numel() < dense["pred_mzs"].numel()
+    assert th.equal(sparse["candidate_mzs_by_cut"], dense["candidate_mzs_by_cut"])
+    assert th.equal(sparse["proposal_candidate_mzs"], dense["proposal_candidate_mzs"])
+    assert th.equal(sparse["cross_ev_candidate_mzs"], dense["cross_ev_candidate_mzs"])
+    assert th.equal(
+        sparse["ion_h_chemical_valid_channels"],
+        dense["ion_h_chemical_valid_channels"],
+    )
+    assert sparse["ion_h_dense_log_weights"].shape == sparse["ion_h_dense_mzs"].shape
+    assert th.isfinite(
+        sparse["ion_h_dense_log_weights"][sparse["ion_h_chemical_valid_channels"]]
+    ).all()
+    removed_outputs = {
+        "full_candidate_ion_mode_idxs",
+        "full_candidate_h_shift_idxs",
+        "proposal_candidate_ion_mode_idxs",
+        "proposal_candidate_h_shift_idxs",
+        "ion_h_spectral_output_channels",
+    }
+    assert removed_outputs.isdisjoint(sparse)
+
+
+def test_retained_channel_probability_uses_dense_intensity_distribution() -> None:
+    batch = _build_batch(("CCO",))
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        separate_ion_h_support_head=True,
+        min_ion_h_relative_probability=1.0,
+        precursor_types=("[M+H]+",),
+    ).eval()
+    support_head = model.intensity_head.ion_h_support_head
+    assert support_head is not None
+    with th.no_grad():
+        model.intensity_head.ion_hydrogen_head.weight.zero_()
+        model.intensity_head.ion_hydrogen_head.bias.fill_(-10.0)
+        model.intensity_head.ion_hydrogen_head.bias[2] = 10.0
+        support_head.weight.zero_()
+        support_head.bias.fill_(-10.0)
+        support_head.bias[0] = 10.0
+
+        output = model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0]),
+            spec_nce=th.tensor([25.0]),
+        )
+
+    assert output["ion_h_cutoff_pruned_fraction"].item() > 0.0
+    assert output["retained_ion_h_probability"].item() < 1e-6

@@ -28,29 +28,6 @@ from fragnnet.utils.setup_utils import get_model_cls
 
 logger = logging.getLogger(__name__)
 
-_LEGACY_MASS_SHATTER_HPARAMS = {
-    "mass_shatter_intensity_output": "probability",
-    "mass_shatter_peak_matching": "closest",
-    "mass_shatter_intensity_entropy_match_weight": 0.0,
-    "mass_shatter_proposal_barcode_target": False,
-    "mass_shatter_min_fragment_relative_probability": 0.0,
-}
-
-
-def _migrate_legacy_checkpoint_config(config_d: dict[str, Any]) -> None:
-    """Add missing MASShatter hyperparameters to legacy checkpoint configs."""
-    if config_d["model_type"] != "mass_shatter":
-        return
-    missing_keys = [key for key in _LEGACY_MASS_SHATTER_HPARAMS if key not in config_d]
-    if not missing_keys:
-        return
-    logger.warning(
-        "Migrating legacy MASShatter checkpoint hyperparameters: %s",
-        ", ".join(missing_keys),
-    )
-    for key in missing_keys:
-        config_d[key] = _LEGACY_MASS_SHATTER_HPARAMS[key]
-
 
 def init_wandb_ckpt(
     run_id: str,
@@ -383,7 +360,6 @@ def get_config_from_ckpt(
 
     print(">> Extracting config from checkpoint hparams")
     config_d = get_pl_hparams(ckpt)
-    _migrate_legacy_checkpoint_config(config_d)
 
     # Override with custom config if provided
     if custom_fp is not None:

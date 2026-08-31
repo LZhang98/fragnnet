@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import math
 from functools import lru_cache
-from typing import Any
+from typing import Any, Literal
 
 import torch as th
 from rdkit import Chem
@@ -35,7 +35,7 @@ from fragnnet.model.loss import (
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_utils import calculate_match_mzs, linear_sum_assignment
 
 _CUT_COUNT_BUCKETS = {
     "0": lambda cut_counts: cut_counts == 0,
@@ -164,6 +164,57 @@ def _candidate_coverage_by_cut_count(
     return metrics
 
 
+def _candidate_weighted_recall(
+    *,
+    true_mzs: th.Tensor,
+    true_ints: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_batch_idxs: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> th.Tensor:
+    """Measure weighted true-peak coverage from the full chemical candidate set."""
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    weighted_recall = true_ints.new_zeros(batch_size)
+    for batch_index in range(batch_size):
+        true_mask = true_batch_idxs == batch_index
+        batch_true_mzs = true_mzs[true_mask]
+        batch_true_ints = true_ints[true_mask]
+        if batch_true_mzs.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no true peaks")
+        batch_candidate_mzs = candidate_mzs[candidate_batch_idxs == batch_index]
+        if tol_per_sample is None:
+            match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+        else:
+            tol_per_true = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            match_mask = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=tol_per_true,
+            )
+        weighted_recall[batch_index] = (
+            batch_true_ints * match_mask.any(dim=1)
+        ).sum() / batch_true_ints.sum()
+    return weighted_recall
+
+
 def _proposal_coverage_loss(
     *,
     true_mzs: th.Tensor,
@@ -270,6 +321,238 @@ def _proposal_coverage_loss(
             th.zeros_like(peak_log_coverage),
         ).sum()
     return coverage_loss
+
+
+def _observational_channel_targets(
+    *,
+    true_mzs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    channel_mzs: th.Tensor,
+    channel_log_weights: th.Tensor,
+    chemical_valid_channels: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+    attribution: Literal["gaussian_posterior", "hungarian"],
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> th.Tensor:
+    """Attribute observed peaks to chemically valid ion/H channels.
+
+    ``gaussian_posterior`` returns FraGNNet-style mixture responsibilities. For each
+    observed peak, the detached channel prior is multiplied by a Gaussian mass-error
+    likelihood and normalized over matching channels. ``hungarian`` converts the same
+    pairwise likelihood into a hard one-to-one peak/channel assignment.
+    """
+    if channel_mzs.shape != chemical_valid_channels.shape or channel_mzs.ndim != 3:
+        raise ValueError("channel masses and validity must be aligned rank-3 tensors")
+    if channel_log_weights.shape != channel_mzs.shape:
+        raise ValueError("channel log weights must align with channel masses")
+    if fragment_batch_idxs.shape != (channel_mzs.shape[0],):
+        raise ValueError("fragment_batch_idxs must contain one index per fragment")
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    if attribution not in {"gaussian_posterior", "hungarian"}:
+        raise ValueError(f"unknown channel support attribution: {attribution}")
+    if not bool(th.isfinite(channel_log_weights[chemical_valid_channels]).all().item()):
+        raise ValueError("valid channels must have finite log weights")
+    targets = channel_log_weights.new_zeros(channel_log_weights.shape)
+    for batch_index in range(batch_size):
+        batch_true_mzs = true_mzs[true_batch_idxs == batch_index]
+        fragment_mask = fragment_batch_idxs == batch_index
+        valid_mask = chemical_valid_channels[fragment_mask]
+        if batch_true_mzs.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no true peaks")
+        if valid_mask.numel() == 0:
+            raise ValueError(f"spectrum {batch_index} has no proposed fragments")
+        valid_mzs = channel_mzs[fragment_mask][valid_mask]
+        valid_log_weights = channel_log_weights[fragment_mask][valid_mask].detach()
+        if tol_per_sample is None:
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                valid_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+            channel_stds = (
+                tolerance * th.maximum(valid_mzs, valid_mzs.new_tensor(tolerance_min_mz))
+                if relative
+                else th.full_like(valid_mzs, tolerance)
+            )
+        else:
+            per_peak_tolerance = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                valid_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=per_peak_tolerance,
+            )
+            channel_stds = tol_per_sample[batch_index] * th.maximum(
+                valid_mzs,
+                min_mz_per_sample[batch_index],
+            )
+        channel_match = th.as_tensor(
+            channel_match,
+            dtype=th.bool,
+            device=valid_mzs.device,
+        )
+        if bool((channel_stds <= 0).any().item()):
+            raise ValueError("channel Gaussian standard deviations must be positive")
+
+        mass_errors = batch_true_mzs[:, None] - valid_mzs[None, :]
+        mass_log_likelihood = (
+            -0.5 * (mass_errors / channel_stds[None, :]) ** 2
+            - th.log(channel_stds)[None, :]
+        ).to(valid_log_weights)
+        pair_log_likelihood = valid_log_weights[None, :] + mass_log_likelihood
+        valid_targets = valid_log_weights.new_zeros(valid_log_weights.shape)
+        if attribution == "gaussian_posterior":
+            matched_peaks = channel_match.any(dim=1)
+            if matched_peaks.any():
+                responsibilities = th.softmax(
+                    pair_log_likelihood[matched_peaks].masked_fill(
+                        ~channel_match[matched_peaks],
+                        -th.inf,
+                    ),
+                    dim=1,
+                )
+                # Channel support is existential, so a channel keeps its largest
+                # responsibility if overlapping observed tolerance windows occur.
+                valid_targets = responsibilities.amax(dim=0)
+        elif channel_match.any():
+            valid_pair_scores = pair_log_likelihood[channel_match]
+            pair_cost = valid_pair_scores.max() - pair_log_likelihood
+            max_valid_cost = pair_cost[channel_match].max()
+            invalid_cost = (max_valid_cost + 1.0) * (min(channel_match.shape) + 1)
+            assignment_cost = pair_cost.masked_fill(~channel_match, invalid_cost)
+            peak_indices, channel_indices = linear_sum_assignment(
+                assignment_cost.detach(),
+                maximize=False,
+            )
+            assigned_valid = channel_match[peak_indices, channel_indices]
+            valid_targets[channel_indices[assigned_valid]] = 1.0
+
+        batch_targets = targets.new_zeros(valid_mask.shape)
+        batch_targets[valid_mask] = valid_targets
+        targets[fragment_mask] = batch_targets
+    return targets.detach()
+
+
+def _balanced_binary_support_loss(
+    logits: th.Tensor,
+    targets: th.Tensor,
+    valid_mask: th.Tensor,
+    item_batch_idxs: th.Tensor,
+    batch_size: int,
+    *,
+    allow_empty_batches: bool = False,
+) -> th.Tensor:
+    """Return class-balanced binary support loss for each spectrum."""
+    if logits.shape != targets.shape or logits.shape != valid_mask.shape:
+        raise ValueError("support logits, targets, and validity must have matching shapes")
+    if logits.shape[0] != item_batch_idxs.numel():
+        raise ValueError("item_batch_idxs must contain one index per first-axis item")
+    if valid_mask.dtype != th.bool:
+        raise ValueError("support validity must be boolean")
+    target_values = targets.to(logits)
+    if not bool(th.isfinite(target_values).all().item()) or bool(
+        ((target_values < 0.0) | (target_values > 1.0)).any().item()
+    ):
+        raise ValueError("support targets must be finite values in [0, 1]")
+    positive_element_loss = th.nn.functional.softplus(-logits)
+    negative_element_loss = th.nn.functional.softplus(logits)
+    losses = logits.new_zeros(batch_size)
+    for batch_index in range(batch_size):
+        batch_items = item_batch_idxs == batch_index
+        batch_valid = valid_mask[batch_items]
+        batch_targets = target_values[batch_items]
+        class_losses = []
+        positive_weights = batch_targets * batch_valid
+        negative_weights = (1.0 - batch_targets) * batch_valid
+        positive_mass = positive_weights.sum()
+        negative_mass = negative_weights.sum()
+        if positive_mass.item() > 0.0:
+            class_losses.append(
+                (positive_element_loss[batch_items] * positive_weights).sum() / positive_mass
+            )
+        if negative_mass.item() > 0.0:
+            class_losses.append(
+                (negative_element_loss[batch_items] * negative_weights).sum() / negative_mass
+            )
+        if not class_losses:
+            if allow_empty_batches:
+                continue
+            raise ValueError(f"spectrum {batch_index} has no valid support states")
+        losses[batch_index] = th.stack(class_losses).mean()
+    return losses
+
+
+def _ion_mode_support_loss(
+    logits: th.Tensor,
+    targets: th.Tensor,
+    valid_mask: th.Tensor,
+    item_batch_idxs: th.Tensor,
+    batch_size: int,
+) -> th.Tensor:
+    """Supervise CRF/CMF ranking only where both ion modes are valid."""
+    if logits.ndim != 2 or logits.shape[1] != 2:
+        raise ValueError("ion-mode support loss requires exactly two ion modes")
+    two_mode_items = valid_mask.all(dim=1, keepdim=True)
+    return _balanced_binary_support_loss(
+        logits,
+        targets,
+        valid_mask & two_mode_items,
+        item_batch_idxs,
+        batch_size,
+        allow_empty_batches=True,
+    )
+
+
+def _channel_support_metrics(
+    *,
+    channel_targets: th.Tensor,
+    chemical_valid_channels: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    batch_size: int,
+    fragment_logprobs: th.Tensor | None,
+) -> dict[str, th.Tensor]:
+    """Measure responsibility-weighted fragment and channel support prevalence."""
+    valid_modes = chemical_valid_channels.any(dim=2)
+    mode_targets = channel_targets.sum(dim=2).clamp(max=1.0)
+    fragment_targets = channel_targets.flatten(start_dim=1).sum(dim=1).clamp(max=1.0)
+    reference = channel_targets.new_zeros((), dtype=th.float32)
+    metrics = {
+        "fragment_precision": reference.new_zeros(batch_size),
+        "fragment_weighted_precision": reference.new_zeros(batch_size),
+        "ion_mode_support_positive_rate": reference.new_zeros(batch_size),
+        "ion_h_support_positive_rate": reference.new_zeros(batch_size),
+    }
+    for batch_index in range(batch_size):
+        fragment_mask = fragment_batch_idxs == batch_index
+        batch_fragments = fragment_targets[fragment_mask]
+        batch_valid_modes = valid_modes[fragment_mask]
+        batch_valid_channels = chemical_valid_channels[fragment_mask]
+        metrics["fragment_precision"][batch_index] = batch_fragments.mean()
+        metrics["ion_mode_support_positive_rate"][batch_index] = (
+            mode_targets[fragment_mask][batch_valid_modes].mean()
+        )
+        metrics["ion_h_support_positive_rate"][batch_index] = (
+            channel_targets[fragment_mask][batch_valid_channels].mean()
+        )
+        if fragment_logprobs is None:
+            metrics["fragment_weighted_precision"][batch_index] = batch_fragments.mean()
+        else:
+            metrics["fragment_weighted_precision"][batch_index] = (
+                fragment_logprobs[fragment_mask].exp() * batch_fragments
+            ).sum()
+    return metrics
 
 
 def _shared_group_proposal_coverage_loss(
@@ -638,6 +921,21 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_separate_proposal_encoder
             ),
             share_proposal_across_ev=self.hparams.mass_shatter_share_proposal_across_ev,
+            separate_ion_mode_proposal_head=(
+                self.hparams.mass_shatter_separate_ion_mode_proposal_head
+            ),
+            min_ion_mode_relative_probability=(
+                self.hparams.mass_shatter_min_ion_mode_relative_probability
+            ),
+            separate_ion_h_support_head=(
+                self.hparams.mass_shatter_separate_ion_h_support_head
+            ),
+            min_ion_h_relative_probability=(
+                self.hparams.mass_shatter_min_ion_h_relative_probability
+            ),
+            apply_channel_selection_in_training=(
+                self.hparams.mass_shatter_apply_channel_selection_in_training
+            ),
             precursor_types=self.hparams.spec_params["prec_types"],
             instrument_types=instrument_types,
             fragmentation_modes=fragmentation_modes,
@@ -713,6 +1011,14 @@ class MassShatterPL(SpectrumPL):
             )
         if self.hparams.mass_shatter_peak_matching not in {"closest", "hungarian"}:
             raise ValueError("mass_shatter_peak_matching must be closest or hungarian")
+        if self.hparams.mass_shatter_channel_support_attribution not in {
+            "gaussian_posterior",
+            "hungarian",
+        }:
+            raise ValueError(
+                "mass_shatter_channel_support_attribution must be "
+                "gaussian_posterior or hungarian"
+            )
         if (
             not math.isfinite(self.hparams.mass_shatter_intensity_entropy_match_weight)
             or self.hparams.mass_shatter_intensity_entropy_match_weight < 0.0
@@ -737,6 +1043,54 @@ class MassShatterPL(SpectrumPL):
             or self.hparams.mass_shatter_proposal_loss_weight < 0.0
         ):
             raise ValueError("mass_shatter_proposal_loss_weight must be finite and nonnegative")
+        support_head_configs = (
+            (
+                "ion_mode",
+                self.hparams.mass_shatter_separate_ion_mode_proposal_head,
+                self.hparams.mass_shatter_ion_mode_proposal_loss_weight,
+                self.hparams.mass_shatter_min_ion_mode_relative_probability,
+            ),
+            (
+                "ion_h",
+                self.hparams.mass_shatter_separate_ion_h_support_head,
+                self.hparams.mass_shatter_ion_h_support_loss_weight,
+                self.hparams.mass_shatter_min_ion_h_relative_probability,
+            ),
+        )
+        for name, enabled, loss_weight, probability_floor in support_head_configs:
+            if not isinstance(enabled, bool):
+                raise ValueError(f"the separate {name} head switch must be boolean")
+            if not math.isfinite(loss_weight) or loss_weight < 0.0:
+                raise ValueError(f"the {name} support loss weight must be nonnegative")
+            if enabled != (loss_weight > 0.0):
+                raise ValueError(
+                    f"the separate {name} support head and its positive loss weight "
+                    "must be enabled together"
+                )
+            if not math.isfinite(probability_floor) or not 0.0 <= probability_floor <= 1.0:
+                raise ValueError(
+                    f"mass_shatter_min_{name}_relative_probability must be in [0, 1]"
+                )
+        if not isinstance(self.hparams.mass_shatter_apply_channel_selection_in_training, bool):
+            raise ValueError("mass_shatter_apply_channel_selection_in_training must be boolean")
+        if not isinstance(self.hparams.mass_shatter_channel_diagnostics, bool):
+            raise ValueError("mass_shatter_channel_diagnostics must be boolean")
+        if self.hparams.mass_shatter_channel_diagnostics and not (
+            self.hparams.mass_shatter_unique_fragment_mode
+            and self.hparams.mass_shatter_proposal_selection_only
+        ):
+            raise ValueError(
+                "mass_shatter_channel_diagnostics requires unique-fragment "
+                "proposal-selection-only mode"
+            )
+        if self.hparams.mass_shatter_apply_channel_selection_in_training and not any(
+            enabled and loss_weight > 0.0 and probability_floor > 0.0
+            for _, enabled, loss_weight, probability_floor in support_head_configs
+        ):
+            raise ValueError(
+                "training-time channel selection requires a supervised support head "
+                "with a positive selection floor"
+            )
         if not isinstance(self.hparams.mass_shatter_proposal_barcode_target, bool):
             raise ValueError("mass_shatter_proposal_barcode_target must be boolean")
         if (
@@ -783,6 +1137,15 @@ class MassShatterPL(SpectrumPL):
                 "mass_shatter_proposal_anchored requires a positive proposal supervision loss"
             )
         proposal_loss_enabled = self.hparams.mass_shatter_proposal_loss_weight > 0.0
+        ion_mode_proposal_loss_enabled = (
+            self.hparams.mass_shatter_ion_mode_proposal_loss_weight > 0.0
+        )
+        ion_h_support_loss_enabled = self.hparams.mass_shatter_ion_h_support_loss_weight > 0.0
+        channel_targets_enabled = (
+            self.hparams.mass_shatter_channel_diagnostics
+            or ion_mode_proposal_loss_enabled
+            or ion_h_support_loss_enabled
+        )
         cross_ev_fragment_loss_enabled = self.hparams.cross_ev_fragment_loss_weight > 0.0
         if (
             not math.isfinite(self.hparams.cross_ev_fragment_loss_weight)
@@ -912,7 +1275,7 @@ class MassShatterPL(SpectrumPL):
                 if sparse_ce_fn is None:
                     raise RuntimeError("sparse CE was not configured")
                 # The legacy control retains its Gaussian/peak-marginal behavior.
-                spectrum_ce, _, unmatched_true_logprobs, _ = sparse_ce_fn(
+                spectrum_ce, _, _, _ = sparse_ce_fn(
                     true_mzs,
                     true_logprobs,
                     true_batch_idxs,
@@ -924,7 +1287,19 @@ class MassShatterPL(SpectrumPL):
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
                 primary_loss = spectrum_ce
-                candidate_wrecall = 1.0 - unmatched_true_logprobs.exp()
+                candidate_wrecall = _candidate_weighted_recall(
+                    true_mzs=true_mzs,
+                    true_ints=true_intensities,
+                    true_batch_idxs=true_batch_idxs,
+                    candidate_mzs=kwargs["candidate_mzs_by_cut"],
+                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
+                    batch_size=batch_size,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
             else:
                 objective = (
                     "cosine" if self.hparams.loss_type == "cosine_distance" else "jensen_shannon"
@@ -966,6 +1341,70 @@ class MassShatterPL(SpectrumPL):
                     loss
                     + self.hparams.mass_shatter_intensity_entropy_match_weight
                     * entropy_match
+                )
+            support_metric_names = (
+                "fragment_precision",
+                "fragment_weighted_precision",
+                "ion_mode_support_positive_rate",
+                "ion_h_support_positive_rate",
+            )
+            support_metrics = {
+                name: prediction_reference.new_zeros(batch_size)
+                for name in support_metric_names
+            }
+            channel_targets = None
+            if channel_targets_enabled:
+                channel_targets = _observational_channel_targets(
+                    true_mzs=true_mzs,
+                    true_batch_idxs=true_batch_idxs,
+                    channel_mzs=kwargs["ion_h_dense_mzs"],
+                    channel_log_weights=kwargs["ion_h_dense_log_weights"],
+                    chemical_valid_channels=kwargs["ion_h_chemical_valid_channels"],
+                    fragment_batch_idxs=kwargs["ion_h_fragment_batch_idxs"],
+                    batch_size=batch_size,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    attribution=(
+                        self.hparams.mass_shatter_channel_support_attribution
+                    ),
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
+                support_metrics = _channel_support_metrics(
+                    channel_targets=channel_targets,
+                    chemical_valid_channels=kwargs["ion_h_chemical_valid_channels"],
+                    fragment_batch_idxs=kwargs["ion_h_fragment_batch_idxs"],
+                    batch_size=batch_size,
+                    fragment_logprobs=kwargs["proposal_fragment_logprobs"],
+                )
+            if ion_h_support_loss_enabled:
+                if channel_targets is None:
+                    raise ValueError("ion/H support loss requires dense channel tensors")
+                ion_h_support_loss = _balanced_binary_support_loss(
+                    kwargs["ion_h_support_logits"],
+                    channel_targets,
+                    kwargs["ion_h_chemical_valid_channels"],
+                    kwargs["ion_h_fragment_batch_idxs"],
+                    batch_size,
+                )
+                loss = loss + (
+                    self.hparams.mass_shatter_ion_h_support_loss_weight
+                    * ion_h_support_loss
+                )
+            if ion_mode_proposal_loss_enabled:
+                if channel_targets is None:
+                    raise ValueError("ion-mode proposal loss requires dense channel tensors")
+                ion_mode_proposal_loss = _ion_mode_support_loss(
+                    kwargs["ion_mode_proposal_logits"],
+                    channel_targets.sum(dim=2).clamp(max=1.0),
+                    kwargs["ion_h_chemical_valid_channels"].any(dim=2),
+                    kwargs["ion_h_fragment_batch_idxs"],
+                    batch_size,
+                )
+                loss = loss + (
+                    self.hparams.mass_shatter_ion_mode_proposal_loss_weight
+                    * ion_mode_proposal_loss
                 )
             if proposal_loss_enabled:
                 proposal_loss_kwargs = {
@@ -1118,6 +1557,24 @@ class MassShatterPL(SpectrumPL):
                 "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
                 "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
             }
+            loss_values.update(
+                {
+                    name: value.detach().to(prediction_reference)
+                    for name, value in support_metrics.items()
+                }
+            )
+            for diagnostic_name in (
+                "valid_ion_h_count",
+                "retained_ion_h_count",
+                "retained_ion_h_probability",
+                "ion_h_cutoff_pruned_fraction",
+                "valid_ion_mode_count",
+                "retained_ion_mode_count",
+                "retained_ion_mode_probability",
+                "ion_mode_cutoff_pruned_fraction",
+            ):
+                diagnostic = kwargs[diagnostic_name]
+                loss_values[diagnostic_name] = diagnostic.detach().to(prediction_reference)
             if spectrum_ce is not None:
                 loss_values["spec_ce"] = spectrum_ce
             else:
@@ -1125,6 +1582,10 @@ class MassShatterPL(SpectrumPL):
                 loss_values["spec_entropy_match"] = entropy_match
             if proposal_loss_enabled:
                 loss_values["proposal_loss"] = proposal_loss
+            if ion_h_support_loss_enabled:
+                loss_values["ion_h_support_loss"] = ion_h_support_loss
+            if ion_mode_proposal_loss_enabled:
+                loss_values["ion_mode_proposal_loss"] = ion_mode_proposal_loss
             if cross_ev_fragment_loss_enabled:
                 loss_values["cross_ev_fragment_loss"] = cross_ev_fragment_loss
                 loss_values["cross_ev_fragment_endpoints"] = cross_ev_fragment_endpoints
@@ -1228,7 +1689,24 @@ class MassShatterPL(SpectrumPL):
             "candidate_output_transfer_batch_ms",
             "candidate_total_batch_ms",
             "candidate_total_molecule_ms",
+            "valid_ion_h_count",
+            "retained_ion_h_count",
+            "retained_ion_h_probability",
+            "ion_h_cutoff_pruned_fraction",
+            "valid_ion_mode_count",
+            "retained_ion_mode_count",
+            "retained_ion_mode_probability",
+            "ion_mode_cutoff_pruned_fraction",
         ]
+        if channel_targets_enabled:
+            loss_names.extend(
+                [
+                    "fragment_precision",
+                    "fragment_weighted_precision",
+                    "ion_mode_support_positive_rate",
+                    "ion_h_support_positive_rate",
+                ]
+            )
         if self.hparams.loss_type == "cross_entropy":
             loss_names.append("spec_ce")
         else:
@@ -1237,6 +1715,10 @@ class MassShatterPL(SpectrumPL):
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
         if proposal_loss_enabled:
             loss_names.append("proposal_loss")
+        if ion_h_support_loss_enabled:
+            loss_names.append("ion_h_support_loss")
+        if ion_mode_proposal_loss_enabled:
+            loss_names.append("ion_mode_proposal_loss")
         if cross_ev_fragment_loss_enabled:
             loss_names.extend(["cross_ev_fragment_loss", "cross_ev_fragment_endpoints"])
         if base_ce_enabled:

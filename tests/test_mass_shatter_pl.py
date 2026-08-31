@@ -16,8 +16,11 @@ from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.model.nn_blocks import GINEGraphormer
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
 from fragnnet.pl_model.mass_shatter_pl import (
+    _balanced_binary_support_loss,
     _candidate_coverage_by_cut_count,
     _cross_ev_fragment_delta_loss,
+    _ion_mode_support_loss,
+    _observational_channel_targets,
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
@@ -83,7 +86,113 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
         "candidate_output_transfer_batch_ms": th.tensor([5.0]),
         "candidate_total_batch_ms": th.tensor([15.0]),
         "candidate_total_molecule_ms": th.tensor([15.0]),
+        "valid_ion_h_count": th.tensor([8.0]),
+        "retained_ion_h_count": th.tensor([6.0]),
+        "retained_ion_h_probability": th.tensor([0.9]),
+        "ion_h_cutoff_pruned_fraction": th.tensor([0.25]),
+        "valid_ion_mode_count": th.tensor([3.0]),
+        "retained_ion_mode_count": th.tensor([2.0]),
+        "retained_ion_mode_probability": th.tensor([0.95]),
+        "ion_mode_cutoff_pruned_fraction": th.tensor([1.0 / 3.0]),
     }
+
+
+def test_observational_channel_targets_use_gaussian_posterior() -> None:
+    channel_mzs = th.tensor([[[100.0, 101.0], [200.0, 201.0]]])
+    valid = th.tensor([[[True, True], [True, False]]])
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([101.0, 200.0]),
+        true_batch_idxs=th.tensor([0, 0]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=th.zeros_like(channel_mzs),
+        chemical_valid_channels=valid,
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="gaussian_posterior",
+    )
+
+    assert targets.tolist() == [[[0.0, 1.0], [1.0, 0.0]]]
+
+
+def test_gaussian_posterior_splits_ambiguous_peak_by_channel_prior() -> None:
+    channel_mzs = th.tensor([[[99.99, 100.01]]], dtype=th.float64)
+    channel_weights = th.tensor([[[0.8, 0.2]]], requires_grad=True)
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([100.0]),
+        true_batch_idxs=th.tensor([0]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=channel_weights.log(),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.02,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="gaussian_posterior",
+    )
+
+    assert targets.flatten().tolist() == pytest.approx([0.8, 0.2])
+    assert targets.sum().item() == pytest.approx(1.0)
+    assert not targets.requires_grad
+
+
+def test_hungarian_channel_attribution_is_hard_one_to_one() -> None:
+    channel_mzs = th.tensor([[[100.0, 100.004, 101.0]]])
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([100.0, 101.0]),
+        true_batch_idxs=th.tensor([0, 0]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=th.zeros_like(channel_mzs),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="hungarian",
+    )
+
+    assert targets.tolist() == [[[1.0, 0.0, 1.0]]]
+
+
+def test_balanced_support_loss_handles_single_class_spectra() -> None:
+    logits = th.zeros(2, 1, 2, requires_grad=True)
+    targets = th.tensor([[[True, True]], [[True, False]]])
+    loss = _balanced_binary_support_loss(
+        logits,
+        targets,
+        th.ones_like(targets),
+        th.tensor([0, 1]),
+        batch_size=2,
+    )
+    loss.sum().backward()
+
+    assert loss.tolist() == pytest.approx([math.log(2.0), math.log(2.0)])
+    assert logits.grad is not None
+
+
+def test_ion_mode_support_loss_skips_single_mode_fragments() -> None:
+    logits = th.zeros(3, 2, requires_grad=True)
+    loss = _ion_mode_support_loss(
+        logits,
+        th.tensor([[True, False], [True, False], [False, True]]),
+        th.tensor([[True, False], [True, True], [True, True]]),
+        th.tensor([0, 1, 1]),
+        batch_size=2,
+    )
+
+    loss.sum().backward()
+
+    assert loss.tolist() == pytest.approx([0.0, math.log(2.0)])
+    assert logits.grad is not None
+    assert logits.grad[0].abs().sum().item() == 0.0
+    assert logits.grad[1:].abs().sum().item() > 0.0
 
 
 def test_mass_shatter_registration_uses_spectrum_only_dataset() -> None:
@@ -249,6 +358,47 @@ def test_mass_shatter_pl_builds_proposal_selection_only_from_config() -> None:
 
     assert model.model.proposal_selection_only
     assert "proposal_loss" in model.loss_names
+    assert "fragment_precision" not in model.loss_names
+
+
+def test_mass_shatter_pl_builds_separate_ion_h_support_head() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_separate_ion_h_support_head=True,
+        mass_shatter_ion_h_support_loss_weight=0.2,
+        mass_shatter_min_ion_h_relative_probability=0.1,
+    )
+
+    assert model.model.intensity_head.ion_h_support_head is not None
+    assert "ion_h_support_loss" in model.loss_names
+    assert "fragment_precision" in model.loss_names
+
+
+def test_channel_support_attribution_defaults_to_gaussian_posterior() -> None:
+    model, _ = _build_pl()
+
+    assert model.hparams.mass_shatter_channel_support_attribution == "gaussian_posterior"
+
+
+def test_channel_support_attribution_rejects_unknown_method() -> None:
+    with pytest.raises(ValueError, match="channel_support_attribution"):
+        _build_pl(mass_shatter_channel_support_attribution="all_matches")
+
+
+def test_channel_diagnostics_require_selection_only_mode() -> None:
+    with pytest.raises(ValueError, match="requires unique-fragment"):
+        _build_pl(mass_shatter_channel_diagnostics=True)
+
+
+def test_training_channel_selection_rejects_unsupervised_arm() -> None:
+    with pytest.raises(ValueError, match="requires a supervised support head"):
+        _build_pl(
+            mass_shatter_min_ion_h_relative_probability=0.1,
+            mass_shatter_apply_channel_selection_in_training=True,
+        )
 
 
 def test_mass_shatter_ignores_legacy_oos_config() -> None:
@@ -506,7 +656,9 @@ def test_cross_ev_fragment_delta_loss_skips_missing_coverage_endpoint() -> None:
     assert loss.tolist() == [0.0, 0.0]
 
 
-def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None:
+def test_selection_only_loss_skips_unrequested_channel_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
         mass_shatter_proposal_anchored=True,
@@ -515,6 +667,16 @@ def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None
     )
     proposal_fragment_probabilities = th.tensor([0.4, 0.3], requires_grad=True)
     proposal_fragment_logprobs = th.log(proposal_fragment_probabilities)
+
+    model.eval()
+
+    def unexpected_channel_target(*args: object, **kwargs: object) -> th.Tensor:
+        raise AssertionError("dense channel matching must stay off unless requested")
+
+    monkeypatch.setattr(
+        "fragnnet.pl_model.mass_shatter_pl._observational_channel_targets",
+        unexpected_channel_target,
+    )
     actual = model.loss_fn(
         true_mzs=th.tensor([100.0]),
         true_logprobs=th.tensor([0.0]),
@@ -522,6 +684,8 @@ def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None
         pred_mzs=th.tensor([100.0, 200.0]),
         pred_logprobs=th.log(th.tensor([0.8, 0.1])),
         pred_batch_idxs=th.tensor([0, 0]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
         proposal_candidate_mzs=th.tensor([100.0, 100.0, 200.0]),
         proposal_candidate_fragment_idxs=th.tensor([0, 0, 1]),
         proposal_fragment_logprobs=proposal_fragment_logprobs,
@@ -539,6 +703,44 @@ def test_selection_only_loss_combines_spectrum_and_proposal_objectives() -> None
     assert proposal_fragment_probabilities.grad.abs().sum() > 0.0
 
 
+def test_requested_channel_diagnostics_are_computed_during_training() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_channel_diagnostics=True,
+    )
+    proposal_fragment_logprobs = th.log(th.tensor([0.6, 0.4]))
+
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0]),
+        true_logprobs=th.tensor([0.0]),
+        true_batch_idxs=th.tensor([0]),
+        pred_mzs=th.tensor([100.0, 200.0]),
+        pred_logprobs=th.log(th.tensor([0.8, 0.1])),
+        pred_batch_idxs=th.tensor([0, 0]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
+        proposal_candidate_mzs=th.tensor([100.0, 200.0]),
+        proposal_candidate_fragment_idxs=th.tensor([0, 1]),
+        proposal_fragment_logprobs=proposal_fragment_logprobs,
+        proposal_fragment_batch_idxs=th.tensor([0, 0]),
+        ion_h_dense_mzs=th.tensor([[[100.0]], [[200.0]]]),
+        ion_h_dense_log_weights=th.log(th.tensor([[[0.6]], [[0.4]]])),
+        ion_h_chemical_valid_channels=th.ones(2, 1, 1, dtype=th.bool),
+        ion_h_fragment_batch_idxs=th.tensor([0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+
+    assert model.training
+    assert actual["fragment_precision"].tolist() == pytest.approx([0.5])
+    assert actual["fragment_weighted_precision"].tolist() == pytest.approx([0.6])
+    assert actual["ion_mode_support_positive_rate"].tolist() == pytest.approx([0.5])
+    assert actual["ion_h_support_positive_rate"].tolist() == pytest.approx([0.5])
+
+
 def test_selection_only_loss_uses_barcode_proposal_target() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
@@ -554,6 +756,8 @@ def test_selection_only_loss_uses_barcode_proposal_target() -> None:
         pred_mzs=th.tensor([100.0, 200.0]),
         pred_logprobs=th.log(th.tensor([0.8, 0.2])),
         pred_batch_idxs=th.tensor([0, 0]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
         proposal_candidate_mzs=th.tensor([100.0, 200.0]),
         proposal_candidate_fragment_idxs=th.tensor([0, 1]),
         proposal_fragment_logprobs=th.log(th.tensor([0.8, 0.2])),
@@ -582,6 +786,8 @@ def test_shared_selection_only_loss_routes_through_merged_group_target() -> None
         pred_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
         pred_logprobs=th.log(th.tensor([0.5, 0.5, 0.5, 0.5])),
         pred_batch_idxs=th.tensor([0, 0, 1, 1]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0, 100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0, 1, 1]),
         proposal_candidate_mzs=th.tensor([100.0, 200.0, 100.0, 200.0]),
         proposal_candidate_fragment_idxs=th.tensor([0, 1, 2, 3]),
         proposal_fragment_logprobs=shared_fragment_probabilities.log().repeat(2),
@@ -661,7 +867,9 @@ def test_mass_shatter_transfer_precomputes_smarts_templates_when_enabled() -> No
     assert any(template.rule_name == "sulfoxide_so_loss" for template in templates[0])
 
 
-def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() -> None:
+def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     model, config = _build_pl(
         mass_shatter_log_base_ce=True,
         mass_shatter_base_ce_weight=0.2,
@@ -674,6 +882,14 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
     pred_logprobs = th.log(th.tensor([0.5, 0.3]))
     base_pred_logprobs = th.log(th.tensor([0.3, 0.5])).requires_grad_()
     pred_batch_indices = th.tensor([0, 0], dtype=th.long)
+
+    def unexpected_bucket_matching(*args: object, **kwargs: object) -> dict[str, th.Tensor]:
+        raise AssertionError("CE candidate_wrecall must not compute cut-bucket metrics")
+
+    monkeypatch.setattr(
+        "fragnnet.pl_model.mass_shatter_pl._candidate_coverage_by_cut_count",
+        unexpected_bucket_matching,
+    )
     actual = model.loss_fn(
         true_mzs=true_mzs,
         true_logprobs=true_logprobs,
@@ -682,6 +898,8 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         pred_logprobs=pred_logprobs,
         base_pred_logprobs=base_pred_logprobs,
         pred_batch_idxs=pred_batch_indices,
+        candidate_mzs_by_cut=th.tensor([100.0, 150.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
         retained_mask_probability=th.tensor([0.8]),
         selected_mask_count=th.tensor([2]),
         component_pathway_count=th.tensor([4]),
@@ -720,6 +938,14 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         candidate_output_transfer_batch_ms=th.tensor([5.0]),
         candidate_total_batch_ms=th.tensor([15.0]),
         candidate_total_molecule_ms=th.tensor([15.0]),
+        valid_ion_h_count=th.tensor([8.0]),
+        retained_ion_h_count=th.tensor([6.0]),
+        retained_ion_h_probability=th.tensor([0.9]),
+        ion_h_cutoff_pruned_fraction=th.tensor([0.25]),
+        valid_ion_mode_count=th.tensor([3.0]),
+        retained_ion_mode_count=th.tensor([2.0]),
+        retained_ion_mode_probability=th.tensor([0.95]),
+        ion_mode_cutoff_pruned_fraction=th.tensor([1.0 / 3.0]),
         batch_size=1,
     )
     sparse_ce_fn = get_sparse_cross_entropy_fn(
@@ -733,7 +959,7 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
         pm_tolerance_multiple=config["pm_tolerance_multiple"],
         loss_batch_size=config["loss_batch_size"],
     )
-    expected_spec_ce, _, expected_unmatched, _ = sparse_ce_fn(
+    expected_spec_ce, _, _, _ = sparse_ce_fn(
         true_mzs,
         true_logprobs,
         true_batch_indices,
@@ -762,8 +988,7 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy() ->
     actual["loss"].sum().backward()
     assert base_pred_logprobs.grad is not None
     assert base_pred_logprobs.grad.abs().sum() > 0.0
-    assert th.allclose(actual["candidate_wrecall"], 1.0 - expected_unmatched.exp())
-    assert actual["candidate_wrecall"].tolist() == pytest.approx([0.6])
+    assert actual["candidate_wrecall"].tolist() == pytest.approx([1.0])
     assert actual["retained_mask_probability"].tolist() == pytest.approx([0.8])
     assert actual["selected_mask_count"].tolist() == [2.0]
     assert actual["component_pathway_count"].tolist() == [4.0]

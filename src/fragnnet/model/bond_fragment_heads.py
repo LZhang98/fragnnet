@@ -122,6 +122,67 @@ class _InducedCandidateAttentionLayer(nn.Module):
         return candidate_tokens, inducing_tokens
 
 
+class IonModeProposalHead(nn.Module):
+    """Score CRF/CMF support from proposal-side fragment features."""
+
+    def __init__(
+        self,
+        fragment_embedding_dim: int,
+        context_dim: int,
+        hidden_dim: int,
+        num_ion_modes: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        if fragment_embedding_dim <= 0 or context_dim < 0 or num_ion_modes <= 1:
+            raise ValueError("ion-mode proposal dimensions are invalid")
+        self.fragment_embedding_dim = fragment_embedding_dim
+        self.context_dim = context_dim
+        self.head = _build_head(
+            3 * fragment_embedding_dim + context_dim + 2,
+            hidden_dim,
+            num_ion_modes,
+            dropout,
+        )
+
+    def forward(
+        self,
+        fragment_embeddings: th.Tensor,
+        complement_embeddings: th.Tensor,
+        boundary_embeddings: th.Tensor,
+        cut_counts: th.Tensor,
+        fragment_sizes: th.Tensor,
+        context: th.Tensor | None,
+    ) -> th.Tensor:
+        """Return one proposal logit per fragment and ion mode."""
+        embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
+        num_fragments = fragment_embeddings.shape[0]
+        if any(
+            embedding.shape != (num_fragments, self.fragment_embedding_dim)
+            for embedding in embeddings
+        ):
+            raise ValueError("proposal fragment embeddings must have matching shapes")
+        if cut_counts.shape != (num_fragments,) or fragment_sizes.shape != (num_fragments,):
+            raise ValueError("proposal scalar features must contain one value per fragment")
+        if self.context_dim == 0:
+            if context is not None:
+                raise ValueError("context was provided but context_dim is zero")
+            features = [*embeddings]
+        else:
+            if context is None or context.shape != (num_fragments, self.context_dim):
+                raise ValueError(
+                    f"context must have shape ({num_fragments}, {self.context_dim})"
+                )
+            features = [*embeddings, context]
+        features.extend(
+            (
+                cut_counts.to(fragment_embeddings).unsqueeze(1),
+                th.log1p(fragment_sizes.to(fragment_embeddings)).unsqueeze(1),
+            )
+        )
+        return self.head(th.cat(features, dim=1))
+
+
 class CandidateIntensityTransformerHead(nn.Module):
     """Contextualize a molecule's component candidates before intensity scoring.
 
@@ -143,6 +204,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_h_shifts: int,
         dropout: float,
         use_base_probability_feature: bool,
+        separate_ion_h_support_head: bool = False,
         predict_oos: bool = False,
         initial_oos_probability: float = 0.1,
     ) -> None:
@@ -230,6 +292,16 @@ class CandidateIntensityTransformerHead(nn.Module):
             model_dim,
             num_ion_modes * num_h_shifts,
         )
+        self.ion_h_support_head: nn.Linear | None = None
+        if separate_ion_h_support_head:
+            with th.random.fork_rng(devices=[]):
+                self.ion_h_support_head = nn.Linear(
+                    model_dim,
+                    num_ion_modes * num_h_shifts,
+                )
+            with th.no_grad():
+                self.ion_h_support_head.weight.copy_(self.ion_hydrogen_head.weight)
+                self.ion_h_support_head.bias.copy_(self.ion_hydrogen_head.bias)
         self.oos_head = nn.Linear(model_dim, 1) if predict_oos else None
         if self.oos_head is not None:
             nn.init.zeros_(self.oos_head.weight)
@@ -237,6 +309,33 @@ class CandidateIntensityTransformerHead(nn.Module):
                 self.oos_head.bias,
                 math.log(initial_oos_probability / (1.0 - initial_oos_probability)),
             )
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, th.Tensor],
+        prefix: str,
+        local_metadata: dict[str, object],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Initialize a newly enabled support head from checkpoint intensity weights."""
+        if self.ion_h_support_head is not None:
+            for parameter_name in ("weight", "bias"):
+                support_key = f"{prefix}ion_h_support_head.{parameter_name}"
+                intensity_key = f"{prefix}ion_hydrogen_head.{parameter_name}"
+                if support_key not in state_dict and intensity_key in state_dict:
+                    state_dict[support_key] = state_dict[intensity_key].clone()
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def _refine_from_fragment_atoms(
         self,
@@ -426,6 +525,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         atom_embeddings: th.Tensor | None = None,
         atom_indices: th.Tensor | None = None,
         atom_fragment_indices: th.Tensor | None = None,
+        return_support_logits: bool = False,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -518,6 +618,13 @@ class CandidateIntensityTransformerHead(nn.Module):
             self.num_h_shifts,
         )
         outputs = (component_residuals, mask_residuals, ion_hydrogen_logits)
+        if return_support_logits:
+            ion_h_support_logits = (
+                ion_hydrogen_logits
+                if self.ion_h_support_head is None
+                else self.ion_h_support_head(tokens).reshape_as(ion_hydrogen_logits)
+            )
+            outputs = (*outputs, ion_h_support_logits)
         if self.oos_head is None:
             return outputs
 

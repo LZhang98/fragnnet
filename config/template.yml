@@ -258,6 +258,17 @@ mass_shatter_proposal_barcode_target: False
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
+mass_shatter_separate_ion_mode_proposal_head: False
+mass_shatter_min_ion_mode_relative_probability: 0.0
+mass_shatter_ion_mode_proposal_loss_weight: 0.0
+mass_shatter_separate_ion_h_support_head: False
+mass_shatter_min_ion_h_relative_probability: 0.0
+mass_shatter_ion_h_support_loss_weight: 0.0
+mass_shatter_apply_channel_selection_in_training: False
+# Assign observed-peak evidence to the dense channel-selection support.
+mass_shatter_channel_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+# Compute dense observational channel metrics even without a support loss.
+mass_shatter_channel_diagnostics: False
 # Experimental ablation: reuse one CE-independent proposal pass for spectra from the
 # same acquisition group and supervise it against their merged target. This inherits
 # the observed CE-distribution bias; keep False for the main model. Requires CE-context

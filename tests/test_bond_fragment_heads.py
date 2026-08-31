@@ -14,6 +14,7 @@ from fragnnet.model.bond_fragment_heads import (
     BondFocusedBreakHead,
     CandidateIntensityTransformerHead,
     EndpointBondBreakHead,
+    IonModeProposalHead,
     component_charge_log_probabilities,
     cut_mask_log_probabilities,
     latent_pathway_charge_log_probabilities,
@@ -22,6 +23,113 @@ from fragnnet.model.bond_fragment_heads import (
     pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
+
+
+def test_ion_mode_proposal_head_scores_each_fragment() -> None:
+    head = IonModeProposalHead(4, 3, 8, 2, 0.0)
+    fragment_embeddings = th.randn(5, 4, requires_grad=True)
+    logits = head(
+        fragment_embeddings,
+        th.randn(5, 4),
+        th.randn(5, 4),
+        th.tensor([0, 1, 2, 1, 3]),
+        th.tensor([3, 2, 1, 4, 2]),
+        th.randn(5, 3),
+    )
+
+    logits.sum().backward()
+
+    assert logits.shape == (5, 2)
+    assert fragment_embeddings.grad is not None
+
+
+def test_separate_ion_h_support_head_copies_intensity_initialization() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=6,
+        context_dim=3,
+        model_dim=12,
+        num_layers=1,
+        num_heads=3,
+        feedforward_dim=24,
+        num_inducing_points=4,
+        atom_decoder_num_layers=0,
+        num_ion_modes=2,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+        separate_ion_h_support_head=True,
+    )
+
+    assert head.ion_h_support_head is not None
+    assert th.equal(head.ion_h_support_head.weight, head.ion_hydrogen_head.weight)
+    assert th.equal(head.ion_h_support_head.bias, head.ion_hydrogen_head.bias)
+
+
+def test_separate_ion_h_support_head_copies_loaded_intensity_weights() -> None:
+    kwargs = {
+        "fragment_embedding_dim": 6,
+        "context_dim": 3,
+        "model_dim": 12,
+        "num_layers": 1,
+        "num_heads": 3,
+        "feedforward_dim": 24,
+        "num_inducing_points": 4,
+        "atom_decoder_num_layers": 0,
+        "num_ion_modes": 2,
+        "num_h_shifts": 3,
+        "dropout": 0.0,
+        "use_base_probability_feature": True,
+    }
+    source = CandidateIntensityTransformerHead(**kwargs)
+    with th.no_grad():
+        source.ion_hydrogen_head.weight.fill_(0.25)
+        source.ion_hydrogen_head.bias.fill_(-0.5)
+    target = CandidateIntensityTransformerHead(
+        **kwargs,
+        separate_ion_h_support_head=True,
+    )
+
+    target.load_state_dict(source.state_dict(), strict=True)
+
+    assert target.ion_h_support_head is not None
+    assert th.equal(target.ion_h_support_head.weight, target.ion_hydrogen_head.weight)
+    assert th.equal(target.ion_h_support_head.bias, target.ion_hydrogen_head.bias)
+
+
+def test_support_and_oos_logits_have_distinct_output_slots() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=2,
+        atom_decoder_num_layers=0,
+        num_ion_modes=2,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=False,
+        separate_ion_h_support_head=True,
+        predict_oos=True,
+    )
+    outputs = head(
+        th.randn(2, 4),
+        th.randn(2, 4),
+        th.randn(2, 4),
+        th.tensor([1, 1]),
+        th.tensor([2, 2]),
+        th.zeros(2),
+        th.zeros(2),
+        th.tensor([0, 0]),
+        th.tensor([0, 0]),
+        batch_size=1,
+        num_masks=1,
+        return_support_logits=True,
+    )
+
+    assert outputs[3].shape == (2, 2, 3)
+    assert outputs[4].shape == (1,)
 
 
 def test_candidate_intensity_transformer_is_permutation_equivariant() -> None:
