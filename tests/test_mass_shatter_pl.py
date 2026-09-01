@@ -19,6 +19,7 @@ from fragnnet.pl_model.mass_shatter_pl import (
     _balanced_binary_support_loss,
     _candidate_coverage_by_cut_count,
     _cross_ev_fragment_delta_loss,
+    _ion_h_required_k_metrics,
     _ion_mode_support_loss,
     _observational_channel_targets,
     _proposal_coverage_loss,
@@ -89,6 +90,7 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
         "valid_ion_h_count": th.tensor([8.0]),
         "retained_ion_h_count": th.tensor([6.0]),
         "retained_ion_h_probability": th.tensor([0.9]),
+        "retained_joint_channel_intensity_fraction": th.tensor([0.85]),
         "ion_h_cutoff_pruned_fraction": th.tensor([0.25]),
         "valid_ion_mode_count": th.tensor([3.0]),
         "retained_ion_mode_count": th.tensor([2.0]),
@@ -193,6 +195,38 @@ def test_ion_mode_support_loss_skips_single_mode_fragments() -> None:
     assert logits.grad is not None
     assert logits.grad[0].abs().sum().item() == 0.0
     assert logits.grad[1:].abs().sum().item() > 0.0
+
+
+def test_ion_h_required_k_metrics_separate_supported_fragments() -> None:
+    targets = th.tensor(
+        [
+            [[0.7, 0.2, 0.1, 0.0]],
+            [[0.0, 0.0, 0.0, 0.0]],
+            [[0.6, 0.4, 0.0, 0.0]],
+        ]
+    )
+    logits = th.tensor(
+        [
+            [[4.0, 3.0, 2.0, 1.0]],
+            [[4.0, 3.0, 2.0, 1.0]],
+            [[3.0, 4.0, 2.0, 1.0]],
+        ]
+    )
+
+    metrics = _ion_h_required_k_metrics(
+        channel_targets=targets,
+        support_logits=logits,
+        chemical_valid_channels=th.ones_like(targets, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0, 0, 1]),
+        batch_size=2,
+    )
+
+    assert metrics["valid_ion_h_per_fragment_mean"].tolist() == [4.0, 4.0]
+    assert metrics["attributed_ion_h_per_fragment_mean"].tolist() == [1.5, 2.0]
+    assert metrics["ion_h_supported_fragment_fraction"].tolist() == [0.5, 1.0]
+    assert metrics["required_ion_h_top_k_95_mean"].tolist() == [3.0, 2.0]
+    assert metrics["required_ion_h_top_k_95_p90"].tolist() == [3.0, 2.0]
+    assert metrics["required_ion_h_top_k_99_max"].tolist() == [3.0, 2.0]
 
 
 def test_mass_shatter_registration_uses_spectrum_only_dataset() -> None:
@@ -538,9 +572,7 @@ def test_proposal_coverage_loss_can_use_barcode_target_weights() -> None:
     assert intensity_weighted.tolist() == pytest.approx(
         [-0.9 * math.log(0.8) - 0.1 * math.log(0.2)]
     )
-    assert barcode_weighted.tolist() == pytest.approx(
-        [-0.5 * math.log(0.8) - 0.5 * math.log(0.2)]
-    )
+    assert barcode_weighted.tolist() == pytest.approx([-0.5 * math.log(0.8) - 0.5 * math.log(0.2)])
 
 
 def test_shared_group_proposal_loss_uses_merged_group_target() -> None:
@@ -729,6 +761,7 @@ def test_requested_channel_diagnostics_are_computed_during_training() -> None:
         ion_h_dense_mzs=th.tensor([[[100.0]], [[200.0]]]),
         ion_h_dense_log_weights=th.log(th.tensor([[[0.6]], [[0.4]]])),
         ion_h_chemical_valid_channels=th.ones(2, 1, 1, dtype=th.bool),
+        ion_h_support_logits=th.zeros(2, 1, 1),
         ion_h_fragment_batch_idxs=th.tensor([0, 0]),
         batch_size=1,
         **_loss_diagnostics(),
@@ -739,6 +772,10 @@ def test_requested_channel_diagnostics_are_computed_during_training() -> None:
     assert actual["fragment_weighted_precision"].tolist() == pytest.approx([0.6])
     assert actual["ion_mode_support_positive_rate"].tolist() == pytest.approx([0.5])
     assert actual["ion_h_support_positive_rate"].tolist() == pytest.approx([0.5])
+    assert actual["valid_ion_h_per_fragment_mean"].tolist() == pytest.approx([1.0])
+    assert actual["attributed_ion_h_per_fragment_mean"].tolist() == pytest.approx([0.5])
+    assert actual["ion_h_supported_fragment_fraction"].tolist() == pytest.approx([0.5])
+    assert actual["required_ion_h_top_k_99_p90"].tolist() == pytest.approx([1.0])
 
 
 def test_selection_only_loss_uses_barcode_proposal_target() -> None:
@@ -941,6 +978,7 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
         valid_ion_h_count=th.tensor([8.0]),
         retained_ion_h_count=th.tensor([6.0]),
         retained_ion_h_probability=th.tensor([0.9]),
+        retained_joint_channel_intensity_fraction=th.tensor([0.85]),
         ion_h_cutoff_pruned_fraction=th.tensor([0.25]),
         valid_ion_mode_count=th.tensor([3.0]),
         retained_ion_mode_count=th.tensor([2.0]),

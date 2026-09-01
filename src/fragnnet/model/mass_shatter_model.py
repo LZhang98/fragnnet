@@ -132,10 +132,7 @@ def _relative_fragment_keep_mask(
         raise ValueError("fragment batch indices must have dtype torch.long")
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
-    if (
-        not math.isfinite(min_relative_probability)
-        or not 0.0 <= min_relative_probability <= 1.0
-    ):
+    if not math.isfinite(min_relative_probability) or not 0.0 <= min_relative_probability <= 1.0:
         raise ValueError("min_relative_probability must be finite and in [0, 1]")
     fragment_counts = th.bincount(fragment_batch_indices, minlength=batch_size)
     _validate_tensor_condition(
@@ -144,19 +141,22 @@ def _relative_fragment_keep_mask(
     )
     if min_relative_probability == 0.0:
         return th.ones_like(fragment_log_probabilities, dtype=th.bool)
-    map_log_probabilities = fragment_log_probabilities.detach().new_full(
-        (batch_size,),
-        -th.inf,
-    ).scatter_reduce(
-        0,
-        fragment_batch_indices,
-        fragment_log_probabilities.detach(),
-        reduce="amax",
-        include_self=True,
+    map_log_probabilities = (
+        fragment_log_probabilities.detach()
+        .new_full(
+            (batch_size,),
+            -th.inf,
+        )
+        .scatter_reduce(
+            0,
+            fragment_batch_indices,
+            fragment_log_probabilities.detach(),
+            reduce="amax",
+            include_self=True,
+        )
     )
     return fragment_log_probabilities.detach() >= (
-        map_log_probabilities[fragment_batch_indices]
-        + math.log(min_relative_probability)
+        map_log_probabilities[fragment_batch_indices] + math.log(min_relative_probability)
     )
 
 
@@ -183,6 +183,84 @@ def _relative_channel_keep_mask(
         flat_logits >= map_logits.unsqueeze(1) + math.log(min_relative_probability)
     )
     return keep.reshape_as(valid_mask)
+
+
+def _fixed_top_k_channel_keep_mask(
+    logits: th.Tensor,
+    valid_mask: th.Tensor,
+    top_k: int,
+) -> th.Tensor:
+    """Keep the stable top-k valid ion channels independently per fragment."""
+    if logits.shape != valid_mask.shape or valid_mask.dtype != th.bool or logits.ndim < 2:
+        raise ValueError("logits and valid_mask must have matching rank-2-or-higher shapes")
+    if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k <= 0:
+        raise ValueError("top_k must be a positive integer")
+    flat_valid = valid_mask.flatten(start_dim=1)
+    _validate_tensor_condition(
+        flat_valid.any(dim=1).all(),
+        "every fragment must have at least one valid channel",
+    )
+    flat_logits = logits.detach().flatten(start_dim=1).masked_fill(~flat_valid, -th.inf)
+    stable_order = th.sort(flat_logits, dim=1, descending=True, stable=True).indices
+    keep_count = flat_valid.sum(dim=1).clamp(max=top_k)
+    ranked_keep = th.arange(flat_valid.shape[1], device=logits.device).unsqueeze(0) < (
+        keep_count.unsqueeze(1)
+    )
+    keep = th.zeros_like(flat_valid).scatter(1, stable_order, ranked_keep)
+    return (keep & flat_valid).reshape_as(valid_mask)
+
+
+def _relative_joint_channel_keep_mask(
+    channel_log_weights: th.Tensor,
+    valid_mask: th.Tensor,
+    fragment_batch_indices: th.Tensor,
+    batch_size: int,
+    min_relative_weight: float,
+) -> th.Tensor:
+    """Apply a spectrum-relative floor to joint fragment/ion/H weights.
+
+    At least the highest-weight valid channel of every fragment is retained because
+    downstream conditional channel normalization requires nonempty fragment support.
+    """
+    if channel_log_weights.shape != valid_mask.shape or channel_log_weights.ndim != 3:
+        raise ValueError("channel weights and valid_mask must be aligned rank-3 tensors")
+    if valid_mask.dtype != th.bool:
+        raise ValueError("valid_mask must be boolean")
+    if fragment_batch_indices.shape != (channel_log_weights.shape[0],):
+        raise ValueError("fragment_batch_indices must contain one index per fragment")
+    if fragment_batch_indices.dtype != th.long:
+        raise ValueError("fragment_batch_indices must have dtype torch.long")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if not math.isfinite(min_relative_weight) or not 0.0 <= min_relative_weight <= 1.0:
+        raise ValueError("min_relative_weight must be finite and in [0, 1]")
+    flat_valid = valid_mask.flatten(start_dim=1)
+    _validate_tensor_condition(
+        flat_valid.any(dim=1).all(),
+        "every fragment must have at least one valid channel",
+    )
+    if min_relative_weight == 0.0:
+        return valid_mask.clone()
+
+    flat_log_weights = channel_log_weights.detach().flatten(start_dim=1)
+    fragment_maxima = flat_log_weights.masked_fill(~flat_valid, -th.inf).max(dim=1).values
+    spectrum_maxima = fragment_maxima.new_full((batch_size,), -th.inf).scatter_reduce(
+        0,
+        fragment_batch_indices,
+        fragment_maxima,
+        reduce="amax",
+        include_self=True,
+    )
+    keep = flat_valid & (
+        flat_log_weights
+        >= spectrum_maxima[fragment_batch_indices].unsqueeze(1) + math.log(min_relative_weight)
+    )
+    fragment_fallback = _fixed_top_k_channel_keep_mask(
+        channel_log_weights,
+        valid_mask,
+        top_k=1,
+    ).flatten(start_dim=1)
+    return (keep | fragment_fallback).reshape_as(valid_mask)
 
 
 def _parse_formula_delta(formula: str) -> dict[str, int]:
@@ -213,8 +291,7 @@ def _cmf_duplicate_crf_shift(
     if precursor_type not in PREC_TYPE_TO_CMF_MASS_DIFF:
         return None
     shift = (
-        PREC_TYPE_TO_CMF_MASS_DIFF[precursor_type]
-        - PREC_TYPE_TO_MASS_DIFF[precursor_type]
+        PREC_TYPE_TO_CMF_MASS_DIFF[precursor_type] - PREC_TYPE_TO_MASS_DIFF[precursor_type]
     ) / H_MASS
     rounded_shift = round(shift)
     if abs(shift - rounded_shift) > tolerance or not (
@@ -224,9 +301,7 @@ def _cmf_duplicate_crf_shift(
     crf_counts = _parse_formula_delta(PREC_TYPE_TO_FORMULA_DIFF[precursor_type])
     cmf_counts = _parse_formula_delta(PREC_TYPE_TO_CMF_FORMULA_DIFF[precursor_type])
     for element in set(crf_counts) | set(cmf_counts) | {"H"}:
-        expected = crf_counts.get(element, 0) + (
-            rounded_shift if element == "H" else 0
-        )
+        expected = crf_counts.get(element, 0) + (rounded_shift if element == "H" else 0)
         if cmf_counts.get(element, 0) != expected:
             return None
     return rounded_shift
@@ -277,9 +352,9 @@ class BernoulliMixtureWeightHead(nn.Module):
             raise ValueError("atom_batch_indices must contain one index per atom")
         if atom_batch_indices.dtype != th.long:
             raise ValueError("atom_batch_indices must have dtype torch.long")
-        atom_sums = atom_embeddings.new_zeros(
-            (batch_size, self.atom_embedding_dim)
-        ).index_add(0, atom_batch_indices, atom_embeddings)
+        atom_sums = atom_embeddings.new_zeros((batch_size, self.atom_embedding_dim)).index_add(
+            0, atom_batch_indices, atom_embeddings
+        )
         atom_counts = th.bincount(atom_batch_indices, minlength=batch_size).to(atom_embeddings)
         _validate_tensor_condition(
             (atom_counts > 0).all(),
@@ -287,9 +362,7 @@ class BernoulliMixtureWeightHead(nn.Module):
         )
         molecule_embeddings = atom_sums / atom_counts.unsqueeze(1)
         if context.shape != (batch_size, self.context_dim):
-            raise ValueError(
-                f"context must have shape ({batch_size}, {self.context_dim})"
-            )
+            raise ValueError(f"context must have shape ({batch_size}, {self.context_dim})")
         return F.log_softmax(
             self.head(th.cat([molecule_embeddings, context], dim=1)),
             dim=1,
@@ -830,9 +903,7 @@ class MassShatterModel(nn.Module):
                 f"got {min_fragment_relative_probability}"
             )
         if min_fragment_relative_probability > 0.0 and not unique_fragment_mode:
-            raise ValueError(
-                "min_fragment_relative_probability requires unique_fragment_mode"
-            )
+            raise ValueError("min_fragment_relative_probability requires unique_fragment_mode")
         for name, value in (
             ("min_ion_mode_relative_probability", min_ion_mode_relative_probability),
             ("min_ion_h_relative_probability", min_ion_h_relative_probability),
@@ -886,6 +957,8 @@ class MassShatterModel(nn.Module):
         self.min_ion_mode_relative_probability = min_ion_mode_relative_probability
         self.min_ion_h_relative_probability = min_ion_h_relative_probability
         self.apply_channel_selection_in_training = apply_channel_selection_in_training
+        self.evaluation_ion_h_top_k = 0
+        self.evaluation_joint_channel_relative_threshold = 0.0
         self.proposal_num_mixtures = proposal_num_mixtures
         # Every component fans out into num_ion_modes * num_h_shifts candidate ions:
         # charge retention (CRF) and optionally charge migration (CMF), crossed with
@@ -1015,6 +1088,23 @@ class MassShatterModel(nn.Module):
         )
         self._setup_chemistry_buffers()
 
+    def set_evaluation_ion_h_top_k(self, top_k: int) -> None:
+        """Set evaluation-only fixed-k ion/H selection; zero disables it."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 0:
+            raise ValueError("evaluation ion/H top_k must be a nonnegative integer")
+        self.evaluation_ion_h_top_k = top_k
+
+    def set_evaluation_joint_channel_relative_threshold(self, threshold: float) -> None:
+        """Set an evaluation-only spectrum-relative joint channel floor."""
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, (int, float))
+            or not math.isfinite(threshold)
+            or not 0.0 <= threshold <= 1.0
+        ):
+            raise ValueError("evaluation joint channel threshold must be finite and in [0, 1]")
+        self.evaluation_joint_channel_relative_threshold = float(threshold)
+
     def _setup_chemistry_buffers(self) -> None:
         """Precompute per-adduct mass and validity deltas.
 
@@ -1093,8 +1183,7 @@ class MassShatterModel(nn.Module):
             "cmf_precursor_valid",
             th.tensor(
                 [
-                    precursor_type in PREC_TYPE_TO_CMF_MASS_DIFF
-                    and duplicate_shift is None
+                    precursor_type in PREC_TYPE_TO_CMF_MASS_DIFF and duplicate_shift is None
                     for precursor_type, duplicate_shift in zip(
                         self.precursor_types,
                         duplicate_crf_shifts,
@@ -1221,9 +1310,11 @@ class MassShatterModel(nn.Module):
             if len(mode_indices) != len(precursor_indices):
                 raise ValueError("fragmentation modes must contain one index per precursor")
             fragmentation_modes = [
-                self.fragmentation_modes[index]
-                if 0 <= index < len(self.fragmentation_modes)
-                else None
+                (
+                    self.fragmentation_modes[index]
+                    if 0 <= index < len(self.fragmentation_modes)
+                    else None
+                )
                 for index in mode_indices
             ]
 
@@ -1376,10 +1467,9 @@ class MassShatterModel(nn.Module):
             "all spectra in a proposal group must have identical bond features",
         )
         local_bond_index = mol_pyg.chemical_bond_index - mol_pyg.ptr[bond_batch].unsqueeze(0)
-        shared_local_bond_index = (
-            shared_chemical_bond_index
-            - shared_atom_ptr[shared_bond_batch].unsqueeze(0)
-        )
+        shared_local_bond_index = shared_chemical_bond_index - shared_atom_ptr[
+            shared_bond_batch
+        ].unsqueeze(0)
         _validate_tensor_condition(
             (local_bond_index == shared_local_bond_index[:, bond_to_shared]).all(),
             "all spectra in a proposal group must have identical bond topology",
@@ -1549,12 +1639,8 @@ class MassShatterModel(nn.Module):
                     mol_pyg.edge_attr[layout["representative_edge_mask"]],
                 )
             if self.ion_mode_proposal_head is not None:
-                proposal_atom_embeddings = shared_proposal_atom_embeddings[
-                    layout["atom_to_shared"]
-                ]
-                proposal_context = (
-                    context.detach() if self.proposal_selection_only else context
-                )
+                proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
+                proposal_context = context.detach() if self.proposal_selection_only else context
             shared_proposal_context = (
                 shared_context.detach() if self.proposal_selection_only else shared_context
             )
@@ -1651,11 +1737,7 @@ class MassShatterModel(nn.Module):
             static_graph=static_graph,
             smarts_templates=smarts_templates,
             mixture_log_weights=mixture_log_weights,
-            candidate_group_ids=(
-                layout["spectrum_to_shared"]
-                if layout is not None
-                else None
-            ),
+            candidate_group_ids=(layout["spectrum_to_shared"] if layout is not None else None),
         )
 
         # 3. Score charge retention. In unique-fragment mode, masks remain latent
@@ -1666,9 +1748,7 @@ class MassShatterModel(nn.Module):
             + atom_embeddings[mol_pyg.chemical_bond_index[1]]
         ) / 2.0
         if self.mechanism_head is None:
-            mechanism_log_probabilities = bond_logits.new_zeros(
-                candidates.num_mechanisms
-            )
+            mechanism_log_probabilities = bond_logits.new_zeros(candidates.num_mechanisms)
         else:
             mechanism_boundary_embeddings = pool_boundary_bond_embeddings(
                 chemical_bond_embeddings,
@@ -1690,8 +1770,7 @@ class MassShatterModel(nn.Module):
                 num_masks,
             )
             mechanism_log_probabilities = (
-                mechanism_logits
-                - mechanism_log_normalizers[candidates.mechanism_mask_indices]
+                mechanism_logits - mechanism_log_normalizers[candidates.mechanism_mask_indices]
             )
         unique_fragment_effective_count = bond_logits.new_zeros(batch_size)
         unique_fragment_top1_mass_fraction = bond_logits.new_zeros(batch_size)
@@ -1738,8 +1817,7 @@ class MassShatterModel(nn.Module):
                 batch_size,
             )
             base_fragment_log_probabilities = (
-                fragment_log_probabilities
-                - proposal_log_normalizers[fragment_batch_indices]
+                fragment_log_probabilities - proposal_log_normalizers[fragment_batch_indices]
             )
             best_pathway_log_probabilities = component_log_probabilities.new_full(
                 (num_fragments,),
@@ -1889,9 +1967,7 @@ class MassShatterModel(nn.Module):
                 atom_embeddings=atom_embeddings,
                 atom_indices=fragment_atom_indices,
                 atom_fragment_indices=atom_fragment_indices,
-                return_support_logits=(
-                    self.intensity_head.ion_h_support_head is not None
-                ),
+                return_support_logits=(self.intensity_head.ion_h_support_head is not None),
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             ion_h_support_logits = (
@@ -1912,8 +1988,7 @@ class MassShatterModel(nn.Module):
                 batch_size,
             )
             fragment_log_probabilities = (
-                corrected_fragment_logits
-                - fragment_log_normalizers[fragment_batch_indices]
+                corrected_fragment_logits - fragment_log_normalizers[fragment_batch_indices]
             )
             normalized_fragment_log_probabilities = fragment_log_probabilities
             normalized_fragment_probabilities = normalized_fragment_log_probabilities.exp()
@@ -2007,9 +2082,7 @@ class MassShatterModel(nn.Module):
                 atom_embeddings=atom_embeddings,
                 atom_indices=candidates.atom_indices,
                 atom_fragment_indices=candidates.atom_component_indices,
-                return_support_logits=(
-                    self.intensity_head.ion_h_support_head is not None
-                ),
+                return_support_logits=(self.intensity_head.ion_h_support_head is not None),
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             ion_h_support_logits = (
@@ -2027,8 +2100,7 @@ class MassShatterModel(nn.Module):
                 batch_size,
             )
             base_fragment_log_probabilities = (
-                base_fragment_log_probabilities
-                - retained_log_probabilities[fragment_batch_indices]
+                base_fragment_log_probabilities - retained_log_probabilities[fragment_batch_indices]
             )
             mask_log_normalizers = _segment_logsumexp(
                 mask_logits,
@@ -2036,8 +2108,7 @@ class MassShatterModel(nn.Module):
                 batch_size,
             )
             mask_log_probabilities = (
-                mask_logits
-                - mask_log_normalizers[candidates.mask_batch_indices]
+                mask_logits - mask_log_normalizers[candidates.mask_batch_indices]
             )
             component_charge_logits = charge_log_probabilities + component_residuals
             component_log_normalizers = _segment_logsumexp(
@@ -2072,6 +2143,17 @@ class MassShatterModel(nn.Module):
             ion_h_logits,
             valid_channels,
         )
+        if self.intensity_output == "independent":
+            dense_channel_weights = F.softplus(
+                corrected_fragment_logits[:, None, None] + ion_h_logits
+            )
+            dense_channel_log_weights = th.log(
+                dense_channel_weights.clamp_min(th.finfo(dense_channel_weights.dtype).tiny)
+            ).masked_fill(~valid_channels, -th.inf)
+        else:
+            dense_channel_log_weights = (
+                fragment_log_probabilities[:, None, None] + dense_intensity_log_probabilities
+            )
         valid_ion_modes = valid_channels.any(dim=2)
         existing_mode_log_probabilities = th.logsumexp(
             dense_support_log_probabilities,
@@ -2093,15 +2175,28 @@ class MassShatterModel(nn.Module):
             else valid_ion_modes
         )
         mode_selected_channels = valid_channels & mode_keep.unsqueeze(2)
-        spectral_output_channels = (
-            _relative_channel_keep_mask(
+        if not self.training and self.evaluation_ion_h_top_k > 0:
+            spectral_output_channels = _fixed_top_k_channel_keep_mask(
+                ion_h_support_logits,
+                mode_selected_channels,
+                self.evaluation_ion_h_top_k,
+            )
+        elif apply_selection:
+            spectral_output_channels = _relative_channel_keep_mask(
                 ion_h_support_logits,
                 mode_selected_channels,
                 self.min_ion_h_relative_probability,
             )
-            if apply_selection
-            else valid_channels
-        )
+        else:
+            spectral_output_channels = valid_channels
+        if not self.training and self.evaluation_joint_channel_relative_threshold > 0.0:
+            spectral_output_channels &= _relative_joint_channel_keep_mask(
+                dense_channel_log_weights,
+                spectral_output_channels,
+                fragment_batch_indices,
+                batch_size,
+                self.evaluation_joint_channel_relative_threshold,
+            )
         ion_h_log_probabilities = masked_ion_hydrogen_log_probabilities(
             ion_h_logits,
             spectral_output_channels,
@@ -2109,21 +2204,8 @@ class MassShatterModel(nn.Module):
         pathway_log_probabilities = (
             fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
         )
-        if self.intensity_output == "independent":
-            dense_channel_weights = F.softplus(
-                corrected_fragment_logits[:, None, None] + ion_h_logits
-            )
-            dense_channel_log_weights = th.log(
-                dense_channel_weights.clamp_min(th.finfo(dense_channel_weights.dtype).tiny)
-            ).masked_fill(~valid_channels, -th.inf)
-        else:
-            dense_channel_log_weights = (
-                fragment_log_probabilities[:, None, None] + dense_intensity_log_probabilities
-            )
         base_ion_h_log_probabilities = (
-            ion_h_log_probabilities.detach()
-            if self.detach_base_ion_h
-            else ion_h_log_probabilities
+            ion_h_log_probabilities.detach() if self.detach_base_ion_h else ion_h_log_probabilities
         )
         base_pathway_log_probabilities = (
             base_fragment_log_probabilities[:, None, None] + base_ion_h_log_probabilities
@@ -2164,21 +2246,43 @@ class MassShatterModel(nn.Module):
         retained_intensity_mass = (
             dense_intensity_log_probabilities.exp() * spectral_output_channels
         ).sum(dim=(1, 2))
-        retained_ion_h_probability = bond_logits.new_zeros(batch_size).index_add(
+        retained_ion_h_probability = (
+            bond_logits.new_zeros(batch_size).index_add(
+                0,
+                fragment_batch_indices,
+                retained_intensity_mass.to(bond_logits),
+            )
+            / fragment_counts
+        )
+        dense_joint_weights = dense_channel_log_weights.exp()
+        joint_intensity_by_fragment = dense_joint_weights.sum(dim=(1, 2))
+        retained_joint_intensity_by_fragment = (dense_joint_weights * spectral_output_channels).sum(
+            dim=(1, 2)
+        )
+        total_joint_intensity = bond_logits.new_zeros(batch_size).index_add(
             0,
             fragment_batch_indices,
-            retained_intensity_mass.to(bond_logits),
-        ) / fragment_counts
+            joint_intensity_by_fragment.to(bond_logits),
+        )
+        retained_joint_intensity = bond_logits.new_zeros(batch_size).index_add(
+            0,
+            fragment_batch_indices,
+            retained_joint_intensity_by_fragment.to(bond_logits),
+        )
+        retained_joint_intensity_fraction = retained_joint_intensity / total_joint_intensity
         mode_log_probabilities = th.log_softmax(
             ion_mode_proposal_logits.masked_fill(~valid_ion_modes, -th.inf),
             dim=1,
         )
         retained_mode_mass = (mode_log_probabilities.exp() * mode_keep).sum(dim=1)
-        retained_ion_mode_probability = bond_logits.new_zeros(batch_size).index_add(
-            0,
-            fragment_batch_indices,
-            retained_mode_mass.to(bond_logits),
-        ) / fragment_counts
+        retained_ion_mode_probability = (
+            bond_logits.new_zeros(batch_size).index_add(
+                0,
+                fragment_batch_indices,
+                retained_mode_mass.to(bond_logits),
+            )
+            / fragment_counts
+        )
         valid_ion_mode_count = bond_logits.new_zeros(batch_size).index_add(
             0,
             fragment_batch_indices,
@@ -2263,9 +2367,7 @@ class MassShatterModel(nn.Module):
             else bond_logits.new_zeros((batch_size, 1))
         )
         mixture_weights = logged_mixture_log_weights.exp()
-        proposal_mixture_entropy = -(
-            mixture_weights * logged_mixture_log_weights
-        ).sum(dim=1)
+        proposal_mixture_entropy = -(mixture_weights * logged_mixture_log_weights).sum(dim=1)
         output = {
             "pred_mzs": pred_mzs,
             "pred_batch_idxs": pred_batch_idxs,
@@ -2282,6 +2384,7 @@ class MassShatterModel(nn.Module):
             "valid_ion_h_count": valid_ion_h_count,
             "retained_ion_h_count": retained_ion_h_count,
             "retained_ion_h_probability": retained_ion_h_probability,
+            "retained_joint_channel_intensity_fraction": retained_joint_intensity_fraction,
             "ion_h_cutoff_pruned_fraction": 1.0 - retained_ion_h_count / valid_ion_h_count,
             "valid_ion_mode_count": valid_ion_mode_count,
             "retained_ion_mode_count": retained_ion_mode_count,

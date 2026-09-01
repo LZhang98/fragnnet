@@ -50,6 +50,18 @@ _CUT_COUNT_BUCKETS = {
 
 logger = logging.getLogger(__name__)
 
+_ION_H_REQUIRED_K_METRIC_NAMES = (
+    "valid_ion_h_per_fragment_mean",
+    "attributed_ion_h_per_fragment_mean",
+    "ion_h_supported_fragment_fraction",
+    "required_ion_h_top_k_95_mean",
+    "required_ion_h_top_k_95_p90",
+    "required_ion_h_top_k_95_max",
+    "required_ion_h_top_k_99_mean",
+    "required_ion_h_top_k_99_p90",
+    "required_ion_h_top_k_99_max",
+)
+
 
 @lru_cache(maxsize=100_000)
 def _cached_mass_shatter_templates(
@@ -552,6 +564,87 @@ def _channel_support_metrics(
             metrics["fragment_weighted_precision"][batch_index] = (
                 fragment_logprobs[fragment_mask].exp() * batch_fragments
             ).sum()
+    return metrics
+
+
+def _ion_h_required_k_metrics(
+    *,
+    channel_targets: th.Tensor,
+    support_logits: th.Tensor,
+    chemical_valid_channels: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    batch_size: int,
+) -> dict[str, th.Tensor]:
+    """Summarize per-fragment H support and model-ranked coverage requirements."""
+    if (
+        channel_targets.shape != support_logits.shape
+        or channel_targets.shape != chemical_valid_channels.shape
+        or channel_targets.ndim != 3
+    ):
+        raise ValueError("channel targets, logits, and validity must be aligned rank-3 tensors")
+    if chemical_valid_channels.dtype != th.bool:
+        raise ValueError("chemical channel validity must be boolean")
+    if fragment_batch_idxs.shape != (channel_targets.shape[0],):
+        raise ValueError("fragment_batch_idxs must contain one index per fragment")
+
+    flat_valid = chemical_valid_channels.flatten(start_dim=1)
+    flat_targets = channel_targets.flatten(start_dim=1).masked_fill(~flat_valid, 0.0)
+    flat_logits = support_logits.detach().flatten(start_dim=1).masked_fill(~flat_valid, -th.inf)
+    ranked_indices = th.sort(flat_logits, dim=1, descending=True, stable=True).indices
+    ranked_targets = flat_targets.gather(1, ranked_indices)
+    target_mass = flat_targets.sum(dim=1)
+    supported_fragments = target_mass > 0.0
+    cumulative_target_mass = ranked_targets.cumsum(dim=1)
+
+    required_ks = {}
+    for label, coverage in (("95", 0.95), ("99", 0.99)):
+        reaches_coverage = cumulative_target_mass >= target_mass.unsqueeze(1) * coverage
+        first_reaching_rank = reaches_coverage.to(th.int64).argmax(dim=1) + 1
+        required_ks[label] = th.where(
+            supported_fragments,
+            first_reaching_rank,
+            th.zeros_like(first_reaching_rank),
+        ).to(device=channel_targets.device, dtype=th.float32)
+
+    reference = channel_targets.new_zeros((), dtype=th.float32)
+    metrics = {
+        "valid_ion_h_per_fragment_mean": reference.new_zeros(batch_size),
+        "attributed_ion_h_per_fragment_mean": reference.new_zeros(batch_size),
+        "ion_h_supported_fragment_fraction": reference.new_zeros(batch_size),
+    }
+    for label in required_ks:
+        for statistic in ("mean", "p90", "max"):
+            metrics[f"required_ion_h_top_k_{label}_{statistic}"] = reference.new_zeros(batch_size)
+
+    valid_counts = flat_valid.sum(dim=1).to(device=channel_targets.device, dtype=th.float32)
+    attributed_counts = (
+        ((flat_targets > 0.0) & flat_valid)
+        .sum(dim=1)
+        .to(
+            device=channel_targets.device,
+            dtype=th.float32,
+        )
+    )
+    for batch_index in range(batch_size):
+        fragment_mask = fragment_batch_idxs == batch_index
+        batch_supported = supported_fragments[fragment_mask]
+        metrics["valid_ion_h_per_fragment_mean"][batch_index] = valid_counts[fragment_mask].mean()
+        metrics["attributed_ion_h_per_fragment_mean"][batch_index] = attributed_counts[
+            fragment_mask
+        ].mean()
+        metrics["ion_h_supported_fragment_fraction"][batch_index] = batch_supported.to(
+            channel_targets
+        ).mean()
+        if not batch_supported.any():
+            continue
+        for label, values in required_ks.items():
+            batch_values = values[fragment_mask][batch_supported]
+            metrics[f"required_ion_h_top_k_{label}_mean"][batch_index] = batch_values.mean()
+            metrics[f"required_ion_h_top_k_{label}_p90"][batch_index] = th.quantile(
+                batch_values,
+                0.9,
+            )
+            metrics[f"required_ion_h_top_k_{label}_max"][batch_index] = batch_values.max()
     return metrics
 
 
@@ -1347,6 +1440,7 @@ class MassShatterPL(SpectrumPL):
                 "fragment_weighted_precision",
                 "ion_mode_support_positive_rate",
                 "ion_h_support_positive_rate",
+                *_ION_H_REQUIRED_K_METRIC_NAMES,
             )
             support_metrics = {
                 name: prediction_reference.new_zeros(batch_size)
@@ -1377,6 +1471,15 @@ class MassShatterPL(SpectrumPL):
                     fragment_batch_idxs=kwargs["ion_h_fragment_batch_idxs"],
                     batch_size=batch_size,
                     fragment_logprobs=kwargs["proposal_fragment_logprobs"],
+                )
+                support_metrics.update(
+                    _ion_h_required_k_metrics(
+                        channel_targets=channel_targets,
+                        support_logits=kwargs["ion_h_support_logits"],
+                        chemical_valid_channels=kwargs["ion_h_chemical_valid_channels"],
+                        fragment_batch_idxs=kwargs["ion_h_fragment_batch_idxs"],
+                        batch_size=batch_size,
+                    )
                 )
             if ion_h_support_loss_enabled:
                 if channel_targets is None:
@@ -1567,6 +1670,7 @@ class MassShatterPL(SpectrumPL):
                 "valid_ion_h_count",
                 "retained_ion_h_count",
                 "retained_ion_h_probability",
+                "retained_joint_channel_intensity_fraction",
                 "ion_h_cutoff_pruned_fraction",
                 "valid_ion_mode_count",
                 "retained_ion_mode_count",
@@ -1692,6 +1796,7 @@ class MassShatterPL(SpectrumPL):
             "valid_ion_h_count",
             "retained_ion_h_count",
             "retained_ion_h_probability",
+            "retained_joint_channel_intensity_fraction",
             "ion_h_cutoff_pruned_fraction",
             "valid_ion_mode_count",
             "retained_ion_mode_count",
@@ -1705,6 +1810,7 @@ class MassShatterPL(SpectrumPL):
                     "fragment_weighted_precision",
                     "ion_mode_support_positive_rate",
                     "ion_h_support_positive_rate",
+                    *_ION_H_REQUIRED_K_METRIC_NAMES,
                 ]
             )
         if self.hparams.loss_type == "cross_entropy":

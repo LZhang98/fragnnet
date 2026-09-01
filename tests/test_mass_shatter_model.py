@@ -14,8 +14,10 @@ from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.mass_shatter_model import (
     MassShatterModel,
     _cmf_duplicate_crf_shift,
+    _fixed_top_k_channel_keep_mask,
     _relative_channel_keep_mask,
     _relative_fragment_keep_mask,
+    _relative_joint_channel_keep_mask,
 )
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
@@ -160,6 +162,69 @@ def test_relative_channel_keep_mask_is_per_fragment() -> None:
         [[True, True], [False, False]],
     ]
     assert th.equal(_relative_channel_keep_mask(logits, valid, 0.0), valid)
+
+
+def test_fixed_top_k_channel_keep_mask_is_stable_and_per_fragment() -> None:
+    logits = th.tensor([[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], [[3.0, 2.0, 1.0], [0.0, 0.0, 0.0]]])
+    valid = th.tensor(
+        [
+            [[True, False, True], [True, False, False]],
+            [[True, True, True], [False, False, False]],
+        ]
+    )
+
+    keep = _fixed_top_k_channel_keep_mask(logits, valid, top_k=2)
+
+    assert keep.tolist() == [
+        [[True, False, True], [False, False, False]],
+        [[True, True, False], [False, False, False]],
+    ]
+    assert th.equal(_fixed_top_k_channel_keep_mask(logits, valid, top_k=10), valid)
+
+
+def test_relative_joint_channel_keep_mask_is_per_spectrum_with_fragment_fallback() -> None:
+    weights = th.tensor(
+        [
+            [[1.0, 0.5, 0.01]],
+            [[0.02, 0.01, 0.001]],
+            [[0.2, 0.01, 0.001]],
+        ]
+    )
+    valid = th.ones_like(weights, dtype=th.bool)
+
+    keep = _relative_joint_channel_keep_mask(
+        weights.log(),
+        valid,
+        fragment_batch_indices=th.tensor([0, 0, 1]),
+        batch_size=2,
+        min_relative_weight=0.1,
+    )
+
+    assert keep.tolist() == [
+        [[True, True, False]],
+        [[True, False, False]],
+        [[True, False, False]],
+    ]
+    assert th.equal(
+        _relative_joint_channel_keep_mask(
+            weights.log(),
+            valid,
+            fragment_batch_indices=th.tensor([0, 0, 1]),
+            batch_size=2,
+            min_relative_weight=0.0,
+        ),
+        valid,
+    )
+
+
+@pytest.mark.parametrize("top_k", [0, -1, True, 1.5])
+def test_fixed_top_k_channel_keep_mask_rejects_invalid_k(top_k: object) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        _fixed_top_k_channel_keep_mask(
+            th.ones((1, 1, 2)),
+            th.ones((1, 1, 2), dtype=th.bool),
+            top_k,  # type: ignore[arg-type]
+        )
 
 
 @pytest.mark.parametrize(
@@ -456,8 +521,7 @@ def test_mass_shatter_forward_conserves_selected_probability_per_molecule() -> N
     assert output["components_per_mask"].tolist() == pytest.approx([2.0, 1.5])
     assert th.all(output["unique_components_per_mask"] <= output["components_per_mask"])
     cut_fraction_sum = sum(
-        output[f"mask_cut_fraction_{bucket}"]
-        for bucket in ("0", "1", "2", "3", "4", "5", "6plus")
+        output[f"mask_cut_fraction_{bucket}"] for bucket in ("0", "1", "2", "3", "4", "5", "6plus")
     )
     assert cut_fraction_sum.tolist() == pytest.approx([1.0, 1.0])
     assert th.allclose(
@@ -1271,6 +1335,116 @@ def test_channel_selection_leaves_full_candidate_consumers_unchanged() -> None:
         "ion_h_spectral_output_channels",
     }
     assert removed_outputs.isdisjoint(sparse)
+
+
+def test_evaluation_top_k_keeps_one_channel_per_fragment_and_is_reversible() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        separate_ion_h_support_head=True,
+    ).eval()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+
+    with th.no_grad():
+        dense = model(**inputs)
+        model.set_evaluation_ion_h_top_k(1)
+        top_one = model(**inputs)
+        model.set_evaluation_ion_h_top_k(0)
+        restored = model(**inputs)
+
+    assert th.equal(top_one["retained_ion_h_count"], top_one["fragment_count_after_cutoff"])
+    assert top_one["pred_mzs"].numel() < dense["pred_mzs"].numel()
+    assert th.equal(top_one["candidate_mzs_by_cut"], dense["candidate_mzs_by_cut"])
+    assert th.equal(top_one["proposal_candidate_mzs"], dense["proposal_candidate_mzs"])
+    assert th.equal(top_one["cross_ev_candidate_mzs"], dense["cross_ev_candidate_mzs"])
+    assert th.equal(restored["pred_mzs"], dense["pred_mzs"])
+    assert th.equal(restored["pred_logprobs"], dense["pred_logprobs"])
+
+
+def test_evaluation_top_k_is_ignored_during_training() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        separate_ion_h_support_head=True,
+    ).train()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+
+    with th.no_grad():
+        dense = model(**inputs)
+        model.set_evaluation_ion_h_top_k(1)
+        top_k_configured = model(**inputs)
+
+    assert th.equal(top_k_configured["pred_mzs"], dense["pred_mzs"])
+    assert th.equal(top_k_configured["pred_logprobs"], dense["pred_logprobs"])
+
+
+def test_evaluation_joint_threshold_is_reversible_and_ignored_during_training() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        separate_ion_h_support_head=True,
+    ).eval()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+    with th.no_grad():
+        model.intensity_head.ion_hydrogen_head.weight.zero_()
+        model.intensity_head.ion_hydrogen_head.bias.copy_(
+            th.arange(model.intensity_head.ion_hydrogen_head.bias.numel())
+        )
+        dense = model(**inputs)
+        model.set_evaluation_joint_channel_relative_threshold(1.0)
+        thresholded = model(**inputs)
+        model.set_evaluation_joint_channel_relative_threshold(0.0)
+        restored = model(**inputs)
+        model.train()
+        model.set_evaluation_joint_channel_relative_threshold(1.0)
+        training_output = model(**inputs)
+
+    assert th.equal(
+        thresholded["retained_ion_h_count"],
+        thresholded["fragment_count_after_cutoff"],
+    )
+    assert thresholded["pred_mzs"].numel() < dense["pred_mzs"].numel()
+    assert dense["retained_joint_channel_intensity_fraction"].tolist() == pytest.approx(
+        [1.0, 1.0]
+    )
+    assert th.all(thresholded["retained_joint_channel_intensity_fraction"] < 1.0)
+    assert th.equal(restored["pred_mzs"], dense["pred_mzs"])
+    assert th.equal(training_output["pred_mzs"], dense["pred_mzs"])
+
+
+@pytest.mark.parametrize("top_k", [-1, True, 1.5])
+def test_evaluation_top_k_rejects_invalid_values(top_k: object) -> None:
+    model = _build_model(_build_batch())
+    with pytest.raises(ValueError, match="nonnegative integer"):
+        model.set_evaluation_ion_h_top_k(top_k)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("threshold", [-0.1, 1.1, float("nan"), True, "0.1"])
+def test_evaluation_joint_threshold_rejects_invalid_values(threshold: object) -> None:
+    model = _build_model(_build_batch())
+    with pytest.raises(ValueError, match=r"finite and in \[0, 1\]"):
+        model.set_evaluation_joint_channel_relative_threshold(threshold)  # type: ignore[arg-type]
 
 
 def test_retained_channel_probability_uses_dense_intensity_distribution() -> None:
