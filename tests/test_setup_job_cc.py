@@ -244,9 +244,11 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
 
     script = (project / "slurm_scripts" / "channel_audit.sh").read_text()
     assert (
-        "rsync -av --relative ${FRAGNNET_DP}/./saved_ckpts/model.ckpt ${WORKING_DIR}"
+        "rsync -avL --relative ${FRAGNNET_DP}/./saved_ckpts/model.ckpt ${WORKING_DIR}"
         in script
     )
+    assert "if [[ ! -f ${WORKING_DIR}/saved_ckpts/model.ckpt ]]; then" in script
+    assert "ERROR: checkpoint was not staged" in script
     assert "--model_ckpt saved_ckpts/model.ckpt" in script
     assert "--ion_h_top_ks 0 4" in script
     assert f"mkdir -p {project}/output/eval" in script

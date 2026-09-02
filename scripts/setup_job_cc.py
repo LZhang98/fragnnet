@@ -667,6 +667,18 @@ def main(args):
                 " ${WORKING_DIR}"
             )
             script_lines.extend(array_lines)
+        elif name == "model_ckpt":
+            print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
+            script_lines.extend(
+                [
+                    f"# copy {name} file from {path_value} to slurm tmp dir",
+                    f"rsync -avL --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
+                    f"if [[ ! -f ${{WORKING_DIR}}/{path_value} ]]; then",
+                    f'    echo "ERROR: checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
+                    "    exit 1",
+                    "fi",
+                ]
+            )
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(

@@ -268,16 +268,18 @@ def get_ckpt_path(
     Returns:
             Path to checkpoint file
     """
-    if model_ckpt is None or not os.path.isfile(model_ckpt):
-        # Download from W&B
+    if model_ckpt is not None:
+        if not os.path.isfile(model_ckpt):
+            raise FileNotFoundError(f"Local checkpoint does not exist: {model_ckpt}")
+        ckpt_fp = model_ckpt
+        print(f">> Using local checkpoint: {ckpt_fp}")
+    else:
+        if wandb_run_id is None:
+            raise ValueError("Either wandb_run_id or model_ckpt must be provided")
         os.makedirs(model_save_dp, exist_ok=True)
         print(f">> Downloading model to {model_save_dp} from W&B")
         print(f">> W&B run id: {wandb_run_id}")
         ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, wandb_run_id, use_cached=use_cached)
-    else:
-        # Use local checkpoint
-        ckpt_fp = model_ckpt
-        print(f">> Using local checkpoint: {ckpt_fp}")
 
     return ckpt_fp
 
