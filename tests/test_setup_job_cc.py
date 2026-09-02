@@ -251,6 +251,9 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     assert "--ion_h_top_ks 0 4" in script
     assert f"mkdir -p {project}/output/eval" in script
     assert (
-        f"rsync -av ${{WORKING_DIR}}/output/eval/result.csv "
+        "if [[ -f ${WORKING_DIR}/output/eval/result.csv ]]; then\n"
+        f"    rsync -av ${{WORKING_DIR}}/output/eval/result.csv "
         f"{project}/output/eval/result.csv" in script
     )
+    assert "CHANNEL_AUDIT_STATUS=$?" in script
+    assert 'exit "${CHANNEL_AUDIT_STATUS}"' in script

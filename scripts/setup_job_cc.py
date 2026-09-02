@@ -756,6 +756,7 @@ def main(args):
 
     # Preserve the channel-selection audit CSV outside node-local scratch.
     if is_channel_selection_audit:
+        script_lines.append("CHANNEL_AUDIT_STATUS=$?")
         output_fp = config_d.get(
             "output_fp",
             "output/eval/mass_shatter_ion_h_top_k_sweep.csv",
@@ -768,9 +769,18 @@ def main(args):
                     "",
                     "# copy channel-selection audit output back to the project directory",
                     f"mkdir -p {os.path.dirname(output_dest)}",
-                    f"rsync -av {output_src} {output_dest}",
+                    f"if [[ -f {output_src} ]]; then",
+                    f"    rsync -av {output_src} {output_dest}",
+                    "fi",
                 ]
             )
+        script_lines.extend(
+            [
+                'if [[ "${CHANNEL_AUDIT_STATUS}" -ne 0 ]]; then',
+                '    exit "${CHANNEL_AUDIT_STATUS}"',
+                "fi",
+            ]
+        )
 
     # copy predictions output back to project directory
     if is_inference_eval_script:

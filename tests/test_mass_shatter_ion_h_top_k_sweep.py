@@ -3,6 +3,7 @@
 import pytest
 
 from scripts.eval.mass_shatter_ion_h_top_k_sweep import (
+    metric_names,
     validate_joint_relative_thresholds,
     validate_top_ks,
 )
@@ -32,3 +33,18 @@ def test_validate_joint_relative_thresholds_rejects_invalid_values(
 ) -> None:
     with pytest.raises(ValueError):
         validate_joint_relative_thresholds(thresholds)
+
+
+def test_metric_names_only_requests_configured_auxiliary_scores() -> None:
+    names = metric_names(
+        {
+            "auxiliary_scores": ["cos_sim", "precision", "recall"],
+            "eval_mz_bin_res": [0.01],
+        }
+    )
+
+    assert "precision" in names
+    assert "recall" in names
+    assert "cos_sim_0.01" in names
+    assert "wprecision" not in names
+    assert "wrecall" not in names

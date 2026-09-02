@@ -49,9 +49,6 @@ BASE_METRICS = (
     "candidate_wrecall",
     "fragment_precision",
     "fragment_weighted_precision",
-    "precision",
-    "recall",
-    "wrecall",
     "valid_ion_h_count",
     "retained_ion_h_count",
     "retained_ion_h_probability",
@@ -199,8 +196,18 @@ def parse_args() -> argparse.Namespace:
 
 def metric_names(config_d: dict[str, Any]) -> tuple[str, ...]:
     """Return channel diagnostics plus configured binned cosine metrics."""
-    cosine_names = tuple(f"cos_sim_{resolution}" for resolution in config_d["eval_mz_bin_res"])
-    return BASE_METRICS + cosine_names
+    auxiliary_scores = set(config_d["auxiliary_scores"])
+    match_names = tuple(
+        name
+        for name in ("precision", "recall", "wprecision", "wrecall")
+        if name in auxiliary_scores
+    )
+    cosine_names = (
+        tuple(f"cos_sim_{resolution}" for resolution in config_d["eval_mz_bin_res"])
+        if "cos_sim" in auxiliary_scores
+        else ()
+    )
+    return BASE_METRICS + match_names + cosine_names
 
 
 def evaluate_selection(
