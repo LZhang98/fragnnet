@@ -428,6 +428,9 @@ def main(args):
     # Check if running sweep script
     is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
     is_inference_eval_script = "run_save_inference_eval.py" in args.python_script_fp
+    is_channel_selection_audit = (
+        "mass_shatter_ion_h_top_k_sweep.py" in args.python_script_fp
+    )
 
     # parse script kwargs
     script_kwargs_list = args.script_kwargs if args.script_kwargs else []
@@ -519,6 +522,8 @@ def main(args):
         data_keyword.append("ann_fp")
     elif config_d["model_type"] == "mces_pretraining":
         data_keyword.append("mces_fp")
+    if config_d.get("model_ckpt") and not os.path.isabs(config_d["model_ckpt"]):
+        data_keyword.append("model_ckpt")
     # copy fp if pretraining
 
     if config_d["finetune"].lower() == "true":
@@ -748,6 +753,24 @@ def main(args):
 
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
+
+    # Preserve the channel-selection audit CSV outside node-local scratch.
+    if is_channel_selection_audit:
+        output_fp = config_d.get(
+            "output_fp",
+            "output/eval/mass_shatter_ion_h_top_k_sweep.csv",
+        )
+        if not os.path.isabs(output_fp):
+            output_src = os.path.join("${WORKING_DIR}", output_fp)
+            output_dest = os.path.abspath(os.path.join(args.frag_gnn_dp, output_fp))
+            script_lines.extend(
+                [
+                    "",
+                    "# copy channel-selection audit output back to the project directory",
+                    f"mkdir -p {os.path.dirname(output_dest)}",
+                    f"rsync -av {output_src} {output_dest}",
+                ]
+            )
 
     # copy predictions output back to project directory
     if is_inference_eval_script:

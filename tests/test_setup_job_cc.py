@@ -1,5 +1,7 @@
 import argparse
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -192,3 +194,63 @@ class TestApplyGpuProfile:
         mod.apply_gpu_profile(args)
         expected = mod.GPU_PROFILES["narval:a100-40gb"]
         assert args.cpu == expected["cpu"]
+
+
+def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    project = tmp_path / "project"
+    config_dp = project / "config"
+    data_dp = project / "data"
+    checkpoint_dp = project / "saved_ckpts"
+    config_dp.mkdir(parents=True)
+    data_dp.mkdir()
+    checkpoint_dp.mkdir()
+    (data_dp / "spec.pkl").touch()
+    (data_dp / "mol.pkl").touch()
+    (data_dp / "split").mkdir()
+    (checkpoint_dp / "model.ckpt").touch()
+    (config_dp / "template.yml").write_text(
+        "model_type: mass_shatter\n"
+        "finetune: False\n"
+        "spec_fp: data/spec.pkl\n"
+        "mol_fp: data/mol.pkl\n"
+        "split_dp: data/split\n"
+    )
+    (config_dp / "custom.yml").write_text("model_type: mass_shatter\n")
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(repo_root / "scripts" / "setup_job_cc.py"),
+            "--job_name=channel_audit",
+            "--python_script_fp=./scripts/eval/mass_shatter_ion_h_top_k_sweep.py",
+            "--frag_gnn_dp=./",
+            "--script_dp=slurm_scripts",
+            "--job_dp=jobs",
+            "--script_kwargs",
+            "model_ckpt=saved_ckpts/model.ckpt",
+            "custom_fp=config/custom.yml",
+            "ion_h_top_ks=0 4",
+            "joint_relative_thresholds=",
+            "output_fp=output/eval/result.csv",
+            "device=cuda",
+            "wandb_mode=disabled",
+        ],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    script = (project / "slurm_scripts" / "channel_audit.sh").read_text()
+    assert (
+        "rsync -av --relative ${FRAGNNET_DP}/./saved_ckpts/model.ckpt ${WORKING_DIR}"
+        in script
+    )
+    assert "--model_ckpt saved_ckpts/model.ckpt" in script
+    assert "--ion_h_top_ks 0 4" in script
+    assert f"mkdir -p {project}/output/eval" in script
+    assert (
+        f"rsync -av ${{WORKING_DIR}}/output/eval/result.csv "
+        f"{project}/output/eval/result.csv" in script
+    )
