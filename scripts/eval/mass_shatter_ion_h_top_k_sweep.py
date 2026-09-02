@@ -1,8 +1,8 @@
-"""Evaluate one MASShatter checkpoint with ion/H channel pruning rules.
+"""Evaluate one MASShatter checkpoint with fragment and ion/H pruning rules.
 
 The model weights, fragment candidates, and dataset stay fixed. The audit compares a
-dense reference, stable support-ranked top-k channels per fragment, and
-spectrum-relative thresholds on final joint fragment/ion/H intensity.
+dense reference, MAP-relative fragment thresholds, stable support-ranked top-k channels
+per fragment, and spectrum-relative thresholds on final joint fragment/ion/H intensity.
 
 Example:
     python scripts/eval/mass_shatter_ion_h_top_k_sweep.py \
@@ -42,6 +42,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_KS = tuple(range(10))
+DEFAULT_FRAGMENT_RELATIVE_THRESHOLDS = (0.0,)
 DEFAULT_JOINT_RELATIVE_THRESHOLDS = (0.001, 0.003, 0.01, 0.03, 0.1)
 BASE_METRICS = (
     "loss",
@@ -49,6 +50,10 @@ BASE_METRICS = (
     "candidate_wrecall",
     "fragment_precision",
     "fragment_weighted_precision",
+    "fragment_count_before_cutoff",
+    "fragment_count_after_cutoff",
+    "retained_fragment_probability",
+    "fragment_cutoff_pruned_fraction",
     "valid_ion_h_count",
     "retained_ion_h_count",
     "retained_ion_h_probability",
@@ -79,6 +84,19 @@ def validate_top_ks(top_ks: list[int]) -> list[int]:
     return top_ks
 
 
+def validate_fragment_relative_thresholds(thresholds: list[float]) -> list[float]:
+    """Validate MAP-relative fragment thresholds with an unpruned reference."""
+    if not thresholds:
+        raise ValueError("At least one fragment-relative threshold is required.")
+    if any(isinstance(threshold, bool) or not 0.0 <= threshold <= 1.0 for threshold in thresholds):
+        raise ValueError(f"Fragment-relative thresholds must be in [0, 1]: {thresholds}")
+    if len(set(thresholds)) != len(thresholds):
+        raise ValueError(f"Fragment-relative thresholds must be unique: {thresholds}")
+    if 0.0 not in thresholds:
+        raise ValueError("Fragment-relative thresholds must include the unpruned reference 0")
+    return thresholds
+
+
 def validate_joint_relative_thresholds(thresholds: list[float]) -> list[float]:
     """Validate spectrum-relative joint channel thresholds."""
     if any(isinstance(threshold, bool) or not 0.0 < threshold <= 1.0 for threshold in thresholds):
@@ -86,6 +104,28 @@ def validate_joint_relative_thresholds(thresholds: list[float]) -> list[float]:
     if len(set(thresholds)) != len(thresholds):
         raise ValueError(f"Joint relative thresholds must be unique: {thresholds}")
     return thresholds
+
+
+def build_selections(
+    fragment_relative_thresholds: list[float],
+    top_ks: list[int],
+    joint_relative_thresholds: list[float],
+) -> list[tuple[str, float, int, float]]:
+    """Build fragment-threshold combinations with each channel pruning rule."""
+    selections: list[tuple[str, float, int, float]] = []
+    for fragment_threshold in fragment_relative_thresholds:
+        fragment_label = (
+            "" if fragment_threshold == 0.0 else f"fragment_relative_{fragment_threshold:g}"
+        )
+        for top_k in top_ks:
+            channel_label = "" if top_k == 0 else f"top_k_{top_k}"
+            label = "_".join(part for part in (fragment_label, channel_label) if part) or "dense"
+            selections.append((label, fragment_threshold, top_k, 0.0))
+        for joint_threshold in joint_relative_thresholds:
+            channel_label = f"joint_relative_{joint_threshold:g}"
+            label = "_".join(part for part in (fragment_label, channel_label) if part)
+            selections.append((label, fragment_threshold, 0, joint_threshold))
+    return selections
 
 
 def sample_weights(
@@ -158,6 +198,12 @@ def parse_args() -> argparse.Namespace:
     checkpoint_group.add_argument("--model_ckpt", help="Local checkpoint path.")
     checkpoint_group.add_argument("--wandb_run_id", help="Run ID containing a checkpoint.")
     parser.add_argument("--model_save_dp", default="saved_ckpts")
+    parser.add_argument(
+        "--fragment_relative_thresholds",
+        type=float,
+        nargs="+",
+        default=DEFAULT_FRAGMENT_RELATIVE_THRESHOLDS,
+    )
     parser.add_argument("--ion_h_top_ks", type=int, nargs="+", default=DEFAULT_TOP_KS)
     parser.add_argument(
         "--joint_relative_thresholds",
@@ -258,6 +304,7 @@ def init_wandb_run(
     config_d: dict[str, Any],
     checkpoint_fp: str,
     label: str,
+    fragment_relative_threshold: float,
     top_k: int,
     joint_relative_threshold: float,
 ) -> Any | None:
@@ -278,6 +325,7 @@ def init_wandb_run(
         config={
             "source_checkpoint": os.path.abspath(checkpoint_fp),
             "source_wandb_run_id": args.wandb_run_id,
+            "evaluation_fragment_relative_threshold": fragment_relative_threshold,
             "evaluation_ion_h_top_k": top_k,
             "evaluation_joint_channel_relative_threshold": joint_relative_threshold,
             "evaluation_channel_selection": label,
@@ -295,6 +343,9 @@ def save_rows(rows: list[dict[str, Any]], output_fp: str) -> None:
 
 def main() -> None:
     args = parse_args()
+    fragment_relative_thresholds = validate_fragment_relative_thresholds(
+        list(args.fragment_relative_thresholds)
+    )
     top_ks = validate_top_ks(list(args.ion_h_top_ks))
     joint_relative_thresholds = validate_joint_relative_thresholds(
         list(args.joint_relative_thresholds)
@@ -328,15 +379,20 @@ def main() -> None:
     dataloader = init_dataloader(dataset, config_d)
     metrics = metric_names(config_d)
 
-    # 2. Reload identical weights for each isolated runtime selection rule.
-    selections = [("dense" if top_k == 0 else f"top_k_{top_k}", top_k, 0.0) for top_k in top_ks]
-    selections.extend(
-        (f"joint_relative_{threshold:g}", 0, threshold) for threshold in joint_relative_thresholds
+    # 2. Reload identical weights for each fragment/channel selection rule.
+    selections = build_selections(
+        fragment_relative_thresholds,
+        top_ks,
+        joint_relative_thresholds,
     )
     rows: list[dict[str, Any]] = []
-    for label, top_k, joint_relative_threshold in selections:
+    for label, fragment_relative_threshold, top_k, joint_relative_threshold in selections:
         logger.info("Evaluating checkpoint channel selection: %s", label)
-        model = init_model_from_ckpt(checkpoint_fp, config_d, device)
+        selection_config = {
+            **config_d,
+            "mass_shatter_min_fragment_relative_probability": fragment_relative_threshold,
+        }
+        model = init_model_from_ckpt(checkpoint_fp, selection_config, device)
         model.model.set_evaluation_ion_h_top_k(top_k)
         model.model.set_evaluation_joint_channel_relative_threshold(joint_relative_threshold)
         wandb_run = None
@@ -346,6 +402,7 @@ def main() -> None:
                 config_d,
                 checkpoint_fp,
                 label,
+                fragment_relative_threshold,
                 top_k,
                 joint_relative_threshold,
             )
@@ -360,6 +417,7 @@ def main() -> None:
             )
             row = {
                 "evaluation_channel_selection": label,
+                "evaluation_fragment_relative_threshold": fragment_relative_threshold,
                 "evaluation_ion_h_top_k": top_k,
                 "evaluation_joint_channel_relative_threshold": joint_relative_threshold,
                 "eval_split": args.eval_split,

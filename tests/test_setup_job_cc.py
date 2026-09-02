@@ -230,6 +230,7 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
             "--script_kwargs",
             "model_ckpt=saved_ckpts/model.ckpt",
             "custom_fp=config/custom.yml",
+            "fragment_relative_thresholds=0 0.01",
             "ion_h_top_ks=0 4",
             "joint_relative_thresholds=",
             "output_fp=output/eval/result.csv",
@@ -250,6 +251,7 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     assert "if [[ ! -f ${WORKING_DIR}/saved_ckpts/model.ckpt ]]; then" in script
     assert "ERROR: checkpoint was not staged" in script
     assert "--model_ckpt saved_ckpts/model.ckpt" in script
+    assert "--fragment_relative_thresholds 0 0.01" in script
     assert "--ion_h_top_ks 0 4" in script
     assert f"mkdir -p {project}/output/eval" in script
     assert (
