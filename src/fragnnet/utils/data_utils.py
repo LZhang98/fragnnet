@@ -178,6 +178,11 @@ def rdkit_ml_standardize(
 
     # Step 1: Normalize and reionize — skip MetalDisconnector (would strip covalent C–metal bonds)
     mol = rdMolStandardize.Normalize(mol)
+    phosphorus_oxide_normalizer = rdMolStandardize.NormalizerFromData(
+        "Phosphorus oxide\t[P+:1]-[O-:2]>>[P+0:1]=[O+0:2]\n",
+        rdMolStandardize.CleanupParameters(),
+    )
+    mol = phosphorus_oxide_normalizer.normalize(mol)
     mol = rdMolStandardize.Reionize(mol)
 
     # Step 2: Get the parent fragment

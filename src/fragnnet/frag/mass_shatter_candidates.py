@@ -1084,9 +1084,10 @@ def build_mass_shatter_candidates(
     # whose difference is exactly logit.
     probability_start = perf_counter()
     base_log_probabilities = F.logsigmoid(-bond_logits)
+    probability_logits = bond_logits.to(base_log_probabilities)
     molecule_log_probabilities = th.zeros(
         (num_molecules,) if num_mixtures == 1 else (num_molecules, num_mixtures),
-        dtype=bond_logits.dtype,
+        dtype=base_log_probabilities.dtype,
         device=device,
     )
     if bond_logits.numel() > 0:
@@ -1100,7 +1101,7 @@ def build_mass_shatter_candidates(
         mask_log_probabilities = mask_log_probabilities.index_add(
             0,
             mask_indices_t,
-            bond_logits[broken_bond_indices_t],
+            probability_logits[broken_bond_indices_t],
         )
     if num_mixtures > 1:
         if mixture_log_weights is None:
