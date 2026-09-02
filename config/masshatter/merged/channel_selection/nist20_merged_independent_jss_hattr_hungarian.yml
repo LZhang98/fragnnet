@@ -28,8 +28,13 @@ wandb_tags:
   - adduct_embed
   - proposal_selection_only
   - proposal_loss_0.1
+  - proposal_mixtures_1
+  - proposal_intensity_transform_none
   - candidate_conditional
   - separate_proposal_encoder
+  - intensity_atom_decoder_layers_4
+  - h_selection_0.01
+  - mass_only_h_attribution
   - no_forced_single_cuts
   - charge_logsumexp
 
@@ -84,6 +89,8 @@ mass_shatter_metadata_embedding_dim: 32
 mass_shatter_head_hidden_dim: 512
 mass_shatter_head_dropout: 0.1
 mass_shatter_bond_num_layers: 3
+mass_shatter_proposal_num_mixtures: 1
+mass_shatter_intensity_atom_decoder_num_layers: 4
 mass_shatter_intensity_transformer_dim: 384
 mass_shatter_intensity_transformer_num_layers: 3
 mass_shatter_intensity_transformer_num_heads: 8
@@ -98,12 +105,14 @@ mass_shatter_base_ce_weight: 0.0
 mass_shatter_detach_base_ion_h: True
 mass_shatter_proposal_selection_only: True
 mass_shatter_proposal_loss_weight: 0.1
+mass_shatter_proposal_ints_transform: none
 mass_shatter_separate_proposal_encoder: True
 mass_shatter_separate_ion_h_support_head: True
-mass_shatter_min_ion_h_relative_probability: 0.0
+mass_shatter_min_ion_h_relative_probability: 0.01
 mass_shatter_ion_h_support_loss_weight: 0.1
 mass_shatter_apply_channel_selection_in_training: False
 mass_shatter_channel_support_attribution: hungarian
+mass_shatter_channel_support_use_intensity_prior: False
 mass_shatter_channel_diagnostics: True
 
 # 3. Optimize nonnegative, non-normalized peak intensities with the configured

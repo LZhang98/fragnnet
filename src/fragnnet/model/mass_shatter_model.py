@@ -164,12 +164,16 @@ def _relative_channel_keep_mask(
     logits: th.Tensor,
     valid_mask: th.Tensor,
     min_relative_probability: float,
+    *,
+    binary_logits: bool = False,
 ) -> th.Tensor:
-    """Apply a per-fragment MAP-relative floor over valid ion channels."""
+    """Apply a per-fragment MAP-relative probability floor over valid ion channels."""
     if logits.shape != valid_mask.shape or valid_mask.dtype != th.bool or logits.ndim < 2:
         raise ValueError("logits and valid_mask must have matching rank-2-or-higher shapes")
     if not math.isfinite(min_relative_probability) or not 0.0 <= min_relative_probability <= 1.0:
         raise ValueError("min_relative_probability must be finite and in [0, 1]")
+    if not isinstance(binary_logits, bool):
+        raise ValueError("binary_logits must be boolean")
     flat_valid = valid_mask.flatten(start_dim=1)
     _validate_tensor_condition(
         flat_valid.any(dim=1).all(),
@@ -177,7 +181,8 @@ def _relative_channel_keep_mask(
     )
     if min_relative_probability == 0.0:
         return valid_mask.clone()
-    flat_logits = logits.detach().flatten(start_dim=1)
+    log_scores = F.logsigmoid(logits) if binary_logits else logits
+    flat_logits = log_scores.detach().flatten(start_dim=1)
     map_logits = flat_logits.masked_fill(~flat_valid, -th.inf).max(dim=1).values
     keep = flat_valid & (
         flat_logits >= map_logits.unsqueeze(1) + math.log(min_relative_probability)
@@ -2170,6 +2175,7 @@ class MassShatterModel(nn.Module):
                 ion_mode_proposal_logits,
                 valid_ion_modes,
                 self.min_ion_mode_relative_probability,
+                binary_logits=learned_ion_mode_proposal_logits is not None,
             )
             if apply_selection
             else valid_ion_modes
@@ -2186,6 +2192,7 @@ class MassShatterModel(nn.Module):
                 ion_h_support_logits,
                 mode_selected_channels,
                 self.min_ion_h_relative_probability,
+                binary_logits=self.intensity_head.ion_h_support_head is not None,
             )
         else:
             spectral_output_channels = valid_channels

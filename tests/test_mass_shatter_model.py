@@ -164,6 +164,22 @@ def test_relative_channel_keep_mask_is_per_fragment() -> None:
     assert th.equal(_relative_channel_keep_mask(logits, valid, 0.0), valid)
 
 
+def test_relative_channel_keep_mask_uses_probabilities_for_binary_logits() -> None:
+    logits = th.tensor([[[10.0, 5.0]]])
+    valid = th.ones_like(logits, dtype=th.bool)
+
+    probability_keep = _relative_channel_keep_mask(
+        logits,
+        valid,
+        0.01,
+        binary_logits=True,
+    )
+    odds_keep = _relative_channel_keep_mask(logits, valid, 0.01)
+
+    assert probability_keep.tolist() == [[[True, True]]]
+    assert odds_keep.tolist() == [[[True, False]]]
+
+
 def test_fixed_top_k_channel_keep_mask_is_stable_and_per_fragment() -> None:
     logits = th.tensor([[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], [[3.0, 2.0, 1.0], [0.0, 0.0, 0.0]]])
     valid = th.tensor(

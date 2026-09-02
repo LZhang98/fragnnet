@@ -66,7 +66,7 @@ def sparse_peak_list_distance(
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
     decimals: int = 4,
-    kl_epsilon: float = 1e-8,
+    kl_epsilon: float = 1e-4,
 ) -> tuple[th.Tensor, th.Tensor]:
     """Compare sparse peak lists without an m/z probability density.
 
@@ -92,8 +92,8 @@ def sparse_peak_list_distance(
         tol_per_sample: Optional relative tolerance per spectrum.
         min_mz_per_sample: Optional relative-tolerance floor per spectrum.
         decimals: Decimal precision for numerical exact-mass coalescing.
-        kl_epsilon: Positive smoothing added to both distributions for
-            Kullback-Leibler divergence.
+        kl_epsilon: Fraction of the predicted distribution replaced by the
+            observed distribution before Kullback-Leibler divergence.
 
     Returns:
         Two per-spectrum vectors: primary distance and squared entropy mismatch.
@@ -106,8 +106,8 @@ def sparse_peak_list_distance(
         raise ValueError(f"unknown peak-list objective: {objective}")
     if matching not in {"closest", "hungarian"}:
         raise ValueError(f"unknown peak-list matching mode: {matching}")
-    if not math.isfinite(kl_epsilon) or kl_epsilon <= 0.0:
-        raise ValueError("kl_epsilon must be finite and positive")
+    if not math.isfinite(kl_epsilon) or not 0.0 < kl_epsilon < 1.0:
+        raise ValueError("kl_epsilon must be finite and in (0, 1)")
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     tensors = {
@@ -211,18 +211,31 @@ def sparse_peak_list_distance(
                 matched_true_indices = feasible_distances.argmin(dim=0)
                 matched_pred_indices = th.where(feasible_predictions)[0]
         elif match_mask.any():
+            feasible_true = match_mask.any(dim=1)
+            feasible_pred = match_mask.any(dim=0)
+            feasible_true_indices = th.where(feasible_true)[0]
+            feasible_pred_indices = th.where(feasible_pred)[0]
+            feasible_match_mask = match_mask[feasible_true][:, feasible_pred]
+            feasible_mass_distance = mass_distance[feasible_true][:, feasible_pred]
             # Invalid pairs receive a cost larger than every possible sum of valid
             # distances, so assignment first maximizes valid cardinality and then
-            # minimizes total m/z distance. Intensities never enter this decision.
-            invalid_cost = (mass_distance.max().detach() + 1.0) * (min(match_mask.shape) + 1)
-            assignment_cost = mass_distance.masked_fill(~match_mask, invalid_cost)
+            # minimizes total m/z distance. Drop isolated rows and columns before
+            # solving because MASShatter usually has many candidates outside every
+            # observed peak's tolerance window.
+            invalid_cost = (feasible_mass_distance.max().detach() + 1.0) * (
+                min(feasible_match_mask.shape) + 1
+            )
+            assignment_cost = feasible_mass_distance.masked_fill(
+                ~feasible_match_mask,
+                invalid_cost,
+            )
             row_indices, column_indices = linear_sum_assignment(
                 assignment_cost.detach(),
                 maximize=False,
             )
-            valid_assignments = match_mask[row_indices, column_indices]
-            matched_true_indices = row_indices[valid_assignments]
-            matched_pred_indices = column_indices[valid_assignments]
+            valid_assignments = feasible_match_mask[row_indices, column_indices]
+            matched_true_indices = feasible_true_indices[row_indices[valid_assignments]]
+            matched_pred_indices = feasible_pred_indices[column_indices[valid_assignments]]
 
         pred_at_true = batch_pred_intensities.new_zeros(batch_true_intensities.shape)
         if matched_pred_indices.numel() > 0:
@@ -249,19 +262,19 @@ def sparse_peak_list_distance(
             dim=0,
         )
 
+        distance_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
+        if distance_dtype in {th.float16, th.bfloat16}:
+            distance_dtype = th.float32
+        distance_pred = aligned_pred.to(dtype=distance_dtype)
+        distance_true = aligned_true.to(dtype=distance_dtype)
         if objective == "cosine_distance":
-            cosine_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
-            if cosine_dtype in {th.float16, th.bfloat16}:
-                cosine_dtype = th.float32
-            cosine_pred = aligned_pred.to(dtype=cosine_dtype)
-            cosine_true = aligned_true.to(dtype=cosine_dtype)
-            similarity = th.dot(cosine_pred, cosine_true) / (
-                th.linalg.vector_norm(cosine_pred) * th.linalg.vector_norm(cosine_true)
+            similarity = th.dot(distance_pred, distance_true) / (
+                th.linalg.vector_norm(distance_pred) * th.linalg.vector_norm(distance_true)
             )
             primary_losses[batch_index] = 1.0 - similarity
         elif objective == "jss_distance":
-            pred_distribution = aligned_pred / aligned_pred.sum()
-            true_distribution = aligned_true / aligned_true.sum()
+            pred_distribution = distance_pred / distance_pred.sum()
+            true_distribution = distance_true / distance_true.sum()
             mixture = 0.5 * (pred_distribution + true_distribution)
 
             def x_log_x(values: th.Tensor) -> th.Tensor:
@@ -274,18 +287,25 @@ def sparse_peak_list_distance(
             )
             primary_losses[batch_index] = divergence / log_two
         else:
-            pred_distribution = aligned_pred / aligned_pred.sum()
-            true_distribution = aligned_true / aligned_true.sum()
-            pred_distribution = pred_distribution + kl_epsilon
-            pred_distribution = pred_distribution / pred_distribution.sum()
-            true_distribution = true_distribution + kl_epsilon
-            true_distribution = true_distribution / true_distribution.sum()
+            pred_distribution = distance_pred / distance_pred.sum()
+            true_distribution = distance_true / distance_true.sum()
+            # Reserve a fixed total epsilon mass for observed support. Unlike adding
+            # epsilon per aligned entry, this remains invariant when the same unmatched
+            # intensity is split across more predicted peaks.
+            smoothed_pred_distribution = (
+                1.0 - kl_epsilon
+            ) * pred_distribution + kl_epsilon * true_distribution
+            positive_true = true_distribution > 0.0
             primary_losses[batch_index] = (
-                true_distribution * (true_distribution.log() - pred_distribution.log())
+                true_distribution[positive_true]
+                * (
+                    true_distribution[positive_true].log()
+                    - smoothed_pred_distribution[positive_true].log()
+                )
             ).sum()
 
-        pred_distribution = aligned_pred / aligned_pred.sum()
-        true_distribution = aligned_true / aligned_true.sum()
+        pred_distribution = distance_pred / distance_pred.sum()
+        true_distribution = distance_true / distance_true.sum()
         pred_entropy = -(
             pred_distribution
             * pred_distribution.clamp_min(th.finfo(pred_distribution.dtype).tiny).log()

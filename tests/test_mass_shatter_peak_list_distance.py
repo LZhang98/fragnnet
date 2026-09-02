@@ -194,7 +194,7 @@ def test_kl_smoothing_keeps_missing_predicted_support_finite() -> None:
         matching="hungarian",
         tolerance=0.01,
         relative=False,
-        kl_epsilon=1e-8,
+        kl_epsilon=1e-4,
     )
 
     assert th.isfinite(primary).all()
@@ -204,9 +204,96 @@ def test_kl_smoothing_keeps_missing_predicted_support_finite() -> None:
     assert th.isfinite(pred_intensities.grad).all()
 
 
-@pytest.mark.parametrize(
-    "objective", ["cosine_distance", "jss_distance", "kl_distance"]
-)
+def test_kl_smoothing_does_not_reward_splitting_unmatched_intensity() -> None:
+    losses = []
+    for unmatched_peak_count in (1, 1_000):
+        pred_mzs = th.cat(
+            [
+                th.tensor([100.0]),
+                th.arange(unmatched_peak_count, dtype=th.float32) + 200.0,
+            ]
+        )
+        pred_intensities = th.cat(
+            [
+                th.tensor([0.5]),
+                th.full((unmatched_peak_count,), 0.5 / unmatched_peak_count),
+            ]
+        )
+        primary, _ = sparse_peak_list_distance(
+            th.tensor([100.0]),
+            th.tensor([1.0]),
+            th.tensor([0]),
+            pred_mzs,
+            pred_intensities,
+            th.zeros(unmatched_peak_count + 1, dtype=th.long),
+            objective="kl_distance",
+            matching="hungarian",
+            tolerance=0.01,
+            relative=False,
+            kl_epsilon=1e-4,
+        )
+        losses.append(primary)
+
+    assert th.allclose(losses[0], losses[1], atol=1e-6)
+
+
+@pytest.mark.parametrize("pred_dtype", [th.float16, th.bfloat16])
+def test_kl_smoothing_is_stable_for_mixed_precision_predictions(
+    pred_dtype: th.dtype,
+) -> None:
+    pred_intensities = th.tensor(
+        [1.0, 0.0],
+        dtype=pred_dtype,
+        requires_grad=True,
+    )
+    primary, _ = sparse_peak_list_distance(
+        th.tensor([100.0, 150.0]),
+        th.tensor([0.5, 0.5]),
+        th.tensor([0, 0]),
+        th.tensor([100.0, 150.0]),
+        pred_intensities,
+        th.tensor([0, 0]),
+        objective="kl_distance",
+        matching="hungarian",
+        tolerance=0.01,
+        relative=False,
+        kl_epsilon=1e-4,
+    )
+    primary.sum().backward()
+
+    assert th.isfinite(primary).all()
+    assert pred_intensities.grad is not None
+    assert th.isfinite(pred_intensities.grad).all()
+
+
+def test_hungarian_drops_candidates_outside_all_tolerance_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_shapes: list[th.Size] = []
+
+    def assignment(cost: th.Tensor, *, maximize: bool) -> tuple[th.Tensor, th.Tensor]:
+        observed_shapes.append(cost.shape)
+        assert not maximize
+        return th.tensor([0]), th.tensor([0])
+
+    monkeypatch.setattr("fragnnet.model.loss.linear_sum_assignment", assignment)
+    sparse_peak_list_distance(
+        th.tensor([100.0]),
+        th.tensor([1.0]),
+        th.tensor([0]),
+        th.tensor([100.0, 200.0, 300.0]),
+        th.ones(3),
+        th.zeros(3, dtype=th.long),
+        objective="jss_distance",
+        matching="hungarian",
+        tolerance=0.01,
+        relative=False,
+    )
+
+    assert observed_shapes == [th.Size([1, 1])]
+
+
+@pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
 def test_instrument_tolerance_is_passed_to_peak_matching(objective: str) -> None:
     primary, _ = sparse_peak_list_distance(
         th.tensor([100.0, 100.0]),

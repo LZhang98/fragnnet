@@ -47,6 +47,33 @@ def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
     return MassShatterPL(**config), config
 
 
+def test_merged_independent_distance_configs_enable_requested_model() -> None:
+    config_dir = (
+        Path(__file__).parents[1] / "config" / "masshatter" / "merged" / "channel_selection"
+    )
+    config_paths = sorted(config_dir.glob("nist20_merged_independent_*_hattr_*.yml"))
+
+    assert len(config_paths) == 6
+    for config_path in config_paths:
+        with config_path.open() as config_file:
+            config = yaml.safe_load(config_file)
+        assert config["mass_shatter_peak_matching"] == "hungarian"
+        assert config["mass_shatter_min_ion_h_relative_probability"] == pytest.approx(0.01)
+        assert config["mass_shatter_apply_channel_selection_in_training"] is False
+        assert config["mass_shatter_channel_support_use_intensity_prior"] is False
+        assert config["mass_shatter_proposal_num_mixtures"] == 1
+        assert config["mass_shatter_intensity_atom_decoder_num_layers"] == 4
+        assert config["mass_shatter_proposal_ints_transform"] == "none"
+        if config["loss_type"] == "kl_distance":
+            assert config["mass_shatter_kl_epsilon"] == pytest.approx(1.0e-4)
+
+
+@pytest.mark.parametrize("precision", [16, "16", "16-mixed"])
+def test_kl_distance_rejects_fp16_mixed_precision(precision: int | str) -> None:
+    with pytest.raises(ValueError, match="does not support FP16 mixed precision"):
+        _build_pl(loss_type="kl_distance", precision=precision)
+
+
 def _loss_diagnostics() -> dict[str, th.Tensor]:
     return {
         "retained_mask_probability": th.tensor([0.8]),
@@ -143,6 +170,29 @@ def test_gaussian_posterior_splits_ambiguous_peak_by_channel_prior() -> None:
     assert not targets.requires_grad
 
 
+def test_gaussian_posterior_can_ignore_predicted_intensity_prior() -> None:
+    channel_mzs = th.tensor([[[99.99, 100.01]]], dtype=th.float64)
+    channel_weights = th.tensor([[[0.8, 0.2]]], requires_grad=True)
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([100.0]),
+        true_batch_idxs=th.tensor([0]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=channel_weights.log(),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.02,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="gaussian_posterior",
+        use_intensity_prior=False,
+    )
+
+    assert targets.flatten().tolist() == pytest.approx([0.5, 0.5])
+    assert not targets.requires_grad
+
+
 def test_hungarian_channel_attribution_is_hard_one_to_one() -> None:
     channel_mzs = th.tensor([[[100.0, 100.004, 101.0]]])
 
@@ -161,6 +211,39 @@ def test_hungarian_channel_attribution_is_hard_one_to_one() -> None:
     )
 
     assert targets.tolist() == [[[1.0, 0.0, 1.0]]]
+
+
+def test_hungarian_channel_attribution_drops_infeasible_channels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_shapes: list[th.Size] = []
+
+    def assignment(cost: th.Tensor, *, maximize: bool) -> tuple[th.Tensor, th.Tensor]:
+        observed_shapes.append(cost.shape)
+        assert not maximize
+        return th.tensor([0]), th.tensor([0])
+
+    monkeypatch.setattr(
+        "fragnnet.pl_model.mass_shatter_pl.linear_sum_assignment",
+        assignment,
+    )
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([100.0]),
+        true_batch_idxs=th.tensor([0]),
+        channel_mzs=th.tensor([[[100.0, 200.0, 300.0]]]),
+        channel_log_weights=th.zeros(1, 1, 3),
+        chemical_valid_channels=th.ones(1, 1, 3, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="hungarian",
+        use_intensity_prior=False,
+    )
+
+    assert observed_shapes == [th.Size([1, 1])]
+    assert targets.tolist() == [[[1.0, 0.0, 0.0]]]
 
 
 def test_balanced_support_loss_handles_single_class_spectra() -> None:
@@ -741,6 +824,41 @@ def test_selection_only_loss_skips_unrequested_channel_diagnostics(
     actual["loss"].sum().backward()
     assert proposal_fragment_probabilities.grad is not None
     assert proposal_fragment_probabilities.grad.abs().sum() > 0.0
+
+
+def test_proposal_target_can_use_a_different_intensity_transform() -> None:
+    model, _ = _build_pl(
+        ints_transform="sqrt",
+        mass_shatter_proposal_ints_transform="none",
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+    )
+    transformed_true_probabilities = th.tensor([0.75, 0.25])
+    proposal_fragment_probabilities = th.tensor([0.8, 0.2])
+
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0, 200.0]),
+        true_logprobs=transformed_true_probabilities.log(),
+        true_intensities=transformed_true_probabilities,
+        true_batch_idxs=th.tensor([0, 0]),
+        pred_mzs=th.tensor([100.0, 200.0]),
+        pred_logprobs=transformed_true_probabilities.log(),
+        pred_batch_idxs=th.tensor([0, 0]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
+        proposal_candidate_mzs=th.tensor([100.0, 200.0]),
+        proposal_candidate_fragment_idxs=th.tensor([0, 1]),
+        proposal_fragment_logprobs=proposal_fragment_probabilities.log(),
+        proposal_fragment_batch_idxs=th.tensor([0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+
+    raw_true_probabilities = th.tensor([0.9, 0.1])
+    expected = -(raw_true_probabilities * proposal_fragment_probabilities.log()).sum()
+    assert actual["proposal_loss"].item() == pytest.approx(expected.item())
 
 
 def test_requested_channel_diagnostics_are_computed_during_training() -> None:

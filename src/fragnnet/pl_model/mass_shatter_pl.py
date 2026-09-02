@@ -35,7 +35,11 @@ from fragnnet.model.loss import (
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.spec_utils import calculate_match_mzs, linear_sum_assignment
+from fragnnet.utils.spec_utils import (
+    calculate_match_mzs,
+    get_ints_transform_func,
+    linear_sum_assignment,
+)
 
 _CUT_COUNT_BUCKETS = {
     "0": lambda cut_counts: cut_counts == 0,
@@ -346,15 +350,16 @@ def _observational_channel_targets(
     relative: bool,
     tolerance_min_mz: float,
     attribution: Literal["gaussian_posterior", "hungarian"],
+    use_intensity_prior: bool = True,
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
 ) -> th.Tensor:
     """Attribute observed peaks to chemically valid ion/H channels.
 
     ``gaussian_posterior`` returns FraGNNet-style mixture responsibilities. For each
-    observed peak, the detached channel prior is multiplied by a Gaussian mass-error
-    likelihood and normalized over matching channels. ``hungarian`` converts the same
-    pairwise likelihood into a hard one-to-one peak/channel assignment.
+    observed peak, an optional detached channel prior is multiplied by a Gaussian
+    mass-error likelihood and normalized over matching channels. ``hungarian`` converts
+    the same pairwise likelihood into a hard one-to-one peak/channel assignment.
     """
     if channel_mzs.shape != chemical_valid_channels.shape or channel_mzs.ndim != 3:
         raise ValueError("channel masses and validity must be aligned rank-3 tensors")
@@ -366,6 +371,8 @@ def _observational_channel_targets(
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     if attribution not in {"gaussian_posterior", "hungarian"}:
         raise ValueError(f"unknown channel support attribution: {attribution}")
+    if not isinstance(use_intensity_prior, bool):
+        raise ValueError("use_intensity_prior must be boolean")
     if not bool(th.isfinite(channel_log_weights[chemical_valid_channels]).all().item()):
         raise ValueError("valid channels must have finite log weights")
     targets = channel_log_weights.new_zeros(channel_log_weights.shape)
@@ -379,6 +386,9 @@ def _observational_channel_targets(
             raise ValueError(f"spectrum {batch_index} has no proposed fragments")
         valid_mzs = channel_mzs[fragment_mask][valid_mask]
         valid_log_weights = channel_log_weights[fragment_mask][valid_mask].detach()
+        channel_log_priors = (
+            valid_log_weights if use_intensity_prior else th.zeros_like(valid_log_weights)
+        )
         if tol_per_sample is None:
             channel_match = calculate_match_mzs(
                 batch_true_mzs,
@@ -420,7 +430,7 @@ def _observational_channel_targets(
         mass_log_likelihood = (
             -0.5 * (mass_errors / channel_stds[None, :]) ** 2 - th.log(channel_stds)[None, :]
         ).to(valid_log_weights)
-        pair_log_likelihood = valid_log_weights[None, :] + mass_log_likelihood
+        pair_log_likelihood = channel_log_priors[None, :] + mass_log_likelihood
         valid_targets = valid_log_weights.new_zeros(valid_log_weights.shape)
         if attribution == "gaussian_posterior":
             matched_peaks = channel_match.any(dim=1)
@@ -436,17 +446,23 @@ def _observational_channel_targets(
                 # responsibility if overlapping observed tolerance windows occur.
                 valid_targets = responsibilities.amax(dim=0)
         elif channel_match.any():
-            valid_pair_scores = pair_log_likelihood[channel_match]
-            pair_cost = valid_pair_scores.max() - pair_log_likelihood
-            max_valid_cost = pair_cost[channel_match].max()
-            invalid_cost = (max_valid_cost + 1.0) * (min(channel_match.shape) + 1)
-            assignment_cost = pair_cost.masked_fill(~channel_match, invalid_cost)
+            feasible_peaks = channel_match.any(dim=1)
+            feasible_channels = channel_match.any(dim=0)
+            feasible_channel_indices = th.where(feasible_channels)[0]
+            feasible_match = channel_match[feasible_peaks][:, feasible_channels]
+            feasible_pair_log_likelihood = pair_log_likelihood[feasible_peaks][:, feasible_channels]
+            valid_pair_scores = feasible_pair_log_likelihood[feasible_match]
+            pair_cost = valid_pair_scores.max() - feasible_pair_log_likelihood
+            max_valid_cost = pair_cost[feasible_match].max()
+            invalid_cost = (max_valid_cost + 1.0) * (min(feasible_match.shape) + 1)
+            assignment_cost = pair_cost.masked_fill(~feasible_match, invalid_cost)
             peak_indices, channel_indices = linear_sum_assignment(
                 assignment_cost.detach(),
                 maximize=False,
             )
-            assigned_valid = channel_match[peak_indices, channel_indices]
-            valid_targets[channel_indices[assigned_valid]] = 1.0
+            assigned_valid = feasible_match[peak_indices, channel_indices]
+            matched_channel_indices = feasible_channel_indices[channel_indices[assigned_valid]]
+            valid_targets[matched_channel_indices] = 1.0
 
         batch_targets = targets.new_zeros(valid_mask.shape)
         batch_targets[valid_mask] = valid_targets
@@ -1107,6 +1123,15 @@ class MassShatterPL(SpectrumPL):
             raise ValueError(
                 "mass_shatter_channel_support_attribution must be gaussian_posterior or hungarian"
             )
+        if not isinstance(
+            self.hparams.mass_shatter_channel_support_use_intensity_prior,
+            bool,
+        ):
+            raise ValueError("mass_shatter_channel_support_use_intensity_prior must be boolean")
+        proposal_ints_transform = self.hparams.mass_shatter_proposal_ints_transform
+        proposal_ints_transform_func = None
+        if proposal_ints_transform != "same":
+            proposal_ints_transform_func = get_ints_transform_func(proposal_ints_transform)
         if (
             not math.isfinite(self.hparams.mass_shatter_intensity_entropy_match_weight)
             or self.hparams.mass_shatter_intensity_entropy_match_weight < 0.0
@@ -1116,9 +1141,17 @@ class MassShatterPL(SpectrumPL):
             )
         if (
             not math.isfinite(self.hparams.mass_shatter_kl_epsilon)
-            or self.hparams.mass_shatter_kl_epsilon <= 0.0
+            or not 0.0 < self.hparams.mass_shatter_kl_epsilon < 1.0
         ):
-            raise ValueError("mass_shatter_kl_epsilon must be finite and positive")
+            raise ValueError("mass_shatter_kl_epsilon must be finite and in (0, 1)")
+        if self.hparams.loss_type == "kl_distance" and self.hparams.precision in {
+            16,
+            "16",
+            "16-mixed",
+        }:
+            raise ValueError(
+                "kl_distance does not support FP16 mixed precision; use precision 32 or bf16"
+            )
         if not self.hparams.sparse_cosine_similarity or not self.hparams.sum_ints:
             raise ValueError("MASShatter requires sparse_cosine_similarity and sum_ints")
         if self.hparams.ce_pair_min_endpoint_reliability is not None:
@@ -1356,6 +1389,21 @@ class MassShatterPL(SpectrumPL):
                     raise ValueError("loss input is missing predicted intensity values")
                 pred_intensities = pred_logprobs.exp()
             true_intensities = kwargs.get("true_intensities", true_logprobs.exp())
+            proposal_true_intensities = true_intensities
+            proposal_true_logprobs = true_logprobs
+            if proposal_ints_transform_func is not None:
+                proposal_true_intensities = self.ints_untransform_func(
+                    true_intensities,
+                    true_batch_idxs,
+                )
+                proposal_true_intensities = proposal_ints_transform_func(proposal_true_intensities)
+                proposal_true_intensities = self.ints_normalize_func(
+                    proposal_true_intensities,
+                    true_batch_idxs,
+                )
+                proposal_true_logprobs = proposal_true_intensities.clamp_min(
+                    th.finfo(proposal_true_intensities.dtype).tiny
+                ).log()
             prediction_reference = pred_logprobs if pred_logprobs is not None else pred_intensities
             spectrum_ce = None
             entropy_match = None
@@ -1379,7 +1427,7 @@ class MassShatterPL(SpectrumPL):
                 primary_loss = spectrum_ce
                 candidate_wrecall = _candidate_weighted_recall(
                     true_mzs=true_mzs,
-                    true_ints=true_intensities,
+                    true_ints=proposal_true_intensities,
                     true_batch_idxs=true_batch_idxs,
                     candidate_mzs=kwargs["candidate_mzs_by_cut"],
                     candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
@@ -1410,7 +1458,7 @@ class MassShatterPL(SpectrumPL):
                 )
                 coverage = _candidate_coverage_by_cut_count(
                     true_mzs=true_mzs,
-                    true_ints=true_intensities,
+                    true_ints=proposal_true_intensities,
                     true_batch_idxs=true_batch_idxs,
                     candidate_mzs=kwargs["candidate_mzs_by_cut"],
                     candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
@@ -1452,6 +1500,9 @@ class MassShatterPL(SpectrumPL):
                     relative=self.relative,
                     tolerance_min_mz=self.tolerance_min_mz,
                     attribution=(self.hparams.mass_shatter_channel_support_attribution),
+                    use_intensity_prior=(
+                        self.hparams.mass_shatter_channel_support_use_intensity_prior
+                    ),
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
@@ -1500,7 +1551,7 @@ class MassShatterPL(SpectrumPL):
             if proposal_loss_enabled:
                 proposal_loss_kwargs = {
                     "true_mzs": true_mzs,
-                    "true_logprobs": true_logprobs,
+                    "true_logprobs": proposal_true_logprobs,
                     "true_batch_idxs": true_batch_idxs,
                     "candidate_mzs": kwargs["proposal_candidate_mzs"],
                     "candidate_fragment_idxs": kwargs["proposal_candidate_fragment_idxs"],

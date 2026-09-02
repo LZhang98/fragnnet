@@ -230,8 +230,8 @@ mass_shatter_intensity_output: probability  # ["probability", "independent"]
 # Direct peak-list losses always coalesce numerical exact masses to four decimals,
 # then use one of these m/z-only correspondence rules inside instrument tolerance.
 mass_shatter_peak_matching: closest  # ["closest", "hungarian"]
-# Epsilon added to both aligned distributions before Kullback-Leibler(true || predicted).
-mass_shatter_kl_epsilon: 1.0e-8
+# Fraction of predicted mass replaced by observed mass for stable KL(true || predicted).
+mass_shatter_kl_epsilon: 1.0e-4
 mass_shatter_intensity_entropy_match_weight: 0.0
 mass_shatter_use_mask_residuals: True  # False keeps original proposal mask probabilities.
 # Proposal-anchored mode keeps base-plus-residual scoring but hides the base
@@ -257,6 +257,9 @@ mass_shatter_proposal_loss_weight: 0.0
 # Give every retained target peak equal weight in the proposal-support loss. This
 # affects proposal ranking only; the primary spectrum loss remains intensity-aware.
 mass_shatter_proposal_barcode_target: False
+# Proposal-target intensity transform. "same" preserves historical behavior by
+# reusing ints_transform; another standard transform is applied independently.
+mass_shatter_proposal_ints_transform: same
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
@@ -269,6 +272,9 @@ mass_shatter_ion_h_support_loss_weight: 0.0
 mass_shatter_apply_channel_selection_in_training: False
 # Assign observed-peak evidence to the dense channel-selection support.
 mass_shatter_channel_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+# Historical attribution uses detached intensity predictions as channel priors.
+# False makes support targets depend only on observed and candidate m/z values.
+mass_shatter_channel_support_use_intensity_prior: True
 # Compute dense observational channel metrics even without a support loss.
 mass_shatter_channel_diagnostics: False
 # Experimental ablation: reuse one CE-independent proposal pass for spectra from the
