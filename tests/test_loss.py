@@ -23,7 +23,30 @@ from fragnnet.model.loss import (
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
+    sparse_peak_list_distance,
 )
+
+
+@pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
+def test_peak_list_distances_normalize_intensity_scale(objective: str) -> None:
+    common = {
+        "true_mzs": th.tensor([100.0, 150.0]),
+        "true_intensities": th.tensor([1.0, 1.0]),
+        "true_batch_idxs": th.tensor([0, 0]),
+        "pred_mzs": th.tensor([100.0, 150.0]),
+        "pred_batch_idxs": th.tensor([0, 0]),
+        "objective": objective,
+        "matching": "hungarian",
+        "tolerance": 0.01,
+        "relative": False,
+    }
+
+    distance, _ = sparse_peak_list_distance(pred_intensities=th.tensor([1.0, 3.0]), **common)
+    scaled_distance, _ = sparse_peak_list_distance(
+        pred_intensities=th.tensor([100.0, 300.0]), **common
+    )
+
+    assert th.allclose(distance, scaled_distance)
 
 
 def _precursor_pair_inputs() -> dict:
@@ -152,9 +175,7 @@ class TestCESwitchPairBCE:
     def test_prediction_aliases_are_aggregated(self):
         inputs = _ce_switch_inputs()
         inputs["pred_mzs"] = th.tensor([100.0, 100.001, 200.0, 100.0, 200.0])
-        inputs["pred_logprobs"] = th.log(
-            th.tensor([0.3, 0.3, 0.4, 0.4, 0.6])
-        ).requires_grad_()
+        inputs["pred_logprobs"] = th.log(th.tensor([0.3, 0.3, 0.4, 0.4, 0.6])).requires_grad_()
         inputs["pred_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
 
         loss, eligible = ce_switch_pair_bce(**inputs)
@@ -207,9 +228,7 @@ class TestCESwitchPairBCE:
 
     def test_observed_aliases_are_merged_before_winner_selection(self):
         inputs = _ce_switch_inputs()
-        inputs["true_mzs"] = th.tensor(
-            [100.0, 100.001, 200.0, 100.0, 200.0]
-        )
+        inputs["true_mzs"] = th.tensor([100.0, 100.001, 200.0, 100.0, 200.0])
         inputs["true_ints"] = th.tensor([0.3, 0.3, 0.4, 0.3, 0.7])
         inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
 
@@ -220,9 +239,7 @@ class TestCESwitchPairBCE:
 
     def test_non_disjoint_observed_aliases_skip_transition(self):
         inputs = _ce_switch_inputs()
-        inputs["true_mzs"] = th.tensor(
-            [100.0, 100.0015, 100.003, 200.0, 100.0, 200.0]
-        )
+        inputs["true_mzs"] = th.tensor([100.0, 100.0015, 100.003, 200.0, 100.0, 200.0])
         inputs["true_ints"] = th.tensor([0.4, 0.3, 0.2, 0.1, 0.3, 0.7])
         inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 0, 1, 1])
 

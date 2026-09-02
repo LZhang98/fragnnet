@@ -261,7 +261,15 @@ def test_candidate_metric_wrapper_does_not_repeat_loss_wrecall() -> None:
 
 
 @pytest.mark.parametrize("matching", ["closest", "hungarian"])
-def test_independent_peak_list_loss_avoids_gaussian_ce(matching: str) -> None:
+@pytest.mark.parametrize(
+    "loss_type",
+    [
+        "cosine_distance",
+        "jss_distance",
+        "kl_distance",
+    ],
+)
+def test_independent_peak_list_loss_avoids_gaussian_ce(matching: str, loss_type: str) -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
         mass_shatter_proposal_anchored=True,
@@ -270,7 +278,7 @@ def test_independent_peak_list_loss_avoids_gaussian_ce(matching: str) -> None:
         mass_shatter_intensity_output="independent",
         mass_shatter_peak_matching=matching,
         mass_shatter_intensity_entropy_match_weight=0.1,
-        loss_type="cosine_distance",
+        loss_type=loss_type,
     )
     true_mzs = th.tensor([100.0, 150.0])
     true_intensities = th.tensor([0.75, 0.25])

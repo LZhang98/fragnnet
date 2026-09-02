@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # }
 
 
-def sparse_peak_list_loss(
+def sparse_peak_list_distance(
     true_mzs: th.Tensor,
     true_intensities: th.Tensor,
     true_batch_idxs: th.Tensor,
@@ -54,7 +54,11 @@ def sparse_peak_list_loss(
     pred_intensities: th.Tensor,
     pred_batch_idxs: th.Tensor,
     *,
-    objective: Literal["cosine", "jensen_shannon"],
+    objective: Literal[
+        "cosine_distance",
+        "jss_distance",
+        "kl_distance",
+    ],
     matching: Literal["closest", "hungarian"],
     tolerance: float = 1e-5,
     relative: bool = True,
@@ -62,6 +66,7 @@ def sparse_peak_list_loss(
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
     decimals: int = 4,
+    kl_epsilon: float = 1e-8,
 ) -> tuple[th.Tensor, th.Tensor]:
     """Compare sparse peak lists without an m/z probability density.
 
@@ -87,14 +92,22 @@ def sparse_peak_list_loss(
         tol_per_sample: Optional relative tolerance per spectrum.
         min_mz_per_sample: Optional relative-tolerance floor per spectrum.
         decimals: Decimal precision for numerical exact-mass coalescing.
+        kl_epsilon: Positive smoothing added to both distributions for
+            Kullback-Leibler divergence.
 
     Returns:
         Two per-spectrum vectors: primary distance and squared entropy mismatch.
     """
-    if objective not in {"cosine", "jensen_shannon"}:
+    if objective not in {
+        "cosine_distance",
+        "jss_distance",
+        "kl_distance",
+    }:
         raise ValueError(f"unknown peak-list objective: {objective}")
     if matching not in {"closest", "hungarian"}:
         raise ValueError(f"unknown peak-list matching mode: {matching}")
+    if not math.isfinite(kl_epsilon) or kl_epsilon <= 0.0:
+        raise ValueError("kl_epsilon must be finite and positive")
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     tensors = {
@@ -168,16 +181,12 @@ def sparse_peak_list_loss(
                 tolerance_min_mz=tolerance_min_mz,
             )
         else:
-            per_true_tolerance = tol_per_sample[batch_index] * th.maximum(
-                batch_true_mzs,
-                min_mz_per_sample[batch_index],
-            )
             match_mask = calculate_match_mzs(
                 batch_true_mzs,
                 batch_pred_mzs,
-                tolerance=0.0,
-                relative=False,
-                tol_per_true=per_true_tolerance,
+                relative=True,
+                tol_per_true=tol_per_sample[batch_index].expand_as(batch_true_mzs),
+                min_mz_per_true=min_mz_per_sample[batch_index].expand_as(batch_true_mzs),
             )
         match_mask = th.as_tensor(match_mask, dtype=th.bool, device=batch_true_mzs.device)
         mass_distance = (batch_true_mzs[:, None] - batch_pred_mzs[None, :]).abs()
@@ -240,7 +249,7 @@ def sparse_peak_list_loss(
             dim=0,
         )
 
-        if objective == "cosine":
+        if objective == "cosine_distance":
             cosine_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
             if cosine_dtype in {th.float16, th.bfloat16}:
                 cosine_dtype = th.float32
@@ -250,7 +259,7 @@ def sparse_peak_list_loss(
                 th.linalg.vector_norm(cosine_pred) * th.linalg.vector_norm(cosine_true)
             )
             primary_losses[batch_index] = 1.0 - similarity
-        else:
+        elif objective == "jss_distance":
             pred_distribution = aligned_pred / aligned_pred.sum()
             true_distribution = aligned_true / aligned_true.sum()
             mixture = 0.5 * (pred_distribution + true_distribution)
@@ -264,6 +273,16 @@ def sparse_peak_list_loss(
                 - x_log_x(mixture).sum()
             )
             primary_losses[batch_index] = divergence / log_two
+        else:
+            pred_distribution = aligned_pred / aligned_pred.sum()
+            true_distribution = aligned_true / aligned_true.sum()
+            pred_distribution = pred_distribution + kl_epsilon
+            pred_distribution = pred_distribution / pred_distribution.sum()
+            true_distribution = true_distribution + kl_epsilon
+            true_distribution = true_distribution / true_distribution.sum()
+            primary_losses[batch_index] = (
+                true_distribution * (true_distribution.log() - pred_distribution.log())
+            ).sum()
 
         pred_distribution = aligned_pred / aligned_pred.sum()
         true_distribution = aligned_true / aligned_true.sum()
@@ -315,9 +334,9 @@ def mog_log_prob(
     )
     normal_log_probs = normal_log_probs - log_trunc_factors
     if match_mask is not None:
-        normal_log_probs = normal_log_probs + LOG_ZERO(normal_log_probs.dtype) * (
-            ~match_mask
-        ).to(normal_log_probs.dtype)
+        normal_log_probs = normal_log_probs + LOG_ZERO(normal_log_probs.dtype) * (~match_mask).to(
+            normal_log_probs.dtype
+        )
     # [B]
     log_probs = th.logsumexp(normal_log_probs + log_weights, dim=1)
     return log_probs
@@ -1703,7 +1722,9 @@ def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
     batch_size = spectrum_embeddings.size(0)
     labels = th.arange(batch_size, device=spectrum_embeddings.device)
 
-    loss = (F.cross_entropy(logits_per_spectrum, labels) + F.cross_entropy(logits_per_mol, labels)) / 2
+    loss = (
+        F.cross_entropy(logits_per_spectrum, labels) + F.cross_entropy(logits_per_mol, labels)
+    ) / 2
     return loss
 
 
@@ -2486,12 +2507,22 @@ def get_cross_jss_contrastive(
 
     # Bin both spectra into sparse COO representation
     true_bin_idxs, true_bin_lp, true_bin_bidxs = batched_bin_func(
-        true_mzs, true_logprobs, true_batch_idxs,
-        mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True,
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        mz_max=mz_max,
+        mz_bin_res=mz_bin_res,
+        agg="lse",
+        sparse=True,
     )
     pred_bin_idxs, pred_bin_lp, pred_bin_bidxs = batched_bin_func(
-        pred_mzs, pred_logprobs, pred_batch_idxs,
-        mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+        mz_max=mz_max,
+        mz_bin_res=mz_bin_res,
+        agg="lse",
+        sparse=True,
     )
 
     # L1-normalise
@@ -2516,9 +2547,7 @@ def get_cross_jss_contrastive(
     all_intra = th.cat([true_intra, pred_intra])
     unique_bins = th.unique(all_intra)
     K = unique_bins.numel()
-    bin_idx_map = th.full(
-        (int(all_intra.max().item()) + 1,), -1, device=device, dtype=th.long
-    )
+    bin_idx_map = th.full((int(all_intra.max().item()) + 1,), -1, device=device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(K, device=device, dtype=th.long)
     true_compact = bin_idx_map[true_intra]
     pred_compact = bin_idx_map[pred_intra]
@@ -2600,15 +2629,11 @@ def ce_switch_pair_bce(
     true_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
     for peak_idx, sample_idx in enumerate(true_batch_idxs_cpu.tolist()):
         true_index_lists[sample_idx].append(peak_idx)
-    true_indices_by_sample = [
-        th.tensor(indices, dtype=th.long) for indices in true_index_lists
-    ]
+    true_indices_by_sample = [th.tensor(indices, dtype=th.long) for indices in true_index_lists]
     pred_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
     for peak_idx, sample_idx in enumerate(pred_batch_idxs_cpu.tolist()):
         pred_index_lists[sample_idx].append(peak_idx)
-    pred_indices_by_sample = [
-        th.tensor(indices, dtype=th.long) for indices in pred_index_lists
-    ]
+    pred_indices_by_sample = [th.tensor(indices, dtype=th.long) for indices in pred_index_lists]
 
     def _matches(mzs: th.Tensor, mass: float, sample_idx: int) -> th.Tensor:
         tolerance = float(tol_cpu[sample_idx]) * max(mass, float(min_mz_cpu[sample_idx]))
@@ -2623,9 +2648,7 @@ def ce_switch_pair_bce(
         groups: list[list[tuple[float, float]]] = []
         group_upper_bounds: list[tuple[float, float]] = []
         for mz, intensity in zip(mzs[order].tolist(), ints[order].tolist()):
-            tolerance = float(tol_cpu[sample_idx]) * max(
-                mz, float(min_mz_cpu[sample_idx])
-            )
+            tolerance = float(tol_cpu[sample_idx]) * max(mz, float(min_mz_cpu[sample_idx]))
             upper_bound = mz + tolerance
             if groups and mz < group_upper_bounds[-1][1]:
                 if len(groups) > 1 and mz < group_upper_bounds[-2][1]:
@@ -2682,12 +2705,16 @@ def ce_switch_pair_bce(
                 valid = True
                 for endpoint in (low, high):
                     groups = observed_by_sample[endpoint]
-                    matches_a = [group for group in groups if _matches(
-                        th.tensor([group[0]]), mass_a, endpoint
-                    ).item()]
-                    matches_b = [group for group in groups if _matches(
-                        th.tensor([group[0]]), mass_b, endpoint
-                    ).item()]
+                    matches_a = [
+                        group
+                        for group in groups
+                        if _matches(th.tensor([group[0]]), mass_a, endpoint).item()
+                    ]
+                    matches_b = [
+                        group
+                        for group in groups
+                        if _matches(th.tensor([group[0]]), mass_b, endpoint).item()
+                    ]
                     if len(matches_a) != 1 or len(matches_b) != 1:
                         valid = False
                         break
@@ -2700,9 +2727,7 @@ def ce_switch_pair_bce(
                         valid = False
                         break
                     max_intensity = max(group[1] for group in groups)
-                    if min(int_a, int_b) < (
-                        min_contender_relative_intensity * max_intensity
-                    ):
+                    if min(int_a, int_b) < (min_contender_relative_intensity * max_intensity):
                         valid = False
                         break
                     total = int_a + int_b
@@ -2723,9 +2748,7 @@ def ce_switch_pair_bce(
                         endpoint_data[endpoint == high] += (match_a, match_b)
                 if valid:
                     transition_weight = min(endpoint_data[0][2], endpoint_data[1][2])
-                    transitions.append(
-                        (transition_weight, endpoint_data)
-                    )
+                    transitions.append((transition_weight, endpoint_data))
             if transitions:
                 context_transitions[int(group_id)] = transitions
 
@@ -2810,20 +2833,14 @@ def precursor_contender_bce(
     true_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
     for peak_idx, sample_idx in enumerate(true_batch_idxs_cpu.tolist()):
         true_index_lists[sample_idx].append(peak_idx)
-    true_indices_by_sample = [
-        th.tensor(indices, dtype=th.long) for indices in true_index_lists
-    ]
+    true_indices_by_sample = [th.tensor(indices, dtype=th.long) for indices in true_index_lists]
     pred_index_lists: list[list[int]] = [[] for _ in range(batch_size)]
     for peak_idx, sample_idx in enumerate(pred_batch_idxs_cpu.tolist()):
         pred_index_lists[sample_idx].append(peak_idx)
-    pred_indices_by_sample = [
-        th.tensor(indices, dtype=th.long) for indices in pred_index_lists
-    ]
+    pred_indices_by_sample = [th.tensor(indices, dtype=th.long) for indices in pred_index_lists]
 
     def _matches(mzs: th.Tensor, mass: float, sample_idx: int) -> th.Tensor:
-        tolerance = float(tol_cpu[sample_idx]) * max(
-            mass, float(min_mz_cpu[sample_idx])
-        )
+        tolerance = float(tol_cpu[sample_idx]) * max(mass, float(min_mz_cpu[sample_idx]))
         return th.abs(mzs - mass) < tolerance
 
     def _observed_groups(sample_idx: int) -> list[tuple[float, float]]:
@@ -2835,9 +2852,7 @@ def precursor_contender_bce(
         groups: list[list[tuple[float, float]]] = []
         upper_bounds: list[tuple[float, float]] = []
         for mz, intensity in zip(mzs[order].tolist(), ints[order].tolist()):
-            tolerance = float(tol_cpu[sample_idx]) * max(
-                mz, float(min_mz_cpu[sample_idx])
-            )
+            tolerance = float(tol_cpu[sample_idx]) * max(mz, float(min_mz_cpu[sample_idx]))
             upper_bound = mz + tolerance
             if groups and mz < upper_bounds[-1][1]:
                 if len(groups) > 1 and mz < upper_bounds[-2][1]:
@@ -2890,9 +2905,7 @@ def precursor_contender_bce(
             continue
         base_intensity = max(intensity for _, intensity in groups)
         precursor_intensity = (
-            precursor_groups[0][1]
-            if precursor_groups
-            else absent_intensity_floor * base_intensity
+            precursor_groups[0][1] if precursor_groups else absent_intensity_floor * base_intensity
         )
 
         contender = None
@@ -2909,9 +2922,7 @@ def precursor_contender_bce(
             continue
 
         contender_intensity = contender[1]
-        target_precursor = precursor_intensity / (
-            precursor_intensity + contender_intensity
-        )
+        target_precursor = precursor_intensity / (precursor_intensity + contender_intensity)
         pair_data.append(
             (
                 sample_idx,

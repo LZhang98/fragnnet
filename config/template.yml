@@ -230,6 +230,8 @@ mass_shatter_intensity_output: probability  # ["probability", "independent"]
 # Direct peak-list losses always coalesce numerical exact masses to four decimals,
 # then use one of these m/z-only correspondence rules inside instrument tolerance.
 mass_shatter_peak_matching: closest  # ["closest", "hungarian"]
+# Epsilon added to both aligned distributions before Kullback-Leibler(true || predicted).
+mass_shatter_kl_epsilon: 1.0e-8
 mass_shatter_intensity_entropy_match_weight: 0.0
 mass_shatter_use_mask_residuals: True  # False keeps original proposal mask probabilities.
 # Proposal-anchored mode keeps base-plus-residual scoring but hides the base

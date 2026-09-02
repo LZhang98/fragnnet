@@ -31,7 +31,7 @@ from fragnnet.model import MassShatterModel
 from fragnnet.model.loss import (
     ce_switch_pair_bce,
     get_sparse_cross_entropy_fn,
-    sparse_peak_list_loss,
+    sparse_peak_list_distance,
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
@@ -131,9 +131,9 @@ def _candidate_coverage_by_cut_count(
                 relative=False,
                 tol_per_true=tol_per_true,
             )
-        metrics["candidate_recall"][batch_index] = all_match_mask.any(dim=1).to(
-            batch_true_ints
-        ).mean()
+        metrics["candidate_recall"][batch_index] = (
+            all_match_mask.any(dim=1).to(batch_true_ints).mean()
+        )
         metrics["candidate_wrecall"][batch_index] = (
             batch_true_ints * all_match_mask.any(dim=1)
         ).sum() / true_intensity
@@ -170,9 +170,9 @@ def _candidate_coverage_by_cut_count(
             ).sum() / true_intensity
             candidate_match_mask = match_mask.any(dim=0)
             if candidate_match_mask.numel() > 0:
-                metrics[f"candidate_precision_cut_{bucket}"][batch_index] = (
-                    candidate_match_mask.to(batch_true_ints).mean()
-                )
+                metrics[f"candidate_precision_cut_{bucket}"][batch_index] = candidate_match_mask.to(
+                    batch_true_ints
+                ).mean()
     return metrics
 
 
@@ -288,9 +288,7 @@ def _proposal_coverage_loss(
             raise ValueError("proposal fragments must be contiguous within each spectrum")
         candidate_mask = fragment_batch_idxs[candidate_fragment_idxs] == batch_index
         batch_candidate_mzs = candidate_mzs[candidate_mask]
-        local_fragment_indices = (
-            candidate_fragment_idxs[candidate_mask] - first_fragment_index
-        )
+        local_fragment_indices = candidate_fragment_idxs[candidate_mask] - first_fragment_index
         if tol_per_sample is None:
             channel_match = calculate_match_mzs(
                 batch_true_mzs,
@@ -420,8 +418,7 @@ def _observational_channel_targets(
 
         mass_errors = batch_true_mzs[:, None] - valid_mzs[None, :]
         mass_log_likelihood = (
-            -0.5 * (mass_errors / channel_stds[None, :]) ** 2
-            - th.log(channel_stds)[None, :]
+            -0.5 * (mass_errors / channel_stds[None, :]) ** 2 - th.log(channel_stds)[None, :]
         ).to(valid_log_weights)
         pair_log_likelihood = valid_log_weights[None, :] + mass_log_likelihood
         valid_targets = valid_log_weights.new_zeros(valid_log_weights.shape)
@@ -552,12 +549,12 @@ def _channel_support_metrics(
         batch_valid_modes = valid_modes[fragment_mask]
         batch_valid_channels = chemical_valid_channels[fragment_mask]
         metrics["fragment_precision"][batch_index] = batch_fragments.mean()
-        metrics["ion_mode_support_positive_rate"][batch_index] = (
-            mode_targets[fragment_mask][batch_valid_modes].mean()
-        )
-        metrics["ion_h_support_positive_rate"][batch_index] = (
-            channel_targets[fragment_mask][batch_valid_channels].mean()
-        )
+        metrics["ion_mode_support_positive_rate"][batch_index] = mode_targets[fragment_mask][
+            batch_valid_modes
+        ].mean()
+        metrics["ion_h_support_positive_rate"][batch_index] = channel_targets[fragment_mask][
+            batch_valid_channels
+        ].mean()
         if fragment_logprobs is None:
             metrics["fragment_weighted_precision"][batch_index] = batch_fragments.mean()
         else:
@@ -1010,9 +1007,7 @@ class MassShatterPL(SpectrumPL):
             ),
             detach_base_ion_h=self.hparams.mass_shatter_detach_base_ion_h,
             proposal_selection_only=self.hparams.mass_shatter_proposal_selection_only,
-            separate_proposal_encoder=(
-                self.hparams.mass_shatter_separate_proposal_encoder
-            ),
+            separate_proposal_encoder=(self.hparams.mass_shatter_separate_proposal_encoder),
             share_proposal_across_ev=self.hparams.mass_shatter_share_proposal_across_ev,
             separate_ion_mode_proposal_head=(
                 self.hparams.mass_shatter_separate_ion_mode_proposal_head
@@ -1020,9 +1015,7 @@ class MassShatterPL(SpectrumPL):
             min_ion_mode_relative_probability=(
                 self.hparams.mass_shatter_min_ion_mode_relative_probability
             ),
-            separate_ion_h_support_head=(
-                self.hparams.mass_shatter_separate_ion_h_support_head
-            ),
+            separate_ion_h_support_head=(self.hparams.mass_shatter_separate_ion_h_support_head),
             min_ion_h_relative_probability=(
                 self.hparams.mass_shatter_min_ion_h_relative_probability
             ),
@@ -1051,9 +1044,7 @@ class MassShatterPL(SpectrumPL):
             unique_fragment_mode=self.hparams.mass_shatter_unique_fragment_mode,
             max_enumerated_masks=self.hparams.mass_shatter_ranked_mask_budget,
             mask_selection_threads=self.hparams.mass_shatter_mask_selection_threads,
-            min_mask_relative_probability=(
-                self.hparams.mass_shatter_min_mask_relative_probability
-            ),
+            min_mask_relative_probability=(self.hparams.mass_shatter_min_mask_relative_probability),
             min_fragment_relative_probability=(
                 self.hparams.mass_shatter_min_fragment_relative_probability
             ),
@@ -1068,7 +1059,7 @@ class MassShatterPL(SpectrumPL):
     def _setup_loss_fn(self) -> None:
         """Configure legacy CE or a direct clustered peak-list objective.
 
-        Direct cosine/JSD losses use m/z-only closest or Hungarian correspondence and
+        Direct spectral losses use m/z-only closest or Hungarian correspondence and
         never evaluate a Gaussian density. The legacy cross-entropy branch is retained
         unchanged as the control. This method also registers candidate-generation
         diagnostics and compatible auxiliary losses.
@@ -1077,7 +1068,12 @@ class MassShatterPL(SpectrumPL):
             ValueError: If the configured loss/spectrum options are outside the subset
                 this training path supports.
         """
-        accepted_loss_types = {"cross_entropy", "cosine_distance", "jss_distance"}
+        accepted_loss_types = {
+            "cross_entropy",
+            "cosine_distance",
+            "jss_distance",
+            "kl_distance",
+        }
         if self.hparams.loss_type not in accepted_loss_types:
             raise ValueError(f"MASShatter loss_type must be one of {sorted(accepted_loss_types)}")
         if self.hparams.mass_shatter_intensity_output not in {
@@ -1109,8 +1105,7 @@ class MassShatterPL(SpectrumPL):
             "hungarian",
         }:
             raise ValueError(
-                "mass_shatter_channel_support_attribution must be "
-                "gaussian_posterior or hungarian"
+                "mass_shatter_channel_support_attribution must be gaussian_posterior or hungarian"
             )
         if (
             not math.isfinite(self.hparams.mass_shatter_intensity_entropy_match_weight)
@@ -1119,6 +1114,11 @@ class MassShatterPL(SpectrumPL):
             raise ValueError(
                 "mass_shatter_intensity_entropy_match_weight must be finite and nonnegative"
             )
+        if (
+            not math.isfinite(self.hparams.mass_shatter_kl_epsilon)
+            or self.hparams.mass_shatter_kl_epsilon <= 0.0
+        ):
+            raise ValueError("mass_shatter_kl_epsilon must be finite and positive")
         if not self.hparams.sparse_cosine_similarity or not self.hparams.sum_ints:
             raise ValueError("MASShatter requires sparse_cosine_similarity and sum_ints")
         if self.hparams.ce_pair_min_endpoint_reliability is not None:
@@ -1161,9 +1161,7 @@ class MassShatterPL(SpectrumPL):
                     "must be enabled together"
                 )
             if not math.isfinite(probability_floor) or not 0.0 <= probability_floor <= 1.0:
-                raise ValueError(
-                    f"mass_shatter_min_{name}_relative_probability must be in [0, 1]"
-                )
+                raise ValueError(f"mass_shatter_min_{name}_relative_probability must be in [0, 1]")
         if not isinstance(self.hparams.mass_shatter_apply_channel_selection_in_training, bool):
             raise ValueError("mass_shatter_apply_channel_selection_in_training must be boolean")
         if not isinstance(self.hparams.mass_shatter_channel_diagnostics, bool):
@@ -1254,8 +1252,7 @@ class MassShatterPL(SpectrumPL):
                 "mass_shatter_share_proposal_across_ev"
             )
         base_ce_enabled = (
-            self.hparams.mass_shatter_log_base_ce
-            or self.hparams.mass_shatter_base_ce_weight > 0.0
+            self.hparams.mass_shatter_log_base_ce or self.hparams.mass_shatter_base_ce_weight > 0.0
         )
         sparse_ce_fn = None
         if self.hparams.loss_type == "cross_entropy":
@@ -1394,17 +1391,14 @@ class MassShatterPL(SpectrumPL):
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
             else:
-                objective = (
-                    "cosine" if self.hparams.loss_type == "cosine_distance" else "jensen_shannon"
-                )
-                primary_loss, entropy_match = sparse_peak_list_loss(
+                primary_loss, entropy_match = sparse_peak_list_distance(
                     true_mzs,
                     true_intensities,
                     true_batch_idxs,
                     pred_mzs,
                     pred_intensities,
                     pred_batch_idxs,
-                    objective=objective,
+                    objective=self.hparams.loss_type,
                     matching=self.hparams.mass_shatter_peak_matching,
                     tolerance=self.tolerance,
                     relative=self.relative,
@@ -1412,6 +1406,7 @@ class MassShatterPL(SpectrumPL):
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                     decimals=4,
+                    kl_epsilon=self.hparams.mass_shatter_kl_epsilon,
                 )
                 coverage = _candidate_coverage_by_cut_count(
                     true_mzs=true_mzs,
@@ -1431,9 +1426,7 @@ class MassShatterPL(SpectrumPL):
             loss = self.hparams.primary_loss_weight * primary_loss
             if entropy_match is not None:
                 loss = (
-                    loss
-                    + self.hparams.mass_shatter_intensity_entropy_match_weight
-                    * entropy_match
+                    loss + self.hparams.mass_shatter_intensity_entropy_match_weight * entropy_match
                 )
             support_metric_names = (
                 "fragment_precision",
@@ -1443,8 +1436,7 @@ class MassShatterPL(SpectrumPL):
                 *_ION_H_REQUIRED_K_METRIC_NAMES,
             )
             support_metrics = {
-                name: prediction_reference.new_zeros(batch_size)
-                for name in support_metric_names
+                name: prediction_reference.new_zeros(batch_size) for name in support_metric_names
             }
             channel_targets = None
             if channel_targets_enabled:
@@ -1459,9 +1451,7 @@ class MassShatterPL(SpectrumPL):
                     tolerance=self.tolerance,
                     relative=self.relative,
                     tolerance_min_mz=self.tolerance_min_mz,
-                    attribution=(
-                        self.hparams.mass_shatter_channel_support_attribution
-                    ),
+                    attribution=(self.hparams.mass_shatter_channel_support_attribution),
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
@@ -1492,8 +1482,7 @@ class MassShatterPL(SpectrumPL):
                     batch_size,
                 )
                 loss = loss + (
-                    self.hparams.mass_shatter_ion_h_support_loss_weight
-                    * ion_h_support_loss
+                    self.hparams.mass_shatter_ion_h_support_loss_weight * ion_h_support_loss
                 )
             if ion_mode_proposal_loss_enabled:
                 if channel_targets is None:
@@ -1506,8 +1495,7 @@ class MassShatterPL(SpectrumPL):
                     batch_size,
                 )
                 loss = loss + (
-                    self.hparams.mass_shatter_ion_mode_proposal_loss_weight
-                    * ion_mode_proposal_loss
+                    self.hparams.mass_shatter_ion_mode_proposal_loss_weight * ion_mode_proposal_loss
                 )
             if proposal_loss_enabled:
                 proposal_loss_kwargs = {
@@ -1698,8 +1686,7 @@ class MassShatterPL(SpectrumPL):
                     {
                         "base_spec_ce": base_spec_ce,
                         "base_primary_loss": base_primary_loss,
-                        "base_ce_gain": base_spec_ce.detach()
-                        - spectrum_ce.detach(),
+                        "base_ce_gain": base_spec_ce.detach() - spectrum_ce.detach(),
                     }
                 )
 
@@ -1980,10 +1967,7 @@ class MassShatterPL(SpectrumPL):
             atom_batch_indices=mol_pyg.batch,
             atom_ptr=mol_pyg.ptr,
             smarts_templates=(
-                tuple(
-                    _cached_mass_shatter_templates(str(smiles))
-                    for smiles in batch["mol_smiles"]
-                )
+                tuple(_cached_mass_shatter_templates(str(smiles)) for smiles in batch["mol_smiles"])
                 if self.hparams.mass_shatter_smarts_templates
                 else None
             ),
