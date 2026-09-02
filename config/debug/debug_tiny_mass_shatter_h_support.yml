@@ -52,6 +52,7 @@ mass_shatter_separate_ion_mode_proposal_head: false
 mass_shatter_min_ion_mode_relative_probability: 0.0
 mass_shatter_ion_mode_proposal_loss_weight: 0.0
 mass_shatter_separate_ion_h_support_head: true
+mass_shatter_ion_h_support_binary_logits: true
 mass_shatter_min_ion_h_relative_probability: 0.1
 mass_shatter_ion_h_support_loss_weight: 0.1
 mass_shatter_apply_channel_selection_in_training: false

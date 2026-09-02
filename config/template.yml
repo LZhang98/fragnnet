@@ -264,9 +264,13 @@ mass_shatter_proposal_ints_transform: same
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
 mass_shatter_separate_ion_mode_proposal_head: False
+# Declare the score semantics separately from head construction. The current
+# balanced-BCE proposal/support losses require these flags when their heads are enabled.
+mass_shatter_ion_mode_proposal_binary_logits: False
 mass_shatter_min_ion_mode_relative_probability: 0.0
 mass_shatter_ion_mode_proposal_loss_weight: 0.0
 mass_shatter_separate_ion_h_support_head: False
+mass_shatter_ion_h_support_binary_logits: False
 mass_shatter_min_ion_h_relative_probability: 0.0
 mass_shatter_ion_h_support_loss_weight: 0.0
 mass_shatter_apply_channel_selection_in_training: False

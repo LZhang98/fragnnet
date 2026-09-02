@@ -1028,10 +1028,16 @@ class MassShatterPL(SpectrumPL):
             separate_ion_mode_proposal_head=(
                 self.hparams.mass_shatter_separate_ion_mode_proposal_head
             ),
+            ion_mode_proposal_binary_logits=(
+                self.hparams.mass_shatter_ion_mode_proposal_binary_logits
+            ),
             min_ion_mode_relative_probability=(
                 self.hparams.mass_shatter_min_ion_mode_relative_probability
             ),
             separate_ion_h_support_head=(self.hparams.mass_shatter_separate_ion_h_support_head),
+            ion_h_support_binary_logits=(
+                self.hparams.mass_shatter_ion_h_support_binary_logits
+            ),
             min_ion_h_relative_probability=(
                 self.hparams.mass_shatter_min_ion_h_relative_probability
             ),
@@ -1173,25 +1179,34 @@ class MassShatterPL(SpectrumPL):
             (
                 "ion_mode",
                 self.hparams.mass_shatter_separate_ion_mode_proposal_head,
+                self.hparams.mass_shatter_ion_mode_proposal_binary_logits,
                 self.hparams.mass_shatter_ion_mode_proposal_loss_weight,
                 self.hparams.mass_shatter_min_ion_mode_relative_probability,
             ),
             (
                 "ion_h",
                 self.hparams.mass_shatter_separate_ion_h_support_head,
+                self.hparams.mass_shatter_ion_h_support_binary_logits,
                 self.hparams.mass_shatter_ion_h_support_loss_weight,
                 self.hparams.mass_shatter_min_ion_h_relative_probability,
             ),
         )
-        for name, enabled, loss_weight, probability_floor in support_head_configs:
+        for name, enabled, binary_logits, loss_weight, probability_floor in support_head_configs:
             if not isinstance(enabled, bool):
                 raise ValueError(f"the separate {name} head switch must be boolean")
+            if not isinstance(binary_logits, bool):
+                raise ValueError(f"the {name} binary-logit switch must be boolean")
             if not math.isfinite(loss_weight) or loss_weight < 0.0:
                 raise ValueError(f"the {name} support loss weight must be nonnegative")
             if enabled != (loss_weight > 0.0):
                 raise ValueError(
                     f"the separate {name} support head and its positive loss weight "
                     "must be enabled together"
+                )
+            if binary_logits != (loss_weight > 0.0):
+                raise ValueError(
+                    f"the {name} binary-logit semantics and its positive BCE loss "
+                    "weight must be enabled together"
                 )
             if not math.isfinite(probability_floor) or not 0.0 <= probability_floor <= 1.0:
                 raise ValueError(f"mass_shatter_min_{name}_relative_probability must be in [0, 1]")
@@ -1209,7 +1224,7 @@ class MassShatterPL(SpectrumPL):
             )
         if self.hparams.mass_shatter_apply_channel_selection_in_training and not any(
             enabled and loss_weight > 0.0 and probability_floor > 0.0
-            for _, enabled, loss_weight, probability_floor in support_head_configs
+            for _, enabled, _, loss_weight, probability_floor in support_head_configs
         ):
             raise ValueError(
                 "training-time channel selection requires a supervised support head "

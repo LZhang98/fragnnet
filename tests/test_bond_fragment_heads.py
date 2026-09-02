@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 from typing import Literal
 
@@ -435,23 +436,51 @@ def test_candidate_intensity_transformer_buckets_ragged_padding() -> None:
         tokens,
         component_batch_indices,
         batch_size=3,
-        component_counts=(2, 3, 20),
     )
     hook.remove()
-    fallback = head._contextualize_by_molecule(
-        tokens,
-        component_batch_indices,
-        batch_size=3,
-    )
 
     assert contextualized.shape == (25, 8)
-    assert th.allclose(contextualized, fallback)
     assert observed_shapes == [
         th.Size([1, 2, 8]),
         th.Size([1, 4, 8]),
         th.Size([1, 32, 8]),
     ]
     assert sum(shape[0] * shape[1] for shape in observed_shapes) < 3 * 20
+
+
+def test_candidate_intensity_transformer_preserves_large_counts_under_bfloat16() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        atom_decoder_num_layers=0,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+    ).eval()
+    observed_shapes: list[th.Size] = []
+    hook = head.layers[0].register_forward_pre_hook(
+        lambda _module, args: observed_shapes.append(args[0].shape)
+    )
+    tokens = th.randn(261, 8)
+    component_batch_indices = th.zeros(261, dtype=th.long)
+
+    assert "component_counts" not in inspect.signature(head.forward).parameters
+    with th.autocast(device_type="cpu", dtype=th.bfloat16):
+        contextualized = head._contextualize_by_molecule(
+            tokens,
+            component_batch_indices,
+            batch_size=1,
+        )
+    hook.remove()
+
+    assert contextualized.shape == tokens.shape
+    assert observed_shapes == [th.Size([1, 512, 8])]
 
 
 def test_candidate_intensity_transformer_isolates_molecules() -> None:

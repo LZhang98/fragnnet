@@ -59,6 +59,7 @@ def test_merged_independent_distance_configs_enable_requested_model() -> None:
             config = yaml.safe_load(config_file)
         assert config["mass_shatter_peak_matching"] == "hungarian"
         assert config["mass_shatter_min_ion_h_relative_probability"] == pytest.approx(0.01)
+        assert config["mass_shatter_ion_h_support_binary_logits"] is True
         assert config["mass_shatter_apply_channel_selection_in_training"] is False
         assert config["mass_shatter_channel_support_use_intensity_prior"] is False
         assert config["mass_shatter_proposal_num_mixtures"] == 1
@@ -493,13 +494,28 @@ def test_mass_shatter_pl_builds_separate_ion_h_support_head() -> None:
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_loss_weight=0.1,
         mass_shatter_separate_ion_h_support_head=True,
+        mass_shatter_ion_h_support_binary_logits=True,
         mass_shatter_ion_h_support_loss_weight=0.2,
         mass_shatter_min_ion_h_relative_probability=0.1,
     )
 
     assert model.model.intensity_head.ion_h_support_head is not None
+    assert model.model.ion_h_support_binary_logits
     assert "ion_h_support_loss" in model.loss_names
     assert "fragment_precision" in model.loss_names
+
+
+def test_binary_logit_semantics_must_match_bce_support_loss() -> None:
+    with pytest.raises(ValueError, match="binary-logit semantics"):
+        _build_pl(
+            mass_shatter_unique_fragment_mode=True,
+            mass_shatter_proposal_anchored=True,
+            mass_shatter_proposal_selection_only=True,
+            mass_shatter_proposal_loss_weight=0.1,
+            mass_shatter_separate_ion_h_support_head=True,
+            mass_shatter_ion_h_support_binary_logits=False,
+            mass_shatter_ion_h_support_loss_weight=0.2,
+        )
 
 
 def test_channel_support_attribution_defaults_to_gaussian_posterior() -> None:

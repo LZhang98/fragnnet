@@ -15,6 +15,7 @@ from fragnnet.model.mass_shatter_model import (
     MassShatterModel,
     _cmf_duplicate_crf_shift,
     _fixed_top_k_channel_keep_mask,
+    _ion_mode_logits_from_ion_h_support,
     _relative_channel_keep_mask,
     _relative_fragment_keep_mask,
     _relative_joint_channel_keep_mask,
@@ -57,8 +58,10 @@ def _build_model(
     separate_proposal_encoder: bool = False,
     share_proposal_across_ev: bool = False,
     separate_ion_mode_proposal_head: bool = False,
+    ion_mode_proposal_binary_logits: bool = False,
     min_ion_mode_relative_probability: float = 0.0,
     separate_ion_h_support_head: bool = False,
+    ion_h_support_binary_logits: bool = False,
     min_ion_h_relative_probability: float = 0.0,
     apply_channel_selection_in_training: bool = False,
     intensity_atom_decoder_num_layers: int = 0,
@@ -102,8 +105,10 @@ def _build_model(
         separate_proposal_encoder=separate_proposal_encoder,
         share_proposal_across_ev=share_proposal_across_ev,
         separate_ion_mode_proposal_head=separate_ion_mode_proposal_head,
+        ion_mode_proposal_binary_logits=ion_mode_proposal_binary_logits,
         min_ion_mode_relative_probability=min_ion_mode_relative_probability,
         separate_ion_h_support_head=separate_ion_h_support_head,
+        ion_h_support_binary_logits=ion_h_support_binary_logits,
         min_ion_h_relative_probability=min_ion_h_relative_probability,
         apply_channel_selection_in_training=apply_channel_selection_in_training,
         precursor_types=precursor_types,
@@ -178,6 +183,83 @@ def test_relative_channel_keep_mask_uses_probabilities_for_binary_logits() -> No
 
     assert probability_keep.tolist() == [[[True, True]]]
     assert odds_keep.tolist() == [[[True, False]]]
+
+
+def test_ion_mode_fallback_aggregates_binary_channel_probabilities() -> None:
+    channel_probabilities = th.tensor([[[0.5, 0.5], [0.2, 0.9]]])
+    valid_channels = th.tensor([[[True, True], [True, False]]])
+
+    mode_logits = _ion_mode_logits_from_ion_h_support(
+        th.logit(channel_probabilities),
+        valid_channels,
+        binary_logits=True,
+    )
+
+    th.testing.assert_close(mode_logits.sigmoid(), th.tensor([[0.75, 0.2]]))
+    assert _relative_channel_keep_mask(
+        mode_logits,
+        valid_channels.any(dim=2),
+        0.25,
+        binary_logits=True,
+    ).tolist() == [[True, True]]
+
+
+def test_ion_mode_fallback_preserves_categorical_marginalization() -> None:
+    channel_probabilities = th.tensor([[[0.4, 0.1], [0.3, 0.2]]])
+    valid_channels = th.ones_like(channel_probabilities, dtype=th.bool)
+
+    mode_log_probabilities = _ion_mode_logits_from_ion_h_support(
+        channel_probabilities.log(),
+        valid_channels,
+        binary_logits=False,
+    )
+
+    th.testing.assert_close(mode_log_probabilities.exp(), th.tensor([[0.5, 0.5]]))
+
+
+def test_channel_selection_uses_explicit_semantics_not_head_presence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_binary_flags: list[bool] = []
+
+    def record_semantics(
+        logits: th.Tensor,
+        valid_mask: th.Tensor,
+        min_relative_probability: float,
+        *,
+        binary_logits: bool = False,
+    ) -> th.Tensor:
+        observed_binary_flags.append(binary_logits)
+        return _relative_channel_keep_mask(
+            logits,
+            valid_mask,
+            min_relative_probability,
+            binary_logits=binary_logits,
+        )
+
+    monkeypatch.setattr(
+        mass_shatter_model_module,
+        "_relative_channel_keep_mask",
+        record_semantics,
+    )
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=False,
+    ).eval()
+
+    with th.no_grad():
+        model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0, 1]),
+            spec_nce=th.tensor([25.0, 35.0]),
+        )
+
+    assert observed_binary_flags == [False, False]
 
 
 def test_fixed_top_k_channel_keep_mask_is_stable_and_per_fragment() -> None:
@@ -1361,6 +1443,7 @@ def test_evaluation_top_k_keeps_one_channel_per_fragment_and_is_reversible() -> 
         proposal_selection_only=True,
         use_base_probability_feature=False,
         separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
     ).eval()
     inputs = {
         "mol_pyg": batch,
@@ -1392,6 +1475,7 @@ def test_evaluation_top_k_is_ignored_during_training() -> None:
         proposal_selection_only=True,
         use_base_probability_feature=False,
         separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
     ).train()
     inputs = {
         "mol_pyg": batch,
@@ -1416,6 +1500,7 @@ def test_evaluation_joint_threshold_is_reversible_and_ignored_during_training() 
         proposal_selection_only=True,
         use_base_probability_feature=False,
         separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
     ).eval()
     inputs = {
         "mol_pyg": batch,
@@ -1471,6 +1556,7 @@ def test_retained_channel_probability_uses_dense_intensity_distribution() -> Non
         proposal_selection_only=True,
         use_base_probability_feature=False,
         separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
         min_ion_h_relative_probability=1.0,
         precursor_types=("[M+H]+",),
     ).eval()

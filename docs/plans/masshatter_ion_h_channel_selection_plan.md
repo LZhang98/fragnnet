@@ -496,14 +496,14 @@ mode_keep[f, mode] = relative_keep(
     valid_ion_mode[f, mode],
     min_ion_mode_relative_probability,
 )
-scores[f, c] = ion_h_support_logits[f, c]
+scores[f, c] = log_sigmoid(ion_h_support_logits[f, c])  # Bernoulli support head
+# Existing categorical intensity controls use their logits directly instead.
 scores[f, invalid or mode-pruned] = -inf
-support_logprob[f] = log_softmax(scores[f])
-map_logprob[f] = max(support_logprob[f])
+map_logscore[f] = max(scores[f])
 selected[f, c] = chemical_valid_channels[f, c]
                  and mode_keep[f, mode(c)]
-                 and support_logprob[f, c]
-                     >= map_logprob[f]
+                 and scores[f, c]
+                     >= map_logscore[f]
                         + log(min_ion_h_relative_probability)
 spectral_output_channels = chemical_valid_channels & selected
 ```
@@ -767,9 +767,11 @@ Declare every new field in `config/template.yml`; do not use fallback access:
 
 ```yaml
 mass_shatter_separate_ion_mode_proposal_head: False
+mass_shatter_ion_mode_proposal_binary_logits: False
 mass_shatter_min_ion_mode_relative_probability: 0.0
 mass_shatter_ion_mode_proposal_loss_weight: 0.0
 mass_shatter_separate_ion_h_support_head: False
+mass_shatter_ion_h_support_binary_logits: False
 mass_shatter_min_ion_h_relative_probability: 0.0
 mass_shatter_ion_h_support_loss_weight: 0.0
 mass_shatter_apply_channel_selection_in_training: False
@@ -780,10 +782,12 @@ Semantics:
 
 - both heads `False`, both floors `0.0`, and both loss weights `0.0`: selector-disabled
   path, bit-for-bit relative to the post-Phase-0 chemistry baseline;
-- mode head `True` with positive mode-loss weight: learn CRF/CMF proposal support;
+- mode head `True`, mode binary-logit semantics `True`, and a positive mode-loss
+  weight: learn CRF/CMF proposal support with balanced BCE;
 - mode head `True` with mode floor `0.0`: train and diagnose the head without pruning;
-- separate H-support head `True` with positive support-loss weight: split H support
-  from ion/H intensity;
+- separate H-support head `True`, H-support binary-logit semantics `True`, and a
+  positive support-loss weight: split H support from ion/H intensity with balanced
+  BCE;
 - `mass_shatter_apply_channel_selection_in_training: False` applies positive floors
   only during validation/inference;
 - setting it `True` applies active mode and ion/H floors to the training spectral path,
@@ -795,6 +799,7 @@ Semantics:
 - either new head enabled with its loss weight zero is invalid because an unsupervised
   random selector has no defined purpose;
 - either new loss weight positive with its head disabled is invalid;
+- either binary-logit flag must agree with its current balanced-BCE loss configuration;
 - mode-head configuration is invalid when CMF emission is disabled or when CMF is
   degenerate for every configured adduct at the configured `max_h_transfer`, because
   the proposer has no identifiable two-mode decision to learn;
@@ -898,6 +903,11 @@ over valid H shifts within CRF and CMF:
 existing_mode_logprob[f, mode]
     = logsumexp(ion_h_logprob[f, mode, valid_h], dim=h)
 ```
+
+When the fallback source is a binary H-support head instead, preserve its independent
+Bernoulli semantics and derive each mode's probability as
+`1 - product_h(1 - sigmoid(ion_h_support_logit))`. The explicit binary-logit config
+flags select these conversions; head presence alone does not determine them.
 
 Evaluate selection only from one fixed checkpoint.
 

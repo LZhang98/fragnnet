@@ -190,6 +190,47 @@ def _relative_channel_keep_mask(
     return keep.reshape_as(valid_mask)
 
 
+def _ion_mode_logits_from_ion_h_support(
+    ion_h_support_logits: th.Tensor,
+    valid_channels: th.Tensor,
+    *,
+    binary_logits: bool,
+) -> th.Tensor:
+    """Collapse ion/H support scores to ion-mode scores with matching semantics.
+
+    Categorical channel logits are marginalized from their masked joint distribution.
+    For independent Bernoulli channels, a mode is supported when any valid H channel
+    is supported, so its probability is ``1 - product_h(1 - p_h)``.
+    """
+    if (
+        ion_h_support_logits.ndim != 3
+        or valid_channels.shape != ion_h_support_logits.shape
+        or valid_channels.dtype != th.bool
+    ):
+        raise ValueError("ion/H support logits and validity must be aligned rank-3 tensors")
+    if not isinstance(binary_logits, bool):
+        raise ValueError("binary_logits must be boolean")
+    _validate_tensor_condition(
+        valid_channels.flatten(start_dim=1).any(dim=1).all(),
+        "every fragment must have at least one valid ion/H channel",
+    )
+    if not binary_logits:
+        channel_log_probabilities = masked_ion_hydrogen_log_probabilities(
+            ion_h_support_logits,
+            valid_channels,
+        )
+        return th.logsumexp(channel_log_probabilities, dim=2)
+
+    valid_logits = ion_h_support_logits.masked_fill(~valid_channels, -th.inf)
+    mode_log_no_support = F.logsigmoid(-valid_logits).sum(dim=2)
+    mode_log_support = th.where(
+        mode_log_no_support < -math.log(2.0),
+        th.log1p(-mode_log_no_support.exp()),
+        th.log(-th.expm1(mode_log_no_support)),
+    )
+    return mode_log_support - mode_log_no_support
+
+
 def _fixed_top_k_channel_keep_mask(
     logits: th.Tensor,
     valid_mask: th.Tensor,
@@ -734,8 +775,10 @@ class MassShatterModel(nn.Module):
         separate_proposal_encoder: bool,
         share_proposal_across_ev: bool,
         separate_ion_mode_proposal_head: bool,
+        ion_mode_proposal_binary_logits: bool,
         min_ion_mode_relative_probability: float,
         separate_ion_h_support_head: bool,
+        ion_h_support_binary_logits: bool,
         min_ion_h_relative_probability: float,
         apply_channel_selection_in_training: bool,
         precursor_types: Sequence[str],
@@ -812,6 +855,10 @@ class MassShatterModel(nn.Module):
                 independent molecular GNN trained by proposal supervision.
             share_proposal_across_ev: Run the proposal encoder and heads once for all
                 spectra in the same acquisition group, without collision-energy input.
+            ion_mode_proposal_binary_logits: Whether the separate ion-mode proposal
+                head emits independent Bernoulli logits.
+            ion_h_support_binary_logits: Whether the ion/H support source emits
+                independent Bernoulli logits instead of categorical logits.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -891,6 +938,12 @@ class MassShatterModel(nn.Module):
                 "ion-mode and ion/H support heads require unique-fragment "
                 "proposal-selection-only mode"
             )
+        for name, binary_logits in (
+            ("ion_mode_proposal_binary_logits", ion_mode_proposal_binary_logits),
+            ("ion_h_support_binary_logits", ion_h_support_binary_logits),
+        ):
+            if not isinstance(binary_logits, bool):
+                raise ValueError(f"{name} must be boolean")
         if (
             not math.isfinite(min_mask_relative_probability)
             or not 0.0 <= min_mask_relative_probability <= 1.0
@@ -959,7 +1012,9 @@ class MassShatterModel(nn.Module):
         self.proposal_selection_only = proposal_selection_only
         self.separate_proposal_encoder = separate_proposal_encoder
         self.share_proposal_across_ev = share_proposal_across_ev
+        self.ion_mode_proposal_binary_logits = ion_mode_proposal_binary_logits
         self.min_ion_mode_relative_probability = min_ion_mode_relative_probability
+        self.ion_h_support_binary_logits = ion_h_support_binary_logits
         self.min_ion_h_relative_probability = min_ion_h_relative_probability
         self.apply_channel_selection_in_training = apply_channel_selection_in_training
         self.evaluation_ion_h_top_k = 0
@@ -1897,9 +1952,6 @@ class MassShatterModel(nn.Module):
                 fragment_log_probabilities
                 - retained_proposal_log_normalizers[fragment_batch_indices]
             )
-            retained_fragment_counts = tuple(
-                int(count) for count in fragment_count_after_cutoff.tolist()
-            )
             fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
                 atom_embeddings,
                 fragment_atom_indices,
@@ -1968,7 +2020,6 @@ class MassShatterModel(nn.Module):
                 batch_size=batch_size,
                 num_masks=num_fragments,
                 context=context[fragment_batch_indices],
-                component_counts=retained_fragment_counts,
                 atom_embeddings=atom_embeddings,
                 atom_indices=fragment_atom_indices,
                 atom_fragment_indices=atom_fragment_indices,
@@ -2083,7 +2134,6 @@ class MassShatterModel(nn.Module):
                 batch_size=batch_size,
                 num_masks=num_masks,
                 context=context[fragment_batch_indices],
-                component_counts=candidates.component_counts,
                 atom_embeddings=atom_embeddings,
                 atom_indices=candidates.atom_indices,
                 atom_fragment_indices=candidates.atom_component_indices,
@@ -2140,10 +2190,6 @@ class MassShatterModel(nn.Module):
             )
 
         # 4. Separate full chemical support from selected spectral output.
-        dense_support_log_probabilities = masked_ion_hydrogen_log_probabilities(
-            ion_h_support_logits,
-            valid_channels,
-        )
         dense_intensity_log_probabilities = masked_ion_hydrogen_log_probabilities(
             ion_h_logits,
             valid_channels,
@@ -2160,22 +2206,23 @@ class MassShatterModel(nn.Module):
                 fragment_log_probabilities[:, None, None] + dense_intensity_log_probabilities
             )
         valid_ion_modes = valid_channels.any(dim=2)
-        existing_mode_log_probabilities = th.logsumexp(
-            dense_support_log_probabilities,
-            dim=2,
-        )
-        ion_mode_proposal_logits = (
-            existing_mode_log_probabilities
-            if learned_ion_mode_proposal_logits is None
-            else learned_ion_mode_proposal_logits
-        )
+        if learned_ion_mode_proposal_logits is None:
+            ion_mode_proposal_logits = _ion_mode_logits_from_ion_h_support(
+                ion_h_support_logits,
+                valid_channels,
+                binary_logits=self.ion_h_support_binary_logits,
+            )
+            ion_mode_proposal_binary_logits = self.ion_h_support_binary_logits
+        else:
+            ion_mode_proposal_logits = learned_ion_mode_proposal_logits
+            ion_mode_proposal_binary_logits = self.ion_mode_proposal_binary_logits
         apply_selection = not self.training or self.apply_channel_selection_in_training
         mode_keep = (
             _relative_channel_keep_mask(
                 ion_mode_proposal_logits,
                 valid_ion_modes,
                 self.min_ion_mode_relative_probability,
-                binary_logits=learned_ion_mode_proposal_logits is not None,
+                binary_logits=ion_mode_proposal_binary_logits,
             )
             if apply_selection
             else valid_ion_modes
@@ -2192,7 +2239,7 @@ class MassShatterModel(nn.Module):
                 ion_h_support_logits,
                 mode_selected_channels,
                 self.min_ion_h_relative_probability,
-                binary_logits=self.intensity_head.ion_h_support_head is not None,
+                binary_logits=self.ion_h_support_binary_logits,
             )
         else:
             spectral_output_channels = valid_channels
@@ -2277,8 +2324,13 @@ class MassShatterModel(nn.Module):
             retained_joint_intensity_by_fragment.to(bond_logits),
         )
         retained_joint_intensity_fraction = retained_joint_intensity / total_joint_intensity
+        mode_log_scores = (
+            F.logsigmoid(ion_mode_proposal_logits)
+            if ion_mode_proposal_binary_logits
+            else ion_mode_proposal_logits
+        )
         mode_log_probabilities = th.log_softmax(
-            ion_mode_proposal_logits.masked_fill(~valid_ion_modes, -th.inf),
+            mode_log_scores.masked_fill(~valid_ion_modes, -th.inf),
             dim=1,
         )
         retained_mode_mass = (mode_log_probabilities.exp() * mode_keep).sum(dim=1)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from typing import Literal
 
 import torch as th
@@ -170,9 +169,7 @@ class IonModeProposalHead(nn.Module):
             features = [*embeddings]
         else:
             if context is None or context.shape != (num_fragments, self.context_dim):
-                raise ValueError(
-                    f"context must have shape ({num_fragments}, {self.context_dim})"
-                )
+                raise ValueError(f"context must have shape ({num_fragments}, {self.context_dim})")
             features = [*embeddings, context]
         features.extend(
             (
@@ -229,9 +226,7 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("model_dim must be divisible by num_heads")
         if dropout < 0.0 or dropout > 1.0:
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
-        if not math.isfinite(initial_oos_probability) or not (
-            0.0 < initial_oos_probability < 1.0
-        ):
+        if not math.isfinite(initial_oos_probability) or not (0.0 < initial_oos_probability < 1.0):
             raise ValueError("initial_oos_probability must be finite and in (0, 1)")
 
         self.fragment_embedding_dim = fragment_embedding_dim
@@ -380,9 +375,9 @@ class CandidateIntensityTransformerHead(nn.Module):
         order = th.argsort(atom_fragment_indices, stable=True)
         sorted_fragment_indices = atom_fragment_indices[order]
         offsets = counts.cumsum(0) - counts
-        positions = th.arange(order.shape[0], device=order.device) - offsets[
-            sorted_fragment_indices
-        ]
+        positions = (
+            th.arange(order.shape[0], device=order.device) - offsets[sorted_fragment_indices]
+        )
         max_atoms = int(counts.max().item())
         memory = tokens.new_zeros((tokens.shape[0], max_atoms, tokens.shape[1]))
         if self.atom_projection is None:
@@ -410,7 +405,6 @@ class CandidateIntensityTransformerHead(nn.Module):
         tokens: th.Tensor,
         component_batch_indices: th.Tensor,
         batch_size: int,
-        component_counts: Sequence[int] | None = None,
     ) -> th.Tensor:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -429,31 +423,12 @@ class CandidateIntensityTransformerHead(nn.Module):
         # molecule to the largest precursor in the batch.
         order = th.argsort(component_batch_indices, stable=True)
         sorted_batch_indices = component_batch_indices[order]
-        actual_counts = th.bincount(sorted_batch_indices, minlength=batch_size)
-        if component_counts is None:
-            counts = actual_counts
-            count_values = counts.tolist()
-        else:
-            count_values = [int(count) for count in component_counts]
-            if len(count_values) != batch_size:
-                raise ValueError("component_counts must contain one count per molecule")
-            if any(count <= 0 for count in count_values):
-                raise ValueError("every component count must be positive")
-            if sum(count_values) != tokens.shape[0]:
-                raise ValueError("component_counts must sum to the number of tokens")
-            counts = th.tensor(
-                count_values,
-                dtype=th.long,
-                device=tokens.device,
-            )
-            _validate_tensor_condition(
-                (actual_counts == counts).all(),
-                "component_counts do not match component_batch_indices",
-            )
+        counts = th.bincount(sorted_batch_indices, minlength=batch_size)
         _validate_tensor_condition(
             (counts > 0).all(),
             "every molecule must contain at least one component token",
         )
+        count_values = counts.tolist()
         bucketed_molecules: dict[int, list[int]] = {}
         for molecule_index, count in enumerate(count_values):
             bucket_limit = 1 << (count - 1).bit_length()
@@ -521,7 +496,6 @@ class CandidateIntensityTransformerHead(nn.Module):
         batch_size: int,
         num_masks: int,
         context: th.Tensor | None = None,
-        component_counts: Sequence[int] | None = None,
         atom_embeddings: th.Tensor | None = None,
         atom_indices: th.Tensor | None = None,
         atom_fragment_indices: th.Tensor | None = None,
@@ -602,7 +576,6 @@ class CandidateIntensityTransformerHead(nn.Module):
             tokens,
             component_batch_indices,
             batch_size,
-            component_counts,
         )
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(
