@@ -53,7 +53,7 @@ def test_merged_independent_distance_configs_enable_requested_model() -> None:
     )
     config_paths = sorted(config_dir.glob("nist20_merged_independent_*_hattr_*.yml"))
 
-    assert len(config_paths) == 6
+    assert len(config_paths) == 8
     for config_path in config_paths:
         with config_path.open() as config_file:
             config = yaml.safe_load(config_file)
