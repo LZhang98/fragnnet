@@ -32,6 +32,10 @@ spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: True
+  merge_normalize_each_spectrum: True
+  merge_equal_ce_weight: True
   inst_type: True
   inst_types:
     - "FT"
