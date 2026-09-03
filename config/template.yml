@@ -32,6 +32,16 @@ subsample_params:
 spec_params:
   merge: True
   merge_keep_ces: False
+  # exact_sum preserves the historical exact-m/z union. tolerance_consensus
+  # normalizes source spectra, clusters peaks at instrument tolerance, averages
+  # replicates, and can give distinct CE schedules equal weight.
+  merge_method: exact_sum  # ["exact_sum", "tolerance_consensus"]
+  merge_tolerance_common_overlap: True
+  merge_normalize_each_spectrum: False
+  merge_equal_ce_weight: False
+  merge_tolerance_by_inst:
+    FT: {rel: 1.0e-5, min_mz: 200.0}
+    QTOF: {rel: 2.0e-5, min_mz: 750.0}
   sparse: True
   prec_type: True
   prec_type_str: False

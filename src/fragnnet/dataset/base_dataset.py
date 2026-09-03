@@ -399,7 +399,30 @@ class BaseDataset(Dataset):
         ]
         um_spec_df = spec_df[[col for col in um_spec_cols if col in spec_df.columns]].copy()
         if spec_params["merge"]:
-            spec_df = merge_spec_df(spec_df, keep_ces=spec_params["merge_keep_ces"])
+            required_merge_params = {
+                "merge_method",
+                "merge_tolerance_by_inst",
+                "merge_tolerance_common_overlap",
+                "merge_normalize_each_spectrum",
+                "merge_equal_ce_weight",
+            }
+            missing_merge_params = required_merge_params.difference(spec_params)
+            if missing_merge_params:
+                raise ValueError(
+                    "spec_params is missing required merge settings "
+                    f"{sorted(missing_merge_params)}. Merge old checkpoint settings with "
+                    "the current config/template.yml before constructing a dataset."
+                )
+            spec_df = merge_spec_df(
+                spec_df,
+                keep_ces=spec_params["merge_keep_ces"],
+                method=spec_params["merge_method"],
+                ce_key=ce_key,
+                tolerance_by_inst=spec_params["merge_tolerance_by_inst"],
+                require_common_tolerance_overlap=(spec_params["merge_tolerance_common_overlap"]),
+                normalize_each_spectrum=spec_params["merge_normalize_each_spectrum"],
+                equal_ce_weight=spec_params["merge_equal_ce_weight"],
+            )
             id_key = "group_id"
         else:
             id_key = "spec_id"

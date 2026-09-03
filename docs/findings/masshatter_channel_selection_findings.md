@@ -346,9 +346,40 @@ new training config is:
 [`nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml`](../../config/masshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml)
 
 It matches the no-barcode U256/E1024/Mix2 H-support configuration except for experiment identity,
-tags, and `mass_shatter_proposal_barcode_target: True`. Checkpoint uploading is an operational
-difference and remains disabled. This matched comparison should determine whether barcode
-supervision changes:
+tags, `mass_shatter_proposal_barcode_target: True`, and the corrected merged-target construction
+described below. Checkpoint uploading remains disabled. This comparison therefore tests the
+barcode model on the intended consensus target; it is not a strict one-variable ablation against
+the historical exact-union checkpoint.
+
+### Corrected merged target
+
+The historical merge pooled every spectrum sharing molecule, precursor type, and instrument. It
+summed intensities only at exactly equal m/z values and retained every union peak. On the 4,222
+validation groups, each target combined 12.32 source spectra on average and contained 208.49
+peaks. Although 66.7% of those peaks were below 1% of the merged base peak, they contributed only
+4.32% of total intensity. This explains why top-2 caused a large count-recall loss with a much
+smaller cosine loss.
+
+The new config uses `spec_params.merge_method: tolerance_consensus`. It:
+
+1. L1-normalizes every source spectrum;
+2. clusters peaks using the instrument tolerance and a common-overlap rule;
+3. averages replicate spectra within each CE schedule;
+4. gives distinct CE schedules equal weight;
+5. removes merged peaks below 0.1% of the base peak through
+   `target_rel_ints_thresh: 0.001`;
+6. reports `wrecall` alongside count recall.
+
+On the same 4,222 validation groups, the implemented tolerance consensus contains 95.87 peaks per
+target on average. Applying the 0.1% target floor leaves 71.00 peaks, removing 25.94% of the
+tolerance-merged peaks. Relative to the historical 208.49-peak exact union, the new training target
+contains about 66% fewer peak entries; most of that reduction is consolidation of masses that are
+indistinguishable at the configured FT tolerance rather than intensity filtering.
+
+The legacy `exact_sum` method remains the template default for checkpoint reproducibility. Because
+the consensus construction changes training targets, it requires a newly trained checkpoint.
+
+The matched follow-up should determine whether barcode supervision changes:
 
 1. soft fragment attribution;
 2. fragment any-match rate;
