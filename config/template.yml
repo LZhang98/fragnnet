@@ -273,6 +273,9 @@ mass_shatter_proposal_ints_transform: same
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
 mass_shatter_separate_proposal_encoder: False
+# Train only proposal selection through this zero-indexed epoch, then jointly train
+# proposal and intensity. Null keeps joint training throughout.
+mass_shatter_proposal_only_until_epoch: null
 mass_shatter_separate_ion_mode_proposal_head: False
 # Declare the score semantics separately from head construction. The current
 # balanced-BCE proposal/support losses require these flags when their heads are enabled.

@@ -1080,6 +1080,7 @@ class MassShatterModel(nn.Module):
         self.return_base_spectrum = return_base_spectrum
         self.detach_base_ion_h = detach_base_ion_h
         self.proposal_selection_only = proposal_selection_only
+        self.proposal_input_gradients_enabled = False
         self.separate_proposal_encoder = separate_proposal_encoder
         self.share_proposal_across_ev = share_proposal_across_ev
         self.ion_mode_proposal_binary_logits = ion_mode_proposal_binary_logits
@@ -1225,6 +1226,12 @@ class MassShatterModel(nn.Module):
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 0:
             raise ValueError("evaluation ion/H top_k must be a nonnegative integer")
         self.evaluation_ion_h_top_k = top_k
+
+    def set_proposal_input_gradients_enabled(self, enabled: bool) -> None:
+        """Control whether proposal supervision updates its shared input encoders."""
+        if not isinstance(enabled, bool):
+            raise ValueError("proposal input-gradient state must be boolean")
+        self.proposal_input_gradients_enabled = enabled
 
     def set_evaluation_joint_channel_relative_threshold(self, threshold: float) -> None:
         """Set an evaluation-only spectrum-relative joint channel floor."""
@@ -1761,7 +1768,7 @@ class MassShatterModel(nn.Module):
             shared_atom_indices = layout["representative_atom_indices"]
             if self.proposal_encoder is None:
                 shared_proposal_atom_embeddings = atom_embeddings[shared_atom_indices]
-                if self.proposal_selection_only:
+                if self.proposal_selection_only and not self.proposal_input_gradients_enabled:
                     shared_proposal_atom_embeddings = shared_proposal_atom_embeddings.detach()
             else:
                 shared_proposal_atom_embeddings = self.proposal_encoder(
@@ -1772,9 +1779,15 @@ class MassShatterModel(nn.Module):
                 )
             if self.ion_mode_proposal_head is not None:
                 proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
-                proposal_context = context.detach() if self.proposal_selection_only else context
+                proposal_context = (
+                    context.detach()
+                    if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                    else context
+                )
             shared_proposal_context = (
-                shared_context.detach() if self.proposal_selection_only else shared_context
+                shared_context.detach()
+                if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                else shared_context
             )
             shared_bond_logits = self.bond_break_head(
                 shared_proposal_atom_embeddings,
@@ -1805,7 +1818,9 @@ class MassShatterModel(nn.Module):
             # an independent molecular representation from proposal supervision.
             if self.proposal_encoder is None:
                 proposal_atom_embeddings = (
-                    atom_embeddings.detach() if self.proposal_selection_only else atom_embeddings
+                    atom_embeddings.detach()
+                    if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                    else atom_embeddings
                 )
             else:
                 proposal_atom_embeddings = self.proposal_encoder(
@@ -1814,7 +1829,11 @@ class MassShatterModel(nn.Module):
                     mol_pyg.edge_index,
                     mol_pyg.edge_attr,
                 )
-            proposal_context = context.detach() if self.proposal_selection_only else context
+            proposal_context = (
+                context.detach()
+                if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                else context
+            )
             bond_logits = self.bond_break_head(
                 proposal_atom_embeddings,
                 mol_pyg.chemical_bond_index,

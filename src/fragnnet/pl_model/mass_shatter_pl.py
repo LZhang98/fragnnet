@@ -761,6 +761,31 @@ class MassShatterPL(SpectrumPL):
             ValueError: If ``compile`` is on, or the spectrum config does not provide
                 the precursor type MASShatter needs to compute adduct-dependent m/z.
         """
+        proposal_only_until_epoch = self.hparams.mass_shatter_proposal_only_until_epoch
+        if proposal_only_until_epoch is not None and (
+            isinstance(proposal_only_until_epoch, bool)
+            or not isinstance(proposal_only_until_epoch, int)
+            or proposal_only_until_epoch < 0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_only_until_epoch must be null or a nonnegative integer"
+            )
+        if proposal_only_until_epoch is not None:
+            if not self.hparams.mass_shatter_proposal_selection_only:
+                raise ValueError(
+                    "mass_shatter_proposal_only_until_epoch requires "
+                    "mass_shatter_proposal_selection_only=True"
+                )
+            if self.hparams.mass_shatter_proposal_loss_weight <= 0.0:
+                raise ValueError(
+                    "mass_shatter_proposal_only_until_epoch requires a positive "
+                    "mass_shatter_proposal_loss_weight"
+                )
+            if self.hparams.mass_shatter_smarts_templates:
+                raise ValueError(
+                    "mass_shatter_proposal_only_until_epoch does not support "
+                    "mass_shatter_smarts_templates=True"
+                )
         legacy_oos_enabled = (
             self.hparams.predict_oos
             or self.hparams.oos_loss
@@ -903,7 +928,77 @@ class MassShatterPL(SpectrumPL):
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
             use_smarts_templates=self.hparams.mass_shatter_smarts_templates,
         )
+        self._proposal_only_training = False
         self._check_ce_params()
+
+    def _proposal_modules(self) -> tuple[th.nn.Module, ...]:
+        """Return modules whose outputs determine proposal candidate selection."""
+        proposal_encoder = (
+            self.model.proposal_encoder
+            if self.model.proposal_encoder is not None
+            else self.model.precursor_encoder
+        )
+        modules = (
+            self.model.context_encoder,
+            proposal_encoder,
+            self.model.bond_break_head,
+            self.model.proposal_mixture_head,
+            self.model.charge_head,
+            self.model.ion_mode_proposal_head,
+            self.model.mechanism_head,
+        )
+        return tuple(module for module in modules if module is not None)
+
+    def _intensity_modules(self) -> tuple[th.nn.Module, ...]:
+        """Return modules trained by the final spectrum-intensity objective."""
+        return (self.model.precursor_encoder, self.model.intensity_head)
+
+    @staticmethod
+    def _set_modules_trainable(
+        modules: tuple[th.nn.Module, ...],
+        *,
+        trainable: bool,
+    ) -> None:
+        """Set gradient and train/evaluation state for one training branch."""
+        for module in modules:
+            module.requires_grad_(trainable)
+            if trainable:
+                module.train()
+            else:
+                for parameter in module.parameters():
+                    parameter.grad = None
+                module.eval()
+
+    def _apply_staged_training(self, epoch: int) -> None:
+        """Train proposal only through the boundary, then train both branches."""
+        proposal_only_until_epoch = self.hparams.mass_shatter_proposal_only_until_epoch
+        if proposal_only_until_epoch is None:
+            return
+
+        # 1. Select the phase using the inclusive proposal-only boundary.
+        proposal_only = epoch <= proposal_only_until_epoch
+        self._proposal_only_training = proposal_only
+        self.model.set_proposal_input_gradients_enabled(
+            proposal_only or self.model.proposal_encoder is None
+        )
+
+        # 2. Keep proposal training active and enable intensity after warm-up.
+        self._set_modules_trainable(self._proposal_modules(), trainable=True)
+        if proposal_only:
+            intensity_only_modules = (self.model.intensity_head,)
+            if self.model.proposal_encoder is not None:
+                intensity_only_modules = (
+                    self.model.precursor_encoder,
+                    *intensity_only_modules,
+                )
+            self._set_modules_trainable(intensity_only_modules, trainable=False)
+        else:
+            self._set_modules_trainable(self._intensity_modules(), trainable=True)
+
+    def on_train_epoch_start(self) -> None:
+        """Seed the loader and apply the configured staged-training phase."""
+        super().on_train_epoch_start()
+        self._apply_staged_training(self.current_epoch)
 
     def _setup_loss_fn(self) -> None:
         """Configure legacy CE or a direct clustered peak-list objective.
@@ -1040,13 +1135,8 @@ class MassShatterPL(SpectrumPL):
         if not isinstance(self.hparams.mass_shatter_apply_channel_selection_in_training, bool):
             raise ValueError("mass_shatter_apply_channel_selection_in_training must be boolean")
         absolute_support_floor = self.hparams.mass_shatter_min_ion_h_absolute_probability
-        if (
-            not math.isfinite(absolute_support_floor)
-            or not 0.0 <= absolute_support_floor <= 1.0
-        ):
-            raise ValueError(
-                "mass_shatter_min_ion_h_absolute_probability must be in [0, 1]"
-            )
+        if not math.isfinite(absolute_support_floor) or not 0.0 <= absolute_support_floor <= 1.0:
+            raise ValueError("mass_shatter_min_ion_h_absolute_probability must be in [0, 1]")
         if absolute_support_floor > 0.0 and not (
             independent_output
             and self.hparams.mass_shatter_separate_ion_h_support_head
@@ -1642,6 +1732,9 @@ class MassShatterPL(SpectrumPL):
                 loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
                 loss_values["ce_pair_loss"] = pair_loss
                 loss_values["ce_pair_eligible_endpoints"] = eligible_endpoints
+            if self.training and self._proposal_only_training:
+                # Phase 1 uses no intensity-side auxiliary or primary objective.
+                loss = self.hparams.mass_shatter_proposal_loss_weight * proposal_loss
             loss_values["loss"] = loss
             return loss_values
 

@@ -70,6 +70,193 @@ def test_merged_independent_distance_configs_enable_requested_model() -> None:
             assert config["mass_shatter_kl_epsilon"] == pytest.approx(1.0e-4)
 
 
+def test_proposal_warmup_configs_enable_proposal_only_epochs_0_through_15() -> None:
+    config_dir = Path(__file__).parents[1] / "config" / "masshatter" / "merged" / "proposal_warmup"
+    config_paths = sorted(config_dir.glob("*proposal_warmup_e0_15.yml"))
+
+    assert len(config_paths) == 3
+    for config_path in config_paths:
+        with config_path.open() as config_file:
+            config = yaml.safe_load(config_file)
+        assert config["mass_shatter_proposal_only_until_epoch"] == 15
+        assert config["mass_shatter_separate_proposal_encoder"] is False
+        assert "shared_proposal_encoder" in config["wandb_tags"]
+        assert "proposal_warmup_epochs_0_15" in config["wandb_tags"]
+        assert config["wandb_name"].endswith("_shared_proposal_warmup_e0_15")
+
+
+def test_baseline_directory_contains_probability_ce_control() -> None:
+    baseline_path = (
+        Path(__file__).parents[1]
+        / "config"
+        / "masshatter"
+        / "merged"
+        / "baseline"
+        / "nist20_merged_probability_ce_baseline.yml"
+    )
+    with baseline_path.open() as config_file:
+        baseline_config = yaml.safe_load(config_file)
+    assert baseline_config["mass_shatter_intensity_output"] == "probability"
+    assert baseline_config["mass_shatter_proposal_num_mixtures"] == 1
+    assert baseline_config["mass_shatter_gate_independent_intensity_with_support"] is False
+    assert baseline_config["mass_shatter_separate_proposal_encoder"] is True
+    assert baseline_config["mass_shatter_separate_ion_h_support_head"] is False
+    assert baseline_config["mass_shatter_ion_h_support_binary_logits"] is False
+    assert baseline_config["mass_shatter_min_ion_h_relative_probability"] == 0.0
+    assert baseline_config["mass_shatter_min_ion_h_absolute_probability"] == 0.0
+    assert baseline_config["mass_shatter_ion_h_support_loss_weight"] == 0.0
+    assert baseline_config["mass_shatter_channel_diagnostics"] is False
+    assert baseline_config["mass_shatter_proposal_only_until_epoch"] is None
+    assert baseline_config["loss_type"] == "cross_entropy"
+    assert baseline_config["wandb_name"].endswith("_baseline")
+
+
+@pytest.mark.parametrize("proposal_only_until_epoch", [True, -1, 1.5])
+def test_proposal_only_epoch_rejects_invalid_values(proposal_only_until_epoch: object) -> None:
+    with pytest.raises(
+        ValueError,
+        match="mass_shatter_proposal_only_until_epoch must be null or a nonnegative integer",
+    ):
+        _build_pl(mass_shatter_proposal_only_until_epoch=proposal_only_until_epoch)
+
+
+@pytest.mark.parametrize(
+    ("config_overrides", "message"),
+    [
+        (
+            {"mass_shatter_proposal_selection_only": False},
+            "mass_shatter_proposal_selection_only=True",
+        ),
+        (
+            {
+                "mass_shatter_proposal_selection_only": True,
+                "mass_shatter_separate_proposal_encoder": True,
+                "mass_shatter_proposal_loss_weight": 0.0,
+            },
+            "positive mass_shatter_proposal_loss_weight",
+        ),
+        (
+            {
+                "mass_shatter_proposal_selection_only": True,
+                "mass_shatter_separate_proposal_encoder": True,
+                "mass_shatter_proposal_loss_weight": 0.1,
+                "mass_shatter_smarts_templates": True,
+            },
+            "does not support mass_shatter_smarts_templates=True",
+        ),
+    ],
+)
+def test_proposal_only_schedule_rejects_incompatible_model_configs(
+    config_overrides: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _build_pl(
+            mass_shatter_proposal_only_until_epoch=2,
+            **config_overrides,
+        )
+
+
+def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:
+    pl, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_separate_proposal_encoder=False,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_proposal_only_until_epoch=15,
+    )
+
+    pl._apply_staged_training(epoch=15)
+    assert pl._proposal_only_training
+    assert pl.model.proposal_input_gradients_enabled
+    assert all(
+        parameter.requires_grad
+        for module in pl._proposal_modules()
+        for parameter in module.parameters()
+    )
+    assert all(parameter.requires_grad for parameter in pl.model.precursor_encoder.parameters())
+    assert all(not parameter.requires_grad for parameter in pl.model.intensity_head.parameters())
+
+    proposal_parameter = next(pl.model.precursor_encoder.parameters())
+    pl._apply_staged_training(epoch=16)
+    assert not pl._proposal_only_training
+    assert pl.model.proposal_input_gradients_enabled
+    assert all(
+        parameter.requires_grad
+        for module in pl._proposal_modules()
+        for parameter in module.parameters()
+    )
+    assert proposal_parameter.requires_grad
+    assert all(parameter.requires_grad for parameter in pl.model.precursor_encoder.parameters())
+    assert all(parameter.requires_grad for parameter in pl.model.intensity_head.parameters())
+
+
+def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
+    pl, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_separate_proposal_encoder=False,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_proposal_only_until_epoch=15,
+    )
+
+    def calculate_loss(
+        pred_probabilities: th.Tensor,
+        proposal_probabilities: th.Tensor,
+    ) -> dict[str, th.Tensor]:
+        return pl.loss_fn(
+            true_mzs=th.tensor([100.0]),
+            true_logprobs=th.tensor([0.0]),
+            true_batch_idxs=th.tensor([0]),
+            pred_mzs=th.tensor([100.0, 200.0]),
+            pred_logprobs=pred_probabilities.log(),
+            pred_batch_idxs=th.tensor([0, 0]),
+            candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+            candidate_batch_idxs_by_cut=th.tensor([0, 0]),
+            proposal_candidate_mzs=th.tensor([100.0, 200.0]),
+            proposal_candidate_fragment_idxs=th.tensor([0, 1]),
+            proposal_fragment_logprobs=proposal_probabilities.log(),
+            proposal_fragment_batch_idxs=th.tensor([0, 0]),
+            batch_size=1,
+            **_loss_diagnostics(),
+        )
+
+    pl._apply_staged_training(epoch=15)
+    pred_probabilities = th.tensor([0.8, 0.2], requires_grad=True)
+    proposal_probabilities = th.tensor([0.7, 0.3], requires_grad=True)
+    proposal_phase = calculate_loss(pred_probabilities, proposal_probabilities)
+    assert proposal_phase["loss"].tolist() == pytest.approx(
+        (0.1 * proposal_phase["proposal_loss"]).tolist()
+    )
+    proposal_phase["loss"].sum().backward()
+    assert pred_probabilities.grad is None
+    assert proposal_probabilities.grad is not None
+
+    pl.eval()
+    pred_probabilities = th.tensor([0.8, 0.2], requires_grad=True)
+    proposal_probabilities = th.tensor([0.7, 0.3], requires_grad=True)
+    validation_phase = calculate_loss(pred_probabilities, proposal_probabilities)
+    expected_validation_loss = (
+        validation_phase["primary_loss"] + 0.1 * validation_phase["proposal_loss"]
+    )
+    assert validation_phase["loss"].tolist() == pytest.approx(
+        expected_validation_loss.tolist()
+    )
+
+    pl.train()
+    pl._apply_staged_training(epoch=16)
+    pred_probabilities = th.tensor([0.8, 0.2], requires_grad=True)
+    proposal_probabilities = th.tensor([0.7, 0.3], requires_grad=True)
+    intensity_phase = calculate_loss(pred_probabilities, proposal_probabilities)
+    expected_joint_loss = intensity_phase["primary_loss"] + 0.1 * intensity_phase["proposal_loss"]
+    assert intensity_phase["loss"].tolist() == pytest.approx(expected_joint_loss.tolist())
+    intensity_phase["loss"].sum().backward()
+    assert pred_probabilities.grad is not None
+    assert proposal_probabilities.grad is not None
+
+
 @pytest.mark.parametrize("precision", [16, "16", "16-mixed"])
 def test_kl_distance_rejects_fp16_mixed_precision(precision: int | str) -> None:
     with pytest.raises(ValueError, match="does not support FP16 mixed precision"):
