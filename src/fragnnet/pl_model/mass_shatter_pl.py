@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import math
 from functools import lru_cache
-from typing import Any, Literal
+from typing import Any
 
 import torch as th
 from rdkit import Chem
@@ -28,6 +28,12 @@ from fragnnet.frag.mass_shatter_templates import (
     build_mass_shatter_templates,
 )
 from fragnnet.model import MassShatterModel
+from fragnnet.model.candidate_support import (
+    balanced_binary_support_loss as _balanced_binary_support_loss,
+)
+from fragnnet.model.candidate_support import (
+    observational_channel_targets as _observational_channel_targets,
+)
 from fragnnet.model.loss import (
     ce_switch_pair_bce,
     get_sparse_cross_entropy_fn,
@@ -38,7 +44,6 @@ from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.spec_utils import (
     calculate_match_mzs,
     get_ints_transform_func,
-    linear_sum_assignment,
 )
 
 _CUT_COUNT_BUCKETS = {
@@ -335,188 +340,6 @@ def _proposal_coverage_loss(
             th.zeros_like(peak_log_coverage),
         ).sum()
     return coverage_loss
-
-
-def _observational_channel_targets(
-    *,
-    true_mzs: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    channel_mzs: th.Tensor,
-    channel_log_weights: th.Tensor,
-    chemical_valid_channels: th.Tensor,
-    fragment_batch_idxs: th.Tensor,
-    batch_size: int,
-    tolerance: float,
-    relative: bool,
-    tolerance_min_mz: float,
-    attribution: Literal["gaussian_posterior", "hungarian"],
-    use_intensity_prior: bool = True,
-    tol_per_sample: th.Tensor | None = None,
-    min_mz_per_sample: th.Tensor | None = None,
-) -> th.Tensor:
-    """Attribute observed peaks to chemically valid ion/H channels.
-
-    ``gaussian_posterior`` returns FraGNNet-style mixture responsibilities. For each
-    observed peak, an optional detached channel prior is multiplied by a Gaussian
-    mass-error likelihood and normalized over matching channels. ``hungarian`` converts
-    the same pairwise likelihood into a hard one-to-one peak/channel assignment.
-    """
-    if channel_mzs.shape != chemical_valid_channels.shape or channel_mzs.ndim != 3:
-        raise ValueError("channel masses and validity must be aligned rank-3 tensors")
-    if channel_log_weights.shape != channel_mzs.shape:
-        raise ValueError("channel log weights must align with channel masses")
-    if fragment_batch_idxs.shape != (channel_mzs.shape[0],):
-        raise ValueError("fragment_batch_idxs must contain one index per fragment")
-    if (tol_per_sample is None) != (min_mz_per_sample is None):
-        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
-    if attribution not in {"gaussian_posterior", "hungarian"}:
-        raise ValueError(f"unknown channel support attribution: {attribution}")
-    if not isinstance(use_intensity_prior, bool):
-        raise ValueError("use_intensity_prior must be boolean")
-    if not bool(th.isfinite(channel_log_weights[chemical_valid_channels]).all().item()):
-        raise ValueError("valid channels must have finite log weights")
-    targets = channel_log_weights.new_zeros(channel_log_weights.shape)
-    for batch_index in range(batch_size):
-        batch_true_mzs = true_mzs[true_batch_idxs == batch_index]
-        fragment_mask = fragment_batch_idxs == batch_index
-        valid_mask = chemical_valid_channels[fragment_mask]
-        if batch_true_mzs.numel() == 0:
-            raise ValueError(f"spectrum {batch_index} has no true peaks")
-        if valid_mask.numel() == 0:
-            raise ValueError(f"spectrum {batch_index} has no proposed fragments")
-        valid_mzs = channel_mzs[fragment_mask][valid_mask]
-        valid_log_weights = channel_log_weights[fragment_mask][valid_mask].detach()
-        channel_log_priors = (
-            valid_log_weights if use_intensity_prior else th.zeros_like(valid_log_weights)
-        )
-        if tol_per_sample is None:
-            channel_match = calculate_match_mzs(
-                batch_true_mzs,
-                valid_mzs,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            )
-            channel_stds = (
-                tolerance * th.maximum(valid_mzs, valid_mzs.new_tensor(tolerance_min_mz))
-                if relative
-                else th.full_like(valid_mzs, tolerance)
-            )
-        else:
-            per_peak_tolerance = tol_per_sample[batch_index] * th.maximum(
-                batch_true_mzs,
-                min_mz_per_sample[batch_index],
-            )
-            channel_match = calculate_match_mzs(
-                batch_true_mzs,
-                valid_mzs,
-                tolerance=0.0,
-                relative=False,
-                tol_per_true=per_peak_tolerance,
-            )
-            channel_stds = tol_per_sample[batch_index] * th.maximum(
-                valid_mzs,
-                min_mz_per_sample[batch_index],
-            )
-        channel_match = th.as_tensor(
-            channel_match,
-            dtype=th.bool,
-            device=valid_mzs.device,
-        )
-        if bool((channel_stds <= 0).any().item()):
-            raise ValueError("channel Gaussian standard deviations must be positive")
-
-        mass_errors = batch_true_mzs[:, None] - valid_mzs[None, :]
-        mass_log_likelihood = (
-            -0.5 * (mass_errors / channel_stds[None, :]) ** 2 - th.log(channel_stds)[None, :]
-        ).to(valid_log_weights)
-        pair_log_likelihood = channel_log_priors[None, :] + mass_log_likelihood
-        valid_targets = valid_log_weights.new_zeros(valid_log_weights.shape)
-        if attribution == "gaussian_posterior":
-            matched_peaks = channel_match.any(dim=1)
-            if matched_peaks.any():
-                responsibilities = th.softmax(
-                    pair_log_likelihood[matched_peaks].masked_fill(
-                        ~channel_match[matched_peaks],
-                        -th.inf,
-                    ),
-                    dim=1,
-                )
-                # Channel support is existential, so a channel keeps its largest
-                # responsibility if overlapping observed tolerance windows occur.
-                valid_targets = responsibilities.amax(dim=0)
-        elif channel_match.any():
-            feasible_peaks = channel_match.any(dim=1)
-            feasible_channels = channel_match.any(dim=0)
-            feasible_channel_indices = th.where(feasible_channels)[0]
-            feasible_match = channel_match[feasible_peaks][:, feasible_channels]
-            feasible_pair_log_likelihood = pair_log_likelihood[feasible_peaks][:, feasible_channels]
-            valid_pair_scores = feasible_pair_log_likelihood[feasible_match]
-            pair_cost = valid_pair_scores.max() - feasible_pair_log_likelihood
-            max_valid_cost = pair_cost[feasible_match].max()
-            invalid_cost = (max_valid_cost + 1.0) * (min(feasible_match.shape) + 1)
-            assignment_cost = pair_cost.masked_fill(~feasible_match, invalid_cost)
-            peak_indices, channel_indices = linear_sum_assignment(
-                assignment_cost.detach(),
-                maximize=False,
-            )
-            assigned_valid = feasible_match[peak_indices, channel_indices]
-            matched_channel_indices = feasible_channel_indices[channel_indices[assigned_valid]]
-            valid_targets[matched_channel_indices] = 1.0
-
-        batch_targets = targets.new_zeros(valid_mask.shape)
-        batch_targets[valid_mask] = valid_targets
-        targets[fragment_mask] = batch_targets
-    return targets.detach()
-
-
-def _balanced_binary_support_loss(
-    logits: th.Tensor,
-    targets: th.Tensor,
-    valid_mask: th.Tensor,
-    item_batch_idxs: th.Tensor,
-    batch_size: int,
-    *,
-    allow_empty_batches: bool = False,
-) -> th.Tensor:
-    """Return class-balanced binary support loss for each spectrum."""
-    if logits.shape != targets.shape or logits.shape != valid_mask.shape:
-        raise ValueError("support logits, targets, and validity must have matching shapes")
-    if logits.shape[0] != item_batch_idxs.numel():
-        raise ValueError("item_batch_idxs must contain one index per first-axis item")
-    if valid_mask.dtype != th.bool:
-        raise ValueError("support validity must be boolean")
-    target_values = targets.to(logits)
-    if not bool(th.isfinite(target_values).all().item()) or bool(
-        ((target_values < 0.0) | (target_values > 1.0)).any().item()
-    ):
-        raise ValueError("support targets must be finite values in [0, 1]")
-    positive_element_loss = th.nn.functional.softplus(-logits)
-    negative_element_loss = th.nn.functional.softplus(logits)
-    losses = logits.new_zeros(batch_size)
-    for batch_index in range(batch_size):
-        batch_items = item_batch_idxs == batch_index
-        batch_valid = valid_mask[batch_items]
-        batch_targets = target_values[batch_items]
-        class_losses = []
-        positive_weights = batch_targets * batch_valid
-        negative_weights = (1.0 - batch_targets) * batch_valid
-        positive_mass = positive_weights.sum()
-        negative_mass = negative_weights.sum()
-        if positive_mass.item() > 0.0:
-            class_losses.append(
-                (positive_element_loss[batch_items] * positive_weights).sum() / positive_mass
-            )
-        if negative_mass.item() > 0.0:
-            class_losses.append(
-                (negative_element_loss[batch_items] * negative_weights).sum() / negative_mass
-            )
-        if not class_losses:
-            if allow_empty_batches:
-                continue
-            raise ValueError(f"spectrum {batch_index} has no valid support states")
-        losses[batch_index] = th.stack(class_losses).mean()
-    return losses
 
 
 def _ion_mode_support_loss(
@@ -1035,11 +858,15 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_min_ion_mode_relative_probability
             ),
             separate_ion_h_support_head=(self.hparams.mass_shatter_separate_ion_h_support_head),
-            ion_h_support_binary_logits=(
-                self.hparams.mass_shatter_ion_h_support_binary_logits
+            ion_h_support_binary_logits=(self.hparams.mass_shatter_ion_h_support_binary_logits),
+            gate_independent_intensity_with_support=(
+                self.hparams.mass_shatter_gate_independent_intensity_with_support
             ),
             min_ion_h_relative_probability=(
                 self.hparams.mass_shatter_min_ion_h_relative_probability
+            ),
+            min_ion_h_absolute_probability=(
+                self.hparams.mass_shatter_min_ion_h_absolute_probability
             ),
             apply_channel_selection_in_training=(
                 self.hparams.mass_shatter_apply_channel_selection_in_training
@@ -1212,6 +1039,23 @@ class MassShatterPL(SpectrumPL):
                 raise ValueError(f"mass_shatter_min_{name}_relative_probability must be in [0, 1]")
         if not isinstance(self.hparams.mass_shatter_apply_channel_selection_in_training, bool):
             raise ValueError("mass_shatter_apply_channel_selection_in_training must be boolean")
+        absolute_support_floor = self.hparams.mass_shatter_min_ion_h_absolute_probability
+        if (
+            not math.isfinite(absolute_support_floor)
+            or not 0.0 <= absolute_support_floor <= 1.0
+        ):
+            raise ValueError(
+                "mass_shatter_min_ion_h_absolute_probability must be in [0, 1]"
+            )
+        if absolute_support_floor > 0.0 and not (
+            independent_output
+            and self.hparams.mass_shatter_separate_ion_h_support_head
+            and self.hparams.mass_shatter_ion_h_support_binary_logits
+        ):
+            raise ValueError(
+                "an absolute ion/H support floor requires independent intensity and a "
+                "separate binary support head"
+            )
         if not isinstance(self.hparams.mass_shatter_channel_diagnostics, bool):
             raise ValueError("mass_shatter_channel_diagnostics must be boolean")
         if self.hparams.mass_shatter_channel_diagnostics and not (

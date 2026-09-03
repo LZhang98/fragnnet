@@ -134,8 +134,8 @@ of weak fragments and should be accounted for when interpreting a joint-threshol
 2. the model must receive a per-candidate signal that a channel is unsupported; and
 3. inference must be able to emit an exact zero, normally by omitting the rejected sparse peak.
 
-The independent MASShatter intensity path currently satisfies only the first requirement. For a
-valid fragment/ion/H candidate it computes
+The original independent MASShatter intensity path satisfied only the first requirement. For a
+valid fragment/ion/H candidate it computed
 
 ```text
 z_i = corrected_fragment_logit_i + ion_h_logit_i
@@ -187,15 +187,16 @@ outputs. Its important lesson is therefore the separation of *existence* from *m
 choice of sigmoid itself. See also the
 [GLACIER paper](https://arxiv.org/abs/2606.29161).
 
-### Proposed deterministic support gate
+### Implemented deterministic support gate
 
 MASShatter already has a separate ion/H support head with observational targets. Hungarian
 attribution produces hard zero/one targets, while Gaussian-posterior attribution produces
 fractional responsibilities. The balanced binary support loss directly teaches whether each
-chemically valid channel is observed. At present, this head controls evaluation selection but is
-disconnected from the independent training intensity.
+chemically valid channel is observed. The independent intensity path now uses this head for both
+differentiable training gates and evaluation selection whenever the separate binary support head
+is enabled.
 
-The proposed output is
+The output is
 
 ```text
 g_i = sigmoid(support_logit_i)
@@ -233,15 +234,21 @@ training is not recommended because a mistakenly rejected true channel would los
 gradient. ReLU intensity outputs can generate exact zeros directly, but negative logits have zero
 gradient and can create permanently dead channels.
 
+`mass_shatter_min_ion_h_absolute_probability` configures the evaluation-only exact-zero cutoff;
+`0.0` disables it. The absolute selector is restricted to independent intensity with a separate
+binary support head. It may remove all channels of an unsupported fragment, but preserves the
+highest-support remaining channel when a whole spectrum would otherwise be empty. The six
+independent JSS/JSS-sqrt/KL Gaussian/Hungarian configs use a conservative `0.01` absolute floor.
+
 ### Threshold and attribution caveats
 
 The existing `mass_shatter_min_ion_h_relative_probability: 0.01` rule compares each support score
 with one percent of the maximum score for that fragment. It always preserves the fragment's
 highest-scoring valid channel. Consequently, it cannot reject an entirely unsupported fragment:
-if all of its support scores are uniformly small, at least the largest still survives. A production
-zero policy therefore needs a validation-tuned absolute support floor, a genuinely global final
-intensity threshold, or a fragment-level support gate in addition to the relative H-selection
-rule.
+if all of its support scores are uniformly small, at least the largest still survives. The
+implemented absolute support floor supplies that second decision. It should still be tuned on
+validation data; a genuinely global final intensity threshold or fragment-level support gate may
+be worth testing if the support floor alone leaves too many weak fragments.
 
 Hungarian attribution is the clearest primary experiment for sparse gating because it provides
 hard zero/one labels. Its limitation is mass aliasing: when multiple structural pathways have
@@ -287,6 +294,48 @@ reduction in emitted peak count or the best count precision. The evaluation shou
 weighted recall, ordinary recall, JSS or cosine similarity, count precision, and peaks per
 spectrum. This uses exact-zero inference only where validation shows it does not sacrifice
 MASShatter's principal recall advantage.
+
+## FraGNNet formula-support gate
+
+The same low-intensity tail exists in FraGNNet because softmax assigns positive probability to
+every finite candidate. The standard FraGNNet baseline uses cross entropy rather than cosine, so
+it does not reward splitting fixed false mass, but it is indifferent to how that mass is divided.
+Each false candidate receives a gradient proportional to its own probability, which becomes very
+small when the false mass is spread over many candidates. OOS handles observed intensity outside
+the candidate set, while the null formula handles invalid candidate states; neither supervises
+the support of valid formulas.
+
+FraGNNet now has an opt-in, separately parameterized support head. Its sigmoid probability gates
+the existing joint candidate logit before the normalizing softmax:
+
+```text
+gate_i = sigmoid(support_logit_i)
+effective_joint_logit_i = intensity_logit_i + log(gate_i)
+```
+
+Thus the intensity head remains a normalized probabilistic model, while support has independent
+binary semantics. The support head starts at probability `0.99`; because the same initial gate is
+applied to real and null candidates, enabling it initially preserves the legacy distribution.
+Training uses soft gates. Evaluation and inference apply an absolute sigmoid-probability threshold
+and always retain the highest-support real joint state in each spectrum, preventing an empty
+prediction. The existing exported-intensity threshold remains a second, downstream filter.
+
+Targets are constructed against all emitted isotope masses using the existing instrument-aware
+tolerance, then reduced existentially to their parent formula. No intensity prior is used for
+support attribution, keeping support and magnitude supervision separate. Gaussian-posterior and
+Hungarian attribution are both supported. Gaussian targets preserve mass ambiguity; Hungarian
+targets are harder and potentially sparser.
+
+The first matched experiments now use the established NIST20 MA/MI depth-3 baseline: four adducts,
+per-CE spectra, CMF candidates, instrument/fragmentation-mode conditioning, and instrument-aware
+mass tolerances. They keep its cross-entropy objective and add support BCE with weight `0.1`:
+
+- [`fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_gaussian.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_gaussian.yml)
+- [`fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml)
+
+Compare them with
+[`fraggnn_d3_ma_mi_nist20_amolc_all.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml)
+using cosine similarity, recall, weighted recall, emitted peak count, and threshold curves.
 
 ## Barcode follow-up
 

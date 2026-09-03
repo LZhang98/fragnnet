@@ -365,6 +365,8 @@ def main() -> None:
         raise ValueError("The channel audit requires mass_shatter_channel_diagnostics=True")
     if config_d["mass_shatter_min_ion_h_relative_probability"] != 0.0:
         raise ValueError("Disable the ion/H probability floor for an isolated channel audit")
+    if config_d["mass_shatter_min_ion_h_absolute_probability"] != 0.0:
+        raise ValueError("Disable the absolute ion/H support floor for an isolated channel audit")
     config_d = apply_inference_config(
         config_d,
         disable_preproc=True,

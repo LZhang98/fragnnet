@@ -13,6 +13,7 @@ from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.mass_shatter_model import (
     MassShatterModel,
+    _absolute_binary_channel_keep_mask,
     _cmf_duplicate_crf_shift,
     _fixed_top_k_channel_keep_mask,
     _ion_mode_logits_from_ion_h_support,
@@ -62,7 +63,9 @@ def _build_model(
     min_ion_mode_relative_probability: float = 0.0,
     separate_ion_h_support_head: bool = False,
     ion_h_support_binary_logits: bool = False,
+    gate_independent_intensity_with_support: bool = False,
     min_ion_h_relative_probability: float = 0.0,
+    min_ion_h_absolute_probability: float = 0.0,
     apply_channel_selection_in_training: bool = False,
     intensity_atom_decoder_num_layers: int = 0,
     intensity_output: str = "probability",
@@ -109,7 +112,9 @@ def _build_model(
         min_ion_mode_relative_probability=min_ion_mode_relative_probability,
         separate_ion_h_support_head=separate_ion_h_support_head,
         ion_h_support_binary_logits=ion_h_support_binary_logits,
+        gate_independent_intensity_with_support=gate_independent_intensity_with_support,
         min_ion_h_relative_probability=min_ion_h_relative_probability,
+        min_ion_h_absolute_probability=min_ion_h_absolute_probability,
         apply_channel_selection_in_training=apply_channel_selection_in_training,
         precursor_types=precursor_types,
         instrument_types=[],
@@ -183,6 +188,31 @@ def test_relative_channel_keep_mask_uses_probabilities_for_binary_logits() -> No
 
     assert probability_keep.tolist() == [[[True, True]]]
     assert odds_keep.tolist() == [[[True, False]]]
+
+
+def test_absolute_binary_channel_keep_mask_can_remove_a_whole_fragment() -> None:
+    probabilities = th.tensor(
+        [
+            [[0.001, 0.002]],
+            [[0.2, 0.05]],
+            [[0.001, 0.003]],
+        ]
+    )
+    valid = th.ones_like(probabilities, dtype=th.bool)
+
+    keep = _absolute_binary_channel_keep_mask(
+        th.logit(probabilities),
+        valid,
+        fragment_batch_indices=th.tensor([0, 0, 1]),
+        batch_size=2,
+        min_probability=0.1,
+    )
+
+    assert keep.tolist() == [
+        [[False, False]],
+        [[True, False]],
+        [[False, True]],
+    ]
 
 
 def test_ion_mode_fallback_aggregates_binary_channel_probabilities() -> None:
@@ -450,6 +480,128 @@ def test_mass_shatter_independent_output_returns_normal_space_intensities() -> N
 
     output["pred_intensities"].sum().backward()
     assert model.intensity_head.ion_hydrogen_head.weight.grad is not None
+
+
+def test_independent_intensity_is_soft_gated_by_binary_support() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
+        gate_independent_intensity_with_support=True,
+        intensity_output="independent",
+    ).train()
+    support_head = model.intensity_head.ion_h_support_head
+    assert support_head is not None
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+
+    with th.no_grad():
+        support_head.weight.zero_()
+        support_head.bias.fill_(th.logit(th.tensor(0.25)))
+        low_support = model(**inputs)
+        support_head.bias.fill_(th.logit(th.tensor(0.75)))
+    high_support = model(**inputs)
+
+    assert th.equal(high_support["pred_mzs"], low_support["pred_mzs"])
+    th.testing.assert_close(
+        high_support["pred_intensities"],
+        3.0 * low_support["pred_intensities"],
+    )
+    high_support["pred_intensities"].sum().backward()
+    assert support_head.bias.grad is not None
+    assert support_head.bias.grad.abs().sum() > 0
+
+
+def test_independent_intensity_gate_is_opt_in() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
+        intensity_output="independent",
+    ).train()
+    support_head = model.intensity_head.ion_h_support_head
+    assert support_head is not None
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+
+    with th.no_grad():
+        support_head.weight.zero_()
+        support_head.bias.fill_(th.logit(th.tensor(0.25)))
+        low_support = model(**inputs)
+        support_head.bias.fill_(th.logit(th.tensor(0.75)))
+        high_support = model(**inputs)
+
+    th.testing.assert_close(high_support["pred_intensities"], low_support["pred_intensities"])
+
+
+def test_independent_intensity_gate_requires_independent_output_and_support_head() -> None:
+    batch = _build_batch()
+    with pytest.raises(ValueError, match="gating independent intensity by support requires"):
+        _build_model(
+            batch,
+            unique_fragment_mode=True,
+            use_base_probability_feature=False,
+            proposal_selection_only=True,
+            gate_independent_intensity_with_support=True,
+            intensity_output="probability",
+        )
+
+
+def test_independent_intensity_gate_requires_binary_support_logits() -> None:
+    batch = _build_batch()
+    with pytest.raises(ValueError, match="requires binary support logits"):
+        _build_model(
+            batch,
+            unique_fragment_mode=True,
+            use_base_probability_feature=False,
+            proposal_selection_only=True,
+            separate_ion_h_support_head=True,
+            ion_h_support_binary_logits=False,
+            gate_independent_intensity_with_support=True,
+            intensity_output="independent",
+        )
+
+
+def test_absolute_support_floor_is_evaluation_only_and_keeps_each_spectrum_nonempty() -> None:
+    batch = _build_batch()
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        separate_ion_h_support_head=True,
+        ion_h_support_binary_logits=True,
+        min_ion_h_absolute_probability=1.0,
+        intensity_output="independent",
+    )
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 1]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+    }
+
+    with th.no_grad():
+        training_output = model.train()(**inputs)
+        model.eval()
+        model.set_evaluation_joint_channel_relative_threshold(0.1)
+        evaluation_output = model(**inputs)
+
+    assert evaluation_output["pred_mzs"].numel() < training_output["pred_mzs"].numel()
+    assert th.bincount(evaluation_output["pred_batch_idxs"], minlength=2).gt(0).all()
 
 
 def test_mass_shatter_shares_one_ce_independent_proposal_pass(

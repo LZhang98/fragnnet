@@ -59,6 +59,7 @@ def test_merged_independent_distance_configs_enable_requested_model() -> None:
             config = yaml.safe_load(config_file)
         assert config["mass_shatter_peak_matching"] == "hungarian"
         assert config["mass_shatter_min_ion_h_relative_probability"] == pytest.approx(0.01)
+        assert config["mass_shatter_min_ion_h_absolute_probability"] == pytest.approx(0.01)
         assert config["mass_shatter_ion_h_support_binary_logits"] is True
         assert config["mass_shatter_apply_channel_selection_in_training"] is False
         assert config["mass_shatter_channel_support_use_intensity_prior"] is False
@@ -225,7 +226,7 @@ def test_hungarian_channel_attribution_drops_infeasible_channels(
         return th.tensor([0]), th.tensor([0])
 
     monkeypatch.setattr(
-        "fragnnet.pl_model.mass_shatter_pl.linear_sum_assignment",
+        "fragnnet.model.candidate_support.linear_sum_assignment",
         assignment,
     )
     targets = _observational_channel_targets(
@@ -260,6 +261,38 @@ def test_balanced_support_loss_handles_single_class_spectra() -> None:
     loss.sum().backward()
 
     assert loss.tolist() == pytest.approx([math.log(2.0), math.log(2.0)])
+    assert logits.grad is not None
+
+
+def test_balanced_support_loss_rejects_spectrum_with_no_valid_states() -> None:
+    logits = th.zeros(2, 1, 2)
+    targets = th.zeros(2, 1, 2, dtype=th.bool)
+    valid_mask = th.tensor([[[True, True]], [[False, False]]])
+    with pytest.raises(ValueError, match="valid support state"):
+        _balanced_binary_support_loss(
+            logits,
+            targets,
+            valid_mask,
+            th.tensor([0, 1]),
+            batch_size=2,
+        )
+
+
+def test_balanced_support_loss_allows_empty_batches() -> None:
+    logits = th.zeros(2, 1, 2, requires_grad=True)
+    targets = th.zeros(2, 1, 2, dtype=th.bool)
+    valid_mask = th.tensor([[[True, True]], [[False, False]]])
+    loss = _balanced_binary_support_loss(
+        logits,
+        targets,
+        valid_mask,
+        th.tensor([0, 1]),
+        batch_size=2,
+        allow_empty_batches=True,
+    )
+    loss.sum().backward()
+
+    assert loss.tolist() == pytest.approx([math.log(2.0), 0.0])
     assert logits.grad is not None
 
 
@@ -515,6 +548,38 @@ def test_binary_logit_semantics_must_match_bce_support_loss() -> None:
             mass_shatter_separate_ion_h_support_head=True,
             mass_shatter_ion_h_support_binary_logits=False,
             mass_shatter_ion_h_support_loss_weight=0.2,
+        )
+
+
+def test_absolute_support_floor_builds_independent_hurdle_model() -> None:
+    model, _ = _build_pl(
+        loss_type="jss_distance",
+        mass_shatter_intensity_output="independent",
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_separate_ion_h_support_head=True,
+        mass_shatter_ion_h_support_binary_logits=True,
+        mass_shatter_ion_h_support_loss_weight=0.1,
+        mass_shatter_min_ion_h_absolute_probability=0.01,
+    )
+
+    assert model.model.intensity_output == "independent"
+    assert model.model.min_ion_h_absolute_probability == pytest.approx(0.01)
+
+
+def test_absolute_support_floor_rejects_probability_output() -> None:
+    with pytest.raises(ValueError, match="requires independent intensity"):
+        _build_pl(
+            mass_shatter_unique_fragment_mode=True,
+            mass_shatter_proposal_anchored=True,
+            mass_shatter_proposal_selection_only=True,
+            mass_shatter_proposal_loss_weight=0.1,
+            mass_shatter_separate_ion_h_support_head=True,
+            mass_shatter_ion_h_support_binary_logits=True,
+            mass_shatter_ion_h_support_loss_weight=0.1,
+            mass_shatter_min_ion_h_absolute_probability=0.01,
         )
 
 

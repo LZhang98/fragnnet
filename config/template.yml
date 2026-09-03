@@ -271,7 +271,14 @@ mass_shatter_min_ion_mode_relative_probability: 0.0
 mass_shatter_ion_mode_proposal_loss_weight: 0.0
 mass_shatter_separate_ion_h_support_head: False
 mass_shatter_ion_h_support_binary_logits: False
+# Opt-in: scale independent-output intensities by the support head's sigmoid
+# probability, in both training and evaluation. Independent of the absolute
+# floor below; requires independent intensity output and binary support logits.
+mass_shatter_gate_independent_intensity_with_support: False
 mass_shatter_min_ion_h_relative_probability: 0.0
+# Evaluation-only absolute support floor. Unlike the relative floor, this may
+# remove every ion/H channel of an unsupported fragment; zero disables it.
+mass_shatter_min_ion_h_absolute_probability: 0.0
 mass_shatter_ion_h_support_loss_weight: 0.0
 mass_shatter_apply_channel_selection_in_training: False
 # Assign observed-peak evidence to the dense channel-selection support.
@@ -378,6 +385,13 @@ candidate_ion_checkpoint: True  # Checkpoint candidate chunks during training to
 ion_channel_factorized: False  # Cheap alternative: keep per-node H logits and add a low-rank learned H/CMF-channel residual
 ion_channel_adduct_gated: False  # Adduct-conditioned variant: gate the low-rank node factor by spec_prec_type for a node x channel x adduct residual (mutually exclusive with ion_channel_factorized)
 ion_channel_rank: 32
+# FraGNNet-only supervised support gate. A separate sigmoid head attenuates the
+# existing joint intensity logits; the spectrum remains normalized by softmax.
+fragnnet_formula_support: False
+fragnnet_formula_support_initial_probability: 0.99
+fragnnet_formula_support_loss_weight: 0.0
+fragnnet_formula_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+fragnnet_formula_support_threshold: 0.5  # Absolute sigmoid probability; hard selection is eval/inference-only
 mlp_hidden_size: 256  # Hidden dimension for MLP layers
 mlp_dropout: 0.0  # Dropout rate for MLP
 mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]

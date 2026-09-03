@@ -3,6 +3,7 @@ FragGNNMet Model for MS/MS Spectrum Prediction
 """
 
 import logging
+import math
 
 import numpy as np
 import torch as th
@@ -48,6 +49,53 @@ from fragnnet.utils.misc_utils import (
 from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_formula_support_gate(
+    intensity_logits: th.Tensor,
+    support_logits: th.Tensor,
+    valid_mask: th.Tensor,
+    null_support_logit: float,
+) -> th.Tensor:
+    """Attenuate valid candidate logits while keeping null-state support fixed."""
+    if intensity_logits.shape != support_logits.shape or valid_mask.shape != support_logits.shape:
+        raise ValueError("intensity logits, support logits, and validity must have matching shapes")
+    gate_logits = th.where(
+        valid_mask,
+        support_logits,
+        support_logits.new_full((), null_support_logit),
+    )
+    return intensity_logits + F.logsigmoid(gate_logits)
+
+
+def _formula_support_keep_mask(
+    support_logits: th.Tensor,
+    valid_mask: th.Tensor,
+    batch_idxs: th.Tensor,
+    probability_threshold: float,
+) -> th.Tensor:
+    """Select support states by probability while retaining each spectrum's MAP state."""
+    if support_logits.shape != valid_mask.shape or support_logits.shape != batch_idxs.shape:
+        raise ValueError("support logits, validity, and batch indices must have matching shapes")
+    if not 0.0 <= probability_threshold <= 1.0:
+        raise ValueError("formula support probability threshold must be in [0, 1]")
+    if probability_threshold == 0.0:
+        return valid_mask
+    threshold_logit = (
+        math.inf
+        if probability_threshold == 1.0
+        else math.log(probability_threshold / (1.0 - probability_threshold))
+    )
+    valid_logits = support_logits.masked_fill(~valid_mask, LOG_ZERO(support_logits.dtype))
+    max_logits = scatter_reduce(
+        valid_logits,
+        batch_idxs,
+        reduce="amax",
+        default=LOG_ZERO(support_logits.dtype),
+    )
+    return valid_mask & (
+        (support_logits >= threshold_logit) | (support_logits >= max_logits[batch_idxs])
+    )
 
 
 class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
@@ -142,6 +190,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ion_channel_factorized: bool = False,
         ion_channel_adduct_gated: bool = False,
         ion_channel_rank: int = 32,
+        formula_support: bool = False,
+        formula_support_initial_probability: float = 0.99,
+        formula_support_threshold: float = 0.5,
     ):
         # nn.Module init
         super().__init__()
@@ -582,6 +633,28 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 "normalization": mlp_normalization,
             }
             self.formula_module = MLPBlocks(**formula_mlp_kwargs)
+            self.formula_support = formula_support
+            if self.formula_support:
+                if not 0.0 < formula_support_initial_probability < 1.0:
+                    raise ValueError("formula_support_initial_probability must be in (0, 1)")
+                if not 0.0 <= formula_support_threshold <= 1.0:
+                    raise ValueError("formula_support_threshold must be in [0, 1]")
+                self.formula_support_module = MLPBlocks(**formula_mlp_kwargs)
+                initial_support_logit = math.log(
+                    formula_support_initial_probability
+                    / (1.0 - formula_support_initial_probability)
+                )
+                assert self.formula_support_module.output_layer is not None
+                nn.init.zeros_(self.formula_support_module.output_layer.weight)
+                nn.init.constant_(
+                    self.formula_support_module.output_layer.bias, initial_support_logit
+                )
+                self.formula_support_initial_logit = initial_support_logit
+                self.formula_support_threshold = formula_support_threshold
+            else:
+                self.formula_support_module = None
+                self.formula_support_initial_logit = 0.0
+                self.formula_support_threshold = 0.0
 
         # mode-conditioned output scaling (applied after formula_module)
         self.frag_mode_scale = frag_mode_scale
@@ -931,6 +1004,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
     def _candidate_ion_logits(
         self,
+        module: nn.Module,
         frag_embed: th.Tensor,
         frag_x: th.Tensor,
         frag_node_feat_idxs: th.Tensor,
@@ -968,7 +1042,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     node_start=_node_start,
                     node_end=_node_end,
                 )
-                return self.formula_module(candidate_input).reshape(_node_end - _node_start, H)
+                return module(candidate_input).reshape(_node_end - _node_start, H)
 
             if self.training and self.candidate_ion_checkpoint:
                 chunk_logits = th_checkpoint.checkpoint(
@@ -1821,11 +1895,37 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             .flatten()
         )
 
+        frag_joint_support_logits = None
+        frag_joint_support_keep_mask = None
+        if self.formula_support:
+            assert self.formula_support_module is not None
+            if self.candidate_ion_head:
+                frag_joint_support_logits = self._candidate_ion_logits(
+                    module=self.formula_support_module,
+                    frag_embed=frag_embed,
+                    frag_x=frag_x,
+                    frag_node_feat_idxs=frag_node_feat_idxs,
+                    frag_node_batch_idxs=frag_node_batch_idxs,
+                    frag_joint_mask=frag_joint_mask,
+                    batch_size=batch_size,
+                )
+            else:
+                frag_joint_support_logits = self.formula_support_module(frag_embed)
+            if not self.training:
+                flat_support_logits = frag_joint_support_logits.flatten()
+                frag_joint_support_keep_mask = _formula_support_keep_mask(
+                    flat_support_logits,
+                    frag_joint_mask.bool(),
+                    frag_joint_batch_idxs,
+                    self.formula_support_threshold,
+                ).reshape_as(frag_joint_support_logits)
+
         if self.mlp_output_format == "formula":
             #  predicts joint logits for each (node, formula) pair:
             # log p(f,n)
             if self.candidate_ion_head:
                 frag_joint_logits = self._candidate_ion_logits(
+                    module=self.formula_module,
                     frag_embed=frag_embed,
                     frag_x=frag_x,
                     frag_node_feat_idxs=frag_node_feat_idxs,
@@ -1897,6 +1997,19 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     frag_joint_logits = frag_joint_logits.masked_fill(
                         null_mask, LOG_ZERO(frag_joint_logits.dtype)
                     )
+            if frag_joint_support_logits is not None:
+                support_valid = frag_joint_mask.reshape_as(frag_joint_support_logits).bool()
+                frag_joint_logits = _apply_formula_support_gate(
+                    frag_joint_logits,
+                    frag_joint_support_logits,
+                    support_valid,
+                    self.formula_support_initial_logit,
+                )
+                if frag_joint_support_keep_mask is not None:
+                    frag_joint_logits = frag_joint_logits.masked_fill(
+                        support_valid & ~frag_joint_support_keep_mask,
+                        LOG_ZERO(frag_joint_logits.dtype),
+                    )
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (
                 frag_joint_logits.shape[1],
                 2 * self.num_hs + 1,
@@ -1939,6 +2052,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # log p(f|n) formula given node
             if self.candidate_ion_head:
                 frag_node_formula_logits = self._candidate_ion_logits(
+                    module=self.formula_module,
                     frag_embed=frag_embed,
                     frag_x=frag_x,
                     frag_node_feat_idxs=frag_node_feat_idxs,
@@ -1975,6 +2089,19 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     spec_prec_type,
                     frag_node_batch_idxs,
                 )
+            if frag_joint_support_logits is not None:
+                support_valid = frag_joint_mask.reshape_as(frag_joint_support_logits).bool()
+                frag_node_formula_logits = _apply_formula_support_gate(
+                    frag_node_formula_logits,
+                    frag_joint_support_logits,
+                    support_valid,
+                    self.formula_support_initial_logit,
+                )
+                if frag_joint_support_keep_mask is not None:
+                    frag_node_formula_logits = frag_node_formula_logits.masked_fill(
+                        support_valid & ~frag_joint_support_keep_mask,
+                        LOG_ZERO(frag_node_formula_logits.dtype),
+                    )
             assert frag_node_formula_logits.shape[1] == self.mlp_output_dim, (
                 frag_node_formula_logits.shape[1],
                 self.mlp_output_dim,
@@ -2042,6 +2169,26 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 log=True,
             )
 
+        frag_formula_support_logits = None
+        if frag_joint_support_logits is not None:
+            flat_support_logits = frag_joint_support_logits.flatten()
+            valid_joint_support_logits = flat_support_logits.masked_fill(
+                ~frag_joint_mask.bool(),
+                LOG_ZERO(flat_support_logits.dtype),
+            )
+            frag_formula_support_logits = scatter_reduce(
+                valid_joint_support_logits,
+                frag_joint_formula_idxs,
+                reduce="amax",
+                dim_size=int(batch_frag_num_formulae),
+                default=LOG_ZERO(flat_support_logits.dtype),
+            )
+            frag_formula_support_logits = th.where(
+                frag_formula_mask.bool(),
+                frag_formula_support_logits,
+                th.zeros_like(frag_formula_support_logits),
+            )
+
         # OOS Stuff
         if self.predict_oos:
             # get OOS logits and logprobs
@@ -2071,15 +2218,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_formula_sizes - 1,  # -1 is for NULL formulae
         )
         spec_mzs = frag_formula_peak_mzs
-        spec_logprobs = frag_formula_oos_logprobs[
-            frag_formula_peak_idxs + frag_formula_offsets
-        ] + th.log(frag_formula_peak_probs)
+        spec_formula_idxs = frag_formula_peak_idxs + frag_formula_offsets
+        spec_logprobs = frag_formula_oos_logprobs[spec_formula_idxs] + th.log(
+            frag_formula_peak_probs
+        )
 
         # get batch idxs
         spec_batch_idxs = th.repeat_interleave(
             th.arange(frag_formula_peak_sizes.shape[0], device=device),
             frag_formula_peak_sizes,
         )
+        formula_support_peak_mzs = spec_mzs
+        formula_support_peak_batch_idxs = spec_batch_idxs
 
         if not self.skip_edge_loss:
             frag_edge_batch_idxs = frag_batch[frag_edge_index[0]]
@@ -2366,6 +2516,22 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "pred_edge_h_logprobs": frag_edge_h_logprobs,  # Log probabilities for hydrogen transfers on edges [E, H*H]
             "pred_edge_batch_idxs": frag_edge_batch_idxs,  # Batch indices for edges [E]
             "pred_oos_logprobs": oos_logprobs,  # Log probability of Out-Of-Scope (OOS) intensity [B]
+            "pred_formula_support_logits": frag_formula_support_logits,
+            "pred_formula_support_batch_idxs": (
+                frag_formula_batch_idxs if frag_formula_support_logits is not None else None
+            ),
+            "pred_formula_support_valid_mask": (
+                frag_formula_mask.bool() if frag_formula_support_logits is not None else None
+            ),
+            "pred_formula_support_peak_formula_idxs": (
+                spec_formula_idxs if frag_formula_support_logits is not None else None
+            ),
+            "pred_formula_support_peak_mzs": (
+                formula_support_peak_mzs if frag_formula_support_logits is not None else None
+            ),
+            "pred_formula_support_peak_batch_idxs": (
+                formula_support_peak_batch_idxs if frag_formula_support_logits is not None else None
+            ),
             "pred_h_counts": frag_real_h_counts,  # Hydrogen counts for the hydrogen distribution [B*H]
             "pred_h_batch_idxs": frag_real_h_batch_idxs,  # Batch indices for the hydrogen distribution [B*H]
             "pred_h_logprobs": frag_real_h_logprobs,  # Log probabilities of hydrogen counts [B*H]

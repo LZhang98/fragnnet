@@ -190,6 +190,47 @@ def _relative_channel_keep_mask(
     return keep.reshape_as(valid_mask)
 
 
+def _absolute_binary_channel_keep_mask(
+    logits: th.Tensor,
+    valid_mask: th.Tensor,
+    fragment_batch_indices: th.Tensor,
+    batch_size: int,
+    min_probability: float,
+) -> th.Tensor:
+    """Apply an absolute Bernoulli support floor with one fallback per spectrum."""
+    if logits.shape != valid_mask.shape or valid_mask.dtype != th.bool or logits.ndim != 3:
+        raise ValueError("logits and valid_mask must be matching rank-3 tensors")
+    if fragment_batch_indices.shape != (logits.shape[0],):
+        raise ValueError("fragment_batch_indices must contain one index per fragment")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if not math.isfinite(min_probability) or not 0.0 <= min_probability <= 1.0:
+        raise ValueError("min_probability must be finite and in [0, 1]")
+    flat_valid = valid_mask.flatten()
+    expanded_batch_indices = fragment_batch_indices[:, None, None].expand_as(valid_mask)
+    flat_batch_indices = expanded_batch_indices.flatten()
+    _validate_tensor_condition(
+        th.bincount(flat_batch_indices[flat_valid], minlength=batch_size).gt(0).all(),
+        "every spectrum must have at least one valid channel",
+    )
+    if min_probability == 0.0:
+        return valid_mask.clone()
+
+    flat_log_probabilities = F.logsigmoid(logits.detach()).flatten()
+    keep = flat_valid & (flat_log_probabilities >= math.log(min_probability))
+    kept_per_spectrum = th.bincount(flat_batch_indices[keep], minlength=batch_size)
+    if kept_per_spectrum.gt(0).all():
+        return keep.reshape_as(valid_mask)
+
+    for batch_index in th.where(kept_per_spectrum == 0)[0]:
+        batch_valid_indices = th.where(flat_valid & (flat_batch_indices == batch_index))[0]
+        fallback_index = batch_valid_indices[
+            flat_log_probabilities[batch_valid_indices].argmax()
+        ]
+        keep[fallback_index] = True
+    return keep.reshape_as(valid_mask)
+
+
 def _ion_mode_logits_from_ion_h_support(
     ion_h_support_logits: th.Tensor,
     valid_channels: th.Tensor,
@@ -779,7 +820,9 @@ class MassShatterModel(nn.Module):
         min_ion_mode_relative_probability: float,
         separate_ion_h_support_head: bool,
         ion_h_support_binary_logits: bool,
+        gate_independent_intensity_with_support: bool,
         min_ion_h_relative_probability: float,
+        min_ion_h_absolute_probability: float,
         apply_channel_selection_in_training: bool,
         precursor_types: Sequence[str],
         instrument_types: Sequence[str],
@@ -859,6 +902,13 @@ class MassShatterModel(nn.Module):
                 head emits independent Bernoulli logits.
             ion_h_support_binary_logits: Whether the ion/H support source emits
                 independent Bernoulli logits instead of categorical logits.
+            gate_independent_intensity_with_support: Whether independent-output
+                intensities are scaled by the separate ion/H support head's sigmoid
+                probability, in both training and evaluation. Requires independent
+                intensity output, a separate binary ion/H support head, and is
+                independent of ``min_ion_h_absolute_probability``.
+            min_ion_h_absolute_probability: Evaluation-only absolute Bernoulli
+                support floor. Zero disables it.
             precursor_types: Supported adduct strings; sorted and used as the label
                 vocabulary, so their order must match the dataset encoding.
             instrument_types: Instrument vocabulary; empty disables the embedding.
@@ -938,12 +988,31 @@ class MassShatterModel(nn.Module):
                 "ion-mode and ion/H support heads require unique-fragment "
                 "proposal-selection-only mode"
             )
-        for name, binary_logits in (
+        for name, flag_value in (
             ("ion_mode_proposal_binary_logits", ion_mode_proposal_binary_logits),
             ("ion_h_support_binary_logits", ion_h_support_binary_logits),
+            ("gate_independent_intensity_with_support", gate_independent_intensity_with_support),
         ):
-            if not isinstance(binary_logits, bool):
+            if not isinstance(flag_value, bool):
                 raise ValueError(f"{name} must be boolean")
+        if gate_independent_intensity_with_support and not (
+            intensity_output == "independent" and separate_ion_h_support_head
+        ):
+            raise ValueError(
+                "gating independent intensity by support requires independent intensity "
+                "output and a separate ion/H support head"
+            )
+        if gate_independent_intensity_with_support and not ion_h_support_binary_logits:
+            raise ValueError("independent intensity support gating requires binary support logits")
+        if min_ion_h_absolute_probability > 0.0 and not (
+            intensity_output == "independent"
+            and separate_ion_h_support_head
+            and ion_h_support_binary_logits
+        ):
+            raise ValueError(
+                "an absolute ion/H support floor requires independent intensity and a "
+                "separate binary support head"
+            )
         if (
             not math.isfinite(min_mask_relative_probability)
             or not 0.0 <= min_mask_relative_probability <= 1.0
@@ -965,6 +1034,7 @@ class MassShatterModel(nn.Module):
         for name, value in (
             ("min_ion_mode_relative_probability", min_ion_mode_relative_probability),
             ("min_ion_h_relative_probability", min_ion_h_relative_probability),
+            ("min_ion_h_absolute_probability", min_ion_h_absolute_probability),
         ):
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be finite and in [0, 1]")
@@ -1015,7 +1085,9 @@ class MassShatterModel(nn.Module):
         self.ion_mode_proposal_binary_logits = ion_mode_proposal_binary_logits
         self.min_ion_mode_relative_probability = min_ion_mode_relative_probability
         self.ion_h_support_binary_logits = ion_h_support_binary_logits
+        self.gate_independent_intensity_with_support = gate_independent_intensity_with_support
         self.min_ion_h_relative_probability = min_ion_h_relative_probability
+        self.min_ion_h_absolute_probability = min_ion_h_absolute_probability
         self.apply_channel_selection_in_training = apply_channel_selection_in_training
         self.evaluation_ion_h_top_k = 0
         self.evaluation_joint_channel_relative_threshold = 0.0
@@ -2198,6 +2270,12 @@ class MassShatterModel(nn.Module):
             dense_channel_weights = F.softplus(
                 corrected_fragment_logits[:, None, None] + ion_h_logits
             )
+            if self.gate_independent_intensity_with_support:
+                if not self.ion_h_support_binary_logits:
+                    raise ValueError(
+                        "independent intensity support gating requires binary support logits"
+                    )
+                dense_channel_weights = dense_channel_weights * ion_h_support_logits.sigmoid()
             dense_channel_log_weights = th.log(
                 dense_channel_weights.clamp_min(th.finfo(dense_channel_weights.dtype).tiny)
             ).masked_fill(~valid_channels, -th.inf)
@@ -2251,9 +2329,20 @@ class MassShatterModel(nn.Module):
                 batch_size,
                 self.evaluation_joint_channel_relative_threshold,
             )
+        if not self.training and self.min_ion_h_absolute_probability > 0.0:
+            spectral_output_channels &= _absolute_binary_channel_keep_mask(
+                ion_h_support_logits,
+                spectral_output_channels,
+                fragment_batch_indices,
+                batch_size,
+                self.min_ion_h_absolute_probability,
+            )
+        probability_output_channels = (
+            valid_channels if self.intensity_output == "independent" else spectral_output_channels
+        )
         ion_h_log_probabilities = masked_ion_hydrogen_log_probabilities(
             ion_h_logits,
-            spectral_output_channels,
+            probability_output_channels,
         )
         pathway_log_probabilities = (
             fragment_log_probabilities[:, None, None] + ion_h_log_probabilities
@@ -2270,9 +2359,7 @@ class MassShatterModel(nn.Module):
         pred_mzs = ion_mzs.flatten()[selected_flat_valid]
         pred_logprobs = pathway_log_probabilities.flatten()[selected_flat_valid]
         pred_intensities = (
-            F.softplus(corrected_fragment_logits[:, None, None] + ion_h_logits).flatten()[
-                selected_flat_valid
-            ]
+            dense_channel_weights.flatten()[selected_flat_valid]
             if self.intensity_output == "independent"
             else None
         )

@@ -110,7 +110,9 @@ mass_shatter_proposal_ints_transform: none
 mass_shatter_separate_proposal_encoder: True
 mass_shatter_separate_ion_h_support_head: True
 mass_shatter_ion_h_support_binary_logits: True
+mass_shatter_gate_independent_intensity_with_support: True
 mass_shatter_min_ion_h_relative_probability: 0.01
+mass_shatter_min_ion_h_absolute_probability: 0.01
 mass_shatter_ion_h_support_loss_weight: 0.1
 mass_shatter_apply_channel_selection_in_training: False
 mass_shatter_channel_support_attribution: gaussian_posterior

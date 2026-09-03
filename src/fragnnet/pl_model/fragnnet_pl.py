@@ -1,5 +1,6 @@
 import logging
-from typing import Any
+import math
+from typing import Any, Literal
 
 import torch as th
 import torch._dynamo as th_dynamo
@@ -14,6 +15,10 @@ except ImportError:
 import os
 
 from fragnnet.model import FraGNNetModel
+from fragnnet.model.candidate_support import (
+    balanced_binary_support_loss,
+    observational_channel_targets,
+)
 from fragnnet.model.loss import (
     ce_switch_pair_bce,
     get_cross_jss_contrastive,
@@ -39,6 +44,49 @@ from fragnnet.utils.nn_utils import (
     get_optimizer_class,
 )
 from fragnnet.utils.spec_utils import scatter_reduce
+
+
+def _formula_support_targets(
+    *,
+    true_mzs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    formula_support_logits: th.Tensor,
+    formula_peak_mzs: th.Tensor,
+    formula_peak_formula_idxs: th.Tensor,
+    formula_peak_batch_idxs: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float | None,
+    attribution: Literal["gaussian_posterior", "hungarian"],
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> th.Tensor:
+    """Build existential formula-support targets from its isotope peak masses."""
+    peak_shape = (formula_peak_mzs.shape[0], 1, 1)
+    peak_targets = observational_channel_targets(
+        true_mzs=true_mzs,
+        true_batch_idxs=true_batch_idxs,
+        channel_mzs=formula_peak_mzs.reshape(peak_shape),
+        channel_log_weights=formula_peak_mzs.new_zeros(peak_shape),
+        chemical_valid_channels=th.ones(peak_shape, dtype=th.bool, device=formula_peak_mzs.device),
+        fragment_batch_idxs=formula_peak_batch_idxs,
+        batch_size=batch_size,
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
+        attribution=attribution,
+        use_intensity_prior=False,
+        tol_per_sample=tol_per_sample,
+        min_mz_per_sample=min_mz_per_sample,
+    ).flatten()
+    return scatter_reduce(
+        peak_targets,
+        formula_peak_formula_idxs,
+        reduce="amax",
+        dim_size=formula_support_logits.shape[0],
+        default=0.0,
+    ).detach()
 
 
 class FraGNNetPL(SpectrumPL):
@@ -140,6 +188,11 @@ class FraGNNetPL(SpectrumPL):
             ion_channel_factorized=self.hparams.get("ion_channel_factorized", False),
             ion_channel_adduct_gated=self.hparams.get("ion_channel_adduct_gated", False),
             ion_channel_rank=self.hparams.get("ion_channel_rank", 32),
+            formula_support=self.hparams.fragnnet_formula_support,
+            formula_support_initial_probability=(
+                self.hparams.fragnnet_formula_support_initial_probability
+            ),
+            formula_support_threshold=self.hparams.fragnnet_formula_support_threshold,
         )
 
         self._check_ce_params()
@@ -311,6 +364,8 @@ class FraGNNetPL(SpectrumPL):
             loss_names.extend(["spec_ce", "oos_ce", "ios_ce"])
         elif "cross_entropy" in self.hparams.auxiliary_scores:
             loss_names.append("spec_ce")
+        if self.hparams.fragnnet_formula_support_loss_weight > 0.0:
+            loss_names.append("formula_support_loss")
 
         def _add_if_active(names: list[str], *weights: float) -> None:
             """Add names only when at least one weight is non-zero."""
@@ -448,6 +503,23 @@ class FraGNNetPL(SpectrumPL):
                 )
 
     def _setup_loss_fn(self):
+        support_weight = self.hparams.fragnnet_formula_support_loss_weight
+        if not math.isfinite(support_weight) or support_weight < 0.0:
+            raise ValueError("fragnnet_formula_support_loss_weight must be finite and nonnegative")
+        if self.hparams.fragnnet_formula_support != (support_weight > 0.0):
+            raise ValueError(
+                "fragnnet_formula_support and its positive loss weight must be enabled together"
+            )
+        if self.hparams.fragnnet_formula_support_attribution not in {
+            "gaussian_posterior",
+            "hungarian",
+        }:
+            raise ValueError(
+                "fragnnet_formula_support_attribution must be gaussian_posterior or hungarian"
+            )
+        if not 0.0 <= self.hparams.fragnnet_formula_support_threshold <= 1.0:
+            raise ValueError("fragnnet_formula_support_threshold must be in [0, 1]")
+
         # cross entropy
         sparse_ce_fn = get_sparse_cross_entropy_fn(
             dist=self.hparams.output_distribution,
@@ -685,6 +757,12 @@ class FraGNNetPL(SpectrumPL):
             pred_edge_h_logprobs,
             pred_edge_batch_idxs,
             pred_oos_logprobs,
+            pred_formula_support_logits,
+            pred_formula_support_batch_idxs,
+            pred_formula_support_valid_mask,
+            pred_formula_support_peak_formula_idxs,
+            pred_formula_support_peak_mzs,
+            pred_formula_support_peak_batch_idxs,
             pred_h_logprobs,
             pred_h_counts,
             pred_h_batch_idxs,
@@ -775,6 +853,33 @@ class FraGNNetPL(SpectrumPL):
 
             loss = self.hparams.primary_loss_weight * primary_loss
             loss_d["primary_loss"] = primary_loss
+
+            if self.hparams.fragnnet_formula_support:
+                formula_support_targets = _formula_support_targets(
+                    true_mzs=true_mzs,
+                    true_batch_idxs=true_batch_idxs,
+                    formula_support_logits=pred_formula_support_logits,
+                    formula_peak_mzs=pred_formula_support_peak_mzs,
+                    formula_peak_formula_idxs=pred_formula_support_peak_formula_idxs,
+                    formula_peak_batch_idxs=pred_formula_support_peak_batch_idxs,
+                    batch_size=batch_size,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    attribution=self.hparams.fragnnet_formula_support_attribution,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
+                formula_support_loss = balanced_binary_support_loss(
+                    pred_formula_support_logits,
+                    formula_support_targets,
+                    pred_formula_support_valid_mask,
+                    pred_formula_support_batch_idxs,
+                    batch_size,
+                    allow_empty_batches=True,
+                )
+                loss = loss + support_weight * formula_support_loss
+                loss_d["formula_support_loss"] = formula_support_loss
 
             if self.hparams.ce_pair_loss_weight != 0.0:
                 pair_loss = pred_logprobs.new_zeros(batch_size)
