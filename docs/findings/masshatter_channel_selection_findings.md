@@ -379,6 +379,11 @@ indistinguishable at the configured FT tolerance rather than intensity filtering
 The legacy `exact_sum` method remains the template default for checkpoint reproducibility. Because
 the consensus construction changes training targets, it requires a newly trained checkpoint.
 
+The matched no-barcode control is
+[`nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml`](../../config/masshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml).
+It differs from the barcode consensus arm only in experiment metadata and
+`mass_shatter_proposal_barcode_target: False`, allowing the barcode effect to be isolated.
+
 The matched follow-up should determine whether barcode supervision changes:
 
 1. soft fragment attribution;
