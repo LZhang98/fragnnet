@@ -57,6 +57,15 @@ spec_params:
   nce: False
   ace: False
   preprocess: False
+  # Per-spectrum peak cleanup, applied before replicate-spectrum merging.
+  centroid_peaks: False
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: False
+  centroid_method: common_overlap  # ["common_overlap", "naive_centroid"]
+  filter_subformula_peaks: False
+  subformula_ppm: 5.0 # only use if filter_subformula_peaks is True and subformula_use_instrument_tolerance is False
+  subformula_use_instrument_tolerance: True
+  drop_empty_spectra: True
   # Monoisotopic target cleanup. When True, isotope peaks are removed from
   # observed spectra before they become training/evaluation targets; isotope
   # envelopes can then be added back as a post-process.

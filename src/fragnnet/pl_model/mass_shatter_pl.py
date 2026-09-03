@@ -1733,8 +1733,14 @@ class MassShatterPL(SpectrumPL):
                 loss_values["ce_pair_loss"] = pair_loss
                 loss_values["ce_pair_eligible_endpoints"] = eligible_endpoints
             if self.training and self._proposal_only_training:
-                # Phase 1 uses no intensity-side auxiliary or primary objective.
+                # Phase 1 trains proposal coverage and any dedicated proposal heads.
+                # Intensity-head support and cross-EV losses begin with joint training.
                 loss = self.hparams.mass_shatter_proposal_loss_weight * proposal_loss
+                if ion_mode_proposal_loss_enabled:
+                    loss = loss + (
+                        self.hparams.mass_shatter_ion_mode_proposal_loss_weight
+                        * ion_mode_proposal_loss
+                    )
             loss_values["loss"] = loss
             return loss_values
 

@@ -165,6 +165,9 @@ def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:
         mass_shatter_separate_proposal_encoder=False,
         mass_shatter_proposal_loss_weight=0.1,
         mass_shatter_proposal_only_until_epoch=15,
+        mass_shatter_separate_ion_h_support_head=True,
+        mass_shatter_ion_h_support_binary_logits=True,
+        mass_shatter_ion_h_support_loss_weight=0.1,
     )
 
     pl._apply_staged_training(epoch=15)
@@ -177,6 +180,10 @@ def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:
     )
     assert all(parameter.requires_grad for parameter in pl.model.precursor_encoder.parameters())
     assert all(not parameter.requires_grad for parameter in pl.model.intensity_head.parameters())
+    assert all(
+        not parameter.requires_grad
+        for parameter in pl.model.intensity_head.ion_h_support_head.parameters()
+    )
 
     proposal_parameter = next(pl.model.precursor_encoder.parameters())
     pl._apply_staged_training(epoch=16)
@@ -190,21 +197,38 @@ def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:
     assert proposal_parameter.requires_grad
     assert all(parameter.requires_grad for parameter in pl.model.precursor_encoder.parameters())
     assert all(parameter.requires_grad for parameter in pl.model.intensity_head.parameters())
+    assert all(
+        parameter.requires_grad
+        for parameter in pl.model.intensity_head.ion_h_support_head.parameters()
+    )
 
 
 def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
+    template_path = Path(__file__).parents[1] / "config" / "template.yml"
+    with template_path.open() as template_file:
+        spec_params = yaml.safe_load(template_file)["spec_params"]
+    spec_params["prec_types"] = ["[M+Na]+"]
     pl, _ = _build_pl(
+        spec_params=spec_params,
         mass_shatter_unique_fragment_mode=True,
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_anchored=True,
         mass_shatter_separate_proposal_encoder=False,
         mass_shatter_proposal_loss_weight=0.1,
         mass_shatter_proposal_only_until_epoch=15,
+        mass_shatter_separate_ion_h_support_head=True,
+        mass_shatter_ion_h_support_binary_logits=True,
+        mass_shatter_ion_h_support_loss_weight=0.1,
+        mass_shatter_separate_ion_mode_proposal_head=True,
+        mass_shatter_ion_mode_proposal_binary_logits=True,
+        mass_shatter_ion_mode_proposal_loss_weight=0.2,
     )
 
     def calculate_loss(
         pred_probabilities: th.Tensor,
         proposal_probabilities: th.Tensor,
+        support_logits: th.Tensor,
+        ion_mode_logits: th.Tensor,
     ) -> dict[str, th.Tensor]:
         return pl.loss_fn(
             true_mzs=th.tensor([100.0]),
@@ -219,6 +243,12 @@ def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
             proposal_candidate_fragment_idxs=th.tensor([0, 1]),
             proposal_fragment_logprobs=proposal_probabilities.log(),
             proposal_fragment_batch_idxs=th.tensor([0, 0]),
+            ion_h_dense_mzs=th.tensor([[[100.0], [100.0]], [[200.0], [200.0]]]),
+            ion_h_dense_log_weights=th.zeros(2, 2, 1),
+            ion_h_chemical_valid_channels=th.ones(2, 2, 1, dtype=th.bool),
+            ion_h_fragment_batch_idxs=th.tensor([0, 0]),
+            ion_h_support_logits=support_logits,
+            ion_mode_proposal_logits=ion_mode_logits,
             batch_size=1,
             **_loss_diagnostics(),
         )
@@ -226,20 +256,42 @@ def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
     pl._apply_staged_training(epoch=15)
     pred_probabilities = th.tensor([0.8, 0.2], requires_grad=True)
     proposal_probabilities = th.tensor([0.7, 0.3], requires_grad=True)
-    proposal_phase = calculate_loss(pred_probabilities, proposal_probabilities)
+    support_logits = th.zeros(2, 2, 1, requires_grad=True)
+    ion_mode_logits = th.zeros(2, 2, requires_grad=True)
+    proposal_phase = calculate_loss(
+        pred_probabilities,
+        proposal_probabilities,
+        support_logits,
+        ion_mode_logits,
+    )
     assert proposal_phase["loss"].tolist() == pytest.approx(
-        (0.1 * proposal_phase["proposal_loss"]).tolist()
+        (
+            0.1 * proposal_phase["proposal_loss"]
+            + 0.2 * proposal_phase["ion_mode_proposal_loss"]
+        ).tolist()
     )
     proposal_phase["loss"].sum().backward()
     assert pred_probabilities.grad is None
     assert proposal_probabilities.grad is not None
+    assert support_logits.grad is None
+    assert ion_mode_logits.grad is not None
 
     pl.eval()
     pred_probabilities = th.tensor([0.8, 0.2], requires_grad=True)
     proposal_probabilities = th.tensor([0.7, 0.3], requires_grad=True)
-    validation_phase = calculate_loss(pred_probabilities, proposal_probabilities)
+    support_logits = th.zeros(2, 2, 1, requires_grad=True)
+    ion_mode_logits = th.zeros(2, 2, requires_grad=True)
+    validation_phase = calculate_loss(
+        pred_probabilities,
+        proposal_probabilities,
+        support_logits,
+        ion_mode_logits,
+    )
     expected_validation_loss = (
-        validation_phase["primary_loss"] + 0.1 * validation_phase["proposal_loss"]
+        validation_phase["primary_loss"]
+        + 0.1 * validation_phase["proposal_loss"]
+        + 0.1 * validation_phase["ion_h_support_loss"]
+        + 0.2 * validation_phase["ion_mode_proposal_loss"]
     )
     assert validation_phase["loss"].tolist() == pytest.approx(
         expected_validation_loss.tolist()
@@ -249,12 +301,26 @@ def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
     pl._apply_staged_training(epoch=16)
     pred_probabilities = th.tensor([0.8, 0.2], requires_grad=True)
     proposal_probabilities = th.tensor([0.7, 0.3], requires_grad=True)
-    intensity_phase = calculate_loss(pred_probabilities, proposal_probabilities)
-    expected_joint_loss = intensity_phase["primary_loss"] + 0.1 * intensity_phase["proposal_loss"]
+    support_logits = th.zeros(2, 2, 1, requires_grad=True)
+    ion_mode_logits = th.zeros(2, 2, requires_grad=True)
+    intensity_phase = calculate_loss(
+        pred_probabilities,
+        proposal_probabilities,
+        support_logits,
+        ion_mode_logits,
+    )
+    expected_joint_loss = (
+        intensity_phase["primary_loss"]
+        + 0.1 * intensity_phase["proposal_loss"]
+        + 0.1 * intensity_phase["ion_h_support_loss"]
+        + 0.2 * intensity_phase["ion_mode_proposal_loss"]
+    )
     assert intensity_phase["loss"].tolist() == pytest.approx(expected_joint_loss.tolist())
     intensity_phase["loss"].sum().backward()
     assert pred_probabilities.grad is not None
     assert proposal_probabilities.grad is not None
+    assert support_logits.grad is not None
+    assert ion_mode_logits.grad is not None
 
 
 @pytest.mark.parametrize("precision", [16, "16", "16-mixed"])

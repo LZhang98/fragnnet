@@ -1723,6 +1723,9 @@ class MassShatterModel(nn.Module):
         # ``chemical_bond_index`` is the undirected single-entry-per-bond view of the
         # graph (``edge_index`` is directed), so either endpoint identifies the molecule.
         bond_batch_indices = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]
+        detach_proposal_inputs = (
+            self.proposal_selection_only and not self.proposal_input_gradients_enabled
+        )
         if self.share_proposal_across_ev:
             assert layout is not None
             representatives = layout["representatives"]
@@ -1768,7 +1771,7 @@ class MassShatterModel(nn.Module):
             shared_atom_indices = layout["representative_atom_indices"]
             if self.proposal_encoder is None:
                 shared_proposal_atom_embeddings = atom_embeddings[shared_atom_indices]
-                if self.proposal_selection_only and not self.proposal_input_gradients_enabled:
+                if detach_proposal_inputs:
                     shared_proposal_atom_embeddings = shared_proposal_atom_embeddings.detach()
             else:
                 shared_proposal_atom_embeddings = self.proposal_encoder(
@@ -1781,12 +1784,12 @@ class MassShatterModel(nn.Module):
                 proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
                 proposal_context = (
                     context.detach()
-                    if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                    if detach_proposal_inputs
                     else context
                 )
             shared_proposal_context = (
                 shared_context.detach()
-                if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                if detach_proposal_inputs
                 else shared_context
             )
             shared_bond_logits = self.bond_break_head(
@@ -1819,7 +1822,7 @@ class MassShatterModel(nn.Module):
             if self.proposal_encoder is None:
                 proposal_atom_embeddings = (
                     atom_embeddings.detach()
-                    if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                    if detach_proposal_inputs
                     else atom_embeddings
                 )
             else:
@@ -1831,7 +1834,7 @@ class MassShatterModel(nn.Module):
                 )
             proposal_context = (
                 context.detach()
-                if self.proposal_selection_only and not self.proposal_input_gradients_enabled
+                if detach_proposal_inputs
                 else context
             )
             bond_logits = self.bond_break_head(
