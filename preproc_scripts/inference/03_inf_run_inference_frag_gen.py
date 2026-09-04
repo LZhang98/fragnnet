@@ -1,4 +1,6 @@
 import argparse
+import ctypes
+import gc
 import logging
 import os
 import time
@@ -10,6 +12,20 @@ from tqdm import tqdm
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype
+
+
+def trim_process_memory() -> bool:
+    """Collect garbage and return free heap pages when glibc supports it."""
+    gc.collect()
+    try:
+        process_library = ctypes.CDLL(None)
+        malloc_trim = process_library.malloc_trim
+        malloc_trim.argtypes = [ctypes.c_size_t]
+        malloc_trim.restype = ctypes.c_int
+        return bool(malloc_trim(0))
+    except Exception:
+        # malloc_trim is a glibc extension and is unavailable on other platforms.
+        return False
 
 
 def get_args() -> argparse.Namespace:
@@ -63,7 +79,9 @@ def get_args() -> argparse.Namespace:
         "--project_dp", type=str, default=os.getcwd(), help="Project root directory path"
     )
     parser.add_argument(
-        "--frag_dp", type=str, required=True, help="Path to the fragmentation output directory"
+        "--frag_dp",
+        type=str,
+        help="Path to the fragmentation output directory; required unless --no-out is used",
     )
     parser.add_argument(
         "--proc_dp",
@@ -106,7 +124,14 @@ def get_args() -> argparse.Namespace:
         default=False,
         help="Show tqdm progress bar instead of interval logging",
     )
+    parser.add_argument(
+        "--no-out",
+        action="store_true",
+        help="Compute fragment DAGs without reading cached outputs or writing result files",
+    )
     args = parser.parse_args()
+    if not args.no_out and args.frag_dp is None:
+        parser.error("--frag_dp is required unless --no-out is used")
     return args
 
 
@@ -168,7 +193,9 @@ if __name__ == "__main__":
     logger.info("Step 2: Setting up output directory")
     logger.info(f"Output directory: {args.frag_dp}")
 
-    if os.path.exists(args.frag_dp):
+    if args.no_out:
+        logger.info("No-output mode enabled - fragment DAGs will be computed and discarded")
+    elif os.path.exists(args.frag_dp):
         logger.info("Output directory already exists")
         existing_files = len(
             [
@@ -178,7 +205,7 @@ if __name__ == "__main__":
             ]
         )
         logger.info(f"Found {existing_files} existing fragment files in output directory")
-        if args.allow_cached:
+        if args.allow_cached and not args.no_out:
             logger.info("Caching enabled - will skip molecules with existing fragment files")
         else:
             logger.info("Caching disabled - will regenerate all fragments")
@@ -251,7 +278,7 @@ if __name__ == "__main__":
 
     skipped_cached = 0
     for idx, (_, row) in enumerate(mol_df_chunk.iterrows()):
-        if args.allow_cached:
+        if args.allow_cached and not args.no_out:
             cached_fp = frag_utils.get_frag_fp(row["mol_id"], args.frag_dp, args.compressed)
             if os.path.isfile(cached_fp):
                 skipped_cached += 1
@@ -278,6 +305,14 @@ if __name__ == "__main__":
     logger.info(f"Completed input preparation for {len(dag_feat_inputs_l)} molecules")
     if skipped_cached > 0:
         logger.info(f"Skipped {skipped_cached} molecules with cached fragments")
+
+    # The dataframe owns every deserialized RDKit molecule in the input pickle.
+    # Retain only the selected molecules referenced by dag_feat_inputs_l before
+    # starting worker processes, then return unused allocator pages to the OS.
+    del mol_df_chunk
+    del mol_df
+    memory_trimmed = trim_process_memory()
+    logger.info(f"Released input dataframes (malloc_trim released memory: {memory_trimmed})")
     logger.info("-" * 40)
 
     # Execute parallel fragment generation using FraGNNet algorithm
@@ -313,7 +348,7 @@ if __name__ == "__main__":
             n_done += 1
             if not dag_d:
                 n_errors += 1
-            else:
+            elif not args.no_out:
                 frag_utils.save_frag_d(dag_d, mol_id, args.frag_dp, args.compressed)
             current_time = time.time()
 
@@ -341,7 +376,7 @@ if __name__ == "__main__":
             n_done += 1
             if not dag_d:
                 n_errors += 1
-            else:
+            elif not args.no_out:
                 frag_utils.save_frag_d(dag_d, mol_id, args.frag_dp, args.compressed)
             current_time = time.time()
 
@@ -370,18 +405,21 @@ if __name__ == "__main__":
         logger.info("No errors encountered - 100% success rate")
 
     # Log output directory information
-    try:
-        output_files = [
-            f
-            for f in os.listdir(args.frag_dp)
-            if f.endswith(".pickle") or f.endswith(".pickle.bz2")
-        ]
-        logger.info(f"Generated {len(output_files)} fragment files in {args.frag_dp}")
-        total_size = sum(os.path.getsize(os.path.join(args.frag_dp, f)) for f in output_files) / (
-            1024 * 1024
-        )
-        logger.info(f"Total output size: {total_size:.2f} MB")
-    except Exception as e:
-        logger.warning(f"Could not analyze output directory: {e}")
+    if args.no_out:
+        logger.info("No-output mode enabled - skipped fragment file summary")
+    else:
+        try:
+            output_files = [
+                f
+                for f in os.listdir(args.frag_dp)
+                if f.endswith(".pickle") or f.endswith(".pickle.bz2")
+            ]
+            logger.info(f"Generated {len(output_files)} fragment files in {args.frag_dp}")
+            total_size = sum(
+                os.path.getsize(os.path.join(args.frag_dp, f)) for f in output_files
+            ) / (1024 * 1024)
+            logger.info(f"Total output size: {total_size:.2f} MB")
+        except Exception as e:
+            logger.warning(f"Could not analyze output directory: {e}")
 
     logger.info("=" * 60)
