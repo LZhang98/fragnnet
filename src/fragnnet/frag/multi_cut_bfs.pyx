@@ -504,20 +504,20 @@ def compute_ccs_multi_cut(
     cdef bytes root_node_key = PyBytes_FromStringAndSize(&node_mask_mv[0], num_nodes)
     cdef bytes root_edge_key = PyBytes_FromStringAndSize(&base_edge_mask_mv[0], num_edges)
 
+    root_queue_key = (root_node_key, root_edge_key)
     css_to_id_dict  = {root_node_key: 0}
     ccs_depth_bits  = {root_node_key: 1}   # bit 0 = depth 0 for root
     ccs_min_depth   = {root_node_key: 0}
-    # min_rc_for_key: (node_key, edge_key) → minimum ring_cuts value seen across all
-    # paths that reach this fragment state.  Only the first (minimum) ring_cuts path
-    # adds the state to depth_queue; later paths with equal/higher ring_cuts are
-    # skipped entirely, so each state is processed exactly once.
-    min_rc_for_key  = {(root_node_key, root_edge_key): 0}
+    queued_set      = {root_queue_key}
+    # min_rc_for_key stores the minimum ring-cut count seen for each queued state.
+    # queued_set independently guarantees that each state enters depth_queue once.
+    min_rc_for_key  = {root_queue_key: 0}
     dag_edge_dict   = {}
 
     # depth_queue[d] = list of (node_key, edge_key) pairs to process at depth d.
     # A cut=k bond break at depth d places children at depth d+k (cut weight = depth
     # consumed), preventing compounding multi-cuts across depths.
-    depth_queue = [[(root_node_key, root_edge_key)]] + [[] for _ in range(max_depth)]
+    depth_queue = [[root_queue_key]] + [[] for _ in range(max_depth)]
 
     # -----------------------------------------------------------------------
     # C-level loop variables
@@ -710,8 +710,9 @@ def compute_ccs_multi_cut(
 
                     child_queue_key = (child_node_key, child_edge_key)
                     if cur_ring_cuts < min_rc_for_key.get(child_queue_key, 999):
-                        if child_queue_key not in min_rc_for_key:
+                        if child_queue_key not in queued_set:
                             depth_queue[current_depth + 1].append(child_queue_key)
+                            queued_set.add(child_queue_key)
                         min_rc_for_key[child_queue_key] = cur_ring_cuts
 
                     if cur_node_key != child_node_key:
@@ -753,8 +754,9 @@ def compute_ccs_multi_cut(
                     child_node_key = cur_node_key  # same atoms
                     child_queue_key = (child_node_key, child_edge_key)
                     if cur_ring_cuts < min_rc_for_key.get(child_queue_key, 999):
-                        if child_queue_key not in min_rc_for_key:
+                        if child_queue_key not in queued_set:
                             depth_queue[current_depth + 1].append(child_queue_key)
+                            queued_set.add(child_queue_key)
                         min_rc_for_key[child_queue_key] = cur_ring_cuts
                     # No DAG edge and no depth-bit update: child_node_key ==
                     # cur_node_key, so the atom subset is already registered at
@@ -834,8 +836,9 @@ def compute_ccs_multi_cut(
                                 child_queue_key = (child_node_key, child_edge_key)
                                 child_rc = cur_ring_cuts + 1
                                 if child_rc < min_rc_for_key.get(child_queue_key, 999):
-                                    if child_queue_key not in min_rc_for_key:
+                                    if child_queue_key not in queued_set:
                                         depth_queue[current_depth + 1].append(child_queue_key)
+                                        queued_set.add(child_queue_key)
                                     min_rc_for_key[child_queue_key] = child_rc
 
                                 if cur_node_key != child_node_key:
@@ -879,8 +882,9 @@ def compute_ccs_multi_cut(
 
                     child_queue_key = (child_node_key, child_edge_key)
                     if 0 < min_rc_for_key.get(child_queue_key, 999):
-                        if child_queue_key not in min_rc_for_key:
+                        if child_queue_key not in queued_set:
                             depth_queue[1].append(child_queue_key)
+                            queued_set.add(child_queue_key)
                         min_rc_for_key[child_queue_key] = 0
 
                     edge_pair = (css_to_id_dict[root_node_key],
