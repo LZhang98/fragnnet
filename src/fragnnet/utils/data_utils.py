@@ -598,7 +598,14 @@ def seq_apply(iterator, func, need_unpack=False):
     return result
 
 
-def par_apply(iterator, func, need_unpack=False, return_as_generator=False, n_jobs=JOBLIB_N_JOBS):
+def par_apply(
+    iterator,
+    func,
+    need_unpack=False,
+    return_as_generator=False,
+    n_jobs=JOBLIB_N_JOBS,
+    unordered=False,
+):
     """Apply a function to each item in an iterator in parallel.
 
     Args:
@@ -607,17 +614,41 @@ def par_apply(iterator, func, need_unpack=False, return_as_generator=False, n_jo
             need_unpack (bool, optional): _description_. Defaults to False.
             return_as_generator (bool, optional): _description_. Defaults to False.
             n_jobs (_type_, optional): _description_. Defaults to JOBLIB_N_JOBS.
+            unordered (bool, optional): Yield generator results as workers finish.
+                Requires ``return_as_generator=True``. Defaults to False.
 
     Returns:
             _type_: _description_
     """
+    if unordered and not return_as_generator:
+        raise ValueError("unordered=True requires return_as_generator=True")
+
     par_func = joblib.delayed(func)
-    parallel = joblib.Parallel(
-        backend=JOBLIB_BACKEND,
-        n_jobs=n_jobs,
-        timeout=JOBLIB_TIMEOUT,
-        return_as="list" if not return_as_generator else "generator",
-    )
+    if unordered:
+        return_as = "generator_unordered"
+    elif return_as_generator:
+        return_as = "generator"
+    else:
+        return_as = "list"
+    parallel_kwargs = {
+        "backend": JOBLIB_BACKEND,
+        "n_jobs": n_jobs,
+        "timeout": JOBLIB_TIMEOUT,
+        "return_as": return_as,
+    }
+    try:
+        parallel = joblib.Parallel(**parallel_kwargs)
+    except ValueError as exc:
+        if not unordered or "return_as" not in str(exc):
+            raise
+        warnings.warn(
+            "Installed joblib does not support unordered generators; falling back to "
+            "ordered generator results.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        parallel_kwargs["return_as"] = "generator"
+        parallel = joblib.Parallel(**parallel_kwargs)
     if not need_unpack:
         result = parallel(par_func(i) for i in iterator)
     else:

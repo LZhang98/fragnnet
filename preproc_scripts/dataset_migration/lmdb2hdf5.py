@@ -21,7 +21,7 @@ import h5py
 import lmdb
 from tqdm import tqdm
 
-from fragnnet.utils.frag_utils import dump_dag_hdf5
+from fragnnet.utils.frag_utils import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
 from fragnnet.utils.misc_utils import booltype
 
 
@@ -59,13 +59,13 @@ def main(args: argparse.Namespace) -> None:
     num_ok = 0
     num_err = 0
     with env.begin() as txn, h5py.File(h5_fp, "w") as h5_file:
+        initialize_packed_dag_hdf5(h5_file)
         cursor = txn.cursor()
         for key_bytes, val_bytes in tqdm(cursor.iternext_dup() if False else cursor, total=total):
             key = key_bytes.decode()
             try:
                 dag_d = pickle.loads(bytes(val_bytes))
-                grp = h5_file.create_group(key)
-                dump_dag_hdf5(grp, dag_d)
+                dump_dag_hdf5_packed(h5_file, key, dag_d)
                 num_ok += 1
             except Exception as exc:
                 logging.warning(f"Failed to convert mol_id={key}: {exc}")

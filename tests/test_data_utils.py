@@ -3,10 +3,43 @@
 Tests for normalization, tokenization, charge parsing, and energy conversions.
 """
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
 
 from fragnnet.utils import data_utils as du
+
+
+def test_par_apply_uses_unordered_generator():
+    """Request unordered joblib results without changing the existing defaults."""
+    with patch.object(du.joblib, "Parallel") as parallel_cls:
+        du.par_apply([1], str, return_as_generator=True, n_jobs=2, unordered=True)
+
+    assert parallel_cls.call_args.kwargs["return_as"] == "generator_unordered"
+
+
+def test_par_apply_rejects_unordered_list():
+    """Unordered output is only defined for streaming results."""
+    with pytest.raises(ValueError, match="return_as_generator"):
+        du.par_apply([1], str, unordered=True)
+
+
+def test_par_apply_falls_back_for_older_joblib():
+    """Older joblib releases still receive streaming ordered results."""
+    ordered_parallel = MagicMock(return_value=["result"])
+    with (
+        patch.object(
+            du.joblib,
+            "Parallel",
+            side_effect=[ValueError("invalid return_as"), ordered_parallel],
+        ) as parallel_cls,
+        pytest.warns(RuntimeWarning, match="falling back"),
+    ):
+        result = du.par_apply([1], str, return_as_generator=True, n_jobs=2, unordered=True)
+
+    assert result == ["result"]
+    assert parallel_cls.call_args_list[1].kwargs["return_as"] == "generator"
 
 
 class TestNormalizeInts:
