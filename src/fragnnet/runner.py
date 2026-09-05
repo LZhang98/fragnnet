@@ -17,6 +17,7 @@ except ModuleNotFoundError:
 import logging
 import yaml
 import os
+from datetime import datetime
 
 import glob
 import shutil
@@ -308,9 +309,20 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	callbacks = []
 	if wandb_mode != "disabled":
 		ckpt_dp = os.path.join(wandb.run.dir,"ckpt")
+		run_name = wandb.run.name
 	else:
 		ckpt_dp = "tmp_ckpt"
+		run_name = config_d["wandb_name"]
+	model_save_name = str(run_name).strip().replace(os.sep, "_")
+	run_date = datetime.now().strftime("%Y%m%d")
+	model_save_dp = os.path.join(
+		config_d["model_save_dir"],
+		f"{model_save_name}_{run_date}"
+	)
 	os.makedirs(ckpt_dp, exist_ok=True)
+	os.makedirs(model_save_dp, exist_ok=True)
+	with open(os.path.join(model_save_dp, "config.yml"), "w") as config_file:
+		yaml.dump(config_d, config_file, sort_keys=False)
 	if is_resume:
 		assert not config_d["disable_checkpoints"]
 		# copy the checkpoint files
@@ -507,6 +519,12 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			val_dl,
 			ckpt_path=ckpt_fp
 		)
+	if not trainer.interrupted:
+		for ckpt_fp in glob.glob(os.path.join(ckpt_dp, "*.ckpt")):
+			shutil.copy2(
+				ckpt_fp,
+				os.path.join(model_save_dp, os.path.basename(ckpt_fp))
+			)
 	logging.info("callback metrics")
 
 	if not trainer.interrupted and config_d["eval_test_split"]:

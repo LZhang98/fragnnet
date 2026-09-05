@@ -15,15 +15,24 @@ from fragnnet.utils.script_utils import run_inference
 
 
 def _select_device(config_d: dict, device: str | th.device | None) -> th.device:
+	def cuda_available():
+		if not th.cuda.is_available():
+			return False
+		try:
+			th.cuda.current_device()
+		except RuntimeError:
+			return False
+		return True
+
 	if device is None:
-		if config_d.get("accelerator") == "gpu" and th.cuda.is_available():
+		if config_d.get("accelerator") == "gpu" and cuda_available():
 			return th.device("cuda:0")
 		return th.device("cpu")
 	if isinstance(device, th.device):
-		if device.type == "cuda" and not th.cuda.is_available():
+		if device.type == "cuda" and not cuda_available():
 			return th.device("cpu")
 		return device
-	if device.startswith("cuda") and not th.cuda.is_available():
+	if device.startswith("cuda") and not cuda_available():
 		return th.device("cpu")
 	return th.device(device)
 

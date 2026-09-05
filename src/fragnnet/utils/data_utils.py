@@ -1077,16 +1077,16 @@ def ace_to_nce(row):
 	return nce
 
 def fill_missing_nce(row):
-	nce = row["nce"]
-	ace = row["ace"]
+	nce = row.get("nce", np.nan)
+	ace = row.get("ace", np.nan)
 	if none_or_nan(nce) and not none_or_nan(ace):
 		return ace_to_nce(row)
 	else:
 		return nce
 
 def fill_missing_ace(row):
-	nce = row["nce"]
-	ace = row["ace"]
+	nce = row.get("nce", np.nan)
+	ace = row.get("ace", np.nan)
 	if none_or_nan(ace) and not none_or_nan(nce):
 		return nce_to_ace(row)
 	else:

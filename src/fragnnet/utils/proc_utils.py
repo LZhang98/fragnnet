@@ -204,10 +204,11 @@ def merge_spec_df(spec_df,renormalize=False,sum_ints=True,keep_ces=False):
 	m_spec_meta_df = spec_df.drop(columns=["peaks","spec_id"]).drop_duplicates(subset=["group_id"])
 	m_spec_df = m_spec_peaks_df.merge(m_spec_meta_df,on=["group_id"],how="inner")
 	if keep_ces:
-		m_spec_ce_df = spec_df[["group_id","nce","ace"]].groupby("group_id").agg({"nce":list,"ace":list}).reset_index()
-		m_spec_df = m_spec_df.drop(columns=["nce","ace"])
+		ce_cols = [column for column in ("nce", "ace") if column in spec_df.columns]
+		m_spec_ce_df = spec_df[["group_id", *ce_cols]].groupby("group_id").agg(dict.fromkeys(ce_cols, list)).reset_index()
+		m_spec_df = m_spec_df.drop(columns=ce_cols, errors="ignore")
 		m_spec_df = m_spec_df.merge(m_spec_ce_df,on=["group_id"],how="inner")
 	else:
-		m_spec_df.loc[:,"nce"] = np.nan
-		m_spec_df.loc[:,"ace"] = np.nan
+		for column in ("nce", "ace"):
+			m_spec_df.loc[:,column] = np.nan
 	return m_spec_df

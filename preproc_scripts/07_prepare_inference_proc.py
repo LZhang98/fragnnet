@@ -16,7 +16,7 @@ DEFAULT_PREC_TYPES = ["[M+H]+"]
 DEFAULT_INST_TYPES = ["FT"]
 DEFAULT_FRAG_MODES = ["HCD"]
 DEFAULT_ION_MODES = ["P"]
-DEFAULT_NCE_VALUES = [20.0, 40.0, 60.0]
+DEFAULT_ACE_VALUES = [20.0, 40.0, 60.0]
 SUPPORTED_ELEMENTS = set(frag_utils.ELEMENT_TO_VE)
 
 def load_spec_params(config_fp):
@@ -101,17 +101,14 @@ def make_mol_df(smiles_input):
 
 
 def make_spec_df(mol_df, dset, prec_types, inst_types, frag_modes, ion_modes,
-				 nce_values, ace_values):
+				 ace_values):
 	rows = []
 	group_id = 0
 	for mol_row in mol_df.itertuples(index=False):
 		mol_id = mol_row.mol_id
 		for prec_type, inst_type, frag_mode, ion_mode in itertools.product(
 				prec_types, inst_types, frag_modes, ion_modes):
-			if nce_values and ace_values:
-				raise ValueError("Provide NCE values or ACE values, not both")
-			collision_values = nce_values or ace_values or [None]
-			for collision_value in collision_values:
+			for ace in ace_values:
 				rows.append({
 					"spec_id": len(rows),
 					"mol_id": mol_id,
@@ -121,14 +118,10 @@ def make_spec_df(mol_df, dset, prec_types, inst_types, frag_modes, ion_modes,
 					"spec_type": "MS2",
 					"ion_mode": ion_mode,
 					"dset": dset,
-					"dset_spec_id": f"{dset}_{mol_id}_{group_id}_{len(rows)}",
-					"col_gas": np.nan,
-					"res": 0,
-					"ace": collision_value if ace_values else np.nan,
-					"nce": collision_value if nce_values else np.nan,
+					"dset_spec_id": f"{dset}_{len(rows)}",
+					"ace": ace,
 					"prec_mz": mol_row.exact_mw + PREC_TYPE_TO_MASS_DIFF[prec_type],
-					"peaks": [],
-					"ri": np.nan,
+					"peaks": [(1.0, 1.0)],
 					"group_id": group_id,
 				})
 			group_id += 1
@@ -145,21 +138,12 @@ def main(args):
 		if prec_type not in PREC_TYPE_TO_MASS_DIFF:
 			raise ValueError(f"Unsupported precursor type: {prec_type}")
 
-	use_nce = args.nce_values is not None or spec_params.get("nce", False)
-	use_ace = args.ace_values is not None or spec_params.get("ace", False)
-	if use_nce and use_ace:
-		raise ValueError("The checkpoint cannot use NCE and ACE simultaneously")
-	nce_values = args.nce_values if use_nce else []
-	ace_values = args.ace_values if use_ace else []
-	if use_nce and nce_values is None:
-		nce_values = DEFAULT_NCE_VALUES
-	if use_ace and ace_values is None:
-		ace_values = [20.0]
+	ace_values = DEFAULT_ACE_VALUES
 
 	mol_df = make_mol_df(args.input)
 	spec_df = make_spec_df(
 		mol_df, args.dset, prec_types, inst_types, frag_modes, ion_modes,
-		nce_values, ace_values)
+		ace_values)
 	os.makedirs(args.output_dp, exist_ok=True)
 	spec_fp = os.path.join(args.output_dp, "spec_df.pkl")
 	mol_fp = os.path.join(args.output_dp, "mol_df.pkl")
@@ -179,6 +163,4 @@ if __name__ == "__main__":
 	parser.add_argument("--inst_types", nargs="+")
 	parser.add_argument("--frag_modes", nargs="+", default=DEFAULT_FRAG_MODES)
 	parser.add_argument("--ion_modes", nargs="+", default=DEFAULT_ION_MODES)
-	parser.add_argument("--nce_values", nargs="+", type=float)
-	parser.add_argument("--ace_values", nargs="+", type=float)
 	main(parser.parse_args())
