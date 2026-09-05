@@ -56,8 +56,7 @@ inference:
   num_workers: 7
   split: predict_only
   batch_cutoff: 1000000
-  output_fp: data/inference/debug.pkl
-  error_log_fp: data/inference/debug_errors.csv
+  output_dp: data/inference/debug
   default_nce: 60.0
   include_input_data: True
   output_subset:

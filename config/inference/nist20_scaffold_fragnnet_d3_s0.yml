@@ -1,7 +1,7 @@
 # Inference data.
 spec_fp: data/proc/plastchem/spec_df.pkl
 mol_fp: data/proc/plastchem/mol_df.pkl
-frag_dp: data/frag/nist20_d3/dags
+frag_dp: data/frag/plastchem_d3/dags
 
 # FraGNNet model settings.
 frag_params:
@@ -14,10 +14,14 @@ spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
+  inst_types:
+    - "FT"
+  prec_types:
+    - "[M+H]+"
   preprocess: True
 mol_params:
   preprocess: True
-num_depth: 3
+num_depth: 4
 frag_gnn_type: NodeMLP
 ce_insert_location: mlp
 ce_insert_merge: True
@@ -49,16 +53,19 @@ eval_mz_bin_res:
 
 # inference stuff
 inference:
-  ckpt_fp: tmp_ckpt/model-epoch=007.ckpt # TODO: change this after training completes
+  ckpt_fp: /mnt/data/luke_fragnnet_checkpoints/test_run/model-epoch=195.ckpt
   device: cuda:0
   batch_size: 32
   num_workers: 7
   split: predict_only
   batch_cutoff: 1000000
-  output_fp: data/inference/nist20_scaffold_fragnnet_d3_s0.pkl
+  output_dp: data/inference/fragnnet_d3_195/
+  default_nce: 60.0
+  include_input_data: True
   output_subset:
     - pred_mzs
     - pred_logprobs
     - pred_batch_idxs
     - pred_formula_logprobs
     - pred_formula_batch_idxs
+

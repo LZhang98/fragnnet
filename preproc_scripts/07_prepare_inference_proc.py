@@ -100,6 +100,16 @@ def make_mol_df(smiles_input):
 	return mol_df
 
 
+def load_mol_df(input_values):
+	if len(input_values) == 1 and os.path.splitext(input_values[0])[1].lower() in [".pkl", ".pickle"]:
+		input_df = pd.read_pickle(input_values[0])
+		if {"mol_id", "smiles", "mol"}.issubset(input_df.columns):
+			if input_df["mol_id"].duplicated().any():
+				raise ValueError("Input molecule dataframe contains duplicate mol_id values")
+			return input_df.copy().reset_index(drop=True)
+	return make_mol_df(input_values)
+
+
 def make_spec_df(mol_df, dset, prec_types, inst_types, frag_modes, ion_modes,
 				 ace_values):
 	rows = []
@@ -140,7 +150,7 @@ def main(args):
 
 	ace_values = DEFAULT_ACE_VALUES
 
-	mol_df = make_mol_df(args.input)
+	mol_df = load_mol_df(args.input)
 	spec_df = make_spec_df(
 		mol_df, args.dset, prec_types, inst_types, frag_modes, ion_modes,
 		ace_values)
