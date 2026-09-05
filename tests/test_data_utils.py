@@ -26,13 +26,13 @@ def test_par_apply_rejects_unordered_list():
 
 
 def test_par_apply_falls_back_for_older_joblib():
-    """Older joblib releases still receive streaming ordered results."""
+    """A joblib/backend combo that rejects generator_unordered still streams ordered results."""
     ordered_parallel = MagicMock(return_value=["result"])
     with (
         patch.object(
             du.joblib,
             "Parallel",
-            side_effect=[ValueError("invalid return_as"), ordered_parallel],
+            side_effect=[ValueError("unsupported return_as"), ordered_parallel],
         ) as parallel_cls,
         pytest.warns(RuntimeWarning, match="falling back"),
     ):

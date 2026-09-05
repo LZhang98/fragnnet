@@ -10,6 +10,7 @@ Verifies that:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from rdkit import Chem
 
 from fragnnet.frag.smarts_prepass import NL_RULES, _apply_nl_prepass
@@ -18,7 +19,30 @@ from fragnnet.utils.frag_utils import (
     compute_dags,
     extract_mol_info,
     get_fraggen_input_arrays,
+    get_node_feats,
+    th_long_to_mask,
 )
+
+
+@pytest.mark.parametrize("multi_cut_bfs", [False, True])
+@pytest.mark.parametrize("smarts_prepass", [False, True])
+def test_so2_product_in_both_bfs_modes(multi_cut_bfs: bool, smarts_prepass: bool) -> None:
+    mol_d = extract_mol_info("O=[N+]([O-])c1ccc(S(=O)(=O)Nc2ncccn2)cc1")
+    mol = mol_d["mol"]
+    product = next(
+        mask for mask, idx in _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        if NL_RULES[idx].name == "aryl_sulfonamide_so2"
+    )
+    result = compute_dags(
+        mol_d, 3, False, 4, 100,
+        multi_cut_bfs=multi_cut_bfs, smarts_prepass=smarts_prepass,
+    )
+    dag = result["dag"]
+    masks = th_long_to_mask(get_node_feats(dag.x, dag.node_feat_idxs[0], "cc"))
+    found = np.flatnonzero((masks[:, :mol.GetNumAtoms()].numpy() == product).all(axis=1))
+    assert len(found) == int(smarts_prepass)
+    if smarts_prepass:
+        assert ((dag.edge_index[0] == 0) & (dag.edge_index[1] == found[0])).any()
 
 # ---------------------------------------------------------------------------
 # Helpers

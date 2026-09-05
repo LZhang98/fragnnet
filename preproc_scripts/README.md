@@ -131,6 +131,16 @@ python preproc_scripts/02_prepare_proc.py \
 ```
 ## Step 3: Generating Fragmentation DAGs
 
+Multi-cut BFS now defaults to `--restrict_ring_open False`, allowing isolated rings
+to open even when the molecule also contains fused rings. This can change generated
+DAGs and increase generation time. To reproduce runs that used the previous default,
+pass `--restrict_ring_open True` explicitly. Existing saved DAGs are unaffected.
+
+With `--smarts_prepass True`, both BFS modes now include neutral-loss rearrangements
+such as SO₂ extrusion. Previously these products were injected only in standard
+BFS. Regenerate multi-cut DAGs to obtain the added candidates; keep existing DAGs
+when reproducing experiments run before this correction.
+
 ### NIST 20
 This step generates fragmentation DAGs that are used for the FraGNNet models. Since fragmentation can be slow, we recommend using a compute with many cores (by default, the script will use all available cores). 
 

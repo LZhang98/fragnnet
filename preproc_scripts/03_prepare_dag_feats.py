@@ -837,11 +837,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--restrict_ring_open",
         type=booltype,
-        default=True,
+        default=False,
         help=(
             "Restrict ring-opening in multi-cut BFS to shared (inter-ring) bonds only. "
-            "Set to False to allow all non-bridge ring bonds to be opened (original behaviour, "
-            "slower on dense fused-ring systems)."
+            "Default: False (allow all non-bridge ring bonds to be opened). "
+            "Set to True to reproduce the previous restricted default."
         ),
     )
     args = parser.parse_args()

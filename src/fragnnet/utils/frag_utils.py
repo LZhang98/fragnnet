@@ -90,6 +90,9 @@ MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
 
 PACKED_DAG_FORMAT_ATTR = "fragnnet_dag_format"
+# Bump whenever PACKED_DAG_INDEX_DTYPE's on-disk layout changes, so
+# initialize_packed_dag_hdf5 rejects an old file instead of silently
+# reusing an incompatible index dtype.
 PACKED_DAG_FORMAT = "packed_v1"
 PACKED_DAG_BYTES_DATASET = "dag_bytes"
 PACKED_DAG_INDEX_DATASET = "dag_index"
@@ -99,8 +102,6 @@ PACKED_DAG_INDEX_DTYPE = np.dtype(
     [
         ("offset", "<u8"),
         ("length", "<u8"),
-        ("num_nodes", "<u8"),
-        ("num_edges", "<u8"),
     ]
 )
 
@@ -1098,7 +1099,7 @@ def compute_dags(
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
     max_ring_cut_steps: int = 2,
-    restrict_ring_open: bool = True,
+    restrict_ring_open: bool = False,
 ) -> dict:
     """_summary_
 
@@ -1252,19 +1253,22 @@ def compute_dags(
                     min_frag_atoms,
                 )
             )
-            nl_products = _apply_nl_prepass(NL_RULES, mol_d["mol"], num_nodes)
-            nl_masks = [mask for mask, _ in nl_products]
-            nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
-                _inject_nl_masks_into_dag(
-                    nl_masks,
-                    nodes_mask_matrix,
-                    nodes_depth_matrix,
-                    dag_edges_matrix,
-                    dag_frag_meta,
-                    num_nodes,
-                    min_frag_atoms,
-                )
+    if smarts_prepass:
+        # Inject rearrangement products after either BFS; their new bonds are
+        # not represented in the original molecular connectivity.
+        nl_products = _apply_nl_prepass(NL_RULES, mol_d["mol"], num_nodes)
+        nl_masks = [mask for mask, _ in nl_products]
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            _inject_nl_masks_into_dag(
+                nl_masks,
+                nodes_mask_matrix,
+                nodes_depth_matrix,
+                dag_edges_matrix,
+                dag_frag_meta,
+                num_nodes,
+                min_frag_atoms,
             )
+        )
 
     if nb_isomorphic:
         node_nb_hashes = get_subgraph_hashes(
@@ -1868,7 +1872,20 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
 
 
 def initialize_packed_dag_hdf5(h5_file) -> None:
-    """Initialize an open HDF5 file for packed DAG storage."""
+    """Initialize an open HDF5 file for packed DAG storage.
+
+    Creates the shared byte-blob and index datasets used by
+    :func:`dump_dag_hdf5_packed`. Idempotent: calling this again on a file
+    already initialized for packed storage is a no-op.
+
+    Args:
+        h5_file: Open writable ``h5py.File`` object.
+
+    Raises:
+        ValueError: If the file already stores DAGs in an unsupported packed
+            format, or if the file is non-empty but not yet initialized for
+            packed DAG storage.
+    """
     stored_format = h5_file.attrs.get(PACKED_DAG_FORMAT_ATTR)
     if stored_format is not None:
         if stored_format != PACKED_DAG_FORMAT:
@@ -1895,9 +1912,21 @@ def initialize_packed_dag_hdf5(h5_file) -> None:
 
 
 def dump_dag_hdf5_packed(h5_file, mol_id: str | int, dag_d: dict) -> None:
-    """Append one compressed DAG payload to a packed HDF5 file."""
-    initialize_packed_dag_hdf5(h5_file)
+    """Append one compressed DAG payload to a packed HDF5 file.
 
+    Args:
+        h5_file: Open writable ``h5py.File``, already initialized via
+            :func:`initialize_packed_dag_hdf5`.
+        mol_id: Molecule identifier. Used directly as a dense index into the
+            packed index dataset, so it must be a small non-negative integer.
+        dag_d: DAG payload dictionary as returned by :func:`compute_dags`.
+
+    Raises:
+        ValueError: If ``mol_id`` is negative, or a DAG has already been
+            stored for it.
+        KeyError: If ``h5_file`` was not initialized via
+            :func:`initialize_packed_dag_hdf5`.
+    """
     mol_idx = int(mol_id)
     if mol_idx < 0:
         raise ValueError(f"mol_id must be non-negative for packed HDF5 storage: {mol_id}")
@@ -1918,12 +1947,7 @@ def dump_dag_hdf5_packed(h5_file, mol_id: str | int, dag_d: dict) -> None:
 
     if mol_idx >= index_dataset.shape[0]:
         index_dataset.resize((mol_idx + 1,))
-    index_dataset[mol_idx] = (
-        offset,
-        length,
-        int(dag_d["dag"].num_nodes),
-        int(dag_d["dag"].num_edges),
-    )
+    index_dataset[mol_idx] = (offset, length)
 
 
 def _load_dag_hdf5_packed(h5_file, mol_id: str | int) -> dict:
@@ -1943,30 +1967,37 @@ def _load_dag_hdf5_packed(h5_file, mol_id: str | int) -> dict:
     return pickle.loads(zlib.decompress(compressed_payload))
 
 
-def load_dag_hdf5(h5_group, mol_id: str | int | None = None) -> dict:
-    """Read one DAG dictionary from an open h5py group.
-
-    Numpy arrays are converted back to PyTorch tensors with their original
-    dtypes.  JSON-encoded attributes are decoded to their original Python types.
+def load_dag_hdf5(h5_file, mol_id: str | int) -> dict:
+    """Read one DAG dictionary from an open HDF5 file, packed or legacy format.
 
     Args:
-        h5_group: An open legacy molecule group or a packed HDF5 file.
-        mol_id: Molecule identifier. Required for packed HDF5 files and ignored
-            for legacy molecule groups.
+        h5_file: Open h5py.File written by either :func:`dump_dag_hdf5_packed`
+            or :func:`dump_dag_hdf5`.
+        mol_id: Molecule identifier to look up.
 
     Returns:
         DAG payload dictionary compatible with the format returned by
         ``compute_dags``.
     """
-
-    h5_file = h5_group.file
     if h5_file.attrs.get(PACKED_DAG_FORMAT_ATTR) == PACKED_DAG_FORMAT:
-        if mol_id is None:
-            raise ValueError("mol_id is required when reading packed HDF5 storage")
         return _load_dag_hdf5_packed(h5_file, mol_id)
-    if mol_id is not None:
-        h5_group = h5_file[f"{int(mol_id)}"]
+    return load_dag_hdf5_from_group(h5_file[f"{int(mol_id)}"])
 
+
+def load_dag_hdf5_from_group(h5_group) -> dict:
+    """Read one DAG dictionary from a legacy per-molecule HDF5 group.
+
+    Numpy arrays are converted back to PyTorch tensors with their original
+    dtypes.  JSON-encoded attributes are decoded to their original Python types.
+
+    Args:
+        h5_group: An open legacy molecule group, as created by
+            :func:`dump_dag_hdf5`.
+
+    Returns:
+        DAG payload dictionary compatible with the format returned by
+        ``compute_dags``.
+    """
     g = h5_group["dag"]
     dag = pyg.data.Data(
         x=th.from_numpy(g["x"][:]),
@@ -2246,7 +2277,7 @@ def timed_get_dags(
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
     max_ring_cut_steps: int = 2,
-    restrict_ring_open: bool = True,
+    restrict_ring_open: bool = False,
 ) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
@@ -2296,19 +2327,20 @@ def run_frag_gen_hdf5(
     smarts_prepass: bool,
     min_frag_atoms: int,
     max_ring_cut_steps: int = 2,
-    restrict_ring_open: bool = True,
+    restrict_ring_open: bool = False,
     disable_tqdm: bool = False,
 ) -> dict[str, list[int]]:
     """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
 
     Iterates over rows in ``mol_df``, calls :func:`timed_get_dags` in parallel via
     :func:`~fragnnet.utils.data_utils.par_apply`, and writes each successfully
-    fragmented molecule's DAG into ``h5_file`` under the key ``str(mol_id)``.
+    fragmented molecule's DAG into ``h5_file`` using the packed HDF5 format (see
+    :func:`dump_dag_hdf5_packed`).
 
     Args:
         mol_df: DataFrame with at least ``mol`` and ``mol_id`` columns.
-        h5_file: Open writable ``h5py.File`` object. Groups are created directly
-            inside the root; the caller is responsible for opening and closing the file.
+        h5_file: Open writable ``h5py.File`` object; the caller is responsible
+            for opening and closing the file.
         max_depth: Maximum fragmentation depth for DAG generation.
         max_h_transfer: Maximum hydrogen transfers per fragment.
         max_time: Per-molecule time budget in seconds.
@@ -2355,7 +2387,6 @@ def run_frag_gen_hdf5(
         timed_get_dags,
         True,
         return_as_generator=True,
-        unordered=True,
     )
     if frag_results_gen is None:
         raise RuntimeError("Parallel fragment generation returned no results")

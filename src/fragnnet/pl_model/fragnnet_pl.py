@@ -205,7 +205,7 @@ class FraGNNetPL(SpectrumPL):
 
         Args:
             ckpt_path: Path to checkpoint file
-            strict: Whether to enforce strict state dict matching
+            strict: Require complete, shape-compatible state for the selected components.
             shared_components: List of component prefixes to load (if None, load all matching)
         """
         if not os.path.exists(ckpt_path):
@@ -225,20 +225,28 @@ class FraGNNetPL(SpectrumPL):
             target_components = None
 
         # 2. Check if shared_components are in the target and source
-        target_keys = set(self.model.state_dict().keys())
+        target_state = self.model.state_dict()
+        target_keys = set(target_state)
 
         # Normalize source keys (remove 'model.' prefix if present)
         source_keys = list(state_dict.keys())
         source_starts_with_model = any(k.startswith("model.") for k in source_keys)
         normalized_source_dict = {}
         for k, v in state_dict.items():
+            if source_starts_with_model and not k.startswith("model."):
+                continue  # Lightning state outside the transferred model.
             norm_k = k[6:] if (source_starts_with_model and k.startswith("model.")) else k
             normalized_source_dict[norm_k] = v
 
         if target_components:
             for comp in target_components:
                 # Check target
-                if not any(k.startswith(comp) for k in target_keys):
+                if (
+                    not any(k.startswith(comp) for k in target_keys)
+                    and comp not in dict(self.model.named_modules())
+                ):
+                    if strict:
+                        raise RuntimeError(f"Component '{comp}' not found in current model.")
                     logging.warning(f"Component '{comp}' not found in current model (target).")
                 # Check source
                 if not any(k.startswith(comp) for k in normalized_source_dict):
@@ -248,35 +256,48 @@ class FraGNNetPL(SpectrumPL):
                 "No specific shared_components provided; attempting to load all compatible weights."
             )
 
-        # 3. Load model weight into target components
-        weights_to_load = {}
-        for key in target_keys:
-            # Filter by component
-            if target_components is not None:
-                if not any(key.startswith(comp) for comp in target_components):
-                    continue
+        # 3. Validate all selected tensors before changing any model weights.
+        selected_target_keys = {
+            k for k in target_keys
+            if target_components is None or any(k.startswith(c) for c in target_components)
+        }
+        selected_source_keys = {
+            k for k in normalized_source_dict
+            if target_components is None or any(k.startswith(c) for c in target_components)
+        }
+        if strict:
+            missing = sorted(selected_target_keys - selected_source_keys)
+            unexpected = sorted(selected_source_keys - selected_target_keys)
+            if missing or unexpected:
+                raise RuntimeError(
+                    f"Checkpoint keys do not match selected components: "
+                    f"missing={missing}, unexpected={unexpected}"
+                )
 
-            # Check if key exists in source
-            if key in normalized_source_dict:
-                weights_to_load[key] = normalized_source_dict[key]
+        weights_to_load = {}
+        for key in sorted(selected_target_keys & selected_source_keys):
+            source = normalized_source_dict[key]
+            if source.shape != target_state[key].shape:
+                message = (
+                    f"Checkpoint shape mismatch for {key}: "
+                    f"{tuple(source.shape)} vs {tuple(target_state[key].shape)}"
+                )
+                if strict:
+                    raise RuntimeError(message)
+                logging.warning(message)
+                continue
+            weights_to_load[key] = source
 
         if not weights_to_load:
             logging.warning("No compatible weights found to transfer")
             return
 
-        # Load into self.model
-        try:
-            self.model.load_state_dict(weights_to_load, strict=False)
-            logging.info(f"Successfully loaded {len(weights_to_load)} parameters.")
-
-            # 4. Update dictionary for tracking
-            self.pretrained_param_names = list(weights_to_load.keys())
-
-        except RuntimeError as e:
-            if strict:
-                raise e
-            else:
-                logging.warning(f"Load failed with error: {e}")
+        # 4. Copy validated weights and track only the tensors actually loaded.
+        self.model.load_state_dict(
+            weights_to_load, strict=strict and target_components is None
+        )
+        logging.info(f"Successfully loaded {len(weights_to_load)} parameters.")
+        self.pretrained_param_names = list(weights_to_load.keys())
 
     def _freeze_components(self, components: list[str], exact_match: bool = False):
         """

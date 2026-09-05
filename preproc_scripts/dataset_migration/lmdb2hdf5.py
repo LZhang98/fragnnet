@@ -13,9 +13,11 @@ Usage::
 """
 
 import argparse
+import heapq
 import logging
 import os
 import pickle
+from collections.abc import Iterator
 
 import h5py
 import lmdb
@@ -23,6 +25,13 @@ from tqdm import tqdm
 
 from fragnnet.utils.frag_utils import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
 from fragnnet.utils.misc_utils import booltype
+
+
+def _key_value_pairs(txn: "lmdb.Transaction", mol_ids: list[int]) -> Iterator[tuple[bytes, bytes]]:
+    """Look up ``(key_bytes, value_bytes)`` pairs for the given mol_ids, one get() each."""
+    for mol_id in mol_ids:
+        key_bytes = str(mol_id).encode()
+        yield key_bytes, txn.get(key_bytes)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -48,20 +57,32 @@ def main(args: argparse.Namespace) -> None:
         meminit=False,
     )
 
-    with env.begin() as txn:
-        total = txn.stat()["entries"]
-
-    logging.info(f"LMDB entries: {total}")
-    if args.num_entries > 0:
-        total = min(total, args.num_entries)
-        logging.info(f"Processing first {total} entries (--num_entries={args.num_entries})")
-
     num_ok = 0
     num_err = 0
     with env.begin() as txn, h5py.File(h5_fp, "w") as h5_file:
+        total = txn.stat()["entries"]
+        logging.info(f"LMDB entries: {total}")
+
+        # Packed HDF5 storage indexes DAGs by mol_id used directly as a dense array
+        # position, but LMDB's cursor iterates keys in lexicographic byte order, not
+        # numeric order. Selecting the smallest mol_ids explicitly keeps a partial
+        # (--num_entries) migration's output size proportional to what was requested.
+        entries: Iterator[tuple[bytes, bytes]]
+        if args.num_entries > 0:
+            selected_ids = heapq.nsmallest(
+                args.num_entries, (int(k.decode()) for k, _ in txn.cursor())
+            )
+            total = len(selected_ids)
+            logging.info(
+                f"Processing {total} entries with the smallest mol_id (--num_entries="
+                f"{args.num_entries})"
+            )
+            entries = _key_value_pairs(txn, selected_ids)
+        else:
+            entries = txn.cursor()
+
         initialize_packed_dag_hdf5(h5_file)
-        cursor = txn.cursor()
-        for key_bytes, val_bytes in tqdm(cursor.iternext_dup() if False else cursor, total=total):
+        for key_bytes, val_bytes in tqdm(entries, total=total):
             key = key_bytes.decode()
             try:
                 dag_d = pickle.loads(bytes(val_bytes))
@@ -70,8 +91,6 @@ def main(args: argparse.Namespace) -> None:
             except Exception as exc:
                 logging.warning(f"Failed to convert mol_id={key}: {exc}")
                 num_err += 1
-            if args.num_entries > 0 and (num_ok + num_err) >= args.num_entries:
-                break
 
     env.close()
     logging.info(f"Done. converted={num_ok}, errors={num_err}, output={h5_fp}")

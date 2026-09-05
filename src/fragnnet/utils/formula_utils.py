@@ -69,6 +69,25 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
 }
 
+PREC_TYPE_TO_CMF_FORMULA_DIFF = {
+    "[M+H]+": "",
+    "[M+Na]+": "H1",
+    "[M+H+2i]+": "H1",
+    "[M+K]+": "H1",
+    "[M+NH4]+": "H1",
+    "[M-H2O+H]+": "H1",
+    "[M-2H2O+H]+": "H1",
+    "[M+H-NH3]+": "H1",
+    "[M-H]-": "",
+    "[M-H-CO2]-": "",
+    "[M+Cl]-": "H-1",
+    "[M-H-H2O]-": "H-1",
+    "[M-H+2i]-": "H-1",
+    "[M+CH3COOH-H]-": "H-1",
+    "[M+CH3COO]-": "H-1",
+    "[M+HCOOH-H]-": "H-1",
+}
+
 PREC_TYPE_TO_FORMULA_DIFF = {
     "[M+H]+": "H1",
     "[M+Na]+": "Na1",

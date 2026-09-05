@@ -638,12 +638,12 @@ def par_apply(
     }
     try:
         parallel = joblib.Parallel(**parallel_kwargs)
-    except ValueError as exc:
-        if not unordered or "return_as" not in str(exc):
+    except ValueError:
+        if not unordered:
             raise
         warnings.warn(
-            "Installed joblib does not support unordered generators; falling back to "
-            "ordered generator results.",
+            "Installed joblib/backend does not support unordered generators; falling back "
+            "to ordered generator results.",
             RuntimeWarning,
             stacklevel=2,
         )

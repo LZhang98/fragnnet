@@ -28,7 +28,10 @@ from fragnnet.model.fragment_competition import TopKFragmentTransformer
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
+from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_FORMULA_DIFF,
+    PREC_TYPE_TO_FORMULA_DIFF,
+)
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_VE,
     HEAVY_ELEMENTS,
@@ -683,7 +686,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
             node_mlp_kwargs = {
-                "input_size": 2 * self.frag_embedder.hidden_size,
+                "input_size": mlp_input_dim,
                 "output_size": 1,
                 "hidden_size": mlp_hidden_size,
                 "num_layers": mlp_num_layers,
@@ -2029,6 +2032,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_node_formula_logits = self.frag_mode_scaler(
                     frag_node_formula_logits, spec_frag_mode, frag_node_batch_idxs
                 )
+            if self.ce_scaler is not None:
+                frag_node_formula_logits = self.ce_scaler(
+                    frag_node_formula_logits,
+                    frag_node_batch_idxs,
+                    nce_stats=kwargs.get("spec_nce_stats"),
+                    ace_stats=kwargs.get("spec_ace_stats"),
+                )
             # apply adduct-type FiLM scaling if enabled
             if self.adduct_scaler is not None:
                 assert spec_prec_type is not None, "spec_prec_type required for adduct_scaler"
@@ -2055,6 +2065,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
             # log p(n) node probability
             frag_node_logits = self.node_module(frag_embed).squeeze(1)
+            if self.depth_ce_bias_layer is not None:
+                depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(
+                    batch_frag_num_nodes, -1
+                )
+                depth_idx = depth_raw.argmax(dim=1).clamp(0, self.num_depth)
+                bias_per_depth = self.depth_ce_bias_layer(ce_embed)
+                # Bias P(n): a constant shift of every P(f|n) logit cancels
+                # under the per-node softmax.
+                frag_node_logits = frag_node_logits + bias_per_depth[
+                    frag_node_batch_idxs, depth_idx
+                ]
             frag_node_logprobs = scatter_logsoftmax(frag_node_logits, frag_node_batch_idxs)
 
             # joint logits = formula_logits + node_logits (broadcast); exposed for post-branch
@@ -2470,9 +2491,21 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             assert frag_formula_str.shape[0] == frag_real_formula_logprobs.shape[0]
             prec_type_str = spec_prec_type_str
             prec_type_delta_comp = np.array(
-                [PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))]
+                [PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))],
+                dtype=object,
             )
             prec_type_delta_comp = prec_type_delta_comp[frag_formula_batch_idxs.cpu().numpy()]
+            if include_cmf:
+                formula_offsets = frag_formula_cumsizes.cpu().tolist()
+                for i, prec_type in enumerate(prec_type_str):
+                    if prec_type not in PREC_TYPE_TO_CMF_FORMULA_DIFF:
+                        continue  # Direct ions such as [M]+ have only CRF rows.
+                    start, end = formula_offsets[i : i + 2]
+                    # Dataset layout: NULL, CRF[1:F], CMF[1:F].
+                    cmf_start = start + (end - start + 1) // 2
+                    prec_type_delta_comp[cmf_start:end] = PREC_TYPE_TO_CMF_FORMULA_DIFF[
+                        prec_type
+                    ]
             pred_formula_str = [
                 combine_formulae(frag_formula_str[i], prec_type_delta_comp[i])
                 if frag_formula_str[i] != ""
