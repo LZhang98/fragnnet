@@ -1,17 +1,13 @@
-# ============================================================================
-# Wandb
-# ============================================================================
-wandb_entity: frag-gnn # TODO: change to your wandb entity
+# =====================================================================# Wandb
+# =====================================================================wandb_entity: frag-gnn # TODO: change to your wandb entity
 wandb_project: frag-gnn # TODO: change to your wandb project
 wandb_name: template
 wandb_group:
 wandb_tags:
 wandb_root_dir: wandb
 
-# ============================================================================
-# Data File Paths
-# ============================================================================
-spec_fp: data/proc/nist20/spec_df.pkl
+# =====================================================================# Data File Paths
+# =====================================================================spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey  # Train/val/test split directory
 frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
@@ -19,10 +15,8 @@ magma_dp: data/magma  # MAGMA annotation data directory
 ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
 mces_fp: data/proc/mces/mces_pairs.pkl # MCES pairs file
 
-# ============================================================================
-# Data Processing Parameters
-# ============================================================================
-subsample_params:
+# =====================================================================# Data Processing Parameters
+# =====================================================================subsample_params:
   subsample_size: 0
   subsample_seed: 42
   train: True
@@ -203,10 +197,8 @@ ann_params:
   library_fp:
   preprocess: False
 
-# ============================================================================
-# Model Architecture
-# ============================================================================
-model_type: frag_gnn  # Model type: ["frag_gnn", "mass_shatter", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
+# =====================================================================# Model Architecture
+# =====================================================================model_type: frag_gnn  # Model type: ["frag_gnn", "mass_shatter", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
 num_depth: 5  # Maximum fragmentation depth for DAG
 num_hs: 4  # Number of hydrogen transfer options
 num_elements: 17  # Number of elements including H (16 heavy: 13 base + As + B + Hg + Sn + Pb)
@@ -320,10 +312,8 @@ mass_shatter_batch_sampler: False
 # Maximum summed directed molecular edges per MASShatter CE-context batch.
 mass_shatter_batch_sampler_max: null
 
-# ============================================================================
-# Spectrum-Molecule CLIP Pretraining
-# ============================================================================
-clip_temperature: 0.07
+# =====================================================================# Spectrum-Molecule CLIP Pretraining
+# =====================================================================clip_temperature: 0.07
 clip_embed_dim: 256
 clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
 clip_loss_type: clip  # ["clip", "siglip", "soft_clip"]; soft_clip requires mol_params.fingerprint=True
@@ -338,11 +328,9 @@ spectrum_encoder_params:
   dropout: 0.1
   normalization: layer
 
-# ============================================================================
-# Molecular GNN Configuration
+# =====================================================================# Molecular GNN Configuration
 # NOTE: If using MCES pre-training, these MUST match the pre-training config
-# ============================================================================
-mol_hidden_size: 256  # Hidden dimension for molecular GNN
+# =====================================================================mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
 mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GINE_EFA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GCN", "GAT", "PNA"]
 # GINE_GATED: each bond's message is scaled by a context-conditioned scalar gate in [0, 2], so
@@ -367,10 +355,8 @@ mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
 mol_num_heads: 4  # Attention heads (GINE_EFA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
 
-# ============================================================================
-# Inter-stage Configuration (Mol → Frag connection)
-# ============================================================================
-cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "mlp", "bilinear"]
+# =====================================================================# Inter-stage Configuration (Mol → Frag connection)
+# =====================================================================cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "mlp", "bilinear"]
 cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
 cc_feature_dropout: 0.0  # Training-only batch-level dropout for full-fragment cc node feature group
 # Training-only dropout over pooled cc embedding dimensions. One inverted-dropout mask is shared
@@ -383,10 +369,8 @@ cc_channel_dropout: 0.0
 # boundary_cc / boundary_pair keep the true mask. Fragments are never fully emptied.
 cc_atom_dropout: 0.0
 
-# ============================================================================
-# Fragment GNN Configuration
-# ============================================================================
-frag_hidden_size: 256  # Hidden dimension for fragment GNN
+# =====================================================================# Fragment GNN Configuration
+# =====================================================================frag_hidden_size: 256  # Hidden dimension for fragment GNN
 frag_num_layers: 4  # Number of GNN layers for fragment encoding
 frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 frag_dropout: 0.0  # Dropout rate for fragment GNN
@@ -395,10 +379,8 @@ frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "mea
 frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
 frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
 
-# ============================================================================
-# MLP/Output Configuration
-# ============================================================================
-mlp_output_format: formula  # Output format: ["formula", "peak"]
+# =====================================================================# MLP/Output Configuration
+# =====================================================================mlp_output_format: formula  # Output format: ["formula", "peak"]
 candidate_ion_head: False  # Score each (node, H/formula-channel) candidate row with ion identity features, then reshape to the usual logits
 candidate_ion_formula_features: True  # Add reconstructed candidate formula features; requires h_counts in frag_params.pyg_node_feats
 candidate_ion_neutral_loss_features: True  # Add precursor_formula - candidate_formula features; requires depth and candidate formula features
@@ -414,23 +396,30 @@ fragnnet_formula_support_initial_probability: 0.99
 fragnnet_formula_support_loss_weight: 0.0
 fragnnet_formula_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
 fragnnet_formula_support_threshold: 0.5  # Absolute sigmoid probability; hard selection is eval/inference-only
+# Rank fragments by their aggregate real-channel logits, then use a context-conditioned
+# transformer to add one residual shared by every valid channel of each selected fragment.
+frag_competition: False
+frag_competition_top_k: 128
+frag_competition_hidden_dim: 64
+frag_competition_layers: 2
+frag_competition_heads: 4
+frag_competition_dropout: 0.1
+# Detaching shared-model inputs avoids unstable gradients from the competition transformer.
+frag_competition_detach_encoder: True
+frag_competition_max_delta: 5.0
 mlp_hidden_size: 256  # Hidden dimension for MLP layers
 mlp_dropout: 0.0  # Dropout rate for MLP
 mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
 mlp_num_layers: 2  # Number of MLP layers
 mlp_use_residuals: True  # Use residual connections in MLP
-# ============================================================================
-# NEIMS/Binned Spectrum Model Configuration
-# ============================================================================
-neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
+# =====================================================================# NEIMS/Binned Spectrum Model Configuration
+# =====================================================================neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
 ff_prec_mz_offset: 0 #5
 ff_bidirectional: True
 ff_output_map_size: -1  # Low-rank size (-1 = standard Linear layers, >0 = LowRankDense with this rank)
 ff_output_activation: relu  # Output activation: "relu" or "sigmoid"
-# ============================================================================
-# iceberg model
-# ============================================================================
-iceberg_hidden_size: 256
+# =====================================================================# iceberg model
+# =====================================================================iceberg_hidden_size: 256
 iceberg_num_layers: 3
 iceberg_num_set_layers: 1
 iceberg_num_frag_set_layers: 0
@@ -443,10 +432,8 @@ iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
 iceberg_fix_batch_bug: False
-# ============================================================================
-# massformer model
-# ============================================================================
-mf_flag: False
+# =====================================================================# massformer model
+# =====================================================================mf_flag: False
 mf_pt_weight_decay: 0.0
 mf_fix_num_pt_layers: 0
 mf_reinit_num_pt_layers: -1
@@ -456,10 +443,8 @@ mf_tot_updates: 400
 mf_warmup_frac: 0.1
 mf_high_lr: 0.0002
 mf_low_lr: 0.000000001
-# ============================================================================
-# graff stuff
-# ============================================================================
-graff_encoder_dim: 512
+# =====================================================================# graff stuff
+# =====================================================================graff_encoder_dim: 512
 graff_decoder_dim: 1024
 graff_encoder_depth: 6
 graff_decoder_depth: 2
@@ -468,10 +453,8 @@ graff_eig_depth: 2
 graff_dropout: 0.1
 graff_min_probability: 0.0
 graff_min_mz: 0.0
-# ============================================================================
-# other training options
-# ============================================================================
-lr: 0.0001
+# =====================================================================# other training options
+# =====================================================================lr: 0.0001
 lr_schedule: False
 lr_schedule_type: exponential  # "exponential" or "cosine"
 lr_total_steps: null           # required for cosine; set to max_epochs * steps_per_epoch
@@ -548,10 +531,8 @@ precision: 32 # 64, 16-mixed, bf16-mixed
 debug_overfit: False
 debug_overfit_batches: 10
 log_every_n_steps: 0
-# ============================================================================
-# Loss Weights Configuration
-# ============================================================================
-primary_loss_weight: 1.0
+# =====================================================================# Loss Weights Configuration
+# =====================================================================primary_loss_weight: 1.0
 # H(P(formula)): penalizes spread across empirical formulas. Indirect effect on peak sparsity
 # since multiple nodes can share the same formula. Raw scale — grows with number of formulas.
 formula_entropy_weight: 0.0
@@ -637,10 +618,8 @@ oos_tolerance_multiple: -1
 oos_loss: False
 null_loss: False
 null_loss_weight: 1.0
-# ============================================================================
-# PyTorch Lightning Configuration
-# ============================================================================
-seed: 42
+# =====================================================================# PyTorch Lightning Configuration
+# =====================================================================seed: 42
 detect_anomaly: False
 debug_validate_outputs: False
 automatic_optimization: True
@@ -656,10 +635,8 @@ num_log_val_images: 0
 deterministic: False
 drop_last: False
 num_sanity_val_steps: 0
-# ============================================================================
-# Collision Energy (CE) Configuration
-# ============================================================================
-ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
+# =====================================================================# Collision Energy (CE) Configuration
+# =====================================================================ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
 ce_insert_location: none # Where CE is inserted: ["none","mol_input","frag_input","mlp_input"] or comma-separated
 ce_insert_merge: False # Whether to merge CE embeddings when inserted at multiple locations
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
@@ -689,22 +666,16 @@ ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
 # nce_std: 10
 # nce_max: 60
 
-# ============================================================================
-# Precursor Type Configuration
-# ============================================================================
-prec_insert_location: none  # Where precursor type is inserted: ["none","mol_input","frag_input","mlp_input"]
+# =====================================================================# Precursor Type Configuration
+# =====================================================================prec_insert_location: none  # Where precursor type is inserted: ["none","mol_input","frag_input","mlp_input"]
 prec_insert_size: 32  # Dimension of precursor type embedding (must match MCES config if using pre-training)
 
-# ============================================================================
-# Instrument Type Configuration
-# ============================================================================
-inst_insert_location: none  # Where instrument type is inserted: ["none","mol_input","frag_input","mlp_input"]
+# =====================================================================# Instrument Type Configuration
+# =====================================================================inst_insert_location: none  # Where instrument type is inserted: ["none","mol_input","frag_input","mlp_input"]
 inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
 
-# ============================================================================
-# Fragmentation Mode Configuration
-# ============================================================================
-frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
+# =====================================================================# Fragmentation Mode Configuration
+# =====================================================================frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
 frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 frag_mode_scale: False           # Enable mode-conditioned affine output scaling layer
 # Note: frag_modes list is declared under spec_params.frag_modes (e.g. ["HCD", "CID"]);
@@ -722,10 +693,8 @@ stratum_scaler_embed_dim: 16  # Embedding dim for each categorical axis in Strat
 # Note: adduct_scale and stratum_scale are independent ablation toggles.
 # stratum_scale subsumes adduct_scale — do not enable both simultaneously.
 
-# ============================================================================
-# MCES Pre-training Configuration
-# ============================================================================
-# mces stuff
+# =====================================================================# MCES Pre-training Configuration
+# =====================================================================# mces stuff
 mces_min: 1
 mces_max: 15
 mces_mean: 12
@@ -733,10 +702,8 @@ mces_std: 2
 mces_normalization: zscore  # options: none, zscore, minmax
 mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 
-# ============================================================================
-# Finetune Configuration
-# ============================================================================
-finetune: False
+# =====================================================================# Finetune Configuration
+# =====================================================================finetune: False
 finetune_pretrained_ckpt: none
 finetune_strict_load: True
 finetune_freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
@@ -745,10 +712,8 @@ finetune_shared_all: False  # Whether to share all components, if False, specify
 finetune_shared_components: ['mol_embedder', 'mol_pool'] # Optional 
 finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
 
-# ============================================================================
-# Additional Training Options
-# ============================================================================
-dynamic_batch_sampler: False
+# =====================================================================# Additional Training Options
+# =====================================================================dynamic_batch_sampler: False
 batch_sampler_type: spec_mol_frag  # [spec_mol_frag, ce_context]
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000

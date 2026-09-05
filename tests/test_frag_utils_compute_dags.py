@@ -41,8 +41,9 @@ from fragnnet.utils.frag_utils import (
     cc_bit_mask_to_atom_idx,
     compute_dags,
     extract_mol_info,
+    get_node_feats,
+    th_long_to_mask,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -70,11 +71,34 @@ def _run_compute_dags(smiles: str, max_depth: int = 3) -> dict:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("restrict_ring_open", [None, False, True])
+def test_multi_cut_isolated_ring_opening_default(restrict_ring_open: bool | None) -> None:
+    """Allow isolated-ring fragmentation by default even alongside fused rings."""
+    mol_d = extract_mol_info("C1CC1CC1CCC2CCCCC12")
+    options = {} if restrict_ring_open is None else {"restrict_ring_open": restrict_ring_open}
+    dag_d = compute_dags(
+        mol_d,
+        max_depth=3,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=100,
+        multi_cut_bfs=True,
+        **options,
+    )
+    dag = dag_d["dag"]
+    masks = th_long_to_mask(get_node_feats(dag.x, dag.node_feat_idxs[0], "cc"))
+    isolated_ring = list(mol_d["mol"].GetRingInfo().AtomRings()[0])
+    assert len(isolated_ring) == 3
+    retained_atoms = masks[:, isolated_ring].sum(dim=1)
+    partial_ring = (retained_atoms > 0) & (retained_atoms < len(isolated_ring))
+    assert bool(partial_ring.any()) is (restrict_ring_open is not True)
+
+
 @pytest.mark.parametrize(
     "smiles",
     [
         "BrCCNc1ccccc1",  # N-phenyl-2-bromoethylamine
-        "BrCCC1CCCCN1",   # 1-(3-bromopropyl)piperidine
+        "BrCCC1CCCCN1",  # 1-(3-bromopropyl)piperidine
     ],
 )
 def test_compute_dags_brominated_molecule_no_keyerror(smiles: str) -> None:
@@ -132,9 +156,18 @@ def test_compute_dags_attaches_boundary_pair_cache() -> None:
     assert hasattr(dag, "boundary_pair_frag_idxs")
     assert hasattr(dag, "boundary_pair_in_local")
     assert hasattr(dag, "boundary_pair_out_local")
-    assert dag.boundary_pair_frag_idxs.dtype == np.dtype(np.int64) or str(dag.boundary_pair_frag_idxs.dtype) == "torch.int64"
-    assert dag.boundary_pair_in_local.dtype == np.dtype(np.int64) or str(dag.boundary_pair_in_local.dtype) == "torch.int64"
-    assert dag.boundary_pair_out_local.dtype == np.dtype(np.int64) or str(dag.boundary_pair_out_local.dtype) == "torch.int64"
+    assert (
+        dag.boundary_pair_frag_idxs.dtype == np.dtype(np.int64)
+        or str(dag.boundary_pair_frag_idxs.dtype) == "torch.int64"
+    )
+    assert (
+        dag.boundary_pair_in_local.dtype == np.dtype(np.int64)
+        or str(dag.boundary_pair_in_local.dtype) == "torch.int64"
+    )
+    assert (
+        dag.boundary_pair_out_local.dtype == np.dtype(np.int64)
+        or str(dag.boundary_pair_out_local.dtype) == "torch.int64"
+    )
     assert dag.boundary_pair_frag_idxs.shape == dag.boundary_pair_in_local.shape
     assert dag.boundary_pair_frag_idxs.shape == dag.boundary_pair_out_local.shape
 
@@ -172,9 +205,7 @@ def test_diff_cc_mask_signed_subtraction_correct() -> None:
     from_mask = np.array([1, 1, 1, 0], dtype=MASK_DTYPE)
     to_mask = np.array([0, 1, 0, 0], dtype=MASK_DTYPE)
 
-    diff = np.clip(
-        from_mask.astype(np.int16) - to_mask.astype(np.int16), 0, 1
-    ).astype(MASK_DTYPE)
+    diff = np.clip(from_mask.astype(np.int16) - to_mask.astype(np.int16), 0, 1).astype(MASK_DTYPE)
     atom_ids = cc_bit_mask_to_atom_idx(diff)
 
     # Atoms 0 and 2 are in from but not to; atom 1 is in both; atom 3 in neither
@@ -189,7 +220,7 @@ def test_diff_cc_mask_signed_subtraction_correct() -> None:
 def test_frag_index_dtype_is_uint32() -> None:
     """FRAG_INDEX_DTYPE must be np.uint32, not uint16, to support molecules
     with more than 65535 unique fragment formulae."""
-    assert FRAG_INDEX_DTYPE == np.uint32, (
+    assert np.uint32 == FRAG_INDEX_DTYPE, (
         f"Expected np.uint32, got {FRAG_INDEX_DTYPE}. "
         "uint16 max (65535) can be exceeded by molecules with many unique fragments."
     )
@@ -232,9 +263,7 @@ def test_base_formula_formula_strings_correct() -> None:
     dag_d = _run_compute_dags("CCO")
     # idx_to_formula: {int_idx: formula_str}
     formulae = set(dag_d["idx_to_formula"].values())
-    assert "C2H6O" in formulae, (
-        f"Expected 'C2H6O' in formula set for CCO, got {formulae}"
-    )
+    assert "C2H6O" in formulae, f"Expected 'C2H6O' in formula set for CCO, got {formulae}"
 
 
 # ---------------------------------------------------------------------------
@@ -331,17 +360,17 @@ def test_smarts_prepass_without_multi_cut_bfs_works() -> None:
     "smiles,expected_formula",
     [
         # Single nitro + N-methyl: floor overcount = 1 (1 O= blocked by N+ diff=0)
-        ("Cn1cnc([N+](=O)[O-])c1",                                    "C4H5N3O2"),
-        ("Cn1cnc([N+](=O)[O-])n1",                                    "C3H4N4O2"),
+        ("Cn1cnc([N+](=O)[O-])c1", "C4H5N3O2"),
+        ("Cn1cnc([N+](=O)[O-])n1", "C3H4N4O2"),
         # Single nitro + N-CH2Cl
-        ("O=[N+]([O-])c1nn(CCl)cc1Cl",                               "C4H3Cl2N3O2"),
+        ("O=[N+]([O-])c1nn(CCl)cc1Cl", "C4H3Cl2N3O2"),
         # Two nitro groups + methoxy
-        ("COc1nc(OC)c([N+](=O)[O-])cc1[N+](=O)[O-]",                 "C7H7N3O6"),
-        ("COc1n[n+]([O-])c([N+](=O)[O-])cc1[N+](=O)[O-]",            "C5H4N4O6"),
+        ("COc1nc(OC)c([N+](=O)[O-])cc1[N+](=O)[O-]", "C7H7N3O6"),
+        ("COc1n[n+]([O-])c([N+](=O)[O-])cc1[N+](=O)[O-]", "C5H4N4O6"),
         # Three nitro groups + methoxy
-        ("COc1ccc([N+](=O)[O-])c([N+](=O)[O-])c1[N+](=O)[O-]",      "C7H5N3O7"),
+        ("COc1ccc([N+](=O)[O-])c([N+](=O)[O-])c1[N+](=O)[O-]", "C7H5N3O7"),
         # Sanity: molecule without nitro must also work
-        ("CCO",                                                        "C2H6O"),
+        ("CCO", "C2H6O"),
     ],
 )
 def test_nitro_root_formula_in_dag(smiles: str, expected_formula: str) -> None:
@@ -383,10 +412,10 @@ def test_nitro_root_formula_in_dag(smiles: str, expected_formula: str) -> None:
     [
         # Nitro group — sub-fragments retaining [N+](=O)[O-] previously got ""
         # at delta_h=0 due to H-floor overcounting in compute_cc_h_floor.
-        "Cn1cnc([N+](=O)[O-])c1",           # 1-methylimidazole-4-carbaldehyde nitro
-        "O=[N+]([O-])c1ccccc1CC",            # nitrobenzene + ethyl: aryl-C cut leaves nitrophenyl sub-frag
-        "COc1ccc([N+](=O)[O-])cc1CCC",       # methoxy-nitrophenyl + propyl chain
-        "COc1nc(OC)c([N+](=O)[O-])cc1[N+](=O)[O-]",   # two nitro groups
+        "Cn1cnc([N+](=O)[O-])c1",  # 1-methylimidazole-4-carbaldehyde nitro
+        "O=[N+]([O-])c1ccccc1CC",  # nitrobenzene + ethyl: aryl-C cut leaves nitrophenyl sub-frag
+        "COc1ccc([N+](=O)[O-])cc1CCC",  # methoxy-nitrophenyl + propyl chain
+        "COc1nc(OC)c([N+](=O)[O-])cc1[N+](=O)[O-]",  # two nitro groups
         # Sanity: molecule without nitro must also satisfy the invariant
         "c1ccccc1CC(=O)O",
         "CCO",

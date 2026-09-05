@@ -158,6 +158,15 @@ finetune_shared_components:                         # Components to freeze/fine-
 finetune_weights_lr_ratio: 0.1                      # Shared LR = main_lr × 0.1 (only if freeze_all_shared: false)
 ```
 
+`finetune_strict_load: True` requires matching keys and tensor shapes within the
+selected shared components, and rejects mismatches before copying any weights.
+Use `finetune_strict_load: False` for intentional partial transfers: missing or
+shape-incompatible tensors remain initialized, incompatible shapes are logged,
+and only successfully copied tensors receive the shared learning rate or freezing.
+Corrected `node_formula` input dimensions may require this partial-transfer mode
+for checkpoints with an incompatible node head. Its `ce_scale` and `depth_ce_bias`
+settings now affect predictions when enabled; they were previously ignored.
+
 ### Data Configuration
 
 ```yaml

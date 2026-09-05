@@ -312,6 +312,7 @@ def main(args):
         import h5py
 
         h5_file = h5py.File(h5_fp, "w")
+        frag_utils.initialize_packed_dag_hdf5(h5_file)
         env = None
         txn = None
     else:
@@ -378,8 +379,7 @@ def main(args):
                 elif args.use_hdf5:
                     if h5_file is None:
                         raise RuntimeError("HDF5 file was not initialized")
-                    grp = h5_file.create_group(f"{int(mol_id)}")
-                    frag_utils.dump_dag_hdf5(grp, dag_d)
+                    frag_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
                 else:
                     # Write one artifact per molecule when LMDB storage is disabled.
                     fp = frag_utils.get_dag_output_path(
@@ -405,6 +405,8 @@ def main(args):
         if (i + 1) % 500 == 0:
             with open(meta_info_checkpoint_fp, "w") as _f:
                 json.dump(meta_info, _f)
+            if h5_file is not None:
+                h5_file.flush()
 
     if args.use_lmdb:
         if txn is None or env is None:
@@ -835,11 +837,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--restrict_ring_open",
         type=booltype,
-        default=True,
+        default=False,
         help=(
             "Restrict ring-opening in multi-cut BFS to shared (inter-ring) bonds only. "
-            "Set to False to allow all non-bridge ring bonds to be opened (original behaviour, "
-            "slower on dense fused-ring systems)."
+            "Default: False (allow all non-bridge ring bonds to be opened). "
+            "Set to True to reproduce the previous restricted default."
         ),
     )
     args = parser.parse_args()

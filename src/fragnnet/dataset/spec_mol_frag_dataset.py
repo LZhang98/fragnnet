@@ -218,7 +218,11 @@ class SpecMolFragDataset(SpecMolDataset):
         """
 
         # preload frag dags
-        if self.frag_backend == "h5" and self.frag_h5 is None:
+        if (
+            self.frag_backend == "h5"
+            and self.frag_params["preload"]
+            and self.frag_h5 is None
+        ):
             import h5py
 
             self.frag_h5 = h5py.File(self.frag_dp, "r")
@@ -244,7 +248,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 disable=not self.enable_progress_bar,
             ):
                 if self.frag_backend == "h5":
-                    frag_entry = load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
+                    frag_entry = load_dag_hdf5(self.frag_h5, mol_id)
                 elif self.frag_backend == "lmdb":
                     frag_entry = pickle.loads(bytes(self.txn.get(f"{int(mol_id)}".encode())))
                 else:
@@ -252,6 +256,9 @@ class SpecMolFragDataset(SpecMolDataset):
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
             logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
+            if self.frag_backend == "h5":
+                self.frag_h5.close()
+                self.frag_h5 = None
 
         # preprocess frag dags
         if self.frag_params["preprocess"]:
@@ -357,7 +364,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 import h5py
 
                 self.frag_h5 = h5py.File(self.frag_dp, "r")
-            return load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
+            return load_dag_hdf5(self.frag_h5, mol_id)
         elif self.frag_backend == "lmdb":
             if self.frag_env is None:
                 self.frag_env = lmdb.open(

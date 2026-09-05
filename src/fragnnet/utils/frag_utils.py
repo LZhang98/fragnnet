@@ -8,6 +8,7 @@ import pickle
 import sys
 import tarfile
 import traceback
+import zlib
 from collections import Counter
 from hashlib import blake2b
 from typing import TYPE_CHECKING
@@ -87,6 +88,22 @@ IDX_TO_ELEMENT = {idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
 MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
+
+PACKED_DAG_FORMAT_ATTR = "fragnnet_dag_format"
+# Bump whenever PACKED_DAG_INDEX_DTYPE's on-disk layout changes, so
+# initialize_packed_dag_hdf5 rejects an old file instead of silently
+# reusing an incompatible index dtype.
+PACKED_DAG_FORMAT = "packed_v1"
+PACKED_DAG_BYTES_DATASET = "dag_bytes"
+PACKED_DAG_INDEX_DATASET = "dag_index"
+PACKED_DAG_BYTES_CHUNK_SIZE = 64 * 1024
+PACKED_DAG_INDEX_CHUNK_SIZE = 8192
+PACKED_DAG_INDEX_DTYPE = np.dtype(
+    [
+        ("offset", "<u8"),
+        ("length", "<u8"),
+    ]
+)
 
 NODE_FEAT_DTYPE = th.int64
 EDGE_FEAT_DTYPE = th.int64
@@ -1082,7 +1099,7 @@ def compute_dags(
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
     max_ring_cut_steps: int = 2,
-    restrict_ring_open: bool = True,
+    restrict_ring_open: bool = False,
 ) -> dict:
     """_summary_
 
@@ -1236,19 +1253,22 @@ def compute_dags(
                     min_frag_atoms,
                 )
             )
-            nl_products = _apply_nl_prepass(NL_RULES, mol_d["mol"], num_nodes)
-            nl_masks = [mask for mask, _ in nl_products]
-            nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
-                _inject_nl_masks_into_dag(
-                    nl_masks,
-                    nodes_mask_matrix,
-                    nodes_depth_matrix,
-                    dag_edges_matrix,
-                    dag_frag_meta,
-                    num_nodes,
-                    min_frag_atoms,
-                )
+    if smarts_prepass:
+        # Inject rearrangement products after either BFS; their new bonds are
+        # not represented in the original molecular connectivity.
+        nl_products = _apply_nl_prepass(NL_RULES, mol_d["mol"], num_nodes)
+        nl_masks = [mask for mask, _ in nl_products]
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            _inject_nl_masks_into_dag(
+                nl_masks,
+                nodes_mask_matrix,
+                nodes_depth_matrix,
+                dag_edges_matrix,
+                dag_frag_meta,
+                num_nodes,
+                min_frag_atoms,
             )
+        )
 
     if nb_isomorphic:
         node_nb_hashes = get_subgraph_hashes(
@@ -1851,21 +1871,133 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
         h5_group.attrs[key] = bool(dag_d[key])
 
 
-def load_dag_hdf5(h5_group) -> dict:
-    """Read one DAG dictionary from an open h5py group.
+def initialize_packed_dag_hdf5(h5_file) -> None:
+    """Initialize an open HDF5 file for packed DAG storage.
+
+    Creates the shared byte-blob and index datasets used by
+    :func:`dump_dag_hdf5_packed`. Idempotent: calling this again on a file
+    already initialized for packed storage is a no-op.
+
+    Args:
+        h5_file: Open writable ``h5py.File`` object.
+
+    Raises:
+        ValueError: If the file already stores DAGs in an unsupported packed
+            format, or if the file is non-empty but not yet initialized for
+            packed DAG storage.
+    """
+    stored_format = h5_file.attrs.get(PACKED_DAG_FORMAT_ATTR)
+    if stored_format is not None:
+        if stored_format != PACKED_DAG_FORMAT:
+            raise ValueError(f"Unsupported packed DAG format: {stored_format}")
+        return
+    if len(h5_file) != 0:
+        raise ValueError("Cannot initialize packed DAG storage in a non-empty HDF5 file")
+
+    h5_file.attrs[PACKED_DAG_FORMAT_ATTR] = PACKED_DAG_FORMAT
+    h5_file.create_dataset(
+        PACKED_DAG_BYTES_DATASET,
+        shape=(0,),
+        maxshape=(None,),
+        chunks=(PACKED_DAG_BYTES_CHUNK_SIZE,),
+        dtype=np.uint8,
+    )
+    h5_file.create_dataset(
+        PACKED_DAG_INDEX_DATASET,
+        shape=(0,),
+        maxshape=(None,),
+        chunks=(PACKED_DAG_INDEX_CHUNK_SIZE,),
+        dtype=PACKED_DAG_INDEX_DTYPE,
+    )
+
+
+def dump_dag_hdf5_packed(h5_file, mol_id: str | int, dag_d: dict) -> None:
+    """Append one compressed DAG payload to a packed HDF5 file.
+
+    Args:
+        h5_file: Open writable ``h5py.File``, already initialized via
+            :func:`initialize_packed_dag_hdf5`.
+        mol_id: Molecule identifier. Used directly as a dense index into the
+            packed index dataset, so it must be a small non-negative integer.
+        dag_d: DAG payload dictionary as returned by :func:`compute_dags`.
+
+    Raises:
+        ValueError: If ``mol_id`` is negative, or a DAG has already been
+            stored for it.
+        KeyError: If ``h5_file`` was not initialized via
+            :func:`initialize_packed_dag_hdf5`.
+    """
+    mol_idx = int(mol_id)
+    if mol_idx < 0:
+        raise ValueError(f"mol_id must be non-negative for packed HDF5 storage: {mol_id}")
+
+    index_dataset = h5_file[PACKED_DAG_INDEX_DATASET]
+    if mol_idx < index_dataset.shape[0] and int(index_dataset[mol_idx]["length"]) != 0:
+        raise ValueError(f"Duplicate mol_id in packed HDF5 file: {mol_id}")
+
+    payload = pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
+    compressed_payload = zlib.compress(payload, level=4)
+    payload_array = np.frombuffer(compressed_payload, dtype=np.uint8)
+
+    bytes_dataset = h5_file[PACKED_DAG_BYTES_DATASET]
+    offset = int(bytes_dataset.shape[0])
+    length = int(payload_array.size)
+    bytes_dataset.resize((offset + length,))
+    bytes_dataset[offset : offset + length] = payload_array
+
+    if mol_idx >= index_dataset.shape[0]:
+        index_dataset.resize((mol_idx + 1,))
+    index_dataset[mol_idx] = (offset, length)
+
+
+def _load_dag_hdf5_packed(h5_file, mol_id: str | int) -> dict:
+    """Load one DAG payload from a packed HDF5 file."""
+    mol_idx = int(mol_id)
+    index_dataset = h5_file[PACKED_DAG_INDEX_DATASET]
+    if mol_idx < 0 or mol_idx >= index_dataset.shape[0]:
+        raise KeyError(f"mol_id {mol_id} is not present in packed HDF5 file")
+
+    record = index_dataset[mol_idx]
+    length = int(record["length"])
+    if length == 0:
+        raise KeyError(f"mol_id {mol_id} is not present in packed HDF5 file")
+
+    offset = int(record["offset"])
+    compressed_payload = h5_file[PACKED_DAG_BYTES_DATASET][offset : offset + length].tobytes()
+    return pickle.loads(zlib.decompress(compressed_payload))
+
+
+def load_dag_hdf5(h5_file, mol_id: str | int) -> dict:
+    """Read one DAG dictionary from an open HDF5 file, packed or legacy format.
+
+    Args:
+        h5_file: Open h5py.File written by either :func:`dump_dag_hdf5_packed`
+            or :func:`dump_dag_hdf5`.
+        mol_id: Molecule identifier to look up.
+
+    Returns:
+        DAG payload dictionary compatible with the format returned by
+        ``compute_dags``.
+    """
+    if h5_file.attrs.get(PACKED_DAG_FORMAT_ATTR) == PACKED_DAG_FORMAT:
+        return _load_dag_hdf5_packed(h5_file, mol_id)
+    return load_dag_hdf5_from_group(h5_file[f"{int(mol_id)}"])
+
+
+def load_dag_hdf5_from_group(h5_group) -> dict:
+    """Read one DAG dictionary from a legacy per-molecule HDF5 group.
 
     Numpy arrays are converted back to PyTorch tensors with their original
     dtypes.  JSON-encoded attributes are decoded to their original Python types.
 
     Args:
-        h5_group: An open ``h5py.Group`` previously written by
+        h5_group: An open legacy molecule group, as created by
             :func:`dump_dag_hdf5`.
 
     Returns:
         DAG payload dictionary compatible with the format returned by
         ``compute_dags``.
     """
-
     g = h5_group["dag"]
     dag = pyg.data.Data(
         x=th.from_numpy(g["x"][:]),
@@ -2145,7 +2277,7 @@ def timed_get_dags(
     smarts_prepass: bool = False,
     min_frag_atoms: int = 0,
     max_ring_cut_steps: int = 2,
-    restrict_ring_open: bool = True,
+    restrict_ring_open: bool = False,
 ) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
@@ -2195,19 +2327,20 @@ def run_frag_gen_hdf5(
     smarts_prepass: bool,
     min_frag_atoms: int,
     max_ring_cut_steps: int = 2,
-    restrict_ring_open: bool = True,
+    restrict_ring_open: bool = False,
     disable_tqdm: bool = False,
 ) -> dict[str, list[int]]:
     """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
 
     Iterates over rows in ``mol_df``, calls :func:`timed_get_dags` in parallel via
     :func:`~fragnnet.utils.data_utils.par_apply`, and writes each successfully
-    fragmented molecule's DAG into ``h5_file`` under the key ``str(mol_id)``.
+    fragmented molecule's DAG into ``h5_file`` using the packed HDF5 format (see
+    :func:`dump_dag_hdf5_packed`).
 
     Args:
         mol_df: DataFrame with at least ``mol`` and ``mol_id`` columns.
-        h5_file: Open writable ``h5py.File`` object. Groups are created directly
-            inside the root; the caller is responsible for opening and closing the file.
+        h5_file: Open writable ``h5py.File`` object; the caller is responsible
+            for opening and closing the file.
         max_depth: Maximum fragmentation depth for DAG generation.
         max_h_transfer: Maximum hydrogen transfers per fragment.
         max_time: Per-molecule time budget in seconds.
@@ -2250,12 +2383,16 @@ def run_frag_gen_hdf5(
     from typing import cast
 
     frag_results_gen = par_apply(
-        iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
+        iter(mol_input_rows),
+        timed_get_dags,
+        True,
+        return_as_generator=True,
     )
     if frag_results_gen is None:
         raise RuntimeError("Parallel fragment generation returned no results")
     frag_results_iter = cast("list[tuple[str, dict]]", frag_results_gen)
 
+    initialize_packed_dag_hdf5(h5_file)
     meta_info: dict[str, list[int]] = {}
     n_errors = 0
 
@@ -2271,9 +2408,11 @@ def run_frag_gen_hdf5(
             n_errors += 1
             continue
         meta_info[str(int(mol_id))] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
-        grp = h5_file.create_group(f"{int(mol_id)}")
-        dump_dag_hdf5(grp, dag_d)
+        dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+        if len(meta_info) % 1000 == 0:
+            h5_file.flush()
 
+    h5_file.flush()
     _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
     return meta_info
 

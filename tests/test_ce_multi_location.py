@@ -186,6 +186,48 @@ class TestIonChannelFactorized:
             )
 
 
+class TestFragmentCompetition:
+    def test_flag_enables_fragment_transformer(self):
+        model = _build(
+            "mol",
+            frag_competition=True,
+            frag_competition_top_k=8,
+            frag_competition_hidden_dim=16,
+            frag_competition_layers=1,
+            frag_competition_heads=4,
+            frag_competition_dropout=0.0,
+        )
+
+        assert model.frag_competition_head is not None
+        assert model.frag_competition_head.top_k == 8
+
+    def test_false_flag_keeps_competition_disabled(self):
+        model = _build("mol", frag_competition=False)
+        assert model.frag_competition_head is None
+
+    def test_competition_supports_no_acquisition_context(self):
+        model = _build(
+            "none",
+            prec_insert_location="none",
+            inst_insert_location="none",
+            frag_mode_insert_location="none",
+            frag_competition=True,
+            frag_competition_hidden_dim=16,
+            frag_competition_layers=1,
+            frag_competition_heads=4,
+        )
+
+        assert model.frag_competition_head.context_dim == 0
+
+    def test_competition_rejects_separate_node_formula_output(self):
+        with pytest.raises(ValueError, match="requires mlp_output_format='formula'"):
+            _build(
+                "mol",
+                mlp_output_format="node_formula",
+                frag_competition=True,
+            )
+
+
 def _build_siamese(ce_insert_location: str = "mol") -> SiameseGNNModel:
     """Smallest valid SiameseGNNModel with the given ce_insert_location."""
     return SiameseGNNModel(

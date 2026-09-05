@@ -25,10 +25,14 @@ from fragnnet.model.base_model import (
     StratumScaler,
 )
 from fragnnet.model.form_embedder import get_embedder
+from fragnnet.model.fragment_competition import TopKFragmentTransformer
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
+from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_FORMULA_DIFF,
+    PREC_TYPE_TO_FORMULA_DIFF,
+)
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_VE,
     HEAVY_ELEMENTS,
@@ -193,6 +197,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         formula_support: bool = False,
         formula_support_initial_probability: float = 0.99,
         formula_support_threshold: float = 0.5,
+        frag_competition: bool = False,
+        frag_competition_top_k: int = 128,
+        frag_competition_hidden_dim: int = 64,
+        frag_competition_layers: int = 2,
+        frag_competition_heads: int = 4,
+        frag_competition_dropout: float = 0.1,
+        frag_competition_detach_encoder: bool = True,
+        frag_competition_max_delta: float = 5.0,
     ):
         # nn.Module init
         super().__init__()
@@ -531,6 +543,32 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # the fixed elementwise shift that 'subtract'/'add' apply.
             mlp_input_dim += self.frag_pool_out_size
 
+        if frag_competition:
+            if self.mlp_output_format != "formula":
+                raise ValueError("frag_competition requires mlp_output_format='formula'")
+            if self.context_embedding:
+                competition_context_dim = context_embedding_dim
+            else:
+                competition_context_dim = (
+                    (self.ce_embed_dim if self.ce_insert_locations else 0)
+                    + (prec_insert_size if prec_insert_location != "none" else 0)
+                    + (inst_insert_size if inst_insert_location != "none" else 0)
+                    + (frag_mode_insert_size if frag_mode_insert_location != "none" else 0)
+                )
+            self.frag_competition_head = TopKFragmentTransformer(
+                fragment_dim=mlp_input_dim,
+                context_dim=competition_context_dim,
+                top_k=frag_competition_top_k,
+                hidden_dim=frag_competition_hidden_dim,
+                num_layers=frag_competition_layers,
+                num_heads=frag_competition_heads,
+                dropout=frag_competition_dropout,
+                max_delta=frag_competition_max_delta,
+                detach_inputs=frag_competition_detach_encoder,
+            )
+        else:
+            self.frag_competition_head = None
+
         self.candidate_ion_head = candidate_ion_head
         self.candidate_ion_formula_features = candidate_ion_formula_features
         self.candidate_ion_neutral_loss_features = candidate_ion_neutral_loss_features
@@ -721,7 +759,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
             node_mlp_kwargs = {
-                "input_size": 2 * self.frag_embedder.hidden_size,
+                "input_size": mlp_input_dim,
                 "output_size": 1,
                 "hidden_size": mlp_hidden_size,
                 "num_layers": mlp_num_layers,
@@ -1980,6 +2018,43 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 bias_per_depth = self.depth_ce_bias_layer(ce_embed)            # (batch, num_depth+1)
                 per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
                 frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)
+            if self.frag_competition_head is not None:
+                competition_real_mask = frag_joint_mask.reshape(
+                    batch_frag_num_nodes, self.mlp_output_dim
+                ).bool()
+                if include_cmf:
+                    crf_width = 2 * self.num_hs + 1
+                    formula_idxs_2d = frag_joint_formula_idxs.reshape(
+                        batch_frag_num_nodes, self.mlp_output_dim
+                    )
+                    cmf_dhn0_null = (
+                        formula_idxs_2d[:, crf_width + 1 :]
+                        == frag_node_offsets.unsqueeze(1)
+                    )
+                    competition_real_mask = competition_real_mask & ~F.pad(
+                        cmf_dhn0_null, (crf_width + 1, 0)
+                    )
+                if self.context_embedding:
+                    competition_context = context_embed
+                else:
+                    competition_context_parts = [
+                        embed
+                        for embed in (ce_embed, prec_embed, inst_embed, frag_mode_embed)
+                        if embed is not None
+                    ]
+                    competition_context = (
+                        th.cat(competition_context_parts, dim=1)
+                        if competition_context_parts
+                        else None
+                    )
+                frag_joint_logits = self.frag_competition_head(
+                    frag_joint_logits,
+                    frag_embed,
+                    frag_node_batch_idxs,
+                    competition_real_mask,
+                    competition_context,
+                    batch_size=frag_formula_sizes.shape[0],
+                )
             if include_cmf:
                 # CMF Δh≠0 channels (columns crf_width+1..) that map to NULL should not
                 # consume probability mass before softmax.  This is always the case for
@@ -2071,6 +2146,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_node_formula_logits = self.frag_mode_scaler(
                     frag_node_formula_logits, spec_frag_mode, frag_node_batch_idxs
                 )
+            if self.ce_scaler is not None:
+                frag_node_formula_logits = self.ce_scaler(
+                    frag_node_formula_logits,
+                    frag_node_batch_idxs,
+                    nce_stats=kwargs.get("spec_nce_stats"),
+                    ace_stats=kwargs.get("spec_ace_stats"),
+                )
             # apply adduct-type FiLM scaling if enabled
             if self.adduct_scaler is not None:
                 assert spec_prec_type is not None, "spec_prec_type required for adduct_scaler"
@@ -2110,6 +2192,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
             # log p(n) node probability
             frag_node_logits = self.node_module(frag_embed).squeeze(1)
+            if self.depth_ce_bias_layer is not None:
+                depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(
+                    batch_frag_num_nodes, -1
+                )
+                depth_idx = depth_raw.argmax(dim=1).clamp(0, self.num_depth)
+                bias_per_depth = self.depth_ce_bias_layer(ce_embed)
+                # Bias P(n): a constant shift of every P(f|n) logit cancels
+                # under the per-node softmax.
+                frag_node_logits = frag_node_logits + bias_per_depth[
+                    frag_node_batch_idxs, depth_idx
+                ]
             frag_node_logprobs = scatter_logsoftmax(frag_node_logits, frag_node_batch_idxs)
 
             # joint logits = formula_logits + node_logits (broadcast); exposed for post-branch
@@ -2564,9 +2657,21 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             assert frag_formula_str.shape[0] == frag_real_formula_logprobs.shape[0]
             prec_type_str = spec_prec_type_str
             prec_type_delta_comp = np.array(
-                [PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))]
+                [PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))],
+                dtype=object,
             )
             prec_type_delta_comp = prec_type_delta_comp[frag_formula_batch_idxs.cpu().numpy()]
+            if include_cmf:
+                formula_offsets = frag_formula_cumsizes.cpu().tolist()
+                for i, prec_type in enumerate(prec_type_str):
+                    if prec_type not in PREC_TYPE_TO_CMF_FORMULA_DIFF:
+                        continue  # Direct ions such as [M]+ have only CRF rows.
+                    start, end = formula_offsets[i : i + 2]
+                    # Dataset layout: NULL, CRF[1:F], CMF[1:F].
+                    cmf_start = start + (end - start + 1) // 2
+                    prec_type_delta_comp[cmf_start:end] = PREC_TYPE_TO_CMF_FORMULA_DIFF[
+                        prec_type
+                    ]
             pred_formula_str = [
                 combine_formulae(frag_formula_str[i], prec_type_delta_comp[i])
                 if frag_formula_str[i] != ""
