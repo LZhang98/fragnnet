@@ -29,7 +29,6 @@ from lightning import seed_everything
 from tqdm import tqdm
 
 from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import to_device
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,
@@ -267,6 +266,7 @@ def evaluate_selection(
 ) -> dict[str, float | int]:
     """Evaluate one channel-selection rule with validation-equivalent metrics."""
     accumulator = WeightedMetricAccumulator(metric_names_to_collect)
+    skipped_batches = 0
     if device.type == "cuda":
         th.cuda.reset_peak_memory_stats(device)
         th.cuda.synchronize(device)
@@ -278,8 +278,13 @@ def evaluate_selection(
         ):
             if 0 <= batch_cutoff <= batch_index:
                 break
-            batch = to_device(batch, device)
-            batch_results = model._common_step(batch, split=split, log=False)
+            try:
+                batch = model.transfer_batch_to_device(batch, device, dataloader_idx=0)
+                batch_results = model._common_step(batch, split=split, log=False)
+            except ValueError as error:
+                skipped_batches += 1
+                logger.warning("Skipping invalid evaluation batch %d: %s", batch_index, error)
+                continue
             accumulator.update(batch_results, weight_mode)
 
     if device.type == "cuda":
@@ -289,6 +294,7 @@ def evaluate_selection(
     results.update(
         {
             "num_spectra": accumulator.sample_count,
+            "num_skipped_batches": skipped_batches,
             "elapsed_seconds": elapsed_seconds,
             "spectra_per_second": accumulator.sample_count / elapsed_seconds,
             "gpu_peak_memory_gb": (
@@ -431,6 +437,21 @@ def main() -> None:
             logger.info("Selection %s results: %s", label, result)
             if wandb_run is not None:
                 wandb_run.log({f"{args.eval_split}/{key}": value for key, value in result.items()})
+        except ValueError as error:
+            logger.exception("Selection %s failed", label)
+            rows.append(
+                {
+                    "evaluation_channel_selection": label,
+                    "evaluation_fragment_relative_threshold": fragment_relative_threshold,
+                    "evaluation_ion_h_top_k": top_k,
+                    "evaluation_joint_channel_relative_threshold": joint_relative_threshold,
+                    "eval_split": args.eval_split,
+                    "checkpoint": os.path.abspath(checkpoint_fp),
+                    "status": "failed",
+                    "error": str(error),
+                }
+            )
+            save_rows(rows, args.output_fp)
         finally:
             if wandb_run is not None:
                 wandb_run.finish()

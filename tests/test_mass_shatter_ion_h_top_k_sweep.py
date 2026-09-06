@@ -1,14 +1,112 @@
 """Tests for checkpoint-only MASShatter ion/H top-k sweeps."""
 
 import pytest
+import torch as th
+from lightning import LightningModule
+from rdkit import Chem
+from torch_geometric.data import Batch
 
+from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
+from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
+from fragnnet.utils.feat_utils import get_mol_graph
 from scripts.eval.mass_shatter_ion_h_top_k_sweep import (
     build_selections,
+    evaluate_selection,
     metric_names,
     validate_fragment_relative_thresholds,
     validate_joint_relative_thresholds,
     validate_top_ks,
 )
+from scripts.eval.mass_shatter_mask_budget_sweep import evaluate_budget
+
+
+@pytest.fixture
+def smarts_sweep_model() -> MassShatterPL:
+    # Exercise the real transfer hook without constructing unused training modules.
+    model = MassShatterPL.__new__(MassShatterPL)
+    LightningModule.__init__(model)
+    model.save_hyperparameters({"mass_shatter_smarts_templates": True})
+    return model
+
+
+@pytest.mark.parametrize("evaluate", [evaluate_selection, evaluate_budget])
+def test_evaluate_selection_prepares_smarts_templates(
+    smarts_sweep_model: MassShatterPL,
+    monkeypatch: pytest.MonkeyPatch,
+    evaluate,
+) -> None:
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    molecule = Chem.MolFromSmiles(smiles)
+    batch = {
+        "mol_pyg": Batch.from_data_list(
+            [
+                get_mol_graph(molecule, ["a_onehot", "a_degree"], ["b_degree"], 0, True),
+            ]
+        ),
+        "mol_smiles": [smiles],
+    }
+    expected_templates = build_mass_shatter_templates(molecule)
+    assert expected_templates
+
+    def common_step(transferred: dict, split: str, log: bool) -> dict:
+        static_graph = transferred["mass_shatter_static_graph"]
+        assert static_graph.chemical_bond_index.device.type == "cpu"
+        assert static_graph.smarts_templates == (expected_templates,)
+        assert split == "val"
+        assert log is False
+        return {
+            "templates": th.tensor([len(static_graph.smarts_templates[0])]),
+            "spec_per_group": th.ones(1),
+            "spec_per_mol": th.ones(1),
+            "group_per_mol": th.ones(1),
+        }
+
+    monkeypatch.setattr(smarts_sweep_model, "_common_step", common_step)
+    result = evaluate(
+        smarts_sweep_model,
+        [batch],
+        th.device("cpu"),
+        "val",
+        ("templates",),
+        "none",
+        -1,
+    )
+
+    assert result["templates"] == len(expected_templates)
+    assert result["num_spectra"] == 1
+
+
+@pytest.mark.parametrize("evaluate", [evaluate_selection, evaluate_budget])
+@pytest.mark.parametrize("error_type", [ValueError, RuntimeError])
+def test_sweep_skips_invalid_batch_and_continues(
+    evaluate, caplog: pytest.LogCaptureFixture, error_type,
+) -> None:
+    class Model:
+        def transfer_batch_to_device(self, batch, device, dataloader_idx):
+            return batch
+
+        def _common_step(self, batch, split, log):
+            if batch == "invalid":
+                raise error_type("invalid spectrum")
+            return {
+                "score": th.tensor([0.75]),
+                "spec_per_group": th.ones(1),
+                "spec_per_mol": th.ones(1),
+                "group_per_mol": th.ones(1),
+            }
+
+    if error_type is RuntimeError:
+        with pytest.raises(RuntimeError, match="invalid spectrum"):
+            evaluate(Model(), ["invalid"], th.device("cpu"), "val", ("score",), "none", -1)
+        return
+    result = evaluate(
+        Model(), ["invalid", "valid"], th.device("cpu"), "val", ("score",), "none", -1
+    )
+
+    assert result["num_spectra"] == 1
+    assert result["num_skipped_batches"] == 1
+    assert result["score"] == 0.75
+    assert "Skipping invalid evaluation batch 0" in caplog.text
 
 
 def test_validate_top_ks_keeps_dense_reference_and_requested_order() -> None:

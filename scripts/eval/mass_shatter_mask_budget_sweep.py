@@ -30,7 +30,6 @@ from lightning import seed_everything
 from tqdm import tqdm
 
 from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import to_device
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,
@@ -188,6 +187,7 @@ def evaluate_budget(
 ) -> dict[str, float | int]:
     """Evaluate one budget with the same loss and auxiliary metrics as validation."""
     accumulator = WeightedMetricAccumulator(metric_names_to_collect)
+    skipped_batches = 0
     if device.type == "cuda":
         th.cuda.reset_peak_memory_stats(device)
         th.cuda.synchronize(device)
@@ -199,8 +199,13 @@ def evaluate_budget(
         ):
             if 0 <= batch_cutoff <= batch_index:
                 break
-            batch = to_device(batch, device)
-            batch_results = model._common_step(batch, split=split, log=False)
+            try:
+                batch = model.transfer_batch_to_device(batch, device, dataloader_idx=0)
+                batch_results = model._common_step(batch, split=split, log=False)
+            except ValueError as error:
+                skipped_batches += 1
+                logger.warning("Skipping invalid evaluation batch %d: %s", batch_index, error)
+                continue
             accumulator.update(batch_results, weight_mode)
 
     if device.type == "cuda":
@@ -210,6 +215,7 @@ def evaluate_budget(
     results.update(
         {
             "num_spectra": accumulator.sample_count,
+            "num_skipped_batches": skipped_batches,
             "elapsed_seconds": elapsed_seconds,
             "spectra_per_second": accumulator.sample_count / elapsed_seconds,
             "gpu_peak_memory_gb": (

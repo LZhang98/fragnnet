@@ -28,7 +28,6 @@ Unmatched observed peaks are candidate-coverage diagnostics, not a predicted cla
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Sequence
 
 import torch as th
@@ -66,11 +65,10 @@ from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,
     H_MASS,
     PERIODIC_TABLE,
-    PREC_TYPE_TO_CMF_FORMULA_DIFF,
+    PREC_TYPE_TO_CMF_COMP_DIFF,
     PREC_TYPE_TO_CMF_MASS_DIFF,
-    PREC_TYPE_TO_FORMULA_DIFF,
+    PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
-    parse_formula,
 )
 
 
@@ -209,10 +207,7 @@ def _absolute_binary_channel_keep_mask(
     flat_valid = valid_mask.flatten()
     expanded_batch_indices = fragment_batch_indices[:, None, None].expand_as(valid_mask)
     flat_batch_indices = expanded_batch_indices.flatten()
-    _validate_tensor_condition(
-        th.bincount(flat_batch_indices[flat_valid], minlength=batch_size).gt(0).all(),
-        "every spectrum must have at least one valid channel",
-    )
+    available_per_spectrum = th.bincount(flat_batch_indices[flat_valid], minlength=batch_size)
     if min_probability == 0.0:
         return valid_mask.clone()
 
@@ -222,7 +217,7 @@ def _absolute_binary_channel_keep_mask(
     if kept_per_spectrum.gt(0).all():
         return keep.reshape_as(valid_mask)
 
-    for batch_index in th.where(kept_per_spectrum == 0)[0]:
+    for batch_index in th.where((kept_per_spectrum == 0) & (available_per_spectrum > 0))[0]:
         batch_valid_indices = th.where(flat_valid & (flat_batch_indices == batch_index))[0]
         fallback_index = batch_valid_indices[
             flat_log_probabilities[batch_valid_indices].argmax()
@@ -350,24 +345,6 @@ def _relative_joint_channel_keep_mask(
     return (keep | fragment_fallback).reshape_as(valid_mask)
 
 
-def _parse_formula_delta(formula: str) -> dict[str, int]:
-    """Parse the signed element-count notation used by the adduct tables."""
-    if not formula:
-        return {}
-    counts: dict[str, int] = {}
-    position = 0
-    for match in re.finditer(r"([A-Z][a-z]?)(-?\d*)", formula):
-        if match.start() != position:
-            raise ValueError(f"invalid formula delta: {formula}")
-        count_text = match.group(2)
-        count = 1 if not count_text else int(count_text)
-        counts[match.group(1)] = counts.get(match.group(1), 0) + count
-        position = match.end()
-    if position != len(formula):
-        raise ValueError(f"invalid formula delta: {formula}")
-    return counts
-
-
 def _cmf_duplicate_crf_shift(
     precursor_type: str,
     max_h_transfer: int,
@@ -385,8 +362,8 @@ def _cmf_duplicate_crf_shift(
         -max_h_transfer <= rounded_shift <= max_h_transfer
     ):
         return None
-    crf_counts = _parse_formula_delta(PREC_TYPE_TO_FORMULA_DIFF[precursor_type])
-    cmf_counts = _parse_formula_delta(PREC_TYPE_TO_CMF_FORMULA_DIFF[precursor_type])
+    crf_counts = PREC_TYPE_TO_COMP_DIFF[precursor_type]
+    cmf_counts = PREC_TYPE_TO_CMF_COMP_DIFF[precursor_type]
     for element in set(crf_counts) | set(cmf_counts) | {"H"}:
         expected = crf_counts.get(element, 0) + (rounded_shift if element == "H" else 0)
         if cmf_counts.get(element, 0) != expected:
@@ -1220,6 +1197,17 @@ class MassShatterModel(nn.Module):
             initial_oos_probability=0.1,
         )
         self._setup_chemistry_buffers()
+        self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
+
+    def _restore_chemistry_buffers(
+        self,
+        state_dict: dict[str, th.Tensor],
+        prefix: str,
+        *args: object,
+    ) -> None:
+        """Migrate derived legacy counts without restoring unsigned validity rules."""
+        for name in ("required_atomic_numbers", "crf_formula_deltas", "cmf_formula_deltas"):
+            state_dict[prefix + name] = self.get_buffer(name)
 
     def set_evaluation_ion_h_top_k(self, top_k: int) -> None:
         """Set evaluation-only fixed-k ion/H selection; zero disables it."""
@@ -1255,22 +1243,18 @@ class MassShatterModel(nn.Module):
         counts that can go negative and thereby invalidate a channel.
         """
 
-        def parse_diff(formula: str) -> dict[str, int]:
-            # Preserve the established validity buffers and checkpoint shapes. The
-            # signed parser is used only by CMF degeneracy detection above.
-            return parse_formula(formula) if formula else {}
-
         required_elements = {1}
         parsed_crf: list[dict[str, int]] = []
         parsed_cmf: list[dict[str, int]] = []
         for precursor_type in self.precursor_types:
-            crf_counts = parse_diff(PREC_TYPE_TO_FORMULA_DIFF[precursor_type])
-            cmf_counts = parse_diff(PREC_TYPE_TO_CMF_FORMULA_DIFF.get(precursor_type, ""))
+            crf_counts = PREC_TYPE_TO_COMP_DIFF[precursor_type]
+            cmf_counts = PREC_TYPE_TO_CMF_COMP_DIFF.get(precursor_type, {})
             parsed_crf.append(crf_counts)
             parsed_cmf.append(cmf_counts)
-            for element, count in {**crf_counts, **cmf_counts}.items():
-                if count < 0:
-                    required_elements.add(PERIODIC_TABLE.GetAtomicNumber(element))
+            for counts in (crf_counts, cmf_counts):
+                for element, count in counts.items():
+                    if count < 0:
+                        required_elements.add(PERIODIC_TABLE.GetAtomicNumber(element))
         required_atomic_numbers = sorted(required_elements)
         self.required_atomic_number_values = tuple(required_atomic_numbers)
         # H is tracked in its own column because hydrogen transfer shifts it per channel.
@@ -1430,7 +1414,8 @@ class MassShatterModel(nn.Module):
             ).expand(-1, self.num_h_shifts)
             mz_channels.append(cmf_mzs)
             valid_channels.append(cmf_valid)
-        return th.stack(mz_channels, dim=1), th.stack(valid_channels, dim=1)
+        ion_mzs = th.stack(mz_channels, dim=1)
+        return ion_mzs, th.stack(valid_channels, dim=1) & (ion_mzs > 0.0)
 
     def _eligible_smarts_templates(
         self,
@@ -2000,12 +1985,37 @@ class MassShatterModel(nn.Module):
             # Prune low-probability unique atom sets only after all duplicate
             # pathways have been marginalized. The hard decision is detached, while
             # probabilities for retained fragments stay live for proposal training.
+            ion_mzs, valid_channels = self._fragment_masses_and_valid_channels(
+                mol_pyg,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                fragment_batch_indices,
+                num_fragments,
+                precursor_type_indices,
+            )
             fragment_keep = _relative_fragment_keep_mask(
                 fragment_log_probabilities,
                 fragment_batch_indices,
                 batch_size,
                 self.min_fragment_relative_probability,
             )
+            # A probability cutoff must not discard the last realizable fragment.
+            valid_fragments = valid_channels.flatten(1).any(dim=1)
+            valid_scores = fragment_log_probabilities.detach().masked_fill(
+                ~valid_fragments, -th.inf
+            )
+            best_valid_scores = valid_scores.new_full((batch_size,), -th.inf).scatter_reduce(
+                0,
+                fragment_batch_indices,
+                valid_scores,
+                reduce="amax",
+                include_self=True,
+            )
+            fragment_keep |= valid_fragments & (
+                valid_scores == best_valid_scores[fragment_batch_indices]
+            )
+            ion_mzs = ion_mzs[fragment_keep]
+            valid_channels = valid_channels[fragment_keep]
             fragment_count_before_cutoff = th.bincount(
                 fragment_batch_indices,
                 minlength=batch_size,
@@ -2165,14 +2175,6 @@ class MassShatterModel(nn.Module):
                 )
                 .exp()
             )
-            ion_mzs, valid_channels = self._fragment_masses_and_valid_channels(
-                mol_pyg,
-                fragment_atom_indices,
-                atom_fragment_indices,
-                fragment_batch_indices,
-                num_fragments,
-                precursor_type_indices,
-            )
         else:
             # 3b. Legacy pathway-token model: contextualize every component occurrence.
             charge_log_probabilities = component_charge_log_probabilities(
@@ -2283,7 +2285,39 @@ class MassShatterModel(nn.Module):
                 precursor_type_indices,
             )
 
-        # 4. Separate full chemical support from selected spectral output.
+        # 4. Remove fragments that cannot form an ion under the configured adduct.
+        chemically_valid_fragments = valid_channels.flatten(1).any(dim=1)
+        fragment_batch_indices = fragment_batch_indices[chemically_valid_fragments]
+        fragment_cut_counts = fragment_cut_counts[chemically_valid_fragments]
+        ion_mzs = ion_mzs[chemically_valid_fragments]
+        valid_channels = valid_channels[chemically_valid_fragments]
+        ion_h_logits = ion_h_logits[chemically_valid_fragments]
+        ion_h_support_logits = ion_h_support_logits[chemically_valid_fragments]
+        if learned_ion_mode_proposal_logits is not None:
+            learned_ion_mode_proposal_logits = learned_ion_mode_proposal_logits[
+                chemically_valid_fragments
+            ]
+        if self.intensity_output == "independent":
+            corrected_fragment_logits = corrected_fragment_logits[chemically_valid_fragments]
+        # Normalize the final and proposal distributions together over valid fragments.
+        fragment_scores = th.stack(
+            (fragment_log_probabilities, base_fragment_log_probabilities), dim=1
+        )[chemically_valid_fragments]
+        score_batch_indices = 2 * fragment_batch_indices[:, None] + th.arange(
+            2,
+            device=fragment_batch_indices.device,
+        )
+        normalizers = _segment_logsumexp(
+            fragment_scores.flatten(),
+            score_batch_indices.flatten(),
+            2 * batch_size,
+        ).reshape(batch_size, 2)
+        fragment_log_probabilities, base_fragment_log_probabilities = (
+            fragment_scores - normalizers[fragment_batch_indices]
+        ).unbind(dim=1)
+        num_fragments = int(fragment_batch_indices.numel())
+
+        # 5. Separate full chemical support from selected spectral output.
         dense_intensity_log_probabilities = masked_ion_hydrogen_log_probabilities(
             ion_h_logits,
             valid_channels,
@@ -2415,7 +2449,7 @@ class MassShatterModel(nn.Module):
                 fragment_batch_indices,
                 retained_intensity_mass.to(bond_logits),
             )
-            / fragment_counts
+            / fragment_counts.clamp_min(1)
         )
         dense_joint_weights = dense_channel_log_weights.exp()
         joint_intensity_by_fragment = dense_joint_weights.sum(dim=(1, 2))
@@ -2432,7 +2466,7 @@ class MassShatterModel(nn.Module):
             fragment_batch_indices,
             retained_joint_intensity_by_fragment.to(bond_logits),
         )
-        retained_joint_intensity_fraction = retained_joint_intensity / total_joint_intensity
+        retained_joint_intensity_fraction = retained_joint_intensity / total_joint_intensity.clamp_min(th.finfo(total_joint_intensity.dtype).tiny)
         mode_log_scores = (
             F.logsigmoid(ion_mode_proposal_logits)
             if ion_mode_proposal_binary_logits
@@ -2449,7 +2483,7 @@ class MassShatterModel(nn.Module):
                 fragment_batch_indices,
                 retained_mode_mass.to(bond_logits),
             )
-            / fragment_counts
+            / fragment_counts.clamp_min(1)
         )
         valid_ion_mode_count = bond_logits.new_zeros(batch_size).index_add(
             0,
@@ -2553,12 +2587,12 @@ class MassShatterModel(nn.Module):
             "retained_ion_h_count": retained_ion_h_count,
             "retained_ion_h_probability": retained_ion_h_probability,
             "retained_joint_channel_intensity_fraction": retained_joint_intensity_fraction,
-            "ion_h_cutoff_pruned_fraction": 1.0 - retained_ion_h_count / valid_ion_h_count,
+            "ion_h_cutoff_pruned_fraction": 1.0 - retained_ion_h_count / valid_ion_h_count.clamp_min(1),
             "valid_ion_mode_count": valid_ion_mode_count,
             "retained_ion_mode_count": retained_ion_mode_count,
             "retained_ion_mode_probability": retained_ion_mode_probability,
             "ion_mode_cutoff_pruned_fraction": (
-                1.0 - retained_ion_mode_count / valid_ion_mode_count
+                1.0 - retained_ion_mode_count / valid_ion_mode_count.clamp_min(1)
             ),
             "bond_break_logits": bond_logits,
             "proposal_mixture_log_weights": logged_mixture_log_weights,

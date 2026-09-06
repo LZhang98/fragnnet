@@ -1,11 +1,24 @@
 # MASShatter fragment and ion/H channel-selection findings
 
-> **Status:** FINDING — PROVISIONAL, BARCODE CONTROL PENDING &nbsp;·&nbsp; **Updated:** 2026-09-02
+> **Status:** HISTORICAL RESULTS — CHEMISTRY REVALIDATION AND BARCODE CONTROL PENDING &nbsp;·&nbsp; **Updated:** 2026-09-05
 >
 > The current count-based spectrum precision conflates fragment selection with ion/H
 > expansion. It is useful for measuring output clutter, but it is not fragment precision.
+> Numerical conclusions below are unverified under the corrected chemistry rules.
 
 ## Experiment
+
+**Chemistry correction (2026-09-05):** MASShatter now interprets negative adduct element
+counts as removals when validating CRF and CMF channels. It omits nonpositive masses and
+fragments with no valid ion channels, renormalizing probability outputs over the remaining
+fragments. Dataset setup filters incompatible molecule/adduct pairs before batching and logs
+the removed count. Direct model calls return empty sparse output for incompatible spectra.
+Legacy checkpoints still load strictly: the element-count buffers are regenerated from the
+configured adducts, while learned weights are preserved. Predictions for affected adducts
+therefore change intentionally; the historical results below have not been recomputed.
+Both checkpoint sweeps use Lightning's batch-transfer hook so SMARTS-enabled checkpoints
+receive the same template preparation as validation. Recoverable invalid batches are logged
+and counted as skipped, rather than included in metric denominators.
 
 The completed validation sweep used checkpoint `tq4bdn3g` with:
 

@@ -73,6 +73,8 @@ def _build_model(
     ce_insert_type: str = "id",
     ce_insert_size: int = 6,
     use_smarts_templates: bool = False,
+    include_cmf: bool = True,
+    max_h_transfer: int = 1,
     precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
     fragmentation_modes: tuple[str, ...] = (),
 ) -> MassShatterModel:
@@ -136,8 +138,8 @@ def _build_model(
         min_mask_relative_probability=min_mask_relative_probability,
         min_fragment_relative_probability=min_fragment_relative_probability,
         include_single_bond_cuts=True,
-        max_h_transfer=1,
-        include_cmf=True,
+        max_h_transfer=max_h_transfer,
+        include_cmf=include_cmf,
         charge_pooling="logsumexp",
         use_smarts_templates=use_smarts_templates,
     )
@@ -381,31 +383,165 @@ def test_cmf_validity_excludes_only_reachable_duplicates() -> None:
     }
 
 
-def test_signed_cmf_detection_preserves_legacy_crf_validity_buffers() -> None:
+def test_signed_adduct_deltas_track_removed_elements() -> None:
     batch = _build_batch(("CC",))
     model = _build_model(batch, precursor_types=("[M-H-CO2]-",))
 
-    assert model.required_atomic_numbers.tolist() == [1]
-    assert model.crf_formula_deltas.shape == (1, 1)
-    assert model.crf_formula_deltas.tolist() == [[1]]
+    assert model.required_atomic_numbers.tolist() == [1, 6, 8]
+    assert model.crf_formula_deltas.tolist() == [[-1, -1, -2]]
 
 
-def test_negative_delta_adduct_does_not_empty_h_free_fragments() -> None:
-    batch = _build_batch(("FC(F)(F)F",))
+@pytest.mark.parametrize(
+    ("smiles", "atom_index", "adduct", "mode", "expected"),
+    [
+        ("CC(=O)C", 1, "[M-H]-", 0, False),
+        ("CCO", 0, "[M-H2O+H]+", 0, False),
+        ("CCO", 2, "[M-H2O+H]+", 0, False),  # Empty formula has negative m/z.
+        ("CO", 1, "[M-H]-", 0, True),
+        ("CC(=O)C", 1, "[M+Cl]-", 1, False),
+    ],
+)
+def test_ion_channels_require_available_atoms_and_positive_mass(
+    smiles: str,
+    atom_index: int,
+    adduct: str,
+    mode: int,
+    expected: bool,
+) -> None:
+    batch = _build_batch((smiles,))
+    model = _build_model(batch, precursor_types=(adduct,))
+    _, valid = model._fragment_masses_and_valid_channels(
+        batch,
+        th.tensor([atom_index]),
+        th.tensor([0]),
+        th.tensor([0]),
+        1,
+        th.tensor([0]),
+    )
+
+    assert valid[0, mode, model.max_h_transfer].item() is expected
+
+
+def test_loading_legacy_chemistry_buffers_rebuilds_signed_deltas() -> None:
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, precursor_types=("[M-H-CO2]-",))
+    legacy_state = model.state_dict()
+    legacy_state["required_atomic_numbers"] = th.tensor([1])
+    legacy_state["crf_formula_deltas"] = th.tensor([[1]])
+    legacy_state["cmf_formula_deltas"] = th.tensor([[0]])
+    restored = _build_model(batch, precursor_types=("[M-H-CO2]-",))
+
+    restored.load_state_dict(legacy_state, strict=True)
+
+    assert restored.required_atomic_numbers.tolist() == [1, 6, 8]
+    assert restored.crf_formula_deltas.tolist() == [[-1, -1, -2]]
+    assert restored.cmf_formula_deltas.tolist() == [[0, 0, 0]]
+    for name, parameter in restored.named_parameters():
+        th.testing.assert_close(parameter, legacy_state[name])
+
+
+@pytest.mark.parametrize(
+    ("unique_fragment_mode", "intensity_output"),
+    [(False, "probability"), (True, "probability"), (True, "independent")],
+)
+def test_fragments_without_valid_channels_are_removed_and_mass_renormalized(
+    unique_fragment_mode: bool,
+    intensity_output: str,
+) -> None:
+    batch = _build_batch(("CC(=O)C", "CO"))
     model = _build_model(
         batch,
-        unique_fragment_mode=True,
-        precursor_types=("[M-H-H2O]-",),
+        precursor_types=("[M-H]-",),
+        include_cmf=False,
+        max_h_transfer=0,
+        unique_fragment_mode=unique_fragment_mode,
+        max_masks=8,
+        return_base_spectrum=True,
+        intensity_output=intensity_output,
+        proposal_selection_only=(intensity_output == "independent"),
+        use_base_probability_feature=(intensity_output != "independent"),
     ).eval()
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([25.0, 25.0]),
+    )
+
+    assert output["ion_h_chemical_valid_channels"].flatten(1).any(dim=1).all()
+    assert (output["pred_mzs"] > 0).all()
+    # The bare carbonyl C and O fragments cannot lose H.
+    for impossible_mz in (10.992723548, 14.987638168):
+        assert not th.isclose(
+            output["pred_mzs"],
+            output["pred_mzs"].new_tensor(impossible_mz),
+            atol=1e-6,
+            rtol=0.0,
+        ).any()
+    probability_keys = ["base_pred_logprobs"]
+    if intensity_output == "probability":
+        probability_keys.append("pred_logprobs")
+        objective = -output["pred_logprobs"].mean()
+    else:
+        assert th.isfinite(output["pred_intensities"]).all()
+        assert (output["pred_intensities"] > 0).all()
+        objective = output["pred_intensities"].mean()
+    for key in probability_keys:
+        totals = th.zeros(2).index_add(0, output["pred_batch_idxs"], output[key].exp())
+        th.testing.assert_close(totals, th.ones(2))
+    objective.backward()
+    for parameter in model.parameters():
+        if parameter.grad is not None:
+            assert th.isfinite(parameter.grad).all()
+
+
+@pytest.mark.parametrize("mixed_batch", [False, True])
+@pytest.mark.parametrize("independent", [False, True])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(not th.cuda.is_available(), reason="CUDA not available"),
+        ),
+    ],
+)
+def test_no_chemically_valid_fragments_return_empty_output(
+    mixed_batch: bool,
+    device: str,
+    independent: bool,
+) -> None:
+    smiles = ("FC(F)(F)F", "CCO") if mixed_batch else ("FC(F)(F)F",)
+    batch = _build_batch(smiles).to(device)
+    model = (
+        _build_model(
+            batch,
+            unique_fragment_mode=True,
+            precursor_types=("[M-H-H2O]-",),
+            intensity_output="independent" if independent else "probability",
+            proposal_selection_only=independent,
+            use_base_probability_feature=not independent,
+            separate_ion_h_support_head=independent,
+            ion_h_support_binary_logits=independent,
+            min_ion_h_absolute_probability=0.5 if independent else 0.0,
+        )
+        .to(device)
+        .eval()
+    )
 
     with th.no_grad():
         output = model(
             mol_pyg=batch,
-            spec_prec_type=th.tensor([0]),
-            spec_nce=th.tensor([25.0]),
+            spec_prec_type=th.zeros(len(smiles), dtype=th.long, device=device),
+            spec_nce=th.full((len(smiles),), 25.0, device=device),
         )
-
-    assert output["pred_mzs"].numel() > 0
+    assert (output["pred_batch_idxs"] != 0).all()
+    assert bool(output["pred_mzs"].numel()) is mixed_batch
+    values = output["pred_intensities" if independent else "pred_logprobs"]
+    assert th.isfinite(values).all()
+    assert th.isfinite(output["retained_joint_channel_intensity_fraction"]).all()
+    # A device-side assertion would also poison this subsequent CUDA operation.
+    assert th.ones(1, device=device).sum().item() == 1.0
 
 
 def test_mass_shatter_embeds_each_ce_before_pooling_merged_spectra() -> None:

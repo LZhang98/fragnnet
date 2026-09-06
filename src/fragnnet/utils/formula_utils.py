@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from typing import Literal
 
 import rdkit.Chem as Chem
@@ -114,6 +115,53 @@ PREC_TYPE_TO_FORMULA_DIFF = {
 }
 
 PREC_TYPE_TO_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
+PREC_TYPE_TO_CMF_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()}
+
+
+def mass_shatter_has_valid_ion(
+    mol: Chem.Mol,
+    precursor_type: str,
+    max_h_transfer: int,
+    include_cmf: bool,
+) -> bool:
+    """Check whether an uncut component can supply any configured ion channel.
+
+    Counts and masses match MASShatter's graph chemistry. If a connected component
+    cannot supply the removed elements, none of its smaller fragments can either.
+    This check runs on CPU before spectra enter a training/evaluation batch.
+    """
+    channels = [
+        (PREC_TYPE_TO_COMP_DIFF[precursor_type], PREC_TYPE_TO_MASS_DIFF[precursor_type], shift)
+        for shift in range(-max_h_transfer, max_h_transfer + 1)
+    ]
+    if include_cmf and precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF:
+        channels.append(
+            (
+                PREC_TYPE_TO_CMF_COMP_DIFF[precursor_type],
+                PREC_TYPE_TO_CMF_MASS_DIFF[precursor_type],
+                0,
+            )
+        )
+    for component in Chem.GetMolFrags(mol, asMols=True):
+        counts = Counter(atom.GetSymbol() for atom in component.GetAtoms())
+        counts["H"] += sum(atom.GetTotalNumHs() for atom in component.GetAtoms())
+        mass = sum(
+            PERIODIC_TABLE.GetMostCommonIsotopeMass(element) * count
+            for element, count in counts.items()
+        ) - ELECTRON_MASS * sum(atom.GetFormalCharge() for atom in component.GetAtoms())
+        for delta, mass_delta, shift in channels:
+            if (
+                counts["H"] + delta.get("H", 0) + shift >= 0
+                and all(
+                    counts[element] + count >= 0
+                    for element, count in delta.items()
+                    if element != "H"
+                )
+                and mass + mass_delta + shift * H_MASS > 0.0
+            ):
+                return True
+    return False
+
 
 NEUTRON_MASS = 1.008665
 C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); true M+1 peak spacing
