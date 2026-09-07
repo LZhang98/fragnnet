@@ -286,7 +286,7 @@ def main(args):
 		print("> Compute Molecule Stats")	
 
 		# collect across molecules and report summary statistics
-		peak_mol_df = peak_spec_df.drop(columns=[spec_key]).groupby("mol_id").agg(np.nanmean).reset_index()
+		peak_mol_df = peak_spec_df.drop(columns=[spec_key]).groupby("mol_id").agg("mean").reset_index()
 		for key in metric_keys+stats_cols:
 			print_and_log(mol_prefix+key,peak_mol_df[key],wandb_flag,frag_stats_d)
 
