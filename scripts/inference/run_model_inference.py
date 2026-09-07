@@ -14,6 +14,8 @@ from fragnnet.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES
 from fragnnet.utils.feat_utils import get_frag_graph
 from fragnnet.utils.frag_utils import get_node_feats, load_frag_d, th_long_to_mask
 
+MAX_INFERENCE_PRECURSOR_MZ = 1500.0		# TODO: feed in this value from config_d
+
 
 class _OOSWarningFilter:
 	def __init__(self, stream):
@@ -151,6 +153,26 @@ def filter_unsupported_spectra(spec_df, spec_params):
 	return filtered_spec_df, error_rows
 
 
+def filter_precursor_mz(spec_df, max_precursor_mz=MAX_INFERENCE_PRECURSOR_MZ):
+	too_large_mask = spec_df["prec_mz"] >= max_precursor_mz
+	if not too_large_mask.any():
+		return spec_df, []
+	error_rows = [
+		{
+			"mol_id": mol_id,
+			"reason": "precursor_mz_at_or_above_limit",
+			"num_spectra": int(count),
+		}
+		for mol_id, count in spec_df.loc[too_large_mask].groupby("mol_id").size().items()
+	]
+	filtered_spec_df = spec_df.loc[~too_large_mask].copy()
+	print(
+		f">> Dropping {int(too_large_mask.sum())} spectra with "
+		f"precursor m/z >= {max_precursor_mz}"
+	)
+	return filtered_spec_df, error_rows
+
+
 def fill_missing_nce(spec_df, default_nce):
 	if "nce" not in spec_df:
 		return spec_df, []
@@ -269,12 +291,14 @@ def main():
 	print(f">> Loading molecules from {config['mol_fp']}")
 	mol_df = pd.read_pickle(config["mol_fp"])
 	spec_df, spectrum_errors = filter_unsupported_spectra(spec_df, engine.config_d["spec_params"])
+	spec_df, precursor_errors = filter_precursor_mz(spec_df)
 	frag_dp = config.get("frag_dp")
 	if frag_dp is None:
 		raise ValueError("frag_dp is required for FraGNNet inference.")
 	spec_df, mol_df, error_rows = filter_invalid_molecules(
 		spec_df, mol_df, frag_dp, engine.config_d["frag_params"])
 	error_rows.extend(spectrum_errors)
+	error_rows.extend(precursor_errors)
 	spec_df, nce_error_rows = fill_missing_nce(
 		spec_df,
 		default_nce=inference_config.get("default_nce", config.get("ce_mean", 60.0)),
