@@ -44,3 +44,9 @@ These local pointer changes are not included in Git diffs. It still contains a l
 its state directory had no files during this audit. Shared records above are the portable
 entry points. Local permissions, commands, and skills were not migrated or audited for runtime
 behavior. Their presence is not evidence that another checkout has them.
+
+## Cluster submission knowledge
+
+The [Fir/Vulcan submission guide](guides/submit_cluster_runs.md) now provides the canonical
+procedure linked from INSTALL.md. Commands and profiles were checked against repository source;
+no cluster connection, submission, or training validation was performed.

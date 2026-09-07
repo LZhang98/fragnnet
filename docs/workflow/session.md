@@ -60,6 +60,9 @@ Scientific interpretations remain provisional until supported and reviewed.
 
 ## 4. Record experiments when authorized
 
+For Fir or Vulcan runs, read the [cluster submission guide](../guides/submit_cluster_runs.md)
+before preparing a job.
+
 Before a run, record in its task/experiment record:
 
 - Git revision and dirty diff identity; environment/package identity.
