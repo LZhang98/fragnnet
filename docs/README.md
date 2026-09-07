@@ -1,12 +1,29 @@
 # FraGNNet Documentation Index
 
-Every doc carries a status banner directly under its title. Check it before acting on a doc —
+> **Status:** REFERENCE
+
+Start with [current project state](project-state.md), the [architecture map](architecture.md),
+and the [session workflow](workflow/session.md). Shared constraints live in
+[rules/engineering.md](rules/engineering.md).
+
+## Shared workflow and rules
+
+| Doc | Purpose |
+| --- | --- |
+| [project-state.md](project-state.md) | Current handoff, research navigation, and next task |
+| [architecture.md](architecture.md) | Verified entry points and architectural boundaries |
+| [workflow/session.md](workflow/session.md) | Development, experiment provenance, validation, and handoff |
+| [rules/engineering.md](rules/engineering.md) | Core behavior, environment, compatibility, validation, and Git rules |
+| [rules/python.md](rules/python.md) | Python formatting, imports, docstrings, testing, and hyperparameters |
+| [rules/documentation.md](rules/documentation.md) | Documentation placement, banners, indexing, and preservation |
+
+Research documents generally carry a status banner directly under its title. Check it before acting on a doc —
 several plans here are **closed nulls or superseded**, and they are kept deliberately so the same
 line does not get re-run.
 
 | Status | Meaning |
 |--------|---------|
-| `GUIDE` / `REFERENCE` | Describes how something works or how to run it. Safe to follow. |
+| `GUIDE` / `REFERENCE` | Describes how something works or how to run it; verify against current code. |
 | `ACTIVE` | Live plan. Something is meant to happen next. |
 | `PROPOSED` | Written up, not started. |
 | `LANDED` | The plan shipped; the doc now describes production behavior. |

@@ -15,6 +15,9 @@ This method provides:
 
 ## Project Structure
 
+**Project record and agent workflow**: start at [docs/project-state.md](docs/project-state.md);
+see [docs/README.md](docs/README.md) for the documentation index.
+
 **Experiment configs**: see [config/README.md](config/README.md)
 
 **Data preprocessing**: see [preproc_scripts/README.md](preproc_scripts/README.md)
