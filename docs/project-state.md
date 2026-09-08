@@ -21,6 +21,14 @@ scientific evaluation, or full test suite was run for this documentation change.
 
 ## Research navigation
 
+- [MASShatter code audit](findings/masshatter_code_audit.md) records three reproduced
+  issues at `0b5ad3f4`: standalone SMARTS inference, charged-component masses, and
+  SMARTS proposal gradient isolation. All three fixes and regression tests are now in
+  the working tree: 718 passed, 7 skipped; CPU only. Review the linked compatibility
+  notes and re-evaluate affected checkpoints before comparing experiment metrics.
+  The checkout was clean at audit start, so the
+  uncommitted-work description in the workflow-adoption handoff above is historical.
+
 - [Model improvement roadmap](plans/model_improvement_plan.md) remains the canonical source
   for research priorities and acceptance criteria. Its banner is dated 2026-07-24; reconcile
   its proposed next action with current code and artifacts before resuming it.

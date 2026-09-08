@@ -64,6 +64,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Result |
 |-----|--------|
+| [masshatter_code_audit.md](findings/masshatter_code_audit.md) | Three correctness fixes in the working tree; 718 tests passed, 7 skipped. Includes checkpoint compatibility notes. |
 | [dag_oracle_ceiling_nist20.md](findings/dag_oracle_ceiling_nist20.md) | Baseline d3 DAG ceiling = **0.937 cos_hun** on NIST20 test. Model-free upper bound. |
 | [oracle_recall_wrecall_by_ce.md](findings/oracle_recall_wrecall_by_ce.md) | Coverage ceiling vs. collision energy and adduct. Figures in [figures/](figures/). |
 | [unexplainable_spectra_analysis.md](findings/unexplainable_spectra_analysis.md) | Workflow for spectra the DAG cannot explain, grouped by adduct / molecule / ClassyFire class. |

@@ -1904,6 +1904,13 @@ class MassShatterPL(SpectrumPL):
         Returns:
             The model's sparse prediction dictionary, forwarded unchanged.
         """
+        # Standalone inference bypasses Lightning's transfer hook. Match the same
+        # templates here when that path has not supplied the CPU graph sidecar.
+        static_graph = batch_kwargs.get("mass_shatter_static_graph")
+        if self.hparams.mass_shatter_smarts_templates and (
+            static_graph is None or static_graph.smarts_templates is None
+        ):
+            static_graph = self._build_static_graph(batch_kwargs)
         output = self.model(
             mol_pyg=batch_kwargs["mol_pyg"],
             spec_prec_type=batch_kwargs["spec_prec_type"],
@@ -1913,7 +1920,7 @@ class MassShatterPL(SpectrumPL):
             spec_nce_batch_idxs=batch_kwargs.get("spec_nce_batch_idxs"),
             spec_ace=batch_kwargs.get("spec_ace"),
             spec_ace_batch_idxs=batch_kwargs.get("spec_ace_batch_idxs"),
-            static_graph=batch_kwargs.get("mass_shatter_static_graph"),
+            static_graph=static_graph,
             proposal_group_ids=(
                 batch_kwargs.get("group_id")
                 if self.hparams.mass_shatter_share_proposal_across_ev
@@ -1948,6 +1955,20 @@ class MassShatterPL(SpectrumPL):
                 output.pop(key, None)
         return output
 
+    def _build_static_graph(self, batch: dict[str, Any]) -> MassShatterStaticGraph:
+        """Build CPU topology and optional templates for training or inference."""
+        mol_pyg = batch["mol_pyg"]
+        return MassShatterStaticGraph(
+            chemical_bond_index=mol_pyg.chemical_bond_index.detach().cpu(),
+            atom_batch_indices=mol_pyg.batch.detach().cpu(),
+            atom_ptr=mol_pyg.ptr.detach().cpu(),
+            smarts_templates=(
+                tuple(_cached_mass_shatter_templates(str(smiles)) for smiles in batch["mol_smiles"])
+                if self.hparams.mass_shatter_smarts_templates
+                else None
+            ),
+        )
+
     def transfer_batch_to_device(
         self,
         batch: Any,
@@ -1970,17 +1991,7 @@ class MassShatterPL(SpectrumPL):
             The transferred batch, with the CPU-resident graph indices attached under
             ``mass_shatter_static_graph``.
         """
-        mol_pyg = batch["mol_pyg"]
-        static_graph = MassShatterStaticGraph(
-            chemical_bond_index=mol_pyg.chemical_bond_index,
-            atom_batch_indices=mol_pyg.batch,
-            atom_ptr=mol_pyg.ptr,
-            smarts_templates=(
-                tuple(_cached_mass_shatter_templates(str(smiles)) for smiles in batch["mol_smiles"])
-                if self.hparams.mass_shatter_smarts_templates
-                else None
-            ),
-        )
+        static_graph = self._build_static_graph(batch)
         transferred = super().transfer_batch_to_device(batch, device, dataloader_idx)
         transferred["mass_shatter_static_graph"] = static_graph
         return transferred

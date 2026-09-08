@@ -152,6 +152,119 @@ def test_mass_shatter_selects_bond_focused_head() -> None:
     assert isinstance(model.bond_break_head, BondFocusedBreakHead)
 
 
+@pytest.mark.parametrize(
+    ("smiles", "atom_indices", "formula", "adduct"),
+    [
+        ("C[N+](C)(C)C", [0, 1, 2, 3, 4], "C4H12N", "[M]+"),
+        ("C[O-]", [0, 1], "CH3O", "[M-H]-"),
+        ("C[N+](=O)[O-]", [3], "O", "[M+H]+"),
+        ("CCO", [0, 1, 2], "C2H6O", "[M+H]+"),
+    ],
+)
+def test_fragment_masses_match_elemental_formula(
+    smiles: str,
+    atom_indices: list[int],
+    formula: str,
+    adduct: str,
+) -> None:
+    batch = _build_batch((smiles,))
+    model = _build_model(
+        batch,
+        precursor_types=(adduct,),
+        include_cmf=False,
+        max_h_transfer=0,
+    )
+    masses, valid = model._fragment_masses_and_valid_channels(
+        batch,
+        th.tensor(atom_indices),
+        th.zeros(len(atom_indices), dtype=th.long),
+        th.tensor([0]),
+        1,
+        th.tensor([0]),
+    )
+    expected = formula_to_peak_mzs(formula, adduct, isotopes=False)[0]
+    assert valid.item()
+    assert masses.item() == pytest.approx(expected, abs=1e-9, rel=0)
+
+
+@pytest.mark.parametrize("separate_encoder", [False, True])
+@pytest.mark.parametrize("shared_proposal", [False, True])
+def test_smarts_proposal_gradients_respect_encoder_isolation(
+    separate_encoder: bool,
+    shared_proposal: bool,
+) -> None:
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    batch = _build_batch((smiles, smiles))
+    model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+        use_smarts_templates=True,
+        proposal_selection_only=True,
+        separate_proposal_encoder=separate_encoder,
+        use_base_probability_feature=False,
+        share_proposal_across_ev=shared_proposal,
+    )
+    templates = build_mass_shatter_templates(Chem.MolFromSmiles(smiles))
+    static_graph = MassShatterStaticGraph(
+        chemical_bond_index=batch.chemical_bond_index,
+        atom_batch_indices=batch.batch,
+        atom_ptr=batch.ptr,
+        smarts_templates=(templates, templates),
+    )
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+        "static_graph": static_graph,
+        "proposal_group_ids": th.tensor([7, 7]) if shared_proposal else None,
+    }
+    output = model(**inputs)
+    if shared_proposal:
+        scores = output["proposal_fragment_logprobs"]
+        indices = output["proposal_fragment_batch_idxs"]
+        assert th.allclose(scores[indices == 0], scores[indices == 1])
+    (-output["proposal_fragment_logprobs"].mean()).backward()
+    assert _parameter_gradient_sum(model.precursor_encoder) == 0.0
+    assert _parameter_gradient_sum(model.context_encoder) == 0.0
+    assert _parameter_gradient_sum(model.intensity_head) == 0.0
+    assert _parameter_gradient_sum(model.mechanism_head) > 0.0
+    assert _parameter_gradient_sum(model.bond_break_head) > 0.0
+    if separate_encoder:
+        assert _parameter_gradient_sum(model.proposal_encoder) > 0.0
+
+    model.zero_grad(set_to_none=True)
+    output = model(**inputs)
+    (-output["pred_logprobs"].mean()).backward()
+    assert _parameter_gradient_sum(model.mechanism_head) == 0.0
+    assert _parameter_gradient_sum(model.bond_break_head) == 0.0
+    assert _parameter_gradient_sum(model.precursor_encoder) > 0.0
+    if separate_encoder:
+        assert _parameter_gradient_sum(model.proposal_encoder) == 0.0
+
+
+@pytest.mark.parametrize("with_topology", [False, True])
+def test_smarts_model_rejects_missing_templates(with_topology: bool) -> None:
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, use_smarts_templates=True)
+    static_graph = (
+        MassShatterStaticGraph(
+            chemical_bond_index=batch.chemical_bond_index,
+            atom_batch_indices=batch.batch,
+            atom_ptr=batch.ptr,
+        )
+        if with_topology else None
+    )
+    with pytest.raises(ValueError, match="require static_graph.smarts_templates"):
+        model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0]),
+            spec_nce=th.tensor([25.0]),
+            static_graph=static_graph,
+        )
+
+
 def test_relative_fragment_keep_mask_is_batched_and_map_relative() -> None:
     keep = _relative_fragment_keep_mask(
         th.log(th.tensor([0.6, 0.3, 0.1, 0.8, 0.2])),

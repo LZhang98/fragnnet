@@ -62,7 +62,6 @@ from fragnnet.model.bond_fragment_heads import (
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN
 from fragnnet.utils.formula_utils import (
-    ELECTRON_MASS,
     H_MASS,
     PERIODIC_TABLE,
     PREC_TYPE_TO_CMF_COMP_DIFF,
@@ -1343,17 +1342,11 @@ class MassShatterModel(nn.Module):
         """
         atom_masses = mol_pyg.atom_monoisotopic_masses
         atom_hydrogens = mol_pyg.atom_hydrogen_counts
-        atom_charges = mol_pyg.atom_formal_charges
         atom_numbers = mol_pyg.atom_atomic_numbers
 
-        # Heavy-atom mass plus its implicit/explicit hydrogens, corrected for any formal
-        # charge already present in the precursor; summing over a component's atoms
-        # gives the neutral mass of that fragment.
-        per_atom_neutral_mass = (
-            atom_masses
-            + atom_hydrogens.to(atom_masses) * H_MASS
-            - atom_charges.to(atom_masses) * ELECTRON_MASS
-        )
+        # Sum neutral elemental masses. CRF/CMF deltas below apply the output ion's
+        # electron correction once, irrespective of precursor atom formal charges.
+        per_atom_neutral_mass = atom_masses + atom_hydrogens.to(atom_masses) * H_MASS
         component_masses = atom_masses.new_zeros(num_fragments).index_add(
             0,
             atom_fragment_indices,
@@ -1643,6 +1636,8 @@ class MassShatterModel(nn.Module):
             spec_ace_batch_idxs: Spectrum index per ACE value.
             static_graph: CPU copy of the graph indices kept across Lightning's device
                 transfer, so mask selection only has to move the bond logits back.
+                Must include matched ``smarts_templates`` when SMARTS is enabled;
+                an empty tuple per molecule explicitly represents no matches.
 
         Returns:
             Dictionary with the sparse prediction contract plus diagnostics:
@@ -1653,7 +1648,8 @@ class MassShatterModel(nn.Module):
             - remaining keys: per-spectrum counters and candidate-generation timings.
 
         Raises:
-            ValueError: If ``mol_pyg`` lacks the MASShatter chemistry fields.
+            ValueError: If ``mol_pyg`` lacks the MASShatter chemistry fields or
+                SMARTS is enabled without matched templates.
         """
         required_graph_fields = (
             "chemical_bond_index",
@@ -1765,8 +1761,8 @@ class MassShatterModel(nn.Module):
                     layout["shared_edge_index"],
                     mol_pyg.edge_attr[layout["representative_edge_mask"]],
                 )
+            proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
             if self.ion_mode_proposal_head is not None:
-                proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
                 proposal_context = (
                     context.detach()
                     if detach_proposal_inputs
@@ -1777,6 +1773,7 @@ class MassShatterModel(nn.Module):
                 if detach_proposal_inputs
                 else shared_context
             )
+            mechanism_context = shared_proposal_context[spectrum_to_shared]
             shared_bond_logits = self.bond_break_head(
                 shared_proposal_atom_embeddings,
                 layout["shared_chemical_bond_index"],
@@ -1822,6 +1819,7 @@ class MassShatterModel(nn.Module):
                 if detach_proposal_inputs
                 else context
             )
+            mechanism_context = proposal_context
             bond_logits = self.bond_break_head(
                 proposal_atom_embeddings,
                 mol_pyg.chemical_bond_index,
@@ -1852,11 +1850,12 @@ class MassShatterModel(nn.Module):
         smarts_templates: tuple[tuple[MassShatterTemplate, ...], ...] = tuple(
             () for _ in range(batch_size)
         )
-        if (
-            self.use_smarts_templates
-            and static_graph is not None
-            and static_graph.smarts_templates is not None
-        ):
+        if self.use_smarts_templates:
+            if static_graph is None or static_graph.smarts_templates is None:
+                raise ValueError(
+                    "SMARTS-enabled models require static_graph.smarts_templates; "
+                    "use MassShatterPL with mol_smiles or supply matched templates"
+                )
             smarts_templates = self._eligible_smarts_templates(
                 static_graph.smarts_templates,
                 precursor_type_indices,
@@ -1889,8 +1888,12 @@ class MassShatterModel(nn.Module):
         if self.mechanism_head is None:
             mechanism_log_probabilities = bond_logits.new_zeros(candidates.num_mechanisms)
         else:
+            proposal_bond_embeddings = (
+                proposal_atom_embeddings[mol_pyg.chemical_bond_index[0]]
+                + proposal_atom_embeddings[mol_pyg.chemical_bond_index[1]]
+            ) / 2.0
             mechanism_boundary_embeddings = pool_boundary_bond_embeddings(
-                chemical_bond_embeddings,
+                proposal_bond_embeddings,
                 candidates.mechanism_boundary_bond_indices,
                 candidates.boundary_mechanism_indices,
                 num_components=candidates.num_mechanisms,
@@ -1901,7 +1904,7 @@ class MassShatterModel(nn.Module):
             mechanism_logits = self.mechanism_head(
                 mechanism_boundary_embeddings,
                 candidates.mechanism_rule_indices,
-                context[mechanism_batch_indices],
+                mechanism_context[mechanism_batch_indices],
             )
             mechanism_log_normalizers = _segment_logsumexp(
                 mechanism_logits,

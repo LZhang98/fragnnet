@@ -25,6 +25,7 @@ from fragnnet.pl_model.mass_shatter_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
+from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -1362,6 +1363,39 @@ def test_mass_shatter_transfer_precomputes_smarts_templates_when_enabled() -> No
     templates = transferred["mass_shatter_static_graph"].smarts_templates
     assert templates is not None
     assert any(template.rule_name == "sulfoxide_so_loss" for template in templates[0])
+
+
+def test_smarts_standalone_prediction_matches_lightning_transfer() -> None:
+    model, config = _build_pl(
+        mass_shatter_smarts_templates=True,
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_unique_fragment_target=4,
+        mass_shatter_ranked_mask_budget=8,
+    )
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    params = config["mol_params"]
+    graph = get_mol_graph(
+        Chem.MolFromSmiles(smiles),
+        params["pyg_node_feats"],
+        params["pyg_edge_feats"],
+        params["pyg_pe_embed_k"],
+        True,
+    )
+    batch = {
+        "mol_pyg": Batch.from_data_list([graph]),
+        "mol_smiles": np.asarray([smiles]),
+        "spec_prec_type": th.tensor([model.model.precursor_types.index("[M+H]+")]),
+        "spec_nce": th.tensor([25.0]),
+        "spec_inst_type": th.tensor([0]),
+    }
+    model.eval()
+    with th.no_grad():
+        standalone = model.predict_step(**batch)
+        transferred = model.transfer_batch_to_device(dict(batch), th.device("cpu"), 0)
+        lightning = model.predict_step(**transferred)
+    assert lightning["unique_component_count"].item() >= 9
+    for key in ("pred_mzs", "pred_logprobs", "candidate_mzs_by_cut", "unique_component_count"):
+        th.testing.assert_close(standalone[key], lightning[key])
 
 
 def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
