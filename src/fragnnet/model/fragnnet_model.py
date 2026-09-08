@@ -1271,7 +1271,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             ace = None
             ace_batch_idxs = None
         ce_embed = self.embed_ce(
-            spec_ce, spec_ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs
+            spec_ce, spec_ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs,
+            ce_weights=kwargs.get("spec_ce_weights"),
+            ace_weights=kwargs.get("spec_ace_weights"),
         )
         # get prec value
         prec_embed = self.embed_prec(spec_prec_type)

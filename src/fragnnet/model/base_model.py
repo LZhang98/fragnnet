@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.utils.misc_utils import scatter_reduce
-from fragnnet.utils.spec_utils import transform_ce
+from fragnnet.utils.spec_utils import transform_ce, weighted_mean_by_batch
 
 
 class CEModel:
@@ -184,6 +184,7 @@ class CEModel:
         batch_size: int,
         transform,
         embedder: nn.Module,
+        weights: th.Tensor | None = None,
     ) -> th.Tensor:
         """Embed a single CE tensor using the given transform and embedder.
 
@@ -193,12 +194,17 @@ class CEModel:
             batch_size: Total batch size.
             transform: Transform function to apply before embedding.
             embedder: Embedding module.
+            weights: Optional per-reading weights for merged CE context.
 
         Returns:
             Embedded CE tensor of shape (batch_size, ce_insert_size).
         """
         ce_embed = transform(ce)
         ce_embed = embedder(ce_embed)
+        if weights is not None:
+            if not self.ce_insert_merge:
+                raise ValueError("Weighted CE context requires ce_insert_merge=True")
+            return weighted_mean_by_batch(ce_embed, weights, ce_batch_idxs, batch_size)
         if self.ce_insert_merge:
             ce_embed = scatter_reduce(
                 src=ce_embed,
@@ -216,6 +222,8 @@ class CEModel:
         batch_size: int,
         ace: th.Tensor | None = None,
         ace_batch_idxs: th.Tensor | None = None,
+        ce_weights: th.Tensor | None = None,
+        ace_weights: th.Tensor | None = None,
     ) -> th.Tensor | None:
         """Embed the collision energy values.
 
@@ -228,6 +236,8 @@ class CEModel:
             batch_size: Total batch size.
             ace: ACE tensor (eV). Required when use_ace is True.
             ace_batch_idxs: Batch indices for each ACE value. Required when use_ace is True.
+            ce_weights: Optional NCE reading weights.
+            ace_weights: Optional ACE reading weights.
 
         Returns:
             Embedded CE tensor or None if no insertion location is set ("none").
@@ -238,7 +248,7 @@ class CEModel:
         if self.use_nce:
             embeds.append(
                 self._embed_single_ce(
-                    ce, ce_batch_idxs, batch_size, self.ce_transform, self.ce_embedder
+                    ce, ce_batch_idxs, batch_size, self.ce_transform, self.ce_embedder, ce_weights
                 )
             )
         if self.use_ace:
@@ -247,7 +257,8 @@ class CEModel:
             )
             embeds.append(
                 self._embed_single_ce(
-                    ace, ace_batch_idxs, batch_size, self.ace_transform, self.ce_embedder_ace
+                    ace, ace_batch_idxs, batch_size, self.ace_transform, self.ce_embedder_ace,
+                    ace_weights,
                 )
             )
         if len(embeds) == 1:

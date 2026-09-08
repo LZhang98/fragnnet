@@ -19,6 +19,57 @@ from fragnnet.utils.misc_utils import (
     validate_bin_geometry,
 )
 
+
+def weighted_mean_by_batch(
+    values: th.Tensor,
+    weights: th.Tensor,
+    batch_indices: th.Tensor | None,
+    batch_size: int,
+) -> th.Tensor:
+    """Compute sum(w*x)/sum(w) for each spectrum's CE features.
+
+    Args:
+        values: Reading features with shape (N, D).
+        weights: Finite, nonnegative reading weights with shape (N,).
+        batch_indices: Long spectrum indices (N,), or None for one reading per spectrum.
+        batch_size: Number of spectra; each must have positive total weight.
+
+    Returns:
+        Weighted feature means with shape (batch_size, D).
+
+    Raises:
+        ValueError: If shapes, weights, or spectrum indices are invalid.
+    """
+    if values.ndim != 2 or weights.shape != (values.shape[0],):
+        raise ValueError("CE weights must match the number of reading features")
+    if batch_indices is None:
+        if values.shape[0] != batch_size:
+            raise ValueError("One CE reading per spectrum is required without batch indices")
+        batch_indices = th.arange(batch_size, device=values.device)
+    if batch_indices.shape != weights.shape or batch_indices.dtype != th.long:
+        raise ValueError("CE batch indices must be a matching long vector")
+    weights = weights.to(values)
+    valid_weights = (th.isfinite(weights) & (weights >= 0)).all()
+    valid_indices = ((batch_indices >= 0) & (batch_indices < batch_size)).all()
+    if values.is_cuda or th.compiler.is_compiling():
+        th._assert_async(valid_weights, "CE weights must be finite and nonnegative")
+        th._assert_async(valid_indices, "CE batch indices are out of range")
+    else:
+        if not bool(valid_weights):
+            raise ValueError("CE weights must be finite and nonnegative")
+        if not bool(valid_indices):
+            raise ValueError("CE batch indices are out of range")
+    totals = values.new_zeros(batch_size).index_add(0, batch_indices, weights)
+    if values.is_cuda or th.compiler.is_compiling():
+        th._assert_async((totals > 0).all(), "Each spectrum must have positive total CE weight")
+    elif not bool((totals > 0).all()):
+        raise ValueError("Each spectrum must have positive total CE weight")
+    sums = values.new_zeros(batch_size, values.shape[1]).index_add(
+        0, batch_indices, values * weights.unsqueeze(1)
+    )
+    return sums / totals.unsqueeze(1)
+
+
 _expected_mk_ratio = isotope_utils._expected_mk_ratio
 _parse_adduct_counts = isotope_utils._parse_adduct_counts
 detect_isotope_peaks = isotope_utils.detect_isotope_peaks

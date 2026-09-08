@@ -122,4 +122,16 @@ def get_pl_hparams(ckpt: dict) -> dict:
         Deep copy of hyperparameters dictionary.
     """
     hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+    # Old checkpoints retain first-replicate CE context unless explicitly migrated.
+    if "spec_params" in hyper_parameters:
+        spec_params = hyper_parameters["spec_params"]
+        if "merge_ce_aggregation" not in spec_params:
+            spec_params["merge_ce_aggregation"] = "legacy"
+    # Explicit checkpoint migration: pre-context-input MASShatter weights use the
+    # structural-only GNN width. Fresh configs must declare this key via the template.
+    if (
+        hyper_parameters.get("model_type") == "mass_shatter"
+        and "mass_shatter_context_in_gnn" not in hyper_parameters
+    ):
+        hyper_parameters["mass_shatter_context_in_gnn"] = False
     return hyper_parameters

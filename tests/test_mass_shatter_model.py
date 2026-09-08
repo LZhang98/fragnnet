@@ -77,6 +77,7 @@ def _build_model(
     max_h_transfer: int = 1,
     precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
     fragmentation_modes: tuple[str, ...] = (),
+    context_in_gnn: bool = False,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -89,6 +90,7 @@ def _build_model(
         precursor_normalization="layer",
         precursor_dropout=0.0,
         context_dim=8,
+        context_in_gnn=context_in_gnn,
         metadata_embedding_dim=4,
         head_hidden_dim=12,
         head_dropout=0.0,
@@ -1379,7 +1381,8 @@ def test_selection_only_spectrum_has_no_oos_gate() -> None:
     assert _parameter_gradient_sum(model.charge_head) == 0.0
 
 
-def test_separate_proposal_encoder_isolates_both_objectives() -> None:
+@pytest.mark.parametrize("context_in_gnn", [False, True])
+def test_separate_proposal_encoder_isolates_both_objectives(context_in_gnn: bool) -> None:
     batch = _build_batch(("CCCO",))
     model_kwargs = {
         "max_masks": 5,
@@ -1388,6 +1391,7 @@ def test_separate_proposal_encoder_isolates_both_objectives() -> None:
         "use_base_probability_feature": False,
         "proposal_selection_only": True,
         "separate_proposal_encoder": True,
+        "context_in_gnn": context_in_gnn,
     }
     model_inputs = {
         "mol_pyg": batch,

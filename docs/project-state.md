@@ -69,10 +69,19 @@ now selects the full-metadata, dual-CE MASShatter mask1024 config as the conditi
 the user reports that NCE + ACE + adduct + instrument + mode already helps in existing runs.
 The prepared NCE-only variant is an optional diagnostic outside the next run queue. Two new
 FraGNNet configs complete the existing full-metadata routing pair with output scalers disabled.
-Model code and existing experiments are unchanged. All four passed resolved-diff checks,
-sampler validation, model construction, and synthetic context checks. No runs launched.
-Next: audit retained-row metadata coverage and checkpoint persistence before the matched screen;
-the plan records the within-model controls and remaining scientific checks.
+Follow-up: the user requested context at the merged MASShatter GNN input. The optional
+`mass_shatter_context_in_gnn` path is now implemented, default off with legacy-checkpoint
+migration. A matched full-metadata merged heads-only versus GNN+heads pair is prepared;
+existing experiment configs are unchanged. Validation: 182 passed, 5 skipped, both merged
+configs constructed, intended-only resolved diffs and Ruff passed. No runs launched.
+The [pre-run design audit](findings/masshatter_context_design_audit.md) now confirms homogeneous
+groups, but all selected rows are `[M+H]+`/FT/HCD. It found ACE saturation at 100 eV in 21.42% of
+selected training groups and row-order-dependent ACE selection for same-NCE replicates. Actual
+GINE-EFA forward/backward checks at epochs 15/16 were finite; no quality evaluation ran.
+CE fixes are now implemented: the new pair uses ACE up to 300 eV and order-invariant weighted
+CE aggregation, with both models consuming the weights and legacy behavior preserved. The
+[audit follow-up](findings/masshatter_context_design_audit.md) records regression and source-data
+checks. GNN initialization remains unchanged. Next: a real-data GPU smoke check before training.
 
 FraGNNet formula-support crash follow-up (2026-09-07): W&B runs
 [kvrlaxof](https://wandb.ai/frag-gnn/frag-gnn/runs/kvrlaxof) and

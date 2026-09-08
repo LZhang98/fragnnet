@@ -65,6 +65,7 @@ roadmap. It links the analyses that justify each item.
 | Doc | Result |
 |-----|--------|
 | [masshatter_code_audit.md](findings/masshatter_code_audit.md) | Earlier fixes and pickle API fix implemented; 90 focused tests pass. CPU bfloat16 mixture issue deferred by user. |
+| [masshatter_context_design_audit.md](findings/masshatter_context_design_audit.md) | Merged-context audit and implemented ACE range/weighted aggregation fixes; metadata coverage and deferred initialization suggestion. |
 | [dag_oracle_ceiling_nist20.md](findings/dag_oracle_ceiling_nist20.md) | Baseline d3 DAG ceiling = **0.937 cos_hun** on NIST20 test. Model-free upper bound. |
 | [oracle_recall_wrecall_by_ce.md](findings/oracle_recall_wrecall_by_ce.md) | Coverage ceiling vs. collision energy and adduct. Figures in [figures/](figures/). |
 | [unexplainable_spectra_analysis.md](findings/unexplainable_spectra_analysis.md) | Workflow for spectra the DAG cannot explain, grouped by adduct / molecule / ClassyFire class. |
@@ -83,7 +84,7 @@ roadmap. It links the analyses that justify each item.
 | [sibling_ranking_target_plan.md](plans/sibling_ranking_target_plan.md) | **Current lead.** Coverage gate passed (583,539 targets at margin 0.1); ranking loss on `P(n)` not yet implemented. |
 | [fragment_bond_set_representation.md](plans/fragment_bond_set_representation.md) | All four gates measured, objective corrected to regularization (read §7 first). Next: run the written-but-never-run `cc_atom_dropout` sweep. |
 | [nist_data_quality_plan.md](plans/nist_data_quality_plan.md) | Contaminant-mass and unexplainable-spectra diagnostics; evidence needed before filtering. |
-| [conditioning_refactor_plan.md](plans/conditioning_refactor_plan.md) | Controlled MASShatter full-metadata and FraGNNet context-routing/output-scaler configs prepared; no runs launched. |
+| [conditioning_refactor_plan.md](plans/conditioning_refactor_plan.md) | MASShatter merged routing pair has audited CE-input corrections; FraGNNet routing/scaler screen prepared; no runs launched. |
 | [dag_full_recall_tractability_plan.md](plans/dag_full_recall_tractability_plan.md) | Active hub for DAG pruning, but **mostly negative results** — read the step results before proposing another mechanism. |
 
 ### Proposed, not started

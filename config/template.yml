@@ -39,6 +39,7 @@ spec_params:
   merge_tolerance_common_overlap: True
   merge_normalize_each_spectrum: False
   merge_equal_ce_weight: False
+  merge_ce_aggregation: legacy  # weighted: retain all CE readings with target-matched weights (equal-CE consensus only).
   merge_tolerance_by_inst:
     FT: {rel: 1.0e-5, min_mz: 200.0}
     QTOF: {rel: 2.0e-5, min_mz: 750.0}
@@ -231,6 +232,7 @@ mass_shatter_include_cmf: True
 mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
 mass_shatter_context_dim: 64
+mass_shatter_context_in_gnn: False  # Append spectrum context to atom inputs in both molecular GNNs; incompatible with share_proposal_across_ev.
 mass_shatter_metadata_embedding_dim: 16
 mass_shatter_head_hidden_dim: 256
 mass_shatter_head_dropout: 0.0

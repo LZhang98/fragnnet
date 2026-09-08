@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -346,6 +348,39 @@ def _consensus_group_peaks(
     )
 
 
+def _weighted_merge_ce_context(spec_df: pd.DataFrame, ce_key: str) -> pd.DataFrame:
+    """Preserve CE readings with equal schedule, replicate, and within-row weights.
+
+    Returns one row per group with sorted, coalesced NCE/ACE readings and matching
+    weights. For G schedules, R replicates, and L readings, each reading receives
+    weight 1/(G*R*L). Spectral targets and their grouping are not modified.
+    """
+    records = []
+    source = spec_df.assign(_merge_ce_key=spec_df[ce_key].map(_ce_group_key))
+    for group_id, group in source.groupby("group_id", sort=True):
+        schedules = list(group.groupby("_merge_ce_key", sort=True))
+        record = {"group_id": group_id}
+        for signal in ("nce", "ace"):
+            contributions: dict[float, list[float]] = {}
+            for _, schedule in schedules:
+                for value in schedule[signal]:
+                    readings = _ce_group_key(value)
+                    if not readings:
+                        raise ValueError("Weighted CE aggregation requires nonempty CE readings")
+                    weight = 1.0 / (len(schedules) * len(schedule) * len(readings))
+                    for reading in readings:
+                        contributions.setdefault(reading, []).append(weight)
+            readings = sorted(contributions)
+            record[signal] = readings
+            record[f"{signal}_weights"] = [
+                math.fsum(sorted(contributions[reading])) for reading in readings
+            ]
+        records.append(record)
+    return pd.DataFrame.from_records(
+        records, columns=["group_id", "nce", "nce_weights", "ace", "ace_weights"]
+    )
+
+
 def merge_spec_df(
     spec_df,
     renormalize=False,
@@ -358,10 +393,24 @@ def merge_spec_df(
     require_common_tolerance_overlap=True,
     normalize_each_spectrum=False,
     equal_ce_weight=False,
+    ce_aggregation="legacy",
 ):
-    """Merge spectra by exact m/z or build a tolerance-aware consensus."""
+    """Merge spectra by exact m/z or build a tolerance-aware consensus.
+
+    ``ce_aggregation='legacy'`` preserves historical CE context. ``'weighted'``
+    retains all CE observations and adds ``nce_weights``/``ace_weights`` with
+    equal schedule/replicate weights; it requires equal-CE consensus and does not
+    alter spectral target aggregation.
+    """
     if method not in {"exact_sum", "tolerance_consensus"}:
         raise ValueError(f"Unknown spectrum merge method: {method!r}")
+    if ce_aggregation not in {"legacy", "weighted"}:
+        raise ValueError(f"Unknown CE aggregation: {ce_aggregation!r}")
+    if ce_aggregation == "weighted" and not (
+        keep_ces and method == "tolerance_consensus" and equal_ce_weight
+        and ce_key in {"nce", "ace"}
+    ):
+        raise ValueError("Weighted CE aggregation requires retained CE and equal-CE consensus")
 
     # Legacy exact-m/z behavior remains the default for checkpoint reproducibility.
     def m_peaks_func(peakses):
@@ -407,17 +456,20 @@ def merge_spec_df(
                     result.append(item)
             return result
 
-        ce_source_df = spec_df
-        if method == "tolerance_consensus" and equal_ce_weight:
-            ce_source_df = spec_df.assign(
-                _merge_ce_key=spec_df[ce_key].map(_ce_group_key)
-            ).drop_duplicates(subset=["group_id", "_merge_ce_key"])
-        m_spec_ce_df = (
-            ce_source_df[["group_id", "nce", "ace"]]
-            .groupby("group_id")
-            .agg({"nce": _flatten, "ace": _flatten})
-            .reset_index()
-        )
+        if ce_aggregation == "weighted":
+            m_spec_ce_df = _weighted_merge_ce_context(spec_df, ce_key)
+        else:
+            ce_source_df = spec_df
+            if method == "tolerance_consensus" and equal_ce_weight:
+                ce_source_df = spec_df.assign(
+                    _merge_ce_key=spec_df[ce_key].map(_ce_group_key)
+                ).drop_duplicates(subset=["group_id", "_merge_ce_key"])
+            m_spec_ce_df = (
+                ce_source_df[["group_id", "nce", "ace"]]
+                .groupby("group_id")
+                .agg({"nce": _flatten, "ace": _flatten})
+                .reset_index()
+            )
         m_spec_df = m_spec_df.drop(columns=["nce", "ace"])
         m_spec_df = m_spec_df.merge(m_spec_ce_df, on=["group_id"], how="inner")
     else:

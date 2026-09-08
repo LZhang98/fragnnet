@@ -1,8 +1,8 @@
 # Data Mapping Definitions
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2025-12-10
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-08
 >
-> Batch dictionary schema. Oldest doc here — verify against `base_dataset.py` before relying on it.
+> Weighted CE input contract updated; remaining historical schema should be verified against code.
 
 ## Input Batch Dictionary Reference
 
@@ -20,6 +20,20 @@ batched_mol_frag = {
     "frag_formula_peak_sizes": frag_formula_peak_sizes, # Tensor containing the total number of peaks (isotopes) for each molecule
 }
 ```
+
+## Optional weighted CE inputs
+
+With `spec_params.merge_ce_aggregation: weighted`, merged batches include one-dimensional
+`spec_nce_weights` and `spec_ace_weights`, aligned with the flattened `spec_nce` and `spec_ace`
+readings and their respective batch indices. `spec_ce_weights` aliases the configured primary
+CE signal's weights. Each spectrum has unit total weight separately for NCE and ACE.
+
+The merger weights primary-CE schedules equally, then their replicates equally, then readings
+within each row equally. Both models use these weights when pooling CE embeddings. Collated
+CE statistics use weighted mean and standard deviation over valid readings; missing values keep
+the existing missing-token semantics. Legacy batches omit weight fields and retain mean pooling.
+See the [CE correction record](../findings/masshatter_context_design_audit.md) for constraints
+and compatibility behavior.
 
 ## Output Dictionary Reference
 

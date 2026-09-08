@@ -69,12 +69,14 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
+from fragnnet.utils.spec_utils import weighted_mean_by_batch
 
 
 def _mean_values_by_batch(
     values: th.Tensor,
     batch_indices: th.Tensor | None,
     batch_size: int,
+    weights: th.Tensor | None = None,
 ) -> th.Tensor:
     """Average per-spectrum collision-energy values into one value per spectrum.
 
@@ -88,6 +90,7 @@ def _mean_values_by_batch(
         batch_indices: Spectrum index per reading, shape ``(num_values,)``. None means
             the values are already one-per-spectrum and are returned unchanged.
         batch_size: Number of spectra in the batch.
+        weights: Optional reading weights for merged context.
 
     Returns:
         Mean CE value per spectrum, shape ``(batch_size,)``.
@@ -96,6 +99,8 @@ def _mean_values_by_batch(
         ValueError: If the shapes/dtypes disagree, or a spectrum has no CE value.
     """
     values = values.reshape(-1)
+    if weights is not None:
+        return weighted_mean_by_batch(values.unsqueeze(1), weights, batch_indices, batch_size)[:, 0]
     if batch_indices is None:
         if values.shape[0] != batch_size:
             raise ValueError("one CE value per spectrum is required without batch indices")
@@ -609,6 +614,7 @@ class MassShatterContextEncoder(nn.Module):
         batch_size: int,
         max_value: float,
         embedding: nn.Module,
+        weights: th.Tensor | None = None,
     ) -> th.Tensor:
         """Embed each CE reading, then mean-pool readings by spectrum."""
         values = values.reshape(-1)
@@ -624,6 +630,8 @@ class MassShatterContextEncoder(nn.Module):
         upper_bound = int(max_value) - int(self.ce_insert_type == "embed_clamped")
         embedding_indices = values.clamp(min=-1, max=upper_bound).round().long().unsqueeze(1)
         embedded_values = embedding(embedding_indices)
+        if weights is not None:
+            return weighted_mean_by_batch(embedded_values, weights, batch_indices, batch_size)
         sums = embedded_values.new_zeros(batch_size, self.ce_insert_size).index_add(
             0,
             batch_indices,
@@ -652,6 +660,8 @@ class MassShatterContextEncoder(nn.Module):
         ace: th.Tensor | None,
         ace_batch_indices: th.Tensor | None,
         include_collision_energy: bool = True,
+        nce_weights: th.Tensor | None = None,
+        ace_weights: th.Tensor | None = None,
     ) -> th.Tensor:
         """Return one conditioning vector per spectrum.
 
@@ -668,6 +678,8 @@ class MassShatterContextEncoder(nn.Module):
             ace: Absolute collision energies, ragged over spectra.
             ace_batch_indices: Spectrum index per ACE value, or None when there is
                 exactly one value per spectrum.
+            nce_weights: Optional per-reading NCE weights.
+            ace_weights: Optional per-reading ACE weights.
 
         Returns:
             Context vectors of shape ``(batch_size, context_dim)``.
@@ -696,7 +708,7 @@ class MassShatterContextEncoder(nn.Module):
             elif nce is None:
                 raise ValueError("NCE values are required by the configured context")
             elif self.nce_embedding is None:
-                mean_nce = _mean_values_by_batch(nce, nce_batch_indices, batch_size)
+                mean_nce = _mean_values_by_batch(nce, nce_batch_indices, batch_size, nce_weights)
                 features.append(((mean_nce - self.nce_mean) / self.nce_std).unsqueeze(1))
             else:
                 features.append(
@@ -706,6 +718,7 @@ class MassShatterContextEncoder(nn.Module):
                         batch_size,
                         self.nce_max,
                         self.nce_embedding,
+                        nce_weights,
                     )
                 )
         if self.use_ace:
@@ -715,7 +728,7 @@ class MassShatterContextEncoder(nn.Module):
             elif ace is None:
                 raise ValueError("ACE values are required by the configured context")
             elif self.ace_embedding is None:
-                mean_ace = _mean_values_by_batch(ace, ace_batch_indices, batch_size)
+                mean_ace = _mean_values_by_batch(ace, ace_batch_indices, batch_size, ace_weights)
                 features.append(((mean_ace - self.ace_mean) / self.ace_std).unsqueeze(1))
             else:
                 features.append(
@@ -725,6 +738,7 @@ class MassShatterContextEncoder(nn.Module):
                         batch_size,
                         self.ace_max,
                         self.ace_embedding,
+                        ace_weights,
                     )
                 )
         return self.projector(th.cat(features, dim=1))
@@ -825,6 +839,7 @@ class MassShatterModel(nn.Module):
         include_cmf: bool,
         charge_pooling: str,
         use_smarts_templates: bool,
+        context_in_gnn: bool = False,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -839,6 +854,8 @@ class MassShatterModel(nn.Module):
             precursor_normalization: Normalization used inside the GNN.
             precursor_dropout: Dropout inside the GNN.
             context_dim: Width of the per-spectrum conditioning vector.
+            context_in_gnn: Append context to each atom's input in the precursor and
+                optional proposal GNN. Disabled preserves legacy parameter shapes.
             metadata_embedding_dim: Width of each metadata embedding.
             head_hidden_dim: Hidden width of the bond and charge heads.
             head_dropout: Dropout inside the bond and charge heads.
@@ -1059,6 +1076,9 @@ class MassShatterModel(nn.Module):
         self.proposal_input_gradients_enabled = False
         self.separate_proposal_encoder = separate_proposal_encoder
         self.share_proposal_across_ev = share_proposal_across_ev
+        if context_in_gnn and share_proposal_across_ev:
+            raise ValueError("context_in_gnn is incompatible with share_proposal_across_ev")
+        self.context_in_gnn = context_in_gnn
         self.ion_mode_proposal_binary_logits = ion_mode_proposal_binary_logits
         self.min_ion_mode_relative_probability = min_ion_mode_relative_probability
         self.ion_h_support_binary_logits = ion_h_support_binary_logits
@@ -1078,7 +1098,7 @@ class MassShatterModel(nn.Module):
         self.num_h_shifts = 2 * max_h_transfer + 1
 
         self.precursor_encoder = GNN(
-            node_feats_size=node_feature_dim,
+            node_feats_size=node_feature_dim + (context_dim if context_in_gnn else 0),
             edge_feats_size=edge_feature_dim,
             hidden_size=precursor_hidden_dim,
             num_layers=precursor_num_layers,
@@ -1089,7 +1109,7 @@ class MassShatterModel(nn.Module):
         )
         self.proposal_encoder = (
             GNN(
-                node_feats_size=node_feature_dim,
+                node_feats_size=node_feature_dim + (context_dim if context_in_gnn else 0),
                 edge_feats_size=edge_feature_dim,
                 hidden_size=precursor_hidden_dim,
                 num_layers=precursor_num_layers,
@@ -1617,6 +1637,8 @@ class MassShatterModel(nn.Module):
         spec_nce_batch_idxs: th.Tensor | None = None,
         spec_ace: th.Tensor | None = None,
         spec_ace_batch_idxs: th.Tensor | None = None,
+        spec_nce_weights: th.Tensor | None = None,
+        spec_ace_weights: th.Tensor | None = None,
         static_graph: MassShatterStaticGraph | None = None,
         proposal_group_ids: th.Tensor | None = None,
     ) -> dict[str, th.Tensor]:
@@ -1634,6 +1656,8 @@ class MassShatterModel(nn.Module):
             spec_nce_batch_idxs: Spectrum index per NCE value.
             spec_ace: Absolute collision energies, ragged over spectra.
             spec_ace_batch_idxs: Spectrum index per ACE value.
+            spec_nce_weights: Optional per-reading NCE weights.
+            spec_ace_weights: Optional per-reading ACE weights.
             static_graph: CPU copy of the graph indices kept across Lightning's device
                 transfer, so mask selection only has to move the bond logits back.
                 Must include matched ``smarts_templates`` when SMARTS is enabled;
@@ -1678,9 +1702,16 @@ class MassShatterModel(nn.Module):
             nce_batch_indices=spec_nce_batch_idxs,
             ace=spec_ace,
             ace_batch_indices=spec_ace_batch_idxs,
+            nce_weights=spec_nce_weights,
+            ace_weights=spec_ace_weights,
         )
 
         # 1. Encode each intact precursor once and score every chemical bond.
+        atom_inputs = (
+            th.cat((mol_pyg.x, context[mol_pyg.batch]), dim=1)
+            if self.context_in_gnn
+            else mol_pyg.x
+        )
         layout = None
         if self.share_proposal_across_ev:
             if proposal_group_ids is None:
@@ -1696,7 +1727,7 @@ class MassShatterModel(nn.Module):
             atom_embeddings = shared_atom_embeddings[layout["atom_to_shared"]]
         else:
             atom_embeddings = self.precursor_encoder(
-                mol_pyg.x,
+                atom_inputs,
                 mol_pyg.batch,
                 mol_pyg.edge_index,
                 mol_pyg.edge_attr,
@@ -1808,8 +1839,21 @@ class MassShatterModel(nn.Module):
                     else atom_embeddings
                 )
             else:
+                # Keep proposal-only supervision from entering the shared context
+                # encoder when the existing proposal input routing is detached.
+                proposal_atom_inputs = (
+                    th.cat(
+                        (
+                            mol_pyg.x,
+                            (context.detach() if detach_proposal_inputs else context)[mol_pyg.batch],
+                        ),
+                        dim=1,
+                    )
+                    if self.context_in_gnn
+                    else mol_pyg.x
+                )
                 proposal_atom_embeddings = self.proposal_encoder(
-                    mol_pyg.x,
+                    proposal_atom_inputs,
                     mol_pyg.batch,
                     mol_pyg.edge_index,
                     mol_pyg.edge_attr,

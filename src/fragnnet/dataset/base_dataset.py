@@ -26,21 +26,35 @@ from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
 
 
-def _ce_list_to_stats(t: th.Tensor) -> th.Tensor:
+def _ce_list_to_stats(t: th.Tensor, weights: th.Tensor | None = None) -> th.Tensor:
     """Reduce one sample's CE list to (mean_raw, std_raw, valid) as shape (1, 3).
 
     Args:
         t: 1-D tensor of CE values for one sample; -1 means missing.
+        weights: Optional reading weights, normalized over valid readings for moments.
 
     Returns:
         Tensor of shape (1, 3): columns are (mean, std, valid_flag).
         All zeros when no valid CE is present.
     """
-    valid = t[t >= 0].float()
+    valid_mask = t >= 0
+    if weights is not None:
+        if weights.shape != t.shape or not bool(
+            (th.isfinite(weights) & (weights >= 0)).all()
+        ):
+            raise ValueError("CE statistics require matching finite nonnegative weights")
+        valid_mask = valid_mask & (weights > 0)
+    valid = t[valid_mask].float()
     if len(valid) == 0:
         return th.zeros(1, 3, dtype=th.float32)
-    mean = valid.mean()
-    std = (valid - mean).pow(2).mean().sqrt()
+    if weights is None:
+        mean = valid.mean()
+        std = (valid - mean).pow(2).mean().sqrt()
+    else:
+        valid_weights = weights[valid_mask].float()
+        valid_weights = valid_weights / valid_weights.sum()
+        mean = (valid * valid_weights).sum()
+        std = ((valid - mean).pow(2) * valid_weights).sum().sqrt()
     return th.stack([mean, std, th.ones(1, device=t.device)[0]], dim=0).unsqueeze(0)
 
 
@@ -451,6 +465,7 @@ class BaseDataset(Dataset):
                 "merge_tolerance_common_overlap",
                 "merge_normalize_each_spectrum",
                 "merge_equal_ce_weight",
+                "merge_ce_aggregation",
             }
             missing_merge_params = required_merge_params.difference(spec_params)
             if missing_merge_params:
@@ -468,6 +483,7 @@ class BaseDataset(Dataset):
                 require_common_tolerance_overlap=(spec_params["merge_tolerance_common_overlap"]),
                 normalize_each_spectrum=spec_params["merge_normalize_each_spectrum"],
                 equal_ce_weight=spec_params["merge_equal_ce_weight"],
+                ce_aggregation=spec_params["merge_ce_aggregation"],
             )
             id_key = "group_id"
         else:
@@ -883,6 +899,12 @@ class BaseDataset(Dataset):
             assert isinstance(ace_val, list), type(ace_val)
             spec_data["spec_nce"] = th.tensor(nce_val, dtype=th.float)
             spec_data["spec_ace"] = th.tensor(ace_val, dtype=th.float)
+            if "nce_weights" in spec_entry:
+                for signal in ("nce", "ace"):
+                    spec_data[f"spec_{signal}_weights"] = th.tensor(
+                        spec_entry[f"{signal}_weights"], dtype=th.float
+                    )
+                spec_data["spec_ce_weights"] = spec_data[f"spec_{self.ce_key}_weights"]
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
             prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
@@ -1048,7 +1070,11 @@ class BaseDataset(Dataset):
                 # Pre-reduce to (mean, std, valid) stats for CEScaler — no scatter in model.
                 # Each sample contributes a (1, 3) tensor; _standard_collate cats to (B, 3).
                 stats_key = f"{_ce_key}_stats"
-                collate_data[stats_key] = [_ce_list_to_stats(t) for t in collate_data[_ce_key]]
+                reading_weights = collate_data.get(f"{_ce_key}_weights")
+                collate_data[stats_key] = [
+                    _ce_list_to_stats(t, None if reading_weights is None else reading_weights[i])
+                    for i, t in enumerate(collate_data[_ce_key])
+                ]
                 keys.append(stats_key)
                 # Keep raw concat + batch_idxs for _embed_single_ce (averages embeddings).
                 _ces, _, _batch_idxs = batch_func(

@@ -840,6 +840,7 @@ class MassShatterPL(SpectrumPL):
             precursor_normalization=self.hparams.mol_normalization,
             precursor_dropout=self.hparams.mol_dropout,
             context_dim=self.hparams.mass_shatter_context_dim,
+            context_in_gnn=self.hparams.mass_shatter_context_in_gnn,
             metadata_embedding_dim=self.hparams.mass_shatter_metadata_embedding_dim,
             head_hidden_dim=self.hparams.mass_shatter_head_hidden_dim,
             head_dropout=self.hparams.mass_shatter_head_dropout,
@@ -1920,6 +1921,8 @@ class MassShatterPL(SpectrumPL):
             spec_nce_batch_idxs=batch_kwargs.get("spec_nce_batch_idxs"),
             spec_ace=batch_kwargs.get("spec_ace"),
             spec_ace_batch_idxs=batch_kwargs.get("spec_ace_batch_idxs"),
+            spec_nce_weights=batch_kwargs.get("spec_nce_weights"),
+            spec_ace_weights=batch_kwargs.get("spec_ace_weights"),
             static_graph=static_graph,
             proposal_group_ids=(
                 batch_kwargs.get("group_id")
