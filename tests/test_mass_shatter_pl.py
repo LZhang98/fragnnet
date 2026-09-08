@@ -1,16 +1,21 @@
 """Integration tests for MASShatter's SpectrumPL training wrapper."""
 
+import importlib.util
 import math
+import runpy
+import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch as th
 import yaml
 from rdkit import Chem
 from torch_geometric.data import Batch, Data
 
-from fragnnet.dataset import SpecMolDataset
+import fragnnet.runner as runner
+from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.model.nn_blocks import GINEGraphormer
@@ -25,6 +30,7 @@ from fragnnet.pl_model.mass_shatter_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
+from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
@@ -1396,6 +1402,198 @@ def test_smarts_standalone_prediction_matches_lightning_transfer() -> None:
     assert lightning["unique_component_count"].item() >= 9
     for key in ("pred_mzs", "pred_logprobs", "candidate_mzs_by_cut", "unique_component_count"):
         th.testing.assert_close(standalone[key], lightning[key])
+
+
+@pytest.mark.parametrize("output_mode", ["probability", "independent"])
+def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str) -> None:
+    model, config = _build_pl(
+        mass_shatter_intensity_output=output_mode,
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        loss_type="cosine_distance",
+        ints_transform="sqrt",
+    )
+    params = config["mol_params"]
+    graph = get_mol_graph(
+        Chem.MolFromSmiles("CCO"),
+        params["pyg_node_feats"],
+        params["pyg_edge_feats"],
+        params["pyg_pe_embed_k"],
+        True,
+    )
+    batches = [
+        {
+            "mol_pyg": Batch.from_data_list([graph.clone()]),
+            "spec_prec_type": th.tensor([0]),
+            "spec_inst_type": th.tensor([0]),
+            "spec_nce": th.tensor([energy]),
+        }
+        for energy in (25.0, 35.0)
+    ]
+    model.eval()
+    with th.no_grad():
+        expected = [model.inference_step(batch) for batch in batches]
+    output = script_utils.run_inference_pkl(
+        model, batches, th.device("cpu"),
+        evaluate=False, output_set={"pred_mzs", "pred_ints"},
+    )
+    # These values have already been untransformed and normalized by inference_step.
+    # A second inverse sqrt transform would change their values and scale.
+    th.testing.assert_close(output["pred_ints"], th.cat([x["pred_ints"] for x in expected]))
+    th.testing.assert_close(output["pred_mzs"], th.cat([x["pred_mzs"] for x in expected]))
+    th.testing.assert_close(
+        output["pred_batch_idxs"],
+        th.cat([x["pred_batch_idxs"] + index for index, x in enumerate(expected)]),
+    )
+
+
+@pytest.mark.parametrize("output_mode", ["probability", "independent"])
+@pytest.mark.parametrize("existing_dag_directory", [False, True])
+def test_mass_shatter_cli_exports_without_dags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_mode: str,
+    existing_dag_directory: bool,
+) -> None:
+    model, config = _build_pl(
+        mass_shatter_intensity_output=output_mode,
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        loss_type="cosine_distance",
+        ints_transform="sqrt",
+        auxiliary_scores=[],
+    )
+    smiles = ["CCO", "CO"]
+    params = config["mol_params"]
+    graphs = [
+        get_mol_graph(
+            Chem.MolFromSmiles(s),
+            params["pyg_node_feats"],
+            params["pyg_edge_feats"],
+            params["pyg_pe_embed_k"],
+            True,
+        )
+        for s in smiles
+    ]
+    batch = {
+        "mol_pyg": Batch.from_data_list(graphs),
+        "mol_smiles": smiles,
+        "mol_id": th.tensor([11, 22]),
+        "spec_unique_id": th.tensor([101, 102]),
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_inst_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([25.0, 35.0]),
+        "batch_size": th.tensor(2),
+    }
+    model.eval()
+    with th.no_grad():
+        prediction = model.predict_step(**batch)
+    weights = (
+        prediction["pred_intensities"]
+        if output_mode == "independent"
+        else prediction["pred_logprobs"].exp()
+    )
+    mol_path, spec_path = tmp_path / "mol.pkl", tmp_path / "spec.pkl"
+    pd.DataFrame({"mol_id": [11, 22]}).to_pickle(mol_path)
+    pd.DataFrame({"mol_id": [11, 22], "spec_id": [101, 102]}).to_pickle(spec_path)
+    dag_dir = tmp_path / "unused_dags"
+    if existing_dag_directory:
+        dag_dir.mkdir()
+    config["frag_dp"] = str(dag_dir)
+
+    def dataset_init(self, **kwargs):
+        assert type(self) is SpecMolDataset
+        assert kwargs["mol_fp"]["mol_id"].tolist() == [11, 22]
+        assert kwargs["spec_fp"]["spec_id"].tolist() == [101, 102]
+        self.spec_df = kwargs["spec_fp"]
+
+    # Isolate file/config loading and dataset preprocessing; execute the actual CLI,
+    # model prediction, intensity conversion, tabular iterator, and chunk writer.
+    monkeypatch.setattr(SpecMolDataset, "__init__", dataset_init)
+    monkeypatch.setattr(runner, "init_dataloader", lambda *_args: [batch])
+    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
+    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
+    monkeypatch.setattr(script_utils, "init_model_from_ckpt", lambda *_args: model)
+    monkeypatch.setattr(script_utils, "setup_device", lambda *_args: th.device("cpu"))
+    output_dir = tmp_path / "predictions"
+    save_format = "parquet" if existing_dag_directory else "pkl"
+    if save_format == "parquet" and not any(
+        importlib.util.find_spec(engine) is not None for engine in ("pyarrow", "fastparquet")
+    ):
+        def parquet_boundary(frame, path, index):
+            assert not index
+            assert isinstance(frame.iloc[0]["mol_id"], (int, np.integer))
+            assert isinstance(frame.iloc[0]["pred_mzs"], list)
+            assert isinstance(frame.iloc[0]["pred_ints"], list)
+            frame.to_pickle(path)
+
+        # Check the exact serializer boundary when the optional codec is unavailable.
+        monkeypatch.setattr(pd.DataFrame, "to_parquet", parquet_boundary)
+        monkeypatch.setattr(pd, "read_parquet", pd.read_pickle)
+    monkeypatch.setattr(
+        sys, "argv", [
+            "run_inference.py", "--mol_fp", str(mol_path), "--spec_fp", str(spec_path),
+            "--save_dp", str(output_dir), "--save_format", save_format, "--min_intensity", "0",
+            "--save_chunk_size", "1" if existing_dag_directory else "10000",
+        ],
+    )
+    runpy.run_path(str(Path(__file__).parents[1] / "scripts/run_inference.py"), run_name="__main__")
+    saved_path = output_dir / f"predictions_chunk_0.{save_format}"
+    saved = pd.read_parquet(saved_path) if save_format == "parquet" else pd.read_pickle(saved_path)
+    assert saved["spec_id"].tolist() == [101, 102]
+    for index in range(2):
+        mask = prediction["pred_batch_idxs"] == index
+        th.testing.assert_close(
+            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=prediction["pred_mzs"].dtype),
+            prediction["pred_mzs"][mask],
+        )
+        # sqrt-transformed scores return to a per-spectrum base-peak scale of 1000.
+        expected = (weights[mask] / weights[mask].max()).square() * 1000.0
+        th.testing.assert_close(
+            th.as_tensor(saved.iloc[index]["pred_ints"], dtype=expected.dtype),
+            expected, rtol=1e-5, atol=1e-4,
+        )
+
+
+@pytest.mark.parametrize("model_type", ["frag_gnn", "fragnnet"])
+def test_inference_cli_preserves_dag_model_filtering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model_type: str,
+) -> None:
+    _, config = _build_pl()
+    config["model_type"] = model_type
+    mol_path, spec_path = tmp_path / "mol.pkl", tmp_path / "spec.pkl"
+    pd.DataFrame({"mol_id": [11, 22]}).to_pickle(mol_path)
+    pd.DataFrame({"mol_id": [11, 22], "spec_id": [101, 102]}).to_pickle(spec_path)
+    dag_dir = tmp_path / "dags"
+    dag_dir.mkdir()
+    (dag_dir / "11.hdf5").touch()
+
+    class DatasetChecked(Exception):
+        pass
+
+    def dataset_init(self, **kwargs):
+        assert type(self) is SpecMolFragDataset
+        assert kwargs["mol_fp"]["mol_id"].tolist() == [11]
+        assert kwargs["spec_fp"]["spec_id"].tolist() == [101]
+        raise DatasetChecked
+
+    monkeypatch.setattr(SpecMolFragDataset, "__init__", dataset_init)
+    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
+    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
+    monkeypatch.setattr(
+        sys, "argv", [
+            "run_inference.py", "--mol_fp", str(mol_path), "--spec_fp", str(spec_path),
+            "--save_dp", str(tmp_path / "predictions"), "--frag_dp", str(dag_dir),
+        ],
+    )
+    with pytest.raises(DatasetChecked):
+        runpy.run_path(
+            str(Path(__file__).parents[1] / "scripts/run_inference.py"), run_name="__main__",
+        )
 
 
 def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(

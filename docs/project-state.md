@@ -23,9 +23,24 @@ scientific evaluation, or full test suite was run for this documentation change.
 
 - [MASShatter code audit](findings/masshatter_code_audit.md) records three reproduced
   issues at `0b5ad3f4`: standalone SMARTS inference, charged-component masses, and
-  SMARTS proposal gradient isolation. All three fixes and regression tests are now in
-  the working tree: 718 passed, 7 skipped; CPU only. Review the linked compatibility
+  SMARTS proposal gradient isolation. All three fixes and regression tests are present
+  at `77fdbea2`. A continued audit reproduced two additional inference blockers:
+  unconditional DAG-file filtering/dataset selection in the CLI and independent-output
+  tabular export expecting `pred_logprobs`. Those fixes and the mass-feasibility
+  alignment are now in the working tree, along with CLI directory/row-layout fixes.
+  Validation: 781 passed, 8 skipped; six CLI regressions passed after adding Parquet
+  serializer-boundary coverage. Real Parquet serialization was not verified because
+  its optional engine is unavailable; checkpoint loading and dataset preprocessing
+  are mocked in the CLI tests. Next check: a target-environment real-checkpoint CLI
+  smoke run. Review the linked compatibility
   notes and re-evaluate affected checkpoints before comparing experiment metrics.
+  A third audit pass found two remaining API issues: prediction-only
+  `run_inference_pkl` rejects its existing `pred_ints` output, and direct CPU bfloat16
+  calls with multiple proposal mixtures fail the normalization check. Standard CPU
+  runner fallback avoids the latter. The pickle API fix is now in the working tree:
+  90 tests passed, including real-model prediction-only regressions for both output
+  modes and batch offsets. The bfloat16 issue is deferred by user because it is not
+  used in the current workflow. Separate failure reproductions remain in the audit.
   The checkout was clean at audit start, so the
   uncommitted-work description in the workflow-adoption handoff above is historical.
 

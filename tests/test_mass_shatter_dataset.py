@@ -16,6 +16,7 @@ from fragnnet.utils.formula_utils import mass_shatter_has_valid_ion
         ("CC", "[M-H2O+H]+", True, True),
         ("CCO", "[M-H2O+H]+", False, True),
         ("C.[O]", "[M-H2O+H]+", False, False),
+        ("[H+]", "[M-H]-", False, True),
     ],
 )
 def test_precursor_chemical_support_filter(

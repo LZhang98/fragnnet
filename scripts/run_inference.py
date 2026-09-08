@@ -6,6 +6,7 @@ import time
 from typing import cast
 
 import pandas as pd
+import torch as th
 from tqdm import tqdm
 
 from fragnnet.dataset import SpecMolFragDataset
@@ -24,6 +25,7 @@ from fragnnet.utils.script_utils import (
     run_inference_tabular_iter,
     setup_device,
 )
+from fragnnet.utils.setup_utils import get_dataset_cls
 
 if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
@@ -215,6 +217,7 @@ if __name__ == "__main__":
     start_chunk_idx = 0
 
     print(f"> Checking for existing predictions in {args.save_dp}...")
+    os.makedirs(args.save_dp, exist_ok=True)
     existing_files = [
         f
         for f in os.listdir(args.save_dp)
@@ -279,6 +282,11 @@ if __name__ == "__main__":
 
     # Fragment graphs (DAGs) are computationally expensive to generate
     # Options: 1) Use pre-computed fragments, 2) Generate in temporary directory
+    # Preserve the CLI's legacy FraGNNet spelling while using canonical dispatch.
+    ds_cls = get_dataset_cls(
+        "frag_gnn" if config_d["model_type"] == "fragnnet" else config_d["model_type"]
+    )
+    requires_dags = issubclass(ds_cls, SpecMolFragDataset)
     temp_frag_dir = None
     if args.frag_dp is not None:
         # Use pre-computed fragments
@@ -288,10 +296,10 @@ if __name__ == "__main__":
         # Auto-generate fragments in temporary directory (only for FraGNNet models)
         temp_frag_dir = (
             tempfile.TemporaryDirectory()
-            if config_d["model_type"] in ["frag_gnn", "fragnnet"]
+            if requires_dags
             else None
         )
-        if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
+        if requires_dags:
             if temp_frag_dir is None:
                 raise RuntimeError("Temporary fragment directory could not be created")
             print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
@@ -353,13 +361,14 @@ if __name__ == "__main__":
             print(f"> Fragment generation failures: {failed_frag_count}")
 
     # Filter input data to only include molecules with successfully generated fragments
-    print(">> Filtering molecules without fragments...")
-    all_frags = {f.split(".")[0] for f in os.listdir(config_d["frag_dp"])}
-    print(f">> Found {len(all_frags)} fragment files")
-    mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
-    print(f"> Molecules after filtering: {len(mol_df)}")
-    spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
-    print(f"> Spectra after filtering: {len(spec_df)}")
+    if requires_dags:
+        print(">> Filtering molecules without fragments...")
+        all_frags = {f.split(".")[0] for f in os.listdir(config_d["frag_dp"])}
+        print(f">> Found {len(all_frags)} fragment files")
+        mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
+        print(f"> Molecules after filtering: {len(mol_df)}")
+        spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
+        print(f"> Spectra after filtering: {len(spec_df)}")
 
     # Set dataframes in config for dataset initialization
     config_d["mol_fp"] = mol_df
@@ -367,7 +376,6 @@ if __name__ == "__main__":
 
     # Initialize Dataset and DataLoader
     print(">>> Initializing dataset...")
-    ds_cls = SpecMolFragDataset
     ds = ds_cls(split="predict_only", **config_d)
     dl = init_dataloader(ds, config_d)
     print(f">>> Dataset size: {len(ds)} spectra")
@@ -376,9 +384,6 @@ if __name__ == "__main__":
     model = init_model_from_ckpt(ckpt_fp, config_d, device)
     print(f">>> Model loaded and ready on device: {device}")
     print(f">>> Model in eval mode: {not model.training}")
-
-    # Create output directory for predictions
-    os.makedirs(args.save_dp, exist_ok=True)
 
     # Run inference with periodic saving
     print(">>> Running inference and saving predictions...")
@@ -435,8 +440,16 @@ if __name__ == "__main__":
             output_set=output_set,
         )
     ):
-        preds_l.extend(batch_rows)
-        total_preds += len(batch_rows)
+        # The iterator returns one list per column; the chunk writer needs rows.
+        spectrum_rows = list(zip(*batch_rows))
+        if args.save_format == "parquet":
+            # Arrow columns need scalar/list values rather than PyTorch objects.
+            spectrum_rows = [
+                [value.tolist() if isinstance(value, th.Tensor) else value for value in row]
+                for row in spectrum_rows
+            ]
+        preds_l.extend(spectrum_rows)
+        total_preds += len(spectrum_rows)
 
         # Save periodically every save_interval batches
         if (batch_idx + 1) % save_interval_batches == 0:

@@ -943,9 +943,9 @@ def run_inference_pkl(
                 # output columns. The raw model output uses log-prob keys
                 # (e.g. `pred_node_logprobs`), while the token vocabulary uses
                 # probability names (e.g. `pred_node_probs`). Probability tokens are
-                # exp() of their logprob key; `pred_ints` also applies the intensity
-                # untransform (mirrors `process_batch_to_tabular_row`). Index variables
-                # are always retained so the flat concatenated columns can be regrouped
+                # exp() of their logprob key; `pred_ints` applies the intensity
+                # untransform only when inference_step has not already produced it.
+                # Index variables are always retained so concatenated columns can be regrouped
                 # per-spectrum / per-node downstream.
                 all_idx_vars = set(
                     BATCH_IDX_VARS + NODE_IDX_VARS + FORMULA_IDX_VARS + NB_NODE_IDX_VARS
@@ -953,12 +953,17 @@ def run_inference_pkl(
                 derived = {k: b_output[k] for k in all_idx_vars if b_output.get(k) is not None}
                 for token in output_set:
                     if token == "pred_ints":
-                        if b_output.get("pred_logprobs") is None:
-                            raise KeyError("output token 'pred_ints' needs model output "
-                                           "'pred_logprobs', which is absent/None")
-                        derived["pred_ints"] = model.ints_untransform_func(
-                            th.exp(b_output["pred_logprobs"]), b_output["pred_batch_idxs"]
-                        )
+                        if b_output.get("pred_ints") is not None:
+                            derived["pred_ints"] = b_output["pred_ints"]
+                        elif b_output.get("pred_logprobs") is not None:
+                            derived["pred_ints"] = model.ints_untransform_func(
+                                th.exp(b_output["pred_logprobs"]), b_output["pred_batch_idxs"]
+                            )
+                        else:
+                            raise KeyError(
+                                "output token 'pred_ints' needs model output "
+                                "'pred_ints' or 'pred_logprobs', which are absent/None"
+                            )
                     elif token in _PROB_TOKEN_TO_LOGPROB_KEY:
                         key = _PROB_TOKEN_TO_LOGPROB_KEY[token]
                         if b_output.get(key) is None:
@@ -1508,9 +1513,14 @@ def process_batch_to_tabular_row(
     # split peaks into batchs
     pred_batch_idxs_batched = batch_result["pred_batch_idxs"]
     pred_mzs_batched = batch_result["pred_mzs"]
-    pred_ints_batched = model.ints_untransform_func(
-        th.exp(batch_result["pred_logprobs"]), pred_batch_idxs_batched
-    )
+    pred_logprobs = batch_result.get("pred_logprobs")
+    pred_intensities = batch_result.get("pred_intensities")
+    if (pred_logprobs is None) == (pred_intensities is None):
+        raise ValueError(
+            "model output must contain exactly one of pred_logprobs or pred_intensities"
+        )
+    pred_weights = pred_logprobs.exp() if pred_logprobs is not None else pred_intensities
+    pred_ints_batched = model.ints_untransform_func(pred_weights, pred_batch_idxs_batched)
 
     # prepare
     pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None

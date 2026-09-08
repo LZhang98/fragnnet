@@ -148,7 +148,7 @@ def mass_shatter_has_valid_ion(
         mass = sum(
             PERIODIC_TABLE.GetMostCommonIsotopeMass(element) * count
             for element, count in counts.items()
-        ) - ELECTRON_MASS * sum(atom.GetFormalCharge() for atom in component.GetAtoms())
+        )
         for delta, mass_delta, shift in channels:
             if (
                 counts["H"] + delta.get("H", 0) + shift >= 0
