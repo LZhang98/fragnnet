@@ -21,6 +21,10 @@ scientific evaluation, or full test suite was run for this documentation change.
 
 ## Research navigation
 
+- [MASShatter improvement plan](plans/masshatter_improvement_plan.md) records the proposed
+  unmerged sequence: corrected CE control, proposal-encoder comparison, Gaussian support-gated
+  JSS, conservative output pruning, and measured throughput improvements. Next: resolve the
+  anchor/warmup policy and prepare the matched control. No runs were launched for this plan.
 - [MASShatter code audit](findings/masshatter_code_audit.md) records three reproduced
   issues at `0b5ad3f4`: standalone SMARTS inference, charged-component masses, and
   SMARTS proposal gradient isolation. All three fixes and regression tests are present

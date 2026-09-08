@@ -90,6 +90,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Idea |
 |-----|------|
+| [masshatter_improvement_plan.md](plans/masshatter_improvement_plan.md) | Unmerged MASShatter: corrected CE control, encoder-sharing gate, Gaussian support-gated JSS, oracle diagnostics, conservative pruning, and throughput checks. |
 | [complementary_cut_supervision_experiment_plan.md](plans/complementary_cut_supervision_experiment_plan.md) | Target definition, matched GINE-1 measurement gates, training arms, and stop rules. Read the separate findings before running it. |
 | [global_fragment_intensity_ranking_experiment_plan.md](plans/global_fragment_intensity_ranking_experiment_plan.md) | Global base-mass and online adjacent-CE contender supervision with bounded, group-balanced context batching and matched sampler controls. |
 | [ft_contender_pair_minimal_training_plan.md](plans/ft_contender_pair_minimal_training_plan.md) | Minimal cache-free FT experiment: bounded CE-context batching plus online confidence-weighted soft A/B ranking. |
