@@ -1,6 +1,6 @@
 # MASShatter improvement plan
 
-> **Status:** PROPOSED · **Updated:** 2026-09-07
+> **Status:** PROPOSED · **Updated:** 2026-09-08
 > Prioritize intensity assignment and support gating while preserving candidate coverage.
 > The next experiment targets unmerged NIST20 MA/MI spectra; training has not started under this plan.
 
@@ -146,12 +146,37 @@ mode signal, using the existing channel-selection plan's gates.
 
 ## Current state and next check
 
-The support gate, intensity objectives, encoder-sharing option, and channel diagnostics already
-exist. This task records the experiment sequence; no model/config changes or training runs were
-made. The checkout was clean at entry, so older project-state references to uncommitted audit
-fixes are historical rather than a description of current Git status.
+### Merged warmup loss/transform screen (2026-09-08)
 
-Next: resolve the corrected unmerged anchor and warmup policy, verify checkpoint persistence,
-and prepare the matched CE encoder comparison. Run-specific provenance, oracle measurements,
-paired-seed variance, and unmerged treatment results remain pending. Validate documentation links
-and whitespace for this handoff; model tests are unnecessary for this documentation-only change.
+Five configs are prepared as a precursor to the unmerged comparison:
+
+| Config | Output and loss | Transform |
+| --- | --- | --- |
+| [CE control](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_probability_ce_warmup_e0_15_dense.yml) | Probability, Gaussian CE | none |
+| [JSS](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_warmup_e0_15_dense.yml) | Independent, JSS | none |
+| [JSS square root](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_sqrt_warmup_e0_15_dense.yml) | Independent, JSS | sqrt |
+| [KL](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_kl_warmup_e0_15_dense.yml) | Independent, KL | none |
+| [KL square root](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_kl_sqrt_warmup_e0_15_dense.yml) | Independent, KL | sqrt |
+
+All use merged tolerance-consensus targets, seed 397623, U256/E1024, one proposal mixture,
+batch size 64 with accumulation 4, and proposal-only epochs 0-15 inclusive. They preserve
+the existing warmup implementation: proposal gradients continue into the shared molecular
+and context encoders after epoch 15. This screen compares losses under fixed routing;
+it does not isolate warmup's causal effect. Proposal targets remain untransformed.
+The four independent arms use Gaussian attribution without an intensity prior, support BCE
+weight 0.1, and soft intensity gating. The CE control has neither gate nor support BCE.
+Hard fragment/channel thresholds are zero during validation and checkpoint selection.
+Existing experiment configs are preserved. No runs have been submitted.
+
+Checkpoint uploading remains disabled; verify persistent checkpoint storage and adequate
+wall time through the cluster submission workflow before launching these runs.
+
+
+No model code changed. All five configs passed template resolution, model construction, and
+epoch-15/16 phase-transition checks with the configured interpreter. A resolved-config comparison
+confirmed that only the intended loss, transform, output/support settings, and run metadata vary.
+
+Next: verify checkpoint persistence before launching the merged screen. Resolve the corrected
+unmerged anchor and warmup policy before the matched CE encoder comparison. Run-specific
+provenance, oracle measurements, paired-seed variance, and unmerged treatment results remain
+pending. No training, scientific evaluation, or full test suite was run for this config handoff.
