@@ -1,12 +1,70 @@
 import math
 
+import pytest
 import torch as th
 
+from fragnnet.model.candidate_support import balanced_binary_support_loss
 from fragnnet.model.fragnnet_model import (
+    _aggregate_formula_support,
     _apply_formula_support_gate,
     _formula_support_keep_mask,
 )
 from fragnnet.pl_model.fragnnet_pl import _formula_support_targets
+
+
+@pytest.mark.parametrize("attribution", ["gaussian_posterior", "hungarian"])
+def test_formula_support_ignores_unrepresented_formula_targets(attribution: str) -> None:
+    # Formula slots 3 and 4 have observed peaks but no joint-state contributors.
+    joint_logits = th.tensor([4.0, 2.0, 3.0, -2.0], requires_grad=True)
+    logits, valid = _aggregate_formula_support(
+        joint_logits,
+        th.tensor([0, 1, 1, 2]),
+        th.tensor([False, True, True, True]),
+        th.tensor([False, True, True, True, True]),
+    )
+    assert logits.tolist() == [0.0, 3.0, -2.0, 0.0, 0.0]
+    assert valid.tolist() == [False, True, True, False, False]
+    targets = _formula_support_targets(
+        true_mzs=th.tensor([100.0, 200.0, 300.0]),
+        true_batch_idxs=th.zeros(3, dtype=th.long),
+        formula_support_logits=logits,
+        formula_peak_mzs=th.tensor([100.0, 150.0, 200.0, 300.0]),
+        formula_peak_formula_idxs=th.tensor([1, 2, 3, 4]),
+        formula_peak_batch_idxs=th.zeros(4, dtype=th.long),
+        batch_size=1,
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+        attribution=attribution,
+    )
+    assert targets.tolist() == [0.0, 1.0, 0.0, 1.0, 1.0]
+    loss = balanced_binary_support_loss(
+        logits, targets, valid, th.zeros(5, dtype=th.long), 1,
+        allow_empty_batches=True,
+    )
+    expected = (th.nn.functional.softplus(th.tensor(-3.0))
+                + th.nn.functional.softplus(th.tensor(-2.0))) / 2
+    th.testing.assert_close(loss, expected.reshape(1))
+    loss.sum().backward()
+    assert th.isfinite(joint_logits.grad).all()
+    assert joint_logits.grad[0] == 0
+    assert joint_logits.grad[1] == 0
+    assert joint_logits.grad[2] < 0
+    assert joint_logits.grad[3] > 0
+
+
+def test_formula_support_with_no_represented_formulas() -> None:
+    joint_logits = th.tensor([4.0], requires_grad=True)
+    logits, valid = _aggregate_formula_support(
+        joint_logits, th.tensor([0]), th.tensor([False]), th.tensor([False, True]),
+    )
+    loss = balanced_binary_support_loss(
+        logits, th.ones(2), valid, th.zeros(2, dtype=th.long), 1,
+        allow_empty_batches=True,
+    )
+    assert loss.tolist() == [0.0]
+    loss.sum().backward()
+    assert joint_logits.grad.tolist() == [0.0]
 
 
 def test_formula_support_gate_preserves_logits_at_initialization() -> None:

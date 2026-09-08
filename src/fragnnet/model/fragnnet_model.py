@@ -55,6 +55,34 @@ from fragnnet.utils.spec_utils import batched_bin_func
 logger = logging.getLogger(__name__)
 
 
+def _aggregate_formula_support(
+    joint_logits: th.Tensor,
+    joint_formula_idxs: th.Tensor,
+    joint_valid_mask: th.Tensor,
+    formula_mask: th.Tensor,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Max-pool support logits, supervising only formulas with valid contributors.
+
+    Inputs are flat joint-state tensors and a [num_formulae] non-null mask.
+    Returns [num_formulae] logits and validity; absent formulas receive zero logits.
+    """
+    valid = joint_valid_mask.bool()
+    represented = scatter_reduce(
+        valid.to(joint_logits),
+        joint_formula_idxs,
+        reduce="amax",
+        dim_size=formula_mask.numel(),
+    ).bool() & formula_mask.bool()
+    logits = scatter_reduce(
+        joint_logits.masked_fill(~valid, LOG_ZERO(joint_logits.dtype)),
+        joint_formula_idxs,
+        reduce="amax",
+        dim_size=formula_mask.numel(),
+        default=LOG_ZERO(joint_logits.dtype),
+    )
+    return th.where(represented, logits, th.zeros_like(logits)), represented
+
+
 def _apply_formula_support_gate(
     intensity_logits: th.Tensor,
     support_logits: th.Tensor,
@@ -2263,23 +2291,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
 
         frag_formula_support_logits = None
+        frag_formula_support_valid_mask = None
         if frag_joint_support_logits is not None:
-            flat_support_logits = frag_joint_support_logits.flatten()
-            valid_joint_support_logits = flat_support_logits.masked_fill(
-                ~frag_joint_mask.bool(),
-                LOG_ZERO(flat_support_logits.dtype),
-            )
-            frag_formula_support_logits = scatter_reduce(
-                valid_joint_support_logits,
+            frag_formula_support_logits, frag_formula_support_valid_mask = _aggregate_formula_support(
+                frag_joint_support_logits.flatten(),
                 frag_joint_formula_idxs,
-                reduce="amax",
-                dim_size=int(batch_frag_num_formulae),
-                default=LOG_ZERO(flat_support_logits.dtype),
-            )
-            frag_formula_support_logits = th.where(
-                frag_formula_mask.bool(),
-                frag_formula_support_logits,
-                th.zeros_like(frag_formula_support_logits),
+                frag_joint_mask,
+                frag_formula_mask,
             )
 
         # OOS Stuff
@@ -2613,9 +2631,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "pred_formula_support_batch_idxs": (
                 frag_formula_batch_idxs if frag_formula_support_logits is not None else None
             ),
-            "pred_formula_support_valid_mask": (
-                frag_formula_mask.bool() if frag_formula_support_logits is not None else None
-            ),
+            "pred_formula_support_valid_mask": frag_formula_support_valid_mask,
             "pred_formula_support_peak_formula_idxs": (
                 spec_formula_idxs if frag_formula_support_logits is not None else None
             ),

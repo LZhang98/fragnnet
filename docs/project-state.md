@@ -41,6 +41,20 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+FraGNNet formula-support crash follow-up (2026-09-07): W&B runs
+[kvrlaxof](https://wandb.ai/frag-gnn/frag-gnn/runs/kvrlaxof) and
+[71qtthvw](https://wandb.ai/frag-gnn/frag-gnn/runs/71qtthvw) both failed with infinite
+loss on batch 0 before backward. Local reproduction shows that positive support targets for
+unreferenced formula slots can overflow the binary loss: their logits retain the float32
+minimum sentinel. The working-tree fix in `fragnnet_model.py` derives support validity from
+valid joint-state contributors and zeros invalid support logits. Tensor shapes, parameters,
+configs, and spectral intensity computation are unchanged. Regression coverage verifies both
+attribution methods, finite gradients, max pooling, and empty support. Validation: 40 focused
+tests passed on CPU; Ruff and whitespace checks passed. No full training or validation-set
+evaluation ran. Next check: run a short cluster training smoke test with the patched package,
+checking individual loss terms if failure persists. The exact failing remote batch was not
+replayed, so this is a reproduced defect and candidate crash fix, not a confirmed remote cure.
+
 For the next requested implementation or experiment, verify the relevant plan against code and
 available artifacts. Link that task here when it spans sessions, and record its next check and
 blockers in the plan. Do not duplicate the roadmap or copy its full backlog here.
