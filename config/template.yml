@@ -671,8 +671,8 @@ num_sanity_val_steps: 0
 # Collision Energy (CE) Configuration
 # ============================================================================
 ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
-ce_insert_location: none # Where CE is inserted: ["none","mol_input","frag_input","mlp_input"] or comma-separated
-ce_insert_merge: False # Whether to merge CE embeddings when inserted at multiple locations
+ce_insert_location: none # FraGNNet: none, mol, mlp, or mol,mlp (frag insertion unsupported)
+ce_insert_merge: False # FraGNNet: mean-pool CE-reading embeddings within each spectrum
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
 # Combined context (stratum) embedding: consolidate CE + adduct + instrument + frag_mode into
 # ONE learned vector injected at context_insert_location, instead of four separate *_insert
@@ -682,9 +682,9 @@ context_embedding: False
 context_embedding_dim: 64       # width of the produced context vector
 context_embedding_hidden_dim: 64  # hidden width of the combining MLP
 context_insert_location: mol,mlp  # where to inject the context vector (mol and/or mlp)
-# Dataset CE flags live under spec_params.nce/ace. Model CE embedding is controlled by
-# use_nce/use_ace when constructing FraGNNetModel. When both model flags are True, the two
-# CE embeddings are concatenated, doubling the CE dim.
+# Both Lightning wrappers pass spec_params.nce/ace as the model's use_nce/use_ace
+# arguments; these top-level keys do not override that wiring. When both model
+# arguments are True, the two CE embeddings are concatenated, doubling the CE dim.
 use_nce: True
 use_ace: False
 # Rough approximations from NIST20 Orbitrap/FT MS

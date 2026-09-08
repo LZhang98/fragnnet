@@ -63,6 +63,17 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+Context-conditioning screen (2026-09-08): the user selected controlled experiments before a new
+layer. The [conditioning plan](plans/conditioning_refactor_plan.md#current-controlled-screen-2026-09-08)
+now selects the full-metadata, dual-CE MASShatter mask1024 config as the conditioning baseline:
+the user reports that NCE + ACE + adduct + instrument + mode already helps in existing runs.
+The prepared NCE-only variant is an optional diagnostic outside the next run queue. Two new
+FraGNNet configs complete the existing full-metadata routing pair with output scalers disabled.
+Model code and existing experiments are unchanged. All four passed resolved-diff checks,
+sampler validation, model construction, and synthetic context checks. No runs launched.
+Next: audit retained-row metadata coverage and checkpoint persistence before the matched screen;
+the plan records the within-model controls and remaining scientific checks.
+
 FraGNNet formula-support crash follow-up (2026-09-07): W&B runs
 [kvrlaxof](https://wandb.ai/frag-gnn/frag-gnn/runs/kvrlaxof) and
 [71qtthvw](https://wandb.ai/frag-gnn/frag-gnn/runs/71qtthvw) both failed with infinite

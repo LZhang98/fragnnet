@@ -1,8 +1,104 @@
 # Conditioning Injection: Audit & Consolidation Plan
 
-> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-07-16
+> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-08
 >
-> Collapse 3 overlapping metadata-conditioning mechanisms into one. Plan + ablation config built, not run. Recovered from branch `research/ce_perfrag_features`, where it was the only copy.
+> Controlled metadata and routing/scaler configs prepared for both models; no runs launched.
+> The combined FraGNNet context module is already implemented. Earlier refactor stages below
+> are historical proposals, not the current implementation status.
+
+## Current controlled screen (2026-09-08)
+
+### Objective and constraints
+
+Give MASShatter full acquisition metadata and measure how existing context routes affect
+held-out predictions before adding a conditioning layer. This is the user-selected scope.
+The user reports that existing runs already show benefit from **NCE + ACE + adduct + instrument
++ fragmentation mode**. Treat that full input set as fixed for the next conditioning experiments;
+do not make another metadata-availability ablation a prerequisite. Run IDs and effect sizes were
+not supplied in this session, so this is recorded user-provided evidence, not a new local result.
+No architecture, checkpoint schema, target preprocessing, or existing experiment config changes.
+New arms require retraining: changing metadata vocabularies or injection widths changes parameter
+shapes, and disabling trained scalers changes predictions. Do not load an old checkpoint into a
+new arm and treat that as its trained result.
+
+### MASShatter: full-metadata baseline
+
+Use the prepared full-metadata, dual-CE mask1024 config as the conditioning baseline. It retains
+the existing unmerged mask1024 architecture; it does not settle the newer U256 encoder/warmup comparison in the
+[MASShatter improvement plan](masshatter_improvement_plan.md).
+
+| Arm | Config | Conditioning |
+| --- | --- | --- |
+| M0 — historical reference | [Existing baseline](../../config/masshatter/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_efa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
+| M1 — optional diagnostic, outside the next run queue | [NCE with categorical metadata](../../config/masshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_nce.yml) | NCE + adduct + instrument + mode |
+| M2 — selected conditioning baseline | [Full metadata, dual CE](../../config/masshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce.yml) | NCE + ACE + adduct + instrument + mode |
+
+M0/M1 remain available for diagnosis; the active sequence starts at M2. Instrument
+vocabulary is FT/QTOF/IT; mode vocabulary is HCD/CID with the existing unknown token. Keep the
+same 128-dimensional context, mask budget, loss, optimizer, split, and seed 397623. Global loss
+tolerance stays fixed (`inst_type_loss_tol: null`), so enabling instrument input does not also
+change the objective. Keep `mass_shatter_share_proposal_across_ev: False`: proposals and
+intensities both receive the spectrum's CE and metadata.
+
+The molecular encoder remains structural; existing nonlinear proposal and intensity heads mix
+structural features with context. This already permits fragment-specific context effects.
+The dataset computes both CE columns whenever either CE flag is enabled, filling missing NCE
+from ACE or vice versa using precursor m/z and charge. Dual CE is therefore not necessarily two
+independently measured signals. Keep this conversion unchanged for the screen.
+Future MASShatter context-routing comparisons must retain all five inputs and CE-specific
+proposals. The current configs establish that baseline; no matched MASShatter routing variant
+or new conditioning layer has been implemented yet.
+
+### FraGNNet: routing and output scaling
+
+Complete a 2×2 comparison around the existing NodeMLP context configs:
+
+| Context location | CE/mode output scalers on | All metadata output scalers off |
+| --- | --- | --- |
+| `mol` | [Existing mol-only](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_context_embedding_mol_only.yml) | [New mol-only](../../config/exp_fraggnn_ma_mi/context_ablation/nist20_ma_mi_context_mol_no_output_scalers.yml) |
+| `mol,mlp` | [Existing mol+MLP](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_context_embedding.yml) | [New mol+MLP](../../config/exp_fraggnn_ma_mi/context_ablation/nist20_ma_mi_context_mol_mlp_no_output_scalers.yml) |
+
+All four use NCE, ACE, adduct, instrument, and mode with a 64-dimensional combined context.
+The off arms set `ce_scale`, `frag_mode_scale`, `adduct_scale`, `stratum_scale`, and
+`depth_ce_bias` false; the last three were already false in the controls. The new pair differs
+only in routing and run labels. Keep seed 42 inherited from the template, batching, tolerance,
+optimizer, and schedule matched within this family. MASShatter and FraGNNet families are
+within-model experiments, not a matched head-to-head comparison.
+
+The per-fragment MLP already learns nonlinear fragment/context interactions. Shared affine
+output scalers preserve fragment ordering within each channel, but per-channel affine parameters
+can change channel preferences and aggregated rankings; a depth bias can change ordering across
+depths. The older blanket statements below about all these paths being unable to re-rank are
+too broad. Removing them is an experiment, not an established improvement.
+
+### Acceptance checks, execution, and next step
+
+Before launch, resolve configs against the same template revision and record code/config identity,
+dataset and split fingerprints, actual retained sample IDs, checkpoint destinations, and seed.
+Check instrument coverage and unknown-mode frequency on retained training/validation rows.
+Use the [session workflow](../workflow/session.md) for provenance and
+[cluster guide](../guides/submit_cluster_runs.md) if jobs are subsequently authorized.
+
+Start with the full-metadata MASShatter baseline and the full-metadata FraGNNet routing/scaler
+comparison; skip M0/M1 reruns unless a specific diagnostic requires them. Screen one seed per
+family, then confirm promising treatments with matched seeds. Compare held-out
+cosine and loss at equal optimizer progress; report CE/adduct/instrument/mode slices, train–validation
+gap, and formula retrieval. For MASShatter also report candidate weighted recall and emitted peak
+count so proposal coverage is separated from intensity quality. Use the existing
+[fragment-context routing plan](fragment_context_gate_experiment_plan.md) for switch diagnostics
+and the gate experiment's go/stop rules. No new layer is justified solely by a training gain.
+
+Local validation with `FRAGNNET-GPU`: all four configs passed template resolution, sampler
+validation, and actual Lightning/model construction. Resolved diffs contain only the intended
+metadata, scaler, routing, and run-label differences. Synthetic context checks verified finite
+outputs, dependence on every enabled metadata field, MASShatter gradients into every active
+metadata encoder, multi-reading CE pooling, and the unknown-mode token. FraGNNet checks verified
+the requested insertion widths and absence of all output scalers/depth bias. The configured data,
+split, and DAG paths exist locally, but their contents and retained-row coverage were not audited.
+
+Next: audit retained-row metadata coverage and checkpoint persistence, then run the matched
+screen when authorized. No training, dataset preprocessing, checkpoint migration, cluster
+submission, full test suite, or validation-set evaluation has been performed for this screen.
 
 ## Summary
 

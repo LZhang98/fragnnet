@@ -83,7 +83,7 @@ roadmap. It links the analyses that justify each item.
 | [sibling_ranking_target_plan.md](plans/sibling_ranking_target_plan.md) | **Current lead.** Coverage gate passed (583,539 targets at margin 0.1); ranking loss on `P(n)` not yet implemented. |
 | [fragment_bond_set_representation.md](plans/fragment_bond_set_representation.md) | All four gates measured, objective corrected to regularization (read §7 first). Next: run the written-but-never-run `cc_atom_dropout` sweep. |
 | [nist_data_quality_plan.md](plans/nist_data_quality_plan.md) | Contaminant-mass and unexplainable-spectra diagnostics; evidence needed before filtering. |
-| [conditioning_refactor_plan.md](plans/conditioning_refactor_plan.md) | Collapse 3 overlapping conditioning mechanisms into one. Plan + ablation config built, not run. |
+| [conditioning_refactor_plan.md](plans/conditioning_refactor_plan.md) | Controlled MASShatter full-metadata and FraGNNet context-routing/output-scaler configs prepared; no runs launched. |
 | [dag_full_recall_tractability_plan.md](plans/dag_full_recall_tractability_plan.md) | Active hub for DAG pruning, but **mostly negative results** — read the step results before proposing another mechanism. |
 
 ### Proposed, not started
