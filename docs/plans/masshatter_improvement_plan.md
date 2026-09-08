@@ -180,3 +180,16 @@ Next: verify checkpoint persistence before launching the merged screen. Resolve 
 unmerged anchor and warmup policy before the matched CE encoder comparison. Run-specific
 provenance, oracle measurements, paired-seed variance, and unmerged treatment results remain
 pending. No training, scientific evaluation, or full test suite was run for this config handoff.
+
+### Matched H-support ablation configs
+
+Two additional JSS/no-transform controls are prepared:
+
+- [No H support](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_no_h_support_warmup_e0_15_dense.yml): support head, binary support logits, and gate disabled; support loss weight zero.
+- [H supervision only](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_h_supervision_only_warmup_e0_15_dense.yml): Gaussian support BCE weight 0.1, but no soft intensity gate.
+
+Compare with the existing gated JSS/no-transform arm above. Other settings remain fixed,
+including shared-encoder warmup and zero hard-pruning thresholds. The separate directory
+preserves the original five-config glob. To generate these two jobs with the same Vulcan
+procedure, use `config/masshatter/merged/support_ablation/*.yml` as the config glob.
+No training jobs were submitted for these controls.

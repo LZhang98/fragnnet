@@ -26,7 +26,8 @@ scientific evaluation, or full test suite was run for this documentation change.
   JSS, conservative output pruning, and measured throughput improvements. Five merged warmup
   configs are prepared for a CE/JSS/KL loss and intensity-transform screen. Next: verify checkpoint
   persistence before launching; resolve the unmerged anchor/warmup policy before its matched
-  control. No runs were launched for this plan.
+  control. The plan includes [Vulcan generation and submission commands](plans/masshatter_improvement_plan.md#vulcan-commands-for-the-five-config-screen)
+  for all five configs with a three-hour allocation. No runs were launched for this plan.
 - [MASShatter code audit](findings/masshatter_code_audit.md) records three reproduced
   issues at `0b5ad3f4`: standalone SMARTS inference, charged-component masses, and
   SMARTS proposal gradient isolation. All three fixes and regression tests are present
