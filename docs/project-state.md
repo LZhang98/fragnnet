@@ -63,6 +63,13 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+SMARTS merged readiness (2026-09-09): the [readiness audit](findings/masshatter_code_audit.md#smarts-merged-run-readiness-2026-09-09)
+passed 494 CPU tests (5 skipped) and a synthetic SMARTS + merged NCE + GNN-context
+forward/backward probe. The current merged configs are blocked by their proposal-only
+warmup, which explicitly rejects SMARTS. The requested no-warmup SMARTS config is now
+prepared and linked in the audit; full model construction and intended-only resolved config
+differences passed. Next: perform a real-data GPU smoke check. No runs launched.
+
 Context-conditioning screen (2026-09-08): the user selected controlled experiments before a new
 layer. The [conditioning plan](plans/conditioning_refactor_plan.md#current-controlled-screen-2026-09-08)
 now selects the full-metadata, dual-CE MASShatter mask1024 config as the conditioning baseline:

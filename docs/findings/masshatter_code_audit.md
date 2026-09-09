@@ -2,6 +2,41 @@
 
 > **Status:** REFERENCE · **Updated:** 2026-09-07 · Pickle API fix tested in working tree; bfloat16 issue deferred by user.
 
+## SMARTS merged-run readiness (2026-09-09)
+
+Checked clean revision `7698d285`. SMARTS matching/cache preparation, candidate assembly,
+mechanism normalization and gradients, standalone prediction, and forced-merge behavior pass
+the focused CPU suite: **494 passed, 5 skipped** across `test_mass_shatter_smarts.py`,
+`test_mass_shatter_model.py`, `test_mass_shatter_pl.py`, and
+`test_mass_shatter_forced_merge.py`, using the configured FRAGNNET-GPU interpreter.
+An additional synthetic diphenyl-sulfoxide forward/backward probe combined SMARTS,
+unique fragments, GNN context, and merged NCE readings 20/40. Total probability was 1.0,
+loss was 4.61925, and mechanism-embedding gradient L1 was 0.003975; all parameter
+gradients present were finite. This used the small model-test factory, not the full run config.
+
+**Current merged warmup configs cannot enable SMARTS directly.**
+`MassShatterPL._setup_model` explicitly rejects SMARTS with any non-null
+`mass_shatter_proposal_only_until_epoch`; the current
+[merged context pair](../plans/conditioning_refactor_plan.md#merged-masshatter-context-at-gnn-input)
+sets that boundary to 15. Existing regression coverage verifies the rejection.
+The supported configuration is `mass_shatter_smarts_templates: True` with
+`mass_shatter_proposal_only_until_epoch: null`. For a controlled SMARTS comparison,
+both SMARTS-on and SMARTS-off arms need the same schedule. Alternatively, supporting
+SMARTS warmup requires an explicit mechanism-head training policy and implementation/tests;
+removing the guard alone is not validated.
+
+No model/config changes or training runs were made during the audit. CUDA was unavailable; real-data GPU
+throughput, full-config training, and held-out quality remain unverified. Next: select the
+matched schedule, then run a real-data GPU smoke check before the merged experiment.
+
+Config follow-up: prepared the requested
+[SMARTS merged GNN-context config](../../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_no_warmup.yml)
+with SMARTS enabled and proposal-only warmup disabled. Runner-resolved comparison against
+the GNN-context arm confirms only those two behavior settings and W&B name/group/tags differ.
+The full resolved `MassShatterPL` constructs successfully with its mechanism head and GNN
+context enabled. No training launched. Next: real-data GPU smoke testing; a matched SMARTS-off
+control must also disable warmup to isolate the template effect.
+
 ## Third audit pass: remaining API issues
 
 This pass inspected `77fdbea2` plus the uncommitted inference and feasibility fixes
