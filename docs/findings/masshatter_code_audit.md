@@ -22,8 +22,13 @@ sets that boundary to 15. Existing regression coverage verifies the rejection.
 The supported configuration is `mass_shatter_smarts_templates: True` with
 `mass_shatter_proposal_only_until_epoch: null`. For a controlled SMARTS comparison,
 both SMARTS-on and SMARTS-off arms need the same schedule. Alternatively, supporting
-SMARTS warmup requires an explicit mechanism-head training policy and implementation/tests;
-removing the guard alone is not validated.
+SMARTS warmup requires validating the existing mechanism-head gradient path and staged
+transition before relaxing the guard; removing the guard alone is not validated. Follow-up
+source inspection found that `_proposal_modules()` already includes the mechanism head and
+unique-fragment proposal probabilities include mechanism probabilities. Thus the code already
+suggests training that head through proposal coverage during warmup. The guard was introduced
+in `612efaae8` ("warmup and new baseline config"); no specific mathematical incompatibility
+or failure rationale was found. The restriction is established; its necessity is not.
 
 No model/config changes or training runs were made during the audit. CUDA was unavailable; real-data GPU
 throughput, full-config training, and held-out quality remain unverified. Next: select the

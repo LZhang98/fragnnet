@@ -69,6 +69,10 @@ forward/backward probe. The current merged configs are blocked by their proposal
 warmup, which explicitly rejects SMARTS. The requested no-warmup SMARTS config is now
 prepared and linked in the audit; full model construction and intended-only resolved config
 differences passed. Next: perform a real-data GPU smoke check. No runs launched.
+The subsequently requested [SMARTS warmup config](../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
+is also prepared, with proposal-only epochs 0–15. YAML resolution and intended-only differences
+passed; construction confirms the existing SMARTS/warmup guard still blocks this arm.
+Validate SMARTS warmup support before launching it.
 
 Context-conditioning screen (2026-09-08): the user selected controlled experiments before a new
 layer. The [conditioning plan](plans/conditioning_refactor_plan.md#current-controlled-screen-2026-09-08)
