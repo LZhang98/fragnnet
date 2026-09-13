@@ -63,8 +63,10 @@ roadmap. It links the analyses that justify each item.
 ## findings/ — measured results
 
 | Doc | Result |
+| [fragnnet_masshatter_audit_2026_09_12.md](findings/fragnnet_masshatter_audit_2026_09_12.md) | Reproduced checkpoint, inference, FraGNNet loss/explanation, and shared metric defects; full-suite source/binary validation. |
+| [wandb_screen_2026_09_11.md](findings/wandb_screen_2026_09_11.md) | Recent W&B loss, warmup, support, context, and SMARTS screen; single-seed findings and execution limits. |
 |-----|--------|
-| [masshatter_code_audit.md](findings/masshatter_code_audit.md) | Earlier fixes and pickle API fix implemented; 90 focused tests pass. CPU bfloat16 mixture issue deferred by user. |
+| [masshatter_code_audit.md](findings/masshatter_code_audit.md) | SMARTS/proposal-only-warmup construction guard removed and validated (2026-09-11); earlier fixes and pickle API fix implemented; 90 focused tests pass. CPU bfloat16 mixture issue deferred by user. |
 | [masshatter_context_design_audit.md](findings/masshatter_context_design_audit.md) | Merged-context audit and implemented ACE range/weighted aggregation fixes; metadata coverage and deferred initialization suggestion. |
 | [dag_oracle_ceiling_nist20.md](findings/dag_oracle_ceiling_nist20.md) | Baseline d3 DAG ceiling = **0.937 cos_hun** on NIST20 test. Model-free upper bound. |
 | [oracle_recall_wrecall_by_ce.md](findings/oracle_recall_wrecall_by_ce.md) | Coverage ceiling vs. collision energy and adduct. Figures in [figures/](figures/). |

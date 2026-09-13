@@ -8,6 +8,11 @@
 
 ## Current controlled screen (2026-09-08)
 
+Execution update (2026-09-11): the [W&B screen](../findings/wandb_screen_2026_09_11.md)
+confirms a completed GNN + heads run and SMARTS attempts. No matching full-metadata
+heads-only run appeared in the inspected recent runs; routing benefit remains unresolved.
+The no-training statements below describe the earlier preparation handoff.
+
 The [pre-run design audit](../findings/masshatter_context_design_audit.md) identified ACE clipping
 and row-order-dependent ACE selection. Both are now fixed in the new merged pair: `ace_max: 300`
 and opt-in weighted CE aggregation, supported by both models. Historical configurations and

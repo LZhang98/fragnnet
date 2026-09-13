@@ -16,6 +16,8 @@ from torch_geometric.data import Batch, Data
 
 import fragnnet.runner as runner
 from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
+from fragnnet.frag.mass_shatter_candidates import MassShatterStaticGraph
+from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.model.nn_blocks import GINEGraphormer
@@ -142,15 +144,6 @@ def test_proposal_only_epoch_rejects_invalid_values(proposal_only_until_epoch: o
             },
             "positive mass_shatter_proposal_loss_weight",
         ),
-        (
-            {
-                "mass_shatter_proposal_selection_only": True,
-                "mass_shatter_separate_proposal_encoder": True,
-                "mass_shatter_proposal_loss_weight": 0.1,
-                "mass_shatter_smarts_templates": True,
-            },
-            "does not support mass_shatter_smarts_templates=True",
-        ),
     ],
 )
 def test_proposal_only_schedule_rejects_incompatible_model_configs(
@@ -162,6 +155,100 @@ def test_proposal_only_schedule_rejects_incompatible_model_configs(
             mass_shatter_proposal_only_until_epoch=2,
             **config_overrides,
         )
+
+
+def test_proposal_warmup_supports_smarts_templates() -> None:
+    pl, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_separate_proposal_encoder=False,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_proposal_only_until_epoch=2,
+        mass_shatter_smarts_templates=True,
+    )
+
+    assert pl.model.mechanism_head is not None
+    assert pl.model.mechanism_head in pl._proposal_modules()
+
+    pl._apply_staged_training(epoch=1)
+    assert pl._proposal_only_training
+    assert all(parameter.requires_grad for parameter in pl.model.mechanism_head.parameters())
+    assert all(not parameter.requires_grad for parameter in pl.model.intensity_head.parameters())
+
+    pl._apply_staged_training(epoch=3)
+    assert not pl._proposal_only_training
+    assert all(parameter.requires_grad for parameter in pl.model.mechanism_head.parameters())
+    assert all(parameter.requires_grad for parameter in pl.model.intensity_head.parameters())
+
+
+@pytest.mark.parametrize("separate_encoder", [False, True])
+def test_smarts_proposal_warmup_isolates_gradients_across_boundary(
+    separate_encoder: bool,
+) -> None:
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    pl, config = _build_pl(
+        mass_shatter_unique_fragment_target=4,
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_ranked_mask_budget=8,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_separate_proposal_encoder=separate_encoder,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_proposal_only_until_epoch=1,
+        mass_shatter_smarts_templates=True,
+        mass_shatter_proposal_anchored=True,
+    )
+    params = config["mol_params"]
+    mol = Chem.MolFromSmiles(smiles)
+    graph = get_mol_graph(
+        mol,
+        params["pyg_node_feats"],
+        params["pyg_edge_feats"],
+        params["pyg_pe_embed_k"],
+        True,
+    )
+    batch = Batch.from_data_list([graph, graph])
+    templates = build_mass_shatter_templates(mol)
+    static_graph = MassShatterStaticGraph(
+        chemical_bond_index=batch.chemical_bond_index,
+        atom_batch_indices=batch.batch,
+        atom_ptr=batch.ptr,
+        smarts_templates=(templates, templates),
+    )
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_inst_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+        "static_graph": static_graph,
+    }
+
+    def gradient_sum(module: th.nn.Module) -> float:
+        return sum(
+            parameter.grad.abs().sum().item()
+            for parameter in module.parameters()
+            if parameter.grad is not None
+        )
+
+    pl._apply_staged_training(epoch=1)
+    output = pl.model(**inputs)
+    assert th.isfinite(output["proposal_fragment_logprobs"]).all()
+    (-output["proposal_fragment_logprobs"].mean()).backward()
+    assert gradient_sum(pl.model.mechanism_head) > 0.0
+    assert gradient_sum(pl.model.intensity_head) == 0.0
+
+    pl.model.zero_grad(set_to_none=True)
+    pl._apply_staged_training(epoch=3)
+    output = pl.model(**inputs)
+    assert th.isfinite(output["pred_logprobs"]).all()
+    (
+        -output["proposal_fragment_logprobs"].mean() - output["pred_logprobs"].mean()
+    ).backward()
+    assert gradient_sum(pl.model.mechanism_head) > 0.0
+    assert gradient_sum(pl.model.intensity_head) > 0.0
+    if separate_encoder:
+        assert gradient_sum(pl.model.proposal_encoder) > 0.0
+        assert gradient_sum(pl.model.precursor_encoder) > 0.0
 
 
 def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:

@@ -63,6 +63,24 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+Correctness audit (2026-09-12): the [combined model audit](findings/fragnnet_masshatter_audit_2026_09_12.md)
+records reproduced checkpoint-loading, HDF5 cutoff, FraGNNet loss/explanation, and shared
+test-metric defects, plus silently ignored MASShatter precursor-pair supervision.
+No fixes were applied. The existing local multi-cut extension is
+stale; an isolated rebuild from current source yielded 2,876 passed, 21 skipped, and
+2 expected failures for the full suite. Next: address checkpoint loading and test-metric
+initialization, then the remaining counterexamples. Pre-existing SMARTS warmup edits
+were preserved; CUDA and real-data scientific behavior remain unverified.
+
+W&B review (2026-09-11): the [recent screen](findings/wandb_screen_2026_09_11.md)
+supersedes older “no runs launched” execution statements below and in the linked plans.
+JSS warmup 0–4 leads the single-seed filtered screen at 0.80099 best validation binned
+cosine; CE remains close and finished sooner. Support supervision helps early training;
+an additional soft-gate gain is unresolved. GNN context completed, but its matched
+heads-only comparison is missing from the inspected runs. SMARTS warmup failed at the
+known construction guard. Next: matched-seed confirmation and the missing controls;
+see the finding for metric definitions, run links, and provenance limitations.
+
 SMARTS merged readiness (2026-09-09): the [readiness audit](findings/masshatter_code_audit.md#smarts-merged-run-readiness-2026-09-09)
 passed 494 CPU tests (5 skipped) and a synthetic SMARTS + merged NCE + GNN-context
 forward/backward probe. The current merged configs are blocked by their proposal-only
@@ -70,9 +88,11 @@ warmup, which explicitly rejects SMARTS. The requested no-warmup SMARTS config i
 prepared and linked in the audit; full model construction and intended-only resolved config
 differences passed. Next: perform a real-data GPU smoke check. No runs launched.
 The subsequently requested [SMARTS warmup config](../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
-is also prepared, with proposal-only epochs 0–15. YAML resolution and intended-only differences
-passed; construction confirms the existing SMARTS/warmup guard still blocks this arm.
-Validate SMARTS warmup support before launching it.
+is also prepared, with proposal-only epochs 0–15. The SMARTS/proposal-only-warmup
+construction guard is now removed and validated (2026-09-11): see the
+[guard-removal finding](findings/masshatter_code_audit.md#smarts-proposal-only-warmup-guard-removed-2026-09-11)
+for the new PL-level gradient-isolation regression tests. Construction now succeeds.
+Next: a real-data GPU smoke check before launching this arm.
 
 Context-conditioning screen (2026-09-08): the user selected controlled experiments before a new
 layer. The [conditioning plan](plans/conditioning_refactor_plan.md#current-controlled-screen-2026-09-08)

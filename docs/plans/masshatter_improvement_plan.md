@@ -146,6 +146,11 @@ mode signal, using the existing channel-selection plan's gates.
 
 ## Current state and next check
 
+Execution update (2026-09-11): the [W&B screen](../findings/wandb_screen_2026_09_11.md)
+records runs launched after the preparation handoff below, including loss, support,
+subformula-filtered, and shorter-warmup arms. Its observed results and next checks
+supersede the historical no-submission statements in this plan.
+
 ### Merged warmup loss/transform screen (2026-09-08)
 
 Five configs are prepared as a precursor to the unmerged comparison:

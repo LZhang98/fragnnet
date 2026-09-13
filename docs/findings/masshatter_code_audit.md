@@ -1,6 +1,36 @@
 # MASShatter code audit
 
-> **Status:** REFERENCE · **Updated:** 2026-09-07 · Pickle API fix tested in working tree; bfloat16 issue deferred by user.
+> **Status:** REFERENCE · **Updated:** 2026-09-11 · SMARTS/proposal-only-warmup guard removed and validated; pickle API fix tested in working tree; bfloat16 issue deferred by user.
+
+## SMARTS proposal-only-warmup guard removed (2026-09-11)
+
+`MassShatterPL._setup_model` no longer rejects `mass_shatter_smarts_templates=True`
+combined with a non-null `mass_shatter_proposal_only_until_epoch`. The prior guard
+(introduced in `612efaae8`) had no documented mathematical incompatibility (see the
+readiness audit below); the mechanism head was already routed through
+`_proposal_modules()` and, per the "Fix outcome and compatibility" section above,
+SMARTS mechanism scoring already uses proposal-side embeddings and context, so it
+follows the same gradient-isolation contract as the rest of the proposal branch
+regardless of the staged-training epoch.
+
+Two new regression tests in `test_mass_shatter_pl.py` cover the combination:
+`test_proposal_warmup_supports_smarts_templates` confirms construction succeeds and
+`mechanism_head` is included in `_proposal_modules()` and stays trainable across the
+epoch boundary, and `test_smarts_proposal_warmup_isolates_gradients_across_boundary`
+(parametrized over shared/separate proposal encoders) runs a real forward/backward
+through `MassShatterPL._apply_staged_training` on a diphenyl-sulfoxide molecule with
+`mass_shatter_unique_fragment_mode`: during proposal-only epochs `mechanism_head`
+receives nonzero gradient and `intensity_head` receives none (it is frozen), and after
+the boundary a joint backward gives both heads (and, for the separate-encoder case,
+both `proposal_encoder` and `precursor_encoder`) nonzero gradient. All existing
+MASShatter suites still pass: 558 passed (one pre-existing, unrelated CPU bfloat16
+autocast failure, tracked separately below, reproduced identically before this change).
+
+This clears the blocker recorded in the SMARTS merged-run readiness audit below and in
+`docs/project-state.md`. The prepared
+[SMARTS warmup config](../../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
+can now construct. No training was launched and no real-data GPU smoke check was run;
+that remains the next step before comparing results against the no-warmup SMARTS arm.
 
 ## SMARTS merged-run readiness (2026-09-09)
 

@@ -781,11 +781,6 @@ class MassShatterPL(SpectrumPL):
                     "mass_shatter_proposal_only_until_epoch requires a positive "
                     "mass_shatter_proposal_loss_weight"
                 )
-            if self.hparams.mass_shatter_smarts_templates:
-                raise ValueError(
-                    "mass_shatter_proposal_only_until_epoch does not support "
-                    "mass_shatter_smarts_templates=True"
-                )
         legacy_oos_enabled = (
             self.hparams.predict_oos
             or self.hparams.oos_loss
