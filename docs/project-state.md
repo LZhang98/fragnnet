@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-07
+> **Status:** REFERENCE · **Updated:** 2026-09-13
 
 ## Current handoff
 
@@ -21,6 +21,10 @@ scientific evaluation, or full test suite was run for this documentation change.
 
 ## Research navigation
 
+- [Energy-based spectrum reranking](plans/energy_based_spectrum_reranking_plan.md) is a proposed
+  shared design of record with a FraGNNet anchor (2026-09-13). Next: reconcile the prior correction
+  null, verify export with `--min_intensity -1`, and require oracle excess over matched random pools
+  before implementing/training an energy head. Documentation only; no runs or implementation.
 - [MASShatter improvement plan](plans/masshatter_improvement_plan.md) records the proposed
   unmerged sequence: corrected CE control, proposal-encoder comparison, Gaussian support-gated
   JSS, conservative output pruning, and measured throughput improvements. Five merged warmup
@@ -63,6 +67,55 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+MASShatter SMARTS review (2026-09-13): the [set/literature review](findings/masshatter_smarts_review_2026_09_13.md)
+confirms 26 rules, 19 legacy rules without enforced ionization guards, and a pyrimidine
+gap in the carbamate family. Positive-ion oxygen-transfer and prazole-sulfone candidates
+are supported literature leads, not measured coverage gains. Validation: 75 SMARTS tests
+passed on CPU plus registry/matching probes. Next: measure existing rules' incremental
+coverage on filtered validation peaks before adding narrowly mapped rules. No model edits
+or training ran.
+
+MASShatter proposal review (2026-09-13): the [proposal review](findings/masshatter_proposal_review_2026_09_13.md)
+prioritizes support diagnostics before encoder expansion and separates established loss/routing
+limitations from exploration, diversity, and mixture hypotheses. A fresh 155-run W&B query
+and eight full validation histories support selection-only in a close same-seed historical
+pair: +1.54 percentage points candidate weighted recall and +0.01261 cosine at epoch 142.
+A separate larger-intensity-head pair gains 0.00897 cosine at epoch 98 despite slightly
+lower coverage. Recent matched JSS/KL results are close and do not establish a KL advantage.
+Next for the intensity stage: preserve selection-only and diagnose fragment-versus-H ranking
+on fixed support before another head or loss comparison; see the review for provenance limits.
+A live W&B check of three
+recent merged U256/E1024 histories confirms only 5.5–7.0% reach U256 at their latest logged
+validation epochs. Two existing unmerged pairs match in logged configuration except E and
+labels: E4096 adds about 43–46 fragments but only 0.66–0.67 percentage points of candidate
+weighted recall at common epochs. A subformula-filter query found 14 runs, all U256/E1024;
+late-run coverage is about 94%, with no filtered E4096 counterpart found. No new tests or
+experiments ran. Next: inspect remaining
+missed intensity and support-oracle headroom before proposing another budget run. The proposal review
+is present but untracked, as is its linked loss review; include both in the eventual documentation
+change set with these indexes. No files were staged or committed.
+
+EBM modeling proposal (2026-09-13): the user selected both approaches, with
+[bond-cut EBM modeling first](plans/masshatter_bond_cut_ebm_plan.md), then spectrum reranking.
+The [MASShatter program](plans/masshatter_energy_based_model_plan.md) records this ordering and
+the spectrum setup delta. Next: select a checkpoint and validation subset, measure missed-intensity
+and finite-mask-pool headroom, then evaluate pairwise cut energies against search-only, unary,
+random, and mixture controls. Preserve probability contracts; the existing exact heap guarantee
+does not extend to pairwise energies. No implementation or experiments started for this program.
+The spectrum stage retains its separate shared protocol and null-adjusted gate.
+
+Loss setup review (2026-09-13): the [loss review](findings/loss_setup_review_2026_09_13.md)
+reproduces new FraGNNet vectorized-JSS correspondence/backward defects, ignored OOS
+supervision under JSS, and invalid formula slots stealing support targets. MASShatter
+probes identify weak JSS recovery gradients, correspondence/support ambiguity, proposal-loss
+coverage limits, and a no-warmup gradient-routing confound. No implementation changes or
+training ran; 195 focused tests passed on CPU. Next: fix the verified FraGNNet contracts,
+then inspect MASShatter gradients/coverage before an isolated matched JSS/KL comparison.
+The prior audit's three FraGNNet loss/explanation fixes and MASShatter precursor-pair
+rejection are already present in the reviewed source; their earlier pending status below
+is historical. The W&B screen report is missing from this checkout; its historical summary below
+is not reverified evidence.
+
 Correctness audit (2026-09-12): the [combined model audit](findings/fragnnet_masshatter_audit_2026_09_12.md)
 records reproduced checkpoint-loading, HDF5 cutoff, FraGNNet loss/explanation, and shared
 test-metric defects, plus silently ignored MASShatter precursor-pair supervision.
@@ -72,14 +125,15 @@ stale; an isolated rebuild from current source yielded 2,876 passed, 21 skipped,
 initialization, then the remaining counterexamples. Pre-existing SMARTS warmup edits
 were preserved; CUDA and real-data scientific behavior remain unverified.
 
-W&B review (2026-09-11): the [recent screen](findings/wandb_screen_2026_09_11.md)
-supersedes older “no runs launched” execution statements below and in the linked plans.
+W&B review (2026-09-11; historical summary, source report unavailable here): the recorded screen
+superseded older “no runs launched” statements. `docs/findings/wandb_screen_2026_09_11.md`
+is absent from this checkout; recover the report before using these comparisons as evidence.
 JSS warmup 0–4 leads the single-seed filtered screen at 0.80099 best validation binned
 cosine; CE remains close and finished sooner. Support supervision helps early training;
 an additional soft-gate gain is unresolved. GNN context completed, but its matched
 heads-only comparison is missing from the inspected runs. SMARTS warmup failed at the
 known construction guard. Next: matched-seed confirmation and the missing controls;
-see the finding for metric definitions, run links, and provenance limitations.
+recover the missing report for metric definitions, run links, and provenance limitations.
 
 SMARTS merged readiness (2026-09-09): the [readiness audit](findings/masshatter_code_audit.md#smarts-merged-run-readiness-2026-09-09)
 passed 494 CPU tests (5 skipped) and a synthetic SMARTS + merged NCE + GNN-context

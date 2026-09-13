@@ -63,9 +63,11 @@ roadmap. It links the analyses that justify each item.
 ## findings/ — measured results
 
 | Doc | Result |
-| [fragnnet_masshatter_audit_2026_09_12.md](findings/fragnnet_masshatter_audit_2026_09_12.md) | Reproduced checkpoint, inference, FraGNNet loss/explanation, and shared metric defects; full-suite source/binary validation. |
-| [wandb_screen_2026_09_11.md](findings/wandb_screen_2026_09_11.md) | Recent W&B loss, warmup, support, context, and SMARTS screen; single-seed findings and execution limits. |
+| [masshatter_smarts_review_2026_09_13.md](findings/masshatter_smarts_review_2026_09_13.md) | SMARTS registry and eligibility audit, 75 passing tests, pyrimidine-carbamate gap, and positive-ion literature priorities. |
 |-----|--------|
+| [masshatter_proposal_review_2026_09_13.md](findings/masshatter_proposal_review_2026_09_13.md) | Source review of proposal coverage, deterministic selection, warmup routing, diversity, and mixture capacity; prioritized diagnostics and untested improvements. |
+| [loss_setup_review_2026_09_13.md](findings/loss_setup_review_2026_09_13.md) | Reproduced FraGNNet JSS vectorization, OOS, and support-target issues; MASShatter gradient, correspondence, proposal, and warmup findings. |
+| [fragnnet_masshatter_audit_2026_09_12.md](findings/fragnnet_masshatter_audit_2026_09_12.md) | Reproduced checkpoint, inference, FraGNNet loss/explanation, and shared metric defects; full-suite source/binary validation. |
 | [masshatter_code_audit.md](findings/masshatter_code_audit.md) | SMARTS/proposal-only-warmup construction guard removed and validated (2026-09-11); earlier fixes and pickle API fix implemented; 90 focused tests pass. CPU bfloat16 mixture issue deferred by user. |
 | [masshatter_context_design_audit.md](findings/masshatter_context_design_audit.md) | Merged-context audit and implemented ACE range/weighted aggregation fixes; metadata coverage and deferred initialization suggestion. |
 | [dag_oracle_ceiling_nist20.md](findings/dag_oracle_ceiling_nist20.md) | Baseline d3 DAG ceiling = **0.937 cos_hun** on NIST20 test. Model-free upper bound. |
@@ -94,6 +96,9 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Idea |
 |-----|------|
+| [energy_based_spectrum_reranking_plan.md](plans/energy_based_spectrum_reranking_plan.md) | Shared design of record: null-adjusted oracle gate, ranking objective, matched controls; FraGNNet anchor. |
+| [masshatter_energy_based_model_plan.md](plans/masshatter_energy_based_model_plan.md) | EBM program: bond-cut modeling first, spectrum reranking second; MASShatter spectrum setup delta. |
+| [masshatter_bond_cut_ebm_plan.md](plans/masshatter_bond_cut_ebm_plan.md) | First EBM stage: pairwise cut energy over a finite mask pool, support gate, and matched search/unary/mixture controls. |
 | [masshatter_improvement_plan.md](plans/masshatter_improvement_plan.md) | Unmerged MASShatter: corrected CE control, encoder-sharing gate, Gaussian support-gated JSS, oracle diagnostics, conservative pruning, and throughput checks. |
 | [complementary_cut_supervision_experiment_plan.md](plans/complementary_cut_supervision_experiment_plan.md) | Target definition, matched GINE-1 measurement gates, training arms, and stop rules. Read the separate findings before running it. |
 | [global_fragment_intensity_ranking_experiment_plan.md](plans/global_fragment_intensity_ranking_experiment_plan.md) | Global base-mass and online adjacent-CE contender supervision with bounded, group-balanced context batching and matched sampler controls. |
@@ -125,18 +130,18 @@ roadmap. It links the analyses that justify each item.
 | [lz_molecular_generation.md](notes/lz_molecular_generation.md) | Literature notes on spectrum-conditioned molecular generation (§1–3). |
 | [lz_part2.md](notes/lz_part2.md) | Continuation of the above, starting at §4 (spectrum-to-DAG generation). |
 
-## Top level — curated analysis logs
+## Curated analysis logs
 
-These two are **append-only analysis logs**, kept at top level because they grow by subclass rather
-than belonging to one category. Add sections with the `/analyze-subclass` and `/analyze-subclass-mh`
+These two are **append-only analysis logs** under `findings/`, organized by subclass. Add sections
+with the `/analyze-subclass` and `/analyze-subclass-mh`
 commands, which insert before the Summary section. The measurement they interpret comes from
 `scripts/eval/find_missing_peaks.py`; the prose is written, not generated.
 `src/fragnnet/frag/smarts_prepass.py` cites the first one by path.
 
 | Doc | Scope |
 |-----|-------|
-| [missing_peak_findings.md](missing_peak_findings.md) | FT, `[M+H]+`, 2,655 lines, grouped by root cause. |
-| [missing_peak_findings_m-h.md](missing_peak_findings_m-h.md) | FT, `[M-H]-`, 1,199 lines. |
+| [missing_peak_findings.md](findings/missing_peak_findings.md) | FT, `[M+H]+`, 2,655 lines, grouped by root cause. |
+| [missing_peak_findings_m-h.md](findings/missing_peak_findings_m-h.md) | FT, `[M-H]-`, 1,199 lines. |
 
 `spectra_cleanup.md` is a **0-byte placeholder** committed to the repo — it needs either content or
 deletion.

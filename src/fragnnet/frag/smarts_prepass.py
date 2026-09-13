@@ -497,6 +497,9 @@ NL_RULES: list[NeutralLossRule] = [
     # A new Ar–N bond forms, so the product atoms are disconnected in the original
     # graph.  H-cap adds +2H (one at Ar–C, one at N); correct formula at H_delta=-2.
     # Confirmed in spec_id=610784 and 856552; affects thousands of NIST23 spectra.
+    # Positive-ESI SO2 extrusion evidence (substituent-dependent):
+    # https://pubmed.ncbi.nlm.nih.gov/18059004/
+    # This paper does not validate unrestricted ionization/scaffold eligibility.
     NeutralLossRule(
         name="aryl_sulfonamide_so2",
         reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NH:5]",

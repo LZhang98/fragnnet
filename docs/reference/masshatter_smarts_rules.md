@@ -2,12 +2,17 @@
 
 > **Status:** Reference and research backlog
 >
-> **Updated:** 2026-08-22
+> **Updated:** 2026-09-13
 
 This document defines which gas-phase rearrangement rules belong in MASShatter,
 records the rules currently enabled, and keeps literature candidates separate from
 validated code. It is intentionally narrower than the general
 [rearrangement review](rearrangement_smarts.md).
+
+The [2026-09-13 set and literature audit](../findings/masshatter_smarts_review_2026_09_13.md)
+records current eligibility checks, passing tests, and positive-ion expansion priorities.
+Paper URLs are also attached to the seven newer executable rule definitions in
+[`mass_shatter_templates.py`](../../src/fragnnet/frag/mass_shatter_templates.py).
 
 ## Scope and admission rule
 
@@ -146,6 +151,7 @@ beyond a narrow small-molecule SMARTS.
 | A | `diacylhydrazine_carboxylate_o_transfer` | `[M-H]-`, CID | `[R1CO2]-` is assembled by transferring the opposite amide oxygen to the R1 carbonyl carbon | Evidence is for `R1C(O)-N(t-Bu)NH-C(O)R2`; encode the tert-butyl and side-specific O map | [PLOS ONE, 2013](https://doi.org/10.1371/journal.pone.0063097) |
 | A | `nitrobenzyl_hydroxybenzoate_co2_coupling` | `[M-H]-`, CID | CO2 loss is followed by coupling of the retained 4-nitrobenzyl and hydroxyaryl groups | Require a phenolic anion and the para-nitrobenzyl ester; validate vanillate substitutions separately | [JASMS, 2016](https://doi.org/10.1007/s13361-016-1339-7) |
 | A | `proline_benzyl_ester_n_benzyl_transfer` | `[M+H]+`, CID | Benzyl transfers from the ester oxygen to the proline N while H2O and CO are lost | Separate the N-benzyl product from the competing benzyl-cation and hydride-transfer channels | [Journal of Mass Spectrometry, 2013](https://doi.org/10.1002/jms.3162) |
+| B | `pirimicarb_pyrimidinyl_carbamate_methyl_transfer` | Positive ESI, collisional activation | Proposed methyl transfer in pirimicarb accompanies the reported nominal 57 Da loss | Current pyridyl rule does not match this pyrimidine scaffold; extract Figure 6 atom mapping and prove additional coverage before implementation | [Molecules, 2018, section 2.3/Figure 6](https://pmc.ncbi.nlm.nih.gov/articles/PMC6222809/) |
 | A | `phenylalanine_carboxyl_o_transfer` | `[M+H]+`, CID/MS3 | After NH3 and CH2CO loss, carboxyl O is retained with the benzyl/aryl residue as a hydroxybenzyl cation | This is sequential and has competing benzyl-O versus ortho-aryl-O products with the same formula | [Frontiers in Chemistry, 2023](https://doi.org/10.3389/fchem.2022.1094329) |
 | A | `primary_aryl_sulfonamide_o_transfer` | `[M+H]+`, CID/MS3 | A sulfonyl O transfers to the aryl ring to form a substituted phenoxonium ion | Product abundance depends strongly on ring substituents; require a supported conjugating substituent guard | [International Journal of Mass Spectrometry, 2019](https://doi.org/10.1016/j.ijms.2018.09.033) |
 | B | `prazole_sulfone_so2_extraction` | Positive ESI, CID | Prazole sulfones lose the SO2 linker and form an N-(2-benzimidazolyl)pyridine framework | Restrict to sulfones; sulfoxides rarely form the product, thioethers require an additional SH-radical loss, and pyridine N-oxides are negative controls | [Molecules, 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/) |

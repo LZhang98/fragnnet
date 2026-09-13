@@ -47,11 +47,20 @@ _SHARED_MASS_SHATTER_NL_RULE_NAMES = (
 # These literature-derived rules are MASShatter-only. Keeping them out of the
 # shared FRAG_RULES/NL_RULES registries avoids changing the established BFS
 # preprocessing behavior.
+# Evidence and admission gates: docs/reference/masshatter_smarts_rules.md.
+# Unimplemented candidates and mapping limits:
+# docs/findings/masshatter_smarts_review_2026_09_13.md.
+# - Phenylalanine oxygen transfer: https://doi.org/10.3389/fchem.2022.1094329
+# - Aryl-sulfonamide oxygen transfer: https://doi.org/10.1016/j.ijms.2018.09.033
+# - Prazole-sulfone rearrangement: https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/
 _MASS_SHATTER_ONLY_FRAG_RULES = (
     # Protonated 2-, 3-, or 4-pyridyl O-carbamates transfer Me, Et, or nBu from
     # the carbamate N to the pyridyl-O residue. Cutting O-C(=O) and N-alkyl
     # produces three components; the pyridyl-O and selected alkyl components
     # form the observed RC5H5NO+ assembly.
+    # Paper: https://www.sciencedirect.com/science/article/pii/S004040201401518X
+    # Pyrimidine extension is not implemented; pirimicarb evidence (section 2.3):
+    # https://pmc.ncbi.nlm.nih.gov/articles/PMC6222809/
     SmartsFragRule(
         name="pyridyl_carbamate_alkyl_transfer",
         reactant_smarts=(
@@ -67,6 +76,7 @@ _MASS_SHATTER_ONLY_FRAG_RULES = (
 _MASS_SHATTER_ONLY_NL_RULES = (
     # Deprotonated N-phenylbenzamides lose internal CO through an N-triggered
     # Smiles rearrangement, joining the benzoyl aryl residue to the amide N.
+    # Paper: https://pubmed.ncbi.nlm.nih.gov/26377014/
     NeutralLossRule(
         name="n_phenylbenzamide_co_smiles",
         reactant_smarts="[c:1]-[CX3;!R:2](=[O:3])-[NH:4]-[c:5]",
@@ -77,6 +87,7 @@ _MASS_SHATTER_ONLY_NL_RULES = (
     # Protonated aryl methyl esters expel CO2 while the methyl group transfers
     # from oxygen to the aromatic residue. The methyl guard avoids the broad
     # acyclic-ester rule that MASShatter intentionally excludes.
+    # Paper: https://pubmed.ncbi.nlm.nih.gov/29441643/
     NeutralLossRule(
         name="methyl_benzoate_co2_transfer",
         reactant_smarts="[c:1]-[CX3;!R:2](=[O:3])-[OX2:4]-[CH3:5]",
@@ -87,6 +98,7 @@ _MASS_SHATTER_ONLY_NL_RULES = (
     # Ionized o-, m-, and p-anisoyl fluorides lose CO and retain fluorine on
     # the methoxy-substituted aromatic residue. Recursive queries keep the
     # methoxy group on the same ring as the acyl fluoride.
+    # Paper (EI): https://doi.org/10.1002/oms.1210261122
     NeutralLossRule(
         name="anisoyl_fluoride_co_f_transfer",
         reactant_smarts=(
@@ -99,6 +111,7 @@ _MASS_SHATTER_ONLY_NL_RULES = (
     ),
     # Protonated amines and quaternary ammonium ions bearing a two-carbon
     # haloalkyl arm transfer Cl/Br/I to N while the arm leaves as C2H4.
+    # Paper: https://doi.org/10.1007/s13361-015-1261-4
     NeutralLossRule(
         name="short_haloalkyl_ammonium_c2_transfer",
         reactant_smarts=("[$([NX3;+0;!$(N-C=O)]),$([NX4;+1]):1]-[CH2:2]-[CH2:3]-[Cl,Br,I:4]"),
@@ -107,6 +120,7 @@ _MASS_SHATTER_ONLY_NL_RULES = (
         min_num_atoms=4,
     ),
     # The three-carbon homologue follows the same pathway but loses C3H6.
+    # Paper: https://doi.org/10.1007/s13361-015-1261-4
     NeutralLossRule(
         name="short_haloalkyl_ammonium_c3_transfer",
         reactant_smarts=(
@@ -119,6 +133,7 @@ _MASS_SHATTER_ONLY_NL_RULES = (
     # Deprotonated N-fluoroarenesulfonamides form diagnostic SO2F-. The neutral
     # ArN complement is variably substituted, so this rule maps the small
     # product directly instead of trying to enumerate every neutral atom.
+    # Paper (negative ion): https://doi.org/10.1002/rcm.9722
     NeutralLossRule(
         name="n_fluoro_sulfonamide_f_transfer",
         reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3H1:5]-[F:6]",
