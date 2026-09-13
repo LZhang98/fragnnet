@@ -508,6 +508,10 @@ class FraGNNetPL(SpectrumPL):
         # refuse to enable it while any such loss is active (fail fast rather than crash on a None).
         if self.hparams.skip_train_explainability:
             _expl_losses = {
+                "joint_e",
+                "joint_ne",
+                "nb_joint_e",
+                "nb_joint_ne",
                 "formula_e",
                 "formula_ne",
                 "node_e",

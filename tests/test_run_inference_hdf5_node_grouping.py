@@ -127,3 +127,58 @@ def test_peak_and_node_offsets_are_independent(patched_writer, tmp_path):
     # spec_id/mol_id retained per spectrum
     assert np.array_equal(out["spec_id"], [s["spec"] for s in SPECTRA])
     assert np.array_equal(out["mol_id"], [s["mol"] for s in SPECTRA])
+
+
+@pytest.mark.parametrize("cutoff", [0, 1, 2, 3, 10, -1])
+@pytest.mark.parametrize("chunk_size", [1, 3, 10000])
+def test_cutoff_flushes_all_processed_spectra(monkeypatch, tmp_path, cutoff, chunk_size):
+    batches = _make_batches([2, 1, 2])
+    count = len(batches) if cutoff < 0 else min(cutoff, len(batches))
+    selected = batches[:count]
+    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(selected))
+    path = str(tmp_path / "cutoff.h5")
+    written = script_utils.run_inference_hdf5(
+        types.SimpleNamespace(hparams=None), list(range(len(batches))), th.device("cpu"),
+        batch_cutoff=cutoff, chunk_size=chunk_size, save_path=path,
+    )
+    expected = sum(len(batch[0]) for batch in selected)
+    output = _read(path)
+    assert written == expected
+    assert len(output["start_points"]) == expected
+    if expected:
+        assert output["spec_id"].tolist() == [s["spec"] for s in SPECTRA[:expected]]
+        assert output["end_points"][-1] == sum(s["n_peaks"] for s in SPECTRA[:expected])
+        assert output["node_end_points"][-1] == sum(s["n_nodes"] for s in SPECTRA[:expected])
+
+
+@pytest.mark.parametrize("cutoff, expected", [(0, 0), (1, 1), (10, 3), (-1, 3)])
+def test_tabular_iterator_respects_cutoff(monkeypatch, cutoff, expected):
+    monkeypatch.setattr(script_utils, "get_idx_vars", lambda *a: ([], [], [], []))
+    monkeypatch.setattr(script_utils, "get_score_types", lambda *a: [])
+    processed = []
+
+    def process(**kwargs):
+        processed.append(kwargs["batch_input"])
+        return kwargs["batch_input"]
+
+    monkeypatch.setattr(script_utils, "process_batch_to_tabular_row", process)
+    model = types.SimpleNamespace(training=False, hparams={}, eval=lambda: None)
+    result = list(script_utils.run_inference_tabular_iter(
+        model, [0, 1, 2], th.device("cpu"), batch_cutoff=cutoff,
+    ))
+    assert result == processed == list(range(expected))
+
+
+@pytest.mark.parametrize("reported_batches", [1, 5])
+def test_writer_flushes_on_exhaustion_with_estimated_length(monkeypatch, tmp_path, reported_batches):
+    batches = _make_batches([2, 1, 2])
+    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    path = str(tmp_path / "estimated_length.h5")
+    written = script_utils.run_inference_hdf5(
+        types.SimpleNamespace(hparams=None), list(range(reported_batches)), th.device("cpu"),
+        chunk_size=3, save_path=path,
+    )
+    assert written == 5
+    _assert_node_alignment(_read(path))
