@@ -59,6 +59,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Where it stands |
 |-----|-----------------|
+| [fragnnet_audit_fixes.md](plans/fragnnet_audit_fixes.md) | Six FraGNNet/shared audit fixes on feiw_v2; reproduced regressions and compatibility notes. |
 | [model_improvement_plan.md](plans/model_improvement_plan.md) | **Canonical roadmap.** Start here. |
 | [sibling_ranking_target_plan.md](plans/sibling_ranking_target_plan.md) | **Current lead.** Coverage gate passed (583,539 targets at margin 0.1); ranking loss on `P(n)` not yet implemented. |
 | [fragment_bond_set_representation.md](plans/fragment_bond_set_representation.md) | All four gates measured, objective corrected to regularization (read §7 first). Next: run the written-but-never-run `cc_atom_dropout` sweep. |

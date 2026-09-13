@@ -569,13 +569,11 @@ class SpectrumPL(L.LightningModule):
                 th.max(pred_batch_idxs) + 1,
             )
 
-            if split == "train" or split == "val":
-                metric_d = {
-                    k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
-                    for k in self.auxiliary_metric_names
-                }
-            else:
-                metric_d = {}
+            # Per-spectrum metrics assign by batch index in test/predict as well.
+            metric_d = {
+                k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
+                for k in self.auxiliary_metric_names
+            }
             # define aggregation
             agg = "sum" if self.hparams.sum_ints else "amax"
 

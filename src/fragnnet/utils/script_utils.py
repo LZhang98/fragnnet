@@ -2,6 +2,7 @@ import gc
 import multiprocessing
 import os
 import tempfile
+from itertools import chain
 from typing import Any
 
 import h5py
@@ -303,12 +304,10 @@ def init_model_from_ckpt(
     print(f">> Loading checkpoint from: {ckpt_fp}")
     ckpt = th.load(ckpt_fp, map_location=map_location, weights_only=False)
 
-    # Handle compiled checkpoints: only decompile when the config says the
-    # model was compiled (avoids unnecessary decompilation overhead)
-    if config_d.get("compile", False):
-        print("> Checkpoint was compiled, decompiling...")
-        ckpt = decompile_jit_ckpt(ckpt)
-        config_d["compile"] = False  # prevent re-compilation during eval
+    # Use saved compilation metadata: inference setup already disables compilation
+    # in config_d, but compiled checkpoints still contain _orig_mod state keys.
+    ckpt = decompile_jit_ckpt(ckpt)
+    config_d["compile"] = False
     # Get model class and initialize
     model_type = config_d["model_type"]
     print(f">> Model type: {model_type}")
@@ -316,15 +315,9 @@ def init_model_from_ckpt(
 
     model = model_cls(**config_d)
 
-    # Load state dict
-    try:
-        model.load_state_dict(ckpt["state_dict"], strict=True)
-        print(">> Model loaded successfully (strict=True)")
-    except RuntimeError as e:
-        print("> Warning: Error loading with strict=True, retrying with strict=False")
-        print(f"  Error: {e}")
-        model.load_state_dict(ckpt["state_dict"], strict=False)
-        print(">> Model loaded with strict=False")
+    # Inference requires complete trained weights; partial loads can leave random layers.
+    model.load_state_dict(ckpt["state_dict"], strict=True)
+    print(">> Model loaded successfully (strict=True)")
 
     model.to(device)
     model.eval()
@@ -1172,8 +1165,6 @@ def run_inference_hdf5(
     # chunks. (Formula/joint-level arrays have the same requirement if ever requested.)
     node_name = {"pred_node_probs", "pred_node_node_idxs"}
     # Accumulate all batch results
-    num_pred = 0
-    num_batch = len(dataloader)
     preds_l = {}
     filter_stats: dict = {}
 
@@ -1206,7 +1197,7 @@ def run_inference_hdf5(
             maxshape=(None,),
         )
 
-        for batch_rows in run_inference_tabular_iter(
+        batch_iterator = run_inference_tabular_iter(
             model=model,
             dataloader=dataloader,
             device=device,
@@ -1219,15 +1210,17 @@ def run_inference_hdf5(
             return_cc_hash=return_cc_hash,
             rebase_indices=rebase_indices,
             filter_stats=filter_stats if min_peak_int > 0 else None,
-        ):
-            num_pred += 1
-            assert len(batch_rows) == len(columns_name)
-            for k, v in zip(columns_name, batch_rows):
-                if k not in preds_l:
-                    preds_l[k] = []
-                preds_l[k].extend(v)
-            # use pred_mzs length as the canonical flush trigger (always present)
-            if len(preds_l["pred_mzs"]) >= chunk_size or num_pred == num_batch:
+        )
+        # The final sentinel flushes a partial chunk on actual iterator exhaustion,
+        # including cutoffs and samplers whose reported length is only an estimate.
+        for batch_rows in chain(batch_iterator, (None,)):
+            if batch_rows is not None:
+                assert len(batch_rows) == len(columns_name)
+                for k, v in zip(columns_name, batch_rows):
+                    if k not in preds_l:
+                        preds_l[k] = []
+                    preds_l[k].extend(v)
+            if preds_l and (batch_rows is None or len(preds_l["pred_mzs"]) >= chunk_size):
                 print("saving ...", start_point)
                 # Node-level arrays are saved below with a node offset + node_start/end_points,
                 # not the per-spectrum offset. Only when actually populated (i.e. requested,
@@ -1381,7 +1374,7 @@ def run_inference_tabular_iter(
             enumerate(dataloader), total=total_batches, desc="Running inference"
         ):
             # Early exit for batch cutoff
-            if batch_idx >= batch_cutoff and batch_cutoff > 0:
+            if batch_cutoff >= 0 and batch_idx >= batch_cutoff:
                 print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
                 break
             # Process batch and get data rows

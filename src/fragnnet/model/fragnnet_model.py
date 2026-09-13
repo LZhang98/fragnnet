@@ -2078,15 +2078,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 ]
             frag_node_logprobs = scatter_logsoftmax(frag_node_logits, frag_node_batch_idxs)
 
-            # joint logits = formula_logits + node_logits (broadcast); exposed for post-branch
-            # scatter_logsoftmax over real positions (mirrors formula path's frag_joint_logits)
-            frag_joint_logits = (
-                frag_node_formula_logits + frag_node_logits.unsqueeze(-1)
-            ).flatten()
-
             # log p(f,n) = log p(f|n) + log p(n)
             frag_joint_logprobs = frag_node_formula_logprobs + frag_node_logprobs.unsqueeze(-1)
             frag_joint_logprobs = frag_joint_logprobs.flatten()
+            # Explainability conditions this same joint distribution on real states.
+            # Raw conditional logits would introduce a different normalizer per node.
+            frag_joint_logits = frag_joint_logprobs
 
             # compute total NULL probability (before renormalization)
             frag_null_formula_logprob = scatter_logsumexp(
@@ -2183,10 +2180,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs))
             frag_node_h_counts = get_node_feats(frag_x, frag_node_feat_idxs, "h_counts")
             frag_edge_h_ranges = get_edge_feats(frag_edge_attr, frag_edge_feat_idxs, "h_range")
-            # Memory Opt #2: Use einsum to compute h_diffs without Cartesian product expansion
-            src_h_counts = frag_node_h_counts[frag_edge_index[0]]  # (num_edges,)
-            dst_h_counts = frag_node_h_counts[frag_edge_index[1]]  # (num_edges,)
-            frag_edge_h_diffs = src_h_counts.unsqueeze(1) - dst_h_counts.unsqueeze(1)
+            # Enumerate every source/destination H-channel pair in row-major order.
+            src_h_counts = frag_node_h_counts[frag_edge_index[0]]  # (E, H)
+            dst_h_counts = frag_node_h_counts[frag_edge_index[1]]  # (E, H)
+            frag_edge_h_diffs = src_h_counts.unsqueeze(2) - dst_h_counts.unsqueeze(1)
             frag_edge_h_diffs = frag_edge_h_diffs.reshape(frag_edge_h_diffs.shape[0], -1)
             frag_edge_h_range_masks = th.logical_or(
                 frag_edge_h_diffs < frag_edge_h_ranges[:, 0].unsqueeze(-1),
@@ -2204,10 +2201,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 _crf_w = 2 * self.num_hs + 1
                 src_formula_logprobs = src_formula_logprobs[:, :_crf_w]
                 dst_formula_logprobs = dst_formula_logprobs[:, :_crf_w]
-            # Outer product of per-node formula log-probs across each edge: (E, H*H)
-            frag_edge_h_logprobs = th.einsum(
-                "ni,nj->nij", src_formula_logprobs, dst_formula_logprobs
-            ).reshape(len(src_formula_logprobs), -1)
+            # log P(h_src, h_dst) = log P(h_src) + log P(h_dst), shape (E, H*H).
+            frag_edge_h_logprobs = (
+                src_formula_logprobs.unsqueeze(2) + dst_formula_logprobs.unsqueeze(1)
+            ).flatten(start_dim=1)
 
         else:
             frag_edge_logprobs = None
