@@ -1022,6 +1022,10 @@ class MassShatterPL(SpectrumPL):
         }:
             raise ValueError("mass_shatter_intensity_output must be probability or independent")
         independent_output = self.hparams.mass_shatter_intensity_output == "independent"
+        if self.hparams.precursor_pair_loss_weight != 0.0:
+            raise ValueError(
+                "MASShatter does not support precursor_pair_loss_weight; set it to 0.0"
+            )
         if independent_output and self.hparams.loss_type == "cross_entropy":
             raise ValueError("independent intensity output requires a direct spectral loss")
         if self.hparams.loss_type != "cross_entropy" and (
@@ -1032,7 +1036,6 @@ class MassShatterPL(SpectrumPL):
             self.hparams.mass_shatter_base_ce_weight != 0.0
             or self.hparams.mass_shatter_log_base_ce
             or self.hparams.ce_pair_loss_weight != 0.0
-            or self.hparams.precursor_pair_loss_weight != 0.0
             or self.hparams.cross_ev_fragment_loss_weight != 0.0
         ):
             raise ValueError(

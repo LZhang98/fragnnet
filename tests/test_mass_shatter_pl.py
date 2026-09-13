@@ -423,6 +423,37 @@ def test_kl_distance_rejects_fp16_mixed_precision(precision: int | str) -> None:
         _build_pl(loss_type="kl_distance", precision=precision)
 
 
+@pytest.mark.parametrize(
+    ("intensity_output", "loss_type"),
+    [
+        ("probability", "cross_entropy"),
+        ("probability", "cosine_distance"),
+        ("independent", "cosine_distance"),
+    ],
+)
+@pytest.mark.parametrize("pair_weight", [0.0, 0.1, 10.0])
+def test_precursor_pair_supervision_is_explicitly_unsupported(
+    intensity_output: str, loss_type: str, pair_weight: float
+) -> None:
+    config = {
+        "mass_shatter_unique_fragment_mode": True,
+        "mass_shatter_proposal_anchored": True,
+        "mass_shatter_proposal_selection_only": True,
+        "mass_shatter_proposal_loss_weight": 1.0,
+        "mass_shatter_intensity_output": intensity_output,
+        "loss_type": loss_type,
+        "precursor_pair_loss_weight": pair_weight,
+    }
+    if pair_weight == 0.0:
+        model, _ = _build_pl(**config)
+        assert callable(model.loss_fn)
+    else:
+        with pytest.raises(
+            ValueError, match="MASShatter does not support precursor_pair_loss_weight"
+        ):
+            _build_pl(**config)
+
+
 def _loss_diagnostics() -> dict[str, th.Tensor]:
     return {
         "retained_mask_probability": th.tensor([0.8]),

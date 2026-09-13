@@ -131,6 +131,17 @@ Allocate the indexed metric outputs for all splits.
 
 ## 7. P2: MASShatter silently ignores precursor-pair auxiliary supervision
 
+**Fixed (2026-09-13):** `MassShatterPL._setup_loss_fn` now rejects nonzero
+`precursor_pair_loss_weight` for both probability and independent output, with an
+explicit instruction to set it to zero. The precursor-pair objective remains
+unsupported by MASShatter. Zero-weight configurations retain their existing behavior;
+no model parameters or checkpoint schemas change. Regression coverage checks zero,
+0.1, and 10.0 weights with probability cross-entropy, probability cosine distance,
+and independent cosine distance. The MASShatter suite plus bond-fragment-head tests
+passed **744 tests, with 7 skipped**, on CPU; GPU behavior was not tested.
+
+Original finding:
+
 Location: [MASShatterPL](../../src/fragnnet/pl_model/mass_shatter_pl.py), lines
 1031–1039 and its final loss assembly near line 1731.
 
