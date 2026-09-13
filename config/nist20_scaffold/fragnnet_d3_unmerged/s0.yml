@@ -60,16 +60,16 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
+train_batch_size: 128
+eval_batch_size: 128
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 500
-max_epochs: 500
+min_epochs: 200
+max_epochs: 400
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
