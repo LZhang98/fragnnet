@@ -40,6 +40,18 @@ from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 
 
+class ModelCheckpointWithBestFile(ModelCheckpoint):
+	def __init__(self, best_checkpoint_fp, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.best_checkpoint_fp = best_checkpoint_fp
+
+	def on_validation_end(self, trainer, pl_module):
+		super().on_validation_end(trainer, pl_module)
+		if trainer.is_global_zero and self.best_model_path:
+			with open(self.best_checkpoint_fp, "w") as best_checkpoint_file:
+				best_checkpoint_file.write(os.path.basename(self.best_model_path))
+
+
 def load_config(template_fp, custom_fp):
 
 	assert os.path.isfile(template_fp), template_fp
@@ -308,10 +320,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	# setup callbacks
 	callbacks = []
 	if wandb_mode != "disabled":
-		ckpt_dp = os.path.join(wandb.run.dir,"ckpt")
 		run_name = wandb.run.name
 	else:
-		ckpt_dp = "tmp_ckpt"
 		run_name = config_d["wandb_name"]
 	model_save_name = str(run_name).strip().replace(os.sep, "_")
 	run_date = datetime.now().strftime("%Y%m%d")
@@ -319,8 +329,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		config_d["model_save_dir"],
 		f"{model_save_name}_{run_date}"
 	)
+	ckpt_dp = model_save_dp
 	os.makedirs(ckpt_dp, exist_ok=True)
-	os.makedirs(model_save_dp, exist_ok=True)
 	with open(os.path.join(model_save_dp, "config.yml"), "w") as config_file:
 		yaml.dump(config_d, config_file, sort_keys=False)
 	if is_resume:
@@ -342,24 +352,26 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 				if k in ckpt_callback_data:
 					ckpt_callback_data[k] = ckpt_callback_data[k].replace(
 						os.path.abspath(old_wandb_dp),
-						os.path.abspath(wandb.run.dir)
+						os.path.abspath(ckpt_dp)
 					)
 			if "best_k_models" in ckpt_callback_data:
 				for k in list(ckpt_callback_data["best_k_models"].keys()):
 					new_k = k.replace(
 						os.path.abspath(old_wandb_dp),
-						os.path.abspath(wandb.run.dir)
+						os.path.abspath(ckpt_dp)
 					)
 					ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data["best_k_models"].pop(k)
 			# save modified checkpoint in new wandb dir
 			th.save(new_ckpt_data,new_ckpt_fp)
 	if not config_d["disable_checkpoints"]:
-		checkpoint_callback = ModelCheckpoint(
+		checkpoint_callback = ModelCheckpointWithBestFile(
 			dirpath=ckpt_dp,
 			filename="model-{epoch:03d}",
 			monitor=config_d["checkpoint_metric"],
 			mode=config_d["checkpoint_metric_mode"],
 			save_last=config_d["checkpoint_save_last"],
+			save_top_k=-1,
+			best_checkpoint_fp=os.path.join(ckpt_dp, "0_best_epoch.txt"),
 		)
 		callbacks.append(checkpoint_callback)
 
@@ -519,12 +531,6 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			val_dl,
 			ckpt_path=ckpt_fp
 		)
-	if not trainer.interrupted:
-		for ckpt_fp in glob.glob(os.path.join(ckpt_dp, "*.ckpt")):
-			shutil.copy2(
-				ckpt_fp,
-				os.path.join(model_save_dp, os.path.basename(ckpt_fp))
-			)
 	logging.info("callback metrics")
 
 	if not trainer.interrupted and config_d["eval_test_split"]:

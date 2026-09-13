@@ -1,4 +1,4 @@
-wandb_name: nist20_scaffold_fragnnet_d3_s0_unmerged
+wandb_name: nist20_scaffold_fragnnet_d3_debug
 wandb_group: nist20_scaffold_fragnnet_d3
 
 # seed
@@ -7,7 +7,7 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
-split_dp: data/split/nist20_scaffold
+split_dp: data/split/nist20_debug
 frag_dp: data/frag/nist20_d3/dags
 frag_params:
   pyg_edge_feats: []
@@ -68,8 +68,8 @@ lr: 0.0003033
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 500
-max_epochs: 500
+min_epochs: 10
+max_epochs: 10
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
