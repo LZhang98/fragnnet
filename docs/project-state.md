@@ -67,6 +67,15 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+Joint selection objective (2026-09-13): the
+[ion/H channel plan](plans/masshatter_ion_h_channel_selection_plan.md#joint-fragmentchannel-selection-loss-experiment-2026-09-13)
+now records a proposed single selection loss that couples fragment proposal and
+ion/H support probabilities while retaining the independent spectral intensity loss.
+The current JSS + proposal loss + support BCE configuration is the control. Next:
+check joint-loss gradients and the all-channels-open failure mode on synthetic cases,
+then compare on matched validation support and intensity metrics. Documentation only;
+no implementation, config change, or training run.
+
 MASShatter SMARTS review (2026-09-13): the [set/literature review](findings/masshatter_smarts_review_2026_09_13.md)
 confirms 26 rules, 19 legacy rules without enforced ionization guards, and a pyrimidine
 gap in the carbamate family. Positive-ion oxygen-transfer and prazole-sulfone candidates

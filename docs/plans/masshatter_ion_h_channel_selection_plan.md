@@ -1,6 +1,6 @@
 # MASShatter Ion-Mode Proposal, H Selection, and Intensity-Head Plan
 
-> **Status:** PROPOSED &nbsp;·&nbsp; **Updated:** 2026-08-30
+> **Status:** PROPOSED &nbsp;·&nbsp; **Updated:** 2026-09-13
 >
 > First remove CMF states duplicated by reachable CRF H shifts. Keep atom-set
 > retrieval H-independent, add an explicit CRF/CMF proposal stage only on
@@ -47,6 +47,67 @@ aggregate the already-trained joint logits over valid H shifts to obtain a CRF/C
 ranking, then use the within-mode logits for H ranking. On degenerate lead-scope
 `[M+H]+`, remove CMF and test only H ranking. This prevents arithmetic deduplication
 from being credited to either new head.
+
+## Joint fragment/channel selection-loss experiment (2026-09-13)
+
+**Status: proposed; no implementation or run.** This is an alternative *training
+objective* for the existing selection-only hierarchy, not a change to bond-mask
+enumeration or a claim that the current support BCE is unnecessary. The current
+[merged subformula JSS warmup 0–4 setup](../../config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula.yml)
+trains with JSS + 0.1 fragment proposal coverage loss + 0.1 balanced ion/H support
+BCE. It gates independent intensity with the support sigmoid. Its
+[W&B run](https://wandb.ai/frag-gnn/frag-gnn/runs/8v0i0fq7) leads the inspected
+single-seed filtered screen at best validation binned cosine 0.80099, but reports
+crashed. See the [proposal review](../findings/masshatter_proposal_review_2026_09_13.md#selection-only-versus-joint-training-live-wb-comparison)
+for selection-only and intensity-head comparisons and their provenance limits.
+
+**Question:** Can one joint selection objective train both the fragment proposal
+probabilities and ion/H support probabilities, while leaving the spectral intensity
+objective to allocate signal over the retained candidates? The current fragment
+proposal loss gives a fragment credit when *any* valid channel matches a peak; its
+gradient does not distinguish the matching channel. The support BCE supplies a
+separate channel target. A shared coverage objective would connect these decisions.
+
+For observed peak `i`, let `P(f)` be the existing normalized proposal probability
+over selected fragments, `g(f,c)` the sigmoid support probability of valid ion/H
+channel `c` (including ion mode), and `M(i,f)` the channels within the instrument's
+mass tolerance. A candidate joint coverage probability is:
+
+```text
+C_i = sum_f P(f) * [1 - product_{c in M(i,f)} (1 - g(f,c))]
+L_positive = -sum_{i with at least one reachable channel} y_i * log(C_i)
+```
+
+`y_i` uses the same observed-intensity weighting as the current proposal loss. The
+within-fragment union permits multiple compatible channels, and the outer sum
+marginalizes over alternative fragments instead of asserting a unique structural
+label. `C_i` is at most one because fragment probabilities sum to one. Compute it
+stably in log space and preserve gradients to both heads. Do not multiply the final
+intensity by `P(f)`; selection-only prediction remains the comparison contract.
+
+Positive coverage alone is degenerate: it rewards opening every valid channel.
+Complete **one joint selection loss** with a negative/sparsity term on valid channels
+that have little observational support, using the existing Gaussian mass-attribution
+semantics and explicit class/candidate-count normalization. Define the negative term
+and coefficient on a frozen calibration batch before a training comparison. Avoid
+turning one ambiguous observed mass into hard negatives for its other plausible
+channels. A target peak with no chemically reachable candidate has no gradient under
+this objective; log its excluded intensity and candidate weighted recall separately.
+Neither a constant penalty nor a larger coefficient can create a missing candidate.
+
+Compare on the same output architecture and data: retain the existing proposal and
+support heads, sigmoid gate, independent intensity head, JSS spectral loss, dense
+training support, warmup/routing policy, candidate budget, seed list, and tolerances.
+Replace only the two selection auxiliaries with the calibrated joint selection loss.
+The current separate-loss configuration is the control. Verify on synthetic ambiguous
+and uncovered-peak examples that both heads receive the intended gradients and that
+opening all valid channels is not optimal. Then compare the full training trajectory,
+weighted candidate/channel recall, support precision by threshold, emitted peak count,
+support oracle, and raw-intensity spectral quality on the same validation IDs. A simpler
+intensity task is supported only if attainable quality and coverage are preserved and
+the learned intensity model closes more of the oracle gap. Use the roadmap's paired-seed
+and retrieval gates before promotion. No new loss weight or config is declared here;
+those belong to implementation with checkpoint/config compatibility work.
 
 ## Goal
 
