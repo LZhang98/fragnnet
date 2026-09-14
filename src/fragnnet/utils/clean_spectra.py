@@ -554,7 +554,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--precursor-types",
         nargs="+",
-        help='Only process these precursor types, e.g. "[M+H]+" "[M-H]-"',
+        help=(
+            'Only process these precursor types, e.g. "[M+H]+" "[M-H]-" '
+            '"[M+Na]+" "[M+Cl]-"'
+        ),
     )
     parser.add_argument(
         "--instrument-types",

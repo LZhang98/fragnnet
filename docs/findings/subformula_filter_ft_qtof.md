@@ -2,7 +2,9 @@
 
 > **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-29
 >
-> NIST20-HR-only census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
+> Historical NIST20-HR census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
+> The current evaluation scope also includes `[M+Na]+` and `[M+Cl]-`; the existing numerical
+> tables remain the two-adduct baseline until the four-adduct run is complete.
 
 ## Question
 
@@ -20,6 +22,17 @@ The two operations were evaluated separately because they test different assumpt
 
 The subformula result therefore measures the **combined effect** of the 5 ppm window, precursor
 element budget, adduct model, and RDBE rule. It does not isolate RDBE as the cause of rejection.
+
+### Expanded adduct scope
+
+The current cleaning and DAG evaluation scope is `[M+H]+`, `[M-H]-`, `[M+Na]+`, and `[M+Cl]-`.
+Subformula filtering applies the corresponding precursor-ion mass shift for all four types. In DAG
+evaluation, leave CMF enabled so sodium-adducted fragments can use the protonated CMF carrier and
+chloride-adducted fragments can use the deprotonated CMF carrier. The H-transfer range remains
+controlled independently by `--max_h_transfer 4`.
+
+The result tables below predate this expansion and contain only `[M+H]+` and `[M-H]-`. They must
+not be interpreted as four-adduct results.
 
 ### Instrument-tolerance centroid definition
 
@@ -215,6 +228,26 @@ Until those ablations are complete, unmatched peaks should be marked rather than
 spectra should not be discarded solely because they contain unmatched peaks.
 
 ## Reproduction
+
+Current four-adduct instrument-tolerance cleaning command:
+
+```bash
+python -m fragnnet.utils.clean_spectra \
+  --spec-fp data/proc/nist20/spec_df.pkl \
+  --mol-fp data/proc/nist20/mol_df.pkl \
+  --output-fp /tmp/nist20hr_four_adduct_inst_tol_filtered.pkl \
+  --stats-fp /tmp/nist20hr_four_adduct_inst_tol_filtered_stats.json \
+  --skip-unsupported-formulas \
+  --dsets nist20_hr \
+  --precursor-types "[M+H]+" "[M-H]-" "[M+Na]+" "[M+Cl]-" \
+  --instrument-types FT QTOF \
+  --merge-peaks --merge-inst-tol --merge-method common_overlap \
+  --filter-subformula-peaks --subformula-inst-tol
+```
+
+Use this cleaned table with the D3/H4 and D4/H4 oracle command above. Keep CMF enabled (omit
+`--no_cmf`) and set `--max_h_transfer 4`. The commands below reproduce the historical two-adduct
+tables.
 
 Full subformula census:
 

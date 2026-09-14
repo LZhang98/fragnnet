@@ -161,6 +161,7 @@ def test_filter_subformula_peaks_keeps_only_mass_matches():
         ("[M+H]+", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]),
         ("[M+Na]+", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+Na]+"]),
         ("[M-H]-", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]),
+        ("[M+Cl]-", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+Cl]-"]),
     ],
 )
 def test_filter_subformula_peaks_applies_adduct_mass_shift(precursor_type, mass_shift):
@@ -301,18 +302,20 @@ def test_cleanup_stats_report_peak_and_intensity_retention():
     ]
 
 
-def test_select_precursor_types_focuses_on_protonated_and_deprotonated_spectra():
+def test_select_precursor_types_supports_four_adduct_evaluation_scope():
     spec_df = pd.DataFrame(
         {
-            "spec_id": [0, 1, 2],
-            "prec_type": ["[M+H]+", "[M-H]-", "[M+Na]+"],
-            "peaks": [[], [], []],
+            "spec_id": [0, 1, 2, 3, 4],
+            "prec_type": ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-", "[M+K]+"],
+            "peaks": [[], [], [], [], []],
         }
     )
 
-    selected = clean_spectra.select_precursor_types(spec_df, ["[M+H]+", "[M-H]-"])
+    selected = clean_spectra.select_precursor_types(
+        spec_df, ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
+    )
 
-    assert selected["spec_id"].tolist() == [0, 1]
+    assert selected["spec_id"].tolist() == [0, 1, 2, 3]
 
 
 def test_select_instrument_types_focuses_on_ft_and_qtof():
