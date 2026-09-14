@@ -25,7 +25,7 @@ def main() -> None:
 
     subprocess.run(
         [
-            sys.executable,
+            "python",
             "scripts/setup_job_cc.py",
             "--job_name",
             JOB_NAME,
