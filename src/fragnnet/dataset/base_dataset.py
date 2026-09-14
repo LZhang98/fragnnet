@@ -8,6 +8,7 @@ import torch as th
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from fragnnet.utils.clean_spectra import clean_spectra
 from fragnnet.utils.data_utils import (
     CHARGE_FACTOR_MAP,
     fill_missing_ace,
@@ -384,6 +385,51 @@ class BaseDataset(Dataset):
             print(f">> Dropping spectra unless {ce_key} is one of {spec_params['test_ces']}")
             print(f"> Before drop: {orig_test_spec_count} spectra, {orig_test_group_count} groups")
             print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
+
+        # Clean each source spectrum before merging replicate spectra. Legacy
+        # checkpoint configs predate these settings and omit the whole group.
+        cleanup_param_names = {
+            "centroid_peaks",
+            "centroid_ppm",
+            "centroid_use_instrument_tolerance",
+            "centroid_method",
+            "filter_subformula_peaks",
+            "subformula_ppm",
+            "subformula_use_instrument_tolerance",
+            "drop_empty_spectra",
+        }
+        configured_cleanup_params = cleanup_param_names.intersection(spec_params)
+        if configured_cleanup_params:
+            missing_cleanup_params = cleanup_param_names.difference(spec_params)
+            if missing_cleanup_params:
+                raise ValueError(
+                    "spec_params is missing required spectrum cleanup settings "
+                    f"{sorted(missing_cleanup_params)}. Merge old checkpoint settings with "
+                    "the current config/template.yml before enabling spectrum cleanup."
+                )
+            cleanup_enabled = (
+                spec_params["centroid_peaks"]
+                or spec_params["filter_subformula_peaks"]
+                or spec_params["drop_empty_spectra"]
+            )
+            if cleanup_enabled:
+                spec_df = clean_spectra(
+                    spec_df=spec_df,
+                    mol_df=mol_df,
+                    merge_peak_signals=spec_params["centroid_peaks"],
+                    merge_ppm=spec_params["centroid_ppm"],
+                    filter_by_subformula=spec_params["filter_subformula_peaks"],
+                    subformula_ppm=spec_params["subformula_ppm"],
+                    drop_empty_spectra=spec_params["drop_empty_spectra"],
+                    use_instrument_tolerance=spec_params[
+                        "subformula_use_instrument_tolerance"
+                    ],
+                    use_merge_instrument_tolerance=spec_params[
+                        "centroid_use_instrument_tolerance"
+                    ],
+                    merge_method=spec_params["centroid_method"],
+                )
+                mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
 
         # merge spectra
         um_spec_cols = [

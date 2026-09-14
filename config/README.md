@@ -187,6 +187,25 @@ Its paired control is
 and the head-only K/width/dropout grid is defined in
 [`nist20_d3_ma_mi_frag_competition_sweep.yml`](../sweep/nist20_d3_ma_mi_frag_competition_sweep.yml).
 
+### Spectrum Cleanup (`spec_params`)
+
+Spectrum cleanup runs on each source spectrum after split/metadata filtering and before spectra
+in the same replicate group are merged. It changes the in-memory training/evaluation targets; it
+does not rewrite `spec_df.pkl`.
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `centroid_peaks` | `False` | Merge nearby signals into an intensity-weighted centroid. |
+| `centroid_ppm` | `20.0` | Fixed ppm tolerance used for centroiding. |
+| `centroid_use_instrument_tolerance` | `False` | Use the FraGNNet FT/QTOF tolerance and low-mass floor instead of `centroid_ppm`. |
+| `centroid_method` | `common_overlap` | Peak grouping rule: `common_overlap` or `naive_centroid`. |
+| `filter_subformula_peaks` | `False` | Keep only peaks matching a precursor-compatible molecular subformula. Requires `mol_df.formula`. |
+| `subformula_ppm` | `5.0` | Fixed ppm tolerance used for subformula matching. |
+| `subformula_use_instrument_tolerance` | `True` | Use the FraGNNet FT/QTOF tolerance and low-mass floor instead of `subformula_ppm`. |
+| `drop_empty_spectra` | `True` | Drop spectra, and now-unused molecules, when cleanup removes every peak. |
+
+When both operations are enabled, centroiding runs first and subformula filtering second.
+
 ### Target Spectrum Filtering
 
 These options are top-level model hyperparameters handled in `SpectrumPL.preproc_spec()`.
