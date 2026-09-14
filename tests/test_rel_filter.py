@@ -66,3 +66,36 @@ def test_rel_filter_mz_max():
     mzs, ints, batch_idxs = _make_batch([[(100.0, 999.0), (300.0, 999.0)]])
     out_mzs, _, _ = batched_rel_filter_func(mzs, ints, batch_idxs, rel_thresh=0.0, mz_max=250.0)
     assert out_mzs.tolist() == [100.0]
+
+
+def test_rel_filter_zero_threshold_with_mz_max_drops_only_nonpositive():
+    # rel_thresh == 0.0 takes the shortcut that skips the per-spectrum max entirely.
+    # It must still behave exactly like `ints > 0` combined with the mz_max cutoff:
+    # zero and negative intensities go, positive ones below the old (zero) threshold stay.
+    mzs, ints, batch_idxs = _make_batch([
+        [(100.0, 1000.0), (200.0, 0.0), (300.0, -1.0), (400.0, 1e-9)],
+        [(500.0, 7.0), (1600.0, 900.0)],
+    ])
+    out_mzs, out_ints, out_batch = batched_rel_filter_func(
+        mzs, ints, batch_idxs, rel_thresh=0.0, mz_max=1500.0
+    )
+    # 200.0 (zero) and 300.0 (negative) dropped; 1600.0 dropped by mz_max; rest kept.
+    assert out_mzs.tolist() == [100.0, 400.0, 500.0]
+    assert out_batch.tolist() == [0, 0, 1]
+    assert out_ints[0].item() == 1000.0
+    assert out_ints[1].item() > 0.0  # tiny-but-positive peak survives a zero threshold
+    assert out_ints[2].item() == 7.0
+
+
+def test_rel_filter_explicit_dim_size_matches_inferred():
+    # Passing dim_size explicitly (avoiding the internal th.max(...).item() sync) must give
+    # identical results to leaving it unset, including when the batch has trailing empty
+    # spectra (batch_idxs never reaches dim_size - 1).
+    mzs, ints, batch_idxs = _make_batch([
+        [(100.0, 1000.0), (200.0, 5.0)],
+        [(300.0, 10.0), (400.0, 5.0)],
+    ])
+    inferred = batched_rel_filter_func(mzs, ints, batch_idxs, rel_thresh=0.01)
+    explicit = batched_rel_filter_func(mzs, ints, batch_idxs, rel_thresh=0.01, dim_size=5)
+    for a, b in zip(inferred, explicit):
+        assert a.tolist() == b.tolist()

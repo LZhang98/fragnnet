@@ -552,7 +552,13 @@ def scatter_reduce(
     default: float = 0.0,
     include_self: bool = True,
 ) -> th.Tensor:
-    """Thin wrapper over torch.scatter_reduce_ with validation."""
+    """Thin wrapper over torch.scatter_reduce_ with validation.
+
+    Pass `dim_size` whenever it is already known on the host (e.g. the batch size):
+    leaving it `None` forces a blocking `int(th.max(index))` host sync to derive it.
+    With `dim_size` given, bounds are checked with a non-blocking `torch._assert_async`
+    on CUDA tensors instead, so no sync is introduced.
+    """
 
     if reduce == "mean" and include_self:
         print("scatter_reduce: mean reduce with include_self=True is not recommended")
@@ -562,15 +568,24 @@ def scatter_reduce(
             dim_size = 0
         result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim + 1 :]
         return th.full(result_shape, default, dtype=src.dtype, device=src.device)
-    max_index = int(th.max(index))
-    if max_index < 0:
-        raise ValueError("scatter_reduce: index contains negative entries")
     if dim_size is None:
+        max_index = int(th.max(index))
+        if max_index < 0:
+            raise ValueError("scatter_reduce: index contains negative entries")
         dim_size = max_index + 1
-    elif dim_size <= max_index:
-        raise ValueError(
-            f"scatter_reduce: dim_size {dim_size} is too small for max index {max_index}"
+    elif index.device.type == "cuda":
+        th._assert_async(
+            ((index >= 0) & (index < dim_size)).all(),
+            "scatter_reduce: index contains a negative entry or exceeds dim_size",
         )
+    else:
+        max_index = int(th.max(index))
+        if max_index < 0:
+            raise ValueError("scatter_reduce: index contains negative entries")
+        if dim_size <= max_index:
+            raise ValueError(
+                f"scatter_reduce: dim_size {dim_size} is too small for max index {max_index}"
+            )
     result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim + 1 :]
     results = th.full(result_shape, default, dtype=src.dtype, device=src.device)
     results.scatter_reduce_(dim=dim, index=index, src=src, reduce=reduce, include_self=include_self)

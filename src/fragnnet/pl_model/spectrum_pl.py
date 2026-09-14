@@ -278,13 +278,14 @@ class SpectrumPL(L.LightningModule):
         Setup spectrum preprocessing functions: filtering, binning, intensity transforms, and normalization.
         """
 
-        def _rel_filter_func(mzs, ints, batch_idxs):
+        def _rel_filter_func(mzs, ints, batch_idxs, batch_size=None):
             return batched_rel_filter_func(
                 mzs,
                 ints,
                 batch_idxs,
                 rel_thresh=self.hparams["target_rel_ints_thresh"],
                 mz_max=self.hparams["mz_max"],
+                dim_size=batch_size,
             )
 
         self.rel_filter_func = _rel_filter_func
@@ -1139,6 +1140,7 @@ class SpectrumPL(L.LightningModule):
         bin_spec=False,
         transform_spec=False,
         normalize_spec=False,
+        batch_size=None,
     ):
         """
         Preprocess a spectrum: filter, bin, transform, and normalize intensities as needed.
@@ -1148,7 +1150,7 @@ class SpectrumPL(L.LightningModule):
 
         if rel_filter_spec:
             spec_mzs, spec_ints, spec_batch_idxs = self.rel_filter_func(
-                spec_mzs, spec_ints, spec_batch_idxs
+                spec_mzs, spec_ints, spec_batch_idxs, batch_size=batch_size
             )
         if target_rank_filter_spec:
             spec_mzs, spec_ints, spec_batch_idxs = self.target_rank_filter_func(
@@ -1178,6 +1180,7 @@ class SpectrumPL(L.LightningModule):
         pred: bool,
         log_in: bool = False,
         log_out: bool = False,
+        batch_size: int | None = None,
     ):
         """
         Convenience wrapper for spectrum preprocessing, handling different modes for train/pred.
@@ -1193,6 +1196,7 @@ class SpectrumPL(L.LightningModule):
                 bin_spec=self.binned_loss,
                 transform_spec=False,
                 normalize_spec=False,
+                batch_size=batch_size,
             )
         elif train and (not pred):
             spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
@@ -1204,6 +1208,7 @@ class SpectrumPL(L.LightningModule):
                 bin_spec=self.binned_loss,
                 transform_spec=True,
                 normalize_spec=True,
+                batch_size=batch_size,
             )
         elif (not train) and pred:
             # untransform
@@ -1223,6 +1228,7 @@ class SpectrumPL(L.LightningModule):
                 bin_spec=False,
                 transform_spec=False,
                 normalize_spec=True,
+                batch_size=batch_size,
             )
         if log_out:
             spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
@@ -1267,7 +1273,14 @@ class SpectrumPL(L.LightningModule):
         group_per_mol = batch["group_per_mol"]
         # prepare ground truth
         train_true_mzs, train_true_logprobs, train_true_batch_idxs = self.preproc_spec(
-            true_mzs, true_ints, true_batch_idxs, train=True, pred=False, log_in=False, log_out=True
+            true_mzs,
+            true_ints,
+            true_batch_idxs,
+            train=True,
+            pred=False,
+            log_in=False,
+            log_out=True,
+            batch_size=batch_size,
         )
         train_true_intensities = train_true_logprobs.exp()
         # forward pass and get predictions
@@ -1434,6 +1447,7 @@ class SpectrumPL(L.LightningModule):
                     pred=False,
                     log_in=False,
                     log_out=False,
+                    batch_size=batch_size,
                 )
                 eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
                 eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
@@ -1587,6 +1601,7 @@ class SpectrumPL(L.LightningModule):
         if self.training:
             warnings.warn("Model is in training mode")
 
+        batch_size = batch["batch_size"]
         true_mzs = batch["spec_mzs"]
         true_ints = batch["spec_ints"]
         true_batch_idxs = batch["spec_batch_idxs"]
@@ -1615,6 +1630,7 @@ class SpectrumPL(L.LightningModule):
                 pred=False,
                 log_in=False,
                 log_out=False,
+                batch_size=batch_size,
             )
             eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
             eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
