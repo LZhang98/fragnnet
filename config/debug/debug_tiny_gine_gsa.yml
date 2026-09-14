@@ -1,4 +1,4 @@
-wandb_name: debug_tiny_gine_efa
+wandb_name: debug_tiny_gine_gsa
 wandb_tags:
 - cc_test_run
 
@@ -61,7 +61,7 @@ inst_type_loss_tol:
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 # model stuff
-mol_gnn_type: GINE_EFA  # GINE + per-graph EFA linear global attention; num_heads=4 (default)
+mol_gnn_type: GINE_GSA  # GINE + exact per-graph global self-attention; num_heads=4 (default)
 frag_gnn_type: NodeMLP
 num_depth: 4
 num_hs: 4

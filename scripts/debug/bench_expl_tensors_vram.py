@@ -19,7 +19,7 @@ from fragnnet.utils.script_utils import to_device
 from fragnnet.utils.setup_utils import get_model_cls
 
 TEMPLATE_FP = "config/template.yml"
-CUSTOM_FP = "config/debug/debug_tiny_gine_efa.yml"
+CUSTOM_FP = "config/debug/debug_tiny_gine_gsa.yml"
 DEVICE = th.device("cuda" if th.cuda.is_available() else "cpu")
 N_BATCHES = 20
 

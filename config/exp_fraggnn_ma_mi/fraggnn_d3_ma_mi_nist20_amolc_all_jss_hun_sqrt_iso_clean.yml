@@ -56,8 +56,8 @@ frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 
 mol_hidden_size: 384    # jss_sqrt sweep winner is 512; using 384 for memory test
 mol_num_layers: 4
-mol_gnn_type: GINE      # jss_sqrt sweep: GINE wins over GINE_EFA
-mol_num_heads: 4        # used by GINE_EFA; ignored by GINE
+mol_gnn_type: GINE      # jss_sqrt sweep: GINE wins over GINE_GSA
+mol_num_heads: 4        # used by GINE_GSA; ignored by GINE
 mol_normalization: batch
 mol_pool_type: mean
 
