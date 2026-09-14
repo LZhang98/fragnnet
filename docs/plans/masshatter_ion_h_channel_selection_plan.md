@@ -1,11 +1,26 @@
 # MASShatter Ion-Mode Proposal, H Selection, and Intensity-Head Plan
 
-> **Status:** PROPOSED &nbsp;·&nbsp; **Updated:** 2026-09-13
+> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-14
 >
 > First remove CMF states duplicated by reachable CRF H shifts. Keep atom-set
 > retrieval H-independent, add an explicit CRF/CMF proposal stage only on
 > non-degenerate adduct scopes, split H-support selection from intensity prediction,
 > and emit a compact CE-aware channel set per retained fragment.
+
+## CMF candidate-universe alignment (2026-09-14)
+
+**Implemented; no training or oracle-coverage evaluation run.** User authorization
+superseded the prior proposal-only restriction: MASShatter now emits the full configured
+H-transfer ladder for chemically valid, non-degenerate CMF adducts, matching FraGNNet.
+It still removes CMF entirely for `[M+H]+` and `[M-H]-` when their base CMF ion duplicates
+a reachable CRF H shift, and it retains the shared exclusion of in-source-loss precursors.
+The pre-batch chemical-support filter uses the same mode/H validity contract.
+
+This changes the MASShatter candidate universe for carrier-switching adducts such as
+`[M+Na]+` and `[M+Cl]-`. Existing checkpoints did not train the newly valid CMF-H channels,
+so they are diagnostic-only; rebaseline candidate coverage and train matched controls before
+scientific comparison. The adduct-stratified zero-only versus full-range oracle measurement
+remains required to quantify the effect.
 
 ## Decision
 
@@ -255,19 +270,17 @@ The Phase 4 `>= 50%` channel-reduction gate uses the post-fix dense baseline. Th
 roughly one-of-ten reduction available from deleting redundant `[M+H]+` CMF entries
 must never be credited to a selector.
 
-### CMF coverage limitation on non-degenerate adducts
+### CMF full H-range alignment on non-degenerate adducts
 
-MassShatter currently permits CMF only at zero H shift for every adduct. That is
-appropriate for the direct-charge `[M+H]+`/`[M-H]-` cases once duplicates are removed,
-but it may under-cover carrier-switching adducts. For example, `[M+Na]+` CMF is the
-protonated fragment after sodium departs; additional CMF H shifts would produce
-distinct masses, yet eight nonzero shifts are currently unenumerated at ±4 H.
+MASShatter now permits every configured CMF H shift for non-degenerate adducts, matching
+FraGNNet. Direct-charge `[M+H]+`/`[M-H]-` CMF remains suppressed when its base state
+duplicates a reachable CRF state. For carrier-switching adducts such as `[M+Na]+`, this
+adds the previously unenumerated distinct CMF-H masses at ±4 H.
 
-Do not silently expand CMF support in the selector experiment: that would change the
-chemical candidate universe while testing pruning. First report an adduct-stratified
-oracle coverage audit for zero-only versus full-range CMF on non-degenerate adducts.
-If the extra states add meaningful weighted recall, handle CMF H-range expansion as a
-separate chemistry change with its own candidate-count baseline.
+This is a candidate-universe change, not part of the selector experiment. Report an
+adduct-stratified oracle coverage comparison against the former zero-only universe,
+then rebaseline candidate counts and train matched controls before attributing any
+metric difference to CMF support.
 
 ## Scope
 
@@ -305,14 +318,15 @@ In scope:
 Out of scope for the first implementation:
 
 - joint enumeration of `(bond mask, ion mode, H shift)` states;
-- changing chemical validity rules or the allowed H-transfer range;
+- further changes to chemical validity rules, CMF mass/formula conventions, or the allowed
+  H-transfer range;
 - forcing one channel per fragment;
 - sparsemax, entmax, Gumbel-softmax, straight-through estimators, or reinforcement
   learning;
 - a second channel transformer or explicit ion/H channel tokens;
 - global spectrum top-k or cumulative-intensity truncation;
 - changing fragment proposal loss, mask target, or fragment cutoff;
-- expanding CMF beyond zero H shift in the selector experiment;
+- additional candidate-universe expansions in the selector experiment;
 - applying hard channel selection during the first split-head training run.
 
 Those are escalation options only after the minimal split-head experiment identifies

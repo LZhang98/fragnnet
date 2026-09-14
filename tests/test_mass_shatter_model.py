@@ -23,7 +23,7 @@ from fragnnet.model.mass_shatter_model import (
 )
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
-from fragnnet.utils.formula_utils import formula_to_peak_mzs
+from fragnnet.utils.formula_utils import H_MASS, formula_to_peak_mzs
 
 
 def _build_batch(smiles: tuple[str, ...] = ("CCO", "CO")) -> Batch:
@@ -498,6 +498,34 @@ def test_cmf_validity_excludes_only_reachable_duplicates() -> None:
         "[M+Na]+": True,
         "[M-H]-": False,
     }
+
+
+@pytest.mark.parametrize("precursor_type", ("[M+Na]+", "[M+Cl]-"))
+def test_non_degenerate_cmf_uses_the_full_hydrogen_transfer_ladder(
+    precursor_type: str,
+) -> None:
+    batch = _build_batch(("CCO",))
+    model = _build_model(
+        batch,
+        precursor_types=(precursor_type,),
+        max_h_transfer=1,
+    )
+    atom_indices = th.arange(batch.x.shape[0])
+    ion_mzs, valid = model._fragment_masses_and_valid_channels(
+        batch,
+        atom_indices,
+        th.zeros_like(atom_indices),
+        th.tensor([0]),
+        1,
+        th.tensor([0]),
+    )
+
+    cmf_mzs = ion_mzs[0, 1]
+    assert valid[0, 1].tolist() == [True, True, True]
+    assert th.allclose(
+        cmf_mzs[1:] - cmf_mzs[:-1],
+        th.full((2,), H_MASS, dtype=cmf_mzs.dtype),
+    )
 
 
 def test_signed_adduct_deltas_track_removed_elements() -> None:

@@ -143,13 +143,18 @@ def mass_shatter_has_valid_ion(
         (PREC_TYPE_TO_COMP_DIFF[precursor_type], PREC_TYPE_TO_MASS_DIFF[precursor_type], shift)
         for shift in range(-max_h_transfer, max_h_transfer + 1)
     ]
-    if include_cmf and precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF:
-        channels.append(
+    if (
+        include_cmf
+        and precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF
+        and cmf_duplicate_crf_h_shift(precursor_type, max_h_transfer) is None
+    ):
+        channels.extend(
             (
                 PREC_TYPE_TO_CMF_COMP_DIFF[precursor_type],
                 PREC_TYPE_TO_CMF_MASS_DIFF[precursor_type],
-                0,
+                shift,
             )
+            for shift in range(-max_h_transfer, max_h_transfer + 1)
         )
     for component in Chem.GetMolFrags(mol, asMols=True):
         counts = Counter(atom.GetSymbol() for atom in component.GetAtoms())

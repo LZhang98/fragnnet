@@ -13,7 +13,7 @@ from fragnnet.utils.formula_utils import mass_shatter_has_valid_ion
     [
         ("FC(F)(F)F", "[M-H-H2O]-", True, False),
         ("CC", "[M-H2O+H]+", False, False),
-        ("CC", "[M-H2O+H]+", True, True),
+        ("CC", "[M-H2O+H]+", True, False),
         ("CCO", "[M-H2O+H]+", False, True),
         ("C.[O]", "[M-H2O+H]+", False, False),
         ("[H+]", "[M-H]-", False, True),

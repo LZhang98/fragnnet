@@ -19,6 +19,13 @@ Validation: shared-rule preservation, relative documentation links, and Git whit
 passed. The configured interpreter provides pytest and Ruff. No model code changed; no training,
 scientific evaluation, or full test suite was run for this documentation change.
 
+MASShatter CMF alignment (2026-09-14): MASShatter now emits the full configured H-transfer
+ladder for chemically valid, non-degenerate CMF adducts, matching FraGNNet. It preserves
+reachable CRF/CMF duplicate suppression and in-source-loss exclusion; the pre-batch support
+filter shares the same contract. Existing checkpoints are diagnostic-only because their newly
+valid CMF-H channels were not trained. Validation: 3,032 passed, 21 skipped, 2 xfailed; the
+CMF plan records the required oracle-coverage rebaseline and matched-control training.
+
 ## Research navigation
 
 - [Energy-based spectrum reranking](plans/energy_based_spectrum_reranking_plan.md) is a proposed

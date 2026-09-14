@@ -69,6 +69,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
+    cmf_duplicate_crf_h_shift,
 )
 from fragnnet.utils.spec_utils import weighted_mean_by_batch
 
@@ -355,23 +356,11 @@ def _cmf_duplicate_crf_shift(
     tolerance: float = 1e-8,
 ) -> int | None:
     """Return the reachable CRF H shift duplicated by CMF, if one exists."""
-    if precursor_type not in PREC_TYPE_TO_CMF_MASS_DIFF:
-        return None
-    shift = (
-        PREC_TYPE_TO_CMF_MASS_DIFF[precursor_type] - PREC_TYPE_TO_MASS_DIFF[precursor_type]
-    ) / H_MASS
-    rounded_shift = round(shift)
-    if abs(shift - rounded_shift) > tolerance or not (
-        -max_h_transfer <= rounded_shift <= max_h_transfer
-    ):
-        return None
-    crf_counts = PREC_TYPE_TO_COMP_DIFF[precursor_type]
-    cmf_counts = PREC_TYPE_TO_CMF_COMP_DIFF[precursor_type]
-    for element in set(crf_counts) | set(cmf_counts) | {"H"}:
-        expected = crf_counts.get(element, 0) + (rounded_shift if element == "H" else 0)
-        if cmf_counts.get(element, 0) != expected:
-            return None
-    return rounded_shift
+    return cmf_duplicate_crf_h_shift(
+        precursor_type,
+        max_h_transfer,
+        tolerance=tolerance,
+    )
 
 
 class BernoulliMixtureWeightHead(nn.Module):
@@ -1447,17 +1436,23 @@ class MassShatterModel(nn.Module):
         valid_channels = [crf_valid]
         if self.include_cmf:
             # CMF channel: the charge stays on this fragment while the proton/adduct
-            # leaves. It is defined only for the zero-shift column (index
-            # ``max_h_transfer``), so the remaining H columns stay invalid and its m/z
-            # is broadcast purely to keep the channel tensors rectangular.
-            cmf_counts = component_counts + self.cmf_formula_deltas[component_precursor_types]
-            cmf_valid_base = (cmf_counts >= 0).all(dim=1)
-            cmf_valid_base &= self.cmf_precursor_valid[component_precursor_types]
-            cmf_valid = th.zeros_like(crf_valid)
-            cmf_valid[:, self.max_h_transfer] = cmf_valid_base
+            # leaves. Non-degenerate adducts use the same full H-transfer ladder as
+            # FraGNNet. Direct-charge adducts remain entirely invalid here when their
+            # CMF base state duplicates a reachable CRF state.
+            cmf_counts = (
+                component_counts[:, None, :]
+                + self.cmf_formula_deltas[component_precursor_types, None, :]
+            )
+            cmf_counts = cmf_counts.expand(-1, self.num_h_shifts, -1).clone()
+            cmf_counts[:, :, self.hydrogen_count_column] += h_shifts
+            cmf_valid = (cmf_counts >= 0).all(dim=2)
+            cmf_valid &= self.cmf_precursor_valid[component_precursor_types, None]
             cmf_mzs = (
-                component_masses[:, None] + self.cmf_mass_deltas[component_precursor_types, None]
-            ).expand(-1, self.num_h_shifts)
+                component_masses[:, None]
+                + self.cmf_mass_deltas[component_precursor_types, None]
+                + h_shifts.to(component_masses)
+                * H_MASS
+            )
             mz_channels.append(cmf_mzs)
             valid_channels.append(cmf_valid)
         ion_mzs = th.stack(mz_channels, dim=1)
