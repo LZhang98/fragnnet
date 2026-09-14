@@ -33,7 +33,7 @@ def test_merge_peaks_applies_low_mass_tolerance_floor():
     assert merged == pytest.approx([(100.0015, 2.0)])
 
 
-def test_merge_instrument_tolerance_uses_twice_each_instrument_tolerance():
+def test_merge_instrument_tolerance_uses_overlapping_per_peak_windows():
     peaks = [(100.0, 1.0), (100.01, 1.0)]
     spec_df = pd.DataFrame(
         {
@@ -55,6 +55,74 @@ def test_merge_instrument_tolerance_uses_twice_each_instrument_tolerance():
 
     assert cleaned.loc[0, "peaks"] == peaks
     assert cleaned.loc[1, "peaks"] == pytest.approx([(100.005, 2.0)])
+
+
+def test_merge_instrument_tolerance_requires_cluster_wide_overlap():
+    spec_df = pd.DataFrame(
+        {
+            "inst_type": ["QTOF"],
+            "peaks": [[(100.0, 1.0), (100.028, 1.0), (100.042, 1.0)]],
+        }
+    )
+
+    cleaned = clean_spectra.clean_spectra(
+        spec_df,
+        pd.DataFrame(),
+        merge_peak_signals=True,
+        merge_ppm=20.0,
+        filter_by_subformula=False,
+        subformula_ppm=5.0,
+        drop_empty_spectra=False,
+        use_merge_instrument_tolerance=True,
+    )
+
+    assert len(cleaned.loc[0, "peaks"]) == 2
+    assert cleaned.loc[0, "peaks"][0] == pytest.approx((100.014, 2.0))
+    assert cleaned.loc[0, "peaks"][1] == pytest.approx((100.042, 1.0))
+
+
+def test_merge_instrument_tolerance_can_select_naive_centroid_method():
+    spec_df = pd.DataFrame(
+        {
+            "inst_type": ["QTOF"],
+            "peaks": [[(100.0, 1.0), (100.028, 1.0), (100.042, 1.0)]],
+        }
+    )
+
+    cleaned = clean_spectra.clean_spectra(
+        spec_df,
+        pd.DataFrame(),
+        merge_peak_signals=True,
+        merge_ppm=20.0,
+        filter_by_subformula=False,
+        subformula_ppm=5.0,
+        drop_empty_spectra=False,
+        use_merge_instrument_tolerance=True,
+        merge_method="naive_centroid",
+    )
+
+    assert len(cleaned.loc[0, "peaks"]) == 1
+    assert cleaned.loc[0, "peaks"][0] == pytest.approx((100.0233333333, 3.0))
+
+
+def test_fixed_ppm_merge_can_select_common_overlap_method():
+    spec_df = pd.DataFrame(
+        {"peaks": [[(100.0, 1.0), (100.0038, 3.0)]]}
+    )
+
+    cleaned = clean_spectra.clean_spectra(
+        spec_df,
+        pd.DataFrame(),
+        merge_peak_signals=True,
+        merge_ppm=20.0,
+        filter_by_subformula=False,
+        subformula_ppm=5.0,
+        drop_empty_spectra=False,
+        merge_method="common_overlap",
+    )
+
+    assert len(cleaned.loc[0, "peaks"]) == 1
+    assert cleaned.loc[0, "peaks"][0] == pytest.approx((100.00285, 4.0))
 
 
 def test_merge_only_does_not_require_molecule_metadata():
