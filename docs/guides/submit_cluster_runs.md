@@ -1,6 +1,6 @@
 # Submit training runs on Fir and Vulcan
 
-> **Status:** GUIDE · **Updated:** 2026-09-07
+> **Status:** GUIDE · **Updated:** 2026-09-14
 > Submission procedure verified against repository source; no cluster jobs were submitted or tested.
 
 ## 1. Prepare on the target cluster
@@ -10,9 +10,9 @@ intended cluster's login node. Selecting a GPU profile changes resource directiv
 not connect to another cluster. Login hostnames, current account eligibility, and live resource
 availability are not established by this repository.
 
-Set `FRAGNNET_PYTHON` to the absolute path of the approved Python interpreter on that cluster.
-Do not reuse the workstation interpreter path or assume an environment is active. The generator
-uses the standard library; the generated compute job builds a separate environment.
+For both Fir and Vulcan, invoke the generator as `python` from the cluster login environment; do
+not set or use `FRAGNNET_PYTHON` in cluster commands. The generator uses the standard library;
+the generated compute job builds a separate environment.
 
 Have the experiment config and its referenced data, splits, fragment caches, and any pretrained
 checkpoint available under the cluster checkout. Use repository-relative config/data paths and
@@ -48,7 +48,7 @@ if the account is omitted. Set the email explicitly to avoid its personal defaul
 For Fir:
 
 ```bash
-"$FRAGNNET_PYTHON" scripts/setup_job_cc.py \
+python scripts/setup_job_cc.py \
   --frag_gnn_dp . \
   --python_script_fp scripts/run_pl_model_fit.py \
   --job_name "$FRAGNNET_JOB" \
@@ -60,7 +60,22 @@ For Fir:
   --no_submit=True
 ```
 
-For Vulcan, use the same command with `--gpu_profile vulcan:l40s`.
+For Vulcan, use `python` directly:
+
+```bash
+python scripts/setup_job_cc.py \
+  --frag_gnn_dp . \
+  --python_script_fp scripts/run_pl_model_fit.py \
+  --job_name "$FRAGNNET_JOB" \
+  --gpu_profile vulcan:l40s \
+  --cc_account "$FRAGNNET_ACCOUNT" \
+  --cc_email your_email@example.org \
+  --time 3:00:00 \
+  --script_kwargs w=online c="$FRAGNNET_CONFIG" \
+  --no_submit=True
+```
+
+Do not replace `python` with `FRAGNNET_PYTHON` for cluster submissions.
 These are the current **repository presets**, not verified scheduler availability or quota:
 
 | Profile | GPU request (`--gres`) | CPUs | Host memory |
@@ -106,7 +121,7 @@ status; scheduler submission alone is not evidence of successful training.
 For Fir, replace the single config argument with the supported CV options:
 
 ```bash
-"$FRAGNNET_PYTHON" scripts/setup_job_cc.py \
+python scripts/setup_job_cc.py \
   --frag_gnn_dp . \
   --python_script_fp scripts/run_pl_model_fit.py \
   --job_name fragnnet_cv \
