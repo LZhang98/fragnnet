@@ -133,7 +133,10 @@ def test_support_and_oos_logits_have_distinct_output_slots() -> None:
     assert outputs[4].shape == (1,)
 
 
-def test_candidate_intensity_transformer_is_permutation_equivariant() -> None:
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_candidate_intensity_transformer_is_permutation_equivariant(
+    attention_type: Literal["induced", "full"],
+) -> None:
     th.manual_seed(41)
     head = CandidateIntensityTransformerHead(
         fragment_embedding_dim=6,
@@ -148,6 +151,7 @@ def test_candidate_intensity_transformer_is_permutation_equivariant() -> None:
         num_h_shifts=3,
         dropout=0.0,
         use_base_probability_feature=True,
+        attention_type=attention_type,
     ).eval()
     fragment_embeddings = th.randn(7, 6)
     complement_embeddings = th.randn(7, 6)
@@ -483,7 +487,10 @@ def test_candidate_intensity_transformer_preserves_large_counts_under_bfloat16()
     assert observed_shapes == [th.Size([1, 512, 8])]
 
 
-def test_candidate_intensity_transformer_isolates_molecules() -> None:
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_candidate_intensity_transformer_isolates_molecules(
+    attention_type: Literal["induced", "full"],
+) -> None:
     th.manual_seed(43)
     head = CandidateIntensityTransformerHead(
         fragment_embedding_dim=4,
@@ -498,6 +505,7 @@ def test_candidate_intensity_transformer_isolates_molecules() -> None:
         num_h_shifts=3,
         dropout=0.0,
         use_base_probability_feature=True,
+        attention_type=attention_type,
     ).eval()
     fragment_embeddings = th.randn(5, 4)
     complement_embeddings = th.randn(5, 4)
@@ -531,6 +539,152 @@ def test_candidate_intensity_transformer_isolates_molecules() -> None:
     assert th.allclose(baseline[0][:2], perturbed[0][:2])
     assert th.allclose(baseline[1][0], perturbed[1][0])
     assert th.allclose(baseline[2][:2], perturbed[2][:2])
+
+
+def _build_contextualization_head(
+    attention_type: Literal["induced", "full"],
+    *,
+    num_layers: int = 1,
+) -> CandidateIntensityTransformerHead:
+    return CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=num_layers,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        atom_decoder_num_layers=0,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+        attention_type=attention_type,
+    ).eval()
+
+
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_candidate_contextualization_ignores_bucket_padding(
+    attention_type: Literal["induced", "full"],
+) -> None:
+    """A ragged molecule must match an unpadded reference pass exactly."""
+    th.manual_seed(51)
+    head = _build_contextualization_head(attention_type)
+    # Three candidates land in the power-of-two bucket of four, leaving one padded slot.
+    tokens = th.randn(3, 8)
+
+    bucketed = head._contextualize_by_molecule(
+        tokens,
+        th.zeros(3, dtype=th.long),
+        batch_size=1,
+    )
+    inducing_tokens = (
+        None if head.inducing_tokens is None else head.inducing_tokens.expand(1, -1, -1)
+    )
+    reference, _ = head.layers[0](
+        tokens.unsqueeze(0),
+        inducing_tokens,
+        th.zeros((1, 3), dtype=th.bool),
+    )
+
+    assert th.allclose(bucketed, reference.squeeze(0), atol=1e-6)
+
+
+def test_full_attention_couples_candidates_within_a_molecule() -> None:
+    """Direct candidate attention must propagate one candidate into another."""
+    th.manual_seed(52)
+    head = _build_contextualization_head("full")
+    tokens = th.randn(4, 8)
+    component_batch_indices = th.tensor([0, 0, 1, 1])
+
+    baseline = head._contextualize_by_molecule(
+        tokens,
+        component_batch_indices,
+        batch_size=2,
+    )
+    perturbed_tokens = tokens.clone()
+    perturbed_tokens[0] += 5.0
+    perturbed = head._contextualize_by_molecule(
+        perturbed_tokens,
+        component_batch_indices,
+        batch_size=2,
+    )
+
+    assert not th.allclose(baseline[1], perturbed[1], atol=1e-4)
+    assert th.allclose(baseline[2:], perturbed[2:], atol=1e-6)
+
+
+def test_full_attention_drops_the_latent_set_and_its_parameters() -> None:
+    induced = _build_contextualization_head("induced", num_layers=2)
+    full = _build_contextualization_head("full", num_layers=2)
+
+    assert induced.inducing_tokens is not None
+    assert full.inducing_tokens is None
+    assert not any("inducing_tokens" in name for name, _ in full.named_parameters())
+    assert not any("latent" in name for name, _ in full.named_parameters())
+    # Full attention carries one attention block and one feed-forward block per layer
+    # rather than two, so a win over induced is not bought with extra parameters.
+    assert sum(p.numel() for p in full.parameters()) < sum(
+        p.numel() for p in induced.parameters()
+    )
+
+
+def test_full_attention_backpropagates_through_every_layer_parameter() -> None:
+    th.manual_seed(53)
+    head = _build_contextualization_head("full", num_layers=2)
+    tokens = th.randn(5, 8, requires_grad=True)
+
+    contextualized = head._contextualize_by_molecule(
+        tokens,
+        th.tensor([0, 0, 0, 1, 1]),
+        batch_size=2,
+    )
+    contextualized.square().sum().backward()
+
+    assert tokens.grad is not None
+    assert th.isfinite(tokens.grad).all()
+    for name, parameter in head.layers.named_parameters():
+        assert parameter.grad is not None, name
+        assert th.isfinite(parameter.grad).all(), name
+
+
+def test_candidate_intensity_transformer_validates_attention_type() -> None:
+    with pytest.raises(ValueError, match="unknown attention_type"):
+        _build_contextualization_head("inducing")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="num_inducing_points must be positive"):
+        CandidateIntensityTransformerHead(
+            fragment_embedding_dim=4,
+            context_dim=0,
+            model_dim=8,
+            num_layers=1,
+            num_heads=2,
+            feedforward_dim=16,
+            num_inducing_points=0,
+            atom_decoder_num_layers=0,
+            num_ion_modes=1,
+            num_h_shifts=3,
+            dropout=0.0,
+            use_base_probability_feature=True,
+        )
+    # Full attention never reads the latent count, so zero is acceptable there.
+    assert (
+        CandidateIntensityTransformerHead(
+            fragment_embedding_dim=4,
+            context_dim=0,
+            model_dim=8,
+            num_layers=1,
+            num_heads=2,
+            feedforward_dim=16,
+            num_inducing_points=0,
+            atom_decoder_num_layers=0,
+            num_ion_modes=1,
+            num_h_shifts=3,
+            dropout=0.0,
+            use_base_probability_feature=True,
+            attention_type="full",
+        ).inducing_tokens
+        is None
+    )
 
 
 def test_bond_break_head_is_invariant_to_endpoint_order() -> None:

@@ -63,8 +63,9 @@ roadmap. It links the analyses that justify each item.
 ## findings/ — measured results
 
 | Doc | Result |
-| [masshatter_smarts_review_2026_09_13.md](findings/masshatter_smarts_review_2026_09_13.md) | SMARTS registry and eligibility audit, 75 passing tests, pyrimidine-carbamate gap, and positive-ion literature priorities. |
 |-----|--------|
+| [subformula_filter_ft_qtof.md](findings/subformula_filter_ft_qtof.md) | Cleaning census and verified saved D3/D4 filtered oracle; D4 95.92% weighted recall, with explicit limits on comparison to MASShatter. |
+| [masshatter_smarts_review_2026_09_13.md](findings/masshatter_smarts_review_2026_09_13.md) | SMARTS registry and eligibility audit, 75 passing tests, pyrimidine-carbamate gap, and positive-ion literature priorities. |
 | [masshatter_proposal_review_2026_09_13.md](findings/masshatter_proposal_review_2026_09_13.md) | Source review of proposal coverage, deterministic selection, warmup routing, diversity, and mixture capacity; prioritized diagnostics and untested improvements. |
 | [loss_setup_review_2026_09_13.md](findings/loss_setup_review_2026_09_13.md) | Reproduced FraGNNet JSS vectorization, OOS, and support-target issues; MASShatter gradient, correspondence, proposal, and warmup findings. |
 | [fragnnet_masshatter_audit_2026_09_12.md](findings/fragnnet_masshatter_audit_2026_09_12.md) | Reproduced checkpoint, inference, FraGNNet loss/explanation, and shared metric defects; full-suite source/binary validation. |
@@ -98,7 +99,7 @@ roadmap. It links the analyses that justify each item.
 |-----|------|
 | [energy_based_spectrum_reranking_plan.md](plans/energy_based_spectrum_reranking_plan.md) | Shared design of record: null-adjusted oracle gate, ranking objective, matched controls; FraGNNet anchor. |
 | [masshatter_energy_based_model_plan.md](plans/masshatter_energy_based_model_plan.md) | EBM program: bond-cut modeling first, spectrum reranking second; MASShatter spectrum setup delta. |
-| [masshatter_bond_cut_ebm_plan.md](plans/masshatter_bond_cut_ebm_plan.md) | First EBM stage: pairwise cut energy over a finite mask pool, support gate, and matched search/unary/mixture controls. |
+| [masshatter_bond_cut_ebm_plan.md](plans/masshatter_bond_cut_ebm_plan.md) | Bond-cut-first diagnostic: D4 evidence limits the coverage premise; require support or efficiency headroom before pair-energy training. |
 | [masshatter_improvement_plan.md](plans/masshatter_improvement_plan.md) | Unmerged MASShatter: corrected CE control, encoder-sharing gate, Gaussian support-gated JSS, oracle diagnostics, conservative pruning, and throughput checks. |
 | [complementary_cut_supervision_experiment_plan.md](plans/complementary_cut_supervision_experiment_plan.md) | Target definition, matched GINE-1 measurement gates, training arms, and stop rules. Read the separate findings before running it. |
 | [global_fragment_intensity_ranking_experiment_plan.md](plans/global_fragment_intensity_ranking_experiment_plan.md) | Global base-mass and online adjacent-CE contender supervision with bounded, group-balanced context batching and matched sampler controls. |

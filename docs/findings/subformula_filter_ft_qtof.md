@@ -1,6 +1,6 @@
 # 5 ppm Subformula Filtering on NIST20-HR
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-29
+> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-09-13
 >
 > Historical NIST20-HR census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
 > The current evaluation scope also includes `[M+Na]+` and `[M+Cl]-`; the existing numerical
@@ -226,6 +226,71 @@ Before adopting formula-based filtering, run separate ablations for:
 
 Until those ablations are complete, unmatched peaks should be marked rather than deleted, and
 spectra should not be discarded solely because they contain unmatched peaks.
+
+## Saved subformula-filtered D3/D4 comparison verified 2026-09-13
+
+This is a separate saved comparison from the historical `1_above_prec` table above.
+The per-spectrum artifact was reaggregated; no DAG enumeration, preprocessing, or model inference
+was rerun. Do not use the earlier fixed-10-ppm D4 cosine as intensity-weighted recall.
+
+Artifacts:
+
+- [Per-spectrum D3/H4 and D4/H4 metrics](../../data/eval/nist20hr_subformula_2x_inst_tol_d3_d4_metrics.csv)
+- [Saved summary](../../data/eval/nist20hr_subformula_2x_inst_tol_d3_d4_summary.json)
+- Cleaned input: `/tmp/nist20hr_mh_ft_qtof_2x_inst_tol_centroid_subformula_inst_tol.pkl`
+- Cleaning metadata: `/tmp/nist20hr_mh_ft_qtof_2x_inst_tol_centroid_subformula_inst_tol.stats.json`
+
+The CSV contains 434,917 unique spectrum IDs from 25,264 molecules. Its IDs exactly match the
+cleaned input. The cleaning metadata enables peak merging, subformula filtering, and instrument
+tolerance for both operations; this is not the historical 5 ppm-only filter. File names identify
+this as the `2x_inst_tol`/centroid export, but the saved metadata does not fully establish the
+historical merge implementation or multiplier. It also does not capture the complete oracle
+command, source revision, or DAG fingerprints. Do not infer complete reproducibility from names.
+
+The population is NIST20-HR `[M+H]+`/`[M-H]-` across FT and QTOF, including all available splits.
+The displayed values are arithmetic means of per-spectrum metrics, not a pooled intensity ratio.
+Nineteen empty spectra have NaN metrics and are excluded from these means. Missing-DAG spectra
+have zero coverage: 25 spectra/3 molecules for D3, 398 spectra/30 molecules for D4. On the common
+DAG-available population, mean weighted recall is 92.54% for D3 and 96.00% for D4.
+
+| Population | Spectra | D3 weighted recall | D4 weighted recall | D4 oracle cosine |
+| --- | ---: | ---: | ---: | ---: |
+| All | 434,917 | 92.54% | **95.92%** | **0.9774** |
+| `[M+H]+`, FT | 286,490 | 91.24% | **96.08%** | 0.9813 |
+| `[M+H]+`, QTOF | 24,573 | 97.38% | 98.55% | 0.9932 |
+| `[M-H]-`, FT | 121,450 | 94.49% | 94.96% | 0.9650 |
+| `[M-H]-`, QTOF | 2,404 | 98.40% | 98.09% | 0.9850 |
+| `[M+H]+`, FT, validation IDs only | 57,816 | 91.18% | **96.10%** | — |
+
+Validation membership uses `data/split/nist20_ma_mi_inchikey/val_ids.csv`; it does not imply that
+these individually cleaned spectra reproduce merged MASShatter validation targets. Overall
+unweighted peak recall is 86.59% for D3 and 92.75% for D4. Weighted recall measures covered target
+intensity; oracle cosine measures ideal intensity assignment on reachable support. They are
+separate quantities and must not be substituted for each other.
+
+### Implication for MASShatter and EBM priorities
+
+The [proposal review](masshatter_proposal_review_2026_09_13.md) records roughly 94% candidate
+weighted recall for filtered merged MASShatter runs. Against this saved D4 reference, that is
+numerically about two percentage points lower, so the observed MASShatter coverage is strong.
+The two values are **not a matched gap estimate**: target merging/cleaning, evaluation IDs,
+acquisition mix, channel chemistry, matching, and metric aggregation must be aligned first.
+D4 is not a universal ceiling on MASShatter chemistry or search.
+
+Do not treat the entire remaining 6% of MASShatter intensity as recoverable through better
+bond-cut scores, or claim that an EBM would recover the numerical two-point difference. Before
+an architecture change, measure the current MASShatter support oracle and learned cosine on
+identical targets. A large support-oracle versus predicted-cosine gap prioritizes intensity
+assignment. Bond-cut modeling needs demonstrated additional support, lower cost at preserved
+coverage, or better downstream spectra at matched coverage; nominal U256 underfilling is not
+sufficient motivation. The existing user-requested bond-cut-first sequence remains a diagnostic
+order, not evidence that it offers the largest improvement.
+
+Validation: reaggregated all six D3/D4 metric means and matched the summary to absolute tolerance
+`1e-12`; verified spectrum-ID uniqueness, cleaned-input ID equality, missing-DAG zero coverage,
+and metadata joins. Slice means were recomputed from the saved CSV and cleaned-input metadata.
+No scientific comparison with a MASShatter checkpoint was run. Next: a matched support/intensity
+comparison, preserving this historical artifact rather than silently replacing its protocol.
 
 ## Reproduction
 

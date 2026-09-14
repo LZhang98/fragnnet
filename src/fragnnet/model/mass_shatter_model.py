@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import Literal
 
 import torch as th
 import torch.nn as nn
@@ -223,9 +224,7 @@ def _absolute_binary_channel_keep_mask(
 
     for batch_index in th.where((kept_per_spectrum == 0) & (available_per_spectrum > 0))[0]:
         batch_valid_indices = th.where(flat_valid & (flat_batch_indices == batch_index))[0]
-        fallback_index = batch_valid_indices[
-            flat_log_probabilities[batch_valid_indices].argmax()
-        ]
+        fallback_index = batch_valid_indices[flat_log_probabilities[batch_valid_indices].argmax()]
         keep[fallback_index] = True
     return keep.reshape_as(valid_mask)
 
@@ -795,6 +794,7 @@ class MassShatterModel(nn.Module):
         intensity_transformer_num_heads: int,
         intensity_transformer_feedforward_dim: int,
         intensity_transformer_num_inducing_points: int,
+        intensity_transformer_attention: Literal["induced", "full"],
         intensity_atom_decoder_num_layers: int,
         intensity_transformer_dropout: float,
         intensity_output: str,
@@ -868,6 +868,11 @@ class MassShatterModel(nn.Module):
             intensity_transformer_num_layers: Depth of the candidate transformer.
             intensity_transformer_num_heads: Attention heads per layer.
             intensity_transformer_feedforward_dim: Feed-forward width per layer.
+            intensity_transformer_attention: ``induced`` routes candidate exchange
+                through a latent set and stays linear in the candidate count; ``full``
+                uses direct candidate-to-candidate attention, which is quadratic but
+                is not capped at the inducing-point rank. ``full`` ignores
+                ``intensity_transformer_num_inducing_points``.
             intensity_transformer_num_inducing_points: Latent tokens used to keep
                 attention linear in the number of candidates.
             intensity_atom_decoder_num_layers: Masked fragment-to-atom cross-attention
@@ -971,6 +976,14 @@ class MassShatterModel(nn.Module):
             raise ValueError(
                 "independent intensity output requires unique-fragment mode and "
                 "proposal-selection-only mode"
+            )
+        if intensity_transformer_attention == "full" and not unique_fragment_mode:
+            # Unique-fragment mode bounds a molecule's candidate count by max_masks.
+            # The legacy pathway-token mode instead emits one token per component
+            # occurrence, where quadratic candidate attention is not affordable.
+            raise ValueError(
+                "full candidate attention requires unique_fragment_mode, which bounds "
+                "the quadratic candidate count by max_masks"
             )
         if separate_proposal_encoder and not proposal_selection_only:
             raise ValueError("separate_proposal_encoder requires proposal_selection_only")
@@ -1206,6 +1219,7 @@ class MassShatterModel(nn.Module):
             num_heads=intensity_transformer_num_heads,
             feedforward_dim=intensity_transformer_feedforward_dim,
             num_inducing_points=intensity_transformer_num_inducing_points,
+            attention_type=intensity_transformer_attention,
             atom_decoder_num_layers=intensity_atom_decoder_num_layers,
             num_ion_modes=self.num_ion_modes,
             num_h_shifts=self.num_h_shifts,
@@ -1708,9 +1722,7 @@ class MassShatterModel(nn.Module):
 
         # 1. Encode each intact precursor once and score every chemical bond.
         atom_inputs = (
-            th.cat((mol_pyg.x, context[mol_pyg.batch]), dim=1)
-            if self.context_in_gnn
-            else mol_pyg.x
+            th.cat((mol_pyg.x, context[mol_pyg.batch]), dim=1) if self.context_in_gnn else mol_pyg.x
         )
         layout = None
         if self.share_proposal_across_ev:
@@ -1794,15 +1806,9 @@ class MassShatterModel(nn.Module):
                 )
             proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
             if self.ion_mode_proposal_head is not None:
-                proposal_context = (
-                    context.detach()
-                    if detach_proposal_inputs
-                    else context
-                )
+                proposal_context = context.detach() if detach_proposal_inputs else context
             shared_proposal_context = (
-                shared_context.detach()
-                if detach_proposal_inputs
-                else shared_context
+                shared_context.detach() if detach_proposal_inputs else shared_context
             )
             mechanism_context = shared_proposal_context[spectrum_to_shared]
             shared_bond_logits = self.bond_break_head(
@@ -1834,9 +1840,7 @@ class MassShatterModel(nn.Module):
             # an independent molecular representation from proposal supervision.
             if self.proposal_encoder is None:
                 proposal_atom_embeddings = (
-                    atom_embeddings.detach()
-                    if detach_proposal_inputs
-                    else atom_embeddings
+                    atom_embeddings.detach() if detach_proposal_inputs else atom_embeddings
                 )
             else:
                 # Keep proposal-only supervision from entering the shared context
@@ -1845,7 +1849,9 @@ class MassShatterModel(nn.Module):
                     th.cat(
                         (
                             mol_pyg.x,
-                            (context.detach() if detach_proposal_inputs else context)[mol_pyg.batch],
+                            (context.detach() if detach_proposal_inputs else context)[
+                                mol_pyg.batch
+                            ],
                         ),
                         dim=1,
                     )
@@ -1858,11 +1864,7 @@ class MassShatterModel(nn.Module):
                     mol_pyg.edge_index,
                     mol_pyg.edge_attr,
                 )
-            proposal_context = (
-                context.detach()
-                if detach_proposal_inputs
-                else context
-            )
+            proposal_context = context.detach() if detach_proposal_inputs else context
             mechanism_context = proposal_context
             bond_logits = self.bond_break_head(
                 proposal_atom_embeddings,
@@ -2071,10 +2073,15 @@ class MassShatterModel(nn.Module):
                 fragment_batch_indices[fragment_keep],
                 minlength=batch_size,
             ).to(bond_logits)
-            retained_fragment_probability = bond_logits.new_zeros(batch_size).index_add(
-                0,
-                fragment_batch_indices,
-                base_fragment_log_probabilities.exp() * fragment_keep.to(bond_logits),
+            # Autocast keeps exp() in float32 while bond_logits stays bfloat16, so the
+            # accumulator is built in the contribution dtype and cast back afterwards.
+            retained_fragment_contributions = base_fragment_log_probabilities.exp() * (
+                fragment_keep.to(base_fragment_log_probabilities.dtype)
+            )
+            retained_fragment_probability = (
+                retained_fragment_contributions.new_zeros(batch_size)
+                .index_add(0, fragment_batch_indices, retained_fragment_contributions)
+                .to(bond_logits)
             )
             fragment_cutoff_pruned_fraction = (
                 1.0 - fragment_count_after_cutoff / fragment_count_before_cutoff
@@ -2158,6 +2165,9 @@ class MassShatterModel(nn.Module):
                 dtype=th.long,
                 device=fragment_log_probabilities.device,
             )
+            # Each unique fragment is its own mask here, so the head's per-mask
+            # component count is one everywhere and its component-level residual is
+            # discarded in favor of the mask-pooled one.
             intensity_outputs = self.intensity_head(
                 fragment_embeddings,
                 complement_embeddings,
@@ -2490,14 +2500,11 @@ class MassShatterModel(nn.Module):
         retained_intensity_mass = (
             dense_intensity_log_probabilities.exp() * spectral_output_channels
         ).sum(dim=(1, 2))
-        retained_ion_h_probability = (
-            bond_logits.new_zeros(batch_size).index_add(
-                0,
-                fragment_batch_indices,
-                retained_intensity_mass.to(bond_logits),
-            )
-            / fragment_counts.clamp_min(1)
-        )
+        retained_ion_h_probability = bond_logits.new_zeros(batch_size).index_add(
+            0,
+            fragment_batch_indices,
+            retained_intensity_mass.to(bond_logits),
+        ) / fragment_counts.clamp_min(1)
         dense_joint_weights = dense_channel_log_weights.exp()
         joint_intensity_by_fragment = dense_joint_weights.sum(dim=(1, 2))
         retained_joint_intensity_by_fragment = (dense_joint_weights * spectral_output_channels).sum(
@@ -2513,7 +2520,10 @@ class MassShatterModel(nn.Module):
             fragment_batch_indices,
             retained_joint_intensity_by_fragment.to(bond_logits),
         )
-        retained_joint_intensity_fraction = retained_joint_intensity / total_joint_intensity.clamp_min(th.finfo(total_joint_intensity.dtype).tiny)
+        retained_joint_intensity_fraction = (
+            retained_joint_intensity
+            / total_joint_intensity.clamp_min(th.finfo(total_joint_intensity.dtype).tiny)
+        )
         mode_log_scores = (
             F.logsigmoid(ion_mode_proposal_logits)
             if ion_mode_proposal_binary_logits
@@ -2524,14 +2534,11 @@ class MassShatterModel(nn.Module):
             dim=1,
         )
         retained_mode_mass = (mode_log_probabilities.exp() * mode_keep).sum(dim=1)
-        retained_ion_mode_probability = (
-            bond_logits.new_zeros(batch_size).index_add(
-                0,
-                fragment_batch_indices,
-                retained_mode_mass.to(bond_logits),
-            )
-            / fragment_counts.clamp_min(1)
-        )
+        retained_ion_mode_probability = bond_logits.new_zeros(batch_size).index_add(
+            0,
+            fragment_batch_indices,
+            retained_mode_mass.to(bond_logits),
+        ) / fragment_counts.clamp_min(1)
         valid_ion_mode_count = bond_logits.new_zeros(batch_size).index_add(
             0,
             fragment_batch_indices,
@@ -2634,7 +2641,8 @@ class MassShatterModel(nn.Module):
             "retained_ion_h_count": retained_ion_h_count,
             "retained_ion_h_probability": retained_ion_h_probability,
             "retained_joint_channel_intensity_fraction": retained_joint_intensity_fraction,
-            "ion_h_cutoff_pruned_fraction": 1.0 - retained_ion_h_count / valid_ion_h_count.clamp_min(1),
+            "ion_h_cutoff_pruned_fraction": 1.0
+            - retained_ion_h_count / valid_ion_h_count.clamp_min(1),
             "valid_ion_mode_count": valid_ion_mode_count,
             "retained_ion_mode_count": retained_ion_mode_count,
             "retained_ion_mode_probability": retained_ion_mode_probability,

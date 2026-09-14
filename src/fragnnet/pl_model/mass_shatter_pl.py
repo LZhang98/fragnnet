@@ -854,6 +854,9 @@ class MassShatterPL(SpectrumPL):
             intensity_transformer_num_inducing_points=(
                 self.hparams.mass_shatter_intensity_transformer_num_inducing_points
             ),
+            intensity_transformer_attention=(
+                self.hparams.mass_shatter_intensity_transformer_attention
+            ),
             intensity_atom_decoder_num_layers=(
                 self.hparams.mass_shatter_intensity_atom_decoder_num_layers
             ),
@@ -1021,6 +1024,11 @@ class MassShatterPL(SpectrumPL):
             "independent",
         }:
             raise ValueError("mass_shatter_intensity_output must be probability or independent")
+        if self.hparams.mass_shatter_intensity_transformer_attention not in {
+            "induced",
+            "full",
+        }:
+            raise ValueError("mass_shatter_intensity_transformer_attention must be induced or full")
         independent_output = self.hparams.mass_shatter_intensity_output == "independent"
         if self.hparams.precursor_pair_loss_weight != 0.0:
             raise ValueError(

@@ -363,6 +363,20 @@ Scratch records: `/tmp/masshatter_selection_wandb_index.json`,
 `/tmp/masshatter_selection_wandb_review.py`. Run links, query scope, matching rules,
 configuration differences, and essential values above are the portable evidence.
 
+## D4 reference and revised coverage interpretation
+
+The [saved subformula-filtered D4 comparison](subformula_filter_ft_qtof.md#saved-subformula-filtered-d3d4-comparison-verified-2026-09-13)
+was verified from its per-spectrum artifact. It supports viewing the filtered MASShatter coverage
+above as strong, while its separate cleaning, population, and target construction prevent a matched
+gap estimate. The canonical finding records the metrics, exclusions, and provenance limits.
+
+The remaining uncovered intensity is not all demonstrated proposal-scoring headroom. Before
+another architecture or budget intervention, compare current-support oracle cosine with predicted
+cosine on identical targets. Prioritize intensity assignment if that gap dominates; pursue cut
+modeling only for demonstrated support gains, efficiency at preserved coverage, or downstream
+quality at matched coverage. Earlier search/coverage recommendations in this review are conditional
+on those diagnostics, not on U256 underfilling alone.
+
 ## Validation and handoff
 
 This was a source and documentation review. No model code, configuration, data, or environment

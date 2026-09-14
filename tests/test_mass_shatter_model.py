@@ -68,6 +68,7 @@ def _build_model(
     min_ion_h_absolute_probability: float = 0.0,
     apply_channel_selection_in_training: bool = False,
     intensity_atom_decoder_num_layers: int = 0,
+    intensity_transformer_attention: str = "induced",
     intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
@@ -101,6 +102,7 @@ def _build_model(
         intensity_transformer_num_heads=4,
         intensity_transformer_feedforward_dim=32,
         intensity_transformer_num_inducing_points=4,
+        intensity_transformer_attention=intensity_transformer_attention,
         intensity_atom_decoder_num_layers=intensity_atom_decoder_num_layers,
         intensity_transformer_dropout=0.0,
         intensity_output=intensity_output,
@@ -797,6 +799,26 @@ def test_independent_intensity_gate_is_opt_in() -> None:
         high_support = model(**inputs)
 
     th.testing.assert_close(high_support["pred_intensities"], low_support["pred_intensities"])
+
+
+def test_full_candidate_attention_requires_unique_fragment_mode() -> None:
+    """The legacy pathway-token mode emits one token per occurrence, so the cost is unbounded."""
+    batch = _build_batch()
+    with pytest.raises(ValueError, match="full candidate attention requires unique_fragment_mode"):
+        _build_model(
+            batch,
+            unique_fragment_mode=False,
+            intensity_transformer_attention="full",
+        )
+    # Unique-fragment mode bounds the candidate count, so the same arm constructs there.
+    model = _build_model(
+        batch,
+        unique_fragment_mode=True,
+        max_enumerated_masks=8,
+        intensity_transformer_attention="full",
+    )
+    assert model.intensity_head.attention_type == "full"
+    assert model.intensity_head.inducing_tokens is None
 
 
 def test_independent_intensity_gate_requires_independent_output_and_support_head() -> None:
@@ -1515,7 +1537,10 @@ def test_unique_fragment_mode_marginalizes_paths_and_uses_boundary_counts(
     assert predicted_mass.item() == pytest.approx(1.0, abs=2e-6)
 
 
-def test_unique_fragment_spectrum_loss_reaches_bond_charge_and_ion_heads() -> None:
+@pytest.mark.parametrize("intensity_transformer_attention", ["induced", "full"])
+def test_unique_fragment_spectrum_loss_reaches_bond_charge_and_ion_heads(
+    intensity_transformer_attention: str,
+) -> None:
     batch = _build_batch(("CCCO",))
     model = _build_model(
         batch,
@@ -1523,6 +1548,7 @@ def test_unique_fragment_spectrum_loss_reaches_bond_charge_and_ion_heads() -> No
         unique_fragment_mode=True,
         max_enumerated_masks=16,
         use_mask_residuals=False,
+        intensity_transformer_attention=intensity_transformer_attention,
     )
     output = model(
         mol_pyg=batch,

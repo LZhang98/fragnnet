@@ -18,6 +18,21 @@ The [proposal review](../findings/masshatter_proposal_review_2026_09_13.md) rema
 source for coverage, redundancy, budget, and mixture findings. Its recorded E4096 gains are
 modest and setup-dependent; underfilling U256 alone is not evidence that an EBM will help.
 
+## Coverage evidence and revised justification
+
+The [verified subformula-filtered D4 comparison](../findings/subformula_filter_ft_qtof.md#saved-subformula-filtered-d3d4-comparison-verified-2026-09-13)
+places the recorded MASShatter coverage in a stronger context. This is an unmatched reference,
+not a measurement of recoverable EBM headroom. Do not use all uncovered intensity, nominal
+fragment-budget underfilling, or the raw difference from D4 to justify a new cut model.
+
+Keep the requested bond-cut-first order as a bounded diagnostic. First distinguish useful masks
+that are under-ranked from missing chemistry/search support and intensity-assignment errors.
+If current-support oracle cosine is already high relative to learned cosine, retain the current
+selector and advance to the spectrum stage. Alternatively, test a separately declared efficiency
+objective: less mask processing at non-inferior coverage and downstream quality. Fix those
+non-inferiority margins and the required runtime saving before measuring; it is not an escape
+criterion chosen after a failed coverage experiment.
+
 ## Established constraints
 
 - A cut mask represents a net set of absent precursor bonds, not a known fragmentation event
@@ -96,8 +111,8 @@ selectors over the same pool, matched by cut-count strata and repeated with pred
 Report both raw and excess diagnostic gains over random selection. A positive target-informed
 maximum alone does not demonstrate usable cut structure or learnability.
 
-Before training, require practical headroom beyond the matched random reference and the expanded
-pool's baseline ranking, with paired molecule-bootstrap uncertainty and consistent seed direction.
+For the coverage objective, before training require practical headroom beyond the matched random
+reference and the expanded pool's baseline ranking, with paired molecule-bootstrap uncertainty and consistent seed direction.
 Predeclare useful recall/oracle gains and runtime limits. If widening baseline enumeration already
 captures the benefit, prefer that control. If the union has weak support, inspect chemistry and
 search first. Do not train a new head merely because nominal U is underfilled.
@@ -172,8 +187,10 @@ cut count, and represented acquisition types. Use paired molecule bootstrap and 
 seeds, preserving all spectra of a molecule together. Thresholds, checkpoint, pool sizes, and
 compute budget must be fixed before measurements; none are established in this document.
 
-Promote only if gains beat search-only, unary, random, and relevant mixture controls beyond
-paired variation without unacceptable runtime or spectral regression. Otherwise record the
+For coverage, promote only if gains beat search-only, unary, random, and relevant mixture controls
+beyond paired variation without unacceptable runtime or spectral regression. For a predeclared
+efficiency experiment, require the agreed runtime reduction and non-inferior coverage and spectral
+quality against those controls; a failed coverage arm cannot be relabeled as an efficiency success. Otherwise record the
 bounded failure and retain the baseline selector. Then evaluate the spectrum EBM with the chosen
 selector frozen using its own null-adjusted Gate A. A later 2-by-2 comparison (baseline/bond EBM
 selector crossed with baseline/spectrum EBM output) separates individual gains from interactions.
@@ -185,8 +202,9 @@ Completed: source-informed bond-cut design and user-requested ordering of the tw
 No implementation, configuration, checkpoint evaluation, or training for this plan. Unrelated
 SMARTS source/documentation edits in the working tree were preserved.
 
-Next: identify the anchor checkpoint and fixed validation subset, inspect missed-intensity/support
-headroom, and establish the finite-pool contract before implementing the pair head. Follow the
+Next: identify the anchor checkpoint and fixed validation subset, align target/metric definitions,
+and measure current-support oracle versus predicted cosine. Establish finite-pool headroom or a
+predeclared efficiency opportunity before implementing the pair head. Follow the
 [session workflow](../workflow/session.md) for revision/dirty-diff, environment, dataset, resolved
 configuration, seeds, commands, and artifacts. Documentation validation checks links, anchors,
 and whitespace; scientific thresholds and results remain pending.

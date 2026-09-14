@@ -36,6 +36,20 @@ def _build_head(
     )
 
 
+def _build_feedforward(
+    model_dim: int,
+    feedforward_dim: int,
+    dropout: float,
+) -> nn.Sequential:
+    """Build the position-wise feed-forward block shared by both attention layers."""
+    return nn.Sequential(
+        nn.Linear(model_dim, feedforward_dim),
+        nn.SiLU(),
+        nn.Dropout(dropout),
+        nn.Linear(feedforward_dim, model_dim),
+    )
+
+
 class _InducedCandidateAttentionLayer(nn.Module):
     """Exchange information between candidate tokens through a small latent set."""
 
@@ -63,37 +77,26 @@ class _InducedCandidateAttentionLayer(nn.Module):
         self.latent_feedforward_norm = nn.LayerNorm(model_dim)
         self.candidate_attention_norm = nn.LayerNorm(model_dim)
         self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
-        self.latent_feedforward = self._build_feedforward(
+        self.latent_feedforward = _build_feedforward(
             model_dim,
             feedforward_dim,
             dropout,
         )
-        self.candidate_feedforward = self._build_feedforward(
+        self.candidate_feedforward = _build_feedforward(
             model_dim,
             feedforward_dim,
             dropout,
         )
         self.dropout = nn.Dropout(dropout)
 
-    @staticmethod
-    def _build_feedforward(
-        model_dim: int,
-        feedforward_dim: int,
-        dropout: float,
-    ) -> nn.Sequential:
-        return nn.Sequential(
-            nn.Linear(model_dim, feedforward_dim),
-            nn.SiLU(),
-            nn.Dropout(dropout),
-            nn.Linear(feedforward_dim, model_dim),
-        )
-
     def forward(
         self,
         candidate_tokens: th.Tensor,
-        inducing_tokens: th.Tensor,
+        inducing_tokens: th.Tensor | None,
         candidate_padding_mask: th.Tensor,
     ) -> tuple[th.Tensor, th.Tensor]:
+        if inducing_tokens is None:
+            raise ValueError("induced candidate attention requires a latent token set")
         latent_updates, _ = self.latent_attention(
             inducing_tokens,
             candidate_tokens,
@@ -110,6 +113,65 @@ class _InducedCandidateAttentionLayer(nn.Module):
             candidate_tokens,
             inducing_tokens,
             inducing_tokens,
+            need_weights=False,
+        )
+        candidate_tokens = self.candidate_attention_norm(
+            candidate_tokens + self.dropout(candidate_updates)
+        )
+        candidate_tokens = self.candidate_feedforward_norm(
+            candidate_tokens + self.dropout(self.candidate_feedforward(candidate_tokens))
+        )
+        return candidate_tokens, inducing_tokens
+
+
+class _FullCandidateAttentionLayer(nn.Module):
+    """Let every candidate attend directly to every other candidate in its molecule.
+
+    The induced layer routes all candidate-to-candidate information through a fixed
+    latent set, which caps the rank of that interaction at the inducing-point count.
+    At the configured unique-fragment budget the quadratic cost is affordable, so this
+    layer keeps the pairwise interaction exact. Normalization placement, feed-forward
+    shape, and dropout match :class:`_InducedCandidateAttentionLayer` so that an A/B
+    between the two isolates the attention topology.
+    """
+
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        feedforward_dim: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        self.candidate_attention = nn.MultiheadAttention(
+            model_dim,
+            num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.candidate_attention_norm = nn.LayerNorm(model_dim)
+        self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
+        self.candidate_feedforward = _build_feedforward(
+            model_dim,
+            feedforward_dim,
+            dropout,
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        candidate_tokens: th.Tensor,
+        inducing_tokens: th.Tensor | None,
+        candidate_padding_mask: th.Tensor,
+    ) -> tuple[th.Tensor, th.Tensor | None]:
+        # Padded slots are masked as keys, so they never reach a real candidate even
+        # though their own rows keep accumulating values. Every molecule contributes at
+        # least one real candidate, so no query row attends over a fully masked key set.
+        candidate_updates, _ = self.candidate_attention(
+            candidate_tokens,
+            candidate_tokens,
+            candidate_tokens,
+            key_padding_mask=candidate_padding_mask,
             need_weights=False,
         )
         candidate_tokens = self.candidate_attention_norm(
@@ -183,8 +245,20 @@ class IonModeProposalHead(nn.Module):
 class CandidateIntensityTransformerHead(nn.Module):
     """Contextualize a molecule's component candidates before intensity scoring.
 
-    Inducing tokens keep attention linear in the number of component pathways,
-    which is important when a molecule contributes thousands of candidates.
+    ``attention_type`` selects how candidates exchange information. ``induced`` routes
+    every exchange through a fixed latent set, keeping attention linear in the number
+    of component pathways, which matters when a molecule contributes thousands of
+    candidates. ``full`` lets candidates attend to each other directly: the cost is
+    quadratic in the candidate count, but the pairwise interaction is exact rather than
+    capped at the inducing-point rank.
+
+    Note:
+        Two inputs degenerate in unique-fragment mode, where the caller passes identity
+        ``component_mask_indices`` and ``num_masks`` equal to the component count. The
+        per-mask component count is then one everywhere, so its ``log1p`` input feature
+        is a constant, and ``component_residual_head`` receives no gradient because the
+        caller reads the mask-pooled residual instead. Both remain live in the legacy
+        pathway-token mode, so they are retained for checkpoint and mode compatibility.
     """
 
     def __init__(
@@ -201,6 +275,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_h_shifts: int,
         dropout: float,
         use_base_probability_feature: bool,
+        attention_type: Literal["induced", "full"] = "induced",
         separate_ion_h_support_head: bool = False,
         predict_oos: bool = False,
         initial_oos_probability: float = 0.1,
@@ -212,12 +287,15 @@ class CandidateIntensityTransformerHead(nn.Module):
             num_layers,
             num_heads,
             feedforward_dim,
-            num_inducing_points,
             num_ion_modes,
             num_h_shifts,
         )
         if min(dimensions) <= 0:
             raise ValueError("transformer dimensions and layer counts must be positive")
+        if attention_type not in {"induced", "full"}:
+            raise ValueError(f"unknown attention_type: {attention_type}")
+        if attention_type == "induced" and num_inducing_points <= 0:
+            raise ValueError("num_inducing_points must be positive for induced attention")
         if atom_decoder_num_layers < 0:
             raise ValueError("atom_decoder_num_layers must be nonnegative")
         if context_dim < 0:
@@ -234,6 +312,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.num_ion_modes = num_ion_modes
         self.num_h_shifts = num_h_shifts
         self.use_base_probability_feature = use_base_probability_feature
+        self.attention_type = attention_type
         self.predict_oos = predict_oos
         self.atom_projection: nn.Module | None = None
         self.atom_decoder: nn.TransformerDecoder | None = None
@@ -264,11 +343,18 @@ class CandidateIntensityTransformerHead(nn.Module):
             nn.SiLU(),
             nn.LayerNorm(model_dim),
         )
-        self.inducing_tokens = nn.Parameter(th.empty(1, num_inducing_points, model_dim))
-        nn.init.normal_(self.inducing_tokens, std=model_dim**-0.5)
+        self.inducing_tokens: nn.Parameter | None = None
+        if attention_type == "induced":
+            self.inducing_tokens = nn.Parameter(th.empty(1, num_inducing_points, model_dim))
+            nn.init.normal_(self.inducing_tokens, std=model_dim**-0.5)
+        layer_type = (
+            _InducedCandidateAttentionLayer
+            if attention_type == "induced"
+            else _FullCandidateAttentionLayer
+        )
         self.layers = nn.ModuleList(
             [
-                _InducedCandidateAttentionLayer(
+                layer_type(
                     model_dim,
                     num_heads,
                     feedforward_dim,
@@ -467,8 +553,13 @@ class CandidateIntensityTransformerHead(nn.Module):
             )
             padding_mask[local_batch_indices, positions] = False
 
-            # 2. Contextualize candidates through a fixed-size inducing set.
-            inducing_tokens = self.inducing_tokens.expand(len(molecule_indices), -1, -1)
+            # 2. Contextualize candidates, either through a fixed-size inducing set or
+            # by direct candidate-to-candidate attention.
+            inducing_tokens = (
+                None
+                if self.inducing_tokens is None
+                else self.inducing_tokens.expand(len(molecule_indices), -1, -1)
+            )
             for layer in self.layers:
                 padded_tokens, inducing_tokens = layer(
                     padded_tokens,

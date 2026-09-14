@@ -22,6 +22,19 @@ This sequence updates the priority within the requested EBM program. Existing
 [intensity](masshatter_nonprobabilistic_intensity_plan.md) evidence and gates still apply.
 No performance advantage is assumed, and documenting this order does not launch training.
 
+## D4 evidence update
+
+The [verified D4 comparison](../findings/subformula_filter_ft_qtof.md#saved-subformula-filtered-d3d4-comparison-verified-2026-09-13)
+supports treating current MASShatter intensity coverage as strong. Its numerical proximity to D4
+is informative context, but differences in targets and evaluation prevent a matched ceiling claim.
+The uncovered fraction is not demonstrated cut-scoring headroom.
+
+Preserve the user's bond-cut-first order as a diagnostic priority. A pair head is conditional on
+matched support gains or a predeclared efficiency opportunity. If current support already permits
+much better spectra than the learned predictor produces, keep the baseline proposal model and
+proceed to spectrum/intensity modeling under the shared gate. This does not assume that a spectrum
+EBM will outperform ordinary intensity learning, and it does not promote either EBM without controls.
+
 ## Established implementation and alternatives
 
 The inspected [model](../../src/fragnnet/model/mass_shatter_model.py) already supports mixtures

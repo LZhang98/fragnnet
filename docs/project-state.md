@@ -67,6 +67,33 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+Candidate attention topology audit (2026-09-13): the
+[audit section](findings/masshatter_code_audit.md#candidate-attention-topology-audit-2026-09-13)
+records seven findings on the uncommitted `full` candidate-attention arm, all fixed in the
+working tree: a hyperparameter fallback default plus a missing `get_pl_hparams` migration,
+corrected A/B parameter counts, an unstated capacity confound, a missing unique-fragment guard,
+a pre-existing CUDA bfloat16 `index_add` crash, two documented degenerate head inputs, and a
+per-layer host sync in `_efa_linear_attn`. Bucketed attention masking was verified exact for both
+topologies, and `full` is cheaper only up to about 256 candidates. Validation: full suite plus
+274 focused tests, Ruff check and format on changed files, and construction of both A/B arms.
+A pre-rebuild full-suite run gave 92 failed, 2,873 passed; every failure was the then-stale
+multi-cut Cython extension, all carrying `compute_ccs_multi_cut()` unexpected-keyword errors
+for `max_ring_cut_steps` or `ring_open_mask`. Both extensions were rebuilt in place at
+2026-09-13 18:12, and `mass_shatter_core` was force-rebuilt at 22:38 to a byte-identical
+binary, confirming the 18:12 build already matched its source. All four extensions are now
+current and the full suite passes: 2,975 passed, 1 skipped, 2 xfailed.
+Next: decide whether to remove the degenerate `component_residual_head` and constant mask-count
+feature, which would invalidate existing MASShatter checkpoints and so needs explicit
+authorization. No training ran and no run was launched for this arm.
+
+D4 oracle verification (2026-09-13): the
+[subformula-filter finding](findings/subformula_filter_ft_qtof.md#saved-subformula-filtered-d3d4-comparison-verified-2026-09-13)
+records reaggregation of the saved D3/D4 artifacts. MASShatter's roughly 94% coverage is strong
+relative to that unmatched D4 reference; the remaining 6% is not established cut-scoring headroom.
+No preprocessing, DAG generation, or model inference reran. Next: compare current MASShatter
+support-oracle and predicted cosine on identical targets. Bond-cut-first remains the requested
+diagnostic order, with training conditional on useful support or efficiency headroom.
+
 Joint selection objective (2026-09-13): the
 [ion/H channel plan](plans/masshatter_ion_h_channel_selection_plan.md#joint-fragmentchannel-selection-loss-experiment-2026-09-13)
 now records a proposed single selection loss that couples fragment proposal and

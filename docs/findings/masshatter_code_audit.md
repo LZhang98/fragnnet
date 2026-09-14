@@ -1,6 +1,145 @@
 # MASShatter code audit
 
-> **Status:** REFERENCE · **Updated:** 2026-09-11 · SMARTS/proposal-only-warmup guard removed and validated; pickle API fix tested in working tree; bfloat16 issue deferred by user.
+> **Status:** REFERENCE · **Updated:** 2026-09-13 · Candidate-attention A/B audit: seven findings fixed in the working tree; CUDA bfloat16 autocast now passes.
+
+## Candidate attention topology audit (2026-09-13)
+
+Audit of the uncommitted `full` candidate-attention arm on
+`research/masshatter-ion-h-selection`, covering the MASShatter GNN wiring, the candidate
+intensity transformer, and the prepared A/B config. Seven findings; all fixed in the
+working tree. No training or scientific evaluation ran.
+
+### Verified correct before the fixes
+
+Bucketed contextualization masking is exact for both topologies. Against a per-molecule
+unpadded reference with ragged counts `[1, 3, 4, 9, 4]` — chosen so two power-of-two
+buckets hold non-contiguous molecule sets — the maximum absolute deviation is 2.384e-07
+(`full`) and 4.172e-07 (`induced`); permuting row order changes nothing beyond 4.768e-07.
+No cross-molecule leakage, and no fully masked query row is reachable because every
+molecule contributes at least one real candidate.
+
+Measured contextualization cost at the head geometry (dim 384, 3 layers, ff 1024, B=16),
+on an RTX 2070 SUPER rather than the L40S the config cites:
+
+| N | topology | forward | peak (fwd+bwd) |
+| --- | --- | --- | --- |
+| 256 | induced | 15.10 ms | 1053.1 MiB |
+| 256 | full | 10.32 ms | 664.5 MiB |
+| 1024 | induced | 37.24 ms | 2968.6 MiB |
+| 1024 | full | 50.12 ms | 2471.0 MiB |
+
+`full` wins at the configured 256-fragment budget and loses by N=1024, which is what
+motivates finding 4.
+
+### 1. Hyperparameter fallback default and missing checkpoint migration
+
+`MassShatterPL` read the new topology through
+`self.hparams.get("mass_shatter_intensity_transformer_attention", "induced")` in both
+`_setup_model` and `_setup_loss_fn`. The [Python rules](../rules/python.md) forbid a
+fallback default for a model hyperparameter, and every other `mass_shatter_*` key in that
+file uses direct attribute access. Fixed by direct attribute access plus an explicit
+migration in `get_pl_hparams`, matching the `mass_shatter_context_in_gnn` precedent, so
+pre-topology checkpoints resolve to `induced` while a fresh config that omits the key
+fails during setup. Regression coverage in `test_mass_shatter_pl.py` asserts strict
+state-dict loading after migration and the `AttributeError` for an undeclared key.
+
+Note: the loss-setup value check is unreachable, because the head validates
+`attention_type` during model construction, which precedes it. The adjacent
+`mass_shatter_intensity_output` check has the same property, so it was left in place for
+consistency rather than removed.
+
+### 2. Config parameter counts described a different head geometry
+
+The A/B config quoted 4,643,732 versus 8,835,092 intensity-head parameters. Those
+correspond to `atom_decoder_num_layers=0` and `separate_ion_h_support_head=False`; the
+config sets 4 and `True`. At the configured geometry the counts are 12,542,119 (`full`)
+against 16,733,479 (`induced`). The 4,191,360 difference is identical either way and lies
+entirely in the contextualization layers, so the capacity argument was sound and only the
+absolute figures were wrong. Corrected in the config comment.
+
+### 3. Unstated A/B confound
+
+A `full` layer carries one attention and one feed-forward block where an `induced` layer
+carries two of each, so the arm is both cheaper and roughly half the contextualization
+capacity. A win is clean evidence. A null or a loss cannot separate "full attention is no
+better" from "half the per-layer capacity hurt" and needs a depth- or width-matched full
+arm before concluding against the topology. Recorded in the config comment, together with
+the check that both arms should track the control exactly through the epoch-15
+proposal-only warmup, where the intensity head is frozen in eval mode and the loss is
+replaced by the proposal loss.
+
+### 4. `full` attention was not bound to unique-fragment mode
+
+Only unique-fragment mode bounds a molecule's candidate count by `max_masks`. The legacy
+pathway-token branch emits one token per component occurrence — thousands per molecule at
+a 1024-mask budget — where the quadratic topology is not affordable, as the N=1024
+measurement above shows. `MassShatterModel.__init__` now rejects the combination, with a
+regression test covering both the rejection and construction under unique-fragment mode.
+
+### 5. CUDA bfloat16 autocast crash in retained-fragment diagnostics
+
+`test_mass_shatter_supports_cuda_bfloat16_autocast` failed with
+`index_add_(): self (BFloat16) and source (Float) must have the same scalar type`.
+Autocast keeps `exp()` in float32 while `bond_logits` stays bfloat16, so the accumulator
+built by `bond_logits.new_zeros(batch_size)` could not take the float32 contribution.
+Pre-existing in committed code and independent of the attention arm; it does not affect
+the prepared run, which uses `precision: 32`. Fixed by building the accumulator in the
+contribution dtype and casting back. Distinct from the CPU bfloat16 proposal-mixture
+issue deferred by the user above.
+
+### 6. Two degenerate intensity-head inputs in unique-fragment mode
+
+Confirmed by gradient probe on a spectrum-output backward pass, not by inference:
+`component_residual_head` receives no gradient, because the caller discards the
+component-level residual and reads the mask-pooled one; and the head is called with
+identity mask indices, so the per-mask component count is one everywhere and its `log1p`
+input feature is a constant.
+
+Both remain live in the legacy pathway-token mode. Removing them would change
+`input_projection`'s input width and the state-dict keys, invalidating every existing
+MASShatter checkpoint, which the [engineering rules](../rules/engineering.md) put behind
+explicit authorization and compatibility work. Documented at the head and the call site
+instead; the removal is still open if the user wants it.
+
+### 7. Formatting and a per-layer host sync
+
+`ruff format` deviations in `mass_shatter_model.py` were applied. `_efa_linear_attn`
+derived `num_graphs` via `.item()` inside the checkpointed function, costing one host sync
+per GINE-EFA layer, doubled by checkpoint recomputation. It is now derived once per
+encoder forward and passed in; the refactor is bit-identical (maximum absolute difference
+0.000e+00 against the previous formulation).
+
+### Validation
+
+274 tests passed across `test_bond_fragment_heads.py`, `test_mass_shatter_model.py`,
+`test_mass_shatter_pl.py`, `test_mass_shatter_gnn_context.py`, and
+`test_merged_ce_context.py`, including the previously failing CUDA bfloat16 case. Ruff
+check and format pass on every changed file; the remaining format deviations in
+`nn_blocks.py` and `test_mass_shatter_pl.py` are pre-existing lines outside these changes.
+Both A/B arms construct from their configs, and their resolved configurations differ only
+in `wandb_name`, `wandb_tags`, and `mass_shatter_intensity_transformer_attention`.
+
+A full-suite run at 18:08-18:10 gave 92 failed, 2,873 passed, 1 skipped, 2 xfailed. Every
+failure came from the then-stale multi-cut Cython extension, and all 92 carried one of two
+signatures: `compute_ccs_multi_cut() got an unexpected keyword argument
+'max_ring_cut_steps'` (85) or `... 'ring_open_mask'` (7), accounting for the total exactly.
+They fell in `test_multi_cut_bfs.py` (86), `test_frag_utils_compute_dags.py` (3),
+`test_nl_prepass.py` (2), and `test_num_cut_bonds.py` (1); none import the changed modules
+except `test_num_cut_bonds.py`, which builds MPNN/NodeMLP rather than the GINE-EFA path this
+change touches. These changes are Python-only and cannot affect the Cython BFS.
+
+Both extensions were rebuilt in place at 2026-09-13 18:12, after those runs.
+`mass_shatter_core` was then force-rebuilt at 22:38 from the current source; the result is
+byte-identical to the 18:12 binary, which confirms that build already matched
+`mass_shatter_core.pyx`, so the earlier two-week staleness gap had already been closed
+rather than being a live defect. All four extensions now carry binaries newer than their
+sources.
+
+After the rebuild the full suite passes: **2,975 passed, 1 skipped, 2 xfailed, 0 failed**.
+This is the current baseline for this checkout.
+
+No training, cluster submission, or validation-set evaluation ran. Timings come from an
+RTX 2070 SUPER, so the config's L40S figures were not reproduced, only their ordering.
 
 ## SMARTS proposal-only-warmup guard removed (2026-09-11)
 

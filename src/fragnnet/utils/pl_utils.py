@@ -134,4 +134,11 @@ def get_pl_hparams(ckpt: dict) -> dict:
         and "mass_shatter_context_in_gnn" not in hyper_parameters
     ):
         hyper_parameters["mass_shatter_context_in_gnn"] = False
+    # Explicit checkpoint migration: pre-attention-topology MASShatter weights carry the
+    # induced latent set. Fresh configs must declare this key via the template.
+    if (
+        hyper_parameters.get("model_type") == "mass_shatter"
+        and "mass_shatter_intensity_transformer_attention" not in hyper_parameters
+    ):
+        hyper_parameters["mass_shatter_intensity_transformer_attention"] = "induced"
     return hyper_parameters

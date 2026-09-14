@@ -34,6 +34,7 @@ from fragnnet.pl_model.mass_shatter_pl import (
 )
 from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
+from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -54,6 +55,38 @@ def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
     )
     config.update(config_overrides)
     return MassShatterPL(**config), config
+
+
+def test_attention_topology_migrates_legacy_checkpoints_and_requires_a_fresh_key() -> None:
+    """Old checkpoints predate the key; fresh configs must declare it explicitly."""
+    legacy, config = _build_pl()
+    del config["mass_shatter_intensity_transformer_attention"]
+    checkpoint = {"hyper_parameters": dict(config)}
+    migrated = get_pl_hparams(checkpoint)
+
+    assert migrated["mass_shatter_intensity_transformer_attention"] == "induced"
+    assert "mass_shatter_intensity_transformer_attention" not in checkpoint["hyper_parameters"]
+    restored = MassShatterPL(**migrated)
+    restored.load_state_dict(legacy.state_dict(), strict=True)
+    assert restored.model.intensity_head.attention_type == "induced"
+    assert restored.model.intensity_head.inducing_tokens is not None
+
+    # An explicit key survives migration untouched, and a missing one must not default.
+    migrated["mass_shatter_intensity_transformer_attention"] = "full"
+    assert (
+        get_pl_hparams({"hyper_parameters": migrated})[
+            "mass_shatter_intensity_transformer_attention"
+        ]
+        == "full"
+    )
+    with pytest.raises(AttributeError, match="mass_shatter_intensity_transformer_attention"):
+        MassShatterPL(**config)
+
+
+def test_attention_topology_rejects_unknown_values() -> None:
+    # The head validates during model construction, which precedes the loss-setup check.
+    with pytest.raises(ValueError, match="unknown attention_type: inducing"):
+        _build_pl(mass_shatter_intensity_transformer_attention="inducing")
 
 
 def test_merged_independent_distance_configs_enable_requested_model() -> None:
