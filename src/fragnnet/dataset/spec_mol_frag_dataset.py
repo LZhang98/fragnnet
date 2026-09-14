@@ -18,6 +18,9 @@ from fragnnet.utils.feat_utils import batch_mols_frags, get_frag_graph
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
+    cmf_duplicate_crf_h_shift,
+    prec_type_removed_counts,
+    tracked_element_counts,
 )
 from fragnnet.utils.frag_utils import (
     NODE_FEAT_TO_IDX,
@@ -27,6 +30,10 @@ from fragnnet.utils.frag_utils import (
     load_frag_d,
 )
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
+
+# Per-formula element counts, attached by _process_neutral_frag and consumed (and removed) by
+# _apply_fragment_mz_change so that it never reaches the collate or the model.
+FORMULA_ELEMENT_COUNTS_KEY = "_frag_formula_element_counts"
 
 logger = logging.getLogger(__name__)
 
@@ -440,14 +447,66 @@ class SpecMolFragDataset(SpecMolDataset):
             formula_peak_mzs = formula_peak_mzs[:, : self.frag_params["num_isotopes"]]
             frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
 
+        # Consumed and removed by _apply_fragment_mz_change, which is the first thing every
+        # caller runs; it never reaches the batch.
+        frag_data[FORMULA_ELEMENT_COUNTS_KEY] = th.tensor(
+            [tracked_element_counts(formula) for formula in frag_entry["idx_to_formula"].values()],
+            dtype=th.int32,
+        )
+
         return frag_data
+
+    @staticmethod
+    def _impossible_formula_rows(
+        element_counts: th.Tensor, prec_type: str, *, cmf: bool
+    ) -> th.Tensor | None:
+        """Flag formula rows whose ion this precursor delta cannot actually form.
+
+        A loss-type delta is subtracted from every enumerated fragment, but a fragment that
+        never carried the lost group would need a negative element count, or would be left
+        with no atoms at all. Returns ``None`` when the delta removes nothing.
+        """
+        removed = prec_type_removed_counts(prec_type, cmf=cmf)
+        if not removed:
+            return None
+        impossible = th.zeros(element_counts.shape[0], dtype=th.bool)
+        for position, amount in removed.items():
+            impossible |= element_counts[:, position] < amount
+        return impossible
+
+    @staticmethod
+    def _null_impossible_channels(
+        formula_matrix: th.Tensor, impossible_rows: th.Tensor | None
+    ) -> th.Tensor:
+        """Point channels whose ion cannot exist at the NULL formula, like an absent H shift."""
+        if impossible_rows is None:
+            return formula_matrix
+        return th.where(impossible_rows[formula_matrix.long()], 0, formula_matrix)
+
+    @staticmethod
+    def _max_h_transfer(frag_pyg) -> int:
+        """Recover the DAG's hydrogen-transfer limit from the CRF formula feature block.
+
+        The block is built with one column per reachable shift, ``1 + 2 * max_h_transfer``.
+        """
+        frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+        crf_node_feat_idx = NODE_FEAT_TO_IDX["h_formulae_idx"]
+        num_columns = int(
+            frag_node_feat_idxs[crf_node_feat_idx + 1] - frag_node_feat_idxs[crf_node_feat_idx]
+        )
+        return (num_columns - 1) // 2
 
     def _apply_fragment_mz_change(
         self, frag_data: dict, prec_type: str, neutral_peaks: th.Tensor, clone_pyg: bool = False
     ) -> dict:
         """
-        Apply precursor mass difference for Charge Remote Fragmentation (CRF) and
-        Charge Migration Fragmentation (CMF) to frag_data.
+        Apply precursor mass difference for charge retention fragmentation (CRF) and
+        charge migration fragmentation (CMF) to frag_data.
+
+        Note:
+            CRF here is charge *retention*, not the unrelated charge-*remote* fragmentation
+            of Gross and co-workers, which describes cleavage at a bond away from the charge
+            site. The acronym collides; the mechanism modelled here is carrier retention.
 
         This method updates 'frag_formula_peak_mzs', 'frag_formula_peak_probs',
         'frag_formula_str', and 'frag_pyg' in frag_data.
@@ -464,12 +523,26 @@ class SpecMolFragDataset(SpecMolDataset):
         """
         prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
         crf_peaks = neutral_peaks + prec_type_mass_diff
+        # Unit-test fixtures build frag_data by hand; without counts the validity check is
+        # skipped and every enumerated channel is kept, as before.
+        element_counts = frag_data.pop(FORMULA_ELEMENT_COUNTS_KEY, None)
+        crf_impossible = (
+            None
+            if element_counts is None
+            else self._impossible_formula_rows(element_counts, prec_type, cmf=False)
+        )
+        if clone_pyg and frag_data.get("frag_pyg") is not None:
+            frag_data["frag_pyg"] = frag_data["frag_pyg"].clone()
 
-        # Charge Migration Fragmentation stuff
-        if self.frag_params["include_cmf"] and prec_type not in [
-            "[M]+",
-            "[M-]",
-        ]:
+        # Charge Migration Fragmentation stuff. Adducts whose CMF ion is already enumerated
+        # as a CRF hydrogen shift are skipped: emitting both would put two formula slots on
+        # one m/z, splitting the softmax between indistinguishable states.
+        if (
+            self.frag_params["include_cmf"]
+            and prec_type in PREC_TYPE_TO_CMF_MASS_DIFF
+            and cmf_duplicate_crf_h_shift(prec_type, self._max_h_transfer(frag_data["frag_pyg"]))
+            is None
+        ):
             # Check if cmf_h_formulae_idx exists in pyg node features:
             assert "cmf_h_formulae_idx" in self.frag_params["pyg_node_feats"], (
                 "cmf_h_formulae_idx not in pyg_node_feats"
@@ -495,11 +568,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 )
 
             # update pyg
-            if clone_pyg:
-                frag_pyg = frag_data["frag_pyg"].clone()
-            else:
-                frag_pyg = frag_data["frag_pyg"]
-
+            frag_pyg = frag_data["frag_pyg"]
             frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
             crf_node_feat_idx = NODE_FEAT_TO_IDX["h_formulae_idx"]
             cmf_node_feat_idx = NODE_FEAT_TO_IDX["cmf_h_formulae_idx"]
@@ -508,27 +577,36 @@ class SpecMolFragDataset(SpecMolDataset):
                 frag_node_feat_idxs[crf_node_feat_idx] : frag_node_feat_idxs[crf_node_feat_idx + 1],
             ]
 
-            # For [M+H]+/[M-H]-/[M-H-CO2]- the CMF mode is direct-charge (proton departs with
-            # neutral): only delta_h=0 produces a unique peak; all other delta_h values duplicate
-            # CRF peaks shifted by ±1H, so only column 0 is written. Remaining CMF columns stay
-            # 0 (NULL from DAG initialisation) and are masked out by frag_joint_mask.
-            # For all other adducts the full H-shift range is valid (charge migrates to H+).
-            if prec_type in ("[M+H]+", "[M-H]-", "[M-H-CO2]-"):
-                crf_col0 = crf_formula_matrix[:, 0:1]
-                frag_pyg.x[
-                    :,
-                    frag_node_feat_idxs[cmf_node_feat_idx] : frag_node_feat_idxs[cmf_node_feat_idx] + 1,
-                ] = th.where(crf_col0 != 0, crf_col0 + num_formulae - 1, crf_col0)
-            else:
-                frag_pyg.x[
-                    :,
-                    frag_node_feat_idxs[cmf_node_feat_idx] : frag_node_feat_idxs[cmf_node_feat_idx + 1],
-                ] = th.where(
-                    crf_formula_matrix != 0, crf_formula_matrix + num_formulae - 1, crf_formula_matrix
+            # Reject impossible CMF ions while the indices still address neutral formula rows,
+            # then shift the survivors into the appended CMF half of the formula arrays.
+            cmf_formula_matrix = crf_formula_matrix
+            if element_counts is not None:
+                cmf_formula_matrix = self._null_impossible_channels(
+                    cmf_formula_matrix,
+                    self._impossible_formula_rows(element_counts, prec_type, cmf=True),
                 )
+            frag_pyg.x[
+                :,
+                frag_node_feat_idxs[cmf_node_feat_idx] : frag_node_feat_idxs[cmf_node_feat_idx + 1],
+            ] = th.where(
+                cmf_formula_matrix != 0, cmf_formula_matrix + num_formulae - 1, cmf_formula_matrix
+            )
             frag_data["frag_pyg"] = frag_pyg
         else:
             frag_data["frag_formula_peak_mzs"] = crf_peaks
+
+        if crf_impossible is not None:
+            frag_pyg = frag_data["frag_pyg"]
+            frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+            crf_node_feat_idx = NODE_FEAT_TO_IDX["h_formulae_idx"]
+            crf_slice = slice(
+                int(frag_node_feat_idxs[crf_node_feat_idx]),
+                int(frag_node_feat_idxs[crf_node_feat_idx + 1]),
+            )
+            frag_pyg.x[:, crf_slice] = self._null_impossible_channels(
+                frag_pyg.x[:, crf_slice], crf_impossible
+            )
+            frag_data["frag_pyg"] = frag_pyg
         return frag_data
 
     def get_collate_fn(self):

@@ -15,7 +15,11 @@ import sys
 import numpy as np
 import pytest
 
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_MASS_DIFF,
+    PREC_TYPE_TO_MASS_DIFF,
+    tracked_element_counts,
+)
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "eval")
@@ -25,6 +29,7 @@ from build_cut_pair_targets import (  # noqa: E402
     _complement_incompleteness,
     _complementary_pairs,
     _concat_results,
+    _duplicate_cmf_precursors,
     _empty_mol_result,
     _envelopes_overlap,
     _kish_ess,
@@ -150,40 +155,47 @@ _FPM = np.array([[0.0], [100.0], [101.0]], dtype=np.float64)
 _ALLOWED = {1, 2}
 
 
-def test_direct_charge_adduct_gets_cmf_only_at_zero_h_shift():
-    """[M+H]+ is direct-charge: only delta_h=0 has a unique CMF peak, so only row 1 gets one.
+def test_direct_charge_adduct_gets_no_cmf_channel():
+    """[M+H]+ emits CRF rows only: its CMF ion is the CRF row at delta_h = -1.
 
-    Applying the CMF offset to every row would invent a channel the model never scores.
+    Adding a CMF channel here would put a second candidate on an m/z the CRF ladder already
+    produces, inflating the match count against a peak the model scores once.
     """
-    ion_mz, node_of = _ions(_H_IDX, _FPM, _ALLOWED, "[M+H]+")
+    ion_mz, node_of = _ions(_H_IDX, _FPM, _ALLOWED, "[M+H]+", 1)
     std = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
-    cmf = PREC_TYPE_TO_CMF_MASS_DIFF["[M+H]+"]
-    assert sorted(np.round(ion_mz, 6)) == sorted(
-        np.round([100.0 + std, 101.0 + std, 100.0 + cmf], 6)
-    )
+    assert sorted(np.round(ion_mz, 6)) == sorted(np.round([100.0 + std, 101.0 + std], 6))
     assert set(node_of.tolist()) == {0}
 
 
-def test_cmf_row_is_this_nodes_column_zero_not_a_molecule_wide_zero_shift_set():
+def test_direct_charge_adduct_gets_no_cmf_for_any_node_layout():
     """Formula rows are shared across nodes with different H-shifts.
 
-    Row 2 is node 0's delta_h=+1 candidate and node 1's own delta_h=0 row. Selecting CMF rows by
-    intersecting against the molecule-wide zero-shift set {1, 2} would hand node 0 a CMF peak at
-    row 2, which the dataloader never writes -- it takes column 0 of each node individually.
+    Whichever row is a given node's own delta_h = 0, no node gains a CMF candidate, so the two
+    nodes below differ only in which CRF rows they carry.
     """
     h_idx = np.array([[1, 2], [2, 1]], dtype=np.int64)
-    ion_mz, node_of = _ions(h_idx, _FPM, _ALLOWED, "[M+H]+")
+    ion_mz, node_of = _ions(h_idx, _FPM, _ALLOWED, "[M+H]+", 1)
+    std = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    expected = sorted(np.round([100.0 + std, 101.0 + std], 6).tolist())
+
+    assert sorted(np.round(ion_mz[node_of == 0], 6).tolist()) == expected
+    assert sorted(np.round(ion_mz[node_of == 1], 6).tolist()) == expected
+
+
+def test_direct_charge_adduct_keeps_cmf_without_hydrogen_transfer():
+    """At max_h_transfer = 0 the CRF ladder cannot reach delta_h = -1, so CMF is load-bearing."""
+    ion_mz, _ = _ions(_H_IDX, _FPM, _ALLOWED, "[M+H]+", 0)
     std = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     cmf = PREC_TYPE_TO_CMF_MASS_DIFF["[M+H]+"]
+    assert sorted(np.round(ion_mz, 6)) == sorted(
+        np.round([100.0 + std, 101.0 + std, 100.0 + cmf, 101.0 + cmf], 6)
+    )
 
-    node0 = sorted(np.round(ion_mz[node_of == 0], 6).tolist())
-    node1 = sorted(np.round(ion_mz[node_of == 1], 6).tolist())
-    # Node 0: both CRF rows, but CMF only from its own column 0 (row 1 -> 100.0).
-    assert node0 == sorted(np.round([100.0 + std, 101.0 + std, 100.0 + cmf], 6).tolist())
-    # Node 1: same CRF rows, but CMF from ITS column 0 (row 2 -> 101.0), a different peak.
-    assert node1 == sorted(np.round([100.0 + std, 101.0 + std, 101.0 + cmf], 6).tolist())
-    # Each node gets exactly one CMF channel, never both.
-    assert len(node0) == 3 and len(node1) == 3
+
+def test_cmf_contract_preserves_an_explicit_zero_h_transfer_limit():
+    """The cache audit must describe the same support the target builder uses."""
+    assert _duplicate_cmf_precursors(max_h_transfer=0) == []
+    assert set(_duplicate_cmf_precursors(max_h_transfer=None)) == {"[M+H]+", "[M-H]-"}
 
 
 def test_migrating_charge_adduct_gets_cmf_at_every_h_shift():
@@ -210,12 +222,31 @@ def test_h_transfer_budget_excludes_disallowed_rows():
     assert sorted(np.round(ion_mz, 6)) == sorted(np.round([100.0 + std, 100.0 + cmf], 6))
 
 
-def test_cmf_is_dropped_when_the_nodes_own_zero_h_row_is_outside_the_budget():
-    """A node whose column 0 is filtered out keeps its CRF rows but gets no CMF channel."""
+def test_rows_outside_the_h_transfer_budget_are_dropped():
+    """Only formula rows the budget allows become candidates."""
     h_idx = np.array([[1, 2]], dtype=np.int64)
-    ion_mz, _ = _ions(h_idx, _FPM, {2}, "[M+H]+")
+    ion_mz, _ = _ions(h_idx, _FPM, {2}, "[M+H]+", 1)
     std = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     assert sorted(np.round(ion_mz, 6)) == sorted(np.round([101.0 + std], 6))
+
+
+def test_precursor_loss_candidates_require_the_lost_group():
+    """Target candidates must not retain rows the dataloader nulls for a CO2 loss."""
+    h_idx = np.array([[1, 2]], dtype=np.int64)
+    formula_counts = np.asarray(
+        [tracked_element_counts(formula) for formula in ("", "C2H1O", "C2H1O2")]
+    )
+
+    ion_mz, _ = _ions(
+        h_idx,
+        _FPM,
+        _ALLOWED,
+        "[M-H-CO2]-",
+        formula_element_counts=formula_counts,
+    )
+
+    expected = _FPM[2, 0] + PREC_TYPE_TO_MASS_DIFF["[M-H-CO2]-"]
+    assert np.allclose(ion_mz, [expected])
 
 
 def test_null_formula_row_and_zero_mass_padding_are_dropped():

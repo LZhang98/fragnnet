@@ -1,4 +1,5 @@
 import re
+from functools import lru_cache
 from typing import Literal
 
 import rdkit.Chem as Chem
@@ -42,27 +43,41 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M+H]+_NL": -H_MASS + ELECTRON_MASS,
     "[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
-# charge transfer (CMF): direct-charge mode — fragment retains charge without the proton/adduct.
-# For [M+H]+: proton departs with neutral → fragment is a direct cation, mass_diff ≈ 0 (-e only).
-# For [M-H]-: proton stays with neutral  → fragment is a direct anion,  mass_diff ≈ 0 (+e only).
-# [M-H-CO2]- carries the same [frag-H]- CRF carrier as [M-H]-, so it takes the same direct-anion
-# mass_diff. Giving it the CRF value instead makes every CMF row an exact duplicate of its own
-# CRF row (CMF(F) == CRF(F)), contributing no new m/z at all.
-# Only delta_h=0 is used for these adducts (other delta_h values duplicate CRF peaks).
+# Charge migration fragmentation (CMF): the product ion does NOT carry the precursor's charge
+# carrier, as opposed to charge retention fragmentation (CRF), where it does. For sodiated
+# precursors this is the established definition — CMF yields nonsodiated fragment ions — and
+# Xue et al., J. Am. Soc. Mass Spectrom. 2021, 32, 226 (doi:10.1021/jasms.0c00240) found such
+# ions to be a substantial share of sodiated library spectra.
+#
+# What the fragment is left holding depends on which carrier departed:
+#   - a discrete adduct (Na+, K+, NH4+, Cl-, carboxylate) leaves and the fragment appears with
+#     the conventional carrier instead: [F+H]+ in positive mode, [F-H]- in negative mode.
+#     Chloride and ammonium adducts do this by losing HCl / NH3, hence the H-1 / H1 delta.
+#   - a proton leaves nothing behind, so the fragment carries the charge itself: [F]+ or [F]-,
+#     an empty delta with only the electron in the mass. This covers [M+H]+ and [M-H]-.
+#
+# In-source loss precursors ([M-H2O+H]+, [M-2H2O+H]+, [M+H-NH3]+, [M-H-H2O]-, [M-H-CO2]-) are
+# deliberately absent: their charge is already intrinsic to the loss cation/anion, so there is no
+# carrier left to migrate away and no CMF channel to enumerate. A precursor missing here simply
+# emits CRF rows only, as [M]+ and [M-] do.
+#
+# [M+H]+ and [M-H]- are the opposite case and are kept: their CMF channel is real and common
+# (tropylium, acylium, iminium), it is just that the CRF hydrogen ladder already enumerates that
+# same ion at delta_h = -1 / +1. ``cmf_duplicate_crf_h_shift`` suppresses the duplicate row when
+# the ladder reaches it, and lets it through when max_h_transfer is too small to.
+#
+# Do not give a precursor its CRF value here: CMF(F) == CRF(F) makes every CMF row an exact m/z
+# duplicate of its own CRF row, adding no candidate at all. See ``cmf_duplicate_crf_h_shift`` for
+# the weaker form of the same trap, where CMF coincides with a CRF hydrogen shift.
 PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+H]+": -ELECTRON_MASS,  # direct cation: observed ≈ neutral mass
     "[M+Na]+": H_MASS - ELECTRON_MASS,
     "[M+H+2i]+": H_MASS - ELECTRON_MASS,
     "[M+K]+": H_MASS - ELECTRON_MASS,
     "[M+NH4]+": H_MASS - ELECTRON_MASS,
-    "[M-H2O+H]+": H_MASS - ELECTRON_MASS,
-    "[M-2H2O+H]+": H_MASS - ELECTRON_MASS,
-    "[M+H-NH3]+": H_MASS - ELECTRON_MASS,
     # negative stuff
     "[M-H]-": ELECTRON_MASS,  # direct anion: observed ≈ neutral mass
-    "[M-H-CO2]-": ELECTRON_MASS,  # direct anion, same carrier as [M-H]-
-    "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # fragments are [frag-H]-, same carrier as [M-H]-
-    "[M-H-H2O]-": -H_MASS + ELECTRON_MASS,
+    "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # loses HCl, so fragments are [frag-H]-
     "[M-H+2i]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": -H_MASS + ELECTRON_MASS,
@@ -75,13 +90,8 @@ PREC_TYPE_TO_CMF_FORMULA_DIFF = {
     "[M+H+2i]+": "H1",
     "[M+K]+": "H1",
     "[M+NH4]+": "H1",
-    "[M-H2O+H]+": "H1",
-    "[M-2H2O+H]+": "H1",
-    "[M+H-NH3]+": "H1",
     "[M-H]-": "",
-    "[M-H-CO2]-": "",
     "[M+Cl]-": "H-1",
-    "[M-H-H2O]-": "H-1",
     "[M-H+2i]-": "H-1",
     "[M+CH3COOH-H]-": "H-1",
     "[M+CH3COO]-": "H-1",
@@ -110,6 +120,23 @@ PREC_TYPE_TO_FORMULA_DIFF = {
 }
 
 PREC_TYPE_TO_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
+PREC_TYPE_TO_CMF_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()}
+
+# A precursor delta can only make a fragment's ion formula impossible through the elements it
+# removes. Loss-type precursors such as [M-H-CO2]- subtract their neutral loss from every
+# enumerated fragment, but that loss left the precursor once, from one site: a fragment that
+# never carried the group cannot lose it. Tracking these few elements is enough to reject those
+# channels without carrying a full composition per formula.
+PREC_DELTA_REMOVED_ELEMENTS = tuple(
+    sorted(
+        {
+            element
+            for delta in (*PREC_TYPE_TO_COMP_DIFF.values(), *PREC_TYPE_TO_CMF_COMP_DIFF.values())
+            for element, count in delta.items()
+            if count < 0
+        }
+    )
+)
 
 NEUTRON_MASS = 1.008665
 C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); true M+1 peak spacing
@@ -117,6 +144,80 @@ C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); tru
 
 def MASS(element: str | int) -> float:
     return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
+
+
+# Layout of a tracked-count row: one column per removable element, then the total atom count.
+TOTAL_ATOM_COLUMN = len(PREC_DELTA_REMOVED_ELEMENTS)
+
+
+@lru_cache(maxsize=1 << 16)
+def tracked_element_counts(formula: str) -> tuple[int, ...]:
+    """Count the ``PREC_DELTA_REMOVED_ELEMENTS`` of a neutral formula, plus its atom total.
+
+    The total is what rejects an ion that has been emptied out entirely, which a per-element
+    check cannot see. Fragment formulas repeat heavily across a dataset, so this is cached;
+    the NULL formula ``""`` counts as all zeros.
+    """
+    counts = parse_formula(formula) if formula else {}
+    tracked = tuple(counts.get(element, 0) for element in PREC_DELTA_REMOVED_ELEMENTS)
+    return (*tracked, sum(counts.values()))
+
+
+def prec_type_removed_counts(prec_type: str, *, cmf: bool = False) -> dict[int, int]:
+    """Map tracked-count columns to the minimum a formula needs to survive this delta.
+
+    Includes ``TOTAL_ATOM_COLUMN``, whose minimum keeps at least one atom in the ion. Returns
+    an empty mapping when nothing can be violated, so the validity check can be skipped.
+    """
+    delta = PREC_TYPE_TO_CMF_COMP_DIFF[prec_type] if cmf else PREC_TYPE_TO_COMP_DIFF[prec_type]
+    minimums = {
+        position: -count
+        for position, element in enumerate(PREC_DELTA_REMOVED_ELEMENTS)
+        if (count := delta.get(element, 0)) < 0
+    }
+    net_atoms = sum(delta.values())
+    if net_atoms < 0:
+        minimums[TOTAL_ATOM_COLUMN] = 1 - net_atoms
+    return minimums
+
+
+def cmf_duplicate_crf_h_shift(
+    prec_type: str,
+    max_h_transfer: int,
+    *,
+    tolerance: float = 1e-8,
+) -> int | None:
+    """Return the CRF hydrogen shift that already emits this adduct's CMF ion.
+
+    CMF and CRF describe the same ion whenever their mass and formula deltas differ by a
+    whole number of hydrogens that hydrogen transfer also reaches. For ``[M+H]+`` the CMF
+    state is the CRF state at ``delta_h = -1``, so emitting both puts two formula slots on
+    one m/z. Adducts whose carrier swap is not a whole number of hydrogens, such as
+    ``[M+Na]+`` and ``[M+Cl]-``, stay distinct.
+
+    Args:
+        prec_type: Precursor type string, e.g. ``"[M+H]+"``.
+        max_h_transfer: Hydrogen-transfer limit of the enumerated CRF channels. A shift
+            outside this range is not enumerated, so CMF still contributes a new ion.
+        tolerance: Absolute tolerance on the integer hydrogen shift, in hydrogen masses.
+
+    Returns:
+        The duplicated CRF hydrogen shift, or ``None`` when CMF contributes a distinct ion.
+    """
+    if prec_type not in PREC_TYPE_TO_CMF_MASS_DIFF:
+        return None
+    shift = (PREC_TYPE_TO_CMF_MASS_DIFF[prec_type] - PREC_TYPE_TO_MASS_DIFF[prec_type]) / H_MASS
+    h_shift = round(shift)
+    if abs(shift - h_shift) > tolerance or not -max_h_transfer <= h_shift <= max_h_transfer:
+        return None
+    # Equal masses are not enough: the two states must also be the same formula.
+    crf_counts = PREC_TYPE_TO_COMP_DIFF[prec_type]
+    cmf_counts = PREC_TYPE_TO_CMF_COMP_DIFF[prec_type]
+    for element in set(crf_counts) | set(cmf_counts) | {"H"}:
+        expected = crf_counts.get(element, 0) + (h_shift if element == "H" else 0)
+        if cmf_counts.get(element, 0) != expected:
+            return None
+    return h_shift
 
 
 def get_peaks_for_formula(

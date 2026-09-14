@@ -66,8 +66,11 @@ from fragnnet.utils.feat_utils import get_node_feats
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
+    cmf_duplicate_crf_h_shift,
+    prec_type_removed_counts,
+    tracked_element_counts,
 )
-from fragnnet.utils.frag_utils import th_long_to_mask
+from fragnnet.utils.frag_utils import MAX_H_TRANSFER, th_long_to_mask
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -90,12 +93,19 @@ HIGH_CONF_Q = 0.8
 LOD_AUDIT_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
 LOD_QUANTILE = 0.5
 
-# Adducts whose CMF mode is direct-charge: the proton departs with the neutral, so only delta_h = 0
-# yields a unique CMF peak and every other H-shift merely duplicates a CRF peak. Mirrors
-# src/fragnnet/dataset/spec_mol_frag_dataset.py, which writes only CMF column 0 for these.
-CMF_ZERO_H_ONLY_PREC = ("[M+H]+", "[M-H]-", "[M-H-CO2]-")
 # Precursors that carry no CMF channel at all, matching the dataloader's include_cmf guard.
+# Anything absent from PREC_TYPE_TO_CMF_MASS_DIFF is excluded on the same grounds.
 CMF_EXCLUDED_PREC = ("[M]+", "[M-]")
+
+
+def _duplicate_cmf_precursors(max_h_transfer: int | None) -> list[str]:
+    """List CMF precursors whose ions are already represented by a CRF H-shift."""
+    effective_h_transfer = MAX_H_TRANSFER if max_h_transfer is None else max_h_transfer
+    return sorted(
+        prec_type
+        for prec_type in PREC_TYPE_TO_CMF_MASS_DIFF
+        if cmf_duplicate_crf_h_shift(prec_type, effective_h_transfer) is not None
+    )
 
 
 def _mz_bin(mz: float | np.ndarray) -> np.ndarray:
@@ -427,20 +437,18 @@ def node_candidate_ions(
     formula_peak_mzs: np.ndarray,
     allowed_rows: set[int],
     prec_type: str,
+    max_h_transfer: int | None = None,
+    formula_element_counts: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Build each node's candidate ion m/z under the model's real CRF/CMF contract.
 
-    The CRF channel uses every formula row the node carries within the H-transfer budget. The CMF
-    channel is precursor-dependent and is NOT simply the same rows shifted: the dataloader writes
-    only the delta_h = 0 CMF column for direct-charge adducts, and no CMF column at all for
-    ``[M]+``/``[M-]``. Applying the CMF offset to every row -- as the diagnostic helpers do --
-    invents channels the model never scores, which inflates the match count ``n_j`` and makes
-    unrelated sides look mass-aliased.
-
-    The delta_h = 0 row must be read as **column 0 of that node**, not by intersecting against a
-    molecule-wide zero-shift set. Formula rows are shared across nodes, so one row is routinely
-    delta_h = 0 for a fragment and delta_h = +/-1 for a neighbour differing by a hydrogen; the
-    set-intersection form admits those neighbours' rows and invents CMF peaks.
+    The CRF channel uses every formula row the node carries within the H-transfer budget. Whether
+    a CMF channel exists at all is precursor-dependent, and applying the CMF offset unconditionally
+    -- as the diagnostic helpers do -- invents channels the model never scores, which inflates the
+    match count ``n_j`` and makes unrelated sides look mass-aliased. A precursor has no CMF channel
+    when it carries no CMF entry (``[M]+``/``[M-]`` and the in-source loss precursors), or when its
+    CMF ion is already enumerated as a CRF hydrogen shift (``[M+H]+``/``[M-H]-``). Every remaining
+    CMF-bearing precursor takes the full H-shift range, matching the dataloader.
 
     Args:
         h_formulae_idx: Per-node formula rows of shape (num_nodes, num_h_slots), column 0 being
@@ -448,6 +456,11 @@ def node_candidate_ions(
         formula_peak_mzs: Neutral formula m/z of shape (num_formulas, num_isotopes).
         allowed_rows: Formula rows permitted by the H-transfer budget.
         prec_type: Precursor adduct, selecting the ion-mass conventions.
+        max_h_transfer: H-transfer budget in force, used to decide whether the CRF ladder already
+            reaches the CMF ion. ``None`` means the DAG's own range, read off the slot count.
+        formula_element_counts: Per-formula counts in the layout returned by
+            ``tracked_element_counts``. When supplied, rows that cannot supply a precursor loss
+            are excluded independently for CRF and CMF, matching the dataloader.
 
     Returns:
         Tuple ``(ion_mz, node_of_cand, is_cmf)`` of shape (M,) each: every candidate ion m/z, the
@@ -455,9 +468,34 @@ def node_candidate_ions(
         zero-mass isotope padding are dropped.
     """
     std_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-    include_cmf = prec_type not in CMF_EXCLUDED_PREC and prec_type in PREC_TYPE_TO_CMF_MASS_DIFF
+    # Mirrors src/fragnnet/dataset/spec_mol_frag_dataset.py: a precursor whose CMF ion is already
+    # enumerated as a CRF hydrogen shift emits no CMF rows, and every other CMF-bearing precursor
+    # emits the full H-shift range.
+    effective_h_transfer = (
+        (h_formulae_idx.shape[1] - 1) // 2 if max_h_transfer is None else max_h_transfer
+    )
+    include_cmf = (
+        prec_type not in CMF_EXCLUDED_PREC
+        and prec_type in PREC_TYPE_TO_CMF_MASS_DIFF
+        and cmf_duplicate_crf_h_shift(prec_type, effective_h_transfer) is None
+    )
     cmf_diff = PREC_TYPE_TO_CMF_MASS_DIFF[prec_type] if include_cmf else None
-    cmf_rows_are_zero_h_only = prec_type in CMF_ZERO_H_ONLY_PREC
+
+    def feasible_rows(rows: set[int], *, cmf: bool) -> set[int]:
+        """Keep only rows whose formula survives this channel's precursor delta."""
+        if formula_element_counts is None:
+            return rows
+        removed = prec_type_removed_counts(prec_type, cmf=cmf)
+        if not removed:
+            return rows
+        return {
+            row
+            for row in rows
+            if all(
+                formula_element_counts[row, position] >= amount
+                for position, amount in removed.items()
+            )
+        }
 
     ions: list[np.ndarray] = []
     node_of: list[np.ndarray] = []
@@ -465,23 +503,23 @@ def node_candidate_ions(
     for n in range(h_formulae_idx.shape[0]):
         rows = {int(r) for r in np.unique(h_formulae_idx[n]) if r != 0}
         rows &= allowed_rows
-        if not rows:
-            continue
-        crf = formula_peak_mzs[sorted(rows)].reshape(-1)
-        crf = crf[crf > 0.0] + std_diff
-        chans = [crf]
-        flags = [np.zeros(crf.shape[0], dtype=bool)]
+        crf_rows = feasible_rows(rows, cmf=False)
+        chans: list[np.ndarray] = []
+        flags: list[np.ndarray] = []
+        if crf_rows:
+            crf = formula_peak_mzs[sorted(crf_rows)].reshape(-1)
+            crf = crf[crf > 0.0] + std_diff
+            chans.append(crf)
+            flags.append(np.zeros(crf.shape[0], dtype=bool))
         if include_cmf:
-            if cmf_rows_are_zero_h_only:
-                own_zero_h = int(h_formulae_idx[n, 0])
-                cmf_rows = {own_zero_h} & rows
-            else:
-                cmf_rows = rows
+            cmf_rows = feasible_rows(rows, cmf=True)
             if cmf_rows:
                 cmf = formula_peak_mzs[sorted(cmf_rows)].reshape(-1)
                 cmf = cmf[cmf > 0.0] + cmf_diff
                 chans.append(cmf)
                 flags.append(np.ones(cmf.shape[0], dtype=bool))
+        if not chans:
+            continue
         mzs = np.concatenate(chans)
         if mzs.size == 0:
             continue
@@ -702,6 +740,10 @@ def _process_mol_group(
     allowed = set(_allowed_formula_idxs(dag_d["idx_by_h_delta"], max_h_transfer))
     h_formulae_idx = get_node_feats(dag.x, nfi, "h_formulae_idx").numpy()
     formula_peak_mzs = dag_d["formula_peak_mzs"].numpy()
+    formula_element_counts = np.asarray(
+        [tracked_element_counts(formula) for formula in dag_d["idx_to_formula"].values()],
+        dtype=np.int16,
+    )
     # The depth feature is a range indicator over depths, not a scalar: the first set column is
     # the node's minimum depth. argmax returns that first 1.
     depth = get_node_feats(dag.x, nfi, "depth").numpy().argmax(axis=1)
@@ -736,7 +778,12 @@ def _process_mol_group(
 
         if prec_type not in cand_cache:
             ion_mz, node_of_cand, is_cmf = node_candidate_ions(
-                h_formulae_idx, formula_peak_mzs, allowed, prec_type
+                h_formulae_idx,
+                formula_peak_mzs,
+                allowed,
+                prec_type,
+                max_h_transfer,
+                formula_element_counts,
             )
             cand_cache[prec_type] = (
                 ion_mz,
@@ -1402,8 +1449,9 @@ def main() -> None:
         "high_conf_q": HIGH_CONF_Q,
         "min_frag_atoms_evidence": min_frag_evidence,
         "cmf_contract": {
-            "zero_h_only_prec": list(CMF_ZERO_H_ONLY_PREC),
             "excluded_prec": list(CMF_EXCLUDED_PREC),
+            "cmf_bearing_prec": sorted(PREC_TYPE_TO_CMF_MASS_DIFF),
+            "duplicate_of_crf_shift_prec": _duplicate_cmf_precursors(args.max_h_transfer),
         },
         "lod_contract": {
             "source": "estimated_train_only",
