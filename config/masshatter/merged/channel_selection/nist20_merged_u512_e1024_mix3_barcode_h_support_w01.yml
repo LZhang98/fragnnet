@@ -50,7 +50,7 @@ mol_params:
 # 2. Match the control structure and add only the separately supervised H-support
 # head. Keep pruning disabled so training and checkpoint selection remain dense.
 model_type: mass_shatter
-mol_gnn_type: GINE_EFA
+mol_gnn_type: GINE_GSA
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch

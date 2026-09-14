@@ -214,6 +214,6 @@ spectrum reward.
   and §9 open risks.
 - `src/fragnnet/frag/mass_shatter_candidates.py` — proposal and rejection loop.
 - `src/fragnnet/pl_model/mass_shatter_pl.py` — `candidate_wrecall` logging.
-- `config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3.yml`
+- `config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3.yml`
   and its `_explore64` / `_explore256` variants — the deterministic control and
   the augmented arms.

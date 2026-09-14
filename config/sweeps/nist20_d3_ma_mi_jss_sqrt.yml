@@ -27,7 +27,7 @@ frag_gnn_type: NodeMLP
 mol_hidden_size: 384    # sweep: 4/5 top runs
 mol_num_layers: 4
 mol_gnn_type: GINE
-mol_num_heads: 4        # used by GINE_EFA; ignored by GINE
+mol_num_heads: 4        # used by GINE_GSA; ignored by GINE
 mol_normalization: batch
 mol_pool_type: mean
 

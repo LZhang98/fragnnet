@@ -9,7 +9,7 @@ wandb_tags:
   - ranked_mask_budget_sweep
   - pathway_marginalization
   - deterministic
-  - gine_efa384
+  - gine_gsa384
   - bond_centric
   - intensity_transformer
   - ce_embed
@@ -51,7 +51,7 @@ mol_params:
 # 2. Fix the unique-fragment target at 256; the matching W&B grid sweeps
 # the ranked-mask budget and auxiliary CE weight.
 model_type: mass_shatter
-mol_gnn_type: GINE_EFA
+mol_gnn_type: GINE_GSA
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch

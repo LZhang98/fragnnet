@@ -49,7 +49,7 @@ mol_params:
 # 2. Reproduce the ka68eu6p fragment-selection structure and keep all chemically
 # valid ion/H channels for the matched existing-head control.
 model_type: mass_shatter
-mol_gnn_type: GINE_EFA
+mol_gnn_type: GINE_GSA
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch

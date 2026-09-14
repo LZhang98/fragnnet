@@ -9,7 +9,7 @@ wandb_tags:
   - max_enumerated_masks_1024
   - pathway_marginalization
   - deterministic
-  - gine_efa384
+  - gine_gsa384
   - bond_centric
   - atom_layers_2
   - bond_layers_3
@@ -76,7 +76,7 @@ mol_params:
 
 # 2. Match the merged independent-cosine baseline's candidate architecture.
 model_type: mass_shatter
-mol_gnn_type: GINE_EFA
+mol_gnn_type: GINE_GSA
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch

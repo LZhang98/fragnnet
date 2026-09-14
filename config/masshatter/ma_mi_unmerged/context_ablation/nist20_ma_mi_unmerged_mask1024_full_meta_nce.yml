@@ -10,7 +10,7 @@ wandb_tags:
   - unmerged
   - masks_1024
   - deterministic
-  - gine_efa384
+  - gine_gsa384
   - bond_centric
   - atom_layers_2
   - bond_layers_3
@@ -64,7 +64,7 @@ mol_params:
 
 # 2. Feed full acquisition context to the existing proposal and intensity heads.
 model_type: mass_shatter
-mol_gnn_type: GINE_EFA
+mol_gnn_type: GINE_GSA
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch

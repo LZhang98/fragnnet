@@ -351,7 +351,7 @@ spectrum_encoder_params:
 # ============================================================================
 mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
-mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GINE_EFA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GCN", "GAT", "PNA"]
+mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GCN", "GAT", "PNA"]
 # GINE_GATED: each bond's message is scaled by a context-conditioned scalar gate in [0, 2], so
 # which bonds conduct can change with CE/adduct instead of context only rescaling the output.
 # Requires context_embedding: True (supplies the conditioning vector). Zero-init => gate == 1.0
@@ -372,7 +372,7 @@ cut_bond_hidden_dim: 256
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
-mol_num_heads: 4  # Attention heads (GINE_EFA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
+mol_num_heads: 4  # Attention heads (GINE_GSA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
 
 # ============================================================================
 # Inter-stage Configuration (Mol → Frag connection)

@@ -9,7 +9,7 @@ wandb_tags:
   - ranked_mask_budget_2048
   - pathway_marginalization
   - deterministic
-  - gine_efa384
+  - gine_gsa384
   - bond_centric
   - intensity_transformer
   - ce_embed
@@ -51,7 +51,7 @@ mol_params:
 # 2. Hold support, architecture, and auxiliary weight fixed; the W&B grid changes
 # only whether base-only CE may train the shared ion/H path.
 model_type: mass_shatter
-mol_gnn_type: GINE_EFA
+mol_gnn_type: GINE_GSA
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch

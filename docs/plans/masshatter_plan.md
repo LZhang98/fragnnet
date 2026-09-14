@@ -110,13 +110,13 @@ must be evaluated by CE bin and under CE-distribution shift.
 ### 1.1 Shared dual atom-bond backbone proposal (2026-08-23)
 
 > **Status:** PROPOSED — not implemented or validated. The current
-> `GINE_EFA + BondFocusedBreakHead` remains the control.
+> `GINE_GSA + BondFocusedBreakHead` remains the control.
 
 The representative `a2_b3` configs currently use two different stages:
 
 ```
 mol_num_layers: 2
-  -> two GINE_EFA atom-encoder blocks
+  -> two GINE_GSA atom-encoder blocks
 
 mass_shatter_bond_num_layers: 3
   -> three alternating bond -> atom -> bond refinement blocks inside
@@ -138,7 +138,7 @@ are also local to the head. In particular:
 
 The proposed change is to promote this temporary atom/bond refinement into a
 shared encoder that returns both representations. In the first shared-local arm,
-the coupled blocks **stack on top of the unchanged two-layer GINE_EFA atom
+the coupled blocks **stack on top of the unchanged two-layer GINE_GSA atom
 encoder**; they do not replace it:
 
 The diagram below is the **target design after the staged sub-arms**, not the
@@ -146,7 +146,7 @@ first Arm 3 comparison. That first sub-arm still routes `A_enc` rather than `A3`
 to charge and fragment/complement pooling.
 
 ```
-atom features -> GINE_EFA x2 -> A_enc -> AtomProjection -> A0 --+
+atom features -> GINE_GSA x2 -> A_enc -> AtomProjection -> A0 --+
                                   |                              |
                                   | endpoint summaries           |
 bond features --------------------+-> BondProjection -> B0 ------+
@@ -162,7 +162,7 @@ bond features --------------------+-> BondProjection -> B0 ------+
 Initialize the streams from the existing atom-backbone output:
 
 ```
-A_enc = GINE_EFA_2(atom_features, directed_bonds, bond_features)
+A_enc = GINE_GSA_2(atom_features, directed_bonds, bond_features)
 A0 = AtomProjection(A_enc)
 
 B0 = BondProjection(
@@ -173,7 +173,7 @@ B0 = BondProjection(
 ```
 
 This definition keeps the control's atom encoder fixed and changes only whether
-the coupled atom/bond states become reusable outputs. Replacing GINE_EFA with an
+the coupled atom/bond states become reusable outputs. Replacing GINE_GSA with an
 interleaved dual encoder is a later arm and must not be folded into this first
 comparison.
 
@@ -357,16 +357,16 @@ Do not implement the complete dual transformer first. Advance in the following
 order, keeping candidate enumeration, losses, context, data splits, and realized
 candidate budgets fixed:
 
-1. **Current control:** `GINE_EFA + BondFocusedBreakHead`; endpoint-average
+1. **Current control:** `GINE_GSA + BondFocusedBreakHead`; endpoint-average
    boundary features.
 2. **Refactor-equivalence check:** extract the current refinement blocks so they
    return `A3, B3`, but preserve the current logits and do not consume those
    states downstream. Require numerical parity before training a changed model.
 3. **Shared-local dual encoder:** stack those blocks on the unchanged two-layer
-   GINE_EFA output, use a small context-conditioned cleavage MLP, and replace the
+   GINE_GSA output, use a small context-conditioned cleavage MLP, and replace the
    endpoint-average boundary feature with `B3`. Run the context-location and
    stop-gradient/proposal-weight controls defined above. In the first sub-arm,
-   keep charge and fragment/complement pooling on the original GINE_EFA atom
+   keep charge and fragment/complement pooling on the original GINE_GSA atom
    output so `B3` boundary reuse is the only downstream representation change.
    Promote `A3` to those consumers only in a second sub-arm. Add no global mixer.
    This arm requires `separate_proposal_encoder: False`.
@@ -863,10 +863,10 @@ weighted recall.
 
 Reference configurations:
 
-- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_efa384_bondcentric_a2_b3_transformer_full_context_no_mask_residual.yml`
-- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_efa384_bondcentric_a2_b3_transformer_full_context_mask_residual.yml`
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique512_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_no_mask_residual.yml`
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique512_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_mask_residual.yml`
+- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_full_context_no_mask_residual.yml`
+- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_full_context_mask_residual.yml`
+- `config/masshatter/merged/unique_fragment/nist20_merged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_no_mask_residual.yml`
+- `config/masshatter/merged/unique_fragment/nist20_merged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_mask_residual.yml`
 
 ### 6.1.1 Mask-residual shortcut and proposal-recall risk
 
@@ -1054,8 +1054,8 @@ configs were therefore removed rather than retained as meaningful ablations.
 
 Reference configurations:
 
-- merged U256/E1024: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
-- unmerged U256/E4096: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
+- merged U256/E1024: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
+- unmerged U256/E4096: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
 
 #### Separate proposal encoder ablation (2026-08-23)
 
@@ -1077,10 +1077,10 @@ transformer. Each comparison changes only
 
 Matched experiment pairs:
 
-- merged control: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
-- merged separate encoder: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_efa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_separate_proposal_encoder.yml`
-- unmerged control: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
-- unmerged separate encoder: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_efa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_separate_proposal_encoder_inst_tol.yml`
+- merged control: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
+- merged separate encoder: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_separate_proposal_encoder.yml`
+- unmerged control: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
+- unmerged separate encoder: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_separate_proposal_encoder_inst_tol.yml`
 
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 
@@ -1607,9 +1607,9 @@ this phase broadens candidate support but is not policy-gradient RL.
 Use bounded selection only for training. Validation, test, and prediction use
 the existing deterministic exact top-K path. The deterministic control and
 matched K256+64 experiment are
-`config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3.yml`
+`config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3.yml`
 and
-`config/masshatter/legacy/explore/nist20_merged_mask256_gine_efa384_bondcentric_a2_b3_explore64.yml`.
+`config/masshatter/legacy/explore/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3_explore64.yml`.
 
 Implement and verify in this order:
 
@@ -1734,7 +1734,7 @@ updates. Bonds communicate when they share an atom, without materializing a
 line graph, and endpoint-order invariance is preserved. A value of zero keeps
 the original endpoint baseline. The charge/ion heads and independent-Bernoulli
 top-K mask ranking remain unchanged. The controlled K256 GINE-EFA experiment is
-`config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_efa384_bond2.yml`.
+`config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bond2.yml`.
 
 **Architecture direction from the initial W&B runs, 2026-08-16:** increasing
 the atom-centered GINE encoder from 256/4 layers to 384/5 layers did not improve

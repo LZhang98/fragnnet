@@ -79,7 +79,7 @@ the existing unmerged mask1024 architecture; it does not settle the newer U256 e
 
 | Arm | Config | Conditioning |
 | --- | --- | --- |
-| M0 — historical reference | [Existing baseline](../../config/masshatter/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_efa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
+| M0 — historical reference | [Existing baseline](../../config/masshatter/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_gsa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
 | M1 — optional diagnostic, outside the next run queue | [NCE with categorical metadata](../../config/masshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_nce.yml) | NCE + adduct + instrument + mode |
 | M2 — selected conditioning baseline | [Full metadata, dual CE](../../config/masshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce.yml) | NCE + ACE + adduct + instrument + mode |
 
