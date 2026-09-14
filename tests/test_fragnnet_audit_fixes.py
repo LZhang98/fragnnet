@@ -77,9 +77,10 @@ def test_edge_hydrogen_pairs_and_loss_match_explicit_enumeration(loss_config, in
     counts = get_node_feats(graph.x, graph.node_feat_idxs.view(-1), "h_counts")
     # CRF channels alone describe edge H transfers, even when CMF output is enabled.
     if include_cmf:
-        # Preserve the existing policy that unavailable shifted CMF ions have zero mass.
+        # Every unavailable CMF ion has zero mass, Δh=0 included: an adduct whose CMF ion
+        # duplicates a CRF hydrogen shift leaves its whole CMF block NULL.
         cmf_indices = get_node_feats(graph.x, graph.node_feat_idxs.view(-1), "cmf_h_formulae_idx")
-        logits[0][:, 6:] = logits[0][:, 6:].masked_fill(cmf_indices[:, 1:] == 0, -th.inf)
+        logits[0][:, 5:] = logits[0][:, 5:].masked_fill(cmf_indices == 0, -th.inf)
     probabilities = logits[0].softmax(dim=1)[:, :5]
     expected_diffs = []
     expected_probs = []

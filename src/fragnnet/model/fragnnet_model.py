@@ -32,6 +32,7 @@ from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_FORMULA_DIFF,
     PREC_TYPE_TO_FORMULA_DIFF,
+    cmf_duplicate_crf_h_shift,
 )
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_VE,
@@ -2064,13 +2065,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     formula_idxs_2d = frag_joint_formula_idxs.reshape(
                         batch_frag_num_nodes, self.mlp_output_dim
                     )
-                    cmf_dhn0_null = (
-                        formula_idxs_2d[:, crf_width + 1 :]
-                        == frag_node_offsets.unsqueeze(1)
-                    )
-                    competition_real_mask = competition_real_mask & ~F.pad(
-                        cmf_dhn0_null, (crf_width + 1, 0)
-                    )
+                    cmf_null = formula_idxs_2d[:, crf_width:] == frag_node_offsets.unsqueeze(1)
+                    competition_real_mask = competition_real_mask & ~F.pad(cmf_null, (crf_width, 0))
                 if self.context_embedding:
                     competition_context = context_embed
                 else:
@@ -2093,19 +2089,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     batch_size=frag_formula_sizes.shape[0],
                 )
             if include_cmf:
-                # CMF Δh≠0 channels (columns crf_width+1..) that map to NULL should not
-                # consume probability mass before softmax.  This is always the case for
-                # [M+H]+/[M-H]- (direct-charge: only Δh=0 is a real CMF peak) and also
-                # applies per-node for any adduct where a Δh≠0 shift was not generated.
+                # CMF channels that map to NULL should not consume probability mass before
+                # softmax.  This covers every CMF column, including Δh=0: adducts whose CMF
+                # ion duplicates a CRF hydrogen shift emit no CMF rows at all, and any adduct
+                # can leave a column NULL when that shift was not generated for the node.
                 crf_width = 2 * self.num_hs + 1
                 formula_idxs_2d = frag_joint_formula_idxs.reshape(
                     batch_frag_num_nodes, self.mlp_output_dim
                 )
-                cmf_dhn0_null = (
-                    formula_idxs_2d[:, crf_width + 1 :] == frag_node_offsets.unsqueeze(1)
-                )
-                if cmf_dhn0_null.any():
-                    null_mask = F.pad(cmf_dhn0_null, (crf_width + 1, 0))
+                cmf_null = formula_idxs_2d[:, crf_width:] == frag_node_offsets.unsqueeze(1)
+                if cmf_null.any():
+                    null_mask = F.pad(cmf_null, (crf_width, 0))
                     frag_joint_logits = frag_joint_logits.masked_fill(
                         null_mask, LOG_ZERO(frag_joint_logits.dtype)
                     )
@@ -2688,6 +2682,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 for i, prec_type in enumerate(prec_type_str):
                     if prec_type not in PREC_TYPE_TO_CMF_FORMULA_DIFF:
                         continue  # Direct ions such as [M]+ have only CRF rows.
+                    if cmf_duplicate_crf_h_shift(prec_type, self.num_hs) is not None:
+                        # The dataset skips CMF when a CRF shift already emits that ion,
+                        # so this sample has CRF rows only and must keep its CRF labels.
+                        continue
                     start, end = formula_offsets[i : i + 2]
                     # Dataset layout: NULL, CRF[1:F], CMF[1:F].
                     cmf_start = start + (end - start + 1) // 2
