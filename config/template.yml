@@ -373,6 +373,9 @@ mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
 mol_num_heads: 4  # Attention heads (GINE_GSA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
+mol_max_degree: 64  # Graphormer: largest atom degree the degree embedding distinguishes
+mol_max_spatial_distance: 128  # Graphormer: largest shortest-path distance the spatial embedding distinguishes
+mol_multi_hop_max_distance: 5  # Graphormer: leading bonds encoded along each shortest path
 
 # ============================================================================
 # Inter-stage Configuration (Mol → Frag connection)

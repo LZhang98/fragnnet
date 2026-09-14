@@ -55,6 +55,9 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ace_max: float,
         ace_mean: float,
         ace_std: float,
+        mol_max_degree: int | None = None,
+        mol_max_spatial_distance: int | None = None,
+        mol_multi_hop_max_distance: int | None = None,
     ):
         super().__init__()
 
@@ -166,6 +169,10 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             normalization=self.mol_normalization,
             dropout=self.mol_dropout,
             num_heads=mol_num_heads,
+            # Graphormer structural-encoding sizes; None means "use the class default".
+            max_degree=mol_max_degree,
+            max_spatial_distance=mol_max_spatial_distance,
+            multi_hop_max_distance=mol_multi_hop_max_distance,
         )
 
         # Pooling

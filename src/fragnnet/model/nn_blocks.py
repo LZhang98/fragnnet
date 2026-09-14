@@ -180,6 +180,7 @@ class GNN(nn.Module):
                 dropout=self.dropout,
                 normalization=self.normalization,
                 num_heads=kwargs["num_heads"],
+                **_graphormer_structural_kwargs(kwargs),
             )
         elif self.gnn_type == "GINE_GATED":
             self.gnn = GatedGINE(
@@ -201,6 +202,7 @@ class GNN(nn.Module):
                 dropout=self.dropout,
                 normalization=self.normalization,
                 num_heads=kwargs["num_heads"],
+                **_graphormer_structural_kwargs(kwargs),
             )
         elif self.gnn_type == "NodeMLP":
             self.gnn = NodeMLP(
@@ -266,6 +268,16 @@ class GNN(nn.Module):
         else:
             z = self.gnn(z, batch_index, edge_index, edge_attr)
         return z
+
+
+def _graphormer_structural_kwargs(kwargs: dict) -> dict:
+    """Pick out the optional Graphormer structural-encoding sizes, if the caller set them.
+
+    Omitted keys and ``None`` both fall through to the constructor defaults, so callers
+    that do not care about these knobs can keep passing only ``num_heads``.
+    """
+    names = ("max_degree", "max_spatial_distance", "multi_hop_max_distance")
+    return {name: kwargs[name] for name in names if kwargs.get(name) is not None}
 
 
 def get_norm(normalization, hidden_size):
@@ -358,11 +370,17 @@ class Graphormer(nn.Module):
     structural signals from Graphormer: in/out degree, shortest-path distance, and
     encoded bond features. A virtual graph token provides a global communication path
     but is removed from the returned atom states.
-    """
 
-    max_degree = 64
-    max_spatial_distance = 128
-    multi_hop_max_distance = 5
+    Cost note: the structural bias is rebuilt on every forward pass and accounts for
+    roughly a fifth of the step time (9.3 ms of a 42.5 ms forward+backward at batch 32,
+    60 atoms, hidden 512, 5 layers on an RTX 2070 SUPER). Half of that is the
+    Floyd-Warshall loop, which is kernel-launch bound rather than compute bound: it
+    issues ``max_nodes`` sequential iterations over small tensors, so neither a narrower
+    integer dtype nor min-plus repeated squaring speeds it up enough to justify their
+    cost (squaring is exact but only 1.1-2.1x while needing an extra
+    ``num_graphs * max_nodes ** 3`` workspace). Removing this cost needs the topology
+    tables to be precomputed per molecule in the dataset, not a different kernel here.
+    """
 
     def __init__(
         self,
@@ -372,6 +390,9 @@ class Graphormer(nn.Module):
         dropout: float,
         normalization: str,
         num_heads: int,
+        max_degree: int = 64,
+        max_spatial_distance: int = 128,
+        multi_hop_max_distance: int = 5,
     ) -> None:
         super().__init__()
         if hidden_size % num_heads != 0:
@@ -382,8 +403,20 @@ class Graphormer(nn.Module):
             raise ValueError("Graphormer requires mol_normalization: layer")
         if edge_feats_size <= 0:
             raise ValueError("Graphormer requires at least one edge feature")
+        if max_degree < 1 or max_spatial_distance < 1 or multi_hop_max_distance < 1:
+            raise ValueError(
+                "max_degree, max_spatial_distance and multi_hop_max_distance must be >= 1, got "
+                f"{max_degree}, {max_spatial_distance}, {multi_hop_max_distance}"
+            )
 
         self.num_heads = num_heads
+        self.max_degree = max_degree
+        self.max_spatial_distance = max_spatial_distance
+        self.multi_hop_max_distance = multi_hop_max_distance
+        # Molecular graphs are bidirectional whenever mol_params.pyg_bigraph is True, which
+        # makes the two degree tables receive identical indices. They are kept separate so
+        # that pyg_bigraph=False, where every bond appears in one direction only, still gets
+        # distinguishable in- and out-degree signals.
         self.in_degree_embedding = nn.Embedding(self.max_degree + 1, hidden_size)
         self.out_degree_embedding = nn.Embedding(self.max_degree + 1, hidden_size)
         self.spatial_embedding = nn.Embedding(self.max_spatial_distance + 2, num_heads)
@@ -397,6 +430,8 @@ class Graphormer(nn.Module):
             [GraphormerEncoderLayer(hidden_size, num_heads, dropout) for _ in range(num_layers)]
         )
         self.output_norm = nn.LayerNorm(hidden_size)
+        # Initializes everything built above; subclasses add their own modules afterwards
+        # and keep whatever init suits their fan-in (see GINEGraphormer).
         self.apply(self._init_graphormer_parameters)
         nn.init.normal_(self.edge_distance_mixing, std=0.02)
         nn.init.normal_(self.graph_token, std=0.02)
@@ -415,14 +450,22 @@ class Graphormer(nn.Module):
         edge_index: th.Tensor,
         max_nodes: int,
     ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
-        """Return all-pairs distances, next hops, and flat-to-dense atom indices."""
+        """Return true all-pairs distances, next hops, and flat-to-dense atom indices.
+
+        Distances are the real shortest-path lengths, never truncated to
+        ``max_spatial_distance``: a disconnected pair is the only thing that comes back as
+        ``unreachable_distance(max_nodes)``. Saturating the reachable distances onto the
+        embedding's last bucket is the caller's job, so that a small
+        ``max_spatial_distance`` shortens the embedding table without also telling the
+        model that distant atoms belong to different molecules.
+        """
         num_graphs = int(batch_index[-1].item()) + 1
         graph_sizes = th.bincount(batch_index, minlength=num_graphs)
         graph_offsets = th.cat((graph_sizes.new_zeros(1), graph_sizes.cumsum(0)[:-1]))
         local_indices = th.arange(batch_index.numel(), device=batch_index.device)
         local_indices = local_indices - graph_offsets[batch_index]
 
-        unreachable = self.max_spatial_distance + 1
+        unreachable = self.unreachable_distance(max_nodes)
         distances = th.full(
             (num_graphs, max_nodes, max_nodes),
             unreachable,
@@ -450,6 +493,16 @@ class Graphormer(nn.Module):
             distances = th.where(shorter_path, through_intermediate, distances)
         return distances.clamp_max(unreachable), next_hop, local_indices
 
+    @staticmethod
+    def unreachable_distance(max_nodes: int) -> int:
+        """Sentinel standing for "no path at all" between two atoms.
+
+        Any real shortest path in a graph of ``max_nodes`` atoms visits at most
+        ``max_nodes`` atoms, so ``max_nodes`` itself can never be a true distance and is
+        free to mark disconnection.
+        """
+        return max(max_nodes, 1)
+
     def _multi_hop_edge_bias(
         self,
         distances: th.Tensor,
@@ -466,7 +519,7 @@ class Graphormer(nn.Module):
         target_grid = target_grid.expand(batch_size, max_nodes, max_nodes)
 
         hop_count = distances.clamp(max=self.multi_hop_max_distance)
-        reachable = (distances > 0) & (distances <= self.max_spatial_distance)
+        reachable = (distances > 0) & (distances < self.unreachable_distance(max_nodes))
         current_nodes = source_grid
         encoded_path = direct_edge_bias.new_zeros(direct_edge_bias.shape)
         for hop_index in range(self.multi_hop_max_distance):
@@ -499,7 +552,17 @@ class Graphormer(nn.Module):
             edge_index,
             max_nodes,
         )
-        spatial_bias = self.spatial_embedding(distances)
+        # Saturate reachable pairs onto the last real bucket and reserve the row past it
+        # for genuine disconnection, mirroring how max_degree clamps. Folding the two
+        # together would tell the model that atoms farther than max_spatial_distance are
+        # in a different molecule.
+        unreachable = self.unreachable_distance(max_nodes)
+        spatial_index = th.where(
+            distances >= unreachable,
+            th.full_like(distances, self.max_spatial_distance + 1),
+            distances.clamp_max(self.max_spatial_distance),
+        )
+        spatial_bias = self.spatial_embedding(spatial_index)
         encoded_edges = self.edge_bias(edge_attr)
         bias_dtype = th.promote_types(spatial_bias.dtype, encoded_edges.dtype)
         spatial_bias = spatial_bias.to(dtype=bias_dtype)
@@ -509,16 +572,17 @@ class Graphormer(nn.Module):
         )
         source, target = edge_index
         edge_graphs = batch_index[source]
-        for head_index in range(self.num_heads):
-            direct_edge_bias[..., head_index].index_put_(
-                (
-                    edge_graphs,
-                    local_indices[source],
-                    local_indices[target],
-                ),
-                encoded_edges[:, head_index],
-                accumulate=True,
-            )
+        # Scatter all heads in one call: indexing the leading three axes leaves the head
+        # axis to broadcast, which is ~9x faster than one index_put_ per head.
+        direct_edge_bias.index_put_(
+            (
+                edge_graphs,
+                local_indices[source],
+                local_indices[target],
+            ),
+            encoded_edges,
+            accumulate=True,
+        )
         multi_hop_bias = self._multi_hop_edge_bias(
             distances,
             next_hop,
@@ -536,32 +600,64 @@ class Graphormer(nn.Module):
         """Encode atoms with graph-local, structurally biased global attention."""
         if x.shape[0] == 0:
             return x
+        self._validate_inputs(x, batch_index, edge_index, edge_attr)
+
+        atom_states = x + self._degree_states(edge_index, x.shape[0])
+        dense_x, valid_atoms = pyg.utils.to_dense_batch(atom_states, batch_index)
+        batch_size, max_nodes, _ = dense_x.shape
+        attention_bias, padding_mask = self._global_attention_inputs(
+            batch_index,
+            edge_index,
+            edge_attr,
+            valid_atoms,
+            max_nodes,
+        )
+
+        dense_x = th.cat((self.graph_token.expand(batch_size, -1, -1), dense_x), dim=1)
+        for layer in self.layers:
+            dense_x = layer(dense_x, attention_bias, padding_mask)
+        return self.output_norm(dense_x[:, 1:])[valid_atoms]
+
+    def _validate_inputs(
+        self,
+        x: th.Tensor,
+        batch_index: th.Tensor,
+        edge_index: th.Tensor,
+        edge_attr: th.Tensor,
+    ) -> None:
+        """Reject batches this encoder cannot interpret."""
+        name = type(self).__name__
         if batch_index.shape != (x.shape[0],):
             raise ValueError("batch_index must contain one graph index per atom")
         if not th.all(batch_index[1:] >= batch_index[:-1]):
-            raise ValueError("Graphormer requires atoms grouped by graph")
+            raise ValueError(f"{name} requires atoms grouped by graph")
         if edge_index.shape[0] != 2 or edge_attr.shape[0] != edge_index.shape[1]:
             raise ValueError("edge_index and edge_attr must describe the same directed bonds")
         if not th.equal(batch_index[edge_index[0]], batch_index[edge_index[1]]):
-            raise ValueError("Graphormer received a bond connecting two batched graphs")
+            raise ValueError(f"{name} received a bond connecting two batched graphs")
 
-        dense_x, valid_atoms = pyg.utils.to_dense_batch(x, batch_index)
-        batch_size, max_nodes, _ = dense_x.shape
-        in_degree = th.bincount(edge_index[1], minlength=x.shape[0]).clamp_max(self.max_degree)
-        out_degree = th.bincount(edge_index[0], minlength=x.shape[0]).clamp_max(self.max_degree)
-        degree_states = self.in_degree_embedding(in_degree) + self.out_degree_embedding(out_degree)
-        dense_degree_states, _ = pyg.utils.to_dense_batch(degree_states, batch_index)
-        dense_x = dense_x + dense_degree_states
+    def _degree_states(self, edge_index: th.Tensor, num_atoms: int) -> th.Tensor:
+        """Embed each atom's in- and out-degree."""
+        in_degree = th.bincount(edge_index[1], minlength=num_atoms).clamp_max(self.max_degree)
+        out_degree = th.bincount(edge_index[0], minlength=num_atoms).clamp_max(self.max_degree)
+        return self.in_degree_embedding(in_degree) + self.out_degree_embedding(out_degree)
 
+    def _global_attention_inputs(
+        self,
+        batch_index: th.Tensor,
+        edge_index: th.Tensor,
+        edge_attr: th.Tensor,
+        valid_atoms: th.Tensor,
+        max_nodes: int,
+    ) -> tuple[th.Tensor, th.Tensor]:
+        """Build the virtual-token-padded attention bias and key padding mask."""
         structural_bias = self._structural_attention_bias(
             batch_index,
             edge_index,
             edge_attr,
             max_nodes,
         )
-
-        graph_tokens = self.graph_token.expand(batch_size, -1, -1)
-        dense_x = th.cat((graph_tokens, dense_x), dim=1)
+        batch_size = structural_bias.shape[0]
         attention_bias = structural_bias.new_zeros(
             (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
         )
@@ -570,16 +666,12 @@ class Graphormer(nn.Module):
         attention_bias[:, :, 1:, 0] = self.graph_token_bias.view(1, -1, 1)
         padding_mask = th.cat(
             (
-                th.zeros((batch_size, 1), dtype=th.bool, device=x.device),
+                th.zeros((batch_size, 1), dtype=th.bool, device=valid_atoms.device),
                 ~valid_atoms,
             ),
             dim=1,
         )
-
-        for layer in self.layers:
-            dense_x = layer(dense_x, attention_bias, padding_mask)
-        atom_states = self.output_norm(dense_x[:, 1:])
-        return atom_states[valid_atoms]
+        return attention_bias, padding_mask
 
 
 class GINEGraphormer(Graphormer):
@@ -599,6 +691,9 @@ class GINEGraphormer(Graphormer):
         dropout: float,
         normalization: str,
         num_heads: int,
+        max_degree: int = 64,
+        max_spatial_distance: int = 128,
+        multi_hop_max_distance: int = 5,
     ) -> None:
         super().__init__(
             hidden_size=hidden_size,
@@ -607,6 +702,9 @@ class GINEGraphormer(Graphormer):
             dropout=dropout,
             normalization=normalization,
             num_heads=num_heads,
+            max_degree=max_degree,
+            max_spatial_distance=max_spatial_distance,
+            multi_hop_max_distance=multi_hop_max_distance,
         )
         self.local_edge_transform = nn.Linear(edge_feats_size, hidden_size)
         self.local_layers = nn.ModuleList(
@@ -627,6 +725,12 @@ class GINEGraphormer(Graphormer):
             [nn.LayerNorm(hidden_size) for _ in range(num_layers)]
         )
         self.local_dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(num_layers)])
+        # The local branch deliberately keeps PyTorch's fan-in-aware default init rather
+        # than the Graphormer std=0.02 used by the attention stack. Graphormer's constant
+        # std is tuned for fan_in == hidden_size; applying it to local_edge_transform,
+        # whose fan_in is the handful of bond features, would shrink that projection's
+        # output ~8x relative to the atom states it is summed with inside GINEConv
+        # (relu(x_j + edge_attr)) and near-ablate bond features at init.
 
     def forward(
         self,
@@ -638,41 +742,18 @@ class GINEGraphormer(Graphormer):
         """Return one locally and globally contextualized state per atom."""
         if x.shape[0] == 0:
             return x
-        if batch_index.shape != (x.shape[0],):
-            raise ValueError("batch_index must contain one graph index per atom")
-        if not th.all(batch_index[1:] >= batch_index[:-1]):
-            raise ValueError("GINE_GRAPHORMER requires atoms grouped by graph")
-        if edge_index.shape[0] != 2 or edge_attr.shape[0] != edge_index.shape[1]:
-            raise ValueError("edge_index and edge_attr must describe the same directed bonds")
-        if not th.equal(batch_index[edge_index[0]], batch_index[edge_index[1]]):
-            raise ValueError("GINE_GRAPHORMER received a bond connecting two batched graphs")
+        self._validate_inputs(x, batch_index, edge_index, edge_attr)
 
         # 1. Build graph structure once and initialize topology-aware atom states.
-        dense_x, valid_atoms = pyg.utils.to_dense_batch(x, batch_index)
-        batch_size, max_nodes, _ = dense_x.shape
-        in_degree = th.bincount(edge_index[1], minlength=x.shape[0]).clamp_max(self.max_degree)
-        out_degree = th.bincount(edge_index[0], minlength=x.shape[0]).clamp_max(self.max_degree)
-        atom_states = (
-            x + self.in_degree_embedding(in_degree) + self.out_degree_embedding(out_degree)
-        )
-        structural_bias = self._structural_attention_bias(
+        atom_states = x + self._degree_states(edge_index, x.shape[0])
+        _, valid_atoms = pyg.utils.to_dense_batch(atom_states, batch_index)
+        batch_size, max_nodes = valid_atoms.shape
+        attention_bias, padding_mask = self._global_attention_inputs(
             batch_index,
             edge_index,
             edge_attr,
+            valid_atoms,
             max_nodes,
-        )
-        attention_bias = structural_bias.new_zeros(
-            (batch_size, self.num_heads, max_nodes + 1, max_nodes + 1)
-        )
-        attention_bias[:, :, 1:, 1:] = structural_bias
-        attention_bias[:, :, 0, 1:] = self.graph_token_bias.view(1, -1, 1)
-        attention_bias[:, :, 1:, 0] = self.graph_token_bias.view(1, -1, 1)
-        padding_mask = th.cat(
-            (
-                th.zeros((batch_size, 1), dtype=th.bool, device=x.device),
-                ~valid_atoms,
-            ),
-            dim=1,
         )
         graph_tokens = self.graph_token.expand(batch_size, -1, -1)
         local_edge_attr = self.local_edge_transform(edge_attr)

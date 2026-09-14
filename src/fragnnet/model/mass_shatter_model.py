@@ -783,6 +783,9 @@ class MassShatterModel(nn.Module):
         precursor_gnn_type: str,
         precursor_normalization: str,
         precursor_dropout: float,
+        precursor_max_degree: int | None = None,
+        precursor_max_spatial_distance: int | None = None,
+        precursor_multi_hop_max_distance: int | None = None,
         context_dim: int,
         metadata_embedding_dim: int,
         head_hidden_dim: int,
@@ -850,6 +853,13 @@ class MassShatterModel(nn.Module):
                 the pooled fragment/complement/boundary embeddings.
             precursor_num_layers: Number of message-passing layers.
             precursor_num_heads: Number of molecular-attention heads.
+            precursor_max_degree: Largest degree the Graphormer degree embedding
+                distinguishes; ``None`` keeps the encoder default.
+            precursor_max_spatial_distance: Largest shortest-path distance the Graphormer
+                spatial embedding distinguishes; ``None`` keeps the encoder default.
+            precursor_multi_hop_max_distance: Number of leading bonds encoded along each
+                shortest path by the Graphormer edge bias; ``None`` keeps the encoder
+                default. Ignored by every non-Graphormer ``precursor_gnn_type``.
             precursor_gnn_type: GNN cell name understood by :class:`GNN`.
             precursor_normalization: Normalization used inside the GNN.
             precursor_dropout: Dropout inside the GNN.
@@ -1110,6 +1120,13 @@ class MassShatterModel(nn.Module):
         self.num_ion_modes = 2 if include_cmf else 1
         self.num_h_shifts = 2 * max_h_transfer + 1
 
+        # Graphormer structural-encoding sizes; omitted keys fall through to the encoder
+        # defaults, and non-Graphormer gnn_types ignore them.
+        graphormer_structural_kwargs = {
+            "max_degree": precursor_max_degree,
+            "max_spatial_distance": precursor_max_spatial_distance,
+            "multi_hop_max_distance": precursor_multi_hop_max_distance,
+        }
         self.precursor_encoder = GNN(
             node_feats_size=node_feature_dim + (context_dim if context_in_gnn else 0),
             edge_feats_size=edge_feature_dim,
@@ -1119,6 +1136,7 @@ class MassShatterModel(nn.Module):
             normalization=precursor_normalization,
             dropout=precursor_dropout,
             num_heads=precursor_num_heads,
+            **graphormer_structural_kwargs,
         )
         self.proposal_encoder = (
             GNN(
@@ -1130,6 +1148,7 @@ class MassShatterModel(nn.Module):
                 normalization=precursor_normalization,
                 dropout=precursor_dropout,
                 num_heads=precursor_num_heads,
+                **graphormer_structural_kwargs,
             )
             if separate_proposal_encoder
             else None

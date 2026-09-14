@@ -65,6 +65,7 @@ mol_gnn_type: Graphormer
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_num_heads: 4
+mol_multi_hop_max_distance: 5
 mol_normalization: layer
 mol_dropout: 0.1
 ce_insert_type: embed

@@ -233,6 +233,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_competition_dropout: float = 0.1,
         frag_competition_detach_encoder: bool = True,
         frag_competition_max_delta: float = 5.0,
+        mol_max_degree: int | None = None,
+        mol_max_spatial_distance: int | None = None,
+        mol_multi_hop_max_distance: int | None = None,
     ):
         # nn.Module init
         super().__init__()
@@ -371,6 +374,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "dropout": mol_dropout,
             "normalization": mol_normalization,
             "num_heads": mol_num_heads,
+            # Graphormer structural-encoding sizes; None means "use the class default".
+            "max_degree": mol_max_degree,
+            "max_spatial_distance": mol_max_spatial_distance,
+            "multi_hop_max_distance": mol_multi_hop_max_distance,
         }
         # Context-gated mol messages: the gate is conditioned on the combined context vector, so
         # it needs context_embedding to have produced one. Metadata concatenated at the mol input
