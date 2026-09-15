@@ -1026,7 +1026,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
         Uses precom_meta_info and precom_group_info caches on the dataset when available,
         avoiding a full frag_pyg load for each sample (which would be expensive for
-        HDF5/LMDB-backed datasets). Falls back to data_source[idx] otherwise.
+        HDF5-backed datasets). Falls back to data_source[idx] otherwise.
 
         Also builds per-sample inverse maps (_idx_to_group1_key, _idx_to_group2_key) for
         O(1) available-count updates in _pre_compute_batches, replacing the original

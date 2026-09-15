@@ -1,10 +1,8 @@
 import json
 import logging
 import os
-import pickle
 import sys
 
-import lmdb
 import numpy as np
 import torch as th
 import torch.nn.functional as F
@@ -100,13 +98,10 @@ class SpecMolFragDataset(SpecMolDataset):
         )
         self.mol_params = mol_params
         self.frag_dp = frag_dp
-        self.frag_env = None
         self.frag_h5 = None  # h5py.File handle when using HDF5 backend
         self.frag_params = frag_params
         if frag_dp.endswith(".h5"):
             self.frag_backend = "h5"
-        elif os.path.isdir(frag_dp) and os.path.exists(os.path.join(frag_dp, "data.mdb")):
-            self.frag_backend = "lmdb"
         else:
             self.frag_backend = "folder"
 
@@ -194,8 +189,8 @@ class SpecMolFragDataset(SpecMolDataset):
     def _find_missing_frag_mol_ids(self) -> set[int]:
         """Return mol_ids that have no DAG file on disk (folder backend only).
 
-        For lmdb and h5 backends all mol_ids are stored in a single file, so
-        this check is not needed there.
+        For the h5 backend all mol_ids are stored in a single file, so this
+        check is not needed there.
 
         Returns:
             Set of integer mol_ids for which no DAG file can be found.
@@ -233,16 +228,6 @@ class SpecMolFragDataset(SpecMolDataset):
             import h5py
 
             self.frag_h5 = h5py.File(self.frag_dp, "r")
-        elif self.frag_backend == "lmdb" and self.frag_env is None:
-            self.frag_env = lmdb.open(
-                self.frag_dp,
-                readahead=False,
-                max_readers=2048,
-                readonly=True,
-                lock=False,
-                meminit=False,
-            )
-            self.txn = self.frag_env.begin()
         # folder backend: no setup needed
 
         if self.frag_params["preload"]:
@@ -256,8 +241,6 @@ class SpecMolFragDataset(SpecMolDataset):
             ):
                 if self.frag_backend == "h5":
                     frag_entry = load_dag_hdf5(self.frag_h5, mol_id)
-                elif self.frag_backend == "lmdb":
-                    frag_entry = pickle.loads(bytes(self.txn.get(f"{int(mol_id)}".encode())))
                 else:
                     frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
@@ -372,20 +355,6 @@ class SpecMolFragDataset(SpecMolDataset):
 
                 self.frag_h5 = h5py.File(self.frag_dp, "r")
             return load_dag_hdf5(self.frag_h5, mol_id)
-        elif self.frag_backend == "lmdb":
-            if self.frag_env is None:
-                self.frag_env = lmdb.open(
-                    self.frag_dp,
-                    readahead=False,
-                    readonly=True,
-                    max_readers=2048,
-                    lock=False,
-                    meminit=False,
-                )
-                self.txn = self.frag_env.begin()
-            v = self.txn.get(f"{int(mol_id)}".encode())
-            assert v is not None, mol_id
-            return pickle.loads(bytes(v))
         else:
             return load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
 

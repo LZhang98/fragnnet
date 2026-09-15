@@ -28,7 +28,6 @@ pip install --no-index \
   pyopenms==3.3.0 \
   numpy==1.26.4 \
   pandarallel==1.6.5 \
-  lmdb==1.7.5 \
   h5py
 
 pip install pyteomics torch-linear-assignment

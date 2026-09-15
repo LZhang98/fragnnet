@@ -35,7 +35,6 @@ MAX_DEPTH=${MAX_DEPTH:-3}
 MAX_H_TRANSFER=${MAX_H_TRANSFER:-4}
 MAX_TIME=${MAX_TIME:-150}
 USE_HDF5=${USE_HDF5:-False}
-USE_LMDB=${USE_LMDB:-False}
 SKIP_STATS=${SKIP_STATS:-True}
 SAVE_NAME=${SAVE_NAME:-${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}}
 
@@ -72,7 +71,6 @@ echo MAX_DEPTH: ${MAX_DEPTH}
 echo MAX_H_TRANSFER: ${MAX_H_TRANSFER}
 echo MAX_TIME: ${MAX_TIME}
 echo USE_HDF5: ${USE_HDF5}
-echo USE_LMDB: ${USE_LMDB}
 echo SKIP_STATS: ${SKIP_STATS}
 echo PREC: ${PREC}
 echo INST: ${INST}
@@ -120,7 +118,6 @@ else
         cython==3.0.12 \
         pyopenms==3.3.0 \
         pandarallel==1.6.5 \
-        lmdb==1.7.5 \
         h5py
 
     # install from whl
@@ -220,7 +217,6 @@ python ${WORKING_DIR}/preproc_scripts/03_prepare_dag_feats.py \
     --wandb_mode disabled \
     --wandb_run_name fool \
     --use_hdf5 ${USE_HDF5} \
-    --use_lmdb ${USE_LMDB} \
     --skip_stats ${SKIP_STATS}
 
 # === save this shard's frags to scratch ====================================
