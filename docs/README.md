@@ -1,12 +1,29 @@
 # FraGNNet Documentation Index
 
-Every doc carries a status banner directly under its title. Check it before acting on a doc —
-several plans here are **closed nulls or superseded**, and they are kept deliberately so the same
-line does not get re-run.
+> **Status:** REFERENCE
+
+Start with [current project state](project-state.md), the [architecture map](architecture.md),
+and the [session workflow](workflow/session.md). Shared constraints live in
+[rules/engineering.md](rules/engineering.md).
+
+## Shared workflow and rules
+
+| Doc | Purpose |
+| --- | --- |
+| [project-state.md](project-state.md) | Current handoff, research navigation, and next task |
+| [architecture.md](architecture.md) | Verified entry points and architectural boundaries |
+| [workflow/session.md](workflow/session.md) | Development, experiment provenance, validation, and handoff |
+| [rules/engineering.md](rules/engineering.md) | Core behavior, environment, compatibility, validation, and Git rules |
+| [rules/python.md](rules/python.md) | Python formatting, imports, docstrings, testing, and hyperparameters |
+| [rules/documentation.md](rules/documentation.md) | Documentation placement, banners, indexing, and preservation |
+
+Research documents generally carry a status banner directly under their title. Check it before
+acting on a doc — several plans here are **closed nulls or superseded**, and they are kept
+deliberately so the same line does not get re-run.
 
 | Status | Meaning |
 |--------|---------|
-| `GUIDE` / `REFERENCE` | Describes how something works or how to run it. Safe to follow. |
+| `GUIDE` / `REFERENCE` | Describes how something works or how to run it; verify against current code. |
 | `ACTIVE` | Live plan. Something is meant to happen next. |
 | `PROPOSED` | Written up, not started. |
 | `LANDED` | The plan shipped; the doc now describes production behavior. |
@@ -24,6 +41,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | What it covers |
 |-----|----------------|
+| [submit_cluster_runs.md](guides/submit_cluster_runs.md) | Generate, inspect, and submit Fir/Vulcan jobs; CV arrays, staging, and output persistence. |
 | [run_inference.md](guides/run_inference.md) | Data prep (`01_inf_prepare_mol_df.py`, `02_inf_prepare_spec_df.py`) and running prediction. |
 | [finetune_fragnnet.md](guides/finetune_fragnnet.md) | Fine-tuning for spectrum-to-molecule ranking and retrieval; component freezing. |
 | [nist_human_review.md](guides/nist_human_review.md) | Generating the ranked suspicious-spectrum queue and visual report. |
@@ -107,8 +125,8 @@ commands, which insert before the Summary section. The measurement they interpre
 
 | Doc | Scope |
 |-----|-------|
-| [missing_peak_findings.md](missing_peak_findings.md) | FT, `[M+H]+`, 2,655 lines, grouped by root cause. |
-| [missing_peak_findings_m-h.md](missing_peak_findings_m-h.md) | FT, `[M-H]-`, 1,199 lines. |
+| [missing_peak_findings.md](findings/missing_peak_findings.md) | FT, `[M+H]+`, 2,655 lines, grouped by root cause. |
+| [missing_peak_findings_m-h.md](findings/missing_peak_findings_m-h.md) | FT, `[M-H]-`, 1,199 lines. |
 
 `spectra_cleanup.md` is a **0-byte placeholder** committed to the repo — it needs either content or
 deletion.
