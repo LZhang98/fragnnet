@@ -153,25 +153,6 @@ ff_output_map_size: 256  # Low-rank approximation
 ff_output_activation: relu
 ```
 
-### Spectrum Cleanup (`spec_params`)
-
-Spectrum cleanup runs on each source spectrum after split/metadata filtering and before spectra
-in the same replicate group are merged. It changes the in-memory training/evaluation targets; it
-does not rewrite `spec_df.pkl`.
-
-| Name | Default | Description |
-|------|---------|-------------|
-| `centroid_peaks` | `False` | Merge nearby signals into an intensity-weighted centroid. |
-| `centroid_ppm` | `20.0` | Fixed ppm tolerance used for centroiding. |
-| `centroid_use_instrument_tolerance` | `False` | Use the FraGNNet FT/QTOF tolerance and low-mass floor instead of `centroid_ppm`. |
-| `centroid_method` | `common_overlap` | Peak grouping rule: `common_overlap` or `naive_centroid`. |
-| `filter_subformula_peaks` | `False` | Keep only peaks matching a precursor-compatible molecular subformula. Requires `mol_df.formula`. Candidates always include charge-migration ions, so `[M+Na]+` matches `[frag+H]+` and `[M+Cl]-` matches `[frag-H]-`; this is chemistry only and does not consult the DAG. |
-| `subformula_ppm` | `5.0` | Fixed ppm tolerance used for subformula matching. |
-| `subformula_use_instrument_tolerance` | `True` | Use the FraGNNet FT/QTOF tolerance and low-mass floor instead of `subformula_ppm`. |
-| `drop_empty_spectra` | `True` | Drop spectra, and now-unused molecules, when cleanup removes every peak. |
-
-When both operations are enabled, centroiding runs first and subformula filtering second.
-
 ### FraGNNet Top-K Fragment Competition
 
 FraGNNet can refine its strongest predicted fragments with a transformer before joint
@@ -233,23 +214,22 @@ the dataset pickle and they do not filter predicted spectra.
 
 | Name | Default | Scope | Description |
 |------|---------|-------|-------------|
-| `target_ints_thresh` | `0.0` | train true + eval true | Removes target peaks with intensity `<= target_ints_thresh`. This is the clearer replacement for legacy `ints_thresh`. |
-| `ints_thresh` | `0.0` | fallback only | Legacy name used when `target_ints_thresh` is absent. Prefer `target_ints_thresh` in new configs. |
+| `target_rel_ints_thresh` | `0.0` | train true + eval true | Per-spectrum relative threshold in `[0, 1)`. Drops target peaks below `target_rel_ints_thresh * max_int` of that spectrum, e.g. `0.01` keeps only peaks at or above 1% of the base peak. `0.0` drops only zero-intensity peaks. |
 | `train_target_top_k_peaks` | `-1` | train true | If positive, keeps only the top-k highest-intensity target peaks per spectrum. `-1` disables it. |
 | `train_target_drop_min_int_peak` | `False` | train true | Drops exactly one weakest target peak per spectrum when more than one peak remains. |
-| `eval_target_apply_train_rank_filters` | `False` | eval true | When `True`, eval true spectra also apply `train_target_top_k_peaks` and `train_target_drop_min_int_peak`. `target_ints_thresh` already applies to eval true spectra. |
+| `eval_target_apply_train_rank_filters` | `False` | eval true | When `True`, eval true spectra also apply `train_target_top_k_peaks` and `train_target_drop_min_int_peak`. `target_rel_ints_thresh` already applies to eval true spectra. Falls back to the legacy name `eval_target_apply_train_peak_filters` when absent. |
 | `mz_max` | model-specific | train true + eval true | Removes target peaks with `m/z >= mz_max` and also controls bin/loss geometry. |
 
 Filtering order for true spectra is:
 
 ```text
-target_ints_thresh / mz_max -> train rank filters -> bin/transform/normalize
+target_rel_ints_thresh / mz_max -> train rank filters -> bin/transform/normalize
 ```
 
 Example:
 
 ```yaml
-target_ints_thresh: 0.0
+target_rel_ints_thresh: 0.0
 train_target_top_k_peaks: 20
 train_target_drop_min_int_peak: False
 eval_target_apply_train_rank_filters: False
