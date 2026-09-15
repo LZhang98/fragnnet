@@ -14,6 +14,7 @@ from fragnnet.utils import data_utils, frag_utils
 from fragnnet.utils.misc_utils import booltype
 from fragnnet.utils.script_utils import (
     apply_inference_config,
+    available_frag_mol_ids,
     get_ckpt_path,
     get_config_from_ckpt,
     get_required_config_indices,
@@ -176,6 +177,22 @@ if __name__ == "__main__":
         default=1_000,
         help="Write predictions to disk every N predictions (lower = more disk I/O but safer)",
     )
+
+    # Sharding (SLURM array jobs)
+    parser.add_argument(
+        "--start_mol_idx",
+        type=int,
+        default=0,
+        help="Row offset into mol_df: this run only predicts molecules "
+        "[start_mol_idx, start_mol_idx + num_mols). Use the same offset/size as the "
+        "DAG preprocessing array so each task lines up with one frag shard.",
+    )
+    parser.add_argument(
+        "--num_mols",
+        type=int,
+        default=-1,
+        help="Number of mol_df rows in this shard (-1 = all remaining rows).",
+    )
     args = parser.parse_args()
 
     # Get checkpoint path (download from W&B or use local)
@@ -210,10 +227,34 @@ if __name__ == "__main__":
     print(spec_df.head(5))
 
     # =========================================
+    # Shard selection (SLURM array jobs)
+    # =========================================
+    # Slice by mol_df ROW POSITION, matching how the DAG preprocessing array sharded,
+    # so shard i of the frag output holds exactly the molecules selected here.
+    if args.start_mol_idx > 0 or args.num_mols >= 0:
+        if args.start_mol_idx >= len(mol_df):
+            print(
+                f"> start_mol_idx {args.start_mol_idx} is beyond mol_df ({len(mol_df)} rows), "
+                "nothing to do"
+            )
+            sys.exit(0)
+        stop = len(mol_df) if args.num_mols < 0 else args.start_mol_idx + args.num_mols
+        mol_df = mol_df.iloc[args.start_mol_idx : stop]
+        spec_df = spec_df[spec_df["mol_id"].isin(set(mol_df["mol_id"]))]
+        print(
+            f"> Shard [{args.start_mol_idx}, {args.start_mol_idx + len(mol_df)}): "
+            f"{len(mol_df)} molecules, {len(spec_df)} spectra"
+        )
+        if len(spec_df) == 0:
+            print("> Shard has no spectra, nothing to do")
+            sys.exit(0)
+
+    # =========================================
     # Resume logic
     # =========================================
     start_chunk_idx = 0
 
+    os.makedirs(args.save_dp, exist_ok=True)
     print(f"> Checking for existing predictions in {args.save_dp}...")
     existing_files = [
         f
@@ -354,8 +395,8 @@ if __name__ == "__main__":
 
     # Filter input data to only include molecules with successfully generated fragments
     print(">> Filtering molecules without fragments...")
-    all_frags = {f.split(".")[0] for f in os.listdir(config_d["frag_dp"])}
-    print(f">> Found {len(all_frags)} fragment files")
+    all_frags = available_frag_mol_ids(config_d["frag_dp"])
+    print(f">> Found {len(all_frags)} fragment entries")
     mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
     print(f"> Molecules after filtering: {len(mol_df)}")
     spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
