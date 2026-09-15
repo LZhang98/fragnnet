@@ -155,14 +155,20 @@ def _channel_ion_masses(
 def _subformula_channels(normalized_precursor_type: str, include_cmf: bool) -> list:
     """Return the ``(comp_diff, mass_diff)`` carrier channels for a precursor type.
 
-    Mirrors the channel construction in ``formula_utils.mass_shatter_has_valid_ion``
-    so this filter accepts exactly the ions the DAG is allowed to emit. Direct charge
-    retention (CRF) keeps the precursor's own adduct. Charge migration (CMF) swaps it
-    for the protonated or deprotonated carrier, which is how sodiated and chloride
-    adducts mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl
-    to yield ``[frag-H]-``. Without the CMF channel those real peaks match no candidate
-    and get deleted. ``[M+H]+``/``[M-H]-`` skip CMF because their carrier swap is a whole
-    hydrogen, which the subformula enumeration already reaches.
+    This is a chemical-feasibility test on an observed peak, not a question about what
+    any fragmentation model can enumerate: a peak is kept if some subformula of the
+    precursor could carry a plausible charge carrier. Direct charge retention (CRF)
+    keeps the precursor's own adduct. Charge migration (CMF) swaps it for the
+    protonated or deprotonated carrier, which is how sodiated and chloride adducts
+    mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl to
+    yield ``[frag-H]-`` (see the references on ``PREC_TYPE_TO_CMF_MASS_DIFF``). Both are
+    real ions, so both are candidates. ``[M+H]+``/``[M-H]-`` skip CMF because their
+    carrier swap is a whole hydrogen the subformula enumeration already reaches.
+
+    The carrier tables come from ``formula_utils`` and are shared with the fragmentation
+    code, but nothing here consults a DAG: a peak this filter cannot explain is kept or
+    dropped on chemistry alone, and a peak no DAG can explain is the model's problem to
+    handle downstream, not a reason to delete it from the target.
     """
     channels = [
         (
@@ -222,10 +228,11 @@ def filter_subformula_peaks(
 ) -> list[tuple[float, float]]:
     """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula.
 
-    With ``include_cmf`` (the default, matching the DAG's ``include_cmf``) candidates
-    include charge-migration ions, so ``[M+Na]+`` accepts ``[frag+H]+`` and ``[M+Cl]-``
-    accepts ``[frag-H]-``. Disabling it restricts candidates to carrier-retaining
-    fragments, which discards most real peaks for those two adducts.
+    With ``include_cmf`` (the default) candidates include charge-migration ions, so
+    ``[M+Na]+`` accepts ``[frag+H]+`` and ``[M+Cl]-`` accepts ``[frag-H]-``. Disabling it
+    restricts candidates to carrier-retaining fragments, which discards most real peaks
+    for those two adducts; it exists as an ablation, not as a setting to match against a
+    fragmentation model's own options.
     """
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
@@ -700,7 +707,8 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help=(
             "Restrict subformula candidates to carrier-retaining fragments. This drops "
-            "most real [M+Na]+ and [M+Cl]- peaks; the DAG keeps CMF enabled by default"
+            "most real [M+Na]+ and [M+Cl]- peaks, which are genuine charge-migration "
+            "ions; intended as an ablation"
         ),
     )
     parser.add_argument(

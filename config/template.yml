@@ -55,7 +55,7 @@ spec_params:
   filter_subformula_peaks: False
   subformula_ppm: 5.0 # only use if filter_subformula_peaks is True and subformula_use_instrument_tolerance is False
   subformula_use_instrument_tolerance: True
-  subformula_include_cmf: True  # allow charge-migration ions ([M+Na]+ -> [frag+H]+, [M+Cl]- -> [frag-H]-); match the DAG's include_cmf
+  subformula_include_cmf: True  # allow charge-migration ions ([M+Na]+ -> [frag+H]+, [M+Cl]- -> [frag-H]-); chemistry only, unrelated to mol_params.include_cmf
   drop_empty_spectra: True
   # Monoisotopic target cleanup. When True, isotope peaks are removed from
   # observed spectra before they become training/evaluation targets; isotope

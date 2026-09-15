@@ -428,8 +428,9 @@ class BaseDataset(Dataset):
                         "centroid_use_instrument_tolerance"
                     ],
                     merge_method=spec_params["centroid_method"],
-                    # Optional so legacy configs and checkpoints keep loading. Defaults
-                    # to the DAG's own include_cmf setting: without it, [M+Na]+ and
+                    # Spectrum cleaning is chemistry-only and independent of the DAG;
+                    # this is its own setting, not mol_params["include_cmf"]. Optional
+                    # so legacy configs and checkpoints keep loading. Off, [M+Na]+ and
                     # [M+Cl]- targets lose most of their real peaks.
                     subformula_include_cmf=spec_params.get(
                         "subformula_include_cmf", True
