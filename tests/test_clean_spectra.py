@@ -213,6 +213,84 @@ def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
     assert filtered == []
 
 
+@pytest.mark.parametrize(
+    ("precursor_type", "cmf_shift"),
+    [
+        ("[M+Na]+", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]),
+        ("[M+Cl]-", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]),
+    ],
+)
+def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
+    """[M+Na]+ fragments to [frag+H]+ and [M+Cl]- loses HCl to give [frag-H]-."""
+    migrated_mz = data_utils.formula_to_mass("CH4O") + cmf_shift
+    peaks = [(migrated_mz, 10.0)]
+
+    kept = clean_spectra.filter_subformula_peaks(
+        peaks, "CH4O", precursor_type, tolerance_ppm=5.0
+    )
+    dropped = clean_spectra.filter_subformula_peaks(
+        peaks, "CH4O", precursor_type, tolerance_ppm=5.0, include_cmf=False
+    )
+
+    assert kept == peaks
+    assert dropped == []
+
+
+@pytest.mark.parametrize("precursor_type", ["[M+Na]+", "[M+Cl]-"])
+def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
+    """Adding the CMF channel must widen the candidate set, never replace it."""
+    retained_mz = (
+        data_utils.formula_to_mass("CH4O")
+        + clean_spectra.PREC_TYPE_TO_MASS_DIFF[precursor_type]
+    )
+
+    filtered = clean_spectra.filter_subformula_peaks(
+        [(retained_mz, 10.0)], "CH4O", precursor_type, tolerance_ppm=5.0
+    )
+
+    assert filtered == [(retained_mz, 10.0)]
+
+
+@pytest.mark.parametrize("precursor_type", ["[M+H]+", "[M-H]-"])
+def test_protonated_adducts_are_unchanged_by_cmf(precursor_type):
+    """Their carrier swap is a whole hydrogen the enumeration already reaches."""
+    masses = clean_spectra._subformula_masses("C6H12O6", precursor_type, True)
+    without_cmf = clean_spectra._subformula_masses("C6H12O6", precursor_type, False)
+
+    assert len(clean_spectra._subformula_channels(precursor_type, True)) == 1
+    assert masses.tolist() == without_cmf.tolist()
+
+
+def test_cmf_channel_still_requires_a_removable_hydrogen():
+    """[M+Cl]- CMF is [frag-H]-, so a hydrogen-free subformula cannot supply it."""
+    impossible_mz = (
+        data_utils.formula_to_mass("C")
+        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
+    )
+
+    filtered = clean_spectra.filter_subformula_peaks(
+        [(impossible_mz, 10.0)], "CCl4", "[M+Cl]-", tolerance_ppm=5.0
+    )
+
+    assert filtered == []
+
+
+def test_cmf_channel_respects_the_rdbe_rule():
+    """A CMF candidate with negative RDBE is rejected like any other subformula."""
+    # H4 is a subformula of CH4O but has negative RDBE, so the CMF channel must
+    # reject it rather than emit [H4+H]+ as a candidate.
+    impossible_mz = (
+        data_utils.formula_to_mass("H4")
+        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    )
+
+    filtered = clean_spectra.filter_subformula_peaks(
+        [(impossible_mz, 10.0)], "CH4O", "[M+Na]+", tolerance_ppm=5.0
+    )
+
+    assert filtered == []
+
+
 def test_qtof_instrument_tolerance_uses_0p015_da_low_mass_floor():
     theoretical_mz = (
         data_utils.formula_to_mass("CH4")
