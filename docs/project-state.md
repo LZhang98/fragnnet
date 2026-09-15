@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-13
+> **Status:** REFERENCE · **Updated:** 2026-09-14
 
 ## Current handoff
 
@@ -100,6 +100,19 @@ relative to that unmatched D4 reference; the remaining 6% is not established cut
 No preprocessing, DAG generation, or model inference reran. Next: compare current MASShatter
 support-oracle and predicted cosine on identical targets. Bond-cut-first remains the requested
 diagnostic order, with training conditional on useful support or efficiency headroom.
+
+MASShatter H-support ablation (2026-09-14): the
+[ion/H channel plan](plans/masshatter_ion_h_channel_selection_plan.md#h-support-ablation-measurement-2026-09-14)
+now records the matched 2026-09-08 gated / supervision-only / no-support arms read from W&B. No
+trained arm exercises channel selection: retained channels equal valid channels in every arm
+(about 8.5 per fragment against roughly 1.02 attributed), so the hard-selection stage has never
+been measured. The soft support gate shows no spectral or weighted-precision benefit in either
+data variant, and all dense cosine differences fall below one per-epoch standard deviation of a
+single seed. The support BCE does concentrate 95% of per-fragment channel mass into about 11%
+fewer channels without moving cosine. Next: disable the gate in the H-support configs, verify the
+`required_ion_h_top_k_95`/`_99` metric that reports identical means, and recover one cluster
+checkpoint so the Phase 2 selection sweep can run; W&B holds no checkpoint artifacts for these
+runs. Documentation only; no training, evaluation, or code change.
 
 Joint selection objective (2026-09-13): the
 [ion/H channel plan](plans/masshatter_ion_h_channel_selection_plan.md#joint-fragmentchannel-selection-loss-experiment-2026-09-13)

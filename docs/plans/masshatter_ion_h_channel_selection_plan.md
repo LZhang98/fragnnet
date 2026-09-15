@@ -6,6 +6,11 @@
 > retrieval H-independent, add an explicit CRF/CMF proposal stage only on
 > non-degenerate adduct scopes, split H-support selection from intensity prediction,
 > and emit a compact CE-aware channel set per retained fragment.
+>
+> Measured 2026-09-14: no trained arm exercises channel selection at all (retained channels
+> equal valid channels), the soft support gate has no measured spectral or precision benefit,
+> and the support BCE sharpens channel ranking without moving cosine. The blocking next step is
+> the Phase 2 fixed-checkpoint sweep, which needs a recoverable checkpoint.
 
 ## CMF candidate-universe alignment (2026-09-14)
 
@@ -21,6 +26,98 @@ This changes the MASShatter candidate universe for carrier-switching adducts suc
 so they are diagnostic-only; rebaseline candidate coverage and train matched controls before
 scientific comparison. The adduct-stratified zero-only versus full-range oracle measurement
 remains required to quantify the effect.
+
+## H-support ablation measurement (2026-09-14)
+
+**Read from the authenticated W&B API on 2026-09-14. No training, evaluation, or code ran for
+this record.** The matched arms were launched 2026-09-08 and every one of them terminated at the
+three-hour scheduler limit after 43 epochs (epochs 0-15 proposal-only), single seed `397623`,
+merged NIST20 `[M+H]+` scope, U256/E1024, dense evaluation, hard thresholds zero.
+
+| Arm | Config | Dense run | Subformula run |
+| --- | --- | --- | --- |
+| Gated | [warmup_loss_transform](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_warmup_e0_15_dense.yml) | [`gbdszzlw`](https://wandb.ai/frag-gnn/frag-gnn/runs/gbdszzlw) | [`elfzwq6s`](https://wandb.ai/frag-gnn/frag-gnn/runs/elfzwq6s) |
+| H supervision only | [support_ablation](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_h_supervision_only_warmup_e0_15_dense.yml) | [`sr9xfkk8`](https://wandb.ai/frag-gnn/frag-gnn/runs/sr9xfkk8) | [`1fp53ss4`](https://wandb.ai/frag-gnn/frag-gnn/runs/1fp53ss4) |
+| No H support | [support_ablation](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_no_h_support_warmup_e0_15_dense.yml) | [`s23w0lt2`](https://wandb.ai/frag-gnn/frag-gnn/runs/s23w0lt2) | [`ynhectw6`](https://wandb.ai/frag-gnn/frag-gnn/runs/ynhectw6) |
+
+### Channel selection is inert in every trained arm
+
+Final-epoch validation summaries, dense arms:
+
+| Validation metric | Gated | Supervision only | No H support |
+| --- | ---: | ---: | ---: |
+| `valid_ion_h_per_fragment_mean` | 8.5433 | 8.5438 | 8.5414 |
+| `attributed_ion_h_per_fragment_mean` | 1.0198 | 1.0168 | 1.0169 |
+| `retained_ion_h_count` / `valid_ion_h_count` | 1475.5 / 1475.5 | 1496.6 / 1496.6 | 1478.7 / 1478.7 |
+| `retained_ion_h_probability` | 1.0000 | 1.0000 | 1.0000 |
+| `ion_h_cutoff_pruned_fraction` | 0.0000 | 0.0000 | 0.0000 |
+
+Retained equals valid in every arm. With `min_ion_h_relative_probability: 0.0`,
+`min_ion_h_absolute_probability: 0.0`, and `mass_shatter_apply_channel_selection_in_training:
+False`, what has been trained so far is an H-**support** head; the hard channel-selection stage of
+the hierarchy has never been exercised in training or validation. About 8.5 channels are emitted
+per fragment where roughly 1.02 are attributed. Phase 2's fixed-checkpoint sweep remains the first
+measurement of the selection itself, not a refinement of an existing measurement.
+
+### Spectral quality does not separate the arms
+
+`val_cos_sim_0.01`, mean over the last five shared epochs (38-42), with the per-epoch standard
+deviation over the last ten epochs as the noise scale:
+
+| Arm | Dense | sd | Subformula | sd |
+| --- | ---: | ---: | ---: | ---: |
+| Gated | 0.7630 | 0.0047 | 0.7692 | 0.0049 |
+| H supervision only | 0.7655 | 0.0055 | 0.7693 | 0.0043 |
+| No H support | 0.7631 | 0.0054 | 0.7504 | 0.0132 |
+
+Every dense difference is smaller than one per-epoch standard deviation of a single seed. The soft
+intensity gate has no measured spectral benefit in either data variant, and no benefit in
+validation `fragment_weighted_precision` either (0.6513 gated, 0.6517 supervision only, 0.6547 no
+support). The one large gap, subformula without H support, comes from the least stable arm in the
+set and is not yet a result. Best-epoch values (0.7668, 0.7706, 0.7694 dense) reorder the arms
+relative to the five-epoch means, which is itself evidence that best-epoch selection sits inside
+the noise band here. Paired seeds are required before the gate or the support BCE is credited or
+removed on quality grounds.
+
+### The support loss does sharpen channel ranking
+
+Final-epoch validation, dense arms:
+
+| Validation metric | Gated | Supervision only | No H support |
+| --- | ---: | ---: | ---: |
+| `required_ion_h_top_k_95_mean` | 3.2721 | 3.2842 | 3.6623 |
+| `required_ion_h_top_k_95_p90` | 5.5665 | 5.5731 | 6.3422 |
+| `required_ion_h_top_k_95_max` | 7.2532 | 7.2250 | 7.8719 |
+
+Supervision concentrates 95% of per-fragment channel mass into about 11% fewer channels while
+cosine and weighted precision stay flat. This is the separation the plan's goal section predicts:
+a mechanism diagnostic improves while thresholded spectral quality does not. It supports carrying
+the supervision into Phase 2 as a ranking signal, not as a spectral-quality intervention.
+
+**Metric check required before these numbers gate anything.** `required_ion_h_top_k_95_mean` and
+`required_ion_h_top_k_99_mean` agree to four decimals in all three arms (3.2721 versus 3.2722 in
+the gated arm). Two different cumulative thresholds yielding the same mean needs verification in
+the metric implementation before either is used as a Phase 4 gate.
+
+### Scope consequences
+
+- `spec_params.prec_types` is `['[M+H]+']` only, and its CMF is removed as degenerate with
+  reachable CRF `delta_h = -1`. The CMF candidate-universe alignment above therefore does not
+  change this screen's candidate set, and cannot explain metric differences between 2026-09-08
+  and 2026-09-14 runs on it.
+- Arm C stays untestable in this scope, exactly as Phase 1 predicts. Ion-mode work requires
+  `[M+Na]+` or `[M+Cl]-` in `spec_params.prec_types`.
+
+### Next concrete check
+
+1. Set `mass_shatter_gate_independent_intensity_with_support: False` in the H-support configs. No
+   measured outcome pays for the gate, and it confounds every later support comparison.
+2. Recover one trained checkpoint from the cluster and run the Phase 2 staged selection sweep on
+   it. This is blocked, not deprioritized: W&B lists only `run-*-history` artifacts for these
+   runs, so no checkpoint is recoverable from the run records, and the earlier `tq4bdn3g` sweep
+   predates the chemistry corrections.
+3. Keep the support BCE at `0.1` until Phase 2 measures whether its sharper ranking survives hard
+   selection.
 
 ## Decision
 
@@ -986,6 +1083,13 @@ flags select these conversions; head presence alone does not determine them.
 
 Evaluate selection only from one fixed checkpoint.
 
+**Blocking status (2026-09-14):** this is the next step and it is blocked on checkpoint
+recovery, not on analysis. The
+[H-support ablation measurement](#h-support-ablation-measurement-2026-09-14) shows that every
+trained arm retains all valid channels, so no run to date measures any selection rule. W&B lists
+only `run-*-history` artifacts for those runs, and the earlier `tq4bdn3g` sweep predates the
+chemistry corrections. Recover one checkpoint from the cluster before planning further training.
+
 Do not run the mode-control sweep on an all-degenerate scope. On the lead checkpoint,
 Phase 2 starts directly with post-fix CRF H-channel controls. On mixed scopes, exclude
 degenerate CMF states before marginalization and report every curve per adduct as well
@@ -1029,7 +1133,11 @@ oracle gates pass; extra model complexity requires a measurable improvement.
 ### 3. Add the split support/intensity head
 
 Add the optional support projection, balanced support loss, and dense support metrics.
-Proceed only if the Phase 1 oracle clears the Phase 4 gates. Train the split-head arm
+Proceed only if the Phase 1 oracle clears the Phase 4 gates. Run the matched arms with
+`mass_shatter_gate_independent_intensity_with_support: False`: the
+[H-support ablation measurement](#h-support-ablation-measurement-2026-09-14) found no spectral or
+weighted-precision benefit from the soft gate in either data variant, so keeping it only confounds
+the support comparison. Train the split-head arm
 from scratch using the `ka68eu6p` fragment-selection configuration. If there is no
 recoverable control checkpoint produced by the same code, data, seed, and training
 schedule, also train a fresh existing-head control. Keep channel selection disabled
