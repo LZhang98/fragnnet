@@ -18,7 +18,6 @@ MAX_TIME=-1
 NB_FLAG=False
 ISO_FLAG=False
 SMARTS_PREPASS=False
-USE_LMDB=False
 SAVE_NAME=${DATASET_NAME}_mona23_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_smp${SMARTS_PREPASS}
 DSETS='nist20_hr mona23'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'

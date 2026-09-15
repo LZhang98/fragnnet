@@ -41,6 +41,7 @@ pip install --no-index torch==2.4.1 \
     dgl==2.4.0 \
     omegaconf \
     cython==3.0.12 \
+    pyopenms==3.3.0 \
     h5py
 
 # intall from whl

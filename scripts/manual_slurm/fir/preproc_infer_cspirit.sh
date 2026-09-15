@@ -60,7 +60,8 @@ pip install --no-index \
     dgl==2.4.0 \
     omegaconf \
     cython==3.0.12 \
-
+    pyopenms==3.3.0 \
+    
 # install from whl
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
 pip install pyteomics-4.7.5-py3-none-any.whl

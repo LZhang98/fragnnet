@@ -26,9 +26,18 @@ Tests cover:
     Previously, sub-fragments containing [N+](=O)[O-] would receive "" at slot 0
     even when the parent molecule's root formula was correct — affecting 82% of
     nitro-containing molecules in NIST20 at the sub-fragment level.
+12. Bond-free (single-atom) molecules such as C, F and [SiH4]: mol_d["bonds"]
+    must stay 2-D and every atom must appear in atoms_to_bonds, otherwise
+    update_bonds raises "Buffer has wrong number of dimensions (expected 2,
+    got 1)" and the DAG for the whole molecule is discarded.
+13. Isotope-labeled atoms ([13C], [15N], [2H], ...) are rejected.  Formulae and
+    masses are monoisotopic per element, so the label was silently dropped and
+    '[13CH3]O' yielded exactly the formulae and m/z of 'CO'.
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 import pytest
@@ -454,3 +463,90 @@ def test_all_nodes_have_valid_delta_h0_formula(smiles: str) -> None:
         "Likely cause: compute_cc_h_floor overcounted the H floor for sub-fragments "
         "containing [N+](=O)[O-], making delta_h=0 invalid (floor > num_hs_prior)."
     )
+
+
+# ---------------------------------------------------------------------------
+# 12. Regression: bond-free (single-atom) molecules
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("smiles", ["C", "F", "N", "O", "Br", "[SiH4]"])
+def test_extract_mol_info_bond_free_molecule_shapes(smiles: str) -> None:
+    """Single-atom molecules must keep the (num_bonds, 2) bond contract.
+
+    ``np.array([], dtype=np.int32)`` is 1-D, which raised
+    ``ValueError: Buffer has wrong number of dimensions (expected 2, got 1)``
+    in the typed Cython buffer of ``compute_frags.update_bonds``.  Every atom
+    must also appear in ``atoms_to_bonds`` so that isolated atoms map to an
+    empty bond list instead of raising ``KeyError``.
+    """
+    mol_d = extract_mol_info(smiles)
+
+    assert mol_d["bonds"].shape == (0, 2)
+    assert mol_d["bonds"].dtype == np.int32
+    assert mol_d["atoms_to_bonds"] == {0: []}
+    assert mol_d["bond_mask_arr"].shape == (0,)
+
+
+@pytest.mark.parametrize(
+    ("smiles", "formula", "mz"),
+    [
+        ("C", "CH4", 16.0313),
+        ("O", "H2O", 18.0106),
+    ],
+)
+def test_compute_dags_bond_free_molecule(smiles: str, formula: str, mz: float) -> None:
+    """A bond-free molecule yields a single-node, edge-free DAG for the precursor."""
+    dag_d = _run_compute_dags(smiles)
+
+    assert dag_d["dag_num_nodes"] == 1
+    assert dag_d["dag_num_edges"] == 0
+    assert dag_d["dag"].x.shape[0] == 1
+    assert dag_d["dag"].edge_index.shape == (2, 0)
+    assert formula in dag_d["idx_to_formula"].values()
+    assert dag_d["formula_peak_mzs"][1, 0].item() == pytest.approx(mz, abs=1e-3)
+
+
+def test_extract_mol_info_bonded_molecule_covers_every_atom() -> None:
+    """Bonded molecules keep their bond lists, with one entry per atom."""
+    mol_d = extract_mol_info("CCO")
+
+    assert mol_d["bonds"].shape == (2, 2)
+    assert mol_d["atoms_to_bonds"] == {0: [0], 1: [0, 1], 2: [1]}
+
+
+# ---------------------------------------------------------------------------
+# 13. Isotope-labeled atoms are rejected
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("smiles", "label"),
+    [
+        ("[14CH4]", "[14C]"),
+        ("[13CH3]O", "[13C]"),
+        ("[15NH2]CC(=O)O", "[15N]"),
+        ("[37Cl]c1ccccc1", "[37Cl]"),
+        ("[2H]C1=C([2H])c2ccccc12", "[2H]"),
+    ],
+)
+def test_extract_mol_info_rejects_isotope_labels(smiles: str, label: str) -> None:
+    """Isotope-labeled molecules must raise instead of yielding unlabeled masses.
+
+    Formulae and masses are monoisotopic per element, so a label such as 13C is
+    silently dropped: '[13CH3]O' previously produced exactly the same formulae
+    and m/z as 'CO', putting every predicted peak ~1 Da off.
+    """
+    with pytest.raises(ValueError, match="isotope-labeled atoms currently not supported"):
+        extract_mol_info(smiles)
+
+    with pytest.raises(ValueError, match=re.escape(label)):
+        extract_mol_info(smiles)
+
+
+@pytest.mark.parametrize("smiles", ["CO", "NCC(=O)O", "c1ccccc1O", "C"])
+def test_extract_mol_info_accepts_unlabeled_molecules(smiles: str) -> None:
+    """Molecules at natural isotopic abundance are unaffected by the isotope gate."""
+    mol_d = extract_mol_info(smiles)
+
+    assert len(mol_d["elems"]) == mol_d["mol"].GetNumAtoms()

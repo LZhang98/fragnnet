@@ -2,10 +2,8 @@ import argparse
 import json
 import logging
 import os
-import pickle
 from typing import cast
 
-import lmdb
 import numpy as np
 import pandas as pd
 
@@ -62,14 +60,6 @@ def main(args):
         raise ValueError(
             f"Invalid --compress_format '{args.compress_format}'. Expected one of: 'gz', 'bz2'."
         )
-
-    if args.use_lmdb and args.compress_dags:
-        logging.info(
-            "--compress_dags is ignored when --use_lmdb=True because DAGs are stored in LMDB."
-        )
-
-    if args.use_hdf5 and args.use_lmdb:
-        raise ValueError("--use_hdf5 and --use_lmdb are mutually exclusive.")
 
     elements = args.elements
     dsets = args.dsets
@@ -297,27 +287,12 @@ def main(args):
         return
 
     # Full path: keep loop so stats can be accumulated alongside DAG writes.
-    if args.use_lmdb:
-        env = lmdb.open(
-            dag_dp,
-            map_size=args.map_size,
-            meminit=False,
-            map_async=True,
-        )
-        txn = env.begin(write=True)
-        if txn is None:
-            raise RuntimeError("Failed to open LMDB write transaction")
-        h5_file = None
-    elif args.use_hdf5:
+    if args.use_hdf5:
         import h5py
 
         h5_file = h5py.File(h5_fp, "w")
         frag_utils.initialize_packed_dag_hdf5(h5_file)
-        env = None
-        txn = None
     else:
-        env = None
-        txn = None
         h5_file = None
     frag_results_gen = data_utils.par_apply(
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
@@ -366,22 +341,12 @@ def main(args):
             if not args.skip_stats:
                 stats_row = {k: dag_d[k] for k in _STATS_KEYS if k in dag_d}
             try:
-                if args.use_lmdb:
-                    if txn is None or env is None:
-                        raise RuntimeError("LMDB environment was not initialized")
-                    txn.put(
-                        f"{int(mol_id)}".encode(),
-                        pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL),
-                    )
-                    if (int(mol_id) + 1) % 200 == 0:
-                        txn.commit()
-                        txn = env.begin(write=True)
-                elif args.use_hdf5:
+                if args.use_hdf5:
                     if h5_file is None:
                         raise RuntimeError("HDF5 file was not initialized")
                     frag_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
                 else:
-                    # Write one artifact per molecule when LMDB storage is disabled.
+                    # Write one artifact per molecule when HDF5 storage is disabled.
                     fp = frag_utils.get_dag_output_path(
                         dag_dp=dag_dp,
                         mol_id=mol_id,
@@ -408,13 +373,7 @@ def main(args):
             if h5_file is not None:
                 h5_file.flush()
 
-    if args.use_lmdb:
-        if txn is None or env is None:
-            raise RuntimeError("LMDB environment was not initialized")
-        txn.commit()
-        env.sync()
-        env.close()
-    elif args.use_hdf5:
+    if args.use_hdf5:
         if h5_file is None:
             raise RuntimeError("HDF5 file was not initialized")
         h5_file.close()
@@ -699,17 +658,14 @@ if __name__ == "__main__":
         "--compress_dags",
         type=booltype,
         default=True,
-        help=(
-            "Whether to compress per-molecule DAG files when --use_lmdb=False. "
-            "Ignored when --use_lmdb=True."
-        ),
+        help="Whether to compress per-molecule DAG files when --use_hdf5=False.",
     )
     parser.add_argument(
         "--compress_format",
         type=str,
         default="bz2",
         choices=["gz", "bz2"],
-        help="Compression format for DAG files when --compress_dags=True and --use_lmdb=False.",
+        help="Compression format for DAG files when --compress_dags=True and --use_hdf5=False.",
     )
     parser.add_argument(
         "--wandb_run_name", type=str, help="Custom W&B run name (required when wandb_mode enabled)"
@@ -749,7 +705,7 @@ if __name__ == "__main__":
         "--use_hdf5",
         type=booltype,
         default=False,
-        help="Save DAGs to <frag_dp>/dags.h5 (HDF5). Mutually exclusive with --use_lmdb.",
+        help="Save DAGs to <frag_dp>/dags.h5 (HDF5) instead of one pickle per molecule.",
     )
     parser.add_argument(
         "--disable_tqdm",
@@ -762,21 +718,6 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help="whether skip stats compute and only compute and save the DAGs ",
-    )
-    parser.add_argument(
-        "--map_size",
-        type=int,
-        default=10 * 1024**3,
-        help="map size for LMDB (bytes). Default 10*1024**3 = 10 GiB",
-    )
-    parser.add_argument(
-        "--use_lmdb",
-        type=booltype,
-        default=False,
-        help=(
-            "Whether to use LMDB to store DAGs. If False, each DAG will be saved as an "
-            "individual pickle file under <frag_dp>/dags/. Default True."
-        ),
     )
     parser.add_argument(
         "--multi_cut_bfs",
