@@ -29,18 +29,18 @@ SAVE_NAME=${SAVE_NAME:-${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}}
 
 # --- filters ---------------------------------------------------------------
 # These MUST match what 02_inf_prepare_spec_df.py actually writes into spec_df:
-#   dset      -> always "inference"   (hardcoded, 02_inf_prepare_spec_df.py:88)
-#   ion_mode  -> always "P"           (hardcoded, 02_inf_prepare_spec_df.py:94) — even for [M-H]-
-#   frag_mode -> always "CID"         (hardcoded, 02_inf_prepare_spec_df.py:92)
-#   spec_type -> always "MS2"         (hardcoded, 02_inf_prepare_spec_df.py:93)
+#   dset      -> always "inference"   (hardcoded)
+#   ion_mode  -> derived from the prec_type charge: "P" for +, "N" for -
+#   frag_mode -> always "CID"         (hardcoded)
+#   spec_type -> always "MS2"         (hardcoded)
 #   prec_type / inst_type -> only what PREC / INST below generate
 # Do NOT copy the training-side filter lists (nist23_hr1/mona23/..., P N, [M+Na]+ ...)
 # here: none of those values exist in an inference spec_df and the filter would
-# select zero rows.
+# select zero rows. ION_MODES must list both P and N whenever PREC mixes +/- adducts.
 PREC=${PREC:-'[M+H]+ [M-H]-'}
 INST=${INST:-'FT QTOF'}
 FRAG_MODE=${FRAG_MODE:-'CID'}
-ION_MODES=${ION_MODES:-'P'}
+ION_MODES=${ION_MODES:-'P N'}
 DSETS=${DSETS:-'inference'}
 SPEC_TYPE=${SPEC_TYPE:-MS2}
 
