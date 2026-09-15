@@ -221,6 +221,7 @@ does not rewrite `spec_df.pkl`.
 | `filter_subformula_peaks` | `False` | Keep only peaks matching a precursor-compatible molecular subformula. Requires `mol_df.formula`. |
 | `subformula_ppm` | `5.0` | Fixed ppm tolerance used for subformula matching. |
 | `subformula_use_instrument_tolerance` | `True` | Use the FraGNNet FT/QTOF tolerance and low-mass floor instead of `subformula_ppm`. |
+| `subformula_include_cmf` | `True` | Also accept charge-migration ions, so `[M+Na]+` matches `[frag+H]+` and `[M+Cl]-` matches `[frag-H]-`. Mirrors the DAG's `include_cmf`; disabling it discards most real peaks for those two adducts. |
 | `drop_empty_spectra` | `True` | Drop spectra, and now-unused molecules, when cleanup removes every peak. |
 
 When both operations are enabled, centroiding runs first and subformula filtering second.

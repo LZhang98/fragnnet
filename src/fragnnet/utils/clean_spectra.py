@@ -11,8 +11,11 @@ import pandas as pd
 
 from fragnnet.utils.data_utils import ELEMENT_TO_MASS, VALID_ELEMENTS
 from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_COMP_DIFF,
+    PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
+    cmf_duplicate_crf_h_shift,
     parse_formula,
 )
 
@@ -24,6 +27,15 @@ PRECURSOR_TYPE_ALIASES = {
     "[M-H4O2+H]+": "[M-2H2O+H]+",
     "[M+H3N+H]+": "[M+NH4]+",
 }
+
+# Twice-RDBE contribution per element; a subformula with negative RDBE is not a
+# feasible neutral and is rejected before the carrier mass shift is applied.
+RDBE_COEFFICIENTS = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
+
+# Hydrogen-transfer reach used when testing whether an adduct's CMF channel merely
+# repeats its CRF channel. The subformula enumeration spans every hydrogen count in
+# the precursor formula, so any whole-hydrogen carrier swap is already reachable.
+_SUBFORMULA_H_REACH = 1
 
 INSTRUMENT_TOLERANCES = {
     "FT": {"relative": 1.0e-5, "min_mz": 200.0},
@@ -104,8 +116,78 @@ def _cluster_centroid(cluster: list[tuple[float, float]]) -> float:
     return sum(mz * intensity for mz, intensity in cluster) / total_intensity
 
 
+def _channel_ion_masses(
+    element_counts: dict[str, int], comp_diff, mass_diff: float
+) -> np.ndarray:
+    """Enumerate ion masses for one charge-carrier channel.
+
+    Walks every subformula bounded by ``element_counts``, drops those with negative
+    RDBE or that cannot supply the elements this channel removes, and applies the
+    channel's mass shift. Hydrogen transfer needs no explicit term: the enumeration
+    already spans every hydrogen count in the precursor formula.
+    """
+    required_counts = {
+        element: -count_change
+        for element, count_change in comp_diff.items()
+        if count_change < 0
+    }
+    if any(element_counts.get(element, 0) < count for element, count in required_counts.items()):
+        return np.array([], dtype=float)
+    neutral_masses = np.array([0.0])
+    rdbe_twice = np.array([2.0])
+    for element, max_count in element_counts.items():
+        min_count = required_counts.get(element, 0)
+        if min_count > max_count:
+            return np.array([], dtype=float)
+        levels = np.arange(min_count, max_count + 1)
+        neutral_masses = (
+            neutral_masses[:, None] + levels * ELEMENT_TO_MASS[element]
+        ).ravel()
+        rdbe_twice = (
+            rdbe_twice[:, None] + levels * RDBE_COEFFICIENTS.get(element, 0)
+        ).ravel()
+
+    neutral_masses = neutral_masses[(neutral_masses > 0) & (rdbe_twice >= 0)]
+    ion_masses = neutral_masses + mass_diff
+    return ion_masses[ion_masses > 0]
+
+
+def _subformula_channels(normalized_precursor_type: str, include_cmf: bool) -> list:
+    """Return the ``(comp_diff, mass_diff)`` carrier channels for a precursor type.
+
+    Mirrors the channel construction in ``formula_utils.mass_shatter_has_valid_ion``
+    so this filter accepts exactly the ions the DAG is allowed to emit. Direct charge
+    retention (CRF) keeps the precursor's own adduct. Charge migration (CMF) swaps it
+    for the protonated or deprotonated carrier, which is how sodiated and chloride
+    adducts mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl
+    to yield ``[frag-H]-``. Without the CMF channel those real peaks match no candidate
+    and get deleted. ``[M+H]+``/``[M-H]-`` skip CMF because their carrier swap is a whole
+    hydrogen, which the subformula enumeration already reaches.
+    """
+    channels = [
+        (
+            PREC_TYPE_TO_COMP_DIFF[normalized_precursor_type],
+            PREC_TYPE_TO_MASS_DIFF[normalized_precursor_type],
+        )
+    ]
+    if (
+        include_cmf
+        and normalized_precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF
+        and cmf_duplicate_crf_h_shift(normalized_precursor_type, _SUBFORMULA_H_REACH) is None
+    ):
+        channels.append(
+            (
+                PREC_TYPE_TO_CMF_COMP_DIFF[normalized_precursor_type],
+                PREC_TYPE_TO_CMF_MASS_DIFF[normalized_precursor_type],
+            )
+        )
+    return channels
+
+
 @lru_cache(maxsize=2)
-def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
+def _subformula_masses(
+    formula: str, precursor_type: str, include_cmf: bool = True
+) -> np.ndarray:
     normalized_precursor_type = PRECURSOR_TYPE_ALIASES.get(precursor_type, precursor_type)
     if normalized_precursor_type not in PREC_TYPE_TO_MASS_DIFF:
         supported_types = sorted(set(PREC_TYPE_TO_MASS_DIFF) | set(PRECURSOR_TYPE_ALIASES))
@@ -119,32 +201,15 @@ def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
     if unsupported_elements:
         raise ValueError(f"Unsupported formula elements: {sorted(unsupported_elements)}")
 
-    required_counts = {
-        element: -count_change
-        for element, count_change in PREC_TYPE_TO_COMP_DIFF[normalized_precursor_type].items()
-        if count_change < 0
-    }
-    if any(element_counts.get(element, 0) < count for element, count in required_counts.items()):
-        return np.array([], dtype=float)
-    neutral_masses = np.array([0.0])
-    rdbe_twice = np.array([2.0])
-    rdbe_coefficients = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
-    for element, max_count in element_counts.items():
-        min_count = required_counts.get(element, 0)
-        if min_count > max_count:
-            return np.array([], dtype=float)
-        levels = np.arange(min_count, max_count + 1)
-        neutral_masses = (
-            neutral_masses[:, None] + levels * ELEMENT_TO_MASS[element]
-        ).ravel()
-        rdbe_twice = (
-            rdbe_twice[:, None] + levels * rdbe_coefficients.get(element, 0)
-        ).ravel()
-
-    neutral_masses = neutral_masses[(neutral_masses > 0) & (rdbe_twice >= 0)]
-    adduct_mass_shift = PREC_TYPE_TO_MASS_DIFF[normalized_precursor_type]
-    ion_masses = neutral_masses + adduct_mass_shift
-    return np.sort(ion_masses[ion_masses > 0])
+    ion_masses = np.concatenate(
+        [
+            _channel_ion_masses(element_counts, comp_diff, mass_diff)
+            for comp_diff, mass_diff in _subformula_channels(
+                normalized_precursor_type, include_cmf
+            )
+        ]
+    )
+    return np.unique(ion_masses)
 
 
 def filter_subformula_peaks(
@@ -153,12 +218,19 @@ def filter_subformula_peaks(
     precursor_type: str,
     tolerance_ppm: float,
     tolerance_min_mz: float = 0.0,
+    include_cmf: bool = True,
 ) -> list[tuple[float, float]]:
-    """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula."""
+    """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula.
+
+    With ``include_cmf`` (the default, matching the DAG's ``include_cmf``) candidates
+    include charge-migration ions, so ``[M+Na]+`` accepts ``[frag+H]+`` and ``[M+Cl]-``
+    accepts ``[frag-H]-``. Disabling it restricts candidates to carrier-retaining
+    fragments, which discards most real peaks for those two adducts.
+    """
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
 
-    candidate_masses = _subformula_masses(formula, precursor_type)
+    candidate_masses = _subformula_masses(formula, precursor_type, include_cmf)
     if candidate_masses.size == 0:
         return []
 
@@ -358,6 +430,7 @@ def clean_spectra(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
+    subformula_include_cmf: bool = True,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -371,6 +444,7 @@ def clean_spectra(
         use_instrument_tolerance,
         use_merge_instrument_tolerance,
         merge_method,
+        subformula_include_cmf,
     )
     return cleaned_df
 
@@ -386,6 +460,7 @@ def clean_spectra_with_stats(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
+    subformula_include_cmf: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
     if merge_method is None:
@@ -418,6 +493,7 @@ def clean_spectra_with_stats(
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
             "subformula_instrument_tolerance": use_instrument_tolerance,
+            "subformula_include_cmf": subformula_include_cmf,
             "drop_empty_spectra": drop_empty_spectra,
         },
         "input": summarize_spectra(spec_df),
@@ -498,6 +574,7 @@ def clean_spectra_with_stats(
                     precursor_type,
                     INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
                     INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                    subformula_include_cmf,
                 )
                 for peaks, formula, precursor_type, instrument_type in zip(
                     result["peaks"],
@@ -509,7 +586,13 @@ def clean_spectra_with_stats(
             )
         else:
             filtered_peaks = (
-                filter_subformula_peaks(peaks, formula, precursor_type, subformula_ppm)
+                filter_subformula_peaks(
+                    peaks,
+                    formula,
+                    precursor_type,
+                    subformula_ppm,
+                    include_cmf=subformula_include_cmf,
+                )
                 for peaks, formula, precursor_type in zip(
                     result["peaks"], formulas, result["prec_type"], strict=True
                 )
@@ -612,6 +695,15 @@ def parse_args() -> argparse.Namespace:
         help="Use FraGNNet FT/QTOF tolerance and m/z floors instead of --subformula-ppm",
     )
     parser.add_argument(
+        "--no-subformula-cmf",
+        dest="subformula_include_cmf",
+        action="store_false",
+        help=(
+            "Restrict subformula candidates to carrier-retaining fragments. This drops "
+            "most real [M+Na]+ and [M+Cl]- peaks; the DAG keeps CMF enabled by default"
+        ),
+    )
+    parser.add_argument(
         "--drop-empty-spectra",
         action="store_true",
         help="Drop spectra with no peaks after the selected operations",
@@ -654,6 +746,7 @@ def main() -> None:
         use_instrument_tolerance=args.subformula_inst_tol,
         use_merge_instrument_tolerance=args.merge_inst_tol,
         merge_method=args.merge_method,
+        subformula_include_cmf=args.subformula_include_cmf,
     )
     stats["selection"] = {
         "precursor_types": args.precursor_types,
