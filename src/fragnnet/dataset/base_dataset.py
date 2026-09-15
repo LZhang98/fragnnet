@@ -442,12 +442,6 @@ class BaseDataset(Dataset):
                         "centroid_use_instrument_tolerance"
                     ],
                     merge_method=spec_params["centroid_method"],
-                    # Optional so legacy configs and checkpoints keep loading. Defaults
-                    # to the DAG's own include_cmf setting: without it, [M+Na]+ and
-                    # [M+Cl]- targets lose most of their real peaks.
-                    subformula_include_cmf=spec_params.get(
-                        "subformula_include_cmf", True
-                    ),
                 )
                 mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
 

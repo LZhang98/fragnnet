@@ -359,6 +359,69 @@ python scripts/run_inference.py \
 #### Resume Capability
 The script automatically checks the output directory (`--save_dp`) for existing prediction chunks. If found, it skips the spectra that have already been processed, allowing you to resume interrupted jobs without restarting from scratch.
 
+#### Sharding (SLURM array jobs)
+
+`--start_mol_idx` / `--num_mols` slice **mol_df by row position** and keep only the spectra
+of the selected molecules. The DAG preprocessing arrays
+(`preproc_infer_synced_dag_arr*.sh`) shard mol_df the same way, so array task *i* of the
+inference job lines up with frag shard *i* and the shards do **not** have to be merged
+first — `merge_dag_h5_shards.py` is only needed to run the whole set as a single job.
+
+`--frag_dp` takes either backend:
+
+| Preprocessing output | `--frag_dp` argument |
+| --- | --- |
+| tar of `<save_name>/dags/<mol_id>.pkl.bz2` | the extracted `<save_name>/dags` directory |
+| `shard_<i>/dags.h5` (packed HDF5) | the `dags.h5` file itself |
+
+For HDF5 the `meta_info.json` written next to the `.h5` must be staged with it: it is both
+the dataset's node/edge count source and the list of molecules that actually fragmented
+(the HDF5 backend does no missing-entry check, so a molecule that failed fragmentation
+would otherwise raise a `KeyError` at dataset build time).
+
+Each task must get its **own** `--save_dp`: chunk files are named
+`predictions_chunk_<n>.<ext>` and are only unique within a directory. Resume then works
+per task.
+
+#### Choosing the checkpoint
+
+`run_inference.py` takes either `--model_ckpt <path>` or `--wandb_run_id <id>`
+(`--model_save_dp` is the download cache). `get_ckpt_path` falls back to the W&B
+download whenever `--model_ckpt` is absent **or points at a file that does not exist** —
+a typo'd path silently becomes a W&B lookup, so check the `>>> Using local checkpoint:`
+line in the log.
+
+`--wandb_run_id` works from the compute nodes, but in an **array** job every task
+resolves the checkpoint independently. With a cold cache they all download and all
+`shutil.copy` — not atomic — onto the same `<model_save_dp>/<run_name>_<run_id>.ckpt`,
+so a task can read a half-written file. Warm the cache once before submitting:
+
+```bash
+python -c "from fragnnet.utils.misc_utils import get_best_ckpt_from_wandb; \
+           print(get_best_ckpt_from_wandb('saved_ckpts', '<run_id>'))"
+```
+
+After that the tasks just hit the cache (`use_cached=True`); passing the printed path as
+`--model_ckpt` is equivalent.
+
+In the array scripts these are the `MODEL_CKPT` / `WANDB_RUN_ID` variables at the top of
+`infer_synced_arr*.sh` (`MODEL_CKPT` wins when both are set; relative paths resolve
+against `FRAGNNET_DP`), with `CUSTOM_FP` for the checkpoint's training config.
+
+Ready-made array jobs for the SYNCED set:
+
+```bash
+# tar backend
+sbatch scripts/manual_slurm/fir/infer_synced_arr.sh
+# packed HDF5 backend
+sbatch scripts/manual_slurm/fir/infer_synced_arr_hdf5.sh
+```
+
+Both default to one task per frag shard (`--array=0-14`, `CHUNK_SIZE=20000`). To shorten
+per-task wall time without regenerating DAGs, raise `SUB_SHARDS` and widen the array to
+`0-(15*SUB_SHARDS - 1)`; each task then covers `CHUNK_SIZE/SUB_SHARDS` molecules of one
+shard, and tasks past the end of mol_df exit cleanly.
+
 ## Workflow Overview
 
 1. **Prepare Molecules**: Use `01_inf_prepare_mol_df.py` to create the molecule dataframe from SMILES.

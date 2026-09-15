@@ -228,12 +228,17 @@ def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
     kept = clean_spectra_utils.filter_subformula_peaks(
         peaks, "CH4O", precursor_type, tolerance_ppm=5.0
     )
-    dropped = clean_spectra_utils.filter_subformula_peaks(
-        peaks, "CH4O", precursor_type, tolerance_ppm=5.0, include_cmf=False
-    )
 
     assert kept == peaks
-    assert dropped == []
+    # The carrier-retaining channel alone cannot explain this peak, so the CMF channel
+    # is what keeps it: these adducts must always enumerate both.
+    crf_only = clean_spectra_utils._channel_ion_masses(
+        {"C": 1, "H": 4, "O": 1},
+        clean_spectra_utils.PREC_TYPE_TO_COMP_DIFF[precursor_type],
+        clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[precursor_type],
+    )
+    assert min(abs(crf_only - migrated_mz)) > 5e-6 * migrated_mz
+    assert len(clean_spectra_utils._subformula_channels(precursor_type)) == 2
 
 
 @pytest.mark.parametrize("precursor_type", ["[M+Na]+", "[M+Cl]-"])
@@ -252,13 +257,9 @@ def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
 
 
 @pytest.mark.parametrize("precursor_type", ["[M+H]+", "[M-H]-"])
-def test_protonated_adducts_are_unchanged_by_cmf(precursor_type):
+def test_protonated_adducts_emit_a_single_channel(precursor_type):
     """Their carrier swap is a whole hydrogen the enumeration already reaches."""
-    masses = clean_spectra_utils._subformula_masses("C6H12O6", precursor_type, True)
-    without_cmf = clean_spectra_utils._subformula_masses("C6H12O6", precursor_type, False)
-
-    assert len(clean_spectra_utils._subformula_channels(precursor_type, True)) == 1
-    assert masses.tolist() == without_cmf.tolist()
+    assert len(clean_spectra_utils._subformula_channels(precursor_type)) == 1
 
 
 def test_cmf_channel_still_requires_a_removable_hydrogen():
