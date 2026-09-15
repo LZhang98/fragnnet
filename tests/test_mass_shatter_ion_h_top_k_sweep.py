@@ -11,6 +11,7 @@ from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
 from fragnnet.utils.feat_utils import get_mol_graph
 from scripts.eval.mass_shatter_ion_h_top_k_sweep import (
     build_selections,
+    build_support_selections,
     evaluate_selection,
     metric_names,
     validate_fragment_relative_thresholds,
@@ -79,7 +80,9 @@ def test_evaluate_selection_prepares_smarts_templates(
 @pytest.mark.parametrize("evaluate", [evaluate_selection, evaluate_budget])
 @pytest.mark.parametrize("error_type", [ValueError, RuntimeError])
 def test_sweep_skips_invalid_batch_and_continues(
-    evaluate, caplog: pytest.LogCaptureFixture, error_type,
+    evaluate,
+    caplog: pytest.LogCaptureFixture,
+    error_type,
 ) -> None:
     class Model:
         def transfer_batch_to_device(self, batch, device, dataloader_idx):
@@ -179,3 +182,18 @@ def test_build_selections_crosses_fragment_thresholds_with_top_ks() -> None:
         ("fragment_relative_0.01", 0.01, 0, 0.0),
         ("fragment_relative_0.01_top_k_4", 0.01, 4, 0.0),
     ]
+
+
+def test_support_threshold_rules_are_separate_from_intensity_and_top_k() -> None:
+    assert build_support_selections([0.0, 0.001], [0.2, 0.5]) == [
+        ("support_absolute_0.2", 0.0, 0, 0.2),
+        ("support_absolute_0.5", 0.0, 0, 0.5),
+        ("fragment_relative_0.001_support_absolute_0.2", 0.001, 0, 0.2),
+        ("fragment_relative_0.001_support_absolute_0.5", 0.001, 0, 0.5),
+    ]
+
+
+@pytest.mark.parametrize("thresholds", [[0.0], [float("nan")], [1.1], [0.5, 0.5]])
+def test_support_threshold_rules_reject_invalid_floors(thresholds: list[float]) -> None:
+    with pytest.raises(ValueError):
+        build_support_selections([0.0], thresholds)

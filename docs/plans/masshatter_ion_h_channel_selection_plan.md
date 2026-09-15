@@ -1,6 +1,6 @@
 # MASShatter Ion-Mode Proposal, H Selection, and Intensity-Head Plan
 
-> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-14
+> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-15
 >
 > First remove CMF states duplicated by reachable CRF H shifts. Keep atom-set
 > retrieval H-independent, add an explicit CRF/CMF proposal stage only on
@@ -99,6 +99,25 @@ the supervision into Phase 2 as a ranking signal, not as a spectral-quality inte
 the gated arm). Two different cumulative thresholds yielding the same mean needs verification in
 the metric implementation before either is used as a Phase 4 gate.
 
+### Clone initialization and self-gating (code check 2026-09-15)
+
+The separate support projection starts with an exact copy of the intensity projection's
+weight and bias. Loading an old checkpoint without support keys also copies its intensity
+weights into the newly enabled support head. Both projections consume the same `tokens`:
+see [head construction and checkpoint migration](../../src/fragnnet/model/bond_fragment_heads.py)
+and the copy-initialization requirement in this plan's experiment matrix. This is deliberate
+RNG-preserving initialization, not an independently initialized support signal.
+
+At that point, `ion_h_support_logits == ion_h_logits == z`, so the independent intensity
+path computes `softplus(c + z) * sigmoid(z)`, where `c` is the corrected fragment logit;
+see [spectral weighting](../../src/fragnnet/model/mass_shatter_model.py). The initial gate is
+therefore a self-gate. The parameters remain separate and can diverge through support BCE
+and through the different spectral gradients entering the intensity and gate branches.
+Clone initialization is a candidate confound for the measured gate null, not an established
+explanation: the recorded runs do not measure projection divergence or logit correlation.
+An initialization comparison would need matched RNG isolation and separate treatment of
+legacy-checkpoint migration; no initialization or compatibility behavior changed here.
+
 ### Scope consequences
 
 - `spec_params.prec_types` is `['[M+H]+']` only, and its CMF is removed as degenerate with
@@ -107,8 +126,26 @@ the metric implementation before either is used as a Phase 4 gate.
   and 2026-09-14 runs on it.
 - Arm C stays untestable in this scope, exactly as Phase 1 predicts. Ion-mode work requires
   `[M+Na]+` or `[M+Cl]-` in `spec_params.prec_types`.
+- In this six-run ablation, `cmf_precursor_valid` is false for the only configured adduct.
+  With `max_h_transfer = 4`, each fragment has at most nine valid CRF H channels (-4 through
+  +4), with chemical validity reducing the measured mean to about 8.5. The `ion_h` metric
+  names describe a general tensor interface; these results measure H ranking/support only,
+  and provide no evidence of learned ion-mode discrimination. This scope statement does
+  not establish the adduct scope or validity behavior of every historical trained run.
 
 ### Next concrete check
+
+Script update (2026-09-15):
+[`mass_shatter_ion_h_top_k_sweep.py`](../../scripts/eval/mass_shatter_ion_h_top_k_sweep.py)
+now accepts `--support_absolute_thresholds` separately from final-intensity
+`--joint_relative_thresholds`. It uses the model's existing one-channel-per-spectrum
+fallback, requires a separate binary support head, includes selected-output weighted
+precision/recall, and reseeds each rule. Use the newer checkpoint's matching training
+YAML to preserve architecture and target construction. Disable fragment pruning with
+`--fragment_relative_thresholds 0`; compare `--ion_h_top_ks 0 4 5` against a support-floor
+sweep, with `--joint_relative_thresholds` supplied without values to omit intensity-floor
+rules. Metrics are validation-equivalent and do not include a separate exported-intensity
+cutoff pass. No checkpoint/data evaluation ran for this update.
 
 1. Set `mass_shatter_gate_independent_intensity_with_support: False` in the H-support configs. No
    measured outcome pays for the gate, and it confounds every later support comparison.

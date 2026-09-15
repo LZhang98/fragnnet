@@ -3,6 +3,7 @@
 The model weights, fragment candidates, and dataset stay fixed. The audit compares a
 dense reference, MAP-relative fragment thresholds, stable support-ranked top-k channels
 per fragment, and spectrum-relative thresholds on final joint fragment/ion/H intensity.
+Absolute support-probability thresholds are available with ``--support_absolute_thresholds``.
 
 Example:
     python scripts/eval/mass_shatter_ion_h_top_k_sweep.py \
@@ -127,6 +128,25 @@ def build_selections(
     return selections
 
 
+def build_support_selections(
+    fragment_relative_thresholds: list[float],
+    thresholds: list[float],
+) -> list[tuple[str, float, int, float]]:
+    """Build support-only threshold rules, without top-k or intensity pruning."""
+    validate_joint_relative_thresholds(thresholds)
+    return [
+        (
+            (f"fragment_relative_{fragment:g}_" if fragment else "")
+            + f"support_absolute_{threshold:g}",
+            fragment,
+            0,
+            threshold,
+        )
+        for fragment in fragment_relative_thresholds
+        for threshold in thresholds
+    ]
+
+
 def sample_weights(
     mode: str,
     spec_per_group: th.Tensor,
@@ -204,6 +224,13 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_FRAGMENT_RELATIVE_THRESHOLDS,
     )
     parser.add_argument("--ion_h_top_ks", type=int, nargs="+", default=DEFAULT_TOP_KS)
+    parser.add_argument(
+        "--support_absolute_thresholds",
+        type=float,
+        nargs="*",
+        default=[],
+        help="Absolute sigmoid support floors in (0, 1]; retain one fallback channel per spectrum.",
+    )
     parser.add_argument(
         "--joint_relative_thresholds",
         type=float,
@@ -356,6 +383,9 @@ def main() -> None:
     joint_relative_thresholds = validate_joint_relative_thresholds(
         list(args.joint_relative_thresholds)
     )
+    support_selections = build_support_selections(
+        fragment_relative_thresholds, list(args.support_absolute_thresholds)
+    )
 
     # 1. Resolve the immutable checkpoint and evaluation data.
     checkpoint_fp = get_ckpt_path(
@@ -373,6 +403,23 @@ def main() -> None:
         raise ValueError("Disable the ion/H probability floor for an isolated channel audit")
     if config_d["mass_shatter_min_ion_h_absolute_probability"] != 0.0:
         raise ValueError("Disable the absolute ion/H support floor for an isolated channel audit")
+    if support_selections and not (
+        config_d["mass_shatter_separate_ion_h_support_head"]
+        and config_d["mass_shatter_ion_h_support_binary_logits"]
+    ):
+        raise ValueError("Support thresholds require a separate binary support head")
+    config_d["auxiliary_scores"] = list(
+        dict.fromkeys(
+            [
+                *config_d["auxiliary_scores"],
+                "precision",
+                "recall",
+                "wprecision",
+                "wrecall",
+                "cos_sim",
+            ]
+        )
+    )
     config_d = apply_inference_config(
         config_d,
         disable_preproc=True,
@@ -393,12 +440,19 @@ def main() -> None:
         top_ks,
         joint_relative_thresholds,
     )
+    support_threshold_by_label = {row[0]: row[3] for row in support_selections}
+    selections.extend(
+        (label, fragment, top_k, 0.0) for label, fragment, top_k, _threshold in support_selections
+    )
     rows: list[dict[str, Any]] = []
     for label, fragment_relative_threshold, top_k, joint_relative_threshold in selections:
+        support_absolute_threshold = support_threshold_by_label.get(label, 0.0)
         logger.info("Evaluating checkpoint channel selection: %s", label)
+        seed_everything(config_d["seed"], workers=True)
         selection_config = {
             **config_d,
             "mass_shatter_min_fragment_relative_probability": fragment_relative_threshold,
+            "mass_shatter_min_ion_h_absolute_probability": support_absolute_threshold,
         }
         model = init_model_from_ckpt(checkpoint_fp, selection_config, device)
         model.model.set_evaluation_ion_h_top_k(top_k)
@@ -414,6 +468,12 @@ def main() -> None:
                 top_k,
                 joint_relative_threshold,
             )
+            if wandb_run is not None:
+                wandb_run.config.update(
+                    {
+                        "evaluation_support_absolute_threshold": support_absolute_threshold,
+                    }
+                )
             result = evaluate_selection(
                 model=model,
                 dataloader=dataloader,
@@ -428,6 +488,7 @@ def main() -> None:
                 "evaluation_fragment_relative_threshold": fragment_relative_threshold,
                 "evaluation_ion_h_top_k": top_k,
                 "evaluation_joint_channel_relative_threshold": joint_relative_threshold,
+                "evaluation_support_absolute_threshold": support_absolute_threshold,
                 "eval_split": args.eval_split,
                 "checkpoint": os.path.abspath(checkpoint_fp),
                 **result,
@@ -445,6 +506,7 @@ def main() -> None:
                     "evaluation_fragment_relative_threshold": fragment_relative_threshold,
                     "evaluation_ion_h_top_k": top_k,
                     "evaluation_joint_channel_relative_threshold": joint_relative_threshold,
+                    "evaluation_support_absolute_threshold": support_absolute_threshold,
                     "eval_split": args.eval_split,
                     "checkpoint": os.path.abspath(checkpoint_fp),
                     "status": "failed",
