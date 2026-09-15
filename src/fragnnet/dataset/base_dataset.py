@@ -8,7 +8,7 @@ import torch as th
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from fragnnet.utils.clean_spectra import clean_spectra
+from fragnnet.utils.clean_spectra_utils import clean_spectra
 from fragnnet.utils.data_utils import (
     CHARGE_FACTOR_MAP,
     fill_missing_ace,

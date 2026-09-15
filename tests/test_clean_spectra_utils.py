@@ -1,13 +1,13 @@
 import pandas as pd
 import pytest
 
-from fragnnet.utils import clean_spectra, data_utils
+from fragnnet.utils import clean_spectra_utils, data_utils
 
 
 def test_merge_peaks_uses_intensity_weighted_centroid():
     peaks = [(100.0, 1.0), (100.001, 3.0), (101.0, 2.0)]
 
-    merged = clean_spectra.merge_peaks(peaks, tolerance_ppm=20.0)
+    merged = clean_spectra_utils.merge_peaks(peaks, tolerance_ppm=20.0)
 
     assert merged[0] == pytest.approx((100.00075, 4.0))
     assert merged[1] == pytest.approx((101.0, 2.0))
@@ -16,7 +16,7 @@ def test_merge_peaks_uses_intensity_weighted_centroid():
 def test_merge_peaks_does_not_use_transitive_chaining():
     peaks = [(100.0, 1.0), (100.0019, 1.0), (100.0038, 1.0)]
 
-    merged = clean_spectra.merge_peaks(peaks, tolerance_ppm=20.0)
+    merged = clean_spectra_utils.merge_peaks(peaks, tolerance_ppm=20.0)
 
     assert len(merged) == 2
     assert merged[0] == pytest.approx((100.00095, 2.0))
@@ -26,7 +26,7 @@ def test_merge_peaks_does_not_use_transitive_chaining():
 def test_merge_peaks_applies_low_mass_tolerance_floor():
     peaks = [(100.0, 1.0), (100.003, 1.0)]
 
-    merged = clean_spectra.merge_peaks(
+    merged = clean_spectra_utils.merge_peaks(
         peaks, tolerance_ppm=20.0, tolerance_min_mz=200.0
     )
 
@@ -42,7 +42,7 @@ def test_merge_instrument_tolerance_uses_overlapping_per_peak_windows():
         }
     )
 
-    cleaned = clean_spectra.clean_spectra(
+    cleaned = clean_spectra_utils.clean_spectra(
         spec_df,
         pd.DataFrame(),
         merge_peak_signals=True,
@@ -65,7 +65,7 @@ def test_merge_instrument_tolerance_requires_cluster_wide_overlap():
         }
     )
 
-    cleaned = clean_spectra.clean_spectra(
+    cleaned = clean_spectra_utils.clean_spectra(
         spec_df,
         pd.DataFrame(),
         merge_peak_signals=True,
@@ -89,7 +89,7 @@ def test_merge_instrument_tolerance_can_select_naive_centroid_method():
         }
     )
 
-    cleaned = clean_spectra.clean_spectra(
+    cleaned = clean_spectra_utils.clean_spectra(
         spec_df,
         pd.DataFrame(),
         merge_peak_signals=True,
@@ -110,7 +110,7 @@ def test_fixed_ppm_merge_can_select_common_overlap_method():
         {"peaks": [[(100.0, 1.0), (100.0038, 3.0)]]}
     )
 
-    cleaned = clean_spectra.clean_spectra(
+    cleaned = clean_spectra_utils.clean_spectra(
         spec_df,
         pd.DataFrame(),
         merge_peak_signals=True,
@@ -128,7 +128,7 @@ def test_fixed_ppm_merge_can_select_common_overlap_method():
 def test_merge_only_does_not_require_molecule_metadata():
     spec_df = pd.DataFrame({"peaks": [[(100.0, 1.0), (100.001, 2.0)]]})
 
-    cleaned = clean_spectra.clean_spectra(
+    cleaned = clean_spectra_utils.clean_spectra(
         spec_df,
         pd.DataFrame(),
         merge_peak_signals=True,
@@ -145,7 +145,7 @@ def test_filter_subformula_peaks_keeps_only_mass_matches():
     carbon_ion_mz = data_utils.formula_to_mass("C") - data_utils.ELECTRON_MASS
     peaks = [(carbon_ion_mz + 4e-5, 10.0), (50.0, 5.0)]
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         peaks,
         formula="CH4",
         precursor_type="[M]+",
@@ -158,10 +158,10 @@ def test_filter_subformula_peaks_keeps_only_mass_matches():
 @pytest.mark.parametrize(
     ("precursor_type", "mass_shift"),
     [
-        ("[M+H]+", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]),
-        ("[M+Na]+", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+Na]+"]),
-        ("[M-H]-", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]),
-        ("[M+Cl]-", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+Cl]-"]),
+        ("[M+H]+", clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]),
+        ("[M+Na]+", clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+Na]+"]),
+        ("[M-H]-", clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]),
+        ("[M+Cl]-", clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+Cl]-"]),
     ],
 )
 def test_filter_subformula_peaks_applies_adduct_mass_shift(precursor_type, mass_shift):
@@ -169,7 +169,7 @@ def test_filter_subformula_peaks_applies_adduct_mass_shift(precursor_type, mass_
     neutral_mz = data_utils.formula_to_mass("CH4")
     peaks = [(ion_mz, 10.0), (neutral_mz, 5.0)]
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         peaks,
         formula="CH4",
         precursor_type=precursor_type,
@@ -184,10 +184,10 @@ def test_filter_subformula_peaks_accepts_nist_dehydration_adduct_alias():
     nist_type = "[M+H-H2O]+"
     ion_mz = (
         data_utils.formula_to_mass("CH4O")
-        + clean_spectra.PREC_TYPE_TO_MASS_DIFF[normalized_type]
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[normalized_type]
     )
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         [(ion_mz, 10.0)],
         formula="CH4O",
         precursor_type=nist_type,
@@ -200,10 +200,10 @@ def test_filter_subformula_peaks_accepts_nist_dehydration_adduct_alias():
 def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
     impossible_mz = (
         data_utils.formula_to_mass("C")
-        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
     )
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         [(impossible_mz, 10.0)],
         formula="CH4",
         precursor_type="[M-H]-",
@@ -216,8 +216,8 @@ def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
 @pytest.mark.parametrize(
     ("precursor_type", "cmf_shift"),
     [
-        ("[M+Na]+", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]),
-        ("[M+Cl]-", clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]),
+        ("[M+Na]+", clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]),
+        ("[M+Cl]-", clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]),
     ],
 )
 def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
@@ -225,10 +225,10 @@ def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
     migrated_mz = data_utils.formula_to_mass("CH4O") + cmf_shift
     peaks = [(migrated_mz, 10.0)]
 
-    kept = clean_spectra.filter_subformula_peaks(
+    kept = clean_spectra_utils.filter_subformula_peaks(
         peaks, "CH4O", precursor_type, tolerance_ppm=5.0
     )
-    dropped = clean_spectra.filter_subformula_peaks(
+    dropped = clean_spectra_utils.filter_subformula_peaks(
         peaks, "CH4O", precursor_type, tolerance_ppm=5.0, include_cmf=False
     )
 
@@ -241,10 +241,10 @@ def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
     """Adding the CMF channel must widen the candidate set, never replace it."""
     retained_mz = (
         data_utils.formula_to_mass("CH4O")
-        + clean_spectra.PREC_TYPE_TO_MASS_DIFF[precursor_type]
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[precursor_type]
     )
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         [(retained_mz, 10.0)], "CH4O", precursor_type, tolerance_ppm=5.0
     )
 
@@ -254,10 +254,10 @@ def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
 @pytest.mark.parametrize("precursor_type", ["[M+H]+", "[M-H]-"])
 def test_protonated_adducts_are_unchanged_by_cmf(precursor_type):
     """Their carrier swap is a whole hydrogen the enumeration already reaches."""
-    masses = clean_spectra._subformula_masses("C6H12O6", precursor_type, True)
-    without_cmf = clean_spectra._subformula_masses("C6H12O6", precursor_type, False)
+    masses = clean_spectra_utils._subformula_masses("C6H12O6", precursor_type, True)
+    without_cmf = clean_spectra_utils._subformula_masses("C6H12O6", precursor_type, False)
 
-    assert len(clean_spectra._subformula_channels(precursor_type, True)) == 1
+    assert len(clean_spectra_utils._subformula_channels(precursor_type, True)) == 1
     assert masses.tolist() == without_cmf.tolist()
 
 
@@ -265,10 +265,10 @@ def test_cmf_channel_still_requires_a_removable_hydrogen():
     """[M+Cl]- CMF is [frag-H]-, so a hydrogen-free subformula cannot supply it."""
     impossible_mz = (
         data_utils.formula_to_mass("C")
-        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
     )
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         [(impossible_mz, 10.0)], "CCl4", "[M+Cl]-", tolerance_ppm=5.0
     )
 
@@ -281,10 +281,10 @@ def test_cmf_channel_respects_the_rdbe_rule():
     # reject it rather than emit [H4+H]+ as a candidate.
     impossible_mz = (
         data_utils.formula_to_mass("H4")
-        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
 
-    filtered = clean_spectra.filter_subformula_peaks(
+    filtered = clean_spectra_utils.filter_subformula_peaks(
         [(impossible_mz, 10.0)], "CH4O", "[M+Na]+", tolerance_ppm=5.0
     )
 
@@ -294,14 +294,14 @@ def test_cmf_channel_respects_the_rdbe_rule():
 def test_qtof_instrument_tolerance_uses_0p015_da_low_mass_floor():
     theoretical_mz = (
         data_utils.formula_to_mass("CH4")
-        + clean_spectra.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
     observed_peak = (theoretical_mz + 0.01, 10.0)
 
-    fixed_5ppm = clean_spectra.filter_subformula_peaks(
+    fixed_5ppm = clean_spectra_utils.filter_subformula_peaks(
         [observed_peak], "CH4", "[M+H]+", tolerance_ppm=5.0
     )
-    qtof_inst_tol = clean_spectra.filter_subformula_peaks(
+    qtof_inst_tol = clean_spectra_utils.filter_subformula_peaks(
         [observed_peak],
         "CH4",
         "[M+H]+",
@@ -324,7 +324,7 @@ def test_cleanup_options_are_independent_and_can_drop_empty_spectra():
     )
     mol_df = pd.DataFrame({"mol_id": [0], "formula": ["CH4"]})
 
-    merged_only = clean_spectra.clean_spectra(
+    merged_only = clean_spectra_utils.clean_spectra(
         spec_df,
         mol_df,
         merge_peak_signals=True,
@@ -333,7 +333,7 @@ def test_cleanup_options_are_independent_and_can_drop_empty_spectra():
         subformula_ppm=5.0,
         drop_empty_spectra=False,
     )
-    filtered = clean_spectra.clean_spectra(
+    filtered = clean_spectra_utils.clean_spectra(
         spec_df.iloc[[1]],
         mol_df,
         merge_peak_signals=False,
@@ -357,7 +357,7 @@ def test_cleanup_stats_report_peak_and_intensity_retention():
     )
     mol_df = pd.DataFrame({"mol_id": [0], "formula": ["CH4"]})
 
-    cleaned, stats = clean_spectra.clean_spectra_with_stats(
+    cleaned, stats = clean_spectra_utils.clean_spectra_with_stats(
         spec_df,
         mol_df,
         merge_peak_signals=False,
@@ -389,7 +389,7 @@ def test_select_precursor_types_supports_four_adduct_evaluation_scope():
         }
     )
 
-    selected = clean_spectra.select_precursor_types(
+    selected = clean_spectra_utils.select_precursor_types(
         spec_df, ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )
 
@@ -405,7 +405,7 @@ def test_select_instrument_types_focuses_on_ft_and_qtof():
         }
     )
 
-    selected = clean_spectra.select_instrument_types(spec_df, ["FT", "QTOF"])
+    selected = clean_spectra_utils.select_instrument_types(spec_df, ["FT", "QTOF"])
 
     assert selected["spec_id"].tolist() == [0, 1]
 
@@ -419,7 +419,7 @@ def test_select_dsets_focuses_on_requested_source_dataset():
         }
     )
 
-    selected = clean_spectra.select_dsets(spec_df, ["nist20_hr"])
+    selected = clean_spectra_utils.select_dsets(spec_df, ["nist20_hr"])
 
     assert selected["spec_id"].tolist() == [0, 2]
 
@@ -428,7 +428,7 @@ def test_select_supported_formula_spectra_reports_exclusions():
     spec_df = pd.DataFrame({"spec_id": [0, 1], "mol_id": [0, 1], "peaks": [[], []]})
     mol_df = pd.DataFrame({"mol_id": [0, 1], "formula": ["CH4", "CH4Sn"]})
 
-    selected, summary = clean_spectra.select_supported_formula_spectra(spec_df, mol_df)
+    selected, summary = clean_spectra_utils.select_supported_formula_spectra(spec_df, mol_df)
 
     assert selected["spec_id"].tolist() == [0]
     assert summary == {

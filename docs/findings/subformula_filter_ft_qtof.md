@@ -232,7 +232,7 @@ spectra should not be discarded solely because they contain unmatched peaks.
 Current four-adduct instrument-tolerance cleaning command:
 
 ```bash
-python -m fragnnet.utils.clean_spectra \
+python -m fragnnet.utils.clean_spectra_utils \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --output-fp /tmp/nist20hr_four_adduct_inst_tol_filtered.pkl \
@@ -252,7 +252,7 @@ tables.
 Full subformula census:
 
 ```bash
-python -m fragnnet.utils.clean_spectra \
+python -m fragnnet.utils.clean_spectra_utils \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --stats-fp /tmp/nist20hr_mh_ft_qtof_cleanup_stats.json \
@@ -269,7 +269,7 @@ python -m fragnnet.utils.clean_spectra \
 Grouped merge-only control:
 
 ```bash
-python -m fragnnet.utils.clean_spectra \
+python -m fragnnet.utils.clean_spectra_utils \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --stats-fp /tmp/nist20hr_mh_ft_qtof_merge_stats.json \
   --stats-only \
@@ -282,7 +282,7 @@ python -m fragnnet.utils.clean_spectra \
 FraGNNet instrument-tolerance census:
 
 ```bash
-python -m fragnnet.utils.clean_spectra \
+python -m fragnnet.utils.clean_spectra_utils \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --stats-fp /tmp/nist20hr_mh_ft_qtof_inst_tol_stats.json \
@@ -300,7 +300,7 @@ Human-review queue after instrument-tolerance filtering. This filtering run deli
 `--drop-empty-spectra` so the review detector sees empty results:
 
 ```bash
-python -m fragnnet.utils.clean_spectra \
+python -m fragnnet.utils.clean_spectra_utils \
   --spec-fp data/proc/nist20/spec_df.pkl \
   --mol-fp data/proc/nist20/mol_df.pkl \
   --output-fp /tmp/nist20hr_mh_ft_qtof_inst_tol_filtered.pkl \
