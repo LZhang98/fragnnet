@@ -70,6 +70,11 @@ fi
 MODEL_CKPT=${MODEL_CKPT:-}
 WANDB_RUN_ID=${WANDB_RUN_ID:-}
 MODEL_SAVE_DP=${MODEL_SAVE_DP:-${FRAGNNET_DP}/saved_ckpts}
+# The checkpoint's training config. SET THIS for any checkpoint not trained against the
+# current code: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is
+# given, so otherwise config_d is the ckpt's saved hparams alone and every config key
+# added since it was trained is missing -> model init dies on self.hparams.<new_key>
+# (e.g. AttributeError: ... has no attribute 'depth_ce_bias').
 CUSTOM_FP=${CUSTOM_FP:-}
 
 if [ -z "${MODEL_CKPT}" ] && [ -z "${WANDB_RUN_ID}" ]; then
@@ -84,8 +89,23 @@ case "${CUSTOM_FP}" in "" | /*) ;; *) CUSTOM_FP=${FRAGNNET_DP}/${CUSTOM_FP} ;; e
 
 # --- inference knobs -------------------------------------------------------
 BATCH_SIZE=${BATCH_SIZE:-16}
-MIN_INTENSITY=${MIN_INTENSITY:-1.0}
-SAVE_FORMAT=${SAVE_FORMAT:-parquet}
+# 10.0 = keep peaks above 1% of base peak (pred_ints is rescaled per spectrum to a
+# 0-1000 base peak, filtered with a strict >). Higher than run_inference.py's own 1.0
+# default: measured on NIST20 val (2,000 spectra, 9t63zils), 1.0 -> 10.0 costs
+# cos_hun -0.0001 while cutting peaks ~3x (p50 39 -> 13, p90 202 -> 60), and 13/60
+# matches what real spectra carry (p50 11, p90 45). At 4.05M spectra that is the
+# difference between a ~3x larger export and the same score.
+# Trade-off: the export is then even further from the DAG support, so peak-coverage
+# analysis off these files is not possible - see
+# docs/findings/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
+MIN_INTENSITY=${MIN_INTENSITY:-10.0}
+SAVE_FORMAT=${SAVE_FORMAT:-pkl}
+# Peak-only output: m/z + intensity, no formula/fragment annotation, no probabilities.
+# run_inference.py defaults --return_formula_str/--return_cc_hash to True, so turn them
+# off explicitly - otherwise every row does the per-fragment formula/CC lookup.
+OUTPUT_SUBSET=${OUTPUT_SUBSET:-'pred_mzs pred_ints'}
+RETURN_FORMULA_STR=${RETURN_FORMULA_STR:-False}
+RETURN_CC_HASH=${RETURN_CC_HASH:-False}
 SAVE_CHUNK_SIZE=${SAVE_CHUNK_SIZE:-10000}
 
 # --- io --------------------------------------------------------------------
@@ -114,6 +134,8 @@ echo SUB_IDX: ${SUB_IDX}
 echo START_IDX: ${START_IDX}
 echo NUM_MOLS: ${NUM_MOLS}
 echo BATCH_SIZE: ${BATCH_SIZE}
+echo SAVE_FORMAT: ${SAVE_FORMAT}
+echo OUTPUT_SUBSET: ${OUTPUT_SUBSET}
 nvidia-smi || true
 
 if [ ! -d "${SRC_PROC_DP}" ]; then
@@ -214,6 +236,8 @@ if [ -n "${CUSTOM_FP}" ]; then
     CUSTOM_ARGS=(--custom_fp "${CUSTOM_FP}")
 fi
 
+read -r -a OUTPUT_SUBSET_ARGS <<< "${OUTPUT_SUBSET}"
+
 # run_inference.py falls back to the W&B download whenever --model_ckpt is absent OR
 # points at a nonexistent file, so an unset MODEL_CKPT is simply not passed.
 CKPT_ARGS=()
@@ -239,6 +263,9 @@ python ${WORKING_DIR}/scripts/run_inference.py \
     --min_intensity ${MIN_INTENSITY} \
     --save_dp ${TASK_OUT_DP} \
     --save_format ${SAVE_FORMAT} \
+    --output_subset "${OUTPUT_SUBSET_ARGS[@]}" \
+    --return_formula_str ${RETURN_FORMULA_STR} \
+    --return_cc_hash ${RETURN_CC_HASH} \
     --save_chunk_size ${SAVE_CHUNK_SIZE} \
     "${CUSTOM_ARGS[@]}"
 

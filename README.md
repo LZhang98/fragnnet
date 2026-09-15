@@ -99,5 +99,3 @@ This project supports dynamic batching to avoid OOM and a formula-based hard-neg
 Notes:
 - `FormulaHardNegativeDynamicBatchSampler` groups spectra by molecular formula then builds dynamic batches that respect the chosen `limited_by` metric (nodes or edges). See `FormulaHardNegativeDynamicBatchSampler` and `SpecMolFragDynamicBatchSampler` in [src/fragnnet/dataset/data_sampler.py](src/fragnnet/dataset/data_sampler.py).
 - The runner enforces valid modes (`frag_node` or `frag_edge`). See the config checks in [src/fragnnet/runner.py](src/fragnnet/runner.py).
-
-````

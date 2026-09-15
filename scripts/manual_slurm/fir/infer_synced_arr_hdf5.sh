@@ -52,8 +52,8 @@ BATCH_SIZE=${BATCH_SIZE:-16}
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FRAGNNET_DP=${FRAGNNET_DP:-/home/feiw/project/feiw/frag-gnn}
-if [ -f "${SCRIPT_DIR}/infer_synced_arr_hdf5_common.sh" ]; then
-    source "${SCRIPT_DIR}/infer_synced_arr_hdf5_common.sh"
+if [ -f "${SCRIPT_DIR}/infer_synced_arr_common.sh" ]; then
+    source "${SCRIPT_DIR}/infer_synced_arr_common.sh"
 else
-    source "${FRAGNNET_DP}/scripts/manual_slurm/fir/infer_synced_arr_hdf5_common.sh"
+    source "${FRAGNNET_DP}/scripts/manual_slurm/fir/infer_synced_arr_common.sh"
 fi

@@ -353,7 +353,15 @@ python scripts/run_inference.py \
 
 **Inference Options**:
 - `--batch_size`: Batch size for inference (default: 1)
-- `--min_intensity`: Minimum intensity threshold for peaks (default: 1.0)
+- `--min_intensity`: Minimum intensity threshold for peaks (default: 1.0). `pred_ints` is
+  rescaled per spectrum to a 0-1000 base peak and filtered with a strict `>`, so the value is
+  percent-of-base-peak x 10 (1.0 = 0.1%, 10.0 = 1%). Measured on NIST20 val (2,000 spectra,
+  `9t63zils`): cosine is flat to four decimals from 0.0 through 10.0 (cos_hun 0.5638 -> 0.5637)
+  while the peak count falls ~3x (p50 39 -> 13, p90 202 -> 60), and 13/60 matches what real
+  spectra carry (p50 11, p90 45). **Prefer 10.0 for predicted libraries** - same score, ~3x
+  smaller output. Keep it low only if you need to recover DAG support from the export, which
+  even 1.0 largely prevents (see
+  [dominant_peak_outcome_decomposition.md](../findings/dominant_peak_outcome_decomposition.md)).
 - `--disable_preproc`: Disable dataset preprocessing to save memory (default: True)
 
 #### Resume Capability
@@ -473,3 +481,34 @@ shard, and tasks past the end of mol_df exit cleanly.
 - Configuration JSON files provide complete traceability of all parameters
 - Timestamps recorded for all runs
 - All input parameters logged to config files
+
+## Inference peak threshold (`--min_intensity`)
+
+`scripts/run_inference.py` rescales `pred_ints` per spectrum to a 0-1000 base peak, then keeps
+peaks with intensity **strictly greater than** `--min_intensity`. The value is therefore
+percent-of-base-peak x 10.
+
+Measured on NIST20 val (2,000 spectra, `9t63zils`):
+
+| `--min_intensity` | % base peak | pred peaks p50 | pred peaks p90 | cos_hun | delta |
+| ----------------- | ----------- | -------------- | -------------- | ------- | ------ |
+| 0.0               | no filter   | 418            | 3138           | 0.5638  | —      |
+| 1.0 (script default) | 0.1%     | 39             | 202            | 0.5638  | -0.0000 |
+| 5.0               | 0.5%        | 18             | 87             | 0.5638  | -0.0000 |
+| **10.0**          | **1%**      | **13**         | **60**         | 0.5637  | **-0.0001** |
+| 20.0              | 2%          | 9              | 41             | 0.5635  | -0.0003 |
+| 50.0              | 5%          | 6              | 23             | 0.5628  | -0.0010 |
+
+Cosine is flat to four decimals through 1% while the peak count drops ~3x. Real spectra in the
+same subset carry p50 11 / p90 45 peaks, so **10.0 matches the reference peak count and 1.0
+over-emits by 3-4x** — prefer `10.0` for predicted libraries and spectral matching. It is the
+default in `scripts/manual_slurm/fir/infer_synced_arr*.sh`.
+
+Keep the threshold low only if you need to recover DAG support from the export: even 1.0 leaves
+the median spectrum with just 5.3% of its candidate m/z, so peak-coverage analysis needs a
+low-threshold re-run, not a re-filter. See
+[docs/findings/dominant_peak_outcome_decomposition.md](docs/findings/dominant_peak_outcome_decomposition.md).
+
+Sweep it yourself with [scripts/debug/debug_peak_count_diag.py](scripts/debug/debug_peak_count_diag.py),
+which reports peak counts and `cos_hun` at `[0, 1, 5, 10, 20, 50]`. Ground-truth peak counts per
+adduct x instrument x CE are in `notebooks/debug_notebooks/debug_nits20_peaks.ipynb` (cells 8-9).
