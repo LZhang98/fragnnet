@@ -35,6 +35,11 @@ line does not get re-run.
 **Start at [plans/model_improvement_plan.md](plans/model_improvement_plan.md)** — the canonical
 roadmap. It links the analyses that justify each item.
 
+| Audit | Scope |
+|-------|-------|
+| [MASShatter GPU audit](plans/masshatter_gpu_audit.md) | Static + measured (2026-09-14) GPU utilization and CPU–GPU synchronization audit of the masshatter and ion-H-selection branches; branch-specific optimization priorities. |
+| [Intensity-head bucketing sync plan](plans/masshatter_intensity_head_bucketing_sync_plan.md) | PROPOSED design for removing avoidable host syncs in `CandidateIntensityTransformerHead`'s per-molecule bucketing; not yet implemented. |
+
 ---
 
 ## guides/ — how to run things
