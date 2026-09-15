@@ -52,10 +52,9 @@ spec_params:
   centroid_ppm: 20.0
   centroid_use_instrument_tolerance: False
   centroid_method: common_overlap  # ["common_overlap", "naive_centroid"]
-  filter_subformula_peaks: False
+  filter_subformula_peaks: False  # when True, candidates always include charge-migration ions ([M+Na]+ -> [frag+H]+, [M+Cl]- -> [frag-H]-)
   subformula_ppm: 5.0 # only use if filter_subformula_peaks is True and subformula_use_instrument_tolerance is False
   subformula_use_instrument_tolerance: True
-  subformula_include_cmf: True  # allow charge-migration ions ([M+Na]+ -> [frag+H]+, [M+Cl]- -> [frag-H]-); chemistry only, unrelated to mol_params.include_cmf
   drop_empty_spectra: True
   # Monoisotopic target cleanup. When True, isotope peaks are removed from
   # observed spectra before they become training/evaluation targets; isotope

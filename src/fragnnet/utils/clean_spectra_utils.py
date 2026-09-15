@@ -152,7 +152,7 @@ def _channel_ion_masses(
     return ion_masses[ion_masses > 0]
 
 
-def _subformula_channels(normalized_precursor_type: str, include_cmf: bool) -> list:
+def _subformula_channels(normalized_precursor_type: str) -> list:
     """Return the ``(comp_diff, mass_diff)`` carrier channels for a precursor type.
 
     This is a chemical-feasibility test on an observed peak, not a question about what
@@ -162,8 +162,9 @@ def _subformula_channels(normalized_precursor_type: str, include_cmf: bool) -> l
     protonated or deprotonated carrier, which is how sodiated and chloride adducts
     mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl to
     yield ``[frag-H]-`` (see the references on ``PREC_TYPE_TO_CMF_MASS_DIFF``). Both are
-    real ions, so both are candidates. ``[M+H]+``/``[M-H]-`` skip CMF because their
-    carrier swap is a whole hydrogen the subformula enumeration already reaches.
+    real ions, so both are always candidates. ``[M+H]+``/``[M-H]-`` skip CMF because
+    their carrier swap is a whole hydrogen the subformula enumeration already reaches,
+    so their channel list is unchanged.
 
     The carrier tables come from ``formula_utils`` and are shared with the fragmentation
     code, but nothing here consults a DAG: a peak this filter cannot explain is kept or
@@ -177,8 +178,7 @@ def _subformula_channels(normalized_precursor_type: str, include_cmf: bool) -> l
         )
     ]
     if (
-        include_cmf
-        and normalized_precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF
+        normalized_precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF
         and cmf_duplicate_crf_h_shift(normalized_precursor_type, _SUBFORMULA_H_REACH) is None
     ):
         channels.append(
@@ -191,9 +191,7 @@ def _subformula_channels(normalized_precursor_type: str, include_cmf: bool) -> l
 
 
 @lru_cache(maxsize=2)
-def _subformula_masses(
-    formula: str, precursor_type: str, include_cmf: bool = True
-) -> np.ndarray:
+def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
     normalized_precursor_type = PRECURSOR_TYPE_ALIASES.get(precursor_type, precursor_type)
     if normalized_precursor_type not in PREC_TYPE_TO_MASS_DIFF:
         supported_types = sorted(set(PREC_TYPE_TO_MASS_DIFF) | set(PRECURSOR_TYPE_ALIASES))
@@ -210,9 +208,7 @@ def _subformula_masses(
     ion_masses = np.concatenate(
         [
             _channel_ion_masses(element_counts, comp_diff, mass_diff)
-            for comp_diff, mass_diff in _subformula_channels(
-                normalized_precursor_type, include_cmf
-            )
+            for comp_diff, mass_diff in _subformula_channels(normalized_precursor_type)
         ]
     )
     return np.unique(ion_masses)
@@ -224,20 +220,17 @@ def filter_subformula_peaks(
     precursor_type: str,
     tolerance_ppm: float,
     tolerance_min_mz: float = 0.0,
-    include_cmf: bool = True,
 ) -> list[tuple[float, float]]:
     """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula.
 
-    With ``include_cmf`` (the default) candidates include charge-migration ions, so
-    ``[M+Na]+`` accepts ``[frag+H]+`` and ``[M+Cl]-`` accepts ``[frag-H]-``. Disabling it
-    restricts candidates to carrier-retaining fragments, which discards most real peaks
-    for those two adducts; it exists as an ablation, not as a setting to match against a
-    fragmentation model's own options.
+    Candidates always include charge-migration ions, so ``[M+Na]+`` accepts
+    ``[frag+H]+`` and ``[M+Cl]-`` accepts ``[frag-H]-``. Those are real ions; excluding
+    them discards most genuine peaks for those two adducts, so it is not an option.
     """
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
 
-    candidate_masses = _subformula_masses(formula, precursor_type, include_cmf)
+    candidate_masses = _subformula_masses(formula, precursor_type)
     if candidate_masses.size == 0:
         return []
 
@@ -437,7 +430,6 @@ def clean_spectra(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
-    subformula_include_cmf: bool = True,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -451,7 +443,6 @@ def clean_spectra(
         use_instrument_tolerance,
         use_merge_instrument_tolerance,
         merge_method,
-        subformula_include_cmf,
     )
     return cleaned_df
 
@@ -467,7 +458,6 @@ def clean_spectra_with_stats(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
-    subformula_include_cmf: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
     if merge_method is None:
@@ -500,7 +490,6 @@ def clean_spectra_with_stats(
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
             "subformula_instrument_tolerance": use_instrument_tolerance,
-            "subformula_include_cmf": subformula_include_cmf,
             "drop_empty_spectra": drop_empty_spectra,
         },
         "input": summarize_spectra(spec_df),
@@ -581,7 +570,6 @@ def clean_spectra_with_stats(
                     precursor_type,
                     INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
                     INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
-                    subformula_include_cmf,
                 )
                 for peaks, formula, precursor_type, instrument_type in zip(
                     result["peaks"],
@@ -593,13 +581,7 @@ def clean_spectra_with_stats(
             )
         else:
             filtered_peaks = (
-                filter_subformula_peaks(
-                    peaks,
-                    formula,
-                    precursor_type,
-                    subformula_ppm,
-                    include_cmf=subformula_include_cmf,
-                )
+                filter_subformula_peaks(peaks, formula, precursor_type, subformula_ppm)
                 for peaks, formula, precursor_type in zip(
                     result["peaks"], formulas, result["prec_type"], strict=True
                 )
@@ -702,16 +684,6 @@ def parse_args() -> argparse.Namespace:
         help="Use FraGNNet FT/QTOF tolerance and m/z floors instead of --subformula-ppm",
     )
     parser.add_argument(
-        "--no-subformula-cmf",
-        dest="subformula_include_cmf",
-        action="store_false",
-        help=(
-            "Restrict subformula candidates to carrier-retaining fragments. This drops "
-            "most real [M+Na]+ and [M+Cl]- peaks, which are genuine charge-migration "
-            "ions; intended as an ablation"
-        ),
-    )
-    parser.add_argument(
         "--drop-empty-spectra",
         action="store_true",
         help="Drop spectra with no peaks after the selected operations",
@@ -754,7 +726,6 @@ def main() -> None:
         use_instrument_tolerance=args.subformula_inst_tol,
         use_merge_instrument_tolerance=args.merge_inst_tol,
         merge_method=args.merge_method,
-        subformula_include_cmf=args.subformula_include_cmf,
     )
     stats["selection"] = {
         "precursor_types": args.precursor_types,
