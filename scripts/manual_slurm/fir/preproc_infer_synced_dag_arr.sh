@@ -10,7 +10,7 @@
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_synced_dag_arr_%A_%a.out
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_synced_dag_arr_%A_%a.err
 #SBATCH --open-mode=append
-#SBATCH --array=0-36
+#SBATCH --array=0-14
 
 # SYNCED inference preprocessing, STEP 03 ONLY (DAG feature generation), as an array job.
 #
@@ -25,7 +25,7 @@
 # so the shards are disjoint and their dags/ dirs can simply be untarred on top of
 # each other to reconstitute the full frag dir.
 #
-# Array sizing: 289,480 molecules / CHUNK_SIZE=8000 -> 37 tasks (0-36). Keep
+# Array sizing: 289,480 molecules / CHUNK_SIZE=20000 -> 15 tasks (0-14). Keep
 # --array and CHUNK_SIZE in sync when either changes.
 
 echo "$(date): Job ${SLURM_JOB_ID} (array ${SLURM_ARRAY_JOB_ID} task ${SLURM_ARRAY_TASK_ID}) is allocated resources"
@@ -46,7 +46,7 @@ USE_LMDB=${USE_LMDB:-False}
 SKIP_STATS=${SKIP_STATS:-True}
 SAVE_NAME=${SAVE_NAME:-${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}}
 
-CHUNK_SIZE=${CHUNK_SIZE:-8000}
+CHUNK_SIZE=${CHUNK_SIZE:-20000}
 TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
 START_IDX=$((TASK_ID * CHUNK_SIZE))
 
