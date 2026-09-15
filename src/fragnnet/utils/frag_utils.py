@@ -284,6 +284,16 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
         cur_deg = atom.GetTotalDegree()
         # cur_num_bonds = atom.GetNumBonds()
         cur_element = atom.GetSymbol()
+        cur_isotope = atom.GetIsotope()
+
+        # Formulae and masses here are monoisotopic per element, so an isotope label is
+        # silently dropped and every fragment m/z would be off by the label's mass defect.
+        # Reject such molecules explicitly instead of emitting wrong masses.
+        if cur_isotope != 0:
+            raise ValueError(
+                f"Molecules with isotope-labeled atoms currently not supported: "
+                f"[{cur_isotope}{cur_element}] at atom index {cur_idx}"
+            )
 
         if cur_element not in element_counts:
             raise ValueError(f"Molecules with {cur_element} atom(s) currently not supported")
@@ -326,7 +336,9 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     ve_arr = np.array(ve_arr, dtype=np.int32)
     hs_arr = np.array(hs_arr, dtype=np.int32)
     # enumerate bonds
-    atoms_to_bonds = {}
+    # Every atom maps to a (possibly empty) bond list: isolated atoms have no bonds
+    # but are still valid fragment members.
+    atoms_to_bonds = {atom_idx: [] for atom_idx in range(num_atoms)}
     bonds, bond_type_idxs, ring_bond_mask = [], [], []
     num_bonds = 0
     adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
@@ -343,17 +355,12 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
         bond_type_idxs.append(cur_type_idx)
         ring_bond_mask.append(1 if bond.IsInRing() else 0)
 
-        if from_idx not in atoms_to_bonds:
-            atoms_to_bonds[from_idx] = [cur_idx]
-        else:
-            atoms_to_bonds[from_idx].append(cur_idx)
-
-        if to_idx not in atoms_to_bonds:
-            atoms_to_bonds[to_idx] = [cur_idx]
-        else:
-            atoms_to_bonds[to_idx].append(cur_idx)
+        atoms_to_bonds[from_idx].append(cur_idx)
+        atoms_to_bonds[to_idx].append(cur_idx)
         num_bonds += 1
-    bonds = np.array(bonds, dtype=np.int32)
+    # reshape keeps the (num_bonds, 2) contract for bond-free molecules (single atoms),
+    # where np.array([]) would otherwise be 1-D and break the typed Cython buffers.
+    bonds = np.array(bonds, dtype=np.int32).reshape(-1, 2)
     mol_d = {}
     mol_d["mol"] = mol
     mol_d["num_hs"] = num_hs
