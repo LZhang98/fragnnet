@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from fragnnet.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES
-from fragnnet.utils.clean_spectra import merge_peaks
+from fragnnet.utils.clean_spectra_utils import merge_peaks
 from fragnnet.utils.formula_utils import parse_formula
 from fragnnet.utils.spec_utils import merge_sparse_specs
 
