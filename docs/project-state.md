@@ -74,6 +74,25 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+Subformula filter hooked up to MASShatter (2026-09-16): the merged Cl/Na fix reaches MASShatter
+through the shared `BaseDataset` cleanup with no code change, but it was **inert for every
+MASShatter config** — all of them use `data/split/nist20_inchikey`, which is 209,698 `[M+H]+`/FT
+spectra with no Na, Cl, QTOF, or IT. Added
+`config/masshatter/merged/subformula_filter/nist20_ma_mi_merged_independent_jss_warmup_e0_15_dense_subformula.yml`,
+identical to its `[M+H]+` sibling except for `split_dp: data/split/nist20_ma_mi_inchikey`,
+`prec_types` (four adducts) and `inst_types: [FT, QTOF]`, so the two remain a matched A/B on adduct
+scope. MASShatter needs no DAGs, so the split change costs no preprocessing. The
+[subformula finding](findings/subformula_filter_ft_qtof.md#clna-budget-fix-measured-on-the-multi-adduct-split-2026-09-16)
+records the measured pre-fix/post-fix delta (+90 peaks of 62,702, every adduct nonnegative),
+per-adduct retention at instrument tolerance, and the model/filter agreement on CMF validity.
+Validation: 344 passed, 2 xfailed across the filter, MASShatter, dataset, and split-filter suites;
+config resolved through `load_config`; cleanup run end-to-end on 2,620 real multi-adduct spectra
+with zero emptied spectra. No training run was launched and no checkpoint was evaluated.
+Next: launch the new config as the matched multi-adduct arm, or first measure oracle coverage on
+the Na/Cl population. Note the existing 4-adduct MASShatter configs (`context_ablation`, `smarts`)
+declare Na/Cl in `prec_types` but sit on the `[M+H]+`-only split, so their extra adduct slots and
+CMF channels have never been exercised.
+
 Inference path consolidation merged from `feiw_v2` (2026-09-16): the
 [inference step consolidation plan](plans/inference_step_consolidation_plan.md) is LANDED on that
 branch and is now merged here. It collapses the three `SpectrumPL` inference entry points into one,

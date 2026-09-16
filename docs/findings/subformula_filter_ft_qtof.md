@@ -1,10 +1,12 @@
 # 5 ppm Subformula Filtering on NIST20-HR
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-09-13
+> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-09-16
 >
 > Historical NIST20-HR census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
 > The current evaluation scope also includes `[M+Na]+` and `[M+Cl]-`; the existing numerical
 > tables remain the two-adduct baseline until the four-adduct run is complete.
+> The 2026-09-16 section at the end measures the Cl/Na budget fix on all four adducts and
+> records the MASShatter scope; it does not restate the 5 ppm tables.
 
 ## Question
 
@@ -397,3 +399,59 @@ NIST20-HR-only reports:
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_stats.json`
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_filtered_stats.json`
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_human_review.csv`
+
+## Cl/Na budget fix, measured on the multi-adduct split (2026-09-16)
+
+Commits `2922ef7e` and `04133d45` (merged here at `ba9192b7`) rewrote the candidate enumeration.
+The filter now bounds each candidate by a **precursor ion** rather than by the neutral `M`, so a
+fragment may retain part of the charge carrier, give it up entirely, or be the bare carrier; RDBE
+is scored on the molecular part with the carrier stripped, which is what `[M+Cl]-` needs.
+
+Measured pre-fix (`04133d45^`) against post-fix on 2,620 stratified `nist20_ma_mi_inchikey`
+validation spectra, at instrument tolerance (FT 10 ppm/200 Da floor, QTOF 20 ppm/750 Da floor):
+
+| Adduct | Instrument | Raw peaks | Pre-fix kept | Post-fix kept | Delta |
+|---|---|---:|---:|---:|---:|
+| `[M+H]+` | FT | 13,710 | 12,439 | 12,497 | +58 |
+| `[M+H]+` | QTOF | 7,839 | 7,577 | 7,582 | +5 |
+| `[M-H]-` | FT | 13,438 | 12,357 | 12,357 | 0 |
+| `[M-H]-` | QTOF | 7,120 | 6,855 | 6,855 | 0 |
+| `[M+Na]+` | FT | 9,799 | 8,477 | 8,481 | +4 |
+| `[M+Na]+` | QTOF | 2,214 | 1,742 | 1,742 | 0 |
+| `[M+Cl]-` | FT | 8,582 | 7,779 | 7,802 | +23 |
+
+The fix is **directionally safe but small on this population**: +90 peaks of 62,702 (+0.14%), and
+every cell is nonnegative — the new enumeration only ever admits peaks, never deletes more than
+the old one did. The old code raised no errors on any of these spectra, so this is a retention
+change, not a crash fix. Do not read the per-adduct deltas as a scientific gain; they are a
+correctness check on the enumeration.
+
+Retention at instrument tolerance on the same sample, for planning target density (this is the
+instrument-tolerance contract, not the 5 ppm tables above):
+
+| Adduct | Instrument | Peaks kept | Intensity kept | Spectra emptied |
+|---|---|---:|---:|---:|
+| `[M+H]+` | FT | 91.2% | 97.1% | 0 |
+| `[M+H]+` | QTOF | 96.7% | 98.5% | 0 |
+| `[M-H]-` | FT | 92.0% | 98.4% | 0 |
+| `[M-H]-` | QTOF | 96.3% | 98.2% | 0 |
+| `[M+Na]+` | FT | 86.6% | 97.0% | 0 |
+| `[M+Na]+` | QTOF | 78.7% | 93.6% | 0 |
+| `[M+Cl]-` | FT | 90.9% | 98.7% | 0 |
+
+### MASShatter scope
+
+The fix reaches MASShatter through the shared `BaseDataset` cleanup with no code change, but it
+was inert for every MASShatter config: all of them point at `data/split/nist20_inchikey`, which
+holds 209,698 `[M+H]+`/FT spectra and no Na, Cl, QTOF, or IT. `data/split/nist20_ma_mi_inchikey`
+carries 480,002 spectra over all four adducts and FT+QTOF (45,976 Na/Cl; **no IT rows**, so the
+FT/QTOF-only `INSTRUMENT_TOLERANCES` table covers it and does not raise).
+
+MASShatter's own channel enumeration agrees with the filter on which adducts have a real
+charge-migration channel: at `max_h_transfer=4`, `cmf_precursor_valid` is True for `[M+Na]+` and
+`[M+Cl]-` and False for `[M+H]+`/`[M-H]-`, whose CMF state duplicates CRF h_shift -1/+1 — the same
+reason `_precursor_ion_budgets` gives those two adducts a single budget. Over all sub-multisets of
+a C6H8N2O3 stand-in, the filter rejects 21.6% of the channels MASShatter can emit for `[M+H]+`
+against 24.5%/21.4% for `[M+Na]+`/`[M+Cl]-`; the rejects are over-hydrogenated negative-RDBE
+channels, so the filter is stricter in the same way for every adduct and creates no MASShatter-
+specific asymmetry.
