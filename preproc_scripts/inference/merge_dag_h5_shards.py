@@ -96,7 +96,11 @@ def merge_shard(src_h5: h5py.File, dst_h5: h5py.File) -> int:
 
 
 def main(args: argparse.Namespace) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     shard_fps = find_shards(args.shard_dp)
     logging.info(f"merging {len(shard_fps)} shards from {args.shard_dp}")

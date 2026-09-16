@@ -10,7 +10,7 @@ import pandas as pd
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.frag_utils import run_frag_gen_hdf5
-from fragnnet.utils.misc_utils import booltype, progress_wrapper
+from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 # Default per-instrument m/z tolerance, matching inst_type_loss_tol in the training configs
@@ -46,6 +46,36 @@ def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict)
         wandb.log(log_d)
 
 
+def log_frag_output_summary(args, h5_fp: str, dag_dp: str) -> None:
+    """Log the on-disk size of whatever the frag gen step just wrote.
+
+    Both the HDF5 and the per-molecule-pickle layouts report their footprint the
+    same way, so a job's log ends with a comparable line whichever one it wrote.
+
+    Args:
+        args: Parsed CLI namespace (``use_hdf5`` selects which layout to report).
+        h5_fp: Path to ``dags.h5``, used when ``args.use_hdf5`` is set.
+        dag_dp: Directory holding per-molecule pickles, used otherwise.
+    """
+    try:
+        if args.use_hdf5:
+            size_mb = os.path.getsize(h5_fp) / (1024 * 1024)
+            logging.info(f"Wrote packed HDF5: {h5_fp}")
+            logging.info(f"Total output size: {size_mb:.2f} MB")
+        else:
+            output_files = [
+                f for f in os.listdir(dag_dp) if f.endswith((".pkl", ".pkl.gz", ".pkl.bz2"))
+            ]
+            total_size = sum(os.path.getsize(os.path.join(dag_dp, f)) for f in output_files) / (
+                1024 * 1024
+            )
+            logging.info(f"Generated {len(output_files)} fragment files in {dag_dp}")
+            logging.info(f"Total output size: {total_size:.2f} MB")
+    except Exception as e:
+        logging.warning(f"Could not analyze output directory: {e}")
+    logging.info("=" * 60)
+
+
 def main(args):
     if args.max_time >= data_utils.JOBLIB_TIMEOUT:
         raise ValueError(
@@ -53,8 +83,20 @@ def main(args):
             f"({data_utils.JOBLIB_TIMEOUT}s)"
         )
 
-    # Setup logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    # Setup logging. datefmt is explicit so asctime renders as "2026-09-14 22:06:53"
+    # rather than logging's default "2026-09-14 22:06:53,924".
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logging.info("=" * 60)
+    logging.info("Starting DAG Feature Preparation Pipeline")
+    logging.info("=" * 60)
+    logging.info("Configuration parameters:")
+    for k, v in vars(args).items():
+        logging.info(f"  {k}: {v}")
+    logging.info("-" * 40)
 
     if args.compress_dags and args.compress_format not in {"gz", "bz2"}:
         raise ValueError(
@@ -256,7 +298,11 @@ def main(args):
         for _, row in mol_df.iterrows()
     )
 
-    print("> Running frag gen")
+    logging.info("Running frag gen")
+    logging.info(
+        f"  Output layout: {'packed HDF5 (dags.h5)' if args.use_hdf5 else 'one pickle per molecule'}"
+    )
+    logging.info(f"  Molecules to fragment: {mol_df.shape[0]}")
     h5_fp = os.path.join(args.frag_dp, "dags.h5")
     meta_info_fp = os.path.join(args.frag_dp, "meta_info.json")
 
@@ -284,6 +330,7 @@ def main(args):
             )
         with open(meta_info_fp, "w") as f:
             f.write(json.dumps(meta_info))
+        log_frag_output_summary(args, h5_fp, dag_dp)
         return
 
     # Full path: keep loop so stats can be accumulated alongside DAG writes.
@@ -317,25 +364,21 @@ def main(args):
         "idx_by_h_delta",
     }
     meta_info_checkpoint_fp = os.path.join(args.frag_dp, "meta_info_checkpoint.json")
-    for i, fr in enumerate(
-        progress_wrapper(
-            frag_results_iter,
-            total=n_total,
-            desc="Compute Frags",
-            disable_tqdm=True,  # Always disable tqdm for this loop to avoid issues with parallel processing
-        )
-    ):
+    logging.info(f"Executing fragment generation for {n_total} molecules")
+    progress = ProgressLogger(total=n_total, desc="Fragment generation")
+    # tqdm is always disabled for this loop to avoid issues with parallel processing;
+    # ProgressLogger supplies the rate/ETA reporting in its place.
+    for i, fr in enumerate(frag_results_iter):
         mol_id, dag_d = fr
 
         # Log before any processing so the last entry in the log identifies the OOM culprit.
         logging.debug(f"Processing mol_id={mol_id} ({i + 1}/{n_total})")
 
-        if (i + 1) % 50 == 0 or (i + 1) == n_total:
-            logging.info(f"Processed {i + 1}/{n_total} molecules")
-
         stats_row: dict = {}
+        had_error = False
         if len(dag_d) == 0:
             logging.warning(f"Fragmentation failed for mol_id={mol_id}")
+            had_error = True
         else:
             meta_info[mol_id] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
             if not args.skip_stats:
@@ -358,6 +401,7 @@ def main(args):
                 logging.error(f"OOM (MemoryError) writing DAG for mol_id={mol_id} — skipping")
                 oom_mol_ids.append(mol_id)
                 stats_row = {}
+                had_error = True
             finally:
                 # Release the large DAG dict immediately — do not hold it for the rest of
                 # the loop iteration, as this is the dominant per-molecule memory consumer.
@@ -366,6 +410,8 @@ def main(args):
         if not args.skip_stats:
             frag_results.append(stats_row)
 
+        progress.update(is_error=had_error)
+
         # Periodic checkpoint so we know how far we got if the process is OOM-killed.
         if (i + 1) % 500 == 0:
             with open(meta_info_checkpoint_fp, "w") as _f:
@@ -373,12 +419,16 @@ def main(args):
             if h5_file is not None:
                 h5_file.flush()
 
+    progress.finish()
+
     if args.use_hdf5:
         if h5_file is None:
             raise RuntimeError("HDF5 file was not initialized")
         h5_file.close()
     with open(meta_info_fp, "w") as f:
         f.write(json.dumps(meta_info))
+
+    log_frag_output_summary(args, h5_fp, dag_dp)
 
     if oom_mol_ids:
         logging.warning(f"OOM occurred for {len(oom_mol_ids)} molecules: {oom_mol_ids}")

@@ -7,6 +7,7 @@ and torch/pandas friendly for use in data loading, model code, and scripts.
 """
 
 import glob
+import logging
 import multiprocessing
 import os
 import shutil
@@ -1005,3 +1006,89 @@ def progress_wrapper(
 
         for item in tqdm(iterable, total=total, desc=desc):
             yield item
+
+
+class ProgressLogger:
+    """Interval-based progress logger with rate, ETA, and error tracking.
+
+    A line is emitted every ``log_every`` items OR every ``log_seconds`` seconds,
+    whichever comes first, so long-running jobs stay legible in SLURM logs without
+    depending on tqdm.
+
+    Example:
+        progress = ProgressLogger(total=len(rows), desc="Fragment generation")
+        for row in rows:
+            ...
+            progress.update(is_error=failed)
+        progress.finish()
+    """
+
+    def __init__(
+        self,
+        total: int,
+        desc: str = "Progress",
+        log_every: int = 100,
+        log_seconds: float = 30.0,
+        logger: "logging.Logger | None" = None,
+    ) -> None:
+        self.total = total
+        self.desc = desc
+        self.log_every = max(1, log_every)
+        self.log_seconds = log_seconds
+        self.logger = logger if logger is not None else logging.getLogger(__name__)
+        self.n_done = 0
+        self.n_errors = 0
+        self.start_time = time.time()
+        self._last_log_time = self.start_time
+
+    @property
+    def elapsed(self) -> float:
+        """Seconds since the logger was created."""
+        return time.time() - self.start_time
+
+    @property
+    def rate(self) -> float:
+        """Completed items per second, 0.0 before any time has passed."""
+        elapsed = self.elapsed
+        return self.n_done / elapsed if elapsed > 0 else 0.0
+
+    def update(self, is_error: bool = False, n: int = 1) -> None:
+        """Record ``n`` completed items and log if an interval boundary was crossed."""
+        self.n_done += n
+        if is_error:
+            self.n_errors += n
+
+        now = time.time()
+        if self.n_done % self.log_every == 0 or (now - self._last_log_time) >= self.log_seconds:
+            self._log_progress(now)
+
+    def _log_progress(self, now: float) -> None:
+        elapsed = now - self.start_time
+        rate = self.n_done / elapsed if elapsed > 0 else 0.0
+        remaining = max(0, self.total - self.n_done)
+        eta = remaining / rate if rate > 0 else 0.0
+        pct = (self.n_done / self.total * 100) if self.total > 0 else 0.0
+
+        self.logger.info(f"{self.desc}: {self.n_done}/{self.total} ({pct:.1f}%)")
+        self.logger.info(f"  Rate: {rate:.2f} items/sec")
+        self.logger.info(f"  Elapsed: {elapsed:.0f}s, ETA: {eta:.0f}s")
+        if self.n_errors > 0:
+            self.logger.warning(f"  Errors encountered: {self.n_errors}")
+        self._last_log_time = now
+
+    def finish(self) -> None:
+        """Log the completion summary: totals, wall time, average rate, success rate."""
+        elapsed = self.elapsed
+        avg_rate = self.n_done / elapsed if elapsed > 0 else 0.0
+
+        self.logger.info(f"{self.desc} completed")
+        self.logger.info(f"Total items processed: {self.n_done}")
+        self.logger.info(f"Total time elapsed: {elapsed:.2f} seconds")
+        self.logger.info(f"Average processing rate: {avg_rate:.2f} items/second")
+        if self.n_errors > 0:
+            self.logger.warning(f"Total errors encountered: {self.n_errors}")
+            if self.n_done > 0:
+                success = (self.n_done - self.n_errors) / self.n_done * 100
+                self.logger.warning(f"Success rate: {success:.1f}%")
+        else:
+            self.logger.info("No errors encountered - 100% success rate")
