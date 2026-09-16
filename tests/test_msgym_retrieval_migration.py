@@ -90,3 +90,36 @@ def test_build_proc_aligns_candidates_and_query_groups(tmp_path: Path) -> None:
         {"spec_id": 1, "mol_id": 1, "group_id": 0},
         {"spec_id": 2, "mol_id": 1, "group_id": 1},
     ]
+
+
+def test_msgym_json_selects_the_requested_fold(tmp_path: Path) -> None:
+    raw_dp = tmp_path / "raw"
+    raw_dp.mkdir()
+    tsv_fp = raw_dp / "MassSpecGym1.5.tsv"
+    pd.DataFrame(
+        {
+            "identifier": ["test_query", "val_query"],
+            "smiles": ["C", "CC"],
+            "precursor_mz": [17.0, 31.0],
+            "adduct": ["[M+H]+", "[M+H]+"],
+            "instrument_type": ["Orbitrap", "Orbitrap"],
+            "collision_energy": [20.0, 30.0],
+            "fold": ["test", "val"],
+            "simulation_challenge": [True, True],
+        }
+    ).to_csv(tsv_fp, sep="\t", index=False)
+    candidates_fp = raw_dp / "candidates.json"
+    candidates_fp.write_text('{"C": ["C"], "CC": ["CC"]}')
+
+    for fold, expected_query in (("test", "test_query"), ("val", "val_query")):
+        manifest_fp, _ = MSGYM.export_msgym_json(
+            tsv_fp, candidates_fp, tmp_path / fold, "simulation_challenge", fold
+        )
+        manifest = pd.read_pickle(manifest_fp)
+        assert manifest["source_identifier"].tolist() == [expected_query]
+
+    # The default stays on the test fold so existing invocations are unchanged.
+    manifest_fp, _ = MSGYM.export_msgym_json(
+        tsv_fp, candidates_fp, tmp_path / "default", "simulation_challenge"
+    )
+    assert pd.read_pickle(manifest_fp)["source_identifier"].tolist() == ["test_query"]

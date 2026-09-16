@@ -38,23 +38,11 @@ FRAG_BACKEND=${FRAG_BACKEND:-tar}
 CHUNK_SIZE=${CHUNK_SIZE:-20000}
 TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
 
-# SUB_SHARDS splits each frag shard across several array tasks, so the array can be
-# wider than the 15 frag shards without regenerating DAGs. Task -> (frag shard, sub):
-#   frag_shard = TASK_ID / SUB_SHARDS      sub = TASK_ID % SUB_SHARDS
-# and --array must then be 0-(NUM_FRAG_SHARDS*SUB_SHARDS - 1).
-SUB_SHARDS=${SUB_SHARDS:-1}
-FRAG_SHARD=$((TASK_ID / SUB_SHARDS))
-SUB_IDX=$((TASK_ID % SUB_SHARDS))
-SUB_SIZE=$(((CHUNK_SIZE + SUB_SHARDS - 1) / SUB_SHARDS))
-START_IDX=$((FRAG_SHARD * CHUNK_SIZE + SUB_IDX * SUB_SIZE))
-# Clamp to this frag shard: molecules past it live in another shard's DAG file and
-# would be silently dropped (filtered as "no fragments") instead of predicted.
-REMAIN=$((CHUNK_SIZE - SUB_IDX * SUB_SIZE))
-NUM_MOLS=$((REMAIN < SUB_SIZE ? REMAIN : SUB_SIZE))
-if [ ${NUM_MOLS} -le 0 ]; then
-    echo "task ${TASK_ID} (frag shard ${FRAG_SHARD}, sub ${SUB_IDX}) covers no molecules, exiting"
-    exit 0
-fi
+# One array task per frag shard: task i consumes shard i and predicts exactly the mol_df
+# slice that built it. Partial progress is handled by resume (each task skips the spec_ids
+# already in its own output dir), not by splitting shards further.
+START_IDX=$((TASK_ID * CHUNK_SIZE))
+NUM_MOLS=${CHUNK_SIZE}
 
 # --- model -----------------------------------------------------------------
 # Set exactly one of:
@@ -106,7 +94,9 @@ SAVE_FORMAT=${SAVE_FORMAT:-pkl}
 #
 #   pred_mzs / pred_ints            the spectrum
 #   frag_formula_peak_idxs          peak -> formula        (always written)
-#   pred_formula_strs               formula string         (RETURN_FORMULA_STR)
+#   pred_formula_strs               NEUTRAL fragment formula (RETURN_FORMULA_STR)
+#   pred_formula_adducts            precursor delta for that row, signed: +H, -H, +Na
+#                                   (written whenever EITHER annotation flag is set)
 #   pred_formula_probs              P(f)
 #   pred_joint_formula_idxs/_node_idxs + pred_formula_node_probs
 #                                   formula -> candidate node, with P(n|f)
@@ -117,6 +107,12 @@ SAVE_FORMAT=${SAVE_FORMAT:-pkl}
 # So peak k's formula is pred_formula_strs[frag_formula_peak_idxs[k]], and its fragment
 # is the argmax of pred_formula_node_probs over the joint rows with that formula - all
 # indices are rebased per spectrum, so the lookups are local.
+#
+# The formula string is the NEUTRAL fragment; pred_formula_adducts carries the delta that
+# makes it the observed ion, so a peak reads as "C6H4O2 -H" and the annotated fragment is
+# that cc PLUS that adduct. With frag_params.include_cmf the formula axis is
+# NULL, CRF[1:F], CMF[1:F] and the two halves carry different deltas (+Na vs +H for
+# [M+Na]+), so the adduct column is what tells the two channels apart.
 #
 # The joint index columns come in automatically with RETURN_CC_HASH (they are what prunes
 # the node arrays); P(n|f) is what makes them usable, hence its place in OUTPUT_SUBSET.
@@ -138,7 +134,21 @@ if [ ! -d "${SRC_PROC_DP}" ] && [ -d "${FRAGNNET_DP}/data/inference/synced_smile
     SRC_PROC_DP=${FRAGNNET_DP}/data/inference/synced_smiles
 fi
 DEST_FRAG_DP=${DEST_FRAG_DP:-/scratch/feiw/frag-gnn-data/inference/frags}
-OUT_DP=${OUT_DP:-/scratch/feiw/frag-gnn-data/inference_outputs/${SAVE_NAME}}
+# The output dir has to identify the MODEL, not just the DAGs. Resume skips any spec_id
+# already present in the task's dir, so two checkpoints sharing one OUT_DP would not
+# collide loudly - the second run would skip whatever the first predicted and leave a
+# silently mixed-model prediction set. SAVE_NAME covers only the dataset + DAG params and
+# is shared with DEST_FRAG_DP (which is model-independent), hence this separate tag.
+# Mirrors the MODEL_CKPT-wins precedence used to build CKPT_ARGS below.
+MODEL_TAG=${MODEL_TAG:-}
+if [ -z "${MODEL_TAG}" ]; then
+    if [ -n "${MODEL_CKPT}" ]; then
+        MODEL_TAG=$(basename "${MODEL_CKPT}" .ckpt)
+    else
+        MODEL_TAG=${WANDB_RUN_ID}
+    fi
+fi
+OUT_DP=${OUT_DP:-/scratch/feiw/frag-gnn-data/inference_outputs/${SAVE_NAME}_${MODEL_TAG}}
 VENV_DP=${VENV_DP:-}
 
 echo SAVE_NAME: ${SAVE_NAME}
@@ -149,12 +159,10 @@ echo MODEL_SAVE_DP: ${MODEL_SAVE_DP}
 echo CUSTOM_FP: ${CUSTOM_FP}
 echo SRC_PROC_DP: ${SRC_PROC_DP}
 echo DEST_FRAG_DP: ${DEST_FRAG_DP}
+echo MODEL_TAG: ${MODEL_TAG}
 echo OUT_DP: ${OUT_DP}
 echo TASK_ID: ${TASK_ID}
 echo CHUNK_SIZE: ${CHUNK_SIZE}
-echo SUB_SHARDS: ${SUB_SHARDS}
-echo FRAG_SHARD: ${FRAG_SHARD}
-echo SUB_IDX: ${SUB_IDX}
 echo START_IDX: ${START_IDX}
 echo NUM_MOLS: ${NUM_MOLS}
 echo BATCH_SIZE: ${BATCH_SIZE}
@@ -166,6 +174,38 @@ nvidia-smi || true
 
 if [ ! -d "${SRC_PROC_DP}" ]; then
     echo "ERROR: SRC_PROC_DP does not exist: ${SRC_PROC_DP}" >&2
+    exit 1
+fi
+
+# --- array width vs frag shards --------------------------------------------
+# #SBATCH --array is a static directive, so nothing keeps it in step with the number of
+# shards preprocessing actually wrote. An array narrower than that leaves the tail shards
+# with no task at all: every task still succeeds and the run quietly covers only part of
+# mol_df. Check both the bounds and Slurm's task count so sparse arrays cannot pass.
+# Count the shards on disk and require one task each. Checked here, before the
+# venv build, so a misconfigured array fails in seconds rather than after the pip install.
+if [ "${FRAG_BACKEND}" = "hdf5" ]; then
+    NUM_FRAG_SHARDS=${NUM_FRAG_SHARDS:-$(ls -d ${DEST_FRAG_DP}/${SAVE_NAME}/shard_* 2>/dev/null | wc -l | tr -d ' ')}
+else
+    NUM_FRAG_SHARDS=${NUM_FRAG_SHARDS:-$(ls ${DEST_FRAG_DP}/${SAVE_NAME}/${SAVE_NAME}_*.tar 2>/dev/null | wc -l | tr -d ' ')}
+fi
+echo NUM_FRAG_SHARDS: ${NUM_FRAG_SHARDS}
+if [ "${NUM_FRAG_SHARDS}" -eq 0 ]; then
+    echo "ERROR: no ${FRAG_BACKEND} frag shards under ${DEST_FRAG_DP}/${SAVE_NAME}" >&2
+    echo "       Run preproc_infer_synced_dag_arr_hdf5.sh first, or set DEST_FRAG_DP/SAVE_NAME." >&2
+    exit 1
+fi
+# Skipped for a deliberate partial rerun: a subset that starts above task 0 cannot be a
+# full sweep. Set PARTIAL_ARRAY=1 for a partial rerun that does start at 0.
+PARTIAL_ARRAY=${PARTIAL_ARRAY:-0}
+if [ "${PARTIAL_ARRAY}" != "1" ] && [ -n "${SLURM_ARRAY_TASK_MAX}" ] &&
+   [ "${SLURM_ARRAY_TASK_MIN:-0}" -eq 0 ] &&
+   { [ $((SLURM_ARRAY_TASK_MAX + 1)) -ne "${NUM_FRAG_SHARDS}" ] ||
+     [ "${SLURM_ARRAY_TASK_COUNT:-$((SLURM_ARRAY_TASK_MAX + 1))}" -ne "${NUM_FRAG_SHARDS}" ]; }; then
+    echo "ERROR: array spans 0-${SLURM_ARRAY_TASK_MAX} with ${SLURM_ARRAY_TASK_COUNT:-unknown} tasks, but" >&2
+    echo "       ${DEST_FRAG_DP}/${SAVE_NAME} holds ${NUM_FRAG_SHARDS} frag shards." >&2
+    echo "       Resubmit with:  sbatch --array=0-$((NUM_FRAG_SHARDS - 1)) <script>" >&2
+    echo "       or set PARTIAL_ARRAY=1 if this subset is intentional." >&2
     exit 1
 fi
 
@@ -222,8 +262,8 @@ STAGE_DP=${SLURM_TMPDIR:-/tmp}/frag_${TASK_ID}
 mkdir -p ${STAGE_DP}
 
 if [ "${FRAG_BACKEND}" = "hdf5" ]; then
-    SHARD_H5=${DEST_FRAG_DP}/${SAVE_NAME}/shard_${FRAG_SHARD}/dags.h5
-    SHARD_META=${DEST_FRAG_DP}/${SAVE_NAME}/shard_${FRAG_SHARD}/meta_info.json
+    SHARD_H5=${DEST_FRAG_DP}/${SAVE_NAME}/shard_${TASK_ID}/dags.h5
+    SHARD_META=${DEST_FRAG_DP}/${SAVE_NAME}/shard_${TASK_ID}/meta_info.json
     if [ ! -f "${SHARD_H5}" ]; then
         echo "ERROR: missing frag shard ${SHARD_H5}" >&2
         exit 1
@@ -234,7 +274,7 @@ if [ "${FRAG_BACKEND}" = "hdf5" ]; then
     [ -f "${SHARD_META}" ] && cp ${SHARD_META} ${STAGE_DP}/
     FRAG_ARG=${STAGE_DP}/dags.h5
 else
-    SHARD_TAR=${DEST_FRAG_DP}/${SAVE_NAME}/${SAVE_NAME}_${FRAG_SHARD}.tar
+    SHARD_TAR=${DEST_FRAG_DP}/${SAVE_NAME}/${SAVE_NAME}_${TASK_ID}.tar
     if [ ! -f "${SHARD_TAR}" ]; then
         echo "ERROR: missing frag shard ${SHARD_TAR}" >&2
         exit 1
@@ -254,7 +294,7 @@ fi
 echo FRAG_ARG: ${FRAG_ARG}
 
 # === run inference =========================================================
-TASK_OUT_DP=${OUT_DP}/shard_${FRAG_SHARD}_${SUB_IDX}
+TASK_OUT_DP=${OUT_DP}/shard_${TASK_ID}
 mkdir -p ${TASK_OUT_DP}
 
 CUSTOM_ARGS=()

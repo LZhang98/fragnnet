@@ -3,9 +3,12 @@
 Tests for formula parsing, isotopic peak generation, and mass calculations.
 """
 
+import re
+
 import numpy as np
 import pytest
 import rdkit.Chem as Chem
+from pyteomics.mass import Composition
 
 from fragnnet.utils import formula_utils as fu
 
@@ -123,6 +126,107 @@ class TestPrecTypeDiffs:
         """Edge case: [M]+ adds no atoms, so its diff is a bare electron loss."""
         assert fu.PREC_TYPE_TO_FORMULA_DIFF["[M]+"] == ""
         assert fu.PREC_TYPE_TO_MASS_DIFF["[M]+"] == pytest.approx(-fu.ELECTRON_MASS, abs=1e-12)
+
+
+def _nonzero(delta_formula: str) -> dict[str, int]:
+    return {el: n for el, n in Composition(formula=delta_formula).items() if n != 0}
+
+
+def _parse_signed(rendered: str) -> dict[str, int]:
+    """Read a signed rendering back into element counts, independently of the renderer."""
+    counts: dict[str, int] = {}
+    for sign, body in re.findall(r"([+-])([A-Za-z0-9]*)", rendered):
+        mult = 1 if sign == "+" else -1
+        for element, num in re.findall(r"([A-Z][a-z]?)(\d*)", body):
+            counts[element] = counts.get(element, 0) + mult * int(num or 1)
+    return counts
+
+
+class TestFormulaDeltaToSignedStr:
+    """Signed rendering of a precursor delta, for fragment annotation."""
+
+    @pytest.mark.parametrize(
+        ("delta", "expected"),
+        [
+            ("H1", "+H"),
+            ("H-1", "-H"),
+            ("Na1", "+Na"),
+            ("Cl1", "+Cl"),
+            ("C1H1O2", "+CHO2"),
+            ("H-1C-1O-2", "-CHO2"),
+            ("N1H4", "+H4N"),
+            ("", ""),
+            # A delta that both removes and adds atoms keeps one group per sign, losses
+            # first, matching how its adduct name is written ([M-H+2i]-).
+            ("H-1I2", "-H+I2"),
+        ],
+    )
+    def test_rendering(self, delta, expected):
+        assert fu.formula_delta_to_signed_str(delta) == expected
+
+    def test_every_shipped_delta_round_trips(self):
+        """No shipped adduct may lose, invent or flip an atom in its rendering."""
+        for table in (fu.PREC_TYPE_TO_FORMULA_DIFF, fu.PREC_TYPE_TO_CMF_FORMULA_DIFF):
+            for prec_type, delta in table.items():
+                rendered = fu.formula_delta_to_signed_str(delta)
+                assert rendered == "" or rendered[0] in "+-", (prec_type, rendered)
+                assert _parse_signed(rendered) == _nonzero(delta), (prec_type, rendered)
+
+    def test_mixed_sign_delta_keeps_both_groups(self):
+        assert fu.formula_delta_to_signed_str("C1H-1") == "-H+C"
+
+
+class TestFormulaRowPrecDeltas:
+    """CRF/CMF split across the batch-concatenated formula rows."""
+
+    def test_crf_only_layout(self):
+        # 1 sample, NULL + 3 CRF rows. The NULL row stands for no fragment.
+        deltas = fu.formula_row_prec_deltas(
+            ["[M+H]+"], [0, 4], include_cmf=False, max_h_transfer=4
+        )
+        assert deltas.tolist() == ["", "H1", "H1", "H1"]
+
+    def test_negative_mode_delta(self):
+        deltas = fu.formula_row_prec_deltas(
+            ["[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4
+        )
+        assert deltas.tolist() == ["", "H-1", "H-1"]
+
+    def test_cmf_half_gets_the_migration_delta(self):
+        # NULL + CRF[1:2] + CMF[1:2] = 5 rows; [M+Na]+ keeps both channels.
+        deltas = fu.formula_row_prec_deltas(
+            ["[M+Na]+"], [0, 5], include_cmf=True, max_h_transfer=4
+        )
+        assert deltas.tolist() == ["", "Na1", "Na1", "H1", "H1"]
+
+    def test_cmf_ignored_when_it_duplicates_a_crf_h_shift(self):
+        # [M+H]+ CMF is the CRF state at delta_h = -1, so the dataset never emits it.
+        assert fu.cmf_duplicate_crf_h_shift("[M+H]+", 4) == -1
+        deltas = fu.formula_row_prec_deltas(
+            ["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=4
+        )
+        assert deltas.tolist() == ["", "H1", "H1", "H1", "H1"]
+
+    def test_cmf_emitted_when_h_transfer_cannot_reach_it(self):
+        # With no hydrogen transfer the CRF ladder never reaches the CMF state, so the
+        # dataset does emit the CMF half even for [M+H]+.
+        assert fu.cmf_duplicate_crf_h_shift("[M+H]+", 0) is None
+        deltas = fu.formula_row_prec_deltas(
+            ["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=0
+        )
+        assert deltas.tolist() == ["", "H1", "H1", "", ""]
+
+    def test_per_sample_precursor_across_a_batch(self):
+        deltas = fu.formula_row_prec_deltas(
+            ["[M+H]+", "[M-H]-"], [0, 3, 6], include_cmf=False, max_h_transfer=4
+        )
+        assert deltas.tolist() == ["", "H1", "H1", "", "H-1", "H-1"]
+
+    def test_cumsizes_length_is_validated(self):
+        with pytest.raises(ValueError, match="batch_size \\+ 1"):
+            fu.formula_row_prec_deltas(
+                ["[M+H]+", "[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4
+            )
 
 
 if __name__ == "__main__":

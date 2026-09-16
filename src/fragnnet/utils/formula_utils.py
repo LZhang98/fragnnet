@@ -1,7 +1,9 @@
 import re
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Literal
 
+import numpy as np
 import rdkit.Chem as Chem
 from pyteomics.mass import Composition
 
@@ -116,8 +118,14 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M+CH3COO]-": "C2H3O2",
 }
 
-PREC_TYPE_TO_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
-PREC_TYPE_TO_CMF_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()}
+# `formula=` throughout: a positional string is read by pyteomics as a PEPTIDE SEQUENCE.
+# Every value above happens to carry a digit (or be empty), which is what keeps the
+# positional form correct today - adding a plain "Na" or "H" would silently yield sodium's
+# or histidine's residue composition instead. Pinning the keyword removes that trap.
+PREC_TYPE_TO_COMP_DIFF = {k: Composition(formula=v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
+PREC_TYPE_TO_CMF_COMP_DIFF = {
+    k: Composition(formula=v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()
+}
 
 # A precursor delta can only make a fragment's ion formula impossible through the elements it
 # removes. Loss-type precursors such as [M-H-CO2]- subtract their neutral loss from every
@@ -316,6 +324,83 @@ def get_formulae_hill_notation(element_counts: dict[str, int]) -> str:
         if element_counts[element] > 1:
             formulae_string += str(element_counts[element])
     return formulae_string
+
+
+@lru_cache(maxsize=64)
+def formula_delta_to_signed_str(delta_formula: str) -> str:
+    """Render a precursor delta formula in signed notation for annotation.
+
+    Cached: the export calls this once per formula row, but the deltas come from the two
+    fixed precursor tables, so there are only a handful of distinct inputs.
+
+    ``"H1" -> "+H"``, ``"H-1" -> "-H"``, ``"H-1C-1O-2" -> "-CHO2"``. Atoms removed and atoms
+    added are grouped under one sign each, losses first, so a delta that does both reads the
+    way its adduct name does: ``[M-H+2i]-`` (``"H-1I2"``) renders as ``"-H+I2"``. Element
+    order and the dropped ``1`` suffix follow :func:`get_formulae_hill_notation`, so a
+    fragment annotation reads as ``"C6H4O2 -H"`` against a neutral formula string.
+
+    Args:
+        delta_formula: Delta in canonical form, e.g. a ``PREC_TYPE_TO_FORMULA_DIFF`` value.
+
+    Returns:
+        Signed string, or ``""`` for a zero delta (a direct cation/anion adds nothing).
+    """
+    counts = {el: n for el, n in Composition(formula=delta_formula).items() if n != 0}
+    rendered = ""
+    for sign, keep in (("-", False), ("+", True)):
+        group = {el: abs(n) for el, n in counts.items() if (n > 0) is keep}
+        if group:
+            rendered += sign + get_formulae_hill_notation(group)
+    return rendered
+
+
+def formula_row_prec_deltas(
+    prec_type_strs: Sequence[str],
+    formula_cumsizes: Sequence[int],
+    *,
+    include_cmf: bool,
+    max_h_transfer: int,
+) -> np.ndarray:
+    """Precursor delta formula for every formula row of a batch.
+
+    The dataset lays each sample's formula rows out as ``NULL, CRF[1:F]``, and appends
+    ``CMF[1:F]`` only when the CMF channel is actually enumerated — that is, when
+    ``include_cmf`` is set, the adduct has a CMF delta, and
+    :func:`cmf_duplicate_crf_h_shift` does not already emit that ion as a CRF hydrogen
+    shift. This reproduces that split so callers do not each re-derive it.
+
+    Args:
+        prec_type_strs: Precursor type per sample, length ``B``.
+        formula_cumsizes: Formula-row offsets into the batch-concatenated arrays,
+            length ``B + 1``.
+        include_cmf: The ``frag_params["include_cmf"]`` setting the batch was built with.
+        max_h_transfer: Hydrogen-transfer limit of the enumerated CRF channels.
+
+    Returns:
+        Object array of delta formula strings, shape ``[formula_cumsizes[-1]]``. The NULL
+        row of each sample is ``""``: it stands for no fragment, so no adduct applies.
+    """
+    offsets = [int(o) for o in formula_cumsizes]
+    if len(offsets) != len(prec_type_strs) + 1:
+        raise ValueError(
+            f"formula_cumsizes has {len(offsets)} entries for {len(prec_type_strs)} samples; "
+            "expected batch_size + 1"
+        )
+    deltas = np.empty(offsets[-1], dtype=object)
+    for i, prec_type in enumerate(prec_type_strs):
+        start, end = offsets[i], offsets[i + 1]
+        deltas[start:end] = PREC_TYPE_TO_FORMULA_DIFF[prec_type]
+        deltas[start] = ""  # NULL row
+        emits_cmf = (
+            include_cmf
+            and prec_type in PREC_TYPE_TO_CMF_FORMULA_DIFF
+            and cmf_duplicate_crf_h_shift(prec_type, max_h_transfer) is None
+        )
+        if emits_cmf:
+            # Layout: NULL, CRF[1:F], CMF[1:F] -> the CMF half starts after NULL + F rows.
+            cmf_start = start + (end - start + 1) // 2
+            deltas[cmf_start:end] = PREC_TYPE_TO_CMF_FORMULA_DIFF[prec_type]
+    return deltas
 
 
 def parse_formula(formula: str) -> dict[str, int]:

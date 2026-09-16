@@ -3,6 +3,7 @@ import json
 import multiprocessing
 import os
 import tempfile
+import warnings
 from dataclasses import dataclass
 from itertools import chain
 from typing import Any
@@ -16,6 +17,10 @@ from tqdm import tqdm
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.pl_model import FraGNNetPL
 from fragnnet.runner import load_config
+from fragnnet.utils.formula_utils import (
+    formula_delta_to_signed_str,
+    formula_row_prec_deltas,
+)
 from fragnnet.utils.frag_utils import PACKED_DAG_INDEX_DATASET, get_node_feats
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
@@ -609,6 +614,7 @@ COLUMN_SPECS = (
     ColumnSpec("pred_node_node_idxs", "node"),
     ColumnSpec("index_rebased"),
     ColumnSpec("pred_formula_strs", "formula", flag="return_formula_str"),
+    ColumnSpec("pred_formula_adducts", "formula", flag="return_annotation"),
     ColumnSpec("pred_node_ccs", "node", flag="return_cc_hash"),
 )
 
@@ -624,7 +630,14 @@ def selected_column_specs(return_formula_str: bool, return_cc_hash: bool) -> lis
     names and the row values are built from this one function, so a row can never be
     misaligned against its header.
     """
-    flags = {"return_formula_str": return_formula_str, "return_cc_hash": return_cc_hash}
+    flags = {
+        "return_formula_str": return_formula_str,
+        "return_cc_hash": return_cc_hash,
+        # `pred_formula_adducts` is what makes either annotation resolvable: it turns a
+        # neutral `pred_formula_strs` entry into the observed ion, and tells a `pred_node_ccs`
+        # bitmask which adduct that fragment carries on the CRF/CMF row it was reached by.
+        "return_annotation": return_formula_str or return_cc_hash,
+    }
     return [c for c in COLUMN_SPECS if c.flag is None or flags[c.flag]]
 
 
@@ -1332,11 +1345,18 @@ def run_inference_hdf5(
             return all(v is None or (isinstance(v, float) and np.isnan(v)) for v in save_v)
         return False
 
-    def concat_blocks(values):
+    def concat_blocks(values, column_name):
         """Flatten per-spectrum blocks into one array h5py can store."""
         if isinstance(values[0], th.Tensor):
             return th.cat(values, 0).detach().cpu().numpy()
         flat = [item for block in values for item in block]
+        if column_name == "pred_formula_adducts":
+            # A missing precursor type is NaN in the tabular export. HDF5 needs one
+            # string dtype across chunks, including when the first chunk is all missing.
+            return np.array(
+                ["NaN" if isinstance(v, float) and np.isnan(v) else v for v in flat],
+                dtype=h5py.string_dtype(),
+            )
         if flat and isinstance(flat[0], str):
             # Formula strings are ragged text, so they need a variable-length string dtype.
             return np.array(flat, dtype=h5py.string_dtype())
@@ -1484,7 +1504,7 @@ def run_inference_hdf5(
                         offset += n
                         ends.append(offset)
                     for k in present:
-                        resize_and_save(k, concat_blocks(preds_l[k]), group_start)
+                        resize_and_save(k, concat_blocks(preds_l[k], k), group_start)
                     # start/end points are per spectrum, so they go at the spectrum offset.
                     resize_and_save(f"{prefix}start_points", np.array(starts), start_point)
                     resize_and_save(f"{prefix}end_points", np.array(ends), start_point)
@@ -1880,6 +1900,42 @@ def process_batch_to_tabular_row(
         None if frag_formula_peak_mzs is None else batch_split_fn(frag_formula_peak_mzs)
     )
     assert len(pred_mzs_split) == len(pred_ints_split)
+
+    # Per-formula-row precursor delta for the annotation columns. The dataset lays formula
+    # rows out as NULL, CRF[1:F], CMF[1:F], so the delta a row carries depends on which half
+    # it is in; `formula_row_prec_deltas` is the same split the model applies when it builds
+    # ion formula strings. Indexed exactly like `frag_formula_str`, so a row's neutral
+    # formula and its adduct are always read from the same place. FraGNNet only: no other
+    # model here has a CRF/CMF formula axis.
+    formula_row_deltas = None
+    if (return_formula_str or return_cc_hash) and isinstance(model, FraGNNetPL):
+        # Degrade to NaN like every sibling field rather than raising: `spec_prec_type_str`
+        # exists only when spec_params.prec_type_str is on (False in config/template.yml and
+        # in nearly every experiment config), and it is `apply_inference_config` that forces
+        # it on. A caller reaching this function another way - a notebook, a future script, a
+        # unit-level call - would otherwise get a KeyError mid-export instead of a column of
+        # NaN. Warned rather than silent, because a missing adduct makes the neutral
+        # `pred_formula_strs` ambiguous, which is the whole reason this column exists.
+        # `frag_formula_cumsizes` needs no such guard: an annotation flag forces the
+        # formula axis into the index vars, and batch_filter_by_peak_intensity above
+        # rebases with it unconditionally, so a batch missing it never reaches this line.
+        prec_type_strs = batch_input.get("spec_prec_type_str")
+        if prec_type_strs is None:
+            warnings.warn(
+                "formula annotation was requested but the batch has no "
+                "'spec_prec_type_str' (spec_params.prec_type_str is off); "
+                "pred_formula_adducts will be NaN. Build the config with "
+                "apply_inference_config, which turns that key on.",
+                stacklevel=2,
+            )
+        else:
+            formula_row_deltas = formula_row_prec_deltas(
+                prec_type_strs,
+                frag_formula_cumsizes.cpu().tolist(),
+                include_cmf="cmf_h_formulae_idx" in model.model.frag_node_feats,
+                max_h_transfer=model.model.num_hs,
+            )
+
     batch_rows = None
     for b_idx in range(batch_size):
         # per-spectrum masks and basic fields
@@ -1986,22 +2042,37 @@ def process_batch_to_tabular_row(
             "index_rebased": bool(rebase_indices),
         }
 
-        if return_formula_str:
-            b_pred_formula_strs = np.nan
-            if frag_formula_str is not None:
-                f_offset = frag_formula_cumsizes[b_idx].item()
-                if rebase_indices and orig_formula_idxs_for_lookup is not None:
-                    # Use original (pre-rebase) indices
-                    global_f_idxs = orig_formula_idxs_for_lookup + f_offset
-                elif not rebase_indices and b_pred_formula_formula_idxs is not None:
-                    # Use current indices
-                    global_f_idxs = b_pred_formula_formula_idxs + f_offset
-                else:
-                    global_f_idxs = None
+        # Formula-axis annotation. `pred_formula_strs` and `pred_formula_adducts` address the
+        # batch-wide formula arrays with the same index, so it is resolved once for both.
+        global_f_idxs = None
+        if (return_formula_str or return_cc_hash) and frag_formula_cumsizes is not None:
+            f_offset = frag_formula_cumsizes[b_idx].item()
+            if rebase_indices and orig_formula_idxs_for_lookup is not None:
+                # Use original (pre-rebase) indices
+                global_f_idxs = orig_formula_idxs_for_lookup + f_offset
+            elif not rebase_indices and b_pred_formula_formula_idxs is not None:
+                # Use current indices
+                global_f_idxs = b_pred_formula_formula_idxs + f_offset
+        np_f_idxs = None if global_f_idxs is None else global_f_idxs.cpu().numpy()
 
-                if global_f_idxs is not None:
-                    b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
-            row_d["pred_formula_strs"] = b_pred_formula_strs
+        if return_formula_str:
+            row_d["pred_formula_strs"] = (
+                frag_formula_str[np_f_idxs].tolist()
+                if np_f_idxs is not None and frag_formula_str is not None
+                else np.nan
+            )
+
+        if return_formula_str or return_cc_hash:
+            # Signed rendering ("-H", "+Na"), so a peak reads as "C6H4O2 -H" against the
+            # neutral formula string, and a cc bitmask as that fragment plus this adduct.
+            if np_f_idxs is not None:
+                row_d["pred_formula_adducts"] = (
+                    [formula_delta_to_signed_str(d) for d in formula_row_deltas[np_f_idxs]]
+                    if formula_row_deltas is not None
+                    else [np.nan] * len(np_f_idxs)
+                )
+            else:
+                row_d["pred_formula_adducts"] = np.nan
 
         if return_cc_hash:
             b_pred_node_ccs = np.nan

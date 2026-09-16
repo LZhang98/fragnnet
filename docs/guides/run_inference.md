@@ -393,11 +393,12 @@ python scripts/run_inference.py \
 
 #### Fragment annotation
 
-`pred_formula_strs` and `pred_node_ccs` carry the fragment annotation. They are addressed
-by `pred_formula_formula_idxs` / `pred_node_node_idxs`, which used to be requested only by
-the `pred_formula_probs` / `pred_node_probs` tokens — so annotation came out NaN unless a
-probability was also asked for. `--return_formula_str` / `--return_cc_hash` now request
-those index arrays themselves (and, for cc hashes, the joint grid that prunes them).
+`pred_formula_strs`, `pred_formula_adducts` and `pred_node_ccs` carry the fragment
+annotation. They are addressed by `pred_formula_formula_idxs` / `pred_node_node_idxs`,
+which used to be requested only by the `pred_formula_probs` / `pred_node_probs` tokens — so
+annotation came out NaN unless a probability was also asked for. `--return_formula_str` /
+`--return_cc_hash` now request those index arrays themselves (and, for cc hashes, the joint
+grid that prunes them).
 
 ```bash
 --output_subset pred_mzs pred_ints pred_formula_probs pred_formula_node_probs \
@@ -410,7 +411,8 @@ All indices are rebased per spectrum, so every lookup below is local:
 | --- | --- | --- |
 | `pred_mzs`, `pred_ints` | peak | the spectrum |
 | `frag_formula_peak_idxs` | peak | peak -> formula |
-| `pred_formula_strs` | formula | formula string |
+| `pred_formula_strs` | formula | **neutral** fragment formula |
+| `pred_formula_adducts` | formula | precursor delta for that row, signed (`+H`, `-H`, `+Na`) |
 | `pred_formula_probs` | formula | P(f) |
 | `pred_joint_formula_idxs`, `pred_joint_node_idxs` | joint row | formula -> candidate node |
 | `pred_formula_node_probs` | joint row | P(n\|f) |
@@ -421,6 +423,33 @@ Peak `k`'s formula is `pred_formula_strs[frag_formula_peak_idxs[k]]`. Its fragme
 why the annotation needs P(n|f): one formula is generally explained by several DAG nodes
 (4 on average, see below). Resolve the cc bitmask to a SMILES against the parent molecule
 downstream.
+
+**The formula string is the neutral fragment, not the ion.** `pred_formula_adducts` carries
+the precursor delta that turns it into the observed ion, so a peak reads as
+`"C6H4O2 -H"` and the annotated fragment is that cc **plus** that adduct:
+
+```python
+f = row["frag_formula_peak_idxs"][k]                       # peak -> formula row
+rows = (row["pred_joint_formula_idxs"] == f).nonzero()     # its candidate nodes
+n = row["pred_joint_node_idxs"][rows[row["pred_formula_node_probs"][rows].argmax()]]
+
+ion_formula = f"{row['pred_formula_strs'][f]} {row['pred_formula_adducts'][f]}"
+fragment    = row["pred_node_ccs"][n]                      # atoms, ionized by that adduct
+```
+
+Verified against the measured m/z: neutral formula + exported delta reproduces every
+`pred_mzs` entry to 2.6e-5 Da.
+
+**Charge migration (CMF).** With `frag_params.include_cmf: True` the formula axis is laid
+out as `NULL, CRF[1:F], CMF[1:F]`, and the two halves carry *different* deltas — for
+`[M+Na]+` the CRF fragment keeps the sodium (`+Na`) while the CMF fragment is protonated
+(`+H`). The same neutral formula therefore appears twice with two adducts, and
+`pred_formula_adducts` is what tells them apart. `[M+H]+` and `[M-H]-` emit no CMF half at
+all: their CMF ion is already the CRF state at `delta_h = -/+1`
+(`cmf_duplicate_crf_h_shift`), so every row keeps the CRF delta.
+
+`pred_formula_adducts` is emitted whenever **either** `--return_formula_str` or
+`--return_cc_hash` is set: it is what makes both of them resolvable.
 
 **`--min_intensity` prunes the node arrays too.** It used to prune peaks, formulas and the
 joint grid but leave `pred_node_probs` / `pred_node_node_idxs` — and therefore
@@ -499,10 +528,15 @@ sbatch scripts/manual_slurm/fir/infer_synced_arr.sh
 sbatch scripts/manual_slurm/fir/infer_synced_arr_hdf5.sh
 ```
 
-Both default to one task per frag shard (`--array=0-14`, `CHUNK_SIZE=20000`). To shorten
-per-task wall time without regenerating DAGs, raise `SUB_SHARDS` and widen the array to
-`0-(15*SUB_SHARDS - 1)`; each task then covers `CHUNK_SIZE/SUB_SHARDS` molecules of one
-shard, and tasks past the end of mol_df exit cleanly.
+Both run one task per frag shard (`--array=0-14`, `CHUNK_SIZE=20000`): task i consumes
+shard i and predicts exactly the mol_df slice that built it, so no merge step is needed.
+`--array` must cover exactly the shards preprocessing wrote, and the scripts refuse to
+start otherwise; pass `PARTIAL_ARRAY=1` when rerunning a subset that starts at task 0.
+
+A task that runs out of wall time is resumed by resubmitting the array — each task skips
+the spec_ids already present in its own output dir. Output goes to
+`${OUT_DP}/shard_<task>/`, where `OUT_DP` carries the model tag (the W&B run id, or the
+checkpoint basename) so two models never share a directory and resume across them.
 
 ## Workflow Overview
 

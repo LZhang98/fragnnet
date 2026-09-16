@@ -7,7 +7,8 @@ the previous flush, so the defect only appears once a run exceeds chunk_size.
 
 The sibling module test_run_inference_hdf5_node_grouping.py covers the peak and node
 families; this one covers formula, joint, the 2-D `pred_node_ccs`, and the ragged-string
-`pred_formula_strs`, and it checks every family round-trips per spectrum.
+`pred_formula_strs` / `pred_formula_adducts`, and it checks every family round-trips per
+spectrum.
 """
 
 import types
@@ -29,6 +30,7 @@ COLUMNS = [
     "pred_formula_probs",
     "pred_formula_formula_idxs",
     "pred_formula_strs",
+    "pred_formula_adducts",
     "pred_joint_formula_idxs",
     "pred_joint_node_idxs",
 ]
@@ -68,6 +70,10 @@ def _blocks(s):
         "pred_formula_probs": th.full((s["n_formulas"],), 1.0 / s["n_formulas"], dtype=th.float64),
         "pred_formula_formula_idxs": th.arange(s["n_formulas"], dtype=th.int64) + tag,
         "pred_formula_strs": [f"C{s['spec']}H{i}" for i in range(s["n_formulas"])],
+        # CRF rows then a CMF row, so the family carries two distinct delta strings.
+        "pred_formula_adducts": [
+            "+H" if i < s["n_formulas"] - 1 else "+Na" for i in range(s["n_formulas"])
+        ],
         "pred_joint_formula_idxs": th.arange(s["n_joint"], dtype=th.int64) + tag,
         "pred_joint_node_idxs": th.arange(s["n_joint"], dtype=th.int64) + tag + 100,
     }
@@ -110,7 +116,12 @@ FAMILIES = [
     (
         "formula_",
         "n_formulas",
-        ["pred_formula_probs", "pred_formula_formula_idxs", "pred_formula_strs"],
+        [
+            "pred_formula_probs",
+            "pred_formula_formula_idxs",
+            "pred_formula_strs",
+            "pred_formula_adducts",
+        ],
     ),
     ("joint_", "n_joint", ["pred_joint_formula_idxs", "pred_joint_node_idxs"]),
 ]
@@ -141,7 +152,7 @@ def test_every_family_round_trips_per_spectrum(monkeypatch, tmp_path, batch_size
             for col in columns:
                 got = out[col][starts[i] : ends[i]]
                 want = expected[col]
-                if col == "pred_formula_strs":
+                if col in ("pred_formula_strs", "pred_formula_adducts"):
                     assert [b.decode() for b in got] == want, f"{col} spectrum {i}"
                 else:
                     np.testing.assert_array_equal(got, want.numpy(), err_msg=f"{col} spec {i}")
@@ -152,6 +163,33 @@ def test_node_ccs_keeps_its_second_dimension(monkeypatch, tmp_path):
     out = _read(_write(monkeypatch, tmp_path, [2, 2, 2], 2))
     assert out["pred_node_ccs"].ndim == 2
     assert out["pred_node_ccs"].shape == (sum(s["n_nodes"] for s in SPECTRA), 2)
+
+
+def test_missing_adducts_in_first_chunk_keep_formula_alignment(monkeypatch, tmp_path):
+    batches = _make_batches([2, 2, 2])
+    adduct_col = COLUMNS.index("pred_formula_adducts")
+    for i in range(2):
+        batches[0][adduct_col][i] = [np.nan] * SPECTRA[i]["n_formulas"]
+    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    path = str(tmp_path / "missing_adducts.hdf5")
+    script_utils.run_inference_hdf5(
+        types.SimpleNamespace(hparams=None),
+        dataloader=list(range(len(batches))),
+        device=th.device("cpu"),
+        chunk_size=2,
+        save_path=path,
+    )
+    out = _read(path)
+    starts, ends = out["formula_start_points"], out["formula_end_points"]
+    for i, spectrum in enumerate(SPECTRA):
+        got = [value.decode() for value in out["pred_formula_adducts"][starts[i] : ends[i]]]
+        want = (
+            ["NaN"] * spectrum["n_formulas"]
+            if i < 2
+            else _blocks(spectrum)["pred_formula_adducts"]
+        )
+        assert got == want
 
 
 def test_families_do_not_share_an_offset(monkeypatch, tmp_path):

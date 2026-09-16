@@ -28,11 +28,7 @@ from fragnnet.model.fragment_competition import TopKFragmentTransformer
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.formula_utils import (
-    PREC_TYPE_TO_CMF_FORMULA_DIFF,
-    PREC_TYPE_TO_FORMULA_DIFF,
-    cmf_duplicate_crf_h_shift,
-)
+from fragnnet.utils.formula_utils import formula_row_prec_deltas
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_VE,
     HEAVY_ELEMENTS,
@@ -2524,27 +2520,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 "spec_prec_type_strs must be provided if output_formula_str=True"
             )
             assert frag_formula_str.shape[0] == frag_real_formula_logprobs.shape[0]
-            prec_type_str = spec_prec_type_str
-            prec_type_delta_comp = np.array(
-                [PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))],
-                dtype=object,
+            prec_type_delta_comp = formula_row_prec_deltas(
+                spec_prec_type_str,
+                frag_formula_cumsizes.cpu().tolist(),
+                include_cmf=include_cmf,
+                max_h_transfer=self.num_hs,
             )
-            prec_type_delta_comp = prec_type_delta_comp[frag_formula_batch_idxs.cpu().numpy()]
-            if include_cmf:
-                formula_offsets = frag_formula_cumsizes.cpu().tolist()
-                for i, prec_type in enumerate(prec_type_str):
-                    if prec_type not in PREC_TYPE_TO_CMF_FORMULA_DIFF:
-                        continue  # Direct ions such as [M]+ have only CRF rows.
-                    if cmf_duplicate_crf_h_shift(prec_type, self.num_hs) is not None:
-                        # The dataset skips CMF when a CRF shift already emits that ion,
-                        # so this sample has CRF rows only and must keep its CRF labels.
-                        continue
-                    start, end = formula_offsets[i : i + 2]
-                    # Dataset layout: NULL, CRF[1:F], CMF[1:F].
-                    cmf_start = start + (end - start + 1) // 2
-                    prec_type_delta_comp[cmf_start:end] = PREC_TYPE_TO_CMF_FORMULA_DIFF[
-                        prec_type
-                    ]
             pred_formula_str = [
                 combine_formulae(frag_formula_str[i], prec_type_delta_comp[i])
                 if frag_formula_str[i] != ""

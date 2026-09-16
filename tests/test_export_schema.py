@@ -57,6 +57,7 @@ class TestTable:
     def test_annotation_columns_append_in_order(self):
         assert [c.name for c in selected_column_specs(True, True)] == BASE_COLUMNS + [
             "pred_formula_strs",
+            "pred_formula_adducts",
             "pred_node_ccs",
         ]
 
@@ -64,9 +65,11 @@ class TestTable:
         ("formula_str", "cc_hash", "extra"),
         [
             (False, False, []),
-            (True, False, ["pred_formula_strs"]),
-            (False, True, ["pred_node_ccs"]),
-            (True, True, ["pred_formula_strs", "pred_node_ccs"]),
+            # `pred_formula_adducts` rides on EITHER annotation flag: it is what turns a
+            # neutral formula string into the ion, and what tells a cc bitmask its adduct.
+            (True, False, ["pred_formula_strs", "pred_formula_adducts"]),
+            (False, True, ["pred_formula_adducts", "pred_node_ccs"]),
+            (True, True, ["pred_formula_strs", "pred_formula_adducts", "pred_node_ccs"]),
         ],
     )
     def test_each_flag_combination(self, formula_str, cc_hash, extra):
@@ -114,12 +117,30 @@ class TestTable:
         assert subset == full
 
 
+class _StubInner:
+    """Just the two attributes the exporter reads to place the CRF/CMF formula split.
+
+    Canonical definition: `tests/test_inference_annotation_without_probs.py` imports this
+    one rather than keeping a second copy, so a change to what the exporter reads off
+    `model.model` cannot leave one suite passing against a stale stub shape.
+    """
+
+    def __init__(
+        self,
+        frag_node_feats: tuple[str, ...] = ("cc", "h_formulae_idx"),
+        num_hs: int = 4,
+    ):
+        self.frag_node_feats = frag_node_feats
+        self.num_hs = num_hs
+
+
 class _StubFraGNNet(FraGNNetPL):
     """FraGNNetPL-typed stub replaying one canned model output, skipping __init__."""
 
     def __init__(self, batch_output: dict):
         self.training = False
         self._batch_output = batch_output
+        self.model = _StubInner()
 
     @property
     def hparams(self):
@@ -165,6 +186,7 @@ def one_spectrum():
         "batch_size": th.tensor(1),
         "frag_formula_cumsizes": th.tensor([0, 4]),
         "frag_num_nodes": th.tensor([0, 3]),
+        "spec_prec_type_str": np.array(["[M+H]+"]),
         "frag_formula_str": np.array(["", "CH4", "C2H6", "C3H8"]),
         "frag_formula_peak_idxs": th.tensor([1, 2, 3]),
         "frag_formula_peak_mzs": th.tensor([100.0, 200.0, 300.0]),

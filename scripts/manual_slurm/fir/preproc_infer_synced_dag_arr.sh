@@ -15,7 +15,7 @@
 # SYNCED inference preprocessing, STEP 03 ONLY (DAG feature generation), as an array
 # job -> one bz2 pickle per molecule under dags/, shipped as one .tar per shard.
 #
-# Array sizing: 289,480 molecules / CHUNK_SIZE=20000 -> 15 tasks (0-14). Keep
+# Array sizing: 289,249 molecules / CHUNK_SIZE=20000 -> 15 tasks (0-14). Keep
 # --array and CHUNK_SIZE in sync when either changes.
 
 DATASET_NAME=synced

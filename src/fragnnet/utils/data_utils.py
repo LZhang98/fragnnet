@@ -1030,16 +1030,23 @@ def composition_to_string(x):
 
 
 def combine_formulae(formula_1, formula_2):
-    if isinstance(formula_1, str):
-        formula_1 = Composition(formula_1)
-    if isinstance(formula_2, str):
-        formula_2 = Composition(formula_2)
-    combine_comp = Composition(formula_1) + Composition(formula_2)
+    # `formula=` is required: pyteomics reads a positional string as a PEPTIDE SEQUENCE, so
+    # Composition("C") is cysteine, not carbon. Any digit-free formula in the one-letter amino
+    # acid alphabet (C, N, O, CO, CN, CNO, ...) silently misparsed before this was keyword-ed.
+    # Each operand is normalised exactly once; the previous `Composition(formula_1) +
+    # Composition(formula_2)` re-copied both on every call, once per predicted fragment.
+    formula_1 = (
+        Composition(formula=formula_1) if isinstance(formula_1, str) else Composition(formula_1)
+    )
+    formula_2 = (
+        Composition(formula=formula_2) if isinstance(formula_2, str) else Composition(formula_2)
+    )
+    combine_comp = formula_1 + formula_2
     return composition_to_string(combine_comp)
 
 
 def parse_product_isotope(annot, precursor):
-    formula = Composition("")
+    formula = Composition(formula="")
     precursor = Composition(formula=precursor)
     adducts = []
     losses = []
@@ -1108,7 +1115,10 @@ def parse_annotations(row):
     if error is not None:
         error = repr(error)
         return np.nan, np.nan, np.nan, np.nan, np.nan, error
-    precursor = Composition(formula)
+    # `formula=` for the same reason as in `combine_formulae`: this is a molecular formula
+    # in Hill notation, which drops the "1" on count-one elements, so an all-single-atom
+    # formula like "CHN" or "CO" is a valid peptide sequence and parses as one positionally.
+    precursor = Composition(formula=formula)
     if prec_type == "[M+H]+":
         precursor["H"] += 1
     elif prec_type == "[M-H]-":

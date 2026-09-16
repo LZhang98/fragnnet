@@ -16,7 +16,7 @@
 # job -> one packed dags.h5 per shard. Uses the --use_hdf5 True + --skip_stats True
 # fast path in 03_prepare_dag_feats.py.
 #
-# Array sizing: 289,480 molecules / CHUNK_SIZE=20000 -> 15 tasks (0-14). Keep
+# Array sizing: 289,249 molecules / CHUNK_SIZE=20000 -> 15 tasks (0-14). Keep
 # --array and CHUNK_SIZE in sync when either changes.
 #
 # Each task writes ${DEST_FRAG_DP}/${SAVE_NAME}/shard_<task>/{dags.h5,meta_info.json}.

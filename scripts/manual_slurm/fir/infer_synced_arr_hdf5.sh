@@ -20,9 +20,11 @@
 # Task i predicts mol_df rows [i*CHUNK_SIZE, (i+1)*CHUNK_SIZE) - the same slice that
 # built shard i - so merge_dag_h5_shards.py is NOT needed here; merge only when you
 # want to run inference as a single job. Keep --array and CHUNK_SIZE in sync with the
-# preprocessing array (289,480 molecules / 20000 -> 15 tasks).
+# preprocessing array (289,249 molecules / 20000 -> 15 tasks); the common body hard-fails
+# if --array does not cover exactly the shards on disk. A task that runs out of wall time
+# is resumed by resubmitting the array - it skips whatever it already wrote.
 #
-# Output: ${OUT_DP}/shard_<frag_shard>_<sub>/predictions_chunk_*.pkl
+# Output: ${OUT_DP}/shard_<task>/predictions_chunk_*.pkl
 
 DATASET_NAME=synced
 MAX_DEPTH=3
@@ -31,22 +33,41 @@ SAVE_NAME=${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_hdf5
 FRAG_BACKEND=hdf5
 CHUNK_SIZE=20000
 
-# One array task per frag shard by default. Raise SUB_SHARDS to split each shard
-# across several tasks (shorter per-task wall time, same DAGs) and widen --array to
-# 0-(15*SUB_SHARDS - 1) to match; tasks past the end of mol_df exit cleanly.
-SUB_SHARDS=${SUB_SHARDS:-1}
-
 # --- MODEL: set one of these two ------------------------------------------
-# Local checkpoint. Relative paths resolve against FRAGNNET_DP.
-MODEL_CKPT=${MODEL_CKPT:-saved_ckpts/deepmet/nist20_inchikey_fraggnn_d3_ma_mi_amolc_cv_all_hifszbst.ckpt}
-# ...or a W&B run id, used only when MODEL_CKPT is empty. The download works from the
-# compute nodes, but warm the cache once before submitting so the tasks do not race
-# each other writing the same cached .ckpt:
+# A checkpoint and its training config are ONE pairing, never two independent knobs:
+# get_config_from_ckpt writes CUSTOM_FP's contents over the checkpoint's saved hparams
+# with no check that the two belong together, so a config from the wrong run loads
+# silently and mistrains the architecture it builds. The defaults below are therefore
+# set as a unit - override a model selector and you MUST pass CUSTOM_FP with it.
+#
+# W&B run id, resolved to that run's best checkpoint under MODEL_SAVE_DP. The download
+# works from the compute nodes, but WARM THE CACHE ONCE before submitting so the array
+# tasks do not race each other writing the same cached .ckpt:
 #   python -c "from fragnnet.utils.misc_utils import get_best_ckpt_from_wandb; \
-#              print(get_best_ckpt_from_wandb('saved_ckpts', '<run_id>'))"
+#              print(get_best_ckpt_from_wandb('saved_ckpts', 'jnokddr9'))"
 WANDB_RUN_ID=${WANDB_RUN_ID:-}
-# Training config for that checkpoint, if it needs one (relative to FRAGNNET_DP).
+# ...or a local checkpoint, which wins when set. Relative paths resolve against
+# FRAGNNET_DP. Passing the path printed by the command above skips the W&B lookup
+# entirely, which is one less moving part across 15 tasks.
+MODEL_CKPT=${MODEL_CKPT:-}
+# Training config for the selected checkpoint (relative to FRAGNNET_DP). REQUIRED, not
+# optional: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is given,
+# so leaving this empty makes config_d the ckpt's saved hparams alone and every config key
+# added since it was trained is missing -> model init dies on self.hparams.<new_key>.
 CUSTOM_FP=${CUSTOM_FP:-}
+
+if [ -z "${MODEL_CKPT}" ] && [ -z "${WANDB_RUN_ID}" ]; then
+    # Nothing overridden: use the default run together with the config it was trained on.
+    WANDB_RUN_ID=jnokddr9
+    CUSTOM_FP=${CUSTOM_FP:-config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml}
+elif [ -z "${CUSTOM_FP}" ]; then
+    echo "ERROR: MODEL_CKPT/WANDB_RUN_ID was overridden but CUSTOM_FP was not." >&2
+    echo "       Pass the training config belonging to that checkpoint:" >&2
+    echo "         CUSTOM_FP=config/<...>.yml sbatch <script>" >&2
+    echo "       There is no default that is safe here - the config is written over the" >&2
+    echo "       checkpoint's hparams unchecked, so the wrong one loads silently." >&2
+    exit 1
+fi
 
 BATCH_SIZE=${BATCH_SIZE:-16}
 

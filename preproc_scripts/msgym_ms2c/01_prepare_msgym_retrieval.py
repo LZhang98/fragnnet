@@ -67,6 +67,7 @@ def export_msgym_json(
     candidates_fp: Path,
     output_dp: Path,
     subset: str,
+    fold: str = "test",
 ) -> tuple[Path, Path]:
     """Export MSGYM JSON candidates and TSV metadata to a canonical manifest."""
     # 1. Select the retrieval spectra and load their candidate lists.
@@ -84,7 +85,10 @@ def export_msgym_json(
     missing = required_columns - set(spec_df.columns)
     if missing:
         raise ValueError(f"Missing required MSGYM columns in {tsv_fp}: {sorted(missing)}")
-    spec_df = spec_df[spec_df["fold"] == "test"].copy()
+    available_folds = set(spec_df["fold"].unique())
+    if fold not in available_folds:
+        raise ValueError(f"Fold {fold!r} is absent from {tsv_fp}; available: {sorted(available_folds)}")
+    spec_df = spec_df[spec_df["fold"] == fold].copy()
     if subset == "simulation_challenge":
         spec_df = spec_df[spec_df["simulation_challenge"]].copy()
 
@@ -144,9 +148,10 @@ def export_msgym_json(
         candidates_fp, index=False
     )
     logger.info(
-        "Exported %d query-candidate records and %d unique candidates",
+        "Exported %d query-candidate records and %d unique candidates from the %s fold",
         len(manifest),
         len(manifest["candidate_smiles"].unique()),
+        fold,
     )
     return manifest_fp, candidates_fp
 
@@ -236,7 +241,13 @@ def get_args() -> argparse.Namespace:
         "--subset",
         choices=["simulation_challenge", "all"],
         default="simulation_challenge",
-        help="Use test-fold simulation-challenge spectra (default) or all test spectra.",
+        help="Use simulation-challenge spectra (default) or every spectrum in the fold.",
+    )
+    export_parser.add_argument(
+        "--fold",
+        choices=["train", "val", "test"],
+        default="test",
+        help="MSGYM fold to export (default: test).",
     )
 
     proc_parser = subparsers.add_parser(
@@ -253,7 +264,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     args = get_args()
     if args.command == "export":
-        export_msgym_json(args.tsv_fp, args.candidates_fp, args.output_dp, args.subset)
+        export_msgym_json(
+            args.tsv_fp, args.candidates_fp, args.output_dp, args.subset, args.fold
+        )
     elif args.command == "build-proc":
         build_proc_from_manifest(args.manifest_fp, args.output_dp)
 
