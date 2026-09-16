@@ -18,13 +18,31 @@ N_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("N")
 O_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("O")
 CL_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl")
 K_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("K")
-I_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("I")
 C_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("C")
 
+# NIST ``+Ni`` precursor labels -- ``[M+H+2i]+``, ``[M+H+4i]+``, ``[M-H+2i]-``, ``[M+Na+2i]+``
+# and friends -- are NOT SUPPORTED and are deliberately absent from every table below.
+#
+# The trailing ``+Ni`` is NIST notation for "the M+N isotopologue was isolated as the precursor":
+# the quadrupole selected the M+2 (or M+4) peak of the natural isotope envelope instead of the
+# monoisotopic one. It does not name an added adduct atom. These entries used to be present and
+# read the ``i`` as IODINE (``"H1I2"``, ``H_MASS + 2 * I_MASS``), putting the precursor ~253.8 Da
+# off; the ``prec_types`` filter in every shipped config kept them out of training, so the error
+# stayed latent.
+#
+# They cannot be re-added as a fixed delta, because the shift is formula dependent: +2i is
+# +1.99705 Da when the carrier is 37Cl, +1.99795 for 81Br, +1.99812 for 41K, +2.00671 for two
+# 13C. Real support would also have to shift every halogen-retaining *fragment*, since the heavy
+# atom is carried through fragmentation -- these are not [M+H]+ spectra with an offset precursor.
+# NIST20 holds ~27k ``[M+H+2i]+`` spectra plus smaller ``+4i`` and other ``+Ni`` variants.
+#
+# Absence from these tables is what enforces it: ``base_dataset.py`` asserts every configured
+# prec_type is a key of ``PREC_TYPE_TO_MASS_DIFF``, ``clean_spectra_utils._subformula_masses``
+# raises on a missing key, and the ``spec_df[...isin(PREC_TYPE_TO_MASS_DIFF)]`` filters across
+# scripts/eval drop them from analyses.
 PREC_TYPE_TO_MASS_DIFF = {
     "[M+H]+": H_MASS - ELECTRON_MASS,
     "[M+Na]+": NA_MASS - ELECTRON_MASS,
-    "[M+H+2i]+": H_MASS + 2 * I_MASS - ELECTRON_MASS,
     "[M+K]+": K_MASS - ELECTRON_MASS,
     "[M+NH4]+": N_MASS + 4 * H_MASS - ELECTRON_MASS,
     "[M-H2O+H]+": -H_MASS - O_MASS - ELECTRON_MASS,
@@ -37,7 +55,6 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M-H-CO2]-": -H_MASS - C_MASS - 2 * O_MASS + ELECTRON_MASS,
     "[M+Cl]-": CL_MASS + ELECTRON_MASS,
     "[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
-    "[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
@@ -71,13 +88,11 @@ PREC_TYPE_TO_MASS_DIFF = {
 PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+H]+": -ELECTRON_MASS,  # direct cation: observed ≈ neutral mass
     "[M+Na]+": H_MASS - ELECTRON_MASS,
-    "[M+H+2i]+": H_MASS - ELECTRON_MASS,
     "[M+K]+": H_MASS - ELECTRON_MASS,
     "[M+NH4]+": H_MASS - ELECTRON_MASS,
     # negative stuff
     "[M-H]-": ELECTRON_MASS,  # direct anion: observed ≈ neutral mass
     "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # loses HCl, so fragments are [frag-H]-
-    "[M-H+2i]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": -H_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
@@ -86,12 +101,10 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
 PREC_TYPE_TO_CMF_FORMULA_DIFF = {
     "[M+H]+": "",
     "[M+Na]+": "H1",
-    "[M+H+2i]+": "H1",
     "[M+K]+": "H1",
     "[M+NH4]+": "H1",
     "[M-H]-": "",
     "[M+Cl]-": "H-1",
-    "[M-H+2i]-": "H-1",
     "[M+CH3COOH-H]-": "H-1",
     "[M+CH3COO]-": "H-1",
     "[M+HCOOH-H]-": "H-1",
@@ -100,7 +113,6 @@ PREC_TYPE_TO_CMF_FORMULA_DIFF = {
 PREC_TYPE_TO_FORMULA_DIFF = {
     "[M+H]+": "H1",
     "[M+Na]+": "Na1",
-    "[M+H+2i]+": "H1I2",
     "[M+K]+": "K1",
     "[M+NH4]+": "N1H4",
     "[M-H2O+H]+": "O-1H-1",
@@ -112,7 +124,6 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M-H-CO2]-": "H-1C-1O-2",
     "[M+Cl]-": "Cl1",
     "[M-H-H2O]-": "H-3O-1",
-    "[M-H+2i]-": "H-1I2",
     "[M+HCOOH-H]-": "C1H1O2",
     "[M+CH3COOH-H]-": "C2H3O2",
     "[M+CH3COO]-": "C2H3O2",
@@ -335,9 +346,10 @@ def formula_delta_to_signed_str(delta_formula: str) -> str:
 
     ``"H1" -> "+H"``, ``"H-1" -> "-H"``, ``"H-1C-1O-2" -> "-CHO2"``. Atoms removed and atoms
     added are grouped under one sign each, losses first, so a delta that does both reads the
-    way its adduct name does: ``[M-H+2i]-`` (``"H-1I2"``) renders as ``"-H+I2"``. Element
-    order and the dropped ``1`` suffix follow :func:`get_formulae_hill_notation`, so a
-    fragment annotation reads as ``"C6H4O2 -H"`` against a neutral formula string.
+    way an adduct name is written: ``"H-1Na1"`` renders as ``"-H+Na"``. No shipped precursor
+    delta currently mixes signs, but the rendering handles it. Element order and the dropped
+    ``1`` suffix follow :func:`get_formulae_hill_notation`, so a fragment annotation reads as
+    ``"C6H4O2 -H"`` against a neutral formula string.
 
     Args:
         delta_formula: Delta in canonical form, e.g. a ``PREC_TYPE_TO_FORMULA_DIFF`` value.

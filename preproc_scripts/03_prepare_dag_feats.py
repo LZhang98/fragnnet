@@ -691,8 +691,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--isotopes",
         type=booltype,
-        default=True,
-        help="Whether to compute isotopic peak distributions",
+        default=False,
+        help=(
+            "Whether to compute isotopic peak distributions. Keep this False unless a "
+            "config sets frag_params.num_isotopes > 1: formula_peak_mzs is sorted by "
+            "abundance before it is truncated to num_isotopes, so with the default "
+            "num_isotopes=1 an isotope-expanded table hands the model the MOST ABUNDANT "
+            "isotopologue instead of the monoisotopic mass (M+2 for >=3 Cl / >=2 Br). "
+            "Training DAGs are built with ISO_FLAG=False, so True here is a train/serve skew."
+        ),
     )
     parser.add_argument(
         "--wandb_mode",

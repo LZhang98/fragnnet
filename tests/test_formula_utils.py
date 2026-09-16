@@ -157,8 +157,10 @@ class TestFormulaDeltaToSignedStr:
             ("N1H4", "+H4N"),
             ("", ""),
             # A delta that both removes and adds atoms keeps one group per sign, losses
-            # first, matching how its adduct name is written ([M-H+2i]-).
-            ("H-1I2", "-H+I2"),
+            # first, matching how an adduct name is written. Synthetic: no shipped
+            # precursor delta mixes signs (the one that did, [M-H+2i]-, was an iodine
+            # misparse of NIST's isotope-selected label and is no longer supported).
+            ("H-1Na1", "-H+Na"),
         ],
     )
     def test_rendering(self, delta, expected):
