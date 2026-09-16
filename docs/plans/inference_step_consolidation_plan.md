@@ -489,6 +489,70 @@ guard is left for the case it was written for.
 than the earlier 24. Per-spectrum shapes are correct throughout, so this remains the
 undertrained debug head, not a broadcast bug.
 
+## HDF5 export size (2026-09-16)
+
+Two changes, after checking a real 96k-spectrum eval
+(`output/inference_eval/jnokddr9/predictions_test.hdf5`, 212 MB).
+
+**`--drop_none_cols` now reaches the HDF5 writer.** The flag existed on
+`run_save_inference_eval.py` but only `run_inference.py` ever read it, so an HDF5 eval
+carried a full float64 column of NaN for every output the run did not request - 9 of the
+20 datasets in that file. The decision is made on the **first flush and enforced after**:
+this writer appends to one file, so a column skipped early and written late would be short
+by every earlier spectrum. A dropped column that later holds values raises instead.
+
+**Datasets are chunked and compressed** (`gzip` level 4, byte-shuffle for fixed-width
+numbers, `chunks = (65536,) + trailing`). This replaces a dtype downcast that was proposed
+and rejected:
+
+| index column, written through the real streaming path | size |
+| --- | --- |
+| current (int64, no options) | 80.1 MB |
+| int32 downcast | 40.0 MB |
+| shuffle + gzip4, h5py auto-chunk (1024 rows) | 9.3 MB |
+| shuffle + gzip4, `chunks=(65536,)` | **5.1 MB** |
+
+Compression wins 16x where the downcast wins 2x, and stacking int32 on top adds ~5%. So
+**no dtype changes**: int64 indices stay int64, and the probability columns were already
+float32. Compression is very uneven and it is worth knowing which way: int64 index columns
+compress 15-26x (small integers padded into 8 bytes, byte-shuffled into runs of zeros),
+float32 probabilities only 1.1-1.3x (high-entropy mantissas). Even the float64 metric
+columns land at 0.30 MB compressed, below the 0.4 MB a float32 downcast would have given,
+so that idea is superseded too.
+
+Measured end to end: the debug eval's default output 1,549,728 -> 171,571 bytes (9.0x);
+the jnokddr9 file recompressed column by column 212.5 -> 65.7 MB (3.2x) with every column
+byte-identical and dtype-unchanged.
+
+The large chunk and the compression are one decision, not two. HDF5 allocates a whole chunk
+as soon as any of it is touched, so a 65536-row chunk holding a 378-row column costs 528 KB
+raw and 7 KB compressed. `compression=None` therefore falls back to `chunks=True`.
+
+`gzip` over `lzf` deliberately: lzf is an h5py-only filter, gzip is standard HDF5. Every
+reader in this repo is h5py, but gzip is both smaller at level 4 and portable, and the
+write cost is ~0.46 s per 80 MB column.
+
+### Not done
+
+int32 indices. If it is ever revisited, the guard has to be: check max/min **before**
+casting (numpy wraps silently), decide once at the first flush and raise later (h5py cannot
+widen a dataset's dtype), gate on `rebase_indices=True` (unrebased indices scale with run
+size, rebased ones are bounded by one spectrum's DAG - max 36,734 measured), and never
+touch `start_points`/`end_points` or `spec_id`/`mol_id`. At 1M spectra the joint/node
+offsets reach ~700M, only 3.1x under the int32 ceiling, and `spec_id` already reaches
+1,010,470.
+
+### Validation
+
+- **Full suite:** 2337 passed, 1 skipped, 2 xfailed (+16: 7 for `drop_none_cols`, 9 for
+  compression).
+- New tests pin that every dataset is chunked and compressed, that shuffle is on for
+  numbers and off for variable-length strings, that floats/int64 dtypes/vlen strings/index
+  pairs all survive the round trip, and that `compression=None` opts out of both the filter
+  and the large chunk.
+- **Ruff:** clean on the new test file; the 3 findings in `script_utils.py` are
+  pre-existing and elsewhere.
+
 ## Follow-up
 
 Remove the `pred_logprobs` compatibility key once the ensembling artifacts are regenerated

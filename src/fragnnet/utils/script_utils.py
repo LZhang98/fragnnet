@@ -578,6 +578,12 @@ class ColumnSpec:
     flag: str | None = None
 
 
+# Rows per HDF5 chunk. Compression works per chunk, so a chunk large enough to hold long
+# runs of similar values is what turns the index columns from 8 bytes per small integer
+# into ~0.5. Measured on a real index column: h5py's auto-chunk (1024 rows) gives 9.3 MB,
+# this gives 5.1 MB, uncompressed 80 MB.
+_HDF5_CHUNK_LEN = 1 << 16
+
 # HDF5 index-pair prefix per ragged family. Readers already expect these exact spellings
 # (start_points, node_start_points, formula_start_points, joint_start_points).
 RAGGED_FAMILY_PREFIX = {"peak": "", "node": "node_", "formula": "formula_", "joint": "joint_"}
@@ -1232,6 +1238,8 @@ def run_inference_hdf5(
     chunk_size=10000,
     save_path: str = "",
     drop_none_cols: bool = True,
+    compression: str | None = "gzip",
+    compression_opts: int | None = 4,
 ) -> pd.DataFrame:
     """
     Stream inference results to an HDF5 file and return the number of spectra written.
@@ -1273,6 +1281,11 @@ def run_inference_hdf5(
             return_formula_and_cc: Whether to return formula strings and CCs
             rebase_indices: Whether to rebase indices
             drop_none_cols: Skip scalar columns that hold nothing but NaN placeholders
+            compression: HDF5 filter for every dataset, or None to store raw. gzip is a
+                    standard HDF5 filter, so the file stays readable outside h5py; lzf is
+                    faster but h5py-only.
+            compression_opts: Level passed to the filter (gzip 0-9); None for filters that
+                    take no level.
 
     Returns:
             DataFrame with all inference results
@@ -1341,6 +1354,35 @@ def run_inference_hdf5(
     start_point = 0
     with h5py.File(save_path, "w") as save_file:
 
+        def create_kwargs(dtype, trailing):
+            """Chunking/compression for one dataset.
+
+            Compression is what makes this file small: the index columns are small integers
+            stored in 8 bytes, so byte-shuffling exposes long runs of zeros and gzip takes
+            them ~15-26x. The float probability columns are high-entropy and barely move
+            (~1.2x) - they are already float32, and neither a dtype change nor a filter
+            helps them. Measured on a real 96k-spectrum eval: an 80 MB index column becomes
+            5.1 MB.
+
+            The large chunk needs compression to be safe. HDF5 allocates a whole chunk once
+            any of it is touched, so a 65536-row chunk holding a 378-row column costs 528 KB
+            raw - but 7 KB once the unwritten tail is compressed.
+            """
+            if not compression:
+                # Let h5py size the chunks; a big one would be pure waste uncompressed.
+                return {"chunks": True}
+            kwargs = {
+                "chunks": (_HDF5_CHUNK_LEN,) + trailing,
+                "compression": compression,
+            }
+            if compression_opts is not None:
+                kwargs["compression_opts"] = compression_opts
+            if dtype.kind in "biufc":
+                # Byte-shuffle only applies to fixed-width numbers; it is a no-op on the
+                # variable-length strings in pred_formula_strs.
+                kwargs["shuffle"] = True
+            return kwargs
+
         def resize_and_save(k, save_v, start_point):
             if k not in save_file:
                 # Trailing dims are kept fixed and only axis 0 grows, so 2-D columns such as
@@ -1350,6 +1392,7 @@ def run_inference_hdf5(
                     shape=(0,) + save_v.shape[1:],
                     dtype=save_v.dtype,
                     maxshape=(None,) + save_v.shape[1:],
+                    **create_kwargs(save_v.dtype, save_v.shape[1:]),
                 )  # important to avoid bug in large number
             save_file[k].resize(start_point + len(save_v), axis=0)
             save_file[k][start_point : start_point + len(save_v)] = save_v
@@ -1359,12 +1402,14 @@ def run_inference_hdf5(
             shape=(0,),
             dtype=np.int64,
             maxshape=(None,),
+            **create_kwargs(np.dtype(np.int64), ()),
         )
         save_file.create_dataset(
             "end_points",
             shape=(0,),
             dtype=np.int64,
             maxshape=(None,),
+            **create_kwargs(np.dtype(np.int64), ()),
         )
 
         batch_iterator = run_inference_tabular_iter(
