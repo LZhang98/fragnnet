@@ -278,5 +278,37 @@ FraGNNet reference config inherits. The FraGNNet-only `ce_scale`/`frag_mode_scal
 layers have no MASShatter equivalent by design, since its heads consume the context vector
 directly, and `prec_mz` is not a conditioning input in either model.
 
-Next: run the launcher on the Vulcan login node, submit, and record the scheduler job ID and W&B
-run ID here.
+### Unmerged proposal-warmup ladder (2026-09-16)
+
+Step 3 leaves the warmup policy open: "a 16-epoch proposal-only phase is not established as
+necessary for unmerged spectra. Resolve it from the current merged warmup controls or a bounded
+matched pilot." Two arms now supply that pilot, in the same `cmf/` directory as the anchor and
+named `<anchor stem>_warmup_e0_{2,4}.yml`. They vary
+`mass_shatter_proposal_only_until_epoch` and nothing else: a resolved-config comparison against
+the anchor returns exactly that one key for each arm. The anchor, which leaves the key null, is
+the ladder's no-warmup control.
+
+The boundaries are the two short rungs of the merged
+[warmup_duration](../../config/masshatter/merged/warmup_duration/) ladder, so the two scopes stay
+comparable; the user scoped this pilot to 2 and 4, leaving that ladder's 9 and the merged
+loss/transform screen's 16-epoch `e0_15` unrun on the unmerged scope. The boundary is inclusive,
+so `e0_N` is `N+1` proposal-only epochs. `MassShatterPL` requires
+`mass_shatter_proposal_selection_only: True` and a positive proposal loss weight for this key, and
+the anchor satisfies both. Proposal gradients continue into the shared molecular and context
+encoders after the boundary, as in the merged screen.
+
+Launch: [submit_masshatter_unmerged_cmf_warmup.sh](../../scripts/manual_slurm/vulcan/submit_masshatter_unmerged_cmf_warmup.sh),
+generation-only, two `vulcan:l40s` jobs named `msh_unmrg_cmf_wu{2,4}`, each with the
+anchor's twelve-hour allocation and `j=` resume. It deliberately does not regenerate the anchor,
+so an already-submitted anchor keeps its job id and resume state.
+
+Validation: both resolved and constructed; `_apply_staged_training` was checked at epochs
+`0`, `N`, and `N+1` for every boundary, confirming proposal-only with frozen intensity parameters
+through `N` and joint training from `N+1`; both generated job scripts passed `bash -n`. A real
+four-epoch subsampled run of `e0_2` on the local GPU crossed the boundary, exit 0: validation
+`cos_sim_0.01` stayed flat at 0.0436 / 0.0380 / 0.0419 across the frozen epochs 0-2 and rose to
+0.1901 at epoch 3, while candidate weighted recall held near 0.89 throughout, and the checkpoint
+callback selected epoch 3. Those are 200-spectrum smoke numbers, not results.
+
+Next: run both launchers on the Vulcan login node, submit, and record the scheduler job IDs and
+W&B run IDs here.
