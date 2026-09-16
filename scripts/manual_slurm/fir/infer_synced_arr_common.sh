@@ -149,7 +149,6 @@ if [ -z "${MODEL_TAG}" ]; then
     fi
 fi
 OUT_DP=${OUT_DP:-/scratch/feiw/frag-gnn-data/inference_outputs/${SAVE_NAME}_${MODEL_TAG}}
-VENV_DP=${VENV_DP:-}
 
 echo SAVE_NAME: ${SAVE_NAME}
 echo FRAG_BACKEND: ${FRAG_BACKEND}
@@ -210,49 +209,44 @@ fi
 mkdir -p ${WORKING_DIR}
 cd ${WORKING_DIR}
 
-if [ -n "${VENV_DP}" ] && [ -f "${VENV_DP}/bin/activate" ]; then
-    echo `date`: using prebuilt venv ${VENV_DP}
-    source ${VENV_DP}/bin/activate
-    cd ${FRAGNNET_DP}
-    WORKING_DIR=${FRAGNNET_DP}
-else
-    echo `date`: building venv in ${WORKING_DIR}
-    virtualenv FRAG-GNN
-    source FRAG-GNN/bin/activate
-    pip install --no-index --upgrade pip
-    pip install --no-index \
-        torch==2.4.1 \
-        torch_geometric==2.6.1 \
-        torch_scatter \
-        pandas \
-        pyarrow \
-        wandb \
-        tqdm \
-        scipy \
-        joblib==1.3.2 \
-        matplotlib \
-        pytorch_lightning==2.4.0 \
-        dgl==2.4.0 \
-        omegaconf \
-        cython==3.0.12 \
-        pyopenms==3.3.0 \
-        pandarallel==1.6.5 \
-        h5py
+# Always build the venv in the job. pyarrow is deliberately absent: on fir it resolves to
+# the Alliance dummy wheel, which fails the build and takes torch down with it, and
+# nothing here needs it (--save_format pkl; parquet cannot hold the torch tensors this
+# export writes). setup.cfg is gone from the repo - pyproject.toml is the build config.
+echo `date`: building venv in ${WORKING_DIR}
+virtualenv FRAG-GNN
+source FRAG-GNN/bin/activate
+pip install --no-index --upgrade pip
+pip install --no-index \
+    torch==2.4.1 \
+    torch_geometric==2.6.1 \
+    torch_scatter==2.1.2 \
+    pandas \
+    wandb==0.21.2 \
+    tqdm \
+    scipy==1.15.2 \
+    joblib==1.3.2 \
+    matplotlib \
+    lightning==2.4.0 \
+    dgl==2.4.0 \
+    omegaconf \
+    cython==3.0.12 \
+    pyopenms==3.3.0 \
+    pandarallel==1.6.5 \
+    h5py
 
-    cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
-    pip install pyteomics-4.7.5-py3-none-any.whl
+cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
+pip install pyteomics-4.7.5-py3-none-any.whl
 
-    rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/preproc_scripts ${WORKING_DIR}
-    rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/scripts ${WORKING_DIR}
-    rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}
-    cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/
-    cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
-    cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/
-    mkdir -p ${WORKING_DIR}/config
-    cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
-    pip install --no-deps -I ${WORKING_DIR}
-    cd ${WORKING_DIR}
-fi
+rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/preproc_scripts ${WORKING_DIR}
+rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/scripts ${WORKING_DIR}
+rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}
+cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
+cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/
+mkdir -p ${WORKING_DIR}/config
+cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
+pip install --no-deps -I ${WORKING_DIR}
+cd ${WORKING_DIR}
 
 # === stage this shard's DAGs ===============================================
 STAGE_DP=${SLURM_TMPDIR:-/tmp}/frag_${TASK_ID}
