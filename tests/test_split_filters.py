@@ -48,13 +48,18 @@ def _make_mol_df(mol_ids: list[int]) -> pd.DataFrame:
     return pd.DataFrame({"mol_id": mol_ids})
 
 
-def _make_split_dir(split_name: str, spec_ids: list[int], mol_ids: list[int]) -> str:
-    """Write a <split>_ids.csv to a temp directory and return the directory path."""
-    tmp = tempfile.mkdtemp()
+def _write_split_file(
+    split_dp: str, split_name: str, spec_ids: list[int], mol_ids: list[int]
+) -> None:
+    """Write a <split>_ids.csv into an existing directory.
+
+    Takes the directory rather than creating one: this used to call mkdtemp() and never
+    remove it, so every test run left one directory per test behind in /tmp (thousands of
+    them accumulated).
+    """
     pd.DataFrame({"spec_id": spec_ids, "mol_id": mol_ids}).to_csv(
-        os.path.join(tmp, f"{split_name}_ids.csv"), index=False
+        os.path.join(split_dp, f"{split_name}_ids.csv"), index=False
     )
-    return tmp
 
 
 def _base_spec_params(**overrides) -> dict:
@@ -106,19 +111,21 @@ def _run_setup_dfs(
     spec_params: dict,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Run BaseDataset._setup_dfs and return (spec_df, mol_df)."""
-    split_dp = _make_split_dir(
-        split_name,
-        spec_ids=spec_df["spec_id"].tolist(),
-        mol_ids=spec_df["mol_id"].tolist(),
-    )
-    result = BaseDataset._setup_dfs(
-        spec_fp_or_df=spec_df,
-        mol_fp_or_df=mol_df,
-        split_dp=split_dp,
-        splits=[split_name],
-        subsample_params={},
-        spec_params=spec_params,
-    )
+    with tempfile.TemporaryDirectory() as split_dp:
+        _write_split_file(
+            split_dp,
+            split_name,
+            spec_ids=spec_df["spec_id"].tolist(),
+            mol_ids=spec_df["mol_id"].tolist(),
+        )
+        result = BaseDataset._setup_dfs(
+            spec_fp_or_df=spec_df,
+            mol_fp_or_df=mol_df,
+            split_dp=split_dp,
+            splits=[split_name],
+            subsample_params={},
+            spec_params=spec_params,
+        )
     out_spec_df, out_mol_df = result[0], result[1]
     return out_spec_df, out_mol_df
 
