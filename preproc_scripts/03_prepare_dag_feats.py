@@ -123,13 +123,12 @@ def main(args):
 
     # read in the molecule data
     mol_df_fp = os.path.join(args.project_dp, args.proc_dp, "mol_df.pkl")
-    print(f"read in mol from {mol_df_fp}")
+    logging.info(f"read in mol from {mol_df_fp}")
     mol_df = pd.read_pickle(mol_df_fp)
 
     sped_df_fp = os.path.join(args.project_dp, args.proc_dp, "spec_df.pkl")
-    print(f"read in spec from {sped_df_fp}")
+    logging.info(f"read in spec from {sped_df_fp}")
     spec_df = pd.read_pickle(sped_df_fp)
-    print()
 
     # perform filter selection
     prec_types = args.prec_types
@@ -153,16 +152,12 @@ def main(args):
 
     n_dup = mol_df["mol_id"].duplicated().sum()
     if n_dup > 0:
-        print(f">> WARNING: mol_df has {n_dup} duplicate mol_ids — deduplicating")
+        logging.warning(f"mol_df has {n_dup} duplicate mol_ids — deduplicating")
         mol_df = mol_df.drop_duplicates(subset=["mol_id"]).reset_index(drop=True)
 
-    print(
-        f">> {len(spec_df)} spectra, {len(mol_df)} molecules"
-    )  # , {len(m_spec_df)} merged spectra")
-    print(spec_df["prec_type"].value_counts())
-    print(spec_df["inst_type"].value_counts())
-
-    print()
+    logging.info(f"{len(spec_df)} spectra, {len(mol_df)} molecules")
+    logging.info(f"prec_type counts:\n{spec_df['prec_type'].value_counts()}")
+    logging.info(f"inst_type counts:\n{spec_df['inst_type'].value_counts()}")
 
     num_atoms = mol_df["num_atoms"]
     print_and_log("num_atoms", num_atoms, wandb_flag, {})
@@ -276,7 +271,7 @@ def main(args):
         result_df.columns = cols
         return result_df
 
-    print("> Compute Fragments")
+    logging.info("> Compute Fragments")
     mol_input_rows = (
         [
             row["mol"],
@@ -326,7 +321,9 @@ def main(args):
                 min_frag_atoms=args.min_frag_atoms,
                 max_ring_cut_steps=args.max_ring_cut_steps,
                 restrict_ring_open=args.restrict_ring_open,
-                disable_tqdm=args.disable_tqdm,
+                # tqdm is never used here: ProgressLogger inside run_frag_gen_hdf5 is the
+                # only progress reporter, so SLURM logs stay line-oriented.
+                disable_tqdm=True,
             )
         with open(meta_info_fp, "w") as f:
             f.write(json.dumps(meta_info))
@@ -467,8 +464,7 @@ def main(args):
     # count failures, then remove them
     num_failures = frag_stats_df.isna().any(axis=1).sum()
     frag_stats_d["total_num_failures"] = num_failures
-    print(f"> total num failures: {num_failures}")
-    print()
+    logging.info(f"> total num failures: {num_failures}")
     if wandb_flag:
         wandb.log({"total_num_failures": num_failures, "step": 0})
     frag_stats_df = frag_stats_df.dropna(axis=0)
@@ -480,13 +476,10 @@ def main(args):
     for idx_to_formula in frag_stats_df["idx_to_formula"].values:
         unique_formulae.update(list(idx_to_formula.values()))
     frag_stats_d["total_num_formulae"] = len(unique_formulae)
-    print(f"> total num formulae: {len(unique_formulae)}")
-    print()
+    logging.info(f"> total num formulae: {len(unique_formulae)}")
 
     # compute total number of depths
-    print("> depth:")
-    print(frag_stats_df["depth"].value_counts())
-    print()
+    logging.info(f"> depth:\n{frag_stats_df['depth'].value_counts()}")
     depth_d = {f"depth/{k}": v for k, v in frag_stats_df["depth"].value_counts().to_dict().items()}
     frag_stats_d.update(depth_d)
     if wandb_flag:
@@ -515,7 +508,7 @@ def main(args):
     # drop idx_to_formula
     frag_stats_df = frag_stats_df.drop(columns=["idx_to_formula"])
 
-    print("> Compute Spectra Stats")
+    logging.info("> Compute Spectra Stats")
 
     stats_cols = [
         "num_formulae",
@@ -560,7 +553,7 @@ def main(args):
             peak_spec_df.iterrows(),
             total=peak_spec_df.shape[0],
             desc="prepare spectra stats inputs",
-            disable_tqdm=args.disable_tqdm,
+            disable_tqdm=True,  # log progress instead of drawing a tqdm bar
         ):
             spectra_input_rows.append(
                 [
@@ -597,7 +590,7 @@ def main(args):
         for key in metric_keys + stats_cols:
             print_and_log(spec_prefix + key, peak_spec_df[key], wandb_flag, frag_stats_d)
 
-        print("> Compute Molecule Stats")
+        logging.info("> Compute Molecule Stats")
 
         # collect across molecules and report summary statistics
         peak_mol_df = (
@@ -763,12 +756,6 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help="Save DAGs to <frag_dp>/dags.h5 (HDF5) instead of one pickle per molecule.",
-    )
-    parser.add_argument(
-        "--disable_tqdm",
-        type=booltype,
-        default=False,
-        help="Disable tqdm progress bars and use logging instead",
     )
     parser.add_argument(
         "--skip_stats",

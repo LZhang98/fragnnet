@@ -107,6 +107,13 @@ mol_normalization: batch
 mol_dropout: 0.1
 ce_insert_type: embed
 ce_insert_size: 32
+# The context encoder clamps each CE reading to its max before integer featurization, so
+# ace_max is a real ceiling once ace is on. Measured over the 383,874 train+val spectra of
+# this split: ACE p50 27, p90 73, max 329 eV, and 13,406 spectra (3.49%, all FT) exceed the
+# template's ace_max: 100 and would collapse into one saturated embedding row. 300 leaves 4.
+# Matches config/masshatter/merged/context_ablation. NCE is left at the template's 200,
+# which only 0.02% of readings exceed.
+ace_max: 300
 mass_shatter_unique_fragment_target: 256
 mass_shatter_unique_fragment_mode: True
 mass_shatter_ranked_mask_budget: 4096

@@ -205,16 +205,23 @@ Step 1's unmerged control now has a config:
 [nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml).
 It is the lead unmerged arm
 ([`ef7fl5c6`](https://wandb.ai/frag-gnn/frag-gnn/runs/ef7fl5c6), validation `cos_sim_0.01`
-0.7515) with exactly three deltas, confirmed by a resolved-config comparison in which
-`spec_params` is the only differing key:
+0.7515) with exactly four deltas, confirmed by a resolved-config comparison in which
+`spec_params` and `ace_max` are the only differing keys:
 
 1. `spec_params.ace: True`. `MassShatterPL` passes `spec_params.nce`/`ace` straight to the
    model's `use_nce`/`use_ace`, so this turns on the dual-CE context of the selected
-   full-metadata baseline. Parameter count 8,431,302 to 8,436,336.
+   full-metadata baseline. Parameter count 8,431,302 to 8,438,404, including the wider ACE embedding from delta 4.
 2. `inst_types` drops `IT`. Measured on `data/split/nist20_ma_mi_inchikey`: 480,002 spectra,
    FT and QTOF only, zero IT rows. The IT slot only widened the embedding table.
 3. `mass_shatter_channel_diagnostics: True`, so the valid/attributed/retained ion-H channel
    counts are logged without adding a support loss.
+4. `ace_max: 300`, required by delta 1. `MassShatterContextEncoder._embed_ce_values` clamps each
+   reading to `ace_max` before integer featurization, so the template's 100 is a real ceiling
+   once ACE is on. Measured over the 383,874 train+val spectra of this split: ACE p50 27, p90 73,
+   max 329 eV, with 13,406 spectra (3.49%, all FT) above 100 and 4 above 300. This matches the
+   corrected merged [context pair](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml),
+   whose audit found the same saturation at 21.42% on merged FT groups. NCE stays at the
+   template's 200, which only 0.02% of readings exceed.
 
 Enumeration budget stays at E4096 and the probability/cross-entropy output stays unchanged so
 the run remains comparable with `ef7fl5c6`. `filter_subformula_peaks` stays `False`: the Na/Cl
@@ -249,5 +256,27 @@ that is a 400-spectrum untrained-epoch number on a different scope, not a result
 
 No Vulcan job was generated or submitted from this workstation, which has no `sbatch`. No adduct-
 stratified metric exists in the training loop, so the CMF comparison needs a post-hoc evaluation.
+
+Two conditioning differences against the FraGNNet MA/MI reference
+[config](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_subformula_filter.yml)
+are left in place deliberately, because each is an unmeasured treatment rather than a defect:
+
+- `mass_shatter_context_in_gnn` stays `False`. FraGNNet injects its CE, adduct, instrument, and
+  mode embeddings at the molecule-encoder input through `*_insert_location: mol`, so its
+  molecular representation is context-conditioned; here the context reaches only the proposal
+  and intensity heads. The matched merged pair for this exact question
+  ([heads only](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml)
+  versus [GNN and heads](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml))
+  is prepared and has never been run; settle it there rather than inside this anchor.
+- `mass_shatter_smarts_templates` stays `False`. The FraGNNet DAG is built by a prepass carrying
+  15 `FRAG_RULES` and 7 `NL_RULES`, which MASShatter's mask enumeration does not use. Its SMARTS
+  configs exist only on the merged scope.
+
+Molecular features are not a gap in the other direction: this config declares `a_ring_size`,
+`a_num_hs`, `b_ring`, and `b_conj` on top of the eight-node/one-edge template default that the
+FraGNNet reference config inherits. The FraGNNet-only `ce_scale`/`frag_mode_scale` output FiLM
+layers have no MASShatter equivalent by design, since its heads consume the context vector
+directly, and `prec_mz` is not a conditioning input in either model.
+
 Next: run the launcher on the Vulcan login node, submit, and record the scheduler job ID and W&B
 run ID here.

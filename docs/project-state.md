@@ -81,8 +81,12 @@ records a new config,
 and a generation-only launcher
 `scripts/manual_slurm/vulcan/submit_masshatter_unmerged_cmf.sh`. It is the lead unmerged arm
 (`ef7fl5c6`, 0.7515) plus dual CE, `inst_types` reduced to the FT/QTOF actually present in the
-split, and channel diagnostics; a resolved-config comparison shows `spec_params` as the only
-differing key. This is the first config to train the 2026-09-14 CMF alignment, because only its
+split, channel diagnostics, and `ace_max: 300` (the template's 100 clamps 3.49% of this split's
+spectra into one saturated embedding row once ACE is on); a resolved-config comparison shows
+`spec_params` and `ace_max` as the only differing keys. Two conditioning differences against the
+FraGNNet MA/MI reference are left in place as unmeasured treatments rather than defects:
+`mass_shatter_context_in_gnn` and `mass_shatter_smarts_templates`, both `False`. The prepared
+merged `context_ablation` pair is the place to settle the first. This is the first config to train the 2026-09-14 CMF alignment, because only its
 `[M+Na]+`/`[M+Cl]-` spectra (38,156 and 7,820 of 480,002) have a non-degenerate CMF ladder. The
 twelve-hour allocation and `j=` resume address the wall-time half of the convergence blocker that
 holds up [Arm C](plans/masshatter_ion_h_channel_selection_plan.md). `filter_subformula_peaks`
