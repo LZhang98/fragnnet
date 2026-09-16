@@ -530,8 +530,11 @@ sbatch scripts/manual_slurm/fir/infer_synced_arr_hdf5.sh
 
 Both run one task per frag shard (`--array=0-14`, `CHUNK_SIZE=20000`): task i consumes
 shard i and predicts exactly the mol_df slice that built it, so no merge step is needed.
-`--array` must cover exactly the shards preprocessing wrote, and the scripts refuse to
-start otherwise; pass `PARTIAL_ARRAY=1` when rerunning a subset that starts at task 0.
+A full sweep needs `--array` to cover exactly the shards preprocessing wrote. A narrower
+array is allowed — `sbatch --array=0-0` to run one shard, or a subset to rerun failed
+tasks — and the scripts only print a note comparing task count to shard count. Nothing
+fails when shards are left out: those molecules are simply not predicted and every task
+still exits 0, so check the note before calling a sweep complete.
 
 A task that runs out of wall time is resumed by resubmitting the array — each task skips
 the spec_ids already present in its own output dir. Output goes to

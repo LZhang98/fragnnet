@@ -179,11 +179,9 @@ fi
 
 # --- array width vs frag shards --------------------------------------------
 # #SBATCH --array is a static directive, so nothing keeps it in step with the number of
-# shards preprocessing actually wrote. An array narrower than that leaves the tail shards
-# with no task at all: every task still succeeds and the run quietly covers only part of
-# mol_df. Check both the bounds and Slurm's task count so sparse arrays cannot pass.
-# Count the shards on disk and require one task each. Checked here, before the
-# venv build, so a misconfigured array fails in seconds rather than after the pip install.
+# shards preprocessing actually wrote. Count the shards on disk and report the comparison
+# here, before the venv build, so the numbers are at the top of the log rather than behind
+# a pip install.
 if [ "${FRAG_BACKEND}" = "hdf5" ]; then
     NUM_FRAG_SHARDS=${NUM_FRAG_SHARDS:-$(ls -d ${DEST_FRAG_DP}/${SAVE_NAME}/shard_* 2>/dev/null | wc -l | tr -d ' ')}
 else
@@ -195,18 +193,17 @@ if [ "${NUM_FRAG_SHARDS}" -eq 0 ]; then
     echo "       Run preproc_infer_synced_dag_arr_hdf5.sh first, or set DEST_FRAG_DP/SAVE_NAME." >&2
     exit 1
 fi
-# Skipped for a deliberate partial rerun: a subset that starts above task 0 cannot be a
-# full sweep. Set PARTIAL_ARRAY=1 for a partial rerun that does start at 0.
-PARTIAL_ARRAY=${PARTIAL_ARRAY:-0}
-if [ "${PARTIAL_ARRAY}" != "1" ] && [ -n "${SLURM_ARRAY_TASK_MAX}" ] &&
-   [ "${SLURM_ARRAY_TASK_MIN:-0}" -eq 0 ] &&
+# A narrower array is a normal way to run this (one shard at a time, a rerun of a few
+# failed tasks), so the mismatch is reported and the task continues. What it costs you:
+# shards with no task are simply not predicted, and every task still exits 0, so the run
+# can cover only part of mol_df without any failure to notice. Reconcile shard count
+# against task count yourself before treating a sweep as complete.
+if [ -n "${SLURM_ARRAY_TASK_MAX}" ] &&
    { [ $((SLURM_ARRAY_TASK_MAX + 1)) -ne "${NUM_FRAG_SHARDS}" ] ||
      [ "${SLURM_ARRAY_TASK_COUNT:-$((SLURM_ARRAY_TASK_MAX + 1))}" -ne "${NUM_FRAG_SHARDS}" ]; }; then
-    echo "ERROR: array spans 0-${SLURM_ARRAY_TASK_MAX} with ${SLURM_ARRAY_TASK_COUNT:-unknown} tasks, but" >&2
-    echo "       ${DEST_FRAG_DP}/${SAVE_NAME} holds ${NUM_FRAG_SHARDS} frag shards." >&2
-    echo "       Resubmit with:  sbatch --array=0-$((NUM_FRAG_SHARDS - 1)) <script>" >&2
-    echo "       or set PARTIAL_ARRAY=1 if this subset is intentional." >&2
-    exit 1
+    echo "NOTE: array spans ${SLURM_ARRAY_TASK_MIN:-0}-${SLURM_ARRAY_TASK_MAX} with ${SLURM_ARRAY_TASK_COUNT:-unknown} tasks," \
+         "but ${DEST_FRAG_DP}/${SAVE_NAME} holds ${NUM_FRAG_SHARDS} frag shards."
+    echo "      A full sweep is:  sbatch --array=0-$((NUM_FRAG_SHARDS - 1)) <script>"
 fi
 
 # --- env -------------------------------------------------------------------

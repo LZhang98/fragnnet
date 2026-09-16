@@ -25,8 +25,9 @@
 # Task i predicts mol_df rows [i*CHUNK_SIZE, (i+1)*CHUNK_SIZE) - the same slice that
 # built shard i - so merge_dag_h5_shards.py is NOT needed here; merge only when you
 # want to run inference as a single job. Keep --array and CHUNK_SIZE in sync with the
-# preprocessing array (289,249 molecules / 48209 -> 6 tasks); the common body hard-fails
-# if --array does not cover exactly the shards on disk. A task that runs out of wall time
+# preprocessing array (289,249 molecules / 48209 -> 6 tasks); a narrower array is allowed
+# (run one shard, rerun a few failed tasks) and the common body only notes the mismatch -
+# the shards it leaves out are silently not predicted. A task that runs out of wall time
 # is resumed by resubmitting the array - it skips whatever it already wrote.
 #
 # Output: ${OUT_DP}/shard_<task>/predictions_chunk_*.pkl
