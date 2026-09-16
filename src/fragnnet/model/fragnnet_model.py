@@ -3,6 +3,7 @@ FragGNNMet Model for MS/MS Spectrum Prediction
 """
 
 import logging
+from collections.abc import Callable
 
 import numpy as np
 import torch as th
@@ -49,6 +50,14 @@ from fragnnet.utils.misc_utils import (
 from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
+
+# Peak memory for the per-cut-bond features (`boundary_pair`, `cut_bond`) is set by the number
+# of cut bonds in the batch, which nothing bounds: batches are packed to a frag-node budget, and
+# a batch that respects it can still carry millions of (fragment, cut bond) pairs. Encoding them
+# in one shot materializes several (num_pairs, mol_hidden_size) tensors at once. This is how many
+# float elements one chunk of gathered atom embeddings may hold; the encoders' own intermediates
+# are a small multiple of it.
+CUT_BOND_CHUNK_ELEMS = 1 << 24  # ~64 MB in float32
 
 # Outputs of `FraGNNetModel.forward` that only exist when the terminal explainability
 # marginals are computed; every one of them is None on a forward that skipped them.
@@ -242,7 +251,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             ctx_in = sum(active_dims)
             if ctx_in == 0:
                 raise ValueError("context_embedding=True requires at least one metadata enabled")
-            self.context_insert_locations = {loc.strip() for loc in context_insert_location.split(",")}
+            self.context_insert_locations = {
+                loc.strip() for loc in context_insert_location.split(",")
+            }
             invalid = self.context_insert_locations - {"mol", "mlp"}
             if invalid:
                 raise ValueError(f"context_insert_location must be mol/mlp, got {invalid}")
@@ -392,9 +403,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # ELEMENT_TO_VE rather than hardcoded so it stays correct if the element list changes.
             # H is appended last in ELEMENTS and is monovalent. Stored doubled (v_i - 2, not
             # (v_i - 2)/2) so the contraction stays in integer arithmetic; see the forward.
-            _val = th.tensor(
-                [ELEMENT_TO_VE[e] for e in HEAVY_ELEMENTS] + [1], dtype=th.long
-            )
+            _val = th.tensor([ELEMENT_TO_VE[e] for e in HEAVY_ELEMENTS] + [1], dtype=th.long)
             if _val.shape[0] != self.num_elements:
                 raise ValueError(
                     f"rdbe valence table has {_val.shape[0]} entries but num_elements="
@@ -560,7 +569,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.ion_channel_factorized = bool(ion_channel_factorized)
         self.ion_channel_adduct_gated = bool(ion_channel_adduct_gated)
         self.ion_channel_rank = int(ion_channel_rank)
-        if self.candidate_ion_head and (self.ion_channel_factorized or self.ion_channel_adduct_gated):
+        if self.candidate_ion_head and (
+            self.ion_channel_factorized or self.ion_channel_adduct_gated
+        ):
             raise ValueError(
                 "candidate_ion_head and ion_channel_factorized/ion_channel_adduct_gated are "
                 "mutually exclusive"
@@ -578,8 +589,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
             self.candidate_cmf_flag_embedder = get_embedder(int_embedder, max_count_int=2)
             self.candidate_ion_feature_dim += (
-                self.candidate_h_channel_embedder.num_dim
-                + self.candidate_cmf_flag_embedder.num_dim
+                self.candidate_h_channel_embedder.num_dim + self.candidate_cmf_flag_embedder.num_dim
             )
             if self.candidate_ion_formula_features:
                 if (
@@ -590,9 +600,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                         "candidate_ion_formula_features requires base_formula and h_counts in "
                         "frag_node_feats"
                     )
-                self.candidate_ion_feature_dim += (
-                    self.num_elements * self.formula_embedder.num_dim
-                )
+                self.candidate_ion_feature_dim += self.num_elements * self.formula_embedder.num_dim
             if self.candidate_ion_neutral_loss_features:
                 if not self.candidate_ion_formula_features:
                     raise ValueError(
@@ -603,9 +611,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     raise ValueError(
                         "candidate_ion_neutral_loss_features requires depth in frag_node_feats"
                     )
-                self.candidate_ion_feature_dim += (
-                    self.num_elements * self.formula_embedder.num_dim
-                )
+                self.candidate_ion_feature_dim += self.num_elements * self.formula_embedder.num_dim
         else:
             self.candidate_h_channel_embedder = None
             self.candidate_cmf_flag_embedder = None
@@ -613,9 +619,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if self.ion_channel_factorized or self.ion_channel_adduct_gated:
             if self.ion_channel_rank <= 0:
                 raise ValueError(f"ion_channel_rank must be positive, got {ion_channel_rank}")
-            self.ion_channel_node_proj = nn.Linear(
-                mlp_input_dim, self.ion_channel_rank, bias=False
-            )
+            self.ion_channel_node_proj = nn.Linear(mlp_input_dim, self.ion_channel_rank, bias=False)
             self.ion_channel_embed = nn.Embedding(self.mlp_output_dim, self.ion_channel_rank)
             # Identity start: residual is zero, but node_proj receives gradients immediately
             # because ion_channel_embed is nonzero.
@@ -759,7 +763,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.cc_interstage_use_rest = cc_interstage_use_rest
 
         if self.bin_output:
-            self.register_buffer("mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res), persistent=False)
+            self.register_buffer(
+                "mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res), persistent=False
+            )
 
         # this is required
         assert "h_formulae_idx" in self.frag_node_feats
@@ -804,6 +810,79 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             * keep.to(dtype=frag_node_mask_embed.dtype)
             / (1.0 - self.cc_channel_dropout)
         )
+
+    def _encode_pool_cut_bonds(
+        self,
+        encode: Callable[[th.Tensor, th.Tensor], th.Tensor],
+        mol_embed_gnn: th.Tensor,
+        frag_idxs: th.Tensor,
+        in_idxs: th.Tensor,
+        out_idxs: th.Tensor,
+        num_frags_total: int,
+    ) -> th.Tensor:
+        """Encode each cut bond from its (inside, outside) atom embeddings, pooled per fragment.
+
+        Shared by the `boundary_pair` and `cut_bond` features, which differ only in `encode`.
+
+        The chunked path accumulates straight into the pooled (num_frags_total, width) result
+        instead of materializing the per-pair encoding, so peak memory stops scaling with the
+        number of cut bonds in the batch. It is exact, not an approximation: each row is encoded
+        independently of the others, and sum/mean pooling is a segment reduction that composes
+        over chunks. It is taken only where it pays off -- with autograd on, every chunk's input
+        stays saved for backward, so training keeps the single-shot path -- and only for the pool
+        types that decompose (`sum`, `mean`); a learned pool (`attention`, `softmax`, ...) has to
+        see every pair at once, as before.
+
+        Args:
+            encode: Maps (inside_atom_embed, outside_atom_embed) to a per-bond encoding.
+            mol_embed_gnn: Atom embeddings for the whole batch, indexed by in_idxs/out_idxs.
+            frag_idxs: Fragment each cut bond belongs to, shape (num_pairs,).
+            in_idxs: Global atom index of each bond's retained (inside) atom.
+            out_idxs: Global atom index of each bond's lost (outside) atom.
+            num_frags_total: Number of fragment rows to pool into.
+
+        Returns:
+            Pooled per-fragment encoding of shape (num_frags_total, encoding width).
+        """
+        num_pairs = in_idxs.shape[0]
+        chunk_rows = max(1, CUT_BOND_CHUNK_ELEMS // mol_embed_gnn.shape[1])
+        if (
+            th.is_grad_enabled()
+            or num_pairs <= chunk_rows
+            or self.mol_pool_type not in ("sum", "mean")
+        ):
+            return self.mol_pool(
+                encode(
+                    th.index_select(mol_embed_gnn, 0, in_idxs),
+                    th.index_select(mol_embed_gnn, 0, out_idxs),
+                ),
+                frag_idxs,
+                dim_size=num_frags_total,
+            )
+        pooled = None
+        for start in range(0, num_pairs, chunk_rows):
+            end = min(start + chunk_rows, num_pairs)
+            chunk_embed = encode(
+                th.index_select(mol_embed_gnn, 0, in_idxs[start:end]),
+                th.index_select(mol_embed_gnn, 0, out_idxs[start:end]),
+            )
+            if pooled is None:
+                pooled = th.zeros(
+                    num_frags_total,
+                    chunk_embed.shape[1],
+                    device=chunk_embed.device,
+                    dtype=chunk_embed.dtype,
+                )
+            pooled.index_add_(0, frag_idxs[start:end], chunk_embed)
+        if self.mol_pool_type == "mean":
+            degree = (
+                th.bincount(frag_idxs, minlength=num_frags_total)
+                .to(pooled.dtype)
+                .clamp(min=1)
+                .unsqueeze(1)
+            )
+            pooled = pooled / degree
+        return pooled
 
     def _ce_location_check(self):
         assert "frag" not in self.ce_insert_locations, "ce_insert_location=frag not supported"
@@ -976,16 +1055,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 root_formula[:, self.num_elements - 1] = root_h_counts
                 precursor_formula[frag_node_batch_idxs[root_mask]] = root_formula
                 frag_node_batch_chunk = frag_node_batch_idxs[node_start:node_end]
-                neutral_loss_formula = (
-                    precursor_formula[frag_node_batch_chunk]
-                    .unsqueeze(1)
-                    .expand(N, H, -1)
-                    - candidate_formula.reshape(N, H, self.num_elements)
-                )
+                neutral_loss_formula = precursor_formula[frag_node_batch_chunk].unsqueeze(1).expand(
+                    N, H, -1
+                ) - candidate_formula.reshape(N, H, self.num_elements)
                 candidate_parts.append(
-                    self.formula_embedder(
-                        neutral_loss_formula.reshape(N * H, self.num_elements)
-                    )
+                    self.formula_embedder(neutral_loss_formula.reshape(N * H, self.num_elements))
                 )
 
         candidate_feats = th.cat(candidate_parts, dim=1)
@@ -994,9 +1068,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             candidate_feats.dtype
         )
         frag_embed_expanded = (
-            frag_embed_chunk.unsqueeze(1)
-            .expand(N, H, frag_embed_chunk.shape[1])
-            .reshape(N * H, -1)
+            frag_embed_chunk.unsqueeze(1).expand(N, H, frag_embed_chunk.shape[1]).reshape(N * H, -1)
         )
         return th.cat([frag_embed_expanded, candidate_feats], dim=1)
 
@@ -1453,11 +1525,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 pair_in_global = pair_in_global[valid]
                 pair_out_global = pair_out_global[valid]
             if pair_frag_idxs.numel() > 0:
-                in_embed = th.index_select(mol_embed_gnn, 0, pair_in_global)
-                out_embed = th.index_select(mol_embed_gnn, 0, pair_out_global)
-                pair_embed = self.boundary_pair_proj(th.cat([in_embed, out_embed], dim=-1))
-                boundary_pair_out = self.mol_pool(
-                    pair_embed, pair_frag_idxs, dim_size=num_frags_total
+                boundary_pair_out = self._encode_pool_cut_bonds(
+                    lambda a, b: self.boundary_pair_proj(th.cat([a, b], dim=-1)),
+                    mol_embed_gnn,
+                    pair_frag_idxs,
+                    pair_in_global,
+                    pair_out_global,
+                    num_frags_total,
                 )
             else:
                 boundary_pair_out = th.zeros(
@@ -1483,11 +1557,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 cut_in_global = cut_in_global[valid]
                 cut_out_global = cut_out_global[valid]
             if cut_frag_idxs.numel() > 0:
-                bond_embed = self.cut_bond_encoder(
-                    th.index_select(mol_embed_gnn, 0, cut_in_global),
-                    th.index_select(mol_embed_gnn, 0, cut_out_global),
+                cut_bond_out = self._encode_pool_cut_bonds(
+                    self.cut_bond_encoder,
+                    mol_embed_gnn,
+                    cut_frag_idxs,
+                    cut_in_global,
+                    cut_out_global,
+                    num_frags_total,
                 )
-                cut_bond_out = self.mol_pool(bond_embed, cut_frag_idxs, dim_size=num_frags_total)
             else:
                 cut_bond_out = th.zeros(
                     num_frags_total,
@@ -1954,7 +2031,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     batch_frag_num_nodes, -1
                 )
                 depth_idx = depth_raw.argmax(dim=1).clamp(0, self.num_depth)  # (n_nodes,)
-                bias_per_depth = self.depth_ce_bias_layer(ce_embed)            # (batch, num_depth+1)
+                bias_per_depth = self.depth_ce_bias_layer(ce_embed)  # (batch, num_depth+1)
                 per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
                 frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)
             if self.frag_competition_head is not None:
@@ -2105,9 +2182,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 bias_per_depth = self.depth_ce_bias_layer(ce_embed)
                 # Bias P(n): a constant shift of every P(f|n) logit cancels
                 # under the per-node softmax.
-                frag_node_logits = frag_node_logits + bias_per_depth[
-                    frag_node_batch_idxs, depth_idx
-                ]
+                frag_node_logits = (
+                    frag_node_logits + bias_per_depth[frag_node_batch_idxs, depth_idx]
+                )
             frag_node_logprobs = scatter_logsoftmax(frag_node_logits, frag_node_batch_idxs)
 
             # log p(f,n) = log p(f|n) + log p(n)
