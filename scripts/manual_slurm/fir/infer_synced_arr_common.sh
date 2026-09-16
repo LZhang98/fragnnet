@@ -127,6 +127,13 @@ OUTPUT_SUBSET=${OUTPUT_SUBSET:-'pred_mzs pred_ints pred_formula_probs pred_formu
 RETURN_FORMULA_STR=${RETURN_FORMULA_STR:-True}
 RETURN_CC_HASH=${RETURN_CC_HASH:-True}
 SAVE_CHUNK_SIZE=${SAVE_CHUNK_SIZE:-10000}
+# Resource tracking (GPU/CPU/memory + throughput) via W&B. Off by default so a production
+# sweep carries no extra failure mode; set WANDB_TRACK_MODE=online for a sizing run. Named
+# apart from wandb's own WANDB_MODE env var on purpose, so setting this cannot silently
+# reconfigure the checkpoint download. One run per array task, grouped by array job id.
+# Caveat: NVML does not report utilization for MIG instances, so on the h100_3g.40gb slice
+# expect the throughput and torch-side peak-memory metrics to be the usable ones.
+WANDB_TRACK_MODE=${WANDB_TRACK_MODE:-disabled}
 
 # --- io --------------------------------------------------------------------
 SRC_PROC_DP=${SRC_PROC_DP:-${FRAGNNET_DP}/data/inference/synced}
@@ -166,6 +173,7 @@ echo START_IDX: ${START_IDX}
 echo NUM_MOLS: ${NUM_MOLS}
 echo BATCH_SIZE: ${BATCH_SIZE}
 echo SAVE_FORMAT: ${SAVE_FORMAT}
+echo WANDB_TRACK_MODE: ${WANDB_TRACK_MODE}
 echo OUTPUT_SUBSET: ${OUTPUT_SUBSET}
 echo RETURN_FORMULA_STR: ${RETURN_FORMULA_STR}
 echo RETURN_CC_HASH: ${RETURN_CC_HASH}
@@ -324,6 +332,8 @@ python ${WORKING_DIR}/scripts/run_inference.py \
     --return_formula_str ${RETURN_FORMULA_STR} \
     --return_cc_hash ${RETURN_CC_HASH} \
     --save_chunk_size ${SAVE_CHUNK_SIZE} \
+    --wandb_mode ${WANDB_TRACK_MODE} \
+    --wandb_run_name ${SAVE_NAME}_shard_${TASK_ID} \
     "${CUSTOM_ARGS[@]}"
 
 echo `date`: Job ${SLURM_JOB_ID} task ${TASK_ID} finished running

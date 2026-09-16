@@ -487,6 +487,37 @@ class TestMolGraph:
         assert g.number_of_nodes() == 3
         assert g.number_of_edges() == 2
 
+    @pytest.mark.parametrize("smiles", ["C", "O", "Cl", "[SiH4]"])
+    @pytest.mark.parametrize("bigraph", [False, True])
+    def test_bond_free_mol_graph(self, mol_graph, smiles, bigraph):
+        """A lone heavy atom (CH4, H2O, HCl, SiH4) yields empty but 2-D bond arrays."""
+        mol = Chem.MolFromSmiles(smiles)
+        assert mol.GetNumBonds() == 0
+        graph_dict = mol_graph.get_mol_graph(mol, bigraph=bigraph)
+
+        assert graph_dict["atom_feats"].shape == (1, mol_graph.num_atom_feats)
+        assert graph_dict["bond_feats"].shape == (0, mol_graph.num_bond_feats)
+        assert graph_dict["bond_tuples"].shape == (0, 2)
+        assert np.issubdtype(graph_dict["bond_tuples"].dtype, np.integer)
+
+    @pytest.mark.parametrize("bigraph", [False, True])
+    def test_bond_free_pyg_graph(self, mol_graph, bigraph):
+        """A bond-free molecule gives a one-node PyG graph with a (2, 0) edge_index."""
+        data = mol_graph.get_pyg_graph(Chem.MolFromSmiles("C"), bigraph=bigraph)
+
+        assert data.x.shape == (1, mol_graph.num_atom_feats)
+        assert data.edge_index.shape == (2, 0)
+        assert data.edge_index.dtype == th.int64
+        assert data.edge_attr.shape == (0, mol_graph.num_bond_feats)
+        assert data.edge_attr.dtype == th.float32
+
+    def test_bond_free_networkx_graph(self, mol_graph):
+        """NetworkX conversion of a bond-free molecule keeps the atom and adds no edges."""
+        g = mol_graph.get_networkx_graph(Chem.MolFromSmiles("C"), bigraph=True)
+
+        assert g.number_of_nodes() == 1
+        assert g.number_of_edges() == 0
+
 
 class TestGetMolFeaturesSizes:
     """Tests for get_mol_feats_sizes function."""
@@ -822,6 +853,30 @@ class TestGetMolGraphFunc:
         assert g.x.shape[0] == 6  # 6 carbons
         assert g.edge_index.shape[1] == 6  # 6 bonds in benzene ring
 
+    def test_bond_free_graph(self):
+        """A bond-free molecule (methane) builds a single-node, zero-edge graph."""
+        g = get_mol_graph(Chem.MolFromSmiles("C"), None, None, 0, bigraph=True)
+
+        assert g.x.shape[0] == 1
+        assert g.edge_index.shape == (2, 0)
+        assert g.edge_attr.shape[0] == 0
+
+    @pytest.mark.parametrize("bigraph", [False, True])
+    def test_bond_free_graph_with_pe(self, bigraph):
+        """A bond-free molecule still gets a k-wide (all-zero) RWPE block on its atom."""
+        g_no_pe = get_mol_graph(Chem.MolFromSmiles("C"), None, None, 0, bigraph=bigraph)
+        g = get_mol_graph(Chem.MolFromSmiles("C"), None, None, pe_embed_k=8, bigraph=bigraph)
+
+        assert g.x.shape == (1, g_no_pe.x.shape[1] + 8)
+        assert th.all(g.x[:, -8:] == 0)
+
+    @pytest.mark.parametrize("smiles,num_atoms", [("CCO", 3), ("CC(=O)O", 4), ("c1ccccc1", 6)])
+    def test_pe_with_directed_graph(self, smiles, num_atoms):
+        """RWPE works without bigraph, where the adjacency is not square by construction."""
+        g = get_mol_graph(Chem.MolFromSmiles(smiles), None, None, pe_embed_k=4, bigraph=False)
+
+        assert g.x.shape[0] == num_atoms
+
 
 class TestBatchMolsFrags:
     """Tests for batch_mols_frags function.
@@ -1060,7 +1115,7 @@ class TestRandomWalkPE:
         """Test PE computation on a simple cyclic graph."""
         # Create a simple cyclic graph: 0-1-2-0
         edge_index = th.tensor([[0, 1, 2], [1, 2, 0]])
-        data = Data(edge_index=edge_index)
+        data = Data(edge_index=edge_index, num_nodes=3)
         pe = random_walk_pe(data, k=2)
 
         assert pe is not None
@@ -1071,7 +1126,7 @@ class TestRandomWalkPE:
     def test_pe_different_k_values(self):
         """Test PE with different k values."""
         edge_index = th.tensor([[0, 1, 2, 3], [1, 2, 3, 0]])
-        data = Data(edge_index=edge_index)
+        data = Data(edge_index=edge_index, num_nodes=4)
 
         for k in [1, 4, 8, 16]:
             pe = random_walk_pe(data, k=k)
@@ -1092,7 +1147,7 @@ class TestRandomWalkPE:
     def test_pe_output_properties(self):
         """Test PE output has expected numerical properties."""
         edge_index = th.tensor([[0, 1], [1, 0]])
-        data = Data(edge_index=edge_index)
+        data = Data(edge_index=edge_index, num_nodes=2)
         pe = random_walk_pe(data, k=4)
 
         # PE should be real valued
@@ -1109,6 +1164,36 @@ class TestRandomWalkPE:
 
         expected = th.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=pe.dtype)
         assert th.allclose(pe, expected, atol=1e-6, rtol=1e-6)
+
+    def test_pe_no_edges(self):
+        """An edgeless graph has no walks, so every landing probability is 0."""
+        data = Data(x=th.zeros(1, 3), edge_index=th.zeros((2, 0), dtype=th.long))
+        pe = random_walk_pe(data, k=4)
+
+        assert pe.shape == (1, 4)
+        assert th.all(pe == 0)
+
+    def test_pe_isolated_node_keeps_one_row_per_node(self):
+        """A trailing isolated node gets its own zero row; connected rows are unchanged."""
+        # 0 <-> 1 plus a detached node 2, which never appears in edge_index.
+        edge_index = th.tensor([[0, 1], [1, 0]], dtype=th.long)
+        pe_pair = random_walk_pe(Data(edge_index=edge_index, num_nodes=2), k=2)
+        pe_plus = random_walk_pe(Data(edge_index=edge_index, num_nodes=3), k=2)
+
+        assert pe_plus.shape == (3, 2)
+        assert th.equal(pe_plus[:2], pe_pair)
+        assert th.all(pe_plus[2] == 0)
+
+    def test_pe_directed_graph_is_square(self):
+        """A directed (non-symmetrized) graph is padded to N x N, not max_row x max_col."""
+        # 0 -> 1 -> 2: row indices are {0, 1} and column indices {1, 2}, so inferring the
+        # shape from the indices would give a non-square 2x3 adjacency.
+        data = Data(edge_index=th.tensor([[0, 1], [1, 2]], dtype=th.long), num_nodes=3)
+        pe = random_walk_pe(data, k=3)
+
+        assert pe.shape == (3, 3)
+        # A path graph with no cycles can never return to its start.
+        assert th.all(pe == 0)
 
 
 if __name__ == "__main__":

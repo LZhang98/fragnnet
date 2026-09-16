@@ -28,6 +28,62 @@ from fragnnet.utils.script_utils import (
 )
 
 
+def _resource_metrics(total_preds: int, t0: float) -> dict:
+    """Throughput plus the GPU and host memory high-water marks.
+
+    These are cumulative maxima since process start, not samples, so unlike W&B's 15s
+    system sampler they cannot miss a spike between ticks. They also survive MIG: NVML
+    reports no SM utilization for a `h100_3g.40gb` instance, while `torch.cuda` is
+    CUDA-side and unaffected.
+
+    `ru_maxrss` covers this process only. Nothing here forks - the DataLoader runs with
+    `num_workers=0` - so it is the whole job, but it would undercount if workers were
+    ever enabled.
+    """
+    import resource
+
+    import torch as th
+
+    elapsed = max(time.time() - t0, 1e-9)
+    m = {
+        "total_preds": total_preds,
+        "elapsed_s": elapsed,
+        "spectra_per_s": total_preds / elapsed,
+        # ru_maxrss is in kilobytes on Linux.
+        "host_mem_peak_rss_gb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
+    }
+    if th.cuda.is_available():
+        m["gpu_mem_peak_alloc_gb"] = th.cuda.max_memory_allocated() / 1024**3
+        m["gpu_mem_peak_reserved_gb"] = th.cuda.max_memory_reserved() / 1024**3
+    return m
+
+
+def _log_resources(total_preds: int, t0: float, wandb_run) -> None:
+    """Print resource usage to the job log, and send it to W&B when W&B is running.
+
+    The print is the point: the SYNCED array scripts pass `--wandb_mode
+    ${WANDB_TRACK_MODE}`, which defaults to `disabled`, so W&B is off unless a sizing run
+    turns it on and this line is otherwise the only record of how a shard used its slice.
+    It lands in the task's `#SBATCH --output` file, which is what sizing the next
+    `--gpu_profile` and `--time` is argued from.
+    """
+    m = _resource_metrics(total_preds, t0)
+    parts = [
+        f"{m['total_preds']} preds",
+        f"{m['elapsed_s']:.0f}s",
+        f"{m['spectra_per_s']:.1f} spectra/s",
+        f"host RSS peak {m['host_mem_peak_rss_gb']:.1f} GB",
+    ]
+    if "gpu_mem_peak_alloc_gb" in m:
+        parts.append(
+            f"GPU peak {m['gpu_mem_peak_alloc_gb']:.2f} GB alloc / "
+            f"{m['gpu_mem_peak_reserved_gb']:.2f} GB reserved"
+        )
+    print(f">> resources: {' | '.join(parts)}", flush=True)
+    if wandb_run is not None:
+        wandb_run.log(m)
+
+
 def passthrough_collate(batch):
     """Identity collate: IterableSpecMolFragDataset already yields collated batches.
 
@@ -217,6 +273,29 @@ if __name__ == "__main__":
         type=int,
         default=-1,
         help="Number of mol_df rows in this shard (-1 = all remaining rows).",
+    )
+    # Resource tracking. Default off: this script runs as a 6-task array on fir, and an
+    # enabled run adds an import, a network dependency and a per-task W&B run to a path
+    # whose whole job is to write predictions. GPU/CPU/memory system metrics are sampled
+    # by wandb itself once init() runs - the explicit logs below are throughput and the
+    # torch-side allocator high-water mark, which is the number that answers "is this MIG
+    # slice / batch size right-sized" and, unlike NVML utilization, is reported on MIG.
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="W&B mode for resource tracking. 'disabled' (default) skips init entirely.",
+    )
+    parser.add_argument(
+        "--wandb_project", type=str, default="fragnnet-inference", help="W&B project"
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="W&B run name. Defaults to the shard's save_dp basename, so array tasks "
+        "do not collide.",
     )
     args = parser.parse_args()
 
@@ -521,6 +600,29 @@ if __name__ == "__main__":
     # Inferencing
     # =========================================
 
+    # Array tasks group under the array job id so the 6 shards roll up as one view.
+    infer_t0 = time.time()
+    wandb_run = None
+    if args.wandb_mode != "disabled":
+        import wandb
+
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name or os.path.basename(os.path.normpath(args.save_dp)),
+            group=os.environ.get("SLURM_ARRAY_JOB_ID") or os.environ.get("SLURM_JOB_ID"),
+            mode=args.wandb_mode,
+            config={
+                "batch_size": args.batch_size,
+                "dynamic_batch_max": args.dynamic_batch_max,
+                "min_intensity": args.min_intensity,
+                "start_mol_idx": args.start_mol_idx,
+                "num_mols": args.num_mols,
+                "num_spectra": len(spec_df),
+                "device": str(device),
+                "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID"),
+            },
+        )
+
     # Iterate through batches and save periodically
     preds_l = []
     chunk_idx = start_chunk_idx
@@ -560,6 +662,7 @@ if __name__ == "__main__":
             chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
             pred_df.to_pickle(chunk_fp)
             print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
+            _log_resources(total_preds, infer_t0, wandb_run)
             preds_l = []
             chunk_idx += 1
 
@@ -575,6 +678,10 @@ if __name__ == "__main__":
         chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
         pred_df.to_pickle(chunk_fp)
         print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
+
+    _log_resources(total_preds, infer_t0, wandb_run)
+    if wandb_run is not None:
+        wandb_run.finish()
 
     print(f"\n>>> Inference complete! Total predictions: {total_preds}")
     print(f">>> Predictions saved to: {args.save_dp}")

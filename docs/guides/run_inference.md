@@ -536,6 +536,15 @@ tasks — and the scripts only print a note comparing task count to shard count.
 fails when shards are left out: those molecules are simply not predicted and every task
 still exits 0, so check the note before calling a sweep complete.
 
+Every chunk save and the end of the run print a `>> resources:` line to the task's
+`#SBATCH --output` file — throughput plus peak GPU and host memory, as high-water marks
+rather than samples. This is unconditional; `WANDB_TRACK_MODE=online sbatch ...` (which the
+scripts pass through as `--wandb_mode`, default `disabled`) only adds the same numbers to
+a W&B run. Size the next `--gpu_profile` and `--time` from that line,
+not from a guess. Note that NVML reports no SM utilization for a MIG slice, so W&B's
+system panels cannot tell you whether a `h100_3g.40gb` instance is saturated — only the
+memory figures and throughput are available.
+
 A task that runs out of wall time is resumed by resubmitting the array — each task skips
 the spec_ids already present in its own output dir. Output goes to
 `${OUT_DP}/shard_<task>/`, where `OUT_DP` carries the model tag (the W&B run id, or the

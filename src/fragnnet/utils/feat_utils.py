@@ -147,8 +147,15 @@ class MolGraph:
             atom_feats.append(atom_feat)
 
         atom_feats = np.array(atom_feats)
-        bond_feats = np.array(bond_feats)
-        bond_tuples = np.array(bond_tuples)
+        if len(bond_tuples) == 0:
+            # Bond-free molecule (a lone heavy atom such as CH4 or HCl). np.array([]) is
+            # 1-D, so give the empty arrays their real 2-D shape or every consumer below
+            # (and every downstream reshape/transpose) indexes a phantom axis.
+            bond_feats = np.zeros((0, self.num_bond_feats), dtype=np.int64)
+            bond_tuples = np.zeros((0, 2), dtype=np.int64)
+        else:
+            bond_feats = np.array(bond_feats)
+            bond_tuples = np.array(bond_tuples)
 
         # Add doubles
         if bigraph:
@@ -971,12 +978,17 @@ def random_walk_pe(g: Data, k: int) -> th.Tensor:
         tensor([[0.0000, 0.5000],
                 [0.5000, 0.7500]])
     """
-    # sparse adjacency matrix
+    # Sparse adjacency matrix. The shape is passed explicitly rather than inferred from the
+    # largest index: inference gives (max_row + 1, max_col + 1), which is wrong whenever an
+    # atom is missing from either endpoint list. A bond-free molecule (a lone heavy atom)
+    # has no indices at all and cannot be inferred from, and a directed (bigraph=False)
+    # graph is generally not even square.
     A = scipy.sparse.csr_matrix(
         (
             th.ones_like(g.edge_index[0]).numpy(),
             (g.edge_index[0].numpy(), g.edge_index[1].numpy()),
-        )
+        ),
+        shape=(g.num_nodes, g.num_nodes),
     )
     RW = A / (A.sum(1).reshape(-1, 1) + 1e-30)  # 1-step transition probability
 
