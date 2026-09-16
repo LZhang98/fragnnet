@@ -1,10 +1,10 @@
 """Tests for `run_inference_pkl` output-token translation.
 
 `run_inference_pkl` receives user-facing `output_subset` tokens (e.g. `pred_ints`,
-`pred_node_probs`) but the raw model output is emitted in log space
-(`pred_logprobs`, `pred_node_logprobs`). These tests pin the translation:
-probability tokens are exp() of their logprob key, `pred_ints` also applies the
-intensity untransform, index variables are retained, and everything is rebatched
+`pred_node_probs`) while the marginals are emitted in log space
+(`pred_node_logprobs`). These tests pin the translation: probability tokens are exp()
+of their logprob key, `pred_ints` is only base-peak rescaled because `inference_step`
+already untransformed it, index variables are retained, and everything is rebatched
 across batches so the flat columns stay regroupable.
 """
 
@@ -25,11 +25,15 @@ class _StubFraGNNet(FraGNNetPL):
     def __init__(self, batch_outputs: list[dict]):
         self.training = False
         self._batch_outputs = batch_outputs
-        # identity untransform so pred_ints == exp(pred_logprobs) for assertions
-        self.ints_untransform_func = lambda ints, _batch_idxs: ints
+        # the exporter must never call this; a raising stub proves it
+        self.ints_untransform_func = _forbidden_untransform
 
-    def inference_with_ground_truth_step(self, batch_input, split):  # noqa: ARG002
+    def inference_step(self, batch_input, *, metrics=None):  # noqa: ARG002
         return self._batch_outputs[batch_input["_batch_i"]]
+
+
+def _forbidden_untransform(ints, batch_idxs):  # noqa: ARG001
+    raise AssertionError("the exporter must not re-apply ints_untransform_func")
 
 
 def _log(vals):
@@ -41,7 +45,7 @@ def two_batches():
     """Two single-spectrum batches, 2 peaks and 2 nodes each."""
     b0 = {
         "pred_mzs": th.tensor([100.0, 200.0]),
-        "pred_logprobs": _log([0.6, 0.4]),
+        "pred_ints": th.tensor([0.6, 0.4], dtype=th.float64),
         "pred_batch_idxs": th.tensor([0, 0]),
         "pred_node_logprobs": _log([0.7, 0.3]),
         "pred_node_batch_idxs": th.tensor([0, 0]),
@@ -49,7 +53,7 @@ def two_batches():
     }
     b1 = {
         "pred_mzs": th.tensor([150.0, 250.0]),
-        "pred_logprobs": _log([0.5, 0.5]),
+        "pred_ints": th.tensor([0.5, 0.5], dtype=th.float64),
         "pred_batch_idxs": th.tensor([0, 0]),
         "pred_node_logprobs": _log([0.9, 0.1]),
         "pred_node_batch_idxs": th.tensor([0, 0]),
@@ -78,10 +82,44 @@ def test_node_probs_are_exp_of_logprobs(two_batches):
     assert th.allclose(out["pred_node_probs"], expected, atol=1e-6)
 
 
-def test_pred_ints_applies_untransform_of_exp(two_batches):
+def test_pred_ints_does_not_reapply_untransform(two_batches):
+    """`inference_step` already untransformed; the exporter must only rescale the base peak.
+
+    The step runs `preproc_spec(train=False, pred=True)`, which applies
+    `ints_untransform_func` and L1-normalizes. Re-applying the untransform here is what
+    squared every exported relative intensity under `ints_transform: sqrt`.
+    """
     out = _run(two_batches, {"pred_mzs", "pred_ints"})
-    expected = th.tensor([0.6, 0.4, 0.5, 0.5], dtype=th.float64)
+    # base peak = 1000 per spectrum, relative intensities preserved LINEARLY:
+    # batch 0 is 0.6/0.4 -> 1000/666.67 (squaring would have given 1000/444.4)
+    expected = th.tensor([1000.0, 1000.0 * 0.4 / 0.6, 1000.0, 1000.0], dtype=th.float64)
     assert th.allclose(out["pred_ints"], expected, atol=1e-6)
+
+
+@pytest.mark.parametrize("evaluate", [True, False])
+def test_pred_ints_identical_in_both_modes(two_batches, evaluate):
+    """`evaluate` only adds ground-truth scoring; the intensities must not move.
+
+    Before the merge these were two different steps with two different postconditions,
+    and `evaluate` had to be decoded by the exporter to pick an untransform.
+    """
+    model = _StubFraGNNet(two_batches)
+    out = script_utils.run_inference_pkl(
+        model,
+        [{"_batch_i": 0}, {"_batch_i": 1}],
+        device=th.device("cpu"),
+        output_set={"pred_mzs", "pred_ints"},
+        evaluate=evaluate,
+    )
+    expected = th.tensor([1000.0, 1000.0 * 0.4 / 0.6, 1000.0, 1000.0], dtype=th.float64)
+    assert th.allclose(out["pred_ints"], expected, atol=1e-6)
+
+
+def test_pred_ints_missing_raises(two_batches):
+    """`pred_ints` is the only intensity contract, so its absence must fail loudly."""
+    batches = [{k: v for k, v in b.items() if k != "pred_ints"} for b in two_batches]
+    with pytest.raises(KeyError, match="pred_ints"):
+        _run(batches, {"pred_mzs", "pred_ints"})
 
 
 def test_index_vars_retained_and_rebatched(two_batches):

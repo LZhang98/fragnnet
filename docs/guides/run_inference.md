@@ -330,7 +330,7 @@ python scripts/run_inference.py \
   --model_ckpt <MODEL_CHECKPOINT> \
   --save_dp <OUTPUT_DIRECTORY> \
   [--frag_dp <FRAG_DIR>] \
-  [--save_format parquet|pkl|pkl.gz]
+  [--save_format pkl|pkl.gz]
 ```
 
 #### Arguments
@@ -347,12 +347,33 @@ python scripts/run_inference.py \
 
 **Output Options**:
 - `--save_dp`: Directory to save inference results
-- `--save_format`: Output format (`parquet`, `pkl`, or `pkl.gz`; default: `parquet`)
+- `--save_format`: Output format (`pkl` or `pkl.gz`; default: `pkl`). Parquet is not
+  supported — prediction cells are `torch.Tensor`, which pyarrow cannot serialize.
 - `--save_chunk_size`: Number of predictions per chunk file (default: 10,000)
-- `--output_subset`: Subset of columns to output (optional)
+- `--output_subset`: Which prediction arrays to compute (optional; `--list_output_subset`
+  prints the tokens). Everything outside the subset comes back as NaN and is removed by
+  `--drop_none_cols`.
+- `--return_formula_str` / `--return_cc_hash`: annotation columns (default: True). See
+  [Annotation without probabilities](#annotation-without-probabilities).
 
 **Inference Options**:
-- `--batch_size`: Batch size for inference (default: 1)
+- `--batch_size`: Fixed batch size for inference (default: 16, matching `eval_batch_size` in
+  `config/template.yml`). Ignored when `--dynamic_batch_max` is set. Do not set it to 1
+  casually: besides the obvious per-call overhead, it is also what `init_dataloader` passes as
+  `return_batch_at`, so a config with `dynamic_batch_sampler: True` would flush a batch after
+  every single sample and never reach `dynamic_batch_sampler_max`. Batch size 1 has also
+  historically masked index-offset bugs, since spectrum 0 has offset 0 under any scheme.
+- `--dynamic_batch_max` / `--dynamic_batch_limited_by`: pack batches greedily up to this many
+  `frag_node` (default) or `frag_edge` per batch instead of using a fixed `--batch_size`. Backed
+  by `IterableSpecMolFragDataset`, which forms batches lazily while streaming, so each DAG is
+  loaded exactly once and no size cache (`meta_info.json` / `precom_meta_info`) is needed. The
+  tradeoff is that the batch count is unknown until the run finishes, so the progress bar has no
+  total. Dynamic batching currently runs with `num_workers=0`; the fixed-batch path still uses
+  the configured worker count. For scale, training uses `dynamic_batch_sampler_max: 100000` in
+  `frag_node` units.
+  Only pass `frag_edge` for a config that materializes fragment edges — otherwise `num_edges` is
+  0 for every sample, which would put the entire run in a single batch (this now raises rather
+  than OOMing).
 - `--min_intensity`: Minimum intensity threshold for peaks (default: 1.0). `pred_ints` is
   rescaled per spectrum to a 0-1000 base peak and filtered with a strict `>`, so the value is
   percent-of-base-peak x 10 (1.0 = 0.1%, 10.0 = 1%). Measured on NIST20 val (2,000 spectra,
@@ -362,7 +383,60 @@ python scripts/run_inference.py \
   smaller output. Keep it low only if you need to recover DAG support from the export, which
   even 1.0 largely prevents (see
   [dominant_peak_outcome_decomposition.md](../findings/dominant_peak_outcome_decomposition.md)).
-- `--disable_preproc`: Disable dataset preprocessing to save memory (default: True)
+- `--disable_preproc`: Disable dataset preprocessing to save memory (default: True). This
+  forces both `frag_params.preprocess` and `frag_params.preload` off, so DAGs are read and
+  processed on access. Since `__getitem__` is per-spectrum while a DAG is per-molecule, the
+  repeated work is absorbed by a per-molecule LRU sized by `frag_params.cache_size` (default
+  16, 0 disables). Hit rate depends on how clustered a molecule's rows are in the input
+  `spec_df` — sorting it by `mol_id` maximizes reuse. Dynamic batching runs in one process, so it
+  also shares one LRU across the full index stream.
+
+#### Fragment annotation
+
+`pred_formula_strs` and `pred_node_ccs` carry the fragment annotation. They are addressed
+by `pred_formula_formula_idxs` / `pred_node_node_idxs`, which used to be requested only by
+the `pred_formula_probs` / `pred_node_probs` tokens — so annotation came out NaN unless a
+probability was also asked for. `--return_formula_str` / `--return_cc_hash` now request
+those index arrays themselves (and, for cc hashes, the joint grid that prunes them).
+
+```bash
+--output_subset pred_mzs pred_ints pred_formula_probs pred_formula_node_probs \
+--return_formula_str True --return_cc_hash True --min_intensity 10.0
+```
+
+All indices are rebased per spectrum, so every lookup below is local:
+
+| Column | One entry per | Meaning |
+| --- | --- | --- |
+| `pred_mzs`, `pred_ints` | peak | the spectrum |
+| `frag_formula_peak_idxs` | peak | peak -> formula |
+| `pred_formula_strs` | formula | formula string |
+| `pred_formula_probs` | formula | P(f) |
+| `pred_joint_formula_idxs`, `pred_joint_node_idxs` | joint row | formula -> candidate node |
+| `pred_formula_node_probs` | joint row | P(n\|f) |
+| `pred_node_ccs` | node | atom bitmask (2 x int64, `MASK_SIZE=128`) |
+
+Peak `k`'s formula is `pred_formula_strs[frag_formula_peak_idxs[k]]`. Its fragment is the
+`argmax` of `pred_formula_node_probs` over the joint rows carrying that formula — which is
+why the annotation needs P(n|f): one formula is generally explained by several DAG nodes
+(4 on average, see below). Resolve the cc bitmask to a SMILES against the parent molecule
+downstream.
+
+**`--min_intensity` prunes the node arrays too.** It used to prune peaks, formulas and the
+joint grid but leave `pred_node_probs` / `pred_node_node_idxs` — and therefore
+`pred_node_ccs` — covering every node of the DAG at any threshold. Measured on NIST20 val
+with `9t63zils`, per spectrum:
+
+| Array | `--min_intensity 0` (400 spectra) | `--min_intensity 10.0` (1,000 spectra) |
+| --- | --- | --- |
+| peaks | p50 2,075 / mean 2,689 | p50 12 / mean 20.8 |
+| formulas | p50 2,076 / mean 2,690 | p50 12 / mean 20.8 |
+| joint rows | p50 8,545 / mean 29,884 | p50 49 / mean 102.9 |
+| nodes | p50 1,042 / mean 2,350 | p50 38 / mean 64.4 |
+
+Over the SYNCED set (4.05M spectra) that is the difference between ~152 GB and ~4.2 GB of
+cc bitmasks, and ~2.4 TB and ~8.3 GB of joint rows. The node count was threshold-independent
+before the fix, so the left column is also what `--min_intensity 10.0` used to produce.
 
 #### Resume Capability
 The script automatically checks the output directory (`--save_dp`) for existing prediction chunks. If found, it skips the spectra that have already been processed, allowing you to resume interrupted jobs without restarting from scratch.

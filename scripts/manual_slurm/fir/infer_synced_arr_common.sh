@@ -100,12 +100,36 @@ BATCH_SIZE=${BATCH_SIZE:-16}
 # docs/findings/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
 MIN_INTENSITY=${MIN_INTENSITY:-10.0}
 SAVE_FORMAT=${SAVE_FORMAT:-pkl}
-# Peak-only output: m/z + intensity, no formula/fragment annotation, no probabilities.
-# run_inference.py defaults --return_formula_str/--return_cc_hash to True, so turn them
-# off explicitly - otherwise every row does the per-fragment formula/CC lookup.
-OUTPUT_SUBSET=${OUTPUT_SUBSET:-'pred_mzs pred_ints'}
-RETURN_FORMULA_STR=${RETURN_FORMULA_STR:-False}
-RETURN_CC_HASH=${RETURN_CC_HASH:-False}
+# Peaks + fragment annotation. MIN_INTENSITY prunes peaks, formulas, the joint grid and
+# (as of the node-pruning fix) the node arrays, so every array below covers only what is
+# behind a surviving peak.
+#
+#   pred_mzs / pred_ints            the spectrum
+#   frag_formula_peak_idxs          peak -> formula        (always written)
+#   pred_formula_strs               formula string         (RETURN_FORMULA_STR)
+#   pred_formula_probs              P(f)
+#   pred_joint_formula_idxs/_node_idxs + pred_formula_node_probs
+#                                   formula -> candidate node, with P(n|f)
+#   pred_node_ccs                   node -> atom bitmask   (RETURN_CC_HASH)
+#                                   2 x int64, MASK_SIZE=128; resolve to SMILES against
+#                                   the parent molecule downstream
+#
+# So peak k's formula is pred_formula_strs[frag_formula_peak_idxs[k]], and its fragment
+# is the argmax of pred_formula_node_probs over the joint rows with that formula - all
+# indices are rebased per spectrum, so the lookups are local.
+#
+# The joint index columns come in automatically with RETURN_CC_HASH (they are what prunes
+# the node arrays); P(n|f) is what makes them usable, hence its place in OUTPUT_SUBSET.
+# Add 'pred_node_probs' for P(n), or drop 'pred_formula_probs' if P(f) is not needed.
+#
+# Size at MIN_INTENSITY=10.0, measured on NIST20 val (9t63zils, 1,000 spectra): per
+# spectrum p50 12 peaks / 12 formulas / 49 joint rows / 38 nodes, mean 20.8 / 20.8 /
+# 102.9 / 64.4. Over SYNCED's 4.05M spectra that is ~4.2 GB of cc bitmasks and ~8.3 GB
+# of joint rows. Unpruned it would be ~152 GB and ~2.4 TB - so do NOT lower
+# MIN_INTENSITY without recomputing the budget.
+OUTPUT_SUBSET=${OUTPUT_SUBSET:-'pred_mzs pred_ints pred_formula_probs pred_formula_node_probs'}
+RETURN_FORMULA_STR=${RETURN_FORMULA_STR:-True}
+RETURN_CC_HASH=${RETURN_CC_HASH:-True}
 SAVE_CHUNK_SIZE=${SAVE_CHUNK_SIZE:-10000}
 
 # --- io --------------------------------------------------------------------
@@ -136,6 +160,8 @@ echo NUM_MOLS: ${NUM_MOLS}
 echo BATCH_SIZE: ${BATCH_SIZE}
 echo SAVE_FORMAT: ${SAVE_FORMAT}
 echo OUTPUT_SUBSET: ${OUTPUT_SUBSET}
+echo RETURN_FORMULA_STR: ${RETURN_FORMULA_STR}
+echo RETURN_CC_HASH: ${RETURN_CC_HASH}
 nvidia-smi || true
 
 if [ ! -d "${SRC_PROC_DP}" ]; then

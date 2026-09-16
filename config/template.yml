@@ -161,6 +161,11 @@ frag_params:
   compressed: True
   preload: False
   preprocess: False
+  # Per-molecule LRU of processed neutral DAGs, used whenever preload/preprocess are off
+  # (which apply_inference_config forces for every inference run). __getitem__ is
+  # per-spectrum but a DAG is per-molecule, so without this every collision energy of a
+  # molecule re-reads and re-builds the same graph. 0 disables.
+  cache_size: 16
   include_cmf: False
 magma_params:
   pe_embed_k: 0

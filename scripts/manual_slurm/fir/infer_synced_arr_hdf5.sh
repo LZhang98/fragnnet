@@ -22,7 +22,7 @@
 # want to run inference as a single job. Keep --array and CHUNK_SIZE in sync with the
 # preprocessing array (289,480 molecules / 20000 -> 15 tasks).
 #
-# Output: ${OUT_DP}/shard_<frag_shard>_<sub>/predictions_chunk_*.parquet
+# Output: ${OUT_DP}/shard_<frag_shard>_<sub>/predictions_chunk_*.pkl
 
 DATASET_NAME=synced
 MAX_DEPTH=3

@@ -77,6 +77,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Where it stands |
 |-----|-----------------|
+| [inference_step_consolidation_plan.md](plans/inference_step_consolidation_plan.md) | **Landed (working tree, uncommitted).** The three `SpectrumPL` inference entry points are one `inference_step(batch, *, metrics=None)`; `resolve_pred_ints`/`step_untransformed` deleted. No model evaluation run. |
 | [fragnnet_audit_fixes.md](plans/fragnnet_audit_fixes.md) | Six FraGNNet/shared audit fixes on feiw_v2; reproduced regressions and compatibility notes. |
 | [model_improvement_plan.md](plans/model_improvement_plan.md) | **Canonical roadmap.** Start here. |
 | [sibling_ranking_target_plan.md](plans/sibling_ranking_target_plan.md) | **Current lead.** Coverage gate passed (583,539 targets at margin 0.1); ranking loss on `P(n)` not yet implemented. |

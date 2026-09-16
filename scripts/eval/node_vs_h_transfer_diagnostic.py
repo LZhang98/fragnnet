@@ -387,7 +387,7 @@ def main() -> None:
                 break
             batch = to_device(batch, device, non_blocking=False)
             batch["return_explainability_tensors"] = True
-            out = model.inference_with_ground_truth_step(batch, split="test")
+            out = model.inference_step(batch, metrics="test")
             batch_cpu = {k: _tensor_to_cpu(v) for k, v in batch.items()}
             out_cpu = {k: _tensor_to_cpu(v) for k, v in out.items()}
             batch_size = int(batch_cpu["batch_size"])
