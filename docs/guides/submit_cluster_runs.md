@@ -1,6 +1,6 @@
 # Submit training runs on Fir and Vulcan
 
-> **Status:** GUIDE · **Updated:** 2026-09-14
+> **Status:** GUIDE · **Updated:** 2026-09-16
 > Submission procedure verified against repository source; no cluster jobs were submitted or tested.
 
 ## 1. Prepare on the target cluster
@@ -78,13 +78,31 @@ python scripts/setup_job_cc.py \
 Do not replace `python` with `FRAGNNET_PYTHON` for cluster submissions.
 These are the current **repository presets**, not verified scheduler availability or quota:
 
-| Profile | GPU request (`--gres`) | CPUs | Host memory |
-| --- | --- | --- | --- |
-| `fir:h100-80gb` | `gpu:h100:1` | 12 | 280G |
-| `fir:h100-1g.10gb` | `gpu:h100_1g.10gb:1` | 1 | 35G |
-| `fir:h100-2g.20gb` | `gpu:h100_2g.20gb:1` | 3 | 70G |
-| `fir:h100-3g.40gb` | `gpu:h100_3g.40gb:1` | 6 | 140G |
-| `vulcan:l40s` | `gpu:1` | 6 | 192G |
+| Profile | GPU request (`--gres`) | CPUs | Host memory | Price |
+| --- | --- | --- | --- | --- |
+| `fir:h100-80gb` | `gpu:h100:1` | 12 | 280G | 12.2 |
+| `fir:h100-1g.10gb` | `gpu:h100_1g.10gb:1` | 1 | 35G | 1.74 |
+| `fir:h100-2g.20gb` | `gpu:h100_2g.20gb:1` | 3 | 70G | 3.48 |
+| **`fir:h100-3g.40gb`** (Fir default) | `gpu:h100_3g.40gb:1` | 6 | 140G | 6.1 |
+| `vulcan:l40s` | `gpu:1` | 6 | 192G | 0 |
+
+**On Fir, use `fir:h100-3g.40gb` unless you have a reason not to.** The 40GB MIG slice is
+enough for FraGNNet training and inference and costs half a whole H100. Move up to
+`fir:h100-80gb` only on a stated need, such as a measured OOM at 40GB.
+
+Hand-written job scripts under `scripts/manual_slurm/fir/` cannot call the generator, so they
+spell the same preset out as three directives that must stay consistent with each other:
+
+```bash
+#SBATCH --mem=140G
+#SBATCH --cpus-per-task=6
+#SBATCH --gres=gpu:h100_3g.40gb:1
+```
+
+Request the GPU with `--gres` and the gres *type*, not `--gpus-per-node` with a device name
+(`nvidia_h100_80gb_hbm3_3g.40gb`). The CPU and memory values are that slice's proportional
+share of the node, so changing the slice without changing the other two bills at the higher
+ratio. `GPU_PROFILES` in `setup_job_cc.py` is the source of truth for every triple.
 
 Profiles override CPU and memory arguments. Check the generated directives and choose resources
 and wall time appropriate to the experiment. `w=online` enables W&B logging; arrange authentication

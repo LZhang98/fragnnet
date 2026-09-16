@@ -2,9 +2,14 @@
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
 #SBATCH --job-name=infer_synced_arr_hdf5
-#SBATCH --mem=64G
-#SBATCH --cpus-per-task=8
-#SBATCH --gpus-per-node=nvidia_h100_80gb_hbm3_3g.40gb:1
+# Resources are the fir:h100-3g.40gb preset from GPU_PROFILES in scripts/setup_job_cc.py
+# (python scripts/setup_job_cc.py --list_gpu_profiles). Keep the three lines below as one
+# unit when switching presets: the cpu/mem values are that slice's proportional share, so
+# a mismatched pair bills at the higher ratio. Inference runs with num_workers=0, so the
+# cpu count only covers the shard staging copy, not dataloading.
+#SBATCH --mem=140G
+#SBATCH --cpus-per-task=6
+#SBATCH --gres=gpu:h100_3g.40gb:1
 #SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
