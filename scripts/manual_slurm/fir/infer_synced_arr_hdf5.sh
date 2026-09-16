@@ -4,7 +4,7 @@
 #SBATCH --job-name=infer_synced_arr_hdf5
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
-#SBATCH --gpus-per-node=1
+#SBATCH --gpus-per-node=nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
