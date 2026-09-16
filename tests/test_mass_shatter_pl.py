@@ -1,6 +1,5 @@
 """Integration tests for MASShatter's SpectrumPL training wrapper."""
 
-import importlib.util
 import math
 import runpy
 import sys
@@ -1590,14 +1589,18 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
         model, batches, th.device("cpu"),
         evaluate=False, output_set={"pred_mzs", "pred_ints"},
     )
-    # These values have already been untransformed and normalized by inference_step.
-    # A second inverse sqrt transform would change their values and scale.
-    th.testing.assert_close(output["pred_ints"], th.cat([x["pred_ints"] for x in expected]))
-    th.testing.assert_close(output["pred_mzs"], th.cat([x["pred_mzs"] for x in expected]))
+    # `inference_step` has already untransformed and L1-normalized these; the exporter
+    # only rescales the base peak to 1000. A second inverse sqrt transform would change
+    # the ratios, which the rescale cannot hide.
+    expected_batch_idxs = th.cat([x["pred_batch_idxs"] + index for index, x in enumerate(expected)])
     th.testing.assert_close(
-        output["pred_batch_idxs"],
-        th.cat([x["pred_batch_idxs"] + index for index, x in enumerate(expected)]),
+        output["pred_ints"],
+        script_utils.batched_mf1000_normalize(
+            th.cat([x["pred_ints"] for x in expected]), expected_batch_idxs
+        ),
     )
+    th.testing.assert_close(output["pred_mzs"], th.cat([x["pred_mzs"] for x in expected]))
+    th.testing.assert_close(output["pred_batch_idxs"], expected_batch_idxs)
 
 
 @pytest.mark.parametrize("output_mode", ["probability", "independent"])
@@ -1671,30 +1674,17 @@ def test_mass_shatter_cli_exports_without_dags(
     monkeypatch.setattr(script_utils, "init_model_from_ckpt", lambda *_args: model)
     monkeypatch.setattr(script_utils, "setup_device", lambda *_args: th.device("cpu"))
     output_dir = tmp_path / "predictions"
-    save_format = "parquet" if existing_dag_directory else "pkl"
-    if save_format == "parquet" and not any(
-        importlib.util.find_spec(engine) is not None for engine in ("pyarrow", "fastparquet")
-    ):
-        def parquet_boundary(frame, path, index):
-            assert not index
-            assert isinstance(frame.iloc[0]["mol_id"], (int, np.integer))
-            assert isinstance(frame.iloc[0]["pred_mzs"], list)
-            assert isinstance(frame.iloc[0]["pred_ints"], list)
-            frame.to_pickle(path)
-
-        # Check the exact serializer boundary when the optional codec is unavailable.
-        monkeypatch.setattr(pd.DataFrame, "to_parquet", parquet_boundary)
-        monkeypatch.setattr(pd, "read_parquet", pd.read_pickle)
+    # `existing_dag_directory` also varies the chunk size so both the periodic and the
+    # final chunk writer run. Parquet is no longer an option, so both arms write pkl.
     monkeypatch.setattr(
         sys, "argv", [
             "run_inference.py", "--mol_fp", str(mol_path), "--spec_fp", str(spec_path),
-            "--save_dp", str(output_dir), "--save_format", save_format, "--min_intensity", "0",
+            "--save_dp", str(output_dir), "--save_format", "pkl", "--min_intensity", "0",
             "--save_chunk_size", "1" if existing_dag_directory else "10000",
         ],
     )
     runpy.run_path(str(Path(__file__).parents[1] / "scripts/run_inference.py"), run_name="__main__")
-    saved_path = output_dir / f"predictions_chunk_0.{save_format}"
-    saved = pd.read_parquet(saved_path) if save_format == "parquet" else pd.read_pickle(saved_path)
+    saved = pd.read_pickle(output_dir / "predictions_chunk_0.pkl")
     assert saved["spec_id"].tolist() == [101, 102]
     for index in range(2):
         mask = prediction["pred_batch_idxs"] == index

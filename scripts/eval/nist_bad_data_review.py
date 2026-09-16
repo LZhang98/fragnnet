@@ -244,9 +244,9 @@ def _polarity_mismatch(prec_type: object, ion_mode: object) -> bool:
     """Check whether the adduct charge sign conflicts with NIST ion mode."""
     if not isinstance(prec_type, str) or ion_mode not in {"P", "N"}:
         return False
-    if prec_type.endswith("+") or prec_type.endswith("+_NL"):
+    if prec_type.endswith("+"):
         return ion_mode != "P"
-    if prec_type.endswith("-") or prec_type.endswith("-_NL"):
+    if prec_type.endswith("-"):
         return ion_mode != "N"
     return False
 

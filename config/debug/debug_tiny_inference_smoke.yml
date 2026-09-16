@@ -1,0 +1,116 @@
+wandb_name: debug_tiny_inference_smoke
+wandb_tags:
+- debug
+- inference_smoke
+
+# data stuff
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+frag_dp: data/frag/debug_tinyv4_d3h4/dags
+
+seed: 42
+
+subsample_params:
+  subsample_size: 0
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: False
+  preprocess: False
+
+spec_params:
+  merge: False
+  nce: True
+  ace: True
+  preprocess: False
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - "QQQ"
+    - "Other"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
+
+mol_params:
+  preprocess: False
+
+nb_iso: False
+
+# model stuff
+frag_gnn_type: NodeMLP
+num_depth: 4
+num_hs: 4
+ce_insert_type: embed_clamped
+ce_insert_location: mol
+ce_insert_merge: True
+ce_insert_size: 16
+prec_insert_location: mol
+prec_insert_size: 16
+inst_insert_location: mol
+inst_insert_size: 16
+frag_mode_insert_location: mol
+frag_mode_insert_size: 16
+mol_hidden_size: 64
+mol_num_layers: 2
+mol_dropout: 0.1
+frag_dropout: 0.1
+mlp_dropout: 0.1
+
+# loss stuff
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 16
+
+# optimization stuff
+train_batch_size: 8
+eval_batch_size: 8
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+accelerator: gpu
+devices: 1
+min_epochs: 30
+max_epochs: 30
+lr_schedule: False
+upload_checkpoints: False
+delete_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+  - cos_sim
+eval_mz_bin_res:
+  - 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False
+dynamic_batch_sampler: False
+pl_enable_progress_bar: True
+compile: False
+num_workers: 0
+detect_anomaly: False

@@ -74,6 +74,21 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+Inference path consolidation merged from `feiw_v2` (2026-09-16): the
+[inference step consolidation plan](plans/inference_step_consolidation_plan.md) is LANDED on that
+branch and is now merged here. It collapses the three `SpectrumPL` inference entry points into one,
+deletes `resolve_pred_ints` and its `step_untransformed` flag, and removes
+`GreedyInferenceBatchSampler` in favour of the lazy `IterableSpecMolFragDataset`. The same merge
+brings the subformula-filter fix for Cl and Na adducts, HDF5 output compression, and the
+`drop_empty_spectra` prediction-only fix. Training and loss paths keep `pred_logprobs` and were not
+touched. Two contract changes from `feiw_v2` win over this branch's prior behaviour: the exporters
+now rescale each spectrum's base peak to 1000 on top of the L1-normalized `pred_ints`, and
+`run_inference.py` no longer offers `--save_format parquet`. Two MASShatter tests that pinned the
+old exporter scale and the parquet writer were updated accordingly; this branch's `requires_dags`
+guard and its `pred_intensities` output contract are preserved. Validation: 3,234 passed, 1 skipped,
+2 xfailed; Ruff on the resolved files matches the `feiw_v2` baseline. Next: a real-checkpoint
+inference smoke check; no GPU run or evaluation was performed for the merge.
+
 Candidate attention topology audit (2026-09-13): the
 [audit section](findings/masshatter_code_audit.md#candidate-attention-topology-audit-2026-09-13)
 records seven findings on the uncommitted `full` candidate-attention arm, all fixed in the

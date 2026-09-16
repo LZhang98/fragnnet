@@ -21,8 +21,8 @@
   | `docs/workflow/` | Shared development and experiment procedures |
 
 - Keep the architecture map, current-state entry point, and documentation index at `docs/`
-  top level. The existing `missing_peak_findings.md` and `missing_peak_findings_m-h.md` also
-  remain there as append-only curated analyses. Use their existing `/analyze-subclass` and
+  top level. The curated `findings/missing_peak_findings.md` and
+  `findings/missing_peak_findings_m-h.md` analyses are append-only. Use their `/analyze-subclass` and
   `/analyze-subclass-mh` procedures when available; if unavailable, read the procedure and
   resolve how to preserve its append-only contract before changing the logs.
 - Every project document needs a status banner directly below its H1. Include an update date

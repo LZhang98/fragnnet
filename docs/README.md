@@ -17,9 +17,9 @@ and the [session workflow](workflow/session.md). Shared constraints live in
 | [rules/python.md](rules/python.md) | Python formatting, imports, docstrings, testing, and hyperparameters |
 | [rules/documentation.md](rules/documentation.md) | Documentation placement, banners, indexing, and preservation |
 
-Research documents generally carry a status banner directly under its title. Check it before acting on a doc —
-several plans here are **closed nulls or superseded**, and they are kept deliberately so the same
-line does not get re-run.
+Research documents generally carry a status banner directly under their title. Check it before
+acting on a doc — several plans here are **closed nulls or superseded**, and they are kept
+deliberately so the same line does not get re-run.
 
 | Status | Meaning |
 |--------|---------|
@@ -90,6 +90,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Where it stands |
 |-----|-----------------|
+| [inference_step_consolidation_plan.md](plans/inference_step_consolidation_plan.md) | **Landed (working tree, uncommitted).** The three `SpectrumPL` inference entry points are one `inference_step(batch, *, metrics=None)`; `resolve_pred_ints`/`step_untransformed` deleted. No model evaluation run. |
 | [fragnnet_audit_fixes.md](plans/fragnnet_audit_fixes.md) | Six FraGNNet/shared audit fixes on feiw_v2; reproduced regressions and compatibility notes. |
 | [model_improvement_plan.md](plans/model_improvement_plan.md) | **Canonical roadmap.** Start here. |
 | [sibling_ranking_target_plan.md](plans/sibling_ranking_target_plan.md) | **Current lead.** Coverage gate passed (583,539 targets at margin 0.1); ranking loss on `P(n)` not yet implemented. |

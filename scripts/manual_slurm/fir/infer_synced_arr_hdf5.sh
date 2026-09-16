@@ -5,7 +5,7 @@
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-node=1
-#SBATCH --time=0-12:00
+#SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/infer_synced_arr_hdf5_%A_%a.out
@@ -22,7 +22,7 @@
 # want to run inference as a single job. Keep --array and CHUNK_SIZE in sync with the
 # preprocessing array (289,480 molecules / 20000 -> 15 tasks).
 #
-# Output: ${OUT_DP}/shard_<frag_shard>_<sub>/predictions_chunk_*.parquet
+# Output: ${OUT_DP}/shard_<frag_shard>_<sub>/predictions_chunk_*.pkl
 
 DATASET_NAME=synced
 MAX_DEPTH=3
@@ -52,8 +52,8 @@ BATCH_SIZE=${BATCH_SIZE:-16}
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FRAGNNET_DP=${FRAGNNET_DP:-/home/feiw/project/feiw/frag-gnn}
-if [ -f "${SCRIPT_DIR}/infer_synced_arr_hdf5_common.sh" ]; then
-    source "${SCRIPT_DIR}/infer_synced_arr_hdf5_common.sh"
+if [ -f "${SCRIPT_DIR}/infer_synced_arr_common.sh" ]; then
+    source "${SCRIPT_DIR}/infer_synced_arr_common.sh"
 else
-    source "${FRAGNNET_DP}/scripts/manual_slurm/fir/infer_synced_arr_hdf5_common.sh"
+    source "${FRAGNNET_DP}/scripts/manual_slurm/fir/infer_synced_arr_common.sh"
 fi

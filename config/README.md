@@ -267,7 +267,12 @@ Use rounded m/z values and a fixed matching tolerance.
 #### Hungarian matching metrics (per-instrument ppm tolerance)
 
 Use per-instrument-type ppm tolerance from `inst_type_loss_tol`. Require `spec_inst_type` in
-the batch. Fall back silently to no score if `inst_type_loss_tol` is not configured.
+the batch. Requesting either score while `inst_type_loss_tol` is null raises at setup - it
+used to skip the score silently and export -1.0 for every spectrum. They are **opt-in**:
+`run_save_inference_eval.py` defaults to `cos_hun`, which needs no table. Reach for the
+`_inst_tol` variants when the eval set contains QTOF and the config declares both QTOF in
+`spec_params.inst_types` and the table - for an FT-only config they equal the plain versions,
+since the FT entry is the global tolerance.
 
 | Name | Description |
 |------|-------------|
@@ -310,8 +315,9 @@ In `run_save_inference_eval.py` pass `--eval_sqrt True` (controls `eval_hun_sqrt
 
 #### Per-instrument tolerance configuration
 
-Required for `cos_hun_inst_tol` and `jss_hun_inst_tol` to use instrument-specific ppm
-windows instead of the global tolerance.
+Required for `cos_hun_inst_tol` and `jss_hun_inst_tol`, which raise at setup without it.
+Feeds the training loss too, not only the scores. An instrument that is not listed falls back
+to the global `loss_tolerance_rel` / `loss_tolerance_min_mz`.
 
 ```yaml
 inst_type_loss_tol:

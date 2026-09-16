@@ -7,9 +7,13 @@ and eval/inference, so they are dead weight on the training forward peak otherwi
 The invariants under test:
 - training + flag on  -> the explainability out_d keys are None, but the loss-critical spectrum
   path (pred_mzs, pred_logprobs) is bit-for-bit identical to the flag-off baseline;
-- eval / inference    -> the marginals are always computed (so val aux metrics are unaffected),
-  even with the flag on;
+- eval / inference    -> the marginals are still computed with the flag on, so val aux
+  metrics are unaffected (`self.training` is not consulted outside the flag);
 - flag off (default)  -> marginals always computed (backward compatible).
+
+Inference forwards, which `self.training` cannot distinguish from val/test loss forwards,
+opt out through the single per-call switch `return_explainability_tensors` instead; see
+TestReturnExplainabilityTensors. On a training forward the constructor flag wins.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from __future__ import annotations
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.model.fragnnet_model import FraGNNetModel
+from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS, FraGNNetModel
 from fragnnet.utils.data_utils import mol_from_smiles
 from fragnnet.utils.feat_utils import get_frag_graph, get_mol_graph
 from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
@@ -214,14 +218,18 @@ class TestSkipTrainExplainability:
             assert out[k] is not None, f"{k} must be computed in eval mode"
             assert th.isfinite(out[k]).all()
 
-    def test_explicit_request_overrides_flag_in_train(self) -> None:
-        """return_explainability_tensors=True computes marginals even in train() with the flag."""
+    def test_training_flag_wins_over_a_request(self) -> None:
+        """On a TRAINING forward the constructor flag beats the per-call switch.
+
+        With one switch that defaults True there is no way to tell "explicitly asked" from
+        "said nothing", so the training memory flag has to win or it would never fire.
+        """
         model = _build_model(skip_explainability_when_training=True)
         model.train()
         with th.no_grad():
             out = model(**_forward_kwargs(), return_explainability_tensors=True)
-        assert out["pred_node_formula_logprobs"] is not None
-        assert out["pred_formula_formula_idxs"] is not None  # only set when requested
+        assert out["pred_node_formula_logprobs"] is None
+        assert out.get("pred_formula_formula_idxs") is None
 
     def test_flag_off_always_computes(self) -> None:
         """Default (flag off) computes marginals in train mode -- backward compatible."""
@@ -283,3 +291,74 @@ class TestFormulaSupportIntegration:
         ]
         assert gradients
         assert any(bool(th.any(gradient != 0).item()) for gradient in gradients)
+
+
+class TestReturnExplainabilityTensors:
+    """The single per-call switch. False drops the marginals; True/default keeps them.
+
+    `self.training` is False on inference forwards AND on val/test loss forwards, so it can
+    never authorize the skip on its own - the caller has to say so. These pin that the
+    switch works in eval mode (which the training flag deliberately does not touch).
+    """
+
+    def test_false_drops_marginals_in_eval(self) -> None:
+        model = _build_model(skip_explainability_when_training=False)
+        model.eval()
+        with th.no_grad():
+            out = model(**_forward_kwargs(), return_explainability_tensors=False)
+        for k in EXPL_KEYS:
+            assert out[k] is None, f"{k} should be None when the caller opts out"
+        assert th.isfinite(out["pred_logprobs"]).all()
+        assert th.isfinite(out["pred_mzs"]).all()
+
+    def test_spectrum_path_unchanged_by_opting_out(self) -> None:
+        """Opting out is free: the exported spectrum is bit-for-bit identical."""
+        model = _build_model(skip_explainability_when_training=False)
+        model.eval()
+        kwargs = _forward_kwargs("CCO", ce=70.0)
+        with th.no_grad():
+            full = model(**kwargs)
+            dropped = model(**kwargs, return_explainability_tensors=False)
+        assert th.equal(full["pred_mzs"], dropped["pred_mzs"])
+        assert th.equal(full["pred_logprobs"], dropped["pred_logprobs"])
+        assert th.equal(full["pred_batch_idxs"], dropped["pred_batch_idxs"])
+        assert th.equal(full["pred_oos_logprobs"], dropped["pred_oos_logprobs"])
+        assert full["pred_node_logprobs"] is not None
+        assert dropped["pred_node_logprobs"] is None
+
+    def test_default_is_on(self) -> None:
+        """A caller that says nothing still gets them, so the loss path is unaffected."""
+        model = _build_model(skip_explainability_when_training=False)
+        model.eval()
+        with th.no_grad():
+            out = model(**_forward_kwargs())
+        for k in EXPL_KEYS:
+            assert out[k] is not None
+        # the index arrays now ride the same single decision
+        assert out["pred_node_node_idxs"] is not None
+        assert out["pred_formula_formula_idxs"] is not None
+
+    def test_index_arrays_ride_the_same_switch(self) -> None:
+        model = _build_model(skip_explainability_when_training=False)
+        model.eval()
+        with th.no_grad():
+            out = model(**_forward_kwargs(), return_explainability_tensors=False)
+        assert out.get("pred_node_node_idxs") is None
+        assert out.get("pred_formula_formula_idxs") is None
+
+    def test_every_gated_key_is_declared(self) -> None:
+        """EXPLAINABILITY_OUTPUT_KEYS must list exactly what the switch can null out.
+
+        SpectrumPL intersects that set with `extra_metric_args` to decide whether a
+        metric-bearing inference forward may opt out; a key missing from the set would let
+        it opt out of a forward whose metric then reads None.
+        """
+        model = _build_model(skip_explainability_when_training=False)
+        model.eval()
+        kwargs = _forward_kwargs()
+        with th.no_grad():
+            full = model(**kwargs)
+            dropped = model(**kwargs, return_explainability_tensors=False)
+        nulled = {k for k in full if full[k] is not None and dropped.get(k) is None}
+        undeclared = nulled - EXPLAINABILITY_OUTPUT_KEYS
+        assert not undeclared, f"gated but not declared: {sorted(undeclared)}"

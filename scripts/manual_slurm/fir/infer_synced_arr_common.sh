@@ -70,6 +70,11 @@ fi
 MODEL_CKPT=${MODEL_CKPT:-}
 WANDB_RUN_ID=${WANDB_RUN_ID:-}
 MODEL_SAVE_DP=${MODEL_SAVE_DP:-${FRAGNNET_DP}/saved_ckpts}
+# The checkpoint's training config. SET THIS for any checkpoint not trained against the
+# current code: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is
+# given, so otherwise config_d is the ckpt's saved hparams alone and every config key
+# added since it was trained is missing -> model init dies on self.hparams.<new_key>
+# (e.g. AttributeError: ... has no attribute 'depth_ce_bias').
 CUSTOM_FP=${CUSTOM_FP:-}
 
 if [ -z "${MODEL_CKPT}" ] && [ -z "${WANDB_RUN_ID}" ]; then
@@ -84,8 +89,47 @@ case "${CUSTOM_FP}" in "" | /*) ;; *) CUSTOM_FP=${FRAGNNET_DP}/${CUSTOM_FP} ;; e
 
 # --- inference knobs -------------------------------------------------------
 BATCH_SIZE=${BATCH_SIZE:-16}
-MIN_INTENSITY=${MIN_INTENSITY:-1.0}
-SAVE_FORMAT=${SAVE_FORMAT:-parquet}
+# 10.0 = keep peaks above 1% of base peak (pred_ints is rescaled per spectrum to a
+# 0-1000 base peak, filtered with a strict >). Higher than run_inference.py's own 1.0
+# default: measured on NIST20 val (2,000 spectra, 9t63zils), 1.0 -> 10.0 costs
+# cos_hun -0.0001 while cutting peaks ~3x (p50 39 -> 13, p90 202 -> 60), and 13/60
+# matches what real spectra carry (p50 11, p90 45). At 4.05M spectra that is the
+# difference between a ~3x larger export and the same score.
+# Trade-off: the export is then even further from the DAG support, so peak-coverage
+# analysis off these files is not possible - see
+# docs/findings/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
+MIN_INTENSITY=${MIN_INTENSITY:-10.0}
+SAVE_FORMAT=${SAVE_FORMAT:-pkl}
+# Peaks + fragment annotation. MIN_INTENSITY prunes peaks, formulas, the joint grid and
+# (as of the node-pruning fix) the node arrays, so every array below covers only what is
+# behind a surviving peak.
+#
+#   pred_mzs / pred_ints            the spectrum
+#   frag_formula_peak_idxs          peak -> formula        (always written)
+#   pred_formula_strs               formula string         (RETURN_FORMULA_STR)
+#   pred_formula_probs              P(f)
+#   pred_joint_formula_idxs/_node_idxs + pred_formula_node_probs
+#                                   formula -> candidate node, with P(n|f)
+#   pred_node_ccs                   node -> atom bitmask   (RETURN_CC_HASH)
+#                                   2 x int64, MASK_SIZE=128; resolve to SMILES against
+#                                   the parent molecule downstream
+#
+# So peak k's formula is pred_formula_strs[frag_formula_peak_idxs[k]], and its fragment
+# is the argmax of pred_formula_node_probs over the joint rows with that formula - all
+# indices are rebased per spectrum, so the lookups are local.
+#
+# The joint index columns come in automatically with RETURN_CC_HASH (they are what prunes
+# the node arrays); P(n|f) is what makes them usable, hence its place in OUTPUT_SUBSET.
+# Add 'pred_node_probs' for P(n), or drop 'pred_formula_probs' if P(f) is not needed.
+#
+# Size at MIN_INTENSITY=10.0, measured on NIST20 val (9t63zils, 1,000 spectra): per
+# spectrum p50 12 peaks / 12 formulas / 49 joint rows / 38 nodes, mean 20.8 / 20.8 /
+# 102.9 / 64.4. Over SYNCED's 4.05M spectra that is ~4.2 GB of cc bitmasks and ~8.3 GB
+# of joint rows. Unpruned it would be ~152 GB and ~2.4 TB - so do NOT lower
+# MIN_INTENSITY without recomputing the budget.
+OUTPUT_SUBSET=${OUTPUT_SUBSET:-'pred_mzs pred_ints pred_formula_probs pred_formula_node_probs'}
+RETURN_FORMULA_STR=${RETURN_FORMULA_STR:-True}
+RETURN_CC_HASH=${RETURN_CC_HASH:-True}
 SAVE_CHUNK_SIZE=${SAVE_CHUNK_SIZE:-10000}
 
 # --- io --------------------------------------------------------------------
@@ -114,6 +158,10 @@ echo SUB_IDX: ${SUB_IDX}
 echo START_IDX: ${START_IDX}
 echo NUM_MOLS: ${NUM_MOLS}
 echo BATCH_SIZE: ${BATCH_SIZE}
+echo SAVE_FORMAT: ${SAVE_FORMAT}
+echo OUTPUT_SUBSET: ${OUTPUT_SUBSET}
+echo RETURN_FORMULA_STR: ${RETURN_FORMULA_STR}
+echo RETURN_CC_HASH: ${RETURN_CC_HASH}
 nvidia-smi || true
 
 if [ ! -d "${SRC_PROC_DP}" ]; then
@@ -214,6 +262,8 @@ if [ -n "${CUSTOM_FP}" ]; then
     CUSTOM_ARGS=(--custom_fp "${CUSTOM_FP}")
 fi
 
+read -r -a OUTPUT_SUBSET_ARGS <<< "${OUTPUT_SUBSET}"
+
 # run_inference.py falls back to the W&B download whenever --model_ckpt is absent OR
 # points at a nonexistent file, so an unset MODEL_CKPT is simply not passed.
 CKPT_ARGS=()
@@ -239,6 +289,9 @@ python ${WORKING_DIR}/scripts/run_inference.py \
     --min_intensity ${MIN_INTENSITY} \
     --save_dp ${TASK_OUT_DP} \
     --save_format ${SAVE_FORMAT} \
+    --output_subset "${OUTPUT_SUBSET_ARGS[@]}" \
+    --return_formula_str ${RETURN_FORMULA_STR} \
+    --return_cc_hash ${RETURN_CC_HASH} \
     --save_chunk_size ${SAVE_CHUNK_SIZE} \
     "${CUSTOM_ARGS[@]}"
 

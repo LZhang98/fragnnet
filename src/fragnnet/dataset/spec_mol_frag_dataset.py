@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+from collections import OrderedDict
 
 import numpy as np
 import torch as th
@@ -100,6 +101,10 @@ class SpecMolFragDataset(SpecMolDataset):
         self.frag_dp = frag_dp
         self.frag_h5 = None  # h5py.File handle when using HDF5 backend
         self.frag_params = frag_params
+        # Neutral-DAG LRU, see _get_neutral_frag. Built lazily so it is never pickled to
+        # dataloader workers; with fork each worker then fills its own.
+        self._frag_cache = None
+        self._frag_cache_size = int(frag_params["cache_size"])
         if frag_dp.endswith(".h5"):
             self.frag_backend = "h5"
         else:
@@ -310,24 +315,18 @@ class SpecMolFragDataset(SpecMolDataset):
                 frag_data, spec_entry["prec_type"], neutral_peaks, clone_pyg=True
             )
 
-        elif self.frag_params["preload"]:
-            frag_entry = self.frag_entries[mol_id]
-            # frag_entry['frag_pyg'] = frag_entry['frag_pyg'].clone() # clone to avoid modifying the original one
-            frag_data = self._process_neutral_frag(frag_entry, mol=mol_entry["mol"])
-            frag_data = self._apply_fragment_mz_change(
-                frag_data,
-                spec_entry["prec_type"],
-                frag_data["frag_formula_peak_mzs"],
-                clone_pyg=True,
-            )
         else:
-            frag_entry = self._load_frag_entry(mol_id)
-            frag_data = self._process_neutral_frag(frag_entry, mol=mol_entry["mol"])
+            # `preload` (DAG bytes in RAM) and the bare path (read per access) differ only
+            # in where the entry comes from; both then have to build the PyG graph, so both
+            # go through the same cache.
+            frag_data, shared = self._get_neutral_frag(mol_id, mol_entry)
+            if shared:
+                frag_data = frag_data.copy()
             frag_data = self._apply_fragment_mz_change(
                 frag_data,
                 spec_entry["prec_type"],
                 frag_data["frag_formula_peak_mzs"],
-                clone_pyg=False,
+                clone_pyg=shared,
             )
 
         data = {**spec_data, **mol_data, **frag_data}
@@ -338,6 +337,54 @@ class SpecMolFragDataset(SpecMolDataset):
         if "formula" not in data:
             data["formula"] = mol_entry["formula"]
         return data
+
+    def _get_neutral_frag(self, mol_id: str, mol_entry) -> tuple[dict, bool]:
+        """Neutral (pre-adduct) fragment data for one molecule, served from a small LRU.
+
+        A DAG is per MOLECULE but ``__getitem__`` runs per SPECTRUM, and there are many
+        spectra per molecule (one per collision energy / adduct). Inference forces both
+        ``frag_params.preprocess`` and ``frag_params.preload`` off - see
+        ``apply_inference_config`` - so without this cache every spectrum of a molecule
+        re-read its DAG from HDF5/disk and rebuilt the PyG graph (plus Gasteiger charges
+        when ``frag_q`` is a node feature) from scratch.
+
+        Cache size is required via ``frag_params.cache_size`` (template: 16, 0 disables). Hit rate depends
+        on how clustered the same molecule's rows are in ``spec_df``: sorting the input by
+        ``mol_id`` maximizes it, and note that ``IterableSpecMolFragDataset`` shards indices
+        round-robin across workers, so each worker sees every Nth row.
+
+        Returns:
+            ``(frag_data, shared)``. When ``shared`` is True the dict is cached and aliased
+            by other samples, so the caller must ``.copy()`` it and pass ``clone_pyg=True``
+            to ``_apply_fragment_mz_change`` (which pops a key and writes into ``frag_pyg.x``
+            in place) - the same contract the ``preprocess`` branch already follows.
+        """
+        if self._frag_cache_size <= 0:
+            frag_entry = (
+                self.frag_entries[mol_id]
+                if self.frag_params["preload"]
+                else self._load_frag_entry(mol_id)
+            )
+            return self._process_neutral_frag(frag_entry, mol=mol_entry["mol"]), False
+
+        cache = self._frag_cache
+        if cache is None:
+            cache = self._frag_cache = OrderedDict()
+        frag_data = cache.get(mol_id)
+        if frag_data is not None:
+            cache.move_to_end(mol_id)
+            return frag_data, True
+
+        frag_entry = (
+            self.frag_entries[mol_id]
+            if self.frag_params["preload"]
+            else self._load_frag_entry(mol_id)
+        )
+        frag_data = self._process_neutral_frag(frag_entry, mol=mol_entry["mol"])
+        cache[mol_id] = frag_data
+        while len(cache) > self._frag_cache_size:
+            cache.popitem(last=False)
+        return frag_data, True
 
     def _load_frag_entry(self, mol_id: str) -> dict:
         """

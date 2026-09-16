@@ -138,7 +138,7 @@ def main() -> None:
                     break
                 batch = to_device(batch, device, non_blocking=False)
                 # Always use evaluation metric policy, even when reading the training dataset.
-                results = model.inference_with_ground_truth_step(batch, split="test")
+                results = model.inference_step(batch, metrics="test")
                 for score_name in score_names:
                     values = results[score_name].detach()
                     sums[score_name] += values.sum().item()

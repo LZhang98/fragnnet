@@ -55,6 +55,42 @@ from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
 
+# Outputs of `FraGNNetModel.forward` that only exist when the terminal explainability
+# marginals are computed; every one of them is None on a forward that skipped them.
+# A forward with `return_explainability_tensors=False` returns None for every one of them.
+EXPLAINABILITY_OUTPUT_KEYS = frozenset(
+    {
+        "pred_formula_logprobs",
+        "pred_node_logprobs",
+        "pred_node_formula_logprobs",
+        "pred_formula_node_logprobs",
+        "pred_joint_logprobs",
+        "pred_joint_node_idxs",
+        "pred_joint_formula_idxs",
+        "pred_joint_batch_idxs",
+        "pred_h_counts",
+        "pred_h_batch_idxs",
+        "pred_h_logprobs",
+        "pred_formula_formula_idxs",
+        "pred_node_node_idxs",
+        "pred_joint_h_counts",
+        "pred_joint_h_idxs",
+        # nb_iso (isomorphic-neighbourhood) marginals ride the same gate
+        "pred_nb_node_logprobs",
+        "pred_nb_node_formula_logprobs",
+        "pred_nb_formula_node_logprobs",
+        "pred_nb_node_node_logprobs",
+        "pred_nb_node_node_idxs",
+        "pred_nb_node_batch_idxs",
+        "pred_nb_joint_logprobs",
+        "pred_nb_joint_node_idxs",
+        "pred_nb_joint_formula_idxs",
+        "pred_nb_joint_batch_idxs",
+        "pred_nb_node_node_node_idxs",
+        "pred_nb_node_node_batch_idxs",
+    }
+)
+
 
 def _aggregate_formula_support(
     joint_logits: th.Tensor,
@@ -1205,7 +1241,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         spec_inst_type: th.Tensor | None = None,
         spec_frag_mode: th.Tensor | None = None,
         spec_prec_type_str: np.ndarray | None = None,
-        return_explainability_tensors: bool = False,
+        return_explainability_tensors: bool = True,
         **kwargs,
     ):
         """forward methods for joint predictor
@@ -1221,6 +1257,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_formula_sizes (th.Tensor): _description_
             frag_formula_cumsizes (th.Tensor): _description_
             frag_formula_peak_sizes (th.Tensor): _description_
+            return_explainability_tensors (bool): Whether this caller will read the terminal
+                explainability marginals and their index arrays - everything in
+                `EXPLAINABILITY_OUTPUT_KEYS`. False drops them (they come back None) and
+                skips ~6 scatter passes over the joint grid. Default True, so a caller that
+                says nothing still gets them; on a TRAINING forward the constructor's
+                `skip_explainability_when_training` overrides it to off.
 
         Returns:
             _type_: _description_
@@ -2386,12 +2428,19 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
         # Explainability marginals (P(n), P(f), P(f|n), P(n|f), P(h) + nb_iso below) are terminal:
         # nothing on the loss-critical spectrum path (spec_logprobs, null, oos) depends on them.
-        # Skip them on TRAINING forwards when opted in (no active consumer) to cut the forward peak;
-        # eval/inference (self.training False) and any explainability request always compute them.
-        _compute_expl = (
+        # They cost ~6 scatter passes over the joint grid (J = N*H), the largest array in the
+        # forward, so a caller that will not read them should not pay for them.
+        #
+        # ONE per-call switch decides: `return_explainability_tensors`. It defaults to True, so
+        # a caller that says nothing (the loss path) behaves as it always has, and the inference
+        # exporters pass their own computed demand. `self.training` is deliberately NOT part of
+        # the decision - val/test loss forwards also run with it False and do consume the
+        # marginals - except for `skip_explainability_when_training`, a constructor-level memory
+        # switch for the training loop only, which FraGNNetPL has already refused to enable
+        # alongside any active explainability loss.
+        _compute_expl = self.debug_validate_outputs or (
             return_explainability_tensors
-            or self.debug_validate_outputs
-            or not (self.training and self.skip_explainability_when_training)
+            and not (self.training and self.skip_explainability_when_training)
         )
         if _compute_expl:
             # select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
@@ -2412,10 +2461,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_real_joint_logits, frag_real_joint_batch_idxs
             )
             # P(n) - sum, renormalize, but keep all-NULL nodes (as zeros)
-            _need_expl_idxs = return_explainability_tensors or self.debug_validate_outputs
-            frag_real_node_node_idxs = (
-                th.arange(batch_frag_num_nodes, device=device) if _need_expl_idxs else None
-            )
+            frag_real_node_node_idxs = th.arange(batch_frag_num_nodes, device=device)
             frag_real_node_logprobs = scatter_logsumexp(
                 frag_real_joint_logprobs,
                 frag_real_joint_node_idxs,
@@ -2434,9 +2480,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_real_formula_logprobs,
                 frag_formula_batch_idxs,
             )
-            frag_real_formula_formula_idxs = (
-                th.arange(batch_frag_num_formulae, device=device) if _need_expl_idxs else None
-            )
+            frag_real_formula_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
             # P(f|n) - remove all NULLs from conditionals
             frag_real_node_formula_logprobs = (
                 frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
@@ -2657,7 +2701,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs,  # (Isomorphism) Node indices for node-node mapping [N]
             "pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs,  # (Isomorphism) Batch indices for node-node mapping [N]
         }
-        if return_explainability_tensors:
+        if _compute_expl:
             out_d["pred_formula_formula_idxs"] = frag_real_formula_formula_idxs  # [F]
             out_d["pred_node_node_idxs"] = frag_real_node_node_idxs  # [N]
             out_d["pred_joint_h_counts"] = frag_real_joint_h_counts  # [J]
