@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import sys
 import tempfile
@@ -7,12 +8,11 @@ from typing import cast
 
 import pandas as pd
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from fragnnet.dataset import IterableSpecMolFragDataset, SpecMolFragDataset
 from fragnnet.runner import init_dataloader
 from fragnnet.utils import data_utils, frag_utils
-from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import ProgressLogger, booltype
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     available_frag_mol_ids,
@@ -299,6 +299,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # Progress is reported through logging rather than tqdm, so a handler has to exist
+    # before the first ProgressLogger. basicConfig is a no-op if one is already set up.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.StreamHandler()],
+    )
+
     # Get checkpoint path (download from W&B or use local)
     ckpt_fp = get_ckpt_path(
         wandb_run_id=args.wandb_run_id,
@@ -369,7 +377,9 @@ if __name__ == "__main__":
     finished_spec_ids = set()
     max_chunk_idx = -1
 
-    for f in tqdm(existing_files, desc="Reading existing predictions"):
+    read_progress = ProgressLogger(total=len(existing_files), desc="Reading existing predictions")
+    for f in existing_files:
+        read_progress.update()
         # Parse chunk index
         try:
             c_idx = int(f.split("_")[-1].split(".")[0])
@@ -385,6 +395,7 @@ if __name__ == "__main__":
                 finished_spec_ids.update(df["spec_id"].unique())
         except Exception as e:
             print(f"Warning: Could not read {fp}: {e}")
+    read_progress.finish()
 
     # Filter once, after every chunk has been read. Doing it inside the loop re-filtered
     # spec_df/mol_df once per chunk file and made the "skipped" count report only the
@@ -446,9 +457,9 @@ if __name__ == "__main__":
 
             # Prepare inputs for parallel fragment graph generation
             dag_feat_inputs_l = []
-            for _, row in tqdm(
-                mol_df.iterrows(), total=len(mol_df), desc="Preparing fragment inputs"
-            ):
+            prep_progress = ProgressLogger(total=len(mol_df), desc="Preparing fragment inputs")
+            for _, row in mol_df.iterrows():
+                prep_progress.update()
                 dag_feat_inputs_l.append(
                     [
                         row["mol"],  # RDKit molecule object
@@ -465,6 +476,7 @@ if __name__ == "__main__":
                         False,  # Disable SMARTS prepass
                     ]
                 )
+            prep_progress.finish()
 
             # Time the fragment generation process
             start = time.time()
@@ -480,18 +492,20 @@ if __name__ == "__main__":
             frag_results_iter = cast("list[tuple[str, dict]]", frag_results)
             # Consume the generator to complete all fragment computations
             failed_frag_count = 0
-            for mol_id, dag_d in tqdm(
-                frag_results_iter, total=len(dag_feat_inputs_l), desc="Computing Fragments"
-            ):
+            frag_progress = ProgressLogger(total=len(dag_feat_inputs_l), desc="Computing fragments")
+            for mol_id, dag_d in frag_results_iter:
                 if not dag_d:
                     failed_frag_count += 1
+                    frag_progress.update(is_error=True)
                     continue
+                frag_progress.update()
                 frag_utils.save_frag_d(
                     frag_d=dag_d,
                     mol_id=mol_id,
                     frag_dp=config_d["frag_dp"],
                     is_compressed=config_d["frag_params"]["compressed"],
                 )
+            frag_progress.finish()
             end = time.time()
             time_cost = end - start
             print(

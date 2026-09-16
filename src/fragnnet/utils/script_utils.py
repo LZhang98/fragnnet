@@ -12,7 +12,6 @@ import h5py
 import numpy as np
 import pandas as pd
 import torch as th
-from tqdm import tqdm
 
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.pl_model import FraGNNetPL
@@ -24,6 +23,7 @@ from fragnnet.utils.formula_utils import (
 from fragnnet.utils.frag_utils import PACKED_DAG_INDEX_DATASET, get_node_feats
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
+    ProgressLogger,
     flatten_lol,
     get_best_ckpt_from_wandb,
     scatter_reduce,
@@ -1015,13 +1015,13 @@ def run_inference_pkl(
 
     # Run inference loops
     total_batches = len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
+    progress = ProgressLogger(total=total_batches, desc="Running inference")
     with th.inference_mode():
-        for batch_idx, batch_input in tqdm(
-            enumerate(dataloader), total=total_batches, desc="Running inference"
-        ):
+        for batch_idx, batch_input in enumerate(dataloader):
             # Early exit for batch cutoff
             if batch_idx >= total_batches:
                 break
+            progress.update()
 
             # Move batch to device
             batch_input = to_device(batch_input, device, non_blocking=False)
@@ -1146,6 +1146,7 @@ def run_inference_pkl(
                 else:
                     assert batch_idx > 0
                     vals[k].append(b_output[k])
+    progress.finish()
 
     # Consolidate collected outputs
     print(f"> num_datapoints = {cum_num_datapoints}")
@@ -1603,14 +1604,14 @@ def run_inference_tabular_iter(
 
     eval_score_types = get_score_types(model.hparams)
     model.eval()
+    progress = ProgressLogger(total=total_batches, desc="Running inference")
     with th.inference_mode():
-        for batch_idx, batch_input in tqdm(
-            enumerate(dataloader), total=total_batches, desc="Running inference"
-        ):
+        for batch_idx, batch_input in enumerate(dataloader):
             # Early exit for batch cutoff
             if batch_cutoff >= 0 and batch_idx >= batch_cutoff:
                 print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
                 break
+            progress.update()
             # Process batch and get data rows
             batch_rows = process_batch_to_tabular_row(
                 batch_input=batch_input,
@@ -1629,6 +1630,7 @@ def run_inference_tabular_iter(
                 filter_stats=filter_stats,
             )
             yield batch_rows
+    progress.finish()
 
 
 def get_split_fn(bs_idx, batch_size: int | None = None):
