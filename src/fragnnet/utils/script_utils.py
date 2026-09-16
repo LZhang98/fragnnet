@@ -1231,6 +1231,7 @@ def run_inference_hdf5(
     rebase_indices: bool = True,
     chunk_size=10000,
     save_path: str = "",
+    drop_none_cols: bool = True,
 ) -> pd.DataFrame:
     """
     Stream inference results to an HDF5 file and return the number of spectra written.
@@ -1271,6 +1272,7 @@ def run_inference_hdf5(
             min_peak_int: Minimum peak intensity threshold
             return_formula_and_cc: Whether to return formula strings and CCs
             rebase_indices: Whether to rebase indices
+            drop_none_cols: Skip scalar columns that hold nothing but NaN placeholders
 
     Returns:
             DataFrame with all inference results
@@ -1303,6 +1305,20 @@ def run_inference_hdf5(
         """
         return bool(values) and isinstance(values[0], (th.Tensor, np.ndarray, list))
 
+    def is_all_none(save_v) -> bool:
+        """True when a scalar column carries no value at all, only NaN/None placeholders.
+
+        An unrequested column arrives as one NaN per spectrum (see `is_blocked`), which is
+        what `drop_none_cols` removes. Non-float columns are never placeholders.
+        """
+        if len(save_v) == 0:
+            return False
+        if save_v.dtype.kind == "f":
+            return bool(np.isnan(save_v).all())
+        if save_v.dtype == object:
+            return all(v is None or (isinstance(v, float) and np.isnan(v)) for v in save_v)
+        return False
+
     def concat_blocks(values):
         """Flatten per-spectrum blocks into one array h5py can store."""
         if isinstance(values[0], th.Tensor):
@@ -1316,6 +1332,11 @@ def run_inference_hdf5(
     # Accumulate all batch results
     preds_l = {}
     filter_stats: dict = {}
+
+    # Columns dropped as all-NaN placeholders. The decision is made once, on the first
+    # flush, and enforced on every later one: this writer appends to a single file, so a
+    # column skipped early and written late would be short by every earlier spectrum.
+    placeholder_cols: set[str] = set()
 
     start_point = 0
     with h5py.File(save_path, "w") as save_file:
@@ -1381,6 +1402,21 @@ def run_inference_hdf5(
                         save_v = th.cat(preds_l[k], 0).detach().cpu().numpy()
                     else:
                         save_v = np.array(preds_l[k])
+                    if drop_none_cols:
+                        if start_point == 0:
+                            if is_all_none(save_v):
+                                placeholder_cols.add(k)
+                                continue
+                        elif k in placeholder_cols:
+                            # A metric that is NaN for the first chunk's spectra and real
+                            # later would silently lose those later values, so stop instead.
+                            if not is_all_none(save_v):
+                                raise RuntimeError(
+                                    f"Column '{k}' was dropped as an all-NaN placeholder on "
+                                    f"the first chunk but holds values at spectrum "
+                                    f"{start_point}. Rerun with drop_none_cols=False."
+                                )
+                            continue
                     resize_and_save(k, save_v, start_point)
 
                 for prefix, members in ragged_groups:

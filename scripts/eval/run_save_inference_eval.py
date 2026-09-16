@@ -343,6 +343,7 @@ if __name__ == "__main__":
             return_cc_hash=args.return_cc_hash or args.output_everything,
             rebase_indices=True,
             save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
+            drop_none_cols=args.drop_none_cols,
         )
     else:
         results = run_inference_pkl(
