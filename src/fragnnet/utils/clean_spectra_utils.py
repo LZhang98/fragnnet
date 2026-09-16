@@ -11,11 +11,10 @@ import pandas as pd
 
 from fragnnet.utils.data_utils import ELEMENT_TO_MASS, VALID_ELEMENTS
 from fragnnet.utils.formula_utils import (
+    ELECTRON_MASS,
     PREC_TYPE_TO_CMF_COMP_DIFF,
-    PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
-    cmf_duplicate_crf_h_shift,
     parse_formula,
 )
 
@@ -31,11 +30,6 @@ PRECURSOR_TYPE_ALIASES = {
 # Twice-RDBE contribution per element; a subformula with negative RDBE is not a
 # feasible neutral and is rejected before the carrier mass shift is applied.
 RDBE_COEFFICIENTS = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
-
-# Hydrogen-transfer reach used when testing whether an adduct's CMF channel merely
-# repeats its CRF channel. The subformula enumeration spans every hydrogen count in
-# the precursor formula, so any whole-hydrogen carrier swap is already reachable.
-_SUBFORMULA_H_REACH = 1
 
 INSTRUMENT_TOLERANCES = {
     "FT": {"relative": 1.0e-5, "min_mz": 200.0},
@@ -116,78 +110,119 @@ def _cluster_centroid(cluster: list[tuple[float, float]]) -> float:
     return sum(mz * intensity for mz, intensity in cluster) / total_intensity
 
 
-def _channel_ion_masses(
-    element_counts: dict[str, int], comp_diff, mass_diff: float
-) -> np.ndarray:
-    """Enumerate ion masses for one charge-carrier channel.
+def _precursor_ion_charge(normalized_precursor_type: str) -> int:
+    """Return the precursor's charge from its adduct string, 0 when it names no polarity."""
+    if normalized_precursor_type.endswith("+"):
+        return 1
+    if normalized_precursor_type.endswith("-"):
+        return -1
+    return 0
 
-    Walks every subformula bounded by ``element_counts``, drops those with negative
-    RDBE or that cannot supply the elements this channel removes, and applies the
-    channel's mass shift. Hydrogen transfer needs no explicit term: the enumeration
-    already spans every hydrogen count in the precursor formula.
+
+def _budget_ion_masses(neutral_counts: dict[str, int], comp_diff, charge: int) -> np.ndarray:
+    """Enumerate ion masses for every subformula of one precursor-ion budget.
+
+    The budget is a precursor ion, ``M`` plus an adduct delta, and a candidate is split the way
+    the chemistry splits it: a molecular part drawn from ``M`` and whatever of the carrier the ion
+    still holds. Bounding the walk by an ion rather than by the neutral is what lets one budget
+    cover several charge-carrier outcomes at once — a fragment that keeps the carrier, one that
+    gives it up, and the bare carrier are all subformulas of the same parent.
+
+    ``RDBE_COEFFICIENTS`` sums twice the ring-plus-double-bond equivalent, and the rule it bounds
+    is about a neutral: a formula whose neutral form cannot be drawn is not a formula. So the test
+    is taken on the neutral form, which means stripping the charge carrier before applying it —
+    the molecular part is what has to be drawable, and the carrier is exempt. A chloride adduct is
+    the case that makes this matter: ``[CH3OH+Cl]-`` is a real ion, but scoring RDBE across the
+    whole anion counts the chloride against a saturated molecule and rejects it.
+
+    A delta that removes atoms is the other half of the same idea. Its loss comes out of the
+    molecular part, so a deprotonated precursor is a neutral that has already given up a hydrogen
+    and needs no separate sign correction. The ion mass is the formula mass less the charge's
+    electrons.
     """
     required_counts = {
-        element: -count_change
-        for element, count_change in comp_diff.items()
-        if count_change < 0
+        element: -count_change for element, count_change in comp_diff.items() if count_change < 0
     }
-    if any(element_counts.get(element, 0) < count for element, count in required_counts.items()):
+    if any(neutral_counts.get(element, 0) < count for element, count in required_counts.items()):
         return np.array([], dtype=float)
-    neutral_masses = np.array([0.0])
+
+    masses = np.array([0.0])
     rdbe_twice = np.array([2.0])
-    for element, max_count in element_counts.items():
+    for element, max_count in neutral_counts.items():
         min_count = required_counts.get(element, 0)
         if min_count > max_count:
             return np.array([], dtype=float)
         levels = np.arange(min_count, max_count + 1)
-        neutral_masses = (
-            neutral_masses[:, None] + levels * ELEMENT_TO_MASS[element]
-        ).ravel()
-        rdbe_twice = (
-            rdbe_twice[:, None] + levels * RDBE_COEFFICIENTS.get(element, 0)
-        ).ravel()
+        masses = (masses[:, None] + levels * ELEMENT_TO_MASS[element]).ravel()
+        rdbe_twice = (rdbe_twice[:, None] + levels * RDBE_COEFFICIENTS.get(element, 0)).ravel()
+    masses = masses[rdbe_twice >= 0]
+    if masses.size == 0:
+        return np.array([], dtype=float)
 
-    neutral_masses = neutral_masses[(neutral_masses > 0) & (rdbe_twice >= 0)]
-    ion_masses = neutral_masses + mass_diff
+    masses = masses + sum(
+        count * ELEMENT_TO_MASS[element]
+        for element, count in comp_diff.items()
+        if count < 0
+    )
+    for element, count in comp_diff.items():
+        if count > 0:
+            levels = np.arange(0, count + 1)
+            masses = (masses[:, None] + levels * ELEMENT_TO_MASS[element]).ravel()
+
+    masses = masses[masses > 0]
+    ion_masses = masses - charge * ELECTRON_MASS
     return ion_masses[ion_masses > 0]
 
 
-def _subformula_channels(normalized_precursor_type: str) -> list:
-    """Return the ``(comp_diff, mass_diff)`` carrier channels for a precursor type.
+def _apply_comp_diff(element_counts: dict[str, int], comp_diff) -> dict:
+    """Return the ion element counts for one adduct delta applied to a neutral formula."""
+    return {
+        element: element_counts.get(element, 0) + comp_diff.get(element, 0)
+        for element in set(element_counts) | set(comp_diff)
+    }
 
-    This is a chemical-feasibility test on an observed peak, not a question about what
-    any fragmentation model can enumerate: a peak is kept if some subformula of the
-    precursor could carry a plausible charge carrier. Direct charge retention (CRF)
-    keeps the precursor's own adduct. Charge migration (CMF) swaps it for the
-    protonated or deprotonated carrier, which is how sodiated and chloride adducts
-    mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl to
-    yield ``[frag-H]-`` (see the references on ``PREC_TYPE_TO_CMF_MASS_DIFF``). Both are
-    real ions, so both are always candidates. ``[M+H]+``/``[M-H]-`` skip CMF because
-    their carrier swap is a whole hydrogen the subformula enumeration already reaches,
-    so their channel list is unchanged.
 
-    The carrier tables come from ``formula_utils`` and are shared with the fragmentation
-    code, but nothing here consults a DAG: a peak this filter cannot explain is kept or
-    dropped on chemistry alone, and a peak no DAG can explain is the model's problem to
-    handle downstream, not a reason to delete it from the target.
+def _precursor_ion_budgets(normalized_precursor_type: str) -> list:
+    """Return the adduct deltas whose ions bound what a fragment of this precursor can be.
+
+    This is a chemical-feasibility test on an observed peak, not a question about what any
+    fragmentation model can enumerate. A precursor presents two parents. Direct charge retention
+    (CRF) keeps the precursor's own adduct, so its budget is the precursor ion. Charge migration
+    (CMF) swaps that carrier for the protonated or deprotonated one, which is how sodiated and
+    chloride adducts mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl
+    to yield ``[frag-H]-`` (see the references on ``PREC_TYPE_TO_CMF_MASS_DIFF``).
+
+    The migrated carrier is why CMF can need a budget of its own rather than a share of the CRF
+    one: ``[frag+H]+`` carries a proton, so it reaches one hydrogen beyond what ``M+Na`` holds,
+    and no subformula of the sodiated ion can express it. That second budget is added only when
+    it buys something, which rules out two cases.
+
+    An empty CMF delta means the precursor's carrier was already the proton, so there is no other
+    carrier to migrate to and no second parent: ``[M+H]+`` is bounded by ``M+H`` alone and
+    ``[M-H]-`` by ``M-H`` alone. Giving those a budget of ``M`` would let a fragment ion hold more
+    hydrogens than the precursor ion itself has, which fragmentation cannot produce.
+
+    A CMF delta contained in the CRF delta would only repeat masses the first budget already
+    covers. ``[M+Cl]-`` is that case: its products lose HCl, so every one is already a subformula
+    of ``M+Cl``. Ammonium and the iodine adducts behave the same way.
+
+    The carrier tables come from ``formula_utils`` and are shared with the fragmentation code,
+    but nothing here consults a DAG: a peak this filter cannot explain is kept or dropped on
+    chemistry alone, and a peak no DAG can explain is the model's problem to handle downstream,
+    not a reason to delete it from the target.
     """
-    channels = [
-        (
-            PREC_TYPE_TO_COMP_DIFF[normalized_precursor_type],
-            PREC_TYPE_TO_MASS_DIFF[normalized_precursor_type],
-        )
-    ]
+    crf_diff = PREC_TYPE_TO_COMP_DIFF[normalized_precursor_type]
+    budgets = [crf_diff]
+    cmf_diff = PREC_TYPE_TO_CMF_COMP_DIFF.get(normalized_precursor_type)
     if (
-        normalized_precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF
-        and cmf_duplicate_crf_h_shift(normalized_precursor_type, _SUBFORMULA_H_REACH) is None
-    ):
-        channels.append(
-            (
-                PREC_TYPE_TO_CMF_COMP_DIFF[normalized_precursor_type],
-                PREC_TYPE_TO_CMF_MASS_DIFF[normalized_precursor_type],
-            )
+        cmf_diff
+        and any(
+            cmf_diff.get(element, 0) > crf_diff.get(element, 0)
+            for element in set(cmf_diff) | set(crf_diff)
         )
-    return channels
+    ):
+        budgets.append(cmf_diff)
+    return budgets
 
 
 @lru_cache(maxsize=2)
@@ -205,10 +240,11 @@ def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
     if unsupported_elements:
         raise ValueError(f"Unsupported formula elements: {sorted(unsupported_elements)}")
 
+    charge = _precursor_ion_charge(normalized_precursor_type)
     ion_masses = np.concatenate(
         [
-            _channel_ion_masses(element_counts, comp_diff, mass_diff)
-            for comp_diff, mass_diff in _subformula_channels(normalized_precursor_type)
+            _budget_ion_masses(element_counts, comp_diff, charge)
+            for comp_diff in _precursor_ion_budgets(normalized_precursor_type)
         ]
     )
     return np.unique(ion_masses)

@@ -230,15 +230,16 @@ def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
     )
 
     assert kept == peaks
-    # The carrier-retaining channel alone cannot explain this peak, so the CMF channel
-    # is what keeps it: these adducts must always enumerate both.
-    crf_only = clean_spectra_utils._channel_ion_masses(
+    # Nothing that keeps the carrier lands here, so it is the carrier-free subformula of the
+    # precursor ion that explains the peak.
+    carrier = "Na" if precursor_type == "[M+Na]+" else "Cl"
+    crf_budget = clean_spectra_utils._budget_ion_masses(
         {"C": 1, "H": 4, "O": 1},
         clean_spectra_utils.PREC_TYPE_TO_COMP_DIFF[precursor_type],
-        clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[precursor_type],
+        clean_spectra_utils._precursor_ion_charge(precursor_type),
     )
-    assert min(abs(crf_only - migrated_mz)) > 5e-6 * migrated_mz
-    assert len(clean_spectra_utils._subformula_channels(precursor_type)) == 2
+    carrier_retaining = crf_budget[crf_budget > data_utils.formula_to_mass(carrier)]
+    assert min(abs(carrier_retaining - migrated_mz)) > 5e-6 * migrated_mz
 
 
 @pytest.mark.parametrize("precursor_type", ["[M+Na]+", "[M+Cl]-"])
@@ -256,10 +257,108 @@ def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
     assert filtered == [(retained_mz, 10.0)]
 
 
-@pytest.mark.parametrize("precursor_type", ["[M+H]+", "[M-H]-"])
-def test_protonated_adducts_emit_a_single_channel(precursor_type):
-    """Their carrier swap is a whole hydrogen the enumeration already reaches."""
-    assert len(clean_spectra_utils._subformula_channels(precursor_type)) == 1
+@pytest.mark.parametrize(
+    ("precursor_type", "budget_hydrogens"),
+    [
+        # The proton is already [M+H]+'s own carrier, so there is nothing to migrate to.
+        ("[M+H]+", [5]),
+        # Likewise [M-H]-: a budget of M would hold more hydrogens than the precursor ion does.
+        ("[M-H]-", [3]),
+        # [M+Na]+ fragments to [frag+H]+, which reaches a hydrogen beyond what M+Na holds.
+        ("[M+Na]+", [4, 5]),
+        ("[M+K]+", [4, 5]),
+        # [M+Cl]- loses HCl, so its migrated products are already subformulas of M+Cl.
+        ("[M+Cl]-", [4]),
+        ("[M+NH4]+", [8]),
+    ],
+)
+def test_budgets_are_precursor_ions_including_the_migrated_one(precursor_type, budget_hydrogens):
+    """Each budget is an ion the fragment could have come from, not the bare neutral."""
+    budgets = [
+        clean_spectra_utils._apply_comp_diff({"C": 1, "H": 4}, comp_diff)
+        for comp_diff in clean_spectra_utils._precursor_ion_budgets(precursor_type)
+    ]
+
+    assert [counts["H"] for counts in budgets] == budget_hydrogens
+
+
+def test_charge_migration_reaches_one_hydrogen_past_the_sodiated_ion():
+    """[frag+H]+ carries a proton M+Na cannot supply, so the CMF budget must allow it."""
+    protonated_mz = (
+        data_utils.formula_to_mass("CH4O")
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    )
+
+    filtered = clean_spectra_utils.filter_subformula_peaks(
+        [(protonated_mz, 10.0)], "CH4O", "[M+Na]+", tolerance_ppm=5.0
+    )
+
+    assert filtered == [(protonated_mz, 10.0)]
+
+
+def test_fragment_ion_cannot_outrun_the_deprotonated_precursor_hydrogens():
+    """[M-H]- holds one less hydrogen than M, so a full-hydrogen fragment anion is impossible."""
+    impossible_mz = data_utils.formula_to_mass("CH4") + clean_spectra_utils.ELECTRON_MASS
+
+    filtered = clean_spectra_utils.filter_subformula_peaks(
+        [(impossible_mz, 10.0)], "CH4O", "[M-H]-", tolerance_ppm=5.0
+    )
+
+    assert filtered == []
+
+
+def test_neutral_loss_precursor_types_are_gone():
+    """The _NL entries were never present in real data and are no longer supported."""
+    assert not [
+        prec_type
+        for prec_type in clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF
+        if "_NL" in prec_type
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ion_formula", "precursor_type", "source_formula", "kept"),
+    [
+        # The molecular part is what must be drawable, so the carrier is stripped before the
+        # RDBE test. A saturated molecule keeps its carrier-retaining adduct ions.
+        ("CH4OCl", "[M+Cl]-", "CH4O", True),  # [CH3OH+Cl]- is real; RDBE scores CH4O, not CH4OCl
+        ("C2H10NO", "[M+NH4]+", "C2H6O", True),  # likewise the ammonium adduct of ethanol
+        ("CH5O", "[M+H]+", "CH4O", True),  # protonated methanol, molecular part CH4O at RDBE 0
+        ("CH3O", "[M-H]-", "CH4O", True),  # methoxide: the loss comes out of the molecule
+        # An impossible molecular part is still rejected in either polarity.
+        ("CH7", "[M+H]+", "CH6", False),
+        ("CH5O2", "[M-H]-", "CH6O2", False),
+    ],
+)
+def test_rdbe_is_taken_on_the_neutral_form_with_the_carrier_stripped(
+    ion_formula, precursor_type, source_formula, kept
+):
+    """RDBE bounds a neutral, so it scores the molecular part and exempts the charge carrier."""
+    charge = clean_spectra_utils._precursor_ion_charge(precursor_type)
+    ion_mz = data_utils.formula_to_mass(ion_formula) - charge * clean_spectra_utils.ELECTRON_MASS
+
+    filtered = clean_spectra_utils.filter_subformula_peaks(
+        [(ion_mz, 10.0)], source_formula, precursor_type, tolerance_ppm=5.0
+    )
+
+    assert bool(filtered) is kept
+
+
+def test_precursor_ion_charge_is_signed():
+    """Polarity drives the electron correction on the ion mass."""
+    assert clean_spectra_utils._precursor_ion_charge("[M+H]+") == 1
+    assert clean_spectra_utils._precursor_ion_charge("[M-H]-") == -1
+
+
+def test_carrier_free_fragment_ion_is_a_candidate():
+    """The bare chloride of an [M+Cl]- precursor is a subformula of that precursor ion."""
+    chloride_mz = data_utils.formula_to_mass("Cl") + clean_spectra_utils.ELECTRON_MASS
+
+    filtered = clean_spectra_utils.filter_subformula_peaks(
+        [(chloride_mz, 10.0)], "CH4O", "[M+Cl]-", tolerance_ppm=5.0
+    )
+
+    assert filtered == [(chloride_mz, 10.0)]
 
 
 def test_cmf_channel_still_requires_a_removable_hydrogen():

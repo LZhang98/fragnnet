@@ -39,9 +39,6 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
-    # some NL adducts
-    "[M+H]+_NL": -H_MASS + ELECTRON_MASS,
-    "[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
 # Charge migration fragmentation (CMF): the product ion does NOT carry the precursor's charge
 # carrier, as opposed to charge retention fragmentation (CRF), where it does. For sodiated
