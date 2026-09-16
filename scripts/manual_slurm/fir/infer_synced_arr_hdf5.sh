@@ -11,7 +11,7 @@
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/infer_synced_arr_hdf5_%A_%a.out
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/infer_synced_arr_hdf5_%A_%a.err
 #SBATCH --open-mode=append
-#SBATCH --array=0-14
+#SBATCH --array=0-5
 
 # SYNCED inference, packed HDF5 frag backend, as an array job.
 #
@@ -20,7 +20,7 @@
 # Task i predicts mol_df rows [i*CHUNK_SIZE, (i+1)*CHUNK_SIZE) - the same slice that
 # built shard i - so merge_dag_h5_shards.py is NOT needed here; merge only when you
 # want to run inference as a single job. Keep --array and CHUNK_SIZE in sync with the
-# preprocessing array (289,249 molecules / 20000 -> 15 tasks); the common body hard-fails
+# preprocessing array (289,249 molecules / 48209 -> 6 tasks); the common body hard-fails
 # if --array does not cover exactly the shards on disk. A task that runs out of wall time
 # is resumed by resubmitting the array - it skips whatever it already wrote.
 #
@@ -31,7 +31,7 @@ MAX_DEPTH=3
 MAX_H_TRANSFER=4
 SAVE_NAME=${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_hdf5
 FRAG_BACKEND=hdf5
-CHUNK_SIZE=20000
+CHUNK_SIZE=48209
 
 # --- MODEL: set one of these two ------------------------------------------
 # A checkpoint and its training config are ONE pairing, never two independent knobs:
@@ -48,7 +48,7 @@ CHUNK_SIZE=20000
 WANDB_RUN_ID=${WANDB_RUN_ID:-}
 # ...or a local checkpoint, which wins when set. Relative paths resolve against
 # FRAGNNET_DP. Passing the path printed by the command above skips the W&B lookup
-# entirely, which is one less moving part across 15 tasks.
+# entirely, which is one less moving part across 6 tasks.
 MODEL_CKPT=${MODEL_CKPT:-}
 # Training config for the selected checkpoint (relative to FRAGNNET_DP). REQUIRED, not
 # optional: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is given,
