@@ -428,6 +428,15 @@ if __name__ == "__main__":
     print(f"> Molecules after filtering: {len(mol_df)}")
     spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
     print(f"> Spectra after filtering: {len(spec_df)}")
+    # Report this cause here rather than letting the empty-dataset guard below blame the
+    # dataset: nothing reaches it, so its message about spec_params would send the reader
+    # looking in the wrong place.
+    if len(spec_df) == 0:
+        raise RuntimeError(
+            f"No molecule has a fragment graph in {config_d['frag_dp']} "
+            f"({len(all_frags)} entries found), so every spectrum was filtered out. "
+            "Check --frag_dp, or drop it to generate fragments on the fly."
+        )
 
     # Set dataframes in config for dataset initialization
     config_d["mol_fp"] = mol_df

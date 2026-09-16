@@ -448,6 +448,47 @@ own filter stats (350,761 peaks to 23,241, 93.4% removed).
 - **Ruff:** no new findings on either changed file; the 20 in `spectrum_pl.py` and 1 in the
   test file are pre-existing and elsewhere.
 
+## `run_inference.py` end-to-end matrix (2026-09-16)
+
+The earlier smoke test drove `run_inference.py` with 4 molecules / 24 spectra, which is too
+small to exercise chunking, resume or sharding. Re-run on a 50-molecule / 600-spectrum
+prediction-only input built with the real preprocessing scripts
+(`01_inf_prepare_mol_df.py` -> `02_inf_prepare_spec_df.py`, 2 precursor types x 3 FT NCEs x
+3 QTOF eVs, `peaks == []` everywhere), against
+`ckpts/debug_tiny_inference_smoke/last.ckpt`.
+
+| Axis | Result |
+| --- | --- |
+| Default run, `--save_chunk_size 250` | 600/600 spectra, 3 chunks (256/256/88), 600 unique `spec_id`, 0 duplicates |
+| Tensor device | 0 non-CPU tensors in any column of any chunk |
+| Resume | dropped chunk 2, reran: "Found 512 finished spectra", 88 reprocessed, identical `spec_id` set and identical m/z |
+| `--output_everything True` | all 18 columns, `pred_oos_prob` present and **0 NaN** (the fix reaches this script too) |
+| `--min_intensity 0 / 10 / 50` | 137,424 -> 8,514 -> 2,484 peaks; lowest surviving intensity 0.0 / 10.02 / 50.37 (strict `>`); base peak exactly 1000.0 in every spectrum |
+| `--save_format pkl.gz` | writes `predictions_chunk_0.pkl.gz`, loads, equals the `pkl` run |
+| `--dynamic_batch_max 20000` vs `--batch_size 8` | same 120 spectra, every index/string column bit-identical, `pred_ints` max abs diff 3.1e-4 on the 0-1000 scale (~3e-7 relative) |
+| `--start_mol_idx 40 --num_mols 10` | exactly the 120 spectra of `mol_df.iloc[40:50]` |
+| `--start_mol_idx 500` (past the end) | "nothing to do", exit 0 |
+| No `--frag_dp` (on-the-fly DAGs) | 5 molecules in 5.9 s, 0 failures, temp dir cleaned up |
+| Export axes | peak / formula / joint / node columns length-aligned per spectrum; 0 out-of-range indices after rebasing; all probabilities in [0, 1]; base-peak annotation resolves to a valid node for all 120 spectra |
+| `--save_interval` | `error: unrecognized arguments` (flag is gone) |
+
+Resume reproduces the same spectra but not bit-identical intensities (84/88 rows differ, max
+7.3e-4 on the 0-1000 scale): a resumed run packs different batches, and float32 reductions
+are not batch-composition invariant. Same cause as the dynamic-vs-fixed delta above.
+
+### Fixed here
+
+The empty-dataset guard blamed the wrong thing when the fragment directory was the problem.
+With a `--frag_dp` holding no DAGs, the molecule filter empties `spec_df` first, so the
+guard fired as *"Dataset is empty although 0 spectra reached it; the dataset dropped all of
+them"* - self-contradictory, and it pointed the reader at `spec_params`. The fragment filter
+now raises for its own failure, naming the directory and its entry count, and the dataset
+guard is left for the case it was written for.
+
+`pred_oos_prob` is still the constant 0.1515 here, on 600 spectra from 50 molecules rather
+than the earlier 24. Per-spectrum shapes are correct throughout, so this remains the
+undertrained debug head, not a broadcast bug.
+
 ## Follow-up
 
 Remove the `pred_logprobs` compatibility key once the ensembling artifacts are regenerated
