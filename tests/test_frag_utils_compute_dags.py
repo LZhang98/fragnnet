@@ -30,6 +30,10 @@ Tests cover:
     must stay 2-D and every atom must appear in atoms_to_bonds, otherwise
     update_bonds raises "Buffer has wrong number of dimensions (expected 2,
     got 1)" and the DAG for the whole molecule is discarded.
+14. formula_peak_mzs column 0 must be the monoisotopic mass.  compute_dags sorts
+    the isotope peaks by abundance before truncating to MAX_NUM_MZS_PER_FORMULA, and
+    the dataset reads only formula_peak_mzs[:, :num_isotopes] with num_isotopes=1, so
+    isotopes=True silently hands the model M+2 for any fragment with >=3 Cl / >=2 Br.
 13. Isotope-labeled atoms ([13C], [15N], [2H], ...) are rejected.  Formulae and
     masses are monoisotopic per element, so the label was silently dropped and
     '[13CH3]O' yielded exactly the formulae and m/z of 'CO'.
@@ -43,6 +47,7 @@ import numpy as np
 import pytest
 
 from fragnnet.frag.compute_frags import MASK_DTYPE
+from fragnnet.utils.formula_utils import PERIODIC_TABLE, parse_formula
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_IDX,
     FRAG_INDEX_DTYPE,
@@ -550,3 +555,72 @@ def test_extract_mol_info_accepts_unlabeled_molecules(smiles: str) -> None:
     mol_d = extract_mol_info(smiles)
 
     assert len(mol_d["elems"]) == mol_d["mol"].GetNumAtoms()
+
+
+# ---------------------------------------------------------------------------
+# 14. formula_peak_mzs column 0 must be the MONOISOTOPIC mass
+# ---------------------------------------------------------------------------
+
+
+def _monoisotopic_mass(formula: str) -> float:
+    """Sum of most-common-isotope masses, i.e. what column 0 is supposed to hold."""
+    return sum(
+        count * PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
+        for element, count in parse_formula(formula).items()
+    )
+
+
+def _formula_col0_deltas(smiles: str, isotopes: bool) -> dict[str, float]:
+    """Map each non-empty formula to ``formula_peak_mzs[idx, 0] - monoisotopic mass``."""
+    dag_d = compute_dags(
+        extract_mol_info(smiles),
+        max_depth=1,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=int(1e6),
+        isotopes=isotopes,
+        nb_isomorphic=False,
+        wl_max_iterations=-1,
+    )
+    peak_mzs = np.asarray(dag_d["formula_peak_mzs"])
+    return {
+        formula: float(peak_mzs[idx, 0]) - _monoisotopic_mass(formula)
+        for idx, formula in dag_d["idx_to_formula"].items()
+        if formula != ""
+    }
+
+
+# 1,2,4,5-tetrachlorobenzene: every Cl4 fragment has M+2 as its base isotopologue.
+_TETRACHLOROBENZENE = "Clc1cc(Cl)c(Cl)c(Cl)c1"
+
+
+def test_formula_peak_mzs_col0_is_monoisotopic_without_isotopes() -> None:
+    """With ``isotopes=False`` column 0 is the monoisotopic mass for every formula.
+
+    ``frag_params.num_isotopes`` is 1 in config/template.yml and no config overrides
+    it, so ``SpecMolFragDataset`` only ever reads ``formula_peak_mzs[:, :1]``.  That
+    column is the m/z the model is trained and served on, so it must be monoisotopic.
+    """
+    deltas = _formula_col0_deltas(_TETRACHLOROBENZENE, isotopes=False)
+
+    assert any("Cl4" in formula for formula in deltas), deltas
+    assert max(abs(delta) for delta in deltas.values()) < 1e-3, deltas
+
+
+def test_formula_peak_mzs_col0_is_wrong_with_isotopes() -> None:
+    """``isotopes=True`` puts the MOST ABUNDANT isotopologue in column 0, not M+0.
+
+    This pins the reason ``--isotopes`` defaults to False in
+    ``preproc_scripts/03_prepare_dag_feats.py``.  ``compute_dags`` sorts the isotope
+    peaks by abundance before truncating them to ``MAX_NUM_MZS_PER_FORMULA``, so with
+    ``num_isotopes=1`` a Cl4 fragment is served M+2 — 2.0067 Da off, far outside the
+    10 ppm instrument tolerance.  Training DAGs are built with ``ISO_FLAG=False``
+    (``scripts/manual_slurm/fir/frag_gen_common.sh``), so turning this on for
+    inference preprocessing alone is a train/serve skew.
+    """
+    deltas = _formula_col0_deltas(_TETRACHLOROBENZENE, isotopes=True)
+
+    cl4_deltas = [delta for formula, delta in deltas.items() if "Cl4" in formula]
+    assert cl4_deltas, deltas
+    # Two 35Cl -> 37Cl substitutions, at the coarse 1.00335 Da isotope spacing.
+    assert all(abs(delta - 2.0067) < 1e-3 for delta in cl4_deltas), deltas

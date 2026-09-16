@@ -19,9 +19,9 @@
 #   ${DEST_FRAG_DP}/synced_d3_h4/synced_d3_h4_<task>.tar
 # Task i predicts mol_df rows [i*CHUNK_SIZE, (i+1)*CHUNK_SIZE) - the same slice that
 # built shard i - so no tar merging is needed. Keep --array and CHUNK_SIZE in sync
-# with the preprocessing array (289,480 molecules / 20000 -> 15 tasks).
+# with the preprocessing array (289,249 molecules / 20000 -> 15 tasks).
 #
-# Output: ${OUT_DP}/shard_<frag_shard>_<sub>/predictions_chunk_*.pkl
+# Output: ${OUT_DP}/shard_<task>/predictions_chunk_*.pkl
 
 DATASET_NAME=synced
 MAX_DEPTH=3
@@ -29,11 +29,6 @@ MAX_H_TRANSFER=4
 SAVE_NAME=${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}
 FRAG_BACKEND=tar
 CHUNK_SIZE=20000
-
-# One array task per frag shard by default. Raise SUB_SHARDS to split each shard
-# across several tasks (shorter per-task wall time, same DAGs) and widen --array to
-# 0-(15*SUB_SHARDS - 1) to match; tasks past the end of mol_df exit cleanly.
-SUB_SHARDS=${SUB_SHARDS:-1}
 
 # --- MODEL: set one of these two ------------------------------------------
 # Local checkpoint. Relative paths resolve against FRAGNNET_DP.

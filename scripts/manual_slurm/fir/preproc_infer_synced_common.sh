@@ -50,6 +50,14 @@ QTOF_CES=${QTOF_CES:-'10.0eV 20.0eV 30.0eV'}
 INPUT_FP=${INPUT_FP:-${FRAGNNET_DP}/data/raw/synced/synced_smiles_inchi_filled.csv}
 SMILES_COLNAME=${SMILES_COLNAME:-moldb_smiles}
 ID_COLNAME=${ID_COLNAME:-id}
+# Step 03 (DAG generation) runs here by default, doing 01+02+03 in one job. Set False to
+# stop after the proc dir: that is the mode to use when the DAGs are built by the
+# preproc_infer_synced_dag_arr_*.sh array instead, which needs 01/02 output to already
+# exist. The array must then be pointed at this run's proc with
+# SRC_PROC_DP=<untarred ${DEST_PROC_DP}/${DATASET_NAME}_proc.tar>/${DATASET_NAME}/proc,
+# and run_inference.py must read the SAME proc - both slice mol_df by row index, so a
+# regenerated mol_df with different row order silently mismatches shard i against slice i.
+RUN_STEP_03=${RUN_STEP_03:-True}
 DEST_PROC_DP=${DEST_PROC_DP:-/scratch/feiw/frag-gnn-data/inference/proc}
 DEST_FRAG_DP=${DEST_FRAG_DP:-/scratch/feiw/frag-gnn-data/inference/frags}
 INPUT_BASENAME=$(basename ${INPUT_FP})
@@ -151,47 +159,55 @@ mkdir -p ${DEST_PROC_DP}
 tar -cf ${DATASET_NAME}_proc.tar ${PROC_DP}
 cp ${DATASET_NAME}_proc.tar ${DEST_PROC_DP}/
 
-# === Step 03: DAG feature generation =======================================
-echo `date`: Step 03 - DAG feature generation
-read -r -a FRAG_MODE_ARGS <<< "${FRAG_MODE}"
-read -r -a ION_MODE_ARGS <<< "${ION_MODES}"
-read -r -a DSET_ARGS <<< "${DSETS}"
-
-mkdir -p data/frag
-python preproc_scripts/03_prepare_dag_feats.py \
-    --max_depth ${MAX_DEPTH} \
-    --max_h_transfer ${MAX_H_TRANSFER} \
-    --max_time ${MAX_TIME} \
-    --frag_dp ./data/frag/${SAVE_NAME} \
-    --proc_dp ./${PROC_DP} \
-    --prec_types "${PREC_ARGS[@]}" \
-    --inst_types "${INST_ARGS[@]}" \
-    --frag_modes "${FRAG_MODE_ARGS[@]}" \
-    --ion_modes "${ION_MODE_ARGS[@]}" \
-    --dsets "${DSET_ARGS[@]}" \
-    --spec_type "${SPEC_TYPE}" \
-    --wandb_mode disabled \
-    --wandb_run_name fool \
-    --use_hdf5 ${USE_HDF5} \
-    --skip_stats ${SKIP_STATS}
-
-# === save frags to scratch =================================================
-echo `date`: saving frags to ${DEST_FRAG_DP}
-mkdir -p ${DEST_FRAG_DP}
-cd ${WORKING_DIR}/data/frag
-ls -l ${SAVE_NAME}
-
-if [ "${USE_HDF5}" = "True" ] || [ "${USE_HDF5}" = "true" ]; then
-    # HDF5 layout: a single dags.h5 plus meta_info.json — copy directly, no tar.
-    mkdir -p ${DEST_FRAG_DP}/${SAVE_NAME}
-    cp ${SAVE_NAME}/dags.h5 ${DEST_FRAG_DP}/${SAVE_NAME}/
-    cp ${SAVE_NAME}/meta_info.json ${DEST_FRAG_DP}/${SAVE_NAME}/
-    echo copied dags.h5 to ${DEST_FRAG_DP}/${SAVE_NAME}/
+if [ "${RUN_STEP_03}" != "True" ] && [ "${RUN_STEP_03}" != "true" ]; then
+    echo `date`: RUN_STEP_03=${RUN_STEP_03} - stopping after the proc dir.
+    echo "proc tar: ${DEST_PROC_DP}/${DATASET_NAME}_proc.tar"
+    echo "Build the DAGs with preproc_infer_synced_dag_arr_hdf5.sh, pointing"
+    echo "SRC_PROC_DP at this proc dir."
 else
-    # Pickle layout: one compressed artifact per molecule under dags/ — tar it.
-    tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
-    cp ${SAVE_NAME}.tar ${DEST_FRAG_DP}/
-    echo copied tar: ${SAVE_NAME}.tar to ${DEST_FRAG_DP}
+    # === Step 03: DAG feature generation =======================================
+    echo `date`: Step 03 - DAG feature generation
+    read -r -a FRAG_MODE_ARGS <<< "${FRAG_MODE}"
+    read -r -a ION_MODE_ARGS <<< "${ION_MODES}"
+    read -r -a DSET_ARGS <<< "${DSETS}"
+
+    mkdir -p data/frag
+    python preproc_scripts/03_prepare_dag_feats.py \
+        --max_depth ${MAX_DEPTH} \
+        --max_h_transfer ${MAX_H_TRANSFER} \
+        --max_time ${MAX_TIME} \
+        --frag_dp ./data/frag/${SAVE_NAME} \
+        --proc_dp ./${PROC_DP} \
+        --prec_types "${PREC_ARGS[@]}" \
+        --inst_types "${INST_ARGS[@]}" \
+        --frag_modes "${FRAG_MODE_ARGS[@]}" \
+        --ion_modes "${ION_MODE_ARGS[@]}" \
+        --dsets "${DSET_ARGS[@]}" \
+        --spec_type "${SPEC_TYPE}" \
+        --wandb_mode disabled \
+        --wandb_run_name fool \
+        --use_hdf5 ${USE_HDF5} \
+        --skip_stats ${SKIP_STATS}
+
+    # === save frags to scratch =================================================
+    echo `date`: saving frags to ${DEST_FRAG_DP}
+    mkdir -p ${DEST_FRAG_DP}
+    cd ${WORKING_DIR}/data/frag
+    ls -l ${SAVE_NAME}
+
+    if [ "${USE_HDF5}" = "True" ] || [ "${USE_HDF5}" = "true" ]; then
+        # HDF5 layout: a single dags.h5 plus meta_info.json — copy directly, no tar.
+        mkdir -p ${DEST_FRAG_DP}/${SAVE_NAME}
+        cp ${SAVE_NAME}/dags.h5 ${DEST_FRAG_DP}/${SAVE_NAME}/
+        cp ${SAVE_NAME}/meta_info.json ${DEST_FRAG_DP}/${SAVE_NAME}/
+        echo copied dags.h5 to ${DEST_FRAG_DP}/${SAVE_NAME}/
+    else
+        # Pickle layout: one compressed artifact per molecule under dags/ — tar it.
+        tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
+        cp ${SAVE_NAME}.tar ${DEST_FRAG_DP}/
+        echo copied tar: ${SAVE_NAME}.tar to ${DEST_FRAG_DP}
+    fi
+
 fi
 
 echo `date`: Job ${SLURM_JOB_ID} finished running

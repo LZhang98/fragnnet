@@ -1,8 +1,10 @@
 import re
 from collections import Counter
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Literal
 
+import numpy as np
 import rdkit.Chem as Chem
 from pyteomics.mass import Composition
 
@@ -17,13 +19,31 @@ N_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("N")
 O_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("O")
 CL_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl")
 K_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("K")
-I_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("I")
 C_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("C")
 
+# NIST ``+Ni`` precursor labels -- ``[M+H+2i]+``, ``[M+H+4i]+``, ``[M-H+2i]-``, ``[M+Na+2i]+``
+# and friends -- are NOT SUPPORTED and are deliberately absent from every table below.
+#
+# The trailing ``+Ni`` is NIST notation for "the M+N isotopologue was isolated as the precursor":
+# the quadrupole selected the M+2 (or M+4) peak of the natural isotope envelope instead of the
+# monoisotopic one. It does not name an added adduct atom. These entries used to be present and
+# read the ``i`` as IODINE (``"H1I2"``, ``H_MASS + 2 * I_MASS``), putting the precursor ~253.8 Da
+# off; the ``prec_types`` filter in every shipped config kept them out of training, so the error
+# stayed latent.
+#
+# They cannot be re-added as a fixed delta, because the shift is formula dependent: +2i is
+# +1.99705 Da when the carrier is 37Cl, +1.99795 for 81Br, +1.99812 for 41K, +2.00671 for two
+# 13C. Real support would also have to shift every halogen-retaining *fragment*, since the heavy
+# atom is carried through fragmentation -- these are not [M+H]+ spectra with an offset precursor.
+# NIST20 holds ~27k ``[M+H+2i]+`` spectra plus smaller ``+4i`` and other ``+Ni`` variants.
+#
+# Absence from these tables is what enforces it: ``base_dataset.py`` asserts every configured
+# prec_type is a key of ``PREC_TYPE_TO_MASS_DIFF``, ``clean_spectra_utils._subformula_masses``
+# raises on a missing key, and the ``spec_df[...isin(PREC_TYPE_TO_MASS_DIFF)]`` filters across
+# scripts/eval drop them from analyses.
 PREC_TYPE_TO_MASS_DIFF = {
     "[M+H]+": H_MASS - ELECTRON_MASS,
     "[M+Na]+": NA_MASS - ELECTRON_MASS,
-    "[M+H+2i]+": H_MASS + 2 * I_MASS - ELECTRON_MASS,
     "[M+K]+": K_MASS - ELECTRON_MASS,
     "[M+NH4]+": N_MASS + 4 * H_MASS - ELECTRON_MASS,
     "[M-H2O+H]+": -H_MASS - O_MASS - ELECTRON_MASS,
@@ -36,7 +56,6 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M-H-CO2]-": -H_MASS - C_MASS - 2 * O_MASS + ELECTRON_MASS,
     "[M+Cl]-": CL_MASS + ELECTRON_MASS,
     "[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
-    "[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
@@ -70,13 +89,11 @@ PREC_TYPE_TO_MASS_DIFF = {
 PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+H]+": -ELECTRON_MASS,  # direct cation: observed ≈ neutral mass
     "[M+Na]+": H_MASS - ELECTRON_MASS,
-    "[M+H+2i]+": H_MASS - ELECTRON_MASS,
     "[M+K]+": H_MASS - ELECTRON_MASS,
     "[M+NH4]+": H_MASS - ELECTRON_MASS,
     # negative stuff
     "[M-H]-": ELECTRON_MASS,  # direct anion: observed ≈ neutral mass
     "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # loses HCl, so fragments are [frag-H]-
-    "[M-H+2i]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": -H_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
@@ -89,12 +106,10 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
 PREC_TYPE_TO_CMF_FORMULA_DIFF = {
     "[M+H]+": "",
     "[M+Na]+": "H1",
-    "[M+H+2i]+": "H1",
     "[M+K]+": "H1",
     "[M+NH4]+": "H1",
     "[M-H]-": "",
     "[M+Cl]-": "H-1",
-    "[M-H+2i]-": "H-1",
     "[M+CH3COOH-H]-": "H-1",
     "[M+CH3COO]-": "H-1",
     "[M+HCOOH-H]-": "H-1",
@@ -103,7 +118,6 @@ PREC_TYPE_TO_CMF_FORMULA_DIFF = {
 PREC_TYPE_TO_FORMULA_DIFF = {
     "[M+H]+": "H1",
     "[M+Na]+": "Na1",
-    "[M+H+2i]+": "H1I2",
     "[M+K]+": "K1",
     "[M+NH4]+": "N1H4",
     "[M-H2O+H]+": "O-1H-1",
@@ -115,14 +129,19 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M-H-CO2]-": "H-1C-1O-2",
     "[M+Cl]-": "Cl1",
     "[M-H-H2O]-": "H-3O-1",
-    "[M-H+2i]-": "H-1I2",
     "[M+HCOOH-H]-": "C1H1O2",
     "[M+CH3COOH-H]-": "C2H3O2",
     "[M+CH3COO]-": "C2H3O2",
 }
 
-PREC_TYPE_TO_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
-PREC_TYPE_TO_CMF_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()}
+# `formula=` throughout: a positional string is read by pyteomics as a PEPTIDE SEQUENCE.
+# Every value above happens to carry a digit (or be empty), which is what keeps the
+# positional form correct today - adding a plain "Na" or "H" would silently yield sodium's
+# or histidine's residue composition instead. Pinning the keyword removes that trap.
+PREC_TYPE_TO_COMP_DIFF = {k: Composition(formula=v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
+PREC_TYPE_TO_CMF_COMP_DIFF = {
+    k: Composition(formula=v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()
+}
 
 def mass_shatter_has_valid_ion(
     mol: Chem.Mol,
@@ -371,6 +390,84 @@ def get_formulae_hill_notation(element_counts: dict[str, int]) -> str:
         if element_counts[element] > 1:
             formulae_string += str(element_counts[element])
     return formulae_string
+
+
+@lru_cache(maxsize=64)
+def formula_delta_to_signed_str(delta_formula: str) -> str:
+    """Render a precursor delta formula in signed notation for annotation.
+
+    Cached: the export calls this once per formula row, but the deltas come from the two
+    fixed precursor tables, so there are only a handful of distinct inputs.
+
+    ``"H1" -> "+H"``, ``"H-1" -> "-H"``, ``"H-1C-1O-2" -> "-CHO2"``. Atoms removed and atoms
+    added are grouped under one sign each, losses first, so a delta that does both reads the
+    way an adduct name is written: ``"H-1Na1"`` renders as ``"-H+Na"``. No shipped precursor
+    delta currently mixes signs, but the rendering handles it. Element order and the dropped
+    ``1`` suffix follow :func:`get_formulae_hill_notation`, so a fragment annotation reads as
+    ``"C6H4O2 -H"`` against a neutral formula string.
+
+    Args:
+        delta_formula: Delta in canonical form, e.g. a ``PREC_TYPE_TO_FORMULA_DIFF`` value.
+
+    Returns:
+        Signed string, or ``""`` for a zero delta (a direct cation/anion adds nothing).
+    """
+    counts = {el: n for el, n in Composition(formula=delta_formula).items() if n != 0}
+    rendered = ""
+    for sign, keep in (("-", False), ("+", True)):
+        group = {el: abs(n) for el, n in counts.items() if (n > 0) is keep}
+        if group:
+            rendered += sign + get_formulae_hill_notation(group)
+    return rendered
+
+
+def formula_row_prec_deltas(
+    prec_type_strs: Sequence[str],
+    formula_cumsizes: Sequence[int],
+    *,
+    include_cmf: bool,
+    max_h_transfer: int,
+) -> np.ndarray:
+    """Precursor delta formula for every formula row of a batch.
+
+    The dataset lays each sample's formula rows out as ``NULL, CRF[1:F]``, and appends
+    ``CMF[1:F]`` only when the CMF channel is actually enumerated — that is, when
+    ``include_cmf`` is set, the adduct has a CMF delta, and
+    :func:`cmf_duplicate_crf_h_shift` does not already emit that ion as a CRF hydrogen
+    shift. This reproduces that split so callers do not each re-derive it.
+
+    Args:
+        prec_type_strs: Precursor type per sample, length ``B``.
+        formula_cumsizes: Formula-row offsets into the batch-concatenated arrays,
+            length ``B + 1``.
+        include_cmf: The ``frag_params["include_cmf"]`` setting the batch was built with.
+        max_h_transfer: Hydrogen-transfer limit of the enumerated CRF channels.
+
+    Returns:
+        Object array of delta formula strings, shape ``[formula_cumsizes[-1]]``. The NULL
+        row of each sample is ``""``: it stands for no fragment, so no adduct applies.
+    """
+    offsets = [int(o) for o in formula_cumsizes]
+    if len(offsets) != len(prec_type_strs) + 1:
+        raise ValueError(
+            f"formula_cumsizes has {len(offsets)} entries for {len(prec_type_strs)} samples; "
+            "expected batch_size + 1"
+        )
+    deltas = np.empty(offsets[-1], dtype=object)
+    for i, prec_type in enumerate(prec_type_strs):
+        start, end = offsets[i], offsets[i + 1]
+        deltas[start:end] = PREC_TYPE_TO_FORMULA_DIFF[prec_type]
+        deltas[start] = ""  # NULL row
+        emits_cmf = (
+            include_cmf
+            and prec_type in PREC_TYPE_TO_CMF_FORMULA_DIFF
+            and cmf_duplicate_crf_h_shift(prec_type, max_h_transfer) is None
+        )
+        if emits_cmf:
+            # Layout: NULL, CRF[1:F], CMF[1:F] -> the CMF half starts after NULL + F rows.
+            cmf_start = start + (end - start + 1) // 2
+            deltas[cmf_start:end] = PREC_TYPE_TO_CMF_FORMULA_DIFF[prec_type]
+    return deltas
 
 
 def parse_formula(formula: str) -> dict[str, int]:

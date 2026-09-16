@@ -45,7 +45,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     formula_to_peak_mzs,
 )
-from fragnnet.utils.misc_utils import PPM, progress_wrapper
+from fragnnet.utils.misc_utils import PPM, ProgressLogger, progress_wrapper
 
 # Fragment index dtype (change here to update everywhere)
 # uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
@@ -98,6 +98,14 @@ PACKED_DAG_BYTES_DATASET = "dag_bytes"
 PACKED_DAG_INDEX_DATASET = "dag_index"
 PACKED_DAG_BYTES_CHUNK_SIZE = 64 * 1024
 PACKED_DAG_INDEX_CHUNK_SIZE = 8192
+# zlib level for the per-molecule DAG payload. Measured on 185 drug-like d3/h4 DAGs
+# (150 MB of raw pickle): level 4 -> 13.5 MB, level 6 -> 12.2 MB, level 9 -> 12.0 MB.
+# Level 6 is strictly better than 4 here — 9.5% smaller AND ~10% faster to inflate
+# (0.83 vs 0.92 ms/DAG, since there is less to read back) for +3 ms/molecule of write
+# CPU, against ~90 ms/molecule of fragmentation. Level 9 costs 20x the write CPU for a
+# further 1.5%. No HDF5-level filter is applied on top: the bytes dataset already holds
+# compressed payloads, so a gzip filter would mostly duplicate this work.
+PACKED_DAG_ZLIB_LEVEL = 6
 PACKED_DAG_INDEX_DTYPE = np.dtype(
     [
         ("offset", "<u8"),
@@ -1943,7 +1951,7 @@ def dump_dag_hdf5_packed(h5_file, mol_id: str | int, dag_d: dict) -> None:
         raise ValueError(f"Duplicate mol_id in packed HDF5 file: {mol_id}")
 
     payload = pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
-    compressed_payload = zlib.compress(payload, level=4)
+    compressed_payload = zlib.compress(payload, level=PACKED_DAG_ZLIB_LEVEL)
     payload_array = np.frombuffer(compressed_payload, dtype=np.uint8)
 
     bytes_dataset = h5_file[PACKED_DAG_BYTES_DATASET]
@@ -2401,26 +2409,36 @@ def run_frag_gen_hdf5(
 
     initialize_packed_dag_hdf5(h5_file)
     meta_info: dict[str, list[int]] = {}
-    n_errors = 0
+    n_total = mol_df.shape[0]
 
-    for fr in progress_wrapper(
-        frag_results_iter,
-        total=mol_df.shape[0],
-        desc="Compute Frags",
-        disable_tqdm=disable_tqdm,
-    ):
+    _log.info("Executing fragment generation for %d molecules (packed HDF5 output)", n_total)
+    progress = ProgressLogger(total=n_total, desc="Fragment generation", logger=_log)
+
+    # ProgressLogger already emits the rate/ETA lines, so progress_wrapper is only used
+    # for the interactive tqdm bar; its logging fallback would duplicate every line.
+    frag_iter = frag_results_iter
+    if not disable_tqdm:
+        frag_iter = progress_wrapper(frag_results_iter, total=n_total, desc="Compute Frags")
+
+    for fr in frag_iter:
         mol_id, dag_d = fr
         if len(dag_d) == 0:
             _log.warning("Empty DAG for mol_id=%s", mol_id)
-            n_errors += 1
+            progress.update(is_error=True)
             continue
         meta_info[str(int(mol_id))] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
         dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+        progress.update()
         if len(meta_info) % 1000 == 0:
             h5_file.flush()
 
     h5_file.flush()
-    _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
+    progress.finish()
+    _log.info(
+        "Stored %d DAGs in packed HDF5 (%d molecules failed)",
+        len(meta_info),
+        n_total - len(meta_info),
+    )
     return meta_info
 
 

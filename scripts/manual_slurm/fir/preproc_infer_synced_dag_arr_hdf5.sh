@@ -10,13 +10,13 @@
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_synced_dag_arr_hdf5_%A_%a.out
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_synced_dag_arr_hdf5_%A_%a.err
 #SBATCH --open-mode=append
-#SBATCH --array=0-14
+#SBATCH --array=0-5
 
 # SYNCED inference preprocessing, STEP 03 ONLY (DAG feature generation), as an array
 # job -> one packed dags.h5 per shard. Uses the --use_hdf5 True + --skip_stats True
 # fast path in 03_prepare_dag_feats.py.
 #
-# Array sizing: 289,480 molecules / CHUNK_SIZE=20000 -> 15 tasks (0-14). Keep
+# Array sizing: 289,249 molecules / CHUNK_SIZE=48209 -> 6 tasks (0-5). Keep
 # --array and CHUNK_SIZE in sync when either changes.
 #
 # Each task writes ${DEST_FRAG_DP}/${SAVE_NAME}/shard_<task>/{dags.h5,meta_info.json}.
@@ -35,7 +35,7 @@ MAX_TIME=150
 USE_HDF5=True
 SKIP_STATS=True
 SAVE_NAME=${DATASET_NAME}_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_hdf5
-CHUNK_SIZE=20000
+CHUNK_SIZE=48209
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FRAGNNET_DP=${FRAGNNET_DP:-/home/feiw/project/feiw/frag-gnn}

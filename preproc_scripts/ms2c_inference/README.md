@@ -171,15 +171,24 @@ python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
 python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
   --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
   --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_mass.json \
-  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass_all \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass_test \
   --subset all
 
 # Formula-constrained candidates for every test-fold spectrum.
 python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
   --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
   --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_formula.json \
-  --output_dp data/ms2c/msgym/current/retrieval_candidates_formula_all \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_formula_test \
   --subset all
+
+# The same export for the val fold. --fold defaults to test, so the commands
+# above are unchanged; pass --fold val (or train) to select another fold.
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_formula.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_formula_val \
+  --subset all \
+  --fold val
 
 ```
 
@@ -197,6 +206,10 @@ python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py build-proc \
 This writes `mol_df.pkl`, `spec_df.pkl`, and `test_ids.csv`. Each
 query-candidate pair is one spectrum row, and candidates belonging to the same
 MSGYM spectrum share a `group_id`.
+
+`build-proc` always names the split `test_ids.csv` because that is the filename
+inference reads (`base_dataset.py`), regardless of which MSGYM fold the manifest
+came from. The fold lives in the output directory name, not in the split name.
 
 ### run_ms2c_predict_val.py
 

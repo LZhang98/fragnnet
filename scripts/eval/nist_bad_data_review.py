@@ -48,8 +48,10 @@ INSTRUMENT_TOLERANCE = {
 }
 DEFAULT_TOLERANCE = (1.0e-5, 200.0)
 PRECURSOR_MASS_CHECK_INSTRUMENTS = set(INSTRUMENT_TOLERANCE)
-# Formula-dependent ``+2i`` isotope-selected labels are deliberately excluded from this simple
-# monoisotopic precursor check.
+# NIST ``+Ni`` isotope-selected labels ([M+H+2i]+ and friends) carry a formula-dependent mass
+# shift and are unsupported upstream, so they are already absent from PREC_TYPE_TO_MASS_DIFF and
+# land in ``unsupported_precursor_type`` rather than in this monoisotopic check.  The ``+2i``
+# guard is kept as a belt-and-braces filter in case a variant is ever added there.
 PRECURSOR_TYPE_TO_MASS_DIFF = {
     prec_type: mass_diff
     for prec_type, mass_diff in PREC_TYPE_TO_MASS_DIFF.items()
