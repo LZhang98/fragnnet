@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-15
+> **Status:** REFERENCE · **Updated:** 2026-09-16
 
 ## Current handoff
 
@@ -73,6 +73,25 @@ No training processes, scheduler jobs, checkpoints, or external run statuses wer
 workflow adoption. No new research priority or scientific conclusion is inferred here.
 
 ## Next task
+
+Unmerged MASShatter CMF anchor prepared (2026-09-16): the
+[improvement plan](plans/masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
+records a new config,
+`config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml`,
+and a generation-only launcher
+`scripts/manual_slurm/vulcan/submit_masshatter_unmerged_cmf.sh`. It is the lead unmerged arm
+(`ef7fl5c6`, 0.7515) plus dual CE, `inst_types` reduced to the FT/QTOF actually present in the
+split, and channel diagnostics; a resolved-config comparison shows `spec_params` as the only
+differing key. This is the first config to train the 2026-09-14 CMF alignment, because only its
+`[M+Na]+`/`[M+Cl]-` spectra (38,156 and 7,820 of 480,002) have a non-degenerate CMF ladder. The
+twelve-hour allocation and `j=` resume address the wall-time half of the convergence blocker that
+holds up [Arm C](plans/masshatter_ion_h_channel_selection_plan.md). `filter_subformula_peaks`
+stays off so the target spectra do not change alongside the candidate universe. Validation:
+config resolved, both arms constructed, generated job script passed `bash -n`, and one full
+subsampled epoch ran end-to-end on the local GPU (exit 0, `val_cos_sim_0.01_epoch/mean` present,
+`last.ckpt` written). No Vulcan job was generated or submitted from this workstation, which has
+no `sbatch`. Next: run the launcher on the Vulcan login node, `sbatch` it, and record the
+scheduler and W&B run IDs in the improvement plan.
 
 Subformula filter hooked up to MASShatter (2026-09-16): the merged Cl/Na fix reaches MASShatter
 through the shared `BaseDataset` cleanup with no code change, but it was **inert for every

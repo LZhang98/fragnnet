@@ -1,6 +1,6 @@
 # MASShatter Ion-Mode Proposal, H Selection, and Intensity-Head Plan
 
-> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-15
+> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-16
 >
 > First remove CMF states duplicated by reachable CRF H shifts. Keep atom-set
 > retrieval H-independent, add an explicit CRF/CMF proposal stage only on
@@ -26,6 +26,15 @@ This changes the MASShatter candidate universe for carrier-switching adducts suc
 so they are diagnostic-only; rebaseline candidate coverage and train matched controls before
 scientific comparison. The adduct-stratified zero-only versus full-range oracle measurement
 remains required to quantify the effect.
+
+**Matched control prepared 2026-09-16, not yet launched.** The
+[corrected unmerged CMF anchor](masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
+is the first config that trains these channels: four adducts on
+`data/split/nist20_ma_mi_inchikey`, full acquisition context including dual CE, and channel
+diagnostics on. Constructed from the resolved config, `[M+Na]+` and `[M+Cl]-` carry a live
+nine-shift CMF ladder while `[M+H]+` and `[M-H]-` stay suppressed at duplicate CRF shifts `-1`
+and `+1`; those two adducts are 38,156 and 7,820 of the split's 480,002 spectra. The training
+loop logs no adduct-stratified metric, so the oracle comparison stays a post-hoc evaluation.
 
 ## H-support ablation measurement (2026-09-14)
 
@@ -607,7 +616,9 @@ contain enough such spectra to evaluate CRF-versus-CMF ranking separately by add
 The four-adduct `ma_mi_unmerged` family includes `[M+Na]+` and `[M+Cl]-`, but only two
 of its four adducts carry mode-identifying signal after degeneracy removal. Existing
 three-hour runs in that family have not yielded a converged recoverable baseline, so
-Arm C is blocked until that convergence/wall-time prerequisite is satisfied.
+Arm C is blocked until that convergence/wall-time prerequisite is satisfied. The
+[corrected unmerged CMF anchor](masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
+is prepared against that prerequisite and has not been launched.
 
 In a mixed scope, mark degenerate CMF states invalid per precursor before mode loss,
 selection, and metrics. Train and evaluate the mode head only on remaining two-mode
@@ -1414,7 +1425,9 @@ Arm C only if all of these prerequisites hold:
 
 The current four-adduct `ma_mi_unmerged` scope supplies signal only through `[M+Na]+`
 and `[M+Cl]-` and has not converged within the three-hour jobs. Arm C remains blocked
-until that baseline issue is resolved. Repeat arms with additional seeds only after a
+until that baseline issue is resolved; the
+[corrected unmerged CMF anchor](masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
+is the prepared attempt at it, with a twelve-hour allocation and job-id resume, and has not run. Repeat arms with additional seeds only after a
 new-head arm clears the validation gates.
 
 Constructing either optional head must not perturb the global initialization or

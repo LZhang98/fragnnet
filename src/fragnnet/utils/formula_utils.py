@@ -143,6 +143,7 @@ PREC_TYPE_TO_CMF_COMP_DIFF = {
     k: Composition(formula=v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()
 }
 
+
 def mass_shatter_has_valid_ion(
     mol: Chem.Mol,
     precursor_type: str,

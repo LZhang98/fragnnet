@@ -198,3 +198,56 @@ including shared-encoder warmup and zero hard-pruning thresholds. The separate d
 preserves the original five-config glob. To generate these two jobs with the same Vulcan
 procedure, use `config/masshatter/merged/support_ablation/*.yml` as the config glob.
 No training jobs were submitted for these controls.
+
+### Corrected unmerged CMF anchor prepared (2026-09-16)
+
+Step 1's unmerged control now has a config:
+[nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml).
+It is the lead unmerged arm
+([`ef7fl5c6`](https://wandb.ai/frag-gnn/frag-gnn/runs/ef7fl5c6), validation `cos_sim_0.01`
+0.7515) with exactly three deltas, confirmed by a resolved-config comparison in which
+`spec_params` is the only differing key:
+
+1. `spec_params.ace: True`. `MassShatterPL` passes `spec_params.nce`/`ace` straight to the
+   model's `use_nce`/`use_ace`, so this turns on the dual-CE context of the selected
+   full-metadata baseline. Parameter count 8,431,302 to 8,436,336.
+2. `inst_types` drops `IT`. Measured on `data/split/nist20_ma_mi_inchikey`: 480,002 spectra,
+   FT and QTOF only, zero IT rows. The IT slot only widened the embedding table.
+3. `mass_shatter_channel_diagnostics: True`, so the valid/attributed/retained ion-H channel
+   counts are logged without adding a support loss.
+
+Enumeration budget stays at E4096 and the probability/cross-entropy output stays unchanged so
+the run remains comparable with `ef7fl5c6`. `filter_subformula_peaks` stays `False`: the Na/Cl
+charge-migration filter fix would change the target spectra at the same time as the CMF
+candidate-universe change. The merged
+[subformula sibling](../../config/masshatter/merged/subformula_filter/nist20_ma_mi_merged_independent_jss_warmup_e0_15_dense_subformula.yml)
+remains the separate filter arm.
+
+This scope is what makes the 2026-09-14 CMF alignment observable. Constructed from the resolved
+config, `[M+Na]+` and `[M+Cl]-` carry a live CMF ladder (`cmf_precursor_valid` true,
+`cmf_duplicate_crf_h_shift` `None`) while `[M+H]+` and `[M-H]-` stay suppressed at duplicate CRF
+shifts `-1` and `+1`. At `max_h_transfer: 4` that is nine previously unenumerated channels per
+fragment on the two carrier-switching adducts, which are 38,156 and 7,820 of the 480,002 split
+spectra (9.6% combined).
+
+Launch: [submit_masshatter_unmerged_cmf.sh](../../scripts/manual_slurm/vulcan/submit_masshatter_unmerged_cmf.sh),
+generation-only, `vulcan:l40s`, job name `msh_unmrg_cmf_dualce`. It answers the wall-time half of
+the convergence blocker with a twelve-hour allocation and `j=msh_unmrg_cmf_dualce`, which records
+`job_id/msh_unmrg_cmf_dualce.id` so a re-submission resumes from `last.ckpt` in the same W&B run.
+Checkpoints are written under `wandb/run-*/files/ckpt` in the cluster checkout rather than
+node-local scratch, so a wall-time kill leaves them recoverable; the `.id` file is removed on clean
+completion, so a later re-run starts fresh instead of silently resuming.
+
+Validation at `c6a7b8b8` with torch 2.4.1+cu121 / lightning 2.4.0: config resolved through
+`load_config`; both arms constructed; the generated job script passed `bash -n` and carries the
+intended directives, staging, `wandb`/`job_id` symlinks, and final command. One full subsampled
+epoch ran end-to-end on a local RTX 2070 SUPER (400 train / 400 validation spectra, batch 4,
+`num_workers: 0`), exit 0, producing `val_cos_sim_0.01_epoch/mean` (so `checkpoint_metric`
+resolves) plus `last.ckpt` and `model-epoch=000.ckpt`. Its `val_valid_ion_h_per_fragment_mean`
+was 9.246 against 8.54 in the merged `[M+H]+`-only arms, consistent with the added CMF channels;
+that is a 400-spectrum untrained-epoch number on a different scope, not a result.
+
+No Vulcan job was generated or submitted from this workstation, which has no `sbatch`. No adduct-
+stratified metric exists in the training loop, so the CMF comparison needs a post-hoc evaluation.
+Next: run the launcher on the Vulcan login node, submit, and record the scheduler job ID and W&B
+run ID here.
