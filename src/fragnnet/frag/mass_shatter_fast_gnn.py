@@ -1,7 +1,7 @@
 """FastGNN-style connected-fragment beam proposals on the model's tensor device.
 
-Search is discrete and detached. Each fragment receives the exact boundary-mask
-score C_mol + sum(boundary logits), then the model normalizes over retained fragments.
+Search is discrete and detached. Each fragment scores boundary bonds as cut and internal bonds as intact, leaving
+outside bonds unrestricted. The model normalizes over retained fragments.
 This is not MASShatter's marginalized cut-pathway probability. One adapter row per
 fragment reuses the downstream sparse membership contract without topology enumeration.
 """
@@ -64,7 +64,7 @@ def _search(
     max_order: int,
     top_k: int,
     overprovision: int = 4,
-) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     device = canon_logit.device
 
     mol_atom_count = th.bincount(bs, minlength=num_mols)
@@ -96,11 +96,16 @@ def _search(
     adj_bool = th.zeros(num_mols, max_atoms, max_atoms, dtype=th.bool, device=device)
     adj_bool[canon_bs, local_u, local_v] = True
     adj_bool[canon_bs, local_v, local_u] = True
-    adj_logit = canon_logit.new_zeros(num_mols, max_atoms, max_atoms)
-    adj_logit[canon_bs, local_u, local_v] = canon_logit
-    adj_logit[canon_bs, local_v, local_u] = canon_logit
+    log_cut = F.logsigmoid(canon_logit)
+    log_intact = F.logsigmoid(-canon_logit)
+    adj_cut = canon_logit.new_zeros(num_mols, max_atoms, max_atoms)
+    adj_cut[canon_bs, local_u, local_v] = log_cut
+    adj_cut[canon_bs, local_v, local_u] = log_cut
+    adj_correction = th.zeros_like(adj_cut)
+    adj_correction[canon_bs, local_u, local_v] = log_intact - 2 * log_cut
+    adj_correction[canon_bs, local_v, local_u] = log_intact - 2 * log_cut
     adj_bool_f = adj_bool.float()
-    deg_logit = adj_logit.sum(-1)  # (num_mols, max_atoms)
+    deg_cut = adj_cut.sum(-1)  # (num_mols, max_atoms)
     deg_count = adj_bool_f.sum(-1)  # (num_mols, max_atoms)
 
     atom_valid = th.arange(max_atoms, device=device).unsqueeze(0) < mol_atom_count.unsqueeze(1)
@@ -135,10 +140,11 @@ def _search(
     for r in range(num_rounds):
         cur_beam = cur_mask.shape[1]
         cur_mask_f = cur_mask.float()
-        to_F = th.bmm(cur_mask_f, adj_logit)  # (num_mols, cur_beam, max_atoms)
+        to_F = th.bmm(cur_mask_f, adj_correction)  # (num_mols, cur_beam, max_atoms)
         to_F_count = th.bmm(cur_mask_f, adj_bool_f)  # (num_mols, cur_beam, max_atoms)
 
-        new_score = cur_score.unsqueeze(-1) + deg_logit.unsqueeze(1) - 2 * to_F
+        # New outside edges become boundary; edges to F change from cut to intact.
+        new_score = cur_score.unsqueeze(-1) + deg_cut.unsqueeze(1) + to_F
         new_bcount = cur_bcount.unsqueeze(-1) + deg_count.unsqueeze(1) - 2 * to_F_count
 
         if r == 0:
@@ -294,7 +300,18 @@ def _search(
         if mirror_ok.any():
             mirror_mol = g_mol[mirror_ok]
             mirror_packed = full_packed[mirror_mol] ^ g_packed[mirror_ok]
-            mirror_score = g_score[mirror_ok]
+            mirror_mask = complement_mask[mirror_ok]
+            mirror_u = th.gather(mirror_mask, 1, edge_u_pad[mirror_mol])
+            mirror_v = th.gather(mirror_mask, 1, edge_v_pad[mirror_mol])
+            mirror_valid = edge_valid_pad[mirror_mol]
+            # Complements share boundary bonds, but have different internal bonds.
+            padded_logits = canon_logit.new_zeros(edge_valid_pad.shape)
+            padded_logits[canon_bs, edge_local_idx] = canon_logit
+            mirror_logits = padded_logits[mirror_mol]
+            mirror_score = (
+                F.logsigmoid(mirror_logits) * ((mirror_u != mirror_v) & mirror_valid)
+                + F.logsigmoid(-mirror_logits) * (mirror_u & mirror_v & mirror_valid)
+            ).sum(-1)
 
             merged_mol = th.cat([g_mol, mirror_mol])
             merged_packed = th.cat([g_packed, mirror_packed], dim=0)
@@ -327,12 +344,15 @@ def _search(
 
     frag_edge_u_local = edge_u_pad[g_mol]
     frag_edge_v_local = edge_v_pad[g_mol]
-    is_boundary = (
-        th.gather(frag_mask, 1, frag_edge_u_local) != th.gather(frag_mask, 1, frag_edge_v_local)
-    ) & edge_valid_pad[g_mol]
+    u_in = th.gather(frag_mask, 1, frag_edge_u_local)
+    v_in = th.gather(frag_mask, 1, frag_edge_v_local)
+    is_boundary = (u_in != v_in) & edge_valid_pad[g_mol]
+    is_internal = u_in & v_in & edge_valid_pad[g_mol]
     frag_edge_owner = th.arange(n_frag, device=device)[:, None].expand_as(is_boundary)[is_boundary]
     frag_edge_id = edge_global_pad[g_mol][is_boundary]
-    return g_mol, flat_global, flat_owner, frag_edge_id, frag_edge_owner
+    internal_owner = th.arange(n_frag, device=device)[:, None].expand_as(is_internal)[is_internal]
+    internal_id = edge_global_pad[g_mol][is_internal]
+    return g_mol, flat_global, flat_owner, frag_edge_id, frag_edge_owner, internal_id, internal_owner
 
 
 def build_fast_gnn_candidates(
@@ -345,7 +365,7 @@ def build_fast_gnn_candidates(
     beam_width: int,
     max_boundary_cuts: int,
 ) -> MassShatterCandidateBatch:
-    """Search connected atom sets and score their boundary masks.
+    """Search connected atom sets with boundary-cut and internal-intact scores.
 
     Args:
         bond_logits: One finite logit per chemical bond, shape ``(E,)``.
@@ -359,8 +379,9 @@ def build_fast_gnn_candidates(
     Returns:
         Sparse membership adapter with one row per unique fragment. Mask/mechanism
         indices are identity mappings, not latent fragmentation events. Scores are
-        differentiable exact boundary-mask log probabilities, without charge factors.
-        Complement pairs can share the same boundary mask, so their score sum must
+        differentiable log probabilities of cutting boundary bonds and keeping internal
+        bonds intact, with outside bonds unrestricted and no charge factors. Fragment
+        events overlap, so their score sum must
         not be interpreted as retained probability mass. Timings measure host wall
         time and do not synchronize asynchronous CUDA kernels.
 
@@ -413,7 +434,15 @@ def build_fast_gnn_candidates(
     selection_start = perf_counter()
     with th.autocast(device_type=bond_logits.device.type, enabled=False):
         search_logits = bond_logits.detach().float()
-        frag_batch, atoms, owners, sorted_bonds, boundary_owners = _search(
+        (
+            frag_batch,
+            atoms,
+            owners,
+            sorted_bonds,
+            boundary_owners,
+            sorted_internal,
+            internal_owners,
+        ) = _search(
             search_logits[order],
             u[order],
             v[order],
@@ -433,12 +462,10 @@ def build_fast_gnn_candidates(
     live_logits = (
         bond_logits.float() if bond_logits.dtype in (th.float16, th.bfloat16) else bond_logits
     )
-    base = live_logits.new_zeros(batch_size).index_add(0, bond_batch, -F.softplus(live_logits))
-    scores = (
-        live_logits.new_zeros(num_fragments).index_add(
-            0, boundary_owners, live_logits[boundary_bonds]
-        )
-        + base[frag_batch]
+    scores = live_logits.new_zeros(num_fragments).index_add(
+        0, boundary_owners, F.logsigmoid(live_logits[boundary_bonds])
+    ).index_add(
+        0, internal_owners, F.logsigmoid(-live_logits[order[sorted_internal]])
     )
     cuts = th.bincount(boundary_owners, minlength=num_fragments)
     fragment_counts = th.bincount(frag_batch, minlength=batch_size)

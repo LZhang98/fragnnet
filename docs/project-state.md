@@ -78,6 +78,8 @@ The [FastGNN proposal option](plans/masshatter_fast_gnn_proposal.md) is implemen
 explicit alternative to cut-mask proposals, preserving the default and checkpoint shapes.
 Full suite: 3,451 passed, 96 skipped, 2 xfailed; three separate GPU checks and a real-data
 forward/backward smoke passed. The linked plan supplies the config and score semantics.
+The connected-fragment option now aligns search and scoring with boundary-cut/internal-intact
+probabilities from the updated prototype; see the linked plan for changed checkpoint semantics.
 Next: matched coverage, throughput and accuracy comparison; no training run was launched.
 
 Unmerged MASShatter CMF anchor prepared (2026-09-16): the

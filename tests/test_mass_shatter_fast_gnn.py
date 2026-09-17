@@ -56,16 +56,17 @@ def test_complete_small_graph_search_and_live_boundary_score(edges):
     }
     assert set(fragments) == expected
     assert len(fragments) == len(expected)
+    references = []
     for i, fragment in enumerate(fragments):
         boundary = th.tensor([(u in fragment) != (v in fragment) for u, v in edges])
-        expected_score = th.where(boundary, F.logsigmoid(logits), F.logsigmoid(-logits)).sum()
+        internal = th.tensor([(u in fragment) and (v in fragment) for u, v in edges])
+        expected_score = F.logsigmoid(logits[boundary]).sum() + F.logsigmoid(-logits[internal]).sum()
+        references.append(expected_score)
         th.testing.assert_close(candidates.mask_log_probabilities[i], expected_score)
         assert candidates.mask_cut_counts[i] == boundary.sum()
-    # A normalized boundary distribution has the same gradient as summed boundary logits.
+    # Normalized scores and gradients agree with an independent edge-membership reference.
     actual = candidates.mask_log_probabilities.log_softmax(0)
-    direct = th.stack(
-        [logits[th.tensor([(u in f) != (v in f) for u, v in edges])].sum() for f in fragments]
-    ).log_softmax(0)
+    direct = th.stack(references).log_softmax(0)
     th.testing.assert_close(actual, direct)
     grad = th.autograd.grad(actual[0], logits, retain_graph=True)[0]
     th.testing.assert_close(grad, th.autograd.grad(direct[0], logits)[0])
@@ -381,7 +382,7 @@ def test_batch_padding_does_not_change_proposals():
 
 def test_connected_multiword_complements():
     edges = [(i, i + 1) for i in range(64)]
-    candidates, _ = _graph(65, edges, beam_width=2, max_fragments=12, max_boundary_cuts=1)
+    candidates, _ = _graph(65, edges, beam_width=2, max_fragments=130, max_boundary_cuts=1)
     fragments = _sets(candidates)
     assert any(len(f) == 64 for f in fragments)
     assert all(_connected(f, edges) for f in fragments)
@@ -448,3 +449,49 @@ def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, ol
         == "cut_masks"
     )
     assert load_config(str(custom), None, None)[new_key] == expected
+
+
+def test_outside_bonds_are_unrestricted():
+    logits = th.zeros(2, requires_grad=True)
+    candidates, _ = _graph(3, [(0, 1), (1, 2)], logits=logits)
+    fragments = _sets(candidates)
+    endpoint = fragments.index(frozenset({0}))
+    pair = fragments.index(frozenset({0, 1}))
+    scores = candidates.mask_log_probabilities
+    th.testing.assert_close(scores[endpoint].exp(), th.tensor(0.5))
+    th.testing.assert_close(scores[pair].exp(), th.tensor(0.25))
+    th.testing.assert_close(
+        th.autograd.grad(scores[endpoint], logits)[0], th.tensor([0.5, 0.0])
+    )
+
+
+@pytest.mark.parametrize("beam_width", [1, 128])
+def test_selection_uses_fragment_probability(beam_width):
+    # Boundary-logit ranking favors the middle singleton; fragment probability favors A.
+    logits = th.tensor([2.0, 1.0])
+    candidates, _ = _graph(
+        3, [(0, 1), (1, 2)], logits=logits,
+        max_fragments=2, beam_width=beam_width,
+    )
+    assert set(_sets(candidates)) == {frozenset({0}), frozenset({0, 1, 2})}
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_capped_search_matches_exhaustive_chain_ranking(seed):
+    # Wide search enumerates the chain; mirrors must use their own internal scores.
+    generator = th.Generator().manual_seed(seed)
+    logits = th.randn(5, generator=generator)
+    edges = [(i, i + 1) for i in range(5)]
+    reference = []
+    for start in range(6):
+        for stop in range(start + 1, 7):
+            fragment = frozenset(range(start, stop))
+            if len(fragment) == 6:
+                continue
+            boundary = th.tensor([(u in fragment) != (v in fragment) for u, v in edges])
+            internal = th.tensor([(u in fragment) and (v in fragment) for u, v in edges])
+            score = F.logsigmoid(logits[boundary]).sum() + F.logsigmoid(-logits[internal]).sum()
+            reference.append((float(score), fragment))
+    expected = {f for _, f in sorted(reference, key=lambda entry: entry[0], reverse=True)[:3]}
+    candidates, _ = _graph(6, edges, logits=logits, max_fragments=4, beam_width=128)
+    assert set(_sets(candidates)) == expected | {frozenset(range(6))}

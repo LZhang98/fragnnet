@@ -27,7 +27,7 @@ The prepared [dual-CE arm](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_
 retains the existing fast control's encoder, intensity head, chemistry, loss weights,
 optimizer and batch settings. It uses selection-only proposal supervision. No run was launched.
 
-- Grow connected atom sets, ranking expansions by summed boundary logits. Keep a bounded
+- Grow connected atom sets, ranking expansions by boundary-cut plus internal-intact log probability. Keep a bounded
   beam after atom-set deduplication; consider at most four times the beam width before
   deduplication. This approximation can underfill the beam when many paths duplicate.
 - Grow to `ceil(atom_count / 2)` per molecule, then add connected complements. Using each
@@ -42,10 +42,13 @@ optimizer and batch settings. It uses selection-only proposal supervision. No ru
 - Use multiword 63-bit atom masks, no fixed atom-count ceiling. Dense batch adjacency and
   beam expansion still impose practical memory limits. Discrete search runs in FP32 on
   the model device with autograd disabled; live score computation preserves gradients.
-- A fragment score is `sum_e log(1-p_e) + sum_boundary logit(p_e)`. Normalize these scores
-  over retained fragments for the existing support-coverage objective. No charge factor
-  or latent-pathway marginal is used. The common molecular constant cancels under this
-  normalization. Coupled intensity mode can also consume this alternative fragment prior.
+- A fragment score is `sum_boundary log(p_e) + sum_internal log(1-p_e)`; bonds entirely
+  outside the fragment are unrestricted. Beam growth, candidate ranking, complementary
+  fragment ranking and live differentiable scoring use this same objective. Normalize
+  over retained fragments for the support-coverage objective. No charge factor or
+  latent-pathway marginal is used. Internal bonds must all remain intact, so this is
+  not the full connected-component marginal on rings. Coupled intensity mode can also
+  consume this alternative fragment prior.
 - No extra encoder or FastGNN intensity/chemistry modules are introduced. The existing
   optional separate proposal encoder remains usable. Charge-head tensors remain in state
   dictionaries for compatibility, but the head is frozen and skipped for FastGNN proposals.
@@ -64,8 +67,8 @@ optimizer and batch settings. It uses selection-only proposal supervision. No ru
 
 [Search implementation](../../src/fragnnet/frag/mass_shatter_fast_gnn.py) returns the existing
 sparse membership adapter with one identity mask/mechanism row per unique fragment. These
-adapter rows are not a latent cut-mask pool: complementary fragments may share a boundary
-mask, so summing their exact-mask scores is not retained probability mass.
+adapter rows are not a latent cut-mask pool: fragment events can overlap, so summing their scores after exponentiation is not retained
+probability mass. Complementary fragments generally have different internal-bond scores.
 
 [Model integration](../../src/fragnnet/model/mass_shatter_model.py) bypasses charge/pathway
 marginalization for this option and shares the remaining intensity and chemistry path.
@@ -77,7 +80,7 @@ not synchronized CUDA stage durations; use synchronized whole-step benchmarks fo
 
 ## Validation and next check
 
-Acceptance checks: exhaustive small-graph membership and boundary-score references; normalized
+Acceptance checks: exhaustive small-graph membership and boundary/internal-score references; normalized
 score gradients; rings, disconnected and zero-bond inputs, multiword masks, budgets and batch
 indexing; CPU/CUDA parity; real-model output normalization and proposal gradients; CE/JSS
 loss and warmup routing; config rejection; strict new/legacy checkpoint loading; regression suites.
@@ -130,3 +133,27 @@ Validation: 355 focused tests passed, 8 GPU tests skipped in the sandbox. These 
 old-name YAML/CLI loading, strict old/new checkpoint roundtrips and canonical override
 precedence, plus model, loss, backend compatibility and runner-config regressions.
 Ruff and whitespace checks passed. No training or scientific behavior changed.
+
+
+## Fragment probability alignment (2026-09-17)
+
+The updated workspace prototype scores boundary cuts and internal intact bonds, leaving
+outside bonds unrestricted. The connected-fragment option now uses this formulation for
+both search and live scores, including independently rescored complements. Growth adds
+`sum_incident log(p)` plus `sum_edges_to_fragment [log(1-p) - 2 log(p)]`.
+The prototype itself still searches by summed boundary logits; this implementation aligns
+search with the returned score. Finite beam pruning and complement generation remain
+approximate: ranking consistency does not guarantee globally optimal fragment selection.
+
+The final candidate cap and reserved precursor remain unchanged. `cut_masks` is unchanged.
+Existing connected-fragment checkpoints still load, but predictions and resumed-training
+semantics change; comparisons with the prior formulation need the prior code revision.
+Tests cover outside-bond independence, normalized gradients, narrow-beam selection and
+exhaustive chain rankings. The multiword complement test now uses a nonbinding cap because
+large complements no longer inherit their small partners' scores.
+
+Validation for the probability alignment: **136 passed, 8 skipped** across the proposal
+and MASShatter model suites; GPU checks skipped because CUDA was unavailable in the
+sandbox. Ruff and `git diff --check` passed. Log:
+`/tmp/connected_fragment_probability_tests.log`. No training, throughput benchmark or
+validation-set quality evaluation ran for this change.
