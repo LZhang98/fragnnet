@@ -1308,6 +1308,12 @@ class SpectrumPL(pl.LightningModule):
 
 	def _check_ce_params(self):
 
+		# check ce source
+		has_ce_source = self.hparams.spec_params["nce"] or self.hparams.spec_params["ace"]
+		if self.hparams.ce_insert_location != "none":
+			assert has_ce_source, (
+				"ce_insert_location is set but both nce and ace are False"
+			)
 		# check merge params
 		if self.hparams.spec_params["merge"]:
 			assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params["merge_keep_ces"]
