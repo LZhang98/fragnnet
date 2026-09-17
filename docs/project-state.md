@@ -74,6 +74,12 @@ workflow adoption. No new research priority or scientific conclusion is inferred
 
 ## Next task
 
+The [FastGNN proposal option](plans/masshatter_fast_gnn_proposal.md) is implemented as an
+explicit alternative to cut-mask proposals, preserving the default and checkpoint shapes.
+Full suite: 3,451 passed, 96 skipped, 2 xfailed; three separate GPU checks and a real-data
+forward/backward smoke passed. The linked plan supplies the config and score semantics.
+Next: matched coverage, throughput and accuracy comparison; no training run was launched.
+
 Unmerged MASShatter CMF anchor prepared (2026-09-16): the
 [improvement plan](plans/masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
 records a new config,

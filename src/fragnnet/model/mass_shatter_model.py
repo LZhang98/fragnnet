@@ -21,6 +21,10 @@ The conditional probability of an enumerated pathway therefore factorizes as::
     P(mask | enumerated) * P(component keeps the charge | mask)
     * P(ion mode, H shift | component)
 
+The optional ``fast_gnn`` proposal instead grows connected atom sets by beam search.
+It normalizes exact boundary-mask scores over retained fragments, without latent
+pathway marginalization or charge allocation; chemistry and intensity scoring are shared.
+
 The final spectrum is normalized over the candidates generated for that precursor.
 Unmatched observed peaks are candidate-coverage diagnostics, not a predicted class.
 """
@@ -41,6 +45,7 @@ from fragnnet.frag.mass_shatter_candidates import (
     MassShatterStaticGraph,
     build_mass_shatter_candidates,
 )
+from fragnnet.frag.mass_shatter_fast_gnn import build_fast_gnn_candidates
 from fragnnet.frag.mass_shatter_templates import (
     MASS_SHATTER_NUM_RULES,
     MassShatterTemplate,
@@ -735,7 +740,7 @@ class MassShatterContextEncoder(nn.Module):
 class MassShatterModel(nn.Module):
     """Predict sparse MS/MS spectra from globally ranked precursor bond masks.
 
-    The forward pass runs four stages (see the numbered comments in :meth:`forward`):
+    The default cut-mask forward pass runs four stages (see :meth:`forward`):
 
     1. Encode the intact precursor with one GNN pass and score every chemical bond
        with an independent break logit.
@@ -824,6 +829,9 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: bool,
         max_enumerated_masks: int,
         mask_selection_threads: int = 1,
+        proposal_type: Literal["cut_masks", "fast_gnn"] = "cut_masks",
+        fast_gnn_beam_width: int = 256,
+        fast_gnn_max_boundary_cuts: int = 3,
         min_mask_relative_probability: float,
         min_fragment_relative_probability: float,
         include_single_bond_cuts: bool,
@@ -927,6 +935,11 @@ class MassShatterModel(nn.Module):
             mask_selection_threads: Worker threads used to select Bernoulli-mixture cut
                 masks. The selection kernel releases the GIL, so values above one give
                 real parallelism and leave the selected masks unchanged. Defaults to 1.
+            proposal_type: ``cut_masks`` retains latent-pathway marginalization;
+                ``fast_gnn`` searches connected atom sets and normalizes exact boundary
+                mask scores over fragments, without a charge-allocation factor.
+            fast_gnn_beam_width: States retained per connected-set growth round.
+            fast_gnn_max_boundary_cuts: Maximum boundary size for proper fragments.
             max_enumerated_masks: Safety cap on latent masks considered while filling
                 the unique-fragment target.
             min_mask_relative_probability: MAP-relative probability floor below which
@@ -954,7 +967,11 @@ class MassShatterModel(nn.Module):
             raise ValueError("max_enumerated_masks must be positive")
         if mask_selection_threads < 1:
             raise ValueError("mask_selection_threads must be at least 1")
-        if unique_fragment_mode and max_enumerated_masks < max_masks:
+        if (
+            proposal_type == "cut_masks"
+            and unique_fragment_mode
+            and max_enumerated_masks < max_masks
+        ):
             raise ValueError(
                 "max_enumerated_masks must be at least max_masks in unique-fragment mode"
             )
@@ -1047,6 +1064,26 @@ class MassShatterModel(nn.Module):
             raise ValueError("bond_num_layers must be nonnegative")
         if proposal_num_mixtures <= 0:
             raise ValueError("proposal_num_mixtures must be positive")
+        if proposal_type not in ("cut_masks", "fast_gnn"):
+            raise ValueError(f"unknown proposal_type: {proposal_type!r}")
+        if any(
+            isinstance(v, bool) or not isinstance(v, int)
+            for v in (fast_gnn_beam_width, fast_gnn_max_boundary_cuts)
+        ):
+            raise ValueError("fast_gnn beam width and boundary cuts must be integers")
+        if fast_gnn_beam_width < 1 or fast_gnn_max_boundary_cuts < 0:
+            raise ValueError("fast_gnn beam width must be positive and boundary cuts nonnegative")
+        if proposal_type == "fast_gnn" and (
+            not unique_fragment_mode
+            or proposal_num_mixtures != 1
+            or use_smarts_templates
+            or share_proposal_across_ev
+            or min_mask_relative_probability != 0.0
+        ):
+            raise ValueError(
+                "fast_gnn requires unique mode, one mixture, SMARTS off, "
+                "share_proposal_across_ev off and zero mask probability floor"
+            )
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
 
@@ -1073,6 +1110,9 @@ class MassShatterModel(nn.Module):
         self.unique_fragment_mode = unique_fragment_mode
         self.max_enumerated_masks = max_enumerated_masks
         self.mask_selection_threads = mask_selection_threads
+        self.proposal_type = proposal_type
+        self.fast_gnn_beam_width = fast_gnn_beam_width
+        self.fast_gnn_max_boundary_cuts = fast_gnn_max_boundary_cuts
         self.min_mask_relative_probability = min_mask_relative_probability
         self.min_fragment_relative_probability = min_fragment_relative_probability
         self.include_single_bond_cuts = include_single_bond_cuts
@@ -1199,6 +1239,9 @@ class MassShatterModel(nn.Module):
             head_hidden_dim,
             head_dropout,
         )
+        if proposal_type == "fast_gnn":
+            # Retain checkpoint tensor names/shapes, but do not train an unused head.
+            self.charge_head.requires_grad_(False)
         self.ion_mode_proposal_head: IonModeProposalHead | None = None
         if separate_ion_mode_proposal_head:
             with th.random.fork_rng(devices=[]):
@@ -1897,16 +1940,17 @@ class MassShatterModel(nn.Module):
                 if self.proposal_mixture_head is not None
                 else None
             )
-            atom_charge_logits = self.charge_head(
-                proposal_atom_embeddings,
-                context=proposal_context,
-                atom_batch_indices=mol_pyg.batch,
-            )
+            if self.proposal_type == "fast_gnn":
+                atom_charge_logits = bond_logits.new_zeros(mol_pyg.batch.numel())
+            else:
+                atom_charge_logits = self.charge_head(
+                    proposal_atom_embeddings,
+                    context=proposal_context,
+                    atom_batch_indices=mol_pyg.batch,
+                )
 
-        # 2. Select global masks and construct sparse component pathways.
-        # Mask identities are picked from detached logits on CPU; the returned log
-        # probabilities are recomputed from the live logits, so gradients still reach
-        # every cut/intact bond decision. Exploration masks are training-only.
+        # 2. Select cut-mask pathways or direct fragments with detached search scores.
+        # Recompute probabilities from live logits for proposal supervision.
         smarts_templates: tuple[tuple[MassShatterTemplate, ...], ...] = tuple(
             () for _ in range(batch_size)
         )
@@ -1921,22 +1965,35 @@ class MassShatterModel(nn.Module):
                 precursor_type_indices,
                 spec_frag_mode,
             )
-        candidates = build_mass_shatter_candidates(
-            bond_logits,
-            mol_pyg.chemical_bond_index,
-            mol_pyg.batch,
-            mol_pyg.ptr,
-            max_masks=self.max_masks,
-            min_mask_relative_probability=self.min_mask_relative_probability,
-            include_single_bond_cuts=self.include_single_bond_cuts,
-            max_unique_components=(self.max_masks if self.unique_fragment_mode else None),
-            max_enumerated_masks=(self.max_enumerated_masks if self.unique_fragment_mode else None),
-            mask_selection_threads=self.mask_selection_threads,
-            static_graph=static_graph,
-            smarts_templates=smarts_templates,
-            mixture_log_weights=mixture_log_weights,
-            candidate_group_ids=(layout["spectrum_to_shared"] if layout is not None else None),
-        )
+        if self.proposal_type == "fast_gnn":
+            candidates = build_fast_gnn_candidates(
+                bond_logits,
+                mol_pyg.chemical_bond_index,
+                mol_pyg.batch,
+                mol_pyg.ptr,
+                max_fragments=self.max_masks,
+                beam_width=self.fast_gnn_beam_width,
+                max_boundary_cuts=self.fast_gnn_max_boundary_cuts,
+            )
+        else:
+            candidates = build_mass_shatter_candidates(
+                bond_logits,
+                mol_pyg.chemical_bond_index,
+                mol_pyg.batch,
+                mol_pyg.ptr,
+                max_masks=self.max_masks,
+                min_mask_relative_probability=self.min_mask_relative_probability,
+                include_single_bond_cuts=self.include_single_bond_cuts,
+                max_unique_components=(self.max_masks if self.unique_fragment_mode else None),
+                max_enumerated_masks=(
+                    self.max_enumerated_masks if self.unique_fragment_mode else None
+                ),
+                mask_selection_threads=self.mask_selection_threads,
+                static_graph=static_graph,
+                smarts_templates=smarts_templates,
+                mixture_log_weights=mixture_log_weights,
+                candidate_group_ids=(layout["spectrum_to_shared"] if layout is not None else None),
+            )
 
         # 3. Score charge retention. In unique-fragment mode, masks remain latent
         # pathways and are marginalized before the expensive candidate transformer.
@@ -1992,27 +2049,32 @@ class MassShatterModel(nn.Module):
                 fragment_cut_counts,
             ) = self._unique_component_memberships(candidates)
             num_fragments = candidates.num_unique_components
-            charge_log_probabilities = latent_pathway_charge_log_probabilities(
-                atom_charge_logits,
-                fragment_atom_indices,
-                atom_fragment_indices,
-                candidates.component_unique_indices,
-                candidates.component_mechanism_indices,
-                num_unique_components=num_fragments,
-                num_masks=candidates.num_mechanisms,
-                pooling=self.charge_pooling,
-            )
-            # 3a. Sum every charged pathway that produces the same precursor atom set.
-            component_log_probabilities = (
-                candidates.mask_log_probabilities[candidates.component_mask_indices]
-                + mechanism_log_probabilities[candidates.component_mechanism_indices]
-                + charge_log_probabilities
-            )
-            fragment_log_probabilities = _segment_logsumexp(
-                component_log_probabilities,
-                candidates.component_unique_indices,
-                num_fragments,
-            )
+            if self.proposal_type == "fast_gnn":
+                # One unique fragment per adapter row: no latent charge competition.
+                component_log_probabilities = candidates.mask_log_probabilities
+                fragment_log_probabilities = component_log_probabilities
+            else:
+                charge_log_probabilities = latent_pathway_charge_log_probabilities(
+                    atom_charge_logits,
+                    fragment_atom_indices,
+                    atom_fragment_indices,
+                    candidates.component_unique_indices,
+                    candidates.component_mechanism_indices,
+                    num_unique_components=num_fragments,
+                    num_masks=candidates.num_mechanisms,
+                    pooling=self.charge_pooling,
+                )
+                # 3a. Sum every charged pathway that produces the same precursor atom set.
+                component_log_probabilities = (
+                    candidates.mask_log_probabilities[candidates.component_mask_indices]
+                    + mechanism_log_probabilities[candidates.component_mechanism_indices]
+                    + charge_log_probabilities
+                )
+                fragment_log_probabilities = _segment_logsumexp(
+                    component_log_probabilities,
+                    candidates.component_unique_indices,
+                    num_fragments,
+                )
             proposal_log_normalizers = _segment_logsumexp(
                 fragment_log_probabilities,
                 fragment_batch_indices,

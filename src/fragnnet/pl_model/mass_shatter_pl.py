@@ -754,6 +754,38 @@ class MassShatterPL(SpectrumPL):
 
     hparams: Any
 
+    def __init__(self, **kwargs: Any) -> None:
+        legacy_candidate_backend = kwargs.pop("_legacy_candidate_backend", False)
+        if legacy_candidate_backend:
+            if "mass_shatter_proposal_type" not in kwargs:
+                kwargs["mass_shatter_proposal_type"] = "cut_masks"
+            if "mass_shatter_fast_gnn_beam_width" not in kwargs:
+                kwargs["mass_shatter_fast_gnn_beam_width"] = 256
+            if "mass_shatter_fast_gnn_max_boundary_cuts" not in kwargs:
+                kwargs["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
+        super().__init__(**kwargs)
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: Any,
+        map_location: Any = None,
+        hparams_file: Any = None,
+        strict: bool | None = None,
+        **kwargs: Any,
+    ) -> MassShatterPL:
+        """Load Lightning checkpoints, migrating missing candidate/proposal settings.
+
+        Lightning merges saved hyperparameters and explicit overrides before the
+        constructor runs. The private marker is removed before hyperparameters are
+        captured, so saved or overridden backend values retain their precedence.
+        Positional arguments have the same meaning as in Lightning's loader.
+        """
+        kwargs["_legacy_candidate_backend"] = True
+        return super().load_from_checkpoint(
+            checkpoint_path, map_location, hparams_file, strict, **kwargs
+        )
+
     def _setup_model(self) -> None:
         """Instantiate ``MassShatterModel`` from the flat hparam namespace.
 
@@ -826,6 +858,9 @@ class MassShatterPL(SpectrumPL):
             self.hparams.spec_params["frag_modes"] if self.hparams.spec_params["frag_mode"] else []
         )
         self.model = MassShatterModel(
+            proposal_type=self.hparams.mass_shatter_proposal_type,
+            fast_gnn_beam_width=self.hparams.mass_shatter_fast_gnn_beam_width,
+            fast_gnn_max_boundary_cuts=self.hparams.mass_shatter_fast_gnn_max_boundary_cuts,
             node_feature_dim=node_feature_dim,
             edge_feature_dim=edge_feature_dim,
             precursor_hidden_dim=self.hparams.mol_hidden_size,
@@ -930,6 +965,7 @@ class MassShatterPL(SpectrumPL):
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
             use_smarts_templates=self.hparams.mass_shatter_smarts_templates,
         )
+        logger.info("Resolved MASShatter proposal type: %s", self.model.proposal_type)
         self._proposal_only_training = False
         self._check_ce_params()
 
@@ -945,7 +981,7 @@ class MassShatterPL(SpectrumPL):
             proposal_encoder,
             self.model.bond_break_head,
             self.model.proposal_mixture_head,
-            self.model.charge_head,
+            self.model.charge_head if self.model.proposal_type == "cut_masks" else None,
             self.model.ion_mode_proposal_head,
             self.model.mechanism_head,
         )
@@ -1752,6 +1788,12 @@ class MassShatterPL(SpectrumPL):
                         * ion_mode_proposal_loss
                     )
             loss_values["loss"] = loss
+            if self.hparams.mass_shatter_proposal_type == "fast_gnn":
+                loss_values = {
+                    fast_metric_names.get(name, name): value
+                    for name, value in loss_values.items()
+                    if fast_metric_names.get(name, name) is not None
+                }
             return loss_values
 
         self.loss_fn = loss_fn
@@ -1840,6 +1882,30 @@ class MassShatterPL(SpectrumPL):
                     "base_ce_gain",
                 ]
             )
+        fast_metric_names = {
+            "retained_mask_probability": None,
+            "selected_mask_count": "fast_gnn_fragment_count",
+            "component_pathway_count": None,
+            "mean_mask_cut_count": "fast_gnn_mean_boundary_cut_count",
+            "proposal_single_cut_fraction": "fast_gnn_single_boundary_cut_fraction",
+            "components_per_mask": None,
+            "unique_components_per_mask": None,
+            "latent_pathways_per_unique_fragment": None,
+            "duplicate_pathway_probability_fraction": None,
+            "productive_mask_fraction": None,
+            "duplicate_component_pathway_fraction": None,
+            "candidate_mask_selection_batch_ms": "fast_gnn_search_batch_ms",
+            **{
+                f"mask_cut_fraction_{bucket}": f"fast_gnn_boundary_cut_fraction_{bucket}"
+                for bucket in ("0", "1", "2", "3", "4", "5", "6plus", "4plus")
+            },
+        }
+        if self.hparams.mass_shatter_proposal_type == "fast_gnn":
+            loss_names = [
+                fast_metric_names.get(name, name)
+                for name in loss_names
+                if fast_metric_names.get(name, name) is not None
+            ]
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
 

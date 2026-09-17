@@ -141,4 +141,11 @@ def get_pl_hparams(ckpt: dict) -> dict:
         and "mass_shatter_intensity_transformer_attention" not in hyper_parameters
     ):
         hyper_parameters["mass_shatter_intensity_transformer_attention"] = "induced"
+    if hyper_parameters.get("model_type") == "mass_shatter":
+        if "mass_shatter_proposal_type" not in hyper_parameters:
+            hyper_parameters["mass_shatter_proposal_type"] = "cut_masks"
+        if "mass_shatter_fast_gnn_beam_width" not in hyper_parameters:
+            hyper_parameters["mass_shatter_fast_gnn_beam_width"] = 256
+        if "mass_shatter_fast_gnn_max_boundary_cuts" not in hyper_parameters:
+            hyper_parameters["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
     return hyper_parameters

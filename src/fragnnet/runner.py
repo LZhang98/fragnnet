@@ -53,6 +53,12 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
     assert os.path.isfile(template_fp), template_fp
     with open(template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
+    if "mass_shatter_proposal_type" not in config_d:
+        config_d["mass_shatter_proposal_type"] = "cut_masks"
+    if "mass_shatter_fast_gnn_beam_width" not in config_d:
+        config_d["mass_shatter_fast_gnn_beam_width"] = 256
+    if "mass_shatter_fast_gnn_max_boundary_cuts" not in config_d:
+        config_d["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
     # overwrite parts of the config
     if custom_fp is not None:
         assert os.path.isfile(custom_fp), custom_fp
@@ -801,6 +807,10 @@ def init_run(
     model_cls = get_model_cls(config_d["model_type"])
     model = model_cls(**config_d)
     model.train()
+    if config_d["model_type"] == "mass_shatter" and wandb_mode != "disabled":
+        wandb.run.summary["mass_shatter_proposal_type_resolved"] = config_d[
+            "mass_shatter_proposal_type"
+        ]
 
     # setup callbacks
     callbacks = []

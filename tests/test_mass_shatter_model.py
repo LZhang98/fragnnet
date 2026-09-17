@@ -79,6 +79,7 @@ def _build_model(
     precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
     fragmentation_modes: tuple[str, ...] = (),
     context_in_gnn: bool = False,
+    proposal_type: str = "cut_masks",
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -146,6 +147,7 @@ def _build_model(
         include_cmf=include_cmf,
         charge_pooling="logsumexp",
         use_smarts_templates=use_smarts_templates,
+        proposal_type=proposal_type,
     )
 
 
