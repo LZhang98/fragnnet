@@ -222,13 +222,13 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 
 # MASShatter: one-pass bond-set fragmentation. Candidate identities are selected
 # on CPU; their probabilities are recomputed from live logits for gradients.
-mass_shatter_proposal_type: cut_masks  # cut_masks | fast_gnn; default preserves checkpoints.
+mass_shatter_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
 mass_shatter_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
 mass_shatter_fast_gnn_max_boundary_cuts: 3  # Proper-fragment boundary limit; precursor always kept.
-  # fast_gnn: unique mode, one mixture, SMARTS/share_proposal_across_ev off, zero mask floor.
+  # connected_fragment_beam: unique mode, one mixture, SMARTS/share_proposal_across_ev off, zero mask floor.
   # Runs on the model device. Uses unique_fragment_target as a strict cap including precursor.
   # candidate_backend, ranked_mask_budget, mask_selection_threads and forced single cuts
-  # apply only to cut_masks; fast_gnn searches up to ceil(molecule atoms / 2) then mirrors.
+  # apply only to cut_masks; connected_fragment_beam searches up to ceil(molecule atoms / 2) then mirrors.
   # Probability is normalized boundary-mask score, not marginalized mask/charge probability.
 mass_shatter_unique_fragment_mode: False
 mass_shatter_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.

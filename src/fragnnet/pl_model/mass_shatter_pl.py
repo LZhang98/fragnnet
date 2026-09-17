@@ -41,6 +41,7 @@ from fragnnet.model.loss import (
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.utils.pl_utils import migrate_mass_shatter_proposal_method
 from fragnnet.utils.spec_utils import (
     calculate_match_mzs,
     get_ints_transform_func,
@@ -755,10 +756,11 @@ class MassShatterPL(SpectrumPL):
     hparams: Any
 
     def __init__(self, **kwargs: Any) -> None:
+        migrate_mass_shatter_proposal_method(kwargs)
         legacy_candidate_backend = kwargs.pop("_legacy_candidate_backend", False)
         if legacy_candidate_backend:
-            if "mass_shatter_proposal_type" not in kwargs:
-                kwargs["mass_shatter_proposal_type"] = "cut_masks"
+            if "mass_shatter_proposal_method" not in kwargs:
+                kwargs["mass_shatter_proposal_method"] = "cut_masks"
             if "mass_shatter_fast_gnn_beam_width" not in kwargs:
                 kwargs["mass_shatter_fast_gnn_beam_width"] = 256
             if "mass_shatter_fast_gnn_max_boundary_cuts" not in kwargs:
@@ -858,7 +860,7 @@ class MassShatterPL(SpectrumPL):
             self.hparams.spec_params["frag_modes"] if self.hparams.spec_params["frag_mode"] else []
         )
         self.model = MassShatterModel(
-            proposal_type=self.hparams.mass_shatter_proposal_type,
+            proposal_method=self.hparams.mass_shatter_proposal_method,
             fast_gnn_beam_width=self.hparams.mass_shatter_fast_gnn_beam_width,
             fast_gnn_max_boundary_cuts=self.hparams.mass_shatter_fast_gnn_max_boundary_cuts,
             node_feature_dim=node_feature_dim,
@@ -965,7 +967,7 @@ class MassShatterPL(SpectrumPL):
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
             use_smarts_templates=self.hparams.mass_shatter_smarts_templates,
         )
-        logger.info("Resolved MASShatter proposal type: %s", self.model.proposal_type)
+        logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
         self._proposal_only_training = False
         self._check_ce_params()
 
@@ -981,7 +983,7 @@ class MassShatterPL(SpectrumPL):
             proposal_encoder,
             self.model.bond_break_head,
             self.model.proposal_mixture_head,
-            self.model.charge_head if self.model.proposal_type == "cut_masks" else None,
+            self.model.charge_head if self.model.proposal_method == "cut_masks" else None,
             self.model.ion_mode_proposal_head,
             self.model.mechanism_head,
         )
@@ -1788,7 +1790,7 @@ class MassShatterPL(SpectrumPL):
                         * ion_mode_proposal_loss
                     )
             loss_values["loss"] = loss
-            if self.hparams.mass_shatter_proposal_type == "fast_gnn":
+            if self.hparams.mass_shatter_proposal_method == "connected_fragment_beam":
                 loss_values = {
                     fast_metric_names.get(name, name): value
                     for name, value in loss_values.items()
@@ -1900,7 +1902,7 @@ class MassShatterPL(SpectrumPL):
                 for bucket in ("0", "1", "2", "3", "4", "5", "6plus", "4plus")
             },
         }
-        if self.hparams.mass_shatter_proposal_type == "fast_gnn":
+        if self.hparams.mass_shatter_proposal_method == "connected_fragment_beam":
             loss_names = [
                 fast_metric_names.get(name, name)
                 for name in loss_names

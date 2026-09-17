@@ -33,7 +33,7 @@ from fragnnet.dataset.data_sampler import (
 )
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
-from fragnnet.utils.pl_utils import ConsoleLogger
+from fragnnet.utils.pl_utils import ConsoleLogger, migrate_mass_shatter_proposal_method
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
@@ -53,8 +53,9 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
     assert os.path.isfile(template_fp), template_fp
     with open(template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
-    if "mass_shatter_proposal_type" not in config_d:
-        config_d["mass_shatter_proposal_type"] = "cut_masks"
+    migrate_mass_shatter_proposal_method(config_d)
+    if "mass_shatter_proposal_method" not in config_d:
+        config_d["mass_shatter_proposal_method"] = "cut_masks"
     if "mass_shatter_fast_gnn_beam_width" not in config_d:
         config_d["mass_shatter_fast_gnn_beam_width"] = 256
     if "mass_shatter_fast_gnn_max_boundary_cuts" not in config_d:
@@ -64,6 +65,7 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
         assert os.path.isfile(custom_fp), custom_fp
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
+        migrate_mass_shatter_proposal_method(custom_d)
         assert all(k in config_d for k in custom_d), set(custom_d.keys()) - set(config_d.keys())
         config_d = deep_update(config_d, custom_d)
 
@@ -71,6 +73,11 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
     if override is not None:
         for item in override:
             key, value = item.split("=", 1)
+            if key in ("mass_shatter_proposal_type", "mass_shatter_proposal_method"):
+                proposal_override = {key: yaml.safe_load(value)}
+                migrate_mass_shatter_proposal_method(proposal_override)
+                config_d.update(proposal_override)
+                continue
             keys = key.split(".")
             cur = config_d
             for k in keys[:-1]:
@@ -761,22 +768,24 @@ def init_run(
                 job_id_file.write(f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}")
         # update config results (primarily for wandb)
         # configs can be nested up to 2 levels
+        saved_run_config = dict(wandb.config)
+        migrate_mass_shatter_proposal_method(saved_run_config)
         for k in list(config_d.keys()):
-            if k in wandb.config:
+            if k in saved_run_config:
                 if isinstance(config_d[k], dict):
                     # nested
-                    assert isinstance(wandb.config[k], dict)
+                    assert isinstance(saved_run_config[k], dict)
                     for kk in list(config_d[k].keys()):
-                        if kk in wandb.config[k]:
-                            if config_d[k][kk] != wandb.config[k][kk]:
+                        if kk in saved_run_config[k]:
+                            if config_d[k][kk] != saved_run_config[k][kk]:
                                 print(
-                                    f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {wandb.config[k][kk]}"
+                                    f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {saved_run_config[k][kk]}"
                                 )
-                            config_d[k][kk] = wandb.config[k][kk]
+                            config_d[k][kk] = saved_run_config[k][kk]
                 else:
-                    if config_d[k] != wandb.config[k]:
-                        print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
-                    config_d[k] = wandb.config[k]
+                    if config_d[k] != saved_run_config[k]:
+                        print(f"> config diff -- {k}: {config_d[k]} vs {saved_run_config[k]}")
+                    config_d[k] = saved_run_config[k]
         loggers.append(wandb_logger)
     else:
         is_resume = False
@@ -808,8 +817,8 @@ def init_run(
     model = model_cls(**config_d)
     model.train()
     if config_d["model_type"] == "mass_shatter" and wandb_mode != "disabled":
-        wandb.run.summary["mass_shatter_proposal_type_resolved"] = config_d[
-            "mass_shatter_proposal_type"
+        wandb.run.summary["mass_shatter_proposal_method_resolved"] = config_d[
+            "mass_shatter_proposal_method"
         ]
 
     # setup callbacks

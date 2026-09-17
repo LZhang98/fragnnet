@@ -21,7 +21,7 @@ The conditional probability of an enumerated pathway therefore factorizes as::
     P(mask | enumerated) * P(component keeps the charge | mask)
     * P(ion mode, H shift | component)
 
-The optional ``fast_gnn`` proposal instead grows connected atom sets by beam search.
+The optional ``connected_fragment_beam`` proposal instead grows connected atom sets by beam search.
 It normalizes exact boundary-mask scores over retained fragments, without latent
 pathway marginalization or charge allocation; chemistry and intensity scoring are shared.
 
@@ -829,7 +829,7 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: bool,
         max_enumerated_masks: int,
         mask_selection_threads: int = 1,
-        proposal_type: Literal["cut_masks", "fast_gnn"] = "cut_masks",
+        proposal_method: Literal["cut_masks", "connected_fragment_beam"] = "cut_masks",
         fast_gnn_beam_width: int = 256,
         fast_gnn_max_boundary_cuts: int = 3,
         min_mask_relative_probability: float,
@@ -935,8 +935,8 @@ class MassShatterModel(nn.Module):
             mask_selection_threads: Worker threads used to select Bernoulli-mixture cut
                 masks. The selection kernel releases the GIL, so values above one give
                 real parallelism and leave the selected masks unchanged. Defaults to 1.
-            proposal_type: ``cut_masks`` retains latent-pathway marginalization;
-                ``fast_gnn`` searches connected atom sets and normalizes exact boundary
+            proposal_method: ``cut_masks`` retains latent-pathway marginalization;
+                ``connected_fragment_beam`` searches connected atom sets and normalizes exact boundary
                 mask scores over fragments, without a charge-allocation factor.
             fast_gnn_beam_width: States retained per connected-set growth round.
             fast_gnn_max_boundary_cuts: Maximum boundary size for proper fragments.
@@ -968,7 +968,7 @@ class MassShatterModel(nn.Module):
         if mask_selection_threads < 1:
             raise ValueError("mask_selection_threads must be at least 1")
         if (
-            proposal_type == "cut_masks"
+            proposal_method == "cut_masks"
             and unique_fragment_mode
             and max_enumerated_masks < max_masks
         ):
@@ -1064,8 +1064,8 @@ class MassShatterModel(nn.Module):
             raise ValueError("bond_num_layers must be nonnegative")
         if proposal_num_mixtures <= 0:
             raise ValueError("proposal_num_mixtures must be positive")
-        if proposal_type not in ("cut_masks", "fast_gnn"):
-            raise ValueError(f"unknown proposal_type: {proposal_type!r}")
+        if proposal_method not in ("cut_masks", "connected_fragment_beam"):
+            raise ValueError(f"unknown proposal_method: {proposal_method!r}")
         if any(
             isinstance(v, bool) or not isinstance(v, int)
             for v in (fast_gnn_beam_width, fast_gnn_max_boundary_cuts)
@@ -1073,7 +1073,7 @@ class MassShatterModel(nn.Module):
             raise ValueError("fast_gnn beam width and boundary cuts must be integers")
         if fast_gnn_beam_width < 1 or fast_gnn_max_boundary_cuts < 0:
             raise ValueError("fast_gnn beam width must be positive and boundary cuts nonnegative")
-        if proposal_type == "fast_gnn" and (
+        if proposal_method == "connected_fragment_beam" and (
             not unique_fragment_mode
             or proposal_num_mixtures != 1
             or use_smarts_templates
@@ -1110,7 +1110,7 @@ class MassShatterModel(nn.Module):
         self.unique_fragment_mode = unique_fragment_mode
         self.max_enumerated_masks = max_enumerated_masks
         self.mask_selection_threads = mask_selection_threads
-        self.proposal_type = proposal_type
+        self.proposal_method = proposal_method
         self.fast_gnn_beam_width = fast_gnn_beam_width
         self.fast_gnn_max_boundary_cuts = fast_gnn_max_boundary_cuts
         self.min_mask_relative_probability = min_mask_relative_probability
@@ -1239,7 +1239,7 @@ class MassShatterModel(nn.Module):
             head_hidden_dim,
             head_dropout,
         )
-        if proposal_type == "fast_gnn":
+        if proposal_method == "connected_fragment_beam":
             # Retain checkpoint tensor names/shapes, but do not train an unused head.
             self.charge_head.requires_grad_(False)
         self.ion_mode_proposal_head: IonModeProposalHead | None = None
@@ -1940,7 +1940,7 @@ class MassShatterModel(nn.Module):
                 if self.proposal_mixture_head is not None
                 else None
             )
-            if self.proposal_type == "fast_gnn":
+            if self.proposal_method == "connected_fragment_beam":
                 atom_charge_logits = bond_logits.new_zeros(mol_pyg.batch.numel())
             else:
                 atom_charge_logits = self.charge_head(
@@ -1965,7 +1965,7 @@ class MassShatterModel(nn.Module):
                 precursor_type_indices,
                 spec_frag_mode,
             )
-        if self.proposal_type == "fast_gnn":
+        if self.proposal_method == "connected_fragment_beam":
             candidates = build_fast_gnn_candidates(
                 bond_logits,
                 mol_pyg.chemical_bond_index,
@@ -2049,7 +2049,7 @@ class MassShatterModel(nn.Module):
                 fragment_cut_counts,
             ) = self._unique_component_memberships(candidates)
             num_fragments = candidates.num_unique_components
-            if self.proposal_type == "fast_gnn":
+            if self.proposal_method == "connected_fragment_beam":
                 # One unique fragment per adapter row: no latent charge competition.
                 component_log_probabilities = candidates.mask_log_probabilities
                 fragment_log_probabilities = component_log_probabilities

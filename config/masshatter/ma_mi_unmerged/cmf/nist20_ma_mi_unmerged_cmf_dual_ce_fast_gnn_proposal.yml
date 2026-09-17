@@ -1,7 +1,7 @@
 # Experimental connected-fragment proposal arm of the dual-CE fast control.
 # Chemistry, intensity head and losses are retained; search/score semantics change.
 # See docs/plans/masshatter_fast_gnn_proposal.md. No speed/accuracy claim yet.
-mass_shatter_proposal_type: fast_gnn
+mass_shatter_proposal_method: connected_fragment_beam
 mass_shatter_fast_gnn_beam_width: 256
 mass_shatter_fast_gnn_max_boundary_cuts: 3
 wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal

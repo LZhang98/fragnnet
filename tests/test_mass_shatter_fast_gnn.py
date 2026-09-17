@@ -132,7 +132,7 @@ def test_model_forward_probability_and_proposal_gradients(selection_only):
         max_masks=12,
         proposal_selection_only=selection_only,
         use_base_probability_feature=not selection_only,
-        proposal_type="fast_gnn",
+        proposal_method="connected_fragment_beam",
     )
     output = model(
         mol_pyg=batch, spec_prec_type=th.tensor([0, 1]), spec_nce=th.tensor([20.0, 30.0])
@@ -166,7 +166,7 @@ def test_cuda_matches_cpu_memberships_and_gradients():
 @pytest.mark.parametrize(
     "overrides,match",
     [
-        ({"mass_shatter_proposal_type": "unknown"}, "unknown proposal_type"),
+        ({"mass_shatter_proposal_method": "unknown"}, "unknown proposal_method"),
         ({"mass_shatter_unique_fragment_mode": False}, "fast_gnn requires"),
         ({"mass_shatter_proposal_num_mixtures": 2}, "fast_gnn requires"),
         ({"mass_shatter_smarts_templates": True}, "fast_gnn requires"),
@@ -180,7 +180,10 @@ def test_cuda_matches_cpu_memberships_and_gradients():
 def test_invalid_configuration(overrides, match):
     from test_mass_shatter_pl import _build_pl
 
-    settings = {"mass_shatter_proposal_type": "fast_gnn", "mass_shatter_unique_fragment_mode": True}
+    settings = {
+        "mass_shatter_proposal_method": "connected_fragment_beam",
+        "mass_shatter_unique_fragment_mode": True,
+    }
     settings.update(overrides)
     with pytest.raises(ValueError, match=match):
         _build_pl(**settings)
@@ -213,7 +216,7 @@ def _small_pl_config():
         mass_shatter_ranked_mask_budget=12,
         mass_shatter_max_h_transfer=1,
         mass_shatter_fast_gnn_beam_width=16,
-        mass_shatter_proposal_type="fast_gnn",
+        mass_shatter_proposal_method="connected_fragment_beam",
         mass_shatter_proposal_selection_only=True,
         mass_shatter_proposal_anchored=True,
         mass_shatter_proposal_loss_weight=0.1,
@@ -309,7 +312,7 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
 
     config = _small_pl_config()
     if legacy:
-        config["mass_shatter_proposal_type"] = "cut_masks"
+        config["mass_shatter_proposal_method"] = "cut_masks"
     model = MassShatterPL(**config)
     checkpoint = {
         "hyper_parameters": dict(model.hparams),
@@ -318,7 +321,7 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
     }
     model.on_save_checkpoint(checkpoint)
     keys = (
-        "mass_shatter_proposal_type",
+        "mass_shatter_proposal_method",
         "mass_shatter_fast_gnn_beam_width",
         "mass_shatter_fast_gnn_max_boundary_cuts",
     )
@@ -326,11 +329,11 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
         for key in keys:
             del checkpoint["hyper_parameters"][key]
     migrated = get_pl_hparams(checkpoint)
-    assert migrated["mass_shatter_proposal_type"] == config["mass_shatter_proposal_type"]
+    assert migrated["mass_shatter_proposal_method"] == config["mass_shatter_proposal_method"]
     path = tmp_path / "model.ckpt"
     th.save(checkpoint, path)
     restored = MassShatterPL.load_from_checkpoint(path, map_location="cpu", strict=True)
-    assert restored.model.proposal_type == config["mass_shatter_proposal_type"]
+    assert restored.model.proposal_method == config["mass_shatter_proposal_method"]
     assert restored.state_dict().keys() == model.state_dict().keys()
     for name, tensor in model.state_dict().items():
         th.testing.assert_close(restored.state_dict()[name], tensor, rtol=0, atol=0)
@@ -351,7 +354,7 @@ def test_config_arm_resolves_and_constructs():
         None,
     )
     model = MassShatterPL(**config)
-    assert model.model.proposal_type == "fast_gnn"
+    assert model.model.proposal_method == "connected_fragment_beam"
     assert model.model.fast_gnn_beam_width == 256
 
 
@@ -396,3 +399,52 @@ def test_connected_multiword_complements():
 def test_invalid_graph_rejected(edges, match):
     with pytest.raises(ValueError, match=match):
         _graph(3, edges)
+
+
+@pytest.mark.parametrize(
+    "old_value,expected",
+    [("fast_gnn", "connected_fragment_beam"), ("cut_masks", "cut_masks")],
+)
+def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, old_value, expected):
+    import lightning as L
+    import yaml
+
+    from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
+    from fragnnet.runner import load_config
+    from fragnnet.utils.pl_utils import get_pl_hparams
+
+    old_key = "mass_shatter_proposal_type"
+    new_key = "mass_shatter_proposal_method"
+    config = _small_pl_config()
+    del config[new_key]
+    config[old_key] = old_value
+    model = MassShatterPL(**config)
+    assert model.model.proposal_method == expected
+    assert old_key not in model.hparams
+    checkpoint = {
+        "hyper_parameters": config,
+        "state_dict": model.state_dict(),
+        "pytorch-lightning_version": L.__version__,
+    }
+    model.on_save_checkpoint(checkpoint)
+    migrated = get_pl_hparams(checkpoint)
+    assert migrated[new_key] == expected
+    assert old_key not in migrated
+    assert checkpoint["hyper_parameters"][old_key] == old_value
+    path = tmp_path / "old.ckpt"
+    th.save(checkpoint, path)
+    restored = MassShatterPL.load_from_checkpoint(path, map_location="cpu", strict=True)
+    assert restored.model.proposal_method == expected
+    override = MassShatterPL.load_from_checkpoint(
+        path, map_location="cpu", strict=True, **{new_key: "cut_masks"}
+    )
+    assert override.model.proposal_method == "cut_masks"
+    custom = tmp_path / "old.yml"
+    custom.write_text(yaml.safe_dump({old_key: old_value}))
+    assert load_config("config/template.yml", str(custom), None)[new_key] == expected
+    assert load_config("config/template.yml", None, [f"{old_key}={old_value}"])[new_key] == expected
+    assert (
+        load_config("config/template.yml", str(custom), [f"{new_key}=cut_masks"])[new_key]
+        == "cut_masks"
+    )
+    assert load_config(str(custom), None, None)[new_key] == expected

@@ -16,7 +16,7 @@ This is an alternative scientific model, not an exact acceleration of mask margi
 [template.yml](../../config/template.yml) declares:
 
 ```yaml
-mass_shatter_proposal_type: fast_gnn  # default: cut_masks
+mass_shatter_proposal_method: connected_fragment_beam  # default: cut_masks
 mass_shatter_unique_fragment_mode: true
 mass_shatter_unique_fragment_target: 256
 mass_shatter_fast_gnn_beam_width: 256
@@ -55,7 +55,7 @@ optimizer and batch settings. It uses selection-only proposal supervision. No ru
 - `candidate_backend`, ranked-mask budget, CPU selection threads and forced-single-cut
   settings belong to `cut_masks`. FastGNN search follows the model device, independently
   of `candidate_backend`. PyTorch CPU and CUDA are supported; compilation remains disabled.
-  Runner summaries record the resolved proposal type and `torch_device` backend for this option.
+  Runner summaries record the resolved proposal method and `torch_device` backend for this option.
 - Legacy templates and checkpoints explicitly migrate missing proposal keys to `cut_masks`.
   Fresh Lightning configurations require the declared keys. Explicit saved/overridden
   values retain precedence. Existing parameter tensor names and shapes are preserved.
@@ -115,3 +115,18 @@ No optimization/training run or validation-set quality evaluation was performed.
 check: compare the prepared arm to the fast control at matched candidate count and runtime,
 reporting coverage, spectral accuracy and peak memory. The retained intensity head remains a
 possible runtime bottleneck; this option does not claim full FastGNN-model speed.
+
+## Proposal method naming (2026-09-17)
+
+The canonical selector is now `mass_shatter_proposal_method`, with
+`cut_masks` (default) and `connected_fragment_beam`. Config files, CLI overrides,
+saved-run configuration and Lightning/repository checkpoint loading convert the original
+`mass_shatter_proposal_type` key and its `cut_masks`/`fast_gnn` values. If both keys occur
+in the same mapping, the canonical key wins; normal template/custom/CLI precedence is
+preserved. Saved hyperparameters use the canonical name. Beam settings, metric names and
+parameter tensors are unchanged.
+
+Validation: 355 focused tests passed, 8 GPU tests skipped in the sandbox. These cover
+old-name YAML/CLI loading, strict old/new checkpoint roundtrips and canonical override
+precedence, plus model, loss, backend compatibility and runner-config regressions.
+Ruff and whitespace checks passed. No training or scientific behavior changed.

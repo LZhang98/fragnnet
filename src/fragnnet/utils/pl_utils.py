@@ -8,6 +8,25 @@ from lightning.pytorch.loggers import Logger
 from lightning.pytorch.utilities import rank_zero_only
 
 
+def migrate_mass_shatter_proposal_method(config: dict) -> None:
+    """Normalize the original proposal key/values at configuration boundaries.
+
+    Mutates the supplied mapping. The canonical key takes precedence when both keys
+    exist (e.g. an explicit checkpoint override). Missing keys remain missing so fresh
+    model configurations still fail validation; legacy loaders supply defaults.
+    """
+    old_key = "mass_shatter_proposal_type"
+    new_key = "mass_shatter_proposal_method"
+    if old_key in config:
+        old_value = config.pop(old_key)
+        if new_key not in config:
+            config[new_key] = old_value
+    if new_key in config:
+        value = config[new_key]
+        if value == "fast_gnn":
+            config[new_key] = "connected_fragment_beam"
+
+
 class ConsoleLogger(Logger):
     """Custom console logger that logs metrics to console via logging module.
 
@@ -142,8 +161,9 @@ def get_pl_hparams(ckpt: dict) -> dict:
     ):
         hyper_parameters["mass_shatter_intensity_transformer_attention"] = "induced"
     if hyper_parameters.get("model_type") == "mass_shatter":
-        if "mass_shatter_proposal_type" not in hyper_parameters:
-            hyper_parameters["mass_shatter_proposal_type"] = "cut_masks"
+        migrate_mass_shatter_proposal_method(hyper_parameters)
+        if "mass_shatter_proposal_method" not in hyper_parameters:
+            hyper_parameters["mass_shatter_proposal_method"] = "cut_masks"
         if "mass_shatter_fast_gnn_beam_width" not in hyper_parameters:
             hyper_parameters["mass_shatter_fast_gnn_beam_width"] = 256
         if "mass_shatter_fast_gnn_max_boundary_cuts" not in hyper_parameters:
