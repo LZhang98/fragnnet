@@ -20,7 +20,7 @@ mass_shatter_proposal_method: connected_fragment_beam  # default: cut_masks
 mass_shatter_unique_fragment_mode: true
 mass_shatter_unique_fragment_target: 256
 mass_shatter_fast_gnn_beam_width: 256
-mass_shatter_fast_gnn_max_boundary_cuts: 3
+mass_shatter_fast_gnn_max_boundary_cuts: 5
 ```
 
 The prepared [dual-CE arm](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml)
@@ -274,5 +274,94 @@ working-tree implementation on chains with extra five-atom ring-closing bonds, r
 
 These probes expose the extra sorting/connectivity cost; they do not measure CUDA or training
 throughput. The local script is `/tmp/benchmark_connected_beam_fix.py` (ephemeral).
-Next: remeasure candidate coverage, CUDA throughput and memory with these fixes before the
-matched scientific comparison. Earlier performance measurements predate the fixes.
+The [subsequent real-graph speed audit](../findings/connected_fragment_beam_speed_2026_09_17.md)
+measures GPU candidate time 238.7 → 732.1 ms and forward/backward time 744.4 → 1,252.3 ms at
+batch 128 / beam 256. Complement connectivity dominates; stable sorting is a smaller cost.
+All six previously skipped CUDA regressions passed. Next: reduce unnecessary complement
+connectivity work while preserving exact selection, then measure L40S throughput and coverage
+before the scientific comparison. Earlier performance measurements predate the fixes.
+
+## Boundary-cut budget correction (2026-09-17)
+
+`mass_shatter_fast_gnn_max_boundary_cuts: 5` was the binding candidate budget in all four
+prepared arms, not `mass_shatter_unique_fragment_target`. Measured on a synthetic batch of
+126 NIST-like precursors (RTX 2070 SUPER, random bond logits, candidate construction only),
+raising the limit is nearly free in search time and restores budget fill:
+
+| target = beam | cuts = 3 | cuts = 5 |
+| --- | --- | --- |
+| 128 | 121 frag/mol (95% fill) | 128 frag/mol (100%) |
+| 256 | 161 frag/mol (63%) | 251 frag/mol (98%) |
+| 512 | 203 frag/mol (40%) | 396 frag/mol (77%) |
+
+Search time changed by about 3% and peak allocation by about 40%. At the previous setting the
+merged 128/256/512 screen varied a budget that was not binding above 128, so it would have
+measured the boundary-cut cap rather than the fragment budget. `cut_masks` delivers 245-256
+unique fragments per molecule under the same conditions, so the previous unmerged arm also ran
+at roughly half the control's candidate count.
+
+All four connected-fragment arms now set `mass_shatter_fast_gnn_max_boundary_cuts: 5`. The
+`config/template.yml` default and the legacy checkpoint/config migration defaults stay at 3 so
+existing connected-fragment checkpoints keep their trained search behavior.
+
+Candidate-construction throughput was also compared against the CUDA `cut_masks` backend on the
+same batches, which the earlier CPU-only comparison in this plan does not cover. The beam is
+launch-bound and scales well in batch size but linearly in the batch's largest molecule: it wins
+at 22-29 maximum atoms (41 vs 59 ms at batch 126; 57 vs 155 ms at batch 510) and loses at 49
+maximum atoms (104 vs 76 ms at batch 126; 235 vs 168 ms at batch 510). Confirm the NIST20 unmerged
+atom-count distribution before claiming a throughput win over the CUDA backend.
+
+Validation: all four configs load through the repository loader with the expected resolved
+method, beam width, boundary limit and fragment target; `tests/test_mass_shatter_fast_gnn.py`
+**42 passed**. These are synthetic-logit construction measurements on one consumer GPU, not
+whole-step training throughput, and no training or quality evaluation ran. These measurements
+predate the selection fixes in the preceding audit section and need a new baseline.
+
+## Real-precursor throughput measurement (2026-09-17)
+
+The [speed audit](../findings/connected_fragment_beam_speed_2026_09_17.md) measures this
+option before and after the complement-scoring fix. This section adds the missing baseline:
+the same construction against `cut_masks` on real sampled precursors.
+
+The boundary-cut section above measured synthetic batches of 13-49 heavy atoms. That
+understates cost: `mol_df.pkl` for NIST20 has 35,025 molecules at mean 24.3 heavy atoms but
+p90 44, p99 82 and max 186, and search cost is set by the batch maximum, not the mean. Batches
+of 128 sampled without replacement have a median maximum of 94 heavy atoms (p10 70, p90 121);
+at 256 and 512 the medians are 104 and 114.
+
+Measured on five real sampled batches (batch 128, fragment target and beam 256, boundary limit 5,
+RTX 2070 SUPER, random bond logits, candidate construction only), median over batches:
+
+| backend | median time | relative |
+| --- | --- | --- |
+| connected-fragment beam | 1,024 ms | 1.0x |
+| `cut_masks`, `candidate_backend: cuda` | 70 ms | beam is **14x slower** |
+| `cut_masks`, `candidate_backend: cpu` | 157 ms | beam is **6x slower** |
+
+Per-batch beam times ranged 846-2,144 ms and tracked the batch maximum atom count. Unique
+fragments per molecule were comparable (beam 218-230, `cut_masks` 234-242), so this is not a
+candidate-count difference.
+
+Profiling one batch at 79 maximum heavy atoms: 706 of 922 ms (77%) is `_connected_complements`,
+called once per growth round (40 calls, 184,294 seed rows), each running a dense reachability
+loop of up to `max_atoms` iterations that does not converge early because its break tests the
+whole chunk. Growth rounds are `ceil(max_atoms / 2)`, so complement connectivity costs
+`O(max_atoms^2 / 2)` sequential batched matrix products: about 3,174 launches here.
+
+This cost arrived with the fix for the second audit finding, which correctly moved complement
+scoring ahead of output pruning. The complement *score* does not need reachability: it is a
+gather over the padded edge arrays. Only the connectivity filter does. Ranking by the exact
+complement score first and running reachability only on each molecule's surviving candidates
+would preserve the fix and cut roughly 5-6x of the reachability rows; the remaining growth loop
+alone is still 216 ms, above the whole CUDA `cut_masks` time.
+
+Correction to the preceding section: the claim that raising the boundary limit costs about 3%
+holds only for the small synthetic batches it was measured on. On real batches, boundary limit 3
+takes 501 ms and limit 5 takes 954 ms at the same batch. The limit-5 setting is kept because the
+candidate-parity problem it fixes is real and independent of throughput, but it is not free.
+
+Conclusion: the connected-fragment beam is not currently a throughput improvement on NIST20 at
+any measured batch size, and the gap is large enough that it cannot be closed by tuning. Treat it
+as an alternative proposal formulation to screen on accuracy, and remove the speed framing from
+this plan unless the complement and growth loops are restructured and re-measured. No training,
+whole-step throughput or quality evaluation ran for this measurement.

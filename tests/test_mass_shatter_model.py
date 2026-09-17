@@ -79,6 +79,7 @@ def _build_model(
     precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
     fragmentation_modes: tuple[str, ...] = (),
     context_in_gnn: bool = False,
+    candidate_backend: str = "cpu",
     proposal_method: str = "cut_masks",
 ) -> MassShatterModel:
     th.manual_seed(903)
@@ -147,6 +148,7 @@ def _build_model(
         include_cmf=include_cmf,
         charge_pooling="logsumexp",
         use_smarts_templates=use_smarts_templates,
+        candidate_backend=candidate_backend,
         proposal_method=proposal_method,
     )
 

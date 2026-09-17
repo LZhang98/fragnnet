@@ -56,6 +56,12 @@ if __name__ == "__main__":
         help="Path to the template config file",
     )
     parser.add_argument("--custom_fp", type=str, default=None, help="Path to custom config file")
+    parser.add_argument(
+        "--mass_shatter_candidate_backend",
+        choices=("cpu", "cuda"),
+        default=None,
+        help="Override only MASShatter candidate construction after loading checkpoint settings",
+    )
     # Model checkpoint loading
     parser.add_argument(
         "--wandb_run_id",
@@ -240,6 +246,12 @@ if __name__ == "__main__":
         custom_fp=custom_fp,
         template_fp=template_fp,
     )
+    if args.mass_shatter_candidate_backend is not None:
+        if config_d["model_type"] != "mass_shatter":
+            parser.error("--mass_shatter_candidate_backend requires a MASShatter checkpoint")
+        config_d["mass_shatter_candidate_backend"] = args.mass_shatter_candidate_backend
+    if config_d["model_type"] == "mass_shatter":
+        print(f"> MASShatter candidate backend: {config_d['mass_shatter_candidate_backend']}")
 
     # Load Input Data (molecules and spectra)
     print("> Loading mol_df")

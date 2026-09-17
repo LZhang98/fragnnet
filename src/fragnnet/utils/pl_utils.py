@@ -160,6 +160,12 @@ def get_pl_hparams(ckpt: dict) -> dict:
         and "mass_shatter_intensity_transformer_attention" not in hyper_parameters
     ):
         hyper_parameters["mass_shatter_intensity_transformer_attention"] = "induced"
+    # Backend choice changes construction only; old checkpoints retain CPU semantics.
+    if (
+        hyper_parameters.get("model_type") == "mass_shatter"
+        and "mass_shatter_candidate_backend" not in hyper_parameters
+    ):
+        hyper_parameters["mass_shatter_candidate_backend"] = "cpu"
     if hyper_parameters.get("model_type") == "mass_shatter":
         migrate_mass_shatter_proposal_method(hyper_parameters)
         if "mass_shatter_proposal_method" not in hyper_parameters:

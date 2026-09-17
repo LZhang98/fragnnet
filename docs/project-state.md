@@ -85,10 +85,72 @@ Vulcan launcher with three-hour jobs are prepared in the linked plan.
 The [connected-fragment audit](plans/masshatter_fast_gnn_proposal.md#connected-fragment-audit-2026-09-17)
 found two selection issues now fixed in the working tree: stable beam ties remove padding
 dependence, and complements are scored before output-budget pruning. Permanent regressions
-and model/backend checks: 220 passed, 11 skipped; CUDA was unavailable. Small CPU search probes
-showed 25–40% extra candidate-construction time. Next: remeasure CUDA throughput, memory and
-coverage before comparative evaluation; earlier speed measurements predate these fixes.
-Next: matched coverage, throughput and accuracy comparison; no training run was launched.
+and model/backend checks: 220 passed, 11 skipped in the sandbox; the six proposal CUDA checks
+subsequently passed outside it. The [real-graph speed audit](findings/connected_fragment_beam_speed_2026_09_17.md)
+measured candidate time 238.7 → 732.1 ms and forward/backward time 744.4 → 1,252.3 ms at batch
+128 / beam 256 on RTX 2070 SUPER. Complement connectivity dominates; peak whole-step allocation
+stays near 2.83 GB. Next: reduce unnecessary connectivity checks without changing selection,
+then measure L40S throughput and coverage. No production code changed during the speed audit.
+All four connected-fragment arms now use `mass_shatter_fast_gnn_max_boundary_cuts: 5`: at 3 the
+boundary limit, not the fragment target, was the binding candidate budget, so the 256 and 512
+arms filled only 63% and 40% of their budgets and ran at roughly half the `cut_masks` candidate
+count. Template and checkpoint-migration defaults stay at 3.
+On real NIST20 batches the beam is **not** a throughput improvement: 1,024 ms median against
+70 ms for `cut_masks` with `candidate_backend: cuda` and 157 ms for its CPU backend, at batch
+128 and comparable fragment counts. Batch cost is set by the batch maximum heavy-atom count,
+whose median is 94 at batch 128, and 77% of the time is the per-growth-round complement
+reachability loop introduced by the audit fix. See the
+[real-precursor measurement](plans/masshatter_fast_gnn_proposal.md#real-precursor-throughput-measurement-2026-09-17)
+for the profile and the proposed restructuring. Next: screen this arm on accuracy only, or
+restructure complement connectivity before making any speed claim; no training run was launched.
+
+MASShatter training speed (2026-09-17): the
+[s3gy1ro4 audit](findings/masshatter_training_speed_2026_09_17.md) identifies monitoring-only
+channel attribution and base CE as removable overhead. A matched fast config and reusable
+benchmark are prepared; batch-128 local GPU forward/backward throughput improved by 1.40×.
+Scientific losses and checkpoint shapes are unchanged; the two diagnostic families are disabled
+in validation too. Loss/gradient equivalence and checkpoint compatibility passed. The small
+attention-layout experiment was removed after failing to demonstrate useful whole-batch gains.
+A batch-256/accumulation-1 variant is also prepared, preserving effective batch 256. It fits the
+local sampled GPU workload (7.10 GB) but shows no throughput gain over batch 128; see the same
+finding for matched measurements. Next: compare 128×2 and 256×1 on L40S and verify resolved resume
+flags; no remote run or cluster job was changed. The requested 512×1 config is also prepared
+with LR unchanged; its effective batch doubles to 512 and its GPU validation remains pending.
+
+The [candidate-backend plan](plans/masshatter_candidate_backend_plan.md) is active. CPU numeric
+construction now releases the GIL and shares a persistent thread pool; local full-training
+throughput improved about 9.3% with exact candidate/gradient checks. The score-free selector
+specialization was removed after failing its throughput gate. Membership compaction and streaming
+are deferred by the current projections. The same [speed finding](findings/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17)
+records results and limits. Batch256 fits locally; batch512 runs out of memory on the 8 GB GPU.
+[Three-hour L40S benchmark commands](guides/benchmark_masshatter_cpu.md) are prepared; no jobs were
+submitted. CPU remains the default. The exact optional CUDA backend now passes local candidate,
+model-gradient and checkpoint checks, with 19–23% higher full-training throughput than
+improved CPU in the final 128/256 matrix. Explicit CUDA configs are available for all three batch sizes; see the same guide
+for supported modes and compiler requirements. Final CPU full suite: 3,422 passed, 93 skipped,
+2 xfailed; separate CUDA suite: 118 passed. Batch512 hits the local 8 GB GPU limit with either
+backend. Next: confirm throughput, memory and native compilation on L40S before production promotion.
+
+Live fast-run follow-up (2026-09-17): the existing L40S runs `dny62x0i`, `h0ibnndb`, and
+`du6cr9dx` still report the earlier separate candidate timing fields and no backend setting.
+Four CPU selection threads are enabled, but the new parallel topology/CUDA implementation is
+not reflected in those runs. Monitoring-only fast128 reduces epoch time from 44.5 to 33.5 minutes;
+256/512 take 32.1/31.8 minutes, so larger batches alone leave the CPU bottleneck. The old CPU
+batch512 run does fit L40S (about 14.76 GB median sampled allocation); new-backend L40S acceptance
+remains open. See the [live follow-up](findings/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17).
+Next: launch a fresh job from transferred updated source; running job-local installs will not
+pick up these working-tree changes. No remote jobs were modified by this read-only audit.
+
+Unmerged generalization audit (2026-09-16): the
+[27-run W&B census](findings/masshatter_unmerged_overfitting_2026_09_16.md) supports
+widening train/validation loss gaps in mature runs, with modest continued cosine gains.
+The current `s3gy1ro4` run was still improving at epoch 8. No train cosine is logged.
+This audit corrects the anchor provenance below: `ef7fl5c6` is **merged**, not unmerged.
+The claimed architecture-invariant 0.688–0.693 band excludes many of the 27 runs.
+Current `GroupSampler` does resample through the epoch hook; MASShatter's inherited
+optimizer setup ignores cosine scheduler options. Next: matched evaluation-mode train/val
+checkpoint metrics, then separate fixed-objective LR and regularization controls.
+Documentation and a sampler probe only; no training or model/config changes.
 
 Unmerged MASShatter CMF anchor prepared (2026-09-16): the
 [improvement plan](plans/masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
@@ -336,3 +398,20 @@ behavior. Their presence is not evidence that another checkout has them.
 The [Fir/Vulcan submission guide](guides/submit_cluster_runs.md) now provides the canonical
 procedure linked from INSTALL.md. Commands and profiles were checked against repository source;
 no cluster connection, submission, or training validation was performed.
+
+Connected-fragment beam review (2026-09-17): the
+[reuse and equivalence finding](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md)
+records that the beam objective is `log P(mask = ∂f)` minus the complement's intact term, so it
+matches `cut_masks` up to replacing the charge head with a fixed prior, ring-reconnection terms
+that vanish for induced-acyclic fragments, and exact-versus-approximate search. Nine of about
+thirteen search mechanisms already have MASShatter counterparts; the dominant measured cost,
+dense-reachability complement connectivity, is the one with an existing union-find replacement
+on CPU and CUDA, which would also make the half-depth-plus-mirror growth free rather than paid
+for. The finding also flags likely per-iteration host synchronization in the reachability loop.
+The matching `cut_masks` inefficiency is mask-space budget: the unmerged arm enumerates 4096
+masks for a 256 unique-fragment target, and that redundancy is already logged as
+`unique_components_per_mask` and `duplicate_component_pathway_fraction`, so the efficiency
+comparison can be answered from existing run artifacts without a new benchmark.
+Source and algebra review only: no measurement, training, test run or code change. Next: the two
+recorded gap checks (ring-bond probability histogram and implicit-prior versus charge-head split)
+before any further beam optimization or scientific comparison.

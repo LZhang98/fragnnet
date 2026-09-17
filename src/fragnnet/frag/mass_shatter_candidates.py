@@ -496,6 +496,48 @@ def _merge_forced_masks(
     return local_mask_ptr, local_broken_bonds, forced_mask_count
 
 
+def _score_mask_log_probabilities(
+    bond_logits: th.Tensor,
+    bond_batch_indices: th.Tensor,
+    mask_batch_indices_t: th.Tensor,
+    mask_indices_t: th.Tensor,
+    broken_bond_indices_t: th.Tensor,
+    num_molecules: int,
+    mixture_log_weights: th.Tensor | None,
+) -> th.Tensor:
+    """Recompute exact selected-mask probabilities from live logits for autograd."""
+    num_mixtures = 1 if bond_logits.ndim == 1 else bond_logits.shape[1]
+    device = bond_logits.device
+    base_log_probabilities = F.logsigmoid(-bond_logits)
+    probability_logits = bond_logits.to(base_log_probabilities)
+    molecule_log_probabilities = th.zeros(
+        (num_molecules,) if num_mixtures == 1 else (num_molecules, num_mixtures),
+        dtype=base_log_probabilities.dtype,
+        device=device,
+    )
+    if bond_logits.numel() > 0:
+        molecule_log_probabilities.index_add_(
+            0,
+            bond_batch_indices,
+            base_log_probabilities,
+        )
+    mask_log_probabilities = molecule_log_probabilities[mask_batch_indices_t]
+    if broken_bond_indices_t.numel() > 0:
+        mask_log_probabilities = mask_log_probabilities.index_add(
+            0,
+            mask_indices_t,
+            probability_logits[broken_bond_indices_t],
+        )
+    if num_mixtures > 1:
+        if mixture_log_weights is None:
+            raise RuntimeError("mixture weights disappeared during probability evaluation")
+        mask_log_probabilities = th.logsumexp(
+            mask_log_probabilities + mixture_log_weights[mask_batch_indices_t],
+            dim=1,
+        )
+    return mask_log_probabilities
+
+
 def build_mass_shatter_candidates(
     bond_logits: th.Tensor,
     chemical_bond_index: th.Tensor,
@@ -512,6 +554,11 @@ def build_mass_shatter_candidates(
     smarts_templates: Sequence[Sequence[MassShatterTemplate]] | None = None,
     mixture_log_weights: th.Tensor | None = None,
     candidate_group_ids: th.Tensor | None = None,
+    candidate_backend: str = "cpu",
+    _cuda_topology: bool = False,
+    _cuda_topology_stats: list[dict] | None = None,
+    _cuda_full: bool = False,
+    _cuda_full_stats: list[dict] | None = None,
 ) -> MassShatterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
 
@@ -524,11 +571,42 @@ def build_mass_shatter_candidates(
     probabilities and output candidates. ``mask_selection_threads`` above one
     runs selection and local topology/assembly on the same persistent CPU pool.
     Numeric kernels release the GIL; ordering and selected masks stay unchanged.
+    ``candidate_backend='cuda'`` selects exact device construction for finite FP32,
+    one-mixture, unique-mode inputs with no mask floor or SMARTS mechanisms. CUDA
+    compilation is lazy and optional; unsupported requests raise instead of falling back.
     When ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
     number of distinct atom sets. The probability floor applies only to learned ranked
     masks; required intact and single-cut masks remain forced.
     """
+    if candidate_backend not in ("cpu", "cuda"):
+        raise ValueError(f"unknown candidate_backend: {candidate_backend!r}; use cpu or cuda")
+    if candidate_backend == "cuda" or _cuda_full:
+        if _cuda_topology or _cuda_topology_stats is not None:
+            raise ValueError("full CUDA and topology-only prototypes are mutually exclusive")
+        from fragnnet.frag.mass_shatter_cuda_full_candidates import (
+            build_mass_shatter_candidates_cuda,
+        )
+
+        return build_mass_shatter_candidates_cuda(
+            bond_logits,
+            chemical_bond_index,
+            atom_batch_indices,
+            atom_ptr,
+            max_masks=max_masks,
+            include_single_bond_cuts=include_single_bond_cuts,
+            min_mask_relative_probability=min_mask_relative_probability,
+            max_unique_components=max_unique_components,
+            max_enumerated_masks=max_enumerated_masks,
+            mask_selection_threads=mask_selection_threads,
+            static_graph=static_graph,
+            smarts_templates=smarts_templates,
+            mixture_log_weights=mixture_log_weights,
+            candidate_group_ids=candidate_group_ids,
+            _statistics=_cuda_full_stats,
+        )
+    if _cuda_full_stats is not None:
+        raise ValueError("full CUDA statistics require _cuda_full=True")
     if bond_logits.ndim not in {1, 2}:
         raise ValueError("bond_logits must have shape (num_bonds,) or (num_bonds, mixtures)")
     if bond_logits.ndim == 2 and bond_logits.shape[1] < 2:
@@ -571,6 +649,16 @@ def build_mass_shatter_candidates(
         raise ValueError("mixture_log_weights must be omitted for one Bernoulli component")
     if num_mixtures > 1 and mixture_log_weights is None:
         raise ValueError("mixture_log_weights are required for multiple Bernoulli components")
+
+    if _cuda_topology:
+        if bond_logits.device.type != "cuda" or bond_logits.dtype != th.float32:
+            raise ValueError("CUDA topology prototype requires CUDA float32 bond logits")
+        if num_mixtures != 1 or max_unique_components is None:
+            raise ValueError("CUDA topology prototype requires one mixture and unique mode")
+        if min_mask_relative_probability != 0.0:
+            raise ValueError("CUDA topology prototype requires disabled mask probability floors")
+    elif _cuda_topology_stats is not None:
+        raise ValueError("CUDA topology statistics require _cuda_topology=True")
 
     total_start = perf_counter()
     device = bond_logits.device
@@ -640,6 +728,8 @@ def build_mass_shatter_candidates(
         smarts_templates = static_graph.smarts_templates
     if smarts_templates is not None and len(smarts_templates) != num_molecules:
         raise ValueError("smarts_templates must contain one sequence per precursor")
+    if _cuda_topology and smarts_templates is not None and any(smarts_templates):
+        raise ValueError("CUDA topology prototype does not support SMARTS mechanisms")
     atom_ptr_values = atom_ptr_cpu.tolist()
     if atom_batch_indices.numel() != atom_ptr_values[-1]:
         raise ValueError("atom_ptr does not describe atom_batch_indices")
@@ -810,6 +900,26 @@ def build_mass_shatter_candidates(
         representative_of.append(leader)
         if leader == molecule_index:
             topology_representatives.append(leader)
+
+    if _cuda_topology:
+        from fragnnet.frag.mass_shatter_cuda_candidates import _build_cuda_candidates
+
+        return _build_cuda_candidates(
+            bond_logits=bond_logits,
+            topology_inputs=topology_inputs,
+            topology_representatives=topology_representatives,
+            representative_of=representative_of,
+            atom_ptr_values=atom_ptr_values,
+            bond_indices_by_molecule=bond_indices_by_molecule,
+            bond_batch_values=bond_batch_values,
+            proposal_single_cut_fractions=proposal_single_cut_fractions,
+            selected_mask_counts=selected_mask_counts,
+            total_start=total_start,
+            input_transfer_ms=input_transfer_ms,
+            mask_selection_ms=mask_selection_ms,
+            forced_merge_ms=forced_merge_ms,
+            statistics=_cuda_topology_stats,
+        )
 
     # One coordinator interval measures concurrent construction, never a sum of workers.
     topology_start = perf_counter()
@@ -1172,33 +1282,10 @@ def build_mass_shatter_candidates(
     # changes its contribution from logsigmoid(-logit) to logsigmoid(logit),
     # whose difference is exactly logit.
     probability_start = perf_counter()
-    base_log_probabilities = F.logsigmoid(-bond_logits)
-    probability_logits = bond_logits.to(base_log_probabilities)
-    molecule_log_probabilities = th.zeros(
-        (num_molecules,) if num_mixtures == 1 else (num_molecules, num_mixtures),
-        dtype=base_log_probabilities.dtype,
-        device=device,
+    mask_log_probabilities = _score_mask_log_probabilities(
+        bond_logits, bond_batch_indices, mask_batch_indices_t, mask_indices_t,
+        broken_bond_indices_t, num_molecules, mixture_log_weights,
     )
-    if bond_logits.numel() > 0:
-        molecule_log_probabilities.index_add_(
-            0,
-            bond_batch_indices,
-            base_log_probabilities,
-        )
-    mask_log_probabilities = molecule_log_probabilities[mask_batch_indices_t]
-    if broken_bond_indices_t.numel() > 0:
-        mask_log_probabilities = mask_log_probabilities.index_add(
-            0,
-            mask_indices_t,
-            probability_logits[broken_bond_indices_t],
-        )
-    if num_mixtures > 1:
-        if mixture_log_weights is None:
-            raise RuntimeError("mixture weights disappeared during probability evaluation")
-        mask_log_probabilities = th.logsumexp(
-            mask_log_probabilities + mixture_log_weights[mask_batch_indices_t],
-            dim=1,
-        )
     probability_scoring_ms = (perf_counter() - probability_start) * 1000.0
 
     return MassShatterCandidateBatch(

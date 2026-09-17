@@ -8,8 +8,8 @@ otherwise reused unchanged. This module only supplies the three model-specific p
 - :meth:`MassShatterPL._setup_loss_fn` wraps the sparse cross entropy and the
   adjacent-CE switch objective, and forwards MASShatter's candidate-generation
   diagnostics into the logged metrics.
-- :meth:`MassShatterPL.transfer_batch_to_device` keeps a CPU copy of the graph
-  indices, because mask selection runs in Python on the host.
+- :meth:`MassShatterPL.transfer_batch_to_device` keeps static graph metadata on CPU
+  for both candidate backends.
 """
 
 from __future__ import annotations
@@ -758,6 +758,8 @@ class MassShatterPL(SpectrumPL):
     def __init__(self, **kwargs: Any) -> None:
         migrate_mass_shatter_proposal_method(kwargs)
         legacy_candidate_backend = kwargs.pop("_legacy_candidate_backend", False)
+        if legacy_candidate_backend and "mass_shatter_candidate_backend" not in kwargs:
+            kwargs["mass_shatter_candidate_backend"] = "cpu"
         if legacy_candidate_backend:
             if "mass_shatter_proposal_method" not in kwargs:
                 kwargs["mass_shatter_proposal_method"] = "cut_masks"
@@ -838,12 +840,23 @@ class MassShatterPL(SpectrumPL):
             if score not in {"true_oos_prob", "true_oos_e"}
         ]
 
-        # Candidate selection runs Python/CPU code inside forward, which dynamo cannot
-        # trace; compiling would graph-break every batch.
+        # Candidate construction uses native extension calls and host metadata that
+        # dynamo cannot trace; compiling would graph-break every batch.
         if self.hparams.compile:
             raise ValueError(
-                "MASShatter candidate selection is CPU/Python code; set compile: False"
+                "MASShatter candidate construction uses native kernels; set compile: False"
             )
+        if (
+            self.hparams.mass_shatter_proposal_method == "cut_masks"
+            and self.hparams.mass_shatter_candidate_backend == "cuda"
+            and self.hparams.precision
+            not in (
+                32,
+                "32",
+                "32-true",
+            )
+        ):
+            raise ValueError("CUDA candidates require precision: 32-true (FP32)")
         if not self.hparams.spec_params["prec_type"]:
             raise ValueError("MASShatter requires spec_params.prec_type: True")
         node_feature_dim, edge_feature_dim = get_mol_feats_sizes(
@@ -860,6 +873,7 @@ class MassShatterPL(SpectrumPL):
             self.hparams.spec_params["frag_modes"] if self.hparams.spec_params["frag_mode"] else []
         )
         self.model = MassShatterModel(
+            candidate_backend=self.hparams.mass_shatter_candidate_backend,
             proposal_method=self.hparams.mass_shatter_proposal_method,
             fast_gnn_beam_width=self.hparams.mass_shatter_fast_gnn_beam_width,
             fast_gnn_max_boundary_cuts=self.hparams.mass_shatter_fast_gnn_max_boundary_cuts,
@@ -2056,10 +2070,9 @@ class MassShatterPL(SpectrumPL):
     ) -> Any:
         """Keep static candidate-generation graph indices on CPU.
 
-        Mask selection and connected-component search run in Python on the host, so the
-        graph topology is needed on CPU every step. Snapshotting it here — before the
-        base implementation moves the batch to the accelerator — means only the bond
-        logits have to come back per batch, instead of the whole index structure.
+        Both backends need host graph counts and endpoints. Snapshotting them before
+        device transfer avoids downloading graph indices during candidate construction.
+        The CUDA backend keeps proposal logits and selected masks on the device.
 
         Args:
             batch: The collated batch, still on CPU.

@@ -1,6 +1,7 @@
 # Architecture map
 
-> **Status:** REFERENCE · **Verified against source:** 2026-09-07
+> **Status:** REFERENCE · **Updated:** 2026-09-17 · MASShatter backend boundary updated;
+> other boundaries last verified against source on 2026-09-07.
 
 ## Entry points and data flow
 
@@ -20,6 +21,9 @@
    own model and Lightning module. GRAFF, ICEBERG, and MassFormer have separate package directories.
    MASShatter also offers [FastGNN-style connected-fragment proposals](plans/masshatter_fast_gnn_proposal.md),
    sharing its chemistry and intensity model while changing proposal score semantics.
+   MASShatter defaults to CPU candidate construction; its optional CUDA backend performs exact
+   selection and topology for the supported modes. See the
+   [backend and benchmark guide](guides/benchmark_masshatter_cpu.md) for limits and validation.
 5. [Inference](../scripts/run_inference.py) is documented in the [inference guide](guides/run_inference.md).
    [Evaluation scripts](../scripts/eval/) and [findings](findings/) connect artifacts to analysis.
 

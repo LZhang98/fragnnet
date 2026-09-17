@@ -1,6 +1,12 @@
 # MASShatter — Topology and Assembly Performance Plan
 
-> **Status:** IN PROGRESS &nbsp;·&nbsp; **Added:** 2026-08-29
+> **Status:** ACTIVE · **Added:** 2026-08-29 · **Updated:** 2026-09-17
+> Some CPU stages are implemented; canonical full-training performance gates remain open.
+
+The [CPU-first, optional-GPU backend plan](masshatter_candidate_backend_plan.md) now governs
+the order of new work. This document preserves landed-stage history, detailed CPU designs and
+their evidence gates. Its original exclusion of selection/config changes applies to the scope
+below; the linked follow-up explicitly adds selector improvements and a later optional backend.
 
 ## Implementation progress
 
@@ -23,7 +29,11 @@
   forced merging from 290.97 ms to 1.39 ms and candidate total from 386.93 ms to 96.83 ms. With all
   masks retained, forced merging fell from 296.47 ms to 1.31 ms and candidate total from 699.16 ms
   to 409.40 ms.
-- Stages 2, 4, and 5 remain gated and are not implemented.
+- Stage 2 is now implemented in the CPU-first follow-up: numeric GIL release, one persistent
+  executor, local zero-based outputs and deterministic group remapping. Local full-training
+  throughput improved about 9.3%; the canonical L40S gate remains open. See the
+  [current evidence](../findings/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17).
+  Stage 4 is deferred by the current upload-only projection; Stage 5 remains unimplemented.
 
 ## Why now
 
@@ -106,9 +116,10 @@ Extend `scripts/debug/benchmark_mass_shatter_candidates.py` before changing the 
 6. Measure candidate wall time as a fraction of a representative full training step for the
    canonical MA/MI-unmerged run, including the actual DataLoader worker configuration.
 
-Today topology processes 100% of `selected_mask_count`; `retained_mask_count` is only a proxy for
-how many masks a future early-stopping topology kernel would process. Do not report it as current
-topology work. The ranked-mask config ceiling is not a valid denominator because probability floors
+At the pre-Stage-1 baseline, topology processed 100% of `selected_mask_count`;
+`retained_mask_count` was only a proxy for potential early-stopping work. Stage 1 now reports
+actual `scanned_mask_count`; use that for current topology work. The ranked-mask config ceiling
+is not a valid denominator because probability floors
 and finite molecular state spaces can make selection return fewer masks without creating any work
 for Stage 1 to remove.
 
@@ -319,11 +330,12 @@ own permanent differential, parity gate, gradient gate, and common 5% end-to-end
 7. Every retained stage improves measured end-to-end optimizer-step throughput by at least 5%, and
    the complete follow-up improves it by at least 10%; otherwise drop the stage or stop the work.
 
-The gated evaluation order is: **measurement/abort → early termination if the retained/selected
+The original gated evaluation order was: **measurement/abort → early termination if the retained/selected
 distribution supports it → parallel local construction if the Amdahl bound supports it → packed
 batch assembly if host copies support it → unique membership compaction if post-packing transfer
 cost supports it → optional grouped-view compaction**. Only Stage 1 changes asymptotic work; the
-remaining stages must justify their added complexity with measured constant-factor gains.
+remaining stages must justify their added complexity with measured constant-factor gains. The
+linked backend plan orders the remaining work without repeating landed stages.
 
 ## Related
 

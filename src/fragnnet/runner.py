@@ -54,6 +54,10 @@ def load_config(template_fp: str, custom_fp: str | None, override: list | None) 
     with open(template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
     migrate_mass_shatter_proposal_method(config_d)
+    # Compatibility boundary for templates saved before candidate backends existed.
+    # Add the schema key before custom config validation and CLI overrides.
+    if "mass_shatter_candidate_backend" not in config_d:
+        config_d["mass_shatter_candidate_backend"] = "cpu"
     if "mass_shatter_proposal_method" not in config_d:
         config_d["mass_shatter_proposal_method"] = "cut_masks"
     if "mass_shatter_fast_gnn_beam_width" not in config_d:
@@ -816,10 +820,15 @@ def init_run(
     model_cls = get_model_cls(config_d["model_type"])
     model = model_cls(**config_d)
     model.train()
-    if config_d["model_type"] == "mass_shatter" and wandb_mode != "disabled":
-        wandb.run.summary["mass_shatter_proposal_method_resolved"] = config_d[
-            "mass_shatter_proposal_method"
-        ]
+    if config_d["model_type"] == "mass_shatter":
+        resolved_proposal = config_d["mass_shatter_proposal_method"]
+        resolved_backend = (
+            "torch_device" if resolved_proposal == "connected_fragment_beam" else model.model.candidate_backend
+        )
+        logging.info("Resolved MASShatter candidate backend: %s", resolved_backend)
+        if wandb_mode != "disabled":
+            wandb.run.summary["mass_shatter_candidate_backend_resolved"] = resolved_backend
+            wandb.run.summary["mass_shatter_proposal_method_resolved"] = resolved_proposal
 
     # setup callbacks
     callbacks = []

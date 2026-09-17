@@ -1,8 +1,9 @@
 # MASShatter improvement plan
 
-> **Status:** PROPOSED · **Updated:** 2026-09-08
+> **Status:** ACTIVE · **Updated:** 2026-09-17
 > Prioritize intensity assignment and support gating while preserving candidate coverage.
-> The next experiment targets unmerged NIST20 MA/MI spectra; training has not started under this plan.
+> CPU sampling improvements and an optional CUDA backend are validated locally; cluster rollout remains.
+> Remaining experiments below retain their individual evidence and execution status.
 
 ## Objective and scope
 
@@ -145,6 +146,48 @@ out of the initial comparisons. Revisit CRF/CMF mode supervision only on adducts
 mode signal, using the existing channel-selection plan's gates.
 
 ## Current state and next check
+
+Throughput update (2026-09-17): the
+[s3gy1ro4 measurement](../findings/masshatter_training_speed_2026_09_17.md) supplies a fast config
+that disables only monitoring-only channel attribution and base CE. The local batch-128
+forward/backward benchmark improves by 1.40× with unchanged scientific objectives. Next: confirm
+the gain on L40S and verify the resolved flags when resuming; W&B config restoration can supersede
+local settings. The requested larger-microbatch variant uses 256×1 instead of 128×2, preserving
+effective batch 256; it fits the local sampled workload but has not shown a local throughput gain.
+Compare both on L40S before promoting the batch change. No production model implementation or
+remote run was changed. A requested 512×1 variant is also prepared with unchanged LR; see the
+same finding for its config and pending L40S memory/throughput check.
+
+### Candidate generation change list (2026-09-17)
+
+- **CPU improvement — implemented and validated locally:** reuse one persistent worker pool
+  for exact mask selection and parallel local topology/numeric assembly. Release the GIL in
+  the numeric Cython loops, preserve deterministic output ordering, and reduce temporary array
+  retention. Selection was already multithreaded; parallel topology/assembly is the new change.
+  CPU remains the default with `mass_shatter_mask_selection_threads: 4`.
+- **Measured CPU gain:** full-training throughput increased from 219.93 to 240.29 spectra/s
+  (+9.3%) on the local RTX 2070 SUPER at batch 128 with accumulation 2. Candidate identities,
+  ordering, chemistry, and live probability gradients are preserved. See the
+  [canonical measurements](../findings/masshatter_training_speed_2026_09_17.md) and
+  [CPU-first, optional-GPU implementation plan](masshatter_candidate_backend_plan.md).
+- **Optional GPU backend — implemented and validated locally:** select
+  `mass_shatter_candidate_backend: cuda` for supported configurations. CPU remains the
+  correctness reference; L40S acceptance is pending in the implementation plan.
+- **Next: roll out the CPU change and measure it on L40S.** The
+  [live W&B audit](../findings/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17)
+  shows that the running fast jobs still use the earlier code: four selection workers with
+  serial topology/assembly. Launch a fresh job from updated source; existing jobs use their
+  own copied installation. Verify the resolved backend and the new
+  `candidate_topology_assembly_batch_ms` metric before comparing throughput.
+
+Generalization audit update (2026-09-16): the
+[complete unmerged census](../findings/masshatter_unmerged_overfitting_2026_09_16.md)
+supersedes claims of a universal unmerged ceiling and corrects the anchor provenance:
+`ef7fl5c6` is merged. Mature unmerged runs develop widening loss gaps, but missing
+train cosine prevents measuring the cosine generalization gap. Next diagnostic:
+evaluate one mature checkpoint on fixed train/validation subsets in evaluation mode.
+Before a cosine-LR control, wire and verify the inherited MASShatter scheduler options;
+current setup silently uses exponential scheduling when enabled. No experiments launched.
 
 Execution update (2026-09-11): the [W&B screen](../findings/wandb_screen_2026_09_11.md)
 records runs launched after the preparation handoff below, including loss, support,

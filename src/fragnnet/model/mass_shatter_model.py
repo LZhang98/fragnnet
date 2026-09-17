@@ -755,7 +755,8 @@ class MassShatterModel(nn.Module):
         max_masks: Number of cut masks materialized per precursor.
         unique_fragment_mode: Whether ``max_masks`` is a unique atom-set target.
         max_enumerated_masks: Safety cap for unique-fragment mask enumeration.
-        mask_selection_threads: Worker threads used to select cut masks on CPU.
+        mask_selection_threads: Worker threads for CPU mask selection and topology.
+        candidate_backend: Explicit CPU or CUDA candidate construction.
         min_mask_relative_probability: Masks below this fraction of the MAP mask
             probability are dropped.
         min_fragment_relative_probability: Unique fragments below this fraction of
@@ -829,6 +830,7 @@ class MassShatterModel(nn.Module):
         unique_fragment_mode: bool,
         max_enumerated_masks: int,
         mask_selection_threads: int = 1,
+        candidate_backend: Literal["cpu", "cuda"] = "cpu",
         proposal_method: Literal["cut_masks", "connected_fragment_beam"] = "cut_masks",
         fast_gnn_beam_width: int = 256,
         fast_gnn_max_boundary_cuts: int = 3,
@@ -933,13 +935,17 @@ class MassShatterModel(nn.Module):
             unique_fragment_mode: Treat ``max_masks`` as a unique-fragment target and
                 marginalize duplicate component pathways before intensity scoring.
             mask_selection_threads: Worker threads used to select Bernoulli-mixture cut
-                masks. The selection kernel releases the GIL, so values above one give
-                real parallelism and leave the selected masks unchanged. Defaults to 1.
+                masks and build topology on CPU. Numeric kernels release the GIL.
+                Ignored by the CUDA candidate backend. Defaults to 1.
             proposal_method: ``cut_masks`` retains latent-pathway marginalization;
                 ``connected_fragment_beam`` searches connected atom sets and normalizes exact boundary
                 mask scores over fragments, without a charge-allocation factor.
             fast_gnn_beam_width: States retained per connected-set growth round.
             fast_gnn_max_boundary_cuts: Maximum boundary size for proper fragments.
+            candidate_backend: Exact cut-mask construction on CPU or opt-in CUDA.
+                Ignored by fast_gnn, which runs PyTorch search on the model device.
+                CUDA requires FP32, one mixture, unique mode, zero mask floors and
+                SMARTS disabled. The model can be constructed before device transfer.
             max_enumerated_masks: Safety cap on latent masks considered while filling
                 the unique-fragment target.
             min_mask_relative_probability: MAP-relative probability floor below which
@@ -1064,6 +1070,8 @@ class MassShatterModel(nn.Module):
             raise ValueError("bond_num_layers must be nonnegative")
         if proposal_num_mixtures <= 0:
             raise ValueError("proposal_num_mixtures must be positive")
+        if candidate_backend not in ("cpu", "cuda"):
+            raise ValueError(f"unknown candidate_backend: {candidate_backend!r}; use cpu or cuda")
         if proposal_method not in ("cut_masks", "connected_fragment_beam"):
             raise ValueError(f"unknown proposal_method: {proposal_method!r}")
         if any(
@@ -1083,6 +1091,20 @@ class MassShatterModel(nn.Module):
             raise ValueError(
                 "fast_gnn requires unique mode, one mixture, SMARTS off, "
                 "share_proposal_across_ev off and zero mask probability floor"
+            )
+        if (
+            proposal_method == "cut_masks"
+            and candidate_backend == "cuda"
+            and (
+                proposal_num_mixtures != 1
+                or not unique_fragment_mode
+                or min_mask_relative_probability != 0.0
+                or use_smarts_templates
+            )
+        ):
+            raise ValueError(
+                "CUDA candidates require one mixture, unique mode, zero mask probability "
+                "floors and SMARTS disabled; select candidate_backend='cpu' for other modes"
             )
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
@@ -1110,6 +1132,7 @@ class MassShatterModel(nn.Module):
         self.unique_fragment_mode = unique_fragment_mode
         self.max_enumerated_masks = max_enumerated_masks
         self.mask_selection_threads = mask_selection_threads
+        self.candidate_backend = candidate_backend
         self.proposal_method = proposal_method
         self.fast_gnn_beam_width = fast_gnn_beam_width
         self.fast_gnn_max_boundary_cuts = fast_gnn_max_boundary_cuts
@@ -1493,8 +1516,7 @@ class MassShatterModel(nn.Module):
             cmf_mzs = (
                 component_masses[:, None]
                 + self.cmf_mass_deltas[component_precursor_types, None]
-                + h_shifts.to(component_masses)
-                * H_MASS
+                + h_shifts.to(component_masses) * H_MASS
             )
             mz_channels.append(cmf_mzs)
             valid_channels.append(cmf_valid)
@@ -1989,6 +2011,7 @@ class MassShatterModel(nn.Module):
                     self.max_enumerated_masks if self.unique_fragment_mode else None
                 ),
                 mask_selection_threads=self.mask_selection_threads,
+                candidate_backend=self.candidate_backend,
                 static_graph=static_graph,
                 smarts_templates=smarts_templates,
                 mixture_log_weights=mixture_log_weights,

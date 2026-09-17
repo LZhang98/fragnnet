@@ -37,6 +37,8 @@ roadmap. It links the analyses that justify each item.
 
 | Audit | Scope |
 |-------|-------|
+| [Connected-fragment beam reuse and equivalence](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Source/algebra review: the beam objective equals the isolating mask's log probability minus the complement's intact term, with the charge head replaced by a fixed prior; nine of ~13 mechanisms already exist in MASShatter. |
+| [Connected-fragment beam speed audit](findings/connected_fragment_beam_speed_2026_09_17.md) | Synchronized real-graph GPU audit: correctness fixes raise batch-128/beam-256 candidate time 3.07× and forward/backward time 68%; complement connectivity dominates. |
 | [FastGNN proposal option](plans/masshatter_fast_gnn_proposal.md) | LANDED experimental connected-fragment proposals with MASShatter chemistry and intensity scoring; local validation passed. |
 | [MASShatter GPU audit](plans/masshatter_gpu_audit.md) | Static + measured (2026-09-14) GPU utilization and CPU–GPU synchronization audit of the masshatter and ion-H-selection branches; branch-specific optimization priorities. |
 | [Intensity-head bucketing sync plan](plans/masshatter_intensity_head_bucketing_sync_plan.md) | PROPOSED design for removing avoidable host syncs in `CandidateIntensityTransformerHead`'s per-molecule bucketing; not yet implemented. |
@@ -48,6 +50,7 @@ roadmap. It links the analyses that justify each item.
 | Doc | What it covers |
 |-----|----------------|
 | [submit_cluster_runs.md](guides/submit_cluster_runs.md) | Generate, inspect, and submit Fir/Vulcan jobs; CV arrays, staging, and output persistence. |
+| [benchmark_masshatter_cpu.md](guides/benchmark_masshatter_cpu.md) | Freeze source and generate three-hour L40S CPU/hybrid/full-GPU benchmarks for batches 128/256/512. |
 | [run_inference.md](guides/run_inference.md) | Data prep (`01_inf_prepare_mol_df.py`, `02_inf_prepare_spec_df.py`) and running prediction. |
 | [finetune_fragnnet.md](guides/finetune_fragnnet.md) | Fine-tuning for spectrum-to-molecule ranking and retrieval; component freezing. |
 | [nist_human_review.md](guides/nist_human_review.md) | Generating the ranked suspicious-spectrum queue and visual report. |
@@ -70,6 +73,9 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Result |
 |-----|--------|
+| [connected_fragment_beam_reuse_and_equivalence_2026_09_17.md](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Beam vs `cut_masks` objective algebra (equal up to a charge prior, ring-reconnection terms and search), nine duplicated mechanisms with existing counterparts, and five existing features the beam switches off. |
+| [masshatter_training_speed_2026_09_17.md](findings/masshatter_training_speed_2026_09_17.md) | s3gy1ro4 speed audit: 44.4-minute epochs, 33% median GPU utilization; disabling monitoring-only channel attribution and base CE improves local batch-128 forward/backward throughput by 1.40×. |
+| [masshatter_unmerged_overfitting_2026_09_16.md](findings/masshatter_unmerged_overfitting_2026_09_16.md) | All 27 unmerged W&B histories: widening loss gaps, limited late regression, incomplete train-cosine instrumentation, and corrected sampler/scheduler claims. |
 | [subformula_filter_ft_qtof.md](findings/subformula_filter_ft_qtof.md) | Cleaning census and verified saved D3/D4 filtered oracle; D4 95.92% weighted recall, with explicit limits on comparison to MASShatter. |
 | [masshatter_smarts_review_2026_09_13.md](findings/masshatter_smarts_review_2026_09_13.md) | SMARTS registry and eligibility audit, 75 passing tests, pyrimidine-carbamate gap, and positive-ion literature priorities. |
 | [masshatter_proposal_review_2026_09_13.md](findings/masshatter_proposal_review_2026_09_13.md) | Source review of proposal coverage, deterministic selection, warmup routing, diversity, and mixture capacity; prioritized diagnostics and untested improvements. |
@@ -91,6 +97,8 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Where it stands |
 |-----|-----------------|
+| [masshatter_topology_assembly_performance_plan.md](plans/masshatter_topology_assembly_performance_plan.md) | Measurement-gated topology and assembly optimization for the three-hour MA/MI-unmerged constraint. Stage 0 can abort the work; every retained stage must improve end-to-end optimizer-step throughput. |
+| [masshatter_candidate_backend_plan.md](plans/masshatter_candidate_backend_plan.md) | CPU improvements and opt-in exact CUDA construction implemented; local speed/parity checks passed, target-device gates open. |
 | [inference_step_consolidation_plan.md](plans/inference_step_consolidation_plan.md) | **Landed (working tree, uncommitted).** The three `SpectrumPL` inference entry points are one `inference_step(batch, *, metrics=None)`; `resolve_pred_ints`/`step_untransformed` deleted. No model evaluation run. |
 | [fragnnet_audit_fixes.md](plans/fragnnet_audit_fixes.md) | Six FraGNNet/shared audit fixes on feiw_v2; reproduced regressions and compatibility notes. |
 | [model_improvement_plan.md](plans/model_improvement_plan.md) | **Canonical roadmap.** Start here. |
@@ -98,6 +106,7 @@ roadmap. It links the analyses that justify each item.
 | [fragment_bond_set_representation.md](plans/fragment_bond_set_representation.md) | All four gates measured, objective corrected to regularization (read §7 first). Next: run the written-but-never-run `cc_atom_dropout` sweep. |
 | [nist_data_quality_plan.md](plans/nist_data_quality_plan.md) | Contaminant-mass and unexplainable-spectra diagnostics; evidence needed before filtering. |
 | [conditioning_refactor_plan.md](plans/conditioning_refactor_plan.md) | MASShatter merged routing pair has audited CE-input corrections; FraGNNet routing/scaler screen prepared; no runs launched. |
+| [masshatter_improvement_plan.md](plans/masshatter_improvement_plan.md) | Unmerged CMF control running; measured reduced-monitoring config prepared, with remaining encoder, loss and support experiments proposed. |
 | [dag_full_recall_tractability_plan.md](plans/dag_full_recall_tractability_plan.md) | Active hub for DAG pruning, but **mostly negative results** — read the step results before proposing another mechanism. |
 
 ### Proposed, not started
@@ -107,7 +116,6 @@ roadmap. It links the analyses that justify each item.
 | [energy_based_spectrum_reranking_plan.md](plans/energy_based_spectrum_reranking_plan.md) | Shared design of record: null-adjusted oracle gate, ranking objective, matched controls; FraGNNet anchor. |
 | [masshatter_energy_based_model_plan.md](plans/masshatter_energy_based_model_plan.md) | EBM program: bond-cut modeling first, spectrum reranking second; MASShatter spectrum setup delta. |
 | [masshatter_bond_cut_ebm_plan.md](plans/masshatter_bond_cut_ebm_plan.md) | Bond-cut-first diagnostic: D4 evidence limits the coverage premise; require support or efficiency headroom before pair-energy training. |
-| [masshatter_improvement_plan.md](plans/masshatter_improvement_plan.md) | Unmerged MASShatter: corrected CE control, encoder-sharing gate, Gaussian support-gated JSS, oracle diagnostics, conservative pruning, and throughput checks. |
 | [complementary_cut_supervision_experiment_plan.md](plans/complementary_cut_supervision_experiment_plan.md) | Target definition, matched GINE-1 measurement gates, training arms, and stop rules. Read the separate findings before running it. |
 | [global_fragment_intensity_ranking_experiment_plan.md](plans/global_fragment_intensity_ranking_experiment_plan.md) | Global base-mass and online adjacent-CE contender supervision with bounded, group-balanced context batching and matched sampler controls. |
 | [ft_contender_pair_minimal_training_plan.md](plans/ft_contender_pair_minimal_training_plan.md) | Minimal cache-free FT experiment: bounded CE-context batching plus online confidence-weighted soft A/B ranking. |
@@ -116,7 +124,6 @@ roadmap. It links the analyses that justify each item.
 | [classyfire_atom_pretraining_plan.md](plans/classyfire_atom_pretraining_plan.md) | Pretrain a transferable encoder on ClassyFire labels; no annotations needed at inference. |
 | [masshatter_plan.md](plans/masshatter_plan.md) | MASShatter: rank global bond-cut masks, marginalize duplicate latent pathways into unique-fragment tokens, and predict charged fragment-ion outcomes without a depth-limited fragmentation tree. |
 | [masshatter_candidate_pathway_refactor.md](plans/masshatter_candidate_pathway_refactor.md) | **LANDED.** 7 branches collapsed into 5 layers, exploration deleted, `mixtures=1` now threads. Surfaced two latent bugs. Read the `mask_selection_ms` semantics note before comparing timing metrics across runs, and the config note before running a `legacy/explore*` config. |
-| [masshatter_topology_assembly_performance_plan.md](plans/masshatter_topology_assembly_performance_plan.md) | Measurement-gated topology and assembly optimization for the three-hour MA/MI-unmerged constraint. Stage 0 can abort the work; every retained stage must improve end-to-end optimizer-step throughput. |
 | [masshatter_nonprobabilistic_intensity_plan.md](plans/masshatter_nonprobabilistic_intensity_plan.md) | Replace MASShatter's Gaussian probability-density intensity objective with tolerance-aligned peak-list cosine/JSD plus optional entropy matching, and test independent Softplus intensities against the candidate softmax. Intensity only; fragment proposal is unchanged. |
 
 ### Closed — read before reviving

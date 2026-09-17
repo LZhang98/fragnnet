@@ -1,9 +1,15 @@
 # MASShatter GPU utilization audit
 
-> **Status:** REFERENCE · **Updated:** 2026-09-14 · A GPU became available on this machine after
+> **Status:** REFERENCE · **Updated:** 2026-09-17 · A GPU became available on this machine after
 > the static audits below were written; see "Measured profile" for real PyTorch-profiler numbers
 > that confirm and sharpen (not replace) those priorities. Earlier text in this file still says
 > "GPU timing unavailable" — that was true when it was written, not now.
+
+Follow-up (2026-09-17): the [s3gy1ro4 training-speed audit](../findings/masshatter_training_speed_2026_09_17.md)
+measures the proposed monitoring reduction on the current unmerged CMF config: 1.40× local
+batch-128 forward/backward throughput, with a matched fast config prepared. The L40S epoch-speed
+gate remains open. An attention-layout experiment did not establish useful whole-batch gains and
+was removed; the bucketing plan below remains unimplemented.
 
 ## Measured profile (2026-09-14, RTX 2070 SUPER, `research/masshatter-ion-h-selection` @ `43e880b0`)
 

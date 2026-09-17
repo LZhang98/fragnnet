@@ -220,16 +220,18 @@ int_embedder: abs-sines  # Integer embedder type: ["linear", "abs-sines", "sinus
 int_embedder_tight: False  # Use tight integer range for embeddings
 output_formula_str: False  # Output formula as string (slower but useful for debugging)
 
-# MASShatter: one-pass bond-set fragmentation. Candidate identities are selected
-# on CPU; their probabilities are recomputed from live logits for gradients.
+# MASShatter: one-pass bond-set fragmentation. Candidate probabilities are
+# recomputed from live logits for gradients with either construction backend.
 mass_shatter_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
 mass_shatter_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
-mass_shatter_fast_gnn_max_boundary_cuts: 3  # Proper-fragment boundary limit; precursor always kept.
+mass_shatter_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precursor always kept.
   # connected_fragment_beam: unique mode, one mixture, SMARTS/share_proposal_across_ev off, zero mask floor.
   # Runs on the model device. Uses unique_fragment_target as a strict cap including precursor.
   # candidate_backend, ranked_mask_budget, mask_selection_threads and forced single cuts
   # apply only to cut_masks; connected_fragment_beam searches up to ceil(molecule atoms / 2) then mirrors.
   # Probability normalizes boundary-cut/internal-intact scores over retained fragments.
+mass_shatter_candidate_backend: cpu  # cpu | cuda; independent of the model device.
+  # Experimental CUDA: FP32, one mixture, unique mode, zero mask floors, SMARTS off.
 mass_shatter_unique_fragment_mode: False
 mass_shatter_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
 mass_shatter_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
