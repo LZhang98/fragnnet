@@ -157,3 +157,42 @@ and MASShatter model suites; GPU checks skipped because CUDA was unavailable in 
 sandbox. Ruff and `git diff --check` passed. Log:
 `/tmp/connected_fragment_probability_tests.log`. No training, throughput benchmark or
 validation-set quality evaluation ran for this change.
+
+## Merged three-hour screen (2026-09-17)
+
+Three configs under [merged/unique_fragment](../../config/masshatter/merged/unique_fragment/) use the same MA/MI
+split, four adducts, FT/QTOF instruments, model, loss, seed and batch settings
+as the unmerged source. These merged configs use NCE only (`nce: true`, `ace: false`)
+and explicitly disable CMF.
+They enable tolerance-consensus merging with retained collision
+energies, common-overlap tolerance, per-spectrum normalization and equal CE weighting.
+
+| Config suffix after `nist20_ma_mi_merged_fast_gnn_proposal` | Final fragments | Beam width |
+| --- | ---: | ---: |
+| `_fragments128.yml` | 128 | 128 |
+| `.yml` | 256 | 256 |
+| `_fragments512.yml` | 512 | 512 |
+
+Batch size is 128 with accumulation 2 in all arms. These compare combined search/output
+budgets, not isolated beam-width effects. The 512-fragment arm's memory fit is unverified.
+
+On the Vulcan login node, generate the three jobs using:
+
+```bash
+CC_EMAIL=your_email@example.org bash scripts/manual_slurm/vulcan/prepare_masshatter_merged_fast_gnn_3h.sh
+```
+
+The [generation-only launcher](../../scripts/manual_slurm/vulcan/prepare_masshatter_merged_fast_gnn_3h.sh)
+uses `python`, the `vulcan:l40s` profile, account `${CC_ACCOUNT:-aip-rgreiner}` and
+`--time 3:00:00` for each independent job. It prints three `sbatch` commands after
+validating generated shell syntax. `JOB_PREFIX` can distinguish repeated screens.
+Three hours is scheduler wall time, including environment setup; it is not a promise
+of completed training or a graceful trainer stop. Epoch limits remain those of the source.
+W&B is online and the normal best/last checkpoint settings remain enabled; follow the
+[cluster guide](../guides/submit_cluster_runs.md) for staging and checkpoint persistence.
+
+Validation: all three configs load through the repository loader, pass sampler validation,
+and differ only in run identity, fragment cap and beam width. Checkpoint settings checked;
+launcher shell syntax passed. No cluster scripts were generated locally, jobs submitted,
+or training/quality evaluations run. Next: generate on Vulcan, review staging, and compare
+coverage, completed steps, spectral accuracy and memory at the three-hour budget.

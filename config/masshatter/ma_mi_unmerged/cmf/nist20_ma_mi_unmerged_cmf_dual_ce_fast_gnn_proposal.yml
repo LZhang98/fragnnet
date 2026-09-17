@@ -3,7 +3,9 @@
 # See docs/plans/masshatter_fast_gnn_proposal.md. No speed/accuracy claim yet.
 mass_shatter_proposal_method: connected_fragment_beam
 mass_shatter_fast_gnn_beam_width: 256
-mass_shatter_fast_gnn_max_boundary_cuts: 3
+# 3 is the binding budget, not the fragment target: it halves candidates per molecule
+# versus cut_masks on small precursors at no measured search-time saving. 5 restores parity.
+mass_shatter_fast_gnn_max_boundary_cuts: 5
 wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:

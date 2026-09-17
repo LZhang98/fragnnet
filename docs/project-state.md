@@ -80,6 +80,8 @@ Full suite: 3,451 passed, 96 skipped, 2 xfailed; three separate GPU checks and a
 forward/backward smoke passed. The linked plan supplies the config and score semantics.
 The connected-fragment option now aligns search and scoring with boundary-cut/internal-intact
 probabilities from the updated prototype; see the linked plan for changed checkpoint semantics.
+Three merged MA/MI configs (128/256/512 fragments and matching beams) and a generation-only
+Vulcan launcher with three-hour jobs are prepared in the linked plan.
 Next: matched coverage, throughput and accuracy comparison; no training run was launched.
 
 Unmerged MASShatter CMF anchor prepared (2026-09-16): the
