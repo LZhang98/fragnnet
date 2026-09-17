@@ -8,44 +8,46 @@
 
 ## Result
 
-Two conclusions, and they point the same way.
+Measured on trained bond logits at a matched unique-fragment budget, feeding both selectors
+identical logits so only the selection objective differs.
 
-1. **The beam's objective is close to `cut_masks`, not a different model.** The beam score is
-   the isolating mask's log probability minus the complement's intact term. Identifying the
-   charge head with a fixed prior makes the two agree within a mask; the residual gaps are
-   ring-reconnection terms (exactly zero for induced-acyclic fragments) and the search.
-2. **Nine of roughly thirteen mechanisms in the beam already exist in MASShatter.** The one
-   that dominates measured cost — complement connectivity by dense reachability — is precisely
-   the one with an existing union-find replacement on both CPU and CUDA.
+1. **The beam cannot reach most of the probability mass, at any budget.** Captured mass is flat
+   at **0.8695** from K = 256 to 1,024 against **1.0000** for `cut_masks`. It is complete below
+   half the molecule (reach 1.000 and 0.999 by count) and structurally limited above it, reaching
+   0.174 of fragments above 0.75 of the molecule — the band holding 42.9% of all mass. Growth
+   stops at `ceil(n / 2)`, so anything above half arrives only as a connected mirror, and a large
+   fragment needing several cuts leaves a disconnected remainder. That is the
+   precursor-minus-two-neutral-losses shape, missing by construction. **Architectural, not a
+   scoring artifact.**
 
-The dropped `I_f̄` is not neutral: it turns the score into a **size and topology prior** that
-favours small, acyclic fragments and implies "charge stays on the smaller fragment". That is a
-scientific consequence, not only a cost one, and it is the strongest reason to revisit which
-way the prototype's two scores were reconciled. **It is measured, not only predicted, on both
-synthetic and trained bond logits**: at matched fragment target the beam keeps the smaller side
-of a cut about 3:1 to 5:1 and proposes 3-4x fewer large fragments than `cut_masks`, and two
-controls rule out the boundary-cut cap and the candidate budget as causes.
+2. **Its score carries a size and topology prior that is chemically backwards.** `beam(f) =
+   log P(m = ∂f) − I_f̄`, and the dropped term makes the score fall monotonically with fragment
+   size. The beam keeps the smaller side of a cut about 3:1 to 5:1 and implies "charge stays on
+   the smaller fragment". The boundary-cut cap and the candidate budget are excluded as causes;
+   more budget makes it worse.
 
-Because the objectives otherwise nearly coincide, the beam cannot be justified on modelling
-grounds; it has to win on search cost or candidate coverage. **It does neither.** On trained bond
-logits captured probability mass is flat at **0.8695** across a fourfold budget increase against
-**1.0000** for `cut_masks`; on synthetic logits the same ceiling sits at 0.70 against 0.983. The
-beam is complete below half the molecule and structurally blind above it, where the largest share
-of mass lies. That ceiling is architectural rather than a scoring artifact, so the proposal-only
-redesign would not lift it without adopting `cut_masks`' all-components assembly.
+3. **That prior is entirely the scoring change.** The original prototype has the same
+   architecture but ranks by mask log probability, and emits a near-symmetric distribution:
+   0.485 above half against the installed beam's 0.174 and `cut_masks`' 0.500.
 
-`cut_masks` reaches the same fragments but spends its budget in mask space: the unmerged arm
-enumerates up to 4096 masks for a 256 unique-fragment target. That redundancy is already logged
-(`unique_components_per_mask`, `duplicate_component_pathway_fraction`), and it is partly the
-price of the richer marginal rather than pure overhead, so the efficiency and equivalence
-questions are one question — answerable from existing run artifacts.
+4. **But mask scoring alone does not rescue it.** The prototype captures *less* mass, 0.757
+   against 0.869, because a fragment and its complement then score identically and it spends two
+   budget slots per mask. The two beam variants fail in complementary ways and neither approaches
+   `cut_masks`. Escaping both requires emitting every component of one mask, which is exactly
+   `cut_masks`' assembly.
 
-The beam's own half-depth-plus-mirror design is the sharpest form of that argument. Growing
-only to `ceil(atoms / 2)` and recovering the rest as complements is correct and halves the
-growth rounds, but it is paid for by generating complements every round — currently by dense
-reachability, which the speed audit measured as the dominant cost. Union-find yields the
-fragment and its complement pieces from one pass, so the half-depth saving becomes free
-instead of expensive.
+5. **Nine of roughly thirteen beam mechanisms already exist in MASShatter**, including the
+   union-find components that would replace the dense-reachability complement pass responsible
+   for 447 of the 493 ms regression. That replacement is worth doing if the beam stays in the
+   tree as a diagnostic, but it does not change conclusions 1 through 4.
+
+6. **The two audit fixes barely change the output.** Pre-fix and post-fix emit identical fragment
+   sets in 18 of 24 configurations and differ by one or two fragments in 4,001 otherwise. The
+   447 ms bought determinism and a rare ranking correction, not materially different candidates.
+
+Taken together: the beam's objective nearly coincides with `cut_masks` up to a charge prior, so
+it has to win on search cost or candidate coverage, and it does neither. Reproduction commands
+are below; all measurements are candidate construction only, with the limits recorded at the end.
 
 ## Objective equivalence
 
@@ -153,17 +155,18 @@ exact search over masks for an approximate search over fragments.
 
 ### Closing the question
 
-Two cheap checks would settle the size of the remaining gap:
-
-1. Histogram `p_e` restricted to ring bonds from a trained checkpoint, and evaluate
-   `Σ_{e ∈ cycle bonds} p_e/(1−p_e)` per emitted fragment. The recorded
-   `mask_cut_fraction_4plus = 0.77` / `cut_0 = 0.001` behaviour suggests the model is not in
-   the small-`p` regime, so this should not be assumed either way.
-2. Compare the beam's implicit prior `exp(−I_f̄)` against a trained charge head's actual
-   component split on the same masks.
+1. **Partly done.** The overall trained `p_e` distribution is measured below (mean 0.096,
+   median 0.0007), which places the model firmly in the small-`p` regime and makes the
+   ring-reconnection correction small for most bonds. The **ring-bond-restricted** histogram and
+   the per-fragment `Σ_{e ∈ cycle bonds} p_e/(1−p_e)` remain unrun, so the ring gap's exact size
+   is still unquantified. Note this cuts against the earlier `mask_cut_fraction_4plus = 0.77`
+   expectation, which came from a different model.
+2. **Unrun.** Compare the beam's implicit prior `exp(−I_f̄)` against a trained charge head's
+   actual component split on the same masks.
 3. ~~Compare the emitted fragment **size and ring-count distributions** between the two
    proposal methods at a matched fragment target.~~ **Done 2026-09-17** — see the measured
-   section below. The prior is confirmed and both obvious confounds are excluded.
+   sections below, on synthetic and trained logits, with both confounds excluded and the
+   scoring change isolated against the original prototype.
 
 ## Measured: emitted fragment distributions (2026-09-17)
 
@@ -691,11 +694,21 @@ is a cheaper route to nearly the same objective or a more expensive one.
 
 ## Limits
 
-- Source and algebra review at `08e128d5`.
-  `src/fragnnet/frag/mass_shatter_fast_gnn.py` is clean at that commit;
-  `mass_shatter_candidates.py` and `mass_shatter_model.py` carry unrelated uncommitted changes.
-- No benchmark, training run, quality evaluation or test execution was performed for this
-  document, and no code was changed. Every performance number is quoted from the linked
-  documents and inherits their contracts and limits.
-- The ring-gap magnitudes are worked examples at assumed `p_e`, not measurements on a trained
-  checkpoint. The two checks above are unrun.
+- Source and algebra review against `src/fragnnet/frag/mass_shatter_fast_gnn.py`, which is
+  unchanged between `dca3d0f9` and the current tree, so every measurement describes the
+  post-fix implementation.
+- **No training run, optimizer step or validation-set quality evaluation was performed.** All
+  measurements are candidate construction only: selectors are called directly on captured graphs
+  and logits. Spectral accuracy is therefore **not** measured anywhere in this document, and no
+  claim is made about predicted spectra.
+- Timing figures for the 447 ms complement regression and the CUDA `cut_masks` comparison are
+  quoted from the [speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
+  [plan](../plans/masshatter_fast_gnn_proposal.md) and inherit their contracts. Timings measured
+  here are single-run CPU wall times, not synchronized benchmarks.
+- One checkpoint, one epoch, one batch per scan; batches of 16 and 32 molecules. The reference
+  universe is the union of the selectors' own pools, so it under-represents fragments none of
+  them enumerate.
+- The ring-gap magnitudes in the algebra section are worked examples at assumed `p_e`. Checks 1
+  and 2 above remain wholly or partly unrun.
+- New code added for this document: `scripts/debug/analyze_proposal_fragment_coverage.py`. No
+  production code, model, config or test was modified.

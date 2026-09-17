@@ -131,6 +131,35 @@ for supported modes and compiler requirements. Final CPU full suite: 3,422 passe
 2 xfailed; separate CUDA suite: 118 passed. Batch512 hits the local 8 GB GPU limit with either
 backend. Next: confirm throughput, memory and native compilation on L40S before production promotion.
 
+Merged MASShatter arms for the candidate backend (2026-09-17): six configs under
+`config/masshatter/ma_mi_merged/` give merged arms at batch 128x2 / 256x1 / 512x1 on both the CPU
+and CUDA candidate backends. They are derived from the unmerged fast arms but are **not** a
+controlled A/B on merging: by user decision `spec_params.ace` and `mass_shatter_include_cmf` are
+both off, because no merged MASShatter config has ever had a live CMF channel together with dual
+CE (`context_ablation`/`smarts` set `ace: True` but sit on the `[M+H]+`/FT-only `nist20_inchikey`
+split, so their Na/Cl adducts are absent from the data; the one merged config with live CMF is
+NCE-only). Merging is therefore confounded with CE conditioning and the CMF channel; isolating
+merging needs unmerged siblings with the same two flags off, which do not exist yet. Epochs are
+378/630 rather than 60/100 because merging by acquisition `group_id` collapses train 287,721 ->
+45,639 rows and val 96,153 -> 15,257 (6.30x), so the row budget matches (28.75M against 28.77M).
+Merging does not strip adducts: 5,993 `[M+Na]+` and 748 `[M+Cl]-` of 45,639 merged train rows, no
+group mixing adducts, instruments or frag modes. A merged row conditions on the mean-pooled
+acquisition CE ladder (median 4 readings, max 86), not a single energy. Validation: all six
+resolve through `load_config` with exactly the intended delta; the merged dataset constructs on
+real NIST20 data; `tolerance_consensus` merging of whole multi-spectrum groups produces consensus
+peaks; the CUDA config builds a model resolving `candidate_backend` to `cuda` (8,427,349 trainable
+parameters against 8,434,087 with ACE/CMF on); 186 config/merge/fast-GNN tests passed. Merged and
+unmerged validation cosine score different targets and are not comparable. Not measured: any
+training step, batch-512 memory, epoch wall time, and the 6.3x larger fixed per-epoch overhead of
+a 630-epoch run. See the [merged arms guide](guides/benchmark_masshatter_merged_control.md).
+One-hour L40S jobs are the right size for the backend comparison but not for training: merged
+rows fall 6.30x but peaks per row rise 31.9 -> 51.9, so total peak work falls only 3.83x, putting
+a merged epoch at roughly 5.3-6.5 min at batch 128 against the measured unmerged 33.52 min
+(estimate from row/peak counts, not a measured merged epoch). One hour yields about 8-10 epochs,
+so 6 one-hour jobs cover the CPU-vs-CUDA throughput/memory comparison, while 630 epochs would
+need 63-79 jobs per arm chained through `--dependency=afterany` with `j=` resume. The guide
+carries the arithmetic. No job was generated or submitted.
+
 Live fast-run follow-up (2026-09-17): the existing L40S runs `dny62x0i`, `h0ibnndb`, and
 `du6cr9dx` still report the earlier separate candidate timing fields and no backend setting.
 Four CPU selection threads are enabled, but the new parallel topology/CUDA implementation is

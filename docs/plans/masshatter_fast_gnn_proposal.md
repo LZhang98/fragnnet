@@ -1,7 +1,14 @@
 # Optional FastGNN-style MASShatter proposals
 
-> **Status:** LANDED · **Updated:** 2026-09-17 · Experimental option implemented and locally
-> validated; comparative speed and scientific accuracy remain unmeasured.
+> **Status:** LANDED, EVIDENCE AGAINST CONTINUING · **Updated:** 2026-09-17 · The option is
+> implemented and locally validated. Comparative candidate measurement is now complete and
+> argues against continuing the line: on trained bond logits the beam's captured probability
+> mass is flat at 0.8695 across a fourfold budget increase against 1.0000 for `cut_masks`,
+> because it is complete below half the molecule and structurally limited above it. See the
+> [reuse and equivalence finding](../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md).
+> Spectral accuracy remains unmeasured and no training run was performed. Whether to mark this
+> plan `STOPPED` is a pending decision for the user; in the meantime the four prepared arms and
+> the three-hour launcher should **not** be submitted as configured.
 
 ## Objective and scope
 
@@ -405,6 +412,16 @@ baseline. Consequences, all recorded in the linked finding:
   complement cost is removed with it.
 - Internal-bond index arrays (`internal_id`, `internal_owner`) are no longer needed; scoring
   requires the boundary alone.
+
+**Measured caveat (2026-09-17), which was not anticipated when this section was written.**
+Running the original prototype, which already ranks by the mask log probability, confirms the
+first bullet — its emitted distribution is near-symmetric, 0.485 above half against the installed
+beam's 0.174 and `cut_masks`' 0.500 — but it captures **less** probability mass, 0.757 against
+0.869. Under mask scoring a fragment and its complement score identically, so the search spends
+two budget slots per mask and covers roughly half as many distinct masks. **The scoring change
+alone therefore trades one defect for another.** Recovering both requires emitting every
+component of a mask from one enumeration slot, which is `cut_masks`' assembly, at which point the
+method is `cut_masks` with a beam heuristic in place of exact top-K enumeration.
 
 ### Charge component
 

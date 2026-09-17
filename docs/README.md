@@ -37,9 +37,9 @@ roadmap. It links the analyses that justify each item.
 
 | Audit | Scope |
 |-------|-------|
-| [Connected-fragment beam reuse and equivalence](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Source/algebra review: the beam objective equals the isolating mask's log probability minus the complement's intact term, so it carries a size/topology prior favouring small acyclic fragments; nine of ~13 mechanisms already exist in MASShatter. |
+| [Connected-fragment beam reuse and equivalence](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Measured on trained logits: the beam's captured mass is flat at 0.8695 vs 1.0000 for cut_masks because it is complete below half the molecule and limited above it; the size prior is isolated to the scoring change, and mask scoring alone trades it for a budget-efficiency loss. |
 | [Connected-fragment beam speed audit](findings/connected_fragment_beam_speed_2026_09_17.md) | Synchronized real-graph GPU audit: correctness fixes raise batch-128/beam-256 candidate time 3.07× and forward/backward time 68%; complement connectivity dominates. |
-| [FastGNN proposal option](plans/masshatter_fast_gnn_proposal.md) | LANDED experimental connected-fragment proposals with MASShatter chemistry and intensity scoring; local validation passed. |
+| [FastGNN proposal option](plans/masshatter_fast_gnn_proposal.md) | LANDED but EVIDENCE AGAINST CONTINUING: implemented and validated, then measured against `cut_masks` and found to have an architectural coverage ceiling; the prepared arms should not be submitted as configured. |
 | [MASShatter GPU audit](plans/masshatter_gpu_audit.md) | Static + measured (2026-09-14) GPU utilization and CPU–GPU synchronization audit of the masshatter and ion-H-selection branches; branch-specific optimization priorities. |
 | [Intensity-head bucketing sync plan](plans/masshatter_intensity_head_bucketing_sync_plan.md) | PROPOSED design for removing avoidable host syncs in `CandidateIntensityTransformerHead`'s per-molecule bucketing; not yet implemented. |
 
@@ -51,6 +51,7 @@ roadmap. It links the analyses that justify each item.
 |-----|----------------|
 | [submit_cluster_runs.md](guides/submit_cluster_runs.md) | Generate, inspect, and submit Fir/Vulcan jobs; CV arrays, staging, and output persistence. |
 | [benchmark_masshatter_cpu.md](guides/benchmark_masshatter_cpu.md) | Freeze source and generate three-hour L40S CPU/hybrid/full-GPU benchmarks for batches 128/256/512. |
+| [benchmark_masshatter_merged_control.md](guides/benchmark_masshatter_merged_control.md) | Merged MASShatter training arms on the CPU/CUDA candidate backends; NCE-only, CMF off, exposure-matched epochs, and the confounds this leaves. |
 | [run_inference.md](guides/run_inference.md) | Data prep (`01_inf_prepare_mol_df.py`, `02_inf_prepare_spec_df.py`) and running prediction. |
 | [finetune_fragnnet.md](guides/finetune_fragnnet.md) | Fine-tuning for spectrum-to-molecule ranking and retrieval; component freezing. |
 | [nist_human_review.md](guides/nist_human_review.md) | Generating the ranked suspicious-spectrum queue and visual report. |
@@ -73,7 +74,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Result |
 |-----|--------|
-| [connected_fragment_beam_reuse_and_equivalence_2026_09_17.md](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Beam vs `cut_masks` objective algebra (equal up to a charge prior, ring-reconnection terms and search), plus a measured size/topology prior: on trained logits the beam's captured mass is flat at 0.8695 vs 1.0000 for cut_masks because it is complete below half the molecule and blind above it; cut-cap and budget confounds excluded. |
+| [connected_fragment_beam_reuse_and_equivalence_2026_09_17.md](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Beam vs `cut_masks` objective algebra (equal up to a charge prior, ring-reconnection terms and search), plus a measured size/topology prior: on trained logits the beam's captured mass is flat at 0.8695 vs 1.0000 for cut_masks because it is complete below half the molecule and blind above it; cut-cap and budget confounds excluded, and the prior isolated to the scoring change against the original prototype. Reproducible via `scripts/debug/analyze_proposal_fragment_coverage.py`. |
 | [masshatter_training_speed_2026_09_17.md](findings/masshatter_training_speed_2026_09_17.md) | s3gy1ro4 speed audit: 44.4-minute epochs, 33% median GPU utilization; disabling monitoring-only channel attribution and base CE improves local batch-128 forward/backward throughput by 1.40×. |
 | [masshatter_unmerged_overfitting_2026_09_16.md](findings/masshatter_unmerged_overfitting_2026_09_16.md) | All 27 unmerged W&B histories: widening loss gaps, limited late regression, incomplete train-cosine instrumentation, and corrected sampler/scheduler claims. |
 | [subformula_filter_ft_qtof.md](findings/subformula_filter_ft_qtof.md) | Cleaning census and verified saved D3/D4 filtered oracle; D4 95.92% weighted recall, with explicit limits on comparison to MASShatter. |

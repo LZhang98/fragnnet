@@ -115,11 +115,49 @@ FP32, so the CUDA siblings satisfy the backend's supported-mode envelope describ
 [benchmark_masshatter_cpu.md](benchmark_masshatter_cpu.md#select-the-optional-cuda-backend).
 Batch 512 exceeds the local 8 GB GPU with either backend; its memory headroom is an L40S check.
 
+## What fits in a one-hour job
+
+Merged epochs are cheap per epoch, but the configs cap at 630 epochs, so a one-hour allocation is
+a partial run, not a finished one. The arithmetic, from the measured L40S epoch intervals in the
+[training-speed finding](../findings/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17)
+(33.52 / 32.07 / 31.85 min at 128/256/512, validation included, on the unmerged rows):
+
+| Quantity | Unmerged | Merged | Ratio |
+| --- | ---: | ---: | ---: |
+| train rows per epoch | 287,721 | 45,639 | 6.30x |
+| peaks per row (mean) | 31.9 | 51.9 | 0.61x |
+| total peak work per epoch | — | — | 3.83x |
+
+Row count falls 6.30x but peak work only 3.83x, because a consensus row carries the whole
+ladder's peaks. Candidate construction (about 46% of batch time at 128) is strictly per-row and
+scales with the 6.30x; the loss and peak-matching scale with the 3.83x. So a merged epoch is
+**roughly 5.3-6.5 min at batch 128**, bounded below by 33.52/6.30 = 5.32 and above by
+33.52/3.83 = 8.75. This is an estimate from row and peak counts, **not a measured merged epoch
+time**; measure one before planning a long campaign.
+
+Allowing 5-10 min for the dataframe load and preprocessing, one hour yields roughly **8-10
+epochs**:
+
+| Goal | Epochs | One-hour jobs per arm | Six arms |
+| --- | ---: | ---: | ---: |
+| backend throughput/memory comparison | 8-10 | 1 | 6 |
+| epoch-matched to the merged family's precedent | 100 | 10-13 | 60-78 |
+| this config's `min_epochs` | 378 | 38-47 | 228-282 |
+| this config's `max_epochs` (exposure-matched) | 630 | 63-79 | 378-474 |
+
+**One hour per arm is the right size for comparing the CPU and CUDA candidate backends** — the
+throughput, peak memory and candidate-count comparison needs steps, not convergence. It is not
+enough to train a merged model to compare against anything scientifically. The epoch budget in
+the config is a cap: a one-hour job simply stops at the wall clock and writes `last.ckpt`, and
+`min_epochs` does not extend a run past its allocation.
+
 ## Generating the jobs
 
 Follow the [cluster prerequisites](submit_cluster_runs.md) and generate from a checkout that
-contains the CUDA Python modules and `.cu` sources. Twelve hours matches the allocation used by
-the unmerged CMF arms; confirm it against a measured epoch time before relying on it.
+contains the CUDA Python modules and `.cu` sources.
+
+Run this on the Vulcan login node, from the cluster checkout, with the cluster's `python`
+(not `FRAGNNET_PYTHON`). It generates only; nothing is submitted.
 
 ```bash
 FRAGNNET_ACCOUNT=aip-rgreiner
@@ -128,19 +166,44 @@ for backend in "" _cuda; do
   for batch in "" _batch256 _batch512; do
     name="nist20_ma_mi_merged_fast${batch}${backend}"
     python scripts/setup_job_cc.py \
-      --frag_gnn_dp "$PWD" --python_script_fp scripts/run_training.py \
-      --job_name "$name" --gpu_profile vulcan:l40s \
-      --cc_account "$FRAGNNET_ACCOUNT" --cc_email "$FRAGNNET_EMAIL" \
-      --time 12:00:00 --no_submit=True \
-      --script_kwargs c="config/masshatter/ma_mi_merged/${name}.yml" j="$name"
+      --frag_gnn_dp . \
+      --python_script_fp scripts/run_pl_model_fit.py \
+      --job_name "$name" \
+      --gpu_profile vulcan:l40s \
+      --cc_account "$FRAGNNET_ACCOUNT" \
+      --cc_email "$FRAGNNET_EMAIL" \
+      --time 1:00:00 \
+      --script_kwargs w=online c="config/masshatter/ma_mi_merged/${name}.yml" j="$name" \
+      --no_submit=True
+    bash -n "slurm_scripts/${name}.sh"
   done
 done
 ```
 
-Inspect the generated scripts, then submit explicitly. `j=` gives `last.ckpt` resume, which the
-630-epoch budget needs across multiple twelve-hour allocations. Record the resolved backend from
-the `mass_shatter_candidate_backend_resolved` W&B summary field on every run and on every resume,
-because saved run config can overwrite local settings.
+`w=online` is required for `j=` to work at all: the resume bookkeeping lives inside the W&B
+branch, so with `w=disabled` there is no `job_id/<name>.id` and no `last.ckpt` resume.
+Inspect the generated scripts, then submit explicitly. Record the resolved backend from the
+`mass_shatter_candidate_backend_resolved` W&B summary field on every run and on every resume,
+because saved run config can overwrite local settings. Compare `_cuda` against its CPU sibling at
+the same batch size, and verify candidate counts and loss trajectories agree before reading any
+throughput number.
+
+To continue an arm past one hour, resubmit the same script: `j=<name>` resumes from `last.ckpt`.
+Chain without babysitting using a scheduler dependency:
+
+```bash
+JOBID=$(sbatch --parsable slurm_scripts/nist20_ma_mi_merged_fast_cuda.sh)
+for _ in $(seq 1 12); do
+  JOBID=$(sbatch --parsable --dependency=afterany:"$JOBID" \
+    slurm_scripts/nist20_ma_mi_merged_fast_cuda.sh)
+done
+```
+
+`afterany` continues through wall-clock termination, which is the normal exit for a capped job.
+Two things to confirm before trusting a chain: that each link logs `resuming from checkpoint`
+rather than restarting at epoch 0, and that `ckpt_dp` (`wandb/run-*/files/ckpt` in the checkout)
+actually holds `last.ckpt` between jobs. `runner.py` deletes `job_id/<name>.id` on clean
+completion, so a chain that reaches `max_epochs` will start the next link from scratch.
 
 ## What was verified
 
