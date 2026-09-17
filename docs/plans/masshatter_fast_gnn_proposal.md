@@ -29,8 +29,10 @@ optimizer and batch settings. It uses selection-only proposal supervision. No ru
 
 - Grow connected atom sets, ranking expansions by boundary-cut plus internal-intact log probability. Keep a bounded
   beam after atom-set deduplication; consider at most four times the beam width before
-  deduplication. This approximation can underfill the beam when many paths duplicate.
-- Grow to `ceil(atom_count / 2)` per molecule, then add connected complements. Using each
+  deduplication. Stable score ties follow parent beam slot and local atom index, independent
+  of batch padding. This approximation can underfill the beam when many paths duplicate.
+- Grow to `ceil(atom_count / 2)` per molecule, adding connected complements at each round
+  before output-budget pruning. Rank both orientations by their own scores. Using each
   molecule's own limit avoids dependence on unrelated batch padding. This differs from
   the prototype's batch-maximum growth depth.
 - Apply the boundary-cut limit to emitted proper fragments, not intermediate growth states.
@@ -196,3 +198,81 @@ and differ only in run identity, fragment cap and beam width. Checkpoint setting
 launcher shell syntax passed. No cluster scripts were generated locally, jobs submitted,
 or training/quality evaluations run. Next: generate on Vulcan, review staging, and compare
 coverage, completed steps, spectral accuracy and memory at the three-hour budget.
+
+## Connected-fragment audit (2026-09-17)
+
+Audited the working tree at `dca3d0f9`, including existing uncommitted backend changes.
+Two correctness issues were reproduced; both are now fixed in the working tree as described
+in the resolution below. The initial audit did not edit production code.
+
+1. **P2: tied beam selection depends on unrelated batch padding.** In
+   [the search](../../src/fragnnet/frag/mass_shatter_fast_gnn.py), the expansion `topk`
+   operates before lexicographic deduplication and has no stable secondary key. With
+   a five-atom cycle `(0,1),(1,2),(2,3),(3,4),(4,0)`, all-zero logits, beam width 1,
+   fragment cap 8 and boundary limit 3, searching alone retains `{0,4}`. Batching
+   the same graph with an unrelated six-atom zero-logit chain replaces that fragment
+   with `{1,2}`. All other returned sets agree. This contradicts the stated batch-padding
+   independence; changing inference batch composition can change candidate support.
+   Resolve ties by a padding-independent atom-set/order key before truncation. The
+   existing padding test uses unequal logits and misses this case.
+2. **P2: pruning before complement scoring loses better candidates.** Both per-round
+   recording and the global pre-complement cap rank only the grown fragment's score.
+   Complement scores can rank very differently. For the chain `0-1-2-3-4-5`, ordered
+   bond logits `[2,6,-2,-4,-1.5]`, beam width 128, cap 4 and boundary limit 3, the
+   result is `{0}`, `{1}`, `{5}`, and the precursor. The higher-scoring connected
+   complement `{2,3,4,5}` is omitted because its seed `{0,1}` was discarded first.
+   Its log score is approximately -0.349 versus -1.701 for retained `{5}`. Raising
+   the cap to 128 recovers it without changing the beam. This is independent of
+   finite-beam underfill and the documented disconnected-complement limitation:
+   both this fragment and its seed are connected. Score eligible complements before
+   applying output-budget pruning, or retain seeds using both orientations' scores.
+
+Validation with the configured `FRAGNNET-GPU` interpreter: existing proposal and model
+suites **136 passed, 8 skipped**; CUDA was unavailable. Two additional targeted regression
+probes **failed as expected**, one per finding. Local reproducer:
+`/tmp/test_connected_fragment_beam_audit.py` (ephemeral; exact graph inputs and expected
+behavior are recorded above). Run with `python -m pytest /tmp/test_connected_fragment_beam_audit.py -q`
+using the configured interpreter. No full suite, training, throughput or quality evaluation ran.
+The resolution below supersedes this initial failing-probe status.
+
+### Selection fixes and regression coverage
+
+The search now uses stable descending sorting before expansion truncation. Equal scores
+follow parent beam slot and local atom index, so unrelated padding cannot change which tied
+expansions enter the beam. Every recorded growth round emits and scores connected nonempty
+complements before deduplication and output-budget pruning. Keeping the round's top K unique
+fragments then preserves its possible global top-K contributors. The precursor retains its
+reserved final slot. Code comments explain both ordering requirements.
+
+Complement reachability checks use chunks of at most 256 seeds per molecule to bound dense
+temporary storage; chunk boundaries do not discard candidates. This is a workspace limit,
+not a new scientific budget. Existing finite-beam and disconnected-complement limitations
+remain. Config keys, checkpoint parameter shapes and `cut_masks` behavior are unchanged;
+affected connected-fragment checkpoints can produce different candidates with the fixes.
+
+Permanent regressions in [the proposal tests](../../tests/test_mass_shatter_fast_gnn.py) cover:
+
+- Tied beams with several padding sizes, including multiword masks; CUDA cases are included.
+- The original chain counterexample plus a stronger first logit that independently exposes
+  premature pruning within a growth round.
+- Exhaustive reachable-fragment score rankings on chains, cycles and branching graphs.
+- A mixed batch whose dense graph produces more than 256 seeds in one growth round.
+
+Validation: proposal tests **81 passed, 6 skipped**; model/backend-compatibility tests
+**139 passed, 5 skipped**. Total **220 passed, 11 skipped**; CUDA was unavailable. The two
+original regressions failed before the fix and pass afterwards. Ruff and changed-file whitespace
+checks passed. No full suite, training or validation-set quality evaluation ran.
+
+A small single-thread CPU candidate-only probe compared `dca3d0f9` search against the fixed
+working-tree implementation on chains with extra five-atom ring-closing bonds, random logits
+(seed 17), boundary limit 5, one CPU thread, and three calls per case (reported median):
+
+| Atoms/molecule | Batch | Beam = target | Before | Fixed |
+| --- | --- | --- | --- | --- |
+| 20 | 4 | 64 | 20.8 ms | 26.0 ms |
+| 40 | 8 | 256 | 121.5 ms | 169.8 ms |
+
+These probes expose the extra sorting/connectivity cost; they do not measure CUDA or training
+throughput. The local script is `/tmp/benchmark_connected_beam_fix.py` (ephemeral).
+Next: remeasure candidate coverage, CUDA throughput and memory with these fixes before the
+matched scientific comparison. Earlier performance measurements predate the fixes.

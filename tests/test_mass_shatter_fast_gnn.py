@@ -380,6 +380,94 @@ def test_batch_padding_does_not_change_proposals():
     }
 
 
+@pytest.mark.parametrize("padding_atoms", [6, 11, 65])
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_tied_beam_is_independent_of_batch_padding(padding_atoms, device):
+    if device == "cuda" and not th.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    edges = [(i, (i + 1) % 5) for i in range(5)]
+    single, _ = _graph(
+        5, edges, logits=th.zeros(5, device=device), device=device,
+        beam_width=1, max_fragments=8,
+    )
+    padded_edges = edges + [(i, i + 1) for i in range(5, 5 + padding_atoms - 1)]
+    batched = build_fast_gnn_candidates(
+        th.zeros(len(padded_edges), device=device),
+        th.tensor(padded_edges, device=device).T.contiguous(),
+        th.tensor([0] * 5 + [1] * padding_atoms, device=device),
+        th.tensor([0, 5, 5 + padding_atoms], device=device),
+        max_fragments=8, beam_width=1, max_boundary_cuts=3,
+    )
+    assert set(_sets(single)) == {
+        f for f, b in zip(_sets(batched), batched.component_batch_indices) if b == 0
+    }
+
+
+@pytest.mark.parametrize("first_logit", [2.0, 20.0])
+def test_complement_is_scored_before_output_budget_pruning(first_logit):
+    # The weak seed {0, 1} must survive long enough to emit its strong complement.
+    # 2.0 catches global pruning; 20.0 also catches pruning within a growth round.
+    candidates, _ = _graph(
+        6, [(i, i + 1) for i in range(5)],
+        logits=th.tensor([first_logit, 6.0, -2.0, -4.0, -1.5]),
+        beam_width=128, max_fragments=4,
+    )
+    assert set(_sets(candidates)) == {
+        frozenset({0}), frozenset({1}), frozenset({2, 3, 4, 5}), frozenset(range(6)),
+    }
+
+
+@pytest.mark.parametrize("seed", range(6))
+@pytest.mark.parametrize("max_fragments", [2, 4])
+@pytest.mark.parametrize("edges", [
+    [(i, i + 1) for i in range(5)],
+    [(i, (i + 1) % 6) for i in range(6)],
+    [(0, 1), (0, 2), (0, 3), (3, 4), (3, 5)],
+])
+def test_budget_matches_exhaustive_reachable_fragment_scores(seed, max_fragments, edges):
+    logits = 3 * th.randn(len(edges), generator=th.Generator().manual_seed(seed))
+    references = []
+    for size in range(1, 6):
+        for nodes in combinations(range(6), size):
+            fragment = frozenset(nodes)
+            complement = frozenset(range(6)) - fragment
+            # Large fragments are reachable only through a connected small complement.
+            if not _connected(fragment, edges) or (size > 3 and not _connected(complement, edges)):
+                continue
+            boundary = th.tensor([(u in fragment) != (v in fragment) for u, v in edges])
+            if boundary.sum() > 3:
+                continue
+            internal = th.tensor([(u in fragment) and (v in fragment) for u, v in edges])
+            score = F.logsigmoid(logits[boundary]).sum() + F.logsigmoid(-logits[internal]).sum()
+            references.append((float(score), fragment))
+    ranked = sorted(references, key=lambda entry: entry[0], reverse=True)
+    expected = {f for _, f in ranked[:max_fragments - 1]} | {frozenset(range(6))}
+    candidates, _ = _graph(
+        6, edges, logits=logits, beam_width=128, max_fragments=max_fragments,
+    )
+    assert set(_sets(candidates)) == expected
+
+
+def test_large_growth_round_preserves_batched_memberships_and_budget():
+    # A wide beam on K11 visits >256 unique seeds in a round, spanning workspace chunks.
+    edges = list(combinations(range(11), 2)) + [(11, 12), (12, 13)]
+    candidates = build_fast_gnn_candidates(
+        -th.ones(len(edges)), th.tensor(edges).T.contiguous(),
+        th.tensor([0] * 11 + [1] * 3), th.tensor([0, 11, 14]),
+        max_fragments=5, beam_width=512, max_boundary_cuts=30,
+    )
+    fragments = _sets(candidates)
+    assert {
+        f for f, b in zip(fragments, candidates.component_batch_indices) if b == 0
+    } == {frozenset({i}) for i in range(4)} | {frozenset(range(11))}
+    chain, _ = _graph(3, [(0, 1), (1, 2)], logits=-th.ones(2), max_fragments=5, beam_width=512)
+    assert {
+        frozenset(a - 11 for a in f)
+        for f, b in zip(fragments, candidates.component_batch_indices) if b == 1
+    } == set(_sets(chain))
+    assert candidates.unique_component_count.tolist() == [5, 5]
+
+
 def test_connected_multiword_complements():
     edges = [(i, i + 1) for i in range(64)]
     candidates, _ = _graph(65, edges, beam_width=2, max_fragments=130, max_boundary_cuts=1)

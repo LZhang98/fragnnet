@@ -51,6 +51,67 @@ def _group_rank(score: th.Tensor, group: th.Tensor, num_groups: int) -> th.Tenso
     return rank
 
 
+def _connected_complements(
+    key: th.Tensor,
+    full_packed: th.Tensor,
+    atom_valid: th.Tensor,
+    adjacency: th.Tensor,
+    edge_u: th.Tensor,
+    edge_v: th.Tensor,
+    log_cut: th.Tensor,
+    log_intact: th.Tensor,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Return connected, nonempty complements and their boundary/internal log scores.
+
+    Keys are lexicographically sorted molecule IDs followed by packed atom words.
+    Edge log probabilities are padded with zero, so padding contributes no score.
+    """
+    num_mols, max_atoms = atom_valid.shape
+    device = key.device
+    atom_idx = th.arange(max_atoms, device=device)
+    atom_word, atom_bit = atom_idx // 63, atom_idx % 63
+    mol = key[:, 0]
+    counts = th.bincount(mol, minlength=num_mols)
+    starts = counts.cumsum(0) - counts
+    local_idx = th.arange(key.shape[0], device=device) - starts[mol]
+    max_count = int(counts.max().item())
+    keys, scores = [], []
+
+    # Check every seed before output pruning, but bound dense reachability storage.
+    # Chunk size affects memory only; no candidate is discarded at a chunk boundary.
+    for start in range(0, max_count, 256):
+        width = min(256, max_count - start)
+        selected = (local_idx >= start) & (local_idx < start + width)
+        chunk_mol = mol[selected]
+        slot = local_idx[selected] - start
+        packed = full_packed[chunk_mol] ^ key[selected, 1:]
+        mask = ((packed[:, atom_word] >> atom_bit) & 1).bool()
+        padded_mask = th.zeros(num_mols, width, max_atoms, dtype=th.bool, device=device)
+        padded_mask[chunk_mol, slot] = mask
+        reach = th.zeros_like(padded_mask)
+        reach[chunk_mol, slot, mask.long().argmax(-1)] = True
+        reach &= padded_mask
+        for _ in range(max_atoms):
+            step = th.bmm(reach.float(), adjacency) > 0
+            updated = (reach | step) & padded_mask
+            if th.equal(updated, reach):
+                break
+            reach = updated
+        connected = mask.any(-1) & (reach[chunk_mol, slot] == mask).all(-1)
+        mirror_mol = chunk_mol[connected]
+        mirror_mask = mask[connected]
+        u_in = th.gather(mirror_mask, 1, edge_u[mirror_mol])
+        v_in = th.gather(mirror_mask, 1, edge_v[mirror_mol])
+        # The boundary is shared with the seed; internal bonds belong to this side.
+        score = (
+            log_cut[mirror_mol] * (u_in != v_in)
+            + log_intact[mirror_mol] * (u_in & v_in)
+        ).sum(-1)
+        keys.append(th.cat([mirror_mol[:, None], packed[connected]], -1))
+        scores.append(score)
+    return th.cat(keys), th.cat(scores)
+
+
 @th.no_grad()
 def _search(
     canon_logit: th.Tensor,
@@ -98,6 +159,10 @@ def _search(
     adj_bool[canon_bs, local_v, local_u] = True
     log_cut = F.logsigmoid(canon_logit)
     log_intact = F.logsigmoid(-canon_logit)
+    padded_log_cut = canon_logit.new_zeros(edge_valid_pad.shape)
+    padded_log_intact = th.zeros_like(padded_log_cut)
+    padded_log_cut[canon_bs, edge_local_idx] = log_cut
+    padded_log_intact[canon_bs, edge_local_idx] = log_intact
     adj_cut = canon_logit.new_zeros(num_mols, max_atoms, max_atoms)
     adj_cut[canon_bs, local_u, local_v] = log_cut
     adj_cut[canon_bs, local_v, local_u] = log_cut
@@ -180,6 +245,16 @@ def _search(
             rec_packed = cur_packed[rec_mol, rec_k] | atom_word_bitmask[rec_b]
             rec_key, rec_rep = _unique_rows_lex(th.cat([rec_mol[:, None], rec_packed], -1))
             rec_score = rec_score[rec_rep]
+            # Score both orientations before ANY output-budget pruning. A weak seed
+            # can have a strong complement because their internal bonds differ.
+            mirror_key, mirror_score = _connected_complements(
+                rec_key, full_packed, atom_valid, adj_bool_f,
+                edge_u_pad, edge_v_pad, padded_log_cut, padded_log_intact,
+            )
+            rec_key, rec_rep = _unique_rows_lex(th.cat([rec_key, mirror_key]))
+            rec_score = th.cat([rec_score, mirror_score])[rec_rep]
+            # Each size is recorded once, and complements are deduplicated here.
+            # A round's top K contains every possible global top-K contributor.
             rec_keep = _group_rank(rec_score, rec_key[:, 0], num_mols) < top_k
             all_packed.append(rec_key[rec_keep, 1:])
             all_score.append(rec_score[rec_keep])
@@ -190,7 +265,10 @@ def _search(
 
         flat_score = new_score.reshape(num_mols, -1)  # (num_mols, cur_beam*max_atoms)
         over_k = min(overprovision * beam_width, flat_score.shape[1])
-        top_val, top_flat_idx = th.topk(flat_score, k=over_k, dim=1)
+        # Stable ties follow (parent beam slot, local atom index). Padding adds only
+        # invalid entries and cannot reorder these pairs, unlike topk's tie handling.
+        top_flat_idx = flat_score.argsort(dim=1, descending=True, stable=True)[:, :over_k]
+        top_val = flat_score.gather(1, top_flat_idx)
         top_k_idx = top_flat_idx // max_atoms
         top_b_idx = top_flat_idx % max_atoms
 
@@ -265,65 +343,7 @@ def _search(
     g_packed = g_packed[non_trivial]
     g_score = g_score[non_trivial]
 
-    rank = _group_rank(g_score, g_mol, num_mols)
-    keep = rank < top_k
-    g_mol, g_packed, g_score = g_mol[keep], g_packed[keep], g_score[keep]
-
-    # 3. Add complements only when they are connected.
-    if g_mol.shape[0] > 0:
-        n_cur = g_mol.shape[0]
-        atom_col_cur = g_packed[:, atom_word]
-        frag_mask_cur = ((atom_col_cur >> atom_bit.unsqueeze(0)) & 1).bool()  # (n_cur, max_atoms)
-        complement_mask = atom_valid[g_mol] & (~frag_mask_cur)  # (n_cur, max_atoms)
-
-        local_idx = _group_rank(th.arange(n_cur, device=device).float(), g_mol, num_mols)
-        cap = int(local_idx.max().item()) + 1
-
-        comp_padded = th.zeros(num_mols, cap, max_atoms, dtype=th.bool, device=device)
-        comp_padded[g_mol, local_idx] = complement_mask
-
-        seed_idx = complement_mask.long().argmax(dim=-1)
-        reach = th.zeros(num_mols, cap, max_atoms, dtype=th.bool, device=device)
-        reach[g_mol, local_idx, seed_idx] = True
-        reach = reach & comp_padded
-
-        for _r in range(max_atoms):
-            step = th.bmm(reach.float(), adj_bool_f) > 0
-            new_reach = (reach | step) & comp_padded
-            if th.equal(new_reach, reach):
-                break
-            reach = new_reach
-
-        reach_cur = reach[g_mol, local_idx]  # (n_cur, max_atoms)
-        mirror_ok = reach_cur.sum(-1) == complement_mask.sum(-1)
-
-        if mirror_ok.any():
-            mirror_mol = g_mol[mirror_ok]
-            mirror_packed = full_packed[mirror_mol] ^ g_packed[mirror_ok]
-            mirror_mask = complement_mask[mirror_ok]
-            mirror_u = th.gather(mirror_mask, 1, edge_u_pad[mirror_mol])
-            mirror_v = th.gather(mirror_mask, 1, edge_v_pad[mirror_mol])
-            mirror_valid = edge_valid_pad[mirror_mol]
-            # Complements share boundary bonds, but have different internal bonds.
-            padded_logits = canon_logit.new_zeros(edge_valid_pad.shape)
-            padded_logits[canon_bs, edge_local_idx] = canon_logit
-            mirror_logits = padded_logits[mirror_mol]
-            mirror_score = (
-                F.logsigmoid(mirror_logits) * ((mirror_u != mirror_v) & mirror_valid)
-                + F.logsigmoid(-mirror_logits) * (mirror_u & mirror_v & mirror_valid)
-            ).sum(-1)
-
-            merged_mol = th.cat([g_mol, mirror_mol])
-            merged_packed = th.cat([g_packed, mirror_packed], dim=0)
-            merged_score = th.cat([g_score, mirror_score])
-
-            merged_key = th.cat([merged_mol.unsqueeze(-1), merged_packed], dim=-1)
-            mg_key, mrep_idx = _unique_rows_lex(merged_key)
-            g_mol = mg_key[:, 0]
-            g_packed = mg_key[:, 1:]
-            g_score = merged_score[mrep_idx]
-
-    # 4. Reserve one slot for the intact precursor, then enforce the final fragment budget.
+    # 3. Reserve one slot for the intact precursor, then enforce the final fragment budget.
     rank = _group_rank(g_score, g_mol, num_mols)
     keep = rank < top_k - 1
     g_mol = th.cat([g_mol[keep], th.arange(num_mols, device=device)])

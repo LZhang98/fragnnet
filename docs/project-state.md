@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-16
+> **Status:** REFERENCE · **Updated:** 2026-09-17
 
 ## Current handoff
 
@@ -82,6 +82,12 @@ The connected-fragment option now aligns search and scoring with boundary-cut/in
 probabilities from the updated prototype; see the linked plan for changed checkpoint semantics.
 Three merged MA/MI configs (128/256/512 fragments and matching beams) and a generation-only
 Vulcan launcher with three-hour jobs are prepared in the linked plan.
+The [connected-fragment audit](plans/masshatter_fast_gnn_proposal.md#connected-fragment-audit-2026-09-17)
+found two selection issues now fixed in the working tree: stable beam ties remove padding
+dependence, and complements are scored before output-budget pruning. Permanent regressions
+and model/backend checks: 220 passed, 11 skipped; CUDA was unavailable. Small CPU search probes
+showed 25–40% extra candidate-construction time. Next: remeasure CUDA throughput, memory and
+coverage before comparative evaluation; earlier speed measurements predate these fixes.
 Next: matched coverage, throughput and accuracy comparison; no training run was launched.
 
 Unmerged MASShatter CMF anchor prepared (2026-09-16): the
