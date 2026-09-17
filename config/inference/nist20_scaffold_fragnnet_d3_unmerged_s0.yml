@@ -1,5 +1,5 @@
 # Inference data.
-spec_fp: data/proc/plastchem/debug_spec_df.pkl
+spec_fp: data/proc/plastchem/spec_df.pkl
 mol_fp: data/proc/plastchem/mol_df.pkl
 frag_dp: data/frag/plastchem_d3/dags
 
@@ -11,10 +11,13 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: True
-  nce: False
-  ace: True
+  merge: False
+  nce: True
   merge_keep_ces: True
+  inst_types:
+    - "FT"
+  prec_types:
+    - "[M+H]+"
   preprocess: True
 mol_params:
   preprocess: True
@@ -39,7 +42,7 @@ mlp_dropout: 0.2
 
 # loss stuff
 mask_null_formula: False
-predict_oos: True
+predict_oos: False
 oos_tolerance_multiple: 1
 sparse_cosine_similarity: True
 skip_extra_losses: True
@@ -50,14 +53,14 @@ eval_mz_bin_res:
 
 # inference stuff
 inference:
-  ckpt_dir: /mnt/data/luke_fragnnet_checkpoints/test_run
-  ckpt_epoch: 195
+  ckpt_dir: /mnt/data/luke_fragnnet_checkpoints/nist20_scaffold_fragnnet_d3_s0_unmerged_20260913
+  ckpt_epoch: best
   device: cuda:0
   batch_size: 32
   num_workers: 7
   split: predict_only
   batch_cutoff: 1000000
-  output_dp: data/inference/debug
+  output_dp: data/inference/fragnnet_d3_unmerged
   default_nce: 60.0
   include_input_data: True
   output_subset:
@@ -80,3 +83,5 @@ inference:
     - pred_nb_node_node_node_idxs
 #    - pred_nb_joint_node_node_idxs
     - pred_nb_joint_formula_idxs
+    
+

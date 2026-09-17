@@ -53,7 +53,8 @@ eval_mz_bin_res:
 
 # inference stuff
 inference:
-  ckpt_fp: /mnt/data/luke_fragnnet_checkpoints/test_run/model-epoch=195.ckpt
+  ckpt_dir: /mnt/data/luke_fragnnet_checkpoints/test_run
+  ckpt_epoch: 195
   device: cuda:0
   batch_size: 32
   num_workers: 7

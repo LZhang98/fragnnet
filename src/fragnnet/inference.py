@@ -81,6 +81,19 @@ def _prepare_inference_config(
 	return config_d
 
 
+def resolve_ckpt_fp(ckpt_dir: str, ckpt_epoch: str | int) -> str:
+	if ckpt_epoch == "best":
+		best_epoch_fp = os.path.join(ckpt_dir, "0_best_epoch.txt")
+		if not os.path.isfile(best_epoch_fp):
+			raise FileNotFoundError(best_epoch_fp)
+		with open(best_epoch_fp, "r") as best_epoch_file:
+			ckpt_file = best_epoch_file.read().strip()
+		return os.path.join(ckpt_dir, ckpt_file)
+	if isinstance(ckpt_epoch, int):
+		return os.path.join(ckpt_dir, f"model-epoch={ckpt_epoch:03d}.ckpt")
+	raise ValueError(f"Invalid ckpt_epoch={ckpt_epoch!r}; expected 'best' or an int epoch")
+
+
 class FraGNNetInference:
 	"""Reusable inference interface for FraGNNet checkpoints."""
 
@@ -189,7 +202,9 @@ class FraGNNetInference:
 			config = yaml.load(config_file, Loader=yaml.FullLoader) or {}
 		inference_config = config.pop("inference", {})
 		template_fp = inference_config.pop("template_fp", "config/template.yml")
-		ckpt_fp = inference_config.pop("ckpt_fp")
+		ckpt_dir = inference_config.pop("ckpt_dir")
+		ckpt_epoch = inference_config.pop("ckpt_epoch", "best")
+		ckpt_fp = resolve_ckpt_fp(ckpt_dir, ckpt_epoch)
 		config_d = load_config(template_fp, None)
 		config_d = deep_update(config_d, config)
 		return cls.from_checkpoint(

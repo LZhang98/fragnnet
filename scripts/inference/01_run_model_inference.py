@@ -9,7 +9,12 @@ import pandas as pd
 import torch as th
 import yaml
 
-from fragnnet.inference import FraGNNetInference
+from fragnnet.inference import FraGNNetInference, resolve_ckpt_fp
+from fragnnet.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES
+from fragnnet.utils.feat_utils import get_frag_graph
+from fragnnet.utils.frag_utils import get_node_feats, load_frag_d, th_long_to_mask
+
+MAX_INFERENCE_PRECURSOR_MZ = 1500.0		# TODO: feed in this value from config_d
 
 
 class _OOSWarningFilter:
@@ -58,7 +63,7 @@ def parse_args():
 	return parser.parse_args()
 
 
-def filter_invalid_molecules(spec_df, mol_df, frag_dp):
+def filter_invalid_molecules(spec_df, mol_df, frag_dp, frag_params):
 	error_rows = []
 	input_mol_ids = set(spec_df["mol_id"])
 	mol_df = mol_df.loc[mol_df["mol_id"].isin(input_mol_ids)].copy()
@@ -80,6 +85,17 @@ def filter_invalid_molecules(spec_df, mol_df, frag_dp):
 	mol_df = mol_df.loc[valid_mol_mask].copy()
 	spec_df = spec_df.loc[~spec_df["mol_id"].isin(no_bond_mol_ids)].copy()
 
+	too_large_mask = (
+		(mol_df["num_atoms"] > MAX_NUM_NODES)
+		| (mol_df["num_bonds"] > MAX_NUM_EDGES)
+	)
+	too_large_mol_ids = set(mol_df.loc[too_large_mask, "mol_id"])
+	add_errors(too_large_mol_ids, "molecule_exceeds_fragment_limits")
+	if too_large_mol_ids:
+		print(f">> Dropping {len(too_large_mol_ids)} molecules exceeding fragment limits")
+		mol_df = mol_df.loc[~too_large_mask].copy()
+		spec_df = spec_df.loc[~spec_df["mol_id"].isin(too_large_mol_ids)].copy()
+
 	dag_ids = {path.name.removesuffix(".pickle.bz2") for path in Path(frag_dp).glob("*.pickle.bz2")}
 	missing_dag_mask = ~mol_df["mol_id"].astype(str).isin(dag_ids)
 	missing_dag_mol_ids = set(mol_df.loc[missing_dag_mask, "mol_id"])
@@ -89,7 +105,72 @@ def filter_invalid_molecules(spec_df, mol_df, frag_dp):
 		mol_df = mol_df.loc[~missing_dag_mask].copy()
 		spec_df = spec_df.loc[~spec_df["mol_id"].isin(missing_dag_mol_ids)].copy()
 
+	invalid_frag_mol_ids = set()
+	for mol_id in mol_df["mol_id"]:
+		frag_entry = load_frag_d(mol_id, frag_dp, frag_params["compressed"])
+		frag_graph = get_frag_graph(
+			frag_entry["dag"],
+			frag_params["pyg_node_feats"],
+			frag_params["pyg_edge_feats"],
+			frag_params["pyg_edges"],
+			frag_params["pyg_bigraph"],
+		)
+		cc_mask = th_long_to_mask(
+			get_node_feats(frag_graph.x.long(), frag_graph.node_feat_idxs[0].long(), "cc")
+		)
+		selected_atoms = cc_mask.nonzero(as_tuple=False)
+		max_atom_idx = int(selected_atoms[:, 1].max()) if len(selected_atoms) else -1
+		if max_atom_idx >= mol_df.loc[mol_df["mol_id"] == mol_id, "num_atoms"].iloc[0]:
+			invalid_frag_mol_ids.add(mol_id)
+	add_errors(invalid_frag_mol_ids, "invalid_fragment_atom_indices")
+	if invalid_frag_mol_ids:
+		print(f">> Dropping {len(invalid_frag_mol_ids)} molecules with invalid fragment atom indices")
+		mol_df = mol_df.loc[~mol_df["mol_id"].isin(invalid_frag_mol_ids)].copy()
+		spec_df = spec_df.loc[~spec_df["mol_id"].isin(invalid_frag_mol_ids)].copy()
+
 	return spec_df, mol_df, error_rows
+
+
+def filter_unsupported_spectra(spec_df, spec_params):
+	error_rows = []
+	mask = pd.Series(True, index=spec_df.index)
+	for column, config_key in (("inst_type", "inst_types"), ("prec_type", "prec_types")):
+		allowed_values = spec_params.get(config_key)
+		if allowed_values is None or column not in spec_df.columns:
+			continue
+		unsupported_mask = ~spec_df[column].isin(allowed_values)
+		if unsupported_mask.any():
+			mask &= ~unsupported_mask
+			for mol_id, count in spec_df.loc[unsupported_mask].groupby("mol_id").size().items():
+				error_rows.append({
+					"mol_id": mol_id,
+					"reason": f"unsupported_{column}",
+					"num_spectra": int(count),
+				})
+	filtered_spec_df = spec_df.loc[mask].copy()
+	if len(filtered_spec_df) != len(spec_df):
+		print(f">> Dropping {len(spec_df) - len(filtered_spec_df)} spectra outside model configuration")
+	return filtered_spec_df, error_rows
+
+
+def filter_precursor_mz(spec_df, max_precursor_mz=MAX_INFERENCE_PRECURSOR_MZ):
+	too_large_mask = spec_df["prec_mz"] >= max_precursor_mz
+	if not too_large_mask.any():
+		return spec_df, []
+	error_rows = [
+		{
+			"mol_id": mol_id,
+			"reason": "precursor_mz_at_or_above_limit",
+			"num_spectra": int(count),
+		}
+		for mol_id, count in spec_df.loc[too_large_mask].groupby("mol_id").size().items()
+	]
+	filtered_spec_df = spec_df.loc[~too_large_mask].copy()
+	print(
+		f">> Dropping {int(too_large_mask.sum())} spectra with "
+		f"precursor m/z >= {max_precursor_mz}"
+	)
+	return filtered_spec_df, error_rows
 
 
 def fill_missing_nce(spec_df, default_nce):
@@ -164,27 +245,64 @@ def build_input_metadata(spec_df):
 	return metadata.reset_index(drop=True)
 
 
+def build_prediction_dataframe(vals):
+	input_spec = vals["input_spec"].reset_index(drop=True).copy()
+	pred_batch_idxs = vals["pred_batch_idxs"].detach().cpu().numpy()
+	pred_mzs = vals["pred_mzs"].detach().cpu().numpy()
+	pred_ints = th.exp(vals["pred_logprobs"]).detach().cpu().numpy()
+	num_batches = int(pred_batch_idxs.max()) + 1 if len(pred_batch_idxs) else 0
+
+	if len(input_spec) != num_batches:
+		if "group_id" not in input_spec.columns or input_spec["group_id"].nunique() != num_batches:
+			raise ValueError(
+				f"Cannot align {num_batches} predicted spectra with {len(input_spec)} input rows"
+			)
+		input_spec = input_spec.groupby("group_id", sort=False, as_index=False).first()
+
+	input_spec = input_spec.rename(columns={"peaks": "input_peaks"})
+	prediction_rows = []
+	for batch_idx in range(num_batches):
+		batch_mask = pred_batch_idxs == batch_idx
+		prediction_rows.append({
+			"pred_mzs": pred_mzs[batch_mask].tolist(),
+			"pred_ints": pred_ints[batch_mask].tolist(),
+		})
+	prediction_df = pd.DataFrame(prediction_rows)
+	return pd.concat([input_spec.reset_index(drop=True), prediction_df], axis=1)
+
+
 def main():
 	args = parse_args()
 	with open(args.config_fp, "r") as config_file:
 		config = yaml.load(config_file, Loader=yaml.FullLoader) or {}
 
 	inference_config = config.get("inference", {})
+	output_dp = inference_config["output_dp"]
+	os.makedirs(output_dp, exist_ok=True)
 	split = inference_config.get("split", "predict_only")
 	if split != "predict_only":
 		raise ValueError("run_model_inference.py currently requires inference.split='predict_only'.")
 
-	print(f">> Loading model from {inference_config['ckpt_fp']}")
+	ckpt_fp = resolve_ckpt_fp(
+		inference_config["ckpt_dir"],
+		inference_config.get("ckpt_epoch", "best"),
+	)
+	print(f">> Loading model from {ckpt_fp}")
 	engine = FraGNNetInference.from_config(args.config_fp)
 
 	print(f">> Loading spectra from {config['spec_fp']}")
 	spec_df = pd.read_pickle(config["spec_fp"])
 	print(f">> Loading molecules from {config['mol_fp']}")
 	mol_df = pd.read_pickle(config["mol_fp"])
+	spec_df, spectrum_errors = filter_unsupported_spectra(spec_df, engine.config_d["spec_params"])
+	spec_df, precursor_errors = filter_precursor_mz(spec_df)
 	frag_dp = config.get("frag_dp")
 	if frag_dp is None:
 		raise ValueError("frag_dp is required for FraGNNet inference.")
-	spec_df, mol_df, error_rows = filter_invalid_molecules(spec_df, mol_df, frag_dp)
+	spec_df, mol_df, error_rows = filter_invalid_molecules(
+		spec_df, mol_df, frag_dp, engine.config_d["frag_params"])
+	error_rows.extend(spectrum_errors)
+	error_rows.extend(precursor_errors)
 	spec_df, nce_error_rows = fill_missing_nce(
 		spec_df,
 		default_nce=inference_config.get("default_nce", config.get("ce_mean", 60.0)),
@@ -192,7 +310,9 @@ def main():
 	error_rows.extend(nce_error_rows)
 	spec_df, peak_error_rows = fill_empty_peaks(spec_df)
 	error_rows.extend(peak_error_rows)
-	write_error_log(inference_config["error_log_fp"], error_rows)
+	error_log_name = "errors.csv"
+	error_log_fp = os.path.join(output_dp, error_log_name)
+	write_error_log(error_log_fp, error_rows)
 
 	output_subset = inference_config.get("output_subset")
 	if output_subset is not None:
@@ -213,10 +333,13 @@ def main():
 		vals["input_mol"] = mol_df.reset_index(drop=True)
 		vals["input_metadata"] = build_input_metadata(spec_df)
 
-	output_fp = inference_config["output_fp"]
-	os.makedirs(os.path.dirname(output_fp) or ".", exist_ok=True)
-	pd.to_pickle(vals, output_fp)
-	print(f">> Saved predictions to {output_fp}")
+	pred_output_fp = os.path.join(output_dp, "pred_output.pkl")
+	predictions_fp = os.path.join(output_dp, "predictions.parquet")
+	pd.to_pickle(vals, pred_output_fp)
+	predictions_df = build_prediction_dataframe(vals)
+	predictions_df.to_parquet(predictions_fp, index=False)
+	print(f">> Saved prediction dictionary to {pred_output_fp}")
+	print(f">> Saved prediction dataframe to {predictions_fp}")
 
 
 if __name__ == "__main__":
