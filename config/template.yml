@@ -226,8 +226,8 @@ mass_shatter_unique_fragment_mode: False
 mass_shatter_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
 mass_shatter_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
 mass_shatter_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; must be >= the target.
-mass_shatter_mask_selection_threads: 4  # CPU threads for cut-mask selection; the kernel
-  # drops the GIL, so >1 is real parallelism and leaves selected masks unchanged. Best near
+mass_shatter_mask_selection_threads: 4  # CPU threads shared by mask selection and topology/assembly.
+  # Numeric kernels drop the GIL; >1 preserves exact candidates. Best near
   # the physical core count, minus what num_workers already uses. 1 disables threading.
 mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
 mass_shatter_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.

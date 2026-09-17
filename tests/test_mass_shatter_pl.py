@@ -521,8 +521,7 @@ def _loss_diagnostics() -> dict[str, th.Tensor]:
         "mask_cut_fraction_4plus": th.tensor([0.0]),
         "candidate_input_transfer_batch_ms": th.tensor([1.0]),
         "candidate_mask_selection_batch_ms": th.tensor([2.0]),
-        "candidate_topology_batch_ms": th.tensor([3.0]),
-        "candidate_assembly_batch_ms": th.tensor([4.0]),
+        "candidate_topology_assembly_batch_ms": th.tensor([7.0]),
         "candidate_output_transfer_batch_ms": th.tensor([5.0]),
         "candidate_total_batch_ms": th.tensor([15.0]),
         "candidate_total_molecule_ms": th.tensor([15.0]),
@@ -1395,6 +1394,53 @@ def test_requested_channel_diagnostics_are_computed_during_training() -> None:
     assert actual["required_ion_h_top_k_99_p90"].tolist() == pytest.approx([1.0])
 
 
+@pytest.mark.parametrize("channels,base_ce", [(False, True), (True, False), (False, False)])
+def test_monitoring_switches_preserve_training_loss_and_gradients(
+    channels: bool, base_ce: bool
+) -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_channel_diagnostics=True,
+        mass_shatter_log_base_ce=True,
+    )
+    results = []
+    for enable_channels, enable_base_ce in [(True, True), (channels, base_ce)]:
+        model.hparams.mass_shatter_channel_diagnostics = enable_channels
+        model.hparams.mass_shatter_log_base_ce = enable_base_ce
+        model._setup_loss_fn()
+        logits = th.tensor([0.8, 0.2], requires_grad=True)
+        proposal_logits = th.tensor([0.6, 0.4], requires_grad=True)
+        actual = model.loss_fn(
+            true_mzs=th.tensor([100.0]),
+            true_logprobs=th.tensor([0.0]),
+            true_batch_idxs=th.tensor([0]),
+            pred_mzs=th.tensor([100.0, 200.0]),
+            pred_logprobs=logits.log_softmax(0),
+            pred_batch_idxs=th.tensor([0, 0]),
+            base_pred_logprobs=proposal_logits.log_softmax(0),
+            candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+            candidate_batch_idxs_by_cut=th.tensor([0, 0]),
+            proposal_candidate_mzs=th.tensor([100.0, 200.0]),
+            proposal_candidate_fragment_idxs=th.tensor([0, 1]),
+            proposal_fragment_logprobs=proposal_logits.log_softmax(0),
+            proposal_fragment_batch_idxs=th.tensor([0, 0]),
+            ion_h_dense_mzs=th.tensor([[[100.0]], [[200.0]]]),
+            ion_h_dense_log_weights=th.log(th.tensor([[[0.6]], [[0.4]]])),
+            ion_h_chemical_valid_channels=th.ones(2, 1, 1, dtype=th.bool),
+            ion_h_support_logits=th.zeros(2, 1, 1),
+            ion_h_fragment_batch_idxs=th.tensor([0, 0]),
+            batch_size=1,
+            **_loss_diagnostics(),
+        )
+        actual["loss"].sum().backward()
+        results.append((actual["loss"].detach(), logits.grad, proposal_logits.grad))
+    for baseline, reduced in zip(results[0], results[1], strict=True):
+        th.testing.assert_close(baseline, reduced, rtol=0, atol=0)
+
+
 def test_selection_only_loss_uses_barcode_proposal_target() -> None:
     model, _ = _build_pl(
         mass_shatter_unique_fragment_mode=True,
@@ -1803,8 +1849,7 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
         mask_cut_fraction_4plus=th.tensor([0.0]),
         candidate_input_transfer_batch_ms=th.tensor([1.0]),
         candidate_mask_selection_batch_ms=th.tensor([2.0]),
-        candidate_topology_batch_ms=th.tensor([3.0]),
-        candidate_assembly_batch_ms=th.tensor([4.0]),
+        candidate_topology_assembly_batch_ms=th.tensor([7.0]),
         candidate_output_transfer_batch_ms=th.tensor([5.0]),
         candidate_total_batch_ms=th.tensor([15.0]),
         candidate_total_molecule_ms=th.tensor([15.0]),

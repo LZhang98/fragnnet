@@ -2619,8 +2619,7 @@ class MassShatterModel(nn.Module):
         candidate_timing_values = {
             "candidate_input_transfer_batch_ms": candidates.timings.input_transfer_ms,
             "candidate_mask_selection_batch_ms": candidates.timings.mask_selection_ms,
-            "candidate_topology_batch_ms": candidates.timings.topology_ms,
-            "candidate_assembly_batch_ms": candidates.timings.assembly_ms,
+            "candidate_topology_assembly_batch_ms": candidates.timings.topology_assembly_ms,
             "candidate_output_transfer_batch_ms": candidates.timings.output_transfer_ms,
             "candidate_total_batch_ms": candidates.timings.total_ms,
             "candidate_total_molecule_ms": candidates.timings.total_ms / batch_size,

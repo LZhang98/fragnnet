@@ -19,8 +19,6 @@ Shared vocabulary:
     MAP mask: the most probable cut mask, i.e. every bond with a positive logit.
 """
 
-from time import perf_counter
-
 import numpy as np
 
 cimport numpy as cnp
@@ -504,8 +502,10 @@ def build_component_arrays_raw(
 
     Components retain the legacy arbitrary-width-integer ordering. Because the
     components of one mask are disjoint, ascending integer bitmask order is
-    exactly ascending maximum-member-atom order. Cut masks may be the legacy
-    list of index tuples or a numeric ``(mask_ptr, broken_bonds)`` CSR tuple.
+    exactly ascending maximum-member-atom order. Cut masks use the numeric
+    ``(mask_ptr, broken_bonds)`` CSR representation. Validation and allocation
+    hold the GIL; numeric topology and assembly release it for independent
+    molecule workers. The returned arrays and counters contain no timing data.
     """
     cdef cnp.ndarray[cnp.int64_t, ndim=2] endpoints_array
     cdef cnp.int64_t[:, ::1] endpoints
@@ -566,10 +566,7 @@ def build_component_arrays_raw(
     cdef uint64_t* signatures = NULL
     cdef uint64_t signature_hash
     cdef bint signatures_equal
-    cdef object broken_bond_set, bond_value
-    cdef double topology_start, topology_ms, assembly_start, assembly_ms
 
-    topology_start = perf_counter()
     if num_atoms <= 0:
         raise ValueError(f"num_atoms must be positive, got {num_atoms}")
     if max_unique_components is not None:
@@ -594,64 +591,38 @@ def build_component_arrays_raw(
         if left < 0 or right < 0 or left >= num_atoms or right >= num_atoms:
             raise ValueError("bond_endpoints contains an atom index outside [0, num_atoms)")
 
-    if isinstance(broken_bond_sets, tuple):
-        if len(broken_bond_sets) != 2:
-            raise ValueError("CSR cut masks must be a (mask_ptr, broken_bonds) tuple")
-        mask_ptr_array = np.ascontiguousarray(broken_bond_sets[0], dtype=np.int64)
-        local_broken_array = np.ascontiguousarray(
-            broken_bond_sets[1],
-            dtype=np.int64,
-        )
-        if mask_ptr_array.ndim != 1 or local_broken_array.ndim != 1:
-            raise ValueError("CSR mask_ptr and broken_bonds must be one-dimensional")
-        mask_ptr = mask_ptr_array
-        local_broken = local_broken_array
-        if mask_ptr.shape[0] == 0 or mask_ptr[0] != 0:
-            raise ValueError("CSR mask_ptr must start at zero")
-        num_masks = mask_ptr.shape[0] - 1
-        if num_masks <= 0:
-            raise ValueError("broken_bond_sets must contain at least one mask")
-        total_broken = local_broken.shape[0]
-        for mask in range(num_masks):
-            if mask_ptr[mask + 1] < mask_ptr[mask]:
-                raise ValueError("CSR mask_ptr must be monotonically nondecreasing")
-        if mask_ptr[num_masks] != total_broken:
-            raise ValueError("CSR mask_ptr must end at the broken_bonds length")
-        for item in range(total_broken):
-            bond = local_broken[item]
-            if bond < 0 or bond >= num_bonds:
-                raise ValueError("broken_bond_indices contains an invalid bond index")
-        cut_counts_array = np.empty(num_masks, dtype=np.int64)
-        cut_counts = cut_counts_array
-        for mask in range(num_masks):
-            cut_counts[mask] = mask_ptr[mask + 1] - mask_ptr[mask]
-    elif isinstance(broken_bond_sets, list):
-        num_masks = len(broken_bond_sets)
-        if num_masks <= 0:
-            raise ValueError("broken_bond_sets must contain at least one mask")
-        total_broken = 0
-        for broken_bond_set in broken_bond_sets:
-            total_broken += len(broken_bond_set)
-        mask_ptr_array = np.empty(num_masks + 1, dtype=np.int64)
-        cut_counts_array = np.empty(num_masks, dtype=np.int64)
-        local_broken_array = np.empty(total_broken, dtype=np.int64)
-        mask_ptr = mask_ptr_array
-        cut_counts = cut_counts_array
-        local_broken = local_broken_array
-        cursor = 0
-        mask_ptr[0] = 0
-        for mask in range(num_masks):
-            broken_bond_set = broken_bond_sets[mask]
-            cut_counts[mask] = len(broken_bond_set)
-            for bond_value in broken_bond_set:
-                bond = int(bond_value)
-                if bond < 0 or bond >= num_bonds:
-                    raise ValueError("broken_bond_indices contains an invalid bond index")
-                local_broken[cursor] = bond
-                cursor += 1
-            mask_ptr[mask + 1] = cursor
-    else:
-        raise TypeError("broken_bond_sets must be a list or CSR tuple")
+    if not isinstance(broken_bond_sets, tuple):
+        raise TypeError("broken_bond_sets must be a CSR (mask_ptr, broken_bonds) tuple")
+    if len(broken_bond_sets) != 2:
+        raise ValueError("CSR cut masks must be a (mask_ptr, broken_bonds) tuple")
+    mask_ptr_array = np.ascontiguousarray(broken_bond_sets[0], dtype=np.int64)
+    local_broken_array = np.ascontiguousarray(
+        broken_bond_sets[1],
+        dtype=np.int64,
+    )
+    if mask_ptr_array.ndim != 1 or local_broken_array.ndim != 1:
+        raise ValueError("CSR mask_ptr and broken_bonds must be one-dimensional")
+    mask_ptr = mask_ptr_array
+    local_broken = local_broken_array
+    if mask_ptr.shape[0] == 0 or mask_ptr[0] != 0:
+        raise ValueError("CSR mask_ptr must start at zero")
+    num_masks = mask_ptr.shape[0] - 1
+    if num_masks <= 0:
+        raise ValueError("broken_bond_sets must contain at least one mask")
+    total_broken = local_broken.shape[0]
+    for mask in range(num_masks):
+        if mask_ptr[mask + 1] < mask_ptr[mask]:
+            raise ValueError("CSR mask_ptr must be monotonically nondecreasing")
+    if mask_ptr[num_masks] != total_broken:
+        raise ValueError("CSR mask_ptr must end at the broken_bonds length")
+    for item in range(total_broken):
+        bond = local_broken[item]
+        if bond < 0 or bond >= num_bonds:
+            raise ValueError("broken_bond_indices contains an invalid bond index")
+    cut_counts_array = np.empty(num_masks, dtype=np.int64)
+    cut_counts = cut_counts_array
+    for mask in range(num_masks):
+        cut_counts[mask] = mask_ptr[mask + 1] - mask_ptr[mask]
 
     if forced_mask_count < 0 or forced_mask_count > num_masks:
         raise ValueError(
@@ -721,115 +692,113 @@ def build_component_arrays_raw(
     unique_component_count = 0
     component_offsets[0] = 0
     try:
-        for mask in range(num_masks):
-            for atom in range(num_atoms):
-                parents[atom] = atom
-            memset(component_max, 0xff, num_atoms * sizeof(Py_ssize_t))
-            memset(root_by_max, 0xff, num_atoms * sizeof(Py_ssize_t))
-            for item in range(mask_ptr[mask], mask_ptr[mask + 1]):
-                broken_epoch[local_broken[item]] = mask
+        with nogil:
+            for mask in range(num_masks):
+                for atom in range(num_atoms):
+                    parents[atom] = atom
+                memset(component_max, 0xff, num_atoms * sizeof(Py_ssize_t))
+                memset(root_by_max, 0xff, num_atoms * sizeof(Py_ssize_t))
+                for item in range(mask_ptr[mask], mask_ptr[mask + 1]):
+                    broken_epoch[local_broken[item]] = mask
 
-            for bond in range(num_bonds):
-                if broken_epoch[bond] == mask:
-                    continue
-                left_root = _find_root(parents, endpoints[bond, 0])
-                right_root = _find_root(parents, endpoints[bond, 1])
-                if left_root != right_root:
-                    parents[right_root] = left_root
+                for bond in range(num_bonds):
+                    if broken_epoch[bond] == mask:
+                        continue
+                    left_root = _find_root(parents, endpoints[bond, 0])
+                    right_root = _find_root(parents, endpoints[bond, 1])
+                    if left_root != right_root:
+                        parents[right_root] = left_root
 
-            for atom in range(num_atoms):
-                root = _find_root(parents, atom)
-                atom_roots[atom] = root
-                component_max[root] = atom
-            for root in range(num_atoms):
-                if component_max[root] >= 0:
-                    root_by_max[component_max[root]] = root
-            component_count = 0
-            for atom in range(num_atoms):
-                root = root_by_max[atom]
-                if root >= 0:
-                    root_to_component[root] = component_cursor + component_count
-                    component_sizes[component_cursor + component_count] = 0
-                    component_count += 1
-            for atom in range(num_atoms):
-                component = root_to_component[atom_roots[atom]]
-                labels[mask * num_atoms + atom] = component
-                component_sizes[component] += 1
-                signatures[component * words + atom // 64] |= 1ULL << (atom % 64)
+                for atom in range(num_atoms):
+                    root = _find_root(parents, atom)
+                    atom_roots[atom] = root
+                    component_max[root] = atom
+                for root in range(num_atoms):
+                    if component_max[root] >= 0:
+                        root_by_max[component_max[root]] = root
+                component_count = 0
+                for atom in range(num_atoms):
+                    root = root_by_max[atom]
+                    if root >= 0:
+                        root_to_component[root] = component_cursor + component_count
+                        component_sizes[component_cursor + component_count] = 0
+                        component_count += 1
+                for atom in range(num_atoms):
+                    component = root_to_component[atom_roots[atom]]
+                    labels[mask * num_atoms + atom] = component
+                    component_sizes[component] += 1
+                    signatures[component * words + atom // 64] |= 1ULL << (atom % 64)
 
-            # Deduplicate immediately so an unreachable suffix can skip both
-            # connectivity and all local-array materialization. Unique indices
-            # remain ordered by the first component occurrence.
-            for component in range(
-                component_cursor,
-                component_cursor + component_count,
-            ):
-                signature_hash = 1469598103934665603ULL
-                for word in range(words):
-                    signature_hash ^= signatures[component * words + word]
-                    signature_hash *= 1099511628211ULL
-                slot = <Py_ssize_t>(signature_hash & (table_size - 1))
-                while hash_slots[slot] >= 0:
-                    existing_component = hash_slots[slot]
-                    signatures_equal = True
+                # Deduplicate immediately so an unreachable suffix can skip both
+                # connectivity and all local-array materialization. Unique indices
+                # remain ordered by the first component occurrence.
+                for component in range(
+                    component_cursor,
+                    component_cursor + component_count,
+                ):
+                    signature_hash = 1469598103934665603ULL
                     for word in range(words):
-                        if (
-                            signatures[existing_component * words + word]
-                            != signatures[component * words + word]
-                        ):
-                            signatures_equal = False
+                        signature_hash ^= signatures[component * words + word]
+                        signature_hash *= 1099511628211ULL
+                    slot = <Py_ssize_t>(signature_hash & (table_size - 1))
+                    while hash_slots[slot] >= 0:
+                        existing_component = hash_slots[slot]
+                        signatures_equal = True
+                        for word in range(words):
+                            if (
+                                signatures[existing_component * words + word]
+                                != signatures[component * words + word]
+                            ):
+                                signatures_equal = False
+                                break
+                        if signatures_equal:
                             break
-                    if signatures_equal:
+                        slot = (slot + 1) & (table_size - 1)
+                    if hash_slots[slot] < 0:
+                        hash_slots[slot] = component
+                        component_unique_indices[component] = unique_component_count
+                        unique_representative_components[unique_component_count] = component
+                        unique_component_count += 1
+                    else:
+                        component_unique_indices[component] = component_unique_indices[
+                            existing_component
+                        ]
+
+                component_cursor += component_count
+                component_offsets[mask + 1] = component_cursor
+                processed_mask_count = mask + 1
+                if unique_target > 0:
+                    if (
+                        target_prefix_mask_count == 0
+                        and unique_component_count >= unique_target
+                    ):
+                        target_prefix_mask_count = processed_mask_count
+                    # Reaching the target is insufficient: the legacy path only
+                    # truncates if a later component overshoots it. Once that is
+                    # proven, finish the forced prefix and stop scanning.
+                    if (
+                        unique_component_count > unique_target
+                        and processed_mask_count >= forced_mask_count
+                    ):
                         break
-                    slot = (slot + 1) & (table_size - 1)
-                if hash_slots[slot] < 0:
-                    hash_slots[slot] = component
-                    component_unique_indices[component] = unique_component_count
-                    unique_representative_components[unique_component_count] = component
-                    unique_component_count += 1
-                else:
-                    component_unique_indices[component] = component_unique_indices[
-                        existing_component
-                    ]
 
-            component_cursor += component_count
-            component_offsets[mask + 1] = component_cursor
-            processed_mask_count = mask + 1
-            if unique_target > 0:
-                if (
-                    target_prefix_mask_count == 0
-                    and unique_component_count >= unique_target
-                ):
-                    target_prefix_mask_count = processed_mask_count
-                # Reaching the target is insufficient: the legacy path only
-                # truncates if a later component overshoots it. Once that is
-                # proven, finish the forced prefix and stop scanning.
-                if (
-                    unique_component_count > unique_target
-                    and processed_mask_count >= forced_mask_count
-                ):
-                    break
-
-        retained_mask_count = processed_mask_count
-        if unique_target > 0 and unique_component_count > unique_target:
-            retained_mask_count = max(
-                target_prefix_mask_count,
-                forced_mask_count,
-            )
-        retained_component_count = component_offsets[retained_mask_count]
-        retained_broken_count = mask_ptr[retained_mask_count]
-        retained_unique_count = 0
-        while (
-            retained_unique_count < unique_component_count
-            and unique_representative_components[retained_unique_count]
-            < retained_component_count
-        ):
-            retained_unique_count += 1
-        component_cursor = retained_component_count
-        unique_component_count = retained_unique_count
-        topology_ms = (perf_counter() - topology_start) * 1000.0
-
-        assembly_start = perf_counter()
+            retained_mask_count = processed_mask_count
+            if unique_target > 0 and unique_component_count > unique_target:
+                retained_mask_count = max(
+                    target_prefix_mask_count,
+                    forced_mask_count,
+                )
+            retained_component_count = component_offsets[retained_mask_count]
+            retained_broken_count = mask_ptr[retained_mask_count]
+            retained_unique_count = 0
+            while (
+                retained_unique_count < unique_component_count
+                and unique_representative_components[retained_unique_count]
+                < retained_component_count
+            ):
+                retained_unique_count += 1
+            component_cursor = retained_component_count
+            unique_component_count = retained_unique_count
         membership_offsets = <Py_ssize_t*>malloc(
             (component_cursor + 1) * sizeof(Py_ssize_t)
         )
@@ -865,49 +834,50 @@ def build_component_arrays_raw(
         boundary_bond_indices = boundary_bond_indices_array
         boundary_component_indices = boundary_component_indices_array
 
-        membership_offsets[0] = 0
-        for component in range(component_cursor):
-            membership_offsets[component + 1] = (
-                membership_offsets[component] + component_sizes[component]
-            )
-            membership_cursors[component] = membership_offsets[component]
+        with nogil:
+            membership_offsets[0] = 0
+            for component in range(component_cursor):
+                membership_offsets[component + 1] = (
+                    membership_offsets[component] + component_sizes[component]
+                )
+                membership_cursors[component] = membership_offsets[component]
         if membership_offsets[component_cursor] != retained_mask_count * num_atoms:
             raise ValueError("component labels do not partition every atom exactly once")
 
-        for mask in range(retained_mask_count):
-            for component in range(component_offsets[mask], component_offsets[mask + 1]):
-                component_mask_indices[component] = mask_offset + mask
-                component_cut_counts[component] = cut_counts[mask]
-            for atom in range(num_atoms):
-                component = labels[mask * num_atoms + atom]
-                membership_cursor = membership_cursors[component]
-                atom_indices[membership_cursor] = atom_offset + atom
-                atom_component_indices[membership_cursor] = component_offset + component
-                membership_cursors[component] += 1
+        with nogil:
+            for mask in range(retained_mask_count):
+                for component in range(component_offsets[mask], component_offsets[mask + 1]):
+                    component_mask_indices[component] = mask_offset + mask
+                    component_cut_counts[component] = cut_counts[mask]
+                for atom in range(num_atoms):
+                    component = labels[mask * num_atoms + atom]
+                    membership_cursor = membership_cursors[component]
+                    atom_indices[membership_cursor] = atom_offset + atom
+                    atom_component_indices[membership_cursor] = component_offset + component
+                    membership_cursors[component] += 1
 
-        cursor = 0
-        boundary_cursor = 0
-        for mask in range(retained_mask_count):
-            for item in range(mask_ptr[mask], mask_ptr[mask + 1]):
-                bond = local_broken[item]
-                mask_indices[cursor] = mask_offset + mask
-                broken_bond_indices[cursor] = global_bonds[bond]
-                cursor += 1
-                left_component = labels[mask * num_atoms + endpoints[bond, 0]]
-                right_component = labels[mask * num_atoms + endpoints[bond, 1]]
-                if left_component == right_component:
-                    continue
-                boundary_bond_indices[boundary_cursor] = global_bonds[bond]
-                boundary_component_indices[boundary_cursor] = (
-                    component_offset + left_component
-                )
-                boundary_cursor += 1
-                boundary_bond_indices[boundary_cursor] = global_bonds[bond]
-                boundary_component_indices[boundary_cursor] = (
-                    component_offset + right_component
-                )
-                boundary_cursor += 1
-        assembly_ms = (perf_counter() - assembly_start) * 1000.0
+            cursor = 0
+            boundary_cursor = 0
+            for mask in range(retained_mask_count):
+                for item in range(mask_ptr[mask], mask_ptr[mask + 1]):
+                    bond = local_broken[item]
+                    mask_indices[cursor] = mask_offset + mask
+                    broken_bond_indices[cursor] = global_bonds[bond]
+                    cursor += 1
+                    left_component = labels[mask * num_atoms + endpoints[bond, 0]]
+                    right_component = labels[mask * num_atoms + endpoints[bond, 1]]
+                    if left_component == right_component:
+                        continue
+                    boundary_bond_indices[boundary_cursor] = global_bonds[bond]
+                    boundary_component_indices[boundary_cursor] = (
+                        component_offset + left_component
+                    )
+                    boundary_cursor += 1
+                    boundary_bond_indices[boundary_cursor] = global_bonds[bond]
+                    boundary_component_indices[boundary_cursor] = (
+                        component_offset + right_component
+                    )
+                    boundary_cursor += 1
     finally:
         free(parents)
         free(broken_epoch)
@@ -935,8 +905,6 @@ def build_component_arrays_raw(
         boundary_component_indices_array[:boundary_cursor],
         component_cursor,
         unique_component_count,
-        topology_ms,
-        assembly_ms,
         component_unique_indices_array[:component_cursor],
         unique_representative_components_array[:unique_component_count],
         processed_mask_count,
@@ -1666,19 +1634,25 @@ def top_mixture_bond_sets_raw(
     cdef cnp.int64_t[::1] mask_ptr = mask_ptr_array
     cursor = 0
     mask_ptr[0] = 0
-    for index in range(selected_count):
-        for bond in range(num_bonds):
-            if pool_words[unique[index] * word_count + bond // 64] & ((<uint64_t>1) << (bond % 64)):
-                cursor += 1
-        mask_ptr[index + 1] = cursor
+    with nogil:
+        for index in range(selected_count):
+            for bond in range(num_bonds):
+                if pool_words[unique[index] * word_count + bond // 64] & (
+                    (<uint64_t>1) << (bond % 64)
+                ):
+                    cursor += 1
+            mask_ptr[index + 1] = cursor
     broken_bonds_array = np.empty(cursor, dtype=np.int64)
     cdef cnp.int64_t[::1] broken_bonds = broken_bonds_array
     cursor = 0
-    for index in range(selected_count):
-        for bond in range(num_bonds):
-            if pool_words[unique[index] * word_count + bond // 64] & ((<uint64_t>1) << (bond % 64)):
-                broken_bonds[cursor] = bond
-                cursor += 1
+    with nogil:
+        for index in range(selected_count):
+            for bond in range(num_bonds):
+                if pool_words[unique[index] * word_count + bond // 64] & (
+                    (<uint64_t>1) << (bond % 64)
+                ):
+                    broken_bonds[cursor] = bond
+                    cursor += 1
 
     free(pool_words); free(scratch_map_words); free(mixture_logits)
     free(scratch_costs); free(scratch_bonds); free(node_penalties)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
@@ -128,7 +129,7 @@ def _assert_matches_legacy(
     actual = build_component_arrays_raw(
         num_atoms,
         bond_endpoints,
-        broken_bond_sets,
+        _mask_csr(broken_bond_sets),
         global_bond_indices,
         atom_offset,
         mask_offset,
@@ -141,8 +142,6 @@ def _assert_matches_legacy(
         assert actual_array.dtype == np.int64
     assert actual[9] == expected_component_count
     assert actual[10] == expected_unique_count
-    assert actual[11] >= 0.0
-    assert actual[12] >= 0.0
     return actual_arrays
 
 
@@ -173,8 +172,8 @@ def _full_build_then_slice(
     arrays = tuple(np.asarray(value) for value in full[:9])
     component_count = int(full[9])
     unique_count = int(full[10])
-    component_unique_indices = np.asarray(full[13])
-    representatives = np.asarray(full[14])
+    component_unique_indices = np.asarray(full[11])
+    representatives = np.asarray(full[12])
     if unique_count <= target:
         return (*arrays, component_unique_indices, representatives), component_count, unique_count
 
@@ -249,12 +248,12 @@ def _assert_early_build_matches_full_slice(
         target,
         forced_mask_count,
     )
-    actual_arrays = (*actual[:9], actual[13], actual[14])
+    actual_arrays = (*actual[:9], actual[11], actual[12])
     for actual_array, expected_array in zip(actual_arrays, expected, strict=True):
         np.testing.assert_array_equal(actual_array, expected_array)
     assert actual[9] == expected_component_count
     assert actual[10] == expected_unique_count
-    assert 1 <= actual[15] <= len(broken_bond_sets)
+    assert 1 <= actual[13] <= len(broken_bond_sets)
     return actual
 
 
@@ -286,6 +285,47 @@ def test_fused_component_arrays_match_legacy_on_random_multigraphs(seed: int) ->
         mask_offset=23,
         component_offset=31,
     )
+
+
+def test_concurrent_component_arrays_preserve_shared_inputs_and_independent_offsets() -> None:
+    """Workers sharing immutable CSR inputs must keep their scratch buffers private."""
+    num_atoms = 71
+    endpoints = np.asarray(
+        [(atom, atom + 1) for atom in range(num_atoms - 1)] + [(0, num_atoms - 1)],
+        dtype=np.int64,
+    )
+    masks = [(), (0,), (0, 69), (0, 69, 70), (63, 64, 70)] * 8
+    mask_csr = _mask_csr(masks)
+    original_csr = tuple(array.copy() for array in mask_csr)
+    global_bonds = np.arange(endpoints.shape[0], dtype=np.int64) * 3 + 17
+
+    def construct(offset: int) -> tuple[object, ...]:
+        return build_component_arrays_raw(
+            num_atoms, endpoints, mask_csr, global_bonds, offset, offset * 2, offset * 3
+        )
+
+    offsets = list(range(0, 800, 100))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(construct, offsets))
+
+    for result, offset in zip(results, offsets, strict=True):
+        expected, component_count, unique_count = _legacy_component_arrays(
+            num_atoms,
+            endpoints,
+            masks,
+            global_bonds,
+            atom_offset=offset,
+            mask_offset=offset * 2,
+            component_offset=offset * 3,
+        )
+        for actual, reference in zip(result[:9], expected, strict=True):
+            np.testing.assert_array_equal(actual, reference)
+        assert result[9:11] == (component_count, unique_count)
+        np.testing.assert_array_equal(result[11], results[0][11])
+        np.testing.assert_array_equal(result[12], results[0][12])
+        assert result[13] == len(masks)
+    for actual, original in zip(mask_csr, original_csr, strict=True):
+        np.testing.assert_array_equal(actual, original)
 
 
 def test_fused_component_arrays_preserve_redundant_cut_boundary_order() -> None:
@@ -344,7 +384,7 @@ def test_fused_component_arrays_count_multiword_components_exactly() -> None:
     actual = build_component_arrays_raw(
         num_atoms,
         bond_endpoints,
-        broken_bond_sets,
+        _mask_csr(broken_bond_sets),
         np.arange(num_atoms - 1, dtype=np.int64),
         0,
         0,
@@ -361,15 +401,15 @@ def test_fused_component_arrays_maps_duplicate_paths_to_first_representative() -
     actual = build_component_arrays_raw(
         3,
         np.asarray([(0, 1), (1, 2)], dtype=np.int64),
-        [(), (0,), (0, 1)],
+        _mask_csr([(), (0,), (0, 1)]),
         np.asarray([0, 1], dtype=np.int64),
         0,
         0,
         0,
     )
 
-    assert actual[13].tolist() == [0, 1, 2, 1, 3, 4]
-    assert actual[14].tolist() == [0, 1, 2, 4, 5]
+    assert actual[11].tolist() == [0, 1, 2, 1, 3, 4]
+    assert actual[12].tolist() == [0, 1, 2, 4, 5]
 
 
 def test_fused_component_arrays_match_legacy_above_256_atoms() -> None:
@@ -395,7 +435,7 @@ def test_fused_component_arrays_match_legacy_above_256_atoms() -> None:
     actual = build_component_arrays_raw(
         num_atoms,
         bond_endpoints,
-        broken_bond_sets,
+        _mask_csr(broken_bond_sets),
         np.arange(500, 500 + num_atoms - 1, dtype=np.int64),
         1000,
         20,
@@ -436,7 +476,7 @@ def test_early_topology_matches_full_slice_across_budget_boundaries(
     )
 
     assert actual[0].size == expected_retained
-    assert actual[15] == expected_scanned
+    assert actual[13] == expected_scanned
 
 
 @pytest.mark.parametrize("forced_mask_count", [2, 3, 4])
@@ -455,7 +495,7 @@ def test_early_topology_finishes_forced_prefix(
     )
 
     assert actual[0].size == forced_mask_count
-    assert actual[15] == forced_mask_count
+    assert actual[13] == forced_mask_count
 
 
 def test_early_topology_retains_all_masks_when_target_is_reached_exactly() -> None:
@@ -471,7 +511,7 @@ def test_early_topology_retains_all_masks_when_target_is_reached_exactly() -> No
     )
 
     assert actual[0].size == len(masks)
-    assert actual[15] == len(masks)
+    assert actual[13] == len(masks)
 
 
 def test_early_topology_handles_zero_bond_graph_and_duplicate_empty_masks() -> None:
@@ -484,7 +524,7 @@ def test_early_topology_handles_zero_bond_graph_and_duplicate_empty_masks() -> N
     )
 
     assert actual[0].tolist() == [0, 0, 0]
-    assert actual[15] == 3
+    assert actual[13] == 3
 
 
 def test_early_topology_preserves_redundant_ring_and_multigraph_boundaries() -> None:

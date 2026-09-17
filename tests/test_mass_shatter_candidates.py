@@ -1,5 +1,8 @@
 """Tests for sparse MASShatter cut-mask/component batching."""
 
+import multiprocessing
+import os
+
 import numpy as np
 import pytest
 import torch as th
@@ -136,13 +139,13 @@ def _full_build_then_slice_reference(*args: object) -> tuple[object, ...]:
     target = args[7] if len(args) > 7 else None
     forced_mask_count = int(args[8]) if len(args) > 8 else 0
     if target is None or int(full[10]) <= int(target):
-        return (*full[:15], int(np.asarray(full[0]).size))
+        return (*full[:13], int(np.asarray(full[0]).size))
 
     component_mask_indices = np.asarray(full[1])
     atom_component_indices = np.asarray(full[4])
     mask_indices = np.asarray(full[5])
     boundary_component_indices = np.asarray(full[8])
-    representatives = np.asarray(full[14])
+    representatives = np.asarray(full[12])
     mask_offset = int(args[5])
     component_offset = int(args[6])
     target_component = int(representatives[int(target) - 1])
@@ -169,9 +172,7 @@ def _full_build_then_slice_reference(*args: object) -> tuple[object, ...]:
         boundary_component_indices[boundary_keep],
         component_count,
         representatives.size,
-        full[11],
-        full[12],
-        np.asarray(full[13])[:component_count],
+        np.asarray(full[11])[:component_count],
         representatives,
         int(np.asarray(full[0]).size),
     )
@@ -721,7 +722,7 @@ def test_top_mixture_bond_sets_returns_int64_csr() -> None:
     assert np.all(np.diff(ptr) >= 0)
 
 
-@pytest.mark.parametrize("mask_selection_threads", [2, 6])
+@pytest.mark.parametrize("mask_selection_threads", [2, 4, 6])
 def test_threaded_mask_selection_matches_serial(mask_selection_threads: int) -> None:
     """Threaded mixture selection must reproduce the serial candidates exactly."""
     generator = th.Generator().manual_seed(11)
@@ -794,3 +795,99 @@ def test_mask_selection_threads_must_be_positive() -> None:
             include_single_bond_cuts=True,
             mask_selection_threads=0,
         )
+
+
+@pytest.mark.parametrize("threads", [2, 4])
+@pytest.mark.parametrize("unique", [False, True])
+@pytest.mark.parametrize("mixtures", [1, 2])
+@pytest.mark.parametrize("smarts", [False, True])
+def test_parallel_topology_fields_and_gradients(
+    threads: int, unique: bool, mixtures: int, smarts: bool
+) -> None:
+    """Concurrent representatives preserve every pathway, including grouped SMARTS."""
+    from fragnnet.frag.mass_shatter_templates import MassShatterTemplate
+
+    # Two distinct groups with two views each; one ring plus one disconnected atom.
+    endpoints = [(0, 1), (1, 2), (2, 0), (2, 3)]
+    bonds = th.tensor([
+        [a + 5 * molecule for molecule in range(4) for a, _ in endpoints],
+        [b + 5 * molecule for molecule in range(4) for _, b in endpoints],
+    ], dtype=th.long)
+    template = MassShatterTemplate(
+        broken_bond_indices=(0, 1), components=((0, 2, 3), (1,), (4,)),
+        rule_index=1, rule_name="test_partition",
+    )
+    kwargs = {
+        "chemical_bond_index": bonds,
+        "atom_batch_indices": th.arange(4).repeat_interleave(5),
+        "atom_ptr": th.arange(0, 21, 5),
+        "max_masks": 4,
+        "include_single_bond_cuts": True,
+        "max_unique_components": 6 if unique else None,
+        "max_enumerated_masks": 16 if unique else None,
+        "candidate_group_ids": th.tensor([7, 7, 9, 9]),
+        "smarts_templates": ((template,),) * 4 if smarts else None,
+    }
+    base = th.tensor([0.8, -0.4, 0.0, -1.1]).repeat(4)
+    if mixtures == 2:
+        base = th.stack([base, -base], dim=1)
+    serial_logits = base.clone().requires_grad_()
+    parallel_logits = base.clone().requires_grad_()
+    serial_weights = th.tensor([[0.2, -0.2]]).repeat(4, 1).requires_grad_()
+    parallel_weights = serial_weights.detach().clone().requires_grad_()
+    serial = build_mass_shatter_candidates(
+        serial_logits, **kwargs, mask_selection_threads=1,
+        mixture_log_weights=(serial_weights.log_softmax(1) if mixtures == 2 else None),
+    )
+    parallel = build_mass_shatter_candidates(
+        parallel_logits, **kwargs, mask_selection_threads=threads,
+        mixture_log_weights=(parallel_weights.log_softmax(1) if mixtures == 2 else None),
+    )
+    for name, expected in vars(serial).items():
+        if name == "timings":
+            continue
+        actual = getattr(parallel, name)
+        if isinstance(expected, th.Tensor):
+            assert th.equal(actual, expected), name
+        else:
+            assert actual == expected, name
+    weights = th.arange(serial.mask_log_probabilities.numel(), dtype=th.float32)
+    (serial.mask_log_probabilities * weights).sum().backward()
+    (parallel.mask_log_probabilities * weights).sum().backward()
+    assert th.equal(serial_logits.grad, parallel_logits.grad)
+    if mixtures == 2:
+        assert th.equal(serial_weights.grad, parallel_weights.grad)
+
+
+def _fork_pool_probe(queue: object) -> None:
+    queue.put(mass_shatter_candidates._map_cpu_tasks(abs, [-2, -3], 2))
+
+
+def test_cpu_executor_reuse_errors_and_fork() -> None:
+    """A live parent pool is reusable and a child never waits on inherited workers."""
+    mass_shatter_candidates._shutdown_cpu_pool()
+    try:
+        assert mass_shatter_candidates._map_cpu_tasks(abs, [-1, -2], 2) == [1, 2]
+        pool = mass_shatter_candidates._CPU_POOL
+        assert mass_shatter_candidates._map_cpu_tasks(abs, [-3, -4], 2) == [3, 4]
+        assert mass_shatter_candidates._CPU_POOL is pool
+        with pytest.raises(ValueError, match="invalid literal"):
+            mass_shatter_candidates._map_cpu_tasks(int, ["1", "invalid"], 2)
+        assert mass_shatter_candidates._map_cpu_tasks(abs, [-5, -6], 4) == [5, 6]
+        assert mass_shatter_candidates._CPU_POOL is not pool
+        if os.name == "posix":
+            context = multiprocessing.get_context("fork")
+            queue = context.Queue()
+            child = context.Process(target=_fork_pool_probe, args=(queue,))
+            child.start()
+            try:
+                assert queue.get(timeout=10) == [2, 3]
+                child.join(timeout=10)
+                assert child.exitcode == 0
+            finally:
+                if child.is_alive():
+                    child.terminate()
+                    child.join(timeout=10)
+                queue.close()
+    finally:
+        mass_shatter_candidates._shutdown_cpu_pool()

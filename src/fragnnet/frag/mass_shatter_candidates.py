@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import atexit
 import math
-from collections.abc import Sequence
+import os
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Lock
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 import torch as th
@@ -15,6 +18,55 @@ import torch.nn.functional as F
 
 if TYPE_CHECKING:
     from fragnnet.frag.mass_shatter_templates import MassShatterTemplate
+
+
+_CPU_POOL: ThreadPoolExecutor | None = None
+_CPU_POOL_THREADS = 0
+_CPU_POOL_LOCK = Lock()
+_Input = TypeVar("_Input")
+_Output = TypeVar("_Output")
+
+
+def _reset_cpu_pool_after_fork() -> None:
+    global _CPU_POOL, _CPU_POOL_THREADS, _CPU_POOL_LOCK
+    # Parent threads do not survive fork; never submit to their inherited executor.
+    _CPU_POOL = None
+    _CPU_POOL_THREADS = 0
+    _CPU_POOL_LOCK = Lock()
+
+
+def _shutdown_cpu_pool() -> None:
+    global _CPU_POOL, _CPU_POOL_THREADS
+    with _CPU_POOL_LOCK:
+        if _CPU_POOL is not None:
+            _CPU_POOL.shutdown(wait=True)
+            _CPU_POOL = None
+            _CPU_POOL_THREADS = 0
+
+
+atexit.register(_shutdown_cpu_pool)
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_cpu_pool_after_fork)
+
+
+def _map_cpu_tasks(
+    function: Callable[[_Input], _Output], tasks: Sequence[_Input], threads: int
+) -> list[_Output]:
+    """Run non-nested numeric tasks on one persistent executor per process.
+
+    The coordinator lock also serializes simultaneous callers that request different
+    thread counts. Workers never acquire it; failures propagate through ``map``.
+    """
+    global _CPU_POOL, _CPU_POOL_THREADS
+    if threads == 1 or len(tasks) <= 1:
+        return [function(task) for task in tasks]
+    with _CPU_POOL_LOCK:
+        if _CPU_POOL is None or threads != _CPU_POOL_THREADS:
+            if _CPU_POOL is not None:
+                _CPU_POOL.shutdown(wait=True)
+            _CPU_POOL = ThreadPoolExecutor(max_workers=threads, thread_name_prefix="masshatter")
+            _CPU_POOL_THREADS = threads
+        return list(_CPU_POOL.map(function, tasks))
 
 
 @dataclass(frozen=True)
@@ -29,12 +81,15 @@ class MassShatterStaticGraph:
 
 @dataclass(frozen=True)
 class MassShatterCandidateTimings:
-    """Wall-clock milliseconds spent in candidate-generation phases."""
+    """Coordinator wall times in milliseconds, with concurrent workers measured once.
+
+    ``topology_assembly_ms`` covers local dispatch/join. ``batch_packing_ms`` includes
+    serial global-index remapping plus packed-buffer construction.
+    """
 
     input_transfer_ms: float
     mask_selection_ms: float
-    topology_ms: float
-    assembly_ms: float
+    topology_assembly_ms: float
     forced_merge_ms: float
     smarts_assembly_ms: float
     batch_packing_ms: float
@@ -112,6 +167,65 @@ class _TopologyCache:
     scanned_mask_count: int
     component_unique_indices: np.ndarray
     unique_representative_component_indices: np.ndarray
+
+
+@dataclass(frozen=True)
+class _TopologyInput:
+    """Validated molecule-local inputs; workers produce only zero-based indices."""
+
+    num_atoms: int
+    endpoints: tuple[tuple[int, ...], tuple[int, ...]]
+    mask_ptr: np.ndarray
+    broken_bonds: np.ndarray
+    forced_mask_count: int
+    max_unique_components: int | None
+
+
+def _build_local_topology(request: _TopologyInput) -> _TopologyCache:
+    from fragnnet.frag.mass_shatter_core import build_component_arrays_raw
+
+    (
+        cut_counts, component_mask_indices, component_cut_counts, atom_indices,
+        atom_component_indices, mask_indices, broken_bond_indices, boundary_bond_indices,
+        boundary_component_indices, num_components, unique_count, component_unique_indices,
+        representatives, scanned_mask_count,
+    ) = build_component_arrays_raw(
+        request.num_atoms,
+        np.asarray(request.endpoints, dtype=np.int64).T,
+        (request.mask_ptr, request.broken_bonds),
+        np.arange(len(request.endpoints[0]), dtype=np.int64),
+        0, 0, 0,
+        request.max_unique_components,
+        request.forced_mask_count,
+    )
+    num_masks = cut_counts.size
+    return _TopologyCache(
+        num_atoms=request.num_atoms,
+        endpoints=request.endpoints,
+        mask_ptr=request.mask_ptr[:num_masks + 1],
+        broken_bonds=request.broken_bonds[:request.mask_ptr[num_masks]],
+        cut_counts=cut_counts,
+        component_mask_indices=component_mask_indices,
+        component_cut_counts=component_cut_counts,
+        atom_indices=atom_indices,
+        atom_component_indices=atom_component_indices,
+        mask_indices=mask_indices,
+        broken_bond_indices=broken_bond_indices,
+        boundary_bond_indices=boundary_bond_indices,
+        boundary_component_indices=boundary_component_indices,
+        num_components=num_components,
+        unique_component_count=unique_count,
+        scanned_mask_count=scanned_mask_count,
+        # Raw views have E*num_atoms capacity; do not retain every worker's full
+        # allocation across a large batch when early stopping kept a short prefix.
+        component_unique_indices=component_unique_indices.copy(),
+        unique_representative_component_indices=representatives.copy(),
+    )
+
+
+def _offset_local_indices(values: np.ndarray, offset: int, last_view: bool) -> np.ndarray:
+    """Consume private local buffers on their last view instead of copying them."""
+    return np.add(values, offset, out=values if last_view else None)
 
 
 @dataclass(frozen=True)
@@ -260,11 +374,7 @@ def _select_masks_batch(
             min_relative_probability,
         )
 
-    if threads > 1 and len(representatives) > 1:
-        with ThreadPoolExecutor(max_workers=threads) as pool:
-            selected = list(pool.map(select, representatives))
-    else:
-        selected = [select(molecule_index) for molecule_index in representatives]
+    selected = _map_cpu_tasks(select, representatives, threads)
 
     by_representative = dict(zip(representatives, selected))
     return [by_representative[representative_of[i]] for i in range(num_molecules)]
@@ -412,8 +522,8 @@ def build_mass_shatter_candidates(
     collision-energy views with the same group id reuse exact ranked masks and
     connected-component topology while retaining separate differentiable
     probabilities and output candidates. ``mask_selection_threads`` above one
-    selects the Bernoulli-mixture pools on a thread pool; the kernel releases the
-    GIL, so this is real parallelism and it leaves the selected masks unchanged.
+    runs selection and local topology/assembly on the same persistent CPU pool.
+    Numeric kernels release the GIL; ordering and selected masks stay unchanged.
     When ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
     number of distinct atom sets. The probability floor applies only to learned ranked
@@ -579,15 +689,13 @@ def build_mass_shatter_candidates(
     retained_mask_counts: list[int] = []
     scanned_mask_counts: list[int] = []
     mask_selection_ms = 0.0
-    topology_ms = 0.0
-    assembly_ms = 0.0
+    remap_ms = 0.0
     forced_merge_ms = 0.0
     smarts_assembly_ms = 0.0
     num_masks_so_far = 0
     num_mechanisms_so_far = 0
     num_components_so_far = 0
     num_unique_components_so_far = 0
-    topology_cache: dict[int, _TopologyCache] = {}
     smarts_lookup_cache: dict[int, _SmartsLookupCache] = {}
     forced_merge_cache: dict[
         tuple[int, tuple[tuple[int, ...], ...]],
@@ -617,7 +725,11 @@ def build_mass_shatter_candidates(
     )
     mask_selection_ms += (perf_counter() - selection_start) * 1000.0
 
-    # 3. Merge forced masks and assemble candidates independently per precursor.
+    # 3. Merge forced masks before dispatching molecule-local topology workers.
+    topology_inputs: list[_TopologyInput] = []
+    topology_representatives: list[int] = []
+    representative_of: list[int] = []
+    first_of_group: dict[int, int] = {}
     for molecule_index in range(num_molecules):
         atom_start = atom_ptr_values[molecule_index]
         atom_end = atom_ptr_values[molecule_index + 1]
@@ -682,129 +794,107 @@ def build_mass_shatter_candidates(
                 forced_merge_cache[forced_merge_key] = merged_masks
         local_mask_ptr, local_broken_bonds, forced_mask_count = merged_masks
         forced_merge_ms += (perf_counter() - forced_merge_start) * 1000.0
-        broken_mask_input: object = (local_mask_ptr, local_broken_bonds)
-        num_local_masks = local_mask_ptr.size - 1
-        selected_mask_counts.append(num_local_masks)
-        # Build connected components and every flat candidate index without
-        # materializing Python dicts, arbitrary-width bitmasks, or dataclasses.
-        from fragnnet.frag.mass_shatter_core import build_component_arrays_raw
+        selected_mask_counts.append(local_mask_ptr.size - 1)
+        topology_inputs.append(_TopologyInput(
+            num_atoms=num_atoms,
+            endpoints=local_endpoints,
+            mask_ptr=local_mask_ptr,
+            broken_bonds=local_broken_bonds,
+            forced_mask_count=forced_mask_count,
+            max_unique_components=max_unique_components,
+        ))
+        leader = (
+            molecule_index if candidate_group is None
+            else first_of_group.setdefault(candidate_group, molecule_index)
+        )
+        representative_of.append(leader)
+        if leader == molecule_index:
+            topology_representatives.append(leader)
 
+    # One coordinator interval measures concurrent construction, never a sum of workers.
+    topology_start = perf_counter()
+    local_topologies = _map_cpu_tasks(
+        _build_local_topology,
+        [topology_inputs[index] for index in topology_representatives],
+        mask_selection_threads,
+    )
+    topology_assembly_ms = (perf_counter() - topology_start) * 1000.0
+    topology_by_representative = dict(zip(topology_representatives, local_topologies, strict=True))
+    local_topologies.clear()
+    last_view_of = {leader: index for index, leader in enumerate(representative_of)}
+
+    # 4. Apply global offsets in input order, then append any SMARTS mechanisms.
+    for molecule_index, request in enumerate(topology_inputs):
+        atom_start = atom_ptr_values[molecule_index]
+        num_atoms = request.num_atoms
+        local_endpoints = request.endpoints
+        global_bond_indices = bond_indices_by_molecule[molecule_index]
+        local_mask_ptr, local_broken_bonds = request.mask_ptr, request.broken_bonds
+        molecule_templates = (
+            tuple(smarts_templates[molecule_index]) if smarts_templates is not None else ()
+        )
+        candidate_group = (
+            None if candidate_group_values is None else candidate_group_values[molecule_index]
+        )
         mask_start = num_masks_so_far
         component_start = num_components_so_far
-        cached_topology = None if candidate_group is None else topology_cache.get(candidate_group)
-        if cached_topology is None:
-            (
-                local_cut_counts,
-                local_component_mask_indices,
-                local_component_cut_counts,
-                local_atom_indices,
-                local_atom_component_indices,
-                local_mask_indices,
-                local_broken_bond_indices,
-                local_boundary_bond_indices,
-                local_boundary_component_indices,
-                num_local_components,
-                unique_component_count,
-                local_topology_ms,
-                local_assembly_ms,
-                local_component_unique_indices,
-                local_unique_representative_component_indices,
-                local_scanned_mask_count,
-            ) = build_component_arrays_raw(
-                num_atoms,
-                np.asarray(local_endpoints, dtype=np.int64).T,
-                broken_mask_input,
-                global_bond_indices,
-                atom_start,
-                mask_start,
-                component_start,
-                max_unique_components,
-                forced_mask_count,
-            )
-            num_local_masks = local_cut_counts.size
-            if candidate_group is not None:
-                global_to_local_bond = {
-                    int(global_index): local_index
-                    for local_index, global_index in enumerate(global_bond_indices)
-                }
-                local_broken_output = np.asarray(
-                    [
-                        global_to_local_bond[int(global_index)]
-                        for global_index in local_broken_bond_indices
-                    ],
-                    dtype=np.int64,
-                )
-                local_boundary_output = np.asarray(
-                    [
-                        global_to_local_bond[int(global_index)]
-                        for global_index in local_boundary_bond_indices
-                    ],
-                    dtype=np.int64,
-                )
-                topology_cache[candidate_group] = _TopologyCache(
-                    num_atoms=num_atoms,
-                    endpoints=local_endpoints,
-                    mask_ptr=broken_mask_input[0][: num_local_masks + 1].copy(),
-                    broken_bonds=broken_mask_input[1][
-                        : broken_mask_input[0][num_local_masks]
-                    ].copy(),
-                    cut_counts=local_cut_counts.copy(),
-                    component_mask_indices=(local_component_mask_indices - mask_start),
-                    component_cut_counts=local_component_cut_counts.copy(),
-                    atom_indices=local_atom_indices - atom_start,
-                    atom_component_indices=(local_atom_component_indices - component_start),
-                    mask_indices=local_mask_indices - mask_start,
-                    broken_bond_indices=local_broken_output,
-                    boundary_bond_indices=local_boundary_output,
-                    boundary_component_indices=(local_boundary_component_indices - component_start),
-                    num_components=num_local_components,
-                    unique_component_count=unique_component_count,
-                    scanned_mask_count=local_scanned_mask_count,
-                    component_unique_indices=local_component_unique_indices.copy(),
-                    unique_representative_component_indices=(
-                        local_unique_representative_component_indices.copy()
-                    ),
-                )
-        else:
+        leader = representative_of[molecule_index]
+        cached_topology = topology_by_representative[leader]
+        if leader != molecule_index:
             retained_ptr_size = cached_topology.mask_ptr.size
             retained_broken_size = cached_topology.broken_bonds.size
             if (
                 cached_topology.num_atoms != num_atoms
                 or cached_topology.endpoints != local_endpoints
-                or broken_mask_input[0].size < retained_ptr_size
+                or local_mask_ptr.size < retained_ptr_size
+                or not np.array_equal(cached_topology.mask_ptr, local_mask_ptr[:retained_ptr_size])
+                or local_broken_bonds.size < retained_broken_size
                 or not np.array_equal(
-                    cached_topology.mask_ptr,
-                    broken_mask_input[0][:retained_ptr_size],
-                )
-                or broken_mask_input[1].size < retained_broken_size
-                or not np.array_equal(
-                    cached_topology.broken_bonds,
-                    broken_mask_input[1][:retained_broken_size],
+                    cached_topology.broken_bonds, local_broken_bonds[:retained_broken_size]
                 )
             ):
                 raise ValueError("candidate_group_ids can only group identical molecular topology")
-            remap_start = perf_counter()
-            global_bond_array = np.asarray(global_bond_indices, dtype=np.int64)
-            local_cut_counts = cached_topology.cut_counts
-            local_component_mask_indices = cached_topology.component_mask_indices + mask_start
-            local_component_cut_counts = cached_topology.component_cut_counts
-            local_atom_indices = cached_topology.atom_indices + atom_start
-            local_atom_component_indices = cached_topology.atom_component_indices + component_start
-            local_mask_indices = cached_topology.mask_indices + mask_start
+        remap_start = perf_counter()
+        last_view = last_view_of[leader] == molecule_index
+        global_bond_array = np.asarray(global_bond_indices, dtype=np.int64)
+        local_cut_counts = cached_topology.cut_counts
+        local_component_mask_indices = _offset_local_indices(
+            cached_topology.component_mask_indices, mask_start, last_view
+        )
+        local_component_cut_counts = cached_topology.component_cut_counts
+        local_atom_indices = _offset_local_indices(cached_topology.atom_indices, atom_start, last_view)
+        local_atom_component_indices = _offset_local_indices(
+            cached_topology.atom_component_indices, component_start, last_view
+        )
+        local_mask_indices = _offset_local_indices(
+            cached_topology.mask_indices, mask_start, last_view
+        )
+        # Bond lists are strictly increasing; the common contiguous case is a shift.
+        if global_bond_indices and (
+            global_bond_indices[-1] - global_bond_indices[0] + 1 == len(global_bond_indices)
+        ):
+            local_broken_bond_indices = _offset_local_indices(
+                cached_topology.broken_bond_indices, global_bond_indices[0], last_view
+            )
+            local_boundary_bond_indices = _offset_local_indices(
+                cached_topology.boundary_bond_indices, global_bond_indices[0], last_view
+            )
+        else:
             local_broken_bond_indices = global_bond_array[cached_topology.broken_bond_indices]
             local_boundary_bond_indices = global_bond_array[cached_topology.boundary_bond_indices]
-            local_boundary_component_indices = (
-                cached_topology.boundary_component_indices + component_start
-            )
-            num_local_components = cached_topology.num_components
-            unique_component_count = cached_topology.unique_component_count
-            local_scanned_mask_count = cached_topology.scanned_mask_count
-            local_component_unique_indices = cached_topology.component_unique_indices
-            local_unique_representative_component_indices = (
-                cached_topology.unique_representative_component_indices
-            )
-            local_topology_ms = 0.0
-            local_assembly_ms = (perf_counter() - remap_start) * 1000.0
+        local_boundary_component_indices = _offset_local_indices(
+            cached_topology.boundary_component_indices, component_start, last_view
+        )
+        num_local_components = cached_topology.num_components
+        unique_component_count = cached_topology.unique_component_count
+        local_scanned_mask_count = cached_topology.scanned_mask_count
+        local_component_unique_indices = cached_topology.component_unique_indices
+        local_unique_representative_component_indices = (
+            cached_topology.unique_representative_component_indices
+        )
+        if last_view:
+            del topology_by_representative[leader]
+        remap_ms += (perf_counter() - remap_start) * 1000.0
         num_local_masks = local_cut_counts.size
         retained_mask_counts.append(num_local_masks)
         scanned_mask_counts.append(local_scanned_mask_count)
@@ -992,8 +1082,6 @@ def build_mass_shatter_candidates(
                 num_local_components += len(extra_component_masks)
         smarts_assembly_ms += (perf_counter() - smarts_start) * 1000.0
 
-        topology_ms += local_topology_ms
-        assembly_ms += local_assembly_ms
         mask_batch_index_chunks.append(np.full(num_local_masks, molecule_index, dtype=np.int64))
         mask_cut_count_chunks.append(local_cut_counts)
         mechanism_mask_index_chunks.append(local_mechanism_mask_indices)
@@ -1030,7 +1118,7 @@ def build_mass_shatter_candidates(
     if num_masks_so_far == 0:
         raise ValueError("candidate generation produced no cut masks")
 
-    # 4. Fill one packed CPU buffer directly from molecule-local chunks. This
+    # 5. Fill one packed CPU buffer directly from molecule-local chunks. This
     # avoids per-field concatenations followed by a second cross-field copy.
     packed_tensors, batch_packing_ms, device_transfer_ms = _packed_long_chunk_tensors(
         (
@@ -1077,9 +1165,10 @@ def build_mass_shatter_candidates(
         mask_indices_t,
         broken_bond_indices_t,
     ) = packed_tensors
+    batch_packing_ms += remap_ms
     output_transfer_ms = batch_packing_ms + device_transfer_ms
 
-    # 5. Score every selected mask in one batched operation. A broken bond
+    # 6. Score every selected mask in one batched operation. A broken bond
     # changes its contribution from logsigmoid(-logit) to logsigmoid(logit),
     # whose difference is exactly logit.
     probability_start = perf_counter()
@@ -1148,8 +1237,7 @@ def build_mass_shatter_candidates(
         timings=MassShatterCandidateTimings(
             input_transfer_ms=input_transfer_ms,
             mask_selection_ms=mask_selection_ms,
-            topology_ms=topology_ms,
-            assembly_ms=assembly_ms,
+            topology_assembly_ms=topology_assembly_ms,
             forced_merge_ms=forced_merge_ms,
             smarts_assembly_ms=smarts_assembly_ms,
             batch_packing_ms=batch_packing_ms,
