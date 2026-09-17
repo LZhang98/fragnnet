@@ -536,6 +536,18 @@ tasks — and the scripts only print a note comparing task count to shard count.
 fails when shards are left out: those molecules are simply not predicted and every task
 still exits 0, so check the note before calling a sweep complete.
 
+`infer_synced_arr_hdf5.sh` batches by **fragment-node budget**, not by a fixed spectrum
+count: `DYNAMIC_BATCH_MAX=100000` (frag_node), passed through as `--dynamic_batch_max`. Each
+of a molecule's 14 SYNCED rows carries that molecule's whole DAG, so a fixed batch costs
+whatever the molecules in it happen to cost. Measured on 400 random SYNCED molecules
+(mean 1,549 frag_node, p99 24,609, max 108,721), the old `BATCH_SIZE=64` gave batches of mean
+99,591 nodes but max 1,552,120 — the GPU had to be sized for a tail batch 50x the median one.
+The cap keeps the mean and the batch count while cutting that peak 14x. Below ~110,000 the peak
+stops improving (single molecules already exceed it, and are predicted as one-sample batches),
+so raise rather than lower it; the same config trains at `dynamic_batch_sampler_max: 400000`.
+`DYNAMIC_BATCH_MAX=0 sbatch ...` restores fixed `BATCH_SIZE` batches, which is what
+`infer_synced_arr.sh` (tar backend) still does by default.
+
 Every chunk save and the end of the run print a `>> resources:` line to the task's
 `#SBATCH --output` file — throughput plus peak GPU and host memory, as high-water marks
 rather than samples. This is unconditional; `WANDB_TRACK_MODE=online sbatch ...` (which the

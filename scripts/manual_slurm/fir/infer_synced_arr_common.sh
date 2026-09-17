@@ -76,7 +76,35 @@ case "${MODEL_CKPT}" in "" | /*) ;; *) MODEL_CKPT=${FRAGNNET_DP}/${MODEL_CKPT} ;
 case "${CUSTOM_FP}" in "" | /*) ;; *) CUSTOM_FP=${FRAGNNET_DP}/${CUSTOM_FP} ;; esac
 
 # --- inference knobs -------------------------------------------------------
+# Batching. Two mutually exclusive modes; DYNAMIC_BATCH_MAX picks between them.
+#
+# Fixed (DYNAMIC_BATCH_MAX empty or 0): BATCH_SIZE spectra per batch, whatever they cost.
+# Size-capped (DYNAMIC_BATCH_MAX set): pack spectra greedily until their combined fragment
+# DAG node count would exceed it. Backed by IterableSpecMolFragDataset, which forms batches
+# lazily while streaming, so it needs no size cache and loads each DAG exactly once.
+#
+# Why the cap is the better knob HERE specifically: the SYNCED spec_df holds 14 consecutive
+# rows per molecule and every row carries that molecule's whole DAG, so a fixed batch is
+# really "a handful of consecutive molecules, 14 times over". Its cost is set by which
+# molecules happen to land in it, and frag nodes are what inference memory scales with
+# (nodeMLP activations). Capping nodes bounds the peak directly; capping spectra only
+# bounds it on average. The cost is that the batch count -- and so the progress total --
+# is unknown until the run ends.
+#
+# A cap below a single sample's node count is safe: that sample is still predicted, as a
+# batch of one. Only set DYNAMIC_BATCH_LIMITED_BY=frag_edge for a config that materializes
+# fragment edges; on one that does not, every sample measures 0 and run_inference.py raises.
+DYNAMIC_BATCH_MAX=${DYNAMIC_BATCH_MAX:-}
+DYNAMIC_BATCH_LIMITED_BY=${DYNAMIC_BATCH_LIMITED_BY:-frag_node}
 BATCH_SIZE=${BATCH_SIZE:-16}
+if [ -n "${DYNAMIC_BATCH_MAX}" ] && [ "${DYNAMIC_BATCH_MAX}" != "0" ]; then
+    BATCH_ARGS=(--dynamic_batch_max "${DYNAMIC_BATCH_MAX}"
+                --dynamic_batch_limited_by "${DYNAMIC_BATCH_LIMITED_BY}")
+    BATCH_DESC="dynamic, max ${DYNAMIC_BATCH_MAX} ${DYNAMIC_BATCH_LIMITED_BY} per batch"
+else
+    BATCH_ARGS=(--batch_size "${BATCH_SIZE}")
+    BATCH_DESC="fixed, ${BATCH_SIZE} spectra per batch"
+fi
 # 10.0 = keep peaks above 1% of base peak (pred_ints is rescaled per spectrum to a
 # 0-1000 base peak, filtered with a strict >). Higher than run_inference.py's own 1.0
 # default: measured on NIST20 val (2,000 spectra, 9t63zils), 1.0 -> 10.0 costs
@@ -171,7 +199,7 @@ echo TASK_ID: ${TASK_ID}
 echo CHUNK_SIZE: ${CHUNK_SIZE}
 echo START_IDX: ${START_IDX}
 echo NUM_MOLS: ${NUM_MOLS}
-echo BATCH_SIZE: ${BATCH_SIZE}
+echo BATCHING: ${BATCH_DESC}
 echo SAVE_FORMAT: ${SAVE_FORMAT}
 echo WANDB_TRACK_MODE: ${WANDB_TRACK_MODE}
 echo OUTPUT_SUBSET: ${OUTPUT_SUBSET}
@@ -324,7 +352,7 @@ python ${WORKING_DIR}/scripts/run_inference.py \
     --frag_dp ${FRAG_ARG} \
     --start_mol_idx ${START_IDX} \
     --num_mols ${NUM_MOLS} \
-    --batch_size ${BATCH_SIZE} \
+    "${BATCH_ARGS[@]}" \
     --min_intensity ${MIN_INTENSITY} \
     --save_dp ${TASK_OUT_DP} \
     --save_format ${SAVE_FORMAT} \

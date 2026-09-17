@@ -75,6 +75,29 @@ elif [ -z "${CUSTOM_FP}" ]; then
     exit 1
 fi
 
+# Batching: cap the fragment nodes per batch instead of fixing the spectra per batch.
+# See the "inference knobs" block in infer_synced_arr_common.sh for the mechanism; the
+# number comes from SYNCED's own size distribution, measured on 400 random molecules
+# (d3/h4, the DAGs this job consumes):
+#
+#   frag_node per molecule   mean 1,549   p50 332   p90 1,160   p99 24,609   max 108,721
+#
+# Every one of a molecule's 14 spec_df rows carries that whole DAG, so the old
+# BATCH_SIZE=64 produced batches of mean 99,591 nodes but p99 1,165,156 and max 1,552,120
+# - a 16x spread, with the GPU sized for a tail batch that is 50x the median one.
+# 100,000 is that same mean, so average batch cost and batch count are unchanged (90
+# batches vs 87 on the simulated stream), while the peak drops 14x to 108,721.
+#
+# Do not lower it hoping for a smaller peak: 2 of those 400 molecules have a DAG bigger
+# than the cap on their own, so below ~110,000 the peak is pinned by the largest single
+# molecule and a smaller cap only costs batches (143 at 50,000, 233 at 25,000). Raising
+# it is the useful direction - this config TRAINS at dynamic_batch_sampler_max: 400000
+# with gradients, so inference has room. Read the `>> resources:` GPU peak line from a
+# first shard before changing it, and keep frag_node: this config sets pyg_edges: False,
+# so frag_edge measures 0 on every sample and run_inference.py raises.
+#
+# DYNAMIC_BATCH_MAX=0 sbatch <script>   restores fixed batches of BATCH_SIZE spectra.
+DYNAMIC_BATCH_MAX=${DYNAMIC_BATCH_MAX:-100000}
 BATCH_SIZE=${BATCH_SIZE:-64}
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
