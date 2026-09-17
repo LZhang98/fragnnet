@@ -415,3 +415,44 @@ comparison can be answered from existing run artifacts without a new benchmark.
 Source and algebra review only: no measurement, training, test run or code change. Next: the two
 recorded gap checks (ring-bond probability histogram and implicit-prior versus charge-head split)
 before any further beam optimization or scientific comparison.
+
+Beam direction set (2026-09-17): keep the connected-fragment beam as a proposal-only
+enumerator and restore a learned charge component, reconciling the prototype's two scores
+toward its search form (the isolating mask's log probability) rather than its output form.
+This removes the size/topology prior, keeps the chemically correct ring penalty through
+boundary-cut count, makes complements score-symmetric again and so removes most of the
+447 ms complement cost. The one structural item is emitting each mirror pair as two
+components of one mask so the existing charge split and unique-component marginalization
+apply unchanged. Recorded as PROPOSED in
+[the FastGNN plan](plans/masshatter_fast_gnn_proposal.md#proposed-proposal-only-beam-with-learned-charge-2026-09-17);
+not implemented. The gate has now been run: at matched fragment target on identical bond logits
+the beam retains the smaller side of a cut about 5:1 (fraction above half 0.167 versus 0.590),
+proposes about four times fewer large fragments (0.079 versus 0.319 at or above 0.75 of the
+molecule) and 1.5 times more acyclic fragments. Raising `max_boundary_cuts` from 5 to 20 leaves
+the distribution unchanged and raising the fragment target makes the bias worse, so neither the
+cut cap nor the budget explains it. Bond logits were synthetic; the checkpoint-logit
+confirmation was not obtained. Measurements and limits are in the same finding. A budget-exhaustion run also separated ranking from coverage: fragments at or above 0.75 of the
+molecule saturate near a fixed count as the budget grows 9.4x, because anything above half the
+molecule arrives only as a connected mirror, so a connected fragment with a disconnected
+complement is unreachable. That is a coverage hole, not a ranking effect, and the same scoring
+change plus union-find closes it. The coverage-per-budget gate then closed the question against the beam. Scoring every
+reference fragment by the objective the redesign would adopt, the beam's captured probability
+mass saturates near 0.70 across an eightfold budget increase while `cut_masks` reaches 0.983,
+and the beam costs roughly twenty times more per fragment on CPU. Decomposition by fragment size
+locates the ceiling: the beam is complete below half the molecule (1.000 and 0.999 by count) and
+reaches only 0.109 of fragments above 0.75 of the molecule, the band holding 47.2% of all mass.
+Large fragments from a single bond cut are reachable because their complement is connected;
+multi-cut large fragments generally leave a disconnected remainder and are missing by
+construction. This is architectural, not a scoring artifact, so the proposal-only redesign would
+not lift it. Repeating the coverage scan with **trained** bond logits from checkpoint `zlv0bli8` (epoch 41)
+reproduces every direction and revises the magnitude: captured mass is flat at 0.8695 across a
+fourfold budget increase against 1.0000 for `cut_masks`, so the cost of the limit is about 13% of
+probability mass rather than 30%. A confident trained model concentrates mass on single-cut
+masks, whose large fragment has a connected complement and is reachable; the multi-cut large
+fragments remain missing. The pre-fix and post-fix beams emit identical fragment sets in 18 of 24
+configurations, differing by one or two fragments in 4,001 elsewhere, so the 447 ms complement
+pass buys determinism rather than materially different candidates. All measurements are
+reproducible through
+[scripts/debug/analyze_proposal_fragment_coverage.py](../scripts/debug/analyze_proposal_fragment_coverage.py).
+Next: a decision on whether to stop the connected-fragment line; the four prepared arms should
+not be trained as configured in any case.

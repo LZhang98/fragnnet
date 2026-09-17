@@ -1,7 +1,8 @@
 # Connected-fragment beam: reuse and objective equivalence
 
-> **Status:** FINDING · **Updated:** 2026-09-17 · Source and algebra review only. No new
-> measurements, no training, no code changes. Speed numbers are quoted from the existing
+> **Status:** FINDING · **Updated:** 2026-09-17 · Source and algebra review, plus a local
+> candidate-only measurement of the predicted size and topology prior. No training and no code
+> changes. Speed numbers are quoted from the existing
 > [beam speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
 > [FastGNN proposal plan](../plans/masshatter_fast_gnn_proposal.md).
 
@@ -17,9 +18,21 @@ Two conclusions, and they point the same way.
    that dominates measured cost — complement connectivity by dense reachability — is precisely
    the one with an existing union-find replacement on both CPU and CUDA.
 
-Because the objectives nearly coincide, the beam cannot be justified on modelling grounds; it
-has to win on search cost or candidate coverage. Current measurements say it does not. That
-makes the connectivity replacement load-bearing rather than cleanup.
+The dropped `I_f̄` is not neutral: it turns the score into a **size and topology prior** that
+favours small, acyclic fragments and implies "charge stays on the smaller fragment". That is a
+scientific consequence, not only a cost one, and it is the strongest reason to revisit which
+way the prototype's two scores were reconciled. **It is measured, not only predicted, on both
+synthetic and trained bond logits**: at matched fragment target the beam keeps the smaller side
+of a cut about 3:1 to 5:1 and proposes 3-4x fewer large fragments than `cut_masks`, and two
+controls rule out the boundary-cut cap and the candidate budget as causes.
+
+Because the objectives otherwise nearly coincide, the beam cannot be justified on modelling
+grounds; it has to win on search cost or candidate coverage. **It does neither.** On trained bond
+logits captured probability mass is flat at **0.8695** across a fourfold budget increase against
+**1.0000** for `cut_masks`; on synthetic logits the same ceiling sits at 0.70 against 0.983. The
+beam is complete below half the molecule and structurally blind above it, where the largest share
+of mass lies. That ceiling is architectural rather than a scoring artifact, so the proposal-only
+redesign would not lift it without adopting `cut_masks`' all-components assembly.
 
 `cut_masks` reaches the same fragments but spends its budget in mask space: the unmerged arm
 enumerates up to 4096 masks for a 256 unique-fragment target. That redundancy is already logged
@@ -66,6 +79,47 @@ size-and-fragility prior — charge goes to the side whose complement is less li
 intact — where `cut_masks` breaks it with a learned head. That is the substantive modelling
 difference between the two, and it is a narrower one than "different objective".
 
+### The dropped term is a size and topology prior
+
+Because `I_f = Σ_{int(f)} log(1 − p_e) ≤ 0` and grows more negative with every internal bond,
+`B + I_f` charges a fragment for its own bonds but not for the rest of the molecule. At fixed
+boundary the score therefore decreases monotonically with fragment size, and a single atom,
+having no internal bonds, attains `I_f = 0`. The formulation systematically favours:
+
+1. **Small fragments.** Singletons are the maximum of the size term.
+2. **Acyclic fragments.** A connected `n`-atom fragment has at least `n − 1` internal bonds,
+   with equality only for a tree, so ring systems pay extra. The ring-reconnection gap below
+   undercounts the same fragments, so rings are penalized twice by independent mechanisms.
+3. **Stable interiors with fragile boundaries** — the one component of the prior that is
+   chemically reasonable.
+
+`cut_masks`' `B + I_f + I_f̄` carries neither bias 1 nor 2: every bond is counted exactly once
+per mask, so a fragment and its complement score identically. **The size and topology prior is
+exactly what dropping `I_f̄` introduces.**
+
+Order of magnitude, for a tree fragment's `n − 1` internal bonds at a uniform non-breaking `p`:
+
+| typical `p` | 5-atom | 20-atom | ratio |
+| --- | ---: | ---: | ---: |
+| 0.1 | −0.42 | −2.02 | ~5× |
+| 0.3 | −1.43 | −6.78 | ~220× |
+
+At the operating point implied by `mask_cut_fraction_4plus = 0.77`, the structural preference
+for small fragments is plausibly a factor of hundreds before any learning. These are worked
+values at assumed `p`, not measurements. The measured section below confirms the direction and
+that it strengthens with `p`, but does not verify these particular ratios.
+
+The optimizer cannot simply absorb this. A single bond's logit enters with different roles in
+different fragments — internal to some, boundary to others, outside for the rest — so per-bond
+parameters cannot independently set a size prior. It is an inductive bias, not a
+reparameterization.
+
+Chemically, since `score(f) − score(f̄) = I_f − I_f̄`, the smaller and more stable side wins: the
+beam's implicit charge model is "charge stays on the smaller fragment". That is the quantity
+`cut_masks` spends a learned charge head on, and it runs against MS/MS practice, where charge
+retention tracks proton affinity and basic sites rather than size, and where observed fragments
+are typically large pieces remaining after a small neutral loss.
+
 ### The ring-reconnection gap
 
 The beam scores the event "boundary all cut **and** all internal intact". The component event
@@ -107,6 +161,336 @@ Two cheap checks would settle the size of the remaining gap:
    the small-`p` regime, so this should not be assumed either way.
 2. Compare the beam's implicit prior `exp(−I_f̄)` against a trained charge head's actual
    component split on the same masks.
+3. ~~Compare the emitted fragment **size and ring-count distributions** between the two
+   proposal methods at a matched fragment target.~~ **Done 2026-09-17** — see the measured
+   section below. The prior is confirmed and both obvious confounds are excluded.
+
+## Measured: emitted fragment distributions (2026-09-17)
+
+The predicted size and topology prior is confirmed. Identical bond logits were fed to both
+selectors at a matched unique-fragment target, isolating the selection objective.
+
+At `p` mean 0.155 (logits `N(-2, 1)`), the realistic regime for a model that keeps most bonds:
+
+| Selector | fragments | size mean | size median | singleton | ≤3 atoms | acyclic | mean fraction of molecule | fraction > half | fraction ≥ 0.75 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `connected_fragment_beam` | 7,289 | 6.63 | 6 | 0.083 | 0.246 | **0.801** | **0.346** | **0.167** | **0.079** |
+| `cut_masks` | 7,904 | 11.33 | 9 | 0.057 | 0.144 | 0.550 | 0.558 | 0.590 | 0.319 |
+
+`cut_masks` components come from masks whose components partition the molecule, so both sides
+of a cut are naturally present and a near-symmetric 0.59 above the half line is expected by
+construction. The beam must generate complements explicitly, and **retains the smaller side
+about 5:1**. It proposes **roughly four times fewer large fragments** — exactly the
+precursor-minus-small-neutral-loss species that dominate real MS/MS — and **1.5x more acyclic
+fragments**, which is the topology half of the prior.
+
+### The bias strengthens as bonds become more breakable
+
+Fraction of emitted fragments larger than half the molecule:
+
+| `p` mean | beam | `cut_masks` |
+| ---: | ---: | ---: |
+| 0.069 | 0.212 | 0.580 |
+| 0.155 | 0.167 | 0.590 |
+| 0.330 | 0.101 | 0.499 |
+| 0.506 | 0.085 | 0.329 |
+
+This is the predicted direction: each internal bond costs `log(1 − p)`, which grows more
+negative as `p` rises. The beam's mean fragment size is also comparatively insensitive to the
+logits — 7.68 → 5.13 across a 7x change in mean `p`, against 11.34 → 7.12 for `cut_masks` —
+consistent with its output being driven by a structural prior rather than by the learned bond
+probabilities.
+
+### Two controls exclude the obvious confounds
+
+**Not the boundary-cut cap.** Raising `max_boundary_cuts` leaves the distribution frozen once
+it stops binding, so the bias is the score and not the cut budget:
+
+| `max_boundary_cuts` | fragments | size mean | > half | ≥ 0.75 |
+| ---: | ---: | ---: | ---: | ---: |
+| 3 | 5,686 | 7.19 | 0.196 | 0.118 |
+| 5 | 7,289 | 6.63 | 0.167 | 0.079 |
+| 8 | 7,317 | 6.63 | 0.169 | 0.079 |
+| 12 | 7,317 | 6.63 | 0.169 | 0.079 |
+| 20 | 7,317 | 6.63 | 0.169 | 0.079 |
+
+**Not the candidate budget — it moves the wrong way.** Extending the fragment target buys more
+*small* fragments, because the ranking is ordered by size and a longer list descends further
+into it:
+
+| target = beam width | fragments | size mean | > half | ≥ 0.75 |
+| ---: | ---: | ---: | ---: | ---: |
+| 256 | 7,317 | 6.63 | 0.169 | 0.079 |
+| 512 | 12,649 | 7.44 | 0.142 | 0.054 |
+| 1,024 | 20,004 | 8.38 | 0.139 | 0.039 |
+
+### Generation versus ranking: a separate coverage ceiling
+
+The complement is generated, so the large-fragment deficit is not purely a ranking effect.
+Pushing the budget toward exhaustion on a 16-molecule batch (atoms 13 / 20 / 95) separates the
+two:
+
+| target = beam width | fragments | mean size | count > half | count ≥ 0.75 |
+| ---: | ---: | ---: | ---: | ---: |
+| 256 | 4,001 | 6.71 | 662 | 305 |
+| 512 | 7,333 | 7.69 | 1,165 | 453 |
+| 1,024 | 12,815 | 8.54 | 1,810 | 548 |
+| 2,048 | 21,412 | 9.45 | 2,286 | 574 |
+| 4,096 | 37,796 | 10.40 | 3,461 | 595 |
+
+Total candidates grow 9.4x while fragments at or above 0.75 of the molecule **saturate near
+595**: the last step adds 16,384 candidates and 21 large ones. That is a coverage ceiling, not
+a budget limit. Two distinct effects follow:
+
+1. **Ranking.** At the production target of 256 the beam keeps 305 of roughly 595 reachable
+   large fragments, about 51%. This is the size prior, and the scoring change addresses it.
+2. **Coverage.** Growth stops at `ceil(n / 2)`, so every fragment above half arrives only as a
+   mirror, and mirrors are retained only when connected. A connected fragment larger than half
+   **whose complement is disconnected is unreachable by either route.** The plan records this as
+   the disconnected-complement limitation; the saturation is its external signature. The shape
+   is chemically common: a precursor losing two small neutrals from different positions leaves
+   one large connected fragment and a disconnected remainder.
+
+The scoring change closes both, because `log P(∂f) = C_mol + Σ_{∂f} logit` needs only the
+boundary — no complement and no internal bonds — so a fragment can be scored from its cut set
+whether or not the remainder is connected. Paired with union-find, which returns every component
+of a cut set and not just two, the coverage hole closes with the same edit that removes the
+ranking bias and the complement pass. This also bears on gate 1 in the plan: emitting all
+components of one cut set is a different question from enumerating several cut sets per atom
+set.
+
+The saturation count is not a coverage comparison against `cut_masks`; the two runs used
+different batches. A matched-batch reachable-set comparison remains open.
+
+### Coverage per unit budget, and the architectural mass ceiling
+
+The remaining argument for the beam was enumeration efficiency: spending budget directly in
+fragment space rather than on masks that duplicate fragments. It does not hold. Every fragment
+in the reference universe, the union of both selectors at large budget, was scored by the
+objective the proposal would adopt, `log P(m = ∂f) = C_mol + Σ_{∂f} logit`, and each selector
+measured by captured probability mass at matched budget:
+
+| K | beam mass | `cut_masks` mass | beam ms | `cut_masks` ms | beam ms/fragment | `cut_masks` ms/fragment |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 256 | 0.661 | 0.855 | 1,480 | 34 | 0.370 | 0.0083 |
+| 512 | 0.685 | 0.921 | 2,799 | 89 | 0.382 | 0.0112 |
+| 1,024 | 0.695 | 0.976 | 4,853 | 205 | 0.379 | 0.0141 |
+| 2,048 | 0.701 | 0.983 | 9,408 | 500 | 0.439 | 0.0203 |
+
+**The beam's captured mass saturates near 0.70** across an eightfold budget increase, while
+`cut_masks` reaches 0.983. `cut_masks` per-fragment cost does degrade with budget, 0.0083 to
+0.0203 ms, but stays roughly twentyfold below the beam. Both selectors ran on CPU here, which is
+the beam's unfavourable device; the mass ceiling, however, is device independent.
+
+Decomposing the reference universe by fragment size locates that ceiling exactly:
+
+| fragment size, fraction of molecule | reference fragments | share of total mass | beam reaches, by count | mass beam reaches |
+| --- | ---: | ---: | ---: | ---: |
+| [0, 0.25) | 7,778 | 0.219 | 1.000 | 0.219 |
+| [0.25, 0.50) | 22,195 | 0.137 | 0.999 | 0.136 |
+| [0.50, 0.75) | 11,226 | 0.172 | 0.647 | 0.082 |
+| [0.75, 1.0] | 5,477 | **0.472** | **0.109** | 0.270 |
+
+The beam is **complete below half the molecule and structurally blind above it**, and above half
+is where the mass is: the largest band alone holds 47.2% of total probability mass and the beam
+reaches 10.9% of its fragments. The captured total, 0.707, matches the measured 0.701 saturation,
+so the ceiling is fully accounted for.
+
+The mechanism is visible in the top band, where the beam reaches only 10.9% of fragments but
+captures 57% of that band's mass: a large fragment produced by a **single** bond cut always has a
+connected complement and is therefore reachable, while a large fragment needing several cuts
+generally leaves a disconnected remainder and is not. That is the precursor-minus-two-small-
+neutral-losses shape, and it is missing by construction.
+
+This is a coverage defect **independent of the scoring**. Mask scoring corrects the ranking bias
+but does not make these fragments reachable; only emitting every component of a cut set does,
+which is `cut_masks`' assembly. The enumeration-efficiency argument therefore fails on its own
+terms, and it was the last one supporting the beam as a distinct proposal method.
+
+### Confirmed on trained bond logits
+
+The measurements above use synthetic logits. Repeating the coverage scan with **trained** bond
+logits captured from the MASShatter checkpoint `zlv0bli8` (epoch 41) confirms the direction and
+the mechanism, and **revises the magnitude upward in the beam's favour**. Only the encoder,
+bond-break head and charge head are loaded, which is the whole proposal path; the checkpoint's
+intensity head predates the current architecture and is never used.
+
+The trained model is far more confident than the synthetic sweep assumed:
+`p(cut)` mean 0.096, p10 0.0000, p25 0.0000, **p50 0.0007**, p75 0.040, p90 0.386. Most bonds
+essentially never break.
+
+| selector | K | size mean | acyclic | > half | ≥ 0.75 | **captured mass** | ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `connected_fragment_beam` | 256 | 7.48 | 0.743 | 0.174 | 0.087 | **0.8694** | 220.9 |
+| `cut_masks` | 256 | 10.12 | 0.571 | 0.500 | 0.262 | **0.9997** | 34.7 |
+| `connected_fragment_beam` | 1,024 | 8.68 | 0.764 | 0.148 | 0.045 | **0.8695** | 455.7 |
+| `cut_masks` | 1,024 | 11.96 | 0.546 | 0.586 | 0.287 | **1.0000** | 205.8 |
+
+**The ceiling is 0.87 on trained logits, not the 0.70 measured synthetically** — but it is still a
+ceiling: 0.8694 to 0.8695 across a fourfold budget increase is flat to four decimal places, while
+`cut_masks` is essentially complete at K = 256. The beam remains about six times more expensive
+per fragment on this batch.
+
+| fragment size, fraction of molecule | reference fragments | share of total mass | beam reaches, by count | mass beam reaches |
+| --- | ---: | ---: | ---: | ---: |
+| [0, 0.25) | 2,807 | 0.194 | 1.000 | 0.194 |
+| [0.25, 0.50) | 15,120 | 0.217 | 1.000 | 0.217 |
+| [0.50, 0.75) | 7,460 | 0.160 | 0.685 | 0.096 |
+| [0.75, 1.0] | 2,788 | **0.429** | **0.174** | 0.363 |
+
+The structure is unchanged: complete below half the molecule, sharply limited above it, with the
+top band holding the largest share of mass. The beam does better here than under synthetic logits
+for an understandable reason — a confident model concentrates mass on **single-cut** masks, whose
+large fragment always has a connected complement and is therefore reachable. What stays missing
+is the multi-cut large fragments, which is precisely the predicted failure mode.
+
+So the size and topology prior, the above-half coverage limit and the flat ceiling all reproduce
+on real trained weights. The cost of the limit is about 13% of probability mass rather than 30%.
+
+### The original prototype isolates the scoring change
+
+The standalone research prototype `others/fast_gnn.py` shares the beam's architecture — growth to
+`ceil(n / 2)`, connected mirrors, the same budget — but ranks by the **mask log probability**
+rather than by `B + I_f`. Running it on the same trained logits therefore isolates the scoring
+decision from everything else.
+
+| selector | K | fragments | size mean | > half | captured mass |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| repo beam, `B + I_f` | 256 | 3,523 | 7.48 | **0.174** | **0.8694** |
+| prototype, `log P(∂f)` | 256 | 3,801 | 9.85 | **0.485** | **0.7569** |
+| `cut_masks` | 256 | 3,691 | 10.12 | 0.500 | **0.9996** |
+| repo beam, `B + I_f` | 1,024 | 9,608 | 8.68 | 0.148 | 0.8694 |
+| prototype, `log P(∂f)` | 1,024 | 11,843 | 11.36 | 0.560 | 0.7570 |
+| `cut_masks` | 1,024 | 9,304 | 11.96 | 0.586 | 1.0000 |
+
+**The size and topology prior is entirely the scoring change.** With mask scoring the prototype
+emits a nearly symmetric distribution, 0.485 above half against `cut_masks`' 0.500, versus 0.174
+for the installed beam. Architecture, growth depth and mirroring are identical, so nothing else
+can account for it. The two beams agree on only about half their fragments, Jaccard 0.49 at
+K = 256.
+
+**But mask scoring costs budget efficiency.** The prototype captures *less* probability mass,
+0.757 against 0.869, despite the better size distribution. The likely explanation, inferred from
+the counts rather than proven: under mask scoring a fragment and its complement score
+identically, so the prototype spends two budget slots per mask and covers roughly half as many
+distinct masks, while the installed beam's size prior keeps mostly one side and is accidentally
+budget-efficient.
+
+The two beam variants therefore fail in complementary ways and **neither approaches
+`cut_masks`**. Correcting the size bias halves the effective budget; keeping the budget
+efficiency keeps the bias. Escaping both requires emitting every component of a mask from one
+enumeration slot, which is exactly `cut_masks`' assembly. This is the same conclusion the algebra
+reaches, measured from an independent direction.
+
+### Pre-fix versus post-fix: the correctness fixes barely change the output
+
+Every measurement above uses the **post-fix** beam: `mass_shatter_fast_gnn.py` is unchanged
+between `dca3d0f9` and the current tree, so the ceiling is the corrected implementation's, not an
+artifact of the audited defects. Comparing the two revisions' emitted fragment sets directly, on
+a fixed batch across three logit seeds, two logit means, two budgets and two boundary-cut caps:
+
+| configurations | identical emitted set | differing |
+| --- | ---: | ---: |
+| 24 | 18 | 6 |
+
+Where they differ, the difference is **one or two fragments out of 4,001**, about 0.03%, and at
+the smaller budget of 64 the two agree everywhere. So the two audit fixes cost **447 of 493 ms**
+and alter roughly three candidates in ten thousand on real molecular graphs.
+
+That is not an argument that the fixes were wrong. The premature-pruning counterexample is
+genuine, and the stable-tie ordering exists to make candidate selection **invariant to batch
+composition** — a property this comparison cannot see, because it holds the batch fixed. The
+useful conclusion is narrower: the expensive per-round complement pass buys determinism and a
+rare ranking correction, not materially different candidates, while the defect that actually
+limits the method — the coverage ceiling above half the molecule — is untouched by either
+revision.
+
+## Reproducing this analysis
+
+All measurements come from
+[scripts/debug/analyze_proposal_fragment_coverage.py](../../scripts/debug/analyze_proposal_fragment_coverage.py),
+run from the repository root with the configured `FRAGNNET-GPU` interpreter. Candidate
+construction only: no checkpoint, training or spectra are involved.
+
+```bash
+FRAGNNET_PYTHON=/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python
+
+# Emitted size, ring and complement-asymmetry distributions across the logit sweep,
+# and the boundary-cut / budget controls. 32-molecule batch.
+"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+  --mode distributions --batch-size 32 --subsample-size 256 --output /tmp/beam_distributions.json
+"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+  --mode controls --batch-size 32 --subsample-size 256 --output /tmp/beam_controls.json
+
+# Captured mask-probability mass, top-K recall and the size-band decomposition.
+# 16-molecule batch; add --coverage-budgets 256 512 1024 2048 for the saturation table.
+"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+  --mode coverage --batch-size 16 --subsample-size 128 --output /tmp/beam_coverage.json
+
+# Pre-fix versus post-fix emitted sets. Extract the historical revision first.
+git show dca3d0f9:src/fragnnet/frag/mass_shatter_fast_gnn.py > /tmp/prefix_beam.py
+"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+  --mode implementations --beam-implementation /tmp/prefix_beam.py \
+  --output /tmp/beam_implementations.json
+
+# The same coverage scan on TRAINED bond logits, which needs no matching intensity head.
+"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+  --mode coverage --checkpoint wandb/run-20260815_150218-zlv0bli8/files/ckpt/last.ckpt \
+  --batch-size 16 --subsample-size 128 --coverage-budgets 256 1024 \
+  --output /tmp/beam_coverage_trained.json
+
+# The installed beam against the original prototype, which ranks by mask log probability.
+# The prototype imports packages absent here; the loader stubs them, since its search is
+# pure tensor code. Drop --checkpoint to use synthetic logits instead.
+"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+  --mode implementations --beam-implementation others/fast_gnn.py \
+  --checkpoint wandb/run-20260815_150218-zlv0bli8/files/ckpt/last.ckpt \
+  --batch-size 16 --subsample-size 128 --output /tmp/beam_vs_prototype.json
+```
+
+Each run writes a JSON report and logs the tables above. `--logit-seed` selects the synthetic
+logit draw; the recorded numbers use the default 17. The distribution and control tables use a
+32-molecule batch and the coverage tables a 16-molecule batch, so their fragment counts are not
+directly comparable across sections.
+
+### Provenance and limits
+
+- One batch of 32 molecules from the train split of the
+  [unmerged CMF beam arm config](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml),
+  in-memory subsample 256, seed 397623. Atom counts 10 / 17 / 40 (min / median / max), 669
+  bonds. CPU, `FRAGNNET-GPU` interpreter.
+- Beam: `max_fragments = beam_width = 256`, `max_boundary_cuts = 5` unless varied.
+  `cut_masks`: `max_masks = max_unique_components = 256`, `max_enumerated_masks = 4096`,
+  `include_single_bond_cuts = True`, `candidate_backend = "cpu"`.
+- **Budgets are matched on unique fragments, not masks.** `cut_masks` received
+  `max_masks = max_unique_components = K` with `max_enumerated_masks = 16K`, the production
+  ratio (256 / 256 / 4096), so it may enumerate 16K masks but is measured on K distinct atom
+  sets; the beam received `max_fragments = beam_width = K`. Both caps include the intact
+  precursor. Matching on output favours the beam: since `cut_masks` is about twenty times
+  cheaper per fragment, matching on work instead would have widened the gap.
+- **Complement generation was active in every beam run**; `build_fast_gnn_candidates` has no
+  option to disable it. Growth stops at `ceil(n / 2)`, so every emitted fragment above half the
+  molecule is mirror-derived, and the reported above-half coverage is therefore the ceiling with
+  mirroring on rather than without it.
+- Fragments are the unique components from `MassShatterModel._unique_component_memberships`, so
+  both selectors are compared on the same emitted-fragment definition. Cycle rank is
+  `internal_bonds − atoms + 1`; the `≥ 0.75` column includes the intact precursor, the
+  `[0.75, 1)` histogram bin does not.
+- **Two logit sources were used.** The distribution, control and size-band tables use synthetic
+  logits drawn from a normal distribution with seed 17, so the sweep tests whether *any* learned
+  logits could remove the effect. The coverage scan was additionally repeated with **trained**
+  logits from checkpoint `zlv0bli8` (epoch 41), loaded non-strictly so that only the encoder,
+  bond-break head and charge head must match; the checkpoint's intensity head predates the
+  current architecture and is never used. Trained logits reproduce every direction and raise the
+  beam's mass ceiling from 0.70 to 0.87. One checkpoint, one epoch, one batch.
+- One batch, one molecule-size distribution, candidate construction only. No training, no
+  spectral accuracy and no timing conclusions are drawn here.
+- Measurements are reproduced by
+  [scripts/debug/analyze_proposal_fragment_coverage.py](../../scripts/debug/analyze_proposal_fragment_coverage.py);
+  see the reproduction commands above. The script loads one batch through
+  `init_dataset`/`init_dataloader`, generates logits, calls `build_fast_gnn_candidates` and
+  `build_mass_shatter_candidates` on the same tensors, and summarizes
+  `_unique_component_memberships` output.
 
 ## Mechanisms that already exist in MASShatter
 
@@ -204,6 +588,53 @@ That makes the comparison answerable from artifacts that already exist: read
 an existing `cut_masks` run, against `fast_gnn_fragment_count` and `fast_gnn_search_batch_ms`
 from a beam run, at matched fragment target. No new benchmark is required for a first answer.
 
+## Prototype comparison: the scoring change created the cost
+
+The workspace prototype `others/fast_gnn.py` (untracked) carries **two scores that disagree**, and the
+repo's divergence is how that inconsistency was resolved.
+
+Its *search* accumulates `C_mol = Σ_all log(1 − p_e)` from `−softplus(logit)` and grows by
+`deg_logit − 2·to_F`, whose running value is `Σ_{e ∈ ∂f} logit_e`. Its *returned* score is built
+separately from `logit − softplus(logit) = log p` on boundary bonds and `−softplus(logit) =
+log(1 − p)` on internal bonds:
+
+```text
+prototype search  = Σ_all log(1−p) + Σ_{∂f} log(p/(1−p)) = B + I_f + I_f̄ = log P(m = ∂f)
+prototype output  = Σ_{∂f} log p + Σ_{int} log(1−p)      = B + I_f
+```
+
+The search form is exactly `cut_masks`' mask log probability and exactly what
+`_score_mask_log_probabilities` computes; the output form is the repo's beam score. They differ
+by `I_f̄`, the same divergence derived algebraically above. The plan's fragment-probability
+alignment resolved the inconsistency by making search follow the *output* convention, because
+that is the score the downstream model consumes.
+
+That single choice is the origin of everything below. Aligning the other way — output follows
+search — would have been equally consistent, would have kept complements score-symmetric, and
+would have placed the beam on `cut_masks`' objective exactly.
+
+**The consequence is the cost.** Under mask scoring a fragment and its complement share the
+mask and therefore have identical scores — which is what `mirror_symmetric` means in the
+prototype. Mirrors are one XOR plus one connectivity check, run **once at the end on at most
+`top_k` fragments**. Pruning by seed score before mirroring is then correct, because the
+complement's score equals the seed's, so the audit's second finding cannot arise.
+
+Changing the score broke that symmetry, which made pruning-before-mirroring a real defect,
+whose fix moved complement generation into every growth round over unpruned candidates. The
+ablation attributes 447 of the 493 ms regression to that pass and only 34 ms to stable sorting.
+So the beam's dominant cost and its divergence from `cut_masks` are one decision, not two.
+
+Reverting the score to the prototype's form would drop the internal-bond index arrays, make
+complements score-free again, dissolve the second audit finding and most of the regression. The
+price is precisely what `cut_masks` spends the charge head on: `f` and `f̄` become
+indistinguishable, so the frozen charge head would be needed again to separate them.
+
+Both audit defects are present in the prototype: `torch.topk` without a stable tie key, and
+mirrors taken after the `rank < top_k` cap. Other divergences are per-molecule growth depth,
+per-round dedup and top-K (absent in the prototype), the reserved precursor slot, vectorized
+popcount, and the prototype computing `frag_mz`, `frag_num_h` and `frag_embed` inside the
+search where the repo returns the sparse membership adapter and uses MASShatter chemistry.
+
 ## The half-depth trick, and what pays for it
 
 The search grows each molecule's atom sets only to `ceil(atom_count / 2)` rounds and recovers
@@ -224,14 +655,17 @@ boundary cut set yields the fragment **and** every complement piece in the same 
 keeps its 2× and loses its penalty. This is the strongest argument for the replacement, and it
 is stronger than the "duplicated code" argument.
 
-One further source-level observation, not profiled here: the reachability loop breaks on
-`th.equal(updated, reach)`, which returns a Python bool and therefore forces a device-to-host
-synchronization on **every iteration**, inside every chunk, inside every round. `_search` also
-synchronizes at `recorded.any()`, at `int(counts.max().item())`, at `int(keep_rank.max().item())`
-and at each boolean-mask index. On a 76-atom batch at half depth this is plausibly hundreds of
-syncs per batch. This is the failure mode the
-[MASShatter GPU audit](../plans/masshatter_gpu_audit.md) catalogues, it is independent of the
-union-find question, and it is cheap to test.
+Part of that cost is synchronization rather than arithmetic, and the speed audit's operator
+profile already measures it: `aten::equal` rises from 33 to 1,304 calls and CUDA stream
+synchronizations from 1,175 to 3,048. Those `equal` calls are the reachability loop's
+`th.equal(updated, reach)` break test, which returns a Python bool and so forces a
+device-to-host synchronization on every iteration, inside every chunk, inside every round; the
+audit names that host-visible equality test as a main contributor. `_search` synchronizes
+further at `recorded.any()`, `int(counts.max().item())`, `int(keep_rank.max().item())` and at
+each boolean-mask index. This is the failure mode the
+[MASShatter GPU audit](../plans/masshatter_gpu_audit.md) catalogues. It is independent of the
+union-find question: an asynchronous fixed-iteration or count-based convergence test would
+remove the syncs without changing the algorithm.
 
 ## Cost consequence
 

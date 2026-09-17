@@ -6,7 +6,7 @@
 ## Objective and scope
 
 Add a selectable connected-fragment beam proposal inspired by the workspace
-[FastGNN prototype](../../fast_gnn.py), retaining MASShatter's encoder options, chemistry,
+[FastGNN prototype](../../others/fast_gnn.py), retaining MASShatter's encoder options, chemistry,
 intensity head, sparse prediction contract, and spectrum-based proposal supervision.
 The existing `cut_masks` formulation and CPU/CUDA backends remain the default.
 This is an alternative scientific model, not an exact acceleration of mask marginalization.
@@ -365,3 +365,84 @@ any measured batch size, and the gap is large enough that it cannot be closed by
 as an alternative proposal formulation to screen on accuracy, and remove the speed framing from
 this plan unless the complement and growth loops are restructured and re-measured. No training,
 whole-step throughput or quality evaluation ran for this measurement.
+
+## Proposed: proposal-only beam with learned charge (2026-09-17)
+
+> **Status:** PROPOSED, EVIDENCE AGAINST · Design recorded from review, then measured on
+> 2026-09-17 and not supported. Do not implement from this section without reading the
+> [coverage ceiling measurement](../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md#coverage-per-unit-budget-and-the-architectural-mass-ceiling):
+> the beam's captured probability mass saturates near 0.70 at any budget against 0.983 for
+> `cut_masks`, because it is complete below half the molecule and structurally blind above it,
+> where 64% of the mass lies. That ceiling is architectural, so the scoring and charge changes
+> below would not lift it. The redesign remains correct as a description of what is wrong with
+> the current score; it is no longer a recommended build.
+
+Direction set by the user after the
+[reuse and equivalence finding](../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md):
+keep the connected-fragment beam as a **candidate enumerator**, and restore a learned charge
+component instead of the implicit prior that the current score carries.
+
+### Objective
+
+Reconcile the prototype's two scores toward its **search** form rather than its output form.
+The beam then enumerates masks of the shape "boundary of one connected atom set" — the
+chemically meaningful subclass — and MASShatter's existing scoring path assigns fragment
+probability, as it already does for `cut_masks`.
+
+### Scoring change
+
+Replace `B + I_f` with the isolating mask's log probability `B + I_f + I_f̄`, which is what
+`_score_mask_log_probabilities` already computes from boundary bonds and a per-molecule
+baseline. Consequences, all recorded in the linked finding:
+
+- The size and topology prior favouring small acyclic fragments disappears. Ring cleavage
+  remains penalized through the correct channel — two or more boundary cuts, each costing
+  `log p` — rather than being double-charged through internal-bond count.
+- The chemically reasonable part of the prior, fragile boundary with stable interior, is
+  retained unchanged.
+- A fragment and its complement share the mask and therefore the score, so mirrors become free
+  again and the audit's premature-pruning finding cannot arise. Most of the measured 447 ms
+  complement cost is removed with it.
+- Internal-bond index arrays (`internal_id`, `internal_owner`) are no longer needed; scoring
+  requires the boundary alone.
+
+### Charge component
+
+Unfreeze `AtomChargeAffinityHead`, currently `requires_grad_(False)` for this proposal method,
+and route fragments through the existing `latent_pathway_charge_log_probabilities` with the
+configured `charge_pooling`. The learned head then separates a fragment from its complement on
+proton affinity and basic sites, replacing the current implicit "charge stays on the smaller
+fragment" prior. Existing checkpoint tensor names and shapes are unaffected; the head is
+already present in state dictionaries.
+
+### Adapter change
+
+The one structural item. Today every candidate adapter mapping is an identity, one row per
+fragment. Emit each mirror pair as **two components of one mask** instead:
+`mask_log_probabilities` holds one value per mask, and both siblings reference it through
+`component_mask_indices`. This is exactly the shape `cut_masks` produces, so the charge split,
+`component_unique_indices` deduplication and unique-component marginalization all work
+unchanged. Where two distinct masks yield the same atom set, the existing
+`_segment_logsumexp` then recovers ring-reconnection pathways that the current formulation
+drops.
+
+### Open questions and gates
+
+1. Whether the beam should enumerate more than one mask per fragment. One boundary mask per
+   atom set is the default; additional masks are what would narrow the ring-reconnection gap.
+   Note this is a different question from emitting **all** components of one cut set, which the
+   2026-09-17 measurement makes the higher priority: fragments above half the molecule saturate
+   near a fixed count regardless of budget, because they arrive only as connected mirrors, so a
+   connected fragment whose complement is disconnected is unreachable today. Union-find returns
+   every component of a cut set and closes that hole with the same edit.
+2. Whether `proposal_selection_only` remains the right supervision once fragment probability
+   comes from mask probability plus a trained charge head.
+3. Matched comparison against `cut_masks` at equal fragment target: coverage, spectral
+   accuracy, candidate time and peak memory. The fragment size and ring-count half of this gate
+   was run on 2026-09-17 and confirms the prior, with both obvious confounds excluded; see the
+   [measured section](../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md#measured-emitted-fragment-distributions-2026-09-17).
+   Synthetic logits were used, so a checkpoint-logit confirmation remains open.
+4. Existing connected-fragment checkpoints become diagnostic-only under the scoring change, as
+   the earlier fragment-probability alignment already required.
+
+No code was changed and nothing was measured for this proposal.

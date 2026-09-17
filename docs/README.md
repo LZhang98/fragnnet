@@ -37,7 +37,7 @@ roadmap. It links the analyses that justify each item.
 
 | Audit | Scope |
 |-------|-------|
-| [Connected-fragment beam reuse and equivalence](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Source/algebra review: the beam objective equals the isolating mask's log probability minus the complement's intact term, with the charge head replaced by a fixed prior; nine of ~13 mechanisms already exist in MASShatter. |
+| [Connected-fragment beam reuse and equivalence](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Source/algebra review: the beam objective equals the isolating mask's log probability minus the complement's intact term, so it carries a size/topology prior favouring small acyclic fragments; nine of ~13 mechanisms already exist in MASShatter. |
 | [Connected-fragment beam speed audit](findings/connected_fragment_beam_speed_2026_09_17.md) | Synchronized real-graph GPU audit: correctness fixes raise batch-128/beam-256 candidate time 3.07× and forward/backward time 68%; complement connectivity dominates. |
 | [FastGNN proposal option](plans/masshatter_fast_gnn_proposal.md) | LANDED experimental connected-fragment proposals with MASShatter chemistry and intensity scoring; local validation passed. |
 | [MASShatter GPU audit](plans/masshatter_gpu_audit.md) | Static + measured (2026-09-14) GPU utilization and CPU–GPU synchronization audit of the masshatter and ion-H-selection branches; branch-specific optimization priorities. |
@@ -73,7 +73,7 @@ roadmap. It links the analyses that justify each item.
 
 | Doc | Result |
 |-----|--------|
-| [connected_fragment_beam_reuse_and_equivalence_2026_09_17.md](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Beam vs `cut_masks` objective algebra (equal up to a charge prior, ring-reconnection terms and search), nine duplicated mechanisms with existing counterparts, and five existing features the beam switches off. |
+| [connected_fragment_beam_reuse_and_equivalence_2026_09_17.md](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | Beam vs `cut_masks` objective algebra (equal up to a charge prior, ring-reconnection terms and search), plus a measured size/topology prior: on trained logits the beam's captured mass is flat at 0.8695 vs 1.0000 for cut_masks because it is complete below half the molecule and blind above it; cut-cap and budget confounds excluded. |
 | [masshatter_training_speed_2026_09_17.md](findings/masshatter_training_speed_2026_09_17.md) | s3gy1ro4 speed audit: 44.4-minute epochs, 33% median GPU utilization; disabling monitoring-only channel attribution and base CE improves local batch-128 forward/backward throughput by 1.40×. |
 | [masshatter_unmerged_overfitting_2026_09_16.md](findings/masshatter_unmerged_overfitting_2026_09_16.md) | All 27 unmerged W&B histories: widening loss gaps, limited late regression, incomplete train-cosine instrumentation, and corrected sampler/scheduler claims. |
 | [subformula_filter_ft_qtof.md](findings/subformula_filter_ft_qtof.md) | Cleaning census and verified saved D3/D4 filtered oracle; D4 95.92% weighted recall, with explicit limits on comparison to MASShatter. |
