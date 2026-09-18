@@ -165,6 +165,14 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         "collate_fn": ds.get_collate_fn(),
         "pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu"),
     }
+    if (
+        config_d["num_workers"] > 0
+        and config_d["model_type"] == "mass_shatter"
+        and config_d["automatic_optimization"]
+    ):
+        # Keep workers and their preprocessing caches alive; matches the exemption from
+        # reload_dataloaders_every_n_epochs, without which workers respawn every epoch anyway.
+        dl_param_d["persistent_workers"] = True
 
     # Set up a generator for reproducible sampling (will be overwritten each epoch)
     generator = th.Generator()
@@ -1004,10 +1012,13 @@ def init_run(
         trainer_param_d["accumulate_grad_batches"] = config_d["accumulate_grad_batches"]
         trainer_param_d["gradient_clip_val"] = config_d["gradient_clip_val"]
         trainer_param_d["gradient_clip_algorithm"] = config_d["gradient_clip_algorithm"]
-        if config_d["num_workers"] > 0:
+        if config_d["num_workers"] > 0 and config_d["model_type"] != "mass_shatter":
             # little hack to prevent memory explosion
             # https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
             # https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
+            # MASShatter is exempt: it uses SpecMolDataset, which has no frag_pl_sd/frag_pp_sd
+            # fragment caches, so worker RSS stays bounded and respawning only discards the
+            # spectrum/molecule preprocessing caches.
             trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
     elif config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
         # with out this progress will not track dataset length change

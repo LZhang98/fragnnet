@@ -594,3 +594,51 @@ class TestSimpleGroupSamplerTypeValidation:
         validate_sampler_config(
             _base_config(simple_group_sampler=False, simple_group_sampler_type="bad_type")
         )
+
+
+class TestMassShatterWorkerPersistence:
+    """MASShatter keeps DataLoader workers alive across epochs.
+
+    SpecMolDataset carries no frag_pl_sd/frag_pp_sd caches, so the FraGNNet
+    memory-explosion workaround (respawning workers every epoch) only costs
+    MASShatter its spectrum/molecule preprocessing caches.
+    """
+
+    class _Dataset:
+        split = "train"
+
+        def __len__(self):
+            return 2
+
+        @staticmethod
+        def get_collate_fn():
+            return lambda samples: samples
+
+    def _config(self, **overrides):
+        settings = {
+            "dynamic_batch_sampler": False,
+            "mass_shatter_batch_sampler": False,
+            "automatic_optimization": True,
+            "num_workers": 2,
+            "pin_memory": False,
+            "accelerator": "cpu",
+            "train_batch_size": 2,
+            "drop_last": False,
+            "seed": 1,
+        }
+        settings.update(overrides)
+        return _base_config(**settings)
+
+    def test_mass_shatter_uses_persistent_workers(self):
+        loader = init_dataloader(self._Dataset(), self._config(model_type="mass_shatter"))
+        assert loader.persistent_workers is True
+
+    def test_frag_gnn_does_not_use_persistent_workers(self):
+        loader = init_dataloader(self._Dataset(), self._config(model_type="frag_gnn"))
+        assert loader.persistent_workers is False
+
+    def test_single_process_loading_stays_non_persistent(self):
+        loader = init_dataloader(
+            self._Dataset(), self._config(model_type="mass_shatter", num_workers=0)
+        )
+        assert loader.persistent_workers is False

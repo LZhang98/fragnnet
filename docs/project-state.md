@@ -62,6 +62,19 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   The checkout was clean at audit start, so the
   uncommitted-work description in the workflow-adoption handoff above is historical.
 
+- [Cross-adduct loss headroom](findings/cross_adduct_loss_headroom_2026_09_17.md) is a NEW, GREEN
+  data-side gate (2026-09-17) for grouping MS/MS by adduct and adding a paired loss. 46.5% of
+  NIST20 molecules carry at least two adducts; 78,938 groups match on instrument, fragmentation
+  mode and NCE; the InChIKey split never separates a molecule's adducts, so groups are
+  leak-free and usable in validation. `[M+H]+` and `[M-H]-` of the same molecule share about
+  40% of intensity as neutral fragments at 29x over control, but a molecule-independent
+  neutral-loss transform fitted on disjoint molecules closes only 9.3% of the gap to the 0.950
+  replicate floor, so roughly 92% of the cross-adduct difference is molecule-specific and an
+  adduct embedding cannot supply it for free. Chosen formulation: a delta loss on the shared
+  fragment subset, keeping adduct-conditioned proposals. Blockers to implementation are known:
+  `group_id` never spans adducts (0 of 76,164 groups) and the shared-proposal path asserts one
+  precursor type per group. Next: run the trained-model half of the gate against a multi-adduct
+  checkpoint; both checkpoints in this checkout are `[M+H]+` only. No implementation started.
 - [Model improvement roadmap](plans/model_improvement_plan.md) remains the canonical source
   for research priorities and acceptance criteria. Its banner is dated 2026-07-24; reconcile
   its proposed next action with current code and artifacts before resuming it.
