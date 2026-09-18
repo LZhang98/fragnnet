@@ -9,6 +9,12 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
+# PyTorch's attention kernels launch one CUDA grid block per sequence in the batch
+# dimension, which caps that dimension at the 65,535 grid-size limit. The atom decoder
+# treats every fragment as its own sequence, so large training batches exceed the cap and
+# fail with "CUDA error: invalid configuration argument". Decode in chunks below the cap.
+_MAX_ATTENTION_SEQUENCES = 32768
+
 
 def _validate_tensor_condition(condition: th.Tensor, message: str) -> None:
     """Validate tensor data without synchronizing CUDA after every check."""
@@ -477,11 +483,22 @@ class CandidateIntensityTransformerHead(nn.Module):
             device=tokens.device,
         )
         memory_padding_mask[sorted_fragment_indices, positions] = False
-        refined_tokens = self.atom_decoder(
-            tgt=tokens.unsqueeze(1),
-            memory=memory,
-            memory_key_padding_mask=memory_padding_mask,
-        ).squeeze(1)
+        # Each fragment attends only to its own atoms, so splitting the fragment
+        # dimension leaves the result unchanged while keeping every attention launch
+        # inside the CUDA grid limit.
+        refined_chunks = [
+            self.atom_decoder(
+                tgt=tokens[start : start + _MAX_ATTENTION_SEQUENCES].unsqueeze(1),
+                memory=memory[start : start + _MAX_ATTENTION_SEQUENCES],
+                memory_key_padding_mask=memory_padding_mask[
+                    start : start + _MAX_ATTENTION_SEQUENCES
+                ],
+            ).squeeze(1)
+            for start in range(0, tokens.shape[0], _MAX_ATTENTION_SEQUENCES)
+        ]
+        refined_tokens = (
+            refined_chunks[0] if len(refined_chunks) == 1 else th.cat(refined_chunks, dim=0)
+        )
         if self.atom_decoder_gate is None:
             raise RuntimeError("atom decoder gate is missing for the configured atom decoder")
         return tokens + self.atom_decoder_gate * (refined_tokens - tokens)

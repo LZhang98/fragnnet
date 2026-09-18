@@ -10,6 +10,7 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
+from fragnnet.model import bond_fragment_heads
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
@@ -283,6 +284,61 @@ def test_candidate_intensity_transformer_masks_fragment_atom_attention() -> None
 
     assert th.allclose(baseline[0], perturbed[0], atol=1e-6)
     assert not th.allclose(baseline[1], perturbed[1])
+
+
+def test_candidate_intensity_atom_decoder_chunking_matches_one_shot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Chunked atom decoding reproduces the unchunked result up to float32 rounding."""
+    th.manual_seed(46)
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=16,
+        num_inducing_points=3,
+        atom_decoder_num_layers=2,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=True,
+    ).eval()
+    assert head.atom_decoder_gate is not None
+    with th.no_grad():
+        head.atom_decoder_gate.fill_(1.0)
+    num_fragments, atoms_per_fragment = 7, 3
+    tokens = th.randn(num_fragments, 8)
+    atom_embeddings = th.randn(num_fragments * atoms_per_fragment, 4)
+    atom_indices = th.arange(num_fragments * atoms_per_fragment)
+    atom_fragment_indices = th.repeat_interleave(
+        th.arange(num_fragments),
+        atoms_per_fragment,
+    )
+
+    monkeypatch.setattr(bond_fragment_heads, "_MAX_ATTENTION_SEQUENCES", num_fragments)
+    one_shot = head._refine_from_fragment_atoms(
+        tokens,
+        atom_embeddings,
+        atom_indices,
+        atom_fragment_indices,
+    )
+    monkeypatch.setattr(bond_fragment_heads, "_MAX_ATTENTION_SEQUENCES", 2)
+    chunked = head._refine_from_fragment_atoms(
+        tokens,
+        atom_embeddings,
+        atom_indices,
+        atom_fragment_indices,
+    )
+
+    assert chunked.shape == (num_fragments, 8)
+    assert th.allclose(one_shot, chunked, atol=1e-6)
+
+
+def test_atom_decoder_chunk_size_stays_within_the_cuda_grid_limit() -> None:
+    """Attention launches one grid block per sequence, capped at 65,535."""
+    assert 0 < bond_fragment_heads._MAX_ATTENTION_SEQUENCES <= 65535
 
 
 def test_candidate_intensity_atom_decoder_starts_as_identity() -> None:
