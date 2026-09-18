@@ -57,7 +57,7 @@ inference:
   ckpt_dir: /mnt/data/luke_fragnnet_checkpoints/nist20_scaffold_fragnnet_d3_s0_unmerged_20260913
   ckpt_epoch: best
   device: cuda:0
-  batch_size: 32
+  batch_size: 8
   num_workers: 7
   split: predict_only
   batch_cutoff: 1000000
