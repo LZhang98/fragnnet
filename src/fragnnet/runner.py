@@ -17,7 +17,6 @@ except ModuleNotFoundError:
 import logging
 import yaml
 import os
-from datetime import datetime
 
 import glob
 import shutil
@@ -324,10 +323,9 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	else:
 		run_name = config_d["wandb_name"]
 	model_save_name = str(run_name).strip().replace(os.sep, "_")
-	run_date = datetime.now().strftime("%Y%m%d")
 	model_save_dp = os.path.join(
 		config_d["model_save_dir"],
-		f"{model_save_name}_{run_date}"
+		model_save_name
 	)
 	ckpt_dp = model_save_dp
 	os.makedirs(ckpt_dp, exist_ok=True)
@@ -491,7 +489,10 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	trainer = pl.Trainer(**trainer_param_d)
 
-	if not config_d["disable_checkpoints"] and config_d.get("checkpoint_save_initial", False) and not is_resume:
+	# enable resume via config flag (independent of the job_id/wandb-based resume)
+	resume_from_ckpt = config_d.get("resume", False) and not config_d["disable_checkpoints"]
+
+	if not config_d["disable_checkpoints"] and config_d.get("checkpoint_save_initial", False) and not is_resume and not resume_from_ckpt:
 		initial_ckpt_fp = os.path.join(ckpt_dp, "model-epoch=000-untrained.ckpt")
 		th.save(
 			{
@@ -517,11 +518,12 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		trainer.fit(model, train_dl)
 	else:
 		logging.info("fit model")
-		if is_resume:
+		if is_resume or resume_from_ckpt:
 			ckpt_fp = os.path.join(ckpt_dp,"last.ckpt")
 			if os.path.isfile(ckpt_fp):
 				logging.info(f"resuming from checkpoint: {ckpt_fp}")
 			else:
+				logging.warning(f"resume requested but no checkpoint found at: {ckpt_fp}, training from scratch")
 				ckpt_fp = None
 		else:
 			ckpt_fp = None
