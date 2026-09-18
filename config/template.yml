@@ -332,6 +332,12 @@ mass_shatter_channel_support_attribution: gaussian_posterior  # ["gaussian_poste
 mass_shatter_channel_support_use_intensity_prior: True
 # Compute dense observational channel metrics even without a support loss.
 mass_shatter_channel_diagnostics: False
+# Log the per-spectrum channel support summaries: fragment_precision,
+# fragment_weighted_precision, {ion_mode,ion_h}_support_positive_rate and the
+# required_ion_h_top_k_* ranks. They iterate over the batch in Python, which costs more than
+# building the channel targets they summarize, and no loss consumes them. A support loss no
+# longer brings them along; mass_shatter_channel_diagnostics still implies them.
+mass_shatter_channel_support_metrics: False
 # Log overall candidate coverage: candidate_wrecall (the enumerated candidates' intensity
 # ceiling, every step) and validation candidate_recall. Each costs one match-mask pass per
 # spectrum, so they are off by default; enabling them changes monitoring only, not the loss.

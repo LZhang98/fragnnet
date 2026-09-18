@@ -948,7 +948,31 @@ def test_mass_shatter_pl_builds_separate_ion_h_support_head() -> None:
     assert model.model.intensity_head.ion_h_support_head is not None
     assert model.model.ion_h_support_binary_logits
     assert "ion_h_support_loss" in model.loss_names
+    # The support loss builds the channel targets but no longer logs their summaries.
+    assert "fragment_precision" not in model.loss_names
+
+
+def test_channel_support_metrics_can_be_requested_beside_the_support_loss() -> None:
+    model, config = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=0.1,
+        mass_shatter_separate_ion_h_support_head=True,
+        mass_shatter_ion_h_support_binary_logits=True,
+        mass_shatter_ion_h_support_loss_weight=0.2,
+        mass_shatter_channel_support_metrics=True,
+    )
+
+    assert config["mass_shatter_channel_support_metrics"] is True
     assert "fragment_precision" in model.loss_names
+    assert "required_ion_h_top_k_95_mean" in model.loss_names
+
+
+def test_channel_support_metrics_are_off_by_default() -> None:
+    _, config = _build_pl()
+
+    assert config["mass_shatter_channel_support_metrics"] is False
 
 
 def test_binary_logit_semantics_must_match_bce_support_loss() -> None:

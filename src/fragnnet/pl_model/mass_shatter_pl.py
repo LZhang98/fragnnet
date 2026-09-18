@@ -1234,6 +1234,8 @@ class MassShatterPL(SpectrumPL):
             )
         if not isinstance(self.hparams.mass_shatter_channel_diagnostics, bool):
             raise ValueError("mass_shatter_channel_diagnostics must be boolean")
+        if not isinstance(self.hparams.mass_shatter_channel_support_metrics, bool):
+            raise ValueError("mass_shatter_channel_support_metrics must be boolean")
         if self.hparams.mass_shatter_channel_diagnostics and not (
             self.hparams.mass_shatter_unique_fragment_mode
             and self.hparams.mass_shatter_proposal_selection_only
@@ -1302,8 +1304,14 @@ class MassShatterPL(SpectrumPL):
             self.hparams.mass_shatter_ion_mode_proposal_loss_weight > 0.0
         )
         ion_h_support_loss_enabled = self.hparams.mass_shatter_ion_h_support_loss_weight > 0.0
+        # mass_shatter_channel_diagnostics exists to produce exactly these summaries, so it
+        # implies them; without that the dense targets it builds would go unused.
+        channel_support_metrics_enabled = (
+            self.hparams.mass_shatter_channel_support_metrics
+            or self.hparams.mass_shatter_channel_diagnostics
+        )
         channel_targets_enabled = (
-            self.hparams.mass_shatter_channel_diagnostics
+            channel_support_metrics_enabled
             or ion_mode_proposal_loss_enabled
             or ion_h_support_loss_enabled
         )
@@ -1501,16 +1509,7 @@ class MassShatterPL(SpectrumPL):
                 loss = (
                     loss + self.hparams.mass_shatter_intensity_entropy_match_weight * entropy_match
                 )
-            support_metric_names = (
-                "fragment_precision",
-                "fragment_weighted_precision",
-                "ion_mode_support_positive_rate",
-                "ion_h_support_positive_rate",
-                *_ION_H_REQUIRED_K_METRIC_NAMES,
-            )
-            support_metrics = {
-                name: prediction_reference.new_zeros(batch_size) for name in support_metric_names
-            }
+            support_metrics: dict[str, th.Tensor] = {}
             channel_targets = None
             if channel_targets_enabled:
                 channel_targets = _observational_channel_targets(
@@ -1531,6 +1530,11 @@ class MassShatterPL(SpectrumPL):
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
+            if channel_support_metrics_enabled:
+                if channel_targets is None:
+                    raise ValueError("channel support metrics require dense channel tensors")
+                # Monitoring only, and the dominant cost of the channel path: both summaries
+                # iterate over the batch in Python.
                 support_metrics = _channel_support_metrics(
                     channel_targets=channel_targets,
                     chemical_valid_channels=kwargs["ion_h_chemical_valid_channels"],
@@ -1900,7 +1904,7 @@ class MassShatterPL(SpectrumPL):
                     "candidate_total_molecule_ms",
                 ]
             )
-        if channel_targets_enabled:
+        if channel_support_metrics_enabled:
             loss_names.extend(
                 [
                     "fragment_precision",
