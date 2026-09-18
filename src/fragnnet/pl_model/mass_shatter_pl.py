@@ -32,6 +32,9 @@ from fragnnet.model.candidate_support import (
     balanced_binary_support_loss as _balanced_binary_support_loss,
 )
 from fragnnet.model.candidate_support import (
+    matched_peak_candidate_pairs,
+)
+from fragnnet.model.candidate_support import (
     observational_channel_targets as _observational_channel_targets,
 )
 from fragnnet.model.loss import (
@@ -41,6 +44,7 @@ from fragnnet.model.loss import (
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.pl_utils import migrate_mass_shatter_proposal_method
 from fragnnet.utils.spec_utils import (
     calculate_match_mzs,
@@ -272,6 +276,10 @@ def _proposal_coverage_loss(
     proposal objective depend on reachable support rather than the number or learned
     probability of ion/H channels. When ``barcode_target`` is enabled, every retained
     true peak contributes equally instead of being weighted by observed intensity.
+
+    The whole batch is matched at once: peak/channel pairs outside the mass tolerance
+    contribute nothing, so only the pairs inside it are materialized, and fragments are
+    addressed by their global index instead of a per-spectrum local one.
     """
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
@@ -279,79 +287,92 @@ def _proposal_coverage_loss(
         raise ValueError("proposal candidate masses and fragment indices must align")
     if fragment_logprobs.shape != fragment_batch_idxs.shape:
         raise ValueError("proposal fragment probabilities and batch indices must align")
-    coverage_loss = fragment_logprobs.new_zeros(batch_size)
-    for batch_index in range(batch_size):
-        true_mask = true_batch_idxs == batch_index
-        batch_true_mzs = true_mzs[true_mask]
-        batch_fragment_indices = th.where(fragment_batch_idxs == batch_index)[0]
-        if batch_true_mzs.numel() == 0:
-            raise ValueError(f"spectrum {batch_index} has no true peaks")
-        if batch_fragment_indices.numel() == 0:
-            raise ValueError(f"spectrum {batch_index} has no proposed fragments")
-        batch_true_probabilities = (
-            true_logprobs.new_full(
-                batch_true_mzs.shape,
-                1.0 / batch_true_mzs.numel(),
-            )
-            if barcode_target
-            else true_logprobs[true_mask].exp()
-        )
 
-        first_fragment_index = batch_fragment_indices[0]
-        if not th.equal(
-            batch_fragment_indices,
-            th.arange(
-                first_fragment_index,
-                first_fragment_index + batch_fragment_indices.numel(),
-                device=batch_fragment_indices.device,
-            ),
-        ):
-            raise ValueError("proposal fragments must be contiguous within each spectrum")
-        candidate_mask = fragment_batch_idxs[candidate_fragment_idxs] == batch_index
-        batch_candidate_mzs = candidate_mzs[candidate_mask]
-        local_fragment_indices = candidate_fragment_idxs[candidate_mask] - first_fragment_index
-        if tol_per_sample is None:
-            channel_match = calculate_match_mzs(
-                batch_true_mzs,
-                batch_candidate_mzs,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            )
-        else:
-            per_peak_tolerance = tol_per_sample[batch_index] * th.maximum(
-                batch_true_mzs,
-                min_mz_per_sample[batch_index],
-            )
-            channel_match = calculate_match_mzs(
-                batch_true_mzs,
-                batch_candidate_mzs,
-                tolerance=0.0,
-                relative=False,
-                tol_per_true=per_peak_tolerance,
-            )
+    # 1. Every spectrum must contribute both observed peaks and proposed fragments.
+    peak_counts = th.zeros(batch_size, dtype=th.long, device=true_mzs.device).index_add(
+        0,
+        true_batch_idxs.to(th.int64),
+        th.ones_like(true_batch_idxs, dtype=th.long),
+    )
+    fragment_counts = th.zeros(
+        batch_size,
+        dtype=th.long,
+        device=fragment_batch_idxs.device,
+    ).index_add(
+        0,
+        fragment_batch_idxs.to(th.int64),
+        th.ones_like(fragment_batch_idxs, dtype=th.long),
+    )
+    empty_spectra = (peak_counts == 0).nonzero().flatten()
+    if empty_spectra.numel() > 0:
+        raise ValueError(f"spectrum {int(empty_spectra[0])} has no true peaks")
+    empty_proposals = (fragment_counts == 0).nonzero().flatten()
+    if empty_proposals.numel() > 0:
+        raise ValueError(f"spectrum {int(empty_proposals[0])} has no proposed fragments")
 
-        fragment_match_counts = fragment_logprobs.new_zeros(
-            (batch_true_mzs.numel(), batch_fragment_indices.numel())
-        )
-        fragment_match_counts.scatter_add_(
-            1,
-            local_fragment_indices.reshape(1, -1).expand(batch_true_mzs.numel(), -1),
-            channel_match.to(fragment_match_counts),
-        )
-        fragment_match = fragment_match_counts > 0
-        true_peak_covered = fragment_match.any(dim=1)
-        batch_fragment_logprobs = fragment_logprobs[batch_fragment_indices]
-        peak_log_coverage = th.logsumexp(
-            batch_fragment_logprobs.reshape(1, -1).masked_fill(~fragment_match, -th.inf),
-            dim=1,
-        )
-        coverage_loss[batch_index] = th.where(
-            true_peak_covered,
-            -batch_true_probabilities * peak_log_coverage,
-            th.zeros_like(peak_log_coverage),
-        ).sum()
-    return coverage_loss
+    # 2. Match every observed peak against the channels of its own spectrum.
+    peak_idxs, candidate_idxs = matched_peak_candidate_pairs(
+        true_mzs=true_mzs,
+        true_batch_idxs=true_batch_idxs,
+        candidate_mzs=candidate_mzs,
+        candidate_batch_idxs=fragment_batch_idxs[candidate_fragment_idxs],
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
+        tol_per_sample=tol_per_sample,
+        min_mz_per_sample=min_mz_per_sample,
+    )
+
+    # 3. Count each fragment once per peak, however many of its channels matched it.
+    num_fragments = fragment_logprobs.shape[0]
+    num_peaks = true_mzs.shape[0]
+    pair_keys = th.unique(peak_idxs * num_fragments + candidate_fragment_idxs[candidate_idxs])
+    pair_peak_idxs = th.div(pair_keys, num_fragments, rounding_mode="floor")
+    pair_fragment_idxs = pair_keys - pair_peak_idxs * num_fragments
+
+    # 4. Sum the probability of the distinct fragments covering each peak, in log space.
+    # The shift is detached, so this is the gradient of the plain log-sum-exp.
+    pair_logprobs = fragment_logprobs[pair_fragment_idxs]
+    peak_maxima = scatter_reduce(
+        pair_logprobs.detach(),
+        pair_peak_idxs,
+        reduce="amax",
+        dim_size=num_peaks,
+        default=0.0,
+        include_self=False,
+    )
+    peak_coverage = scatter_reduce(
+        th.exp(pair_logprobs - peak_maxima[pair_peak_idxs]),
+        pair_peak_idxs,
+        reduce="sum",
+        dim_size=num_peaks,
+        default=0.0,
+        include_self=False,
+    )
+    covered = peak_coverage > 0.0
+    peak_log_coverage = (
+        peak_coverage.clamp_min(th.finfo(peak_coverage.dtype).tiny).log() + peak_maxima
+    )
+
+    # 5. Weight every covered peak and reduce back to one value per spectrum.
+    peak_probabilities = (
+        true_logprobs.new_ones(true_logprobs.shape) / peak_counts[true_batch_idxs]
+        if barcode_target
+        else true_logprobs.exp()
+    )
+    peak_losses = th.where(
+        covered,
+        -peak_probabilities * peak_log_coverage,
+        th.zeros_like(peak_log_coverage),
+    )
+    coverage_loss = fragment_logprobs.new_zeros(batch_size).index_add(
+        0,
+        true_batch_idxs.to(th.int64),
+        peak_losses.to(fragment_logprobs),
+    )
+    # A batch where nothing matched references no fragment probability at all. Tie the
+    # result back to them with zero weight so the loss stays differentiable either way.
+    return coverage_loss + 0.0 * fragment_logprobs.sum()
 
 
 def _ion_mode_support_loss(

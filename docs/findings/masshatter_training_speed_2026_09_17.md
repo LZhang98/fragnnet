@@ -1,8 +1,8 @@
 # MASShatter training speed: s3gy1ro4
 
-> **Status:** FINDING · **Updated:** 2026-09-17 · Reduced monitoring, CPU improvements and
-> optional exact CUDA construction measured locally; target L40S acceptance remains pending.
-> No cluster job or remote run was changed.
+> **Status:** FINDING · **Updated:** 2026-09-18 · Reduced monitoring, CPU improvements,
+> optional exact CUDA construction and a batched proposal coverage loss measured locally;
+> target L40S acceptance remains pending. No cluster job or remote run was changed.
 
 ## Result and implementation
 
@@ -488,3 +488,34 @@ emit `candidate_topology_assembly_batch_ms` rather than the old separate fields.
 threads alone do not address the large serial topology/packing cost in these existing runs.
 No runs, configs or jobs were changed by this follow-up. API snapshots and aggregation results
 are under `output/masshatter_fast_wandb_2026_09_17/`.
+
+## Batched proposal coverage loss (2026-09-18)
+
+`_proposal_coverage_loss` (`pl_model/mass_shatter_pl.py`) iterated over spectra and built one
+dense peak-by-channel match grid per spectrum. It is active in every training step of the
+unmerged CMF configs (`mass_shatter_proposal_loss_weight: 0.1`), unlike the monitoring families
+already switched off above. It now matches the whole batch at once through
+`matched_peak_candidate_pairs` in `model/candidate_support.py`, the same sorted
+`(spectrum, m/z rank)` window search the batched channel-support targets use; fragments are
+addressed by their global index, so the previous per-spectrum contiguity requirement is gone.
+Duplicate channels of one fragment are still counted once per peak, now by deduplicating
+`(peak, fragment)` pairs instead of a scatter-add grid.
+
+Local micro-benchmark on this workstation's RTX 2070 SUPER, forward and backward, at the
+`dny62x0i` production shapes (batch 128, 50 observed peaks, 233 fragments and about 2,100 valid
+ion/H channels per spectrum):
+
+| Implementation | ms per call |
+| --- | ---: |
+| Per-spectrum loop | 118.6 |
+| Batched | 2.4 |
+
+Agreement against the previous loop, kept in `tests/test_mass_shatter_pl.py` as
+`_reference_proposal_coverage_loss`: max loss difference 2.4e-6, max gradient difference 7.5e-9
+(FP32 reduction order). The randomized equivalence test covers both tolerance modes and both
+target modes; separate tests pin cross-spectrum isolation, the no-match case and the empty-input
+errors. `tests/test_mass_shatter_pl.py` and `tests/test_mass_shatter_model.py` pass (222 tests).
+
+These are synthetic tensors at production shapes on a smaller GPU than the L40S target. No
+end-to-end training-step or epoch measurement was made for this change, so the share of a real
+step it removes is not established here; use the existing full-training benchmark for that gate.

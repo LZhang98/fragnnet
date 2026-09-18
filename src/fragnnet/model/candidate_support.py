@@ -134,6 +134,69 @@ def _pair_match(
     return absolute_errors < peak_tolerance[peak_idxs]
 
 
+def matched_peak_candidate_pairs(
+    *,
+    true_mzs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_batch_idxs: th.Tensor,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float | None,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Return every peak/candidate pair of one spectrum that is inside the m/z tolerance.
+
+    This is the whole-batch form of the per-spectrum ``calculate_match_mzs`` grid: only the
+    pairs inside a peak's tolerance window are materialized, and the predicate is then
+    evaluated in its original algebraic form, so the matched set is the one the dense grid
+    selects.
+
+    Args:
+        true_mzs: Observed m/z values of every spectrum, shape ``(num_peaks,)``.
+        true_batch_idxs: Spectrum index per observed peak, shape ``(num_peaks,)``.
+        candidate_mzs: Candidate m/z values, shape ``(num_candidates,)``.
+        candidate_batch_idxs: Spectrum index per candidate, shape ``(num_candidates,)``.
+        tolerance: Matching tolerance; a ratio when ``relative``, otherwise Da.
+        relative: Whether the scalar tolerance is relative to the observed m/z.
+        tolerance_min_mz: Divisor floor for the relative scalar tolerance.
+        tol_per_sample: Optional per-spectrum relative tolerance, shape ``(batch_size,)``.
+        min_mz_per_sample: Optional per-spectrum divisor floor, shape ``(batch_size,)``.
+
+    Returns:
+        ``(peak_idxs, candidate_idxs)``: two aligned ``(num_matched_pairs,)`` long tensors
+        indexing ``true_mzs`` and ``candidate_mzs``. Pairs are not deduplicated; one peak
+        can match several candidates and one candidate several peaks.
+    """
+    peak_tolerance, peak_divisor, _ = _matching_scales(
+        true_mzs=true_mzs,
+        true_batch_idxs=true_batch_idxs,
+        channel_mzs=candidate_mzs,
+        channel_batch_idxs=candidate_batch_idxs,
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
+        tol_per_sample=tol_per_sample,
+        min_mz_per_sample=min_mz_per_sample,
+    )
+    peak_idxs, candidate_idxs = _candidate_pairs(
+        true_mzs=true_mzs,
+        true_batch_idxs=true_batch_idxs,
+        channel_mzs=candidate_mzs,
+        channel_batch_idxs=candidate_batch_idxs,
+        peak_tolerance=peak_tolerance,
+    )
+    matched = _pair_match(
+        mass_errors=true_mzs[peak_idxs] - candidate_mzs[candidate_idxs],
+        peak_idxs=peak_idxs,
+        peak_tolerance=peak_tolerance,
+        peak_divisor=peak_divisor,
+        tolerance=tolerance,
+    )
+    return peak_idxs[matched], candidate_idxs[matched]
+
+
 def _gaussian_posterior_targets(
     *,
     true_mzs: th.Tensor,

@@ -35,6 +35,7 @@ from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
+from fragnnet.utils.spec_utils import calculate_match_mzs
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
@@ -1268,6 +1269,232 @@ def test_proposal_coverage_loss_can_use_barcode_target_weights() -> None:
         [-0.9 * math.log(0.8) - 0.1 * math.log(0.2)]
     )
     assert barcode_weighted.tolist() == pytest.approx([-0.5 * math.log(0.8) - 0.5 * math.log(0.2)])
+
+
+def _reference_proposal_coverage_loss(
+    *,
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    candidate_mzs: th.Tensor,
+    candidate_fragment_idxs: th.Tensor,
+    fragment_logprobs: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+    barcode_target: bool = False,
+) -> th.Tensor:
+    """Per-spectrum reference for the batched proposal coverage loss.
+
+    This is the loop the production implementation replaced: it builds one dense
+    peak-by-channel match grid per spectrum. It exists only to pin the batched result.
+    """
+    coverage_loss = fragment_logprobs.new_zeros(batch_size)
+    for batch_index in range(batch_size):
+        true_mask = true_batch_idxs == batch_index
+        batch_true_mzs = true_mzs[true_mask]
+        batch_fragment_indices = th.where(fragment_batch_idxs == batch_index)[0]
+        batch_true_probabilities = (
+            true_logprobs.new_full(batch_true_mzs.shape, 1.0 / batch_true_mzs.numel())
+            if barcode_target
+            else true_logprobs[true_mask].exp()
+        )
+        first_fragment_index = batch_fragment_indices[0]
+        candidate_mask = fragment_batch_idxs[candidate_fragment_idxs] == batch_index
+        batch_candidate_mzs = candidate_mzs[candidate_mask]
+        local_fragment_indices = candidate_fragment_idxs[candidate_mask] - first_fragment_index
+        if tol_per_sample is None:
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+            )
+        else:
+            per_peak_tolerance = tol_per_sample[batch_index] * th.maximum(
+                batch_true_mzs,
+                min_mz_per_sample[batch_index],
+            )
+            channel_match = calculate_match_mzs(
+                batch_true_mzs,
+                batch_candidate_mzs,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=per_peak_tolerance,
+            )
+        fragment_match_counts = fragment_logprobs.new_zeros(
+            (batch_true_mzs.numel(), batch_fragment_indices.numel())
+        )
+        fragment_match_counts.scatter_add_(
+            1,
+            local_fragment_indices.reshape(1, -1).expand(batch_true_mzs.numel(), -1),
+            channel_match.to(fragment_match_counts),
+        )
+        fragment_match = fragment_match_counts > 0
+        peak_log_coverage = th.logsumexp(
+            fragment_logprobs[batch_fragment_indices]
+            .reshape(1, -1)
+            .masked_fill(~fragment_match, -th.inf),
+            dim=1,
+        )
+        coverage_loss[batch_index] = th.where(
+            fragment_match.any(dim=1),
+            -batch_true_probabilities * peak_log_coverage,
+            th.zeros_like(peak_log_coverage),
+        ).sum()
+    return coverage_loss
+
+
+def _random_proposal_batch(
+    generator: th.Generator,
+    batch_size: int = 6,
+) -> tuple[dict[str, th.Tensor | int], th.Tensor]:
+    """Build a ragged proposal batch whose peaks are partly covered by several channels."""
+    true_mzs = []
+    true_logprobs = []
+    true_batch_idxs = []
+    candidate_mzs = []
+    candidate_fragment_idxs = []
+    fragment_batch_idxs = []
+    num_fragments = 0
+    for batch_index in range(batch_size):
+        num_peaks = int(th.randint(1, 8, (1,), generator=generator))
+        peak_mzs = th.rand(num_peaks, generator=generator) * 400.0 + 50.0
+        true_mzs.append(peak_mzs)
+        true_logprobs.append(th.log_softmax(th.rand(num_peaks, generator=generator), dim=0))
+        true_batch_idxs.append(th.full((num_peaks,), batch_index, dtype=th.long))
+        spectrum_fragments = int(th.randint(1, 6, (1,), generator=generator))
+        for fragment in range(num_fragments, num_fragments + spectrum_fragments):
+            # Two channels per fragment: one on an observed peak (so duplicate matches of
+            # the same fragment occur), one at an arbitrary mass.
+            claimed = peak_mzs[int(th.randint(0, num_peaks, (1,), generator=generator))]
+            candidate_mzs.append(th.stack([claimed, th.rand(1, generator=generator)[0] * 450.0]))
+            candidate_fragment_idxs.append(th.full((2,), fragment, dtype=th.long))
+        fragment_batch_idxs.append(th.full((spectrum_fragments,), batch_index, dtype=th.long))
+        num_fragments += spectrum_fragments
+    fragment_logits = th.rand(num_fragments, generator=generator, requires_grad=True)
+    fragment_batch_idxs = th.cat(fragment_batch_idxs)
+    fragment_logprobs = th.cat(
+        [
+            th.log_softmax(fragment_logits[fragment_batch_idxs == batch_index], dim=0)
+            for batch_index in range(batch_size)
+        ]
+    )
+    inputs = {
+        "true_mzs": th.cat(true_mzs),
+        "true_logprobs": th.cat(true_logprobs),
+        "true_batch_idxs": th.cat(true_batch_idxs),
+        "candidate_mzs": th.cat(candidate_mzs),
+        "candidate_fragment_idxs": th.cat(candidate_fragment_idxs),
+        "fragment_logprobs": fragment_logprobs,
+        "fragment_batch_idxs": fragment_batch_idxs,
+        "batch_size": batch_size,
+    }
+    return inputs, fragment_logits
+
+
+@pytest.mark.parametrize("barcode_target", [False, True])
+@pytest.mark.parametrize("per_sample_tolerance", [False, True])
+def test_proposal_coverage_loss_matches_per_spectrum_reference(
+    barcode_target: bool,
+    per_sample_tolerance: bool,
+) -> None:
+    generator = th.Generator().manual_seed(20260918)
+    inputs, fragment_logits = _random_proposal_batch(generator)
+    batch_size = inputs["batch_size"]
+    tolerance_kwargs = {
+        "tolerance": 1.0e-5,
+        "relative": True,
+        "tolerance_min_mz": 200.0,
+        "barcode_target": barcode_target,
+    }
+    if per_sample_tolerance:
+        tolerance_kwargs["tol_per_sample"] = th.linspace(1.0e-6, 4.0e-5, batch_size)
+        tolerance_kwargs["min_mz_per_sample"] = th.full((batch_size,), 200.0)
+
+    batched = _proposal_coverage_loss(**inputs, **tolerance_kwargs)
+    reference = _reference_proposal_coverage_loss(**inputs, **tolerance_kwargs)
+    batched_grad = th.autograd.grad(batched.sum(), fragment_logits, retain_graph=True)[0]
+    reference_grad = th.autograd.grad(reference.sum(), fragment_logits)[0]
+
+    assert batched.shape == (batch_size,)
+    assert th.allclose(batched, reference, atol=1e-6)
+    assert th.allclose(batched_grad, reference_grad, atol=1e-6)
+    assert batched_grad.abs().sum() > 0.0
+
+
+def test_proposal_coverage_loss_never_matches_across_spectra() -> None:
+    # Both spectra propose the same channel mass; only spectrum 0 observes it, so the
+    # second spectrum stays uncovered and contributes nothing.
+    loss = _proposal_coverage_loss(
+        true_mzs=th.tensor([100.0, 400.0]),
+        true_logprobs=th.zeros(2),
+        true_batch_idxs=th.tensor([0, 1]),
+        candidate_mzs=th.tensor([100.0, 100.0]),
+        candidate_fragment_idxs=th.tensor([0, 1]),
+        fragment_logprobs=th.log(th.tensor([0.5, 0.5])),
+        fragment_batch_idxs=th.tensor([0, 1]),
+        batch_size=2,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    assert loss.tolist() == pytest.approx([-math.log(0.5), 0.0])
+
+
+def test_proposal_coverage_loss_stays_differentiable_without_any_match() -> None:
+    fragment_logprobs = th.zeros(1, requires_grad=True)
+    loss = _proposal_coverage_loss(
+        true_mzs=th.tensor([100.0]),
+        true_logprobs=th.zeros(1),
+        true_batch_idxs=th.tensor([0]),
+        candidate_mzs=th.tensor([300.0]),
+        candidate_fragment_idxs=th.tensor([0]),
+        fragment_logprobs=fragment_logprobs,
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=1.0e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    assert loss.tolist() == [0.0]
+    loss.sum().backward()
+    assert fragment_logprobs.grad.tolist() == [0.0]
+
+
+def test_proposal_coverage_loss_requires_peaks_and_fragments() -> None:
+    common_kwargs = {
+        "candidate_mzs": th.tensor([100.0]),
+        "candidate_fragment_idxs": th.tensor([0]),
+        "fragment_logprobs": th.zeros(1),
+        "batch_size": 2,
+        "tolerance": 1.0e-5,
+        "relative": True,
+        "tolerance_min_mz": 200.0,
+    }
+    with pytest.raises(ValueError, match="spectrum 1 has no true peaks"):
+        _proposal_coverage_loss(
+            **common_kwargs,
+            true_mzs=th.tensor([100.0]),
+            true_logprobs=th.zeros(1),
+            true_batch_idxs=th.tensor([0]),
+            fragment_batch_idxs=th.tensor([0]),
+        )
+    with pytest.raises(ValueError, match="spectrum 0 has no proposed fragments"):
+        _proposal_coverage_loss(
+            **common_kwargs,
+            true_mzs=th.tensor([100.0, 100.0]),
+            true_logprobs=th.zeros(2),
+            true_batch_idxs=th.tensor([0, 1]),
+            fragment_batch_idxs=th.tensor([1]),
+        )
 
 
 def test_shared_group_proposal_loss_uses_merged_group_target() -> None:

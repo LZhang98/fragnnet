@@ -130,6 +130,12 @@ finding for matched measurements. Next: compare 128×2 and 256×1 on L40S and ve
 flags; no remote run or cluster job was changed. The requested 512×1 config is also prepared
 with LR unchanged; its effective batch doubles to 512 and its GPU validation remains pending.
 
+MASShatter proposal loss (2026-09-18): the per-spectrum proposal coverage loop is now a
+batched whole-batch match, measured 118.6 ms to 2.4 ms per call locally at production shapes
+with the previous loop kept as the test reference; see the same
+[training-speed finding](findings/masshatter_training_speed_2026_09_17.md). No end-to-end
+training-step measurement was run.
+
 The [candidate-backend plan](plans/masshatter_candidate_backend_plan.md) is active. CPU numeric
 construction now releases the GIL and shares a persistent thread pool; local full-training
 throughput improved about 9.3% with exact candidate/gradient checks. The score-free selector
