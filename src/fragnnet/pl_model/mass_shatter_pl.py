@@ -215,41 +215,80 @@ def _candidate_weighted_recall(
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
 ) -> th.Tensor:
-    """Measure weighted true-peak coverage from the full chemical candidate set."""
+    """Measure weighted true-peak coverage from the full chemical candidate set.
+
+    The whole batch is matched at once: a peak only ever matches candidates of its own
+    spectrum, and pairs outside the mass tolerance are never materialized, so this is the
+    per-spectrum ``calculate_match_mzs`` grid without the Python loop over spectra. The
+    loop form cost one host-device synchronization per spectrum and dominated its own
+    arithmetic; see ``_proposal_coverage_loss`` for the same rewrite.
+
+    Args:
+        true_mzs: Observed m/z values of every spectrum, shape ``(num_peaks,)``.
+        true_ints: Observed intensity per peak, shape ``(num_peaks,)``.
+        true_batch_idxs: Spectrum index per observed peak, shape ``(num_peaks,)``.
+        candidate_mzs: Candidate m/z values, shape ``(num_candidates,)``.
+        candidate_batch_idxs: Spectrum index per candidate, shape ``(num_candidates,)``.
+        batch_size: Number of spectra in the batch.
+        tolerance: Matching tolerance; a ratio when ``relative``, otherwise Da.
+        relative: Whether the scalar tolerance is relative to the observed m/z.
+        tolerance_min_mz: Divisor floor for the relative scalar tolerance.
+        tol_per_sample: Optional per-spectrum relative tolerance, shape ``(batch_size,)``.
+        min_mz_per_sample: Optional per-spectrum divisor floor, shape ``(batch_size,)``.
+
+    Returns:
+        Covered fraction of observed intensity per spectrum, shape ``(batch_size,)``. A
+        spectrum whose candidates match nothing scores 0.
+
+    Raises:
+        ValueError: If only one of the per-sample tolerance tensors is given, or if a
+            spectrum contributes no observed peaks.
+    """
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
-    weighted_recall = true_ints.new_zeros(batch_size)
-    for batch_index in range(batch_size):
-        true_mask = true_batch_idxs == batch_index
-        batch_true_mzs = true_mzs[true_mask]
-        batch_true_ints = true_ints[true_mask]
-        if batch_true_mzs.numel() == 0:
-            raise ValueError(f"spectrum {batch_index} has no true peaks")
-        batch_candidate_mzs = candidate_mzs[candidate_batch_idxs == batch_index]
-        if tol_per_sample is None:
-            match_mask = calculate_match_mzs(
-                batch_true_mzs,
-                batch_candidate_mzs,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            )
-        else:
-            tol_per_true = tol_per_sample[batch_index] * th.maximum(
-                batch_true_mzs,
-                min_mz_per_sample[batch_index],
-            )
-            match_mask = calculate_match_mzs(
-                batch_true_mzs,
-                batch_candidate_mzs,
-                tolerance=0.0,
-                relative=False,
-                tol_per_true=tol_per_true,
-            )
-        weighted_recall[batch_index] = (
-            batch_true_ints * match_mask.any(dim=1)
-        ).sum() / batch_true_ints.sum()
-    return weighted_recall
+    # 1. Every spectrum must contribute observed peaks; an empty one has no defined recall.
+    peak_batch_idxs = true_batch_idxs.to(th.int64)
+    peak_counts = th.zeros(batch_size, dtype=th.long, device=true_mzs.device).index_add(
+        0,
+        peak_batch_idxs,
+        th.ones_like(peak_batch_idxs),
+    )
+    empty_spectra = (peak_counts == 0).nonzero().flatten()
+    if empty_spectra.numel() > 0:
+        raise ValueError(f"spectrum {int(empty_spectra[0])} has no true peaks")
+
+    # 2. Match every observed peak against the candidates of its own spectrum.
+    peak_idxs, _ = matched_peak_candidate_pairs(
+        true_mzs=true_mzs,
+        true_batch_idxs=true_batch_idxs,
+        candidate_mzs=candidate_mzs,
+        candidate_batch_idxs=candidate_batch_idxs,
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
+        tol_per_sample=tol_per_sample,
+        min_mz_per_sample=min_mz_per_sample,
+    )
+
+    # 3. A peak counts once however many candidates matched it, as ``any`` did per row.
+    covered = th.zeros_like(true_ints, dtype=th.bool).index_fill_(
+        0,
+        peak_idxs,
+        True,
+    )
+
+    # 4. Reduce covered and total observed intensity back to one value per spectrum.
+    covered_intensity = true_ints.new_zeros(batch_size).index_add(
+        0,
+        peak_batch_idxs,
+        true_ints * covered,
+    )
+    total_intensity = true_ints.new_zeros(batch_size).index_add(
+        0,
+        peak_batch_idxs,
+        true_ints,
+    )
+    return covered_intensity / total_intensity
 
 
 def _proposal_coverage_loss(

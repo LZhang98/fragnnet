@@ -24,6 +24,7 @@ from fragnnet.pl_model import MassShatterPL, SpectrumPL
 from fragnnet.pl_model.mass_shatter_pl import (
     _balanced_binary_support_loss,
     _candidate_coverage_by_cut_count,
+    _candidate_weighted_recall,
     _cross_ev_fragment_delta_loss,
     _ion_h_required_k_metrics,
     _ion_mode_support_loss,
@@ -2334,6 +2335,97 @@ def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
     assert actual["candidate_recall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_wrecall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_precision_cut_2"].tolist() == pytest.approx([0.0, 0.5])
+
+
+def _looped_candidate_weighted_recall(**kwargs) -> th.Tensor:
+    """Per-spectrum reference for the batched matcher, written straight from its contract."""
+    batch_size = kwargs["batch_size"]
+    true_ints = kwargs["true_ints"]
+    recall = true_ints.new_zeros(batch_size)
+    for batch_index in range(batch_size):
+        peak_mask = kwargs["true_batch_idxs"] == batch_index
+        batch_mzs = kwargs["true_mzs"][peak_mask]
+        batch_ints = true_ints[peak_mask]
+        candidate_mask = kwargs["candidate_batch_idxs"] == batch_index
+        batch_candidates = kwargs["candidate_mzs"][candidate_mask]
+        tol_per_sample = kwargs.get("tol_per_sample")
+        if tol_per_sample is None:
+            match = calculate_match_mzs(
+                batch_mzs,
+                batch_candidates,
+                tolerance=kwargs["tolerance"],
+                relative=kwargs["relative"],
+                tolerance_min_mz=kwargs["tolerance_min_mz"],
+            )
+        else:
+            match = calculate_match_mzs(
+                batch_mzs,
+                batch_candidates,
+                tolerance=0.0,
+                relative=False,
+                tol_per_true=tol_per_sample[batch_index]
+                * th.maximum(batch_mzs, kwargs["min_mz_per_sample"][batch_index]),
+            )
+        recall[batch_index] = (batch_ints * match.any(dim=1)).sum() / batch_ints.sum()
+    return recall
+
+
+def test_candidate_weighted_recall_matches_the_per_spectrum_reference() -> None:
+    """The batched matcher runs every training step, so it must equal the loop it replaced."""
+    generator = th.Generator().manual_seed(11)
+    peak_counts = th.randint(1, 20, (6,), generator=generator)
+    candidate_counts = th.randint(0, 80, (6,), generator=generator)
+    # Spectrum 4 gets no candidates at all: its coverage must be 0, not a division by zero.
+    candidate_counts[4] = 0
+    true_batch_idxs = th.repeat_interleave(th.arange(6), peak_counts)
+    candidate_batch_idxs = th.repeat_interleave(th.arange(6), candidate_counts)
+    # A coarse shared m/z grid makes a large share of the peaks genuinely matchable.
+    true_mzs = th.randint(5000, 50000, (int(peak_counts.sum()),), generator=generator) / 100
+    candidate_mzs = (
+        th.randint(5000, 50000, (int(candidate_counts.sum()),), generator=generator) / 100
+    )
+    shared = {
+        "true_mzs": true_mzs.float(),
+        "true_ints": th.rand(int(peak_counts.sum()), generator=generator),
+        "true_batch_idxs": true_batch_idxs,
+        "candidate_mzs": candidate_mzs.float(),
+        "candidate_batch_idxs": candidate_batch_idxs,
+        "batch_size": 6,
+    }
+    cases = [
+        {"tolerance": 1e-5, "relative": True, "tolerance_min_mz": 200.0},
+        {"tolerance": 0.01, "relative": False, "tolerance_min_mz": 200.0},
+        {
+            "tolerance": 1e-5,
+            "relative": True,
+            "tolerance_min_mz": 200.0,
+            "tol_per_sample": th.full((6,), 2e-5),
+            "min_mz_per_sample": th.full((6,), 750.0),
+        },
+    ]
+    for case in cases:
+        actual = _candidate_weighted_recall(**shared, **case)
+        expected = _looped_candidate_weighted_recall(**shared, **case)
+        # Index-add reduction reassociates the float sums; the values are otherwise the same.
+        assert th.allclose(actual, expected, rtol=0, atol=1e-6)
+        assert actual.shape == (6,)
+        assert ((actual >= 0.0) & (actual <= 1.0)).all()
+    assert _candidate_weighted_recall(**shared, **cases[0])[4].item() == 0.0
+
+
+def test_candidate_weighted_recall_rejects_a_spectrum_without_peaks() -> None:
+    with pytest.raises(ValueError, match="spectrum 1 has no true peaks"):
+        _candidate_weighted_recall(
+            true_mzs=th.tensor([100.0, 200.0]),
+            true_ints=th.tensor([1.0, 1.0]),
+            true_batch_idxs=th.tensor([0, 2]),
+            candidate_mzs=th.tensor([100.0]),
+            candidate_batch_idxs=th.tensor([0]),
+            batch_size=3,
+            tolerance=0.01,
+            relative=False,
+            tolerance_min_mz=200.0,
+        )
 
 
 def test_candidate_coverage_metrics_are_off_by_default() -> None:
