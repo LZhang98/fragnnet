@@ -8,10 +8,13 @@
 # none of them enters the training objective:
 #
 #   mass_shatter_channel_diagnostics: True -> False
-#       Monitoring only. Both channel-support loss weights that would consume the
-#       attribution are already 0.0 here, and this flag also implies the per-spectrum
-#       mass_shatter_channel_support_metrics loop. Spectral loss, val cosine and the
-#       inexpensive channel/candidate counts remain.
+#       Monitoring only. This arm DOES train the ion/H support BCE
+#       (mass_shatter_ion_h_support_loss_weight: 0.1), but that loss gates the dense
+#       channel targets itself: in mass_shatter_pl.py channel_targets_enabled is the OR
+#       of the support/ion-mode loss weights with the metrics flags, so turning
+#       diagnostics off drops only the per-spectrum _channel_support_metrics and
+#       _ion_h_required_k_metrics Python loops, not the objective. Spectral loss, val
+#       cosine and the inexpensive channel/candidate counts remain.
 #   mass_shatter_candidate_backend: cpu -> cuda
 #       Exact FP32 single-mixture selection/topology on the device. Legal for this arm:
 #       unique-fragment mode, one proposal mixture, zero mask/fragment/ion probability
