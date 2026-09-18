@@ -425,6 +425,9 @@ def main() -> None:
     config.update({key: value for key, value in overrides.items() if value is not None})
     _resolve_candidate_backend(config, args.candidate_backend)
     config["subsample_params"]["subsample_size"] = args.subsample_size
+    # This benchmark reports the candidate-generation stage breakdown, so the speed trace
+    # is requested here rather than left to the config's monitoring default.
+    config["mass_shatter_candidate_timing_metrics"] = True
     if config["model_type"] != "mass_shatter" or not config["automatic_optimization"]:
         parser.error("requires MASShatter automatic optimization")
     if config["precision"] not in (32, "32", "32-true") or config["devices"] != 1:

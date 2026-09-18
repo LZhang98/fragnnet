@@ -91,26 +91,35 @@ def _candidate_coverage_by_cut_count(
     true_batch_idxs: th.Tensor,
     candidate_mzs: th.Tensor,
     candidate_batch_idxs: th.Tensor,
-    candidate_cut_counts: th.Tensor,
     batch_size: int,
     tolerance: float,
     relative: bool,
     tolerance_min_mz: float,
+    candidate_cut_counts: th.Tensor | None = None,
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
+    include_cut_buckets: bool = True,
 ) -> dict[str, th.Tensor]:
     """Measure overall and cut-bucket true-peak coverage from candidate masses.
 
     A true peak may be covered by multiple buckets, so the resulting recall values
-    describe each bucket's standalone support and are not additive.
+    describe each bucket's standalone support and are not additive. The buckets cost one
+    extra match-mask pass per bucket per spectrum, so ``include_cut_buckets=False`` keeps
+    only the overall coverage.
     """
-    metrics = {
-        f"candidate_{metric}_cut_{bucket}": true_ints.new_zeros(batch_size)
-        for bucket in _CUT_COUNT_BUCKETS
-        for metric in ("recall", "wrecall", "precision")
-    }
+    metrics = (
+        {
+            f"candidate_{metric}_cut_{bucket}": true_ints.new_zeros(batch_size)
+            for bucket in _CUT_COUNT_BUCKETS
+            for metric in ("recall", "wrecall", "precision")
+        }
+        if include_cut_buckets
+        else {}
+    )
     metrics["candidate_recall"] = true_ints.new_zeros(batch_size)
     metrics["candidate_wrecall"] = true_ints.new_zeros(batch_size)
+    if include_cut_buckets and candidate_cut_counts is None:
+        raise ValueError("candidate_cut_counts is required for cut-bucket coverage")
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     for batch_index in range(batch_size):
@@ -147,6 +156,8 @@ def _candidate_coverage_by_cut_count(
         metrics["candidate_wrecall"][batch_index] = (
             batch_true_ints * all_match_mask.any(dim=1)
         ).sum() / true_intensity
+        if not include_cut_buckets:
+            continue
         for bucket, select_bucket in _CUT_COUNT_BUCKETS.items():
             candidate_mask = (candidate_batch_idxs == batch_index) & select_bucket(
                 candidate_cut_counts
@@ -1208,6 +1219,19 @@ class MassShatterPL(SpectrumPL):
                 "an absolute ion/H support floor requires independent intensity and a "
                 "separate binary support head"
             )
+        if not isinstance(self.hparams.mass_shatter_candidate_coverage_metrics, bool):
+            raise ValueError("mass_shatter_candidate_coverage_metrics must be boolean")
+        if not isinstance(self.hparams.mass_shatter_candidate_timing_metrics, bool):
+            raise ValueError("mass_shatter_candidate_timing_metrics must be boolean")
+        if not isinstance(self.hparams.mass_shatter_candidate_cut_diagnostics, bool):
+            raise ValueError("mass_shatter_candidate_cut_diagnostics must be boolean")
+        if self.hparams.mass_shatter_candidate_cut_diagnostics and not (
+            self.hparams.mass_shatter_candidate_coverage_metrics
+        ):
+            raise ValueError(
+                "mass_shatter_candidate_cut_diagnostics requires "
+                "mass_shatter_candidate_coverage_metrics"
+            )
         if not isinstance(self.hparams.mass_shatter_channel_diagnostics, bool):
             raise ValueError("mass_shatter_channel_diagnostics must be boolean")
         if self.hparams.mass_shatter_channel_diagnostics and not (
@@ -1271,6 +1295,8 @@ class MassShatterPL(SpectrumPL):
             raise ValueError(
                 "mass_shatter_proposal_anchored requires a positive proposal supervision loss"
             )
+        candidate_coverage_enabled = self.hparams.mass_shatter_candidate_coverage_metrics
+        candidate_timing_enabled = self.hparams.mass_shatter_candidate_timing_metrics
         proposal_loss_enabled = self.hparams.mass_shatter_proposal_loss_weight > 0.0
         ion_mode_proposal_loss_enabled = (
             self.hparams.mass_shatter_ion_mode_proposal_loss_weight > 0.0
@@ -1435,19 +1461,6 @@ class MassShatterPL(SpectrumPL):
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
                 primary_loss = spectrum_ce
-                candidate_wrecall = _candidate_weighted_recall(
-                    true_mzs=true_mzs,
-                    true_ints=proposal_true_intensities,
-                    true_batch_idxs=true_batch_idxs,
-                    candidate_mzs=kwargs["candidate_mzs_by_cut"],
-                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
-                    batch_size=batch_size,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                    tol_per_sample=tolerance_per_sample,
-                    min_mz_per_sample=minimum_mz_per_sample,
-                )
             else:
                 primary_loss, entropy_match = sparse_peak_list_distance(
                     true_mzs,
@@ -1466,13 +1479,16 @@ class MassShatterPL(SpectrumPL):
                     decimals=4,
                     kl_epsilon=self.hparams.mass_shatter_kl_epsilon,
                 )
-                coverage = _candidate_coverage_by_cut_count(
+            candidate_wrecall = None
+            if candidate_coverage_enabled:
+                # Monitoring only, and the overall coverage alone: the per-cut-count
+                # buckets belong to the validation metric path.
+                candidate_wrecall = _candidate_weighted_recall(
                     true_mzs=true_mzs,
                     true_ints=proposal_true_intensities,
                     true_batch_idxs=true_batch_idxs,
                     candidate_mzs=kwargs["candidate_mzs_by_cut"],
                     candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
-                    candidate_cut_counts=kwargs["candidate_cut_counts"],
                     batch_size=batch_size,
                     tolerance=self.tolerance,
                     relative=self.relative,
@@ -1480,7 +1496,6 @@ class MassShatterPL(SpectrumPL):
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
-                candidate_wrecall = coverage["candidate_wrecall"]
             loss = self.hparams.primary_loss_weight * primary_loss
             if entropy_match is not None:
                 loss = (
@@ -1623,13 +1638,13 @@ class MassShatterPL(SpectrumPL):
                 base_primary_loss = base_spec_ce
                 loss = loss + self.hparams.mass_shatter_base_ce_weight * base_primary_loss
             # The candidate-generation values below are monitoring only and detached:
-            # candidate_wrecall is how much true intensity the enumerated masks could
-            # explain at all (the ceiling on this batch), retained_mask_probability is
-            # how much of the Bernoulli mask distribution survived truncation, and the
-            # counts/timings track the cost of candidate generation.
+            # retained_mask_probability is how much of the Bernoulli mask distribution
+            # survived truncation, and the counts track the cost of candidate generation.
+            # The two optional blocks that follow add candidate_wrecall (how much true
+            # intensity the enumerated masks could explain at all, the ceiling on this
+            # batch) and the candidate-generation stage timings.
             loss_values = {
                 "primary_loss": primary_loss,
-                "candidate_wrecall": candidate_wrecall,
                 "retained_mask_probability": retained_mask_probability.detach(),
                 "selected_mask_count": selected_mask_count.detach().to(prediction_reference),
                 "component_pathway_count": component_pathway_count.detach().to(
@@ -1701,15 +1716,28 @@ class MassShatterPL(SpectrumPL):
                 "mask_cut_fraction_4plus": (
                     mask_cut_fraction_4plus.detach().to(prediction_reference)
                 ),
-                "candidate_input_transfer_batch_ms": (candidate_input_transfer_batch_ms.detach()),
-                "candidate_mask_selection_batch_ms": (candidate_mask_selection_batch_ms.detach()),
-                "candidate_topology_assembly_batch_ms": (
-                    candidate_topology_assembly_batch_ms.detach()
-                ),
-                "candidate_output_transfer_batch_ms": (candidate_output_transfer_batch_ms.detach()),
-                "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
-                "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
             }
+            if candidate_coverage_enabled:
+                loss_values["candidate_wrecall"] = candidate_wrecall
+            if candidate_timing_enabled:
+                loss_values.update(
+                    {
+                        "candidate_input_transfer_batch_ms": (
+                            candidate_input_transfer_batch_ms.detach()
+                        ),
+                        "candidate_mask_selection_batch_ms": (
+                            candidate_mask_selection_batch_ms.detach()
+                        ),
+                        "candidate_topology_assembly_batch_ms": (
+                            candidate_topology_assembly_batch_ms.detach()
+                        ),
+                        "candidate_output_transfer_batch_ms": (
+                            candidate_output_transfer_batch_ms.detach()
+                        ),
+                        "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
+                        "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
+                    }
+                )
             loss_values.update(
                 {
                     name: value.detach().to(prediction_reference)
@@ -1818,7 +1846,6 @@ class MassShatterPL(SpectrumPL):
         loss_names = [
             "loss",
             "primary_loss",
-            "candidate_wrecall",
             "retained_mask_probability",
             "selected_mask_count",
             "component_pathway_count",
@@ -1850,12 +1877,6 @@ class MassShatterPL(SpectrumPL):
             "mask_cut_fraction_5",
             "mask_cut_fraction_6plus",
             "mask_cut_fraction_4plus",
-            "candidate_input_transfer_batch_ms",
-            "candidate_mask_selection_batch_ms",
-            "candidate_topology_assembly_batch_ms",
-            "candidate_output_transfer_batch_ms",
-            "candidate_total_batch_ms",
-            "candidate_total_molecule_ms",
             "valid_ion_h_count",
             "retained_ion_h_count",
             "retained_ion_h_probability",
@@ -1866,6 +1887,19 @@ class MassShatterPL(SpectrumPL):
             "retained_ion_mode_probability",
             "ion_mode_cutoff_pruned_fraction",
         ]
+        if candidate_coverage_enabled:
+            loss_names.append("candidate_wrecall")
+        if candidate_timing_enabled:
+            loss_names.extend(
+                [
+                    "candidate_input_transfer_batch_ms",
+                    "candidate_mask_selection_batch_ms",
+                    "candidate_topology_assembly_batch_ms",
+                    "candidate_output_transfer_batch_ms",
+                    "candidate_total_batch_ms",
+                    "candidate_total_molecule_ms",
+                ]
+            )
         if channel_targets_enabled:
             loss_names.extend(
                 [
@@ -1926,13 +1960,22 @@ class MassShatterPL(SpectrumPL):
         self.metric_names.update(loss_names)
 
     def _setup_metric_fns(self) -> None:
-        """Add overall and cut-bucket validation candidate coverage."""
+        """Add validation candidate coverage when the coverage metrics are enabled."""
         super()._setup_metric_fns()
-        coverage_metric_names = {
-            f"candidate_{metric}_cut_{bucket}"
-            for bucket in _CUT_COUNT_BUCKETS
-            for metric in ("recall", "wrecall", "precision")
-        }
+        if not self.hparams.mass_shatter_candidate_coverage_metrics:
+            # Without the coverage metrics nothing here needs the candidate m/z values,
+            # so the base metric function is left untouched.
+            return
+        cut_diagnostics = self.hparams.mass_shatter_candidate_cut_diagnostics
+        coverage_metric_names = (
+            {
+                f"candidate_{metric}_cut_{bucket}"
+                for bucket in _CUT_COUNT_BUCKETS
+                for metric in ("recall", "wrecall", "precision")
+            }
+            if cut_diagnostics
+            else set()
+        )
         coverage_metric_names.add("candidate_recall")
         for metric_name in coverage_metric_names:
             self.metric_min_max[metric_name] = None
@@ -1942,9 +1985,10 @@ class MassShatterPL(SpectrumPL):
             [
                 "candidate_mzs_by_cut",
                 "candidate_batch_idxs_by_cut",
-                "candidate_cut_counts",
             ]
         )
+        if cut_diagnostics:
+            self.extra_metric_args.append("candidate_cut_counts")
         if self.inst_tol_lookup is not None:
             self.batch_metric_args.add("spec_inst_type")
         base_metric_fn = self.metric_fn
@@ -1965,7 +2009,8 @@ class MassShatterPL(SpectrumPL):
                 true_batch_idxs=kwargs["true_batch_idxs"],
                 candidate_mzs=kwargs["candidate_mzs_by_cut"],
                 candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
-                candidate_cut_counts=kwargs["candidate_cut_counts"],
+                candidate_cut_counts=kwargs.get("candidate_cut_counts"),
+                include_cut_buckets=cut_diagnostics,
                 batch_size=kwargs["true_prec_mzs"].shape[0],
                 tolerance=self.tolerance,
                 relative=self.relative,

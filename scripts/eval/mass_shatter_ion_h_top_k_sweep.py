@@ -408,6 +408,9 @@ def main() -> None:
         and config_d["mass_shatter_ion_h_support_binary_logits"]
     ):
         raise ValueError("Support thresholds require a separate binary support head")
+    # candidate_wrecall is one of this audit's reported metrics, so it is requested here
+    # rather than left to the config's monitoring default.
+    config_d["mass_shatter_candidate_coverage_metrics"] = True
     config_d["auxiliary_scores"] = list(
         dict.fromkeys(
             [

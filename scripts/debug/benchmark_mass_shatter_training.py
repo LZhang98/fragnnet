@@ -59,6 +59,9 @@ def main() -> None:
             parser.error("batch size must be positive")
         config["train_batch_size"] = args.batch_size
     config.update(num_workers=0, share_memory=False, pl_enable_progress_bar=False)
+    # This benchmark reports candidate_total_batch_ms, so the speed trace is requested here
+    # rather than left to the config's monitoring default.
+    config["mass_shatter_candidate_timing_metrics"] = True
     config["subsample_params"]["subsample_size"] = args.subsample_size
     device = (
         th.device("cuda" if th.cuda.is_available() else "cpu")

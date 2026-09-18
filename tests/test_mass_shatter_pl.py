@@ -762,7 +762,11 @@ def test_mass_shatter_registration_uses_spectrum_only_dataset() -> None:
 
 
 def test_candidate_metric_wrapper_does_not_repeat_loss_wrecall() -> None:
-    model, _ = _build_pl(auxiliary_scores=[])
+    model, _ = _build_pl(
+        auxiliary_scores=[],
+        mass_shatter_candidate_coverage_metrics=True,
+        mass_shatter_candidate_cut_diagnostics=True,
+    )
     mzs = th.tensor([100.0])
     intensities = th.tensor([1.0])
     batch_indices = th.tensor([0])
@@ -1790,6 +1794,8 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
         mass_shatter_log_base_ce=True,
         mass_shatter_base_ce_weight=0.2,
         oos_loss=True,
+        mass_shatter_candidate_coverage_metrics=True,
+        mass_shatter_candidate_timing_metrics=True,
     )
     true_mzs = th.tensor([100.0, 150.0])
     true_logprobs = th.log(th.tensor([0.6, 0.4]))
@@ -1932,7 +1938,11 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
 
 
 def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
-    model, _ = _build_pl(auxiliary_scores=["wrecall", "wprecision"])
+    model, _ = _build_pl(
+        auxiliary_scores=["wrecall", "wprecision"],
+        mass_shatter_candidate_coverage_metrics=True,
+        mass_shatter_candidate_cut_diagnostics=True,
+    )
 
     actual = model.metric_fn(
         true_mzs=th.tensor([100.0, 200.0, 400.0]),
@@ -1958,6 +1968,116 @@ def test_weighted_recall_and_precision_ignore_ragged_padding() -> None:
     assert actual["candidate_recall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_wrecall_cut_2"].tolist() == pytest.approx([0.0, 1.0])
     assert actual["candidate_precision_cut_2"].tolist() == pytest.approx([0.0, 0.5])
+
+
+def test_candidate_coverage_metrics_are_off_by_default() -> None:
+    model, config = _build_pl()
+
+    assert config["mass_shatter_candidate_coverage_metrics"] is False
+    assert config["mass_shatter_candidate_cut_diagnostics"] is False
+    assert "candidate_wrecall" not in model.loss_names
+    # The candidate-generation timings keep their names; only coverage is dropped.
+    coverage_names = {"candidate_wrecall", "candidate_recall"}
+    assert not coverage_names & set(model.metric_names)
+    assert not any(name.startswith("candidate_wrecall_cut_") for name in model.metric_names)
+    # The metric function is left untouched, so it never asks for the candidate m/z values.
+    assert "candidate_mzs_by_cut" not in model.extra_metric_args
+    assert "candidate_batch_idxs_by_cut" not in model.extra_metric_args
+
+
+def test_loss_fn_omits_candidate_wrecall_when_coverage_is_disabled() -> None:
+    model, _ = _build_pl()
+
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0]),
+        true_logprobs=th.tensor([0.0]),
+        true_batch_idxs=th.tensor([0]),
+        pred_mzs=th.tensor([100.0, 200.0]),
+        pred_logprobs=th.log(th.tensor([0.8, 0.1])),
+        pred_batch_idxs=th.tensor([0, 0]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+
+    assert "candidate_wrecall" not in actual
+    # SpectrumPL logs exactly loss_names, so every one of them must still be produced.
+    assert set(model.loss_names) <= set(actual)
+
+
+def test_candidate_timing_metrics_are_off_by_default() -> None:
+    model, config = _build_pl()
+
+    assert config["mass_shatter_candidate_timing_metrics"] is False
+    timing_names = {
+        "candidate_input_transfer_batch_ms",
+        "candidate_mask_selection_batch_ms",
+        "candidate_topology_assembly_batch_ms",
+        "candidate_output_transfer_batch_ms",
+        "candidate_total_batch_ms",
+        "candidate_total_molecule_ms",
+    }
+    assert not timing_names & set(model.metric_names)
+
+    actual = model.loss_fn(
+        true_mzs=th.tensor([100.0]),
+        true_logprobs=th.tensor([0.0]),
+        true_batch_idxs=th.tensor([0]),
+        pred_mzs=th.tensor([100.0, 200.0]),
+        pred_logprobs=th.log(th.tensor([0.8, 0.1])),
+        pred_batch_idxs=th.tensor([0, 0]),
+        candidate_mzs_by_cut=th.tensor([100.0, 200.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+
+    # The model still reports the timings; they are simply not logged.
+    assert not timing_names & set(actual)
+    assert set(model.loss_names) <= set(actual)
+
+
+def test_candidate_timing_metrics_are_logged_when_enabled() -> None:
+    model, _ = _build_pl(mass_shatter_candidate_timing_metrics=True)
+
+    assert "candidate_total_batch_ms" in model.loss_names
+    assert "candidate_total_molecule_ms" in model.metric_names
+
+
+def test_cut_diagnostics_require_candidate_coverage_metrics() -> None:
+    with pytest.raises(ValueError, match="mass_shatter_candidate_coverage_metrics"):
+        _build_pl(mass_shatter_candidate_cut_diagnostics=True)
+
+
+def test_cut_buckets_stay_off_when_only_the_coverage_metrics_are_enabled() -> None:
+    model, config = _build_pl(
+        auxiliary_scores=["wrecall"],
+        mass_shatter_candidate_coverage_metrics=True,
+    )
+
+    assert config["mass_shatter_candidate_cut_diagnostics"] is False
+    assert "candidate_cut_counts" not in model.extra_metric_args
+    assert not any(name.startswith("candidate_wrecall_cut_") for name in model.metric_names)
+
+    actual = model.metric_fn(
+        true_mzs=th.tensor([100.0, 200.0, 400.0]),
+        true_ints=th.tensor([0.6, 0.4, 1.0]),
+        true_batch_idxs=th.tensor([0, 0, 1]),
+        pred_mzs=th.tensor([100.0, 400.0, 500.0]),
+        pred_ints=th.tensor([0.7, 0.8, 0.2]),
+        pred_batch_idxs=th.tensor([0, 1, 1]),
+        candidate_mzs_by_cut=th.tensor([100.0, 400.0, 500.0]),
+        candidate_batch_idxs_by_cut=th.tensor([0, 1, 1]),
+        true_prec_mzs=th.tensor([600.0, 600.0]),
+        split="val",
+    )
+
+    # The overall coverage stays; only the per-cut-count breakdown is dropped.
+    assert actual["candidate_recall"].tolist() == pytest.approx([0.5, 1.0])
+    assert not any(key.startswith("candidate_recall_cut_") for key in actual)
+    assert not any(key.startswith("candidate_wrecall_cut_") for key in actual)
+    assert not any(key.startswith("candidate_precision_cut_") for key in actual)
 
 
 def test_candidate_coverage_by_cut_count_uses_per_instrument_tolerance() -> None:

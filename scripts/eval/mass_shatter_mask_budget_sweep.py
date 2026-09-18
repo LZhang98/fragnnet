@@ -281,6 +281,9 @@ def main() -> None:
     config_d = load_config(args.template_fp, args.custom_fp, args.override)
     if config_d["model_type"] != "mass_shatter":
         raise ValueError(f"Expected model_type=mass_shatter, got {config_d['model_type']}")
+    # candidate_wrecall is the candidate ceiling this sweep exists to compare, so it is
+    # requested here rather than left to the config's monitoring default.
+    config_d["mass_shatter_candidate_coverage_metrics"] = True
     budget_key = (
         "mass_shatter_unique_fragment_target"
         if config_d["mass_shatter_unique_fragment_mode"]

@@ -332,6 +332,18 @@ mass_shatter_channel_support_attribution: gaussian_posterior  # ["gaussian_poste
 mass_shatter_channel_support_use_intensity_prior: True
 # Compute dense observational channel metrics even without a support loss.
 mass_shatter_channel_diagnostics: False
+# Log overall candidate coverage: candidate_wrecall (the enumerated candidates' intensity
+# ceiling, every step) and validation candidate_recall. Each costs one match-mask pass per
+# spectrum, so they are off by default; enabling them changes monitoring only, not the loss.
+mass_shatter_candidate_coverage_metrics: False
+# Log the candidate-generation speed trace (candidate_*_batch_ms, candidate_total_molecule_ms,
+# and their fast_gnn_* renames). The stage timers themselves are unconditional perf_counter
+# reads; this only controls whether the six per-batch series are logged.
+mass_shatter_candidate_timing_metrics: False
+# Log per-cut-count candidate coverage (candidate_{recall,wrecall,precision}_cut_*) during
+# validation. The buckets add one match-mask pass per bucket per spectrum, so keep them off
+# unless the cut-depth breakdown is being studied. Requires the overall coverage metrics.
+mass_shatter_candidate_cut_diagnostics: False
 # Experimental ablation: reuse one CE-independent proposal pass for spectra from the
 # same acquisition group and supervise it against their merged target. This inherits
 # the observed CE-distribution bias; keep False for the main model. Requires CE-context
