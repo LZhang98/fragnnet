@@ -4,10 +4,29 @@
 # Effective batch is 512 with accumulation 1; LR remains 0.001.
 # Requires an existing compatible CUDA toolkit for the first native build.
 # See docs/guides/benchmark_masshatter_cpu.md for matched three-hour checks.
+#
+# loss_batch_size raised 8 -> 64 on 2026-09-18, from the measured ma_mi MERGED speed arms
+# (same model, same target, matched one-hour jobs, median seconds per epoch):
+#
+#     backend  train_batch  lb=8   lb=32  lb=64
+#     cuda     256          144    146    152
+#     cuda     512          143    120     88
+#
+# The gain is batch-size dependent, which is what the implementation predicts:
+# loss_batch_size is a CEILING on chunk width in _build_loss_chunks and the inner guard
+# breaks a chunk as soon as padded_pairs > flat_pairs, so a wider ceiling only merges
+# chunks where padding still pays -- and there is only something to merge once a step
+# carries enough spectra. At 256 it is flat to slightly negative; at 512 it is 1.63x.
+# NOT raised on the batch-128/256 arms for that reason.
+#
+# Chunking is a partition, so it changes float association order only, not the loss.
+# The lb=64 merged arm also reached the best cosine of that family (0.7167 at ep56
+# against 0.6980 at ep22 for lb=8) purely by covering more epochs in the same hour.
 wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:
 - cuda_candidates
+- loss_batch_64
 - mass_shatter
 - vulcan_l40s
 - nist20_ma_mi
@@ -123,7 +142,7 @@ oos_loss: false
 gaussian_renormalize: true
 sparse_cosine_similarity: true
 loss_vectorized: true
-loss_batch_size: 8
+loss_batch_size: 64
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
