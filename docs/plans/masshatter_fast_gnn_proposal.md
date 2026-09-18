@@ -1,6 +1,6 @@
 # Optional FastGNN-style MASShatter proposals
 
-> **Status:** LANDED, EVIDENCE AGAINST CONTINUING · **Updated:** 2026-09-17 · The option is
+> **Status:** LANDED, EVIDENCE AGAINST CONTINUING · **Updated:** 2026-09-18 · The option is
 > implemented and locally validated. Comparative candidate measurement is now complete and
 > argues against continuing the line: on trained bond logits the beam's captured probability
 > mass is flat at 0.8695 across a fourfold budget increase against 1.0000 for `cut_masks`,
@@ -463,3 +463,35 @@ drops.
    the earlier fragment-probability alignment already required.
 
 No code was changed and nothing was measured for this proposal.
+
+## Candidate coverage logging on the prepared arms (2026-09-18)
+
+The four prepared `connected_fragment_beam` configs now set
+`mass_shatter_candidate_coverage_metrics: true`: the three
+[merged screen arms](../../config/masshatter/merged/unique_fragment/) and the
+[unmerged dual-CE arm](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml).
+They were written when `mass_shatter_channel_diagnostics` still implied coverage and carry
+`channel_diagnostics: false`, so as configured they logged no candidate ceiling at all -
+the one quantity the 2026-09-17 measurement puts in question. This logs `candidate_wrecall`
+every training step and `candidate_recall` at validation, at one match-mask pass per spectrum.
+`mass_shatter_candidate_cut_diagnostics` stays off; set it to `true` for the per-boundary-cut
+buckets, which add one pass per bucket per spectrum during validation.
+
+Nothing else changed: no model, loss, search or supervision code, and no other config key.
+The coverage plumbing itself was already proposal-method agnostic - `candidate_mzs_by_cut`,
+`candidate_batch_idxs_by_cut` and `candidate_cut_counts` come from the shared post-proposal
+path, and the `fast_gnn_*` rename in `mass_shatter_pl.py` only drops mask/pathway diagnostics -
+so this is a configuration change, not an implementation gap. Two tests in
+[test_mass_shatter_fast_gnn.py](../../tests/test_mass_shatter_fast_gnn.py) now pin that:
+an end-to-end beam forward whose targets are drawn from its own candidates, asserting
+`candidate_wrecall` and `candidate_recall` are exactly 1.0 and survive the rename filter, and a
+parametrized check that all four prepared arms resolve with the coverage names in
+`loss_names`/`metric_names`.
+
+Validation: `tests/test_mass_shatter_fast_gnn.py`, `tests/test_mass_shatter_pl.py` and
+`tests/test_mass_shatter_model.py` pass (314 passed, CUDA-only cases skipped in this sandbox);
+Ruff check and `git diff --check` pass. Ruff format reports pre-existing reformatting in this
+test file, outside the added block, and was deliberately not applied. No training run,
+throughput benchmark or validation-set evaluation was performed, and the standing
+recommendation not to submit these arms as a scientific bet is unchanged - the coverage curve
+is now available if they are run anyway.

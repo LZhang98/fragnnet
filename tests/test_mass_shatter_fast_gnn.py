@@ -304,6 +304,109 @@ def test_lightning_loss_and_staged_training(output_mode, loss_type, device):
         )
 
 
+def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
+    """Beam arms log candidate_wrecall/candidate_recall: the coverage ceiling under test."""
+    from rdkit import Chem
+    from torch_geometric.data import Batch
+
+    from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
+    from fragnnet.utils.feat_utils import get_mol_graph
+
+    config = _small_pl_config()
+    config.update(
+        mass_shatter_proposal_only_until_epoch=0,
+        mass_shatter_candidate_coverage_metrics=True,
+        mass_shatter_candidate_cut_diagnostics=True,
+    )
+    pl = MassShatterPL(**config)
+    # The connected_fragment_beam rename drops the mask/pathway diagnostics; candidate
+    # coverage is not a mask diagnostic and must pass through both filters intact.
+    assert "candidate_wrecall" in pl.loss_names
+    assert "retained_mask_probability" not in pl.loss_names
+    assert {"candidate_recall", "candidate_wrecall_cut_1"} <= pl.metric_names
+    assert "candidate_mzs_by_cut" in pl.extra_metric_args
+
+    params = config["mol_params"]
+    graphs = [
+        get_mol_graph(
+            Chem.MolFromSmiles(smiles),
+            params["pyg_node_feats"],
+            params["pyg_edge_feats"],
+            params["pyg_pe_embed_k"],
+            True,
+        )
+        for smiles in ("CCO", "CCN")
+    ]
+    batch = Batch.from_data_list(graphs)
+    pl._apply_staged_training(1)
+    output = pl.model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_inst_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([20.0, 30.0]),
+    )
+    assert output["candidate_cut_counts"].shape == output["candidate_mzs_by_cut"].shape
+    # Target one beam candidate per spectrum, so both recalls must be exactly 1.
+    targets = th.stack(
+        [
+            output["candidate_mzs_by_cut"][output["candidate_batch_idxs_by_cut"] == i][0]
+            for i in range(2)
+        ]
+    ).detach()
+
+    losses = pl.loss_fn(
+        **output,
+        true_mzs=targets,
+        true_ints=th.ones(2),
+        true_logprobs=th.zeros(2),
+        true_batch_idxs=th.arange(2),
+        batch_size=2,
+    )
+    assert set(pl.loss_names) <= losses.keys()
+    assert losses["candidate_wrecall"].tolist() == pytest.approx([1.0, 1.0])
+
+    metrics = pl.metric_fn(
+        true_mzs=targets,
+        true_ints=th.ones(2),
+        true_batch_idxs=th.arange(2),
+        pred_mzs=output["pred_mzs"].detach(),
+        pred_ints=output["pred_logprobs"].detach().exp(),
+        pred_batch_idxs=output["pred_batch_idxs"],
+        candidate_mzs_by_cut=output["candidate_mzs_by_cut"],
+        candidate_batch_idxs_by_cut=output["candidate_batch_idxs_by_cut"],
+        candidate_cut_counts=output["candidate_cut_counts"],
+        true_prec_mzs=th.tensor([50.0, 50.0]),
+        split="val",
+    )
+    assert metrics["candidate_recall"].tolist() == pytest.approx([1.0, 1.0])
+    # The loss path owns candidate_wrecall; returning it here would collide on merge.
+    assert "candidate_wrecall" not in metrics
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        "config/masshatter/merged/unique_fragment/nist20_ma_mi_merged_fast_gnn_proposal.yml",
+        "config/masshatter/merged/unique_fragment/"
+        "nist20_ma_mi_merged_fast_gnn_proposal_fragments128.yml",
+        "config/masshatter/merged/unique_fragment/"
+        "nist20_ma_mi_merged_fast_gnn_proposal_fragments512.yml",
+        "config/masshatter/ma_mi_unmerged/cmf/"
+        "nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
+    ],
+)
+def test_prepared_beam_arms_log_candidate_coverage(config_path):
+    from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
+    from fragnnet.runner import load_config
+
+    config = load_config("config/template.yml", config_path, None)
+    assert config["mass_shatter_candidate_coverage_metrics"] is True
+    model = MassShatterPL(**config)
+    assert model.model.proposal_method == "connected_fragment_beam"
+    assert "candidate_wrecall" in model.loss_names
+    assert "candidate_recall" in model.metric_names
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
     import lightning as L

@@ -117,6 +117,11 @@ mass_shatter_detach_base_ion_h: true
 mass_shatter_proposal_selection_only: true
 mass_shatter_proposal_loss_weight: 0.1
 mass_shatter_channel_diagnostics: false
+# The beam's candidate ceiling is what this screen measures, so log it even though the
+# rest of the monitoring stays reduced: candidate_wrecall every step and candidate_recall
+# at validation, one match-mask pass per spectrum. Set
+# mass_shatter_candidate_cut_diagnostics: true to also get the per-boundary-cut buckets.
+mass_shatter_candidate_coverage_metrics: true
 loss_type: cross_entropy
 predict_oos: false
 oos_loss: false
