@@ -13,7 +13,8 @@ frag_params:
 spec_params:
   merge: False
   nce: True
-  merge_keep_ces: True
+  merge_keep_ces: False
+  nce_values: [20.0, 35.0, 40.0, 50.0, 60.0]
   inst_types:
     - "FT"
   prec_types:
@@ -42,7 +43,7 @@ mlp_dropout: 0.2
 
 # loss stuff
 mask_null_formula: False
-predict_oos: False
+predict_oos: True
 oos_tolerance_multiple: 1
 sparse_cosine_similarity: True
 skip_extra_losses: True

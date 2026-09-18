@@ -8,6 +8,7 @@ import sys
 import pandas as pd
 import torch as th
 import yaml
+from tqdm import tqdm
 
 from fragnnet.inference import FraGNNetInference, resolve_ckpt_fp
 from fragnnet.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES
@@ -69,7 +70,7 @@ def filter_invalid_molecules(spec_df, mol_df, frag_dp, frag_params):
 	mol_df = mol_df.loc[mol_df["mol_id"].isin(input_mol_ids)].copy()
 
 	def add_errors(mol_ids, reason):
-		for mol_id in sorted(mol_ids, key=str):
+		for mol_id in tqdm(sorted(mol_ids, key=str), desc=f"collecting {reason} errors", leave=False):
 			error_rows.append({
 				"mol_id": mol_id,
 				"reason": reason,
@@ -106,7 +107,7 @@ def filter_invalid_molecules(spec_df, mol_df, frag_dp, frag_params):
 		spec_df = spec_df.loc[~spec_df["mol_id"].isin(missing_dag_mol_ids)].copy()
 
 	invalid_frag_mol_ids = set()
-	for mol_id in mol_df["mol_id"]:
+	for mol_id in tqdm(mol_df["mol_id"], desc="validating fragment atom indices"):
 		frag_entry = load_frag_d(mol_id, frag_dp, frag_params["compressed"])
 		frag_graph = get_frag_graph(
 			frag_entry["dag"],
@@ -134,14 +135,18 @@ def filter_invalid_molecules(spec_df, mol_df, frag_dp, frag_params):
 def filter_unsupported_spectra(spec_df, spec_params):
 	error_rows = []
 	mask = pd.Series(True, index=spec_df.index)
-	for column, config_key in (("inst_type", "inst_types"), ("prec_type", "prec_types")):
+	for column, config_key in tqdm(
+			(("inst_type", "inst_types"), ("prec_type", "prec_types")),
+			desc="filtering unsupported spectra", leave=False):
 		allowed_values = spec_params.get(config_key)
 		if allowed_values is None or column not in spec_df.columns:
 			continue
 		unsupported_mask = ~spec_df[column].isin(allowed_values)
 		if unsupported_mask.any():
 			mask &= ~unsupported_mask
-			for mol_id, count in spec_df.loc[unsupported_mask].groupby("mol_id").size().items():
+			for mol_id, count in tqdm(
+					spec_df.loc[unsupported_mask].groupby("mol_id").size().items(),
+					desc=f"logging unsupported {column}", leave=False):
 				error_rows.append({
 					"mol_id": mol_id,
 					"reason": f"unsupported_{column}",
@@ -163,7 +168,9 @@ def filter_precursor_mz(spec_df, max_precursor_mz=MAX_INFERENCE_PRECURSOR_MZ):
 			"reason": "precursor_mz_at_or_above_limit",
 			"num_spectra": int(count),
 		}
-		for mol_id, count in spec_df.loc[too_large_mask].groupby("mol_id").size().items()
+		for mol_id, count in tqdm(
+			spec_df.loc[too_large_mask].groupby("mol_id").size().items(),
+			desc="logging high precursor m/z", leave=False)
 	]
 	filtered_spec_df = spec_df.loc[~too_large_mask].copy()
 	print(
@@ -191,7 +198,7 @@ def fill_missing_nce(spec_df, default_nce):
 			"reason": "missing_nce_imputed",
 			"num_spectra": int((spec_df["mol_id"] == mol_id).sum()),
 		}
-		for mol_id in sorted(missing_mol_ids, key=str)
+		for mol_id in tqdm(sorted(missing_mol_ids, key=str), desc="logging missing NCE", leave=False)
 	]
 	return spec_df, error_rows
 
@@ -213,7 +220,7 @@ def fill_empty_peaks(spec_df):
 			"reason": "empty_peaks_placeholder",
 			"num_spectra": int((spec_df["mol_id"] == mol_id).sum()),
 		}
-		for mol_id in sorted(empty_peak_mol_ids, key=str)
+		for mol_id in tqdm(sorted(empty_peak_mol_ids, key=str), desc="logging empty peaks", leave=False)
 	]
 	return spec_df, error_rows
 
@@ -261,7 +268,7 @@ def build_prediction_dataframe(vals):
 
 	input_spec = input_spec.rename(columns={"peaks": "input_peaks"})
 	prediction_rows = []
-	for batch_idx in range(num_batches):
+	for batch_idx in tqdm(range(num_batches), desc="building prediction dataframe", leave=False):
 		batch_mask = pred_batch_idxs == batch_idx
 		prediction_rows.append({
 			"pred_mzs": pred_mzs[batch_mask].tolist(),

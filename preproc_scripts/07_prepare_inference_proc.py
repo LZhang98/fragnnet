@@ -16,7 +16,7 @@ DEFAULT_PREC_TYPES = ["[M+H]+"]
 DEFAULT_INST_TYPES = ["FT"]
 DEFAULT_FRAG_MODES = ["HCD"]
 DEFAULT_ION_MODES = ["P"]
-DEFAULT_ACE_VALUES = [20.0, 40.0, 60.0]
+DEFAULT_NCE_VALUES = [20, 35, 40, 50, 60]
 SUPPORTED_ELEMENTS = set(frag_utils.ELEMENT_TO_VE)
 
 def load_spec_params(config_fp):
@@ -111,14 +111,14 @@ def load_mol_df(input_values):
 
 
 def make_spec_df(mol_df, dset, prec_types, inst_types, frag_modes, ion_modes,
-				 ace_values):
+				 nce_values):
 	rows = []
 	group_id = 0
 	for mol_row in mol_df.itertuples(index=False):
 		mol_id = mol_row.mol_id
 		for prec_type, inst_type, frag_mode, ion_mode in itertools.product(
 				prec_types, inst_types, frag_modes, ion_modes):
-			for ace in ace_values:
+			for nce in nce_values:
 				rows.append({
 					"spec_id": len(rows),
 					"mol_id": mol_id,
@@ -129,7 +129,7 @@ def make_spec_df(mol_df, dset, prec_types, inst_types, frag_modes, ion_modes,
 					"ion_mode": ion_mode,
 					"dset": dset,
 					"dset_spec_id": f"{dset}_{len(rows)}",
-					"ace": ace,
+					"nce": nce,
 					"prec_mz": mol_row.exact_mw + PREC_TYPE_TO_MASS_DIFF[prec_type],
 					"peaks": [(1.0, 1.0)],
 					"group_id": group_id,
@@ -148,12 +148,12 @@ def main(args):
 		if prec_type not in PREC_TYPE_TO_MASS_DIFF:
 			raise ValueError(f"Unsupported precursor type: {prec_type}")
 
-	ace_values = DEFAULT_ACE_VALUES
+	nce_values = args.nce_values or spec_params.get("nce_values") or DEFAULT_NCE_VALUES
 
 	mol_df = load_mol_df(args.input)
 	spec_df = make_spec_df(
 		mol_df, args.dset, prec_types, inst_types, frag_modes, ion_modes,
-		ace_values)
+		nce_values)
 	os.makedirs(args.output_dp, exist_ok=True)
 	spec_fp = os.path.join(args.output_dp, "spec_df.pkl")
 	mol_fp = os.path.join(args.output_dp, "mol_df.pkl")
@@ -164,13 +164,28 @@ def main(args):
 
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--input", "-i", nargs="+", required=True)
-	parser.add_argument("--output_dp", "-o", default="data/proc/inference")
-	parser.add_argument("--dset", default="inference")
-	parser.add_argument("--config_fp")
-	parser.add_argument("--prec_types", nargs="+")
-	parser.add_argument("--inst_types", nargs="+")
-	parser.add_argument("--frag_modes", nargs="+", default=DEFAULT_FRAG_MODES)
-	parser.add_argument("--ion_modes", nargs="+", default=DEFAULT_ION_MODES)
+	parser = argparse.ArgumentParser(
+		description="Prepare inference spec/mol dataframes from SMILES")
+	parser.add_argument("--input", "-i", nargs="+", required=True,
+		help="Input SMILES: either one dataframe file (CSV/pickle/parquet with a 'smiles' "
+		"column) or a list of SMILES strings; if one .pkl is given, it may be a mol_df "
+		"(with 'mol_id', 'smiles', 'mol' columns) instead.")
+	parser.add_argument("--output_dp", "-o", default="data/proc/inference",
+		help="Directory to write spec_df.pkl and mol_df.pkl (created if missing).")
+	parser.add_argument("--dset", default="inference",
+		help="Dataset name recorded in the 'dset' and 'dset_spec_id' columns.")
+	parser.add_argument("--config_fp",
+		help="Inference/training YAML config to read spec_params from (e.g. prec_types, "
+		"inst_types, nce_values); falls back to template.yml.")
+	parser.add_argument("--prec_types", nargs="+",
+		help="Precursor adduct types, e.g. '[M+H]+' (default from config or [M+H]+).")
+	parser.add_argument("--inst_types", nargs="+",
+		help="Instrument types, e.g. 'FT' (default from config or FT).")
+	parser.add_argument("--frag_modes", nargs="+", default=DEFAULT_FRAG_MODES,
+		help="Fragmentation modes, e.g. 'HCD' (default: HCD).")
+	parser.add_argument("--ion_modes", nargs="+", default=DEFAULT_ION_MODES,
+		help="Ion modes (P=positive or N=negative), default: P.")
+	parser.add_argument("--nce_values", nargs="+", type=float,
+		help="Collision energies (NCE) to emit, one spectrum per value; defaults to "
+		"config's spec_params.nce_values, else [20, 35, 40, 50, 60].")
 	main(parser.parse_args())
