@@ -273,9 +273,7 @@ def test_smarts_proposal_warmup_isolates_gradients_across_boundary(
     pl._apply_staged_training(epoch=3)
     output = pl.model(**inputs)
     assert th.isfinite(output["pred_logprobs"]).all()
-    (
-        -output["proposal_fragment_logprobs"].mean() - output["pred_logprobs"].mean()
-    ).backward()
+    (-output["proposal_fragment_logprobs"].mean() - output["pred_logprobs"].mean()).backward()
     assert gradient_sum(pl.model.mechanism_head) > 0.0
     assert gradient_sum(pl.model.intensity_head) > 0.0
     if separate_encoder:
@@ -392,8 +390,7 @@ def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
     )
     assert proposal_phase["loss"].tolist() == pytest.approx(
         (
-            0.1 * proposal_phase["proposal_loss"]
-            + 0.2 * proposal_phase["ion_mode_proposal_loss"]
+            0.1 * proposal_phase["proposal_loss"] + 0.2 * proposal_phase["ion_mode_proposal_loss"]
         ).tolist()
     )
     proposal_phase["loss"].sum().backward()
@@ -419,9 +416,7 @@ def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
         + 0.1 * validation_phase["ion_h_support_loss"]
         + 0.2 * validation_phase["ion_mode_proposal_loss"]
     )
-    assert validation_phase["loss"].tolist() == pytest.approx(
-        expected_validation_loss.tolist()
-    )
+    assert validation_phase["loss"].tolist() == pytest.approx(expected_validation_loss.tolist())
 
     pl.train()
     pl._apply_staged_training(epoch=16)
@@ -655,6 +650,97 @@ def test_hungarian_channel_attribution_drops_infeasible_channels(
 
     assert observed_shapes == [th.Size([1, 1])]
     assert targets.tolist() == [[[1.0, 0.0, 0.0]]]
+
+
+def test_channel_targets_never_attribute_across_spectra() -> None:
+    # Both spectra carry the same channel mass; each peak may only claim its own spectrum's
+    # channel, which the batched implementation enforces through the (batch, m/z) sort key.
+    channel_mzs = th.tensor([[[100.0]], [[100.0]]])
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([100.0, 500.0]),
+        true_batch_idxs=th.tensor([0, 1]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=th.zeros_like(channel_mzs),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0, 1]),
+        batch_size=2,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="gaussian_posterior",
+    )
+
+    assert targets.tolist() == [[[1.0]], [[0.0]]]
+
+
+@pytest.mark.parametrize("attribution", ["gaussian_posterior", "hungarian"])
+def test_channel_targets_are_zero_when_no_peak_is_within_tolerance(attribution: str) -> None:
+    channel_mzs = th.tensor([[[100.0, 300.0]]])
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([200.0]),
+        true_batch_idxs=th.tensor([0]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=th.zeros_like(channel_mzs),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution=attribution,
+    )
+
+    assert targets.tolist() == [[[0.0, 0.0]]]
+
+
+def test_channel_targets_respect_per_spectrum_relative_tolerance() -> None:
+    # 5 mDa off at m/z 500: inside a 20 ppm window, outside a 1 ppm one. The two spectra
+    # share a batch, so a correct implementation must apply each spectrum's own tolerance.
+    channel_mzs = th.tensor([[[500.005]], [[500.005]]])
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([500.0, 500.0]),
+        true_batch_idxs=th.tensor([0, 1]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=th.zeros_like(channel_mzs),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0, 1]),
+        batch_size=2,
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+        attribution="gaussian_posterior",
+        tol_per_sample=th.tensor([2e-5, 1e-6]),
+        min_mz_per_sample=th.tensor([200.0, 200.0]),
+    )
+
+    assert targets.tolist() == [[[1.0]], [[0.0]]]
+
+
+def test_channel_targets_take_the_strongest_peak_per_channel() -> None:
+    # One channel matched by two peaks keeps the larger responsibility: the near-exact peak
+    # splits its mass with the decoy channel, the offset peak does not.
+    channel_mzs = th.tensor([[[100.0, 100.002]]], dtype=th.float64)
+
+    targets = _observational_channel_targets(
+        true_mzs=th.tensor([100.0, 100.008], dtype=th.float64),
+        true_batch_idxs=th.tensor([0, 0]),
+        channel_mzs=channel_mzs,
+        channel_log_weights=th.zeros_like(channel_mzs),
+        chemical_valid_channels=th.ones_like(channel_mzs, dtype=th.bool),
+        fragment_batch_idxs=th.tensor([0]),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+        tolerance_min_mz=0.0,
+        attribution="gaussian_posterior",
+    )
+
+    # Channel 0 is claimed most strongly by the peak at 100.0 (responsibility 0.505),
+    # channel 1 by the peak at 100.008 (0.535); each channel keeps its own maximum.
+    assert targets.flatten().tolist() == pytest.approx([0.50500, 0.53495], abs=1e-5)
 
 
 def test_balanced_support_loss_handles_single_class_spectra() -> None:
@@ -1660,8 +1746,11 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
     with th.no_grad():
         expected = [model.inference_step(batch) for batch in batches]
     output = script_utils.run_inference_pkl(
-        model, batches, th.device("cpu"),
-        evaluate=False, output_set={"pred_mzs", "pred_ints"},
+        model,
+        batches,
+        th.device("cpu"),
+        evaluate=False,
+        output_set={"pred_mzs", "pred_ints"},
     )
     # `inference_step` has already untransformed and L1-normalized these; the exporter
     # only rescales the base peak to 1000. A second inverse sqrt transform would change
@@ -1751,10 +1840,22 @@ def test_mass_shatter_cli_exports_without_dags(
     # `existing_dag_directory` also varies the chunk size so both the periodic and the
     # final chunk writer run. Parquet is no longer an option, so both arms write pkl.
     monkeypatch.setattr(
-        sys, "argv", [
-            "run_inference.py", "--mol_fp", str(mol_path), "--spec_fp", str(spec_path),
-            "--save_dp", str(output_dir), "--save_format", "pkl", "--min_intensity", "0",
-            "--save_chunk_size", "1" if existing_dag_directory else "10000",
+        sys,
+        "argv",
+        [
+            "run_inference.py",
+            "--mol_fp",
+            str(mol_path),
+            "--spec_fp",
+            str(spec_path),
+            "--save_dp",
+            str(output_dir),
+            "--save_format",
+            "pkl",
+            "--min_intensity",
+            "0",
+            "--save_chunk_size",
+            "1" if existing_dag_directory else "10000",
         ],
     )
     runpy.run_path(str(Path(__file__).parents[1] / "scripts/run_inference.py"), run_name="__main__")
@@ -1770,13 +1871,17 @@ def test_mass_shatter_cli_exports_without_dags(
         expected = (weights[mask] / weights[mask].max()).square() * 1000.0
         th.testing.assert_close(
             th.as_tensor(saved.iloc[index]["pred_ints"], dtype=expected.dtype),
-            expected, rtol=1e-5, atol=1e-4,
+            expected,
+            rtol=1e-5,
+            atol=1e-4,
         )
 
 
 @pytest.mark.parametrize("model_type", ["frag_gnn", "fragnnet"])
 def test_inference_cli_preserves_dag_model_filtering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model_type: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    model_type: str,
 ) -> None:
     _, config = _build_pl()
     config["model_type"] = model_type
@@ -1800,14 +1905,24 @@ def test_inference_cli_preserves_dag_model_filtering(
     monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
     monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
     monkeypatch.setattr(
-        sys, "argv", [
-            "run_inference.py", "--mol_fp", str(mol_path), "--spec_fp", str(spec_path),
-            "--save_dp", str(tmp_path / "predictions"), "--frag_dp", str(dag_dir),
+        sys,
+        "argv",
+        [
+            "run_inference.py",
+            "--mol_fp",
+            str(mol_path),
+            "--spec_fp",
+            str(spec_path),
+            "--save_dp",
+            str(tmp_path / "predictions"),
+            "--frag_dp",
+            str(dag_dir),
         ],
     )
     with pytest.raises(DatasetChecked):
         runpy.run_path(
-            str(Path(__file__).parents[1] / "scripts/run_inference.py"), run_name="__main__",
+            str(Path(__file__).parents[1] / "scripts/run_inference.py"),
+            run_name="__main__",
         )
 
 
