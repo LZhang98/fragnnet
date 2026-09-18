@@ -393,6 +393,8 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
         "nist20_ma_mi_merged_fast_gnn_proposal_fragments512.yml",
         "config/masshatter/ma_mi_unmerged/cmf/"
         "nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
+        "config/masshatter/merged/warmup_duration/"
+        "nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml",
     ],
 )
 def test_prepared_beam_arms_log_candidate_coverage(config_path):
@@ -405,6 +407,38 @@ def test_prepared_beam_arms_log_candidate_coverage(config_path):
     assert model.model.proposal_method == "connected_fragment_beam"
     assert "candidate_wrecall" in model.loss_names
     assert "candidate_recall" in model.metric_names
+
+
+def test_merged_jss_beam_arm_matches_its_baseline_apart_from_the_proposal() -> None:
+    """The beam arm exists to be comparable to the lead merged run, so pin the diff."""
+    import yaml
+
+    directory = "config/masshatter/merged/warmup_duration"
+    stem = "nist20_merged_independent_jss_warmup_e0_4_dense_subformula"
+    with open(f"{directory}/{stem}_fast.yml") as handle:
+        baseline = yaml.safe_load(handle)
+    with open(f"{directory}/{stem}_fast_gnn_proposal.yml") as handle:
+        arm = yaml.safe_load(handle)
+
+    absent = object()
+    changed = {
+        key for key in set(baseline) | set(arm) if baseline.get(key, absent) != arm.get(key, absent)
+    }
+    assert changed == {
+        "wandb_name",
+        "wandb_tags",
+        "mass_shatter_proposal_method",
+        "mass_shatter_fast_gnn_beam_width",
+        "mass_shatter_fast_gnn_max_boundary_cuts",
+        "mass_shatter_candidate_coverage_metrics",
+        # cut_masks-only, and dropped rather than left to imply a device candidate path.
+        "mass_shatter_candidate_backend",
+    }
+    # The comparison is only meaningful on the lead's split, not the MA/MI one.
+    assert arm["split_dp"] == "data/split/nist20_inchikey"
+    assert arm["loss_type"] == "jss_distance"
+    assert arm["mass_shatter_fast_gnn_beam_width"] == arm["mass_shatter_unique_fragment_target"]
+    assert "mass_shatter_candidate_backend" not in arm
 
 
 @pytest.mark.parametrize("legacy", [False, True])

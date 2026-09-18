@@ -520,37 +520,63 @@ identical: the index-add reduction reassociates the float32 sums. Two regression
 [test_mass_shatter_pl.py](../../tests/test_mass_shatter_pl.py) pin it against a per-spectrum
 reference and against the empty-spectrum error.
 
-### Prepared run
+### Prepared run: the beam on the lead's split, not MA/MI
 
-One 3-hour Vulcan L40S job on the 256-fragment arm, generated **on the Vulcan login node**
-from the cluster checkout (the generator bakes in `FRAGNNET_DP` and a resolved W&B key, so a
-locally generated script is not portable):
+Every config listed above sits on `data/split/nist20_ma_mi_inchikey` with four adducts and a
+`cross_entropy` objective, so none of them is comparable to the merged JSS arm that is the
+current lead (W&B `8v0i0fq7`, best logged `val_cos_sim_0.01_epoch/mean` 0.800989 at epoch 140).
+A beam result on the MA/MI split would not answer whether the beam costs anything against the
+model actually being developed.
+
+[nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml](../../config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml)
+is the beam sibling of the `_fast` baseline. Resolved-key diff, pinned by a test:
+
+| Key | `_fast` baseline | Beam arm |
+| --- | --- | --- |
+| `mass_shatter_proposal_method` | `cut_masks` (template default) | `connected_fragment_beam` |
+| `mass_shatter_fast_gnn_beam_width` | - | 256 |
+| `mass_shatter_fast_gnn_max_boundary_cuts` | - | 5 |
+| `mass_shatter_candidate_coverage_metrics` | `False` | `True` |
+| `mass_shatter_candidate_backend` | `cuda` | removed (cut_masks-only) |
+| `wandb_name`, `wandb_tags` | baseline identity | arm identity |
+
+Split, subformula filter, `tolerance_consensus` merging, encoder, intensity head,
+`jss_distance` objective, warmup boundary, seed, LR, batch sizes and epoch budget are
+byte-identical. Beam width equals `mass_shatter_unique_fragment_target`, so search and output
+budgets agree.
+
+**This is not a clean ablation of the search alone.** The beam bypasses charge/pathway
+marginalization, so the arm also drops the learned charge split and freezes the charge head;
+`mass_shatter_charge_pooling: logsumexp` is inert in it. A deficit against the baseline cannot
+be attributed to the proposal search by itself.
+
+Generate **on the Vulcan login node** from the cluster checkout; the generator bakes in
+`FRAGNNET_DP` and a resolved W&B key, so a locally generated script is not portable:
 
 ```bash
 python scripts/setup_job_cc.py \
   --frag_gnn_dp . \
   --python_script_fp scripts/run_pl_model_fit.py \
-  --job_name msh_ma_mi_mrg_cfb_256_3h \
+  --job_name msh_merged_jss_cfb_256_3h \
   --gpu_profile vulcan:l40s \
   --cc_account aip-rgreiner \
   --cc_email fw4@ualberta.ca \
   --time 3:00:00 \
-  --script_kwargs w=online c=config/masshatter/merged/unique_fragment/nist20_ma_mi_merged_fast_gnn_proposal.yml \
+  --script_kwargs w=online c=config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml \
   --no_submit=True
-bash -n slurm_scripts/msh_ma_mi_mrg_cfb_256_3h.sh
-sbatch slurm_scripts/msh_ma_mi_mrg_cfb_256_3h.sh
+bash -n slurm_scripts/msh_merged_jss_cfb_256_3h.sh
+sbatch slurm_scripts/msh_merged_jss_cfb_256_3h.sh
 ```
-
-The three-budget launcher
-[prepare_masshatter_merged_fast_gnn_3h.sh](../../scripts/manual_slurm/vulcan/prepare_masshatter_merged_fast_gnn_3h.sh)
-is unchanged and still generates all three; this single invocation is its 256 branch.
-Generation was validated locally against this config (model type resolves, and `spec_df.pkl`,
-`mol_df.pkl` and `nist20_ma_mi_inchikey` all stage), then the local artifact was deleted.
 
 Read `candidate_wrecall` (train) and `candidate_recall` (val) against the 0.8695 captured-mass
 ceiling the [2026-09-17 finding](../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md)
-measured on trained `cut_masks` logits. Three hours is scheduler wall time against
-`max_epochs: 100`, so this is a wall-clock screen, not a completed run; compare at matched
-wall clock and matched epoch, and do not read a truncated curve as convergence.
+measured on trained `cut_masks` logits, and read `val_cos_sim_0.01_epoch/mean` against
+`8v0i0fq7` at matched wall clock and matched epoch. Three hours is scheduler wall time against
+`max_epochs: 200`, so this truncates well short of the baseline's epoch 140 best; it is a
+wall-clock screen, not a completed run, and a truncated curve is not convergence.
+
+The MA/MI three-budget launcher
+[prepare_masshatter_merged_fast_gnn_3h.sh](../../scripts/manual_slurm/vulcan/prepare_masshatter_merged_fast_gnn_3h.sh)
+is unchanged and untouched by this arm.
 
 No job was submitted from this session: the workstation has no scheduler.
