@@ -7,8 +7,8 @@
 # returns its tokens unchanged, so this removes the masked fragment-to-atom
 # cross-attention refinement and nothing else.
 #
-# Size: the intensity head goes 16,733,479 -> 8,842,023 and the model 22,699,665 ->
-# 14,808,209 (-34.8%). The atom decoder is 47.2% of the head; the induced-attention
+# Size: the intensity head goes 16,733,479 -> 8,842,022 and the model 22,699,665 ->
+# 14,808,208 (-34.8%). The atom decoder is 47.2% of the head; the induced-attention
 # transformer stack (8,284,416) and the 14,630 parameters that actually emit
 # intensities are untouched.
 #
