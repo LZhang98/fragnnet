@@ -1,12 +1,19 @@
+# Arm of the regularization/normalization sweep -- see
+# docs/plans/masshatter_regularization_sweep_plan.md. Every config in the sweep sets
+# compute_train_auxiliary_metrics: true so the train cosine is logged next to the validation
+# cosine; no MASShatter run before this sweep has ever logged one. Compare arms at matched
+# epoch against ..._ctrl_a / ..._ctrl_b, never at matched wall clock and never against the
+# 2026-09-18 L40S runs. loss_batch_size and num_workers are slice-dependent and are set at
+# launch (2g.20gb needs loss_batch_size=16, num_workers=3); they do not change the loss.
 # Regularization arm: all three live MASShatter dropouts 0.1 -> 0.3.
 # Upper bracket of the direction-finding pair with _drop02. Only the three
 # dropouts and wandb_name differ from nist20_ma_mi_merged_fast_batch512_cuda_lb64.yml.
 wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_drop03
-wandb_group: nist20_mass_shatter_l40s
+wandb_group: nist20_mass_shatter_reg_sweep
 wandb_tags:
 - mass_shatter
 - cuda_candidates
-- vulcan_l40s
+- fir_h100_mig
 - nist20_ma_mi
 - unique_fragments_256
 - max_enumerated_masks_4096
@@ -41,6 +48,8 @@ wandb_tags:
 - nce_only
 - no_cmf
 - exposure_matched_epochs
+- reg_sweep_2026_09_19
+- train_aux_metrics
 seed: 397623
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
@@ -171,6 +180,11 @@ auxiliary_scores:
 - wprecision
 eval_mz_bin_res:
 - 0.01
+
+# Sweep instrumentation: also compute auxiliary_scores on train, so train_cos_sim_0.01_epoch/mean
+# is logged and the train/val gap is readable. The eval tensors are built sparse
+# (spectrum_pl.py:619-629), so this costs throughput, not GPU memory.
+compute_train_auxiliary_metrics: true
 
 # Explicit opt-in; unsupported modes/devices fail instead of falling back.
 mass_shatter_candidate_backend: cuda

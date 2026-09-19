@@ -1,7 +1,7 @@
 # MASShatter regularization and normalization sweep (Fir, one-hour boxes)
 
 > **Status:** PROPOSED · **Updated:** 2026-09-19
-> Eight arms designed and resolved locally; replicate floor, throughput and the GPU-memory /
+> Eight sweep configs written and verified locally; replicate floor, throughput and the GPU-memory /
 > slice-sizing table measured from existing W&B runs. **Nothing generated or submitted on Fir**, no training launched, no
 > model or config code changed by this plan.
 
@@ -162,25 +162,48 @@ replicates per arm are **set by the Stage A slice measurement**, not fixed here:
 `3g.40gb`) if the 2g slice is >= 1.75x slower, shape B (14 jobs on `2g.20gb`, n=2 per arm) if it is
 <= 1.5x. Job names below are shape A; shape B appends `_s2` for the second seed of each arm.
 
-| Job name | Config | Overrides |
+All eight configs exist under `config/masshatter/ma_mi_merged/`, sharing the stem
+`nist20_ma_mi_merged_fast_batch512_cuda_lb64`. The experiment is **in the files**, not in launch
+flags: each carries `compute_train_auxiliary_metrics: true`, `wandb_group:
+nist20_mass_shatter_reg_sweep` and the tags `reg_sweep_2026_09_19` / `train_aux_metrics`, so a
+missing override cannot silently break comparability, and the W&B read-out is one group query.
+
+| Job name | Config suffix | Axis moved vs `ctrl_a` |
 | --- | --- | --- |
-| `ms_reg_ctrl_a` | base | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_ctrl_b` | base | `+ seed=811923`, distinct `wandb_name` |
-| `ms_reg_layernorm` | `_layernorm` | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_graphnorm` | `_graphnorm` | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_drop02` | `_drop02` | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_drop03` | `_drop03` | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_wd10` | `_wd10` | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_ctxnorm` | `_ctxnorm` | `compute_train_auxiliary_metrics=true` |
+| `ms_reg_ctrl_a` | `_ctrl_a` | — (reference) |
+| `ms_reg_ctrl_b` | `_ctrl_b` | `seed: 397623 -> 811923` |
+| `ms_reg_layernorm` | `_layernorm` | `mol_normalization` |
+| `ms_reg_graphnorm` | `_graphnorm` | `mol_normalization` |
+| `ms_reg_drop02` | `_drop02` | the three dropout sites, together |
+| `ms_reg_drop03` | `_drop03` | the three dropout sites, together |
+| `ms_reg_wd10` | `_wd10` | `weight_decay` |
+| `ms_reg_ctxnorm` | `_ctxnorm` | `mass_shatter_context_normalization` |
+
+Verified after generation: each config resolves against `config/template.yml`, has the identical key
+set, and differs from `ctrl_a` in **exactly** the keys of its declared axis and nothing else. The
+original `nist20_ma_mi_merged_fast_batch512_cuda_lb64.yml` is left untouched (still
+`compute_train_auxiliary_metrics: False`) so the four-replicate lineage keeps its config identity;
+`_ctrl_a` is its instrumented copy. The six arm files were instrumented in place — none had ever
+been run, so there was no history to preserve and no reason to duplicate them.
+
+**The two dropout arms move three keys, not one.** `mol_dropout`, `mass_shatter_head_dropout` and
+`mass_shatter_intensity_transformer_dropout` shift together, as the prepared configs were written.
+That is one *axis* but not one *site*: if the GNN and the head want different amounts, this arm
+cannot say so, and a null here does not exonerate dropout site by site. Accepted for a screen;
+a positive result should be followed by a per-site split, not shipped as-is.
 
 Two controls, not one: the four-run floor above was measured on L40S under pre-2026-09-18-afternoon
 code, and this sweep changes GPU, code and instrumentation at once. The second control re-derives
 the floor **inside** the sweep, on the same hardware and the same instrumented code path, which is
 what A3 checks. It is the cheapest insurance available against reading a 0.007 artifact as a result.
 
-`compute_train_auxiliary_metrics` is set on **all** arms, including the controls, so throughput and
-metric definitions stay uniform. It changes the epoch rate relative to the existing L40S runs; those
-runs are already not clock-comparable, so nothing is lost.
+`compute_train_auxiliary_metrics` is in **all eight** configs, including the controls, so throughput
+and metric definitions stay uniform. It changes the epoch rate relative to the existing L40S runs;
+those runs are already not clock-comparable, so nothing is lost.
+
+`loss_batch_size` and `num_workers` are deliberately **not** in the sweep configs: they are slice
+properties, not experiment settings, and the Stage A measurement may move them. They are passed at
+launch, where they appear in the generated job script and the W&B config.
 
 `_warmup_e0_4` is deliberately excluded — it is staged training, not regularization, and it moves
 the optimization schedule rather than the capacity/normalization axis under study here.
@@ -195,8 +218,8 @@ the sweep and the other is kept as cross-slice calibration.
 
 | Pilot | Profile | Config override |
 | --- | --- | --- |
-| `ms_reg_ctrl_a` | `fir:h100-3g.40gb` | `compute_train_auxiliary_metrics=true` |
-| `ms_reg_ctrl_2g` | `fir:h100-2g.20gb` | `+ loss_batch_size=16 num_workers=3` |
+| `ms_reg_ctrl_a` | `fir:h100-3g.40gb` | none — the config carries everything |
+| `ms_reg_ctrl_2g` | `fir:h100-2g.20gb` | `loss_batch_size=16 num_workers=3` |
 
 `loss_batch_size=16` keeps batch 512 (~15.8 GiB projected) inside the 2g slice, and is neutral on
 the loss; `num_workers=3` matches that profile's 3 CPUs. The pair measures the one number this plan
@@ -251,9 +274,9 @@ FRAGNNET_ACCOUNT=rrg-dwishart
 FRAGNNET_EMAIL=fw4@ualberta.ca
 CFG=config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64
 
-# six arms + control A
-for arm in "" _layernorm _graphnorm _drop02 _drop03 _wd10 _ctxnorm; do
-  name="ms_reg${arm:-_ctrl_a}"
+# control A + the six arms (shape A, 3g.40gb: no overrides needed at all)
+for arm in _ctrl_a _layernorm _graphnorm _drop02 _drop03 _wd10 _ctxnorm; do
+  name="ms_reg${arm}"
   python scripts/setup_job_cc.py \
     --frag_gnn_dp . \
     --python_script_fp scripts/run_pl_model_fit.py \
@@ -263,12 +286,11 @@ for arm in "" _layernorm _graphnorm _drop02 _drop03 _wd10 _ctxnorm; do
     --cc_email "$FRAGNNET_EMAIL" \
     --time 1:00:00 \
     --script_kwargs w=online c="${CFG}${arm}.yml" j="$name" \
-      "--override=compute_train_auxiliary_metrics=true" \
     --no_submit=True
   bash -n "slurm_scripts/${name}.sh"
 done
 
-# control B: second seed, distinct run name
+# control B: second seed, carried by its own config
 python scripts/setup_job_cc.py \
   --frag_gnn_dp . \
   --python_script_fp scripts/run_pl_model_fit.py \
@@ -277,8 +299,7 @@ python scripts/setup_job_cc.py \
   --cc_account "$FRAGNNET_ACCOUNT" \
   --cc_email "$FRAGNNET_EMAIL" \
   --time 1:00:00 \
-  --script_kwargs w=online c="${CFG}.yml" j=ms_reg_ctrl_b \
-    "--override=compute_train_auxiliary_metrics=true seed=811923 wandb_name=nist20_ma_mi_merged_fast_batch512_cuda_lb64_ctrl_b" \
+  --script_kwargs w=online c="${CFG}_ctrl_b.yml" j=ms_reg_ctrl_b \
   --no_submit=True
 bash -n slurm_scripts/ms_reg_ctrl_b.sh
 ```
@@ -294,14 +315,16 @@ python scripts/setup_job_cc.py \
   --cc_account "$FRAGNNET_ACCOUNT" \
   --cc_email "$FRAGNNET_EMAIL" \
   --time 1:00:00 \
-  --script_kwargs w=online c="${CFG}.yml" j=ms_reg_ctrl_2g \
-    "--override=compute_train_auxiliary_metrics=true loss_batch_size=16 num_workers=3 wandb_name=nist20_ma_mi_merged_fast_batch512_cuda_lb16_2g" \
+  --script_kwargs w=online c="${CFG}_ctrl_a.yml" j=ms_reg_ctrl_2g \
+    "--override=loss_batch_size=16 num_workers=3 wandb_name=nist20_ma_mi_merged_fast_batch512_cuda_lb16_2g" \
   --no_submit=True
 bash -n slurm_scripts/ms_reg_ctrl_2g.sh
 ```
 
 Mechanics verified locally (generation only, scripts written outside the repo):
 
+- All eight sweep configs resolve, share one key set, and each differs from `_ctrl_a` in exactly
+  its declared axis (verified programmatically after writing them).
 - The quoted `--override=` token survives `setup_job_cc.py`'s `split("=", 1)` kwarg parsing and is
   emitted as `--override compute_train_auxiliary_metrics=true seed=811923 wandb_name=...` — three
   values under **one** flag, which is what `nargs="*"` needs. Passing `--override` twice would keep
