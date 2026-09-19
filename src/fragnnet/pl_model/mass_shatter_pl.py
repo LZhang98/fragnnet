@@ -1551,6 +1551,7 @@ class MassShatterPL(SpectrumPL):
                     min_mz_per_sample=minimum_mz_per_sample,
                     decimals=4,
                     kl_epsilon=self.hparams.mass_shatter_kl_epsilon,
+                    loss_batch_size=self.hparams.loss_batch_size,
                 )
             candidate_wrecall = None
             if candidate_coverage_enabled:

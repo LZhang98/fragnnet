@@ -660,7 +660,8 @@ def calculate_match_mzs(
     Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in true_mzs, M is number of mz in pred_mzs
     Each cell i,j means if true_mzs[i] matches pred_mzs[j]
     works with numpy arrays or torch tensors inspired by the function in ms-pred
-    NOT BATCHED
+    The torch path broadcasts over leading dimensions, so padded ``[batch, N]`` and
+    ``[batch, M]`` inputs return a ``[batch, N, M]`` mask.
     Args:
         true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.
         pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.
@@ -841,37 +842,44 @@ def round_aggregate_peaks(
         decimals (int, optional): Decimals. Defaults to 4.
         sum_ints (bool, optional): Flag to sum intensities if True. Defaults to True.
     Returns:
-        Tuple[th.Tensor,th.Tensor,th.Tensor]: round_mzs, round_ints, round_batch_idxs
+        Tuple[th.Tensor,th.Tensor,th.Tensor]: round_mzs, round_ints, round_batch_idxs,
+            ordered by batch index and then by ascending m/z. Callers that slice the
+            result by batch (``sparse_peak_list_distance``) rely on that ordering.
     """
 
-    batch_size = th.max(batch_idxs) + 1
-    round_mzs, round_ints, round_batch_idxs = [], [], []
-    for b in range(batch_size):
-        b_mask = batch_idxs == b
-        b_round_mzs = th.round(mzs[b_mask], decimals=decimals)
-        b_ints = ints[b_mask]
-        b_round_mzs_un, b_round_mzs_inv = th.unique(b_round_mzs, return_inverse=True)
-        if agg in ["sum", "amax"]:
-            b_round_ints = scatter_reduce(
-                src=b_ints,
-                index=b_round_mzs_inv,
-                reduce=agg,
-                dim_size=b_round_mzs_un.shape[0],
-            )
-        else:
-            assert agg == "lse", agg
-            b_round_ints = scatter_logsumexp(
-                logits=b_ints,
-                subset_idxs=b_round_mzs_inv,
-                dim_size=b_round_mzs_un.shape[0],
-            )
-        round_mzs.append(b_round_mzs_un)
-        round_ints.append(b_round_ints)
-        round_batch_idxs.append(th.full_like(b_round_mzs_un, b, dtype=batch_idxs.dtype))
-    round_mzs = th.cat(round_mzs, dim=0)
-    round_ints = th.cat(round_ints, dim=0)
-    round_batch_idxs = th.cat(round_batch_idxs, dim=0)
-    return round_mzs, round_ints, round_batch_idxs
+    # Group across the whole batch at once: two stable sorts put the peaks in
+    # lexicographic (batch, rounded m/z) order, which is the order a per-spectrum
+    # th.unique produces, and equal neighbours in that order are exactly one group.
+    round_mzs = th.round(mzs, decimals=decimals)
+    order = th.argsort(round_mzs, stable=True)
+    order = order[th.argsort(batch_idxs[order], stable=True)]
+    sorted_mzs = round_mzs[order]
+    sorted_ints = ints[order]
+    sorted_batch_idxs = batch_idxs[order]
+
+    group_starts = th.ones_like(sorted_batch_idxs, dtype=th.bool)
+    group_starts[1:] = (sorted_batch_idxs[1:] != sorted_batch_idxs[:-1]) | (
+        sorted_mzs[1:] != sorted_mzs[:-1]
+    )
+    subset_idxs = th.cumsum(group_starts, dim=0) - 1
+    start_idxs = th.nonzero(group_starts, as_tuple=True)[0]
+    dim_size = int(start_idxs.numel())
+
+    if agg in ["sum", "amax"]:
+        round_ints = scatter_reduce(
+            src=sorted_ints,
+            index=subset_idxs,
+            reduce=agg,
+            dim_size=dim_size,
+        )
+    else:
+        assert agg == "lse", agg
+        round_ints = scatter_logsumexp(
+            logits=sorted_ints,
+            subset_idxs=subset_idxs,
+            dim_size=dim_size,
+        )
+    return sorted_mzs[start_idxs], round_ints, sorted_batch_idxs[start_idxs]
 
 
 def scipy_linear_sum_assignment(matrix: th.Tensor, maximize: bool = False) -> tuple[th.Tensor, th.Tensor]:

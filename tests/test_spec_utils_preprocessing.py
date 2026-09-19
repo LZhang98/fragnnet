@@ -6,7 +6,7 @@ Tests for:
 - filter_func, bin_func, batch_func (single-spectrum operations)
 - batched_filter_func, batched_bin_func (batched operations)
 - merge_sparse_specs, calculate_spectrum_entropy (spectrum utilities)
-- round_aggregate_peaks (peak deduplication and aggregation)
+- round_aggregate_peaks (peak deduplication and aggregation, incl. loop-reference equivalence)
 """
 
 import math
@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 import torch as th
 
+from fragnnet.utils.misc_utils import scatter_logsumexp, scatter_reduce
 from fragnnet.utils.spec_utils import (
     batch_func,
     batched_bin_func,
@@ -695,3 +696,123 @@ class TestRoundAggregatePeaks:
         # At 4 decimals: 1.001→1.001, 1.002→1.002 → 2 peaks
         assert out_2dec.shape[0] == 1
         assert out_4dec.shape[0] == 2
+
+
+def _round_aggregate_peaks_loop_reference(
+    mzs: th.Tensor,
+    ints: th.Tensor,
+    batch_idxs: th.Tensor,
+    decimals: int = 4,
+    agg: str = "sum",
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Per-spectrum reference for round_aggregate_peaks, kept for equivalence testing.
+
+    This is the implementation that the batched segment reduction replaced. It is
+    retained here only so the batched version can be checked against it; production
+    code must not call it.
+    """
+    batch_size = th.max(batch_idxs) + 1
+    round_mzs, round_ints, round_batch_idxs = [], [], []
+    for b in range(batch_size):
+        b_mask = batch_idxs == b
+        b_round_mzs = th.round(mzs[b_mask], decimals=decimals)
+        b_ints = ints[b_mask]
+        b_round_mzs_un, b_round_mzs_inv = th.unique(b_round_mzs, return_inverse=True)
+        if agg in ["sum", "amax"]:
+            b_round_ints = scatter_reduce(
+                src=b_ints,
+                index=b_round_mzs_inv,
+                reduce=agg,
+                dim_size=b_round_mzs_un.shape[0],
+            )
+        else:
+            assert agg == "lse", agg
+            b_round_ints = scatter_logsumexp(
+                logits=b_ints,
+                subset_idxs=b_round_mzs_inv,
+                dim_size=b_round_mzs_un.shape[0],
+            )
+        round_mzs.append(b_round_mzs_un)
+        round_ints.append(b_round_ints)
+        round_batch_idxs.append(th.full_like(b_round_mzs_un, b, dtype=batch_idxs.dtype))
+    return (
+        th.cat(round_mzs, dim=0),
+        th.cat(round_ints, dim=0),
+        th.cat(round_batch_idxs, dim=0),
+    )
+
+
+class TestRoundAggregatePeaksMatchesLoopReference:
+    """Batched round_aggregate_peaks must agree with the per-spectrum implementation."""
+
+    @staticmethod
+    def _random_case(seed: int, decimals: int) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """Build a batch with heavy m/z collisions, ties, and uneven spectrum sizes."""
+        g = th.Generator().manual_seed(seed)
+        batch_size = int(th.randint(1, 6, (1,), generator=g).item())
+        mzs, ints, batch_idxs = [], [], []
+        for b in range(batch_size):
+            # Include empty-after-the-first spectra only via count 0 on later batches,
+            # since the reference indexes batches 0..max inclusive.
+            count = int(th.randint(1, 40, (1,), generator=g).item())
+            # Draw from a small pool of m/z values so rounding produces real collisions.
+            pool = th.round(th.rand(8, generator=g) * 3.0 + 100.0, decimals=decimals)
+            picks = th.randint(0, pool.numel(), (count,), generator=g)
+            mzs.append(pool[picks])
+            ints.append(th.rand(count, generator=g) + 1e-3)
+            batch_idxs.append(th.full((count,), b, dtype=th.long))
+        return th.cat(mzs), th.cat(ints), th.cat(batch_idxs)
+
+    @pytest.mark.parametrize("agg", ["sum", "amax", "lse"])
+    @pytest.mark.parametrize("seed", range(12))
+    def test_matches_reference(self, agg: str, seed: int):
+        """Grouping, order, and aggregated values match the per-spectrum loop."""
+        mzs, ints, batch_idxs = self._random_case(seed, decimals=4)
+        got_mzs, got_ints, got_batch = round_aggregate_peaks(mzs, ints, batch_idxs, agg=agg)
+        ref_mzs, ref_ints, ref_batch = _round_aggregate_peaks_loop_reference(
+            mzs, ints, batch_idxs, agg=agg
+        )
+        assert th.equal(got_mzs, ref_mzs)
+        assert th.equal(got_batch, ref_batch)
+        if agg == "lse":
+            # index_add reassociates float32 sums inside scatter_logsumexp.
+            assert th.allclose(got_ints, ref_ints, atol=1e-6, rtol=1e-6)
+        else:
+            assert th.equal(got_ints, ref_ints)
+
+    def test_single_peak_and_exact_ties(self):
+        """A one-peak batch and an all-identical-m/z batch both match the reference."""
+        mzs = th.tensor([100.0, 200.0, 200.0, 200.0])
+        ints = th.tensor([1.0, 2.0, 3.0, 4.0])
+        batch_idxs = th.tensor([0, 1, 1, 1])
+        got = round_aggregate_peaks(mzs, ints, batch_idxs, agg="sum")
+        ref = _round_aggregate_peaks_loop_reference(mzs, ints, batch_idxs, agg="sum")
+        for got_tensor, ref_tensor in zip(got, ref):
+            assert th.equal(got_tensor, ref_tensor)
+
+    def test_gradient_flows_to_intensities(self):
+        """Summed groups backpropagate to every contributing input intensity."""
+        mzs = th.tensor([100.0, 100.0, 300.0])
+        ints = th.tensor([1.0, 2.0, 5.0], requires_grad=True)
+        batch_idxs = th.tensor([0, 0, 0])
+        _, round_ints, _ = round_aggregate_peaks(mzs, ints, batch_idxs, agg="sum")
+        round_ints.sum().backward()
+        assert th.equal(ints.grad, th.ones(3))
+
+    def test_dtypes_are_preserved(self):
+        """Output m/z and batch-index dtypes follow their inputs."""
+        mzs = th.tensor([100.0, 100.0], dtype=th.float64)
+        ints = th.tensor([1.0, 2.0], dtype=th.float64)
+        batch_idxs = th.tensor([0, 0], dtype=th.int32)
+        round_mzs, round_ints, round_batch_idxs = round_aggregate_peaks(mzs, ints, batch_idxs)
+        assert round_mzs.dtype == th.float64
+        assert round_ints.dtype == th.float64
+        assert round_batch_idxs.dtype == th.int32
+
+    def test_batch_with_no_peaks_is_skipped(self):
+        """A batch index carrying no peaks contributes no output rows."""
+        mzs = th.tensor([100.0, 300.0])
+        ints = th.tensor([1.0, 2.0])
+        batch_idxs = th.tensor([0, 2])
+        _, _, round_batch_idxs = round_aggregate_peaks(mzs, ints, batch_idxs, agg="sum")
+        assert th.equal(round_batch_idxs, th.tensor([0, 2]))

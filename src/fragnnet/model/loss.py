@@ -31,6 +31,7 @@ from fragnnet.utils.misc_utils import (
     validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
+    _solve_batch_assignment,
     batch_jss_hun_helper,
     batched_bin_func,
     calculate_match_mzs,
@@ -44,6 +45,11 @@ logger = logging.getLogger(__name__)
 # LOG_TRUNC_FACTOR = {
 #     i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
 # }
+
+
+def _x_log_x(values: th.Tensor) -> th.Tensor:
+    """Return ``x log x`` with the ``x = 0`` limit, so padded entries contribute nothing."""
+    return values * values.clamp_min(th.finfo(values.dtype).tiny).log()
 
 
 def sparse_peak_list_distance(
@@ -67,6 +73,7 @@ def sparse_peak_list_distance(
     min_mz_per_sample: th.Tensor | None = None,
     decimals: int = 4,
     kl_epsilon: float = 1e-4,
+    loss_batch_size: int = 32,
 ) -> tuple[th.Tensor, th.Tensor]:
     """Compare sparse peak lists without an m/z probability density.
 
@@ -94,6 +101,8 @@ def sparse_peak_list_distance(
         decimals: Decimal precision for numerical exact-mass coalescing.
         kl_epsilon: Fraction of the predicted distribution replaced by the
             observed distribution before Kullback-Leibler divergence.
+        loss_batch_size: Ceiling on the number of spectra padded together. Chunks are
+            narrowed further whenever padding would exceed the flat Cartesian pair count.
 
     Returns:
         Two per-spectrum vectors: primary distance and squared entropy mismatch.
@@ -108,6 +117,8 @@ def sparse_peak_list_distance(
         raise ValueError(f"unknown peak-list matching mode: {matching}")
     if not math.isfinite(kl_epsilon) or not 0.0 < kl_epsilon < 1.0:
         raise ValueError("kl_epsilon must be finite and in (0, 1)")
+    if loss_batch_size <= 0:
+        raise ValueError(f"loss_batch_size must be > 0, got {loss_batch_size}")
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
     tensors = {
@@ -150,116 +161,159 @@ def sparse_peak_list_distance(
         decimals=decimals,
         agg="sum",
     )
+    # ``round_aggregate_peaks`` returns groups in (batch, m/z) order, so the flat
+    # tensors are already batch-major and chunk slicing below is contiguous.
     batch_size = int(true_batch_idxs.max().item()) + 1
     if pred_batch_idxs.min().item() < 0 or pred_batch_idxs.max().item() >= batch_size:
         raise ValueError("predicted batch indices reference a missing observed spectrum")
 
+    true_batch_counts = th.bincount(true_batch_idxs, minlength=batch_size)
+    pred_batch_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    empty_spectra = (true_batch_counts == 0) | (pred_batch_counts == 0)
+    if bool(empty_spectra.any().item()):
+        first_empty = int(empty_spectra.nonzero()[0, 0].item())
+        raise ValueError(f"spectrum {first_empty} must contain observed and predicted peaks")
+    true_batch_totals = true_intensities.new_zeros(batch_size).index_add(
+        0, true_batch_idxs, true_intensities
+    )
+    if bool((true_batch_totals <= 0).any().item()):
+        first_zero = int((true_batch_totals <= 0).nonzero()[0, 0].item())
+        raise ValueError(f"observed spectrum {first_zero} has zero total intensity")
+    pred_batch_totals = pred_intensities.new_zeros(batch_size).index_add(
+        0, pred_batch_idxs, pred_intensities
+    )
+    if bool((pred_batch_totals <= 0).any().item()):
+        first_zero = int((pred_batch_totals <= 0).nonzero()[0, 0].item())
+        raise ValueError(f"predicted spectrum {first_zero} has zero total intensity")
+
+    packed_batch_cumsums = th.cat(
+        (
+            true_batch_idxs.new_zeros(1),
+            true_batch_counts.cumsum(0),
+            pred_batch_idxs.new_zeros(1),
+            pred_batch_counts.cumsum(0),
+        )
+    ).tolist()
+    cumsum_size = batch_size + 1
+    true_batch_cumsum: list[int] = packed_batch_cumsums[:cumsum_size]
+    pred_batch_cumsum: list[int] = packed_batch_cumsums[cumsum_size:]
+    loss_chunks = _build_loss_chunks(true_batch_cumsum, pred_batch_cumsum, loss_batch_size)
+
     primary_losses = true_intensities.new_empty(batch_size)
     entropy_losses = true_intensities.new_empty(batch_size)
     log_two = math.log(2.0)
+    device = true_intensities.device
 
-    for batch_index in range(batch_size):
-        true_mask = true_batch_idxs == batch_index
-        pred_mask = pred_batch_idxs == batch_index
-        batch_true_mzs = true_mzs[true_mask]
-        batch_true_intensities = true_intensities[true_mask]
-        batch_pred_mzs = pred_mzs[pred_mask]
-        batch_pred_intensities = pred_intensities[pred_mask]
-        if batch_true_mzs.numel() == 0 or batch_pred_mzs.numel() == 0:
-            raise ValueError(f"spectrum {batch_index} must contain observed and predicted peaks")
-        if batch_true_intensities.sum().item() <= 0:
-            raise ValueError(f"observed spectrum {batch_index} has zero total intensity")
-        if batch_pred_intensities.sum().item() <= 0:
-            raise ValueError(f"predicted spectrum {batch_index} has zero total intensity")
+    for bl_lower, bl_upper in loss_chunks:
+        bl_true_lower = true_batch_cumsum[bl_lower]
+        bl_true_upper = true_batch_cumsum[bl_upper]
+        bl_pred_lower = pred_batch_cumsum[bl_lower]
+        bl_pred_upper = pred_batch_cumsum[bl_upper]
+        bl_batch_size = bl_upper - bl_lower
+
+        true_sort_idx, true_padded_indices, true_valid, max_true_peaks = _build_padded_batch_layout(
+            true_batch_idxs[bl_true_lower:bl_true_upper] - bl_lower,
+            bl_batch_size,
+            assume_sorted=True,
+            counts=true_batch_counts[bl_lower:bl_upper],
+        )
+        pred_sort_idx, pred_padded_indices, pred_valid, max_pred_peaks = _build_padded_batch_layout(
+            pred_batch_idxs[bl_pred_lower:bl_pred_upper] - bl_lower,
+            bl_batch_size,
+            assume_sorted=True,
+            counts=pred_batch_counts[bl_lower:bl_upper],
+        )
+        true_layout = (true_sort_idx, true_padded_indices, bl_batch_size, max_true_peaks)
+        pred_layout = (pred_sort_idx, pred_padded_indices, bl_batch_size, max_pred_peaks)
+
+        padded_true_mzs = _pad_flat_with_layout(
+            true_mzs[bl_true_lower:bl_true_upper], *true_layout, pad_value=0.0
+        )
+        padded_true_ints = _pad_flat_with_layout(
+            true_intensities[bl_true_lower:bl_true_upper], *true_layout, pad_value=0.0
+        )
+        padded_pred_mzs = _pad_flat_with_layout(
+            pred_mzs[bl_pred_lower:bl_pred_upper], *pred_layout, pad_value=0.0
+        )
+        padded_pred_ints = _pad_flat_with_layout(
+            pred_intensities[bl_pred_lower:bl_pred_upper], *pred_layout, pad_value=0.0
+        )
 
         if tol_per_sample is None:
             match_mask = calculate_match_mzs(
-                batch_true_mzs,
-                batch_pred_mzs,
+                padded_true_mzs,
+                padded_pred_mzs,
                 tolerance=tolerance,
                 relative=relative,
                 tolerance_min_mz=tolerance_min_mz,
             )
         else:
+            bl_tol = tol_per_sample[bl_lower:bl_upper].to(padded_true_mzs.dtype)
+            bl_min_mz = min_mz_per_sample[bl_lower:bl_upper].to(padded_true_mzs.dtype)
             match_mask = calculate_match_mzs(
-                batch_true_mzs,
-                batch_pred_mzs,
+                padded_true_mzs,
+                padded_pred_mzs,
                 relative=True,
-                tol_per_true=tol_per_sample[batch_index].expand_as(batch_true_mzs),
-                min_mz_per_true=min_mz_per_sample[batch_index].expand_as(batch_true_mzs),
+                tol_per_true=bl_tol[:, None].expand_as(padded_true_mzs),
+                min_mz_per_true=bl_min_mz[:, None].expand_as(padded_true_mzs),
             )
-        match_mask = th.as_tensor(match_mask, dtype=th.bool, device=batch_true_mzs.device)
-        mass_distance = (batch_true_mzs[:, None] - batch_pred_mzs[None, :]).abs()
+        match_mask = th.as_tensor(match_mask, dtype=th.bool, device=device)
+        match_mask = match_mask & true_valid[:, :, None] & pred_valid[:, None, :]
+        mass_distance = (padded_true_mzs[:, :, None] - padded_pred_mzs[:, None, :]).abs()
 
-        matched_true_indices = th.empty(
-            0,
-            dtype=th.long,
-            device=batch_true_mzs.device,
-        )
-        matched_pred_indices = th.empty(
-            0,
-            dtype=th.long,
-            device=batch_true_mzs.device,
-        )
         if matching == "closest":
-            feasible_predictions = match_mask.any(dim=0)
-            if feasible_predictions.any():
-                feasible_distances = mass_distance[:, feasible_predictions].masked_fill(
-                    ~match_mask[:, feasible_predictions],
-                    th.inf,
-                )
-                matched_true_indices = feasible_distances.argmin(dim=0)
-                matched_pred_indices = th.where(feasible_predictions)[0]
-        elif match_mask.any():
-            feasible_true = match_mask.any(dim=1)
-            feasible_pred = match_mask.any(dim=0)
-            feasible_true_indices = th.where(feasible_true)[0]
-            feasible_pred_indices = th.where(feasible_pred)[0]
-            feasible_match_mask = match_mask[feasible_true][:, feasible_pred]
-            feasible_mass_distance = mass_distance[feasible_true][:, feasible_pred]
+            # Every in-tolerance prediction joins its nearest observed peak, so several
+            # predictions may land on the same one.
+            matched_pred_mask = match_mask.any(dim=1)
+            matched_true_of_pred = mass_distance.masked_fill(~match_mask, th.inf).argmin(dim=1)
+        else:
             # Invalid pairs receive a cost larger than every possible sum of valid
             # distances, so assignment first maximizes valid cardinality and then
-            # minimizes total m/z distance. Drop isolated rows and columns before
-            # solving because MASShatter usually has many candidates outside every
-            # observed peak's tolerance window.
-            invalid_cost = (feasible_mass_distance.max().detach() + 1.0) * (
-                min(feasible_match_mask.shape) + 1
+            # minimizes total m/z distance.
+            feasible_distance = mass_distance.masked_fill(~match_mask, 0.0)
+            invalid_cost = (feasible_distance.flatten(1).amax(dim=1).detach() + 1.0) * (
+                min(max_true_peaks, max_pred_peaks) + 1
             )
-            assignment_cost = feasible_mass_distance.masked_fill(
-                ~feasible_match_mask,
-                invalid_cost,
+            assignment_cost = th.where(
+                match_mask,
+                mass_distance,
+                invalid_cost[:, None, None].expand_as(mass_distance),
             )
-            row_indices, column_indices = linear_sum_assignment(
-                assignment_cost.detach(),
-                maximize=False,
+            row_indices, column_indices = _solve_batch_assignment(-assignment_cost.detach())
+            # The two assignment backends are selected by whether torch_linear_assignment
+            # is installed, and only the scipy fallback can be exercised without it. Both
+            # document one index pair per row of a (batch, min(rows, cols)) result; check
+            # it rather than let a different layout scatter into the wrong peaks.
+            expected_shape = (bl_batch_size, min(max_true_peaks, max_pred_peaks))
+            if tuple(row_indices.shape) != expected_shape:
+                raise RuntimeError(
+                    "batched linear assignment returned indices of shape "
+                    f"{tuple(row_indices.shape)}, expected {expected_shape}"
+                )
+            chunk_rows = th.arange(bl_batch_size, device=device)[:, None]
+            valid_assignments = match_mask[chunk_rows, row_indices, column_indices]
+            matched_pred_mask = pred_valid.new_zeros(pred_valid.shape).scatter(
+                1, column_indices, valid_assignments
             )
-            valid_assignments = feasible_match_mask[row_indices, column_indices]
-            matched_true_indices = feasible_true_indices[row_indices[valid_assignments]]
-            matched_pred_indices = feasible_pred_indices[column_indices[valid_assignments]]
+            matched_true_of_pred = th.zeros(
+                (bl_batch_size, max_pred_peaks), dtype=th.long, device=device
+            ).scatter(1, column_indices, row_indices)
 
-        pred_at_true = batch_pred_intensities.new_zeros(batch_true_intensities.shape)
-        if matched_pred_indices.numel() > 0:
-            pred_at_true = pred_at_true.index_add(
-                0,
-                matched_true_indices,
-                batch_pred_intensities[matched_pred_indices],
-            )
-        unmatched_predictions = th.ones(
-            batch_pred_intensities.shape,
-            dtype=th.bool,
-            device=batch_pred_intensities.device,
+        # Zeros are the identity for both the L1 normalizer and ``x log x``, so padded
+        # entries and unmatched slots contribute nothing to any objective below.
+        matched_contribution = th.where(
+            matched_pred_mask, padded_pred_ints, th.zeros_like(padded_pred_ints)
         )
-        unmatched_predictions[matched_pred_indices] = False
-        aligned_pred = th.cat(
-            [pred_at_true, batch_pred_intensities[unmatched_predictions]],
-            dim=0,
+        pred_at_true = padded_pred_ints.new_zeros((bl_batch_size, max_true_peaks)).scatter_add(
+            1, matched_true_of_pred, matched_contribution
         )
+        unmatched_contribution = th.where(
+            pred_valid & ~matched_pred_mask, padded_pred_ints, th.zeros_like(padded_pred_ints)
+        )
+        aligned_pred = th.cat([pred_at_true, unmatched_contribution], dim=1)
         aligned_true = th.cat(
-            [
-                batch_true_intensities,
-                batch_true_intensities.new_zeros(int(unmatched_predictions.sum().item())),
-            ],
-            dim=0,
+            [padded_true_ints, padded_true_ints.new_zeros((bl_batch_size, max_pred_peaks))],
+            dim=1,
         )
 
         distance_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
@@ -267,54 +321,46 @@ def sparse_peak_list_distance(
             distance_dtype = th.float32
         distance_pred = aligned_pred.to(dtype=distance_dtype)
         distance_true = aligned_true.to(dtype=distance_dtype)
+
         if objective == "cosine_distance":
-            similarity = th.dot(distance_pred, distance_true) / (
-                th.linalg.vector_norm(distance_pred) * th.linalg.vector_norm(distance_true)
+            similarity = (distance_pred * distance_true).sum(dim=1) / (
+                th.linalg.vector_norm(distance_pred, dim=1)
+                * th.linalg.vector_norm(distance_true, dim=1)
             )
-            primary_losses[batch_index] = 1.0 - similarity
-        elif objective == "jss_distance":
-            pred_distribution = distance_pred / distance_pred.sum()
-            true_distribution = distance_true / distance_true.sum()
-            mixture = 0.5 * (pred_distribution + true_distribution)
-
-            def x_log_x(values: th.Tensor) -> th.Tensor:
-                return values * values.clamp_min(th.finfo(values.dtype).tiny).log()
-
-            divergence = (
-                0.5 * x_log_x(pred_distribution).sum()
-                + 0.5 * x_log_x(true_distribution).sum()
-                - x_log_x(mixture).sum()
-            )
-            primary_losses[batch_index] = divergence / log_two
+            primary_losses[bl_lower:bl_upper] = 1.0 - similarity
         else:
-            pred_distribution = distance_pred / distance_pred.sum()
-            true_distribution = distance_true / distance_true.sum()
-            # Reserve a fixed total epsilon mass for observed support. Unlike adding
-            # epsilon per aligned entry, this remains invariant when the same unmatched
-            # intensity is split across more predicted peaks.
-            smoothed_pred_distribution = (
-                1.0 - kl_epsilon
-            ) * pred_distribution + kl_epsilon * true_distribution
-            positive_true = true_distribution > 0.0
-            primary_losses[batch_index] = (
-                true_distribution[positive_true]
-                * (
-                    true_distribution[positive_true].log()
-                    - smoothed_pred_distribution[positive_true].log()
+            pred_distribution = distance_pred / distance_pred.sum(dim=1, keepdim=True)
+            true_distribution = distance_true / distance_true.sum(dim=1, keepdim=True)
+            if objective == "jss_distance":
+                mixture = 0.5 * (pred_distribution + true_distribution)
+                divergence = (
+                    0.5 * _x_log_x(pred_distribution).sum(dim=1)
+                    + 0.5 * _x_log_x(true_distribution).sum(dim=1)
+                    - _x_log_x(mixture).sum(dim=1)
                 )
-            ).sum()
+                primary_losses[bl_lower:bl_upper] = divergence / log_two
+            else:
+                # Reserve a fixed total epsilon mass for observed support. Unlike adding
+                # epsilon per aligned entry, this remains invariant when the same unmatched
+                # intensity is split across more predicted peaks.
+                smoothed_pred_distribution = (
+                    1.0 - kl_epsilon
+                ) * pred_distribution + kl_epsilon * true_distribution
+                positive_true = true_distribution > 0.0
+                tiny = th.finfo(true_distribution.dtype).tiny
+                divergence_terms = true_distribution * (
+                    true_distribution.clamp_min(tiny).log()
+                    - smoothed_pred_distribution.clamp_min(tiny).log()
+                )
+                primary_losses[bl_lower:bl_upper] = th.where(
+                    positive_true, divergence_terms, th.zeros_like(divergence_terms)
+                ).sum(dim=1)
 
-        pred_distribution = distance_pred / distance_pred.sum()
-        true_distribution = distance_true / distance_true.sum()
-        pred_entropy = -(
-            pred_distribution
-            * pred_distribution.clamp_min(th.finfo(pred_distribution.dtype).tiny).log()
-        ).sum()
-        true_entropy = -(
-            true_distribution
-            * true_distribution.clamp_min(th.finfo(true_distribution.dtype).tiny).log()
-        ).sum()
-        entropy_losses[batch_index] = (pred_entropy - true_entropy).square()
+        entropy_pred_distribution = distance_pred / distance_pred.sum(dim=1, keepdim=True)
+        entropy_true_distribution = distance_true / distance_true.sum(dim=1, keepdim=True)
+        pred_entropy = -_x_log_x(entropy_pred_distribution).sum(dim=1)
+        true_entropy = -_x_log_x(entropy_true_distribution).sum(dim=1)
+        entropy_losses[bl_lower:bl_upper] = (pred_entropy - true_entropy).square()
 
     return primary_losses, entropy_losses
 
