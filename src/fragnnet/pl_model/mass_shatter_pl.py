@@ -930,6 +930,12 @@ class MassShatterPL(SpectrumPL):
             raise ValueError("CUDA candidates require precision: 32-true (FP32)")
         if not self.hparams.spec_params["prec_type"]:
             raise ValueError("MASShatter requires spec_params.prec_type: True")
+        if self.hparams.mass_shatter_intensity_atom_decoder_num_layers != 0:
+            raise ValueError(
+                "mass_shatter_intensity_atom_decoder_num_layers must be 0: the "
+                "fragment-to-atom decoder was removed on 2026-09-19 after it showed no "
+                "epoch-matched cosine gain at 1.8x the wall clock; set it to 0"
+            )
         node_feature_dim, edge_feature_dim = get_mol_feats_sizes(
             self.hparams.mol_params["pyg_node_feats"],
             self.hparams.mol_params["pyg_edge_feats"],
@@ -983,9 +989,6 @@ class MassShatterPL(SpectrumPL):
             ),
             intensity_transformer_attention=(
                 self.hparams.mass_shatter_intensity_transformer_attention
-            ),
-            intensity_atom_decoder_num_layers=(
-                self.hparams.mass_shatter_intensity_atom_decoder_num_layers
             ),
             intensity_transformer_dropout=(self.hparams.mass_shatter_intensity_transformer_dropout),
             intensity_output=self.hparams.mass_shatter_intensity_output,

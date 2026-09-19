@@ -62,6 +62,26 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   The checkout was clean at audit start, so the
   uncommitted-work description in the workflow-adoption handoff above is historical.
 
+- [MASShatter regularization audit](findings/masshatter_regularization_audit_2026_09_19.md)
+  (2026-09-19) establishes that regularization and optimization have effectively never been varied:
+  across 226 `model_type = mass_shatter` W&B runs, `mass_shatter_head_dropout`, `weight_decay`, `lr`,
+  `gradient_clip_val` and `train_sample_weight` are identical in all of them, and only two runs vary
+  any regularization or optimization setting without also changing the encoder. Both predate the
+  `tolerance_consensus` merged-target change, so neither is usable evidence. Five prepared ablation
+  configs under `config/masshatter/ma_mi_merged/` have never been launched. Measured mechanisms:
+  BatchNorm, not dropout, drives the divergence between the candidate set optimized in training and
+  the one evaluated (Jaccard 0.317/0.611 at dropout 0 under `batch`, exactly 1.000 under `layer`,
+  `graph` and `none`); normalizing a residual branch pins its magnitude for `batch`, `layer` and
+  `graph` alike, so switching normalization does not restore a layer's ability to attenuate itself;
+  and `SpectrumPL.configure_optimizers` still drops `lr_schedule_type`/`lr_total_steps`/`lr_min_ratio`,
+  giving 3.774e-04 instead of the configured 1.000e-05 at step 100,000. Next: fix that forwarding,
+  then measure the BatchNorm candidate-set gap on a trained checkpoint before any new training arm.
+  It also records the 2026-09-19 decision to drop the atom decoder going forward: epoch-matched it
+  costs no cosine (-0.0018, inside the replicate floor) while running 1.8x faster per epoch, and
+  `config/template.yml` already defaults it to 0, so the recommended normalization arm needs no
+  config change. The decoder code path remains for checkpoint compatibility.
+  Probes: `scripts/debug/probe_masshatter_regularization.py`. Audit only; no training run,
+  no model-code change.
 - [Cross-adduct loss headroom](findings/cross_adduct_loss_headroom_2026_09_17.md) is a NEW, GREEN
   data-side gate (2026-09-17) for grouping MS/MS by adduct and adding a paired loss. 46.5% of
   NIST20 molecules carry at least two adducts; 78,938 groups match on instrument, fragmentation

@@ -70,7 +70,6 @@ wandb_tags:
   - candidate_conditional
   - shared_proposal_encoder
   - proposal_warmup_epochs_0_4
-  - intensity_atom_decoder_layers_4
   - dense_evaluation
   - mass_only_h_attribution
   - no_forced_single_cuts
@@ -139,7 +138,6 @@ mass_shatter_proposal_num_mixtures: 1
 mass_shatter_proposal_method: connected_fragment_beam
 mass_shatter_fast_gnn_beam_width: 256
 mass_shatter_fast_gnn_max_boundary_cuts: 5
-mass_shatter_intensity_atom_decoder_num_layers: 4
 mass_shatter_intensity_transformer_dim: 384
 mass_shatter_intensity_transformer_num_layers: 3
 mass_shatter_intensity_transformer_num_heads: 8

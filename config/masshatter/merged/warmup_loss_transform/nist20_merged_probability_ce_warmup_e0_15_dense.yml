@@ -29,7 +29,6 @@ wandb_tags:
   - candidate_conditional
   - shared_proposal_encoder
   - proposal_warmup_epochs_0_15
-  - intensity_atom_decoder_layers_4
   - dense_evaluation
   - no_forced_single_cuts
   - charge_logsumexp
@@ -91,7 +90,6 @@ mass_shatter_head_hidden_dim: 512
 mass_shatter_head_dropout: 0.1
 mass_shatter_bond_num_layers: 3
 mass_shatter_proposal_num_mixtures: 1
-mass_shatter_intensity_atom_decoder_num_layers: 4
 mass_shatter_intensity_transformer_dim: 384
 mass_shatter_intensity_transformer_num_layers: 3
 mass_shatter_intensity_transformer_num_heads: 8

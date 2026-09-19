@@ -270,7 +270,10 @@ mass_shatter_intensity_transformer_num_inducing_points: 64
 # full uses direct candidate-to-candidate attention (quadratic, exact pairwise interaction)
 # and ignores num_inducing_points.
 mass_shatter_intensity_transformer_attention: induced  # ["induced", "full"]
-mass_shatter_intensity_atom_decoder_num_layers: 0  # Masked fragment-to-atom attention; 0 preserves the legacy head.
+# REMOVED 2026-09-19. The fragment-to-atom decoder gave no epoch-matched cosine gain at
+# 1.8x the wall clock, so it was deleted. The key is retained because load_config requires
+# every custom-config key to exist here; any value other than 0 now fails at setup.
+mass_shatter_intensity_atom_decoder_num_layers: 0
 mass_shatter_intensity_transformer_dropout: 0.1
 # Final spectrum representation. Independent mode is limited to the unique-fragment,
 # proposal-selection-only path and returns nonnegative normal-space intensities.

@@ -19,7 +19,6 @@ wandb_tags:
   - intensity_layers_3
   - intensity_ff_1024
   - intensity_inducing_128
-  - intensity_atom_decoder_4
   - ce_embed
   - adduct_embed
   - proposal_selection_only
@@ -93,7 +92,6 @@ mass_shatter_intensity_transformer_num_layers: 3
 mass_shatter_intensity_transformer_num_heads: 8
 mass_shatter_intensity_transformer_feedforward_dim: 1024
 mass_shatter_intensity_transformer_num_inducing_points: 128
-mass_shatter_intensity_atom_decoder_num_layers: 4
 mass_shatter_intensity_transformer_dropout: 0.1
 mass_shatter_use_mask_residuals: True
 mass_shatter_proposal_anchored: True

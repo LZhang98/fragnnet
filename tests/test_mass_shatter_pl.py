@@ -90,6 +90,12 @@ def test_attention_topology_rejects_unknown_values() -> None:
         _build_pl(mass_shatter_intensity_transformer_attention="inducing")
 
 
+def test_nonzero_atom_decoder_layers_fail_at_setup() -> None:
+    """The removed atom decoder must not be silently ignored by an old config."""
+    with pytest.raises(ValueError, match="atom_decoder_num_layers must be 0"):
+        _build_pl(mass_shatter_intensity_atom_decoder_num_layers=4)
+
+
 def test_merged_independent_distance_configs_enable_requested_model() -> None:
     config_dir = (
         Path(__file__).parents[1] / "config" / "masshatter" / "merged" / "channel_selection"
@@ -107,7 +113,9 @@ def test_merged_independent_distance_configs_enable_requested_model() -> None:
         assert config["mass_shatter_apply_channel_selection_in_training"] is False
         assert config["mass_shatter_channel_support_use_intensity_prior"] is False
         assert config["mass_shatter_proposal_num_mixtures"] == 1
-        assert config["mass_shatter_intensity_atom_decoder_num_layers"] == 4
+        # The atom decoder was removed on 2026-09-19; these configs no longer set the key
+        # and inherit the template default of 0.
+        assert "mass_shatter_intensity_atom_decoder_num_layers" not in config
         assert config["mass_shatter_proposal_ints_transform"] == "none"
         if config["loss_type"] == "kl_distance":
             assert config["mass_shatter_kl_epsilon"] == pytest.approx(1.0e-4)

@@ -67,7 +67,6 @@ def _build_model(
     min_ion_h_relative_probability: float = 0.0,
     min_ion_h_absolute_probability: float = 0.0,
     apply_channel_selection_in_training: bool = False,
-    intensity_atom_decoder_num_layers: int = 0,
     intensity_transformer_attention: str = "induced",
     intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
@@ -105,7 +104,6 @@ def _build_model(
         intensity_transformer_feedforward_dim=32,
         intensity_transformer_num_inducing_points=4,
         intensity_transformer_attention=intensity_transformer_attention,
-        intensity_atom_decoder_num_layers=intensity_atom_decoder_num_layers,
         intensity_transformer_dropout=0.0,
         intensity_output=intensity_output,
         use_mask_residuals=use_mask_residuals,
@@ -990,29 +988,6 @@ def test_mass_shatter_rejects_mismatched_graphs_in_shared_group() -> None:
             spec_nce=th.tensor([10.0, 20.0]),
             proposal_group_ids=th.zeros(2, dtype=th.long),
         )
-
-
-def test_mass_shatter_spectrum_loss_reaches_masked_atom_decoder() -> None:
-    batch = _build_batch()
-    model = _build_model(batch, intensity_atom_decoder_num_layers=1)
-    gate = model.intensity_head.atom_decoder_gate
-    assert gate is not None
-    with th.no_grad():
-        gate.fill_(1.0)
-    output = model(
-        mol_pyg=batch,
-        spec_prec_type=th.tensor([0, 1]),
-        spec_nce=th.tensor([25.0, 35.0]),
-    )
-
-    (-output["pred_logprobs"].mean()).backward()
-
-    decoder = model.intensity_head.atom_decoder
-    assert decoder is not None
-    cross_attention = decoder.layers[0].multihead_attn.in_proj_weight
-    assert cross_attention.grad is not None
-    assert th.isfinite(cross_attention.grad).all()
-    assert cross_attention.grad.abs().sum() > 0
 
 
 def test_selection_only_proposal_loss_reaches_bernoulli_mixture() -> None:
