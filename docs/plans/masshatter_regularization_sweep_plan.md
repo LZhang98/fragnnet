@@ -1,7 +1,7 @@
 # MASShatter regularization and normalization sweep (Fir, one-hour boxes)
 
 > **Status:** PROPOSED · **Updated:** 2026-09-19
-> Eight sweep configs written and verified locally; replicate floor, throughput and the GPU-memory /
+> Nine sweep configs written and verified locally (eight arms plus the 2g slice variant); replicate floor, throughput and the GPU-memory /
 > slice-sizing table measured from existing W&B runs. **Nothing generated or submitted on Fir**, no training launched, no
 > model or config code changed by this plan.
 
@@ -71,9 +71,9 @@ NVML peak device memory across every merged MA/MI run (GiB, since MIG quotes GiB
 | --- | ---: | --- |
 | 128 cuda lb8 (`qhs040sy`) | 4.9 GiB | yes |
 | 256 cuda lb8 (`r7bavpb0`) | 8.0 GiB | yes |
-| 256 cuda lb32 (`0sfedmop`) | 12.7 GiB | yes |
+| **256 cuda lb32** (`0sfedmop`) — the 2g shape | **12.7 GiB** | **yes, ~6.8 GiB margin** |
 | 512 cuda lb8 (`aqm8u9p4`) | 14.1 GiB | yes |
-| *512 cuda lb16 (interpolated)* | *~15.8 GiB* | *yes, ~3.7 GiB margin* |
+| *512 cuda lb16 (interpolated)* | *~15.8 GiB* | *yes, but projected, not measured* |
 | 256 cuda lb64 (`zxlj1iru`) | 17.3 GiB | yes, 2.2 GiB margin |
 | 512 cuda lb32 (`arnuiim5`, `ewpumd0d`) | 18.7-19.3 GiB | **too tight** |
 | **512 cuda lb64** (this sweep's base) | **25.1-26.9 GiB** | no |
@@ -83,9 +83,11 @@ Memory tracks batch size x `loss_batch_size` at about 0.22 GiB per lb unit above
 **`loss_batch_size` is not a modeling knob.** `_build_loss_chunks` (`loss.py:629-675`) walks the
 batch in windows of at most `loss_batch_size` spectra, subdividing further on a padding heuristic,
 and reduces per-spectrum losses; changing it alters float accumulation order and nothing else. So
-**batch 512 — the knob that does matter — can be kept on a 20 GB slice by running `lb16`.** Earlier
-drafts of this plan claimed a smaller `lb` would break continuity with the `512 x lb64` replicates.
-That was wrong.
+**batch 512 can be kept on a 20 GB slice by running `lb16`.** Earlier drafts of this plan claimed a
+smaller `lb` would break continuity with the `512 x lb64` replicates. That was wrong. The 2g shape
+nevertheless uses microbatch 256 with `accumulate_grad_batches: 2` instead, by user decision: it
+rests on a measured 12.7 GiB rather than an interpolated 15.8 GiB, and keeps the effective batch at
+512. The cost is the BatchNorm interaction noted in [Stage A](#stage-a--paired-slice-pilot-2-jobs-1-h-wall-clock-958-units).
 
 What does not cancel is MIG's non-proportional slicing. `3g.40gb` carries **four** of the eight
 memory slices, not three:
@@ -114,8 +116,8 @@ At roughly 49 price units:
 | | Profile / config | Jobs | Epochs per arm | Comparator resolution |
 | --- | --- | --- | ---: | --- |
 | **A** | `3g.40gb`, `512 x lb64` | 8 x 1 h | ~55 | arm n=1 vs control n=2, se 0.0037 -> ~0.0073 |
-| **B** | `2g.20gb`, `512 x lb16` | 14 x 1 h | ~38 at 1.5x, ~28 at 2x | arm n=2 vs control n=2, se 0.003 -> ~0.006 |
-| **C** | `2g.20gb`, `512 x lb16` | 8 arms x 2 h chained | ~76 at 1.5x, ~56 at 2x | as A, with more exposure |
+| **B** | `2g.20gb`, `256 x 2 x lb32` | 14 x 1 h | ~38 at 1.5x, ~28 at 2x | arm n=2 vs control n=2, se 0.003 -> ~0.006 |
+| **C** | `2g.20gb`, `256 x 2 x lb32` | 8 arms x 2 h chained | ~76 at 1.5x, ~56 at 2x | as A, with more exposure |
 
 B buys a modest threshold improvement by spending 30-50% of the epochs, and thin exposure is
 already what handicaps the dropout arms (see [the bias note](#the-screen-is-biased-against-the-dropout-arms)).
@@ -216,15 +218,28 @@ Submit the control config **twice, in parallel, on both slices**, and let both r
 Both are real control arms, not throwaways — whichever slice wins, its pilot becomes `ctrl_a` for
 the sweep and the other is kept as cross-slice calibration.
 
-| Pilot | Profile | Config override |
+| Pilot | Profile | Config |
 | --- | --- | --- |
-| `ms_reg_ctrl_a` | `fir:h100-3g.40gb` | none — the config carries everything |
-| `ms_reg_ctrl_2g` | `fir:h100-2g.20gb` | `loss_batch_size=16 num_workers=3` |
+| `ms_reg_ctrl_a` | `fir:h100-3g.40gb` | `..._batch512_cuda_lb64_ctrl_a.yml` |
+| `ms_reg_ctrl_2g` | `fir:h100-2g.20gb` | `..._batch256x2_cuda_lb32_ctrl_2g.yml` |
 
-`loss_batch_size=16` keeps batch 512 (~15.8 GiB projected) inside the 2g slice, and is neutral on
-the loss; `num_workers=3` matches that profile's 3 CPUs. The pair measures the one number this plan
-cannot derive: **`min/epoch` on 2g divided by `min/epoch` on 3g**, on this workload, which decides
-between shapes A, B and C above. Gate the fan-out on:
+Neither needs a launch override. The 2g config drops the **microbatch** to 256 with
+`accumulate_grad_batches: 2`, so the effective batch stays 512 and the optimizer math of the lb64
+lineage is preserved; `loss_batch_size` follows to 32 and `num_workers` to 3 for that profile's 3
+CPUs. Measured peak for `256 x lb32` is **12.7 GiB** (`0sfedmop`) against ~19.5 GiB usable — about
+35% headroom, which the `512 x lb16` alternative (~15.8 GiB, and only ever interpolated) did not
+have. The pair measures the one number this plan cannot derive: **`min/epoch` on 2g divided by
+`min/epoch` on 3g**, which decides between shapes A, B and C above.
+
+**The microbatch change lands on the axis under study.** BatchNorm statistics are computed per
+microbatch, so `mol_normalization: batch` at 256 is not the same operator as at 512 — and that is
+precisely what `_layernorm` and `_graphnorm` are testing against. A uniform microbatch across all
+arms keeps the sweep internally valid, but if the 2g shape is selected: every arm must carry the
+same five keys, effect sizes do not transfer to a 512-microbatch run, and nothing in that shape may
+be read against the four `512 x lb64` L40S replicates. This is a further reason to prefer 3g unless
+the measured slice ratio is clearly favourable.
+
+Gate the fan-out on:
 
 1. The native CUDA selection/topology libraries **build for sm_90**. Every prior run of this config
    is L40S (sm_89); this is the first H100 build. The source compiles per-capability into a `/tmp`
@@ -315,8 +330,8 @@ python scripts/setup_job_cc.py \
   --cc_account "$FRAGNNET_ACCOUNT" \
   --cc_email "$FRAGNNET_EMAIL" \
   --time 1:00:00 \
-  --script_kwargs w=online c="${CFG}_ctrl_a.yml" j=ms_reg_ctrl_2g \
-    "--override=loss_batch_size=16 num_workers=3 wandb_name=nist20_ma_mi_merged_fast_batch512_cuda_lb16_2g" \
+  --script_kwargs w=online j=ms_reg_ctrl_2g \
+    c=config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch256x2_cuda_lb32_ctrl_2g.yml \
   --no_submit=True
 bash -n slurm_scripts/ms_reg_ctrl_2g.sh
 ```
@@ -375,6 +390,7 @@ for them and the first trained-checkpoint measurement of that audit claim.
 | --- | --- | --- |
 | OOM on the chosen slice (3g peak 26.9 GiB measured; 2g at `lb16` is a 15.8 GiB projection, not a measurement) | Stage A job dies | 3g: drop `loss_batch_size` to 32. 2g: drop it to 8 (14.1 GiB measured). Never mix profiles or `loss_batch_size` across arms within one sweep |
 | 2g slice starves on 3 CPUs rather than on bandwidth, confounding the slice ratio | Stage A 2g pilot shows low GPU utilization with `num_workers: 3` | Read `system.gpu.0.gpu` on the 2g pilot before trusting the ratio; a CPU-bound 2g pilot understates the slice |
+| The 2g pilot's slice ratio is confounded with its microbatch (256 vs 512), so it measures shape-vs-shape, not slice-vs-slice | By construction | Accept it: the shapes are what is being chosen between. Do not quote the ratio as a pure MIG benchmark |
 | sm_90 native build fails or exceeds its 180 s timeout | Stage A error log | Fall back to the CPU candidate backend **for all arms**, and record it — a mixed-backend sweep is not a sweep |
 | Instrumentation costs more throughput than expected, pushing `E*` below 20 | Stage A epochs/hour | Move the whole sweep to two-hour boxes before fanning out |
 | Fewer than 20 epochs from staging overhead (1.5 G `spec_df.pkl` copy + ~4.3 G dataframe load) | Stage A timestamps | Same response |
