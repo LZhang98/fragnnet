@@ -295,3 +295,77 @@ def test_mass_shatter_wrapper_passes_reading_weights() -> None:
     th.testing.assert_close(captured[0]["ace_weights"], th.tensor([0.25, 0.25, 0.5]))
     th.testing.assert_close(captured[0]["nce_weights"], th.tensor([0.5, 0.5]))
     assert th.isfinite(output["pred_logprobs"]).all()
+
+
+def _context_encoder(**overrides) -> MassShatterContextEncoder:
+    """Build a small context encoder, overriding only the fields under test."""
+    kwargs = dict(
+        num_precursor_types=2,
+        num_instrument_types=2,
+        num_fragmentation_modes=2,
+        use_nce=True,
+        use_ace=False,
+        int_embedder="abs-sines",
+        ce_insert_type="id",
+        ce_insert_size=4,
+        metadata_embedding_dim=4,
+        context_dim=8,
+        nce_max=200,
+        nce_mean=60,
+        nce_std=40,
+        ace_max=300,
+        ace_mean=20,
+        ace_std=15,
+    )
+    kwargs.update(overrides)
+    return MassShatterContextEncoder(**kwargs)
+
+
+def test_context_projector_defaults_match_the_unnormalized_mlp() -> None:
+    """The default must leave the projector, and its checkpoint keys, untouched."""
+    encoder = _context_encoder()
+    assert [type(m).__name__ for m in encoder.projector] == ["Linear", "SiLU", "Linear"]
+    assert [k for k in encoder.state_dict() if k.startswith("projector")] == [
+        "projector.0.weight",
+        "projector.0.bias",
+        "projector.2.weight",
+        "projector.2.bias",
+    ]
+
+
+def test_context_projector_layer_norm_appends_and_keeps_linear_indices() -> None:
+    """`layer` adds a LayerNorm without shifting the existing Linear state-dict keys."""
+    encoder = _context_encoder(normalization="layer")
+    assert [type(m).__name__ for m in encoder.projector] == [
+        "Linear",
+        "SiLU",
+        "Linear",
+        "LayerNorm",
+    ]
+    keys = [k for k in encoder.state_dict() if k.startswith("projector")]
+    assert "projector.0.weight" in keys and "projector.2.weight" in keys
+    assert "projector.3.weight" in keys
+
+
+def test_context_projector_layer_norm_standardizes_the_output() -> None:
+    """A LayerNorm'd projector emits unit-scale context whatever the input scale."""
+    encoder = _context_encoder(normalization="layer").eval()
+    small = encoder.projector(th.randn(16, encoder.projector[0].in_features) * 0.01)
+    large = encoder.projector(th.randn(16, encoder.projector[0].in_features) * 100.0)
+    for out in (small, large):
+        assert th.allclose(out.mean(dim=-1), th.zeros(out.shape[0]), atol=1e-5)
+        assert th.allclose(out.std(dim=-1, unbiased=False), th.ones(out.shape[0]), atol=1e-2)
+
+
+def test_context_projector_dropout_inserts_before_the_second_linear() -> None:
+    kinds = [type(m).__name__ for m in _context_encoder(dropout=0.1).projector]
+    assert kinds == ["Linear", "SiLU", "Dropout", "Linear"]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"normalization": "batch"}, {"normalization": "graph"}, {"dropout": -0.1}, {"dropout": 1.5}],
+)
+def test_context_projector_rejects_invalid_settings(overrides: dict) -> None:
+    with pytest.raises(ValueError):
+        _context_encoder(**overrides)

@@ -247,6 +247,13 @@ mass_shatter_include_cmf: True
 mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
 mass_shatter_context_dim: 64
+# Normalization on the metadata context projector, whose output conditions the GNN and
+# every head. The projector's input scale varies with how many CE readings an acquisition
+# group contributed (merged rows pool a ladder: median 4, max 86), so `layer` appends a
+# LayerNorm to hold that output at a fixed scale. `none` keeps the original MLP.
+mass_shatter_context_normalization: none
+# Dropout inside the context projector; 0.0 keeps the original two-layer MLP unchanged.
+mass_shatter_context_dropout: 0.0
 mass_shatter_context_in_gnn: False  # Append spectrum context to atom inputs in both molecular GNNs; incompatible with share_proposal_across_ev.
 mass_shatter_metadata_embedding_dim: 16
 mass_shatter_head_hidden_dim: 256

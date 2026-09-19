@@ -955,6 +955,8 @@ class MassShatterPL(SpectrumPL):
             precursor_num_heads=self.hparams.mol_num_heads,
             precursor_gnn_type=self.hparams.mol_gnn_type,
             precursor_normalization=self.hparams.mol_normalization,
+            context_normalization=self.hparams.mass_shatter_context_normalization,
+            context_dropout=self.hparams.mass_shatter_context_dropout,
             precursor_dropout=self.hparams.mol_dropout,
             precursor_max_degree=self.hparams.get("mol_max_degree"),
             precursor_max_spatial_distance=self.hparams.get("mol_max_spatial_distance"),

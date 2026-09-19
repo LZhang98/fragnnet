@@ -503,6 +503,8 @@ class MassShatterContextEncoder(nn.Module):
         ace_max: float,
         ace_mean: float,
         ace_std: float,
+        normalization: str = "none",
+        dropout: float = 0.0,
     ) -> None:
         """Initialize the context encoder.
 
@@ -594,11 +596,23 @@ class MassShatterContextEncoder(nn.Module):
         input_dim += ce_feature_dim * (int(use_nce) + int(use_ace))
         input_dim += metadata_embedding_dim * int(self.instrument_embedding is not None)
         input_dim += metadata_embedding_dim * int(self.fragmentation_mode_embedding is not None)
-        self.projector = nn.Sequential(
+        if normalization not in ("none", "layer"):
+            raise ValueError(f"context normalization must be 'none' or 'layer', got {normalization!r}")
+        if not 0.0 <= dropout <= 1.0:
+            raise ValueError(f"context dropout must be in [0, 1], got {dropout}")
+        # The context vector conditions the GNN and every head, but its input scale
+        # varies with how many CE readings a merged acquisition group contributed
+        # (median 4, max 86), so the projector is optionally normalized.
+        projector_layers: list[nn.Module] = [
             nn.Linear(input_dim, context_dim),
             nn.SiLU(),
-            nn.Linear(context_dim, context_dim),
-        )
+        ]
+        if dropout > 0.0:
+            projector_layers.append(nn.Dropout(dropout))
+        projector_layers.append(nn.Linear(context_dim, context_dim))
+        if normalization == "layer":
+            projector_layers.append(nn.LayerNorm(context_dim))
+        self.projector = nn.Sequential(*projector_layers)
 
     def _embed_ce_values(
         self,
@@ -777,6 +791,8 @@ class MassShatterModel(nn.Module):
         precursor_num_heads: int,
         precursor_gnn_type: str,
         precursor_normalization: str,
+        context_normalization: str = "none",
+        context_dropout: float = 0.0,
         precursor_dropout: float,
         precursor_max_degree: int | None = None,
         precursor_max_spatial_distance: int | None = None,
@@ -861,6 +877,9 @@ class MassShatterModel(nn.Module):
                 default. Ignored by every non-Graphormer ``precursor_gnn_type``.
             precursor_gnn_type: GNN cell name understood by :class:`GNN`.
             precursor_normalization: Normalization used inside the GNN.
+            context_normalization: ``layer`` appends a LayerNorm to the metadata
+                context projector; ``none`` keeps the original unnormalized MLP.
+            context_dropout: Dropout inside the context projector.
             precursor_dropout: Dropout inside the GNN.
             context_dim: Width of the per-spectrum conditioning vector.
             context_in_gnn: Append context to each atom's input in the precursor and
@@ -1222,6 +1241,8 @@ class MassShatterModel(nn.Module):
             ace_max=ace_max,
             ace_mean=ace_mean,
             ace_std=ace_std,
+            normalization=context_normalization,
+            dropout=context_dropout,
         )
         # Bond scoring either reads the two endpoint embeddings directly, or refines a
         # dedicated bond state through bond<->atom message passing first.
