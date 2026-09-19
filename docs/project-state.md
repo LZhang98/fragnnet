@@ -62,6 +62,25 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   The checkout was clean at audit start, so the
   uncommitted-work description in the workflow-adoption handoff above is historical.
 
+- [MASShatter regularization sweep](plans/masshatter_regularization_sweep_plan.md) (2026-09-19)
+  is the PROPOSED execution of that audit's sweep half: eight one-hour `fir:h100-3g.40gb` jobs on the
+  merged MA/MI base `nist20_ma_mi_merged_fast_batch512_cuda_lb64`, comprising the six prepared
+  one-knob arms (`layernorm`, `graphnorm`, `drop02`, `drop03`, `wd10`, `ctxnorm`) plus two controls,
+  all with `compute_train_auxiliary_metrics: true` so a train cosine is logged for the first time in
+  this model family. Four historical replicates of the base config set the floor at about 0.003 val
+  cosine sd from epoch 20 on, so the screen resolves roughly 0.007 and promotes on mechanism plus
+  margin; throughput moved 2.5x between two same-config runs on one day, so every comparison is at
+  matched epoch, never at matched wall clock. The GPU profile is an open, measured question rather
+  than a fixed choice: `loss_batch_size` is pure loss chunking (`loss.py:629-675`), so batch 512 fits
+  a `2g.20gb` slice at `lb16` (~15.8 GiB projected against 26.9 GiB measured at `lb64`), but that
+  slice carries 2/8 memory slices against the 3g profile's 4/8 for 57% of the price, on a workload
+  whose NVML memory utilization runs 72-90%. Stage A therefore submits the control on both slices
+  and lets the measured `min/epoch` ratio choose between 8 jobs at n=1 and 14 jobs at n=2. The plan excludes an LR arm because the
+  `lr_schedule_type` forwarding is still dropped at `spectrum_pl.py:1766`, and records that the
+  `cc_*` dropouts listed as unswept are FraGNNet-only and inert for MASShatter. Configs resolved and
+  one job script generated and syntax-checked locally outside the repository; nothing was generated
+  in `slurm_scripts/` and no job was submitted. Next: generate and submit the `ms_reg_ctrl_a` pilot
+  on Fir and report its five gates before fanning out.
 - [MASShatter regularization audit](findings/masshatter_regularization_audit_2026_09_19.md)
   (2026-09-19) establishes that regularization and optimization have effectively never been varied:
   across 226 `model_type = mass_shatter` W&B runs, `mass_shatter_head_dropout`, `weight_decay`, `lr`,
