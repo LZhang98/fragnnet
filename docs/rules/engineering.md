@@ -1,6 +1,6 @@
 # Engineering and research rules
 
-> **Status:** REFERENCE · **Updated:** 2026-09-07
+> **Status:** REFERENCE · **Updated:** 2026-09-19
 
 ## 1. Think Before Coding
 
@@ -90,6 +90,13 @@ When code implements a complicated multi-stage process:
 - If the workspace interpreter setting is absent, ask which environment to use.
 - For cluster work, inspect the actual environment and submission scripts before using them;
   do not assume a named setup script exists or that a job activates the correct environment.
+
+- Narval compute nodes have no outbound internet. Generate Narval jobs with `w=offline`
+  (`--script_kwargs w=offline`), then sync from a login node with
+  `wandb sync wandb/offline-run-*`; the job symlinks `wandb/` back to the cluster checkout, so
+  offline runs survive the job. `wandb agent` sweeps cannot run on Narval for the same reason.
+  The venv build is unaffected: it installs with `pip install --no-index` from the local
+  wheelhouse. Fir and Vulcan compute nodes do have internet, so `w=online` is correct there.
 
 
 ## 6. Compatibility and validation
