@@ -114,6 +114,27 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   `group_id` never spans adducts (0 of 76,164 groups) and the shared-proposal path asserts one
   precursor type per group. Next: run the trained-model half of the gate against a multi-adduct
   checkpoint; both checkpoints in this checkout are `[M+H]+` only. No implementation started.
+- [MASShatter feature set audit](reference/masshatter_feature_set_audit.md) is a NEW audit
+  (2026-09-20) of every feature that reaches a MASShatter parameter, over all 175
+  `model_type: mass_shatter` configs at `31c487db`, with column constancy measured on a
+  5,000-molecule NIST20 sample (120,641 atoms). It found one real defect: `AtomDegree.featurize`
+  passes a list into `one_hot_encoding`, so 12 of `a_degree`'s 14 columns are always the unknown
+  bucket and substitution degree reaches the GNN only as two unnormalized integers. In total
+  34 of 70 atom-feature columns are constant on NIST20 (`a_radical` and `a_chiral` entirely so,
+  because preprocessing strips stereochemistry). The featurizer is shared, so FraGNNet has the
+  same defect. Three design gaps: the candidate intensity head receives no mass, m/z or
+  composition although `ion_mzs` already exists in scope before the call; `a_charge` is enabled
+  in FraGNNet's newest configs and in no MASShatter config, although MASShatter is the model with
+  an explicit charge-affinity head; and the cut bonds' own features reach intensity scoring only
+  through the GNN, because `BondFocusedBreakHead`'s refined bond states are discarded. Also
+  recorded: two dead candidate-token inputs in unique-fragment mode, `atom_formal_charges`
+  required but never read, a shared-list mutation in the featurizer, and six configs still on the
+  template's 60/5 feature width including the canonical seeded `mass_shatter/s0.yml`.
+  The `a_degree` fix is shape-preserving but changes input semantics for existing checkpoints, so
+  it needs a new feature name or opt-in flag under [engineering rules](rules/engineering.md)
+  §6. Next: decide that compatibility path before changing the featurizer; every item needs a
+  matched arm against the 0.003 replicate floor. Audit only; no model code changed, no run
+  launched.
 - [Model improvement roadmap](plans/model_improvement_plan.md) remains the canonical source
   for research priorities and acceptance criteria. Its banner is dated 2026-07-24; reconcile
   its proposed next action with current code and artifacts before resuming it.

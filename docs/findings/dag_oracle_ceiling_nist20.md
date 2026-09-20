@@ -111,6 +111,17 @@ default of 20 peaks, d3 already provides high support at 0.1 Da and ranking/inte
 is the more likely bottleneck. If GLACIER retained all peaks, the comparison must be recomputed
 under that protocol.
 
+**2026-09-20 update, from the PDF (`data/paper/GLACIER_arxiv_2606.29161.pdf`, gitignored):** the
+0.1 Da resolution is now **confirmed** rather than inferred — Section 4.1 states "Binned spectral
+vectors are used with 0.1 resolution on the NIST'20 dataset and 0.01 resolution on the
+MassSpecGym dataset to align with prior work on both benchmarks." So the **0.1 Da row is the
+right comparison row** and the 0.01 Da row is not. Under it, d3 oracle 0.9334 and d4 0.9475 both
+sit above GLACIER's achieved 0.887, so candidate support is not the binding constraint at that
+protocol. The `--max-peaks 20` provenance is still **unconfirmed** for the paper's own runs — the
+caution above stands. Note also that GLACIER's FraGNNet row (0.717 random / 0.654 scaffold) is
+adapted from Wang et al. (ICEBERG 2.0), not produced under our evaluation protocol.
+See [`notes/glacier_object_detection.md`](../notes/glacier_object_detection.md).
+
 Sources: [GLACIER paper](https://arxiv.org/html/2606.29161v1),
 [`spec_pred_eval.py`](https://github.com/coleygroup/ms-pred/blob/main/analysis/spec_pred_eval.py).
 

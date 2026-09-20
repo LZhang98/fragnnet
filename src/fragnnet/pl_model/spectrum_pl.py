@@ -1778,11 +1778,21 @@ class SpectrumPL(L.LightningModule):
             "optimizer": optimizer,
         }
         if self.hparams.lr_schedule:
+            # `lr_schedule_type`, `lr_total_steps` and `lr_min_ratio` were previously dropped
+            # here, so a config asking for `cosine` silently ran exponential decay: six runs in
+            # 2026-09 carried `lr_schedule_type: cosine` and trained at 3.774e-04 where the
+            # configured schedule wanted 1.000e-05 by step 100k. `build_lr_scheduler` raises when
+            # cosine is requested without `lr_total_steps`, which is deliberate -- the total is
+            # the run's planned steps, not the config's `max_epochs`, whenever a job is capped by
+            # wall clock.
             scheduler = build_lr_scheduler(
                 optimizer=optimizer,
                 decay_rate=self.hparams.lr_decay_rate,
                 warmup_steps=self.hparams.lr_warmup_steps,
                 decay_steps=self.hparams.lr_decay_steps,
+                schedule_type=self.hparams.lr_schedule_type,
+                total_steps=self.hparams.lr_total_steps,
+                min_lr_ratio=self.hparams.lr_min_ratio,
             )
             ret["lr_scheduler"] = {
                 "scheduler": scheduler,

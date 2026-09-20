@@ -64,6 +64,7 @@ roadmap. It links the analyses that justify each item.
 | [dataloader_data.md](reference/dataloader_data.md) | Batch dictionary schema. **Oldest doc here (2025-12-10)** — verify against the code. |
 | [frag_gen_prepass.md](reference/frag_gen_prepass.md) | How BFS + SMARTS prepass build the fragment DAG. |
 | [feature_set_audit.md](reference/feature_set_audit.md) | Which features are actually wired. Open gaps: `a_ring_size`, `b_ring`. |
+| [masshatter_feature_set_audit.md](reference/masshatter_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASShatter consumes. **34 of 70 atom-feature columns are constant on NIST20**, 12 of them because `a_degree`'s one-hot is mis-encoded and always returns the unknown bucket; the candidate intensity head never sees mass, m/z or composition; `a_charge` is enabled for FraGNNet but for no MASShatter config. |
 | [pairwise_loss.md](reference/pairwise_loss.md) | Design of the shipped pairwise loss + sampler. |
 | [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Canonical note on isotope-peak cleanup for training. |
 | [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |
@@ -151,6 +152,8 @@ roadmap. It links the analyses that justify each item.
 |-----|-----------|
 | [lz_molecular_generation.md](notes/lz_molecular_generation.md) | Literature notes on spectrum-conditioned molecular generation (§1–3). |
 | [lz_part2.md](notes/lz_part2.md) | Continuation of the above, starting at §4 (spectrum-to-DAG generation). |
+| [aime_deepms2reasoner.md](notes/aime_deepms2reasoner.md) | AIMe / DeepMS2Reasoner (bioRxiv 2026): NIST20 split 80/10/10 by full InChIKey, and why its published cosines are not comparable to ours (formula-filtered targets). |
+| [glacier_object_detection.md](notes/glacier_object_detection.md) | GLACIER (arXiv 2606.29161): single-stage fragment detection; all its NIST'20 numbers are **0.1 Da binned**, and the FraGNNet row is a third-party re-evaluation. |
 
 ## Curated analysis logs
 
