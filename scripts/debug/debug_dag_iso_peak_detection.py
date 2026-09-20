@@ -1,8 +1,8 @@
-"""Compare DAG-based isotope detection strategies on NIST20 FT spectra.
+"""Compare isotope detection strategies on NIST20 FT spectra, DAG-sourced and subformula-sourced.
 
 Uses NIST ann_df isotope annotations as ground truth.
 
-Four methods compared:
+Methods compared:
   current        - detect_isotope_peaks_for_training (prec residual + aggressive fallback,
                    m/z-proxy expected ratio)
   dag_native     - shared detector with DAG fragment formulas and k=1 corrected ratio
@@ -17,10 +17,18 @@ Four methods compared:
   dag_formula_group
                  - group_f, then the same DAG-formula post-check
 
+  sub_native     - shared detector with the fragment composition decomposed from the peak m/z
+                   against the precursor formula, instead of read from a DAG (no frag_dp needed)
+  sub_group      - sub_native plus the group-level co-isolation fraction
+  sub_protect    - sub_native plus protection of peaks a subformula explains on their own
+  sub_infeasible - no detector at all: the peaks `filter_subformula_peaks` already drops,
+                   which is the share of isotope removal that filter does for free
+
 Key questions:
   - dag_filter:   Does requiring DAG parent confirmation reduce FP?
   - dag_protect:  Does protecting confirmed DAG fragments reduce FP?
   - dag_formula:  Does exact formula ratio tighten the ratio gate, reducing FP?
+  - sub_native:   Does a DAG-free composition source match the DAG one, peak for peak?
 
 Run from repo root:
     conda run -n FRAGNNET-GPU python scripts/debug/debug_dag_iso_peak_detection.py
@@ -51,8 +59,10 @@ from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
 from fragnnet.utils.isotope_utils import (
     _expected_mk_ratio,
     _parse_adduct_counts,
+    dag_formula_source,
     detect_isotope_peaks_for_training,
     estimate_coisolation_fraction_from_precursor,
+    subformula_formula_source,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
@@ -69,6 +79,7 @@ N_SAMPLES = 500      # spectra to analyse
 N_PLOTS = 30         # example plots to save (cases where methods differ)
 MZ_TOL_ANN = 0.015   # Da — match observed peak to NIST annotation
 DAG_MZ_TOL = 0.015   # Da — match observed M+0 to a DAG node M+0 m/z
+SUBFORMULA_MZ_TOL = 0.004  # Da — FT accuracy, the window subformula decomposition uses
 PREC_TOL = 0.05      # Da — for recognising precursor M+0 as a valid parent
 RATIO_LO = 0.2       # same gates as detect_isotope_peaks_for_training defaults
 RATIO_HI = 5.0
@@ -335,6 +346,19 @@ def match_ann_peaks(
 # Stats
 # ---------------------------------------------------------------------------
 
+def memoized_source(source):
+    """Cache a formula source per spectrum: the detector asks about the same m/z repeatedly."""
+    cache: dict[int, list[dict[str, int]]] = {}
+
+    def wrapped(query_mz: float) -> list[dict[str, int]]:
+        key = int(round(query_mz * 1e4))
+        if key not in cache:
+            cache[key] = source(query_mz)
+        return cache[key]
+
+    return wrapped
+
+
 def _metrics(pred: np.ndarray, gt: np.ndarray) -> dict:
     tp = int((pred & gt).sum())
     fp = int((pred & ~gt).sum())
@@ -413,6 +437,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--proc-dp", type=Path, default=PROC_DP, help="Processed data directory")
     parser.add_argument("--frag-dp", type=Path, default=FRAG_DP, help="Fragment DAG directory")
     parser.add_argument("--fig-dir", type=Path, default=FIG_DIR, help="Output figure directory")
+    parser.add_argument(
+        "--subformula-tol",
+        type=float,
+        default=SUBFORMULA_MZ_TOL,
+        help="Da window for subformula decomposition (FT accuracy)",
+    )
+    parser.add_argument(
+        "--candidate-rule",
+        default="median",
+        choices=["median", "all", "any"],
+        help="How the subformula arms resolve several candidate compositions",
+    )
     parser.add_argument(
         "--n-samples",
         type=int,
@@ -570,6 +606,7 @@ def main() -> None:
     plot_hits: list[dict] = []
     dag_cache: dict[int, DagInfo | None] = {}
     n_no_dag = 0
+    n_no_subformula = 0
     n_processed = 0
     n_target = len(merged) if N_SAMPLES <= 0 else N_SAMPLES
 
@@ -616,27 +653,21 @@ def main() -> None:
             mzs, ints, prec_mz=prec_mz, inst_type="FT",
             formula=formula if formula else None,
             prec_type=prec_type if prec_type else None,
-            dag_formula_mzs=dag.m0_mzs,
-            dag_formula_strs=dag.formula_strs,
-            dag_mz_tol=DAG_MZ_TOL,
+            formula_source=dag_formula_source(dag.m0_mzs, dag.formula_strs, DAG_MZ_TOL),
         )
         dag_group_mask = detect_isotope_peaks_for_training(
             mzs, ints, prec_mz=prec_mz, inst_type="FT",
             formula=formula if formula else None,
             prec_type=prec_type if prec_type else None,
             coiso_fraction_by_k=group_f,
-            dag_formula_mzs=dag.m0_mzs,
-            dag_formula_strs=dag.formula_strs,
-            dag_mz_tol=DAG_MZ_TOL,
+            formula_source=dag_formula_source(dag.m0_mzs, dag.formula_strs, DAG_MZ_TOL),
         )
         dag_native_protect_mask = detect_isotope_peaks_for_training(
             mzs, ints, prec_mz=prec_mz, inst_type="FT",
             formula=formula if formula else None,
             prec_type=prec_type if prec_type else None,
-            dag_formula_mzs=dag.m0_mzs,
-            dag_formula_strs=dag.formula_strs,
-            dag_mz_tol=DAG_MZ_TOL,
-            protect_dag_mono=True,
+            formula_source=dag_formula_source(dag.m0_mzs, dag.formula_strs, DAG_MZ_TOL),
+            protect_known_mono=True,
         )
         filter_mask = method_dag_filter(mzs, current_mask, dag, prec_mz)
         protect_mask = method_dag_protect(mzs, current_mask, dag)
@@ -650,6 +681,48 @@ def main() -> None:
             formula,
             prec_type,
         )
+
+        # Subformula arms: the same detector with the composition sourced from a
+        # precursor-bounded decomposition instead of the DAG. `sub_infeasible` is what
+        # `filter_subformula_peaks` already removes on its own - no detector involved.
+        try:
+            sub_source = memoized_source(
+                subformula_formula_source(formula, prec_type, args.subformula_tol)
+            )
+        except ValueError:
+            sub_source = None
+
+        if sub_source is None:
+            n_no_subformula += 1
+            sub_native_mask = np.zeros(len(mzs), dtype=bool)
+            sub_group_mask = np.zeros(len(mzs), dtype=bool)
+            sub_protect_mask = np.zeros(len(mzs), dtype=bool)
+            sub_infeasible_mask = np.zeros(len(mzs), dtype=bool)
+        else:
+            sub_native_mask = detect_isotope_peaks_for_training(
+                mzs, ints, prec_mz=prec_mz, inst_type="FT",
+                formula=formula if formula else None,
+                prec_type=prec_type if prec_type else None,
+                formula_source=sub_source,
+                candidate_rule=args.candidate_rule,
+            )
+            sub_group_mask = detect_isotope_peaks_for_training(
+                mzs, ints, prec_mz=prec_mz, inst_type="FT",
+                formula=formula if formula else None,
+                prec_type=prec_type if prec_type else None,
+                coiso_fraction_by_k=group_f,
+                formula_source=sub_source,
+                candidate_rule=args.candidate_rule,
+            )
+            sub_protect_mask = detect_isotope_peaks_for_training(
+                mzs, ints, prec_mz=prec_mz, inst_type="FT",
+                formula=formula if formula else None,
+                prec_type=prec_type if prec_type else None,
+                formula_source=sub_source,
+                candidate_rule=args.candidate_rule,
+                protect_known_mono=True,
+            )
+            sub_infeasible_mask = np.array([not sub_source(float(mz)) for mz in mzs])
 
         s = {
             "spec_id": int(row["spec_id"]),
@@ -665,6 +738,12 @@ def main() -> None:
             "dag_protect": _metrics(protect_mask, gt_iso),
             "dag_formula": _metrics(formula_mask, gt_iso),
             "dag_formula_group": _metrics(formula_group_mask, gt_iso),
+            "sub_native": _metrics(sub_native_mask, gt_iso),
+            "sub_group": _metrics(sub_group_mask, gt_iso),
+            "sub_protect": _metrics(sub_protect_mask, gt_iso),
+            "sub_infeasible": _metrics(sub_infeasible_mask, gt_iso),
+            "dag_vs_sub_agree": int((dag_native_mask == sub_native_mask).sum()),
+            "n_peaks": int(len(mzs)),
         }
         stats_rows.append(s)
         n_processed += 1
@@ -705,7 +784,10 @@ def main() -> None:
         if args.progress_interval > 0 and n_processed % args.progress_interval == 0:
             log.info(f"  processed {n_processed}/{n_target} (no_dag={n_no_dag})")
 
-    log.info(f"Done: {n_processed} spectra, {n_no_dag} skipped (no DAG)")
+    log.info(
+        f"Done: {n_processed} spectra, {n_no_dag} skipped (no DAG), "
+        f"{n_no_subformula} without a subformula source"
+    )
 
     if not stats_rows:
         log.error("No stats collected.")
@@ -728,9 +810,21 @@ def main() -> None:
         ("DAG-protect", "dag_protect"),
         ("DAG-formula", "dag_formula"),
         ("DAG-form+Group", "dag_formula_group"),
+        ("Subform-native", "sub_native"),
+        ("Subform+Group-f", "sub_group"),
+        ("Subform-protect", "sub_protect"),
+        ("Subform-infeas", "sub_infeasible"),
     ]:
         _print_summary(label, stats_rows, key)
     log.info("=" * 72)
+
+    # Head to head: how often the two sources decide a peak differently at all.
+    total_peaks = sum(r["n_peaks"] for r in stats_rows)
+    agree = sum(r["dag_vs_sub_agree"] for r in stats_rows)
+    log.info(
+        f"  DAG-native vs Subform-native: {agree}/{total_peaks} peak decisions agree "
+        f"({agree / max(total_peaks, 1):.4f})"
+    )
 
     # Per-method delta vs current
     log.info("")
@@ -743,6 +837,9 @@ def main() -> None:
         ("DAG-protect", "dag_protect"),
         ("DAG-formula", "dag_formula"),
         ("DAG-form+Group", "dag_formula_group"),
+        ("Subform-native", "sub_native"),
+        ("Subform+Group-f", "sub_group"),
+        ("Subform-protect", "sub_protect"),
     ]:
         fp_delta = np.array([r["current"]["fp"] - r[key]["fp"] for r in stats_rows])
         tp_delta = np.array([r["current"]["tp"] - r[key]["tp"] for r in stats_rows])

@@ -122,6 +122,24 @@ caution above stands. Note also that GLACIER's FraGNNet row (0.717 random / 0.65
 adapted from Wang et al. (ICEBERG 2.0), not produced under our evaluation protocol.
 See [`notes/glacier_object_detection.md`](../notes/glacier_object_detection.md).
 
+**2026-09-20, SECOND update — the `--max-peaks` provenance is now RESOLVED, and it is 100, not 20.**
+`run_scripts/glacier/02_predict_inten.py` (upstream `coleygroup/ms-pred`) passes
+`--max-peaks 100 --min-inten 0 --formula-dir-name no_subform.hdf5`. Every model in the lineage
+passes 100 (CFM-ID passes 1000); the argparse default of 20 is never used by any run script.
+**The default-20 protocol-sensitivity table above is therefore at the wrong protocol** and its
+d3/d4 oracle rows (0.7674/0.8203 at 0.01 Da, 0.9334/0.9475 at 0.1 Da) should be recomputed with
+`max_peaks=100` before being compared to GLACIER's 0.887. Not yet redone.
+
+Also retracted: an earlier note here and in the GLACIER note implied their evaluation target is
+subformula-filtered. It is not — `no_subform` comes from `01_assign_subformulae.py --use-all`,
+which writes `formula_mass_no_adduct = observed m/z - adduct mass` and drops nothing for lacking a
+subformula. The only target filter is `max_inten_spec` (top-50 peaks above 0.001 relative
+intensity).
+
+Protocol-matched trained-model number for reference: our FraGNNet (`pqx7ywc9`) scores **0.757**
+cosine at 0.1 Da under their exact settings on our test split (96,128 spectra), vs GLACIER's
+published 0.838.
+
 Sources: [GLACIER paper](https://arxiv.org/html/2606.29161v1),
 [`spec_pred_eval.py`](https://github.com/coleygroup/ms-pred/blob/main/analysis/spec_pred_eval.py).
 

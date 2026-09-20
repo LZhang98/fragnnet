@@ -35,10 +35,18 @@ MassSpecGym top-1 retrieval):
 | 0.1 | 0.664 mass / 0.479 formula | **0.685 / 0.490** |
 | 0.01 | 0.652 / 0.471 | **0.697 / 0.485** |
 
-Retrieval is *better* at 0.01 Da (finer bins discriminate decoys); cosine moves the other way
-(coarse bins forgive m/z error). So NIST'20 reports **cosine + coverage at the forgiving 0.1 Da**
-while MassSpecGym reports **retrieval at the discriminating 0.01 Da**. Whether or not that is
-deliberate, both reported metrics get the bin width that helps them.
+Retrieval is *better* at 0.01 Da (finer bins discriminate decoys). So NIST'20 reports **cosine +
+coverage at 0.1 Da** while MassSpecGym reports **retrieval at 0.01 Da**.
+
+**Measured 2026-09-20 (see "MEASURED" below): 0.1 Da is a real but SMALL relaxation on their
+data.** Controlled sweep on our FraGNNet (identical peaks, identical Hungarian matching, only the
+window changes): 10 ppm -> a 0.1 Da window is **+0.029 overall**, but only **+0.008 on FT/`[M+H]+`**
+and **+0.38 on QTOF**. GLACIER's NIST'20 is HCD Orbitrap, so the bin width is worth roughly +0.008
+of their 0.838 — not nothing, not the story. It stays small because a fragment model predicts
+exact formula masses and Orbitrap targets are accurate to well under 10 ppm, so a wider window
+finds few new matches. The stronger objection to 0.1 Da is **blindness to formula identity**
+(CO / N2 / C2H4 share a bin), and that they cannot check it at an instrument tolerance because
+ms-pred has no ppm anywhere in its loss or evaluator.
 
 ## NIST'20 results (Appendix G, Table 15, `[M+H]+`, 0.1 Da)
 
@@ -60,16 +68,105 @@ deliberate, both reported metrics get the bin width that helps them.
 - Contrastive finetuning *lowers* spectral similarity (0.838 -> 0.815) while raising retrieval —
   consistent with CF trading calibration for discriminability.
 
-## Coverage is top-20 at 0.1 Da
+## Coverage is top-100, NOT top-20 — RESOLVED 2026-09-20
 
-Confirmed in the released evaluator, [`analysis/spec_pred_eval.py`](https://github.com/coleygroup/ms-pred/blob/main/analysis/spec_pred_eval.py):
-`--max-peaks` defaults to 20 (line 48), and coverage is
-`|top-20 true bins ∩ top-20 predicted bins| / |top-20 true bins|` (lines 119, 167-170). Combined
-with 0.1 Da, "coverage 0.887" asks: of the 20 largest 0.1-Da target bins, how many are among the
-20 largest predicted bins. Our d3 DAG oracle at 0.1 Da is 0.9334 and d4 is 0.9475 (see
-[`dag_oracle_ceiling_nist20.md`](../findings/dag_oracle_ceiling_nist20.md)), both above their
-achieved 0.887 — so under this protocol our candidate support is not the binding constraint.
-Still unconfirmed: whether the *paper's* runs used the evaluator default of 20.
+**`run_scripts/glacier/02_predict_inten.py` passes `--max-peaks 100`.** Verbatim:
+
+```
+python analysis/spec_pred_eval.py \
+--binned-pred-file {out_binned} \
+--max-peaks 100 \
+--min-inten 0 \
+--formula-dir-name no_subform.hdf5 \
+--dataset {dataset}
+```
+
+Every model in the lineage passes 100 (ICEBERG, SCARF, MassFormer, GrAFF-MS, GNN, FFN, MolNetMS);
+CFM-ID passes 1000. **The argparse default of 20 is never used by any run script** — so the
+earlier "top-20 coverage" reading of their 0.887 is WRONG, and any of our numbers computed under
+default-20 behaviour are at the wrong protocol (this includes the protocol-sensitivity table in
+[`dag_oracle_ceiling_nist20.md`](../findings/dag_oracle_ceiling_nist20.md), which should be
+recomputed at 100).
+
+`--max-peaks` truncates the **prediction** to its N strongest bins before cosine and before the
+coverage intersection. At 100 this is nearly inert for us: our predictions average 81 bins per
+spectrum at 0.1 Da.
+
+### Their target is NOT subformula-filtered — RETRACTED 2026-09-20
+
+An earlier version of this note claimed their ground truth is formula-assigned at theoretical
+masses, "the same class of target cleaning as AIMe's". **That is wrong.** The eval path uses
+`--formula-dir-name no_subform`, built by `01_assign_subformulae.py --use-all`, where
+
+    "mz": spec_masses, "formula_mass_no_adduct": spec_masses - adduct_masses, "formula": [""], "mass_diff": [0]
+
+i.e. **observed m/z minus the adduct mass**, with nothing dropped for lacking a subformula. The
+theoretical-mass, subformula-assigned directory (`magma_subform_50`) is the *training-label*
+folder, not the evaluation target.
+
+The one real target filter is `max_inten_spec`: **top-50 peaks above 0.001 relative intensity**
+(argparse defaults `--max-formulae 50`, `--inten-thresh 0.001`, confirmed upstream). That is an
+intensity/count truncation, **not** a chemistry filter, so it is a different and much milder thing
+than AIMe's 5 ppm subformula filter. Do not equate them.
+
+## Their PREDICTION is unbinned — 0.1 Da is a readout choice, not a capability limit
+
+Appendix D. The intensity head emits an **unbinned** value per (fragment, hydrogen shift):
+
+    y(i)_delta = sigma( MLP_inten(H_i)_delta )                      (15)
+    y_hat_m    = sum_i sum_delta y(i)_delta * 1[M(i,delta) = m]     (16)
+
+where `M(i, delta)` is the **exact m/z** of fragment i at hydrogen shift delta. Binning is applied
+after the model. They redesigned this away from ICEBERG deliberately — ICEBERG's attention softmax
+was taken over predictions sharing a bin, which "will lead to inaccurate results if we want to
+adapt the predicted fragment intensity into different bin-width setting" — and state the purpose
+of eq. 16 outright: *"This formulation enables the model to adapt to different mass bin widths at
+inference time, even when trained using a fixed binning resolution."*
+
+**Consequences.** Their trained NIST'20 model could be re-read at 0.01 Da, or at exact masses,
+**with no retraining**; Table 14 is exactly that experiment on MassSpecGym. So reporting NIST'20
+at 0.1 Da is a comparability choice ("to align with prior work"), not a limitation of the model.
+
+What the 0.1 Da *training loss* costs is narrower than it first appears: eq. 16 sums all fragments
+in a bin, so the loss supervises only their **sum** — the split between CO / N2 / C2H4 inside one
+bin receives no gradient. But Table 14 says that costs little: **test** bin width matters (0.01
+beats 0.1 in both challenges) while **train** bin width is a wash (mass challenge favours
+train@0.01 by +0.012, formula challenge favours train@0.1 by +0.005 — opposite directions,
+noise-level). That is itself evidence that fragment masses are exact by construction and only the
+readout grid matters.
+
+So the standing criticism is not "they cannot evaluate at instrument tolerance" in a modelling
+sense — they have a model emitting exact masses and an evaluator that only accepts uniform grids.
+The missing piece is ppm-tolerance matching in `spec_pred_eval.py`, not a different architecture.
+
+## The retrieval protocol contradicts the 0.1 Da scoring
+
+**Candidates are selected at high mass precision, then discriminated at 0.1 Da.** MassSpecGym's
+formula challenge draws candidates with the *same molecular formula* — exact isomers — so the only
+signal that can separate them is which fragments form and at what intensity. Binning fragments at
+0.1 Da merges CO (27.9949) / N2 (28.0062) / C2H4 (28.0313), i.e. exactly that signal. Their own
+Appendix F Table 14 pays the price: retrieval is better at 0.01 Da in all four cells
+(0.685 vs 0.664 mass, 0.490 vs 0.479 formula).
+
+**The "10 ppm PubChem window" (AIMe, following FraGNNet) is not a difficulty control.** Our own
+implementation is `preproc_scripts/ms2c_pubchem/02_prepare_ms2c_candidates.py`: query PubChem by
+exact-mass range (`mass_tol = mw * tolerance * PPM`, default 10 ppm), then `filter_candidates`
+keeps `top_k` by **Morgan-Tanimoto to the true structure**, after dedup by canonical SMILES and
+2D InChIKey and dropping multi-component SMILES, radicals, oversized molecules and out-of-set
+elements. In the dense 200-500 Da region a +/-0.003 Da window returns thousands of PubChem
+compounds (one drug-like formula alone has tens of thousands of isomers), so the window width
+barely affects the final 49 — the Tanimoto ranking does. **The benchmark is really "the 49 nearest
+neighbours of the answer", not "10 ppm".**
+
+Selection by precursor m/z rather than formula also makes the set *easier*: it admits
+near-isobaric non-isomers whose fragment formulas differ systematically and are easy to reject.
+AIMe flag this themselves. The harder and more meaningful variant is formula-based selection
+(MassSpecGym's formula challenge; AIMe's CASMI all-PubChem-isomer setting, ~2.5M candidate
+spectra, 35.6% top-1).
+
+Not measured here: the actual occupancy of a 10 ppm PubChem window — no PubChem sqlite exists in
+this checkout (`data/ms2c/pubchem/` holds only `predicted/`), so the "thousands" figure above is
+an estimate from formula-isomer counts, not a measurement.
 
 ## Dataset scale and m/z limit
 
@@ -100,6 +197,192 @@ means 150,000 bins per spectrum instead of 15,000, a 10x blow-up across 530,640 
 a plausible compute reason for leaving NIST'20 at 0.1 Da while MassSpecGym (231,104 spectra) got
 0.01 — **inference, not stated in the paper**. It does not change that the reported cosine
 benefits from the coarser bin.
+
+## MEASURED: our FraGNNet under their binning (2026-09-20)
+
+Scored `output/inference_eval/{alvhehe2,pqx7ywc9}/predictions_test.hdf5` (96,128-spectrum NIST20
+test split) against raw `data/proc/nist20/spec_df.pkl` peaks, replicating `ms_pred.common.bin_spectra`
+exactly: `np.linspace(0, 1500, num_bins)`, `np.digitize`, drop bins >= len(bins), max-pool per bin,
+their `cos_sim_fn`. Script: `scratchpad/bin_eval2.py`.
+
+| metric | alvhehe2 | pqx7ywc9 |
+|---|---:|---:|
+| stored `cos_hun_inst_tol` (10 ppm FT / 20 ppm QTOF, Hungarian) | 0.7521 | 0.7555 |
+| binned cosine @ 0.1 Da | **0.7525** | **0.7579** |
+| binned cosine @ 0.1 Da, top-20 predicted bins | 0.7488 | 0.7544 |
+| binned cosine @ 0.01 Da | 0.6969 | 0.7016 |
+| FT / `[M+H]+` slice (n=57,172) @ 0.1 Da | 0.7515 | 0.7577 |
+
+### Controlled tolerance sweep — the number that actually answers "is 0.1 Da easier than 10 ppm?"
+
+The table above is NOT a tolerance comparison: `cos_hun_inst_tol` uses **per-instrument**
+tolerance (FT 10 ppm/200 Da, QTOF 20 ppm/750 Da) on a `rel_filter_spec`-filtered target with
+Hungarian one-to-one matching, while the binned rows use raw peaks with max-pooling. Three
+differences at once, which happened to cancel — do not read 0.7521 vs 0.7525 as "10 ppm approx
+0.1 Da".
+
+Controlled version (`scratchpad/tol_sweep.py`, `pqx7ywc9`, n=20,000 sampled): identical peaks,
+identical Hungarian matching mirroring `cos_hun_helper`, **only the m/z window changes**:
+
+| matching window | all | FT / `[M+H]+` | QTOF |
+|---|---:|---:|---:|
+| 10 ppm (200 Da floor) | 0.7286 | 0.7447 | 0.4383 |
+| +/-0.005 Da (= 0.01 Da bin) | 0.7415 | 0.7449 | 0.6528 |
+| +/-0.05 Da (= 0.1 Da bin) | **0.7574** | 0.7520 | 0.8202 |
+| +/-0.1 Da | 0.7578 | 0.7524 | 0.8208 |
+
+**Monotonic, as it must be — a wider window cannot lose matches. 0.1 Da is easier than 10 ppm by
++0.029 overall.** But the gain is almost entirely QTOF (+0.38, because 10 ppm is tighter than
+that instrument's real accuracy); on **FT it is only +0.008**. GLACIER's NIST'20 is HCD Orbitrap,
+so their bin width is worth about +0.008, not the headline. Reference: stored
+`cos_hun_inst_tol` on the same spectra is 0.7560 vs 0.7286 for flat 10 ppm — that +0.027 is the
+QTOF relief already built into our production instrument-tolerance table.
+
+**Hard binning is harsher than tolerance matching at the same width.** +/-0.005 Da tolerance gives
+0.7415 but 0.01 Da hard bins give 0.6969 — 0.045 lost purely to grid boundaries splitting matched
+pairs. So our 0.01 Da binned row understates high-resolution performance; `cos_hun_inst_tol` is
+our real high-resolution score.
+
+What the coarse grid does instead is **hide formula identity**: CO (27.9949), N2 (28.0062) and
+C2H4 (28.0313) share one 0.1 Da bin, so a wrong isobaric assignment is unpunished. That is why
+their Appendix F Table 14 shows *retrieval* improving at 0.01 Da while cosine prefers the coarse
+grid.
+
+**They cannot check it at a real instrument tolerance.** `ppm` appears 25 times in the whole
+ms-pred source and all 25 are in `src/ms_pred/magma/run_magma.py`, the MAGMa fragment-*labeling*
+tool. Zero in `analysis/`, zero in the loss. Everything scored goes through
+`bin_spectra`/`digitize_ar`, which accept only `(num_bins, upper_limit)`. A uniform grid over
+[0, 1500) equals a given ppm at exactly one m/z:
+
+| bin width | @ m/z 100 | @ m/z 300 | @ m/z 1500 | bins |
+|---|---:|---:|---:|---:|
+| 0.1 Da (their NIST'20) | 1000 ppm | 333 ppm | 67 ppm | 15,000 |
+| 0.01 Da (their MSG) | 100 ppm | 33 ppm | 6.7 ppm | 150,000 |
+| 0.001 Da (10 ppm at m/z 100) | 10 ppm | 3.3 ppm | 0.67 ppm | 1,500,000 |
+
+Two further protocol notes measured here:
+
+- **0.01 Da HARD binning is not "high resolution" done right.** It costs us 0.056 overall, but the
+  damage is concentrated in QTOF (`[M+H]+` 0.8157 -> 0.4308, `[M+Na]+` 0.7613 -> 0.3587) where
+  instrument mass error exceeds the bin; FT loses only 0.034. A fixed grid splits a matched pair
+  across adjacent bins whenever a peak sits near a boundary, which tolerance matching forgives.
+  Do not quote our 0.01 Da row as our high-resolution score — `cos_hun_inst_tol` is that.
+- **`--max-peaks 20` truncates the PREDICTION, not just coverage.** `spec_pred_eval.py` does
+  `pos_bins = pos_bins_sorted[:max_peaks]` and then scores that truncated vector. Measured on our
+  predictions it *lowers* cosine by ~0.004 (our tail carries matched mass), so it is not a
+  free inflation knob either way.
+- **Their target is formula-assigned too.** `process_spec_file` builds the true spectrum from
+  `subformulae/<formula_dir_name>/<spec>.json` using `output_tbl["formula_mass_no_adduct"]` —
+  theoretical neutral formula masses, not observed m/z, and only peaks that received a subformula.
+  Same class of target cleaning as AIMe's 5 ppm filter (see `aime_deepms2reasoner.md`).
+
+### Fully protocol-matched number (2026-09-20)
+
+`scratchpad/protocol_matched.py`, pqx7ywc9, full 96,128-spectrum test split, 0.1 Da bins, with
+GLACIER's actual run-script settings (`--max-peaks 100`, `--min-inten 0`, `no_subform` target
+truncated by `max_inten_spec` to top-50 peaks above 0.001 relative intensity):
+
+| variant | ALL | FT `[M+H]+` |
+|---|---:|---:|
+| raw target, all predicted bins | 0.7579 | 0.7577 |
+| raw target, top-100 predicted | 0.7577 | 0.7576 |
+| top-50/0.1% target, all predicted | 0.7570 | 0.7568 |
+| **both (fully matched)** | **0.7569** | **0.7566** |
+
+**The protocol knobs are inert for us** — top-100 truncation costs 0.0002 (our predictions exceed
+100 bins in only 26.7% of spectra; mean 80.4) and their target filter costs 0.0008. Use **0.757**
+as our protocol-matched FraGNNet number.
+
+### Prediction pooling: max vs sum (2026-09-20)
+
+`bin_spectra` defaults to `pool_fn="max"`, but GLACIER's own intensity head **sums** fragment
+contributions into a bin (Appendix D). Max-pooling therefore penalises a high-resolution model
+that splits mass across isobaric candidates. Measured (`scratchpad/pool_test.py`, pqx7ywc9, full
+test split):
+
+| | ALL | FT `[M+H]+` |
+|---|---:|---:|
+| max-pooled predictions | 0.7579 | 0.7577 |
+| **sum-pooled predictions** | **0.7594** | **0.7599** |
+| gain | +0.0015 | +0.0022 |
+
+33.8% of our predicted peaks share a 0.1 Da bin (121.5 peaks -> 80.4 bins), but max-pooling
+discards only **5.7% of predicted intensity** — the colliding peaks are mostly small (isotopes,
+minor H-shifts). Real handicap, worth +0.002.
+
+### Every protocol knob is worth thousandths — the gap is NOT a scoring artifact
+
+| knob | worth to us |
+|---|---:|
+| bin width, 10 ppm -> 0.1 Da (FT cosine) | +0.006 |
+| sum- vs max-pooled predictions | +0.002 |
+| their top-50/0.1% target filter | +0.0008 |
+| `--max-peaks 100` truncation | +0.0002 |
+
+Total well under 0.01 against a ~0.079 gap to GLACIER's 0.838. **Do not explain the gap by
+protocol.** The "they trained at 0.1 Da" advantage is unmeasurable without training, but it is
+bounded by the same 5.7% isobaric collision mass — optimising bins directly mainly buys freedom
+to be wrong about which isobar, and little intensity rides on that.
+
+### Against their Table 15
+
+Protocol-matched, our FraGNNet (pqx7ywc9) on the FT/`[M+H]+` slice scores **0.757**, versus the
+**0.717** their table attributes to FraGNNet, ICEBERG 1.0 at 0.754, ICEBERG 2.0 at 0.794 and
+GLACIER at 0.838 — so we sit ~0.04 above their FraGNNet row and ~0.081 below GLACIER.
+**Not a clean head-to-head** — different test split (our 60/20/20 vs their 80/10/10, so our model
+saw 60% of the data), and our slice is our own test molecules. But our FraGNNet measured under
+their own metric lands above the number published for it, and still clearly below GLACIER.
+
+## Recall vs cosine: the coarse bin inflates COVERAGE, not cosine (2026-09-20)
+
+`scratchpad/tol_recall.py`, pqx7ywc9, n=8,000 sampled, same Hungarian matching, only the window
+changes. Intensity recall = matched TRUE intensity / total true intensity; peak recall = matched
+true peaks / true peaks.
+
+**A 0.1 Da BIN is not a +/-0.05 Da tolerance.** For random phase two peaks `d` apart share a bin
+with probability `1 - d/w`, so a grid misses near pairs straddling an edge and accepts far pairs
+sharing a bin. Our predicted masses are exact formula masses, so `d` is just the target's
+measurement error (~1-3 ppm on FT = 0.0005-0.001 Da at m/z 300): predicted boundary loss ~1% at
+w=0.1 Da but 5-10% at w=0.01 Da. Both confirmed below. Measured with the REAL grid
+(`scratchpad/bin_recall.py`), support = does any predicted peak share the bin / fall in the window:
+
+**FT (n=7,515), 32.2 true peaks and 120.8 predicted peaks per spectrum (0.50 predicted peaks/Da):**
+
+| protocol | intensity recall | peak recall | cos_hun |
+|---|---:|---:|---:|
+| 10 ppm tolerance | 0.8895 | 0.6891 | 0.7470 |
+| 0.01 Da bin | 0.8557 | 0.6770 | 0.6969 |
+| **0.1 Da bin** | **0.9337** | **0.7873** | 0.7577 |
+| +/-0.05 Da tolerance | 0.9412 | 0.7995 | 0.7534 |
+
+**A 0.1 Da bin buys +9.8 points of peak recall and +4.4 of intensity recall on FT — but only
+~+0.6 of cosine.** Note the **0.01 Da grid scores BELOW 10 ppm tolerance** on FT (0.8557 vs
+0.8895) despite being nominally finer: that is entirely grid phase, and it is why our 0.01 Da
+binned rows understate us. Recall counts a true peak as recovered as soon as *any* predicted peak falls in
+the window; cosine credits the **product** of the two normalised intensities. On FT the extra
+matches are spurious neighbours (a wrong fragment within 0.05 Da carrying near-zero predicted
+intensity), so support rises and intensity agreement does not.
+
+**QTOF (n=485) is the contrast** — there a wider window recovers *correct* matches that instrument
+error had displaced, so recall and cosine move together:
+
+| protocol | intensity recall | peak recall | cos_hun |
+|---|---:|---:|---:|
+| 10 ppm tolerance | 0.4823 | 0.3872 | 0.4383 |
+| 0.01 Da bin | 0.5459 | 0.4720 | - |
+| 0.1 Da bin | 0.9481 | 0.8793 | - |
+| +/-0.05 Da tolerance | 0.9670 | 0.8967 | 0.8202 |
+
+### Consequence for reading GLACIER's table
+
+**It is the coverage column (0.887) that the 0.1 Da bin inflates, not the cosine (0.838).** Our FT
+peak recall gains **+0.098** going from 10 ppm tolerance to a real 0.1 Da grid, and the d3 DAG
+oracle gains 0.166 between 0.01 and 0.1 Da bins (`dag_oracle_ceiling_nist20.md`) — both support
+metrics. So at an instrument tolerance their coverage would fall by roughly a tenth while their
+cosine would move ~0.006. Caveat: our peak recall is any-match support; their coverage is
+top-20 ∩ top-20, so the magnitudes are indicative, not a like-for-like restatement.
+This also explains why the oracle-coverage jump (0.7674 -> 0.9334) and the small cosine effect are
+both true: they are measuring different things.
 
 ## Feature setup (Appendix A, Tables 6-7; Appendix C)
 

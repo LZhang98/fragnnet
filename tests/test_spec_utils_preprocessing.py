@@ -2,10 +2,10 @@
 
 Tests for:
 - get_ints_transform_func / get_ints_untransform_func (intensity transforms)
-- transform_ce, transform_nce_to_ace (collision energy transforms)
-- filter_func, bin_func, batch_func (single-spectrum operations)
+- transform_ce (collision energy transform)
+- batch_func (single-spectrum operations)
 - batched_filter_func, batched_bin_func (batched operations)
-- merge_sparse_specs, calculate_spectrum_entropy (spectrum utilities)
+- merge_sparse_specs (spectrum utilities)
 - round_aggregate_peaks (peak deduplication and aggregation, incl. loop-reference equivalence)
 """
 
@@ -20,15 +20,11 @@ from fragnnet.utils.spec_utils import (
     batch_func,
     batched_bin_func,
     batched_filter_func,
-    bin_func,
-    calculate_spectrum_entropy,
-    filter_func,
     get_ints_transform_func,
     get_ints_untransform_func,
     merge_sparse_specs,
     round_aggregate_peaks,
     transform_ce,
-    transform_nce_to_ace,
 )
 
 
@@ -154,141 +150,6 @@ class TestTransformCe:
         result = transform_ce(ce, ce_mean=25.0, ce_std=10.0)
         assert result[0].item() == pytest.approx(0.0)
         assert result[1].item() == pytest.approx(1.0)
-
-
-class TestTransformNceToAce:
-    """Tests for transform_nce_to_ace — converts normalized to absolute collision energy."""
-
-    def test_known_value_charge1(self):
-        """ACE = NCE * mw / 500 * charge_factor for charge_factor=1."""
-        assert transform_nce_to_ace(20.0, 500.0, charge_factor=1) == pytest.approx(20.0)
-
-    def test_double_mw_doubles_ace(self):
-        """Doubling molecular weight doubles the ACE."""
-        ace_500 = transform_nce_to_ace(20.0, 500.0)
-        ace_1000 = transform_nce_to_ace(20.0, 1000.0)
-        assert ace_1000 == pytest.approx(2 * ace_500)
-
-    def test_charge_factor_scales_linearly(self):
-        """charge_factor=2 doubles ACE relative to charge_factor=1."""
-        ace_1 = transform_nce_to_ace(20.0, 500.0, charge_factor=1)
-        ace_2 = transform_nce_to_ace(20.0, 500.0, charge_factor=2)
-        assert ace_2 == pytest.approx(2 * ace_1)
-
-    def test_zero_nce_gives_zero(self):
-        """NCE=0 always gives ACE=0 regardless of mw."""
-        assert transform_nce_to_ace(0.0, 1000.0) == pytest.approx(0.0)
-
-
-
-class TestFilterFunc:
-    """Tests for filter_func — intensity threshold and m/z upper bound filtering."""
-
-    def test_tensor_filters_by_thresh_and_mz_max(self):
-        """Peaks with ints <= thresh or mzs >= mz_max are removed."""
-        mzs = th.tensor([100.0, 200.0, 300.0])
-        ints = th.tensor([0.5, 1.5, 2.5])
-        out_mzs, out_ints = filter_func(mzs, ints, ints_thresh=1.0, mz_max=250.0)
-        assert th.equal(out_mzs, th.tensor([200.0]))
-        assert th.equal(out_ints, th.tensor([1.5]))
-
-    def test_ndarray_same_result(self):
-        """Works identically with numpy arrays."""
-        mzs = np.array([100.0, 200.0, 300.0])
-        ints = np.array([0.5, 1.5, 2.5])
-        out_mzs, out_ints = filter_func(mzs, ints, ints_thresh=1.0, mz_max=250.0)
-        np.testing.assert_array_equal(out_mzs, [200.0])
-        np.testing.assert_array_equal(out_ints, [1.5])
-
-    def test_mixed_types_raises_type_error(self):
-        """Tensor mzs + ndarray ints raises TypeError."""
-        with pytest.raises(TypeError):
-            filter_func(th.tensor([100.0]), np.array([1.0]), ints_thresh=0.0, mz_max=1000.0)
-
-    def test_mz_max_zero_disables_mz_filter(self):
-        """mz_max <= 0 skips the m/z upper bound check."""
-        mzs = th.tensor([100.0, 5000.0])
-        ints = th.tensor([2.0, 3.0])
-        out_mzs, _ = filter_func(mzs, ints, ints_thresh=0.0, mz_max=0.0)
-        assert out_mzs.shape[0] == 2
-
-    def test_all_filtered_returns_empty(self):
-        """If all peaks fail the filter, empty tensors are returned."""
-        mzs = th.tensor([100.0, 200.0])
-        ints = th.tensor([0.1, 0.2])
-        out_mzs, out_ints = filter_func(mzs, ints, ints_thresh=1.0, mz_max=1000.0)
-        assert out_mzs.shape[0] == 0
-        assert out_ints.shape[0] == 0
-
-    def test_thresh_is_exclusive(self):
-        """Intensity exactly at threshold is excluded (strict >)."""
-        mzs = th.tensor([100.0])
-        ints = th.tensor([1.0])
-        out_mzs, _ = filter_func(mzs, ints, ints_thresh=1.0, mz_max=1000.0)
-        assert out_mzs.shape[0] == 0
-
-    def test_mz_max_is_exclusive(self):
-        """m/z exactly at mz_max is excluded (strict <)."""
-        mzs = th.tensor([250.0])
-        ints = th.tensor([2.0])
-        out_mzs, _ = filter_func(mzs, ints, ints_thresh=0.0, mz_max=250.0)
-        assert out_mzs.shape[0] == 0
-
-
-class TestBinFunc:
-    """Tests for bin_func — histogram binning of a single spectrum.
-
-    Uses mz_max=10.0, mz_bin_res=1.0 → 10 bins with edges [1,2,...,10].
-    A peak at mz x lands in bin searchsorted(edges, x, right=True).
-    """
-
-    def test_single_peak_one_nonzero_bin(self):
-        """A single peak produces exactly one non-zero bin."""
-        mzs = th.tensor([2.5])
-        ints = th.tensor([3.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=True)
-        assert out.shape[0] == 10
-        assert out.sum().item() == pytest.approx(3.0)
-        assert (out > 0).sum().item() == 1
-
-    def test_sum_ints_two_peaks_same_bin(self):
-        """Two peaks in the same bin are summed when sum_ints=True."""
-        mzs = th.tensor([2.3, 2.7])  # both map to bin for (2, 3]
-        ints = th.tensor([1.0, 2.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=True)
-        assert out.sum().item() == pytest.approx(3.0)
-        assert (out > 0).sum().item() == 1
-
-    def test_amax_two_peaks_same_bin(self):
-        """Two peaks in the same bin take the max when sum_ints=False."""
-        mzs = th.tensor([2.3, 2.7])
-        ints = th.tensor([1.0, 2.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=False)
-        assert out.max().item() == pytest.approx(2.0)
-        assert (out > 0).sum().item() == 1
-
-    def test_two_peaks_different_bins(self):
-        """Peaks at well-separated m/zs land in two distinct non-zero bins."""
-        mzs = th.tensor([2.5, 7.5])
-        ints = th.tensor([1.0, 2.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=True)
-        assert (out > 0).sum().item() == 2
-        assert out.sum().item() == pytest.approx(3.0)
-
-    def test_return_index_shape_and_uniqueness(self):
-        """return_index=True returns per-peak bin indices, one per input peak."""
-        mzs = th.tensor([2.5, 7.5])
-        ints = th.tensor([1.0, 2.0])
-        idx = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=True, sum_ints=True)
-        assert idx.shape == (2,)
-        assert idx[0].item() != idx[1].item()  # different bins
-
-    def test_return_index_same_bin_for_close_peaks(self):
-        """Peaks in the same bin return the same index."""
-        mzs = th.tensor([2.3, 2.7])
-        ints = th.tensor([1.0, 1.0])
-        idx = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=True, sum_ints=True)
-        assert idx[0].item() == idx[1].item()
 
 
 class TestBatchFunc:
@@ -582,50 +443,6 @@ class TestMergeSparseSpecs:
         merged_dict = dict(merged)
         assert merged_dict[100.0] == pytest.approx(2.0)
         assert merged_dict[200.0] == pytest.approx(5.0)
-
-
-class TestCalculateSpectrumEntropy:
-    """Tests for calculate_spectrum_entropy — entropy over log-intensity distribution.
-
-    Note: this computes H = -sum(p * log(p)) where p = softmax(log_ints).
-    """
-
-    def test_single_peak_zero_entropy(self):
-        """Single peak has H = 0 (the distribution is a point mass)."""
-        log_ints = th.tensor([0.0])
-        batch_idxs = th.tensor([0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() == pytest.approx(0.0, abs=1e-6)
-
-    def test_two_equal_peaks_log2_entropy(self):
-        """Two equal peaks → H = log(2) ≈ 0.6931."""
-        log_ints = th.tensor([0.0, 0.0])
-        batch_idxs = th.tensor([0, 0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() == pytest.approx(math.log(2), abs=1e-5)
-
-    def test_three_equal_peaks_log3_entropy(self):
-        """Three equal peaks → H = log(3)."""
-        log_ints = th.tensor([0.0, 0.0, 0.0])
-        batch_idxs = th.tensor([0, 0, 0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() == pytest.approx(math.log(3), abs=1e-5)
-
-    def test_entropy_non_negative(self):
-        """Entropy is always >= 0 for any valid input."""
-        log_ints = th.tensor([1.0, 2.0, 0.5])
-        batch_idxs = th.tensor([0, 0, 0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() >= 0.0
-
-    def test_multi_batch_independent(self):
-        """Entropy is computed independently per batch item."""
-        # Batch 0: two equal peaks → H = log(2); Batch 1: one peak → H = 0
-        log_ints = th.tensor([0.0, 0.0, 0.0])
-        batch_idxs = th.tensor([0, 0, 1])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy[0].item() == pytest.approx(math.log(2), abs=1e-5)
-        assert entropy[1].item() == pytest.approx(0.0, abs=1e-6)
 
 
 class TestRoundAggregatePeaks:

@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import cast
 
 import numpy as np
 import torch as th
@@ -12,7 +11,6 @@ from fragnnet.utils.misc_utils import (
     safelog,
     scatter_l1normalize,
     scatter_l2normalize,
-    scatter_logsoftmax,
     scatter_logsumexp,
     scatter_reduce,
     th_setdiff1d,
@@ -78,6 +76,8 @@ detect_isotope_peaks_for_training_cleanup = (
     isotope_utils.detect_isotope_peaks_for_training_cleanup
 )
 detect_isotope_peaks_for_training = isotope_utils.detect_isotope_peaks_for_training
+dag_formula_source = isotope_utils.dag_formula_source
+subformula_formula_source = isotope_utils.subformula_formula_source
 estimate_coisolation_fraction_from_precursor = (
     isotope_utils.estimate_coisolation_fraction_from_precursor
 )
@@ -97,10 +97,6 @@ except ImportError:
         "torch_linear_assignment not found; falling back to scipy.optimize.linear_sum_assignment (slower, CPU-only)"
     )
 
-
-MZ_MAX = 1500.0
-MZ_BIN_RES = 0.01
-INTS_THRESH = 0.0
 
 _assignment_device_logged = False
 
@@ -264,107 +260,6 @@ def transform_ce(ce: th.Tensor | float, ce_mean: float, ce_std: float) -> th.Ten
             return th.tensor((ce - ce_mean) / ce_std)
         else:
             return th.tensor(ce)
-
-
-def transform_nce_to_ace(nce: float, mw: float, charge_factor: int = 1) -> float:
-    """get ace from given nce and mw
-       Absolute energy (eV) = (settling NCE) x (Isolation center) / (500 m/z) x (charge factor)
-    Args:
-        nce (float): normalized collision energy
-        mw (float): Isolation center mw, most time it is the precursor ion mass
-
-    Returns:
-        float: absolute energy
-    """
-    return nce * mw / 500 * charge_factor
-
-
-def filter_func(
-    mzs: th.Tensor | np.ndarray,
-    ints: th.Tensor | np.ndarray,
-    ints_thresh: float,
-    mz_max: float,
-) -> tuple[th.Tensor | np.ndarray, th.Tensor | np.ndarray]:
-    """filter spectrum by intesnity value and max mz
-
-    Args:
-        mzs (Union[th.Tensor,np.ndarray]): m/z s
-        ints (Union[th.Tensor,np.ndarray]): intesnities
-        ints_thresh (float): intesnity thresh hold
-        mz_max (float): max mz, if mz_max <= 0, mz_max filter will be ignored
-
-    Returns:
-        Tuple[Union[th.Tensor,np.ndarray], Union[th.Tensor,np.ndarray]]: mzs, ints
-    """
-    is_tensor_pair = isinstance(mzs, th.Tensor) and isinstance(ints, th.Tensor)
-    is_ndarray_pair = isinstance(mzs, np.ndarray) and isinstance(ints, np.ndarray)
-    if not (is_tensor_pair or is_ndarray_pair):
-        raise TypeError("mzs and ints must both be torch tensors or both numpy arrays")
-
-    thresh_mask = ints > ints_thresh
-    if mz_max > 0:
-        both_mask = thresh_mask & (mzs < mz_max)
-    else:
-        both_mask = thresh_mask
-
-    if is_tensor_pair:
-        mzs_t = cast(th.Tensor, mzs)
-        ints_t = cast(th.Tensor, ints)
-        mask_t = cast(th.Tensor, both_mask)
-        return mzs_t[mask_t], ints_t[mask_t]
-
-    mzs_n = cast(np.ndarray, mzs)
-    ints_n = cast(np.ndarray, ints)
-    mask_n = cast(np.ndarray, both_mask)
-    return mzs_n[mask_n], ints_n[mask_n]
-
-
-def bin_func(
-    mzs: th.Tensor,
-    ints: th.Tensor,
-    mz_max: float,
-    mz_bin_res: float,
-    return_index: bool,
-    sum_ints: bool,
-):
-    """
-    return binned spectra
-    Note: if return_index is True, returns the (possibly non-unique) bin index for each mz
-    Note: intensities may not be normalized due to peak merging
-    Args:
-        mzs (th.Tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.
-        ints (th.Tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.
-        mz_max (float): max mz value allowed
-        mz_bin_res (float): bin size
-        return_index (bool): if return_index is True, returns the (possibly non-unique) bin index for each mz
-        sum_ints (bool): flag for sum intensities within the bin, else take max
-    Returns:
-        _type_: _description_
-    """
-
-    assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
-    # bin
-    bins = th.arange(
-        mz_bin_res,
-        mz_max + mz_bin_res,
-        step=mz_bin_res,
-        device=mzs.device,
-        dtype=mzs.dtype,
-    )
-    bin_idx = th.searchsorted(bins, mzs, right=True)
-    if return_index:
-        return bin_idx
-    else:
-        bin_spec = scatter_reduce(
-            src=ints,
-            index=bin_idx,
-            reduce="sum" if sum_ints else "amax",
-            dim_size=bins.shape[0],
-        )
-        if th.all(bin_spec == 0.0):
-            print("> warning: bin_spec is all zeros!")
-            bin_spec[-1] = 1.0
-        return bin_spec
 
 
 def batch_func(*lists, offset_flags: list[bool] | None = None) -> tuple[th.Tensor]:
@@ -621,29 +516,6 @@ def merge_sparse_specs(
         total_intensity = sum([intensity for mz, intensity in merged_peaks])
         merged_peaks = [(mz, intensity / total_intensity) for mz, intensity in merged_peaks]
     return merged_peaks
-
-
-def calculate_spectrum_entropy(log_ints: th.Tensor, batch_idxs: th.Tensor) -> th.Tensor:
-    """method to compute entropy.
-        NOTE: this is NOT same spectra entropy in this https://www.nature.com/articles/s41592-023-02012-9 a
-        nd https://www.nature.com/articles/s41592-021-01331-z
-    Args:
-        log_ints (th.Tensor): intensity in log scale
-        batch_idxs (th.Tensor): batch idx
-
-    Returns:
-        th.Tensor: spectrum entropy
-    """
-
-    k = int(th.max(batch_idxs).item()) + 1
-    log_norm_ints = scatter_logsoftmax(log_ints, batch_idxs)
-    entropy = -scatter_reduce(
-        src=th.exp(log_norm_ints) * log_norm_ints,
-        index=batch_idxs,
-        reduce="sum",
-        dim_size=k,
-    )
-    return entropy
 
 
 def calculate_match_mzs(

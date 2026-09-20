@@ -270,19 +270,6 @@ class TreeProcessor:
                     new_out[bin_post] = max(new_out[bin_post], inten)
             # print(new_out.nonzero()[0])
             out_dict["inten_targs"] = new_out
-            # ###
-            # from fragnnet.utils.spec_utils import bin_func
-            # bin_spec = bin_func(
-            #   th.as_tensor(intens[:,0]).reshape(-1),
-            #   th.as_tensor(intens[:,1]).reshape(-1),
-            #   1500,
-            #   0.1,
-            #   False,
-            #   False
-            # )
-            # print(bin_spec.numpy().nonzero()[0])
-            # import pdb; pdb.set_trace()
-            # ###
         return out_dict
 
     def add_pe_embed(self, graph):

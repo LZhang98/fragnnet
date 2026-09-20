@@ -37,6 +37,37 @@ FORMULA_ELEMENT_COUNTS_KEY = "_frag_formula_element_counts"
 logger = logging.getLogger(__name__)
 
 
+def wire_isotope_dag_paths(spec_params: dict, frag_dp: str, frag_params: dict) -> dict:
+    """Point isotope cleanup's ``dag`` formula source at this dataset's own DAGs.
+
+    NOT HOOKED UP: isotope cleanup is off in every template. FraGNNet is also the only model
+    whose config carries ``frag_dp``, so this is the only place the ``dag`` source can be fed;
+    every other model has to use ``remove_isotope_formula_source: subformula``, which needs no
+    DAG. Leaving the path blank is not an option: the source would come back empty and the
+    m/z-scaled proxy would answer in its place, so ``BaseDataset`` raises on it instead.
+
+    Args:
+        spec_params: The run's spectrum settings; not modified.
+        frag_dp: Directory or packed file holding this dataset's DAGs.
+        frag_params: Fragment settings, read for how those DAGs are stored.
+
+    Returns:
+        A copy with ``remove_isotope_dag_dp`` and ``remove_isotope_dag_compressed`` filled in
+        when the config asks for the DAG source and names no path of its own.
+    """
+    spec_params = dict(spec_params)
+    if not spec_params.get("remove_isotope_peaks", False):
+        return spec_params
+    if spec_params.get("remove_isotope_formula_source") != "dag":
+        return spec_params
+    if not spec_params.get("remove_isotope_dag_dp"):
+        # These two travel together: how the DAGs are stored is a property of the DAGs the
+        # path now points at, not of the cleanup settings.
+        spec_params["remove_isotope_dag_dp"] = frag_dp
+        spec_params["remove_isotope_dag_compressed"] = frag_params["compressed"]
+    return spec_params
+
+
 class SpecMolFragDataset(SpecMolDataset):
     def __init__(
         self,
@@ -78,19 +109,7 @@ class SpecMolFragDataset(SpecMolDataset):
         """
 
         BaseDataset.__init__(self)
-        spec_params = dict(spec_params)
-        # NOT HOOKED UP: isotope cleanup is disabled in every template. FraGNNet is also the
-        # only model whose config still carries `frag_dp`, so this is the only place the
-        # DAG-formula branch of that cleanup could be fed at all.
-        if (
-            spec_params.get("remove_isotope_peaks", False)
-            and spec_params.get("remove_isotope_use_dag_formula", True)
-        ):
-            spec_params.setdefault("remove_isotope_dag_dp", frag_dp)
-            spec_params.setdefault(
-                "remove_isotope_dag_compressed",
-                frag_params.get("compressed", True),
-            )
+        spec_params = wire_isotope_dag_paths(spec_params, frag_dp, frag_params)
         self._base_init(
             spec_fp=spec_fp,
             mol_fp=mol_fp,

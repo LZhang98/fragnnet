@@ -18,12 +18,20 @@ from fragnnet.utils.data_utils import (
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.frag_utils import load_frag_d
 from fragnnet.utils.isotope_utils import (
+    _INST_MZ_TOL,
+    ISOTOPE_CANDIDATE_RULES,
+    dag_formula_source,
     detect_isotope_peaks_for_training_cleanup,
     estimate_coisolation_fraction_from_precursor,
+    subformula_formula_source,
 )
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
+
+# Where a fragment's composition comes from during isotope cleanup: nowhere (the m/z-scaled
+# precursor proxy), a precursor-bounded subformula decomposition, or the molecule's DAG.
+ISOTOPE_FORMULA_SOURCES = ("none", "subformula", "dag")
 
 
 def _ce_list_to_stats(t: th.Tensor, weights: th.Tensor | None = None) -> th.Tensor:
@@ -511,6 +519,7 @@ class BaseDataset(Dataset):
         self._isotope_dag_formula_cache: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
         if not self.spec_params["remove_isotope_peaks"]:
             return
+        self._validate_isotope_formula_source()
         if not self.spec_params["remove_isotope_use_group_f"]:
             return
         if self.um_spec_df.empty:
@@ -565,14 +574,98 @@ class BaseDataset(Dataset):
                 continue
             self.group_coiso_fraction_by_k.setdefault(group_id, {})[k] = med
 
+    def _validate_isotope_formula_source(self) -> None:
+        """Check the cleanup's source settings before any spectrum is cleaned.
+
+        Everything here would otherwise surface late and quietly: an unknown source or rule only
+        on the first spectrum that reaches the gate, and a DAG source with no DAG path not at all,
+        because the source would simply come back empty and the m/z proxy would answer instead.
+
+        Raises:
+            ValueError: If the source or the candidate rule is unknown, a deprecated key is still
+                switched on, or the DAG source has no ``remove_isotope_dag_dp`` to read.
+        """
+        source = self.spec_params["remove_isotope_formula_source"]
+        if source not in ISOTOPE_FORMULA_SOURCES:
+            raise ValueError(
+                f"remove_isotope_formula_source must be one of {sorted(ISOTOPE_FORMULA_SOURCES)}, "
+                f"got {source!r}"
+            )
+        rule = self.spec_params["remove_isotope_candidate_rule"]
+        if rule not in ISOTOPE_CANDIDATE_RULES:
+            raise ValueError(
+                f"remove_isotope_candidate_rule must be one of {list(ISOTOPE_CANDIDATE_RULES)}, "
+                f"got {rule!r}"
+            )
+        mz_tol = self.spec_params["remove_isotope_subformula_mz_tol"]
+        if mz_tol is not None and not float(mz_tol) > 0:
+            raise ValueError(
+                f"remove_isotope_subformula_mz_tol must be positive or blank, got {mz_tol!r}"
+            )
+        if source == "dag" and not self.spec_params["remove_isotope_dag_dp"]:
+            raise ValueError(
+                "remove_isotope_formula_source: dag needs remove_isotope_dag_dp. Only the "
+                "FraGNNet dataset fills it in from `frag_dp`; every other model has no DAG, so "
+                "use remove_isotope_formula_source: subformula there."
+            )
+        for deprecated, replacement in (
+            ("remove_isotope_use_dag_formula", "remove_isotope_formula_source: dag"),
+            ("remove_isotope_protect_dag_mono", "remove_isotope_protect_known_mono"),
+        ):
+            if self.spec_params[deprecated]:
+                raise ValueError(
+                    f"{deprecated} is superseded; set {replacement} instead. It is kept in the "
+                    "template only so older configs and checkpoints still resolve."
+                )
+
+    def _get_isotope_formula_source(
+        self, mol_id: int, formula: str | None, prec_type: str, inst_type: str
+    ):
+        """Return the fragment-composition source for one spectrum, or None.
+
+        The DAG source needs a per-molecule artifact and is FraGNNet-only in practice, since
+        only that template carries ``frag_dp``. The subformula source needs the precursor
+        formula and adduct, which every model has.
+
+        Args:
+            mol_id: Molecule the spectrum belongs to.
+            formula: Neutral molecular formula, or None when unavailable.
+            prec_type: Adduct string of this spectrum.
+            inst_type: Instrument type, which sets the decomposition window when the config
+                leaves ``remove_isotope_subformula_mz_tol`` blank.
+
+        Returns:
+            A callable from m/z to candidate ion compositions, or None for the m/z proxy.
+        """
+        source = self.spec_params["remove_isotope_formula_source"]
+        if source == "none":
+            return None
+        if source == "dag":
+            dag_arrays = self._get_isotope_dag_formula_arrays(int(mol_id))
+            if dag_arrays is None:
+                return None
+            return dag_formula_source(
+                dag_arrays[0], dag_arrays[1], self.spec_params["remove_isotope_dag_mz_tol"]
+            )
+        if not formula:
+            return None
+        mz_tol = self.spec_params["remove_isotope_subformula_mz_tol"]
+        if mz_tol is None:
+            mz_tol = _INST_MZ_TOL.get(inst_type) or 0.004
+        try:
+            return subformula_formula_source(formula, prec_type, float(mz_tol))
+        except ValueError:
+            # An adduct or element the subformula budgets do not cover: fall back to the m/z
+            # proxy for this spectrum rather than dropping it. A bad tolerance cannot reach
+            # here - `_validate_isotope_formula_source` rejects it at setup - so this stays a
+            # statement about the data, not about the configuration.
+            return None
+
     def _get_isotope_dag_formula_arrays(
         self,
         mol_id: int,
     ) -> tuple[np.ndarray, np.ndarray] | None:
         """Return DAG M+0 m/z and formula arrays for isotope cleanup if configured."""
-        if not self.spec_params["remove_isotope_use_dag_formula"]:
-            return None
-
         dag_dp = self.spec_params["remove_isotope_dag_dp"]
         if not dag_dp:
             return None
@@ -775,7 +868,6 @@ class BaseDataset(Dataset):
 
         mzs = th.tensor(mzs, dtype=th.float)
         ints = th.tensor(ints, dtype=th.float)
-        # mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
         return mzs, ints
 
     def _setup_prec_type_to_idx(self) -> None:
@@ -951,9 +1043,12 @@ class BaseDataset(Dataset):
         mol_id = spec_entry["mol_id"]
         formula = str(self.mol_df.loc[mol_id]["formula"]) if mol_id in self.mol_df.index else None
         group_f = self.group_coiso_fraction_by_k.get(int(spec_entry["group_id"]))
-        dag_formula_arrays = self._get_isotope_dag_formula_arrays(int(mol_id))
-        dag_formula_mzs = dag_formula_arrays[0] if dag_formula_arrays is not None else None
-        dag_formula_strs = dag_formula_arrays[1] if dag_formula_arrays is not None else None
+        formula_source = self._get_isotope_formula_source(
+            int(mol_id),
+            formula,
+            str(spec_entry["prec_type"]),
+            str(spec_entry["inst_type"]),
+        )
         remove_mask_np = detect_isotope_peaks_for_training_cleanup(
             mzs.numpy(),
             ints.numpy(),
@@ -970,10 +1065,9 @@ class BaseDataset(Dataset):
             max_leak_factor=self.spec_params["remove_isotope_max_leak_factor"],
             precursor_envelope_lo=self.spec_params["remove_isotope_precursor_envelope_lo"],
             precursor_envelope_hi=self.spec_params["remove_isotope_precursor_envelope_hi"],
-            dag_formula_mzs=dag_formula_mzs,
-            dag_formula_strs=dag_formula_strs,
-            dag_mz_tol=self.spec_params["remove_isotope_dag_mz_tol"],
-            protect_dag_mono=self.spec_params["remove_isotope_protect_dag_mono"],
+            formula_source=formula_source,
+            candidate_rule=self.spec_params["remove_isotope_candidate_rule"],
+            protect_known_mono=self.spec_params["remove_isotope_protect_known_mono"],
         )
         if not remove_mask_np.any():
             return mzs, ints

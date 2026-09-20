@@ -141,7 +141,7 @@ def unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -> lis
 
     Args:
         custom_d: The custom config being validated.
-        config_d: The resolved base plus model overlay.
+        config_d: The resolved model template.
         prefix: Dotted path of the section currently being checked.
 
     Returns:
@@ -1108,7 +1108,7 @@ def init_run(
     # check config for sampler
     validate_sampler_config(config_d)
 
-    # check config for CMF; frag_params is a FraGNNet-owned overlay block.
+    # check config for CMF; only the FraGNNet template declares frag_params.
     if (
         "frag_params" in config_d
         and config_d["frag_params"]["include_cmf"]

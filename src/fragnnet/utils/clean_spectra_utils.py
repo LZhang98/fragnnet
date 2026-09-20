@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import math
 from functools import lru_cache
 from pathlib import Path
 
@@ -225,8 +226,8 @@ def _precursor_ion_budgets(normalized_precursor_type: str) -> list:
     return budgets
 
 
-@lru_cache(maxsize=2)
-def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
+def _validate_formula_and_precursor(formula: str, precursor_type: str) -> tuple[dict, str]:
+    """Return the neutral element counts and the normalized precursor type, or raise."""
     normalized_precursor_type = PRECURSOR_TYPE_ALIASES.get(precursor_type, precursor_type)
     if normalized_precursor_type not in PREC_TYPE_TO_MASS_DIFF:
         supported_types = sorted(set(PREC_TYPE_TO_MASS_DIFF) | set(PRECURSOR_TYPE_ALIASES))
@@ -239,7 +240,14 @@ def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
     unsupported_elements = set(element_counts) - set(VALID_ELEMENTS)
     if unsupported_elements:
         raise ValueError(f"Unsupported formula elements: {sorted(unsupported_elements)}")
+    return element_counts, normalized_precursor_type
 
+
+@lru_cache(maxsize=2)
+def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
+    element_counts, normalized_precursor_type = _validate_formula_and_precursor(
+        formula, precursor_type
+    )
     charge = _precursor_ion_charge(normalized_precursor_type)
     ion_masses = np.concatenate(
         [
@@ -283,6 +291,160 @@ def filter_subformula_peaks(
         ):
             filtered.append((float(peak[0]), float(peak[1])))
     return filtered
+
+
+def _budget_ion_candidates(
+    neutral_counts: dict[str, int],
+    comp_diff,
+    charge: int,
+    mz: float,
+    tolerance_da: float,
+) -> list[dict[str, int]]:
+    """Enumerate one budget's ion compositions whose mass is within ``tolerance_da`` of ``mz``.
+
+    This is the walk :func:`_budget_ion_masses` takes - a molecular part bounded below by what the
+    adduct delta removes and above by the precursor, then the carrier atoms the delta adds, with
+    the nonnegative-RDBE test on the molecular part - with two differences. It is pruned by mass at
+    every element instead of being materialized in full, so cost scales with how many compositions
+    land in the window rather than with the size of the grid; and it keeps the composition, which
+    is what an isotope ratio needs and a mass alone cannot give.
+
+    Args:
+        neutral_counts: Element counts of the neutral precursor molecule.
+        comp_diff: One adduct delta from :func:`_precursor_ion_budgets`.
+        charge: Precursor ion charge, used for the electron correction.
+        mz: Observed ion m/z to decompose.
+        tolerance_da: Absolute half-width of the mass window.
+
+    Returns:
+        Ion element counts, zero counts dropped. Empty when the budget cannot reach the window.
+    """
+    required_counts = {
+        element: -count_change for element, count_change in comp_diff.items() if count_change < 0
+    }
+    if any(neutral_counts.get(element, 0) < count for element, count in required_counts.items()):
+        return []
+
+    # 1. Lay out the walk: molecular atoms first, then the carrier atoms the delta adds.
+    slots: list[tuple[str, int, int, bool]] = []
+    for element, max_count in neutral_counts.items():
+        min_count = required_counts.get(element, 0)
+        if min_count > max_count:
+            return []
+        slots.append((element, min_count, max_count, True))
+    for element, count in comp_diff.items():
+        if count > 0:
+            slots.append((element, 0, count, False))
+    if not slots:
+        return []
+    # Heaviest element first: the widest mass steps prune the most.
+    slots.sort(key=lambda slot: -ELEMENT_TO_MASS[slot[0]])
+
+    # 2. Suffix mass bounds drive the pruning; the delta's removal is a constant mass shift.
+    n_slots = len(slots)
+    suffix_min = [0.0] * (n_slots + 1)
+    suffix_max = [0.0] * (n_slots + 1)
+    for idx in range(n_slots - 1, -1, -1):
+        element, min_count, max_count, _ = slots[idx]
+        suffix_min[idx] = suffix_min[idx + 1] + min_count * ELEMENT_TO_MASS[element]
+        suffix_max[idx] = suffix_max[idx + 1] + max_count * ELEMENT_TO_MASS[element]
+    removed_mass = sum(
+        count * ELEMENT_TO_MASS[element] for element, count in comp_diff.items() if count < 0
+    )
+    target = mz + charge * ELECTRON_MASS - removed_mass
+
+    # 3. Walk the slots, keeping only counts that can still reach the window.
+    results: list[dict[str, int]] = []
+    counts = [0] * n_slots
+
+    def visit_leaf() -> None:
+        rdbe_twice = 2.0 + sum(
+            counts[idx] * RDBE_COEFFICIENTS.get(slots[idx][0], 0)
+            for idx in range(n_slots)
+            if slots[idx][3]
+        )
+        if rdbe_twice < 0:
+            return
+        ion_counts: dict[str, int] = {}
+        for idx, (element, _, _, is_molecular) in enumerate(slots):
+            count = counts[idx]
+            if is_molecular:
+                count -= required_counts.get(element, 0)
+            if count:
+                ion_counts[element] = ion_counts.get(element, 0) + count
+        if not ion_counts:
+            return
+        if sum(count * ELEMENT_TO_MASS[element] for element, count in ion_counts.items()) <= 0:
+            return
+        results.append(ion_counts)
+
+    def walk(idx: int, assigned: float) -> None:
+        if idx == n_slots:
+            if abs(assigned - target) <= tolerance_da:
+                visit_leaf()
+            return
+        element, min_count, max_count, _ = slots[idx]
+        element_mass = ELEMENT_TO_MASS[element]
+        lowest = (target - tolerance_da - assigned - suffix_max[idx + 1]) / element_mass
+        highest = (target + tolerance_da - assigned - suffix_min[idx + 1]) / element_mass
+        low = max(min_count, math.ceil(lowest - 1e-9))
+        high = min(max_count, math.floor(highest + 1e-9))
+        for count in range(low, high + 1):
+            counts[idx] = count
+            walk(idx + 1, assigned + count * element_mass)
+        counts[idx] = min_count
+
+    walk(0, 0.0)
+    return results
+
+
+def subformula_candidates(
+    mz: float,
+    formula: str,
+    precursor_type: str,
+    tolerance_da: float,
+) -> list[dict[str, int]]:
+    """Return the precursor-bounded ion compositions that explain ``mz``.
+
+    Same feasibility rule as :func:`filter_subformula_peaks` - every charge-migration budget, the
+    nonnegative-RDBE test on the neutral part, the electron correction - so a peak this returns
+    candidates for is exactly a peak that filter keeps. The difference is what comes back: the
+    compositions themselves, which an isotope-ratio calculation needs and a DAG is one other way
+    to get.
+
+    Args:
+        mz: Observed ion m/z to decompose.
+        formula: Neutral molecular formula of the precursor.
+        precursor_type: Adduct string, e.g. ``"[M+H]+"``.
+        tolerance_da: Absolute half-width of the mass window, in Da.
+
+    Returns:
+        Distinct ion element counts within the window, in no particular order. Empty when the
+        peak has no feasible subformula.
+
+    Raises:
+        ValueError: If ``tolerance_da`` is not positive, the precursor type is unsupported, or
+            the formula contains an unsupported element.
+    """
+    if tolerance_da <= 0:
+        raise ValueError("tolerance_da must be positive")
+    element_counts, normalized_precursor_type = _validate_formula_and_precursor(
+        formula, precursor_type
+    )
+    charge = _precursor_ion_charge(normalized_precursor_type)
+
+    seen: set[tuple[tuple[str, int], ...]] = set()
+    candidates: list[dict[str, int]] = []
+    for comp_diff in _precursor_ion_budgets(normalized_precursor_type):
+        for ion_counts in _budget_ion_candidates(
+            element_counts, comp_diff, charge, mz, tolerance_da
+        ):
+            key = tuple(sorted(ion_counts.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(ion_counts)
+    return candidates
 
 
 def summarize_spectra(spec_df: pd.DataFrame) -> dict[str, int | float]:

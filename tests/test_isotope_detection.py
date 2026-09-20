@@ -19,13 +19,16 @@ placed at exact C13_SPACING multiples so the search window reliably finds them.
 import numpy as np
 import pytest
 
+from fragnnet.utils import isotope_utils
 from fragnnet.utils.formula_utils import C13_SPACING
 from fragnnet.utils.isotope_utils import (
     _expected_mk_ratio,
     _parse_adduct_counts,
+    dag_formula_source,
     detect_isotope_peaks_for_training,
     detect_isotope_peaks_for_training_cleanup,
     estimate_coisolation_fraction_from_precursor,
+    subformula_formula_source,
 )
 
 # ---------------------------------------------------------------------------
@@ -786,8 +789,9 @@ class TestDetectIsotopePeaksFormulaMode:
             prec_type="[M+H]+",
             aggressive=True,
             aggressive_single_pair_min_f=0.99,
-            dag_formula_mzs=np.array([frag_mz]),
-            dag_formula_strs=np.array([frag_formula], dtype=object),
+            formula_source=dag_formula_source(
+                np.array([frag_mz]), np.array([frag_formula], dtype=object)
+            ),
         )
         assert mask[1], "Corrected k=1 fallback should recover f≈1 and flag the isotope peak"
 
@@ -817,11 +821,13 @@ class TestDetectIsotopePeaksFormulaMode:
             "prec_type": "[M+H]+",
             "aggressive": True,
             "aggressive_single_pair_min_f": 0.99,
-            "dag_formula_mzs": np.array([frag_mz, isotope_mz]),
-            "dag_formula_strs": np.array([frag_formula, competing_formula], dtype=object),
+            "formula_source": dag_formula_source(
+                np.array([frag_mz, isotope_mz]),
+                np.array([frag_formula, competing_formula], dtype=object),
+            ),
         }
         mask_unprotected = detect_isotope_peaks_for_training(**kwargs)
-        mask_protected = detect_isotope_peaks_for_training(**kwargs, protect_dag_mono=True)
+        mask_protected = detect_isotope_peaks_for_training(**kwargs, protect_known_mono=True)
 
         assert mask_unprotected[1]
         assert not mask_protected[1]
@@ -974,3 +980,124 @@ class TestTrainingIsotopeCleanup:
             coiso_fraction_by_k={1: 0.3},
         )
         assert mask.tolist() == [False, True]
+
+
+# ---------------------------------------------------------------------------
+# formula sources: DAG vs subformula
+# ---------------------------------------------------------------------------
+
+
+class TestFormulaSources:
+    """Where the fragment composition comes from, and what happens when it is ambiguous."""
+
+    FORMULA = "C10H22"
+    FRAG_FORMULA = "C5H11"
+    PREC_MZ = 143.179
+    FRAG_MZ = 71.086
+
+    def _spectrum(self):
+        """One fragment and its M+1 satellite at exactly the f=1 co-isolation ratio."""
+        from fragnnet.utils.formula_utils import parse_formula
+
+        r_prec = _expected_mk_ratio(parse_formula(self.FORMULA), 1.0, k=1)
+        r_frag = _expected_mk_ratio(parse_formula(self.FRAG_FORMULA), 1.0, k=1)
+        obs = r_frag / (1.0 + (r_prec - r_frag))
+        mzs = np.array([self.FRAG_MZ, self.FRAG_MZ + _NM])
+        ints = np.array([2000.0, obs * 2000.0])
+        return mzs, ints
+
+    def _detect(self, **kwargs):
+        mzs, ints = self._spectrum()
+        return detect_isotope_peaks_for_training(
+            mzs,
+            ints,
+            prec_mz=self.PREC_MZ,
+            inst_type="FT",
+            formula=self.FORMULA,
+            prec_type="[M+H]+",
+            aggressive=True,
+            aggressive_single_pair_min_f=0.99,
+            **kwargs,
+        )
+
+    def test_subformula_source_returns_the_fragment_composition(self):
+        source = subformula_formula_source(self.FORMULA, "[M+H]+", 0.004)
+
+        assert {"C": 5, "H": 11} in source(self.FRAG_MZ)
+
+    def test_subformula_source_is_empty_off_the_grid(self):
+        source = subformula_formula_source(self.FORMULA, "[M+H]+", 0.004)
+
+        assert source(self.FRAG_MZ + 0.5) == []
+
+    def test_subformula_source_validates_eagerly(self):
+        with pytest.raises(ValueError, match="Unsupported precursor type"):
+            subformula_formula_source(self.FORMULA, "[M+Xx]+", 0.004)
+
+    def test_subformula_source_matches_the_dag_source_on_an_unambiguous_fragment(self):
+        """The DAG is one way to name C5H11; decomposing the m/z is another."""
+        dag_mask = self._detect(
+            formula_source=dag_formula_source(
+                np.array([self.FRAG_MZ]), np.array([self.FRAG_FORMULA], dtype=object)
+            )
+        )
+        subformula_mask = self._detect(
+            formula_source=subformula_formula_source(self.FORMULA, "[M+H]+", 0.004)
+        )
+
+        assert dag_mask.tolist() == [False, True]
+        assert subformula_mask.tolist() == dag_mask.tolist()
+
+    def test_candidate_rule_decides_when_candidates_disagree(self):
+        """Several compositions make the expected ratio an interval, not a point.
+
+        A synthetic three-candidate source isolates the rule: the middle one is the true
+        fragment, so the median behaves exactly as the DAG source does, while the outliers
+        separate ``any`` from ``all``. The shipped ratio window is 0.05x-10x, wide enough to
+        swallow a 9x disagreement, so the window is tightened here to make the rule visible -
+        which is itself the point: the rule only bites once the window is tight.
+        """
+        ambiguous = lambda _mz: [  # noqa: E731
+            {"C": 1, "H": 3, "N": 3, "O": 1},
+            {"C": 5, "H": 11},
+            {"C": 9, "H": 11},
+        ]
+        window = {"ratio_lo": 0.5, "ratio_hi": 2.0}
+
+        assert self._detect(formula_source=ambiguous, candidate_rule="any", **window)[1]
+        assert self._detect(formula_source=ambiguous, candidate_rule="median", **window)[1]
+        assert not self._detect(formula_source=ambiguous, candidate_rule="all", **window)[1]
+
+    def test_protect_known_mono_needs_a_source(self):
+        """Protection is a statement about the source, so without one it cannot fire."""
+        assert self._detect(formula_source=None, protect_known_mono=True)[1]
+
+    def test_empty_source_falls_back_to_the_mz_proxy(self):
+        """No candidate is not an error; it is the pre-existing m/z-scaled behavior."""
+        empty = lambda _mz: []  # noqa: E731
+
+        assert self._detect(formula_source=empty).tolist() == self._detect().tolist()
+
+
+class TestRatioGate:
+    def test_one_candidate_makes_every_rule_agree(self):
+        expected = np.array([0.05])
+
+        for rule in ("median", "all", "any"):
+            assert isotope_utils._ratio_gate(0.06, expected, 0.5, 2.0, rule)
+            assert not isotope_utils._ratio_gate(0.5, expected, 0.5, 2.0, rule)
+
+    def test_rules_differ_once_candidates_disagree(self):
+        expected = np.array([0.05, 0.08])
+
+        # 0.026 is inside 0.05's window [0.025, 0.1] and outside 0.08's [0.04, 0.16].
+        assert isotope_utils._ratio_gate(0.026, expected, 0.5, 2.0, "any")
+        assert not isotope_utils._ratio_gate(0.026, expected, 0.5, 2.0, "all")
+        # The median of two is their mean, 0.065, whose window starts at 0.0325.
+        assert not isotope_utils._ratio_gate(0.026, expected, 0.5, 2.0, "median")
+        # 0.09 is inside both windows, so even the intersection accepts it.
+        assert isotope_utils._ratio_gate(0.09, expected, 0.5, 2.0, "all")
+
+    def test_unknown_rule_raises(self):
+        with pytest.raises(ValueError, match="unknown candidate_rule"):
+            isotope_utils._ratio_gate(0.1, np.array([0.1]), 0.5, 2.0, "mean")

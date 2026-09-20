@@ -1,8 +1,9 @@
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 import numpy as np
 
+from fragnnet.utils.clean_spectra_utils import subformula_candidates
 from fragnnet.utils.formula_utils import (
     C13_SPACING,
     MASS,
@@ -10,6 +11,16 @@ from fragnnet.utils.formula_utils import (
     isotope_offsets_from_formula,
     parse_formula,
 )
+
+# A fragment's composition is what an isotope ratio needs, and there is more than one way to
+# get it: a DAG node, a subformula decomposition, or nothing at all (the m/z-scaled precursor
+# proxy). A formula source maps an observed M+0 m/z to the candidate ion compositions that
+# explain it, so the detector does not care which one it was handed.
+FormulaSource = Callable[[float], list[dict[str, int]]]
+
+# How a ratio test resolves several candidate compositions: test the middle one, demand every
+# candidate agree, or accept one.
+ISOTOPE_CANDIDATE_RULES = ("median", "all", "any")
 
 
 def detect_isotope_peaks(
@@ -306,9 +317,7 @@ def _estimate_leak_ratio_from_spectrum(
     adduct_delta_mass: float = 0.0,
     prec_neutral_mass: float = 0.0,
     r_exp_prec: Mapping[int, float] | None = None,
-    dag_formula_mzs: np.ndarray | None = None,
-    dag_formula_strs: np.ndarray | None = None,
-    dag_mz_tol: float = 0.015,
+    formula_source: FormulaSource | None = None,
 ) -> float | None:
     """Estimate co-isolation ratio from cross-pair consistency of M+k peaks.
 
@@ -344,10 +353,9 @@ def _estimate_leak_ratio_from_spectrum(
             used as denominator for the per-fragment mol_scale estimate.
         r_exp_prec: Precursor expected isotope ratios by order.  When present,
             enables denominator correction for k=1.
-        dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.
-        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
-        dag_mz_tol: Absolute tolerance for matching observed M+0 peaks to DAG
-            formula entries.
+        formula_source: Optional fragment-composition source for the expected
+            ratio; see :func:`dag_formula_source` and
+            :func:`subformula_formula_source`.
 
     Returns:
         Consensus f (when ``mol_counts`` given) or R_k (when not), or None
@@ -373,16 +381,16 @@ def _estimate_leak_ratio_from_spectrum(
             continue
         r_raw = mk_int / m0_int
         if use_formula:
-            r_exp = _fragment_expected_ratio(
-                smzs[i],
-                k,
-                mol_counts,
-                adduct_counts or {},
-                adduct_delta_mass,
-                prec_neutral_mass,
-                dag_formula_mzs=dag_formula_mzs,
-                dag_formula_strs=dag_formula_strs,
-                dag_mz_tol=dag_mz_tol,
+            r_exp = _ratio_point(
+                _fragment_expected_ratios(
+                    smzs[i],
+                    k,
+                    mol_counts,
+                    adduct_counts or {},
+                    adduct_delta_mass,
+                    prec_neutral_mass,
+                    formula_source=formula_source,
+                )
             )
             if r_exp <= 0:
                 continue
@@ -439,31 +447,155 @@ def _find_dag_formula(
     return formula or None
 
 
-def _fragment_expected_ratio(
+def dag_formula_source(
+    dag_formula_mzs: np.ndarray | None,
+    dag_formula_strs: np.ndarray | None,
+    dag_mz_tol: float = 0.015,
+) -> FormulaSource:
+    """Return a formula source backed by a molecule's fragmentation DAG.
+
+    The DAG names one composition per m/z - the closest M+0 node - so this source returns at
+    most one candidate, which is what makes it a point estimate.
+
+    Args:
+        dag_formula_mzs: DAG monoisotopic fragment m/z values, or None.
+        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``, or None.
+        dag_mz_tol: Absolute m/z tolerance for matching a peak to a DAG node.
+
+    Returns:
+        Callable mapping an m/z to zero or one element-count dict.
+    """
+
+    def source(query_mz: float) -> list[dict[str, int]]:
+        formula = _find_dag_formula(query_mz, dag_formula_mzs, dag_formula_strs, dag_mz_tol)
+        if formula is None:
+            return []
+        try:
+            return [parse_formula(formula)]
+        except (ValueError, AssertionError):
+            return []
+
+    return source
+
+
+def subformula_formula_source(
+    formula: str,
+    prec_type: str,
+    tolerance_da: float,
+) -> FormulaSource:
+    """Return a formula source backed by precursor-bounded subformula decomposition.
+
+    Unlike a DAG this needs no per-molecule artifact, so it is available to every model; and
+    unlike a DAG it can return several compositions for one m/z, which is what the candidate
+    rule in :func:`detect_isotope_peaks_for_training` then has to resolve.
+
+    Args:
+        formula: Neutral molecular formula of the precursor.
+        prec_type: Adduct string, e.g. ``"[M+H]+"``.
+        tolerance_da: Absolute half-width of the decomposition window, in Da.
+
+    Returns:
+        Callable mapping an m/z to its candidate ion compositions.
+
+    Raises:
+        ValueError: If the formula, adduct, or tolerance is unsupported. Validation happens
+            here rather than per peak, so a bad configuration fails at setup.
+    """
+    subformula_candidates(1.0, formula, prec_type, tolerance_da)  # validate eagerly
+
+    def source(query_mz: float) -> list[dict[str, int]]:
+        return subformula_candidates(query_mz, formula, prec_type, tolerance_da)
+
+    return source
+
+
+def _fragment_expected_ratios(
     m0_mz: float,
     k: int,
     mol_counts: dict[str, int],
     adduct_counts: dict[str, int],
     adduct_delta_mass: float,
     prec_neutral_mass: float,
-    dag_formula_mzs: np.ndarray | None = None,
-    dag_formula_strs: np.ndarray | None = None,
-    dag_mz_tol: float = 0.015,
-) -> float:
-    """Return expected natural fragment M+k/M+0 ratio.
+    formula_source: FormulaSource | None = None,
+) -> np.ndarray:
+    """Return the expected natural fragment M+k/M+0 ratios, one per candidate composition.
 
-    DAG formulas are preferred because they provide the fragment composition.
-    The m/z-scaled precursor formula is retained as a fallback.
+    A composition from the formula source is preferred because it is exact; the m/z-scaled
+    precursor formula is the fallback and is known to be wrong for all-or-nothing carriers
+    such as Cl and Br.
+
+    Args:
+        m0_mz: m/z of the monoisotopic peak whose satellite is being tested.
+        k: Isotope order (1 = M+1, 2 = M+2).
+        mol_counts: Element counts of the neutral precursor molecule.
+        adduct_counts: Element counts added by the adduct.
+        adduct_delta_mass: Monoisotopic mass of the adduct atoms (Da).
+        prec_neutral_mass: Neutral precursor mass, the mol_scale denominator.
+        formula_source: Optional composition source; None uses the proxy directly.
+
+    Returns:
+        Array of shape (C,) with one ratio per candidate, or (1,) for the proxy fallback.
     """
-    dag_formula = _find_dag_formula(m0_mz, dag_formula_mzs, dag_formula_strs, dag_mz_tol)
-    if dag_formula is not None:
+    ratios = []
+    for counts in formula_source(m0_mz) if formula_source is not None else []:
         try:
-            return _expected_mk_ratio(parse_formula(dag_formula), 1.0, k)
+            ratios.append(_expected_mk_ratio(counts, 1.0, k))
         except (ValueError, AssertionError):
-            pass
+            continue
+    if ratios:
+        return np.asarray(ratios, dtype=np.float64)
+
     neutral_frag = m0_mz - adduct_delta_mass
-    mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
-    return _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts)
+    mol_scale = 0.0
+    if prec_neutral_mass > 0:
+        mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
+    return np.asarray(
+        [_expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts)], dtype=np.float64
+    )
+
+
+def _ratio_point(expected_ratios: np.ndarray) -> float:
+    """Collapse candidate expected ratios to one value; the median, and exact when C == 1."""
+    return float(np.median(expected_ratios))
+
+
+def _ratio_gate(
+    observed: float,
+    expected_ratios: np.ndarray,
+    ratio_lo: float,
+    ratio_hi: float,
+    candidate_rule: str,
+) -> bool:
+    """Whether an observed M+k/M+0 ratio is consistent with the candidate expected ratios.
+
+    One composition gives a point estimate and all three rules agree. Several give an interval,
+    and the rule decides what consistency means: ``median`` tests the middle candidate,
+    ``all`` demands every candidate agree (precision), ``any`` accepts one (recall).
+
+    Args:
+        observed: Observed M+k/M+0 intensity ratio.
+        expected_ratios: Candidate expected ratios of shape (C,).
+        ratio_lo: Lower multiple of the expected ratio that still counts as consistent.
+        ratio_hi: Upper multiple.
+        candidate_rule: One of ``"median"``, ``"all"``, ``"any"``.
+
+    Returns:
+        True when the observed ratio falls in the accepted window.
+
+    Raises:
+        ValueError: If ``candidate_rule`` is not one of the three rules.
+    """
+    if candidate_rule == "median":
+        expected = _ratio_point(expected_ratios)
+        return bool(ratio_lo * expected <= observed <= ratio_hi * expected)
+    if candidate_rule not in ISOTOPE_CANDIDATE_RULES:
+        raise ValueError(
+            f"unknown candidate_rule {candidate_rule!r}; use one of {list(ISOTOPE_CANDIDATE_RULES)}"
+        )
+    within = (expected_ratios * ratio_lo <= observed) & (observed <= expected_ratios * ratio_hi)
+    if candidate_rule == "all":
+        return bool(within.all())
+    return bool(within.any())
 
 
 def _expected_observed_isotope_ratio(
@@ -686,10 +818,9 @@ def detect_isotope_peaks_for_training(
     min_coiso_fraction: float = 0.05,
     max_leak_factor: float = 1.5,
     coiso_fraction_by_k: Mapping[int, float] | None = None,
-    dag_formula_mzs: np.ndarray | None = None,
-    dag_formula_strs: np.ndarray | None = None,
-    dag_mz_tol: float = 0.015,
-    protect_dag_mono: bool = False,
+    formula_source: FormulaSource | None = None,
+    candidate_rule: str = "median",
+    protect_known_mono: bool = False,
 ) -> np.ndarray:
     """Detect isotope leak peaks for training-data cleaning.
 
@@ -781,15 +912,18 @@ def detect_isotope_peaks_for_training(
             group (for example ``mol_id + prec_type + inst_type``). These values
             are used only for isotope orders where this spectrum lacks its own
             precursor-derived reference.
-        dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.  When
-            provided with ``dag_formula_strs``, fragment isotope ratios are
-            computed from DAG formulas instead of the m/z-scaled precursor proxy.
-        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
-        dag_mz_tol: Absolute m/z tolerance for matching observed M+0 peaks to DAG
-            formula entries.
-        protect_dag_mono: If True, never flag a peak whose m/z is itself matched
-            by a DAG monoisotopic formula.  This is conservative and may reduce
-            recall when isotope and monoisotopic explanations overlap.
+        formula_source: Optional fragment-composition source (see
+            :func:`dag_formula_source` and :func:`subformula_formula_source`).
+            When given, fragment isotope ratios come from the composition instead
+            of the m/z-scaled precursor proxy.
+        candidate_rule: How to test an observed ratio when the source returns
+            several compositions: ``"median"``, ``"all"``, or ``"any"``.  With a
+            one-composition source all three agree.
+        protect_known_mono: If True, never flag a peak the formula source can
+            explain as a monoisotopic ion of its own.  This is conservative and
+            may reduce recall when isotope and monoisotopic explanations overlap;
+            how conservative depends on the source, because subformula candidates
+            grow dense with precursor size while DAG nodes do not.
 
     Returns:
         Boolean array of shape (N,) where True means co-isolation isotope leak.
@@ -929,9 +1063,7 @@ def detect_isotope_peaks_for_training(
                 adduct_delta_mass=adduct_delta_mass,
                 prec_neutral_mass=prec_neutral_mass,
                 r_exp_prec=r_exp_prec,
-                dag_formula_mzs=dag_formula_mzs,
-                dag_formula_strs=dag_formula_strs,
-                dag_mz_tol=dag_mz_tol,
+                formula_source=formula_source,
             )
             if r_consensus is None and mol_counts is not None and prec_neutral_mass > 0:
                 # Single-pair fallback: try with min_pairs=1 (no CV check possible).
@@ -949,9 +1081,7 @@ def detect_isotope_peaks_for_training(
                     adduct_delta_mass=adduct_delta_mass,
                     prec_neutral_mass=prec_neutral_mass,
                     r_exp_prec=r_exp_prec,
-                    dag_formula_mzs=dag_formula_mzs,
-                    dag_formula_strs=dag_formula_strs,
-                    dag_mz_tol=dag_mz_tol,
+                    formula_source=formula_source,
                 )
                 if r_single is not None and r_single >= aggressive_single_pair_min_f:
                     r_consensus = r_single
@@ -975,16 +1105,16 @@ def detect_isotope_peaks_for_training(
     # where R_exp_frag_i is estimated via m/z-based mol_scale.  This correctly
     # scales the window for each fragment's composition instead of applying the
     # precursor-level R_k uniformly.
-    def _frag_expected(m0_mz: float, k: int) -> float:
-        """Return per-fragment expected M+k/M+0 ratio given its M+0 m/z.
+    def _frag_expected(m0_mz: float, k: int) -> np.ndarray:
+        """Return the per-fragment expected M+k/M+0 ratios given its M+0 m/z.
 
         Two code paths depending on whether the precursor formula is known:
 
         **Formula known** (``mol_counts is not None``):
             ``r_leak[k]`` = co-isolation fraction f (formula-normalised).
             Returns ``_expected_observed_isotope_ratio(f, r_nat_frag, k, r_exp_prec)``
-            where r_nat_frag comes from the DAG or an m/z proxy
-            (handled by ``_fragment_expected_ratio``).
+            where r_nat_frag comes from the formula source or an m/z proxy
+            (handled by ``_fragment_expected_ratios``), one value per candidate.
 
         **No formula** (``mol_counts is None``):
             ``leak_ratios[k]`` = observed M+k / M+0 ratio of the precursor residual
@@ -994,46 +1124,47 @@ def detect_isotope_peaks_for_training(
             which dramatically increases FP on small fragments because many small noise
             peaks fall within the shrunken window.  The formula-aware path handles
             per-fragment natural-abundance scaling correctly via ``r_leak`` +
-            ``_fragment_expected_ratio``.
+            ``_fragment_expected_ratios``.
         """
         r_k = leak_ratios.get(k, 0.0)
 
         if k not in r_leak:
             # No-formula path: return the spectrum-level R_k directly.
-            return r_k
+            return np.asarray([r_k], dtype=np.float64)
 
         if prec_neutral_mass <= 0:
-            return r_k
+            return np.asarray([r_k], dtype=np.float64)
 
-        # Formula path: r_leak[k] = f; compute exact per-fragment expected ratio.
-        r_exp_frag = _fragment_expected_ratio(
+        # Formula path: r_leak[k] = f; compute exact per-fragment expected ratios.
+        r_exp_frag = _fragment_expected_ratios(
             m0_mz,
             k,
             mol_counts,
             adduct_counts_parsed,
             adduct_delta_mass,
             prec_neutral_mass,
-            dag_formula_mzs=dag_formula_mzs,
-            dag_formula_strs=dag_formula_strs,
-            dag_mz_tol=dag_mz_tol,
+            formula_source=formula_source,
         )
 
-        if r_exp_frag is None or r_exp_frag <= 0:
-            mol_scale = max(
-                0.0,
-                min(1.0, (m0_mz - adduct_delta_mass) / prec_neutral_mass),
-            )
-            r_exp_frag = r_k * mol_scale
+        mol_scale = max(
+            0.0,
+            min(1.0, (m0_mz - adduct_delta_mass) / prec_neutral_mass),
+        )
+        r_exp_frag = np.where(r_exp_frag > 0, r_exp_frag, r_k * mol_scale)
 
-        return _expected_observed_isotope_ratio(r_leak[k], r_exp_frag, k, r_exp_prec)
+        return np.asarray(
+            [
+                _expected_observed_isotope_ratio(r_leak[k], float(r_nat), k, r_exp_prec)
+                for r_nat in r_exp_frag
+            ],
+            dtype=np.float64,
+        )
 
     for i in range(n):
         frag_mz = smzs[i]
         frag_int = sints[i]
 
-        if protect_dag_mono and _find_dag_formula(
-            frag_mz, dag_formula_mzs, dag_formula_strs, dag_mz_tol
-        ):
+        if protect_known_mono and formula_source is not None and formula_source(frag_mz):
             continue
 
         for k in leak_ratios:
@@ -1048,18 +1179,19 @@ def detect_isotope_peaks_for_training(
 
             obs = frag_int / m0_int
             R_expected = _frag_expected(m0_mz, k)
+            R_point = _ratio_point(R_expected)
 
-            if require_monotone and R_expected <= 1.0 and m0_int <= frag_int:
+            if require_monotone and R_point <= 1.0 and m0_int <= frag_int:
                 continue
 
-            if not (ratio_lo * R_expected <= obs <= ratio_hi * R_expected):
+            if not _ratio_gate(obs, R_expected, ratio_lo, ratio_hi, candidate_rule):
                 continue
 
             # Envelope coherence: all intermediate M+j peaks must be present
             # and match their per-fragment expected ratio before accepting M+k.
             if require_envelope and k > 1:
                 # Disable envelope requirement for Cl/Br where M+2 dominates M+1
-                if k == 2 and R_expected > _frag_expected(m0_mz, 1):
+                if k == 2 and R_point > _ratio_point(_frag_expected(m0_mz, 1)):
                     pass
                 else:
                     envelope_ok = True
@@ -1074,12 +1206,18 @@ def detect_isotope_peaks_for_training(
                             break
                         _, mj_int = mj
                         R_exp_j = _frag_expected(m0_mz, j)
-                        if require_monotone and R_exp_j <= 1.0 and mj_int >= m0_int:
+                        if (
+                            require_monotone
+                            and _ratio_point(R_exp_j) <= 1.0
+                            and mj_int >= m0_int
+                        ):
                             envelope_ok = False
                             break
                         if m0_int > 0:
                             obs_j = mj_int / m0_int
-                            if not (ratio_lo * R_exp_j <= obs_j <= ratio_hi * R_exp_j):
+                            if not _ratio_gate(
+                                obs_j, R_exp_j, ratio_lo, ratio_hi, candidate_rule
+                            ):
                                 envelope_ok = False
                                 break
                     if not envelope_ok:
@@ -1107,10 +1245,9 @@ def detect_isotope_peaks_for_training_cleanup(
     max_leak_factor: float = 1.5,
     precursor_envelope_lo: float = 0.2,
     precursor_envelope_hi: float = 5.0,
-    dag_formula_mzs: np.ndarray | None = None,
-    dag_formula_strs: np.ndarray | None = None,
-    dag_mz_tol: float = 0.015,
-    protect_dag_mono: bool = False,
+    formula_source: FormulaSource | None = None,
+    candidate_rule: str = "median",
+    protect_known_mono: bool = False,
 ) -> np.ndarray:
     """Detect isotope peaks to remove from monoisotopic training targets.
 
@@ -1139,11 +1276,12 @@ def detect_isotope_peaks_for_training_cleanup(
             M2/M1 envelope ratio.
         precursor_envelope_hi: Upper bound for the normalized above-precursor
             M2/M1 envelope ratio.
-        dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.
-        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
-        dag_mz_tol: Absolute tolerance for matching peaks to DAG formula m/z.
-        protect_dag_mono: If True, never remove peaks that match a DAG
-            monoisotopic formula.
+        formula_source: Optional fragment-composition source (see
+            :func:`dag_formula_source` and :func:`subformula_formula_source`).
+        candidate_rule: How to test a ratio when the source returns several
+            compositions: ``"median"``, ``"all"``, or ``"any"``.
+        protect_known_mono: If True, never remove a peak the formula source can
+            explain as a monoisotopic ion of its own.
 
     Returns:
         Boolean mask of shape (N,), where True means remove this isotope peak.
@@ -1191,10 +1329,9 @@ def detect_isotope_peaks_for_training_cleanup(
             precursor_envelope_lo=precursor_envelope_lo,
             precursor_envelope_hi=precursor_envelope_hi,
             coiso_fraction_by_k=coiso_fraction_by_k,
-            dag_formula_mzs=dag_formula_mzs,
-            dag_formula_strs=dag_formula_strs,
-            dag_mz_tol=dag_mz_tol,
-            protect_dag_mono=protect_dag_mono,
+            formula_source=formula_source,
+            candidate_rule=candidate_rule,
+            protect_known_mono=protect_known_mono,
         )
 
     return remove_mask

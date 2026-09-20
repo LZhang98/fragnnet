@@ -536,3 +536,128 @@ def test_select_supported_formula_spectra_reports_exclusions():
         "excluded_molecules": 1,
         "unsupported_elements": ["Sn"],
     }
+
+
+def _ion_mz(ion_formula: str, charge: int) -> float:
+    """m/z of an ion given its full element composition and signed charge."""
+    return data_utils.formula_to_mass(ion_formula) - charge * clean_spectra_utils.ELECTRON_MASS
+
+
+def _candidate_masses(candidates: list[dict[str, int]], charge: int) -> list[float]:
+    return sorted(
+        sum(count * data_utils.ELEMENT_TO_MASS[element] for element, count in counts.items())
+        - charge * clean_spectra_utils.ELECTRON_MASS
+        for counts in candidates
+    )
+
+
+@pytest.mark.parametrize(
+    ("formula", "precursor_type"),
+    [
+        ("C9H8O4", "[M+H]+"),
+        ("C9H8O4", "[M-H]-"),
+        ("C6H12O6", "[M+Na]+"),
+        ("CH4O", "[M+Cl]-"),
+        ("C10H12ClNO2", "[M+H]+"),
+    ],
+)
+def test_subformula_candidates_reproduce_the_mass_grid(formula, precursor_type):
+    """The decomposer and the full grid must agree: same feasibility rule, same answers."""
+    grid = clean_spectra_utils._subformula_masses(formula, precursor_type)
+    charge = clean_spectra_utils._precursor_ion_charge(precursor_type)
+    tolerance_da = 0.004
+
+    for query in grid[:: max(1, len(grid) // 25)]:
+        candidates = clean_spectra_utils.subformula_candidates(
+            float(query), formula, precursor_type, tolerance_da
+        )
+        # The grid accumulates one composition's mass by several enumeration routes, so it can
+        # hold float-distinct copies of the same mass; compositions cannot. Compare the sets.
+        expected = sorted({round(mass, 5) for mass in grid[abs(grid - query) <= tolerance_da]})
+        got = sorted({round(mass, 5) for mass in _candidate_masses(candidates, charge)})
+
+        assert got == pytest.approx(expected, abs=1e-5)
+
+
+def test_subformula_candidates_return_the_fragment_composition():
+    """A mass alone cannot give an isotope ratio; the composition is the point of this call."""
+    acylium_mz = _ion_mz("C7H5O2", 1)
+
+    candidates = clean_spectra_utils.subformula_candidates(
+        acylium_mz, "C9H8O4", "[M+H]+", tolerance_da=0.004
+    )
+
+    assert {"C": 7, "H": 5, "O": 2} in candidates
+
+
+def test_subformula_candidates_include_charge_migration_ions():
+    """[frag+H]+ carries a proton M+Na cannot supply, so the CMF budget must reach it."""
+    protonated_mz = _ion_mz("CH5O", 1)
+
+    candidates = clean_spectra_utils.subformula_candidates(
+        protonated_mz, "CH4O", "[M+Na]+", tolerance_da=0.004
+    )
+
+    assert {"C": 1, "H": 5, "O": 1} in candidates
+
+
+def test_deprotonated_candidates_come_out_of_the_molecular_part():
+    """[M-H]- has already given up a hydrogen, so methoxide is CH3O and not CH4O."""
+    methoxide_mz = _ion_mz("CH3O", -1)
+
+    candidates = clean_spectra_utils.subformula_candidates(
+        methoxide_mz, "CH4O", "[M-H]-", tolerance_da=0.004
+    )
+
+    assert {"C": 1, "H": 3, "O": 1} in candidates
+    assert {"C": 1, "H": 4, "O": 1} not in candidates
+
+
+def test_subformula_candidates_keep_the_carrier_out_of_the_rdbe_test():
+    """Same rule as the filter: the molecular part is scored, the carrier is exempt."""
+    chloride_adduct_mz = _ion_mz("CH4OCl", -1)
+    impossible_mz = _ion_mz("H5", 1)
+
+    assert {"C": 1, "H": 4, "O": 1, "Cl": 1} in clean_spectra_utils.subformula_candidates(
+        chloride_adduct_mz, "CH4O", "[M+Cl]-", tolerance_da=0.004
+    )
+    assert (
+        clean_spectra_utils.subformula_candidates(
+            impossible_mz, "CH4O", "[M+Na]+", tolerance_da=0.004
+        )
+        == []
+    )
+
+
+def test_subformula_candidates_respect_the_mass_window():
+    """Inside the tolerance the composition is returned; past it, it is gone."""
+    acylium_mz = _ion_mz("C7H5O2", 1)
+    tolerance_da = 0.004
+
+    at_edge = clean_spectra_utils.subformula_candidates(
+        acylium_mz + 0.9 * tolerance_da, "C9H8O4", "[M+H]+", tolerance_da
+    )
+    beyond = clean_spectra_utils.subformula_candidates(
+        acylium_mz + 3 * tolerance_da, "C9H8O4", "[M+H]+", tolerance_da
+    )
+
+    assert {"C": 7, "H": 5, "O": 2} in at_edge
+    assert {"C": 7, "H": 5, "O": 2} not in beyond
+
+
+def test_subformula_candidates_reject_invalid_inputs():
+    with pytest.raises(ValueError, match="tolerance_da must be positive"):
+        clean_spectra_utils.subformula_candidates(100.0, "CH4O", "[M+H]+", tolerance_da=0.0)
+    with pytest.raises(ValueError, match="Unsupported precursor type"):
+        clean_spectra_utils.subformula_candidates(100.0, "CH4O", "[M+Xx]+", tolerance_da=0.004)
+    with pytest.raises(ValueError, match="Unsupported formula elements"):
+        clean_spectra_utils.subformula_candidates(100.0, "CH4Zn", "[M+H]+", tolerance_da=0.004)
+
+
+def test_subformula_candidates_stay_bounded_for_a_large_precursor():
+    """The window is what costs, not the grid: this precursor has 1.35M feasible ion masses."""
+    candidates = clean_spectra_utils.subformula_candidates(
+        500.0, "C43H66N12O12S2", "[M+H]+", tolerance_da=0.004
+    )
+
+    assert 0 < len(candidates) < 500

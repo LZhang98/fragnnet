@@ -1,6 +1,6 @@
 # fragnnet configuration template
 #
-# Self-contained: this file is the complete default configuration for `model_type: frag_gnn`.
+# Self-contained: this file is the complete default configuration for `model_type: frag_gnn` (aliases `fraggnet`, `fragnnet`).
 # A run resolves as: this template -> your custom config -> CLI --override.
 # Keys shared with the other templates in this directory are duplicated by design; a shared
 # default has to be changed in each file that uses it.
@@ -69,12 +69,17 @@ spec_params:
   subformula_ppm: 5.0 # only use if filter_subformula_peaks is True and subformula_use_instrument_tolerance is False
   subformula_use_instrument_tolerance: True
   drop_empty_spectra: True
-  # Monoisotopic target cleanup. NOT HOOKED UP: the feature is disabled and unsupported;
-  # the keys are kept only so older configs and checkpoints still resolve. The code path
-  # (`BaseDataset._remove_isotope_peaks_from_spec`) is still in the tree, but its
-  # DAG-formula branch needs `frag_dp`, which only the FraGNNet template declares.
-  # When it was on, isotope peaks were removed from observed spectra before they became
-  # training/evaluation targets; isotope envelopes could then be added back as a post-process.
+  # Monoisotopic target cleanup. NOT HOOKED UP: the feature is off everywhere and no run has
+  # been evaluated with it on; the keys are kept so older configs and checkpoints still
+  # resolve. When on, isotope peaks are removed from observed spectra before they become
+  # training/evaluation targets; isotope envelopes can then be added back as a post-process.
+  # `remove_isotope_formula_source` picks where a fragment's composition comes from, which is
+  # what the expected M+k/M+0 ratio needs: `subformula` decomposes the peak against the
+  # precursor formula and works for every model, `dag` reads the molecule's DAG and therefore
+  # needs `frag_dp`, which only the FraGNNet template declares, and `none` falls back to the
+  # m/z-scaled precursor proxy (wrong for Cl/Br). Measured head to head on 1,500 FT NIST20
+  # spectra, subformula and DAG agree on 99.2% of peak decisions:
+  # docs/plans/subformula_isotope_detection_plan.md.
   remove_isotope_peaks: False
   remove_regular_isotope_peaks: False
   remove_coisolation_peaks: False
@@ -86,15 +91,19 @@ spec_params:
   remove_isotope_precursor_envelope_hi: 5.0
   remove_isotope_group_min_count: 1
   remove_isotope_group_max_cv: 1.0
-  remove_isotope_use_dag_formula: False
+  remove_isotope_formula_source: none  # ["none", "subformula", "dag"]
+  remove_isotope_candidate_rule: median  # ["median", "all", "any"] when subformulas disagree
+  remove_isotope_subformula_mz_tol:  # blank = instrument tolerance
+  remove_isotope_use_dag_formula: False  # SUPERSEDED by remove_isotope_formula_source: dag
   remove_isotope_dag_dp:
   remove_isotope_dag_compressed: False
   remove_isotope_dag_mz_tol: 0.015
-  remove_isotope_protect_dag_mono: False
+  remove_isotope_protect_known_mono: False  # never flag a peak the source explains on its own
+  remove_isotope_protect_dag_mono: False  # SUPERSEDED by remove_isotope_protect_known_mono
   remove_isotope_regular_mz_tol:
   unique_id: True
   counts: True
-  # this is deplicated and will be removed in favor of split_filters.val.filter_ce_by_inst.QTOF. Use split_filters instead.
+  # Deprecated; superseded by split_filters.val.filter_ce_by_inst.QTOF. Use split_filters instead.
   test_ces:
   # Per-split spectrum filters applied at dataset load time.
   # Only the entry matching the current split is used.  Missing entry = no filter.
@@ -136,10 +145,12 @@ mol_params:
     - a_chiral
     # - a_ring_size # ring size membership: [in3, in4, in5, in6, inGe7]; no DAG recomputation needed
     # - a_charge    # Gasteiger partial charge (continuous); computed on-the-fly, no DAG recomputation needed
+    # - a_num_hs    # total H count one-hot [0, 1, 2, 3, >=4]; complements a_degree (heavy-atom only)
   pyg_edge_feats:
     - b_degree
     # - b_ring      # bond ring membership (2 bits); no DAG recomputation needed
     # - b_conj      # bond conjugation (2 bits); no DAG recomputation needed
+    # - b_stereo    # bond stereo one-hot (none/any/Z/E/cis/trans + unspecified); preprocessing strips stereo
   pyg_pe_embed_k: 0
   pyg_bigraph: True
   mf: False
@@ -149,9 +160,12 @@ mol_params:
 # ============================================================================
 # Model Architecture
 # ============================================================================
-model_type: frag_gnn  # Model type: ["frag_gnn", "mass_shatter", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
+# Model type. Full list: MODEL_CONFIG_TEMPLATE in src/fragnnet/runner.py -- frag_gnn (aliases
+# fraggnet, fragnnet), mass_shatter, neims, massformer, iceberg_gen, iceberg_inten, graff,
+# precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
+model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
-int_embedder: abs-sines  # Integer embedder type: ["linear", "abs-sines", "sinusoidal"]
+int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
 int_embedder_tight: False  # Use tight integer range for embeddings
 output_formula_str: False  # Output formula as string (slower but useful for debugging)
 
@@ -161,10 +175,10 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 # ============================================================================
 mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
-mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GCN", "GAT", "PNA"]
+mol_gnn_type: GINE  # GNN architecture: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GAT", "GATv2", "GGNN", "MPNN", "NodeMLP"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
-mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
-mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
+mol_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]; Graphormer requires "layer"
+mol_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "set_transformer", "equilibrium", "mean_max_sum", "mean_std_softmax", "none"]
 mol_num_heads: 4  # Attention heads (GINE_GSA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
 mol_max_degree: 64  # Graphormer: largest atom degree the degree embedding distinguishes
 mol_max_spatial_distance: 128  # Graphormer: largest shortest-path distance the spatial embedding distinguishes
@@ -199,7 +213,11 @@ loss_batch_size: 32
 loss_tolerance_min_mz: 200.0
 # Per-instrument-type tolerance override. When set, overrides loss_tolerance_rel/abs for
 # specific instrument types. All entries must use relative tolerance (rel + min_mz).
-# Example: QTOF floor 0.015 Da covers NIST23 floor-truncated m/z (up to 0.009 Da error).
+# The QTOF floor of 0.015 Da covers NIST23 floor-truncated m/z (up to 0.009 Da error).
+# Example:
+# inst_type_loss_tol:
+#   FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
+#   QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
 inst_type_loss_tol: # null = use global loss_tolerance_rel/abs for all inst types
 auxiliary_scores:
   - cos_sim
@@ -224,8 +242,8 @@ target_rel_ints_thresh: 0.0
 train_target_top_k_peaks: -1
 train_target_drop_min_int_peak: False
 eval_target_apply_train_rank_filters: False
-mz_max: 1500.0  # this is also used for bin-specific seondary loss
-mz_bin_res: 0.01 # this is also used for bin-specific seondary loss
+mz_max: 1500.0  # also used for the bin-specific secondary loss
+mz_bin_res: 0.01 # also used for the bin-specific secondary loss
 eval_mz_bin_res:
   - 0.1
   - 0.01
@@ -257,8 +275,9 @@ log_every_n_steps: 0
 # Loss Weights Configuration
 # ============================================================================
 primary_loss_weight: 1.0
-# Online adjacent-CE base-winner supervision. The v1 loss is training-only and
-# requires either CE-context batch sampler when enabled.
+# Online adjacent-CE base-winner supervision. The v1 loss is training-only and, when enabled,
+# requires either batch_sampler_type: ce_context or mass_shatter_batch_sampler: True, plus
+# ce_pair_min_endpoint_confidence set and target_rel_ints_thresh in (0, 1).
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
 # Reserved for the replicate audit; non-null values fail until the table is wired.
@@ -269,7 +288,7 @@ ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 # Same-fragment adjacent-eV delta supervision for MASShatter. Requires shared
 # proposals, unique-fragment mode, and CE-context batches.
 cross_ev_fragment_loss_weight: 0.0
-# nb stuff, set all to 0 to disable
+# nb (isotope) options; set the nb_* entropy weights below to 0 to disable.
 nb_iso: False
 # DAG-based models only; MASShatter has no OOS class.
 predict_oos: False
@@ -313,11 +332,11 @@ ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
 # nce_max: 60
 # -- Precursor Type Configuration --
 
-prec_insert_location: none  # Where precursor type is inserted: ["none","mol_input","frag_input","mlp_input"]
+prec_insert_location: none  # Where precursor type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
 prec_insert_size: 32  # Dimension of precursor type embedding (must match MCES config if using pre-training)
 # -- Instrument Type Configuration --
 
-inst_insert_location: none  # Where instrument type is inserted: ["none","mol_input","frag_input","mlp_input"]
+inst_insert_location: none  # Where instrument type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
 inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
 # -- Fragmentation Mode Configuration --
 
@@ -330,9 +349,9 @@ frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 context_embedding: False
 context_embedding_dim: 64       # width of the produced context vector
 context_embedding_hidden_dim: 64  # hidden width of the combining MLP
-# Both Lightning wrappers pass spec_params.nce/ace as the model's use_nce/use_ace
-# arguments; these top-level keys do not override that wiring. When both model
-# arguments are True, the two CE embeddings are concatenated, doubling the CE dim.
+# This model's Lightning wrapper passes spec_params.nce/ace as the model's use_nce/use_ace
+# arguments; these top-level keys do not override that wiring. When both model arguments
+# are True, the two CE embeddings are concatenated, doubling the CE dim.
 use_nce: True
 use_ace: False
 
@@ -428,13 +447,10 @@ share_memory: False
 log_min: 0.000000001 # 1e-9
 eval_test_split: False
 
-# Precursor-pair loss: read by SpectrumPL/FraGNNetPL, not by model_type: precursor.
-# precursor model configuration
-#
-# Overlay applied on top of config/*_template.yml when `model_type` selects this model.
-# Only keys owned by this model live here; everything shared stays in the base template.
-# Resolution order: template.yml -> this file -> your custom config -> CLI --override.
 # ============================================================================
+# Precursor-pair loss
+# ============================================================================
+# Read by SpectrumPL/FraGNNetPL, not by `model_type: precursor`, so every template carries it.
 # Within-spectrum low-CE precursor-versus-strongest-supported-fragment supervision.
 precursor_pair_loss_weight: 0.0
 precursor_pair_nce_min: 0.0
@@ -463,9 +479,14 @@ frag_params:
     # - rdbe                # ring-and-double-bond equivalents, 1 + sum_i n_i*(v_i-2)/2.
     #                       # REQUIRES base_formula + h_counts (base_formula has no H column);
     #                       # h_counts adds a DAG column but contributes 0 feature dims
-    # - prepass_rule_id     # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
+    # - neutral_loss_formula # precursor formula minus this fragment's; REQUIRES base_formula + depth
+    # - frag_q              # summed Gasteiger charge over the fragment's atoms; computed on-the-fly
+    # - out_degree          # DAG out-degree of the fragment node
+    # - in_degree           # DAG in-degree of the fragment node
+    # - num_heavy_atoms     # heavy-atom count of the fragment
     # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
-    # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; does not expose full-fragment cc
+    # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; superseded by cut_bond
+    # - cut_bond            # cut bonds as (retained, lost) pairs; see cut_bond_hidden_dim below
   pyg_edge_feats:
     - cc
     - base_formula
@@ -487,7 +508,7 @@ frag_params:
   include_cmf: False
 
 num_depth: 5  # Maximum fragmentation depth for DAG
-num_elements: 17  # Number of elements including H (16 heavy: 13 base + As + B + Hg + Sn + Pb)
+num_elements: 17  # Number of elements including H (16 heavy: 11 base + As + B + Hg + Sn + Pb)
 # GINE_GATED: each bond's message is scaled by a context-conditioned scalar gate in [0, 2], so
 # which bonds conduct can change with CE/adduct instead of context only rescaling the output.
 # Requires context_embedding: True (supplies the conditioning vector). Zero-init => gate == 1.0
@@ -527,12 +548,12 @@ cc_atom_dropout: 0.0
 # ============================================================================
 frag_hidden_size: 256  # Hidden dimension for fragment GNN
 frag_num_layers: 4  # Number of GNN layers for fragment encoding
-frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
+frag_gnn_type: GINE  # GNN architecture for fragments: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GAT", "GATv2", "GGNN", "MPNN", "NodeMLP"]
 frag_dropout: 0.0  # Dropout rate for fragment GNN
-frag_normalization: batch  # Normalization: ["batch", "layer", "none"]
-frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
-frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
-frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
+frag_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]
+frag_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "set_transformer", "equilibrium", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
+frag_embed_combine: cat  # How to combine fragment embeddings: ["cat", "avg"]
+frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "concat", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
 
 # ============================================================================
 # MLP/Output Configuration
@@ -565,8 +586,6 @@ frag_competition_dropout: 0.1
 frag_competition_detach_encoder: True
 frag_competition_max_delta: 5.0
 mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
-#   FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
-#   QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
 bin_output: False
 # H(P(formula)): penalizes spread across empirical formulas. Indirect effect on peak sparsity
 # since multiple nodes can share the same formula. Raw scale — grows with number of formulas.
