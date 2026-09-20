@@ -302,7 +302,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 def get_args():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--template_fp", type=str, default="config/models_template", help="Path to the config file"
+        "--template_fp", type=str, default="config", help="Path to the config file"
     )
     parser.add_argument(
         "--custom_fp",

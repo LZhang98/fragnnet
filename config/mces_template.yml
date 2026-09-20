@@ -19,7 +19,6 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey  # Train/val/test split directory
-frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
 
 # ============================================================================
 # Data Processing Parameters
@@ -69,9 +68,12 @@ spec_params:
   subformula_ppm: 5.0 # only use if filter_subformula_peaks is True and subformula_use_instrument_tolerance is False
   subformula_use_instrument_tolerance: True
   drop_empty_spectra: True
-  # Monoisotopic target cleanup. When True, isotope peaks are removed from
-  # observed spectra before they become training/evaluation targets; isotope
-  # envelopes can then be added back as a post-process.
+  # Monoisotopic target cleanup. NOT HOOKED UP: the feature is disabled and unsupported;
+  # the keys are kept only so older configs and checkpoints still resolve. The code path
+  # (`BaseDataset._remove_isotope_peaks_from_spec`) is still in the tree, but its
+  # DAG-formula branch needs `frag_dp`, which only the FraGNNet template declares.
+  # When it was on, isotope peaks were removed from observed spectra before they became
+  # training/evaluation targets; isotope envelopes could then be added back as a post-process.
   remove_isotope_peaks: False
   remove_regular_isotope_peaks: False
   remove_coisolation_peaks: False
@@ -428,7 +430,7 @@ eval_test_split: False
 # Precursor-pair loss: read by SpectrumPL/FraGNNetPL, not by model_type: precursor.
 # precursor model configuration
 #
-# Overlay applied on top of config/models_template when `model_type` selects this model.
+# Overlay applied on top of config/*_template.yml when `model_type` selects this model.
 # Only keys owned by this model live here; everything shared stays in the base template.
 # Resolution order: template.yml -> this file -> your custom config -> CLI --override.
 # ============================================================================
@@ -454,7 +456,7 @@ mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 # MCES pair file path; belongs with the other shared data paths.
 # mces model configuration
 #
-# Overlay applied on top of config/models_template when `model_type` selects this model.
+# Overlay applied on top of config/*_template.yml when `model_type` selects this model.
 # Only keys owned by this model live here; everything shared stays in the base template.
 # Resolution order: template.yml -> this file -> your custom config -> CLI --override.
 # ============================================================================

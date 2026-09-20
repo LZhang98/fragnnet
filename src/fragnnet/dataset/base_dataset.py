@@ -419,7 +419,7 @@ class BaseDataset(Dataset):
                 raise ValueError(
                     "spec_params is missing required spectrum cleanup settings "
                     f"{sorted(missing_cleanup_params)}. Merge old checkpoint settings with "
-                    "the current config/models_template before enabling spectrum cleanup."
+                    "the current config/*_template.yml before enabling spectrum cleanup."
                 )
             cleanup_enabled = (
                 spec_params["centroid_peaks"]
@@ -472,7 +472,7 @@ class BaseDataset(Dataset):
                 raise ValueError(
                     "spec_params is missing required merge settings "
                     f"{sorted(missing_merge_params)}. Merge old checkpoint settings with "
-                    "the current config/models_template before constructing a dataset."
+                    "the current config/*_template.yml before constructing a dataset."
                 )
             spec_df = merge_spec_df(
                 spec_df,
@@ -501,7 +501,12 @@ class BaseDataset(Dataset):
         return spec_df, mol_df, um_spec_df, split_df, id_key, ce_key
 
     def _setup_isotope_peak_cleanup(self) -> None:
-        """Precompute group-level co-isolation fractions for isotope cleanup."""
+        """Precompute group-level co-isolation fractions for isotope cleanup.
+
+        NOT HOOKED UP: ``remove_isotope_peaks`` is off in every template and the feature is
+        unsupported; this returns immediately. The code is kept until isotope cleanup is
+        either rewired or removed.
+        """
         self.group_coiso_fraction_by_k: dict[int, dict[int, float]] = {}
         self._isotope_dag_formula_cache: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
         if not self.spec_params["remove_isotope_peaks"]:
@@ -932,7 +937,11 @@ class BaseDataset(Dataset):
     def _remove_isotope_peaks_from_spec(
         self, spec_entry: pd.Series, mzs: th.Tensor, ints: th.Tensor
     ) -> tuple[th.Tensor, th.Tensor]:
-        """Remove isotope peaks from a spectrum for monoisotopic training targets."""
+        """Remove isotope peaks from a spectrum for monoisotopic training targets.
+
+        NOT HOOKED UP: reachable only with ``remove_isotope_peaks: True``, which no template
+        sets any more (see :meth:`_setup_isotope_peak_cleanup`).
+        """
         if mzs.numel() == 0:
             return mzs, ints
         required_cols = {"group_id", "mol_id", "prec_type", "inst_type", "prec_mz"}

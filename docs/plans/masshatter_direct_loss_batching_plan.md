@@ -272,7 +272,7 @@ that wheel (`setup_job_cc.py:396`), so a cluster job reaches a backend no local 
 All four live under `config/massshatter/ma_mi_merged/` and are derived from `..._ctrl_2g.yml` by
 textual substitution, so the model, data, shape and instrumentation keys are byte-identical to that
 control. Verified after generation: each resolves through `load_config` against the current
-`config/models_template`, all five configs carry the **same 417-key set**, and each arm's resolved diff
+`config/*_template.yml`, all five configs carry the **same 417-key set**, and each arm's resolved diff
 against the control is exactly its declared axis plus the three `wandb_*` identity keys — nothing
 else. `mass_shatter_h_transfer_bound` is `none` in all five, inherited from the new template
 default, so these arms keep the historical H ladder and are not entangled with that change.

@@ -38,7 +38,7 @@ def get_args():
     parser.add_argument(
         "--template_fp",
         type=str,
-        default="config/models_template",
+        default="config",
         help="Path to the template config file",
     )
     parser.add_argument(

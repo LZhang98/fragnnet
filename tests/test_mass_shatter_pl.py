@@ -40,7 +40,7 @@ from fragnnet.utils.spec_utils import calculate_match_mzs
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
-    template_path = Path(__file__).parents[1] / "config" / "models_template"
+    template_path = Path(__file__).parents[1] / "config"
     # Resolve through load_config so the mass_shatter overlay is applied, as a real run does.
     config = runner.load_config(str(template_path), None, None, model_type="mass_shatter")
     config.update(
@@ -338,7 +338,7 @@ def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:
 
 
 def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
-    template_path = Path(__file__).parents[1] / "config" / "models_template"
+    template_path = Path(__file__).parents[1] / "config"
     spec_params = runner.load_config(
         str(template_path), None, None, model_type="mass_shatter"
     )["spec_params"]

@@ -983,7 +983,7 @@ intensity, and spectral metrics at the same checkpoint epoch.
 
 ## Configuration contract
 
-Declare every new field in `config/models_template`; do not use fallback access:
+Declare every new field in `config/*_template.yml`; do not use fallback access:
 
 ```yaml
 mass_shatter_separate_ion_mode_proposal_head: False
@@ -1485,7 +1485,7 @@ Possible outcomes have distinct meanings:
 - `src/fragnnet/pl_model/mass_shatter_pl.py`
   - mode/channel labels and balanced auxiliary losses
   - fragment/mode/channel metrics and logging
-- `config/models_template`
+- `config/*_template.yml`
   - required compatibility-safe hyperparameters
 - `scripts/eval/`
   - fixed-checkpoint MAP-relative, fixed-k, and cumulative evaluation sweep

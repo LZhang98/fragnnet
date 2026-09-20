@@ -35,7 +35,7 @@ def get_args() -> argparse.Namespace:
             "H-transfer/formula ion P(f|n), or whether node mass itself was missing."
         )
     )
-    parser.add_argument("--template_fp", type=str, default="config/models_template")
+    parser.add_argument("--template_fp", type=str, default="config")
     parser.add_argument("--custom_fp", type=str, required=True)
     parser.add_argument("--wandb_run_id", type=str, default=None)
     parser.add_argument("--model_save_dp", type=str, default="saved_ckpts")

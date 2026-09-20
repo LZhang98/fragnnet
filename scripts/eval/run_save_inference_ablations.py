@@ -94,7 +94,7 @@ if __name__ == "__main__":
     model_to_config = NestedDefaultDict()
 
     # find wandb checkpoints
-    template_fp = "config/models_template"
+    template_fp = "config"
     api = wandb.Api()
     for ablation_model_type in ablation_model_types:
         model_to_config[ablation_model_type] = (

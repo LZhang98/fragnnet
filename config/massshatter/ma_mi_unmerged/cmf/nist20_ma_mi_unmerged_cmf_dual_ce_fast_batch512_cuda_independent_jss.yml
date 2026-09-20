@@ -127,7 +127,7 @@ mol_params:
   preprocess: true
   pyg_node_feats:
   - a_onehot
-  - a_degree_onehot
+  - a_degree
   - a_hybrid
   - a_formal
   - a_radical
@@ -231,7 +231,7 @@ eval_mz_bin_res:
 mass_shatter_candidate_backend: cuda
 
 # Independent-intensity output bundle. None of these keys exist in the parent config; they
-# come from config/models_template defaults there, so they are set explicitly here.
+# come from config/*_template.yml defaults there, so they are set explicitly here.
 mass_shatter_intensity_output: independent
 mass_shatter_peak_matching: hungarian
 mass_shatter_separate_ion_h_support_head: true

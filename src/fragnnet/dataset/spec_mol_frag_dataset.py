@@ -79,6 +79,9 @@ class SpecMolFragDataset(SpecMolDataset):
 
         BaseDataset.__init__(self)
         spec_params = dict(spec_params)
+        # NOT HOOKED UP: isotope cleanup is disabled in every template. FraGNNet is also the
+        # only model whose config still carries `frag_dp`, so this is the only place the
+        # DAG-formula branch of that cleanup could be fed at all.
         if (
             spec_params.get("remove_isotope_peaks", False)
             and spec_params.get("remove_isotope_use_dag_formula", True)

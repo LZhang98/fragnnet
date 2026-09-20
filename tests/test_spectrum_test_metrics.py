@@ -12,7 +12,7 @@ from fragnnet.runner import load_config
 @pytest.mark.parametrize("score", ["ndcg", "true_oos_prob", "true_oos_e"])
 @pytest.mark.parametrize("split", ["test", "predict"])
 def test_indexed_metrics_match_validation(score, split):
-    config = load_config("config/models_template", None, None)
+    config = load_config("config", None, None)
     config.update(auxiliary_scores=[score], sparse_cosine_similarity=True)
     pl = SimpleNamespace(
         hparams=SimpleNamespace(**config), metric_names=set(),
@@ -41,7 +41,7 @@ def test_indexed_metrics_match_validation(score, split):
 
 def _binned_metric_pl(**config_overrides):
     """Minimal SpectrumPL stand-in wired for the binned auxiliary metrics."""
-    config = load_config("config/models_template", None, None)
+    config = load_config("config", None, None)
     config.update(
         auxiliary_scores=["cos_sim"],
         eval_mz_bin_res=[0.01],

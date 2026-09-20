@@ -424,7 +424,7 @@ def main(args):
 
     custom_config_fp = None
     # default config template
-    config_template_fp = os.path.join(args.frag_gnn_dp, "config", "models_template")
+    config_template_fp = os.path.join(args.frag_gnn_dp, "config")
     config_d = {}
 
     # Check if running sweep script

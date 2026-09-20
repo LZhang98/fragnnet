@@ -215,4 +215,4 @@ See [pyproject.toml](pyproject.toml) for the complete dependency list.
 - See [docs/guides/finetune_fragnnet.md](docs/guides/finetune_fragnnet.md) for model fine-tuning
 - See [docs/guides/run_inference.md](docs/guides/run_inference.md) for inference pipelines
 - Run tests: `pytest tests/ -v`
-- Check configs: See `config/models_template` for experiment configuration
+- Check configs: See `config/<model>_template.yml` for experiment configuration

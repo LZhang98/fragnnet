@@ -136,7 +136,7 @@ a_formal, a_radical, a_ring` (ring + aromatic), `a_mass, a_chiral, a_ring_size, 
 
 | GLACIER has | us |
 |---|---|
-| Degree one-hot + overflow | `a_degree`'s 12 one-hot columns are dead (list-vs-int); `a_degree_onehot` is a written drop-in used by zero configs |
+| Degree one-hot + overflow | `a_degree`'s 12 one-hot columns were dead (list-vs-int); repaired in place 2026-09-20 at unchanged width |
 | Fused-ring, atoms and bonds | absent |
 | Bond ring-size multi-hot | atoms only (`a_ring_size`) |
 | Bond stereo | `b_stereo` registered, unused |
@@ -144,7 +144,7 @@ a_formal, a_radical, a_ring` (ring + aromatic), `a_mass, a_chiral, a_ring_size, 
 | - | we add `a_mass`, `a_radical` |
 
 Note the `feature_set_audit` "gaps `a_ring_size`, `b_ring`" line is **template-only** — MASShatter
-configs enable both, plus `b_conj` and `a_num_hs`. `config/models_template` still has them commented.
+configs enable both, plus `b_conj` and `a_num_hs`. `config/*_template.yml` still has them commented.
 
 ## Split
 

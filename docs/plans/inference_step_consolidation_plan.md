@@ -282,7 +282,7 @@ was used to predict 4 molecules x 6 conditions through the documented three-step
 found two defects that no unit test covered.
 
 **Prediction-only runs were dropping every spectrum.** `spec_params.drop_empty_spectra` is
-True in [`config/models_template`](../../config/models_template), and
+True in [`config/*_template.yml`](../../config/), and
 `BaseDataset._setup_dfs` runs the spectrum cleanup group whenever the config carries it. An
 inference `spec_df` has `peaks == []` by construction, so cleanup removed all 24 spectra:
 the dataset came back empty and `run_inference.py` printed `Total predictions: 0` and
@@ -381,7 +381,7 @@ where the evaluation output resembles the squared prediction. `resolve_pred_ints
 and the paths really do agree.
 
 **`cos_hun_inst_tol` was silently exporting -1 for every spectrum - fixed.**
-`inst_type_loss_tol` is null in [`config/models_template`](../../config/models_template) (its
+`inst_type_loss_tol` is null in [`config/*_template.yml`](../../config/) (its
 entries are commented out), so `_setup_tolerance` registers `inst_tol_lookup` as None and
 `_common_step` skips the metric - but the name is registered regardless, so the column was
 written as -1.0 for all 378 spectra and the run reported success. The score is in

@@ -56,7 +56,7 @@ checkpoint tensor names/shapes stay unchanged. CUDA reduction differences requir
 numerical tolerances and gradient checks; they do not excuse different discrete candidates.
 
 The GPU integration introduces this setting in
-[template.yml](../../config/models_template), with matching config comments and validation:
+[the model templates](../../config/), with matching config comments and validation:
 
 ```yaml
 # Candidate construction only, independent of the CPU backend's model device.

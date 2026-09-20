@@ -29,7 +29,7 @@
 
 ## Boundaries and canonical references
 
-- Configuration: [config/models_template/](../config/models_template/) holds one self-contained
+- Configuration: [config/](../config/) holds one self-contained `<model>_template.yml`
   template per model, selected by `model_type`; there is no shared base.
   [config README](../config/README.md) documents the resolution order, duplication and validation.
 - Fragment generation: [frag/](../src/fragnnet/frag/) includes Python and Cython code;

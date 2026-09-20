@@ -129,7 +129,7 @@ instead of assuming it.**
 ### The arms exist, resolve, and are one knob each
 
 All eight configs under `config/massshatter/ma_mi_merged/` resolve through `load_config` against
-the current `config/models_template`, and the resolved diff against the base is exactly one key:
+the current `config/*_template.yml`, and the resolved diff against the base is exactly one key:
 
 | Arm config suffix | Resolved delta from base | Prior |
 | --- | --- | --- |
@@ -185,7 +185,7 @@ missing override cannot silently break comparability, and the W&B read-out is on
 | `ms_reg_hbound_complement` | `_hbound_complement` | `mass_shatter_h_transfer_bound` |
 | `ms_reg_hbound_valence` | `_hbound_valence` | `mass_shatter_h_transfer_bound` |
 
-Verified after generation: each config resolves against `config/models_template`, has the identical key
+Verified after generation: each config resolves against `config/*_template.yml`, has the identical key
 set, and differs from `ctrl_a` in **exactly** the keys of its declared axis and nothing else. The
 original `nist20_ma_mi_merged_fast_batch512_cuda_lb64.yml` is left untouched (still
 `compute_train_auxiliary_metrics: False`) so the four-replicate lineage keeps its config identity;

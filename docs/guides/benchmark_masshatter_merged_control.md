@@ -207,7 +207,7 @@ completion, so a chain that reaches `max_epochs` will start the next link from s
 
 ## What was verified
 
-- All six configs resolve through `load_config` against `config/models_template`, and the resolved
+- All six configs resolve through `load_config` against `config/*_template.yml`, and the resolved
   diff against each unmerged base is exactly the table above.
 - The merged dataset constructs on real NIST20 data.
 - `tolerance_consensus` merging of whole multi-spectrum groups produces consensus peak lists and

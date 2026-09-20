@@ -37,7 +37,7 @@ from fragnnet.utils.pl_utils import ConsoleLogger, migrate_mass_shatter_proposal
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
-# Each model_type resolves to one self-contained template in `config/models_template/`.
+# Each model_type resolves to one self-contained `config/<name>_template.yml`.
 # Several model types share a template because they share the same settings.
 MODEL_CONFIG_TEMPLATE = {
     "frag_gnn": "fragnnet",
@@ -55,7 +55,7 @@ MODEL_CONFIG_TEMPLATE = {
     "clip": "clip",
     "spec_mol_clip_pretraining": "clip",
 }
-DEFAULT_TEMPLATE_DIR = "config/models_template"
+DEFAULT_TEMPLATE_DIR = "config"
 # What a config that declares no `model_type` means. The single shared template used to carry
 # this as its default; with one template per model it has to be named.
 DEFAULT_MODEL_TYPE = "frag_gnn"
@@ -102,7 +102,7 @@ def model_template_fp(template_fp: str, model_type: str | None) -> str:
         raise ValueError(
             f"unknown model_type {model_type!r}; known types: {sorted(MODEL_CONFIG_TEMPLATE)}"
         )
-    resolved = os.path.join(template_fp, f"{MODEL_CONFIG_TEMPLATE[model_type]}.yml")
+    resolved = os.path.join(template_fp, f"{MODEL_CONFIG_TEMPLATE[model_type]}_template.yml")
     if not os.path.isfile(resolved):
         raise FileNotFoundError(
             f"missing config template for model_type {model_type!r}: {resolved}"
@@ -125,7 +125,7 @@ def _other_model_keys(resolved_template_fp: str, config_d: dict) -> set[str]:
     """
     template_dir = os.path.dirname(resolved_template_fp) or "."
     keys: set[str] = set()
-    for path in sorted(glob.glob(os.path.join(template_dir, "*.yml"))):
+    for path in sorted(glob.glob(os.path.join(template_dir, "*_template.yml"))):
         if os.path.abspath(path) == os.path.abspath(resolved_template_fp):
             continue
         with open(path) as template_file:
@@ -171,7 +171,7 @@ def load_config(
 ) -> dict:
     """Resolve a model template, the experiment config, and CLI overrides.
 
-    Each model has one self-contained template in ``config/models_template/``, chosen by
+    Each model has one self-contained ``config/<name>_template.yml``, chosen by
     ``model_type`` - taken from the custom config, else from ``model_type``. Passing a single
     template file instead of the directory uses that file directly, which is how a template
     saved inside a checkpoint resolves.

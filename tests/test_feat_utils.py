@@ -13,7 +13,6 @@ from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,
     AtomDegree,
-    AtomDegreeOneHot,
     AtomFormal,
     AtomHybrid,
     AtomMass,
@@ -1113,39 +1112,52 @@ class TestRandomWalkPE:
 
 
 class TestDegreeEncodings:
-    """``a_degree`` versus its corrected replacement (feature audit §7.1)."""
+    """``a_degree``'s one-hot, repaired in place (feature audit §7.1)."""
 
     @pytest.fixture
     def aspirin_mol(self):
         return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
 
-    def test_a_degree_one_hot_is_inert(self, aspirin_mol):
-        """Documented defect: a list never matches, so every atom takes the unknown bucket."""
-        one_hots = np.array([AtomDegree.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()])
-
-        assert (one_hots[:, -1] == 1).all()
-        assert one_hots[:, :-1].sum() == 0
-
-    def test_a_degree_onehot_keeps_the_width_and_encodes_the_degree(self, aspirin_mol):
-        """The replacement is a drop-in: same width, live one-hot."""
-        assert AtomDegreeOneHot.feat_size == AtomDegree.feat_size
-
+    def test_one_hot_encodes_the_heavy_atom_degree(self, aspirin_mol):
+        """Two raw values, then a live one-hot of ``GetDegree()``."""
         for atom in aspirin_mol.GetAtoms():
-            feat = AtomDegreeOneHot.featurize(atom)
-            assert len(feat) == AtomDegreeOneHot.feat_size
+            feat = AtomDegree.featurize(atom)
+
+            assert len(feat) == AtomDegree.feat_size == 14
             assert feat[0] == atom.GetDegree()
             assert feat[1] == atom.GetTotalDegree()
             assert sum(feat[2:]) == 1
             assert feat[2 + atom.GetDegree()] == 1
 
-    def test_a_degree_onehot_varies_across_atoms(self, aspirin_mol):
-        """The columns the broken encoding left constant now carry signal."""
-        one_hots = np.array(
-            [AtomDegreeOneHot.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()]
-        )
+    def test_the_unknown_bucket_no_longer_absorbs_every_atom(self, aspirin_mol):
+        """The defect: passing the pair ``[degree, total_degree]`` pinned column 13 to 1."""
+        one_hots = np.array([AtomDegree.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()])
+
+        assert (one_hots[:, -1] == 0).all()
+        assert one_hots[:, :-1].sum() == aspirin_mol.GetNumAtoms()
+
+    def test_the_formerly_constant_columns_now_carry_signal(self, aspirin_mol):
+        """All 12 one-hot columns used to be constant across every atom of every molecule."""
+        one_hots = np.array([AtomDegree.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()])
         varying = [i for i in range(one_hots.shape[1]) if np.ptp(one_hots[:, i]) > 0]
 
         assert len(varying) >= 3
+
+    def test_an_out_of_range_degree_falls_back_to_the_unknown_bucket(self):
+        """The bucket still exists for degrees above the allowable set."""
+
+        class _Atom:
+            def GetDegree(self):
+                return 99
+
+            def GetTotalDegree(self):
+                return 99
+
+        feat = AtomDegree.featurize(_Atom())
+
+        assert len(feat) == AtomDegree.feat_size
+        assert feat[-1] == 1
+        assert sum(feat[2:]) == 1
 
 
 class TestSharedElementOrder:

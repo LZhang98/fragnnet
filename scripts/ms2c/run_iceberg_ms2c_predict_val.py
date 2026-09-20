@@ -114,7 +114,7 @@ def get_args():
     parser.add_argument("--run_iceberg_inten", type=booltype, default=True, help="")
     parser.add_argument("--iceberg_inten_custom_fp", type=str, required=False, help="")
     parser.add_argument(
-        "--iceberg_inten_template_fp", type=str, default="./config/models_template", help=""
+        "--iceberg_inten_template_fp", type=str, default="./config", help=""
     )
     parser.add_argument(
         "--iceberg_inten_num_workers", type=int, default=get_core_count(), help=""

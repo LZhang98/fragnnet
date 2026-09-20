@@ -103,7 +103,7 @@ def capture_trained_logits(
 ) -> tuple[MolecularBatch, th.Tensor]:
     """Return one batch and the trained bond logits its proposal path produces.
 
-    The checkpoint's saved hyperparameters are filled from `config/models_template` where keys are
+    The checkpoint's saved hyperparameters are filled from `config/*_template.yml` where keys are
     absent, then loaded non-strictly: only encoder, bond-break-head and charge-head tensors must
     match, so a checkpoint predating the current intensity head remains usable. A forward hook
     captures the bond logits, and the rest of the forward is allowed to fail because the
@@ -113,7 +113,7 @@ def capture_trained_logits(
         ValueError: The proposal path did not load completely, or no logits were captured.
     """
     checkpoint = th.load(checkpoint_path, map_location="cpu", weights_only=False)
-    config = _deep_fill(dict(checkpoint["hyper_parameters"]), load_config("config/models_template", None, None))
+    config = _deep_fill(dict(checkpoint["hyper_parameters"]), load_config("config", None, None))
     config.update(num_workers=0, share_memory=False, pl_enable_progress_bar=False)
     config["train_batch_size"] = batch_size
     config["subsample_params"]["subsample_size"] = subsample_size
@@ -163,7 +163,7 @@ def capture_trained_logits(
 
 def load_batch(config_path: str, batch_size: int, subsample_size: int) -> MolecularBatch:
     """Capture the first training batch for the given experiment configuration."""
-    config = load_config("config/models_template", config_path, None)
+    config = load_config("config", config_path, None)
     config.update(num_workers=0, share_memory=False, pl_enable_progress_bar=False)
     config["train_batch_size"] = batch_size
     config["subsample_params"]["subsample_size"] = subsample_size

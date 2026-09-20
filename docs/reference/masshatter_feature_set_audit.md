@@ -151,10 +151,12 @@ length, which is why this survived.
 This is shared with FraGNNet, which uses the same featurizer.
 
 Compatibility: the 12 columns are already allocated, so writing a real `GetDegree()` one-hot into
-them keeps `node_feature_dim = 70` and every checkpoint tensor shape. It still changes input
-*semantics*, so an existing checkpoint loaded against a fixed featurizer would silently see
-different inputs — per [engineering rules §6](../rules/engineering.md) this needs a new feature
-name or an opt-in flag rather than an in-place fix.
+them keeps `node_feature_dim` and every checkpoint tensor shape. It still changes input
+*semantics*, so an existing checkpoint loaded against a fixed featurizer silently sees different
+inputs. The first fix therefore shipped a separately named `a_degree_onehot`; on 2026-09-20 the
+user authorized the in-place repair under [engineering rules §6](../rules/engineering.md), and
+`a_degree` itself was fixed and the duplicate removed. **Every checkpoint trained before
+2026-09-20 must be retrained** — it will load without error and read different inputs.
 
 ### 7.2 The candidate intensity head is mass-blind
 
@@ -236,12 +238,12 @@ which is the heavier user of element-ordered formula arrays.
 
 The canonical seeded config (`nist20_merged_inchikey/mass_shatter/s0.yml`) therefore does not
 match the feature set every experiment arm actually trains with, and produces a different
-`node_feature_dim`. `config/models_template` keeps `a_ring_size`, `a_charge`, `b_ring` and `b_conj`
+`node_feature_dim`. `config/*_template.yml` keeps `a_ring_size`, `a_charge`, `b_ring` and `b_conj`
 commented out.
 
 Minor: `mass_shatter_pl.py:967-969` reads the three Graphormer structural keys with
 `self.hparams.get(...)`, which [Python rules](../rules/python.md) forbid for hyperparameters;
-all three are declared in `config/models_template`, so the fallback only hides missing keys in
+all three are declared in `config/*_template.yml`, so the fallback only hides missing keys in
 legacy checkpoint configs.
 
 ## 9. Suggested order of work
@@ -305,7 +307,7 @@ tensors mismatch. Nothing was trained or evaluated; these are not measured impro
 
 | Finding | Fix |
 |---------|-----|
-| §7.1 dead `a_degree` one-hot | New `a_degree_onehot` featurizer: the two raw values plus a working one-hot of the heavy-atom degree, at the same 14-column width. `a_degree` is untouched for FraGNNet. All 177 MASShatter configs now use the replacement |
+| §7.1 dead `a_degree` one-hot | First shipped as a separately named `a_degree_onehot`; on 2026-09-20 repaired **in place** and the duplicate deleted. `a_degree` is now the two raw values plus a working one-hot of the heavy-atom degree, at the unchanged 14-column width. Shared with FraGNNet, so every pre-2026-09-20 checkpoint of either model must be retrained |
 | §7.2 mass-blind candidate token | `mass_shatter_candidate_mass_features` (default True) adds `log1p(neutral fragment mass)` and the fragment's fraction of the intact precursor mass. `_component_neutral_masses` is now shared with the channel-validity routine rather than recomputed |
 | §7.3 no `a_charge`, no `frag_q` analogue | `a_charge` added to all 177 MASShatter configs, and `mass_shatter_candidate_charge_feature` (default True) sums each candidate's Gasteiger charges — heavy-atom charges only, matching FraGNNet's `frag_q`. `atom_gasteiger_charges` is now attached to every molecular graph (0.03 ms/molecule; 1.1 s for all of NIST20), so the candidate feature does not depend on the atom feature list |
 | §7.4 degenerate boundary embedding | `mass_shatter_boundary_bond_encoder` (default True) reuses FraGNNet's `CutBondEncoder` on the oriented (retained, lost) endpoints. `boundary_bond_endpoint_orientation` recovers the orientation the candidate builders do not emit, by looking both endpoints up in the sparse membership relation; it raises if a boundary bond does not have exactly one endpoint inside its component |

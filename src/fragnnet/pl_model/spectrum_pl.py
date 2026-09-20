@@ -267,7 +267,7 @@ class SpectrumPL(L.LightningModule):
             # Without the lookup, `_common_step` skips these scores entirely, but they are
             # still registered as metric names - so the exporters wrote a column of -1 for
             # every spectrum and the run reported success. `inst_type_loss_tol` is null in
-            # config/models_template while run_save_inference_eval.py requests
+            # config/*_template.yml while run_save_inference_eval.py requests
             # cos_hun_inst_tol by default, so that combination is easy to hit by accident.
             needs_inst_tol = {"cos_hun_inst_tol", "jss_hun_inst_tol"}.intersection(
                 self.hparams["auxiliary_scores"]
@@ -276,7 +276,7 @@ class SpectrumPL(L.LightningModule):
                 raise ValueError(
                     f"auxiliary_scores {sorted(needs_inst_tol)} need per-instrument match "
                     "tolerances, but inst_type_loss_tol is unset. Configure it (see "
-                    "config/models_template) or remove those scores from auxiliary_scores."
+                    "config/*_template.yml) or remove those scores from auxiliary_scores."
                 )
 
         # idx↔str maps are fetched lazily from the dataloader dataset via

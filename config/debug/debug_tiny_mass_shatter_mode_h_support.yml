@@ -28,7 +28,7 @@ spec_params:
 mol_params:
   pyg_node_feats:
   - a_onehot
-  - a_degree_onehot
+  - a_degree
   - a_hybrid
   - a_formal
   - a_radical

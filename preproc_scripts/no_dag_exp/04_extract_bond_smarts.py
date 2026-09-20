@@ -14,7 +14,7 @@ Never-broken bond environments = all_bonds.keys() - broken_bonds.keys()
 
 Usage:
     conda run -n FRAGNNET-GPU python preproc_scripts/no_dag_exp/04_extract_bond_smarts.py \\
-        --template_fp config/models_template \\
+        --template_fp config \\
         --custom_fp config/debug/debug_tiny.yml \\
         --output_dp ./data/bond_smarts/debug_tiny \\
         --batch_size 10 --num_workers 0 --split_names train --env_radius 0
@@ -244,7 +244,7 @@ def process_b_idx(
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extract bond SMARTS for DAG cut bonds.")
-    parser.add_argument("--template_fp", type=str, default="config/models_template")
+    parser.add_argument("--template_fp", type=str, default="config")
     parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml")
     parser.add_argument("--output_dp", type=str, default="./data/bond_smarts/debug_tiny")
     parser.add_argument("--batch_size", type=int, default=40)

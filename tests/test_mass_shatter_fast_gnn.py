@@ -195,7 +195,7 @@ def _small_pl_config():
     from pathlib import Path
 
     config = load_config(
-        str(Path(__file__).parents[1] / "config/models_template"),
+        str(Path(__file__).parents[1] / "config"),
         None,
         None,
         model_type="mass_shatter",
@@ -403,7 +403,7 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
 )
 def test_prepared_beam_arms_log_candidate_coverage(config_path):
     from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
-    config = load_config("config/models_template", config_path, None)
+    config = load_config("config", config_path, None)
     assert config["mass_shatter_candidate_coverage_metrics"] is True
     model = MassShatterPL(**config)
     assert model.model.proposal_method == "connected_fragment_beam"
@@ -487,7 +487,7 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
 def test_config_arm_resolves_and_constructs():
     from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
     config = load_config(
-        "config/models_template",
+        "config",
         "config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
         None,
     )
@@ -666,10 +666,10 @@ def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, ol
     assert override.model.proposal_method == "cut_masks"
     custom = tmp_path / "old.yml"
     custom.write_text(yaml.safe_dump({old_key: old_value}))
-    assert load_config("config/models_template", str(custom), None)[new_key] == expected
-    assert load_config("config/models_template", None, [f"{old_key}={old_value}"])[new_key] == expected
+    assert load_config("config", str(custom), None)[new_key] == expected
+    assert load_config("config", None, [f"{old_key}={old_value}"])[new_key] == expected
     assert (
-        load_config("config/models_template", str(custom), [f"{new_key}=cut_masks"])[new_key]
+        load_config("config", str(custom), [f"{new_key}=cut_masks"])[new_key]
         == "cut_masks"
     )
     assert load_config(str(custom), None, None)[new_key] == expected

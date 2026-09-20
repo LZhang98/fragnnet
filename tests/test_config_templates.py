@@ -1,6 +1,6 @@
 """Self-contained per-model config templates and recursive custom-config validation.
 
-Every model has one complete template in ``config/models_template/``; there is no shared base.
+Every model has one complete template in ``config/*_template.yml``; there is no shared base.
 See ``config/README.md``.
 """
 
@@ -17,15 +17,15 @@ from fragnnet.runner import (
     unknown_config_keys,
 )
 
-TEMPLATE_DIR = "config/models_template"
+TEMPLATE_DIR = "config"
 SHARED_SAMPLE = ("spec_params", "mol_params", "lr", "train_batch_size", "loss_type")
 
 
 @pytest.fixture(scope="module")
 def templates() -> dict[str, dict]:
     return {
-        os.path.basename(path)[: -len(".yml")]: yaml.safe_load(open(path))
-        for path in glob.glob(f"{TEMPLATE_DIR}/*.yml")
+        os.path.basename(path)[: -len("_template.yml")]: yaml.safe_load(open(path))
+        for path in glob.glob(f"{TEMPLATE_DIR}/*_template.yml")
     }
 
 
@@ -64,7 +64,7 @@ class TestTemplateLayout:
     def test_no_model_type_means_fragnnet(self):
         """What the single shared template used to declare as its default."""
         assert model_template_fp(TEMPLATE_DIR, None) == os.path.join(
-            TEMPLATE_DIR, "fragnnet.yml"
+            TEMPLATE_DIR, "fragnnet_template.yml"
         )
 
 
@@ -164,7 +164,7 @@ def test_every_tracked_config_still_resolves():
     """No config in the repository may be broken by the layout change."""
     failures = []
     for path in sorted(glob.glob("config/**/*.yml", recursive=True)):
-        if path.startswith(f"{TEMPLATE_DIR}/"):
+        if path.endswith("_template.yml"):
             continue
         try:
             custom = yaml.safe_load(open(path))

@@ -141,7 +141,7 @@ class TestExplMetricArgs:
 
     @staticmethod
     def _real_model(**overrides):
-        config = load_config("config/models_template", None, None)
+        config = load_config("config", None, None)
         config.update(model_type="frag_gnn", compile=False, sparse_cosine_similarity=True)
         config.update(**overrides)
         return FraGNNetPL(**config)

@@ -5,13 +5,13 @@
 A run's configuration resolves in three steps, each overriding the previous:
 
 ```
-config/models_template/<model>.yml   the complete defaults for that model_type
-your custom config                   the experiment
---override key=value                 temporary changes for one invocation
+config/<model>_template.yml   the complete defaults for that model_type
+your custom config            the experiment
+--override key=value          temporary changes for one invocation
 ```
 
-There is **no shared base**. Each template in [models_template/](models_template/) is complete on
-its own, so a MASShatter run never carries `frag_params` and a FraGNNet run never carries the 73
+There is **no shared base**. Each `config/<model>_template.yml` is complete on its
+own, so a MASShatter run never carries `frag_params` and a FraGNNet run never carries the 73
 `mass_shatter_*` keys. The template is chosen by `model_type` - from the custom config, else from
 the checkpoint, else `frag_gnn`. Several model types share a template (`iceberg_gen` and
 `iceberg_inten`, `clip` and `spec_mol_clip_pretraining`); the mapping is `MODEL_CONFIG_TEMPLATE`
@@ -49,7 +49,7 @@ Grouping them into a `conditioning_params` section was tried and reverted, becau
 every trained checkpoint for no behavioural gain. `spec_params.nce` / `spec_params.ace` are
 separate by design: they decide what the *dataset* loads, not how it is embedded.
 
-Note that `mol_params.pyg_node_feats` (atom features: `a_onehot`, `a_degree_onehot`, ...) and
+Note that `mol_params.pyg_node_feats` (atom features: `a_onehot`, `a_degree`, ...) and
 `frag_params.pyg_node_feats` (fragment-DAG node features: `cc`, `base_formula`, ...) are
 different vocabularies that share a key name. A model only ever resolves the block it reads.
 

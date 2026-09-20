@@ -350,48 +350,22 @@ class AtomOneHot(FeatBase):
 
 @register_atom_feat
 class AtomDegree(FeatBase):
-    """Atom Degree features are one-hot encoded.
+    """Atom degree as two raw values plus a heavy-atom-degree one-hot.
+
+    The one-hot encodes ``GetDegree()``, the heavy-atom degree, because that is what bounds how
+    many bonds an atom can lose. Total degree stays available as raw column 1, and as
+    ``degree + a_num_hs`` wherever that feature is enabled.
 
     Note:
-        The one-hot is inert: ``featurize`` passes a list to ``one_hot_encoding``, which routes
-        every atom to the unknown bucket, so only the two leading raw values carry information.
-        Retained unchanged for FraGNNet checkpoint compatibility; use ``a_degree_onehot`` instead.
+        Until 2026-09-20 ``featurize`` passed the pair ``[degree, total_degree]`` into
+        ``one_hot_encoding``. A list never equals an ``int``, so all 12 one-hot columns were
+        pinned to the unknown bucket and carried no information -- see §7.1 of
+        ``docs/reference/masshatter_feature_set_audit.md``. The fix keeps the 14-column width,
+        so a checkpoint trained before that date still loads but reads different inputs; such
+        checkpoints must be retrained.
     """
 
     name = "a_degree"
-    allowable_set = list(range(11))
-    feat_size = len(allowable_set) + 1 + 2
-
-    @classmethod
-    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
-        """One-hot encode atom degree and total degree.
-
-        Args:
-            x: RDKit atom object.
-
-        Returns:
-            List containing degree values and one-hot encoded degree vector.
-        """
-        deg = [x.GetDegree(), x.GetTotalDegree()]
-        onehot = one_hot_encoding(deg, cls.allowable_set, True)
-        return deg + onehot
-
-
-@register_atom_feat
-class AtomDegreeOneHot(FeatBase):
-    """Atom degree, with a working one-hot.
-
-    ``a_degree`` passes the pair ``[degree, total_degree]`` into ``one_hot_encoding``, and a list
-    never equals an ``int``, so its 12 one-hot columns are always the unknown bucket and carry no
-    information (see ``docs/reference/masshatter_feature_set_audit.md`` §7.1). This feature keeps
-    the two raw values and the same 14-column width, so it is a drop-in replacement, but spends
-    the one-hot on the heavy-atom degree, which is what determines how many bonds an atom can
-    lose. Total degree stays recoverable as ``degree + a_num_hs``.
-
-    ``a_degree`` is left in place because FraGNNet checkpoints were trained with it.
-    """
-
-    name = "a_degree_onehot"
     allowable_set = list(range(11))
     feat_size = len(allowable_set) + 1 + 2
 

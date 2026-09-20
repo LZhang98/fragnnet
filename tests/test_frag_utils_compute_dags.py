@@ -597,7 +597,7 @@ _TETRACHLOROBENZENE = "Clc1cc(Cl)c(Cl)c(Cl)c1"
 def test_formula_peak_mzs_col0_is_monoisotopic_without_isotopes() -> None:
     """With ``isotopes=False`` column 0 is the monoisotopic mass for every formula.
 
-    ``frag_params.num_isotopes`` is 1 in config/models_template and no config overrides
+    ``frag_params.num_isotopes`` is 1 in config/*_template.yml and no config overrides
     it, so ``SpecMolFragDataset`` only ever reads ``formula_peak_mzs[:, :1]``.  That
     column is the m/z the model is trained and served on, so it must be monoisotopic.
     """

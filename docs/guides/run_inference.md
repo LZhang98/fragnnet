@@ -358,7 +358,7 @@ python scripts/run_inference.py \
 
 **Inference Options**:
 - `--batch_size`: Fixed batch size for inference (default: 16, matching `eval_batch_size` in
-  `config/models_template`). Ignored when `--dynamic_batch_max` is set. Do not set it to 1
+  `config/*_template.yml`). Ignored when `--dynamic_batch_max` is set. Do not set it to 1
   casually: besides the obvious per-call overhead, it is also what `init_dataloader` passes as
   `return_batch_at`, so a config with `dynamic_batch_sampler: True` would flush a batch after
   every single sample and never reach `dynamic_batch_sampler_max`. Batch size 1 has also

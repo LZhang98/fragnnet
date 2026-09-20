@@ -20,7 +20,7 @@ This is an alternative scientific model, not an exact acceleration of mask margi
 
 ## Configuration and semantics
 
-[template.yml](../../config/models_template) declares:
+[the model templates](../../config/) declares:
 
 ```yaml
 mass_shatter_proposal_method: connected_fragment_beam  # default: cut_masks
@@ -308,7 +308,7 @@ unique fragments per molecule under the same conditions, so the previous unmerge
 at roughly half the control's candidate count.
 
 All four connected-fragment arms now set `mass_shatter_fast_gnn_max_boundary_cuts: 5`. The
-`config/models_template` default and the legacy checkpoint/config migration defaults stay at 3 so
+`config/*_template.yml` default and the legacy checkpoint/config migration defaults stay at 3 so
 existing connected-fragment checkpoints keep their trained search behavior.
 
 Candidate-construction throughput was also compared against the CUDA `cut_masks` backend on the

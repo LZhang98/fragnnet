@@ -97,8 +97,8 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   then measure the BatchNorm candidate-set gap on a trained checkpoint before any new training arm.
   It also records the 2026-09-19 decision to drop the atom decoder going forward: epoch-matched it
   costs no cosine (-0.0018, inside the replicate floor) while running 1.8x faster per epoch, and
-  `config/models_template` already defaults it to 0, so the recommended normalization arm needs no
-  config change. The decoder code path remains for checkpoint compatibility.
+  `config/mass_shatter_template.yml` already defaults it to 0, so the recommended normalization arm
+  needs no config change. The decoder code path remains for checkpoint compatibility.
   Probes: `scripts/debug/probe_masshatter_regularization.py`. Audit only; no training run,
   no model-code change.
 - [Cross-adduct loss headroom](findings/cross_adduct_loss_headroom_2026_09_17.md) is a NEW, GREEN
@@ -124,8 +124,10 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   was enabled in FraGNNet's newest configs and in no MASShatter config, although MASShatter is the
   model with an explicit charge-affinity head; and that the boundary embedding was degenerate in
   the two ways FraGNNet diagnosed for `boundary_pair` and fixed with `CutBondEncoder`.
-  **All of these are now fixed for MASShatter and are the default** (audit §11): a new
-  `a_degree_onehot` featurizer at unchanged width, `mass_shatter_candidate_mass_features`,
+  **All of these are now fixed for MASShatter and are the default** (audit §11): `a_degree`'s
+  one-hot repaired **in place** at unchanged width (the interim `a_degree_onehot` featurizer was
+  deleted; the repair is shared with FraGNNet, so every pre-2026-09-20 checkpoint of either model
+  must be retrained), `mass_shatter_candidate_mass_features`,
   `mass_shatter_candidate_charge_feature`, `mass_shatter_boundary_bond_encoder`, `a_charge` added
   to all 177 MASShatter configs, the constant unique-mode token columns dropped, the unread
   required `atom_formal_charges` check removed, and the featurizer no longer mutating
@@ -139,11 +141,11 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   improvements. Next: run the new default against the previous base arm at matched epochs,
   against the 0.003 replicate floor, before treating any of it as a gain. `a_radical` and
   `a_chiral` were deliberately left in place; the audit §11 records why.
-- **Config layout: shared base plus per-model overlays** (2026-09-20). `config/models_template` is
-  now the shared base (310 keys: paths, `spec_params`, `mol_params`, trainer, loss, logging,
-  eval) and `config/models_template/<model>.yml` holds each model's private keys (110 keys across nine
-  overlays), selected by `model_type` in the custom config, else an explicit `model_type`
-  argument, else the base default. A MASShatter run therefore no longer carries `frag_params`
+- **Config layout: one self-contained template per model** (2026-09-20).
+  `config/<model>_template.yml` holds that model's complete defaults - the 310 shared keys
+  (paths, `spec_params`, `mol_params`, trainer, loss, logging, eval) plus its own private keys
+  (110 across nine templates) - selected by `model_type` in the custom config, else an explicit
+  `model_type` argument, else `frag_gnn`. A MASShatter run therefore no longer carries `frag_params`
   (the duplicate `pyg_node_feats` that made the two feature vocabularies easy to confuse) and a
   FraGNNet run no longer carries 73 `mass_shatter_*` keys. Custom configs are now validated
   **recursively**, closing a measured hole: a typo inside `spec_params` used to be accepted
@@ -164,7 +166,9 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   `nb_formula_normalized_entropy_weight`, `group_sampler_type` (a leftover from the rename to
   `simple_group_sampler_type`, which is the key `runner.py` actually validates),
   `debug_val_loop_trigger` and `debug_bypass_train_val`. Directories renamed on request:
-  `config/models` -> `config/models_template` and `config/masshatter` -> `config/massshatter`.
+  `config/models` -> `config/models_template` and `config/masshatter` -> `config/massshatter`;
+  the per-model templates were then flattened out of that directory to
+  `config/<model>_template.yml`, so the template directory a run resolves against is `config/`.
   Validation: full suite 3,906 passed, 1 skipped, 2 xfailed. Still open: which
   conditioning mechanism survives is the
   [conditioning refactor](plans/conditioning_refactor_plan.md)'s question, not this layout's.

@@ -433,7 +433,7 @@ def test_missing_prec_type_str_degrades_to_nan(one_spectrum):
     """A batch without `spec_prec_type_str` yields NaN, not a KeyError mid-export.
 
     `spec_prec_type_str` exists only when `spec_params.prec_type_str` is on - False in
-    `config/models_template` and in nearly every experiment config - and it is
+    `config/*_template.yml` and in nearly every experiment config - and it is
     `apply_inference_config` that forces it on. Any caller that does not go through it (a
     notebook, a future script, a unit-level call) must degrade the way every sibling field
     in the exporter does, and say so rather than degrading silently.

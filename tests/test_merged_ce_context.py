@@ -97,7 +97,7 @@ def test_dataset_carries_weights_and_weighted_stats(tmp_path, spectra) -> None:
     for key in ("nce_extra_1", "nce_extra_2", "ace_extra_1", "ace_extra_2"):
         raw[key] = -1.0
     raw[["spec_id", "mol_id", "group_id"]].to_csv(tmp_path / "train_ids.csv", index=False)
-    config = load_config("config/models_template", None, None)
+    config = load_config("config", None, None)
     params = config["spec_params"]
     params.update(
         merge=True,
@@ -227,7 +227,7 @@ def test_checkpoint_migration_and_merged_config_pair() -> None:
     assert get_pl_hparams(old)["spec_params"]["merge_ce_aggregation"] == "legacy"
     assert old == snapshot
     configs = [
-        load_config("config/models_template", str(p), None)
+        load_config("config", str(p), None)
         for p in sorted(Path("config/massshatter/merged/context_ablation").glob("*.yml"))
     ]
     assert len(configs) == 2
@@ -256,7 +256,7 @@ def test_mass_shatter_wrapper_passes_reading_weights() -> None:
     from fragnnet.utils.feat_utils import get_mol_graph
     from tests.test_mass_shatter_pl import _build_pl
 
-    config = load_config("config/models_template", None, None)
+    config = load_config("config", None, None)
     spec_params = config["spec_params"]
     spec_params.update(nce=True, ace=True, merge_keep_ces=True)
     pl, config = _build_pl(spec_params=spec_params, ace_max=300)

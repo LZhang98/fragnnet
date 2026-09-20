@@ -16,7 +16,7 @@ if __name__ == "__main__":
         "-t",
         "--template_fp",
         type=str,
-        default="config/models_template",
+        default="config",
         help="path to template config file",
     )
     parser.add_argument("-c", "--custom_fp", type=str, default="config/sweep/fragnnet_d3_sweep.yml")

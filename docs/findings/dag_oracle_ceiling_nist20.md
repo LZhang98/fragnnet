@@ -552,7 +552,7 @@ outright.
 
 Traced into the actual loss code (`src/fragnnet/pl_model/fragnnet_pl.py`,
 `src/fragnnet/model/loss.py`). Neither alvhehe2 nor pqx7ywc9's config overrides `loss_type`, so
-both inherit `config/models_template`'s default: **`loss_type: cross_entropy`** with
+both inherit `config/*_template.yml`'s default: **`loss_type: cross_entropy`** with
 `output_distribution: gaussian`.
 
 - **`cross_entropy` routes to `mog_ce_fn`** (`loss.py:484-524`, via `get_sparse_cross_entropy_fn`)

@@ -482,7 +482,7 @@ def apply_inference_config(
 
     # Ground-truth peak cleanup is meaningless without ground-truth peaks: an inference
     # spec_df has `peaks == []` by construction, so drop_empty_spectra (True in
-    # config/models_template) removes every spectrum and the run silently predicts nothing.
+    # config/*_template.yml) removes every spectrum and the run silently predicts nothing.
     # Only override when the checkpoint config carries the cleanup group - writing the key
     # into a legacy config that omits it would trip the missing-cleanup-params check in
     # BaseDataset._setup_dfs.
@@ -1932,7 +1932,7 @@ def process_batch_to_tabular_row(
     formula_row_deltas = None
     if (return_formula_str or return_cc_hash) and isinstance(model, FraGNNetPL):
         # Degrade to NaN like every sibling field rather than raising: `spec_prec_type_str`
-        # exists only when spec_params.prec_type_str is on (False in config/models_template and
+        # exists only when spec_params.prec_type_str is on (False in config/*_template.yml and
         # in nearly every experiment config), and it is `apply_inference_config` that forces
         # it on. A caller reaching this function another way - a notebook, a future script, a
         # unit-level call - would otherwise get a KeyError mid-export instead of a column of

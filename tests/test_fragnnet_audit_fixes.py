@@ -18,7 +18,7 @@ from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
 @pytest.fixture
 def loss_config():
     config = load_config(
-        str(Path(__file__).parents[1] / "config/models_template"), None, None, model_type="frag_gnn"
+        str(Path(__file__).parents[1] / "config"), None, None, model_type="frag_gnn"
     )
     config.update(sparse_cosine_similarity=True, oos_tolerance_multiple=1, gaussian_renormalize=True)
     return config

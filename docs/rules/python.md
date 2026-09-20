@@ -60,7 +60,7 @@ Environment, compatibility, and Git constraints remain in [engineering rules](en
 
 - Never use `self.hparams.get(...)`, `getattr(self.hparams, ..., default)`, or another fallback
   default for model or experiment hyperparameters.
-- Declare every hyperparameter explicitly in `config/models_template` (or the applicable required
+- Declare every hyperparameter explicitly in `config/<model>_template.yml` (or the applicable required
   schema) and access it with `self.hparams.key` or `self.hparams["key"]`.
 - A missing hyperparameter must fail during setup instead of silently changing model behavior.
 

@@ -106,7 +106,7 @@ Cost: one gather plus one segment-logsumexp over ~30 groups/spectrum.
 
 ### Config
 
-`config/models_template`, next to the other loss weights, defaulting to off so existing configs are
+`config/*_template.yml`, next to the other loss weights, defaulting to off so existing configs are
 bit-identical:
 
 ```yaml

@@ -209,8 +209,7 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     (data_dp / "mol.pkl").touch()
     (data_dp / "split").mkdir()
     (checkpoint_dp / "model.ckpt").touch()
-    (config_dp / "models_template").mkdir()
-    (config_dp / "models_template" / "mass_shatter.yml").write_text(
+    (config_dp / "mass_shatter_template.yml").write_text(
         "model_type: mass_shatter\n"
         "finetune: False\n"
         "spec_fp: data/spec.pkl\n"

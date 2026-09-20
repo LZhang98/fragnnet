@@ -356,7 +356,7 @@ measurable cosine for 19.2% of parameters and 45% of the wall clock.
 
 Two practical consequences:
 
-- **`config/models_template` already defaults `mass_shatter_intensity_atom_decoder_num_layers: 0`**,
+- **`config/*_template.yml` already defaults `mass_shatter_intensity_atom_decoder_num_layers: 0`**,
   and 104 of 156 configs inherit it. Only 51 configs set 4 explicitly. The `ma_mi_merged`
   normalization arm and its 4x-replicated baseline (3.4) are already decoder-free, so the
   recommended `graph` experiment needs no config change.
@@ -369,7 +369,7 @@ Two practical consequences:
   `CandidateIntensityTransformerHead._load_from_state_dict` raises if a checkpoint carries
   `atom_decoder.*` or `atom_projection.*` weights, so a decoder-trained checkpoint fails
   loudly instead of silently serving a different model. The config key is retained in
-  `config/models_template` at 0 because `load_config` asserts every custom-config key exists
+  `config/*_template.yml` at 0 because `load_config` asserts every custom-config key exists
   there; 51 configs that set 4 now omit it and inherit 0, and 45 stale
   `intensity_atom_decoder_layers_4` W&B tags were dropped.
 

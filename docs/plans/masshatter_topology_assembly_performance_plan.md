@@ -221,7 +221,7 @@ the training process. Do not add OpenMP.
 
 This stage intentionally widens `mass_shatter_mask_selection_threads` to govern all MASShatter CPU
 candidate kernels rather than introducing a config migration. When Stage 2 lands, update the
-`config/models_template` comment to document that wider scope. The key remains a compatibility name;
+`config/*_template.yml` comment to document that wider scope. The key remains a compatibility name;
 no silent second concurrency pool is introduced.
 
 **Go/no-go:** use Stage 0's representative count and serial fraction to compute the four-thread
