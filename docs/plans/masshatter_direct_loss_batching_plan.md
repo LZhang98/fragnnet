@@ -260,39 +260,58 @@ evidence on its own.
 
 Four one-hour training arms that exercise the batched path in a real run and, for the first time,
 execute `_solve_batch_assignment`'s `torch_linear_assignment` branch. The generated job installs
-that wheel (`setup_job_cc.py:396`), so a cluster job reaches the backend a local CUDA box cannot.
+that wheel (`setup_job_cc.py:396`), so a cluster job reaches a backend no local box can.
 
-| Job name | Config suffix | `loss_type` | `mass_shatter_peak_matching` |
-| --- | --- | --- | --- |
-| `ms_loss_jss_closest` | `_jss_closest` | `jss_distance` | `closest` |
-| `ms_loss_jss_hun` | `_jss_hungarian` | `jss_distance` | `hungarian` |
-| `ms_loss_kl_closest` | `_kl_closest` | `kl_distance` | `closest` |
-| `ms_loss_kl_hun` | `_kl_hungarian` | `kl_distance` | `hungarian` |
+| Job name | Config | `loss_type` | matching | `loss_batch_size` |
+| --- | --- | --- | --- | ---: |
+| `ms_loss_jss_closest` | `..._batch256x2_cuda_lb32_jss_closest.yml` | `jss_distance` | `closest` | 32 |
+| `ms_loss_kl_closest` | `..._batch256x2_cuda_lb32_kl_closest.yml` | `kl_distance` | `closest` | 32 |
+| `ms_loss_jss_hun` | `..._batch256x2_cuda_lb8_jss_hungarian.yml` | `jss_distance` | `hungarian` | 8 |
+| `ms_loss_kl_hun` | `..._batch256x2_cuda_lb8_kl_hungarian.yml` | `kl_distance` | `hungarian` | 8 |
 
-All four share the stem `config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch256x2_cuda_lb32`
-and are derived from `..._ctrl_2g.yml` by textual substitution, so the model, data, shape and
-instrumentation keys are byte-identical to that control. Verified after generation: each resolves
-through `load_config` against the current `config/template.yml`, all five configs carry the **same
-416-key set**, and each arm's resolved diff against the control is exactly `loss_type`,
-`mass_shatter_peak_matching` (where it leaves the `closest` default) and the three `wandb_*`
-identity keys — nothing else.
+All four live under `config/masshatter/ma_mi_merged/` and are derived from `..._ctrl_2g.yml` by
+textual substitution, so the model, data, shape and instrumentation keys are byte-identical to that
+control. Verified after generation: each resolves through `load_config` against the current
+`config/template.yml`, all five configs carry the **same 417-key set**, and each arm's resolved diff
+against the control is exactly its declared axis plus the three `wandb_*` identity keys — nothing
+else. `mass_shatter_h_transfer_bound` is `none` in all five, inherited from the new template
+default, so these arms keep the historical H ladder and are not entangled with that change.
 
 `mass_shatter_intensity_output` stays `probability`. The code under test is reached identically
-under `independent`, and keeping `probability` makes the existing CE control a same-shape
-throughput baseline instead of the six-key CE-vs-JSS bundle described in
+under `independent`, and keeping `probability` makes the CE control a same-shape throughput baseline
+instead of the six-key CE-vs-JSS bundle described in
 [the loss-setup review](../findings/loss_setup_review_2026_09_13.md).
 
 `mass_shatter_peak_matching` is written explicitly in all four arms even though `closest` is the
-template default, so the four files share one key set and a future default change cannot silently
-re-point two of them.
+template default, so the four files share one key set and a default change cannot silently re-point
+two of them.
 
-### The control is `ms_reg_ctrl_2g`, and it is not optional
+### `loss_batch_size` is tuned per matching mode, on purpose
 
-The comparison that makes these runs worth an hour each is against
-`..._batch256x2_cuda_lb32_ctrl_2g.yml` on the same slice — the
-[regularization sweep's](masshatter_regularization_sweep_plan.md#stage-a--paired-slice-pilot-2-jobs-1-h-wall-clock-958-units)
-Stage A 2g pilot. Run it in the same batch if it has not already run on 2g; its `ep/h` is the
-denominator for every throughput claim below. A 3g control cannot substitute.
+The hungarian arms run `lb8` against the closest arms' `lb32`. This is the one place the arms
+deliberately leave the control, and it follows finding 1 of
+[the loss audit](../findings/masshatter_loss_audit_2026_09_19.md): on the real ragged merged
+peak-count distribution (p50 25, p99 343, max 1168) every spectrum is padded to its chunk's widest
+peak list, so **hungarian gets worse as the chunk widens** — 116 ms at `lb8` against 442 ms at
+`lb64` — the opposite of this plan's uniform-input benchmark, while `closest` improves to about 32
+and flattens. `lb8` is also what every checked-in direct-loss config already uses.
+
+`loss_batch_size` changes float accumulation order and nothing else, so **the correctness reads
+below are unaffected by the split**; only cross-*mode* throughput stops being comparable, and
+finding 1 says it never was.
+
+### Two prerequisites
+
+1. **The checkout must carry `ffe5d53a`.** The first Stage A submission (SLURM `60545834`) died in
+   `training_step` at `batched_bin_func` with `AssertionError: (tensor(1501.7432), 1500)` — the top
+   rung of the H ladder on a 1497.71 Da training precursor, unfiltered because predicted peaks are
+   never range-bounded. These arms set `compute_train_auxiliary_metrics: true` and so take the same
+   `compute_bin_specs` path that crashed; the fix guards exactly that path. Two training spectra in
+   `nist20_ma_mi_inchikey` are enough to kill a job, so this is not optional.
+2. **Run `ms_reg_ctrl_2g` on the same slice**, the
+   [regularization sweep's](masshatter_regularization_sweep_plan.md#stage-a--paired-slice-pilot-2-jobs-1-h-wall-clock-958-units)
+   Stage A 2g pilot, if it has not yet produced a clean hour. Its `ep/h` is the denominator for the
+   throughput read; a 3g control cannot substitute.
 
 ### Generation
 
@@ -303,10 +322,16 @@ them private.
 ```bash
 FRAGNNET_ACCOUNT=rrg-dwishart
 FRAGNNET_EMAIL=fw4@ualberta.ca
-CFG=config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch256x2_cuda_lb32
+CFG_DP=config/masshatter/ma_mi_merged
+STEM=nist20_ma_mi_merged_fast_batch256x2_cuda
 
-for arm in jss_closest:jss_closest jss_hungarian:jss_hun kl_closest:kl_closest kl_hungarian:kl_hun; do
-  suffix="${arm%%:*}"; name="ms_loss_${arm##*:}"
+for pair in \
+  "lb32_jss_closest:ms_loss_jss_closest" \
+  "lb32_kl_closest:ms_loss_kl_closest" \
+  "lb8_jss_hungarian:ms_loss_jss_hun" \
+  "lb8_kl_hungarian:ms_loss_kl_hun"
+do
+  suffix="${pair%%:*}"; name="${pair##*:}"
   python scripts/setup_job_cc.py \
     --frag_gnn_dp . \
     --python_script_fp scripts/run_pl_model_fit.py \
@@ -315,70 +340,73 @@ for arm in jss_closest:jss_closest jss_hungarian:jss_hun kl_closest:kl_closest k
     --cc_account "$FRAGNNET_ACCOUNT" \
     --cc_email "$FRAGNNET_EMAIL" \
     --time 1:00:00 \
-    --script_kwargs w=online c="${CFG}_${suffix}.yml" j="$name" \
+    --script_kwargs w=online c="${CFG_DP}/${STEM}_${suffix}.yml" j="$name" \
     --no_submit=True
   bash -n "slurm_scripts/${name}.sh"
 done
 ```
 
-No launch overrides. `loss_batch_size: 32` and `num_workers: 3` are already in the configs, unlike
-the regularization sweep where they are passed at launch. `w=online` is required for `j=` to work
-at all — the resume bookkeeping lives inside the W&B branch.
+No launch overrides: `loss_batch_size` and `num_workers` are in the configs, unlike the
+regularization sweep where they are passed at launch. `w=online` is required for `j=` to work at
+all — the resume bookkeeping lives inside the W&B branch.
 
-Expected directives: `--mem=70G --cpus-per-task=3 --time=1:00:00 --gres=gpu:h100_2g.20gb:1`.
-Check them, and the staging paths and final training command, before submitting.
+Expected directives: `--mem=70G --cpus-per-task=3 --time=1:00:00 --gres=gpu:h100_2g.20gb:1`. Check
+them, the staging paths and the final training command before submitting.
 
 ### Submission
 
 ```bash
-for name in ms_loss_jss_closest ms_loss_jss_hun ms_loss_kl_closest ms_loss_kl_hun; do
+for name in ms_loss_jss_closest ms_loss_kl_closest ms_loss_jss_hun ms_loss_kl_hun; do
   sbatch "slurm_scripts/${name}.sh"
 done
 ```
 
-Four arms at 3.48 price units each is 13.9 units for the set, plus 3.48 for the 2g control.
+Four arms at 3.48 price units each is 13.9 units, plus 3.48 for the 2g control if it still needs a
+clean hour.
 
 ### What each gate reads
 
-1. **The jobs start and stay up.** A wrong index layout out of `batch_linear_assignment` fails
-   loudly at the call-site shape check rather than scattering into the wrong peaks, so a hungarian
-   arm that survives its first steps has executed the backend correctly at least structurally.
-2. **`closest` is the reference for `hungarian`, per objective.** This is the main correctness
-   read, and the reason the sweep is 2x2 rather than two arms. The two matchings are different
-   objectives and are *not* expected to give equal losses — but they are expected to track. A
-   hungarian arm whose training loss sits far off its `closest` sibling, or that diverges while the
-   sibling trains, indicts the solver backend, since that is the only code the pair does not share.
+1. **The jobs start and stay up.** A wrong index layout out of `batch_linear_assignment` fails at
+   the call-site shape check (`loss.py:286-293`) rather than scattering into the wrong peaks, so a
+   hungarian arm that survives its first steps has executed the backend correctly at least
+   structurally. This is the gate the whole exercise exists for.
+2. **`closest` is the correctness reference for `hungarian`, per objective.** The two matchings are
+   different objectives and are *not* expected to give equal losses, but they are expected to
+   track. A hungarian arm whose training loss sits far off its `closest` sibling, or that diverges
+   while the sibling trains, indicts the solver backend — that is the only code the pair does not
+   share. Unaffected by the `lb` split.
 3. **Throughput, against `ms_reg_ctrl_2g` at matched epoch.** The claim under test is that the
    1.46x `ep/h` penalty (CE 20.5-20.8 vs JSS 14.0-14.7, KL 13.8-14.8, measured pre-refactor) is
-   gone. Read `ep/h` on the 2g slice; do not compare to the L40S numbers those figures came from.
-4. **`hungarian` against `closest` on time.** Locally hungarian is 19.0 ms against 3.8 ms, entirely
-   the scipy fallback. With the wheel installed the expected cluster figure is **near 4 ms, not
-   19 ms**, so the two matchings should be close in `ep/h`. A large residual gap means the wheel did
-   not install or the GPU solver was not taken — check the job's pip output before reading anything
-   else into it.
+   gone. Read `ep/h` on the 2g slice; do not compare against the L40S runs those figures came from.
+   The `closest` arms at `lb32` are the clean comparison here, since they share the control's `lb`.
+4. **Whether the CUDA solver removes the padding penalty — the biggest open number.** Finding 1 was
+   measured with the SciPy fallback and explicitly flags that the batched CUDA solver has far
+   better constants while its work still scales with the padded matrix, so the *direction* holds
+   and the *magnitude* is open. `ms_loss_jss_hun` at `lb8` against `ms_loss_jss_closest` at `lb32`
+   is the first on-cluster reading of it. Do not report this as a clean matching-mode comparison:
+   `lb` differs by design, and finding 1 says a matched-`lb` comparison would be the misleading one.
 5. **`mass_shatter_candidate_backend_resolved == cuda`** in each run's saved config, read from the
-   run and not from the file.
-6. **Peak GPU memory.** `256 x lb32` measured 12.7 GiB under CE. The direct losses add
-   `[chunk, max_true + max_pred]` aligned tensors, which are linear rather than quadratic, and
-   `_build_loss_chunks` bounds the pairwise tensors to the same flat Cartesian product CE already
-   runs under — so the expectation is CE plus a modest margin, inside the ~19.5 GiB slice. The
-   hungarian arms additionally carry `batch_linear_assignment`'s own workspace, which has never
-   been measured here. **On OOM, drop `loss_batch_size` to 16, then 8, and drop it on all four arms
-   together** — mixing `loss_batch_size` across arms breaks the throughput comparison.
+   run and not from the file — a resumed run's saved config can overwrite local settings.
+6. **Peak GPU memory.** `256 x lb32` measured 12.7 GiB under CE. Finding 2 establishes that the
+   chunk-splitting guard cannot fire for this shape, so `loss_batch_size` is the only real control
+   and memory scales with `lb x max_true x max_pred`; the same finding measured the direct losses
+   at or below the CE control at matched shapes (463-660 MiB against CE's 585 MiB at 512 predicted
+   peaks). The `lb8` hungarian arms are the least exposed. **On OOM, halve `loss_batch_size` within
+   the affected mode and note it** — do not re-unify `lb` across modes to "fix" it.
 
-**Cosine is not a gate.** At one hour these arms are at 6-9% of the configured schedule, the
+**Cosine is not a gate.** At one hour these arms sit at 6-9% of the configured schedule, the
 same-seed replicate floor is 0.003-0.005, and CE/JSS/KL are already established as agreeing to 1e-4
 epoch-matched. These runs validate the refactor; they do not re-open the objective question.
 
 ### The stricter pre-gate, if you want it before spending four GPU-hours
 
-`pytest tests/test_mass_shatter_peak_list_distance.py` on a node that has the wheel installed is
-the direct test of the backend, and it is minutes rather than hours. It needs the same environment
-the generated job builds (`module load cuda/12.2`, then the venv recipe in the generated script,
-including `pip install --no-build-isolation torch_linear_assignment-0.0.6.tar.gz`). Whether the Fir
-checkout already has a reusable interactive environment is not established here — if it does, an
-`salloc` on `fir:h100-1g.10gb` is the cheap way to run it; if it does not, gate 2 above is the
-practical substitute and costs nothing extra.
+`pytest tests/test_mass_shatter_peak_list_distance.py` on a node that has the wheel installed tests
+the backend directly, in minutes rather than hours. It needs the environment the generated job
+builds (`module load cuda/12.2`, then the venv recipe in the generated script, including
+`pip install --no-build-isolation torch_linear_assignment-0.0.6.tar.gz`). Whether the Fir checkout
+already has a reusable interactive environment is not established here — if it does, an `salloc` on
+`fir:h100-1g.10gb` is the cheap way to run it; if it does not, gates 1 and 2 are the practical
+substitute and cost nothing extra.
 
 ## Related documents
 

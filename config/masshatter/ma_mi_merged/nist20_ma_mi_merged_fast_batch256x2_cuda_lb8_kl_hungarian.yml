@@ -10,12 +10,20 @@
 # scipy loop locally, so that backend has NEVER executed -- no local test reaches it. Run
 # pytest tests/test_mass_shatter_peak_list_distance.py on a cluster node before trusting these.
 #
+# loss_batch_size is 8 here, not the control's 32. Per-mode tuning, from
+# docs/findings/masshatter_loss_audit_2026_09_19.md finding 1: on the real ragged merged
+# peak-count distribution every spectrum is padded to its chunk's widest peak list, so hungarian
+# gets WORSE as the chunk widens (116 ms at lb8 -> 442 ms at lb64), the opposite of the
+# uniform-input benchmark; closest peaks near 32 and stays there. lb only changes float
+# accumulation order, never the loss value, so the closest-vs-hungarian correctness read is
+# unaffected -- only cross-MODE throughput stops being comparable, which it never was.
+#
 # Intensity output stays `probability`, not `independent`: the loss code under test is reached
 # identically either way, and keeping it avoids the 6-key CE-vs-JSS bundle confound.
 #
 # Read at matched epoch against ms_reg_ctrl_2g only. These are merged tolerance_consensus targets
 # (post 2026-09-03), so nothing here compares to earlier merged cosines or to the L40S replicates.
-wandb_name: nist20_ma_mi_merged_fast_batch256x2_cuda_lb32_kl_hungarian
+wandb_name: nist20_ma_mi_merged_fast_batch256x2_cuda_lb8_kl_hungarian
 wandb_group: nist20_mass_shatter_loss_batching_check
 wandb_tags:
 - mass_shatter
@@ -47,7 +55,7 @@ wandb_tags:
 - candidate_conditional
 - charge_logsumexp
 - reduced_monitoring
-- loss_batch_32
+- loss_batch_8
 - microbatch_256
 - effective_batch_512
 - merged
@@ -146,7 +154,7 @@ oos_loss: false
 gaussian_renormalize: true
 sparse_cosine_similarity: true
 loss_vectorized: true
-loss_batch_size: 32
+loss_batch_size: 8
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:

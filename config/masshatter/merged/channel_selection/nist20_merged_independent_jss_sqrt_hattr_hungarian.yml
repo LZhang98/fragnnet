@@ -119,7 +119,7 @@ mass_shatter_ion_h_support_loss_weight: 0.1
 mass_shatter_apply_channel_selection_in_training: False
 mass_shatter_channel_support_attribution: hungarian
 mass_shatter_channel_support_use_intensity_prior: False
-mass_shatter_channel_diagnostics: True
+mass_shatter_channel_diagnostics: False
 
 # 3. Optimize nonnegative, non-normalized peak intensities with the configured
 # direct objective and separately supervise supported hydrogen-transfer channels.

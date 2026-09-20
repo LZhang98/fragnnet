@@ -122,7 +122,7 @@ mass_shatter_ion_h_support_loss_weight: 0.0
 mass_shatter_apply_channel_selection_in_training: False
 mass_shatter_channel_support_attribution: gaussian_posterior
 mass_shatter_channel_support_use_intensity_prior: False
-mass_shatter_channel_diagnostics: True
+mass_shatter_channel_diagnostics: False
 
 # 3. Train probabilistic intensity with Gaussian CE and no support gate or BCE.
 # The matching selector below is inactive for Gaussian CE.

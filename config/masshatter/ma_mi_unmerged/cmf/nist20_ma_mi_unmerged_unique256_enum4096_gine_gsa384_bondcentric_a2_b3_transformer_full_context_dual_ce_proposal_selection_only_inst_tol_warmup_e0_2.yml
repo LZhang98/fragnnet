@@ -152,7 +152,7 @@ mass_shatter_proposal_only_until_epoch: 2
 
 # Log dense valid/attributed/retained ion-H channel counts without adding a support
 # loss. These are the diagnostics that report the added CMF-H channels.
-mass_shatter_channel_diagnostics: True
+mass_shatter_channel_diagnostics: False
 
 # 3. Train final spectral intensity and H-independent proposal support separately.
 loss_type: cross_entropy

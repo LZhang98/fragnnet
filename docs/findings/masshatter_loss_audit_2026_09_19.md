@@ -154,6 +154,17 @@ These are monitoring only. The cheapest action is to stop implying them from
 `mass_shatter_channel_diagnostics` on every step, or to compute them on validation batches only;
 batching them is the same segment-reduction rewrite already applied twice in this file.
 
+**Applied 2026-09-19:** `mass_shatter_channel_diagnostics` is now `False` in all 47 configs under
+`config/masshatter/` that set it, matching the template default and the precedent already set by
+[`..._warmup_e0_4_dense_subformula_fast.yml`](../../config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast.yml).
+`mass_shatter_channel_support_metrics` is `True` in no config, so both loops are now off
+everywhere. The objective is unchanged: `channel_targets_enabled` is also the OR of the support
+and ion-mode loss weights, and those arms keep `mass_shatter_ion_h_support_loss_weight: 0.1`.
+The four `config/debug/debug_tiny_mass_shatter_*.yml` smoke configs keep it on by choice.
+**Consequence:** `scripts/eval/mass_shatter_ion_h_top_k_sweep.py` refuses a config with the flag
+off, so the Phase 2 channel audit now needs
+`--override mass_shatter_channel_diagnostics=True` when it is pointed at a training YAML.
+
 The other three per-spectrum loops on this path, `_shared_group_proposal_coverage_loss`
 (`:613`), `_cross_ev_fragment_delta_loss` (`:722`, `:788`) and `_candidate_coverage_by_cut_count`
 (`:129`), are gated off by default and off in the merged base config, so they are not costing

@@ -126,7 +126,7 @@ mass_shatter_ion_h_support_loss_weight: 0.0
 mass_shatter_apply_channel_selection_in_training: False
 mass_shatter_channel_support_attribution: gaussian_posterior
 mass_shatter_channel_support_use_intensity_prior: False
-mass_shatter_channel_diagnostics: True
+mass_shatter_channel_diagnostics: False
 
 # 3. Optimize nonnegative, non-normalized peak intensities with the configured
 # JSS objective only, without auxiliary H-support supervision or a support gate.

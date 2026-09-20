@@ -96,7 +96,7 @@ mass_shatter_min_ion_h_relative_probability: 0.0
 mass_shatter_ion_h_support_loss_weight: 0.1
 mass_shatter_apply_channel_selection_in_training: False
 mass_shatter_channel_support_attribution: gaussian_posterior
-mass_shatter_channel_diagnostics: True
+mass_shatter_channel_diagnostics: False
 
 # 3. Keep the control loss and optimization setup unchanged apart from the
 # explicitly named 0.1 H-support auxiliary loss.
