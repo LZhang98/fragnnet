@@ -1053,6 +1053,7 @@ class MassShatterPL(SpectrumPL):
             ),
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
+            h_transfer_bound=self.hparams.mass_shatter_h_transfer_bound,
             include_cmf=self.hparams.mass_shatter_include_cmf,
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
             use_smarts_templates=self.hparams.mass_shatter_smarts_templates,

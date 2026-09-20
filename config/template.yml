@@ -243,6 +243,17 @@ mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability rela
 mass_shatter_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
+# Which of FraGNNet's hydrogen-transfer bounds MASShatter applies to a candidate channel.
+#   none       - only element counts must stay nonnegative (historical behaviour). Hydrogen
+#                can be gained with no source, so the intact molecule reaches
+#                prec_mz + mass_shatter_max_h_transfer * H. Those channels are chemically
+#                unreachable, but they act as negatives in the candidate softmax and they
+#                absorb M+1 isotope peaks, so dropping them is a trade, not a free win.
+#   complement - a gain may not exceed the hydrogens held by the complementary neutral
+#                fragment; the intact molecule can then only lose them.
+#   valence    - also caps the gain at the fragment's free valence slots plus one per severed
+#                bond, i.e. full parity with FraGNNet's compute_cc_h_cap.
+mass_shatter_h_transfer_bound: none
 mass_shatter_include_cmf: True
 mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.

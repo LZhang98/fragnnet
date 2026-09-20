@@ -61,6 +61,32 @@ def get_mol_feats_sizes(
     return mg.num_atom_feats, mg.num_bond_feats
 
 
+def _atom_free_valence_slots(atom: Chem.rdchem.Atom) -> int:
+    """Return how many more hydrogens an atom could carry in the intact molecule.
+
+    Equal to ``ve - sbond - h``, the quantities FraGNNet builds in
+    ``frag_utils.extract_mol_info``: ``ve`` is the atom's total valence (less a positive
+    formal charge that funds a heavy-atom bond rather than an H slot), ``sbond`` its
+    heavy-atom degree, and ``h`` its current hydrogen count. It is exactly the atom's
+    share of unsaturation -- the sum of ``bond order - 1`` over its bonds -- so a
+    saturated atom scores 0 and each double bond contributes 1 to both endpoints.
+
+    Args:
+        atom: RDKit atom from a molecule with implicit hydrogens.
+
+    Returns:
+        Spare hydrogen slots, before any bond to a neighbouring fragment is cut.
+    """
+    hydrogens = atom.GetTotalNumHs()
+    valence = atom.GetTotalValence()
+    # A cationic atom carrying no hydrogens spends its extra valence on a heavy-atom bond,
+    # not on an H slot; protonated amines ([NH3+]) genuinely use it for H, hence the guard.
+    if atom.GetFormalCharge() > 0 and hydrogens == 0:
+        valence -= atom.GetFormalCharge()
+    heavy_degree = atom.GetTotalDegree() - hydrogens
+    return valence - heavy_degree - hydrogens
+
+
 class MolGraph:
     def __init__(
         self,
@@ -230,6 +256,16 @@ class MolGraph:
         )
         g.atom_formal_charges = th.tensor(
             [atom.GetFormalCharge() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        # Spare hydrogen capacity per atom, in the intact molecule: how many further
+        # hydrogens the atom could carry if every one of its bonds were reduced to a single
+        # bond. Mirrors FraGNNet's `ve_arr`/`sbond_arr` arithmetic in
+        # `frag_utils.extract_mol_info` (`use_default_valence=False`), including its formal
+        # charge correction, so both models bound hydrogen transfer the same way. Cutting a
+        # bond frees one more slot per severed end, which the consumer adds per fragment.
+        g.atom_free_valence_slots = th.tensor(
+            [_atom_free_valence_slots(atom) for atom in mol.GetAtoms()],
             dtype=th.long,
         )
         g.atom_monoisotopic_masses = th.tensor(

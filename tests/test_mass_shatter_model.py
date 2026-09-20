@@ -2,12 +2,14 @@
 
 from dataclasses import replace
 
+import numpy as np
 import pytest
 import torch as th
 from rdkit import Chem
 from torch_geometric.data import Batch
 
 import fragnnet.model.mass_shatter_model as mass_shatter_model_module
+from fragnnet.frag import compute_frags
 from fragnnet.frag.mass_shatter_candidates import MassShatterStaticGraph
 from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
@@ -24,6 +26,7 @@ from fragnnet.model.mass_shatter_model import (
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS, formula_to_peak_mzs
+from fragnnet.utils.frag_utils import compute_cc_h_cap, extract_mol_info
 
 
 def _build_batch(smiles: tuple[str, ...] = ("CCO", "CO")) -> Batch:
@@ -75,6 +78,7 @@ def _build_model(
     use_smarts_templates: bool = False,
     include_cmf: bool = True,
     max_h_transfer: int = 1,
+    h_transfer_bound: str = "none",
     precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
     fragmentation_modes: tuple[str, ...] = (),
     context_in_gnn: bool = False,
@@ -143,6 +147,7 @@ def _build_model(
         min_fragment_relative_probability=min_fragment_relative_probability,
         include_single_bond_cuts=True,
         max_h_transfer=max_h_transfer,
+        h_transfer_bound=h_transfer_bound,
         include_cmf=include_cmf,
         charge_pooling="logsumexp",
         use_smarts_templates=use_smarts_templates,
@@ -512,7 +517,10 @@ def test_non_degenerate_cmf_uses_the_full_hydrogen_transfer_ladder(
         precursor_types=(precursor_type,),
         max_h_transfer=1,
     )
-    atom_indices = th.arange(batch.x.shape[0])
+    # The C-C component of ethanol, whose complementary neutral (OH) still holds one
+    # hydrogen, so the +1 rung is reachable. The intact molecule would not qualify: its
+    # complement is empty, so it can only lose hydrogens.
+    atom_indices = th.tensor([0, 1])
     ion_mzs, valid = model._fragment_masses_and_valid_channels(
         batch,
         atom_indices,
@@ -2003,7 +2011,10 @@ def test_retained_channel_probability_uses_dense_intensity_distribution() -> Non
     with th.no_grad():
         model.intensity_head.ion_hydrogen_head.weight.zero_()
         model.intensity_head.ion_hydrogen_head.bias.fill_(-10.0)
-        model.intensity_head.ion_hydrogen_head.bias[2] = 10.0
+        # Channel 1 is the zero-shift CRF rung, valid for every component. Channel 2 (+1 H)
+        # is unreachable for the intact molecule, so pinning probability there would leak
+        # mass onto other channels instead of testing the support cutoff.
+        model.intensity_head.ion_hydrogen_head.bias[1] = 10.0
         support_head.weight.zero_()
         support_head.bias.fill_(-10.0)
         support_head.bias[0] = 10.0
@@ -2016,3 +2027,176 @@ def test_retained_channel_probability_uses_dense_intensity_distribution() -> Non
 
     assert output["ion_h_cutoff_pruned_fraction"].item() > 0.0
     assert output["retained_ion_h_probability"].item() < 1e-6
+
+
+@pytest.mark.parametrize(
+    ("bound", "atom_indices", "cut_count", "expected_max_gain"),
+    [
+        # Legacy: hydrogen may be gained with no source at all.
+        ("none", [0, 1, 2], 0, 4),
+        ("none", [2], 1, 4),
+        # The complementary neutral must have the hydrogens to give. The intact molecule has
+        # no complement, so it can only lose them -- this is the channel that put the
+        # survivor ion at prec_mz + 4H and crashed the binned metrics.
+        ("complement", [0, 1, 2], 0, 0),
+        ("complement", [0, 1], 1, 1),  # complement OH holds one
+        ("complement", [2], 1, 4),  # complement C2H5 holds five, the ladder caps at four
+        # FraGNNet parity: the fragment must also have somewhere to put them. A lone O from
+        # one severed bond becomes OH, never OH3, however much hydrogen the complement has.
+        ("valence", [0, 1, 2], 0, 0),
+        ("valence", [2], 1, 1),
+    ],
+)
+def test_hydrogen_transfer_bounds(
+    bound: str,
+    atom_indices: list[int],
+    cut_count: int,
+    expected_max_gain: int,
+) -> None:
+    """``h_transfer_bound`` selects how much of FraGNNet's hydrogen cap MASShatter applies.
+
+    FraGNNet has always bounded a fragment's post-transfer hydrogen count by
+    ``min(compute_cc_h_cap(...), num_hs_prior + max_h_transfer, num_hs)``
+    (``frag_utils``). MASShatter only required nonnegative element counts, which bounds
+    losses but not gains. ``complement`` adds the ``num_hs`` term, ``valence`` adds the
+    free-valence cap as well, and ``none`` keeps the original unbounded ladder because those
+    unreachable channels also serve as negatives in the candidate softmax.
+    """
+    batch = _build_batch(("CCO",))
+    model = _build_model(
+        batch,
+        precursor_types=("[M+H]+",),
+        include_cmf=False,
+        max_h_transfer=4,
+        h_transfer_bound=bound,
+    )
+    indices = th.tensor(atom_indices)
+    ion_mzs, valid = model._fragment_masses_and_valid_channels(
+        batch,
+        indices,
+        th.zeros_like(indices),
+        th.tensor([0]),
+        1,
+        th.tensor([0]),
+        th.tensor([cut_count]),
+    )
+
+    shifts = list(range(-model.max_h_transfer, model.max_h_transfer + 1))
+    for offset, shift in enumerate(shifts):
+        if shift > 0:
+            assert valid[0, 0, offset].item() == (shift <= expected_max_gain), (
+                f"+{shift} H under bound {bound!r}"
+            )
+    assert valid[0, 0, shifts.index(0)].item(), "the untransferred channel is always valid"
+
+    if bound != "none":
+        # Nothing survives above the precursor ion itself.
+        all_atoms = th.arange(batch.x.shape[0])
+        precursor_mzs, _ = model._fragment_masses_and_valid_channels(
+            batch,
+            all_atoms,
+            th.zeros_like(all_atoms),
+            th.tensor([0]),
+            1,
+            th.tensor([0]),
+            th.tensor([0]),
+        )
+        precursor_mz = precursor_mzs[0, 0, model.max_h_transfer].item()
+        assert ion_mzs[0, 0][valid[0, 0]].max().item() <= precursor_mz + 1e-9
+
+
+def test_valence_bound_requires_cut_counts() -> None:
+    """The valence bound cannot be applied without knowing what was severed."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, precursor_types=("[M+H]+",), h_transfer_bound="valence")
+    indices = th.arange(batch.x.shape[0])
+    with pytest.raises(ValueError, match="fragment_cut_counts"):
+        model._fragment_masses_and_valid_channels(
+            batch, indices, th.zeros_like(indices), th.tensor([0]), 1, th.tensor([0])
+        )
+
+
+def test_h_transfer_bound_rejects_unknown_values() -> None:
+    batch = _build_batch(("CCO",))
+    with pytest.raises(ValueError, match="h_transfer_bound"):
+        _build_model(batch, h_transfer_bound="complememt")
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "CCO",
+        "CC(=O)Oc1ccccc1C(=O)O",
+        "CN1C=NC2=C1C(=O)N(C)C(=O)N2C",
+        "CC#N",
+        "C1CCCCC1",
+        "C[N+](C)(C)CC(=O)[O-]",
+    ],
+)
+def test_valence_bound_matches_fragnnet_reference(smiles: str) -> None:
+    """MASShatter's tensor bound must equal FraGNNet's own per-fragment computation.
+
+    FraGNNet derives the cap one fragment at a time, in numpy and Cython
+    (``compute_cc_h_cap`` over ``update_bonds``), which cannot run inside a batched GPU
+    forward: it would need a host sync and a Python loop over every fragment in the batch.
+    MASShatter instead pre-aggregates the same arithmetic per atom
+    (``feat_utils._atom_free_valence_slots``) and adds one slot per severed bond. That
+    identity is what this test pins, using FraGNNet's functions as the oracle.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    mol_d = extract_mol_info(mol)
+    ve_arr = mol_d["ve_arr"]
+    sbond_arr = mol_d["sbond_arr"]
+    hs_arr = mol_d["hs_arr"]
+
+    batch = _build_batch((smiles,))
+    model = _build_model(
+        batch,
+        precursor_types=("[M+H]+",),
+        include_cmf=False,
+        max_h_transfer=4,
+        h_transfer_bound="valence",
+    )
+
+    num_atoms = mol.GetNumAtoms()
+    fragments = [list(range(num_atoms))] + [[i] for i in range(num_atoms)]
+    if num_atoms > 2:
+        fragments.append(list(range(num_atoms - 1)))
+
+    for atom_ids in fragments:
+        cc = np.array(atom_ids, dtype=np.int32)
+        fragment_sbond, _ = compute_frags.update_bonds(
+            cc,
+            sbond_arr.astype(np.int32),
+            mol_d["bond_mask_arr"].astype(np.uint8),
+            mol_d["bonds"].astype(np.int32),
+            mol_d["atoms_to_bonds"],
+        )
+        # FraGNNet's own cap, then its two extra terms from compute_cc_h_options.
+        cap = compute_cc_h_cap(cc, ve_arr.copy(), fragment_sbond, 0)
+        hydrogens_prior = int(hs_arr[cc].sum())
+        reference_gain = min(
+            int(cap) - hydrogens_prior,
+            model.max_h_transfer,
+            int(mol_d["num_hs"]) - hydrogens_prior,
+        )
+        # Bonds severed at this fragment's boundary, from FraGNNet's own arrays.
+        cut_count = int(sbond_arr[cc].sum() - fragment_sbond[cc].sum())
+
+        indices = th.tensor(atom_ids)
+        _, valid = model._fragment_masses_and_valid_channels(
+            batch,
+            indices,
+            th.zeros_like(indices),
+            th.tensor([0]),
+            1,
+            th.tensor([0]),
+            th.tensor([cut_count]),
+        )
+        shifts = list(range(-model.max_h_transfer, model.max_h_transfer + 1))
+        gains = [s for s in shifts if s > 0 and valid[0, 0, shifts.index(s)].item()]
+        model_gain = max(gains) if gains else 0
+        assert model_gain == max(reference_gain, 0), (
+            f"{smiles} fragment {atom_ids}: MASShatter allows +{model_gain} H, "
+            f"FraGNNet allows +{reference_gain}"
+        )

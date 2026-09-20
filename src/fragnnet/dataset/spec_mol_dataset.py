@@ -56,6 +56,7 @@ class SpecMolDataset(BaseDataset):
             self._filter_mass_shatter_spectra(
                 kwargs["mass_shatter_max_h_transfer"],
                 kwargs["mass_shatter_include_cmf"],
+                kwargs.get("mass_shatter_h_transfer_bound", "none"),
             )
 
         if spec_pp_sd is None:
@@ -67,7 +68,12 @@ class SpecMolDataset(BaseDataset):
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)
 
-    def _filter_mass_shatter_spectra(self, max_h_transfer: int, include_cmf: bool) -> None:
+    def _filter_mass_shatter_spectra(
+        self,
+        max_h_transfer: int,
+        include_cmf: bool,
+        h_transfer_bound: str = "none",
+    ) -> None:
         """Drop incompatible molecule/adduct pairs before preprocessing and batching."""
         valid_pairs = {
             (mol_id, prec_type): mass_shatter_has_valid_ion(
@@ -75,6 +81,7 @@ class SpecMolDataset(BaseDataset):
                 prec_type,
                 max_h_transfer,
                 include_cmf,
+                h_transfer_bound,
             )
             for mol_id, prec_type in self.spec_df[["mol_id", "prec_type"]]
             .drop_duplicates()

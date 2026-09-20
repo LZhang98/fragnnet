@@ -354,6 +354,21 @@ def _relative_joint_channel_keep_mask(
     return (keep | fragment_fallback).reshape_as(valid_mask)
 
 
+# How far a fragment may be pushed up the hydrogen-transfer ladder.
+#   "none"       - only the element counts must stay nonnegative. Hydrogen may be gained with
+#                  no source, which is how MASShatter behaved before this option existed: the
+#                  intact molecule reached prec_mz + max_h_transfer * H. Those channels are
+#                  chemically unreachable but act as negatives in the candidate softmax, and
+#                  they currently absorb M+1 isotope peaks, so removing them is a measured
+#                  trade rather than a pure win.
+#   "complement" - a gain may not exceed the hydrogens held by the complementary neutral
+#                  fragment; the intact molecule can then only lose hydrogens. Matches the
+#                  `num_hs` term of FraGNNet's cap.
+#   "valence"    - additionally caps the gain at the fragment's free valence slots plus one
+#                  per severed bond, i.e. FraGNNet's `compute_cc_h_cap`. Full parity.
+H_TRANSFER_BOUNDS = ("none", "complement", "valence")
+
+
 def _cmf_duplicate_crf_shift(
     precursor_type: str,
     max_h_transfer: int,
@@ -853,6 +868,7 @@ class MassShatterModel(nn.Module):
         min_fragment_relative_probability: float,
         include_single_bond_cuts: bool,
         max_h_transfer: int,
+        h_transfer_bound: str = "none",
         include_cmf: bool,
         charge_pooling: str,
         use_smarts_templates: bool,
@@ -985,6 +1001,11 @@ class MassShatterModel(nn.Module):
         super().__init__()
         if max_masks <= 0 or max_h_transfer < 0:
             raise ValueError("max_masks must be positive and max_h_transfer nonnegative")
+        if h_transfer_bound not in H_TRANSFER_BOUNDS:
+            raise ValueError(
+                f"h_transfer_bound must be one of {list(H_TRANSFER_BOUNDS)}, "
+                f"got {h_transfer_bound!r}"
+            )
         if max_enumerated_masks <= 0:
             raise ValueError("max_enumerated_masks must be positive")
         if mask_selection_threads < 1:
@@ -1156,6 +1177,7 @@ class MassShatterModel(nn.Module):
         self.min_fragment_relative_probability = min_fragment_relative_probability
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
+        self.h_transfer_bound = h_transfer_bound
         self.include_cmf = include_cmf
         self.charge_pooling = charge_pooling
         self.use_smarts_templates = use_smarts_templates
@@ -1440,6 +1462,78 @@ class MassShatterModel(nn.Module):
             ),
         )
 
+    def _transferable_hydrogen_shifts(
+        self,
+        mol_pyg: Batch,
+        atom_indices: th.Tensor,
+        atom_fragment_indices: th.Tensor,
+        fragment_batch_indices: th.Tensor,
+        component_counts: th.Tensor,
+        h_shifts: th.Tensor,
+        fragment_cut_counts: th.Tensor | None,
+        atom_numbers: th.Tensor,
+        atom_hydrogens: th.Tensor,
+        batch_size: int,
+    ) -> th.Tensor:
+        """Return which hydrogen shifts a source of hydrogen can actually supply.
+
+        Hydrogen transfer moves hydrogens from the complementary neutral fragment, so a gain
+        needs both a donor and somewhere to put the hydrogen. ``h_transfer_bound`` selects how
+        much of that is enforced; see ``H_TRANSFER_BOUNDS``. Losses are bounded elsewhere, by
+        the element counts staying nonnegative.
+
+        Args:
+            mol_pyg: Batched precursor graphs.
+            atom_indices: Atom index for every sparse fragment membership.
+            atom_fragment_indices: Fragment index for every membership.
+            fragment_batch_indices: Spectrum index for every fragment.
+            component_counts: Tracked element counts per fragment.
+            h_shifts: The ladder, from ``-max_h_transfer`` to ``+max_h_transfer``.
+            fragment_cut_counts: Severed bonds per fragment; required by ``valence``.
+            atom_numbers: Atomic number per atom.
+            atom_hydrogens: Hydrogen count per atom.
+            batch_size: Number of spectra in the batch.
+
+        Returns:
+            Bool tensor of shape ``(num_fragments, num_h_shifts)``.
+        """
+        num_fragments = component_counts.shape[0]
+        if self.h_transfer_bound == "none":
+            return h_shifts.new_ones((num_fragments, h_shifts.numel()), dtype=th.bool)
+
+        # The complement's hydrogens: everything the molecule has that this fragment does not.
+        per_atom_hydrogens = (atom_numbers == 1).long() + atom_hydrogens.long()
+        molecule_hydrogens = per_atom_hydrogens.new_zeros(batch_size).index_add(
+            0, mol_pyg.batch, per_atom_hydrogens
+        )
+        max_gain = (
+            molecule_hydrogens[fragment_batch_indices]
+            - component_counts[:, self.hydrogen_count_column]
+        )
+
+        if self.h_transfer_bound == "valence":
+            if fragment_cut_counts is None:
+                raise ValueError(
+                    "h_transfer_bound='valence' needs fragment_cut_counts to count the "
+                    "valence slots freed by each severed bond"
+                )
+            if not hasattr(mol_pyg, "atom_free_valence_slots"):
+                raise ValueError(
+                    "h_transfer_bound='valence' needs `atom_free_valence_slots` on the "
+                    "molecule graph; rebuild the graphs with the current featurizer"
+                )
+            # A fragment can hold its current hydrogens plus one per unsaturation it could
+            # open, plus one per bond severed from the complement. FraGNNet computes the same
+            # quantity as `sum(ve) - sum(retained single bonds)` in `compute_cc_h_cap`.
+            slots = mol_pyg.atom_free_valence_slots.long()[atom_indices]
+            fragment_slots = slots.new_zeros(num_fragments).index_add(
+                0, atom_fragment_indices, slots
+            )
+            valence_gain = fragment_slots + fragment_cut_counts.to(fragment_slots)
+            max_gain = th.minimum(max_gain, valence_gain)
+
+        return h_shifts[None, :] <= max_gain.clamp_min(0)[:, None]
+
     def _fragment_masses_and_valid_channels(
         self,
         mol_pyg: Batch,
@@ -1448,6 +1542,7 @@ class MassShatterModel(nn.Module):
         fragment_batch_indices: th.Tensor,
         num_fragments: int,
         precursor_type_indices: th.Tensor,
+        fragment_cut_counts: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor]:
         """Translate fragment atom sets into monoisotopic ion channels.
 
@@ -1458,12 +1553,16 @@ class MassShatterModel(nn.Module):
             fragment_batch_indices: Spectrum index for every fragment.
             num_fragments: Number of fragment atom sets.
             precursor_type_indices: Adduct index per spectrum, shape ``(batch_size,)``.
+            fragment_cut_counts: Severed bonds per fragment, required by the ``valence``
+                hydrogen-transfer bound and ignored by the others.
 
         Returns:
             Tuple of ``(ion_mzs, valid_channels)``, both shaped
             ``(num_fragments, num_ion_modes, num_h_shifts)``. ``valid_channels`` is
             False wherever a channel would need more atoms of some element than the
-            component actually contains (or a CMF channel the adduct does not define).
+            component actually contains, wherever the hydrogen transfer would take more
+            hydrogens than the complementary neutral fragment has to give, or for a CMF
+            channel the adduct does not define.
         """
         atom_masses = mol_pyg.atom_monoisotopic_masses
         atom_hydrogens = mol_pyg.atom_hydrogen_counts
@@ -1499,6 +1598,18 @@ class MassShatterModel(nn.Module):
             self.max_h_transfer + 1,
             device=component_masses.device,
         )
+        transferable = self._transferable_hydrogen_shifts(
+            mol_pyg,
+            atom_indices,
+            atom_fragment_indices,
+            fragment_batch_indices,
+            component_counts,
+            h_shifts,
+            fragment_cut_counts,
+            atom_numbers,
+            atom_hydrogens,
+            precursor_type_indices.shape[0],
+        )
         # CRF channel: the fragment keeps the adduct, so apply the adduct's element and
         # mass deltas, then sweep the hydrogen-transfer offsets. A channel is invalid
         # once any tracked element count would go negative.
@@ -1508,7 +1619,7 @@ class MassShatterModel(nn.Module):
         )
         crf_counts = crf_counts.expand(-1, self.num_h_shifts, -1).clone()
         crf_counts[:, :, self.hydrogen_count_column] += h_shifts
-        crf_valid = (crf_counts >= 0).all(dim=2)
+        crf_valid = (crf_counts >= 0).all(dim=2) & transferable
         crf_mzs = (
             component_masses[:, None]
             + self.crf_mass_deltas[component_precursor_types, None]
@@ -1528,7 +1639,7 @@ class MassShatterModel(nn.Module):
             )
             cmf_counts = cmf_counts.expand(-1, self.num_h_shifts, -1).clone()
             cmf_counts[:, :, self.hydrogen_count_column] += h_shifts
-            cmf_valid = (cmf_counts >= 0).all(dim=2)
+            cmf_valid = (cmf_counts >= 0).all(dim=2) & transferable
             cmf_valid &= self.cmf_precursor_valid[component_precursor_types, None]
             cmf_mzs = (
                 component_masses[:, None]
@@ -2157,6 +2268,10 @@ class MassShatterModel(nn.Module):
                 fragment_batch_indices,
                 num_fragments,
                 precursor_type_indices,
+                # Bonds severed at this fragment's own boundary, which is what frees a
+                # valence slot. Intra-fragment breaks are excluded, matching the retained-bond
+                # count FraGNNet's `update_bonds` computes.
+                fragment_cut_counts,
             )
             fragment_keep = _relative_fragment_keep_mask(
                 fragment_log_probabilities,
@@ -2450,6 +2565,13 @@ class MassShatterModel(nn.Module):
                 fragment_batch_indices,
                 num_fragments,
                 precursor_type_indices,
+                # `component_cut_counts` carries the whole mask's cut count on every one of
+                # its components (`mass_shatter_core.pyx:851`), so for a mask that yields
+                # three or more pieces this over-counts an end piece's own boundary. It is an
+                # upper bound, so the valence bound stays conservative here: it can leave an
+                # unreachable channel in place, never remove a reachable one. The
+                # unique-fragment path above uses exact per-fragment boundary counts.
+                fragment_cut_counts,
             )
 
         # 4. Remove fragments that cannot form an ion under the configured adduct.

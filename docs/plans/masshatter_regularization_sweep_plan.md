@@ -1,9 +1,11 @@
 # MASShatter regularization and normalization sweep (Fir, one-hour boxes)
 
 > **Status:** PROPOSED · **Updated:** 2026-09-19
-> Nine sweep configs written and verified locally (eight arms plus the 2g slice variant); replicate floor, throughput and the GPU-memory /
-> slice-sizing table measured from existing W&B runs. **Nothing generated or submitted on Fir**, no training launched, no
-> model or config code changed by this plan.
+> Nine sweep configs written and verified locally (eight arms plus the 2g slice variant); replicate
+> floor, throughput and the GPU-memory / slice-sizing table measured from existing W&B runs.
+> **Stage A was submitted on Fir on 2026-09-19 and crashed**; the cause is fixed in
+> `spectrum_pl.py` (see [Stage A incident](#stage-a-incident-2026-09-19--out-of-range-predicted-peaks))
+> and Stage A must be resubmitted from a checkout carrying that fix.
 
 Executes the "sweep second" half of the
 [regularization audit](../findings/masshatter_regularization_audit_2026_09_19.md), whose census
@@ -18,7 +20,7 @@ Screen, at direction-finding resolution, whether any single regularization or no
 moves the merged MA/MI arm off its current trajectory — and, for the first time in this model
 family, observe a **train** cosine next to the validation cosine while doing it.
 
-This is a screen, not a decision. It is designed to rank six one-knob arms and produce one or two
+This is a screen, not a decision. It is designed to rank eight one-knob arms and produce one or two
 candidates worth a multi-hour chained run, not to select a production setting.
 
 ### Acceptance criteria
@@ -50,7 +52,7 @@ Vulcan L40S, compared at matched epoch:
 | **spread** | 0.0124 | 0.0079 | 0.0061 | 0.0075 | 0.0072 | |
 
 `val_cos_sim_0.01_epoch/mean`. Replicate sd is about **0.003** from epoch 20 on, spread about
-0.007. A single one-hour arm therefore resolves effects of roughly **+/-0.007 or larger**. Six arms
+0.007. A single one-hour arm therefore resolves effects of roughly **+/-0.007 or larger**. Eight arms
 at n=1 will produce one false 0.007-level separation on average; that is why the read-out below
 promotes on mechanism plus margin, never on margin alone.
 
@@ -159,9 +161,9 @@ fast path (`a55b0c7f`) and no arm trips the new setup guard.
 
 ## 2. The sweep
 
-Six one-knob arms plus two controls, in one-hour boxes. The GPU profile and the number of
-replicates per arm are **set by the Stage A slice measurement**, not fixed here: shape A (8 jobs on
-`3g.40gb`) if the 2g slice is >= 1.75x slower, shape B (14 jobs on `2g.20gb`, n=2 per arm) if it is
+Eight one-knob arms plus two controls, in one-hour boxes. The GPU profile and the number of
+replicates per arm are **set by the Stage A slice measurement**, not fixed here: shape A (10 jobs on
+`3g.40gb`) if the 2g slice is >= 1.75x slower, shape B (18 jobs on `2g.20gb`, n=2 per arm) if it is
 <= 1.5x. Job names below are shape A; shape B appends `_s2` for the second seed of each arm.
 
 All eight configs exist under `config/masshatter/ma_mi_merged/`, sharing the stem
@@ -180,6 +182,8 @@ missing override cannot silently break comparability, and the W&B read-out is on
 | `ms_reg_drop03` | `_drop03` | the three dropout sites, together |
 | `ms_reg_wd10` | `_wd10` | `weight_decay` |
 | `ms_reg_ctxnorm` | `_ctxnorm` | `mass_shatter_context_normalization` |
+| `ms_reg_hbound_complement` | `_hbound_complement` | `mass_shatter_h_transfer_bound` |
+| `ms_reg_hbound_valence` | `_hbound_valence` | `mass_shatter_h_transfer_bound` |
 
 Verified after generation: each config resolves against `config/template.yml`, has the identical key
 set, and differs from `ctrl_a` in **exactly** the keys of its declared axis and nothing else. The
@@ -206,6 +210,16 @@ those runs are already not clock-comparable, so nothing is lost.
 `loss_batch_size` and `num_workers` are deliberately **not** in the sweep configs: they are slice
 properties, not experiment settings, and the Stage A measurement may move them. They are passed at
 launch, where they appear in the generated job script and the W&B config.
+
+**The two hydrogen-transfer arms are not regularization arms and are not read like one.** They
+change the candidate set rather than the optimizer, and they remove the only channel currently
+explaining M+1 isotope peaks, so roughly 0.2% of intensity weight moves to unexplained and the
+primary loss shifts for a reason unrelated to fit quality. **Compare them on val cosine at matched
+epoch, never on the loss**, and read them against `ctrl_a`/`ctrl_b` like everything else. A null
+result is informative in its own right: it would say the unreachable channels are neither helping
+as softmax negatives nor hurting as isotope crutches, which settles whether the bound can simply be
+turned on. See [the incident section](#stage-a-incident-2026-09-19--out-of-range-predicted-peaks)
+for the mode definitions and the measured candidate counts.
 
 `_warmup_e0_4` is deliberately excluded — it is staged training, not regularization, and it moves
 the optimization schedule rather than the capacity/normalization axis under study here.
@@ -257,10 +271,120 @@ Gate the fan-out on:
 6. **The slice ratio decides the shape.** <= 1.5x -> shape B or C on 2g; >= 1.75x -> shape A on 3g;
    in between, prefer 3g, because epochs are the scarcer resource for the dropout arms.
 
-### Stage B — fan-out (6 or 12 jobs, ~1 h wall clock)
+### Stage A incident, 2026-09-19 — out-of-range predicted peaks
 
-Submit the rest together on the slice Stage A selected: six arms plus `ctrl_b` (shape A), or twelve
-arms plus `ctrl_b` (shape B, n=2 per arm). They are independent; one-hour boxes are chosen partly
+The first Stage A submission (SLURM `60545834`) died inside `training_step` at
+`batched_bin_func`: `AssertionError: (tensor(1501.7432), 1500)`.
+
+**Cause: two bounds that were never reconciled.** `mz_max` bounds the *observed* spectrum — target
+peaks pass through `rel_filter_func` with it (`spectrum_pl.py:296-306`), so they are always in
+range. The *candidate grid* is bounded by something else entirely: each candidate carries an
+H-transfer ladder of `mass_shatter_max_h_transfer: 4`, so the intact-molecule candidate reaches
+`prec_mz + 4 x 1.00783`. Predicted peaks are never range-filtered, because `preproc_spec`'s
+`(not train) and pred` branch (`spectrum_pl.py:1234-1238`) only untransforms and normalizes
+**intensities**. `batched_bin_func` then asserts `max(mzs) < mz_max` on both sides.
+
+**Measured on this split.** The heaviest training precursor is **1497.7119**, and
+1497.7119 + 4 x 1.00783 = **1501.7432** — the assertion value, digit for digit. So the offending
+peak is not a precursor and not a bad prediction: it is the top rung of the H ladder on the intact
+molecule. The collision window is only 4.03 Da wide, so it catches exactly the molecules with
+`prec_mz > 1495.97`:
+
+| Fold | max `prec_mz` | spectra at risk | molecules at risk |
+| --- | ---: | ---: | ---: |
+| train | 1497.71 | **2** | 2 |
+| val | 1477.68 | 0 | 0 |
+| test | 1449.65 | 0 | 0 |
+
+Two training spectra were enough to kill the job. **Correction to an earlier claim in this plan:
+validation could not have tripped this on `nist20_ma_mi_inchikey`** — its val and test folds have
+no molecule in the window at all. The code path is genuinely unguarded, but whether it fires is
+split-dependent, so this was not a near-miss in the 232 historical runs; it is a hazard for any
+split whose evaluation fold carries a precursor within 4 H of `mz_max`.
+
+Worth a separate look, not fixed here: those `+nH`-above-precursor channels are physically
+unreachable outcomes, and the model still spends probability mass on them. Bounding the H ladder
+by `mz_max` at candidate construction would remove both the waste and the crash at the source; that
+is a modeling change, and this sweep is not the place for it.
+
+**Root-cause fix, behind a switch.** MASShatter's only channel rule was `crf_counts >= 0`, which
+bounds hydrogen *loss* but never *gain*: a fragment could acquire hydrogens that exist nowhere, and
+the intact molecule reached `prec_mz + 4H`. FraGNNet has always bounded this
+(`frag_utils.py:518-533`). The bound is now a config option, `mass_shatter_h_transfer_bound`,
+**defaulting to `none` so no existing run changes**:
+
+| Mode | Rule | FraGNNet term |
+| --- | --- | --- |
+| `none` (default) | element counts nonnegative only -- the historical ladder | — |
+| `complement` | a gain may not exceed the complementary neutral fragment's hydrogens; the intact molecule can only lose them | the `num_hs` cap |
+| `valence` | also caps the gain at the fragment's free valence slots plus one per severed bond | `compute_cc_h_cap` |
+
+`valence` is full parity: a lone O from one severed bond becomes OH, never OH3, however much
+hydrogen the complement holds. It needs a new per-atom field, `atom_free_valence_slots`
+(`feat_utils._atom_free_valence_slots`), computed with FraGNNet's own `ve`/`sbond` arithmetic and
+its formal-charge correction. Molecule graphs are built per item with no disk cache, so nothing
+stale needs regenerating. The unique-fragment path passes exact per-fragment boundary counts; the
+component path passes the mask-level count, which over-counts an end piece of a 3-way cut and is
+therefore conservative (it can leave an unreachable channel, never remove a reachable one).
+
+**FraGNNet's own functions are reused as the test oracle, not at runtime.**
+`compute_cc_h_cap` (numpy) and `compute_cc_h_floor` (numpy and Cython) each take one fragment as a
+`cc_atom_ids` array, so calling them inside the batched GPU forward would need a host sync and a
+Python loop over every fragment in the batch -- the cost the proposal-coverage batching removed
+(118.6 ms -> 2.4 ms). MASShatter instead pre-aggregates the identical arithmetic per atom and adds
+one slot per severed bond. `test_valence_bound_matches_fragnnet_reference` pins that identity by
+running FraGNNet's `extract_mol_info` -> `update_bonds` -> `compute_cc_h_cap` as the reference for
+every fragment of six molecules -- ethanol, aspirin, caffeine, acetonitrile (triple bond),
+cyclohexane (ring) and a quaternary-ammonium zwitterion (the formal-charge correction path) -- and
+they agree exactly. The floor term is still FraGNNet-only; MASShatter keeps its weaker
+`counts >= 0` form.
+
+`formula_utils.mass_shatter_has_valid_ion` takes the same setting so the dataset admissibility
+filter cannot disagree with the model. Only hydrogen-free molecules can change verdict there --
+**2 of 35,025** in NIST20 -- and correctly so: a molecule with no hydrogen cannot form `[M-H]-`.
+
+**Why it is a switch and not simply on.** Measured across four probe molecules at
+`max_h_transfer: 4`:
+
+| Mode | Emitted candidates | vs `none` | Above the precursor |
+| --- | ---: | ---: | ---: |
+| `none` | 1,193 | — | 104 |
+| `complement` | 1,042 | **-12.7%** | 0 |
+| `valence` | 982 | **-17.7%** | 0 |
+
+Those unreachable channels are not pure waste: they act as **negatives in the candidate softmax**,
+and they are currently the only thing explaining M+1 isotope peaks. 2.35% of in-scope training
+spectra carry a true peak on an above-precursor channel; for `+1H` (2.27% of spectra on its own)
+**84.3% are closer to the M+1 ¹³C isotope than to a hydrogen transfer**. Turning the bound on makes
+those peaks unexplained -- median 4% of base peak, 34.7% of them at or above 10%, roughly 0.2% of
+intensity weight. That is arguably correct (isotopes should not be laundered through an impossible
+channel) but it is a trade to measure, not assume, and isotope handling is its own problem.
+The three modes are therefore a ready-made ablation axis.
+
+**Defence in depth, kept** (`spectrum_pl.py`, `calculate_all_auxiliary_metrics`): predicted peaks at
+or above `mz_max` are still dropped before binning. The two bounds answer different questions --
+chemistry (can this ion exist?) versus observation window (can this ion be binned?) -- and a dataset
+containing a molecule heavier than `mz_max` would still need the second. Peaks in range are
+untouched, so no metric that did not previously crash changes value, and the range assert stays live
+for the target side, where an out-of-range peak really does mean a broken pipeline.
+
+**Fix** (`spectrum_pl.py`, `calculate_all_auxiliary_metrics`): drop predicted peaks at or above
+`mz_max` before binning, so both sides are compared over the same `[0, mz_max)` window. Peaks in
+range are untouched, so no metric that did not previously crash changes value, and the range assert
+stays live for the target side, where an out-of-range peak really does mean a broken pipeline.
+**Scope of the fix: the binned metrics only.** The edit sits inside `if compute_bin_specs:`, which
+only `cos_sim` and `opt_cos_sim` enable (`spectrum_pl.py:396,430`). Not touched:
+`recall`/`precision`/`wrecall`/`wprecision`, which go through `round_aggregate_peaks` and have no
+range assert — an out-of-range prediction still counts there as unmatched, as it always has; and
+the loss, which never bins for MASShatter (`self.binned_loss = False`, `mass_shatter_pl.py:1227`).
+The binned-loss path (`_preproc_spec(bin_spec=...)` -> `batched_bin_func` at `spectrum_pl.py:323`)
+carries the *same* unfiltered-prediction exposure and is **not** covered by this fix; it is dead for
+MASShatter but live for `BinnedPL` (`binned_pl.py:57`) and for FraGNNet under a binned loss.
+
+### Stage B — fan-out (8 or 16 jobs, ~1 h wall clock)
+
+Submit the rest together on the slice Stage A selected: eight arms plus `ctrl_b` (shape A), or
+sixteen arms plus `ctrl_b` (shape B, n=2 per arm). They are independent; one-hour boxes are chosen partly
 because they schedule quickly, so many short jobs should clear faster than one long one.
 
 ### Stage C — chain the survivors (optional)
@@ -289,8 +413,9 @@ FRAGNNET_ACCOUNT=rrg-dwishart
 FRAGNNET_EMAIL=fw4@ualberta.ca
 CFG=config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64
 
-# control A + the six arms (shape A, 3g.40gb: no overrides needed at all)
-for arm in _ctrl_a _layernorm _graphnorm _drop02 _drop03 _wd10 _ctxnorm; do
+# control A + the eight arms (shape A, 3g.40gb: no overrides needed at all)
+for arm in _ctrl_a _layernorm _graphnorm _drop02 _drop03 _wd10 _ctxnorm \
+           _hbound_complement _hbound_valence; do
   name="ms_reg${arm}"
   python scripts/setup_job_cc.py \
     --frag_gnn_dp . \
@@ -412,6 +537,20 @@ for them and the first trained-checkpoint measurement of that audit claim.
 
 ## 7. Validation performed for this plan
 
+- Full suite: **3,847 passed**, 1 skipped, 2 xfailed.
+- `tests/test_spectrum_test_metrics.py`: 8 passed, including the two new range regressions. The
+  out-of-range test fails with the production `AssertionError` when the fix is stashed.
+- `tests/test_mass_shatter_model.py`: 104 passed, including the new
+  `test_hydrogen_gain_is_bounded_by_the_complement` (intact molecule, and fragments with 1 and 5
+  complement hydrogens). Two existing tests asserted the unbounded ladder and were updated, not
+  deleted: `test_non_degenerate_cmf_uses_the_full_hydrogen_transfer_ladder` now exercises a
+  component whose complement can actually donate the hydrogen, and the retained-channel test pins
+  probability on the zero-shift rung instead of an unreachable `+1`.
+- End-to-end forward passes emit no peak above the precursor.
+- 202 passed across the metric, MASShatter-PL, merged-CE-context, explainability-demand and
+  per-instrument-tolerance suites. Ruff on `spectrum_pl.py` reports the same 20 pre-existing
+  findings before and after the change, none at the edit site; the test file is clean.
+
 - All eight configs resolved through `load_config` against the current template; each diff is
   exactly the single key in the table above.
 - Replicate floor, per-epoch times, epochs reached, peak GPU/host memory and GPU model pulled from
@@ -424,6 +563,7 @@ for them and the first trained-checkpoint measurement of that audit claim.
 
 ## 8. Next concrete check
 
-Generate the two Stage A pilots on the Fir login node, inspect the staging paths and the final
-training commands, submit the pair, and report the six Stage A gates — above all the measured
-2g-to-3g `min/epoch` ratio, which selects the sweep shape. Do not fan out until they pass.
+Get the `spectrum_pl.py` fix onto the Fir checkout — the job stages code at start, so a queued job
+would otherwise rerun the crash — then resubmit both Stage A pilots, and report the six Stage A
+gates, above all the measured 2g-to-3g `min/epoch` ratio that selects the sweep shape. Do not fan
+out until they pass.
