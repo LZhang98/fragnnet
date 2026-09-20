@@ -16,6 +16,18 @@ spec_params:
   merge_keep_ces: True
   preprocess: True
 mol_params:
+  pyg_node_feats:
+  - a_onehot
+  - a_degree_onehot
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
   preprocess: True
 
 # 2. Encode each precursor once, then rank global cut masks from bond probabilities.

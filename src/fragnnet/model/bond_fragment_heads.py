@@ -278,6 +278,9 @@ class CandidateIntensityTransformerHead(nn.Module):
         separate_ion_h_support_head: bool = False,
         predict_oos: bool = False,
         initial_oos_probability: float = 0.1,
+        use_mass_features: bool = False,
+        use_charge_feature: bool = False,
+        unique_fragment_tokens: bool = False,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -311,9 +314,21 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.use_base_probability_feature = use_base_probability_feature
         self.attention_type = attention_type
         self.predict_oos = predict_oos
-        input_dim = 3 * fragment_embedding_dim + context_dim + 3
+        self.use_mass_features = use_mass_features
+        self.use_charge_feature = use_charge_feature
+        # In unique-fragment mode every token is its own mask, so the per-mask component count is
+        # 1 everywhere and the caller has no separate charge factor to report. Both inputs are
+        # then constants and are dropped rather than projected.
+        self.unique_fragment_tokens = unique_fragment_tokens
+        input_dim = 3 * fragment_embedding_dim + context_dim + 2
+        if not unique_fragment_tokens:
+            input_dim += 1
         if use_base_probability_feature:
+            input_dim += 1 if unique_fragment_tokens else 2
+        if use_mass_features:
             input_dim += 2
+        if use_charge_feature:
+            input_dim += 1
         self.input_projection = nn.Sequential(
             nn.Linear(input_dim, model_dim),
             nn.SiLU(),
@@ -512,6 +527,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_masks: int,
         context: th.Tensor | None = None,
         return_support_logits: bool = False,
+        mass_features: th.Tensor | None = None,
+        charge_feature: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -558,6 +575,17 @@ class CandidateIntensityTransformerHead(nn.Module):
         elif context is None or context.shape != (num_components, self.context_dim):
             raise ValueError(f"context must have shape ({num_components}, {self.context_dim})")
 
+        if self.use_mass_features != (mass_features is not None):
+            raise ValueError("mass_features must be supplied exactly when use_mass_features is on")
+        if self.use_charge_feature != (charge_feature is not None):
+            raise ValueError(
+                "charge_feature must be supplied exactly when use_charge_feature is on"
+            )
+        if mass_features is not None and mass_features.shape != (num_components, 2):
+            raise ValueError(f"mass_features must have shape ({num_components}, 2)")
+        if charge_feature is not None and charge_feature.shape != (num_components,):
+            raise ValueError("charge_feature must contain one value per component")
+
         features = [*embeddings]
         if context is not None:
             features.append(context)
@@ -565,18 +593,22 @@ class CandidateIntensityTransformerHead(nn.Module):
             (
                 cut_counts.to(fragment_embeddings).unsqueeze(1),
                 th.log1p(component_sizes.to(fragment_embeddings)).unsqueeze(1),
-                th.log1p(
-                    mask_component_counts[component_mask_indices].to(fragment_embeddings)
-                ).unsqueeze(1),
             )
         )
-        if self.use_base_probability_feature:
-            features.extend(
-                (
-                    charge_log_probabilities.to(fragment_embeddings).unsqueeze(1),
-                    mask_log_probabilities.to(fragment_embeddings).unsqueeze(1),
-                )
+        if not self.unique_fragment_tokens:
+            features.append(
+                th.log1p(
+                    mask_component_counts[component_mask_indices].to(fragment_embeddings)
+                ).unsqueeze(1)
             )
+        if self.use_base_probability_feature:
+            if not self.unique_fragment_tokens:
+                features.append(charge_log_probabilities.to(fragment_embeddings).unsqueeze(1))
+            features.append(mask_log_probabilities.to(fragment_embeddings).unsqueeze(1))
+        if mass_features is not None:
+            features.append(mass_features.to(fragment_embeddings))
+        if charge_feature is not None:
+            features.append(charge_feature.to(fragment_embeddings).unsqueeze(1))
         tokens = self.input_projection(th.cat(features, dim=1))
         tokens = self._contextualize_by_molecule(
             tokens,
@@ -1152,6 +1184,77 @@ def pool_boundary_bond_embeddings(
         reduction=reduction,
         require_nonempty=False,
     )
+
+
+def boundary_bond_endpoint_orientation(
+    bond_endpoints: th.Tensor,
+    boundary_bond_indices: th.Tensor,
+    boundary_component_indices: th.Tensor,
+    atom_indices: th.Tensor,
+    atom_component_indices: th.Tensor,
+    *,
+    num_atoms: int,
+) -> tuple[th.Tensor, th.Tensor]:
+    """Split every (boundary bond, component) pair into its retained and lost atom.
+
+    A boundary bond has exactly one endpoint inside the component and one outside it, but the
+    candidate builders emit boundary bonds without that orientation. Membership is recovered by
+    looking each endpoint up in the sparse ``(component, atom)`` membership relation.
+
+    Args:
+        bond_endpoints: Undirected chemical bonds, shape ``(2, num_bonds)``.
+        boundary_bond_indices: Bond index of each boundary pair, shape ``(num_pairs,)``.
+        boundary_component_indices: Component index of each boundary pair, shape ``(num_pairs,)``.
+        atom_indices: Atom index of each membership entry, shape ``(num_membership,)``.
+        atom_component_indices: Component index of each membership entry, same shape.
+        num_atoms: Total atoms in the batch, used to pack ``(component, atom)`` into one key.
+
+    Returns:
+        ``(inside_atom_indices, outside_atom_indices)``, each shape ``(num_pairs,)``.
+
+    Raises:
+        ValueError: If the inputs disagree in shape or dtype.
+    """
+    if bond_endpoints.ndim != 2 or bond_endpoints.shape[0] != 2:
+        raise ValueError("bond_endpoints must have shape (2, num_bonds)")
+    if boundary_bond_indices.shape != boundary_component_indices.shape:
+        raise ValueError("boundary bond and component indices must be matching vectors")
+    if atom_indices.shape != atom_component_indices.shape:
+        raise ValueError("atom and component membership indices must be matching vectors")
+    if any(
+        tensor.dtype != th.long
+        for tensor in (
+            bond_endpoints,
+            boundary_bond_indices,
+            boundary_component_indices,
+            atom_indices,
+            atom_component_indices,
+        )
+    ):
+        raise ValueError("boundary orientation indices must have dtype torch.long")
+    if num_atoms <= 0:
+        raise ValueError("num_atoms must be positive")
+
+    left = bond_endpoints[0][boundary_bond_indices]
+    right = bond_endpoints[1][boundary_bond_indices]
+    if boundary_bond_indices.numel() == 0:
+        return left, right
+
+    membership_keys = th.sort(atom_component_indices * num_atoms + atom_indices).values
+
+    def contains(atoms: th.Tensor) -> th.Tensor:
+        keys = boundary_component_indices * num_atoms + atoms
+        positions = th.searchsorted(membership_keys, keys).clamp(max=membership_keys.numel() - 1)
+        return membership_keys[positions] == keys
+
+    left_inside = contains(left)
+    _validate_tensor_condition(
+        (left_inside != contains(right)).all(),
+        "a boundary bond must have exactly one endpoint inside its component",
+    )
+    inside = th.where(left_inside, left, right)
+    outside = th.where(left_inside, right, left)
+    return inside, outside
 
 
 def pool_complement_embeddings(

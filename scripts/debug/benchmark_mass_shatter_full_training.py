@@ -415,7 +415,7 @@ def main() -> None:
     cuda_candidate_statistics: list[dict] = []
     if args.candidate_backend != "cpu":
         _enable_cuda_prototype(cuda_candidate_statistics, args.candidate_backend)
-    config = load_config("config/template.yml", args.config, None)
+    config = load_config("config/models_template", args.config, None)
     overrides = {
         "train_batch_size": args.batch_size,
         "accumulate_grad_batches": args.accumulation,
@@ -482,7 +482,7 @@ def main() -> None:
     setup_seconds = time.perf_counter() - setup_start
     source_paths = {
         "benchmark": Path(__file__),
-        "config_template": Path("config/template.yml"),
+        "config_template": Path("config/models_template"),
         "config": Path(args.config),
     }
     for name in (

@@ -417,7 +417,7 @@ Decision rules:
 
 ### 1. Add explicit compatibility modes
 
-Declare the required hyperparameters in `config/template.yml`; do not use fallback defaults:
+Declare the required hyperparameters in `config/models_template`; do not use fallback defaults:
 
 ```yaml
 mass_shatter_intensity_output: probability  # [probability, independent]
@@ -437,7 +437,7 @@ and, in the same guard, requires `sparse_cosine_similarity` and `sum_ints`
 not relax the guard as a whole, because the `sparse_cosine_similarity`/`sum_ints` invariants and the
 `binned_loss = False` assignment below it must survive unchanged in every arm.
 
-Targets carry `ints_transform: none` (`config/template.yml`). The raw, non-sqrt convention in the
+Targets carry `ints_transform: none` (`config/models_template`). The raw, non-sqrt convention in the
 loss depends on that; keep the transform identical across all arms, since a sqrt or log transform
 changes what a cosine or JSD objective is measuring.
 
@@ -547,7 +547,7 @@ adapted to a normalized diagnostic copy; that remains out of scope here.
 
 ### Global-norm gradient clipping recouples the disjoint supports
 
-`gradient_clip_val: 5.0` with `gradient_clip_algorithm: norm` (`config/template.yml`) clips the
+`gradient_clip_val: 5.0` with `gradient_clip_algorithm: norm` (`config/models_template`) clips the
 global norm over all parameters, not per parameter group, and there is no branch-specific override.
 It rescales every gradient by one shared factor `c = min(1, 5.0 / total_norm)`, including the
 proposal branch that the primary loss never touches. The primary loss can therefore modulate the raw

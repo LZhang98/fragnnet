@@ -8,7 +8,7 @@ Absolute support-probability thresholds are available with ``--support_absolute_
 Example:
     python scripts/eval/mass_shatter_ion_h_top_k_sweep.py \
         --model_ckpt saved_ckpts/RUN/checkpoints/best.ckpt \
-        --custom_fp config/masshatter/merged/channel_selection/CONFIG.yml \
+        --custom_fp config/massshatter/merged/channel_selection/CONFIG.yml \
         --wandb_mode online
 """
 
@@ -211,7 +211,7 @@ class WeightedMetricAccumulator:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--template_fp", default="config/template.yml")
+    parser.add_argument("--template_fp", default="config/models_template")
     parser.add_argument("--custom_fp", required=True)
     checkpoint_group = parser.add_mutually_exclusive_group(required=True)
     checkpoint_group.add_argument("--model_ckpt", help="Local checkpoint path.")

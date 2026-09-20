@@ -459,7 +459,7 @@ directly comparable across sections.
 ### Provenance and limits
 
 - One batch of 32 molecules from the train split of the
-  [unmerged CMF beam arm config](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml),
+  [unmerged CMF beam arm config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml),
   in-memory subsample 256, seed 397623. Atom counts 10 / 17 / 40 (min / median / max), 669
   bonds. CPU, `FRAGNNET-GPU` interpreter.
 - Beam: `max_fragments = beam_width = 256`, `max_boundary_cuts = 5` unless varied.

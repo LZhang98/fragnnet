@@ -45,9 +45,9 @@ merged NIST20 `[M+H]+` scope, U256/E1024, dense evaluation, hard thresholds zero
 
 | Arm | Config | Dense run | Subformula run |
 | --- | --- | --- | --- |
-| Gated | [warmup_loss_transform](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_warmup_e0_15_dense.yml) | [`gbdszzlw`](https://wandb.ai/frag-gnn/frag-gnn/runs/gbdszzlw) | [`elfzwq6s`](https://wandb.ai/frag-gnn/frag-gnn/runs/elfzwq6s) |
-| H supervision only | [support_ablation](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_h_supervision_only_warmup_e0_15_dense.yml) | [`sr9xfkk8`](https://wandb.ai/frag-gnn/frag-gnn/runs/sr9xfkk8) | [`1fp53ss4`](https://wandb.ai/frag-gnn/frag-gnn/runs/1fp53ss4) |
-| No H support | [support_ablation](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_no_h_support_warmup_e0_15_dense.yml) | [`s23w0lt2`](https://wandb.ai/frag-gnn/frag-gnn/runs/s23w0lt2) | [`ynhectw6`](https://wandb.ai/frag-gnn/frag-gnn/runs/ynhectw6) |
+| Gated | [warmup_loss_transform](../../config/massshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_warmup_e0_15_dense.yml) | [`gbdszzlw`](https://wandb.ai/frag-gnn/frag-gnn/runs/gbdszzlw) | [`elfzwq6s`](https://wandb.ai/frag-gnn/frag-gnn/runs/elfzwq6s) |
+| H supervision only | [support_ablation](../../config/massshatter/merged/support_ablation/nist20_merged_independent_jss_h_supervision_only_warmup_e0_15_dense.yml) | [`sr9xfkk8`](https://wandb.ai/frag-gnn/frag-gnn/runs/sr9xfkk8) | [`1fp53ss4`](https://wandb.ai/frag-gnn/frag-gnn/runs/1fp53ss4) |
+| No H support | [support_ablation](../../config/massshatter/merged/support_ablation/nist20_merged_independent_jss_no_h_support_warmup_e0_15_dense.yml) | [`s23w0lt2`](https://wandb.ai/frag-gnn/frag-gnn/runs/s23w0lt2) | [`ynhectw6`](https://wandb.ai/frag-gnn/frag-gnn/runs/ynhectw6) |
 
 ### Channel selection is inert in every trained arm
 
@@ -211,7 +211,7 @@ from being credited to either new head.
 **Status: proposed; no implementation or run.** This is an alternative *training
 objective* for the existing selection-only hierarchy, not a change to bond-mask
 enumeration or a claim that the current support BCE is unnecessary. The current
-[merged subformula JSS warmup 0–4 setup](../../config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula.yml)
+[merged subformula JSS warmup 0–4 setup](../../config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula.yml)
 trains with JSS + 0.1 fragment proposal coverage loss + 0.1 balanced ion/H support
 BCE. It gates independent intensity with the support sigmoid. Its
 [W&B run](https://wandb.ai/frag-gnn/frag-gnn/runs/8v0i0fq7) leads the inspected
@@ -983,7 +983,7 @@ intensity, and spectral metrics at the same checkpoint epoch.
 
 ## Configuration contract
 
-Declare every new field in `config/template.yml`; do not use fallback access:
+Declare every new field in `config/models_template`; do not use fallback access:
 
 ```yaml
 mass_shatter_separate_ion_mode_proposal_head: False
@@ -1485,7 +1485,7 @@ Possible outcomes have distinct meanings:
 - `src/fragnnet/pl_model/mass_shatter_pl.py`
   - mode/channel labels and balanced auxiliary losses
   - fragment/mode/channel metrics and logging
-- `config/template.yml`
+- `config/models_template`
   - required compatibility-safe hyperparameters
 - `scripts/eval/`
   - fixed-checkpoint MAP-relative, fixed-k, and cumulative evaluation sweep

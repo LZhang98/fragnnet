@@ -419,7 +419,7 @@ class BaseDataset(Dataset):
                 raise ValueError(
                     "spec_params is missing required spectrum cleanup settings "
                     f"{sorted(missing_cleanup_params)}. Merge old checkpoint settings with "
-                    "the current config/template.yml before enabling spectrum cleanup."
+                    "the current config/models_template before enabling spectrum cleanup."
                 )
             cleanup_enabled = (
                 spec_params["centroid_peaks"]
@@ -472,7 +472,7 @@ class BaseDataset(Dataset):
                 raise ValueError(
                     "spec_params is missing required merge settings "
                     f"{sorted(missing_merge_params)}. Merge old checkpoint settings with "
-                    "the current config/template.yml before constructing a dataset."
+                    "the current config/models_template before constructing a dataset."
                 )
             spec_df = merge_spec_df(
                 spec_df,

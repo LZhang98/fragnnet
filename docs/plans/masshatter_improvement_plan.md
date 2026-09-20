@@ -200,11 +200,11 @@ Five configs are prepared as a precursor to the unmerged comparison:
 
 | Config | Output and loss | Transform |
 | --- | --- | --- |
-| [CE control](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_probability_ce_warmup_e0_15_dense.yml) | Probability, Gaussian CE | none |
-| [JSS](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_warmup_e0_15_dense.yml) | Independent, JSS | none |
-| [JSS square root](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_sqrt_warmup_e0_15_dense.yml) | Independent, JSS | sqrt |
-| [KL](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_kl_warmup_e0_15_dense.yml) | Independent, KL | none |
-| [KL square root](../../config/masshatter/merged/warmup_loss_transform/nist20_merged_independent_kl_sqrt_warmup_e0_15_dense.yml) | Independent, KL | sqrt |
+| [CE control](../../config/massshatter/merged/warmup_loss_transform/nist20_merged_probability_ce_warmup_e0_15_dense.yml) | Probability, Gaussian CE | none |
+| [JSS](../../config/massshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_warmup_e0_15_dense.yml) | Independent, JSS | none |
+| [JSS square root](../../config/massshatter/merged/warmup_loss_transform/nist20_merged_independent_jss_sqrt_warmup_e0_15_dense.yml) | Independent, JSS | sqrt |
+| [KL](../../config/massshatter/merged/warmup_loss_transform/nist20_merged_independent_kl_warmup_e0_15_dense.yml) | Independent, KL | none |
+| [KL square root](../../config/massshatter/merged/warmup_loss_transform/nist20_merged_independent_kl_sqrt_warmup_e0_15_dense.yml) | Independent, KL | sqrt |
 
 All use merged tolerance-consensus targets, seed 397623, U256/E1024, one proposal mixture,
 batch size 64 with accumulation 4, and proposal-only epochs 0-15 inclusive. They preserve
@@ -233,19 +233,19 @@ pending. No training, scientific evaluation, or full test suite was run for this
 
 Two additional JSS/no-transform controls are prepared:
 
-- [No H support](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_no_h_support_warmup_e0_15_dense.yml): support head, binary support logits, and gate disabled; support loss weight zero.
-- [H supervision only](../../config/masshatter/merged/support_ablation/nist20_merged_independent_jss_h_supervision_only_warmup_e0_15_dense.yml): Gaussian support BCE weight 0.1, but no soft intensity gate.
+- [No H support](../../config/massshatter/merged/support_ablation/nist20_merged_independent_jss_no_h_support_warmup_e0_15_dense.yml): support head, binary support logits, and gate disabled; support loss weight zero.
+- [H supervision only](../../config/massshatter/merged/support_ablation/nist20_merged_independent_jss_h_supervision_only_warmup_e0_15_dense.yml): Gaussian support BCE weight 0.1, but no soft intensity gate.
 
 Compare with the existing gated JSS/no-transform arm above. Other settings remain fixed,
 including shared-encoder warmup and zero hard-pruning thresholds. The separate directory
 preserves the original five-config glob. To generate these two jobs with the same Vulcan
-procedure, use `config/masshatter/merged/support_ablation/*.yml` as the config glob.
+procedure, use `config/massshatter/merged/support_ablation/*.yml` as the config glob.
 No training jobs were submitted for these controls.
 
 ### Corrected unmerged CMF anchor prepared (2026-09-16)
 
 Step 1's unmerged control now has a config:
-[nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml).
+[nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml).
 It is the lead unmerged arm
 ([`ef7fl5c6`](https://wandb.ai/frag-gnn/frag-gnn/runs/ef7fl5c6), validation `cos_sim_0.01`
 0.7515) with exactly four deltas, confirmed by a resolved-config comparison in which
@@ -262,7 +262,7 @@ It is the lead unmerged arm
    reading to `ace_max` before integer featurization, so the template's 100 is a real ceiling
    once ACE is on. Measured over the 383,874 train+val spectra of this split: ACE p50 27, p90 73,
    max 329 eV, with 13,406 spectra (3.49%, all FT) above 100 and 4 above 300. This matches the
-   corrected merged [context pair](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml),
+   corrected merged [context pair](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml),
    whose audit found the same saturation at 21.42% on merged FT groups. NCE stays at the
    template's 200, which only 0.02% of readings exceed.
 
@@ -270,7 +270,7 @@ Enumeration budget stays at E4096 and the probability/cross-entropy output stays
 the run remains comparable with `ef7fl5c6`. `filter_subformula_peaks` stays `False`: the Na/Cl
 charge-migration filter fix would change the target spectra at the same time as the CMF
 candidate-universe change. The merged
-[subformula sibling](../../config/masshatter/merged/subformula_filter/nist20_ma_mi_merged_independent_jss_warmup_e0_15_dense_subformula.yml)
+[subformula sibling](../../config/massshatter/merged/subformula_filter/nist20_ma_mi_merged_independent_jss_warmup_e0_15_dense_subformula.yml)
 remains the separate filter arm.
 
 This scope is what makes the 2026-09-14 CMF alignment observable. Constructed from the resolved
@@ -308,8 +308,8 @@ are left in place deliberately, because each is an unmeasured treatment rather t
   mode embeddings at the molecule-encoder input through `*_insert_location: mol`, so its
   molecular representation is context-conditioned; here the context reaches only the proposal
   and intensity heads. The matched merged pair for this exact question
-  ([heads only](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml)
-  versus [GNN and heads](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml))
+  ([heads only](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml)
+  versus [GNN and heads](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml))
   is prepared and has never been run; settle it there rather than inside this anchor.
 - `mass_shatter_smarts_templates` stays `False`. The FraGNNet DAG is built by a prepass carrying
   15 `FRAG_RULES` and 7 `NL_RULES`, which MASShatter's mask enumeration does not use. Its SMARTS
@@ -332,7 +332,7 @@ the anchor returns exactly that one key for each arm. The anchor, which leaves t
 the ladder's no-warmup control.
 
 The boundaries are the two short rungs of the merged
-[warmup_duration](../../config/masshatter/merged/warmup_duration/) ladder, so the two scopes stay
+[warmup_duration](../../config/massshatter/merged/warmup_duration/) ladder, so the two scopes stay
 comparable; the user scoped this pilot to 2 and 4, leaving that ladder's 9 and the merged
 loss/transform screen's 16-epoch `e0_15` unrun on the unmerged scope. The boundary is inclusive,
 so `e0_N` is `N+1` proposal-only epochs. `MassShatterPL` requires

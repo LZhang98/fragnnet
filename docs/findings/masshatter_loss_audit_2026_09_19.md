@@ -114,7 +114,7 @@ independent of `loss_batch_size`.
 The pre-refactor `sparse_peak_list_distance` had no `loss_batch_size` parameter (`git show
 HEAD^`), so on the direct-loss arms the key only ever affected the unused CE path. Every
 checked-in direct-loss config, for example
-[`nist20_merged_independent_jss_hattr_gaussian.yml`](../../config/masshatter/merged/channel_selection/nist20_merged_independent_jss_hattr_gaussian.yml),
+[`nist20_merged_independent_jss_hattr_gaussian.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_independent_jss_hattr_gaussian.yml),
 sets `loss_batch_size: 8`. Given finding 1 that value is close to optimal for `hungarian` and
 leaves roughly 2x on the table for `closest`. It is worth re-tuning per matching mode rather
 than inheriting the CE arm's value, and the plan's claim that the key "does not change the loss"
@@ -135,7 +135,7 @@ expected to be zero. The CE control does not have the ambiguity: it takes the ba
 
 `channel_support_metrics_enabled` is `mass_shatter_channel_support_metrics` **or**
 `mass_shatter_channel_diagnostics`, and every config under
-`config/masshatter/merged/channel_selection/` sets `mass_shatter_channel_diagnostics: True`. That
+`config/massshatter/merged/channel_selection/` sets `mass_shatter_channel_diagnostics: True`. That
 turns on two per-spectrum Python loops inside `loss_fn`, on every training step:
 
 | function | line | CUDA | CPU |
@@ -155,8 +155,8 @@ These are monitoring only. The cheapest action is to stop implying them from
 batching them is the same segment-reduction rewrite already applied twice in this file.
 
 **Applied 2026-09-19:** `mass_shatter_channel_diagnostics` is now `False` in all 47 configs under
-`config/masshatter/` that set it, matching the template default and the precedent already set by
-[`..._warmup_e0_4_dense_subformula_fast.yml`](../../config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast.yml).
+`config/massshatter/` that set it, matching the template default and the precedent already set by
+[`..._warmup_e0_4_dense_subformula_fast.yml`](../../config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast.yml).
 `mass_shatter_channel_support_metrics` is `True` in no config, so both loops are now off
 everywhere. The objective is unchanged: `channel_targets_enabled` is also the OR of the support
 and ion-mode loss weights, and those arms keep `mass_shatter_ion_h_support_loss_weight: 0.1`.

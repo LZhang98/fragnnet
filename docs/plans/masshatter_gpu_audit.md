@@ -14,7 +14,7 @@ was removed; the bucketing plan below remains unimplemented.
 ## Measured profile (2026-09-14, RTX 2070 SUPER, `research/masshatter-ion-h-selection` @ `43e880b0`)
 
 Ran the exact H-support config
-(`config/masshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml`)
+(`config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml`)
 through `scripts/run_pl_model_fit.py` with the built-in `profiler: pytorch` (`MyPyTorchProfiler`,
 `with_stack=True`, flame-graph export). The config's native `train_batch_size: 128` OOMs on this
 card's 8 GB (tried, failed at step 0: "Tried to allocate 2.20 GiB... 6.06 GiB already in use").

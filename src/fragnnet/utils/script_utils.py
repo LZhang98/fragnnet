@@ -370,7 +370,14 @@ def get_config_from_ckpt(
     # Load and merge template and custom config
     if template_fp is not None and custom_fp is not None:
         print(f">> Loading custom config from {custom_fp}")
-        config_d_2 = load_config(template_fp, custom_fp, override=None)
+        # The checkpoint's own model_type picks the overlay when the custom config is silent,
+        # so an inference config never pulls in another model's keys.
+        config_d_2 = load_config(
+            template_fp,
+            custom_fp,
+            override=None,
+            model_type=config_d.get("model_type"),
+        )
         for k, v in config_d_2.items():
             if k in config_d and v != config_d[k]:
                 print(f"  - Overwriting: {k} = {v} (was {config_d[k]})")
@@ -439,8 +446,12 @@ def apply_inference_config(
     config_d["compile"] = False  # Disable compilation for evaluation
     # Disable preprocessing if requested
     if disable_preproc:
+        # frag/magma/ann_params are model-owned, so they are absent for models that never
+        # read them.
         for k in ["spec", "mol", "frag", "magma", "ann"]:
             key = f"{k}_params"
+            if key not in config_d:
+                continue
             config_d[key]["preprocess"] = False
             if k in ["frag"]:
                 config_d[key]["preload"] = False
@@ -451,11 +462,14 @@ def apply_inference_config(
     # Model-specific configurations
     # for fragnnet
     config_d["spec_params"]["prec_type_str"] = True
-    config_d["frag_params"]["formula_str"] = True
+    if "frag_params" in config_d:
+        config_d["frag_params"]["formula_str"] = True
     # for iceberg
-    config_d["magma_params"]["adduct_form_deltas"] = True
+    if "magma_params" in config_d:
+        config_d["magma_params"]["adduct_form_deltas"] = True
     # for graff
-    config_d["ann_params"]["formula_str"] = output_formula_str
+    if "ann_params" in config_d:
+        config_d["ann_params"]["formula_str"] = output_formula_str
     # Set batch sizes if provided
     if train_batch_size is not None:
         config_d["train_batch_size"] = train_batch_size
@@ -468,7 +482,7 @@ def apply_inference_config(
 
     # Ground-truth peak cleanup is meaningless without ground-truth peaks: an inference
     # spec_df has `peaks == []` by construction, so drop_empty_spectra (True in
-    # config/template.yml) removes every spectrum and the run silently predicts nothing.
+    # config/models_template) removes every spectrum and the run silently predicts nothing.
     # Only override when the checkpoint config carries the cleanup group - writing the key
     # into a legacy config that omits it would trip the missing-cleanup-params check in
     # BaseDataset._setup_dfs.
@@ -478,10 +492,13 @@ def apply_inference_config(
     # Apply common inference settings
     config_d["track_datapoint_metrics"] = False
 
-    # Disable preprocessing to save memory
-    config_d["frag_params"]["preload"] = False
-    config_d["frag_params"]["preprocess"] = False
-    config_d["magma_params"]["preprocess"] = False
+    # Disable preprocessing to save memory. Both blocks are model-owned overlays, so they are
+    # absent for a model that does not use them.
+    if "frag_params" in config_d:
+        config_d["frag_params"]["preload"] = False
+        config_d["frag_params"]["preprocess"] = False
+    if "magma_params" in config_d:
+        config_d["magma_params"]["preprocess"] = False
 
     # Disable samplers for deterministic inference
     config_d["dynamic_batch_sampler"] = (
@@ -1915,7 +1932,7 @@ def process_batch_to_tabular_row(
     formula_row_deltas = None
     if (return_formula_str or return_cc_hash) and isinstance(model, FraGNNetPL):
         # Degrade to NaN like every sibling field rather than raising: `spec_prec_type_str`
-        # exists only when spec_params.prec_type_str is on (False in config/template.yml and
+        # exists only when spec_params.prec_type_str is on (False in config/models_template and
         # in nearly every experiment config), and it is `apply_inference_config` that forces
         # it on. A caller reaching this function another way - a notebook, a future script, a
         # unit-level call - would otherwise get a KeyError mid-export instead of a column of

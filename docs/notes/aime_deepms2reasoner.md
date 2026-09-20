@@ -148,6 +148,27 @@ beaten by >10% at top-1 and top-10.
 - Applied at repository scale to GNPS Living Data (8,543,020 clusters, 7,144,480 searched after
   filtering).
 
+## Feature setup
+
+Only the categories are published; "complete feature definitions, architectural specifications,
+and decoder inputs are provided in Supplementary AI Methods", which is **not in the 44-page PDF**
+we have. What the main text states:
+
+- Feature-augmented **heavy-atom** graph. Hydrogens are not nodes: "hydrogen counts, hydrogen
+  shifts and charge-related bookkeeping are encoded as atom-level features."
+- Node- and edge-level features cover "atom identity, bond type, ring context, hydrogen
+  bookkeeping together with global experimental metadata including **collision energy,
+  instrument, adduct**" — note `instrument`, which GLACIER does not use.
+- Graphormer with "learned structural bias terms derived from pairwise graph features"
+  incorporated into self-attention.
+- **Features are recomputed on the evolving fragment state**, since charge localization and
+  hydrogen transfers are part of that state and later actions condition on it. This is the
+  opposite choice from GLACIER, which computes molecule-level features once and reuses them
+  across fragments; ours is molecule-level like GLACIER's.
+
+For the feature comparison that has numbers behind it, see the GLACIER note — its Appendix A/C
+tables are fully specified and are what our 2026-09-20 audit should be read against.
+
 ## Open questions for us
 
 1. What does our test cosine become under their 5 ppm formula filter + unexplained-peak discard?

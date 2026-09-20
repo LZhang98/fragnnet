@@ -60,7 +60,7 @@ cd "$FRAGNNET_RUN_ROOT/$FRAGNNET_VARIANT"
 FRAGNNET_REVISION=$(cat source_revision.txt)
 FRAGNNET_DIFF=$(cat source_diff_sha256.txt)
 for batch in 128 256 512; do
-  config=config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast
+  config=config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast
   accumulation=1
   if [[ "$batch" == 128 ]]; then accumulation=2; else config="${config}_batch${batch}"; fi
   config="${config}.yml"
@@ -118,7 +118,7 @@ Matched CUDA configs sit beside the existing CPU configs:
 - `nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256_cuda.yml`: 256×1.
 - `nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml`: 512×1, effective batch doubles.
 
-All are under `config/masshatter/ma_mi_unmerged/cmf/`; optimizer/loss/candidate settings match
+All are under `config/massshatter/ma_mi_unmerged/cmf/`; optimizer/loss/candidate settings match
 their CPU counterparts. Older checkpoints missing the backend migrate explicitly to CPU;
 saved values and explicit checkpoint-loader overrides are preserved. For inference, pass
 `--mass_shatter_candidate_backend cpu` or `cuda` to `scripts/run_inference.py` to change only
@@ -172,7 +172,7 @@ FRAGNNET_REVISION=$(cat source_revision.txt)
 FRAGNNET_DIFF=$(cat source_diff_sha256.txt)
 for backend in cpu cuda_topology cuda_full; do
   for batch in 128 256 512; do
-    config=config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast
+    config=config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast
     accumulation=1
     if [[ "$batch" == 128 ]]; then accumulation=2; else config="${config}_batch${batch}"; fi
     config="${config}.yml"

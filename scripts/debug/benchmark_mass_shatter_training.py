@@ -40,7 +40,7 @@ def main() -> None:
         parser.error("sizes, steps and threads must be positive; warmup must be nonnegative")
 
     # 1. Load and seed the real pipeline, sampling only for this in-memory benchmark.
-    config = load_config("config/template.yml", args.config, None)
+    config = load_config("config/models_template", args.config, None)
     if config["model_type"] != "mass_shatter":
         parser.error("the config must select mass_shatter")
     if config["precision"] not in (32, "32", "32-true"):

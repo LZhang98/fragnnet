@@ -503,7 +503,7 @@ def plot_peak_stats(
 # Per-instrument-type tolerance: (tol_rel, tol_min_mz).
 # tol_rel is a fraction (not ppm): 1e-5 = 10 ppm.
 # tol_min_mz is the minimum m/z used as divisor floor (effective abs tolerance = tol_rel * tol_min_mz).
-# Matches the defaults from config/template.yml (inst_type_loss_tol section).
+# Matches the defaults from config/models_template (inst_type_loss_tol section).
 _INST_TOL_MAP: dict[str, tuple[float, float]] = {
     "FT": (1e-5, 200.0),  # 10 ppm, 0.002 Da floor
     "QTOF": (2e-5, 750.0),  # 20 ppm, 0.015 Da floor

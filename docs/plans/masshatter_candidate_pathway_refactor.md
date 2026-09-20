@@ -139,17 +139,17 @@ using the generic iterator as an independent oracle.
 
 ### Config and checkpoint compatibility
 
-The four exploration keys cannot be removed from `config/template.yml` immediately: checked-in
+The four exploration keys cannot be removed from `config/models_template` immediately: checked-in
 experiment YAMLs are required to contain only keys present in the template, and historical custom
 configs would otherwise fail before model construction. Use one deprecation window:
 
-1. Keep the four keys in `config/template.yml`, grouped under a retired-feature comment. Their
+1. Keep the four keys in `config/models_template`, grouped under a retired-feature comment. Their
    values remain the historical defaults.
 2. `runner.validate_sampler_config` rejects a new training config with
    `mass_shatter_explore_masks > 0` using an explicit "exploration has been retired" error. The
    other three values are accepted but ignored while the keys remain in the schema.
 3. Remove the four keys from active checked-in MASShatter configs. Legacy exploration configs stay
-   under `config/masshatter/legacy/` as historical records and continue to parse far enough to
+   under `config/massshatter/legacy/` as historical records and continue to parse far enough to
    produce the explicit retirement error.
 4. A later schema cleanup may remove the deprecated template keys together with the remaining
    legacy config references; that cleanup is not part of this refactor.
@@ -322,8 +322,8 @@ scoring pass for the probability floors that the old dedicated kernel folded int
 Removed from the template and from 77 configs that set them to no-op values. **10 configs that
 actually used exploration were deliberately left untouched** so they fail loudly at
 `runner.py:61` rather than silently becoming non-exploration runs under names like `explore512`.
-Nine are under `config/masshatter/legacy/`; the tenth is
-`config/masshatter/merged/baseline/nist20_merged_mask64_gine384_mixed_topk_local8g.yml`, which is
+Nine are under `config/massshatter/legacy/`; the tenth is
+`config/massshatter/merged/baseline/nist20_merged_mask64_gine384_mixed_topk_local8g.yml`, which is
 **not** in `legacy/` and is the config behind the most recent local wandb run — it needs an explicit
 decision.
 
@@ -354,7 +354,7 @@ The metric reduction path is now uniform for every metric.
 legacy config YAMLs, which already fail at load, and these docs.
 
 **Stage 1's config deprecation window was never built.** The four keys were removed from
-`config/template.yml` outright, so the 10 configs listed under **Config keys** fail at
+`config/models_template` outright, so the 10 configs listed under **Config keys** fail at
 `runner.py:61`, inside `load_config`, with a bare `AssertionError` naming the missing keys. A check
 in `validate_sampler_config` would not fix this: `load_config` fails first, and sampler validation
 does not run until after `init_dataset`. The correct compatibility fix is a retired-key check in
@@ -362,7 +362,7 @@ does not run until after `init_dataset`. The correct compatibility fix is a reti
 without restoring dead keys to the active template.
 
 One active config still needs an owner decision before another run:
-`config/masshatter/merged/baseline/nist20_merged_mask64_gine384_mixed_topk_local8g.yml` requests 64
+`config/massshatter/merged/baseline/nist20_merged_mask64_gine384_mixed_topk_local8g.yml` requests 64
 `bounded_additive` exploration masks. Either archive it as a retired experiment or define a new
 deterministic replacement experiment; silently deleting the exploration settings would change the
 experiment represented by its name and history. Resolve that choice before starting the topology

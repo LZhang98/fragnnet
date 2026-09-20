@@ -49,7 +49,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--template_fp",
         type=str,
-        default="config/template.yml",
+        default="config/models_template",
         help="Path to template config file",
     )
     parser.add_argument(

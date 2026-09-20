@@ -863,10 +863,10 @@ weighted recall.
 
 Reference configurations:
 
-- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_full_context_no_mask_residual.yml`
-- `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_full_context_mask_residual.yml`
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_no_mask_residual.yml`
-- `config/masshatter/merged/unique_fragment/nist20_merged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_mask_residual.yml`
+- `config/massshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_full_context_no_mask_residual.yml`
+- `config/massshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_full_context_mask_residual.yml`
+- `config/massshatter/merged/unique_fragment/nist20_merged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_no_mask_residual.yml`
+- `config/massshatter/merged/unique_fragment/nist20_merged_unique512_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_mask_residual.yml`
 
 ### 6.1.1 Mask-residual shortcut and proposal-recall risk
 
@@ -1054,8 +1054,8 @@ configs were therefore removed rather than retained as meaningful ablations.
 
 Reference configurations:
 
-- merged U256/E1024: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
-- unmerged U256/E4096: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
+- merged U256/E1024: `config/massshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
+- unmerged U256/E4096: `config/massshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
 
 #### Separate proposal encoder ablation (2026-08-23)
 
@@ -1077,10 +1077,10 @@ transformer. Each comparison changes only
 
 Matched experiment pairs:
 
-- merged control: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
-- merged separate encoder: `config/masshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_separate_proposal_encoder.yml`
-- unmerged control: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
-- unmerged separate encoder: `config/masshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_separate_proposal_encoder_inst_tol.yml`
+- merged control: `config/massshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only.yml`
+- merged separate encoder: `config/massshatter/merged/unique_fragment/nist20_merged_unique256_enum1024_gine_gsa384_bondcentric_a2_b3_transformer_ce_embed_proposal_selection_only_separate_proposal_encoder.yml`
+- unmerged control: `config/massshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml`
+- unmerged separate encoder: `config/massshatter/ma_mi_unmerged/unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_separate_proposal_encoder_inst_tol.yml`
 
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 
@@ -1607,9 +1607,9 @@ this phase broadens candidate support but is not policy-gradient RL.
 Use bounded selection only for training. Validation, test, and prediction use
 the existing deterministic exact top-K path. The deterministic control and
 matched K256+64 experiment are
-`config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3.yml`
+`config/massshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3.yml`
 and
-`config/masshatter/legacy/explore/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3_explore64.yml`.
+`config/massshatter/legacy/explore/nist20_merged_mask256_gine_gsa384_bondcentric_a2_b3_explore64.yml`.
 
 Implement and verify in this order:
 
@@ -1734,7 +1734,7 @@ updates. Bonds communicate when they share an atom, without materializing a
 line graph, and endpoint-order invariance is preserved. A value of zero keeps
 the original endpoint baseline. The charge/ion heads and independent-Bernoulli
 top-K mask ranking remain unchanged. The controlled K256 GINE-EFA experiment is
-`config/masshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bond2.yml`.
+`config/massshatter/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bond2.yml`.
 
 **Architecture direction from the initial W&B runs, 2026-08-16:** increasing
 the atom-centered GINE encoder from 256/4 layers to 384/5 layers did not improve

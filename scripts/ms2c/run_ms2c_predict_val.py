@@ -57,7 +57,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--model_ckpt", type=str, default=None)
     parser.add_argument("--wandb_run_id", type=str, default="wf1zkb7n")
     parser.add_argument("--custom_fp", type=str, required=False)
-    parser.add_argument("--template_fp", type=str, default="./config/template.yml")
+    parser.add_argument("--template_fp", type=str, default="./config/models_template")
     parser.add_argument("--num_workers", type=int, default=get_core_count())
     parser.add_argument(
         "--evaluate",

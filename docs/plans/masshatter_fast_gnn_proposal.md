@@ -20,7 +20,7 @@ This is an alternative scientific model, not an exact acceleration of mask margi
 
 ## Configuration and semantics
 
-[template.yml](../../config/template.yml) declares:
+[template.yml](../../config/models_template) declares:
 
 ```yaml
 mass_shatter_proposal_method: connected_fragment_beam  # default: cut_masks
@@ -30,7 +30,7 @@ mass_shatter_fast_gnn_beam_width: 256
 mass_shatter_fast_gnn_max_boundary_cuts: 5
 ```
 
-The prepared [dual-CE arm](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml)
+The prepared [dual-CE arm](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml)
 retains the existing fast control's encoder, intensity head, chemistry, loss weights,
 optimizer and batch settings. It uses selection-only proposal supervision. No run was launched.
 
@@ -114,7 +114,7 @@ Reproduce the smoke from the repository root with the configured interpreter:
 
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/benchmark_mass_shatter_training.py \
-  --config config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml \
+  --config config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml \
   --device cuda --subsample-size 128 --batch-size 16 --batches 1 --warmup 1 --steps 2 \
   --output /tmp/masshatter_fast_gnn_smoke.json
 ```
@@ -169,7 +169,7 @@ validation-set quality evaluation ran for this change.
 
 ## Merged three-hour screen (2026-09-17)
 
-Three configs under [merged/unique_fragment](../../config/masshatter/merged/unique_fragment/) use the same MA/MI
+Three configs under [merged/unique_fragment](../../config/massshatter/merged/unique_fragment/) use the same MA/MI
 split, four adducts, FT/QTOF instruments, model, loss, seed and batch settings
 as the unmerged source. These merged configs use NCE only (`nce: true`, `ace: false`)
 and explicitly disable CMF.
@@ -308,7 +308,7 @@ unique fragments per molecule under the same conditions, so the previous unmerge
 at roughly half the control's candidate count.
 
 All four connected-fragment arms now set `mass_shatter_fast_gnn_max_boundary_cuts: 5`. The
-`config/template.yml` default and the legacy checkpoint/config migration defaults stay at 3 so
+`config/models_template` default and the legacy checkpoint/config migration defaults stay at 3 so
 existing connected-fragment checkpoints keep their trained search behavior.
 
 Candidate-construction throughput was also compared against the CUDA `cut_masks` backend on the
@@ -468,8 +468,8 @@ No code was changed and nothing was measured for this proposal.
 
 The four prepared `connected_fragment_beam` configs now set
 `mass_shatter_candidate_coverage_metrics: true`: the three
-[merged screen arms](../../config/masshatter/merged/unique_fragment/) and the
-[unmerged dual-CE arm](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml).
+[merged screen arms](../../config/massshatter/merged/unique_fragment/) and the
+[unmerged dual-CE arm](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml).
 They were written when `mass_shatter_channel_diagnostics` still implied coverage and carry
 `channel_diagnostics: false`, so as configured they logged no candidate ceiling at all -
 the one quantity the 2026-09-17 measurement puts in question. This logs `candidate_wrecall`
@@ -528,7 +528,7 @@ current lead (W&B `8v0i0fq7`, best logged `val_cos_sim_0.01_epoch/mean` 0.800989
 A beam result on the MA/MI split would not answer whether the beam costs anything against the
 model actually being developed.
 
-[nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml](../../config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml)
+[nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml](../../config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml)
 is the beam sibling of the `_fast` baseline. Resolved-key diff, pinned by a test:
 
 | Key | `_fast` baseline | Beam arm |
@@ -562,7 +562,7 @@ python scripts/setup_job_cc.py \
   --cc_account aip-rgreiner \
   --cc_email fw4@ualberta.ca \
   --time 3:00:00 \
-  --script_kwargs w=online c=config/masshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml \
+  --script_kwargs w=online c=config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml \
   --no_submit=True
 bash -n slurm_scripts/msh_merged_jss_cfb_256_3h.sh
 sbatch slurm_scripts/msh_merged_jss_cfb_256_3h.sh

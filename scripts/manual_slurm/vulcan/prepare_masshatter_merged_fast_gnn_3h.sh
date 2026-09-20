@@ -7,7 +7,7 @@ cd "${REPO_ROOT}"
 : "${CC_EMAIL:?Set CC_EMAIL to your scheduler notification email}"
 FRAGNNET_ACCOUNT="${CC_ACCOUNT:-aip-rgreiner}"
 FRAGNNET_PREFIX="${JOB_PREFIX:-msh_ma_mi_mrg_cfb}"
-CONFIG_BASE=config/masshatter/merged/unique_fragment/nist20_ma_mi_merged_fast_gnn_proposal
+CONFIG_BASE=config/massshatter/merged/unique_fragment/nist20_ma_mi_merged_fast_gnn_proposal
 
 # 1. Generate each job with the matching fragment and beam budget.
 for budget in 128 256 512; do

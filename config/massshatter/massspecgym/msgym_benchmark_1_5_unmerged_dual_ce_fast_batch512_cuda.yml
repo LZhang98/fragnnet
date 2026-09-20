@@ -1,0 +1,202 @@
+# MASShatter on MassSpecGym v1.5 (benchmark subset), forked from
+# config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml.
+# Architecture, candidate enumeration, loss and batching are unchanged from that arm, so the two
+# runs stay comparable; only the data, the metadata vocabularies, the CE range and the epoch
+# budget differ.
+#
+# Measured from data/proc/ms_gym_benchmark_1_5/spec_df.pkl (2026-09-20):
+#   118,991 spectra / 16,960 molecules / 19,409 groups.
+#   Split data/split/ms_gym_benchmark_1_5: 99,306 train, 9,731 val, 9,954 test.
+#   prec_type : [M+H]+ for every row.
+#   inst_type : FT 81,313 / QTOF 37,678 (no NA, unlike ms_gym_all_1_5).
+#   frag_mode : CID for every row.
+#   ce        : ce_type "single" everywhere; ACE present on 100% of rows, NCE absent on 100%.
+#               base_dataset fills NCE from ACE (nce = ace * 500 / prec_mz), so both CE
+#               channels of the dual-CE input are populated.
+#   elements  : C H O N S Cl F P Br I B Si As Se -- all in ELEMENT_TO_VE, no "other" bucket hits.
+#   peaks     : p50 17, p90 58, p99 208, max 299 per spectrum.
+#
+# The three msgym-specific deltas from the nist20 arm:
+#
+# 1. mass_shatter_include_cmf false. Every spectrum is [M+H]+ and
+#    cmf_duplicate_crf_h_shift("[M+H]+", 4) == -1, i.e. the CMF ion IS the CRF ion at
+#    delta_h = -1, so cmf_precursor_valid masks the whole channel. Leaving CMF on would only
+#    double num_ion_modes (mass_shatter_model.py:1210) for channels that can never be selected.
+#    [M+Na]+ and [M+Cl]- stay distinct, which is why the nist20 arm keeps CMF on.
+#
+# 2. nce_max 300 (template default 200). NCE here is derived from ACE on a small-precursor
+#    dataset, so the derived values run high: p50 50, p99 284, max 874. At 200, 3.11% of rows
+#    clamp onto one embedding row; at 300, 0.79% do. ace_max stays 300 -- only 0.01% of the raw
+#    ACE values (max 358.4) exceed it.
+#
+# 3. min_epochs/max_epochs 174/290 against the nist20 arm's 60/100. Exposure-matched: 287,721
+#    nist20 ma_mi train spectra against 99,306 here is a 2.90x ratio at identical batch size, so
+#    matched epochs give matched gradient steps. Same convention as the merged arm's 378/630.
+#
+# frag_modes keeps HCD next to CID although msgym is 100% CID, matching
+# config/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
+# No frag_dp: MASShatter enumerates cut masks from the molecular graph and reads no DAG files.
+wandb_name: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda
+wandb_group: msgym_mass_shatter
+wandb_tags:
+- cuda_candidates
+- loss_batch_64
+- mass_shatter
+- massspecgym
+- ms_gym_benchmark_1_5
+- unmerged
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- dual_ce
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- no_cmf
+- exposure_matched_epochs
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- microbatch_512
+- effective_batch_512
+seed: 397623
+spec_fp: data/proc/ms_gym_benchmark_1_5/spec_df.pkl
+mol_fp: data/proc/ms_gym_benchmark_1_5/mol_df.pkl
+split_dp: data/split/ms_gym_benchmark_1_5
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - FT
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree_onehot
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: mass_shatter
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+nce_max: 300
+ace_max: 300
+mass_shatter_unique_fragment_target: 256
+mass_shatter_unique_fragment_mode: true
+mass_shatter_ranked_mask_budget: 4096
+mass_shatter_include_single_bond_cuts: true
+mass_shatter_max_h_transfer: 4
+mass_shatter_include_cmf: false
+mass_shatter_charge_pooling: logsumexp
+mass_shatter_context_dim: 128
+mass_shatter_metadata_embedding_dim: 32
+mass_shatter_head_hidden_dim: 512
+mass_shatter_head_dropout: 0.1
+mass_shatter_bond_num_layers: 3
+mass_shatter_intensity_transformer_dim: 256
+mass_shatter_intensity_transformer_num_layers: 2
+mass_shatter_intensity_transformer_num_heads: 8
+mass_shatter_intensity_transformer_feedforward_dim: 512
+mass_shatter_intensity_transformer_num_inducing_points: 64
+mass_shatter_intensity_transformer_dropout: 0.1
+mass_shatter_use_mask_residuals: true
+mass_shatter_proposal_anchored: true
+mass_shatter_log_base_ce: false
+mass_shatter_base_ce_weight: 0.0
+mass_shatter_detach_base_ion_h: true
+mass_shatter_proposal_selection_only: true
+mass_shatter_proposal_loss_weight: 0.1
+mass_shatter_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol:
+  FT:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 174
+max_epochs: 290
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+mass_shatter_candidate_backend: cuda

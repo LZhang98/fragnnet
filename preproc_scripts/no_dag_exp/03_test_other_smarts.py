@@ -71,7 +71,7 @@ def create_fragments_by_reaction(mol):
 def get_args():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--template_fp", type=str, default="config/template.yml", help="Path to the config file"
+        "--template_fp", type=str, default="config/models_template", help="Path to the config file"
     )
     parser.add_argument(
         "--custom_fp",

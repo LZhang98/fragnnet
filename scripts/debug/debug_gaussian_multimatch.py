@@ -33,7 +33,7 @@ from fragnnet.utils.spec_utils import calculate_match_mzs
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-t", "--template_fp", type=str, default="config/template.yml")
+    parser.add_argument("-t", "--template_fp", type=str, default="config/models_template")
     parser.add_argument("-c", "--custom_fp", type=str, required=True)
     parser.add_argument("-n", "--num_batches", type=int, default=20)
     parser.add_argument("-b", "--eval_batch_size", type=int, default=32)

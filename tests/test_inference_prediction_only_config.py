@@ -1,6 +1,6 @@
 """Prediction-only runs must not be cleaned against ground truth they do not have.
 
-`spec_params.drop_empty_spectra` defaults to True in `config/template.yml`, and
+`spec_params.drop_empty_spectra` defaults to True in `config/models_template`, and
 `BaseDataset._setup_dfs` runs the whole spectrum cleanup group whenever the config
 carries it. An inference `spec_df` from `02_inf_prepare_spec_df.py` has `peaks == []`
 by construction, so the cleanup dropped every spectrum: the dataset came back empty and
@@ -32,7 +32,7 @@ CLEANUP_PARAMS = {
 
 @pytest.fixture
 def config():
-    return load_config("config/template.yml", None, None)
+    return load_config("config/models_template", None, None)
 
 
 @pytest.fixture

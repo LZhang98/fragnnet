@@ -17,7 +17,7 @@ SCRIPT_DIR="${REPO_ROOT}/slurm_scripts/masshatter_l40s"
 JOB_DIR="${REPO_ROOT}/jobs"
 
 JOB_NAME=msh_unmrg_cmf_dualce
-CONFIG=config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml
+CONFIG=config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml
 
 cd "${REPO_ROOT}"
 

@@ -69,16 +69,15 @@ mlp_hidden_size: 64
 mlp_dropout: 0.1
 mlp_num_layers: 2
 mlp_use_residuals: True
-
 ce_insert_type: embed_clamped
 ce_insert_location: mlp
 ce_insert_merge: True
 ce_insert_size: 16
-use_nce: True
-use_ace: False
 prec_insert_location: mlp
 prec_insert_size: 16
 inst_insert_location: none
+use_nce: True
+use_ace: False
 
 # optimization
 train_batch_size: 8

@@ -40,8 +40,8 @@ JOB_NAMES=(
 )
 
 CONFIGS=(
-    config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_cuda_lb32.yml
-    config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_cuda_lb64.yml
+    config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_cuda_lb32.yml
+    config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_cuda_lb64.yml
 )
 
 cd "${REPO_ROOT}"

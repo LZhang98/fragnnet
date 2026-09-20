@@ -35,7 +35,7 @@ from fragnnet.utils.setup_utils import get_dataset_cls
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--template_fp", type=str, default="config/template.yml")
+    parser.add_argument("--template_fp", type=str, default="config/models_template")
     parser.add_argument("--custom_fp", type=str, required=True)
     parser.add_argument("--wandb_run_id", type=str, default=None)
     parser.add_argument("--model_ckpt", type=str, default=None)

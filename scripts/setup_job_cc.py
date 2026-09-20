@@ -3,6 +3,8 @@ import os
 import re
 import subprocess
 
+from fragnnet.runner import model_template_fp
+
 
 def _normalize_profile_name(name: str) -> str:
     return name.strip().lower().replace(" ", "")
@@ -422,7 +424,7 @@ def main(args):
 
     custom_config_fp = None
     # default config template
-    config_template_fp = os.path.join(args.frag_gnn_dp, "config", "template.yml")
+    config_template_fp = os.path.join(args.frag_gnn_dp, "config", "models_template")
     config_d = {}
 
     # Check if running sweep script
@@ -496,6 +498,19 @@ def main(args):
     config_d["config_template"] = config_template_fp
     if custom_config_fp is not None:
         config_d["config"] = custom_config_fp
+
+    # Templates are per model, so a directory has to be narrowed to one file before it can be
+    # read for data paths. The custom config names the model; without one, fall back to FraGNNet.
+    if os.path.isdir(config_template_fp):
+        model_type = "frag_gnn"
+        if custom_config_fp is not None:
+            with open(custom_config_fp) as custom_file:
+                for line in custom_file:
+                    if line.startswith("model_type:"):
+                        model_type = line.split(" #")[0].strip().split(":")[-1].strip()
+                        break
+        config_template_fp = model_template_fp(config_template_fp, model_type)
+        config_d["config_template"] = config_template_fp
 
     # parse configs
     # read from template first, then custom config,

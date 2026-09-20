@@ -37,40 +37,203 @@ from fragnnet.utils.pl_utils import ConsoleLogger, migrate_mass_shatter_proposal
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
+# Each model_type resolves to one self-contained template in `config/models_template/`.
+# Several model types share a template because they share the same settings.
+MODEL_CONFIG_TEMPLATE = {
+    "frag_gnn": "fragnnet",
+    "fraggnet": "fragnnet",
+    "fragnnet": "fragnnet",
+    "mass_shatter": "mass_shatter",
+    "neims": "neims",
+    "massformer": "massformer",
+    "iceberg_gen": "iceberg",
+    "iceberg_inten": "iceberg",
+    "graff": "graff",
+    "precursor": "precursor",
+    "gnn": "gnn",
+    "mces_pretraining": "mces",
+    "clip": "clip",
+    "spec_mol_clip_pretraining": "clip",
+}
+DEFAULT_TEMPLATE_DIR = "config/models_template"
+# What a config that declares no `model_type` means. The single shared template used to carry
+# this as its default; with one template per model it has to be named.
+DEFAULT_MODEL_TYPE = "frag_gnn"
 
-def load_config(template_fp: str, custom_fp: str | None, override: list | None) -> dict:
-    """load config from template and custom yaml files
-        if custom_fp is given, overwrite template config with custom config
+# Mappings whose sub-keys are data (instrument names, split names), not schema. Custom
+# configs may introduce keys inside them, so they are not validated recursively.
+OPEN_CONFIG_MAPPINGS = frozenset(
+    {
+        "spec_params.merge_tolerance_by_inst",
+        "spec_params.split_filters",
+        "ce_context_ce_key_by_inst",
+        "inst_type_loss_tol",
+    }
+)
+
+
+def model_template_fp(template_fp: str, model_type: str | None) -> str:
+    """Resolve the template file for ``model_type``.
+
+    ``template_fp`` is normally the template directory, and the model picks the file inside it.
+    A path to a file is used as-is, which is how a template saved inside a checkpoint still
+    resolves.
+
     Args:
-        template_fp (str): Path to the template YAML file.
-        custom_fp (str | None): Path to the custom YAML file.
-        override (list | None): List of key-value pairs to override in the config.
+        template_fp: Template directory, or a single template file.
+        model_type: Model type declared by the custom config or checkpoint. Only needed when
+            ``template_fp`` is a directory.
 
     Returns:
-        dict: configuration dictionary.
-    """
+        Path to the template to load.
 
-    assert os.path.isfile(template_fp), template_fp
-    with open(template_fp) as template_file:
-        config_d = yaml.load(template_file, Loader=yaml.FullLoader)
-    migrate_mass_shatter_proposal_method(config_d)
-    # Compatibility boundary for templates saved before candidate backends existed.
-    # Add the schema key before custom config validation and CLI overrides.
-    if "mass_shatter_candidate_backend" not in config_d:
-        config_d["mass_shatter_candidate_backend"] = "cpu"
-    if "mass_shatter_proposal_method" not in config_d:
-        config_d["mass_shatter_proposal_method"] = "cut_masks"
-    if "mass_shatter_fast_gnn_beam_width" not in config_d:
-        config_d["mass_shatter_fast_gnn_beam_width"] = 256
-    if "mass_shatter_fast_gnn_max_boundary_cuts" not in config_d:
-        config_d["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
-    # overwrite parts of the config
+    Raises:
+        ValueError: If a directory was given without a resolvable ``model_type``, or the type
+            is unknown.
+        FileNotFoundError: If the resolved template does not exist.
+    """
+    if os.path.isfile(template_fp):
+        return template_fp
+    if not os.path.isdir(template_fp):
+        raise FileNotFoundError(f"no config template at {template_fp}")
+    if model_type is None:
+        model_type = DEFAULT_MODEL_TYPE
+    if model_type not in MODEL_CONFIG_TEMPLATE:
+        raise ValueError(
+            f"unknown model_type {model_type!r}; known types: {sorted(MODEL_CONFIG_TEMPLATE)}"
+        )
+    resolved = os.path.join(template_fp, f"{MODEL_CONFIG_TEMPLATE[model_type]}.yml")
+    if not os.path.isfile(resolved):
+        raise FileNotFoundError(
+            f"missing config template for model_type {model_type!r}: {resolved}"
+        )
+    return resolved
+
+
+def _other_model_keys(resolved_template_fp: str, config_d: dict) -> set[str]:
+    """Return the keys other models' templates declare and this one does not.
+
+    Templates are self-contained, so they share most keys; only the difference identifies a key
+    that belongs to another model.
+
+    Args:
+        resolved_template_fp: The template this run resolved.
+        config_d: That template's contents.
+
+    Returns:
+        Top-level keys declared only by the other templates.
+    """
+    template_dir = os.path.dirname(resolved_template_fp) or "."
+    keys: set[str] = set()
+    for path in sorted(glob.glob(os.path.join(template_dir, "*.yml"))):
+        if os.path.abspath(path) == os.path.abspath(resolved_template_fp):
+            continue
+        with open(path) as template_file:
+            keys.update(yaml.load(template_file, Loader=yaml.FullLoader) or {})
+    return keys - set(config_d)
+
+
+def unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -> list[str]:
+    """Collect dotted paths in ``custom_d`` that the resolved config does not declare.
+
+    Recurses into nested sections so a typo inside ``spec_params`` is caught as loudly as one
+    at the top level. Sections listed in :data:`OPEN_CONFIG_MAPPINGS` hold data rather than a
+    schema and are not descended into.
+
+    Args:
+        custom_d: The custom config being validated.
+        config_d: The resolved base plus model overlay.
+        prefix: Dotted path of the section currently being checked.
+
+    Returns:
+        Sorted dotted paths that are not declared by the resolved config.
+    """
+    unknown = []
+    for key, value in custom_d.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if key not in config_d:
+            unknown.append(path)
+            continue
+        if (
+            path not in OPEN_CONFIG_MAPPINGS
+            and isinstance(value, dict)
+            and isinstance(config_d[key], dict)
+        ):
+            unknown.extend(unknown_config_keys(value, config_d[key], path))
+    return sorted(unknown)
+
+
+def load_config(
+    template_fp: str,
+    custom_fp: str | None,
+    override: list | None,
+    model_type: str | None = None,
+) -> dict:
+    """Resolve a model template, the experiment config, and CLI overrides.
+
+    Each model has one self-contained template in ``config/models_template/``, chosen by
+    ``model_type`` - taken from the custom config, else from ``model_type``. Passing a single
+    template file instead of the directory uses that file directly, which is how a template
+    saved inside a checkpoint resolves.
+
+    Args:
+        template_fp: Template directory, or a single template file.
+        custom_fp: Path to the experiment config YAML, or None.
+        override: ``key=value`` strings; dotted keys address nested sections.
+        model_type: Model type to resolve the template with when the custom config does not
+            declare one, e.g. the type recorded in a checkpoint.
+
+    Returns:
+        The resolved configuration dictionary.
+
+    Raises:
+        ValueError: If the custom config sets keys no model declares.
+    """
+    custom_d = None
     if custom_fp is not None:
         assert os.path.isfile(custom_fp), custom_fp
         with open(custom_fp) as custom_file:
-            custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
+            custom_d = yaml.load(custom_file, Loader=yaml.FullLoader) or {}
+
+    # 1. The model decides which template to read.
+    resolved_model_type = (custom_d or {}).get("model_type") or model_type
+    resolved_template_fp = model_template_fp(template_fp, resolved_model_type)
+    with open(resolved_template_fp) as template_file:
+        config_d = yaml.load(template_file, Loader=yaml.FullLoader)
+    if resolved_model_type is None:
+        resolved_model_type = config_d.get("model_type")
+
+    migrate_mass_shatter_proposal_method(config_d)
+    # Compatibility boundary for templates saved before candidate backends existed.
+    # Add the schema key before custom config validation and CLI overrides.
+    if resolved_model_type == "mass_shatter":
+        if "mass_shatter_candidate_backend" not in config_d:
+            config_d["mass_shatter_candidate_backend"] = "cpu"
+        if "mass_shatter_proposal_method" not in config_d:
+            config_d["mass_shatter_proposal_method"] = "cut_masks"
+        if "mass_shatter_fast_gnn_beam_width" not in config_d:
+            config_d["mass_shatter_fast_gnn_beam_width"] = 256
+        if "mass_shatter_fast_gnn_max_boundary_cuts" not in config_d:
+            config_d["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
+
+    # 2. Validate and merge the custom config. A key another model's template declares is inert
+    # here but is not a typo: configs are tracked experiment records, and historical ones predate
+    # the split. Those are reported and kept; only keys no template declares are an error.
+    if custom_d is not None:
         migrate_mass_shatter_proposal_method(custom_d)
-        assert all(k in config_d for k in custom_d), set(custom_d.keys()) - set(config_d.keys())
+        unknown = unknown_config_keys(custom_d, config_d)
+        if unknown:
+            foreign_keys = _other_model_keys(resolved_template_fp, config_d)
+            inert = [key for key in unknown if key.split(".")[0] in foreign_keys]
+            undeclared = [key for key in unknown if key not in inert]
+            if undeclared:
+                raise ValueError(f"{custom_fp} sets keys no model declares: {undeclared}")
+            logging.warning(
+                "%s sets keys owned by another model; they are inert for model_type %r: %s",
+                custom_fp,
+                resolved_model_type,
+                inert,
+            )
         config_d = deep_update(config_d, custom_d)
 
     # override
@@ -959,9 +1122,10 @@ def init_run(
     # check config for sampler
     validate_sampler_config(config_d)
 
-    # check config for CMF
+    # check config for CMF; frag_params is a FraGNNet-owned overlay block.
     if (
-        config_d["frag_params"]["include_cmf"]
+        "frag_params" in config_d
+        and config_d["frag_params"]["include_cmf"]
         and "cmf_h_formulae_idx" not in config_d["frag_params"]["pyg_node_feats"]
     ):
         raise ValueError(

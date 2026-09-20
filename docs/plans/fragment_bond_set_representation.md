@@ -461,7 +461,7 @@ not the §2 cleavage story — and it says the charge-site term wants to be *los
 
 ### 7.3 What to do
 
-`cc_atom_dropout` already exists as a training knob (`fragnnet_model.py:246`, `config/template.yml:256`)
+`cc_atom_dropout` already exists as a training knob (`fragnnet_model.py:246`, `config/models_template:256`)
 and its docstring is literally this hypothesis: *"Regularizes against memorizing exact atom sets
 (targets the train→val gap)."* A sweep is already written —
 `config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_cc_atom_dropout_p{00,01,02}.yml` — and has

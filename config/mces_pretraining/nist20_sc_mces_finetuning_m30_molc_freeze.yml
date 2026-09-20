@@ -83,7 +83,6 @@ spec_params:
     - 'IT'
 mol_params:
   preprocess: True
-
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
@@ -127,7 +126,6 @@ automatic_optimization: False
 dynamic_batch_sampler:  True
 
 group_sampler: False
-group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 5
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5

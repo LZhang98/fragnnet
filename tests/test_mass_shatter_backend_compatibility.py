@@ -22,8 +22,8 @@ _MISSING = object()
 
 @pytest.fixture(scope="module")
 def backend_model() -> tuple[MassShatterPL, dict]:
-    template = Path(__file__).parents[1] / "config" / "template.yml"
-    config = yaml.safe_load(template.read_text())
+    template = Path(__file__).parents[1] / "config" / "models_template"
+    config = runner.load_config(str(template), None, None, model_type="mass_shatter")
     config.update(
         model_type="mass_shatter",
         compile=False,

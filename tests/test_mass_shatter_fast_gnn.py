@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from test_mass_shatter_model import _build_batch, _build_model
 
 from fragnnet.frag.mass_shatter_fast_gnn import build_fast_gnn_candidates
+from fragnnet.runner import load_config
 
 
 def _graph(n, edges, logits=None, device="cpu", **kwargs):
@@ -193,9 +194,12 @@ def test_invalid_configuration(overrides, match):
 def _small_pl_config():
     from pathlib import Path
 
-    import yaml
-
-    config = yaml.safe_load((Path(__file__).parents[1] / "config/template.yml").read_text())
+    config = load_config(
+        str(Path(__file__).parents[1] / "config/models_template"),
+        None,
+        None,
+        model_type="mass_shatter",
+    )
     config.update(
         model_type="mass_shatter",
         compile=False,
@@ -386,22 +390,20 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
 @pytest.mark.parametrize(
     "config_path",
     [
-        "config/masshatter/merged/unique_fragment/nist20_ma_mi_merged_fast_gnn_proposal.yml",
-        "config/masshatter/merged/unique_fragment/"
+        "config/massshatter/merged/unique_fragment/nist20_ma_mi_merged_fast_gnn_proposal.yml",
+        "config/massshatter/merged/unique_fragment/"
         "nist20_ma_mi_merged_fast_gnn_proposal_fragments128.yml",
-        "config/masshatter/merged/unique_fragment/"
+        "config/massshatter/merged/unique_fragment/"
         "nist20_ma_mi_merged_fast_gnn_proposal_fragments512.yml",
-        "config/masshatter/ma_mi_unmerged/cmf/"
+        "config/massshatter/ma_mi_unmerged/cmf/"
         "nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
-        "config/masshatter/merged/warmup_duration/"
+        "config/massshatter/merged/warmup_duration/"
         "nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal.yml",
     ],
 )
 def test_prepared_beam_arms_log_candidate_coverage(config_path):
     from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
-    from fragnnet.runner import load_config
-
-    config = load_config("config/template.yml", config_path, None)
+    config = load_config("config/models_template", config_path, None)
     assert config["mass_shatter_candidate_coverage_metrics"] is True
     model = MassShatterPL(**config)
     assert model.model.proposal_method == "connected_fragment_beam"
@@ -413,7 +415,7 @@ def test_merged_jss_beam_arm_matches_its_baseline_apart_from_the_proposal() -> N
     """The beam arm exists to be comparable to the lead merged run, so pin the diff."""
     import yaml
 
-    directory = "config/masshatter/merged/warmup_duration"
+    directory = "config/massshatter/merged/warmup_duration"
     stem = "nist20_merged_independent_jss_warmup_e0_4_dense_subformula"
     with open(f"{directory}/{stem}_fast.yml") as handle:
         baseline = yaml.safe_load(handle)
@@ -484,11 +486,9 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
 
 def test_config_arm_resolves_and_constructs():
     from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
-    from fragnnet.runner import load_config
-
     config = load_config(
-        "config/template.yml",
-        "config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
+        "config/models_template",
+        "config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
         None,
     )
     model = MassShatterPL(**config)
@@ -636,7 +636,6 @@ def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, ol
     import yaml
 
     from fragnnet.pl_model.mass_shatter_pl import MassShatterPL
-    from fragnnet.runner import load_config
     from fragnnet.utils.pl_utils import get_pl_hparams
 
     old_key = "mass_shatter_proposal_type"
@@ -667,10 +666,10 @@ def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, ol
     assert override.model.proposal_method == "cut_masks"
     custom = tmp_path / "old.yml"
     custom.write_text(yaml.safe_dump({old_key: old_value}))
-    assert load_config("config/template.yml", str(custom), None)[new_key] == expected
-    assert load_config("config/template.yml", None, [f"{old_key}={old_value}"])[new_key] == expected
+    assert load_config("config/models_template", str(custom), None)[new_key] == expected
+    assert load_config("config/models_template", None, [f"{old_key}={old_value}"])[new_key] == expected
     assert (
-        load_config("config/template.yml", str(custom), [f"{new_key}=cut_masks"])[new_key]
+        load_config("config/models_template", str(custom), [f"{new_key}=cut_masks"])[new_key]
         == "cut_masks"
     )
     assert load_config(str(custom), None, None)[new_key] == expected

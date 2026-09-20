@@ -599,7 +599,7 @@ Proceed only if:
 
 ## Phase 3 — Loss-only training arms
 
-Add explicit required config keys to `config/template.yml`:
+Add explicit required config keys to `config/models_template`:
 
 ```yaml
 batch_sampler_type: ce_context

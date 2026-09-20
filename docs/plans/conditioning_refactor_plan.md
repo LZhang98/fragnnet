@@ -47,8 +47,8 @@ the new pair; legacy configs retain their original mean pooling.
 
 | Arm | Config | Context destinations |
 | --- | --- | --- |
-| Control | [Full metadata, heads only](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml) | Proposal and intensity heads |
-| Requested variant | [Full metadata, GNN + heads](../../config/masshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml) | Atom inputs plus proposal and intensity heads |
+| Control | [Full metadata, heads only](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml) | Proposal and intensity heads |
+| Requested variant | [Full metadata, GNN + heads](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml) | Atom inputs plus proposal and intensity heads |
 
 Both derive from the merged probability-CE warmup control: U256/E1024, Gaussian cross-entropy,
 consensus targets, shared encoder, and proposal-only epochs 0–15. Both enable NCE, ACE, adduct,
@@ -79,9 +79,9 @@ the existing unmerged mask1024 architecture; it does not settle the newer U256 e
 
 | Arm | Config | Conditioning |
 | --- | --- | --- |
-| M0 — historical reference | [Existing baseline](../../config/masshatter/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_gsa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
-| M1 — optional diagnostic, outside the next run queue | [NCE with categorical metadata](../../config/masshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_nce.yml) | NCE + adduct + instrument + mode |
-| M2 — selected conditioning baseline | [Full metadata, dual CE](../../config/masshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce.yml) | NCE + ACE + adduct + instrument + mode |
+| M0 — historical reference | [Existing baseline](../../config/massshatter/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_gsa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
+| M1 — optional diagnostic, outside the next run queue | [NCE with categorical metadata](../../config/massshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_nce.yml) | NCE + adduct + instrument + mode |
+| M2 — selected conditioning baseline | [Full metadata, dual CE](../../config/massshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce.yml) | NCE + ACE + adduct + instrument + mode |
 
 M0/M1 remain available for diagnosis; the active sequence starts at M2. Instrument
 vocabulary is FT/QTOF/IT; mode vocabulary is HCD/CID with the existing unknown token. Keep the

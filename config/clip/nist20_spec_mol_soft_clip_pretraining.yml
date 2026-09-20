@@ -126,7 +126,6 @@ mlp_hidden_size: 256
 mlp_dropout: 0.3
 mlp_num_layers: 2
 mlp_use_residuals: True
-
 # ============================================================================
 # Metadata Conditioning
 # ============================================================================
@@ -134,8 +133,6 @@ ce_insert_type: embed_clamped
 ce_insert_location: mol
 ce_insert_merge: True
 ce_insert_size: 32
-use_nce: True
-use_ace: True
 
 prec_insert_location: mol
 prec_insert_size: 32
@@ -143,15 +140,17 @@ inst_insert_location: mol
 inst_insert_size: 32
 frag_mode_insert_location: mol
 frag_mode_insert_size: 32
-
-# CE normalization params
-int_embedder: abs-sines
 nce_max: 200
 nce_mean: 60
 nce_std: 40
 ace_max: 100.0
 ace_mean: 20.0
 ace_std: 15.0
+use_nce: True
+use_ace: True
+
+# CE normalization params
+int_embedder: abs-sines
 
 # Inference / misc
 mz_max: 1500.0

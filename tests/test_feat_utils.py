@@ -13,6 +13,7 @@ from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,
     AtomDegree,
+    AtomDegreeOneHot,
     AtomFormal,
     AtomHybrid,
     AtomMass,
@@ -1109,6 +1110,83 @@ class TestRandomWalkPE:
 
         expected = th.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=pe.dtype)
         assert th.allclose(pe, expected, atol=1e-6, rtol=1e-6)
+
+
+class TestDegreeEncodings:
+    """``a_degree`` versus its corrected replacement (feature audit §7.1)."""
+
+    @pytest.fixture
+    def aspirin_mol(self):
+        return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
+
+    def test_a_degree_one_hot_is_inert(self, aspirin_mol):
+        """Documented defect: a list never matches, so every atom takes the unknown bucket."""
+        one_hots = np.array([AtomDegree.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()])
+
+        assert (one_hots[:, -1] == 1).all()
+        assert one_hots[:, :-1].sum() == 0
+
+    def test_a_degree_onehot_keeps_the_width_and_encodes_the_degree(self, aspirin_mol):
+        """The replacement is a drop-in: same width, live one-hot."""
+        assert AtomDegreeOneHot.feat_size == AtomDegree.feat_size
+
+        for atom in aspirin_mol.GetAtoms():
+            feat = AtomDegreeOneHot.featurize(atom)
+            assert len(feat) == AtomDegreeOneHot.feat_size
+            assert feat[0] == atom.GetDegree()
+            assert feat[1] == atom.GetTotalDegree()
+            assert sum(feat[2:]) == 1
+            assert feat[2 + atom.GetDegree()] == 1
+
+    def test_a_degree_onehot_varies_across_atoms(self, aspirin_mol):
+        """The columns the broken encoding left constant now carry signal."""
+        one_hots = np.array(
+            [AtomDegreeOneHot.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()]
+        )
+        varying = [i for i in range(one_hots.shape[1]) if np.ptp(one_hots[:, i]) > 0]
+
+        assert len(varying) >= 3
+
+
+class TestSharedElementOrder:
+    """``AtomOneHot`` must not mutate the canonical element order (feature audit §7.8)."""
+
+    @pytest.fixture
+    def aspirin_mol(self):
+        return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
+
+    def test_featurizing_does_not_grow_the_shared_element_list(self, aspirin_mol):
+        from fragnnet.utils import frag_utils
+
+        before = list(frag_utils.CANONICAL_ELEMENT_ORDER)
+        AtomOneHot.featurize(aspirin_mol.GetAtomWithIdx(0))
+
+        assert before == frag_utils.CANONICAL_ELEMENT_ORDER
+        assert None not in frag_utils.CANONICAL_ELEMENT_ORDER
+        assert AtomOneHot.allowable_set is not frag_utils.CANONICAL_ELEMENT_ORDER
+
+
+class TestGasteigerGraphField:
+    """Every molecular graph carries Gasteiger charges (feature audit §7.3)."""
+
+    @pytest.fixture
+    def aspirin_mol(self):
+        return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
+
+    @pytest.mark.parametrize("atom_feats", [["a_onehot"], ["a_onehot", "a_charge"]])
+    def test_charges_are_attached_regardless_of_the_feature_list(self, aspirin_mol, atom_feats):
+        graph = MolGraph(atom_feats, ["b_degree"], 0).get_pyg_graph(aspirin_mol)
+
+        assert graph.atom_gasteiger_charges.shape == (aspirin_mol.GetNumAtoms(),)
+        assert graph.atom_gasteiger_charges.dtype == th.float32
+        assert th.isfinite(graph.atom_gasteiger_charges).all()
+
+    def test_charges_match_the_a_charge_column(self, aspirin_mol):
+        """The field and the atom feature are the same numbers."""
+        mol_graph = MolGraph(["a_charge"], ["b_degree"], 0)
+        graph = mol_graph.get_pyg_graph(aspirin_mol)
+
+        assert th.allclose(graph.x[:, 0], graph.atom_gasteiger_charges)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ defects and are timing controls only. They are not recommended alternatives to t
   `f2227d29a201b9ceb8e04fb71c7d788532a79172658e9eaa43b9f81965f2b278`.
 - RTX 2070 SUPER, 8 GiB; Intel i7-8700K; PyTorch 2.4.1+cu121; configured `FRAGNNET-GPU`
   interpreter; two CPU threads, FP32, matmul precision `high`. GPU was initially idle.
-- Resolved config: [unmerged connected-fragment arm](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml).
+- Resolved config: [unmerged connected-fragment arm](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml).
   Data: `data/proc/nist20/{spec_df,mol_df}.pkl`, split `data/split/nist20_ma_mi_inchikey`.
   Seed 397623; in-memory subsample 1,024 training spectra; workers 0, shared memory off.
 - Captured two batches of 256 graph instances and initialized model bond logits, then froze

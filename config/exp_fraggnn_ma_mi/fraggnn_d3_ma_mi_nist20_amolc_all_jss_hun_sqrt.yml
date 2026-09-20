@@ -123,7 +123,6 @@ spec_params:
 # ============================================================================
 mol_params:
   preprocess: True
-
 # ============================================================================
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
 # All inserted at the mol encoder input ("mol" location)
@@ -225,7 +224,6 @@ dynamic_batch_sampler_max: 400000
 # Group Sampler (same-molecule multi-CE batching)
 # ============================================================================
 group_sampler: False
-group_sampler_type: group
 group_sampler_max_per_group: 5
 simple_group_sampler: True              # simpler group sampler variant
 simple_group_sampler_avg_per_group: 5   # average spectra per molecule group per batch

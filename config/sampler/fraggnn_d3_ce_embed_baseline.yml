@@ -90,7 +90,6 @@ automatic_optimization: False
 dynamic_batch_sampler:  True
 
 group_sampler: False
-group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 5
 simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5

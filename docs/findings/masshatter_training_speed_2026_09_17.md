@@ -7,8 +7,8 @@
 ## Result and implementation
 
 The initial measured improvement was to disable **monitoring-only** channel attribution and
-base-spectrum CE. The [fast config](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml)
-differs from the [s3gy1ro4 control](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml)
+base-spectrum CE. The [fast config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml)
+differs from the [s3gy1ro4 control](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml)
 in exactly four resolved keys: W&B name/tags and these existing switches:
 
 ```yaml
@@ -141,7 +141,7 @@ From the repository root, with the configured environment:
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
   scripts/debug/benchmark_mass_shatter_training.py \
-  --config config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml \
+  --config config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml \
   --output /tmp/masshatter_monitoring_benchmark.json
 ```
 
@@ -161,7 +161,7 @@ were not run; production model code and scientific objectives are unchanged.
 
 ## Larger-microbatch follow-up (2026-09-17)
 
-At the user's request, the [batch-256 config](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml)
+At the user's request, the [batch-256 config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml)
 changes `train_batch_size: 128 → 256` and `accumulate_grad_batches: 2 → 1` relative to the fast
 config. Only those two settings and W&B name/tags differ. Effective batch size remains 256 on
 one GPU; LR, validation batch size, losses, precision and candidate budgets stay fixed.
@@ -191,10 +191,10 @@ L40S from the repository root, with that job's Python environment:
 
 ```bash
 python scripts/debug/benchmark_mass_shatter_training.py \
-  --config config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml \
+  --config config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml \
   --batches 4 --warmup 4 --steps 8 --output /tmp/msh_batch128_control.json
 python scripts/debug/benchmark_mass_shatter_training.py \
-  --config config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml \
+  --config config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml \
   --batches 2 --warmup 2 --steps 4 --output /tmp/msh_batch256.json
 ```
 
@@ -212,7 +212,7 @@ remain separate experiments.
 
 ## Batch-512 config prepared (2026-09-17)
 
-The requested [batch-512 config](../../config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512.yml)
+The requested [batch-512 config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512.yml)
 differs from the batch-256 variant only in `train_batch_size` and W&B name/tags.
 Accumulation remains 1, so effective batch size is 512 on one GPU. LR remains 0.001;
 validation batch size remains 64, precision remains FP32, and both monitoring switches stay off.

@@ -17,7 +17,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SCRIPT_DIR="${REPO_ROOT}/slurm_scripts/masshatter_l40s"
 JOB_DIR="${REPO_ROOT}/jobs"
-CONFIG_DIR=config/masshatter/ma_mi_unmerged/cmf
+CONFIG_DIR=config/massshatter/ma_mi_unmerged/cmf
 STEM=nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol
 
 BOUNDARIES=(2 4)

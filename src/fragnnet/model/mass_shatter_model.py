@@ -51,6 +51,7 @@ from fragnnet.frag.mass_shatter_templates import (
     MassShatterTemplate,
     filter_mass_shatter_templates,
 )
+from fragnnet.model.base_model import CutBondEncoder
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
@@ -59,6 +60,7 @@ from fragnnet.model.bond_fragment_heads import (
     IonModeProposalHead,
     _segment_logsumexp,
     _validate_tensor_condition,
+    boundary_bond_endpoint_orientation,
     component_charge_log_probabilities,
     latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
@@ -126,6 +128,44 @@ def _mean_values_by_batch(
         "every spectrum must have at least one CE value",
     )
     return sums / counts
+
+
+def _per_atom_neutral_masses(mol_pyg: Batch) -> th.Tensor:
+    """Return each atom's monoisotopic mass including its implicit hydrogens."""
+    return mol_pyg.atom_monoisotopic_masses + (
+        mol_pyg.atom_hydrogen_counts.to(mol_pyg.atom_monoisotopic_masses) * H_MASS
+    )
+
+
+def _component_neutral_masses(
+    mol_pyg: Batch,
+    atom_indices: th.Tensor,
+    atom_component_indices: th.Tensor,
+    num_components: int,
+) -> th.Tensor:
+    """Sum neutral elemental masses over each component's atoms.
+
+    Args:
+        mol_pyg: Batched precursor graphs carrying the chemistry fields.
+        atom_indices: Atom index of each membership entry.
+        atom_component_indices: Component index of each membership entry.
+        num_components: Number of components.
+
+    Returns:
+        Neutral fragment mass per component, shape ``(num_components,)``.
+    """
+    per_atom = _per_atom_neutral_masses(mol_pyg)
+    return per_atom.new_zeros(num_components).index_add(
+        0,
+        atom_component_indices,
+        per_atom[atom_indices],
+    )
+
+
+def _precursor_neutral_masses(mol_pyg: Batch, batch_size: int) -> th.Tensor:
+    """Return the intact neutral mass of every precursor in the batch."""
+    per_atom = _per_atom_neutral_masses(mol_pyg)
+    return per_atom.new_zeros(batch_size).index_add(0, mol_pyg.batch, per_atom)
 
 
 def _relative_fragment_keep_mask(
@@ -873,6 +913,9 @@ class MassShatterModel(nn.Module):
         charge_pooling: str,
         use_smarts_templates: bool,
         context_in_gnn: bool = False,
+        boundary_bond_encoder: bool = False,
+        candidate_mass_features: bool = False,
+        candidate_charge_feature: bool = False,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -993,6 +1036,18 @@ class MassShatterModel(nn.Module):
                 (favoring large components); ``logmeanexp`` removes that size prior.
             use_smarts_templates: Add matched SMARTS rearrangements as alternative
                 assembly mechanisms within their corresponding cut masks.
+            boundary_bond_encoder: Encode each cut bond with :class:`CutBondEncoder` from its
+                (retained, lost) atom embeddings instead of averaging the two endpoints. The
+                average is degenerate: it collapses to half the mean inside plus half the mean
+                outside atom, so which atom was bonded to which is discarded and the retained
+                and lost sides are indistinguishable.
+            candidate_mass_features: Give each candidate its neutral fragment mass
+                (``log1p``) and its fraction of the intact precursor mass. Without these the
+                intensity head sees no mass or m/z at all.
+            candidate_charge_feature: Give each candidate the sum of its atoms' Gasteiger
+                partial charges, the MASShatter analogue of FraGNNet's ``frag_q``. Requires
+                ``a_charge`` in ``mol_params.pyg_node_feats``, which is what attaches
+                ``atom_gasteiger_charges`` to the graph.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1296,6 +1351,17 @@ class MassShatterModel(nn.Module):
             if proposal_num_mixtures > 1
             else None
         )
+        self.candidate_mass_features = candidate_mass_features
+        self.candidate_charge_feature = candidate_charge_feature
+        self.boundary_bond_encoder = (
+            CutBondEncoder(
+                atom_dim=precursor_hidden_dim,
+                hidden_dim=head_hidden_dim,
+                out_dim=precursor_hidden_dim,
+            )
+            if boundary_bond_encoder
+            else None
+        )
         self.charge_head = AtomChargeAffinityHead(
             precursor_hidden_dim,
             context_dim,
@@ -1341,6 +1407,9 @@ class MassShatterModel(nn.Module):
             separate_ion_h_support_head=separate_ion_h_support_head,
             predict_oos=False,
             initial_oos_probability=0.1,
+            use_mass_features=candidate_mass_features,
+            use_charge_feature=candidate_charge_feature,
+            unique_fragment_tokens=unique_fragment_mode,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
@@ -1564,17 +1633,16 @@ class MassShatterModel(nn.Module):
             hydrogens than the complementary neutral fragment has to give, or for a CMF
             channel the adduct does not define.
         """
-        atom_masses = mol_pyg.atom_monoisotopic_masses
         atom_hydrogens = mol_pyg.atom_hydrogen_counts
         atom_numbers = mol_pyg.atom_atomic_numbers
 
-        # Sum neutral elemental masses. CRF/CMF deltas below apply the output ion's
-        # electron correction once, irrespective of precursor atom formal charges.
-        per_atom_neutral_mass = atom_masses + atom_hydrogens.to(atom_masses) * H_MASS
-        component_masses = atom_masses.new_zeros(num_fragments).index_add(
-            0,
+        # CRF/CMF deltas below apply the output ion's electron correction once,
+        # irrespective of precursor atom formal charges.
+        component_masses = _component_neutral_masses(
+            mol_pyg,
+            atom_indices,
             atom_fragment_indices,
-            per_atom_neutral_mass[atom_indices],
+            num_fragments,
         )
 
         component_counts = th.zeros(
@@ -1650,6 +1718,116 @@ class MassShatterModel(nn.Module):
             valid_channels.append(cmf_valid)
         ion_mzs = th.stack(mz_channels, dim=1)
         return ion_mzs, th.stack(valid_channels, dim=1) & (ion_mzs > 0.0)
+
+    def _boundary_embeddings(
+        self,
+        mol_pyg: Batch,
+        atom_embeddings: th.Tensor,
+        chemical_bond_embeddings: th.Tensor,
+        boundary_bond_indices: th.Tensor,
+        boundary_component_indices: th.Tensor,
+        atom_indices: th.Tensor,
+        atom_component_indices: th.Tensor,
+        num_components: int,
+    ) -> th.Tensor:
+        """Pool each component's severed bonds into one embedding.
+
+        The default averages the two endpoint atom embeddings, which is degenerate under the
+        subsequent mean pool. With ``boundary_bond_encoder`` the bond is encoded from its
+        oriented (retained, lost) endpoints instead, so the pairing survives pooling.
+
+        Args:
+            mol_pyg: Batched precursor graphs.
+            atom_embeddings: Per-atom embeddings, shape ``(num_atoms, hidden)``.
+            chemical_bond_embeddings: Endpoint-averaged bond embeddings, one per chemical bond.
+            boundary_bond_indices: Bond index of each (bond, component) boundary pair.
+            boundary_component_indices: Component index of each boundary pair.
+            atom_indices: Atom index of each component-membership entry.
+            atom_component_indices: Component index of each membership entry.
+            num_components: Number of components.
+
+        Returns:
+            Boundary embedding per component, shape ``(num_components, hidden)``.
+        """
+        if self.boundary_bond_encoder is None:
+            return pool_boundary_bond_embeddings(
+                chemical_bond_embeddings,
+                boundary_bond_indices,
+                boundary_component_indices,
+                num_components=num_components,
+            )
+        inside_atoms, outside_atoms = boundary_bond_endpoint_orientation(
+            mol_pyg.chemical_bond_index,
+            boundary_bond_indices,
+            boundary_component_indices,
+            atom_indices,
+            atom_component_indices,
+            num_atoms=atom_embeddings.shape[0],
+        )
+        bond_embeddings = self.boundary_bond_encoder(
+            atom_embeddings[inside_atoms],
+            atom_embeddings[outside_atoms],
+        )
+        return pool_boundary_bond_embeddings(
+            bond_embeddings,
+            th.arange(bond_embeddings.shape[0], device=bond_embeddings.device),
+            boundary_component_indices,
+            num_components=num_components,
+        )
+
+    def _candidate_scalar_features(
+        self,
+        mol_pyg: Batch,
+        atom_indices: th.Tensor,
+        atom_component_indices: th.Tensor,
+        component_batch_indices: th.Tensor,
+        num_components: int,
+        batch_size: int,
+    ) -> tuple[th.Tensor | None, th.Tensor | None]:
+        """Build the optional per-candidate mass and charge scalars.
+
+        Args:
+            mol_pyg: Batched precursor graphs.
+            atom_indices: Atom index of each component-membership entry.
+            atom_component_indices: Component index of each membership entry.
+            component_batch_indices: Spectrum index per component.
+            num_components: Number of components.
+            batch_size: Number of spectra in the batch.
+
+        Returns:
+            ``(mass_features, charge_feature)``; each is None when its flag is off.
+            ``mass_features`` is ``(num_components, 2)`` holding ``log1p(neutral mass)`` and the
+            fraction of the intact precursor mass. ``charge_feature`` is ``(num_components,)``.
+        """
+        mass_features = None
+        if self.candidate_mass_features:
+            component_masses = _component_neutral_masses(
+                mol_pyg,
+                atom_indices,
+                atom_component_indices,
+                num_components,
+            )
+            precursor_masses = _precursor_neutral_masses(mol_pyg, batch_size)
+            _validate_tensor_condition(
+                (precursor_masses > 0).all(),
+                "every precursor must have a positive neutral mass",
+            )
+            mass_features = th.stack(
+                (
+                    th.log1p(component_masses),
+                    component_masses / precursor_masses[component_batch_indices],
+                ),
+                dim=1,
+            )
+        charge_feature = None
+        if self.candidate_charge_feature:
+            atom_charges = mol_pyg.atom_gasteiger_charges
+            charge_feature = atom_charges.new_zeros(num_components).index_add(
+                0,
+                atom_component_indices,
+                atom_charges[atom_indices],
+            )
+        return mass_features, charge_feature
 
     def _eligible_smarts_templates(
         self,
@@ -1901,11 +2079,12 @@ class MassShatterModel(nn.Module):
             "chemical_bond_attr",
             "atom_atomic_numbers",
             "atom_hydrogen_counts",
-            "atom_formal_charges",
             "atom_monoisotopic_masses",
             "batch",
             "ptr",
         )
+        if self.candidate_charge_feature:
+            required_graph_fields = (*required_graph_fields, "atom_gasteiger_charges")
         missing = [field for field in required_graph_fields if not hasattr(mol_pyg, field)]
         if missing:
             raise ValueError(
@@ -2350,11 +2529,23 @@ class MassShatterModel(nn.Module):
                 num_components=num_fragments,
                 num_molecules=batch_size,
             )
-            boundary_embeddings = pool_boundary_bond_embeddings(
+            boundary_embeddings = self._boundary_embeddings(
+                mol_pyg,
+                atom_embeddings,
                 chemical_bond_embeddings,
                 fragment_boundary_bond_indices,
                 boundary_fragment_indices,
-                num_components=num_fragments,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                num_fragments,
+            )
+            fragment_mass_features, fragment_charge_feature = self._candidate_scalar_features(
+                mol_pyg,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                fragment_batch_indices,
+                num_fragments,
+                batch_size,
             )
             fragment_sizes = th.bincount(
                 atom_fragment_indices,
@@ -2413,6 +2604,8 @@ class MassShatterModel(nn.Module):
                 num_masks=num_fragments,
                 context=context[fragment_batch_indices],
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
+                mass_features=fragment_mass_features,
+                charge_feature=fragment_charge_feature,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             ion_h_support_logits = (
@@ -2481,11 +2674,23 @@ class MassShatterModel(nn.Module):
                 num_components=num_fragments,
                 num_molecules=batch_size,
             )
-            boundary_embeddings = pool_boundary_bond_embeddings(
+            boundary_embeddings = self._boundary_embeddings(
+                mol_pyg,
+                atom_embeddings,
                 chemical_bond_embeddings,
                 candidates.boundary_bond_indices,
                 candidates.boundary_component_indices,
-                num_components=num_fragments,
+                candidates.atom_indices,
+                candidates.atom_component_indices,
+                num_fragments,
+            )
+            fragment_mass_features, fragment_charge_feature = self._candidate_scalar_features(
+                mol_pyg,
+                candidates.atom_indices,
+                candidates.atom_component_indices,
+                fragment_batch_indices,
+                num_fragments,
+                batch_size,
             )
             fragment_sizes = th.bincount(
                 candidates.atom_component_indices,
@@ -2516,6 +2721,8 @@ class MassShatterModel(nn.Module):
                 num_masks=num_masks,
                 context=context[fragment_batch_indices],
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
+                mass_features=fragment_mass_features,
+                charge_feature=fragment_charge_feature,
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             ion_h_support_logits = (

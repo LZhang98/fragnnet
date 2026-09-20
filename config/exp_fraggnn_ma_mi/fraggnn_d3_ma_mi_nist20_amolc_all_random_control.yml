@@ -92,7 +92,6 @@ spec_params:
 # Molecule Parameters
 mol_params:
   preprocess: True
-
 # Conditioning Embeddings
 ce_insert_type: embed_clamped
 ce_insert_location: mol
@@ -173,7 +172,6 @@ dag_size_curriculum_epochs: 10
 
 # Keep random sampling identical to the curriculum run.
 group_sampler: False
-group_sampler_type: group
 group_sampler_max_per_group: 5
 simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5

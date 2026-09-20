@@ -128,8 +128,8 @@ instead of assuming it.**
 
 ### The arms exist, resolve, and are one knob each
 
-All eight configs under `config/masshatter/ma_mi_merged/` resolve through `load_config` against
-the current `config/template.yml`, and the resolved diff against the base is exactly one key:
+All eight configs under `config/massshatter/ma_mi_merged/` resolve through `load_config` against
+the current `config/models_template`, and the resolved diff against the base is exactly one key:
 
 | Arm config suffix | Resolved delta from base | Prior |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ replicates per arm are **set by the Stage A slice measurement**, not fixed here:
 `3g.40gb`) if the 2g slice is >= 1.75x slower, shape B (18 jobs on `2g.20gb`, n=2 per arm) if it is
 <= 1.5x. Job names below are shape A; shape B appends `_s2` for the second seed of each arm.
 
-All eight configs exist under `config/masshatter/ma_mi_merged/`, sharing the stem
+All eight configs exist under `config/massshatter/ma_mi_merged/`, sharing the stem
 `nist20_ma_mi_merged_fast_batch512_cuda_lb64`. The experiment is **in the files**, not in launch
 flags: each carries `compute_train_auxiliary_metrics: true`, `wandb_group:
 nist20_mass_shatter_reg_sweep` and the tags `reg_sweep_2026_09_19` / `train_aux_metrics`, so a
@@ -185,7 +185,7 @@ missing override cannot silently break comparability, and the W&B read-out is on
 | `ms_reg_hbound_complement` | `_hbound_complement` | `mass_shatter_h_transfer_bound` |
 | `ms_reg_hbound_valence` | `_hbound_valence` | `mass_shatter_h_transfer_bound` |
 
-Verified after generation: each config resolves against `config/template.yml`, has the identical key
+Verified after generation: each config resolves against `config/models_template`, has the identical key
 set, and differs from `ctrl_a` in **exactly** the keys of its declared axis and nothing else. The
 original `nist20_ma_mi_merged_fast_batch512_cuda_lb64.yml` is left untouched (still
 `compute_train_auxiliary_metrics: False`) so the four-replicate lineage keeps its config identity;
@@ -411,7 +411,7 @@ credential, so keep them private.
 ```bash
 FRAGNNET_ACCOUNT=rrg-dwishart
 FRAGNNET_EMAIL=fw4@ualberta.ca
-CFG=config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64
+CFG=config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64
 
 # control A + the eight arms (shape A, 3g.40gb: no overrides needed at all)
 for arm in _ctrl_a _layernorm _graphnorm _drop02 _drop03 _wd10 _ctxnorm \
@@ -456,7 +456,7 @@ python scripts/setup_job_cc.py \
   --cc_email "$FRAGNNET_EMAIL" \
   --time 1:00:00 \
   --script_kwargs w=online j=ms_reg_ctrl_2g \
-    c=config/masshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch256x2_cuda_lb32_ctrl_2g.yml \
+    c=config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch256x2_cuda_lb32_ctrl_2g.yml \
   --no_submit=True
 bash -n slurm_scripts/ms_reg_ctrl_2g.sh
 ```

@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     # load configs
     print(">>> Loading configs")
-    template_fp = "config/template.yml"
+    template_fp = "config/models_template"
     custom_fp = os.path.join("config", entropy_exp, split_type, f"{depth}_script_config.yml")
     assert os.path.isfile(custom_fp)
     config_d = load_config(template_fp, custom_fp)

@@ -1,10 +1,13 @@
 # MASShatter Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-20
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-20 &nbsp;·&nbsp; findings §7.1-§7.8
+> are **FIXED for MASShatter** and are now the default; see §11. FraGNNet is unchanged.
 >
 > Which atom/bond/candidate/conditioning features MASShatter actually consumes.
-> Headline: **34 of 70 atom-feature columns are constant on NIST20**, 12 of them because
-> `a_degree`'s one-hot is mis-encoded; the candidate intensity head is mass-blind.
+> Headline finding: **34 of 70 atom-feature columns were constant on NIST20**, 12 of them
+> because `a_degree`'s one-hot is mis-encoded, and the candidate intensity head was mass-blind.
+> Sections 1-10 describe the audited state; §11 records what changed.
+> **Every MASShatter checkpoint written before 2026-09-20 is incompatible with this code.**
 
 Audited against `31c487db` on branch `research/masshatter-ion-h-selection`, over all 175
 `model_type: mass_shatter` configs under `config/`. Column-constancy measured on a 5,000-molecule
@@ -168,13 +171,32 @@ Gasteiger charges are implemented, computed on the fly (no DAG regeneration), an
 FraGNNet's newest configs, which also carry `frag_q` (the per-fragment Gasteiger sum). MASShatter
 has no `frag_q` analogue in its candidate token.
 
-### 7.4 Cut-bond identity is discarded before intensity scoring
+### 7.4 The boundary embedding is degenerate — FraGNNet diagnosed and fixed this construction
 
-`boundary_embeddings` pool `(atom_emb[u] + atom_emb[v]) / 2`, so `b_degree`/`b_ring`/`b_conj` for
-the *severed* bonds reach the intensity head only through whatever GINE mixed into the endpoint
-atom states. Meanwhile `BondFocusedBreakHead` (3 layers in 156/175 configs) builds refined
-per-bond states that do see `chemical_bond_attr` directly — and discards them after emitting
-break logits. Pooling those existing bond states as the boundary source is shape-local.
+`boundary_embeddings` pool `(atom_emb[u] + atom_emb[v]) / 2` with `reduction="mean"`, so for a
+fragment with *k* cut bonds the result is exactly
+`0.5 * (mean of inside endpoints + mean of outside endpoints)`. Two consequences, both verified
+numerically against `pool_boundary_bond_embeddings`:
+
+- **Pairing is destroyed.** Cutting a1–b1 plus a2–b2 gives a bit-identical embedding to cutting
+  a1–b2 plus a2–b1 (max abs difference 3e-8, float noise). That is precisely the multi-cut
+  ring-cleavage regime.
+- **Inside/outside is destroyed.** The per-bond term is symmetric in its endpoints, so the atoms
+  the fragment *keeps* and the atoms it *loses* enter with the same weight and cannot be
+  distinguished within the boundary term.
+
+This is the same degeneracy FraGNNet diagnosed for its `boundary_pair` feature and fixed with
+`CutBondEncoder` ([base_model.py:803](../../src/fragnnet/model/base_model.py#L803)), whose
+docstring states the argument in full: a linear map on a concatenation cannot express a bond
+because bond identity is an interaction, and a linear map commutes through the pool. MASShatter's
+version is strictly weaker than the `boundary_pair` that fix replaced — `boundary_pair` at least
+had separate `W_in`/`W_out`, so it could tell inside from outside.
+
+Separately, `b_degree`/`b_ring`/`b_conj` for the *severed* bonds reach the intensity head only
+through whatever GINE mixed into the endpoint atom states, while `BondFocusedBreakHead` (3 layers
+in 156/175 configs) builds refined per-bond states that read `chemical_bond_attr` directly and
+discards them after emitting break logits. Pooling those existing bond states as the boundary
+source, or porting `CutBondEncoder`, is shape-local.
 
 ### 7.5 Two dead inputs inside the candidate token
 
@@ -201,24 +223,25 @@ is also absent from the fragment-mass arithmetic, which uses atomic numbers plus
 `AtomOneHot.allowable_set` *is* `frag_utils.CANONICAL_ELEMENT_ORDER` (same list object), and
 `one_hot_encoding(..., encode_unknown=True)` appends `None` to it on first use. After featurizing
 any molecule the shared list is 18 long instead of 17. Harmless today — its two consumers do
-`if elem in elem_d`, and `ELEMENT_TO_IDX`/`IDX_TO_ELEMENT` are built at import — but any
-length-based or lazily-built consumer would break.
+`if elem in elem_d`, and `ELEMENT_TO_IDX`/`IDX_TO_ELEMENT` are built from `ELEMENT_TO_VE`, not
+from this list — but any length-based or lazily-built consumer would break. Shared with FraGNNet,
+which is the heavier user of element-ordered formula arrays.
 
 ## 8. Config drift
 
 | Group | Count | Feature shape |
 |-------|-------|---------------|
-| Experiment configs under `config/masshatter/**` and `config/sweeps_merged/masshatter/**` | 169 | 70 atom / 9 bond |
+| Experiment configs under `config/massshatter/**` and `config/sweeps_merged/masshatter/**` | 169 | 70 atom / 9 bond |
 | `config/nist20_merged_inchikey/mass_shatter/s0.yml` and 5 `config/debug/debug_tiny_mass_shatter*.yml` | 6 | template 60 atom / 5 bond |
 
 The canonical seeded config (`nist20_merged_inchikey/mass_shatter/s0.yml`) therefore does not
 match the feature set every experiment arm actually trains with, and produces a different
-`node_feature_dim`. `config/template.yml` keeps `a_ring_size`, `a_charge`, `b_ring` and `b_conj`
+`node_feature_dim`. `config/models_template` keeps `a_ring_size`, `a_charge`, `b_ring` and `b_conj`
 commented out.
 
 Minor: `mass_shatter_pl.py:967-969` reads the three Graphormer structural keys with
 `self.hparams.get(...)`, which [Python rules](../rules/python.md) forbid for hyperparameters;
-all three are declared in `config/template.yml`, so the fallback only hides missing keys in
+all three are declared in `config/models_template`, so the fallback only hides missing keys in
 legacy checkpoint configs.
 
 ## 9. Suggested order of work
@@ -236,3 +259,77 @@ legacy checkpoint configs.
 None of these are measured wins. Each needs a matched arm, read against the measured same-seed
 replicate floor (0.003 val cosine) recorded in the
 [regularization sweep plan](../plans/masshatter_regularization_sweep_plan.md).
+
+## 10. Which of these apply to FraGNNet
+
+`SpecMolFragDataset` extends `SpecMolDataset`, so both models build their molecular graph through
+the same `MolGraph`/`get_mol_graph` featurizer. Everything at the featurizer level is therefore
+shared; everything at the architecture level is not. Measured on the same NIST20 sample:
+
+| Feature set | Atom dim | Constant cols |
+|-------------|----------|---------------|
+| MASShatter, 169/175 configs | 70 | 34 (49%) |
+| FraGNNet newest (`pcdl_nist23*`, `nps_pcdl_nist23*`), 44/323 configs | 66 | 33 (50%) |
+| Template, inherited by 277/323 FraGNNet configs | 60 | 33 (55%) |
+
+| Finding | FraGNNet |
+|---------|----------|
+| §7.1 `a_degree` one-hot always the unknown bucket | **Yes, identical** — same 12 dead columns in all 323 configs |
+| §7.6 `a_radical` (6) and `a_chiral` (5) fully constant | **Yes, identical** |
+| `a_onehot` / `a_hybrid` / `a_formal` empty buckets | **Yes, identical** |
+| §7.8 shared-list mutation of `CANONICAL_ELEMENT_ORDER` | **Yes, shared** — and FraGNNet is the heavier user of element-ordered formula arrays |
+| `b_stereo` implemented, never enabled | **Yes, shared** — no config in the repository enables it |
+| `self.hparams.get(...)` for the Graphormer keys | **Yes** — same three lines at `fragnnet_pl.py:112-114` |
+| §7.4 degenerate boundary/cut-bond embedding | **Had it, fixed it.** `boundary_pair` has the same defect; `CutBondEncoder` replaced it at identical width. MASShatter's symmetric mean is weaker than the version FraGNNet retired |
+| §7.2 no mass/composition in the candidate token | **No.** FraGNNet fragment nodes carry `base_formula` (elemental composition), `h_formulae_idx`, `depth`, `num_heavy_atoms`, and optionally `frag_q`, `num_cut_bonds`, `rdbe`. Composition is an explicit input there and absent here |
+| §7.3 `a_charge` never enabled | **Partly.** Enabled in 44/323 FraGNNet configs together with `frag_q`; the other 277 inherit the template's 8-feature set, so most FraGNNet arms also lack it. MASShatter has it in 0/175 and has no `frag_q` analogue |
+| §7.7 `atom_formal_charges` | **Weaker.** Attached for every model but read by none; only MASShatter *requires* it in `forward` |
+| §7.5 dead candidate-token columns | **No** — MASShatter-specific |
+| `a_ring_size`, `a_num_hs`, `b_ring`, `b_conj` | **MASShatter is ahead.** All four are on in 169/175 MASShatter configs; FraGNNet enables `a_ring_size`/`b_ring`/`b_conj` in 44/323 and `a_num_hs` nowhere |
+
+So the repository-wide items are §7.1, §7.6, §7.8 and `b_stereo`; §7.4 is a solved problem in
+FraGNNet that MASShatter has not inherited the solution to; and §7.2 is the one place where
+MASShatter is missing a feature class FraGNNet has always had.
+
+Note that the FraGNNet index row and
+[feature_set_audit.md](feature_set_audit.md) (2026-06-09) still list `a_ring_size` and `b_ring` as
+open gaps. They are implemented and enabled in 44 configs, so that document is stale.
+
+## 11. Fixes applied (2026-09-20)
+
+All of §7 is implemented for MASShatter and on by default. FraGNNet keeps its previous inputs:
+the shared featurizer gains a new feature rather than changing `a_degree` in place, and no
+FraGNNet config was touched. **Existing MASShatter checkpoints cannot be loaded**: the atom
+feature width changed (70 → 71) and the intensity head's input width changed, so the affected
+tensors mismatch. Nothing was trained or evaluated; these are not measured improvements.
+
+| Finding | Fix |
+|---------|-----|
+| §7.1 dead `a_degree` one-hot | New `a_degree_onehot` featurizer: the two raw values plus a working one-hot of the heavy-atom degree, at the same 14-column width. `a_degree` is untouched for FraGNNet. All 177 MASShatter configs now use the replacement |
+| §7.2 mass-blind candidate token | `mass_shatter_candidate_mass_features` (default True) adds `log1p(neutral fragment mass)` and the fragment's fraction of the intact precursor mass. `_component_neutral_masses` is now shared with the channel-validity routine rather than recomputed |
+| §7.3 no `a_charge`, no `frag_q` analogue | `a_charge` added to all 177 MASShatter configs, and `mass_shatter_candidate_charge_feature` (default True) sums each candidate's Gasteiger charges — heavy-atom charges only, matching FraGNNet's `frag_q`. `atom_gasteiger_charges` is now attached to every molecular graph (0.03 ms/molecule; 1.1 s for all of NIST20), so the candidate feature does not depend on the atom feature list |
+| §7.4 degenerate boundary embedding | `mass_shatter_boundary_bond_encoder` (default True) reuses FraGNNet's `CutBondEncoder` on the oriented (retained, lost) endpoints. `boundary_bond_endpoint_orientation` recovers the orientation the candidate builders do not emit, by looking both endpoints up in the sparse membership relation; it raises if a boundary bond does not have exactly one endpoint inside its component |
+| §7.5 dead token columns | The intensity head drops the constant per-mask component count and the zeroed charge log-probability when its tokens are unique fragments. The legacy pathway-token mode keeps both, where they are live |
+| §7.7 unread required field | `atom_formal_charges` removed from the `forward` field check. It is still attached to the graph and still unread |
+| §7.8 shared-list mutation | `AtomOneHot.allowable_set` is a copy, so featurizing no longer appends `None` to `frag_utils.CANONICAL_ELEMENT_ORDER` |
+
+Measured effect on the feature matrix, same 5,000-molecule NIST20 sample: constant atom columns
+fall from **34/70 (49%) to 30/71 (42%)**. The corrected degree encoding leaves 8 constant columns
+instead of 12, and those 8 are genuinely empty buckets — the sampled heavy-atom degrees are only
+{1, 2, 3, 4}.
+
+**Deliberately not changed:** §7.6, the fully constant `a_radical` (6 columns) and `a_chiral`
+(5 columns). They are empty because NIST20 carries no radicals and its preprocessing strips
+stereochemistry, not because the features are broken. Dropping them would make the feature set
+dataset-specific and would silently discard signal on a corpus that does carry either. Removing
+them is a config-only change if that trade is wanted.
+
+Validation: full suite **3,890 passed, 1 skipped, 2 xfailed**; 20 new tests in
+`tests/test_mass_shatter_candidate_features.py` and 9 in `tests/test_feat_utils.py` cover the
+degeneracy, the orientation, the token width arithmetic and the new scalars. The lead merged
+config resolves to a 71-dim atom input and a 1,285-dim intensity token and runs a finite
+forward pass. Ruff is clean on the changed files apart from one pre-existing B007 in
+`batch_mols_frags`. No training run, no evaluation, no cluster job.
+
+Molecular preprocessing caches written before 2026-09-20 lack `atom_gasteiger_charges` and must
+be regenerated.

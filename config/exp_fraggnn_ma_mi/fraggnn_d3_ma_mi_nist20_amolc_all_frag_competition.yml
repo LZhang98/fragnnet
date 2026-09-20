@@ -73,7 +73,6 @@ mol_params:
     - b_ring
     - b_conj
   preprocess: True
-
 # Acquisition conditioning is identical to the control. The competition head also
 # receives these embeddings directly as its spectrum-level context.
 ce_insert_type: embed_clamped
@@ -160,7 +159,6 @@ dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 400000
 
 group_sampler: False
-group_sampler_type: group
 group_sampler_max_per_group: 5
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5

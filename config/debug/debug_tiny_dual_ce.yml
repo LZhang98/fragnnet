@@ -74,7 +74,6 @@ frag_dropout: 0.1
 mlp_normalization: layer
 mlp_hidden_size: 64
 mlp_dropout: 0.2
-
 # dual CE embedding — NCE and ACE embedded independently and concatenated
 # lin type: works with any float CE value; no integer clamping required
 ce_insert_type: lin
@@ -87,20 +86,20 @@ nce_std: 40
 ace_max: 100
 ace_mean: 20
 ace_std: 15
+# frag-mode conditioning
+
+frag_mode_insert_location: mol
+frag_mode_insert_size: 8
+# inst_type conditioning
+
+inst_insert_location: mol
+inst_insert_size: 16
 
 # CE-conditioned FiLM scaler with dual (value, valid_bit) inputs
 # input_dim = 4: [norm_nce, nce_valid, norm_ace, ace_valid]
 ce_scale: True
 ce_scaler_hidden_dim: 32
-
-# frag-mode conditioning
-frag_mode_insert_location: mol
-frag_mode_insert_size: 8
 frag_mode_scale: True
-
-# inst_type conditioning
-inst_insert_location: mol
-inst_insert_size: 16
 
 # loss stuff
 mask_null_formula: False

@@ -17,7 +17,7 @@ from fragnnet.utils.script_utils import (
 
 @pytest.fixture
 def checkpoint_model():
-    config = load_config("config/template.yml", None, None)
+    config = load_config("config/models_template", None, None)
     config.update(model_type="frag_gnn", compile=False, sparse_cosine_similarity=True)
     th.manual_seed(7)
     return FraGNNetPL(**config).eval(), config

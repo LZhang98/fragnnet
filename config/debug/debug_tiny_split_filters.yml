@@ -71,6 +71,10 @@ num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mol
 ce_insert_merge: True
+# frag-mode conditioning
+
+frag_mode_insert_location: mol
+frag_mode_insert_size: 8
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
@@ -84,10 +88,6 @@ frag_dropout: 0.1
 mlp_normalization: layer
 mlp_hidden_size: 64
 mlp_dropout: 0.2
-
-# frag-mode conditioning
-frag_mode_insert_location: mol
-frag_mode_insert_size: 8
 frag_mode_scale: True
 
 # CE-conditioned FiLM scaler

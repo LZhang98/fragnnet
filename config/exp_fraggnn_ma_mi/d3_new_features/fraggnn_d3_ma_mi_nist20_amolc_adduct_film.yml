@@ -100,7 +100,6 @@ spec_params:
 # ============================================================================
 mol_params:
   preprocess: True
-
 # ============================================================================
 # Conditioning Embeddings
 # ============================================================================
@@ -197,7 +196,6 @@ dynamic_batch_sampler_max: 400000
 # Group Sampler
 # ============================================================================
 group_sampler: False
-group_sampler_type: group
 group_sampler_max_per_group: 5
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5

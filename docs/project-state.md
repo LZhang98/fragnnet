@@ -87,7 +87,7 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   `gradient_clip_val` and `train_sample_weight` are identical in all of them, and only two runs vary
   any regularization or optimization setting without also changing the encoder. Both predate the
   `tolerance_consensus` merged-target change, so neither is usable evidence. Five prepared ablation
-  configs under `config/masshatter/ma_mi_merged/` have never been launched. Measured mechanisms:
+  configs under `config/massshatter/ma_mi_merged/` have never been launched. Measured mechanisms:
   BatchNorm, not dropout, drives the divergence between the candidate set optimized in training and
   the one evaluated (Jaccard 0.317/0.611 at dropout 0 under `batch`, exactly 1.000 under `layer`,
   `graph` and `none`); normalizing a residual branch pins its magnitude for `batch`, `layer` and
@@ -97,7 +97,7 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   then measure the BatchNorm candidate-set gap on a trained checkpoint before any new training arm.
   It also records the 2026-09-19 decision to drop the atom decoder going forward: epoch-matched it
   costs no cosine (-0.0018, inside the replicate floor) while running 1.8x faster per epoch, and
-  `config/template.yml` already defaults it to 0, so the recommended normalization arm needs no
+  `config/models_template` already defaults it to 0, so the recommended normalization arm needs no
   config change. The decoder code path remains for checkpoint compatibility.
   Probes: `scripts/debug/probe_masshatter_regularization.py`. Audit only; no training run,
   no model-code change.
@@ -114,27 +114,60 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   `group_id` never spans adducts (0 of 76,164 groups) and the shared-proposal path asserts one
   precursor type per group. Next: run the trained-model half of the gate against a multi-adduct
   checkpoint; both checkpoints in this checkout are `[M+H]+` only. No implementation started.
-- [MASShatter feature set audit](reference/masshatter_feature_set_audit.md) is a NEW audit
-  (2026-09-20) of every feature that reaches a MASShatter parameter, over all 175
-  `model_type: mass_shatter` configs at `31c487db`, with column constancy measured on a
-  5,000-molecule NIST20 sample (120,641 atoms). It found one real defect: `AtomDegree.featurize`
-  passes a list into `one_hot_encoding`, so 12 of `a_degree`'s 14 columns are always the unknown
-  bucket and substitution degree reaches the GNN only as two unnormalized integers. In total
-  34 of 70 atom-feature columns are constant on NIST20 (`a_radical` and `a_chiral` entirely so,
-  because preprocessing strips stereochemistry). The featurizer is shared, so FraGNNet has the
-  same defect. Three design gaps: the candidate intensity head receives no mass, m/z or
-  composition although `ion_mzs` already exists in scope before the call; `a_charge` is enabled
-  in FraGNNet's newest configs and in no MASShatter config, although MASShatter is the model with
-  an explicit charge-affinity head; and the cut bonds' own features reach intensity scoring only
-  through the GNN, because `BondFocusedBreakHead`'s refined bond states are discarded. Also
-  recorded: two dead candidate-token inputs in unique-fragment mode, `atom_formal_charges`
-  required but never read, a shared-list mutation in the featurizer, and six configs still on the
-  template's 60/5 feature width including the canonical seeded `mass_shatter/s0.yml`.
-  The `a_degree` fix is shape-preserving but changes input semantics for existing checkpoints, so
-  it needs a new feature name or opt-in flag under [engineering rules](rules/engineering.md)
-  §6. Next: decide that compatibility path before changing the featurizer; every item needs a
-  matched arm against the 0.003 replicate floor. Audit only; no model code changed, no run
-  launched.
+- [MASShatter feature set audit](reference/masshatter_feature_set_audit.md) (2026-09-20)
+  audited every feature that reaches a MASShatter parameter, over all `model_type: mass_shatter`
+  configs, with column constancy measured on a 5,000-molecule NIST20 sample (120,641 atoms).
+  It found one real defect: `AtomDegree.featurize` passes a list into `one_hot_encoding`, so 12 of
+  `a_degree`'s 14 columns were always the unknown bucket and substitution degree reached the GNN
+  only as two unnormalized integers; in total 34 of 70 atom-feature columns were constant. It also
+  found the candidate intensity head received no mass, m/z or composition at all; that `a_charge`
+  was enabled in FraGNNet's newest configs and in no MASShatter config, although MASShatter is the
+  model with an explicit charge-affinity head; and that the boundary embedding was degenerate in
+  the two ways FraGNNet diagnosed for `boundary_pair` and fixed with `CutBondEncoder`.
+  **All of these are now fixed for MASShatter and are the default** (audit §11): a new
+  `a_degree_onehot` featurizer at unchanged width, `mass_shatter_candidate_mass_features`,
+  `mass_shatter_candidate_charge_feature`, `mass_shatter_boundary_bond_encoder`, `a_charge` added
+  to all 177 MASShatter configs, the constant unique-mode token columns dropped, the unread
+  required `atom_formal_charges` check removed, and the featurizer no longer mutating
+  `CANONICAL_ELEMENT_ORDER`. Constant atom columns fall from 34/70 to 30/71. FraGNNet is
+  deliberately untouched: `a_degree` still exists and no FraGNNet config changed, though the same
+  defect applies to all 323 of them. **Every MASShatter checkpoint written before 2026-09-20 is
+  incompatible** (atom width 70 -> 71 and a changed intensity-head input width), and molecular
+  preprocessing caches must be regenerated for `atom_gasteiger_charges`. Validation: full suite
+  3,890 passed, 1 skipped, 2 xfailed; 29 new tests; the lead merged config resolves and runs a
+  finite forward pass. Nothing was trained: these are corrections and new inputs, not measured
+  improvements. Next: run the new default against the previous base arm at matched epochs,
+  against the 0.003 replicate floor, before treating any of it as a gain. `a_radical` and
+  `a_chiral` were deliberately left in place; the audit §11 records why.
+- **Config layout: shared base plus per-model overlays** (2026-09-20). `config/models_template` is
+  now the shared base (310 keys: paths, `spec_params`, `mol_params`, trainer, loss, logging,
+  eval) and `config/models_template/<model>.yml` holds each model's private keys (110 keys across nine
+  overlays), selected by `model_type` in the custom config, else an explicit `model_type`
+  argument, else the base default. A MASShatter run therefore no longer carries `frag_params`
+  (the duplicate `pyg_node_feats` that made the two feature vocabularies easy to confuse) and a
+  FraGNNet run no longer carries 73 `mass_shatter_*` keys. Custom configs are now validated
+  **recursively**, closing a measured hole: a typo inside `spec_params` used to be accepted
+  silently. Ownership follows the reader, not the prefix - `precursor_pair_*` is the `SpectrumPL`
+  loss and `mces_fp` is the MCES dataset's path, and `ann_params` belongs to GrAFF. Historical
+  configs were not rewritten: `config/` is tracked experiment provenance, so a key only another
+  model's template declares is reported and kept rather than rejected, and passing a single
+  template file instead of the directory (a checkpoint's saved template) resolves directly. Validation surfaced 18
+  configs that set keys no template declares; **14 were already rejected before this change** and
+  4 are newly caught nested typos (`config/clip/nist20_spec_mol_{clip,siglip,soft_clip}_pretraining.yml`
+  set undeclared `spectrum_encoder_params.*` sub-keys, `config/debug/debug_tiny_new_frag_mol_feats.yml`
+  sets `frag_params.pyg_pe_embed_k`). None were edited. Nesting the metadata-conditioning keys
+  into a `conditioning_params` section was tried in the same session and **reverted**: it
+  invalidates every trained checkpoint for no behavioural gain, so `ce_insert_*`,
+  `prec_insert_*`, `inst_insert_*`, `frag_mode_insert_*`, `context_*` and the NCE/ACE statistics
+  stay at the top level of each template. Five keys that no code reads were deleted from the
+  templates and from the 203 configs that set them: `wandb_root_dir`,
+  `nb_formula_normalized_entropy_weight`, `group_sampler_type` (a leftover from the rename to
+  `simple_group_sampler_type`, which is the key `runner.py` actually validates),
+  `debug_val_loop_trigger` and `debug_bypass_train_val`. Directories renamed on request:
+  `config/models` -> `config/models_template` and `config/masshatter` -> `config/massshatter`.
+  Validation: full suite 3,906 passed, 1 skipped, 2 xfailed. Still open: which
+  conditioning mechanism survives is the
+  [conditioning refactor](plans/conditioning_refactor_plan.md)'s question, not this layout's.
 - [Model improvement roadmap](plans/model_improvement_plan.md) remains the canonical source
   for research priorities and acceptance criteria. Its banner is dated 2026-07-24; reconcile
   its proposed next action with current code and artifacts before resuming it.
@@ -211,7 +244,7 @@ for supported modes and compiler requirements. Final CPU full suite: 3,422 passe
 backend. Next: confirm throughput, memory and native compilation on L40S before production promotion.
 
 Merged MASShatter arms for the candidate backend (2026-09-17): six configs under
-`config/masshatter/ma_mi_merged/` give merged arms at batch 128x2 / 256x1 / 512x1 on both the CPU
+`config/massshatter/ma_mi_merged/` give merged arms at batch 128x2 / 256x1 / 512x1 on both the CPU
 and CUDA candidate backends. They are derived from the unmerged fast arms but are **not** a
 controlled A/B on merging: by user decision `spec_params.ace` and `mass_shatter_include_cmf` are
 both off, because no merged MASShatter config has ever had a live CMF channel together with dual
@@ -263,7 +296,7 @@ Documentation and a sampler probe only; no training or model/config changes.
 Unmerged MASShatter CMF anchor prepared (2026-09-16): the
 [improvement plan](plans/masshatter_improvement_plan.md#corrected-unmerged-cmf-anchor-prepared-2026-09-16)
 records a new config,
-`config/masshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml`,
+`config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml`,
 and a generation-only launcher
 `scripts/manual_slurm/vulcan/submit_masshatter_unmerged_cmf.sh`. It is the lead unmerged arm
 (`ef7fl5c6`, 0.7515) plus dual CE, `inst_types` reduced to the FT/QTOF actually present in the
@@ -293,7 +326,7 @@ Subformula filter hooked up to MASShatter (2026-09-16): the merged Cl/Na fix rea
 through the shared `BaseDataset` cleanup with no code change, but it was **inert for every
 MASShatter config** — all of them use `data/split/nist20_inchikey`, which is 209,698 `[M+H]+`/FT
 spectra with no Na, Cl, QTOF, or IT. Added
-`config/masshatter/merged/subformula_filter/nist20_ma_mi_merged_independent_jss_warmup_e0_15_dense_subformula.yml`,
+`config/massshatter/merged/subformula_filter/nist20_ma_mi_merged_independent_jss_warmup_e0_15_dense_subformula.yml`,
 identical to its `[M+H]+` sibling except for `split_dp: data/split/nist20_ma_mi_inchikey`,
 `prec_types` (four adducts) and `inst_types: [FT, QTOF]`, so the two remain a matched A/B on adduct
 scope. MASShatter needs no DAGs, so the split change costs no preprocessing. The
@@ -448,7 +481,7 @@ forward/backward probe. The current merged configs are blocked by their proposal
 warmup, which explicitly rejects SMARTS. The requested no-warmup SMARTS config is now
 prepared and linked in the audit; full model construction and intended-only resolved config
 differences passed. Next: perform a real-data GPU smoke check. No runs launched.
-The subsequently requested [SMARTS warmup config](../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
+The subsequently requested [SMARTS warmup config](../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
 is also prepared, with proposal-only epochs 0–15. The SMARTS/proposal-only-warmup
 construction guard is now removed and validated (2026-09-11): see the
 [guard-removal finding](findings/masshatter_code_audit.md#smarts-proposal-only-warmup-guard-removed-2026-09-11)

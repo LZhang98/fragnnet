@@ -39,7 +39,7 @@ The ranking subsystem is already implemented on branch `research/sibling-ranking
   per-spectrum weight normalization;
 - `src/fragnnet/pl_model/fragnnet_pl.py` loads a ragged cache, batches it, and maps local DAG node
   indices to global batch indices;
-- `config/template.yml` defines the loss weight, target path, and shuffled-target control;
+- `config/models_template` defines the loss weight, target path, and shuffled-target control;
 - `tests/test_sibling_rank_loss.py` covers the KL, empty groups, batching offsets, and shuffling;
 - `scripts/eval/build_sibling_rank_targets.py` is the reference cache builder.
 

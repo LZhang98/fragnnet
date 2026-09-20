@@ -1,5 +1,59 @@
 # Experiment Configs
 
+## Layout
+
+A run's configuration resolves in three steps, each overriding the previous:
+
+```
+config/models_template/<model>.yml   the complete defaults for that model_type
+your custom config                   the experiment
+--override key=value                 temporary changes for one invocation
+```
+
+There is **no shared base**. Each template in [models_template/](models_template/) is complete on
+its own, so a MASShatter run never carries `frag_params` and a FraGNNet run never carries the 73
+`mass_shatter_*` keys. The template is chosen by `model_type` - from the custom config, else from
+the checkpoint, else `frag_gnn`. Several model types share a template (`iceberg_gen` and
+`iceberg_inten`, `clip` and `spec_mol_clip_pretraining`); the mapping is `MODEL_CONFIG_TEMPLATE`
+in [runner.py](../src/fragnnet/runner.py). Passing a single file instead of the directory uses
+that file directly, which is how a template saved inside a checkpoint resolves.
+
+The cost of dropping the base is duplication: the ~180 keys every model needs are repeated in
+each template, so **a shared default has to be changed in every template that uses it**.
+`tests/test_config_templates.py` checks a sample of them for drift.
+
+Ownership follows the reader, not the prefix. `precursor_pair_*` is the `SpectrumPL` loss rather
+than `model_type: precursor`, `mces_fp` is the MCES dataset's path, and `ann_params` belongs to
+GrAFF - each lives in the templates that read it.
+
+Custom configs are validated against the resolved template, **recursively**: a typo inside
+`spec_params` fails as loudly as one at the top level. Mappings whose sub-keys are data rather
+than schema (`merge_tolerance_by_inst`, `split_filters`, `inst_type_loss_tol`,
+`ce_context_ce_key_by_inst`) are not descended into. A key that only another model's template
+declares is inert rather than wrong - configs are tracked experiment records and historical ones
+predate this split - so it is reported and kept. Only a key no template declares is an error.
+
+## Sections
+
+Config is grouped by who consumes it, not by topic:
+
+| Section | Holds |
+| --- | --- |
+| `spec_params` | what the dataset loads from the spectrum table: merging, cleanup, which metadata columns, the adduct/instrument/mode vocabularies |
+| `mol_params` | how a molecule becomes a graph: atom and bond feature lists, fingerprints, preprocessing |
+| `frag_params` | FraGNNet's fragment DAG (model-owned; absent for every other model) |
+
+Metadata conditioning stays at the top level: `ce_insert_*`, `prec_insert_*`, `inst_insert_*`,
+`frag_mode_insert_*`, `context_*`, `int_embedder` and the NCE/ACE normalization statistics.
+Grouping them into a `conditioning_params` section was tried and reverted, because it invalidates
+every trained checkpoint for no behavioural gain. `spec_params.nce` / `spec_params.ace` are
+separate by design: they decide what the *dataset* loads, not how it is embedded.
+
+Note that `mol_params.pyg_node_feats` (atom features: `a_onehot`, `a_degree_onehot`, ...) and
+`frag_params.pyg_node_feats` (fragment-DAG node features: `cc`, `base_formula`, ...) are
+different vocabularies that share a key name. A model only ever resolves the block it reads.
+
+
 ## Setting up a Training Run
 
 To train a model, you can use the following command:

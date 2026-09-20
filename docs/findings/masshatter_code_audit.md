@@ -167,7 +167,7 @@ autocast failure, tracked separately below, reproduced identically before this c
 
 This clears the blocker recorded in the SMARTS merged-run readiness audit below and in
 `docs/project-state.md`. The prepared
-[SMARTS warmup config](../../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
+[SMARTS warmup config](../../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
 can now construct. No training was launched and no real-data GPU smoke check was run;
 that remains the next step before comparing results against the no-warmup SMARTS arm.
 
@@ -204,7 +204,7 @@ throughput, full-config training, and held-out quality remain unverified. Next: 
 matched schedule, then run a real-data GPU smoke check before the merged experiment.
 
 Config follow-up: prepared the requested
-[SMARTS merged GNN-context config](../../config/masshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_no_warmup.yml)
+[SMARTS merged GNN-context config](../../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_no_warmup.yml)
 with SMARTS enabled and proposal-only warmup disabled. Runner-resolved comparison against
 the GNN-context arm confirms only those two behavior settings and W&B name/group/tags differ.
 The full resolved `MassShatterPL` constructs successfully with its mechanism head and GNN

@@ -126,7 +126,7 @@ class WeightedMetricAccumulator:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--template_fp", default="config/template.yml")
+    parser.add_argument("--template_fp", default="config/models_template")
     parser.add_argument(
         "--custom_fp",
         default="config/nist20_merged_inchikey/mass_shatter/s0.yml",

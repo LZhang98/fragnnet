@@ -23,7 +23,7 @@ and counted as skipped, rather than included in metric denominators.
 The completed validation sweep used checkpoint `tq4bdn3g` with:
 
 - config
-  [`nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml`](../../config/masshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml);
+  [`nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml);
 - results
   [`h_support_fragment_channel_sweep_tq4bdn3g.csv`](../../output/eval/h_support_fragment_channel_sweep_tq4bdn3g.csv);
 - 4,222 merged NIST20 validation spectra;
@@ -356,7 +356,7 @@ Barcode proposal supervision may concentrate fragment probability on observation
 fragment identities, so the same diagnostics must be repeated on a matched barcode model. The
 new training config is:
 
-[`nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml`](../../config/masshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml)
+[`nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml)
 
 It matches the no-barcode U256/E1024/Mix2 H-support configuration except for experiment identity,
 tags, `mass_shatter_proposal_barcode_target: True`, and the corrected merged-target construction
@@ -393,7 +393,7 @@ The legacy `exact_sum` method remains the template default for checkpoint reprod
 the consensus construction changes training targets, it requires a newly trained checkpoint.
 
 The matched no-barcode control is
-[`nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml`](../../config/masshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml).
+[`nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml).
 It differs from the barcode consensus arm only in experiment metadata and
 `mass_shatter_proposal_barcode_target: False`, allowing the barcode effect to be isolated.
 

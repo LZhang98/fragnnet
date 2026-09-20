@@ -80,14 +80,13 @@ frag_dropout: 0.1
 mlp_normalization: layer
 mlp_hidden_size: 64
 mlp_dropout: 0.2
-
 # CE conditioning
 ce_insert_type: embed_clamped
 ce_insert_location: mol
 ce_insert_merge: True
 ce_insert_size: 32
-
 # per-embedding injection locations
+
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol

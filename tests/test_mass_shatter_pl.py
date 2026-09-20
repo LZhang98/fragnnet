@@ -40,9 +40,9 @@ from fragnnet.utils.spec_utils import calculate_match_mzs
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
-    template_path = Path(__file__).parents[1] / "config" / "template.yml"
-    with template_path.open() as template_file:
-        config = yaml.safe_load(template_file)
+    template_path = Path(__file__).parents[1] / "config" / "models_template"
+    # Resolve through load_config so the mass_shatter overlay is applied, as a real run does.
+    config = runner.load_config(str(template_path), None, None, model_type="mass_shatter")
     config.update(
         model_type="mass_shatter",
         compile=False,
@@ -98,7 +98,7 @@ def test_nonzero_atom_decoder_layers_fail_at_setup() -> None:
 
 def test_merged_independent_distance_configs_enable_requested_model() -> None:
     config_dir = (
-        Path(__file__).parents[1] / "config" / "masshatter" / "merged" / "channel_selection"
+        Path(__file__).parents[1] / "config" / "massshatter" / "merged" / "channel_selection"
     )
     config_paths = sorted(config_dir.glob("nist20_merged_independent_*_hattr_*.yml"))
 
@@ -122,7 +122,7 @@ def test_merged_independent_distance_configs_enable_requested_model() -> None:
 
 
 def test_proposal_warmup_configs_enable_proposal_only_epochs_0_through_15() -> None:
-    config_dir = Path(__file__).parents[1] / "config" / "masshatter" / "merged" / "proposal_warmup"
+    config_dir = Path(__file__).parents[1] / "config" / "massshatter" / "merged" / "proposal_warmup"
     config_paths = sorted(config_dir.glob("*proposal_warmup_e0_15.yml"))
 
     assert len(config_paths) == 3
@@ -140,7 +140,7 @@ def test_baseline_directory_contains_probability_ce_control() -> None:
     baseline_path = (
         Path(__file__).parents[1]
         / "config"
-        / "masshatter"
+        / "massshatter"
         / "merged"
         / "baseline"
         / "nist20_merged_probability_ce_baseline.yml"
@@ -338,9 +338,10 @@ def test_proposal_warmup_enables_intensity_branch_after_boundary() -> None:
 
 
 def test_proposal_warmup_enables_joint_loss_after_boundary() -> None:
-    template_path = Path(__file__).parents[1] / "config" / "template.yml"
-    with template_path.open() as template_file:
-        spec_params = yaml.safe_load(template_file)["spec_params"]
+    template_path = Path(__file__).parents[1] / "config" / "models_template"
+    spec_params = runner.load_config(
+        str(template_path), None, None, model_type="mass_shatter"
+    )["spec_params"]
     spec_params["prec_types"] = ["[M+Na]+"]
     pl, _ = _build_pl(
         spec_params=spec_params,

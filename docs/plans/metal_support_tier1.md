@@ -83,7 +83,7 @@ assert mol.GetNumAtoms() == 3          # C, Hg, Cl — not disconnected
 
 ## Change 3 — Update `num_elements` in configs
 
-**File:** `config/template.yml` line 156
+**File:** `config/models_template` line 156
 
 `num_elements` is the count of heavy elements used in formula embeddings. It is hardcoded
 in YAML and must match `NUM_HEAVY_ELEMENTS` in `frag_utils.py` at runtime.
@@ -97,7 +97,7 @@ python -c "from fragnnet.utils.frag_utils import NUM_HEAVY_ELEMENTS; print(NUM_H
 # Should print 16
 ```
 
-Update `config/template.yml`:
+Update `config/models_template`:
 ```yaml
 num_elements: 16  # Number of heavy elements (13 base + 3 Tier-1 metals: Hg, Sn, Pb)
 ```
@@ -149,6 +149,6 @@ formulas include the metal element correctly.
 |------|------|------|
 | Add metals to `ELEMENT_TO_VE` | `frag_utils.py:51` | 15 min |
 | Replace `Cleanup()` | `data_utils.py:153` | 30 min |
-| Update `num_elements` in all configs | `config/template.yml` | 30 min |
+| Update `num_elements` in all configs | `config/models_template` | 30 min |
 | Write and run tests | `tests/test_metal_support.py` | 30 min |
 | **Total** | | **~1.5 hours** |

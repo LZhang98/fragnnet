@@ -10,7 +10,7 @@
 Source checkout `eea9d623`, clean at audit start, branch `research/masshatter-ion-h-selection`.
 Three evidence sources:
 
-1. All 156 config files under `config/masshatter/**`.
+1. All 156 config files under `config/massshatter/**`.
 2. A read-only W&B query of `frag-gnn/frag-gnn` filtered to `config.model_type = mass_shatter`,
    run 2026-09-19: **226 runs**, 192 merged and 34 unmerged. This supersedes the 197-run
    population in the [unmerged overfitting audit](masshatter_unmerged_overfitting_2026_09_16.md).
@@ -356,7 +356,7 @@ measurable cosine for 19.2% of parameters and 45% of the wall clock.
 
 Two practical consequences:
 
-- **`config/template.yml` already defaults `mass_shatter_intensity_atom_decoder_num_layers: 0`**,
+- **`config/models_template` already defaults `mass_shatter_intensity_atom_decoder_num_layers: 0`**,
   and 104 of 156 configs inherit it. Only 51 configs set 4 explicitly. The `ma_mi_merged`
   normalization arm and its 4x-replicated baseline (3.4) are already decoder-free, so the
   recommended `graph` experiment needs no config change.
@@ -369,7 +369,7 @@ Two practical consequences:
   `CandidateIntensityTransformerHead._load_from_state_dict` raises if a checkpoint carries
   `atom_decoder.*` or `atom_projection.*` weights, so a decoder-trained checkpoint fails
   loudly instead of silently serving a different model. The config key is retained in
-  `config/template.yml` at 0 because `load_config` asserts every custom-config key exists
+  `config/models_template` at 0 because `load_config` asserts every custom-config key exists
   there; 51 configs that set 4 now omit it and inherit 0, and 45 stale
   `intensity_atom_decoder_layers_4` W&B tags were dropped.
 
@@ -424,7 +424,7 @@ differences from its siblings (0.0025 and 0.0099) sit inside this floor, so that
 could not have concluded anything even had the batch sizes matched.
 
 Two useful consequences. First, this family already has a 4x-replicated `batch` baseline, so a
-`graph` or `layer` arm launched from `config/masshatter/ma_mi_merged/` gets a matched control
+`graph` or `layer` arm launched from `config/massshatter/ma_mi_merged/` gets a matched control
 for free. Second, `..._lb64_graphnorm.yml` states in its own header that only
 `mol_normalization` and `wandb_name` differ from `..._lb64.yml`, and it carries the current
 `merge_method: tolerance_consensus` target, so it is a valid one-variable arm today.

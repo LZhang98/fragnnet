@@ -16,7 +16,7 @@ from fragnnet.runner import load_config
 
 
 def _pl(**overrides):
-    config = load_config("config/template.yml", None, None)
+    config = load_config("config/models_template", None, None)
     config.update(optimizer="adamw", lr=1e-3, weight_decay=0.01, lr_schedule=True)
     config.update(overrides)
     parameter = th.nn.Parameter(th.zeros(1))

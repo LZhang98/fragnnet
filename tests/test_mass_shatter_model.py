@@ -84,6 +84,9 @@ def _build_model(
     context_in_gnn: bool = False,
     candidate_backend: str = "cpu",
     proposal_method: str = "cut_masks",
+    boundary_bond_encoder: bool = False,
+    candidate_mass_features: bool = False,
+    candidate_charge_feature: bool = False,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -153,6 +156,9 @@ def _build_model(
         use_smarts_templates=use_smarts_templates,
         candidate_backend=candidate_backend,
         proposal_method=proposal_method,
+        boundary_bond_encoder=boundary_bond_encoder,
+        candidate_mass_features=candidate_mass_features,
+        candidate_charge_feature=candidate_charge_feature,
     )
 
 

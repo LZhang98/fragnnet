@@ -60,7 +60,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 TOLERANCE = 1.0e-5  # relative ratio (10 ppm), matches default loss_tolerance_rel
-TOLERANCE_MIN_MZ = 200.0  # matches config/template.yml loss_tolerance_min_mz
+TOLERANCE_MIN_MZ = 200.0  # matches config/models_template loss_tolerance_min_mz
 MZ_CLUSTER_ATOL = 1.0e-6  # Da; below any real isobar spacing, above float noise
 
 

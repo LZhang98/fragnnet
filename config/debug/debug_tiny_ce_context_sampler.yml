@@ -70,7 +70,6 @@ frag_normalization: graph
 mlp_normalization: layer
 frag_embed_combine: avg
 frag_pool_combine: subtract
-
 ce_insert_type: lin
 ce_insert_location: mol
 ce_insert_merge: true

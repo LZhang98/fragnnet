@@ -5,20 +5,21 @@ from types import SimpleNamespace
 
 import pytest
 import torch as th
-import yaml
 from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build
 from torch_geometric.data import Batch
 
 from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.runner import load_config
 from fragnnet.utils.feat_utils import get_frag_graph, get_node_feats
 from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
 
 
 @pytest.fixture
 def loss_config():
-    with (Path(__file__).parents[1] / "config/template.yml").open() as stream:
-        config = yaml.safe_load(stream)
+    config = load_config(
+        str(Path(__file__).parents[1] / "config/models_template"), None, None, model_type="frag_gnn"
+    )
     config.update(sparse_cosine_similarity=True, oos_tolerance_multiple=1, gaussian_renormalize=True)
     return config
 

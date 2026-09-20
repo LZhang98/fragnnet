@@ -268,6 +268,18 @@ class MolGraph:
             [_atom_free_valence_slots(atom) for atom in mol.GetAtoms()],
             dtype=th.long,
         )
+        # Always exposed as its own field, so a consumer can pool charge per fragment without
+        # knowing the atom feature layout or requiring `a_charge` in the feature list. Measured
+        # at 0.03 ms/molecule, 1.1 s for the whole NIST20 molecule set.
+        if not self.needs_gasteiger:
+            AllChem.ComputeGasteigerCharges(mol)
+        g.atom_gasteiger_charges = th.tensor(
+            [
+                0.0 if math.isnan(v) or math.isinf(v) else v
+                for v in (atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms())
+            ],
+            dtype=th.float32,
+        )
         g.atom_monoisotopic_masses = th.tensor(
             [
                 Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atom.GetAtomicNum())
@@ -318,7 +330,9 @@ class AtomOneHot(FeatBase):
     """Atom element type features are one-hot encoded."""
 
     name = "a_onehot"
-    allowable_set = CANONICAL_ELEMENT_ORDER
+    # A copy: ``one_hot_encoding`` appends the unknown bucket to whatever list it is given, and
+    # ``CANONICAL_ELEMENT_ORDER`` is shared with the formula code in ``frag_utils``.
+    allowable_set = list(CANONICAL_ELEMENT_ORDER)
     feat_size = len(allowable_set) + 1
 
     @classmethod
@@ -336,7 +350,13 @@ class AtomOneHot(FeatBase):
 
 @register_atom_feat
 class AtomDegree(FeatBase):
-    """Atom Degree features are one-hot encoded."""
+    """Atom Degree features are one-hot encoded.
+
+    Note:
+        The one-hot is inert: ``featurize`` passes a list to ``one_hot_encoding``, which routes
+        every atom to the unknown bucket, so only the two leading raw values carry information.
+        Retained unchanged for FraGNNet checkpoint compatibility; use ``a_degree_onehot`` instead.
+    """
 
     name = "a_degree"
     allowable_set = list(range(11))
@@ -355,6 +375,38 @@ class AtomDegree(FeatBase):
         deg = [x.GetDegree(), x.GetTotalDegree()]
         onehot = one_hot_encoding(deg, cls.allowable_set, True)
         return deg + onehot
+
+
+@register_atom_feat
+class AtomDegreeOneHot(FeatBase):
+    """Atom degree, with a working one-hot.
+
+    ``a_degree`` passes the pair ``[degree, total_degree]`` into ``one_hot_encoding``, and a list
+    never equals an ``int``, so its 12 one-hot columns are always the unknown bucket and carry no
+    information (see ``docs/reference/masshatter_feature_set_audit.md`` §7.1). This feature keeps
+    the two raw values and the same 14-column width, so it is a drop-in replacement, but spends
+    the one-hot on the heavy-atom degree, which is what determines how many bonds an atom can
+    lose. Total degree stays recoverable as ``degree + a_num_hs``.
+
+    ``a_degree`` is left in place because FraGNNet checkpoints were trained with it.
+    """
+
+    name = "a_degree_onehot"
+    allowable_set = list(range(11))
+    feat_size = len(allowable_set) + 1 + 2
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """Encode atom degree as two raw values plus a heavy-atom-degree one-hot.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            ``[degree, total_degree]`` followed by the one-hot of ``degree``.
+        """
+        degree = x.GetDegree()
+        return [degree, x.GetTotalDegree()] + one_hot_encoding(degree, cls.allowable_set, True)
 
 
 @register_atom_feat

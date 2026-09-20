@@ -116,7 +116,7 @@ existing configs are unaffected by default (`lambda_false=0`,
    graff/pl_model.py too, so threading a new return value through their
    signatures was judged higher-risk than the small extra match-mzs cost).
    Wired into fragnnet_pl.py as false_peak_loss_weight (default 0.0 in
-   config/template.yml), following the existing *_weight/loss_names
+   config/models_template), following the existing *_weight/loss_names
    pattern (_setup_loss_names/_setup_loss_fn/_loss_fn).
    -> verified: 7 unit tests in tests/test_loss.py::TestSparseFalsePeakPenalty
    (all-matched=0, all-unmatched=1, mixed weighting, empty true/pred peaks,
@@ -202,7 +202,7 @@ existing configs are unaffected by default (`lambda_false=0`,
    and averaged over matched true peaks per spectrum (unmatched true
    peaks excluded from the average, not zero-filled -- that's L_false's
    job). Wired into fragnnet_pl.py as log1p_huber_loss_weight (default
-   0.0) + log1p_huber_beta (default 10.0) in config/template.yml,
+   0.0) + log1p_huber_beta (default 10.0) in config/models_template,
    following the same *_weight/loss_names pattern as false_peak_loss.
    -> verified: 10 unit tests in
    tests/test_loss.py::TestSparseLog1pHuberCalibration (perfect match=0,
@@ -323,7 +323,7 @@ Key comparison: A vs. D.
   value, beta sensitivity, unmatched-peak exclusion, multi-candidate mass
   aggregation, empty true/pred peaks, gradient flow, per-sample
   tolerance).
-- `config/template.yml` — `false_peak_loss_weight: 0.0`,
+- `config/models_template` — `false_peak_loss_weight: 0.0`,
   `log1p_huber_loss_weight: 0.0`, `log1p_huber_beta: 10.0` defaults.
 - `config/debug/debug_tinyv4_false_peak_sweep.yml` — quick local step-3
   sweep config (full `debug_tinyv4` split, NodeMLP, 15 epochs); useful for

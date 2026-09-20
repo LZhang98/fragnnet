@@ -29,8 +29,9 @@
 
 ## Boundaries and canonical references
 
-- Configuration: [template.yml](../config/template.yml) declares hyperparameters;
-  [config README](../config/README.md) documents experiment configuration.
+- Configuration: [config/models_template/](../config/models_template/) holds one self-contained
+  template per model, selected by `model_type`; there is no shared base.
+  [config README](../config/README.md) documents the resolution order, duplication and validation.
 - Fragment generation: [frag/](../src/fragnnet/frag/) includes Python and Cython code;
   [DAG/prepass reference](reference/frag_gen_prepass.md) explains the FraGNNet workflow.
   Cython changes require checking the build in [setup.py](../setup.py) and rebuilding in the

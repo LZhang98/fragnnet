@@ -4,7 +4,7 @@
 > CUDA model construction verified locally. No training run was launched and no cluster job was
 > generated or submitted from this workstation.
 
-The six configs under [`config/masshatter/ma_mi_merged/`](../../config/masshatter/ma_mi_merged/)
+The six configs under [`config/massshatter/ma_mi_merged/`](../../config/massshatter/ma_mi_merged/)
 are merged arms on the multi-adduct split, at three batch sizes and both candidate backends.
 They are real training arms, not benchmark-harness windows; for fixed-window throughput
 measurement use [benchmark_masshatter_cpu.md](benchmark_masshatter_cpu.md) instead.
@@ -12,7 +12,7 @@ measurement use [benchmark_masshatter_cpu.md](benchmark_masshatter_cpu.md) inste
 ## Scope: this is not a controlled merged-vs-unmerged A/B
 
 Each config is derived from an unmerged base in
-[`config/masshatter/ma_mi_unmerged/cmf/`](../../config/masshatter/ma_mi_unmerged/cmf/), but
+[`config/massshatter/ma_mi_unmerged/cmf/`](../../config/massshatter/ma_mi_unmerged/cmf/), but
 **merging is deliberately confounded with two other changes**, by decision of the user:
 
 | Key | Unmerged base | Merged arm | Why it differs |
@@ -40,7 +40,7 @@ model from 8,434,087 to 8,427,349 trainable parameters.
 ## Why CMF and dual CE are off
 
 No merged MASShatter config has ever had a live CMF channel together with dual CE. Surveyed
-across every config under `config/masshatter/`:
+across every config under `config/massshatter/`:
 
 | Merged family | Split | CMF adducts present in data | dual CE |
 | --- | --- | --- | --- |
@@ -173,7 +173,7 @@ for backend in "" _cuda; do
       --cc_account "$FRAGNNET_ACCOUNT" \
       --cc_email "$FRAGNNET_EMAIL" \
       --time 1:00:00 \
-      --script_kwargs w=online c="config/masshatter/ma_mi_merged/${name}.yml" j="$name" \
+      --script_kwargs w=online c="config/massshatter/ma_mi_merged/${name}.yml" j="$name" \
       --no_submit=True
     bash -n "slurm_scripts/${name}.sh"
   done
@@ -207,7 +207,7 @@ completion, so a chain that reaches `max_epochs` will start the next link from s
 
 ## What was verified
 
-- All six configs resolve through `load_config` against `config/template.yml`, and the resolved
+- All six configs resolve through `load_config` against `config/models_template`, and the resolved
   diff against each unmerged base is exactly the table above.
 - The merged dataset constructs on real NIST20 data.
 - `tolerance_consensus` merging of whole multi-spectrum groups produces consensus peak lists and
