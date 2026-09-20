@@ -252,8 +252,12 @@ mass_shatter_max_h_transfer: 4
 #   complement - a gain may not exceed the hydrogens held by the complementary neutral
 #                fragment; the intact molecule can then only lose them.
 #   valence    - also caps the gain at the fragment's free valence slots plus one per severed
-#                bond, i.e. full parity with FraGNNet's compute_cc_h_cap.
-mass_shatter_h_transfer_bound: none
+#                bond, i.e. full parity with FraGNNet's compute_cc_h_cap. DEFAULT since
+#                2026-09-20: measured free on merged MA/MI at epoch 64 (val cosine -0.0002 vs a
+#                control pair agreeing to 0.0016), while cutting retained ion-H channels 9.0%
+#                and epoch time 2.2%. `complement` measured -0.0009 and no speedup. Runs from
+#                before this date used `none` and have a larger candidate set.
+mass_shatter_h_transfer_bound: valence
 mass_shatter_include_cmf: True
 mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
