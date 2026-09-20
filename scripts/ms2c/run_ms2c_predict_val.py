@@ -105,6 +105,7 @@ if __name__ == "__main__":
 
     # Load datasets
     print(f"> Loading datasets from {args.proc_dp}")
+
     def _find_pkl(dp, stem):
         for ext in ("pkl", "pkl.gz"):
             fp = os.path.join(dp, f"{stem}.{ext}")
@@ -143,7 +144,7 @@ if __name__ == "__main__":
     )
 
     # Set fragmentation directory (only for DAG-based models)
-    if config_d["model_type"] in ("frag_gnn", "fraggnet"):
+    if config_d["model_type"] in ("frag_gnn", "fragnnet"):
         config_d["frag_dp"] = args.frag_dp
 
     # Auto-detect sqrt options based on _sqrt suffix in auxiliary_scores

@@ -27,7 +27,7 @@ def get_model_cls(model_type: str) -> type:
     Returns:
         type: The model class corresponding to the model type.
     """
-    if model_type in ["frag_gnn", "fraggnet"]:
+    if model_type in ["frag_gnn", "fragnnet"]:
         model_cls = FraGNNetPL
     elif model_type == "mass_shatter":
         model_cls = MassShatterPL
@@ -66,7 +66,7 @@ def get_dataset_cls(model_type: str) -> type:
     Returns:
         type: The dataset class corresponding to the model type.
     """
-    if model_type in ["frag_gnn", "fraggnet"]:
+    if model_type in ["frag_gnn", "fragnnet"]:
         dataset_cls = SpecMolFragDataset
     elif model_type == "iceberg_gen":
         dataset_cls = SpecMolMagmaGenDataset

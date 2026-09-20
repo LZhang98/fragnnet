@@ -41,7 +41,6 @@ from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 # Several model types share a template because they share the same settings.
 MODEL_CONFIG_TEMPLATE = {
     "frag_gnn": "fragnnet",
-    "fraggnet": "fragnnet",
     "fragnnet": "fragnnet",
     "mass_shatter": "mass_shatter",
     "neims": "neims",
@@ -345,10 +344,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if split == "train":
         # Choose sampler for training
-        if (
-            config_d["mass_shatter_batch_sampler"]
-            or config_d["batch_sampler_type"] == "ce_context"
-        ):
+        if config_d["mass_shatter_batch_sampler"] or config_d["batch_sampler_type"] == "ce_context":
             sampler = None
         elif config_d["group_sampler"]:
             sampler = GroupSampler(
@@ -389,9 +385,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if config_d["mass_shatter_batch_sampler"]:
         return_batch_at = (
-            config_d["train_batch_size"]
-            if split == "train"
-            else config_d["eval_batch_size"]
+            config_d["train_batch_size"] if split == "train" else config_d["eval_batch_size"]
         )
         batch_sampler = MassShatterCEContextDynamicBatchSampler(
             ds,
@@ -430,9 +424,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 return_batch_at=return_batch_at,
                 sampler=sampler,
                 dag_size_curriculum=config_d["dag_size_curriculum"],
-                dag_size_curriculum_start_fraction=config_d[
-                    "dag_size_curriculum_start_fraction"
-                ],
+                dag_size_curriculum_start_fraction=config_d["dag_size_curriculum_start_fraction"],
                 dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
             )
         else:
@@ -533,9 +525,7 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["model_type"] != "mass_shatter":
             raise ValueError("mass_shatter_batch_sampler requires model_type='mass_shatter'")
         if not config_d["automatic_optimization"]:
-            raise ValueError(
-                "mass_shatter_batch_sampler requires automatic_optimization=True"
-            )
+            raise ValueError("mass_shatter_batch_sampler requires automatic_optimization=True")
         mass_shatter_max = config_d["mass_shatter_batch_sampler_max"]
         if (
             isinstance(mass_shatter_max, bool)
@@ -578,9 +568,7 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
 
-    if config_d["batch_sampler_type"] == "ce_context" or config_d[
-        "mass_shatter_batch_sampler"
-    ]:
+    if config_d["batch_sampler_type"] == "ce_context" or config_d["mass_shatter_batch_sampler"]:
         if config_d["devices"] != 1:
             raise ValueError("CE-context batch samplers require devices=1")
         spectra_per_context = config_d["ce_context_spectra_per_context"]
@@ -611,8 +599,7 @@ def validate_sampler_config(config_d: dict) -> None:
             )
         if not config_d["mass_shatter_batch_sampler"]:
             raise ValueError(
-                "mass_shatter_share_proposal_across_ev requires "
-                "mass_shatter_batch_sampler=True"
+                "mass_shatter_share_proposal_across_ev requires mass_shatter_batch_sampler=True"
             )
 
     cross_ev_weight = config_d["cross_ev_fragment_loss_weight"]
@@ -642,8 +629,7 @@ def validate_sampler_config(config_d: dict) -> None:
         raise ValueError("ce_pair_loss_weight must be a non-negative number")
     if pair_weight > 0:
         if not (
-            config_d["batch_sampler_type"] == "ce_context"
-            or config_d["mass_shatter_batch_sampler"]
+            config_d["batch_sampler_type"] == "ce_context" or config_d["mass_shatter_batch_sampler"]
         ):
             raise ValueError("ce_pair_loss_weight > 0 requires a CE-context batch sampler")
         confidence = config_d["ce_pair_min_endpoint_confidence"]
@@ -721,9 +707,7 @@ def validate_sampler_config(config_d: dict) -> None:
                 "spec_params.ace so NCE metadata is loaded"
             )
         if spec_params["merge"]:
-            raise ValueError(
-                "precursor_pair_loss_weight > 0 requires unmerged spectra"
-            )
+            raise ValueError("precursor_pair_loss_weight > 0 requires unmerged spectra")
         nce_min = config_d["precursor_pair_nce_min"]
         nce_max = config_d["precursor_pair_nce_max"]
         if (
@@ -994,7 +978,9 @@ def init_run(
     if config_d["model_type"] == "mass_shatter":
         resolved_proposal = config_d["mass_shatter_proposal_method"]
         resolved_backend = (
-            "torch_device" if resolved_proposal == "connected_fragment_beam" else model.model.candidate_backend
+            "torch_device"
+            if resolved_proposal == "connected_fragment_beam"
+            else model.model.candidate_backend
         )
         logging.info("Resolved MASShatter candidate backend: %s", resolved_backend)
         if wandb_mode != "disabled":
