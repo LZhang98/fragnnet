@@ -610,6 +610,21 @@ class SpectrumPL(L.LightningModule):
                 )
 
             if compute_bin_specs:
+                # Predicted m/z are not range-limited upstream: preproc_spec's (eval, pred)
+                # branch only untransforms and normalizes intensities, while true peaks pass
+                # through rel_filter_func with this same mz_max. A predicted candidate at or
+                # above mz_max -- the precursor of a ~1500 Da molecule, say -- therefore reached
+                # batched_bin_func and tripped its range assert. Drop those peaks so both sides
+                # are binned over the same [0, mz_max) window. Peaks in range are untouched, so
+                # this changes no metric that did not previously crash.
+                bin_pred_mzs = pred_mzs
+                bin_pred_ints = pred_ints
+                bin_pred_batch_idxs = pred_batch_idxs
+                if self.hparams.mz_max > 0.0:
+                    in_bin_range = bin_pred_mzs < self.hparams.mz_max
+                    bin_pred_mzs = bin_pred_mzs[in_bin_range]
+                    bin_pred_ints = bin_pred_ints[in_bin_range]
+                    bin_pred_batch_idxs = bin_pred_batch_idxs[in_bin_range]
                 for remove_prec_peak in bin_remove_prec_peak_flags:
                     for sqrt in bin_sqrt_flags:
                         if sqrt:
@@ -630,9 +645,9 @@ class SpectrumPL(L.LightningModule):
                                 prec_mzs=true_prec_mzs,
                             )
                             pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
-                                pred_mzs,
-                                pred_ints,
-                                pred_batch_idxs,
+                                bin_pred_mzs,
+                                bin_pred_ints,
+                                bin_pred_batch_idxs,
                                 mz_max=self.hparams.mz_max,
                                 mz_bin_res=mz_bin_res,
                                 agg=agg,
