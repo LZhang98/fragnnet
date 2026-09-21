@@ -7,7 +7,9 @@ It is intended to be subclassed for specific model architectures and tasks.
 """
 
 import inspect
+import logging
 import warnings
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import lightning as L
@@ -28,6 +30,7 @@ from fragnnet.utils.misc_utils import (
     to_cpu,
 )
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
+from fragnnet.utils.pl_utils import migrate_legacy_hparams
 from fragnnet.utils.spec_utils import (
     batch_cos_hun_helper,
     batch_jss_hun_helper,
@@ -48,24 +51,43 @@ from fragnnet.utils.spec_utils import (
     scatter_reduce,
 )
 
+logger = logging.getLogger(__name__)
 
-def get_split_fn(bs_idx):
+
+def get_split_fn(bs_idx: th.Tensor) -> Callable[[th.Tensor], tuple[th.Tensor, ...]]:
+    """Return a function that splits a packed tensor into its per-batch-element pieces.
+
+    Args:
+        bs_idx: Non-decreasing batch index per row, shape ``[N]``.
+
+    Returns:
+        Callable mapping a tensor of shape ``[N, ...]`` to one tuple entry per batch element.
+    """
     # check the validity of bs idx
     diffs = bs_idx[1:] - bs_idx[:-1]
     assert len(diffs) == 0 or diffs.min() >= 0
     batch_counts = th.bincount(bs_idx)
     batch_counts = batch_counts.tolist()
 
-    def split_fn(inp_tensor):
+    def split_fn(inp_tensor: th.Tensor) -> tuple[th.Tensor, ...]:
         return th.split(inp_tensor, batch_counts)
 
     return split_fn
 
 
-def list_to_batch_tensor(inp, pad):
+def list_to_batch_tensor(inp: Sequence[th.Tensor], pad: float) -> th.Tensor:
+    """Right-pad a list of 1-D tensors to equal length and stack them.
+
+    Args:
+        inp: Tensors of shape ``[L_i]``.
+        pad: Fill value for positions past each tensor's length.
+
+    Returns:
+        Tensor of shape ``[len(inp), max_i L_i]``.
+    """
     max_l = max([len(_) for _ in inp])
 
-    def padv(v):
+    def padv(v: th.Tensor) -> th.Tensor:
         if len(v) < max_l:
             return th.cat([v, v.new_zeros(max_l - len(v)) + pad], 0)
         return v
@@ -73,7 +95,9 @@ def list_to_batch_tensor(inp, pad):
     return th.stack([padv(_) for _ in inp], 0)
 
 
-def ragged_to_batch(feat: th.Tensor, batch_idx: th.Tensor, pad_value=0):
+def ragged_to_batch(
+    feat: th.Tensor, batch_idx: th.Tensor, pad_value: float = 0
+) -> tuple[th.Tensor, th.Tensor]:
     assert batch_idx.ndim == 1
     assert feat.size(0) == batch_idx.size(0)
 
@@ -197,7 +221,10 @@ class SpectrumPL(L.LightningModule):
 
     hparams: Any
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
+        # Backfill keys that older checkpoints predate, before `save_hyperparameters` freezes
+        # them. Fresh configs carry every key from `config/template.yml` and are unchanged.
+        migrate_legacy_hparams(kwargs)
         super().__init__()
         self.save_hyperparameters()
         # setup functions and state
@@ -230,7 +257,10 @@ class SpectrumPL(L.LightningModule):
             self.relative = True
             self.tolerance_min_mz = self.hparams["loss_tolerance_min_mz"]
         else:
-            assert self.hparams["loss_tolerance_abs"] is not None
+            if self.hparams["loss_tolerance_abs"] is None:
+                raise ValueError(
+                    "loss_tolerance_abs must be set when loss_tolerance_rel is not used"
+                )
             self.tolerance = self.hparams["loss_tolerance_abs"]
             self.relative = False
             self.tolerance_min_mz = None
@@ -238,7 +268,7 @@ class SpectrumPL(L.LightningModule):
         # Per-instrument-type tolerance lookup tensors: shape [num_inst_types].
         # Indexed by inst_type_idx in _common_step to build per-sample tolerance tensors
         # without a Python loop. None when inst_type_loss_tol is not configured (fast path).
-        inst_type_loss_tol = self.hparams.get("inst_type_loss_tol")
+        inst_type_loss_tol = self.hparams["inst_type_loss_tol"]
         if inst_type_loss_tol is not None and len(inst_type_loss_tol) > 0:
             inst_types_sorted = sorted(self.hparams.spec_params["inst_types"])
             global_min_mz = (
@@ -366,8 +396,8 @@ class SpectrumPL(L.LightningModule):
 
         eval_mz_bin_reses = self.hparams.eval_mz_bin_res
 
-        if len(self.hparams.auxiliary_scores) > 0:
-            assert self.hparams.sparse_cosine_similarity
+        if len(self.hparams.auxiliary_scores) > 0 and not self.hparams.sparse_cosine_similarity:
+            raise ValueError("auxiliary_scores require sparse_cosine_similarity")
         compute_match_mzs = False
         compute_full_match_mzs = False
         compute_rounded_match_mzs = False
@@ -572,16 +602,16 @@ class SpectrumPL(L.LightningModule):
         self.expl_metric_args = EXPLAINABILITY_OUTPUT_KEYS.intersection(self.extra_metric_args)
 
         def calculate_all_auxiliary_metrics(
-            true_mzs,
-            true_ints,
-            true_batch_idxs,
-            pred_mzs,
-            pred_ints,
-            pred_batch_idxs,
-            true_prec_mzs,
-            split="test",
-            **kwargs,
-        ):
+            true_mzs: th.Tensor,
+            true_ints: th.Tensor,
+            true_batch_idxs: th.Tensor,
+            pred_mzs: th.Tensor,
+            pred_ints: th.Tensor,
+            pred_batch_idxs: th.Tensor,
+            true_prec_mzs: th.Tensor,
+            split: str = "test",
+            **kwargs: Any,
+        ) -> dict[str, th.Tensor]:
             # assumes both true/pred spectra are already L1-normalized
 
             batch_size = th.max(true_batch_idxs) + 1
@@ -755,14 +785,12 @@ class SpectrumPL(L.LightningModule):
                     batch_true_match_mask = batch_match_mask.max(-1).values
                     batch_pred_match_mask = batch_match_mask.max(-2).values
                 else:
-                    batch_true_match_mask, batch_pred_match_mask = (
-                        calculate_match_mz_reductions(
-                            batch_true_mzs,
-                            batch_pred_mzs,
-                            tolerance=self.tolerance,
-                            relative=self.relative,
-                            tolerance_min_mz=self.tolerance_min_mz,
-                        )
+                    batch_true_match_mask, batch_pred_match_mask = calculate_match_mz_reductions(
+                        batch_true_mzs,
+                        batch_pred_mzs,
+                        tolerance=self.tolerance,
+                        relative=self.relative,
+                        tolerance_min_mz=self.tolerance_min_mz,
                     )
             if compute_rounded_match_mzs:
                 batch_true_mzs_r = ragged_to_batch(
@@ -894,7 +922,6 @@ class SpectrumPL(L.LightningModule):
                 spec_inst_type = kwargs.get("spec_inst_type")
                 if spec_inst_type is not None and self.inst_tol_lookup is not None:
                     inst_idxs = spec_inst_type.reshape(-1)
-                    device = true_ints.device
                     dtype = true_ints.dtype
                     tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=dtype)
                     min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(dtype=dtype)
@@ -1053,22 +1080,31 @@ class SpectrumPL(L.LightningModule):
         self.metric_fn = calculate_all_auxiliary_metrics
 
     def _get_batch_metric_reduce_fn(self, sample_weight):
-        if sample_weight == "none":
-            calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: th.ones_like(
-                spec_per_group, dtype=th.float32
+        # All four share one signature so `_batch_metric_reduce` can call them uniformly.
+        def _weight_none(spec_per_group, spec_per_mol, group_per_mol):
+            return th.ones_like(spec_per_group, dtype=th.float32)
+
+        def _weight_group(spec_per_group, spec_per_mol, group_per_mol):
+            return 1.0 / spec_per_group
+
+        def _weight_mol(spec_per_group, spec_per_mol, group_per_mol):
+            return 1.0 / spec_per_mol
+
+        def _weight_group_mol(spec_per_group, spec_per_mol, group_per_mol):
+            return 1.0 / (spec_per_group * group_per_mol)
+
+        sample_weight_fns = {
+            "none": _weight_none,
+            "group": _weight_group,
+            "mol": _weight_mol,
+            "group_mol": _weight_group_mol,
+        }
+        if sample_weight not in sample_weight_fns:
+            raise ValueError(
+                f"unknown sample_weight {sample_weight!r}; "
+                f"expected one of {sorted(sample_weight_fns)}"
             )
-        elif sample_weight == "group":
-            calc_sample_weights = (
-                lambda spec_per_group, spec_per_mol, group_per_mol: 1.0 / spec_per_group
-            )
-        elif sample_weight == "mol":
-            calc_sample_weights = (
-                lambda spec_per_group, spec_per_mol, group_per_mol: 1.0 / spec_per_mol
-            )
-        elif sample_weight == "group_mol":
-            calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1.0 / (
-                spec_per_group * group_per_mol
-            )
+        calc_sample_weights = sample_weight_fns[sample_weight]
 
         def _batch_metric_reduce(
             b_metric,
@@ -1123,7 +1159,7 @@ class SpectrumPL(L.LightningModule):
             self.max_num_datapoints = 22000
         else:
             self.max_num_datapoints = 270000
-        report_metric_std = getattr(self.hparams, "report_metric_std", False)
+        report_metric_std = self.hparams["report_metric_std"]
         for split in ["train", "val", "test"]:
             setattr(self, f"{split}_results", None)
             setattr(self, f"{split}_counter", 0)
@@ -1207,15 +1243,15 @@ class SpectrumPL(L.LightningModule):
 
     def preproc_spec(
         self,
-        spec_mzs,
-        spec_ints,
-        spec_batch_idxs,
+        spec_mzs: th.Tensor,
+        spec_ints: th.Tensor,
+        spec_batch_idxs: th.Tensor,
         train: bool,
         pred: bool,
         log_in: bool = False,
         log_out: bool = False,
         batch_size: int | None = None,
-    ):
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
         Convenience wrapper for spectrum preprocessing, handling different modes for train/pred.
         """
@@ -1255,10 +1291,7 @@ class SpectrumPL(L.LightningModule):
                 spec_ints,
                 spec_batch_idxs,
                 rel_filter_spec=True,
-                target_rank_filter_spec=self.hparams.get(
-                    "eval_target_apply_train_rank_filters",
-                    self.hparams.get("eval_target_apply_train_peak_filters", False),
-                ),
+                target_rank_filter_spec=self.hparams["eval_target_apply_train_rank_filters"],
                 bin_spec=False,
                 transform_spec=False,
                 normalize_spec=True,
@@ -1268,7 +1301,7 @@ class SpectrumPL(L.LightningModule):
             spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
         return spec_mzs, spec_ints, spec_batch_idxs
 
-    def predict_step(self, **batch_kwargs):
+    def predict_step(self, **batch_kwargs: Any) -> dict[str, Any]:
         """
         PyTorch Lightning predict_step override.
 
@@ -1277,7 +1310,7 @@ class SpectrumPL(L.LightningModule):
         """
         return self.forward(**batch_kwargs)
 
-    def forward(self, **batch_kwargs):
+    def forward(self, **batch_kwargs: Any) -> dict[str, Any]:
         """
         Forward pass through the model, with optional activation checkpointing.
         """
@@ -1378,7 +1411,7 @@ class SpectrumPL(L.LightningModule):
             # reshape(-1) instead of squeeze(-1): squeeze would collapse [1] → 0-d scalar
             # when batch_size=1. reshape(-1) always produces a flat 1-D tensor.
             inst_type_idxs = batch["spec_inst_type"].reshape(-1)  # [batch_size]
-            dtype, device = train_true_logprobs.dtype, train_true_logprobs.device
+            dtype = train_true_logprobs.dtype
             # Tensor indexing (no Python loop) — lookup tensors built once in _setup_tolerance
             tol_per_sample = self.inst_tol_lookup[inst_type_idxs].to(dtype=dtype)
             min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs].to(dtype=dtype)
@@ -1585,7 +1618,7 @@ class SpectrumPL(L.LightningModule):
                 results["ce_ace"] = th.full((batch_size,), float("nan"))
         return results
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """
         PyTorch Lightning training_step override.
         Handles automatic optimization only.
@@ -1598,7 +1631,7 @@ class SpectrumPL(L.LightningModule):
         else:
             raise NotImplementedError("Manual optimization not implemented")
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """
         PyTorch Lightning validation_step override.
         """
@@ -1608,7 +1641,7 @@ class SpectrumPL(L.LightningModule):
         self._update_results(batch_results, "val")
         return mean_loss
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """
         PyTorch Lightning test_step override.
         """
@@ -1618,7 +1651,9 @@ class SpectrumPL(L.LightningModule):
         self._update_results(batch_results, "test")
         return mean_loss
 
-    def inference_step(self, batch, *, metrics: str | None = None):
+    def inference_step(
+        self, batch: dict[str, Any], *, metrics: str | None = None
+    ) -> dict[str, Any]:
         """Run inference outside Lightning's test/val loop, optionally scoring it.
 
         Runs a forward pass and pushes the predicted spectrum through
@@ -1654,7 +1689,7 @@ class SpectrumPL(L.LightningModule):
             ``pred_logprobs`` to obtain intensities.
         """
         if self.training:
-            warnings.warn("Model is in training mode")
+            warnings.warn("Model is in training mode", stacklevel=2)
 
         # Auxiliary metrics can need a marginal the caller did not ask to export, so this
         # step ORs its own demand onto whatever the caller declared.
@@ -1764,7 +1799,7 @@ class SpectrumPL(L.LightningModule):
 
         return results
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> dict[str, Any]:
         """
         Configure optimizer and learning rate scheduler for Lightning.
         """
@@ -1840,7 +1875,7 @@ class SpectrumPL(L.LightningModule):
 
     def _should_report_metric_std(self) -> bool:
         """Return whether epoch std metrics should be computed and logged."""
-        return bool(getattr(self.hparams, "report_metric_std", True))
+        return bool(self.hparams["report_metric_std"])
 
     def _needs_eval_tensors(self, split: str) -> bool:
         """Return whether eval spectra must be materialized for this split."""
@@ -1978,13 +2013,13 @@ class SpectrumPL(L.LightningModule):
         batch_results = {k: v for k, v in batch_results.items() if k in keys}
         # check all metrics
         if self._should_store_metric_vectors(split):
-            assert all([metric_name in batch_results for metric_name in active_metric_names])
+            assert all(metric_name in batch_results for metric_name in active_metric_names)
         if keys:
             # transfer to cpu
             batch_results = to_cpu(batch_results, detach=True)
             # setup results dict
             if getattr(self, results_attr) is None:
-                setattr(self, results_attr, {k: list() for k in keys})
+                setattr(self, results_attr, {k: [] for k in keys})
             else:
                 assert set(keys) == set(getattr(self, results_attr).keys())
             results_dict = getattr(self, results_attr)
@@ -2029,7 +2064,7 @@ class SpectrumPL(L.LightningModule):
             and results is not None
         ):
             self._log_adduct_inst_ce_table(results, split)
-        for k in mean_metrics.keys():
+        for k in mean_metrics:
             self.log(
                 f"{split}_{k}_epoch/mean",
                 mean_metrics[k],
@@ -2042,11 +2077,11 @@ class SpectrumPL(L.LightningModule):
         if split != "test":
             # update epoch stats
             mean_metrics_epochs = getattr(self, f"{split}_mean_metrics")
-            for k in mean_metrics.keys():
+            for k in mean_metrics:
                 mean_metrics_epochs[k.replace(".", "-")][self.current_epoch] = mean_metrics[k]
             if self._should_report_metric_std():
                 std_metrics_epochs = getattr(self, f"{split}_std_metrics")
-                for k in mean_metrics.keys():
+                for k in mean_metrics:
                     std_metrics_epochs[k.replace(".", "-")][self.current_epoch] = std_metrics[k]
             # log histograms
             if self.hparams.log_hist_metrics and results is not None:
@@ -2124,7 +2159,7 @@ class SpectrumPL(L.LightningModule):
                 num_datapoints,
                 datapoint_metrics[example_key.replace(".", "-")].shape[0],
             )
-            for k in mean_metrics.keys():
+            for k in mean_metrics:
                 assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
                 datapoint_metrics[k.replace(".", "-")][:num_datapoints] = results[k]
 
@@ -2251,10 +2286,10 @@ class SpectrumPL(L.LightningModule):
             # Full table at test time for detailed inspection.
             wandb_logger.experiment.log({f"{split}_adduct_inst_ce_table": table})
 
-    def on_train_epoch_start(self):
+    def on_train_epoch_start(self) -> None:
         self._seed_dataloader(self.current_epoch)
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self) -> None:
         # consolidate results
         self._consolidate_results("train")
         # reset
@@ -2262,7 +2297,7 @@ class SpectrumPL(L.LightningModule):
         self._reset_running_metrics("train")
         self.train_counter = 0
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         if not self.trainer.sanity_checking:
             # consolidate results
             self._consolidate_results("val")
@@ -2271,7 +2306,7 @@ class SpectrumPL(L.LightningModule):
         self._reset_running_metrics("val")
         self.val_counter = 0
 
-    def on_test_epoch_end(self):
+    def on_test_epoch_end(self) -> None:
         # consolidate results
         self._consolidate_results("test")
         # reset
@@ -2282,28 +2317,28 @@ class SpectrumPL(L.LightningModule):
     def _print_grad_norm(self, prefix=None, total_num_params=5):
         if prefix is None:
             prefix = "no_prefix"
-        print(f">> {prefix}, {self._cur_batch_size}, {self._max_batch_size}")
+        logger.debug("%s, %s, %s", prefix, self._cur_batch_size, self._max_batch_size)
         opt = self.optimizers()
         num_params = 0
         for pg in opt.param_groups:
             for p in pg["params"]:
                 if p.grad is not None:
-                    print(th.norm(p.grad))
+                    logger.debug("grad norm: %s", th.norm(p.grad))
                     num_params += 1
                 if num_params > total_num_params:
                     break
             if num_params > total_num_params:
                 break
 
-    def on_after_backward(self):
+    def on_after_backward(self) -> None:
         if self.hparams.check_gradient_norm:
             self._print_grad_norm(prefix="after_backward")
 
-    def on_before_optimizer_step(self, optimizer):
+    def on_before_optimizer_step(self, optimizer: th.optim.Optimizer) -> None:
         if self.hparams.check_gradient_norm:
             self._print_grad_norm(prefix="before_optimizer_step")
 
-    def on_after_optimizer_step(self, optimizer):
+    def on_after_optimizer_step(self, optimizer: th.optim.Optimizer) -> None:
         self._cur_batch_size = 0
         self._cur_batch_weight = 0.0
 
@@ -2364,7 +2399,7 @@ class SpectrumPL(L.LightningModule):
                 if obj is not None and hasattr(obj, "_pre_compute_batches"):
                     obj._pre_compute_batches()
 
-    def on_save_checkpoint(self, checkpoint):
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         # rng
         checkpoint["rng_states"] = _collect_rng_states(include_cuda=th.cuda.is_available())
         # metrics
@@ -2379,7 +2414,7 @@ class SpectrumPL(L.LightningModule):
             checkpoint["train_datapoint_metrics"] = self.train_datapoint_metrics
             checkpoint["val_datapoint_metrics"] = self.val_datapoint_metrics
 
-    def on_load_checkpoint(self, checkpoint):
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         # rng
         if "torch" in checkpoint["rng_states"]:
             checkpoint["rng_states"]["torch"] = checkpoint["rng_states"]["torch"].cpu()

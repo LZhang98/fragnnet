@@ -62,7 +62,6 @@ def test_linear_chain_single_cut():
 
 def test_single_atom_fragment():
     """Single-atom fragment: that atom is a boundary if it has any neighbor outside."""
-    mask_size = 2
     frag_node_mask = th.tensor(
         [
             [True, True],  # root
@@ -83,7 +82,6 @@ def test_single_atom_fragment():
 
 def test_no_edges():
     """Molecule with no edges: no boundary atoms for any fragment."""
-    mask_size = 2
     frag_node_mask = th.tensor([[True, True], [True, False]], dtype=th.bool)
     mol_edge_index = th.zeros(2, 0, dtype=th.long)
     mol_num_nodes = _prefix_sum([2])
@@ -95,7 +93,6 @@ def test_no_edges():
 
 def test_root_always_zero():
     """Root fragment (all atoms True) must always produce an all-zero boundary row."""
-    mask_size = 4
     # Root = all atoms
     frag_node_mask = th.tensor(
         [[True, True, True, True]],

@@ -1,6 +1,8 @@
 import collections
 import copy
+import logging
 import os
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -29,6 +31,8 @@ from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
 
+logger = logging.getLogger(__name__)
+
 # Where a fragment's composition comes from during isotope cleanup: nowhere (the m/z-scaled
 # precursor proxy), a precursor-bounded subformula decomposition, or the molecule's DAG.
 ISOTOPE_FORMULA_SOURCES = ("none", "subformula", "dag")
@@ -47,9 +51,7 @@ def _ce_list_to_stats(t: th.Tensor, weights: th.Tensor | None = None) -> th.Tens
     """
     valid_mask = t >= 0
     if weights is not None:
-        if weights.shape != t.shape or not bool(
-            (th.isfinite(weights) & (weights >= 0)).all()
-        ):
+        if weights.shape != t.shape or not bool((th.isfinite(weights) & (weights >= 0)).all()):
             raise ValueError("CE statistics require matching finite nonnegative weights")
         valid_mask = valid_mask & (weights > 0)
     valid = t[valid_mask].float()
@@ -205,9 +207,12 @@ class BaseDataset(Dataset):
             orig_n = len(spec_df)
             spec_df = spec_df[spec_df["prec_type"].isin(allowed_adducts)]
             mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-            print(
-                f">> split_filter [{splits[0]}] filter_prec_types "
-                f"{sorted(allowed_adducts)}: {orig_n} → {len(spec_df)} spectra"
+            logger.info(
+                "split_filter [%s] filter_prec_types %s: %d -> %d spectra",
+                splits[0],
+                sorted(allowed_adducts),
+                orig_n,
+                len(spec_df),
             )
 
         # Determine which CE columns to compute and which is primary.
@@ -356,9 +361,12 @@ class BaseDataset(Dataset):
             orig_n = len(spec_df)
             spec_df = spec_df[keep]
             mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-            print(
-                f">> split_filter [{splits[0]}] filter_ce_by_inst "
-                f"{list(_filter_ce_by_inst)}: {orig_n} → {len(spec_df)} spectra"
+            logger.info(
+                "split_filter [%s] filter_ce_by_inst %s: %d -> %d spectra",
+                splits[0],
+                list(_filter_ce_by_inst),
+                orig_n,
+                len(spec_df),
             )
             # Print CE distribution per filtered instrument type.
             for _inst, _ce_cfg in _filter_ce_by_inst.items():
@@ -367,14 +375,22 @@ class BaseDataset(Dataset):
                 _ce_vals = _inst_rows[_ce_col]
                 _ce_vals = _ce_vals[_ce_vals.notna() & (_ce_vals != -1)]
                 if len(_ce_vals) == 0:
-                    print(f"   [{_inst}] {_ce_col}: no valid values after filter")
+                    logger.info("  [%s] %s: no valid values after filter", _inst, _ce_col)
                     continue
                 _q = _ce_vals.quantile([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
-                print(
-                    f"   [{_inst}] {_ce_col} distribution (n={len(_ce_vals)}): "
-                    f"min={_q[0.0]:.1f}  p10={_q[0.1]:.1f}  p25={_q[0.25]:.1f}  "
-                    f"p50={_q[0.5]:.1f}  p75={_q[0.75]:.1f}  p90={_q[0.9]:.1f}  "
-                    f"max={_q[1.0]:.1f}"
+                logger.info(
+                    "  [%s] %s distribution (n=%d): min=%.1f  p10=%.1f  p25=%.1f  "
+                    "p50=%.1f  p75=%.1f  p90=%.1f  max=%.1f",
+                    _inst,
+                    _ce_col,
+                    len(_ce_vals),
+                    _q[0.0],
+                    _q[0.1],
+                    _q[0.25],
+                    _q[0.5],
+                    _q[0.75],
+                    _q[0.9],
+                    _q[1.0],
                 )
 
         if ce_keys_to_compute:
@@ -404,9 +420,13 @@ class BaseDataset(Dataset):
             orig_test_group_count = orig_test_spec_df["group_id"].nunique()
             new_test_spec_count = new_test_spec_df["spec_id"].nunique()
             new_test_group_count = new_test_spec_df["group_id"].nunique()
-            print(f">> Dropping spectra unless {ce_key} is one of {spec_params['test_ces']}")
-            print(f"> Before drop: {orig_test_spec_count} spectra, {orig_test_group_count} groups")
-            print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
+            logger.info("Dropping spectra unless %s is one of %s", ce_key, spec_params["test_ces"])
+            logger.info(
+                "Before drop: %d spectra, %d groups", orig_test_spec_count, orig_test_group_count
+            )
+            logger.info(
+                "After drop: %d spectra, %d groups", new_test_spec_count, new_test_group_count
+            )
 
         # Clean each source spectrum before merging replicate spectra. Legacy
         # checkpoint configs predate these settings and omit the whole group.
@@ -443,12 +463,8 @@ class BaseDataset(Dataset):
                     filter_by_subformula=spec_params["filter_subformula_peaks"],
                     subformula_ppm=spec_params["subformula_ppm"],
                     drop_empty_spectra=spec_params["drop_empty_spectra"],
-                    use_instrument_tolerance=spec_params[
-                        "subformula_use_instrument_tolerance"
-                    ],
-                    use_merge_instrument_tolerance=spec_params[
-                        "centroid_use_instrument_tolerance"
-                    ],
+                    use_instrument_tolerance=spec_params["subformula_use_instrument_tolerance"],
+                    use_merge_instrument_tolerance=spec_params["centroid_use_instrument_tolerance"],
                     merge_method=spec_params["centroid_method"],
                 )
                 mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
@@ -842,7 +858,7 @@ class BaseDataset(Dataset):
                 spec_data = self._process_spec(spec_entry)
                 total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
                 self.spec_datas[idx] = spec_data
-            print(f"> total_spec_data_size: {total_spec_data_size / 1e6:.2f} MB")
+            logger.info("total_spec_data_size: %.2f MB", total_spec_data_size / 1e6)
 
     @staticmethod
     def _get_mzs_ints(peaks: list) -> tuple[th.Tensor, th.Tensor]:
@@ -1104,7 +1120,7 @@ class BaseDataset(Dataset):
         return len(self.spec_df)
 
     @staticmethod
-    def get_collate_fn():
+    def get_collate_fn() -> Callable:
         """
         Get the collate function for batching dataset samples.
 

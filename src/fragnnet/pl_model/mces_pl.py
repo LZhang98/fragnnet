@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch as th
 import torch._dynamo as th_dynamo
@@ -7,6 +7,9 @@ import torch.nn as nn
 from fragnnet.model import SiameseGNNModel
 from fragnnet.utils.data_utils import min_max_denormalize, zscore_denormalize
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
+
+if TYPE_CHECKING:
+    import torch_geometric
 
 try:
     from torch._dynamo.utils import CompileProfiler
@@ -41,7 +44,7 @@ class MCESPL(L.LightningModule):
 
         self.lr = self.hparams.lr
         self.weight_decay = self.hparams.weight_decay
-        self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
+        self.auxiliary_scores = self.hparams["auxiliary_scores"]
 
     def _setup_model(self) -> None:
         self.model = SiameseGNNModel(

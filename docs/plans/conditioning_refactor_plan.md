@@ -8,7 +8,8 @@
 
 ## Current controlled screen (2026-09-08)
 
-Execution update (2026-09-11): the [W&B screen](../findings/wandb_screen_2026_09_11.md)
+Execution update (2026-09-11): the 2026-09-11 W&B screen (never written up in `docs/findings/`;
+the link that stood here pointed at a file that does not exist)
 confirms a completed GNN + heads run and SMARTS attempts. No matching full-metadata
 heads-only run appeared in the inspected recent runs; routing benefit remains unresolved.
 The no-training statements below describe the earlier preparation handoff.

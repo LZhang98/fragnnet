@@ -45,6 +45,8 @@ from fragnnet.utils.nn_utils import (
 )
 from fragnnet.utils.spec_utils import scatter_reduce
 
+logger = logging.getLogger(__name__)
+
 
 def _formula_support_targets(
     *,
@@ -109,9 +111,9 @@ class FraGNNetPL(SpectrumPL):
             mol_dropout=self.hparams.mol_dropout,
             mol_normalization=self.hparams.mol_normalization,
             mol_num_heads=self.hparams["mol_num_heads"],
-            mol_max_degree=self.hparams.get("mol_max_degree"),
-            mol_max_spatial_distance=self.hparams.get("mol_max_spatial_distance"),
-            mol_multi_hop_max_distance=self.hparams.get("mol_multi_hop_max_distance"),
+            mol_max_degree=self.hparams["mol_max_degree"],
+            mol_max_spatial_distance=self.hparams["mol_max_spatial_distance"],
+            mol_multi_hop_max_distance=self.hparams["mol_multi_hop_max_distance"],
             mol_pool_type=self.hparams.mol_pool_type,
             frag_node_feats=self.hparams.frag_params["pyg_node_feats"],
             frag_edge_feats=self.hparams.frag_params["pyg_edge_feats"],
@@ -169,7 +171,7 @@ class FraGNNetPL(SpectrumPL):
             output_formula_str=self.hparams.output_formula_str,
             cc_feature_dropout=self.hparams.cc_feature_dropout,
             cc_atom_dropout=self.hparams.cc_atom_dropout,
-            cc_channel_dropout=self.hparams.get("cc_channel_dropout", 0.0),
+            cc_channel_dropout=self.hparams["cc_channel_dropout"],
             context_embedding=self.hparams.context_embedding,
             context_embedding_dim=self.hparams.context_embedding_dim,
             context_embedding_hidden_dim=self.hparams.context_embedding_hidden_dim,
@@ -179,18 +181,14 @@ class FraGNNetPL(SpectrumPL):
             cut_bond_hidden_dim=self.hparams.cut_bond_hidden_dim,
             debug_validate_outputs=self.hparams.debug_validate_outputs,
             skip_explainability_when_training=self.hparams.skip_train_explainability,
-            candidate_ion_head=self.hparams.get("candidate_ion_head", False),
-            candidate_ion_formula_features=self.hparams.get(
-                "candidate_ion_formula_features", True
-            ),
-            candidate_ion_neutral_loss_features=self.hparams.get(
-                "candidate_ion_neutral_loss_features", True
-            ),
-            candidate_ion_chunk_size=self.hparams.get("candidate_ion_chunk_size", 32768),
-            candidate_ion_checkpoint=self.hparams.get("candidate_ion_checkpoint", True),
-            ion_channel_factorized=self.hparams.get("ion_channel_factorized", False),
-            ion_channel_adduct_gated=self.hparams.get("ion_channel_adduct_gated", False),
-            ion_channel_rank=self.hparams.get("ion_channel_rank", 32),
+            candidate_ion_head=self.hparams["candidate_ion_head"],
+            candidate_ion_formula_features=self.hparams["candidate_ion_formula_features"],
+            candidate_ion_neutral_loss_features=self.hparams["candidate_ion_neutral_loss_features"],
+            candidate_ion_chunk_size=self.hparams["candidate_ion_chunk_size"],
+            candidate_ion_checkpoint=self.hparams["candidate_ion_checkpoint"],
+            ion_channel_factorized=self.hparams["ion_channel_factorized"],
+            ion_channel_adduct_gated=self.hparams["ion_channel_adduct_gated"],
+            ion_channel_rank=self.hparams["ion_channel_rank"],
             formula_support=self.hparams.fragnnet_formula_support,
             formula_support_initial_probability=(
                 self.hparams.fragnnet_formula_support_initial_probability
@@ -202,9 +200,7 @@ class FraGNNetPL(SpectrumPL):
             frag_competition_layers=self.hparams.frag_competition_layers,
             frag_competition_heads=self.hparams.frag_competition_heads,
             frag_competition_dropout=self.hparams.frag_competition_dropout,
-            frag_competition_detach_encoder=(
-                self.hparams.frag_competition_detach_encoder
-            ),
+            frag_competition_detach_encoder=(self.hparams.frag_competition_detach_encoder),
             frag_competition_max_delta=self.hparams.frag_competition_max_delta,
         )
 
@@ -212,8 +208,16 @@ class FraGNNetPL(SpectrumPL):
         self.pretrained_param_names = []
         # check edge loss params
         if not self.hparams.skip_edge_loss:
-            assert "h_counts" in self.hparams.frag_params["pyg_node_feats"]
-            assert "h_range" in self.hparams.frag_params["pyg_edge_feats"]
+            if "h_counts" not in self.hparams.frag_params["pyg_node_feats"]:
+                raise ValueError(
+                    "edge loss requires 'h_counts' in frag_params.pyg_node_feats; "
+                    "set skip_edge_loss to disable it"
+                )
+            if "h_range" not in self.hparams.frag_params["pyg_edge_feats"]:
+                raise ValueError(
+                    "edge loss requires 'h_range' in frag_params.pyg_edge_feats; "
+                    "set skip_edge_loss to disable it"
+                )
         else:
             if "h_counts" in self.hparams.frag_params["pyg_node_feats"]:
                 logging.warning("h_counts in frag pyg_node_feats but edge_loss is disabled!")
@@ -225,9 +229,11 @@ class FraGNNetPL(SpectrumPL):
             self._load_pretrained_weights(
                 self.hparams.finetune_pretrained_ckpt,
                 strict=self.hparams.finetune_strict_load,
-                shared_components=self.hparams.finetune_shared_components
-                if not self.hparams.finetune_shared_all
-                else None,
+                shared_components=(
+                    self.hparams.finetune_shared_components
+                    if not self.hparams.finetune_shared_all
+                    else None
+                ),
             )
 
             # Handle freezing
@@ -272,7 +278,7 @@ class FraGNNetPL(SpectrumPL):
         # fix compiled ckpt state dict prefix
         ckpt = decompile_jit_ckpt(ckpt)
         # 1. Load ckpt
-        state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+        state_dict = ckpt.get("state_dict", ckpt)
 
         # Determine target components
         if shared_components is not None:
@@ -297,9 +303,8 @@ class FraGNNetPL(SpectrumPL):
         if target_components:
             for comp in target_components:
                 # Check target
-                if (
-                    not any(k.startswith(comp) for k in target_keys)
-                    and comp not in dict(self.model.named_modules())
+                if not any(k.startswith(comp) for k in target_keys) and comp not in dict(
+                    self.model.named_modules()
                 ):
                     if strict:
                         raise RuntimeError(f"Component '{comp}' not found in current model.")
@@ -314,11 +319,13 @@ class FraGNNetPL(SpectrumPL):
 
         # 3. Validate all selected tensors before changing any model weights.
         selected_target_keys = {
-            k for k in target_keys
+            k
+            for k in target_keys
             if target_components is None or any(k.startswith(c) for c in target_components)
         }
         selected_source_keys = {
-            k for k in normalized_source_dict
+            k
+            for k in normalized_source_dict
             if target_components is None or any(k.startswith(c) for c in target_components)
         }
         if strict:
@@ -349,9 +356,7 @@ class FraGNNetPL(SpectrumPL):
             return
 
         # 4. Copy validated weights and track only the tensors actually loaded.
-        self.model.load_state_dict(
-            weights_to_load, strict=strict and target_components is None
-        )
+        self.model.load_state_dict(weights_to_load, strict=strict and target_components is None)
         logging.info(f"Successfully loaded {len(weights_to_load)} parameters.")
         self.pretrained_param_names = list(weights_to_load.keys())
 
@@ -570,15 +575,16 @@ class FraGNNetPL(SpectrumPL):
             pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
             loss_batch_size=self.hparams.loss_batch_size,
         )
+
         # binned cosine distance
         def cos_dist_fn(
-            true_mzs,
-            true_logprobs,
-            true_batch_idxs,
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-        ):
+            true_mzs: th.Tensor,
+            true_logprobs: th.Tensor,
+            true_batch_idxs: th.Tensor,
+            pred_mzs: th.Tensor,
+            pred_logprobs: th.Tensor,
+            pred_batch_idxs: th.Tensor,
+        ) -> th.Tensor:
             return sparse_cosine_distance_binned(
                 true_mzs,
                 true_logprobs,
@@ -591,15 +597,15 @@ class FraGNNetPL(SpectrumPL):
 
         # hungarian cosine distance
         def cos_hun_fn(
-            true_mzs,
-            true_logprobs,
-            true_batch_idxs,
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            tol_per_sample=None,
-            min_mz_per_sample=None,
-        ):
+            true_mzs: th.Tensor,
+            true_logprobs: th.Tensor,
+            true_batch_idxs: th.Tensor,
+            pred_mzs: th.Tensor,
+            pred_logprobs: th.Tensor,
+            pred_batch_idxs: th.Tensor,
+            tol_per_sample: th.Tensor | None = None,
+            min_mz_per_sample: th.Tensor | None = None,
+        ) -> th.Tensor:
             return sparse_cosine_distance_hungarian(
                 true_mzs,
                 true_logprobs,
@@ -616,13 +622,13 @@ class FraGNNetPL(SpectrumPL):
 
         # jensen-shannon distance
         def jss_dist_fn(
-            true_mzs,
-            true_logprobs,
-            true_batch_idxs,
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-        ):
+            true_mzs: th.Tensor,
+            true_logprobs: th.Tensor,
+            true_batch_idxs: th.Tensor,
+            pred_mzs: th.Tensor,
+            pred_logprobs: th.Tensor,
+            pred_batch_idxs: th.Tensor,
+        ) -> th.Tensor:
             return sparse_jensen_shannon_divergence(
                 true_mzs,
                 true_logprobs,
@@ -636,15 +642,15 @@ class FraGNNetPL(SpectrumPL):
 
         # jensen-shannon distance hungarian
         def jss_dist_hun_fn(
-            true_mzs,
-            true_logprobs,
-            true_batch_idxs,
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            tol_per_sample=None,
-            min_mz_per_sample=None,
-        ):
+            true_mzs: th.Tensor,
+            true_logprobs: th.Tensor,
+            true_batch_idxs: th.Tensor,
+            pred_mzs: th.Tensor,
+            pred_logprobs: th.Tensor,
+            pred_batch_idxs: th.Tensor,
+            tol_per_sample: th.Tensor | None = None,
+            min_mz_per_sample: th.Tensor | None = None,
+        ) -> th.Tensor:
             kwargs = {
                 "tolerance": self.tolerance,
                 "relative": self.relative,
@@ -674,8 +680,10 @@ class FraGNNetPL(SpectrumPL):
                 **kwargs,
             )
 
-        assert self.hparams.sparse_cosine_similarity
-        assert self.hparams.sum_ints
+        if not self.hparams.sparse_cosine_similarity:
+            raise ValueError("FraGNNet requires sparse_cosine_similarity")
+        if not self.hparams.sum_ints:
+            raise ValueError("FraGNNet requires sum_ints")
         if self.hparams.loss_type == "cross_entropy":
             self.binned_loss = False
         elif self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
@@ -690,23 +698,25 @@ class FraGNNetPL(SpectrumPL):
 
         if self.binned_loss:
             if self.hparams.ints_transform != "none" and not self.hparams.bin_output:
-                print(
-                    "> Warning: binned loss with ints transform; output is not binned; inverse transform will be biased for binned metrics"
+                logger.warning(
+                    "binned loss with ints transform; output is not binned, so the inverse "
+                    "transform will be biased for binned metrics"
                 )
         else:
-            assert not self.hparams.bin_output, "cannot train binned model with unbinned loss"
+            if self.hparams.bin_output:
+                raise ValueError("cannot train binned model with unbinned loss")
 
         if not self.hparams.skip_edge_loss:
             edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn, 4.0)
             edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn, 4.0)
 
             def edge_loss(
-                pred_edge_logprobs,
-                pred_edge_h_diffs,
-                pred_edge_h_range_masks,
-                pred_edge_h_logprobs,
-                pred_edge_batch_idxs,
-            ):
+                pred_edge_logprobs: th.Tensor,
+                pred_edge_h_diffs: th.Tensor,
+                pred_edge_h_range_masks: th.Tensor,
+                pred_edge_h_logprobs: th.Tensor,
+                pred_edge_batch_idxs: th.Tensor,
+            ) -> dict[str, th.Tensor]:
                 edge_h_range_costs = edge_h_range_loss_fn(
                     pred_edge_h_diffs * pred_edge_h_range_masks.float()
                 )
@@ -968,9 +978,7 @@ class FraGNNetPL(SpectrumPL):
                         batch_size=batch_size,
                         nce_min=self.hparams.precursor_pair_nce_min,
                         nce_max=self.hparams.precursor_pair_nce_max,
-                        absent_intensity_floor=(
-                            self.hparams.precursor_pair_absent_intensity_floor
-                        ),
+                        absent_intensity_floor=(self.hparams.precursor_pair_absent_intensity_floor),
                         tol_per_sample=tol_per_sample,
                         min_mz_per_sample=min_mz_per_sample,
                     )
@@ -1369,7 +1377,7 @@ class FraGNNetPL(SpectrumPL):
 
         self.loss_fn = _loss_fn
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self) -> None:
         if (
             not self.hparams.automatic_optimization
             and self.hparams.dynamic_batch_sampler
@@ -1408,7 +1416,7 @@ class FraGNNetPL(SpectrumPL):
 
         opt.zero_grad()
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """training loop for FragGNNPL
 
         Args:
@@ -1496,7 +1504,7 @@ class FraGNNetPL(SpectrumPL):
             self._update_results(batch_results, "train")
             return mean_loss
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> dict[str, Any]:
         """
         Configure optimizers with different learning rates for pre-trained and other parameters.
         """
@@ -1544,7 +1552,7 @@ class FraGNNetPL(SpectrumPL):
 
         return ret
 
-    def optimizer_step(self, *args, **kwargs):
+    def optimizer_step(self, *args: Any, **kwargs: Any) -> None:
         super().optimizer_step(*args, **kwargs)
         opt = self.optimizers()
         self.on_after_optimizer_step(opt)

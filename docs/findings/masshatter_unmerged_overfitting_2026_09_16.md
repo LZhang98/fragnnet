@@ -49,7 +49,8 @@ overfitting, not uniform validation collapse or proof that more training always 
 Training metrics average changing weights in training mode, whereas validation uses
 end-of-epoch weights in evaluation mode; these are not matched checkpoint evaluations.
 
-![Within-run train and validation spectral CE](../figures/masshatter_unmerged_overfitting_2026_09_16.png)
+> The within-run train/validation spectral-CE figure referenced here was never checked into
+> `docs/figures/`. The per-epoch numbers it plotted are in the tables below.
 
 ## Where the gap appears, and plausible causes
 

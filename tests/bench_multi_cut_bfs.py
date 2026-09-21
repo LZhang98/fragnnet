@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import time
 
-import numpy as np
 import pytest
 
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut
@@ -44,15 +43,15 @@ def _prepare(smiles: str):
     mol_d = extract_mol_info(smiles)
     ring_mask = mol_d["ring_bond_mask"]
     num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
-    return dict(
-        num_nodes=num_nodes,
-        num_edges=num_edges,
-        node_mask_arr=node_mask,
-        edges_arr=edges,
-        edge_mask_arr=edge_mask,
-        node_to_edge_idx_arr=n2e,
-        ring_edge_mask=ring_mask,
-    )
+    return {
+        "num_nodes": num_nodes,
+        "num_edges": num_edges,
+        "node_mask_arr": node_mask,
+        "edges_arr": edges,
+        "edge_mask_arr": edge_mask,
+        "node_to_edge_idx_arr": n2e,
+        "ring_edge_mask": ring_mask,
+    }
 
 
 def _run(inputs: dict, max_cut_size: int = 2, max_depth: int = 3) -> int:
@@ -78,31 +77,31 @@ def _run(inputs: dict, max_cut_size: int = 2, max_depth: int = 3) -> int:
 
 MOLECULES = {
     # Acyclic
-    "n_butane":          "CCCC",
-    "n_octane":          "CCCCCCCC",
-    "n_hexadecane":      "CCCCCCCCCCCCCCCC",
+    "n_butane": "CCCC",
+    "n_octane": "CCCCCCCC",
+    "n_hexadecane": "CCCCCCCCCCCCCCCC",
     # Monocyclic
-    "cyclohexane":       "C1CCCCC1",
-    "cyclooctane":       "C1CCCCCCC1",
-    "benzene":           "c1ccccc1",
+    "cyclohexane": "C1CCCCC1",
+    "cyclooctane": "C1CCCCCCC1",
+    "benzene": "c1ccccc1",
     # Multi-ring-system (separate rings → grouping skips cross-system pairs)
-    "biphenyl":          "c1ccccc1-c1ccccc1",
-    "diphenylmethane":   "c1ccccc1Cc1ccccc1",
-    "terphenyl":         "c1ccccc1-c1ccccc1-c1ccccc1",
+    "biphenyl": "c1ccccc1-c1ccccc1",
+    "diphenylmethane": "c1ccccc1Cc1ccccc1",
+    "terphenyl": "c1ccccc1-c1ccccc1-c1ccccc1",
     # Fused bicyclic
-    "naphthalene":       "c1ccc2ccccc2c1",
-    "tetralin":          "C1CCCc2ccccc21",
-    "decalin":           "C1CCC2CCCCC2C1",
+    "naphthalene": "c1ccc2ccccc2c1",
+    "tetralin": "C1CCCc2ccccc21",
+    "decalin": "C1CCC2CCCCC2C1",
     # Fused polycyclic (large ring system — many same-system pairs)
-    "pyrene":            "c1cc2ccc3cccc4ccc(c1)c2c34",
-    "coronene":          "c1cc2ccc3ccc4ccc5ccc6ccc1c1c2c3c4c5c61",
-    "steroid_skeleton":  "C1CCC2CCCC3CCCC4CCCCC4C3C2C1",   # androstane
+    "pyrene": "c1cc2ccc3cccc4ccc(c1)c2c34",
+    "coronene": "c1cc2ccc3ccc4ccc5ccc6ccc1c1c2c3c4c5c61",
+    "steroid_skeleton": "C1CCC2CCCC3CCCC4CCCCC4C3C2C1",  # androstane
     # Drug-like
-    "ibuprofen":         "CC(C)Cc1ccc(cc1)C(C)C(=O)O",
-    "naproxen":          "CC(C(=O)O)c1ccc2cc(ccc2c1)OC",
-    "caffeine":          "Cn1cnc2c1c(=O)n(c(=O)n2C)C",
-    "aspirin":           "CC(=O)Oc1ccccc1C(=O)O",
-    "sildenafil":        "CCCC1=NN(C2=CC(=C(C=C2)S(=O)(=O)N3CCN(CC3)C)OCC)C(=O)C1=O",  # ~33 atoms
+    "ibuprofen": "CC(C)Cc1ccc(cc1)C(C)C(=O)O",
+    "naproxen": "CC(C(=O)O)c1ccc2cc(ccc2c1)OC",
+    "caffeine": "Cn1cnc2c1c(=O)n(c(=O)n2C)C",
+    "aspirin": "CC(=O)Oc1ccccc1C(=O)O",
+    "sildenafil": "CCCC1=NN(C2=CC(=C(C=C2)S(=O)(=O)N3CCN(CC3)C)OCC)C(=O)C1=O",  # ~33 atoms
 }
 
 
@@ -149,12 +148,15 @@ class TestThroughput:
 
     N_REPEATS = 50  # how many times to repeat each molecule
 
-    @pytest.mark.parametrize("smiles,min_mol_per_sec", [
-        ("CCCCCCCC",              500),   # acyclic octane: trivially fast
-        ("C1CCCCC1",              200),   # cyclohexane: 15 ring pairs
-        ("c1ccc2ccccc2c1",         50),   # naphthalene: large same-system ring pairs
-        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1",  10),  # steroid: large fused ring system
-    ])
+    @pytest.mark.parametrize(
+        "smiles,min_mol_per_sec",
+        [
+            ("CCCCCCCC", 500),  # acyclic octane: trivially fast
+            ("C1CCCCC1", 200),  # cyclohexane: 15 ring pairs
+            ("c1ccc2ccccc2c1", 50),  # naphthalene: large same-system ring pairs
+            ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 10),  # steroid: large fused ring system
+        ],
+    )
     def test_min_throughput(self, smiles: str, min_mol_per_sec: int):
         inputs = _prepare(smiles)
         t0 = time.perf_counter()
@@ -162,9 +164,9 @@ class TestThroughput:
             _run(inputs, max_cut_size=2, max_depth=3)
         elapsed = time.perf_counter() - t0
         mol_per_sec = self.N_REPEATS / elapsed
-        assert mol_per_sec >= min_mol_per_sec, (
-            f"{smiles}: {mol_per_sec:.1f} mol/s < required {min_mol_per_sec} mol/s"
-        )
+        assert (
+            mol_per_sec >= min_mol_per_sec
+        ), f"{smiles}: {mol_per_sec:.1f} mol/s < required {min_mol_per_sec} mol/s"
 
 
 # ---------------------------------------------------------------------------
@@ -179,15 +181,18 @@ class TestCutSizeOverhead:
     should be bounded (not explosive) due to ring-system grouping.
     """
 
-    @pytest.mark.parametrize("smiles,max_overhead_factor", [
-        # Comparison at max_depth=1 (single BFS pass) isolates the per-BFS-node
-        # cut overhead without confounding from the exponentially larger DAG that
-        # cut=2 generates at depth=2/3 (which dominates at deeper depths).
-        ("CCCCCCCC",              2.0),   # acyclic: no ring pairs → overhead ≈ 0
-        ("c1ccccc1-c1ccccc1",     8.0),   # biphenyl: 2 separate 6-bond systems
-        ("c1ccc2ccccc2c1",        8.0),   # naphthalene: 1 large same-system group
-        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 20.0),  # steroid: many ring bonds, 1 fused system
-    ])
+    @pytest.mark.parametrize(
+        "smiles,max_overhead_factor",
+        [
+            # Comparison at max_depth=1 (single BFS pass) isolates the per-BFS-node
+            # cut overhead without confounding from the exponentially larger DAG that
+            # cut=2 generates at depth=2/3 (which dominates at deeper depths).
+            ("CCCCCCCC", 2.0),  # acyclic: no ring pairs → overhead ≈ 0
+            ("c1ccccc1-c1ccccc1", 8.0),  # biphenyl: 2 separate 6-bond systems
+            ("c1ccc2ccccc2c1", 8.0),  # naphthalene: 1 large same-system group
+            ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 20.0),  # steroid: many ring bonds, 1 fused system
+        ],
+    )
     def test_cut2_overhead_bounded(self, smiles: str, max_overhead_factor: float):
         """cut=2 overhead vs cut=1, measured at max_depth=1 (single BFS pass)."""
         inputs = _prepare(smiles)

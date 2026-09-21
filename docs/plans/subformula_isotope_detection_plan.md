@@ -21,7 +21,8 @@ compute the expected M+k/M+0 ratio. Today it gets it from the fragmentation DAG:
 Two problems follow from that choice:
 
 1. **It is FraGNNet-only.** `frag_dp` sat in all ten config templates purely so this branch could
-   be fed for any model. As of 2026-09-20 `frag_dp` is declared only by `fragnnet_template.yml`,
+   be fed for any model. As of 2026-09-21 the per-model templates are replaced by the single
+   `config/template.yml`, which declares `frag_dp` for every model type,
    so on any other model the DAG branch can no longer be satisfied at all.
 2. **A DAG is a model artifact, not a chemistry bound.** It answers "can my fragmenter enumerate
    this?", while the question being asked is "what composition can this peak be?". The subformula

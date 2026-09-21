@@ -4,10 +4,10 @@ Verifies that _inject_smarts_pairs_into_dag and the smarts_prepass=True flag
 in compute_dags correctly add rearrangement fragments without duplicates and
 with consistent metadata arrays.
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from fragnnet.frag.compute_frags import MASK_DTYPE
 from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
@@ -17,7 +17,6 @@ from fragnnet.utils.frag_utils import (
     extract_mol_info,
     get_fraggen_input_arrays,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,7 +43,6 @@ def _get_frag_smiles_set(dag_d: dict, mol_d: dict) -> set[frozenset[int]]:
     """Return the set of fragments as frozensets of atom indices."""
     mol = mol_d["mol"]
     num_nodes = mol.GetNumAtoms()
-    node_feats = dag_d["node_feats"]  # (n_frags, num_nodes, ...)
     # nodes_mask_matrix is not directly in dag_d; reconstruct from cc_bit_mask cols
     # Instead, use raw BFS output via _inject path — just check count via dag_d keys.
     _ = num_nodes  # silence unused warning
@@ -217,7 +215,7 @@ class TestComputeDagsWithSmartsPrepass:
         # The CO2 fragment from crf13_2 corresponds to C(=O)O (3 heavy atoms: C,O,O)
         mol_d = extract_mol_info(self.METHYL_ACETATE)
         mol = mol_d["mol"]
-        dag = compute_dags(
+        compute_dags(
             mol_d,
             max_depth=3,
             h_prior=True,
@@ -252,12 +250,19 @@ class TestComputeDagsWithSmartsPrepass:
         from fragnnet.frag.compute_frags import MASK_DTYPE
 
         nmm, ndm, dem, meta = compute_frags.compute_ccs(
-            num_nodes, num_edges,
-            node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
-            node_to_edge_idx, 3, int(1e6), 3,
+            num_nodes,
+            num_edges,
+            node_mask.astype(MASK_DTYPE),
+            edges,
+            edge_mask.astype(MASK_DTYPE),
+            node_to_edge_idx,
+            3,
+            int(1e6),
+            3,
         )
         pairs = [
-            (a, b) for a, b, _ in _apply_smarts_prepass(
+            (a, b)
+            for a, b, _ in _apply_smarts_prepass(
                 FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
             )
         ]
@@ -265,12 +270,10 @@ class TestComputeDagsWithSmartsPrepass:
             pairs, nmm, ndm, dem, meta, num_nodes, min_frag_atoms=3
         )
         assert len(meta2["nodes_min_depth"]) == len(nmm2), (
-            f"nodes_min_depth length {len(meta2['nodes_min_depth'])} != "
-            f"n_frags {len(nmm2)}"
+            f"nodes_min_depth length {len(meta2['nodes_min_depth'])} != " f"n_frags {len(nmm2)}"
         )
         assert len(meta2["edges_min_depth"]) == len(dem2), (
-            f"edges_min_depth length {len(meta2['edges_min_depth'])} != "
-            f"n_edges {len(dem2)}"
+            f"edges_min_depth length {len(meta2['edges_min_depth'])} != " f"n_edges {len(dem2)}"
         )
 
     def test_prepass_idempotent_on_no_match(self):
@@ -292,6 +295,7 @@ class TestComputeDagsWithSmartsPrepass:
         )
         # crf12_0 should fire on butane's C-C-C-C chain
         assert len(pairs) > 0, "Expected crf12_0 to match on butane"
+
     def test_prepass_unique_fragment_in_dag(self):
         """The unique SMARTS fragment (not reachable by bond cuts) must appear in the DAG.
 
@@ -310,29 +314,38 @@ class TestComputeDagsWithSmartsPrepass:
             get_fraggen_input_arrays(mol_d)
         )
         nmm_base, _, _, _ = compute_frags.compute_ccs(
-            num_nodes, num_edges,
-            node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
-            node_to_edge_idx, 3, int(1e6), 3,
+            num_nodes,
+            num_edges,
+            node_mask.astype(MASK_DTYPE),
+            edges,
+            edge_mask.astype(MASK_DTYPE),
+            node_to_edge_idx,
+            3,
+            int(1e6),
+            3,
         )
         pairs = [
-            (a, b) for a, b, _ in _apply_smarts_prepass(
+            (a, b)
+            for a, b, _ in _apply_smarts_prepass(
                 FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
             )
         ]
         bfs_keys = {nmm_base[i].tobytes() for i in range(len(nmm_base))}
         unique_masks = [
-            m for pair in pairs for m in pair
+            m
+            for pair in pairs
+            for m in pair
             if m.sum() >= 3 and m[:num_nodes].astype(np.uint8).tobytes() not in bfs_keys
         ]
-        assert len(unique_masks) > 0, (
-            "Expected at least one SMARTS fragment not reachable by plain bond cuts"
-        )
+        assert (
+            len(unique_masks) > 0
+        ), "Expected at least one SMARTS fragment not reachable by plain bond cuts"
         # Verify those fragments appear in the post-merge DAG
         dag_yes = _run_compute_dags(smiles, smarts_prepass=True)
         dag_no = _run_compute_dags(smiles, smarts_prepass=False)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Post-merge should add at least one unique SMARTS node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Post-merge should add at least one unique SMARTS node"
 
     def test_prepass_ring_nodes_unchanged(self):
         """Ring-containing molecules: BFS node count is identical with/without prepass.
@@ -360,23 +373,30 @@ class TestComputeDagsWithSmartsPrepass:
             get_fraggen_input_arrays(mol_d)
         )
         pairs = [
-            (a, b) for a, b, _ in _apply_smarts_prepass(
+            (a, b)
+            for a, b, _ in _apply_smarts_prepass(
                 FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
             )
         ]
         nmm, ndm, dem, meta = compute_frags.compute_ccs(
-            num_nodes, num_edges,
-            node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
-            node_to_edge_idx, 3, int(1e6), 3,
+            num_nodes,
+            num_edges,
+            node_mask.astype(MASK_DTYPE),
+            edges,
+            edge_mask.astype(MASK_DTYPE),
+            node_to_edge_idx,
+            3,
+            int(1e6),
+            3,
         )
         _, _, dem2, _ = _inject_smarts_pairs_into_dag(
             pairs, nmm, ndm, dem, meta, num_nodes, min_frag_atoms=3
         )
-        new_edges = dem2[len(dem):]
+        new_edges = dem2[len(dem) :]
         if len(new_edges) > 0:
-            assert (new_edges[:, 0] == 0).all(), (
-                "All new SMARTS edges must originate from root (index 0)"
-            )
+            assert (
+                new_edges[:, 0] == 0
+            ).all(), "All new SMARTS edges must originate from root (index 0)"
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +439,7 @@ class TestBenzopyranoneRingCleavage:
     def test_smarts_compiles(self):
         """The SMARTS pattern compiles to a valid RDKit query molecule."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         assert patt is not None, f"Invalid SMARTS: {rule.reactant_smarts}"
@@ -426,6 +447,7 @@ class TestBenzopyranoneRingCleavage:
     def test_matches_3_phenyl_7_ome_coumarin(self):
         """Exactly 1 match on the primary target scaffold."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.COUMARIN_OMe_Ph)
@@ -435,6 +457,7 @@ class TestBenzopyranoneRingCleavage:
     def test_matches_3_phenyl_4_methyl_7_ome_coumarin(self):
         """Matches 3-phenyl-4-methyl-7-methoxycoumarin (4-Me substituent tolerated)."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.COUMARIN_OMe_Ph_Me)
@@ -444,6 +467,7 @@ class TestBenzopyranoneRingCleavage:
     def test_matches_7_methoxycoumarin_no_phenyl(self):
         """Matches the coumarin core even without a 3-phenyl substituent."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.COUMARIN_OMe_ONLY)
@@ -453,6 +477,7 @@ class TestBenzopyranoneRingCleavage:
     def test_no_match_naphthalene(self):
         """Naphthalene (no O, no lactone) does not match."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.NAPHTHALENE)
@@ -461,6 +486,7 @@ class TestBenzopyranoneRingCleavage:
     def test_no_match_benzene(self):
         """Benzene (no fused ring, no O) does not match."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.BENZENE)
@@ -469,6 +495,7 @@ class TestBenzopyranoneRingCleavage:
     def test_cut_bonds_all_exist_in_molecule(self):
         """All 4 cut bonds specified in cut_bond_map_pairs exist in the molecule."""
         from rdkit import Chem
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.COUMARIN_OMe_Ph)
@@ -492,6 +519,7 @@ class TestBenzopyranoneRingCleavage:
         """Applying all 4 cuts to the primary substrate yields exactly 3 CCs."""
         from rdkit import Chem
         from rdkit.Chem import rdmolops
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.COUMARIN_OMe_Ph)
@@ -512,6 +540,7 @@ class TestBenzopyranoneRingCleavage:
         """The large all-carbon fragment (C13+) is one of the 3 produced CCs."""
         from rdkit import Chem
         from rdkit.Chem import rdmolops
+
         rule = self._get_rule()
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.COUMARIN_OMe_Ph)
@@ -526,10 +555,7 @@ class TestBenzopyranoneRingCleavage:
         for map_a, map_b in rule.cut_bond_map_pairs:
             em.RemoveBond(map_to_mol[map_a], map_to_mol[map_b])
         frags = rdmolops.GetMolFrags(em.GetMol(), asMols=False)
-        max_c = max(
-            sum(1 for a in f if mol.GetAtomWithIdx(a).GetSymbol() == "C")
-            for f in frags
-        )
+        max_c = max(sum(1 for a in f if mol.GetAtomWithIdx(a).GetSymbol() == "C") for f in frags)
         # 3-phenyl-7-methoxycoumarin: large fragment = 13 C atoms
         assert max_c == 13, f"Expected large C13 fragment, got max C count = {max_c}"
 
@@ -537,9 +563,9 @@ class TestBenzopyranoneRingCleavage:
         """smarts_prepass=True adds nodes for the coumarin scaffold."""
         dag_no = _run_compute_dags(self.COUMARIN_OMe_Ph, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.COUMARIN_OMe_Ph, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected benzopyranone_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected benzopyranone_ring_cleavage rule to add at least one new node"
 
 
 # ---------------------------------------------------------------------------
@@ -726,17 +752,17 @@ class TestFuranoCoumarinRingCleavage:
         """smarts_prepass=True adds nodes for psoralen scaffold molecules."""
         dag_no = _run_compute_dags(self.PSORALEN, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.PSORALEN, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected furanocoumarin_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected furanocoumarin_ring_cleavage rule to add at least one new node"
 
     def test_prepass_adds_fragments_substituted(self):
         """smarts_prepass=True adds nodes for a substituted psoralen derivative."""
         dag_no = _run_compute_dags(self.ISOPIMPINELLIN, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.ISOPIMPINELLIN, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected rule to add nodes for substituted psoralen"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected rule to add nodes for substituted psoralen"
 
 
 # ---------------------------------------------------------------------------
@@ -930,9 +956,9 @@ class TestXanthoneRingCleavage:
         """smarts_prepass=True adds nodes for the xanthone scaffold."""
         dag_no = _run_compute_dags(self.XANTHONE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.XANTHONE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected xanthone_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected xanthone_ring_cleavage rule to add at least one new node"
 
 
 # ---------------------------------------------------------------------------
@@ -1134,9 +1160,9 @@ class TestPhenoxazineRingCleavage:
         """smarts_prepass=True adds nodes for a substituted phenoxazine scaffold."""
         dag_no = _run_compute_dags(self.PHENOXAZINE_SUBST, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.PHENOXAZINE_SUBST, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected phenoxazine_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected phenoxazine_ring_cleavage rule to add at least one new node"
 
 
 class TestMorphinanRingCleavage:
@@ -1337,25 +1363,25 @@ class TestMorphinanRingCleavage:
         """smarts_prepass=True adds nodes for morphine."""
         dag_no = _run_compute_dags(self.MORPHINE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.MORPHINE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected morphinan_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected morphinan_ring_cleavage rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_codeine(self):
         """smarts_prepass=True adds nodes for codeine (OMe variant)."""
         dag_no = _run_compute_dags(self.CODEINE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.CODEINE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected morphinan_ring_cleavage rule to add at least one new node for codeine"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected morphinan_ring_cleavage rule to add at least one new node for codeine"
 
     def test_prepass_no_change_naphthalene(self):
         """smarts_prepass=True does not add nodes for naphthalene (negative control)."""
         dag_no = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"], (
-            "morphinan_ring_cleavage rule should not fire on naphthalene"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"]
+        ), "morphinan_ring_cleavage rule should not fire on naphthalene"
 
 
 # ---------------------------------------------------------------------------
@@ -1586,17 +1612,17 @@ class TestHalogenatedQuinolineRingCleavage:
             inner_frag = next(f for f in frags if not any(a in outer_atoms for a in f))
             if any(mol.GetAtomWithIdx(a).GetSymbol() == "Br" for a in inner_frag):
                 found_retained_br = True
-        assert found_retained_br, (
-            "Expected at least one embedding to retain a Br in the inner fragment"
-        )
+        assert (
+            found_retained_br
+        ), "Expected at least one embedding to retain a Br in the inner fragment"
 
     def test_prepass_adds_fragments_to_dag_dibromoquinoline(self):
         """smarts_prepass=True adds nodes for dibromoquinoline."""
         dag_no = _run_compute_dags(self.DIBROMOQUINOLINE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.DIBROMOQUINOLINE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected halogenated_quinoline_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected halogenated_quinoline_ring_cleavage rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_monofluoro(self):
         """smarts_prepass=True adds nodes for the monofluoro-benzo case."""
@@ -1611,9 +1637,9 @@ class TestHalogenatedQuinolineRingCleavage:
         """smarts_prepass=True does not add nodes for plain quinoline (no halogen)."""
         dag_no = _run_compute_dags(self.PLAIN_QUINOLINE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.PLAIN_QUINOLINE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"], (
-            "halogenated_quinoline_ring_cleavage rule should not fire on plain quinoline"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] == dag_no["dag_num_nodes"]
+        ), "halogenated_quinoline_ring_cleavage rule should not fire on plain quinoline"
 
 
 # ---------------------------------------------------------------------------
@@ -1738,9 +1764,9 @@ class TestBenzopyranoneBisChLoss:
     def test_prepass_adds_fragments_to_dag_coumarin(self):
         dag_no = _run_compute_dags(self.COUMARIN, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.COUMARIN, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected benzopyranone_bis_ch_loss rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected benzopyranone_bis_ch_loss rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_acetyl_methoxy_coumarin(self):
         dag_no = _run_compute_dags(self.ACETYL_METHOXY_COUMARIN, smarts_prepass=False)
@@ -1867,9 +1893,9 @@ class TestAnthraquinoneRingC4PlusChLoss:
     def test_prepass_adds_fragments_to_dag_anthraquinone(self):
         dag_no = _run_compute_dags(self.ANTHRAQUINONE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.ANTHRAQUINONE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected anthraquinone_ring_c4_plus_ch_loss rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected anthraquinone_ring_c4_plus_ch_loss rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_methylanthraquinone(self):
         dag_no = _run_compute_dags(self.METHYLANTHRAQUINONE, smarts_prepass=False)
@@ -2012,16 +2038,16 @@ class TestMorphinanAmineArmLoss:
     def test_prepass_adds_fragments_to_dag_morphine(self):
         dag_no = _run_compute_dags(self.MORPHINE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.MORPHINE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected morphinan_amine_arm_loss rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected morphinan_amine_arm_loss rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_codeine(self):
         dag_no = _run_compute_dags(self.CODEINE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.CODEINE, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected morphinan_amine_arm_loss rule to add at least one new node for codeine"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected morphinan_amine_arm_loss rule to add at least one new node for codeine"
 
     def test_prepass_no_change_naphthalene(self):
         dag_no = _run_compute_dags(self.NAPHTHALENE, smarts_prepass=False)
@@ -2167,9 +2193,9 @@ class TestDesoxymorphinanRingCleavage:
     def test_prepass_adds_fragments_to_dag_levallorphan(self):
         dag_no = _run_compute_dags(self.LEVALLORPHAN, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.LEVALLORPHAN, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected desoxymorphinan_ring_cleavage rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected desoxymorphinan_ring_cleavage rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_levorphanol(self):
         dag_no = _run_compute_dags(self.LEVORPHANOL, smarts_prepass=False)
@@ -2344,9 +2370,9 @@ class TestDesoxymorphinanAromaticCoreRelease:
     def test_prepass_adds_fragments_to_dag_levallorphan(self):
         dag_no = _run_compute_dags(self.LEVALLORPHAN, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.LEVALLORPHAN, smarts_prepass=True)
-        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
-            "Expected desoxymorphinan_aromatic_core_release rule to add at least one new node"
-        )
+        assert (
+            dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"]
+        ), "Expected desoxymorphinan_aromatic_core_release rule to add at least one new node"
 
     def test_prepass_adds_fragments_to_dag_levorphanol(self):
         dag_no = _run_compute_dags(self.LEVORPHANOL, smarts_prepass=False)

@@ -75,8 +75,11 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   a `2g.20gb` slice at `lb16` (~15.8 GiB projected against 26.9 GiB measured at `lb64`), but that
   slice carries 2/8 memory slices against the 3g profile's 4/8 for 57% of the price, on a workload
   whose NVML memory utilization runs 72-90%. Stage A therefore submits the control on both slices
-  and lets the measured `min/epoch` ratio choose between 8 jobs at n=1 and 14 jobs at n=2. The plan excludes an LR arm because the
-  `lr_schedule_type` forwarding is still dropped at `spectrum_pl.py:1766`, and records that the
+  and lets the measured `min/epoch` ratio choose between 8 jobs at n=1 and 14 jobs at n=2. The plan
+  excluded an LR arm because the `lr_schedule_type` forwarding was dropped in
+  `SpectrumPL.configure_optimizers`; **that forwarding is fixed as of 2026-09-21**
+  (`spectrum_pl.py:1782-1815`, `fragnnet_pl.py:1511`), so an LR arm is now available and the
+  exclusion no longer applies. The plan records that the
   `cc_*` dropouts listed as unswept are FraGNNet-only and inert for MASShatter. Configs resolved and
   one job script generated and syntax-checked locally outside the repository; nothing was generated
   in `slurm_scripts/` and no job was submitted. Next: generate and submit the `ms_reg_ctrl_a` pilot
@@ -92,9 +95,10 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   the one evaluated (Jaccard 0.317/0.611 at dropout 0 under `batch`, exactly 1.000 under `layer`,
   `graph` and `none`); normalizing a residual branch pins its magnitude for `batch`, `layer` and
   `graph` alike, so switching normalization does not restore a layer's ability to attenuate itself;
-  and `SpectrumPL.configure_optimizers` still drops `lr_schedule_type`/`lr_total_steps`/`lr_min_ratio`,
-  giving 3.774e-04 instead of the configured 1.000e-05 at step 100,000. Next: fix that forwarding,
-  then measure the BatchNorm candidate-set gap on a trained checkpoint before any new training arm.
+  and `SpectrumPL.configure_optimizers` dropped `lr_schedule_type`/`lr_total_steps`/`lr_min_ratio`,
+  giving 3.774e-04 instead of the configured 1.000e-05 at step 100,000. **That forwarding is fixed
+  as of 2026-09-21**; runs before that date trained on exponential decay whatever their config said.
+  Next: measure the BatchNorm candidate-set gap on a trained checkpoint before any new training arm.
   It also records the 2026-09-19 decision to drop the atom decoder going forward: epoch-matched it
   costs no cosine (-0.0018, inside the replicate floor) while running 1.8x faster per epoch, and
   `config/template.yml` already defaults it to 0, so the recommended normalization arm

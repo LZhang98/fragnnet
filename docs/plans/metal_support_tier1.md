@@ -83,7 +83,7 @@ assert mol.GetNumAtoms() == 3          # C, Hg, Cl — not disconnected
 
 ## Change 3 — Update `num_elements` in configs
 
-**File:** `config/fragnnet_template.yml` line 156
+**File:** `config/template.yml` line 526
 
 `num_elements` is the count of heavy elements used in formula embeddings. It is hardcoded
 in YAML and must match `NUM_HEAVY_ELEMENTS` in `frag_utils.py` at runtime.

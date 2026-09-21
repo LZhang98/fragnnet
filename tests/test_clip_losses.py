@@ -114,9 +114,9 @@ class TestSoftClipLoss:
 
         loss_soft = soft_clip_loss(spec, mol, fps, temperature=0.07)
         loss_clip = clip_loss(spec, mol, temperature=0.07)
-        assert th.isclose(loss_soft, loss_clip, atol=1e-5), (
-            f"Expected soft_clip≈clip_loss with identity fps, got {loss_soft:.6f} vs {loss_clip:.6f}"
-        )
+        assert th.isclose(
+            loss_soft, loss_clip, atol=1e-5
+        ), f"Expected soft_clip≈clip_loss with identity fps, got {loss_soft:.6f} vs {loss_clip:.6f}"
 
     def test_duplicate_fps_reduces_penalty_for_misaligned_embeddings(self):
         # Two molecules with identical fps (Tanimoto=1 for all pairs) →
@@ -138,8 +138,6 @@ class TestSoftClipLoss:
         th.manual_seed(6)
         N = 5
         fps = (th.rand(N, 128) > 0.6).float()
-        spec = _unit(th.randn(N, 16))
-        mol = _unit(th.randn(N, 16))
 
         # Patch to expose the internal tanimoto matrix via known fps.
         dots = fps @ fps.t()
@@ -178,7 +176,6 @@ class TestSoftClipLoss:
 
     def test_missing_fps_raises(self):
         # _get_mol_fps should raise when fingerprint key absent from batch.
-        from types import SimpleNamespace
 
         from fragnnet.pl_model.spectrum_mol_clip_pl import SpectrumMolClipPL
 

@@ -198,7 +198,7 @@ def test_process_ms_gym_infers_negative_ion_mode():
 
         assert len(extra_df) == 1
         assert extra_df.iloc[0]["ion_mode"] == "P"
-        assert extra_df.iloc[0]["normalized"] == True
+        assert extra_df.iloc[0]["normalized"]
         assert extra_df.iloc[0]["col_energy"] == "NCE=30%"
     finally:
         Path(tsv_fp).unlink()

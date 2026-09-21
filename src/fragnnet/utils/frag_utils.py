@@ -5,9 +5,7 @@ import json
 import logging
 import os
 import pickle
-import sys
 import tarfile
-import traceback
 import zlib
 from collections import Counter
 from hashlib import blake2b
@@ -46,6 +44,8 @@ from fragnnet.utils.formula_utils import (
     formula_to_peak_mzs,
 )
 from fragnnet.utils.misc_utils import PPM, ProgressLogger, progress_wrapper
+
+logger = logging.getLogger(__name__)
 
 # Fragment index dtype (change here to update everywhere)
 # uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
@@ -156,7 +156,7 @@ def convert_cc_mask_to_int(cc: list | np.ndarray) -> int:
     return sum([2**i for i in cc])
 
 
-def convert_cc_int_to_mask(num_nodes: int, cc_int: int, bitmask=True) -> tuple[int]:
+def convert_cc_int_to_mask(num_nodes: int, cc_int: int, bitmask: bool = True) -> tuple[int]:
     """_summary_
 
     Args:
@@ -180,7 +180,7 @@ def convert_cc_int_to_mask(num_nodes: int, cc_int: int, bitmask=True) -> tuple[i
     return cc
 
 
-def convert_cc_int_to_np_mask(num_nodes: int, cc_int: int, bitmask=True) -> np.ndarray:
+def convert_cc_int_to_np_mask(num_nodes: int, cc_int: int, bitmask: bool = True) -> np.ndarray:
     """_summary_
 
     Args:
@@ -211,7 +211,9 @@ def cc_bit_mask_to_atom_idx(cc: list | np.ndarray) -> np.ndarray:
     return atom_ids
 
 
-def get_fraggen_input_arrays(mol_d: dict):
+def get_fraggen_input_arrays(
+    mol_d: dict,
+) -> tuple[int, int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """_summary_
 
     Args:
@@ -237,7 +239,9 @@ def get_fraggen_input_arrays(mol_d: dict):
     return num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx
 
 
-def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
+def extract_mol_info(
+    smiles_or_mol: "str | Chem.rdchem.Mol", use_default_valence: bool = False
+) -> dict:
     """Method to exatract mol infomation in to dict
 
     Args:
@@ -389,7 +393,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
 
 def compute_cc_h_cap(
     cc_atom_ids: np.ndarray, ve_arr: np.ndarray, sbond_arr: np.ndarray, num_radicals: int
-):
+) -> int:
     """compute max amount of Hs a cc can have.
         For any ccs the max amount of Hs it can have is the congifcation where all the bond are single
         And all the atom has max amount of Hs
@@ -421,7 +425,7 @@ def compute_cc_h_floor(
     bonds: np.ndarray,
     atoms_to_bonds: dict,
     bond_mask_arr: np.ndarray,
-):
+) -> int:
     """compute min amount of Hs a cc can have.
 
     Args:
@@ -470,7 +474,7 @@ def compute_approximate_formula(
     max_h_transfer: int,
     formula_strs: bool = False,
     bitmask: bool = True,
-    base_formula=None,
+    base_formula: np.ndarray | None = None,
 ) -> tuple[dict[int, str] | dict[int, np.ndarray], dict[int, int]]:
     """
     Given a connected component (fragment) of a molecule, compute all possible formulas
@@ -607,7 +611,12 @@ def update_bonds(
     return sbond_arr, bond_mask_arr
 
 
-def compute_approximate_cchs(ccs, mol_d, h_prior=False, max_h_transfer=MAX_H_TRANSFER):
+def compute_approximate_cchs(
+    ccs: list | np.ndarray,
+    mol_d: dict,
+    h_prior: bool = False,
+    max_h_transfer: int = MAX_H_TRANSFER,
+) -> set:
     """
     Enumerate all valid (fragment, hydrogen count) pairs for a set of fragments (connected components).
     For each fragment, compute the allowed hydrogen count range and return all valid combinations.
@@ -652,7 +661,7 @@ def compute_approximate_cchs(ccs, mol_d, h_prior=False, max_h_transfer=MAX_H_TRA
     return all_cchs
 
 
-def cc_to_formula_arr(cc, elems, bitmask=False):
+def cc_to_formula_arr(cc: list | np.ndarray, elems: list, bitmask: bool = False) -> np.ndarray:
     """
     Convert a fragment (connected component) to a formula array (element counts, excluding hydrogens).
 
@@ -677,7 +686,7 @@ def cc_to_formula_arr(cc, elems, bitmask=False):
     return formula_arr
 
 
-def cc_bitmask_to_formula_arr(cc, elem_idxs) -> np.ndarray:
+def cc_bitmask_to_formula_arr(cc: np.ndarray, elem_idxs: np.ndarray) -> np.ndarray:
     """
     Fast conversion of a fragment bitmask to a formula array (element counts, excluding hydrogens).
     Uses element indices for efficient counting.
@@ -751,18 +760,18 @@ def formula_arr_to_str(
 
 
 def compute_frag_peak_stats(
-    peaks,
-    formula_peak_mzs,
-    formula_peak_probs,
-    idx_by_h_delta,
-    prec_mz,
-    allowed_h_transfer,
-    tolerance=0.01,
-    prec_type="[M+H]+",
-    is_ppm=False,
-    inst_type=None,
-    inst_type_tol=None,
-):
+    peaks: np.ndarray,
+    formula_peak_mzs: np.ndarray,
+    formula_peak_probs: np.ndarray,
+    idx_by_h_delta: dict,
+    prec_mz: float,
+    allowed_h_transfer: int,
+    tolerance: float = 0.01,
+    prec_type: str = "[M+H]+",
+    is_ppm: bool = False,
+    inst_type: str | None = None,
+    inst_type_tol: dict | None = None,
+) -> pd.Series:
     """_summary_
 
     Args:
@@ -891,7 +900,7 @@ def th_long_to_mask(long: th.Tensor) -> th.Tensor:
     return long.bitwise_and(mask).ne(0).reshape(long.shape[0], -1)
 
 
-def th_mask_to_long(mask):
+def th_mask_to_long(mask: th.Tensor) -> th.Tensor:
     """convert torch binary mask to 64 bits ints, MASK_SIZE//64 number of int are returned per row
     Args:
         long (_type_): N x MASK_SIZE//64 th.Tensor of int
@@ -1372,9 +1381,7 @@ def compute_dags(
             formula_counts[formula] = formula_counts.get(formula, 0) + 1
 
     # map formulae indices
-    formula_to_idx = {
-        formula: idx for idx, formula in enumerate(sorted(list(formula_counts.keys())))
-    }
+    formula_to_idx = {formula: idx for idx, formula in enumerate(sorted(formula_counts.keys()))}
     idx_to_formula = {idx: formula for formula, idx in formula_to_idx.items()}
     formula_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
 
@@ -1425,18 +1432,17 @@ def compute_dags(
 
     # map nodes to nb_isomorphism indices
     if nb_isomorphic and node_nb_hashes is not None:
-        nb_iso_map = {hash: idx for idx, hash in enumerate(sorted(list(set(node_nb_hashes))))}
+        nb_iso_map = {hash: idx for idx, hash in enumerate(sorted(set(node_nb_hashes)))}
         node_nb_iso_idx = np.array(
             [nb_iso_map[hash] for hash in node_nb_hashes], dtype=FRAG_INDEX_DTYPE
         ).reshape(-1, 1)
         # validate nb iso indices
-        if node_nb_iso_idx.size > 0:
-            if np.any(node_nb_iso_idx < 0) or np.any(
-                node_nb_iso_idx > np.iinfo(FRAG_INDEX_DTYPE).max
-            ):
-                raise ValueError(
-                    f"node_nb_iso_idx contains invalid values outside {FRAG_INDEX_DTYPE} range"
-                )
+        if node_nb_iso_idx.size > 0 and (
+            np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(FRAG_INDEX_DTYPE).max)
+        ):
+            raise ValueError(
+                f"node_nb_iso_idx contains invalid values outside {FRAG_INDEX_DTYPE} range"
+            )
         dag_num_nodes_nb = len(set(node_nb_hashes))
     else:
         node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0], 0), dtype=FRAG_INDEX_DTYPE)
@@ -1476,7 +1482,7 @@ def compute_dags(
     formula_peak_mzs = []
     formula_peak_probs = []
     peaks_for_element_cache = {}
-    for formula, idx in formula_to_idx.items():
+    for formula, _idx in formula_to_idx.items():
         if formula == "":
             peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA, dtype=np.float32)
             peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA, dtype=np.float32)
@@ -1554,9 +1560,9 @@ def compute_dags(
         edge_diff_h_range.append(diff_h_range)
 
     assert len(edge_diff_cc_mask) == len(edge_diff_formula_mask)
-    assert len(edge_diff_cc_mask) > 0 or pyg_node_feats.shape[0] == 1, (
-        f"DAG has no edges, with {pyg_node_feats.shape[0]} nodes"
-    )
+    assert (
+        len(edge_diff_cc_mask) > 0 or pyg_node_feats.shape[0] == 1
+    ), f"DAG has no edges, with {pyg_node_feats.shape[0]} nodes"
 
     # Handle case when there are no edges
     if len(edge_diff_cc_mask) == 0:
@@ -1644,7 +1650,7 @@ def compute_dags(
     return frag_d
 
 
-def get_node_feats(node_feats: th.Tensor, node_feat_idxs: th.Tensor, key: str):
+def get_node_feats(node_feats: th.Tensor, node_feat_idxs: th.Tensor, key: str) -> th.Tensor:
     """get node features by key used for pyg
 
     Args:
@@ -1662,7 +1668,7 @@ def get_node_feats(node_feats: th.Tensor, node_feat_idxs: th.Tensor, key: str):
     return node_feats
 
 
-def get_edge_feats(edge_feats: th.Tensor, edge_feat_idxs: int, key: str):
+def get_edge_feats(edge_feats: th.Tensor, edge_feat_idxs: int, key: str) -> th.Tensor:
     """get edege feats used for pyg
 
     Args:
@@ -1803,7 +1809,7 @@ def dump_dag_pickle(fp: str, dag_d: dict) -> None:
     _dump_pickle_file(fp, dag_d)
 
 
-def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
+def dump_dag_hdf5(h5_group: "_h5py.Group", dag_d: dict) -> None:
     """Write one DAG dictionary into an open h5py group.
 
     All PyTorch tensors are converted to numpy arrays before writing.
@@ -1886,7 +1892,7 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
         h5_group.attrs[key] = bool(dag_d[key])
 
 
-def initialize_packed_dag_hdf5(h5_file) -> None:
+def initialize_packed_dag_hdf5(h5_file: "_h5py.File") -> None:
     """Initialize an open HDF5 file for packed DAG storage.
 
     Creates the shared byte-blob and index datasets used by
@@ -1926,7 +1932,7 @@ def initialize_packed_dag_hdf5(h5_file) -> None:
     )
 
 
-def dump_dag_hdf5_packed(h5_file, mol_id: str | int, dag_d: dict) -> None:
+def dump_dag_hdf5_packed(h5_file: "_h5py.File", mol_id: str | int, dag_d: dict) -> None:
     """Append one compressed DAG payload to a packed HDF5 file.
 
     Args:
@@ -1982,7 +1988,7 @@ def _load_dag_hdf5_packed(h5_file, mol_id: str | int) -> dict:
     return pickle.loads(zlib.decompress(compressed_payload))
 
 
-def load_dag_hdf5(h5_file, mol_id: str | int) -> dict:
+def load_dag_hdf5(h5_file: "_h5py.File", mol_id: str | int) -> dict:
     """Read one DAG dictionary from an open HDF5 file, packed or legacy format.
 
     Args:
@@ -1999,7 +2005,7 @@ def load_dag_hdf5(h5_file, mol_id: str | int) -> dict:
     return load_dag_hdf5_from_group(h5_file[f"{int(mol_id)}"])
 
 
-def load_dag_hdf5_from_group(h5_group) -> dict:
+def load_dag_hdf5_from_group(h5_group: "_h5py.Group") -> dict:
     """Read one DAG dictionary from a legacy per-molecule HDF5 group.
 
     Numpy arrays are converted back to PyTorch tensors with their original
@@ -2070,7 +2076,7 @@ def load_dag_hdf5_from_group(h5_group) -> dict:
     return dag_d
 
 
-def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = False):
+def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = False) -> None:
     """save frag_d use pickle if is_compressed save as .pbz
     Args:
         frag_d (dict): frag_d to save
@@ -2105,7 +2111,7 @@ def _legacy_frag_names(mol_id: str | int, is_compressed: bool) -> list[str]:
     ]
 
 
-def load_frag_d(mol_id: str | int, frag_dp: str, is_compressed: bool = False):
+def load_frag_d(mol_id: str | int, frag_dp: str, is_compressed: bool = False) -> dict | None:
     """Load a fragment DAG dictionary from disk.
 
     Supports folder, tar archive, and zip archive backends.  The canonical
@@ -2259,7 +2265,7 @@ def get_subgraph_hashes(
     node_to_edge_idx: np.ndarray,
     include_bond_type: bool,
     max_iterations: int,
-):
+) -> list:
     subgraph_hashes = []
     num_subgraphs = nodes_mask_matrix.shape[0]
     for i in range(num_subgraphs):
@@ -2278,12 +2284,12 @@ def get_subgraph_hashes(
 
 
 def timed_get_dags(
-    mol,
-    mol_id,
-    max_depth,
-    h_prior,
-    max_h_transfer,
-    max_time,
+    mol: "str | Chem.rdchem.Mol",
+    mol_id: str | int,
+    max_depth: int,
+    h_prior: bool,
+    max_h_transfer: int,
+    max_time: float,
     isotopes: bool,
     nb_isomorphic: bool,
     wl_max_iterations: int,
@@ -2322,9 +2328,7 @@ def timed_get_dags(
         # don't retry, theres a bug
         if type(mol) is not str:
             mol = Chem.MolToSmiles(mol)
-        print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr)
-        print("> Traceback", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        logger.exception("Non-timeout error, aborting: %r Input %s", e, mol)
     return mol_id, {}
 
 
@@ -2503,7 +2507,6 @@ def compute_boundary_mask(
         boundary_mask[f_start:f_end] = bm > 0
 
     return boundary_mask
-    return meta_info
 
 
 def compute_boundary_pair_idxs(

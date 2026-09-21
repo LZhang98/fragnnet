@@ -189,7 +189,8 @@ evaluate one mature checkpoint on fixed train/validation subsets in evaluation m
 Before a cosine-LR control, wire and verify the inherited MASShatter scheduler options;
 current setup silently uses exponential scheduling when enabled. No experiments launched.
 
-Execution update (2026-09-11): the [W&B screen](../findings/wandb_screen_2026_09_11.md)
+Execution update (2026-09-11): the 2026-09-11 W&B screen (never written up in `docs/findings/`;
+the link that stood here pointed at a file that does not exist)
 records runs launched after the preparation handoff below, including loss, support,
 subformula-filtered, and shorter-warmup arms. Its observed results and next checks
 supersede the historical no-submission statements in this plan.

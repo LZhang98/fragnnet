@@ -1,10 +1,12 @@
 import copy
 import importlib
+import logging
 import os
 import re
 import warnings
+from collections.abc import Callable, Iterable, Iterator
 from pprint import pformat
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import joblib
 import numpy as np
@@ -41,7 +43,7 @@ ELEMENT_TO_MASS = {element: MASS(element) for element in VALID_ELEMENTS}
 
 # don't do expesive import in runtime
 if TYPE_CHECKING:
-    pass
+    from rdkit import Chem
 
 JOBLIB_BACKEND = "loky"
 FRAGNNET_JOBLIB_N_JOBS = os.environ.get("FRAGNNET_JOBLIB_N_JOBS", None)
@@ -50,7 +52,7 @@ JOBLIB_N_JOBS = (
 )
 JOBLIB_TIMEOUT = 10800  # default is 300 seconds for "loky"
 if FRAGNNET_JOBLIB_N_JOBS is not None:
-    print(f"Using FRAGNNET_JOBLIB_N_JOBS={FRAGNNET_JOBLIB_N_JOBS} for joblib n_jobs")
+    logging.info("Using FRAGNNET_JOBLIB_N_JOBS=%s for joblib n_jobs", FRAGNNET_JOBLIB_N_JOBS)
 
 
 def rdkit_import(*module_strs: str) -> tuple:
@@ -81,7 +83,7 @@ def normalize_ints(ints: list[float]) -> list[float]:
     return ints
 
 
-def randomize_smiles(smiles, rseed, isomeric=False, kekule=False):
+def randomize_smiles(smiles: str, rseed: int, isomeric: bool = False, kekule: bool = False) -> str:
     """Perform a randomization of a SMILES string must be RDKit sanitizable"""
     if rseed == -1:
         return smiles
@@ -112,13 +114,13 @@ def split_smiles(smiles_str: str) -> list:
     token_list = []
     pattern = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
     regex = re.compile(pattern)
-    token_list = [token for token in regex.findall(smiles_str)]
+    token_list = list(regex.findall(smiles_str))
     assert smiles_str == "".join(token_list)
     return token_list
 
 
-def list_replace(l, d):
-    return [d[data] for data in l]
+def list_replace(values: list, d: dict) -> list:
+    return [d[data] for data in values]
 
 
 def mol_from_inchi(
@@ -329,7 +331,7 @@ def mol_to_inchikey_s(mol: "Chem.rdchem.Mol") -> str:
     return inchikey_s
 
 
-def mol_to_inchi(mol) -> str:
+def mol_to_inchi(mol: "Chem.rdchem.Mol") -> str:
     """get mol weight from mol object
 
     Args:
@@ -342,12 +344,12 @@ def mol_to_inchi(mol) -> str:
     rdinchi = modules[0]
     try:
         inchi = rdinchi.MolToInchi(mol, options="-SNon")[0]
-    except:
+    except Exception:
         inchi = np.nan
     return inchi
 
 
-def mol_to_mol_weight(mol, exact=True) -> float:
+def mol_to_mol_weight(mol: "Chem.rdchem.Mol", exact: bool = True) -> float:
     """get mol weight from mol object
     Args:
             mol (_type_): mol object
@@ -412,7 +414,7 @@ def mol_to_num_bonds(mol: "Chem.rdchem.Mol", heavy: bool = True) -> int | float:
     """
     try:
         num_bonds = mol.GetNumBonds(onlyHeavy=heavy)
-    except:
+    except Exception:
         num_bonds = np.nan
     return num_bonds
 
@@ -430,7 +432,7 @@ def mol_to_num_radicals(mol: "Chem.rdchem.Mol") -> int | float:
         num_radicals = 0
         for atom in mol.GetAtoms():
             num_radicals += atom.GetNumRadicalElectrons()
-    except:
+    except Exception:
         num_radicals = np.nan
     return num_radicals
 
@@ -503,7 +505,7 @@ def smiles_to_selfies(smiles: str) -> str:
     return selfies
 
 
-def get_tanmimoto(fp, other_fp):
+def get_tanmimoto(fp: Any, other_fp: Any) -> float:
     """return tanmimoto distance, does not work with np yet
 
     Args:
@@ -518,8 +520,11 @@ def get_tanmimoto(fp, other_fp):
 
 
 def make_morgan_fingerprint(
-    mol: "Chem.rdchem.Mol", radius: int = 3, nbits: int = 2048, covert_to_np=True
-) -> np.array:
+    mol: "Chem.rdchem.Mol",
+    radius: int = 3,
+    nbits: int = 2048,
+    covert_to_np: bool = True,
+) -> np.ndarray:
     """Make Morgan fingerprint from mol object.
 
     Args:
@@ -591,7 +596,7 @@ def make_maccs_fingerprint(mol: "Chem.rdchem.Mol") -> np.ndarray:
     return fp_arr
 
 
-def remove_stereochemistry(mol: "Chem.rdchem.Mol"):
+def remove_stereochemistry(mol: "Chem.rdchem.Mol") -> None:
     """_summary_
 
     Args:
@@ -615,7 +620,7 @@ def split_selfies(selfies_str: str) -> list[str]:
     return selfies_tokens
 
 
-def seq_apply(iterator, func, need_unpack=False):
+def seq_apply(iterator: Iterable, func: Callable, need_unpack: bool = False) -> list:
     result = []
     for i in iterator:
         if not need_unpack:
@@ -626,13 +631,13 @@ def seq_apply(iterator, func, need_unpack=False):
 
 
 def par_apply(
-    iterator,
-    func,
-    need_unpack=False,
-    return_as_generator=False,
-    n_jobs=JOBLIB_N_JOBS,
-    unordered=False,
-):
+    iterator: Iterable,
+    func: Callable,
+    need_unpack: bool = False,
+    return_as_generator: bool = False,
+    n_jobs: int = JOBLIB_N_JOBS,
+    unordered: bool = False,
+) -> list | Iterator:
     """Apply a function to each item in an iterator in parallel.
 
     Args:
@@ -683,7 +688,9 @@ def par_apply(
     return result
 
 
-def par_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True):
+def par_apply_series(
+    series: pd.Series, func: Callable, tqdm_leave: bool = True, use_tqdm: bool = True
+) -> pd.Series:
     """Apply a function to each item in a pandas Series in parallel.
 
     Args:
@@ -700,7 +707,7 @@ def par_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True):
         else series.items()
     )
 
-    def series_func(tup):
+    def series_func(tup: tuple) -> Any:
         return func(tup[1])
 
     result_list = par_apply(series_iter, series_func)
@@ -708,7 +715,9 @@ def par_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True):
     return result_series
 
 
-def seq_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True) -> pd.Series:
+def seq_apply_series(
+    series: pd.Series, func: Callable, tqdm_leave: bool = True, use_tqdm: bool = True
+) -> pd.Series:
     """Apply a function to each item in a pandas Series in sequence.
 
     Args:
@@ -725,7 +734,7 @@ def seq_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True) -> pd
         else series.items()
     )
 
-    def series_func(tup):
+    def series_func(tup: tuple) -> Any:
         return func(tup[1])
 
     result_list = seq_apply(series_iter, series_func)
@@ -733,7 +742,7 @@ def seq_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True) -> pd
     return result_series
 
 
-def par_apply_df_rows(df, func, use_tqdm: bool = True):
+def par_apply_df_rows(df: pd.DataFrame, func: Callable, use_tqdm: bool = True) -> pd.Series:
     """Apply a function to each row of a DataFrame in parallel.
 
     Args:
@@ -748,7 +757,7 @@ def par_apply_df_rows(df, func, use_tqdm: bool = True):
         tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
     )
 
-    def df_func(tup):
+    def df_func(tup: tuple) -> Any:
         return func(tup[1])
 
     result_list = par_apply(df_iter, df_func)
@@ -759,7 +768,9 @@ def par_apply_df_rows(df, func, use_tqdm: bool = True):
     return result_series
 
 
-def par_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...]:
+def par_apply_df_rows_t(
+    df: pd.DataFrame, func: Callable, use_tqdm: bool = True
+) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in parallel.
 
     Args:
@@ -773,7 +784,7 @@ def par_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...
         tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
     )
 
-    def df_func(tup):
+    def df_func(tup: tuple) -> Any:
         return func(tup[1])
 
     result_list = par_apply(df_iter, df_func)
@@ -781,7 +792,7 @@ def par_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...
     return result_series
 
 
-def seq_apply_df_rows(df, func, use_tqdm: bool = True):
+def seq_apply_df_rows(df: pd.DataFrame, func: Callable, use_tqdm: bool = True) -> pd.Series:
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series.
 
     Args:
@@ -795,7 +806,7 @@ def seq_apply_df_rows(df, func, use_tqdm: bool = True):
         tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
     )
 
-    def df_func(tup):
+    def df_func(tup: tuple) -> Any:
         return func(tup[1])
 
     result_list = seq_apply(df_iter, df_func)
@@ -805,13 +816,15 @@ def seq_apply_df_rows(df, func, use_tqdm: bool = True):
     return result_series
 
 
-def seq_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...]:
+def seq_apply_df_rows_t(
+    df: pd.DataFrame, func: Callable, use_tqdm: bool = True
+) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series."""
     df_iter = (
         tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
     )
 
-    def df_func(tup):
+    def df_func(tup: tuple) -> Any:
         return func(tup[1])
 
     result_list = seq_apply(df_iter, df_func)
@@ -820,7 +833,7 @@ def seq_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...
     return result_series
 
 
-def parse_ace_str(ce_str):
+def parse_ace_str(ce_str: str) -> float:
     if none_or_nan(ce_str):
         return np.nan
     matches = {
@@ -842,7 +855,7 @@ def parse_ace_str(ce_str):
     return np.nan
 
 
-def parse_nce_str(ce_str):
+def parse_nce_str(ce_str: str) -> float:
     if none_or_nan(ce_str):
         return np.nan
     matches = {
@@ -854,12 +867,16 @@ def parse_nce_str(ce_str):
         r"^[\d]+% resonant relative/normalized$": lambda x: float(x.split("%")[0]),
         # other ones
         # r"^[\d]+[.]?[\d]*$": lambda x: 100.*float(x) if float(x) < 2. else np.nan, # this case is ambiguous
-        r"^[\d]+[.]?[\d]*[ ]?[%]? \(nominal\)$": lambda x: float(x.rstrip(" %(nominal)")),
+        r"^[\d]+[.]?[\d]*[ ]?[%]? \(nominal\)$": lambda x: float(
+            x.removesuffix(" (nominal)").rstrip(" %")
+        ),
         r"^HCD [\d]+[.]?[\d]*%$": lambda x: float(x.lstrip("HCD ").rstrip("%")),
         r"^[\d]+[.]?[\d]* NCE$": lambda x: float(x.rstrip("NCE")),
         r"^[\d]+[.]?[\d]*\(NCE\)$": lambda x: float(x.rstrip("(NCE)")),
         r"^[\d]+[.]?[\d]*[ ]?%$": lambda x: float(x.rstrip(" %")),
-        r"^HCD \(NCE [\d]+[.]?[\d]*%\)$": lambda x: float(x.lstrip("HCD (NCE").rstrip("%)")),
+        r"^HCD \(NCE [\d]+[.]?[\d]*%\)$": lambda x: float(
+            x.removeprefix("HCD (NCE ").removesuffix("%)")
+        ),
     }
     for k, v in matches.items():
         if re.match(k, ce_str):
@@ -873,13 +890,13 @@ def parse_nce_str(ce_str):
 #   r"[\d]+[.]?[\d]*-[\d]+[.]?[\d]*": lambda x: (float(x.split("-")[0]),float(x.split("-")[1])),
 
 
-def parse_inst_info(df):
+def parse_inst_info(df: pd.Series) -> tuple[str, str]:
     # TODO: separate FT from Orbitrap
 
     inst_type_str = df["inst_type"]
-    inst_str = df["inst"] if "inst" in df else np.nan
-    frag_mode_str = df["frag_mode"] if "frag_mode" in df else np.nan
-    col_energy_str = df["col_energy"] if "col_energy" in df else np.nan
+    inst_str = df.get("inst", np.nan)
+    frag_mode_str = df.get("frag_mode", np.nan)
+    col_energy_str = df.get("col_energy", np.nan)
     # instrument type
     if inst_type_str == "EI":
         assert inst_str == "EI"
@@ -932,12 +949,9 @@ def parse_inst_info(df):
             "orbitrap": "FT",
             "qtof": "QTOF",
         }
-        if inst_type_str in inst_type_map:
-            inst_type = inst_type_map[inst_type_str]
-        else:
-            inst_type = "Other"
+        inst_type = inst_type_map.get(inst_type_str, "Other")
     # fragmentation mode
-    if inst_type_str == "HCD" or type(col_energy_str) == str and "HCD" in col_energy_str:
+    if inst_type_str == "HCD" or (isinstance(col_energy_str, str) and "HCD" in col_energy_str):
         frag_mode = "HCD"
     elif none_or_nan(frag_mode_str) or frag_mode_str == "CID":
         # default is CID if we don't know
@@ -949,7 +963,7 @@ def parse_inst_info(df):
     return inst_type, frag_mode
 
 
-def parse_ion_mode_str(ion_mode_str):
+def parse_ion_mode_str(ion_mode_str: str) -> str | float:
     if none_or_nan(ion_mode_str):
         return np.nan
     if ion_mode_str in ["P", "N", "E", "EI"]:
@@ -962,14 +976,14 @@ def parse_ion_mode_str(ion_mode_str):
         return np.nan
 
 
-def parse_ri_str(ri_str):
+def parse_ri_str(ri_str: str) -> float:
     if none_or_nan(ri_str):
         return np.nan
     else:
         return float(ri_str)
 
 
-def parse_prec_type_str(prec_type_str):
+def parse_prec_type_str(prec_type_str: str) -> str | float:
     if none_or_nan(prec_type_str):
         return np.nan
     if prec_type_str == "EI":
@@ -989,7 +1003,7 @@ def parse_prec_type_str(prec_type_str):
     return prec_type_str
 
 
-def infer_prec_mz(df):
+def infer_prec_mz(df: pd.Series) -> float:
     # these were observed to be missing prec_mz in MoNA
     prec_type_to_mass_diff = {
         "[M+HCOO]-": MASS("H") + MASS("C") + 2 * MASS("O") + ELECTRON_MASS,
@@ -1014,7 +1028,7 @@ def infer_prec_mz(df):
     return prec_mz
 
 
-def parse_peaks_str(peaks_str):
+def parse_peaks_str(peaks_str: str) -> list | float:
     # peaks still represented as string
     if none_or_nan(peaks_str):
         return np.nan
@@ -1030,11 +1044,11 @@ def parse_peaks_str(peaks_str):
     return peaks
 
 
-def composition_to_string(x):
+def composition_to_string(x: Composition) -> str:
     return "".join([a + str(x[a]) for a in sorted(x)])
 
 
-def combine_formulae(formula_1, formula_2):
+def combine_formulae(formula_1: str, formula_2: str) -> str:
     # `formula=` is required: pyteomics reads a positional string as a PEPTIDE SEQUENCE, so
     # Composition("C") is cysteine, not carbon. Any digit-free formula in the one-letter amino
     # acid alphabet (C, N, O, CO, CN, CNO, ...) silently misparsed before this was keyword-ed.
@@ -1050,7 +1064,7 @@ def combine_formulae(formula_1, formula_2):
     return composition_to_string(combine_comp)
 
 
-def parse_product_isotope(annot, precursor):
+def parse_product_isotope(annot: str, precursor: str) -> tuple:
     formula = Composition(formula="")
     precursor = Composition(formula=precursor)
     adducts = []
@@ -1090,12 +1104,12 @@ def parse_product_isotope(annot, precursor):
     return formula, adducts, losses, isotope, charge
 
 
-def is_pep_annot(annot):
+def is_pep_annot(annot: str) -> bool:
     pattern = r"(?:a|b|y)\d+|pi"
     return re.match(pattern, annot) is not None
 
 
-def parse_annotations(row):
+def parse_annotations(row: pd.Series) -> tuple:
     RDLogger = importlib.import_module("rdkit.RDLogger")
     RDLogger.DisableLog("rdApp.*")
     peaks_str = row["peaks"]
@@ -1198,19 +1212,19 @@ def parse_annotations(row):
         return np.nan, np.nan, np.nan, np.nan, np.nan, error
 
 
-def composition_to_mass(formula, isotope):
+def composition_to_mass(formula: str, isotope: int) -> float:
     mass = isotope * NEUTRON_MASS
     for k, v in formula.items():
         mass += MASS(k) * v
     return mass
 
 
-def formula_to_mass(formula):
+def formula_to_mass(formula: str) -> float:
     formula = Composition(formula=formula)
     return composition_to_mass(formula, 0)
 
 
-def convert_peaks_to_float(peaks):
+def convert_peaks_to_float(peaks: list) -> list:
     # assumes no nan
     float_peaks = []
     for peak in peaks:
@@ -1218,10 +1232,10 @@ def convert_peaks_to_float(peaks):
     return float_peaks
 
 
-def get_res(peaks):
+def get_res(peaks: list) -> int:
     # assumes no nan
     ress = []
-    for mz, ints in peaks:
+    for mz, _ints in peaks:
         dec_idx = mz.find(".")
         if dec_idx == -1:
             res = 0
@@ -1232,7 +1246,9 @@ def get_res(peaks):
     return highest_res
 
 
-def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> str | float:
+def get_murcko_scaffold(
+    mol: "Chem.rdchem.Mol", output_type: str = "smiles", include_chirality: bool = False
+) -> str | float:
     """get murcko scaffold from mol object
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -1251,7 +1267,7 @@ def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> s
                 mol=mol, includeChirality=include_chirality
             )
         except Exception as e:
-            warnings.warn(f"failed to get murcko scaffold: {e}")
+            warnings.warn(f"failed to get murcko scaffold: {e}", stacklevel=2)
             scaffold = np.nan
     else:
         raise NotImplementedError
@@ -1332,8 +1348,6 @@ def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
     bond_counts = {"single": 0, "double": 0, "triple": 0, "aromatic": 0}
     cnops_bond_counts = {"C": [-1], "N": [-1], "O": [-1], "P": [-1], "S": [-1], "Cl": [-1]}
     h_counts = 0
-    p_num_bonds = [-1]
-    s_num_bonds = [-1]
     other_atoms = set()
     for atom in mol.GetAtoms():
         atom_symbol = atom.GetSymbol()
@@ -1355,7 +1369,7 @@ def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
         else:
             assert bond_type == rdkit.Chem.rdchem.BondType.AROMATIC
             bond_counts["aromatic"] += 1
-    mol_dict["other_atoms"] = ",".join(sorted(list(other_atoms)))
+    mol_dict["other_atoms"] = ",".join(sorted(other_atoms))
     mol_dict["H_counts"] = h_counts
     for k, v in cnops_counts.items():
         mol_dict[f"{k}_counts"] = v
@@ -1366,8 +1380,7 @@ def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
     return mol_dict
 
 
-def check_num_bonds(mol):
-    rdkit = importlib.import_module("rdkit")
+def check_num_bonds(mol: "Chem.rdchem.Mol") -> bool:
     valid = mol.GetNumBonds() > 0
     return valid
 
@@ -1441,7 +1454,7 @@ def ace_to_nce_helper(ace: float, charge: int, prec_mz: float) -> float:
     return nce
 
 
-def nce_to_ace(row, nce_colname: str) -> float:
+def nce_to_ace(row: pd.Series, nce_colname: str) -> float:
     """convert nce to ace
     Args:
             row (pd.Series): row of the dataframe
@@ -1457,7 +1470,7 @@ def nce_to_ace(row, nce_colname: str) -> float:
     return ace
 
 
-def ace_to_nce(row, ace_colname: str) -> float:
+def ace_to_nce(row: pd.Series, ace_colname: str) -> float:
     """convert ace to nce
     Args:
             row (pd.Series): row of the dataframe
@@ -1473,7 +1486,7 @@ def ace_to_nce(row, ace_colname: str) -> float:
     return nce
 
 
-def fill_missing_nce(row, ace_colname: str, nce_colname: str) -> float:
+def fill_missing_nce(row: pd.Series, ace_colname: str, nce_colname: str) -> float:
     """fill missing nce with ace
     Args:
             row (pd.Series): row of the dataframe
@@ -1490,12 +1503,14 @@ def fill_missing_nce(row, ace_colname: str, nce_colname: str) -> float:
         return nce
     else:
         warnings.warn(
-            f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} from columns {nce_colname}, {ace_colname}"
+            f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} "
+            f"from columns {nce_colname}, {ace_colname}",
+            stacklevel=2,
         )
         return np.nan
 
 
-def fill_missing_ace(row, ace_colname: str, nce_colname: str) -> float:
+def fill_missing_ace(row: pd.Series, ace_colname: str, nce_colname: str) -> float:
     """fill missing ace with nce
     Args:
             row (pd.Series): row of the dataframe
@@ -1512,12 +1527,14 @@ def fill_missing_ace(row, ace_colname: str, nce_colname: str) -> float:
         return ace
     else:
         warnings.warn(
-            f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} from columns {ace_colname}, {nce_colname}"
+            f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} "
+            f"from columns {ace_colname}, {nce_colname}",
+            stacklevel=2,
         )
         return np.nan
 
 
-def parse_mass_gym_ce_str(ce_str):
+def parse_mass_gym_ce_str(ce_str: str) -> tuple[float, bool, bool]:
     """make it comparable to NIST so we can parse it
 
     Args:
@@ -1542,7 +1559,7 @@ def parse_mass_gym_ce_str(ce_str):
     return ce, normalized, ramped
 
 
-def deep_copy_data_dict(data_dict):
+def deep_copy_data_dict(data_dict: dict) -> dict:
     """Deep copy data dict, used to avoid modifying the original dict.
 
     Handles key-tensor pairs and key-ROMol pairs specifically.
@@ -1568,21 +1585,21 @@ def deep_copy_data_dict(data_dict):
     return copied_dict
 
 
-def min_max_normalize(value, min, max):
+def min_max_normalize(value: float, min: float, max: float) -> float:
     """Normalize float values to [0, 1] range."""
     return (value - min) / (max - min + 1e-8)
 
 
-def min_max_denormalize(normalized_value, min, max):
+def min_max_denormalize(normalized_value: float, min: float, max: float) -> float:
     """Denormalize float predictions back to original scale."""
     return normalized_value * (max - min + 1e-8) + min
 
 
-def zscore_normalize(value, mean, std):
+def zscore_normalize(value: float, mean: float, std: float) -> float:
     """Normalize float values using z-score normalization."""
     return (value - mean) / (std + 1e-8)
 
 
-def zscore_denormalize(normalized_value, mean, std):
+def zscore_denormalize(normalized_value: float, mean: float, std: float) -> float:
     """Denormalize float predictions back to original scale."""
     return normalized_value * (std + 1e-8) + mean

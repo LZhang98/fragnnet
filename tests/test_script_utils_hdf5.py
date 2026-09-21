@@ -8,30 +8,32 @@ We test these behaviours directly against inline versions of the loop,
 and via the HDF5-writing helper, without importing the full script_utils
 module (which has optional heavy dependencies: wandb, etc.).
 """
-import tempfile
 
 import h5py
 import numpy as np
 import pytest
 import torch
 
-
 # ---------------------------------------------------------------------------
 # Inline replica of the merged save loop from run_inference_hdf5
 # (lines 1149-1158 in script_utils.py after resolution)
 # ---------------------------------------------------------------------------
 
-def _run_sequential_save_loop(preds_l: dict, sequential_name: set, save_file: h5py.File, spec_start_point: int):
+
+def _run_sequential_save_loop(
+    preds_l: dict, sequential_name: set, save_file: h5py.File, spec_start_point: int
+):
     """Replica of the merged sequential-key save loop."""
+
     def resize_and_save(k, save_v, start):
         if k not in save_file:
             save_file.create_dataset(k, shape=(0,), dtype=save_v.dtype, maxshape=(None,))
         save_file[k].resize(start + len(save_v), axis=0)
-        save_file[k][start:start + len(save_v)] = save_v
+        save_file[k][start : start + len(save_v)] = save_v
 
     save_length = None
     for k in sequential_name:
-        if k not in preds_l:           # ← HEAD guard
+        if k not in preds_l:  # ← HEAD guard
             continue
         save_v = torch.cat(preds_l[k], 0).detach().cpu().numpy()  # ← ccx_run
         if save_length is None:
@@ -45,6 +47,7 @@ def _run_sequential_save_loop(preds_l: dict, sequential_name: set, save_file: h5
 # ---------------------------------------------------------------------------
 # Tests: HEAD guard — missing sequential keys skipped silently
 # ---------------------------------------------------------------------------
+
 
 class TestMissingSequentialKeyGuard:
     """if k not in preds_l: continue — absent keys must not raise."""
@@ -82,7 +85,6 @@ class TestMissingSequentialKeyGuard:
     def test_no_key_error_without_guard_would_raise(self):
         """Demonstrate that accessing preds_l[k] for a missing key raises KeyError."""
         preds_l = {}
-        sequential = {"pred_mzs"}
         with pytest.raises(KeyError):
             _ = preds_l["pred_mzs"]  # what happens without the guard
 
@@ -108,6 +110,7 @@ class TestMissingSequentialKeyGuard:
 # ---------------------------------------------------------------------------
 # Tests: ccx_run change — .detach().cpu().numpy() handles grad + GPU tensors
 # ---------------------------------------------------------------------------
+
 
 class TestDetachCpuConversion:
     """torch.cat(...).detach().cpu().numpy() must handle requires_grad and GPU tensors."""
@@ -165,6 +168,7 @@ class TestDetachCpuConversion:
 # Tests: data integrity — values round-trip correctly
 # ---------------------------------------------------------------------------
 
+
 class TestDataIntegrity:
     """Values written to HDF5 match the input tensors."""
 
@@ -182,14 +186,13 @@ class TestDataIntegrity:
     def test_length_consistency_assertion_fires(self, tmp_path):
         """If two sequential keys have different lengths, the assertion inside the loop raises."""
         preds_l = {
-            "pred_mzs":  [torch.rand(3)],
-            "pred_ints": [torch.rand(5)],   # different length → should assert
+            "pred_mzs": [torch.rand(3)],
+            "pred_ints": [torch.rand(5)],  # different length → should assert
         }
         sequential = {"pred_mzs", "pred_ints"}
         h5_fp = str(tmp_path / "mismatch.h5")
-        with h5py.File(h5_fp, "w") as f:
-            with pytest.raises(AssertionError):
-                _run_sequential_save_loop(preds_l, sequential, f, spec_start_point=8)
+        with h5py.File(h5_fp, "w") as f, pytest.raises(AssertionError):
+            _run_sequential_save_loop(preds_l, sequential, f, spec_start_point=8)
 
     def test_multiple_chunks_append_correctly(self, tmp_path):
         """Calling the loop twice simulates chunk accumulation; values concatenate."""

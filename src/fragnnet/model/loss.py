@@ -1054,7 +1054,11 @@ def get_sparse_cross_entropy_fn(
             oos_tolerance_multiple if dist == "gaussian" else pm_tolerance_multiple
         )
 
-        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
+        def sce_fn(
+            *args: th.Tensor,
+            tol_per_sample: th.Tensor | None = None,
+            min_mz_per_sample: th.Tensor | None = None,
+        ) -> th.Tensor:
             return sparse_cross_entropy_vec(
                 *args,
                 tolerance=tolerance,
@@ -1074,7 +1078,11 @@ def get_sparse_cross_entropy_fn(
         else:
             tolerance_multiple = pm_tolerance_multiple
 
-        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
+        def sce_fn(
+            *args: th.Tensor,
+            tol_per_sample: th.Tensor | None = None,
+            min_mz_per_sample: th.Tensor | None = None,
+        ) -> th.Tensor:
             return sparse_cross_entropy_seq(
                 *args,
                 ce_fn=ce_fn,
@@ -1332,19 +1340,19 @@ def sparse_conditional_entropy_fn(
 def get_edge_loss_fn(edge_loss_fn_type: str, constant: float) -> Callable:
     if edge_loss_fn_type == "quadratic":
 
-        def quad_loss(x):
+        def quad_loss(x: th.Tensor) -> th.Tensor:
             return constant * x**2
 
         return quad_loss
     elif edge_loss_fn_type == "linear":
 
-        def linear_loss(x):
+        def linear_loss(x: th.Tensor) -> th.Tensor:
             return constant * th.abs(x)
 
         return linear_loss
     elif edge_loss_fn_type == "exponential":
 
-        def exp_loss(x):
+        def exp_loss(x: th.Tensor) -> th.Tensor:
             return constant * th.exp(th.abs(x))
 
         return exp_loss
@@ -1767,7 +1775,9 @@ def sparse_jensen_shannon_divergence(
 ###########################################
 
 
-def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
+def clip_loss(
+    spectrum_embeddings: th.Tensor, mol_embeddings: th.Tensor, temperature: float = 0.07
+) -> th.Tensor:
     """
     Compute the CLIP contrastive loss between spectrum and molecule embeddings.
 

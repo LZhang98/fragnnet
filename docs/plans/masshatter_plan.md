@@ -1409,7 +1409,8 @@ and fixed-width beam above. Both of its gates have now run: the support is affor
 only when restricted to minimal two-component cuts, and the decision gate on this
 section resolves against independence (20.5% of DAG-explained intensity needs three or
 more cuts, 84% of it ring-crossing). See
-[masshatter_ring_system_cut_factorization.md](masshatter_ring_system_cut_factorization.md).
+`masshatter_ring_system_cut_factorization.md`, which was never written (the link that stood
+here pointed at a file that does not exist).
 
 A same-ring/radius-2 pairwise Ising correction is chemically targeted, but it
 requires a partition function for normalized mask probabilities and loses the cheap
@@ -1534,8 +1535,9 @@ independently from the ring-system side, where an option becomes a `(cut pattern
 assembly)` pair. The mechanism-variable formulation here is strictly more general: it
 applies to free-bond cuts and to `NeutralLossRule` products whose deleted-bond set is not
 a ring-system pattern at all. Prefer it. See
-[masshatter_ring_system_cut_factorization.md](masshatter_ring_system_cut_factorization.md)
-§9 for the measurements and §9.3 for the narrower variant.
+`masshatter_ring_system_cut_factorization.md` §9 for the measurements and §9.3 for the narrower
+variant; that document was never written (the link that stood here pointed at a file that does
+not exist).
 
 Verify before adoption:
 

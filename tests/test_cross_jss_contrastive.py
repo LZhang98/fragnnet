@@ -8,7 +8,9 @@ import torch as th
 from fragnnet.model.loss import get_cross_jss_contrastive
 
 
-def _make_spectrum(peaks: dict[float, float], batch_idx: int) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+def _make_spectrum(
+    peaks: dict[float, float], batch_idx: int
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
     """Build (mzs, logprobs, batch_idxs) from a {mz: intensity} dict."""
     mzs = th.tensor(list(peaks.keys()), dtype=th.float32)
     ints = th.tensor(list(peaks.values()), dtype=th.float32)
@@ -29,16 +31,20 @@ MZ_BIN_RES = 0.01
 class TestOutputShape:
     def test_shape_batch3(self):
         """Output is [B] for a batch of 3."""
-        specs = [
-            _make_spectrum({100.0: 0.8, 200.0: 0.2}, i) for i in range(3)
-        ]
+        specs = [_make_spectrum({100.0: 0.8, 200.0: 0.2}, i) for i in range(3)]
         true_mzs, true_lp, true_bi = _cat_spectra(specs)
         pred_mzs, pred_lp, pred_bi = true_mzs.clone(), true_lp.clone(), true_bi.clone()
 
         loss = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            pred_mzs, pred_lp, pred_bi,
-            batch_size=3, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            pred_mzs,
+            pred_lp,
+            pred_bi,
+            batch_size=3,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         assert loss.shape == (3,)
 
@@ -49,8 +55,15 @@ class TestOutputShape:
         bi = th.tensor([0, 0])
 
         loss = get_cross_jss_contrastive(
-            mzs, lp, bi, mzs, lp, bi,
-            batch_size=1, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            mzs,
+            lp,
+            bi,
+            mzs,
+            lp,
+            bi,
+            batch_size=1,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         assert loss.shape == (1,)
 
@@ -60,8 +73,15 @@ class TestOutputShape:
         bi = th.tensor([], dtype=th.long)
 
         loss = get_cross_jss_contrastive(
-            empty, empty, bi, empty, empty, bi,
-            batch_size=3, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            empty,
+            empty,
+            bi,
+            empty,
+            empty,
+            bi,
+            batch_size=3,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         assert loss.shape == (3,)
         assert th.allclose(loss, th.zeros(3))
@@ -75,8 +95,15 @@ class TestLossValues:
         bi = th.zeros(3, dtype=th.long)
 
         loss = get_cross_jss_contrastive(
-            mzs, lp, bi, mzs, lp, bi,
-            batch_size=1, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            mzs,
+            lp,
+            bi,
+            mzs,
+            lp,
+            bi,
+            batch_size=1,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         assert loss[0].item() == pytest.approx(0.0, abs=1e-5)
 
@@ -88,9 +115,15 @@ class TestLossValues:
 
         # Perfect: pred == true
         loss_perfect = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, true_lp.clone(), true_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            true_lp.clone(),
+            true_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
 
         # Random: pred is completely wrong molecule for both
@@ -98,9 +131,15 @@ class TestLossValues:
         wrong_b = _make_spectrum({100.0: 0.7, 200.0: 0.3}, 1)
         pred_mzs, pred_lp, pred_bi = _cat_spectra([wrong_a, wrong_b])
         loss_wrong = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            pred_mzs, pred_lp, pred_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            pred_mzs,
+            pred_lp,
+            pred_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
 
         assert loss_perfect.mean() < loss_wrong.mean()
@@ -117,9 +156,15 @@ class TestLossValues:
         pred_lp = true_lp + th.randn_like(true_lp) * 0.5
 
         loss = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, pred_lp, true_bi,
-            batch_size=B, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            pred_lp,
+            true_bi,
+            batch_size=B,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         assert loss.isfinite().all()
 
@@ -135,14 +180,19 @@ class TestJSSMatrix:
 
         T, B = 1.0, 3
         loss = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, true_lp.clone(), true_bi,
-            batch_size=B, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            true_lp.clone(),
+            true_bi,
+            batch_size=B,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
             temperature=T,
         )
         # With JSS diagonal=1, off-diagonal=0:
         # InfoNCE = -1/T + log(exp(1/T) + (B-1)*1) = log(1 + (B-1)*exp(-1/T))
-        import math
         expected = math.log(1 + (B - 1) * math.exp(-1.0 / T))
         assert loss.mean().item() == pytest.approx(expected, abs=1e-4)
 
@@ -159,14 +209,26 @@ class TestJSSMatrix:
         # We're testing that the function doesn't silently symmetrise the matrix.
         # Two runs with swapped true/pred should give different losses.
         loss_fwd = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, pred_lp, true_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            pred_lp,
+            true_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         loss_rev = get_cross_jss_contrastive(
-            true_mzs, pred_lp, true_bi,
-            true_mzs, true_lp, true_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            pred_lp,
+            true_bi,
+            true_mzs,
+            true_lp,
+            true_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         # Should differ because the matrix rows and columns come from different distributions
         assert not th.allclose(loss_fwd, loss_rev, atol=1e-4)
@@ -182,9 +244,15 @@ class TestGradients:
         pred_lp = true_lp.clone().detach().requires_grad_(True)
 
         loss = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, pred_lp, true_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            pred_lp,
+            true_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         loss.mean().backward()
 
@@ -201,8 +269,15 @@ class TestGradients:
         pred_lp = lp.clone().detach().requires_grad_(True)
 
         loss = get_cross_jss_contrastive(
-            mzs, lp, bi, mzs, pred_lp, bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            mzs,
+            lp,
+            bi,
+            mzs,
+            pred_lp,
+            bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
         )
         loss.sum().backward()  # should not raise
 
@@ -227,15 +302,27 @@ class TestOptions:
         pred_mzs, pred_lp, pred_bi = _cat_spectra([pred_a, pred_b])
 
         loss_sqrt = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            pred_mzs, pred_lp, pred_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            pred_mzs,
+            pred_lp,
+            pred_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
             sqrt_transform=True,
         )
         loss_no_sqrt = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            pred_mzs, pred_lp, pred_bi,
-            batch_size=2, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            pred_mzs,
+            pred_lp,
+            pred_bi,
+            batch_size=2,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
             sqrt_transform=False,
         )
         # sqrt amplifies the minor distinctive peaks (10%) → more sensitive to
@@ -255,15 +342,27 @@ class TestOptions:
         true_mzs, true_lp, true_bi = _cat_spectra(specs)
 
         loss_high_T = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, true_lp.clone(), true_bi,
-            batch_size=B, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            true_lp.clone(),
+            true_bi,
+            batch_size=B,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
             temperature=1.0,
         )
         loss_low_T = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, true_lp.clone(), true_bi,
-            batch_size=B, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            true_lp.clone(),
+            true_bi,
+            batch_size=B,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
             temperature=0.07,
         )
         # Lower temperature sharpens correct answer → loss drives toward 0 for perfect predictor
@@ -276,9 +375,15 @@ class TestOptions:
         true_mzs, true_lp, true_bi = _cat_spectra(specs)
 
         loss = get_cross_jss_contrastive(
-            true_mzs, true_lp, true_bi,
-            true_mzs, true_lp.clone(), true_bi,
-            batch_size=4, mz_max=MZ_MAX, mz_bin_res=MZ_BIN_RES,
+            true_mzs,
+            true_lp,
+            true_bi,
+            true_mzs,
+            true_lp.clone(),
+            true_bi,
+            batch_size=4,
+            mz_max=MZ_MAX,
+            mz_bin_res=MZ_BIN_RES,
             temperature=0.07,
         )
         # JSS diagonal = 1, off-diagonal = 0 → loss = -log(exp(1/T) / exp(1/T)) = 0

@@ -15,7 +15,6 @@ import torch as th
 
 from fragnnet.dataset.data_sampler import get_group_sampler
 
-
 # ============================================================================
 # Mock dataset
 # ============================================================================
@@ -137,9 +136,9 @@ class TestAdductInstTypeSampler:
         sampler = get_group_sampler(ds, "adduct_inst_type", avg_per_group=1, generator=gen)
 
         weights = th.tensor(list(sampler.weights))
-        w_a = weights[0].item()   # 1/6
-        w_b = weights[6].item()   # 1/3
-        w_c = weights[9].item()   # 1/1
+        w_a = weights[0].item()  # 1/6
+        w_b = weights[6].item()  # 1/3
+        w_c = weights[9].item()  # 1/1
 
         assert w_b == pytest.approx(2.0 * w_a, rel=1e-5)
         assert w_c == pytest.approx(6.0 * w_a, rel=1e-5)
@@ -158,9 +157,7 @@ class TestAdductInstTypeSampler:
         ds = MockDataset(prec_types, inst_types, group_ids=group_ids)
 
         gen = th.Generator()
-        sampler_plain = get_group_sampler(
-            ds, "adduct_inst_type", avg_per_group=1, generator=gen
-        )
+        sampler_plain = get_group_sampler(ds, "adduct_inst_type", avg_per_group=1, generator=gen)
         gen2 = th.Generator()
         sampler_group = get_group_sampler(
             ds, "adduct_inst_type_group", avg_per_group=1, generator=gen2
@@ -206,7 +203,7 @@ class TestFragModeSampler:
 
         assert sampler is not None
         weights = th.tensor(list(sampler.weights))
-        hcd_weight = weights[0].item()   # 1/9
+        hcd_weight = weights[0].item()  # 1/9
         cid_weight = weights[-1].item()  # 1/1
 
         assert cid_weight == pytest.approx(9.0 * hcd_weight, rel=1e-5)
@@ -225,9 +222,9 @@ class TestFragModeSampler:
         )
 
         weights = th.tensor(list(sampler.weights))
-        w_hcd = weights[0].item()    # 1/6
-        w_cid = weights[6].item()    # 1/4
-        w_unk = weights[10].item()   # 1/2
+        w_hcd = weights[0].item()  # 1/6
+        w_cid = weights[6].item()  # 1/4
+        w_unk = weights[10].item()  # 1/2
 
         assert w_cid == pytest.approx(6.0 / 4.0 * w_hcd, rel=1e-5)
         assert w_unk == pytest.approx(6.0 / 2.0 * w_hcd, rel=1e-5)
@@ -271,9 +268,7 @@ class TestFragModeSampler:
         weights_group = th.tensor(list(sampler_group.weights))
 
         # CID samples at idx 8, 9: group size=2 → weight /= 2
-        assert weights_group[8].item() == pytest.approx(
-            weights_plain[8].item() / 2.0, rel=1e-5
-        )
+        assert weights_group[8].item() == pytest.approx(weights_plain[8].item() / 2.0, rel=1e-5)
         # HCD samples each in own group (size=1) → unchanged
         assert weights_group[0].item() == pytest.approx(weights_plain[0].item(), rel=1e-5)
 

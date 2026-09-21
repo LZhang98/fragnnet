@@ -608,4 +608,4 @@ def get_elements_set(formula: str) -> set[str]:
     Args:
         formula (str): chemical formula eg.CH4 or chemical formula with adducts eg. CH4+H
     """
-    return set(list(parse_formula(formula).keys()))
+    return set(parse_formula(formula).keys())

@@ -1,9 +1,7 @@
 """Tests for the DAG filename migration script."""
 
 import importlib.util
-import io
 import pickle
-import sys
 import tarfile
 from pathlib import Path
 
@@ -139,9 +137,9 @@ def test_migrate_dir_collision_skipped(tmp_path):
 
 def test_migrate_dir_mixed(tmp_path):
     """Mix of canonical, zero-padded, and old-ext files."""
-    _write_pkl(tmp_path / "1.pkl", {"id": 1})           # canonical
-    _write_pkl(tmp_path / "00000002.pkl", {"id": 2})    # zero-padded
-    _write_pkl(tmp_path / "3.pickle", {"id": 3})        # old ext
+    _write_pkl(tmp_path / "1.pkl", {"id": 1})  # canonical
+    _write_pkl(tmp_path / "00000002.pkl", {"id": 2})  # zero-padded
+    _write_pkl(tmp_path / "3.pickle", {"id": 3})  # old ext
 
     renamed, skipped, untouched = migrate_dir(tmp_path, apply=True)
 
@@ -166,6 +164,7 @@ def _make_tar(tar_path: Path, members: dict[str, dict]) -> None:
             info = tarfile.TarInfo(name=name)
             info.size = len(content)
             import io as _io
+
             tf.addfile(info, _io.BytesIO(content))
 
 
@@ -297,7 +296,7 @@ def test_migrate_tar_prefixed_member_names(tmp_path):
         {
             "dags/00000001.pkl": {"id": 1},
             "dags/00000123.pkl": {"id": 123},
-            "dags/7.pkl": {"id": 7},          # already canonical
+            "dags/7.pkl": {"id": 7},  # already canonical
             "dags/meta_info.json": {"n": 3},  # unrelated, untouched
         },
     )
@@ -343,8 +342,6 @@ def test_migrate_tar_atomic_on_error(tmp_path, monkeypatch):
     src = tmp_path / "src.tar"
     dst = tmp_path / "dst.tar"
     _make_tar(src, {"00000007.pkl": {"id": 7}})
-
-    original_extractfile = tarfile.TarFile.extractfile
 
     def _broken_extract(self, member):
         raise RuntimeError("simulated IO error")

@@ -10,6 +10,7 @@ from fragnnet.model import MolEncoder, SpectrumEncoder
 from fragnnet.model.loss import clip_loss, siglip_loss, soft_clip_loss
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
+from fragnnet.utils.pl_utils import migrate_legacy_hparams
 
 
 class SpectrumMolClipPL(L.LightningModule):
@@ -18,11 +19,14 @@ class SpectrumMolClipPL(L.LightningModule):
     hparams: Any
 
     def __init__(self, **kwargs: Any) -> None:
+        # Backfill keys that older checkpoints predate, before `save_hyperparameters`
+        # freezes them. Fresh configs carry every key from `config/template.yml`.
+        migrate_legacy_hparams(kwargs)
         super().__init__()
         self.save_hyperparameters()
-        self.clip_embed_dim = int(self.hparams.get("clip_embed_dim", 256))
-        self.clip_intensity_transform = self.hparams.get("clip_intensity_transform", "sqrt")
-        self.clip_loss_type = str(self.hparams.get("clip_loss_type", "clip"))
+        self.clip_embed_dim = int(self.hparams["clip_embed_dim"])
+        self.clip_intensity_transform = self.hparams["clip_intensity_transform"]
+        self.clip_loss_type = str(self.hparams["clip_loss_type"])
         init_temp = float(self.hparams["clip_temperature"])
         self.log_temperature = nn.Parameter(th.tensor(math.log(init_temp)))
         self._setup_model()
@@ -31,7 +35,7 @@ class SpectrumMolClipPL(L.LightningModule):
         self._val_mol_ids: list[list] = []
 
     def _setup_model(self) -> None:
-        spec_encoder_params = self.hparams.get("spectrum_encoder_params", {})
+        spec_encoder_params = self.hparams["spectrum_encoder_params"]
         spec_input_dim = int(spec_encoder_params.get("input_dim", 2))
         spec_hidden_dim = int(spec_encoder_params.get("hidden_dim", self.hparams.mlp_hidden_size))
         spec_num_heads = int(spec_encoder_params.get("num_heads", 4))
@@ -100,15 +104,15 @@ class SpectrumMolClipPL(L.LightningModule):
             frag_mode_insert_location=self.hparams.frag_mode_insert_location,
             frag_mode_insert_size=self.hparams.frag_mode_insert_size,
             frag_modes=self.hparams.spec_params["frag_modes"],
-            mol_num_heads=self.hparams.get("mol_num_heads", 4),
-            mol_max_degree=self.hparams.get("mol_max_degree"),
-            mol_max_spatial_distance=self.hparams.get("mol_max_spatial_distance"),
-            mol_multi_hop_max_distance=self.hparams.get("mol_multi_hop_max_distance"),
-            use_nce=self.hparams.get("use_nce", self.hparams.spec_params.get("nce", False)),
-            use_ace=self.hparams.get("use_ace", self.hparams.spec_params.get("ace", False)),
-            ace_max=self.hparams.get("ace_max", 100.0),
-            ace_mean=self.hparams.get("ace_mean", 20.0),
-            ace_std=self.hparams.get("ace_std", 15.0),
+            mol_num_heads=self.hparams["mol_num_heads"],
+            mol_max_degree=self.hparams["mol_max_degree"],
+            mol_max_spatial_distance=self.hparams["mol_max_spatial_distance"],
+            mol_multi_hop_max_distance=self.hparams["mol_multi_hop_max_distance"],
+            use_nce=self.hparams["use_nce"],
+            use_ace=self.hparams["use_ace"],
+            ace_max=self.hparams["ace_max"],
+            ace_mean=self.hparams["ace_mean"],
+            ace_std=self.hparams["ace_std"],
         )
 
         self.spec_encoder = SpectrumEncoder(
@@ -184,7 +188,7 @@ class SpectrumMolClipPL(L.LightningModule):
         parts = [peak_x]
 
         if self._spec_ce_embed_size > 0:
-            use_nce = self.hparams.get("use_nce", self.hparams.spec_params.get("nce", False))
+            use_nce = self.hparams["use_nce"]
             ce = batch.get("spec_nce") if use_nce else None
             ce = ce if ce is not None else batch.get("spec_ce")
             ce_batch_idxs = batch.get("spec_nce_batch_idxs") if use_nce else None
@@ -218,7 +222,7 @@ class SpectrumMolClipPL(L.LightningModule):
     def forward(self, batch: dict[str, Any]) -> tuple[th.Tensor, th.Tensor]:
         ce = batch.get("spec_ce")
         ce_batch_idxs = batch.get("spec_ce_batch_idxs")
-        if self.hparams.get("use_nce", self.hparams.spec_params.get("nce", False)):
+        if self.hparams["use_nce"]:
             ce = batch.get("spec_nce", ce)
             ce_batch_idxs = batch.get("spec_nce_batch_idxs", ce_batch_idxs)
 
@@ -289,7 +293,9 @@ class SpectrumMolClipPL(L.LightningModule):
         fp_dim = fp.shape[0] // batch_size
         return fp.reshape(batch_size, fp_dim)
 
-    def _compute_loss(self, spec_embed: th.Tensor, mol_embed: th.Tensor, batch: dict[str, Any]) -> th.Tensor:
+    def _compute_loss(
+        self, spec_embed: th.Tensor, mol_embed: th.Tensor, batch: dict[str, Any]
+    ) -> th.Tensor:
         """Dispatch to the configured CLIP loss variant.
 
         Args:
@@ -352,7 +358,9 @@ class SpectrumMolClipPL(L.LightningModule):
             mol_embed, spec_embed = self.forward(batch)
         loss = self._compute_loss(spec_embed, mol_embed, batch)
         batch_size = int(batch["batch_size"].item())
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        self.log(
+            "val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=batch_size
+        )
         self._val_mol_embeds.append(mol_embed.detach())
         self._val_spec_embeds.append(spec_embed.detach())
         self._val_mol_ids.append(batch["mol_id"])
@@ -415,9 +423,9 @@ class SpectrumMolClipPL(L.LightningModule):
                 decay_rate=self.hparams.lr_decay_rate,
                 warmup_steps=self.hparams.lr_warmup_steps,
                 decay_steps=self.hparams.lr_decay_steps,
-                schedule_type=self.hparams.get("lr_schedule_type", "exponential"),
-                total_steps=self.hparams.get("lr_total_steps"),
-                min_lr_ratio=self.hparams.get("lr_min_ratio", 0.0),
+                schedule_type=self.hparams["lr_schedule_type"],
+                total_steps=self.hparams["lr_total_steps"],
+                min_lr_ratio=self.hparams["lr_min_ratio"],
             )
             ret["lr_scheduler"] = {
                 "scheduler": scheduler,

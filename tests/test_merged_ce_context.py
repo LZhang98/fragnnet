@@ -299,24 +299,24 @@ def test_mass_shatter_wrapper_passes_reading_weights() -> None:
 
 def _context_encoder(**overrides) -> MassShatterContextEncoder:
     """Build a small context encoder, overriding only the fields under test."""
-    kwargs = dict(
-        num_precursor_types=2,
-        num_instrument_types=2,
-        num_fragmentation_modes=2,
-        use_nce=True,
-        use_ace=False,
-        int_embedder="abs-sines",
-        ce_insert_type="id",
-        ce_insert_size=4,
-        metadata_embedding_dim=4,
-        context_dim=8,
-        nce_max=200,
-        nce_mean=60,
-        nce_std=40,
-        ace_max=300,
-        ace_mean=20,
-        ace_std=15,
-    )
+    kwargs = {
+        "num_precursor_types": 2,
+        "num_instrument_types": 2,
+        "num_fragmentation_modes": 2,
+        "use_nce": True,
+        "use_ace": False,
+        "int_embedder": "abs-sines",
+        "ce_insert_type": "id",
+        "ce_insert_size": 4,
+        "metadata_embedding_dim": 4,
+        "context_dim": 8,
+        "nce_max": 200,
+        "nce_mean": 60,
+        "nce_std": 40,
+        "ace_max": 300,
+        "ace_mean": 20,
+        "ace_std": 15,
+    }
     kwargs.update(overrides)
     return MassShatterContextEncoder(**kwargs)
 

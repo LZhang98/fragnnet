@@ -45,7 +45,8 @@ dev = [
     "mypy>=1.0",
     "ruff>=0.1.0",
     "black>=23.0",
-    "isort>=5.12"
+    "isort>=5.12",
+    "pre-commit>=3.0"
 ]
 
 speed = [
@@ -98,6 +99,7 @@ ignore = [
     "C901",   # too complex
     "ARG002", # unused method argument
     "ARG001", # unused function argument
+    "ARG005", # unused lambda argument (uniform-signature dispatch tables)
     "SIM108", # use ternary operator instead of if-else
     "COM812",  # missing-trailing-comma
     "CPY001",  # Missing copyright notice at top of file

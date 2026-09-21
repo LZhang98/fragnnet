@@ -177,7 +177,7 @@ class TestBatchFunc:
     def test_single_spectrum_all_zeros_batch_idx(self):
         """Single spectrum → all batch indices are 0."""
         mzs = [th.tensor([5.0, 6.0, 7.0])]
-        (b_mzs,), batch_idxs = batch_func(mzs)[:1], batch_func(mzs)[1]
+        batch_idxs = batch_func(mzs)[1]
         assert th.equal(batch_idxs, th.zeros(3, dtype=th.long))
 
 
@@ -361,8 +361,14 @@ class TestBatchedBinFunc:
         ints = th.tensor([1.0])
         batch_idxs = th.tensor([0])
         out_mzs, out_ints, _ = batched_bin_func(
-            mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0,
-            agg="sum", sparse=True, return_mzs=True,
+            mzs,
+            ints,
+            batch_idxs,
+            mz_max=10.0,
+            mz_bin_res=1.0,
+            agg="sum",
+            sparse=True,
+            return_mzs=True,
         )
         # Bin for 2.5 has right edge 3.0 and center 3.0 - 0.5 = 2.5
         assert out_mzs.item() == pytest.approx(2.5)
@@ -375,8 +381,14 @@ class TestBatchedBinFunc:
         batch_idxs = th.tensor([0, 0])
         prec_mzs = th.tensor([2.5])  # one precursor per batch item
         out = batched_bin_func(
-            mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0, agg="sum",
-            remove_prec_peaks=True, prec_mzs=prec_mzs,
+            mzs,
+            ints,
+            batch_idxs,
+            mz_max=10.0,
+            mz_bin_res=1.0,
+            agg="sum",
+            remove_prec_peaks=True,
+            prec_mzs=prec_mzs,
         )
         # Peak at 2.5 → bin index 2; should be zeroed
         assert out[0, 2].item() == pytest.approx(0.0)
@@ -387,8 +399,12 @@ class TestBatchedBinFunc:
         """Empty input tensor raises ValueError."""
         with pytest.raises(ValueError, match="empty"):
             batched_bin_func(
-                th.tensor([]), th.tensor([]), th.tensor([], dtype=th.long),
-                mz_max=10.0, mz_bin_res=1.0, agg="sum",
+                th.tensor([]),
+                th.tensor([]),
+                th.tensor([], dtype=th.long),
+                mz_max=10.0,
+                mz_bin_res=1.0,
+                agg="sum",
             )
 
 

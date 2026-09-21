@@ -170,11 +170,7 @@ class TestCEContextDynamicBatchSampler:
             sampler.set_epoch(epoch)
             epoch_chunks.append(
                 [
-                    [
-                        ds.spec_df.iloc[idx]["nce"][0]
-                        for idx in batch
-                        if idx < 6
-                    ]
+                    [ds.spec_df.iloc[idx]["nce"][0] for idx in batch if idx < 6]
                     for batch in sampler
                     if any(idx < 6 for idx in batch)
                 ]
@@ -431,6 +427,7 @@ class TestCEContextDynamicBatchSampler:
                 ce_key_by_inst=self.CE_KEY_BY_INST,
             )
 
+
 # Tests for BondCountCurriculumSampler
 # =========================================================================
 
@@ -481,9 +478,7 @@ class TestSpecMolFragDynamicBatchSampler:
         """Test an empty split produces no batches."""
         ds = FakeDataset([])
 
-        sampler = SpecMolFragDynamicBatchSampler(
-            data_source=ds, max_num=10, limited_by="frag_node"
-        )
+        sampler = SpecMolFragDynamicBatchSampler(data_source=ds, max_num=10, limited_by="frag_node")
 
         assert list(sampler) == []
         assert len(sampler) == 0
@@ -739,7 +734,7 @@ class TestDualGroupDynamicBatchSampler:
 
         # Expect at least one batch and all indices included
         assert len(batches) > 0
-        included = set(i for b in batches for i in b)
+        included = {i for b in batches for i in b}
         assert included == set(range(len(ds)))
 
         # Each batch must respect node budget
@@ -807,7 +802,7 @@ class TestDualGroupDynamicBatchSampler:
         # A::X group in group2 must contain both isomer indices
         assert set(sampler._group2["A::X"].tolist()) == {0, 1}
         # group2 coverage: every index must appear in at least one group2 entry
-        group2_all = set(i for t in sampler._group2.values() for i in t.tolist())
+        group2_all = {i for t in sampler._group2.values() for i in t.tolist()}
         assert group2_all == set(range(len(samples)))
 
     def test_no_duplicate_indices_within_batch(self):
@@ -844,7 +839,9 @@ class TestDualGroupDynamicBatchSampler:
         gen = th.Generator()
         gen.manual_seed(7)
 
-        sampler = DualGroupDynamicBatchSampler(ds, max_num=20, limited_by="frag_node", generator=gen)
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=20, limited_by="frag_node", generator=gen
+        )
         all_indices = [i for b in sampler for i in b]
 
         assert sorted(all_indices) == list(range(len(samples)))
@@ -901,7 +898,9 @@ class TestDualGroupDynamicBatchSampler:
         gen = th.Generator()
         gen.manual_seed(0)
 
-        sampler = DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node", generator=gen)
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=10, limited_by="frag_node", generator=gen
+        )
 
         assert "A::X" in sampler._group2
         assert "B::X" in sampler._group2
@@ -922,7 +921,9 @@ class TestDualGroupDynamicBatchSampler:
         gen = th.Generator()
         gen.manual_seed(0)
 
-        sampler = DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node", generator=gen)
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=10, limited_by="frag_node", generator=gen
+        )
 
         assert "A::UNIQUE" in sampler._group2
         assert set(sampler._group2["A::UNIQUE"].tolist()) == {0}
@@ -1066,9 +1067,9 @@ class TestDualGroupDynamicBatchSampler:
 
         # At least one batch must contain ≥ 2 mol-1 spectra (i.e., a same-mol pair)
         max_mol1_in_batch = max(len(set(b) & mol1_indices) for b in batches)
-        assert max_mol1_in_batch >= 2, (
-            f"Expected ≥ 2 same-molecule spectra in a batch, got max {max_mol1_in_batch}"
-        )
+        assert (
+            max_mol1_in_batch >= 2
+        ), f"Expected ≥ 2 same-molecule spectra in a batch, got max {max_mol1_in_batch}"
 
     def test_k1_per_key_default_one_unchanged(self):
         """Default k1_per_key=1 behaviour must be identical to the old code:
@@ -1098,7 +1099,12 @@ class TestDualGroupDynamicBatchSampler:
     def test_every_index_covered_with_per_key(self):
         """All samples must be covered exactly once even with per_key > 1."""
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": i // 3, "formula": f"F{i // 3}"}
+            {
+                "frag_pyg": FakeFrag(1, 1),
+                "prec_type": "A",
+                "mol_id": i // 3,
+                "formula": f"F{i // 3}",
+            }
             for i in range(9)
         ]
         ds = DummyDataset(samples)
@@ -1209,7 +1215,7 @@ class TestFormulaPrecTypeGroupSampler:
         )
         batch_sampler.set_epoch(0)
 
-        underlying = set(list(sampler))
+        underlying = set(sampler)
 
         for batch in batch_sampler:
             total_nodes = sum(ds[idx]["frag_pyg"].num_nodes for idx in batch)
@@ -1404,7 +1410,7 @@ class TestDataloaderSmoke:
         )
         batches = list(iter(sampler))
         assert len(batches) > 0
-        included = set(i for b in batches for i in b)
+        included = {i for b in batches for i in b}
         assert included == set(range(len(ds)))
         for b in batches:
             total_nodes = sum(samples[i]["frag_pyg"].num_nodes for i in b)

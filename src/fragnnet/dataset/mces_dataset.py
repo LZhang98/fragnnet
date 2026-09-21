@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any
 
@@ -10,6 +11,8 @@ from tqdm import tqdm
 from fragnnet.utils.data_utils import min_max_normalize, zscore_normalize
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.misc_utils import get_mol_graph_size
+
+logger = logging.getLogger(__name__)
 
 
 class MCESDataset(Dataset):
@@ -103,17 +106,19 @@ class MCESDataset(Dataset):
         # Set normalization flag
         if self.mces_normalization == "minmax" and self.mces_max > self.mces_min:
             self.normalize_type = "minmax"
-            print(
-                f"> MCES normalization: min-max scaling [{self.mces_min}, {self.mces_max}] -> [0, 1]"
+            logger.info(
+                "MCES normalization: min-max scaling [%s, %s] -> [0, 1]",
+                self.mces_min,
+                self.mces_max,
             )
         elif self.mces_normalization == "zscore" and self.mces_std > 0:
             self.normalize_type = "zscore"
-            print(
-                f"> MCES normalization: z-score (mean={self.mces_mean:.4f}, std={self.mces_std:.4f})"
+            logger.info(
+                "MCES normalization: z-score (mean=%.4f, std=%.4f)", self.mces_mean, self.mces_std
             )
         else:
             self.normalize_type = None
-            print("> MCES normalization: disabled")
+            logger.info("MCES normalization: disabled")
 
         # Initialize shared dict for preprocessing
         if mol_pp_sd is None:
@@ -150,7 +155,7 @@ class MCESDataset(Dataset):
                 mol_data = self._process_mol(mol_entry)
                 total_mol_graph_size += get_mol_graph_size(mol_data, self.mol_params)
                 self.mol_datas[mol_entry["mol_id"]] = mol_data
-            print(f"> total_mol_graph_size: {total_mol_graph_size / 1e6:.2f} MB")
+            logger.info("total_mol_graph_size: %.2f MB", total_mol_graph_size / 1e6)
 
     def _process_mol(self, mol_entry: pd.Series) -> dict[str, Any]:
         """

@@ -10,6 +10,8 @@ from fragnnet.utils.feat_utils import get_mol_fp, get_mol_graph
 from fragnnet.utils.formula_utils import mass_shatter_has_valid_ion
 from fragnnet.utils.misc_utils import get_mol_graph_size
 
+logger = logging.getLogger(__name__)
+
 
 class SpecMolDataset(BaseDataset):
     def __init__(
@@ -167,7 +169,7 @@ class SpecMolDataset(BaseDataset):
                 mol_data = self._process_mol(mol_entry)
                 total_mol_graph_size += self._get_mol_graph_size(mol_data)
                 self.mol_datas[mol_entry["mol_id"]] = mol_data
-            print(f"> total_mol_graph_size: {total_mol_graph_size / 1e6:.2f} MB")
+            logger.info("total_mol_graph_size: %.2f MB", total_mol_graph_size / 1e6)
 
     def __getitem__(self, idx: int) -> dict:
         """

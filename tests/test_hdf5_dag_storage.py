@@ -23,7 +23,7 @@ from fragnnet.utils.frag_utils import (
 )
 
 
-def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int) -> dict:
+def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int, seed: int = 0) -> dict:
     """Build a minimal dag_d dict matching the structure from compute_dags."""
     node_feat_dim = 10
     edge_feat_dim = 8
@@ -48,18 +48,21 @@ def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int) -> dict:
     idx_to_formula = {i: f"C{i}H{i + 2}" for i in range(num_formulae)}
     idx_to_formula[0] = ""  # root node has empty formula
 
+    # Seeded generator: the round-trip assertions compare exact values, so the fixture
+    # must not depend on global RNG state left behind by whatever test ran before.
+    rng = np.random.default_rng(seed)
     num_h_delta_slots = 1 + 2 * max_h_transfer
     idx_by_h_delta = [
-        set(np.random.choice(num_formulae, size=2, replace=False).tolist())
+        set(rng.choice(num_formulae, size=2, replace=False).tolist())
         for _ in range(num_h_delta_slots)
     ]
 
     edges_min_depth = (
-        np.random.randint(0, 3, size=num_edges).astype(np.int32)
+        rng.integers(0, 3, size=num_edges).astype(np.int32)
         if num_edges > 0
         else np.array([], dtype=np.int32)
     )
-    nodes_min_depth = np.random.randint(0, 3, size=num_nodes).astype(np.int32)
+    nodes_min_depth = rng.integers(0, 3, size=num_nodes).astype(np.int32)
 
     return {
         "dag": dag,

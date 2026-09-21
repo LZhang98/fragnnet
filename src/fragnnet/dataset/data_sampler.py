@@ -17,7 +17,7 @@ from collections.abc import Iterator
 
 import numpy as np
 import torch as th
-from torch.utils.data import BatchSampler, Sampler, WeightedRandomSampler
+from torch.utils.data import BatchSampler, Dataset, Sampler, WeightedRandomSampler
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -60,16 +60,14 @@ class BondCountCurriculumSampler(Sampler[int]):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         start_fraction: float = 0.25,
         curriculum_epochs: int = 20,
         generator: th.Generator | None = None,
     ) -> None:
         validate_bond_size_curriculum(start_fraction, curriculum_epochs)
         if not hasattr(data_source, "spec_df") or not hasattr(data_source, "mol_df"):
-            raise TypeError(
-                "BondCountCurriculumSampler requires spec_df and mol_df on the dataset"
-            )
+            raise TypeError("BondCountCurriculumSampler requires spec_df and mol_df on the dataset")
 
         mol_ids = data_source.spec_df["mol_id"].to_numpy()
         bond_counts = data_source.mol_df.loc[mol_ids, "num_bonds"].to_numpy()
@@ -127,7 +125,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         max_num: int,
         limited_by: str = "frag_edge",
         skip_too_big: bool = False,
@@ -363,8 +361,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         Yields:
             List[int]: Batch of sample indices
         """
-        for batch in self._batches:
-            yield batch
+        yield from self._batches
 
     def __len__(self) -> int:
         """Return number of batches.
@@ -383,7 +380,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         max_num: int,
         ce_key_by_inst: dict[str, str],
         spectra_per_context: int = 5,
@@ -429,9 +426,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
         self._skip_too_big = skip_too_big
         self._epoch = 0
         self._data_meta = self._load_size_metadata()
-        self._contexts, self._fallback_indices, self._coverage_stats = (
-            self._load_context_metadata()
-        )
+        self._contexts, self._fallback_indices, self._coverage_stats = self._load_context_metadata()
         self.stats: dict[str, int | float] = {}
         self._batches: list[list[int]] = []
         self._pre_compute_batches()
@@ -460,8 +455,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
         missing_columns = {"group_id", "inst_type"}.difference(spec_df.columns)
         if missing_columns:
             raise ValueError(
-                "CE context batching requires spec_df columns "
-                f"{sorted(missing_columns)}"
+                "CE context batching requires spec_df columns " f"{sorted(missing_columns)}"
             )
         inst_types = set(spec_df["inst_type"].astype(str))
         unmapped_inst_types = inst_types.difference(self._ce_key_by_inst)
@@ -488,9 +482,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
         for idx in range(len(spec_df)):
             group_id = spec_df.iloc[idx]["group_id"]
             modes_by_group.setdefault(group_id, set()).add(str(frag_modes[idx]))
-            inst_types_by_group.setdefault(group_id, set()).add(
-                str(spec_df.iloc[idx]["inst_type"])
-            )
+            inst_types_by_group.setdefault(group_id, set()).add(str(spec_df.iloc[idx]["inst_type"]))
         mixed_inst_groups = {
             group_id
             for group_id, group_inst_types in inst_types_by_group.items()
@@ -501,9 +493,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
                 "CE context batching requires one instrument type per group_id; "
                 f"found mixed instruments in {len(mixed_inst_groups)} groups"
             )
-        mixed_groups = {
-            group_id for group_id, modes in modes_by_group.items() if len(modes) > 1
-        }
+        mixed_groups = {group_id for group_id, modes in modes_by_group.items() if len(modes) > 1}
 
         contexts: dict[object, dict[float, list[int]]] = {}
         fallback_indices: list[tuple[object, int]] = []
@@ -531,18 +521,13 @@ class _CEContextBatchSamplerBase(BatchSampler):
             if len(levels) < 2:
                 single_level_spectra += sum(len(indices) for indices in levels.values())
                 fallback_indices.extend(
-                    (group_id, idx)
-                    for indices in levels.values()
-                    for idx in indices
+                    (group_id, idx) for indices in levels.values() for idx in indices
                 )
                 continue
             eligible_contexts.append(
                 (
                     group_id,
-                    tuple(
-                        (ce, tuple(sorted(indices)))
-                        for ce, indices in sorted(levels.items())
-                    ),
+                    tuple((ce, tuple(sorted(indices))) for ce, indices in sorted(levels.items())),
                 )
             )
 
@@ -552,9 +537,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
             "missing_ce_spectra": missing_ce_spectra,
             "single_level_spectra": single_level_spectra,
             "eligible_spectra": sum(
-                len(indices)
-                for _, context in eligible_contexts
-                for _, indices in context
+                len(indices) for _, context in eligible_contexts for _, indices in context
             ),
         }
         return eligible_contexts, fallback_indices, coverage_stats
@@ -578,9 +561,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
         # Rotate chunk boundaries without wrapping the ordered CE axis. A short
         # prefix is allowed; it still receives the ordinary spectrum loss.
         boundary_offset = (
-            rotation % self._spectra_per_context
-            if len(primary) > self._spectra_per_context
-            else 0
+            rotation % self._spectra_per_context if len(primary) > self._spectra_per_context else 0
         )
         level_chunks = []
         if boundary_offset:
@@ -620,9 +601,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
         """Partition all spectra and greedily pack atomic context chunks."""
         generator = th.Generator().manual_seed(self._seed + self._epoch)
         order = (
-            th.randperm(len(self._contexts), generator=generator).tolist()
-            if self._contexts
-            else []
+            th.randperm(len(self._contexts), generator=generator).tolist() if self._contexts else []
         )
 
         atoms: list[tuple[object, list[int]]] = []
@@ -652,8 +631,7 @@ class _CEContextBatchSamplerBase(BatchSampler):
         for group_id, atom in atoms:
             atoms_by_group.setdefault(group_id, []).append(atom)
         pending_groups = deque(
-            (group_id, deque(group_atoms))
-            for group_id, group_atoms in atoms_by_group.items()
+            (group_id, deque(group_atoms)) for group_id, group_atoms in atoms_by_group.items()
         )
         atoms = []
         while pending_groups:
@@ -718,7 +696,7 @@ class CEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         max_num: int,
         ce_key_by_inst: dict[str, str],
         limited_by: str = "frag_edge",
@@ -729,8 +707,7 @@ class CEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
     ) -> None:
         if limited_by != "frag_edge":
             raise ValueError(
-                "CE context batching requires limited_by='frag_edge' "
-                f"(got '{limited_by}')."
+                "CE context batching requires limited_by='frag_edge' " f"(got '{limited_by}')."
             )
         super().__init__(
             data_source=data_source,
@@ -762,7 +739,7 @@ class MassShatterCEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         max_num: int,
         ce_key_by_inst: dict[str, str],
         spectra_per_context: int = 5,
@@ -805,7 +782,10 @@ class GroupSampler(Sampler):
     """
 
     def __init__(
-        self, data_source, sample_k: int | None = None, generator: th.Generator | None = None
+        self,
+        data_source: Dataset,
+        sample_k: int | None = None,
+        generator: th.Generator | None = None,
     ) -> None:
         """Initialize group sampler.
 
@@ -921,7 +901,7 @@ class FormulaPrecTypeGroupSampler(Sampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         sample_k: int = 1,
         key_formula: str = "formula",
         key_adduct: str = "prec_type",
@@ -1010,12 +990,9 @@ class FormulaPrecTypeGroupSampler(Sampler):
     def set_epoch(self, epoch: int) -> None:
         """Set epoch, reseed generator deterministically and recompute indices."""
         self._epoch = int(epoch)
-        if self.generator is not None and hasattr(self.generator, "manual_seed"):
-            try:
-                base = self._base_seed if self._base_seed is not None else 0
-                self.generator.manual_seed(base + int(epoch))
-            except Exception:
-                pass
+        if self.generator is not None:
+            base = self._base_seed if self._base_seed is not None else 0
+            self.generator.manual_seed(base + int(epoch))
         self._pre_compute_indices()
 
     def __iter__(self) -> Iterator[int]:
@@ -1040,7 +1017,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
     def __init__(
         self,
-        data_source,
+        data_source: Dataset,
         max_num: int,
         limited_by: str = "frag_edge",
         skip_too_big: bool = False,
@@ -1172,12 +1149,11 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
     def set_epoch(self, epoch: int) -> None:
         self._epoch = epoch
-        # reseed generator if provided
-        if self.generator is not None and hasattr(self.generator, "manual_seed"):
-            try:
-                self.generator.manual_seed(int(epoch))
-            except Exception:
-                pass
+        # NOTE: unlike FormulaPrecTypeGroupSampler this reseeds from the epoch alone, so the
+        # run seed does not reach it. Changing that would move every existing run's batch
+        # order, so it is left as is.
+        if self.generator is not None:
+            self.generator.manual_seed(int(epoch))
         self._pre_compute_batches()
 
     def _sample_from_group_dict(
@@ -1235,12 +1211,10 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 n = int(self._data_meta[idx, limited_by_idx])
                 if n > budget_left and self._skip_too_big:
                     continue
-                if n > budget_left:
-                    # Match SpecMolFragDynamicBatchSampler behavior: when
-                    # skip_too_big=False, allow an oversized singleton batch
-                    # instead of silently dropping the sample.
-                    if not (n > self._max_num and budget_left == self._max_num):
-                        continue
+                # Match SpecMolFragDynamicBatchSampler behavior: when skip_too_big=False,
+                # allow an oversized singleton batch instead of silently dropping the sample.
+                if n > budget_left and not (n > self._max_num and budget_left == self._max_num):
+                    continue
                 # take it — mark in taken_mask immediately so fill phase sees it
                 taken_mask[idx] = True
                 taken.append(idx)
@@ -1354,9 +1328,8 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                         n_val = int(self._data_meta[idx, limited_by_idx])
                         if n_val > self._max_num and self._skip_too_big:
                             continue
-                        if n_val > budget_left:
-                            if not (n_val > self._max_num and len(batch) == 0):
-                                continue
+                        if n_val > budget_left and not (n_val > self._max_num and len(batch) == 0):
+                            continue
                         batch.append(idx)
                         samples_to_take -= 1
                         remaining -= 1
@@ -1382,15 +1355,14 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         )
 
     def __iter__(self) -> Iterator[list[int]]:
-        for b in self._batches:
-            yield b
+        yield from self._batches
 
     def __len__(self) -> int:
         return len(self._batches)
 
 
 def get_group_sampler(
-    ds, sampler_type: str, avg_per_group: int, generator: th.Generator
+    ds: Dataset, sampler_type: str, avg_per_group: int, generator: th.Generator
 ) -> WeightedRandomSampler | None:
     """Create a WeightedRandomSampler based on group/molecule or adduct+instrument statistics.
 

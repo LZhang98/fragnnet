@@ -125,9 +125,9 @@ class TestCyclohexane:
         r = _run(self.SMILES, max_cut_size=1, max_depth=1)
         # Only the root node should exist since single-bond breaks on a ring
         # never disconnect
-        assert len(r["nodes_mask"]) == 1, (
-            f"Expected only root node, got {len(r['nodes_mask'])} nodes"
-        )
+        assert (
+            len(r["nodes_mask"]) == 1
+        ), f"Expected only root node, got {len(r['nodes_mask'])} nodes"
 
     def test_multi_cut_finds_ring_fragments_at_depth1(self):
         """max_cut_size=2 finds ring-opening fragments at depth 1.
@@ -142,9 +142,9 @@ class TestCyclohexane:
     def test_multi_cut_works_at_max_depth_1(self):
         """With max_depth=1, cut=2 produces ring fragments (costs 1 depth unit)."""
         r = _run(self.SMILES, max_cut_size=2, max_depth=1)
-        assert len(r["nodes_mask"]) > 1, (
-            "Cut=2 should find fragments at max_depth=1 (costs 1 depth unit)"
-        )
+        assert (
+            len(r["nodes_mask"]) > 1
+        ), "Cut=2 should find fragments at max_depth=1 (costs 1 depth unit)"
 
     def test_ring_cut_fragment_sizes(self):
         """2-bond cuts of cyclohexane produce complementary fragment size pairs.
@@ -363,16 +363,16 @@ class TestDepthMatrix:
         for i in range(1, len(r["nodes_mask"])):
             if r["nodes_depth"][i, 1] == 1:
                 # This node is a depth-1 child; it must not have depth 0 set
-                assert r["nodes_depth"][i, 0] == 0, (
-                    f"Node {i} has depth-0 set but was only found at depth 1"
-                )
+                assert (
+                    r["nodes_depth"][i, 0] == 0
+                ), f"Node {i} has depth-0 set but was only found at depth 1"
 
     def test_multi_ring_system_depth_correct(self):
         """Steroid scaffold (multi-ring system): depth-1 fragments only at depth 1."""
         # androstane skeleton — 4 fused rings, many ring bonds in different systems
         r = _run("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", max_cut_size=2, max_depth=2)
         for i in range(1, len(r["nodes_mask"])):
-            depths_set = set(int(d) for d in range(3) if r["nodes_depth"][i, d] == 1)
+            depths_set = {int(d) for d in range(3) if r["nodes_depth"][i, d] == 1}
             # If found at depth 1 only, depth 0 and depth 2 must be 0
             if depths_set == {1}:
                 assert r["nodes_depth"][i, 0] == 0
@@ -385,9 +385,9 @@ class TestDepthMatrix:
         for i in range(len(r["nodes_mask"])):
             cols_set = [int(d) for d in range(4) if r["nodes_depth"][i, d] == 1]
             assert len(cols_set) > 0, f"Node {i} has no depth set in matrix"
-            assert int(min_depths[i]) == min(cols_set), (
-                f"Node {i}: nodes_min_depth={min_depths[i]} but matrix min={min(cols_set)}"
-            )
+            assert int(min_depths[i]) == min(
+                cols_set
+            ), f"Node {i}: nodes_min_depth={min_depths[i]} but matrix min={min(cols_set)}"
 
 
 # ---------------------------------------------------------------------------
@@ -415,9 +415,9 @@ class TestMultiRingSystemCuts:
         for c in counts:
             # Each fragment must have a complementary fragment (partner sums to total)
             complement = total_atoms - c
-            assert complement in counts or complement == total_atoms, (
-                f"Fragment of size {c} has no complement in {counts}"
-            )
+            assert (
+                complement in counts or complement == total_atoms
+            ), f"Fragment of size {c} has no complement in {counts}"
 
     def test_bicyclo_cuts_within_system(self):
         """Bicyclo[2.2.1]heptane (norbornane): both ring bonds in same system."""
@@ -472,9 +472,9 @@ class TestSelectiveScratchReset:
         total = r["num_nodes"]
         for i in range(1, len(r["nodes_mask"])):
             count = int(r["nodes_mask"][i].sum())
-            assert 0 < count < total, (
-                f"Non-root node {i} has invalid atom count {count} (total={total})"
-            )
+            assert (
+                0 < count < total
+            ), f"Non-root node {i} has invalid atom count {count} (total={total})"
 
 
 # ---------------------------------------------------------------------------
@@ -545,9 +545,9 @@ class TestBridgeFindingCutOne:
         """No bond in a simple ring disconnects the molecule — zero fragments."""
         for smiles in ["C1CCCCC1", "c1ccccc1", "C1CCCCCCCC1"]:
             r = self._run1(smiles)
-            assert len(r["nodes_mask"]) == 1, (
-                f"Ring {smiles} should have no bridges, got {len(r['nodes_mask']) - 1} fragment(s)"
-            )
+            assert (
+                len(r["nodes_mask"]) == 1
+            ), f"Ring {smiles} should have no bridges, got {len(r['nodes_mask']) - 1} fragment(s)"
 
     def test_linear_octane_all_bridges(self):
         """Linear C8: all 7 bonds are bridges — cut=1 depth=1 finds all sizes 1..7."""
@@ -572,9 +572,9 @@ class TestNoDuplicateFragments:
         r = _run(smiles, max_cut_size=max_cut_size, max_depth=max_depth)
         nm = r["nodes_mask"]
         rows = [bytes(nm[i]) for i in range(len(nm))]
-        assert len(rows) == len(set(rows)), (
-            f"Duplicate fragment masks in {smiles}: {len(rows)} total rows, {len(set(rows))} unique"
-        )
+        assert len(rows) == len(
+            set(rows)
+        ), f"Duplicate fragment masks in {smiles}: {len(rows)} total rows, {len(set(rows))} unique"
 
     def test_naphthalene_no_duplicates(self):
         self._check_no_duplicates("c1ccc2ccccc2c1")
@@ -646,9 +646,9 @@ class TestDAGStructure:
         for i in range(1, len(r["nodes_mask"])):
             frag = r["nodes_mask"][i]
             # frag must not activate any atom that root has off
-            assert int(((frag > 0) & (root_mask == 0)).sum()) == 0, (
-                f"Fragment {i} activates atoms outside the root molecule"
-            )
+            assert (
+                int(((frag > 0) & (root_mask == 0)).sum()) == 0
+            ), f"Fragment {i} activates atoms outside the root molecule"
 
 
 # ---------------------------------------------------------------------------
@@ -673,9 +673,9 @@ class TestPolycyclicCages:
 
     def test_adamantane_no_cut1_bridges(self):
         r = _run(self.ADAMANTANE, max_cut_size=1, max_depth=1)
-        assert len(r["nodes_mask"]) == 1, (
-            f"Adamantane should have no bridges, got {len(r['nodes_mask']) - 1} fragment(s)"
-        )
+        assert (
+            len(r["nodes_mask"]) == 1
+        ), f"Adamantane should have no bridges, got {len(r['nodes_mask']) - 1} fragment(s)"
 
     def test_adamantane_cut2_sizes(self):
         """Cut=2 on adamantane only isolates single CH2 groups → size 1 and 9.
@@ -697,9 +697,9 @@ class TestPolycyclicCages:
         r = _run(self.NORBORNANE, max_cut_size=2, max_depth=2)
         counts = set(_atom_counts(r["nodes_mask"]))
         for expected in [1, 2, 5, 6]:
-            assert expected in counts, (
-                f"Expected size-{expected} fragment from norbornane, got {sorted(counts)}"
-            )
+            assert (
+                expected in counts
+            ), f"Expected size-{expected} fragment from norbornane, got {sorted(counts)}"
 
     def test_norbornane_no_duplicates(self):
         r = _run(self.NORBORNANE, max_cut_size=2, max_depth=2)
@@ -739,9 +739,9 @@ class TestMacrocycle16:
         count_set = set(counts)
         for c in count_set:
             complement = 16 - c
-            assert complement in count_set, (
-                f"Fragment size {c} has no complement {complement} in {sorted(count_set)}"
-            )
+            assert (
+                complement in count_set
+            ), f"Fragment size {c} has no complement {complement} in {sorted(count_set)}"
 
     def test_no_duplicates(self):
         r = _run(self.SMILES, max_cut_size=2, max_depth=2)
@@ -770,9 +770,9 @@ class TestIbuprofen:
         r = _run(self.SMILES, max_cut_size=1, max_depth=1)
         counts = set(_atom_counts(r["nodes_mask"]))
         for expected in [1, 3, 4, 5, 10, 11]:
-            assert expected in counts, (
-                f"Expected size-{expected} from ibuprofen acyclic bridges, got {sorted(counts)}"
-            )
+            assert (
+                expected in counts
+            ), f"Expected size-{expected} from ibuprofen acyclic bridges, got {sorted(counts)}"
 
     def test_cut1_fragment_count(self):
         """18 unique non-root fragments from 9 acyclic bridges × 2 (minus symmetry)."""
@@ -795,9 +795,9 @@ class TestIbuprofen:
         root_mask = r["nodes_mask"][0]
         for i in range(1, len(r["nodes_mask"])):
             frag = r["nodes_mask"][i]
-            assert int(((frag > 0) & (root_mask == 0)).sum()) == 0, (
-                f"Fragment {i} has atoms outside the full molecule"
-            )
+            assert (
+                int(((frag > 0) & (root_mask == 0)).sum()) == 0
+            ), f"Fragment {i} has atoms outside the full molecule"
 
     def test_no_duplicates_depth2(self):
         r = _run(self.SMILES, max_cut_size=2, max_depth=2)
@@ -833,9 +833,9 @@ class TestDepthBitsConsistencyMultiMol:
             for i in range(len(r["nodes_mask"])):
                 cols_set = [int(d) for d in range(4) if nd[i, d] == 1]
                 assert len(cols_set) > 0, f"{name}: node {i} has no depth set"
-                assert int(min_depths[i]) == min(cols_set), (
-                    f"{name}: node {i} min_depth={min_depths[i]} but matrix min={min(cols_set)}"
-                )
+                assert int(min_depths[i]) == min(
+                    cols_set
+                ), f"{name}: node {i} min_depth={min_depths[i]} but matrix min={min(cols_set)}"
 
     def test_root_only_at_depth0_multi_mol(self):
         for name, smi in self.MOLECULES:
@@ -891,9 +891,9 @@ class TestMinFragAtoms:
             r = _run(smiles, max_cut_size=2, max_depth=2, min_frag_atoms=3)
             for i in range(1, len(r["nodes_mask"])):
                 count = int(r["nodes_mask"][i].sum())
-                assert count >= 3, (
-                    f"{smiles}: non-root node {i} has {count} atoms (< min_frag_atoms=3)"
-                )
+                assert (
+                    count >= 3
+                ), f"{smiles}: non-root node {i} has {count} atoms (< min_frag_atoms=3)"
 
     def test_filter_ring_cut_sizes(self):
         """Cyclohexane cut=2: sizes 1 and 2 pruned, 3+ kept with min_frag_atoms=3."""
@@ -902,9 +902,9 @@ class TestMinFragAtoms:
         assert 1 not in counts and 2 not in counts
         # 3-, 4-, 5-atom splits should still appear
         for expected in [3, 4, 5]:
-            assert expected in counts, (
-                f"Expected {expected}-atom fragment to survive min_frag_atoms=3 filter"
-            )
+            assert (
+                expected in counts
+            ), f"Expected {expected}-atom fragment to survive min_frag_atoms=3 filter"
 
 
 # ---------------------------------------------------------------------------
@@ -925,9 +925,9 @@ class TestRingCutBudget:
     def test_budget_0_no_ring_cuts(self):
         """max_ring_cut_steps=0 means no ring cuts → cyclohexane yields only root."""
         r = _run("C1CCCCC1", max_cut_size=2, max_depth=3, max_ring_cut_steps=0)
-        assert len(r["nodes_mask"]) == 1, (
-            f"With budget=0 on cyclohexane, expected only root; got {len(r['nodes_mask'])} nodes"
-        )
+        assert (
+            len(r["nodes_mask"]) == 1
+        ), f"With budget=0 on cyclohexane, expected only root; got {len(r['nodes_mask'])} nodes"
 
     def test_budget_0_vs_budget_1(self):
         """Naphthalene: budget=0 (no ring cuts) yields far fewer fragments than budget=1.
@@ -949,9 +949,9 @@ class TestRingCutBudget:
         PHENANTHRENE = "c1ccc2ccc3ccccc3c2c1"
         r_depth = _run(PHENANTHRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=3)
         r_large = _run(PHENANTHRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=999)
-        assert len(r_depth["nodes_mask"]) == len(r_large["nodes_mask"]), (
-            "budget=max_depth and budget=999 should produce identical fragment counts"
-        )
+        assert len(r_depth["nodes_mask"]) == len(
+            r_large["nodes_mask"]
+        ), "budget=max_depth and budget=999 should produce identical fragment counts"
 
     def test_cut1_always_allowed_at_budget_0(self):
         """Bridge cuts (cut=1) are never counted against the ring cut budget."""
@@ -959,9 +959,9 @@ class TestRingCutBudget:
         # With budget=0 and max_cut_size=2: only the bridge fires → 2 fragments
         r = _run("CC1CCCCC1", max_cut_size=2, max_depth=1, max_ring_cut_steps=0)
         n_frags = len(r["nodes_mask"])
-        assert n_frags > 1, (
-            f"Bridge on methylcyclohexane should fire even with budget=0; got {n_frags} nodes"
-        )
+        assert (
+            n_frags > 1
+        ), f"Bridge on methylcyclohexane should fire even with budget=0; got {n_frags} nodes"
 
     def test_default_budget_2_matches_explicit(self):
         """Calling with max_ring_cut_steps=2 (default) matches omitting the arg."""
@@ -992,10 +992,10 @@ class TestMinRcDedup:
     # Regression anchors — fragment counts measured after both the min_rc_for_key
     # dedup fix and the stale-cc_nodes_s + ring-open fix; must stay stable.
     REGRESSION = [
-        ("c1ccc2ccccc2c1", 3, 191),               # naphthalene
-        ("c1ccc2cc3ccccc3cc2c1", 3, 1003),         # anthracene
-        ("c1cc2ccc3cccc4ccc(c1)c2c34", 3, 1370),   # pyrene
-        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 3, 4831), # androstane (4 fused rings)
+        ("c1ccc2ccccc2c1", 3, 191),  # naphthalene
+        ("c1ccc2cc3ccccc3cc2c1", 3, 1003),  # anthracene
+        ("c1cc2ccc3cccc4ccc(c1)c2c34", 3, 1370),  # pyrene
+        ("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", 3, 4831),  # androstane (4 fused rings)
     ]
 
     def test_regression_fragment_counts(self):
@@ -1055,9 +1055,9 @@ class TestMinRcDedup:
         PYRENE = "c1cc2ccc3cccc4ccc(c1)c2c34"
         r1 = _run(PYRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
         r2 = _run(PYRENE, max_cut_size=2, max_depth=3, max_ring_cut_steps=2)
-        assert len(r1["nodes_mask"]) == len(r2["nodes_mask"]), (
-            "Fragment count is non-deterministic — dict ordering issue?"
-        )
+        assert len(r1["nodes_mask"]) == len(
+            r2["nodes_mask"]
+        ), "Fragment count is non-deterministic — dict ordering issue?"
 
 
 # ---------------------------------------------------------------------------
@@ -1129,7 +1129,7 @@ class TestRingOpenMask:
     def test_none_mask_matches_unconstrained(self):
         """ring_open_mask=None gives identical fragment counts to the default call."""
         for smiles in [
-            "c1ccc2ccccc2c1",          # naphthalene
+            "c1ccc2ccccc2c1",  # naphthalene
             "CC(C)Cc1ccc(cc1)C(C)C(=O)O",  # ibuprofen
             "C1CCC2CCCC3CCCC4CCCCC4C3C2C1",  # androstane
         ]:
@@ -1166,7 +1166,7 @@ class TestRingOpenMask:
         _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
         zeros = np.zeros(num_edges, dtype=np.uint8)
         r = _run_with_rom(smiles, ring_open_mask=zeros, max_depth=3)
-        counts = set(int(r["nodes_mask"][i].sum()) for i in range(1, len(r["nodes_mask"])))
+        counts = {int(r["nodes_mask"][i].sum()) for i in range(1, len(r["nodes_mask"]))}
         # Direct cut=2 from root on cyclohexane gives sizes 1..5
         for expected in [1, 2, 3, 4, 5]:
             assert expected in counts, (
@@ -1214,7 +1214,7 @@ class TestRingOpenMask:
         _, num_edges, *_ = get_fraggen_input_arrays(mol_d)
         shared = _shared_bond_mask(smiles, num_edges)
         r = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
-        counts = set(int(r["nodes_mask"][i].sum()) for i in range(1, len(r["nodes_mask"])))
+        counts = {int(r["nodes_mask"][i].sum()) for i in range(1, len(r["nodes_mask"]))}
         assert 5 in counts, (
             f"Shared-mask naphthalene should find 5-atom ring-half fragment; "
             f"got sizes {sorted(counts)}"
@@ -1228,9 +1228,9 @@ class TestRingOpenMask:
         shared = _shared_bond_mask(smiles, num_edges)
         r_none = _run_with_rom(smiles, ring_open_mask=None, max_depth=3)
         r_shared = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
-        assert len(r_none["nodes_mask"]) == len(r_shared["nodes_mask"]), (
-            "Acyclic molecule: shared-bond mask should not change fragment count"
-        )
+        assert len(r_none["nodes_mask"]) == len(
+            r_shared["nodes_mask"]
+        ), "Acyclic molecule: shared-bond mask should not change fragment count"
 
     def test_shared_mask_no_effect_on_simple_ring(self):
         """Shared-bond mask on a simple (non-fused) ring leaves fragment count unchanged.
@@ -1255,8 +1255,8 @@ class TestRingOpenMask:
     def test_no_duplicates_with_shared_mask(self):
         """No duplicate fragment masks with shared-bond ring_open_mask."""
         for smiles in [
-            "c1ccc2ccccc2c1",           # naphthalene
-            "c1ccc2cc3ccccc3cc2c1",     # anthracene
+            "c1ccc2ccccc2c1",  # naphthalene
+            "c1ccc2cc3ccccc3cc2c1",  # anthracene
             "C1CCC2CCCC3CCCC4CCCCC4C3C2C1",  # androstane
         ]:
             mol_d = extract_mol_info(smiles)
@@ -1265,6 +1265,6 @@ class TestRingOpenMask:
             r = _run_with_rom(smiles, ring_open_mask=shared, max_depth=3)
             nm = r["nodes_mask"]
             rows = [bytes(nm[i]) for i in range(len(nm))]
-            assert len(rows) == len(set(rows)), (
-                f"Duplicate fragment masks with shared-bond ring_open_mask on {smiles!r}"
-            )
+            assert len(rows) == len(
+                set(rows)
+            ), f"Duplicate fragment masks with shared-bond ring_open_mask on {smiles!r}"

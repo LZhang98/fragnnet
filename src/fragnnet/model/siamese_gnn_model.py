@@ -4,6 +4,8 @@ The model uses GNN  and optional embeddings for collision energy (CE),
 precursor type, and instrument type, and predicts spectra using a feedforward neural network.
 """
 
+import logging
+
 import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
@@ -11,6 +13,8 @@ import torch_geometric as pyg
 from fragnnet.model.base_model import CEModel, InstModel, PrecModel
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+
+logger = logging.getLogger(__name__)
 
 
 class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
@@ -305,8 +309,11 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             # If batch sizes differ we fall back to simple concat (safe fallback).
             if batch_size_i != batch_size_j:
                 # fallback: concatenate (note: typically batches for pair datasets are aligned)
-                print(
-                    f"Warning: cross_attn requested but batch sizes differ ({batch_size_i}!={batch_size_j}), falling back to concat"
+                logger.warning(
+                    "cross_attn requested but batch sizes differ (%d != %d); falling back "
+                    "to concat",
+                    batch_size_i,
+                    batch_size_j,
                 )
                 cat = th.cat([mlp_input_i, mlp_input_j], dim=1)
                 pred = self.regressor(cat)

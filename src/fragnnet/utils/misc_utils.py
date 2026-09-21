@@ -7,6 +7,7 @@ and torch/pandas friendly for use in data loading, model code, and scripts.
 """
 
 import glob
+import importlib.util
 import logging
 import multiprocessing
 import os
@@ -152,12 +153,15 @@ def none_or_nan(thing: Any) -> bool:
 def np_temp_seed(seed: int) -> Generator[None, None, None]:
     """Temporarily set the NumPy random seed within the context."""
 
-    state = np.random.get_state()
-    np.random.seed(seed)
+    # Deliberately the legacy global RNG: this context manager exists to seed and restore
+    # the process-wide state that library code already uses. np.random.Generator is a
+    # separate stream and would not affect those callers.
+    state = np.random.get_state()  # noqa: NPY002
+    np.random.seed(seed)  # noqa: NPY002
     try:
         yield
     finally:
-        np.random.set_state(state)
+        np.random.set_state(state)  # noqa: NPY002
 
 
 @contextmanager
@@ -305,7 +309,7 @@ def get_tensor_dict_memory_usage(**tensor_dict: Any) -> int:
     """Compute total memory usage for tensor values in a dictionary."""
 
     total_memory = 0
-    for k, v in tensor_dict.items():
+    for _k, v in tensor_dict.items():
         if isinstance(v, th.Tensor):
             total_memory += get_tensor_memory_usage(v)
     return total_memory
@@ -678,7 +682,7 @@ def to_device(
     for k in data_d:
         v = data_d[k]
         # Support optional DGL: use DGLGraph placeholder for isinstance checks
-        if isinstance(v, th.Tensor) or isinstance(v, DGLGraph) or isinstance(v, pyg.data.Data):
+        if isinstance(v, (th.Tensor, DGLGraph, pyg.data.Data)):
             v = v.to(device, non_blocking=non_blocking)
             data_d[k] = v
     return data_d
@@ -707,9 +711,9 @@ def print_shapes(input_dict: Mapping[str, Any]) -> None:
     """Print shapes/types for entries in ``input_dict`` (debug helper)."""
 
     for k, v in input_dict.items():
-        if isinstance(v, th.Tensor) or isinstance(v, np.ndarray):
+        if isinstance(v, (th.Tensor, np.ndarray)):
             print(k, "/", tuple(v.shape), "/", type(v))
-        elif isinstance(v, list) or isinstance(v, tuple):
+        elif isinstance(v, (list, tuple)):
             print(k, "/", len(v), "/", type(v))
         elif isinstance(v, pyg.data.Data):
             print(k, "/", (v.num_nodes, v.num_edges), "/", type(v))
@@ -756,13 +760,11 @@ def check_pyg_full_compile() -> bool:
 
 # wandb stuff
 def check_import_wandb() -> bool:
-    """Check for wandb installation and warn if missing."""
-
-    try:
-        import wandb
-    except ImportError:
-        print("wandb is not installed. Please install it using 'pip install wandb' if needed.")
-    return False
+    """Return whether wandb is importable, warning once when it is not."""
+    if importlib.util.find_spec("wandb") is None:
+        logging.warning("wandb is not installed; install it with 'pip install wandb' if needed.")
+        return False
+    return True
 
 
 def get_best_ckpt_from_wandb(
@@ -850,7 +852,7 @@ class NestedDefaultDict(defaultdict):
     """Nested defaultdict that auto-creates deeper levels."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(NestedDefaultDict, self).__init__(NestedDefaultDict, *args, **kwargs)
+        super().__init__(NestedDefaultDict, *args, **kwargs)
 
     def __repr__(self) -> str:
         return repr(dict(self))

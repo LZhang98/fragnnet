@@ -1,12 +1,15 @@
+import logging
 import sqlite3
 
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 class MolCandidateDB:
     def __init__(self, db_config: str):
         self.conn = None
-        if type(db_config) == str:
+        if isinstance(db_config, str):
             self.db_file = db_config
         else:
             self.db_file = db_config.db_file
@@ -27,8 +30,8 @@ class MolCandidateDB:
             self.conn = sqlite3.connect(
                 self.db_file, isolation_level=None, detect_types=sqlite3.PARSE_DECLTYPES
             )
-        except:
-            print(f"Unable to connect to the database: {self.db_file} ")
+        except sqlite3.Error:
+            logger.exception("Unable to connect to the database: %s", self.db_file)
         else:
             # print("Database Connection Established")
             # use wal model
@@ -50,9 +53,8 @@ class MolCandidateDB:
         try:
             cursor = self.conn.cursor()
             cursor.execute(query)
-        except Exception as err:
-            # pass exception to function
-            print(f"{err}")
+        except sqlite3.Error:
+            logger.exception("Query failed: %s", query)
             self.conn.rollback()
             return None
         else:
@@ -68,12 +70,8 @@ class MolCandidateDB:
         try:
             cursor = self.conn.cursor()
             cursor.executemany(query, data)
-        except Exception as err:
-            # pass exception to function
-            # DatabaseUtilities.print_psycopg2_exception(err)
-            print(f"{err}")
-            print(query)
-            print(data)
+        except sqlite3.Error:
+            logger.exception("Batch query failed: %s with %d rows", query, len(data))
             self.conn.rollback()
             return None
         else:
@@ -123,7 +121,7 @@ class MolCandidateDB:
 
         selection_query = f"SELECT COALESCE(id,-1),inchikey,smiles,formula,exact_mass FROM compound WHERE exact_mass >= {mw_min} AND exact_mass <= {mw_max}"
         if verbose:
-            print(f">get_compounds_by_colname {selection_query}")
+            logger.info("get_compounds_by_colname %s", selection_query)
         return self.execute_query(selection_query, fetch=True)
 
     def get_compounds_by_colname(
@@ -149,7 +147,7 @@ class MolCandidateDB:
 
         selection_query = f"SELECT COALESCE(id,-1),inchikey,smiles,formula,exact_mass FROM compound WHERE {col_name} in ({values_query})"
         if verbose:
-            print(f">get_compounds_by_colname {selection_query}")
+            logger.info("get_compounds_by_colname %s", selection_query)
         return self.execute_query(selection_query, fetch=True)
 
     @classmethod

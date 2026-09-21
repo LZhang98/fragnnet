@@ -767,7 +767,7 @@ def batch_mols_frags(
     boundary_pair_frag_idxs = []
     boundary_pair_in_idxs = []
     boundary_pair_out_idxs = []
-    for mol_idx, (mol_pyg_item, frag_pyg_item) in enumerate(zip(mol_pyg_list, frag_pyg_list)):
+    for mol_idx, (_mol_pyg_item, frag_pyg_item) in enumerate(zip(mol_pyg_list, frag_pyg_list)):
         if not hasattr(frag_pyg_item, "boundary_pair_frag_idxs"):
             raise ValueError(
                 "frag_pyg is missing precomputed boundary_pair_* attributes; "
@@ -780,11 +780,17 @@ def batch_mols_frags(
         boundary_pair_out_idxs.append(frag_pyg_item.boundary_pair_out_local + mol_offsets)
 
     # Initialize lists
-    frag_formula_peak_idxs = []  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
+    frag_formula_peak_idxs = (
+        []
+    )  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
     frag_formula_peak_mzs = []
     frag_formula_peak_probs = []
-    frag_formula_sizes = []  # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
-    frag_formula_peak_sizes = []  # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
+    frag_formula_sizes = (
+        []
+    )  # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
+    frag_formula_peak_sizes = (
+        []
+    )  # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
 
     # Loop through the mz and probs for each sample
     for mzs, probs in zip(formula_peak_mzs_list, formula_peak_probs_list):
@@ -968,13 +974,19 @@ def get_frag_graph(
             if feat == "out_degree":  # on-the-fly: count outgoing edges per node
                 _x_cur = th.zeros(num_nodes, 1, device=device, dtype=th.int64)
                 if edge_index.shape[1] > 0:
-                    _x_cur.scatter_add_(0, edge_index[0].unsqueeze(1), th.ones_like(edge_index[0].unsqueeze(1)))
+                    _x_cur.scatter_add_(
+                        0, edge_index[0].unsqueeze(1), th.ones_like(edge_index[0].unsqueeze(1))
+                    )
             elif feat == "in_degree":  # on-the-fly: count incoming edges per node
                 _x_cur = th.zeros(num_nodes, 1, device=device, dtype=th.int64)
                 if edge_index.shape[1] > 0:
-                    _x_cur.scatter_add_(0, edge_index[1].unsqueeze(1), th.ones_like(edge_index[1].unsqueeze(1)))
+                    _x_cur.scatter_add_(
+                        0, edge_index[1].unsqueeze(1), th.ones_like(edge_index[1].unsqueeze(1))
+                    )
             elif feat == "num_heavy_atoms":  # on-the-fly: sum base_formula (H col is already 0)
-                _x_cur = get_node_feats(x, node_feat_idxs[0], "base_formula").sum(dim=1, keepdim=True)
+                _x_cur = get_node_feats(x, node_feat_idxs[0], "base_formula").sum(
+                    dim=1, keepdim=True
+                )
             else:
                 _x_cur = get_node_feats(x, node_feat_idxs[0], feat)
             _x.append(_x_cur)
@@ -1024,7 +1036,11 @@ def get_frag_graph(
         node_feat_idxs=_node_feat_idxs,
         edge_feat_idxs=_edge_feat_idxs,
     )
-    for attr_name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+    for attr_name in (
+        "boundary_pair_frag_idxs",
+        "boundary_pair_in_local",
+        "boundary_pair_out_local",
+    ):
         if hasattr(source_dag_pyg, attr_name):
             setattr(dag_pyg, attr_name, getattr(source_dag_pyg, attr_name))
     if "frag_q" in frag_node_feats:

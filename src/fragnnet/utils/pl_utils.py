@@ -27,6 +27,102 @@ def migrate_mass_shatter_proposal_method(config: dict) -> None:
             config[new_key] = "connected_fragment_beam"
 
 
+# Keys that `SpectrumPL` and its subclasses once read through a fallback default instead of
+# declaring them. `config/template.yml` declares all of them now, so a fresh config always
+# supplies them and a missing key can only come from a checkpoint saved before the key existed.
+# Each value below is the fallback the removed `.get(...)`/`getattr(...)` call supplied, so an
+# old checkpoint keeps its original behavior.
+#
+# `report_metric_std` had two disagreeing fallbacks (`False` when allocating the trackers,
+# `True` when reporting), which made a checkpoint without the key raise in
+# `_accumulate_running_metrics`. `False` is both the template default and the allocation
+# default, so it is the value that keeps old checkpoints running.
+_LEGACY_HPARAM_DEFAULTS = {
+    # Graphormer shape limits: `None` disables the corresponding embedding.
+    "mol_max_degree": None,
+    "mol_max_spatial_distance": None,
+    "mol_multi_hop_max_distance": None,
+    # SpectrumPL evaluation and reporting.
+    "report_metric_std": False,
+    "inst_type_loss_tol": None,
+    "eval_target_apply_train_rank_filters": False,
+}
+
+# FraGNNet-only construction flags, applied when the checkpoint is a FraGNNet model.
+_LEGACY_FRAGNNET_HPARAM_DEFAULTS = {
+    "cc_channel_dropout": 0.0,
+    "candidate_ion_head": False,
+    "candidate_ion_formula_features": True,
+    "candidate_ion_neutral_loss_features": True,
+    "candidate_ion_chunk_size": 32768,
+    "candidate_ion_checkpoint": True,
+    "ion_channel_factorized": False,
+    "ion_channel_adduct_gated": False,
+    "ion_channel_rank": 32,
+}
+
+_FRAGNNET_MODEL_TYPES = frozenset({"frag_gnn", "fragnnet"})
+
+# CLIP and MCES pretraining heads, same story as above.
+_LEGACY_CLIP_HPARAM_DEFAULTS = {
+    "clip_embed_dim": 256,
+    "clip_intensity_transform": "sqrt",
+    "clip_loss_type": "clip",
+    "spectrum_encoder_params": {},
+    "mol_num_heads": 4,
+    "ace_max": 100.0,
+    "ace_mean": 20.0,
+    "ace_std": 15.0,
+    "lr_schedule_type": "exponential",
+    "lr_total_steps": None,
+    "lr_min_ratio": 0.0,
+}
+
+
+def migrate_legacy_hparams(config: dict) -> None:
+    """Backfill hyperparameters that predate their declaration in ``config/template.yml``.
+
+    Mutates the supplied mapping in place. Only missing keys are filled, so an explicit
+    value in a config, checkpoint or CLI override always wins. Fresh configurations already
+    carry every key from the template and are left untouched.
+
+    Args:
+        config: Hyperparameter mapping from a config file or a checkpoint.
+    """
+    # 1. Rename the legacy eval-filter key before the shared defaults fill the new one.
+    legacy_rank_filter_key = "eval_target_apply_train_peak_filters"
+    rank_filter_key = "eval_target_apply_train_rank_filters"
+    if legacy_rank_filter_key in config:
+        legacy_value = config.pop(legacy_rank_filter_key)
+        if rank_filter_key not in config:
+            config[rank_filter_key] = legacy_value
+
+    # 2. Shared SpectrumPL keys.
+    for key, value in _LEGACY_HPARAM_DEFAULTS.items():
+        if key not in config:
+            config[key] = value
+
+    # 3. Per-model-family keys.
+    model_type = config.get("model_type")
+    if model_type in _FRAGNNET_MODEL_TYPES:
+        for key, value in _LEGACY_FRAGNNET_HPARAM_DEFAULTS.items():
+            if key not in config:
+                config[key] = value
+    if model_type in ("clip", "spec_mol_clip_pretraining"):
+        for key, value in _LEGACY_CLIP_HPARAM_DEFAULTS.items():
+            if key not in config:
+                config[key] = value
+    if model_type == "mces_pretraining" and "auxiliary_scores" not in config:
+        config["auxiliary_scores"] = []
+
+    # 4. `use_nce`/`use_ace` fell back to the dataset's `spec_params` rather than a constant,
+    # so their backfill has to read that section instead of a table.
+    spec_params = config.get("spec_params") or {}
+    for key, spec_key in (("use_nce", "nce"), ("use_ace", "ace")):
+        if key not in config:
+            config[key] = bool(spec_params.get(spec_key, False))
+
+
 class ConsoleLogger(Logger):
     """Custom console logger that logs metrics to console via logging module.
 
@@ -141,6 +237,7 @@ def get_pl_hparams(ckpt: dict) -> dict:
         Deep copy of hyperparameters dictionary.
     """
     hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+    migrate_legacy_hparams(hyper_parameters)
     # Old checkpoints retain first-replicate CE context unless explicitly migrated.
     if "spec_params" in hyper_parameters:
         spec_params = hyper_parameters["spec_params"]

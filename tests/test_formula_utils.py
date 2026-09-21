@@ -5,7 +5,6 @@ Tests for formula parsing, isotopic peak generation, and mass calculations.
 
 import re
 
-import numpy as np
 import pytest
 import rdkit.Chem as Chem
 from pyteomics.mass import Composition
@@ -35,6 +34,7 @@ class TestMassAndIsotopes:
     def test_mass_matches_periodic_table(self):
         expected = Chem.GetPeriodicTable().GetMostCommonIsotopeMass("H")
         assert fu.MASS("H") == pytest.approx(expected, rel=1e-8, abs=1e-8)
+
 
 class TestPeaks:
     """Peak generation via get_peaks_for_formula (pyopenms-backed)."""
@@ -183,39 +183,29 @@ class TestFormulaRowPrecDeltas:
 
     def test_crf_only_layout(self):
         # 1 sample, NULL + 3 CRF rows. The NULL row stands for no fragment.
-        deltas = fu.formula_row_prec_deltas(
-            ["[M+H]+"], [0, 4], include_cmf=False, max_h_transfer=4
-        )
+        deltas = fu.formula_row_prec_deltas(["[M+H]+"], [0, 4], include_cmf=False, max_h_transfer=4)
         assert deltas.tolist() == ["", "H1", "H1", "H1"]
 
     def test_negative_mode_delta(self):
-        deltas = fu.formula_row_prec_deltas(
-            ["[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4
-        )
+        deltas = fu.formula_row_prec_deltas(["[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4)
         assert deltas.tolist() == ["", "H-1", "H-1"]
 
     def test_cmf_half_gets_the_migration_delta(self):
         # NULL + CRF[1:2] + CMF[1:2] = 5 rows; [M+Na]+ keeps both channels.
-        deltas = fu.formula_row_prec_deltas(
-            ["[M+Na]+"], [0, 5], include_cmf=True, max_h_transfer=4
-        )
+        deltas = fu.formula_row_prec_deltas(["[M+Na]+"], [0, 5], include_cmf=True, max_h_transfer=4)
         assert deltas.tolist() == ["", "Na1", "Na1", "H1", "H1"]
 
     def test_cmf_ignored_when_it_duplicates_a_crf_h_shift(self):
         # [M+H]+ CMF is the CRF state at delta_h = -1, so the dataset never emits it.
         assert fu.cmf_duplicate_crf_h_shift("[M+H]+", 4) == -1
-        deltas = fu.formula_row_prec_deltas(
-            ["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=4
-        )
+        deltas = fu.formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=4)
         assert deltas.tolist() == ["", "H1", "H1", "H1", "H1"]
 
     def test_cmf_emitted_when_h_transfer_cannot_reach_it(self):
         # With no hydrogen transfer the CRF ladder never reaches the CMF state, so the
         # dataset does emit the CMF half even for [M+H]+.
         assert fu.cmf_duplicate_crf_h_shift("[M+H]+", 0) is None
-        deltas = fu.formula_row_prec_deltas(
-            ["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=0
-        )
+        deltas = fu.formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=0)
         assert deltas.tolist() == ["", "H1", "H1", "", ""]
 
     def test_per_sample_precursor_across_a_batch(self):

@@ -14,10 +14,7 @@ def element_filter(formula, elements):
         element_counts = parse_formula(formula)
     except ValueError:
         return False
-    for k, v in element_counts.items():
-        if v > 0 and k not in elements:
-            return False
-    return True
+    return all(v <= 0 or k in elements for k, v in element_counts.items())
 
 
 def filter_spec_mol(
@@ -407,7 +404,9 @@ def merge_spec_df(
     if ce_aggregation not in {"legacy", "weighted"}:
         raise ValueError(f"Unknown CE aggregation: {ce_aggregation!r}")
     if ce_aggregation == "weighted" and not (
-        keep_ces and method == "tolerance_consensus" and equal_ce_weight
+        keep_ces
+        and method == "tolerance_consensus"
+        and equal_ce_weight
         and ce_key in {"nce", "ace"}
     ):
         raise ValueError("Weighted CE aggregation requires retained CE and equal-CE consensus")

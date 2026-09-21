@@ -5,6 +5,7 @@ import multiprocessing
 import os
 import tempfile
 import warnings
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from itertools import chain
 from typing import Any
@@ -718,7 +719,7 @@ def prepare_output_subset(
 
 def required_index_vars_for_outputs(
     output_subset: set[str] | None,
-    model,
+    model: th.nn.Module,
     nb_iso: bool = False,
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
@@ -843,7 +844,7 @@ def required_index_vars_for_outputs(
 
 def get_required_config_indices(
     output_subset: set[str] | None,
-    model,
+    model: th.nn.Module,
     nb_iso: bool = False,
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
@@ -860,7 +861,7 @@ def get_required_config_indices(
 
 def get_idx_vars(
     output_subset: set[str] | None,
-    model,
+    model: th.nn.Module,
     nb_iso: bool = False,
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
@@ -1061,9 +1062,7 @@ def run_inference_pkl(
 
             # Run inference. `evaluate` only adds ground-truth scoring; the predicted
             # intensities have the same meaning either way.
-            b_output = model.inference_step(
-                batch_input, metrics="test" if evaluate else None
-            )
+            b_output = model.inference_step(batch_input, metrics="test" if evaluate else None)
 
             b_output = to_device(b_output, "cpu", non_blocking=False)
             if output_set is not None:
@@ -1089,8 +1088,10 @@ def run_inference_pkl(
                     elif token in _PROB_TOKEN_TO_LOGPROB_KEY:
                         key = _PROB_TOKEN_TO_LOGPROB_KEY[token]
                         if b_output.get(key) is None:
-                            raise KeyError(f"output token {token!r} needs model output "
-                                           f"{key!r}, which is absent/None")
+                            raise KeyError(
+                                f"output token {token!r} needs model output "
+                                f"{key!r}, which is absent/None"
+                            )
                         derived[token] = th.exp(b_output[key])
                     elif b_output.get(token) is not None:
                         derived[token] = b_output[token]
@@ -1159,7 +1160,7 @@ def run_inference_pkl(
             cum_num_nb_nodes += b_num_nb_nodes
 
             # Collect outputs
-            for k in b_output.keys():
+            for k in b_output:
                 if b_output[k] is None:
                     continue
                 if k not in vals:
@@ -1248,9 +1249,9 @@ def run_inference_tabular(
         return_cc_hash=return_cc_hash,
         rebase_indices=rebase_indices,
     ):
-        assert len(batch_rows) == len(columns_name), (
-            f"batch_rows has {len(batch_rows)} columns, expected {len(columns_name)}"
-        )
+        assert len(batch_rows) == len(
+            columns_name
+        ), f"batch_rows has {len(batch_rows)} columns, expected {len(columns_name)}"
         for k, v in zip(columns_name, batch_rows):
             preds_l.setdefault(k, []).extend(v)
 
@@ -1270,7 +1271,7 @@ def run_inference_hdf5(
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
-    chunk_size=10000,
+    chunk_size: int = 10000,
     save_path: str = "",
     drop_none_cols: bool = True,
     compression: str | None = "gzip",
@@ -1345,7 +1346,7 @@ def run_inference_hdf5(
     ragged_columns = {k for _, members in ragged_groups for k in members}
     group_offsets = {prefix: 0 for prefix, _ in ragged_groups}
 
-    def is_blocked(values) -> bool:
+    def is_blocked(values: list) -> bool:
         """True when a column holds per-spectrum blocks rather than scalar placeholders.
 
         A column that was not requested comes through as one NaN per spectrum, which must
@@ -1353,7 +1354,7 @@ def run_inference_hdf5(
         """
         return bool(values) and isinstance(values[0], (th.Tensor, np.ndarray, list))
 
-    def is_all_none(save_v) -> bool:
+    def is_all_none(save_v: list) -> bool:
         """True when a scalar column carries no value at all, only NaN/None placeholders.
 
         An unrequested column arrives as one NaN per spectrum (see `is_blocked`), which is
@@ -1367,7 +1368,7 @@ def run_inference_hdf5(
             return all(v is None or (isinstance(v, float) and np.isnan(v)) for v in save_v)
         return False
 
-    def concat_blocks(values, column_name):
+    def concat_blocks(values: list, column_name: str) -> np.ndarray:
         """Flatten per-spectrum blocks into one array h5py can store."""
         if isinstance(values[0], th.Tensor):
             return th.cat(values, 0).detach().cpu().numpy()
@@ -1396,7 +1397,7 @@ def run_inference_hdf5(
     start_point = 0
     with h5py.File(save_path, "w") as save_file:
 
-        def create_kwargs(dtype, trailing):
+        def create_kwargs(dtype: Any, trailing: tuple) -> dict[str, Any]:
             """Chunking/compression for one dataset.
 
             Compression is what makes this file small: the index columns are small integers
@@ -1425,7 +1426,7 @@ def run_inference_hdf5(
                 kwargs["shuffle"] = True
             return kwargs
 
-        def resize_and_save(k, save_v, start_point):
+        def resize_and_save(k: str, save_v: Any, start_point: int) -> None:
             if k not in save_file:
                 # Trailing dims are kept fixed and only axis 0 grows, so 2-D columns such as
                 # pred_node_ccs (one hash pair per DAG node) store as (n_nodes, 2).
@@ -1515,7 +1516,9 @@ def run_inference_hdf5(
                     # the concatenated totals would let a per-spectrum misalignment through.
                     block_lengths = [len(block) for block in preds_l[present[0]]]
                     for k in present[1:]:
-                        assert [len(b) for b in preds_l[k]] == block_lengths, (
+                        assert [
+                            len(b) for b in preds_l[k]
+                        ] == block_lengths, (
                             f"{k} block lengths disagree with {present[0]} in family '{prefix}'"
                         )
                     group_start = group_offsets[prefix]
@@ -1563,7 +1566,7 @@ def run_inference_tabular_iter(
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
     filter_stats: dict | None = None,
-):
+) -> Iterator[pd.DataFrame]:
     """
     Generator that yields batch results for streaming inference processing.
 
@@ -1653,7 +1656,9 @@ def run_inference_tabular_iter(
             yield batch_rows
 
 
-def get_split_fn(bs_idx, batch_size: int | None = None):
+def get_split_fn(
+    bs_idx: th.Tensor, batch_size: int | None = None
+) -> Callable[[th.Tensor], tuple[th.Tensor, ...]]:
     """Build a splitter for tensors grouped by sorted batch indices.
 
     Args:
@@ -1675,7 +1680,7 @@ def get_split_fn(bs_idx, batch_size: int | None = None):
         batch_counts = th.bincount(bs_idx.long(), minlength=batch_size)
     batch_counts = batch_counts.detach().cpu().tolist()
 
-    def split_fn(inp_tensor):
+    def split_fn(inp_tensor: th.Tensor) -> tuple[th.Tensor, ...]:
         return th.split(inp_tensor, batch_counts)
 
     return split_fn
@@ -1741,9 +1746,7 @@ def process_batch_to_tabular_row(
     with th.inference_mode():
         # `evaluate` only adds ground-truth scoring; the predicted intensities have the
         # same meaning either way.
-        batch_result = model.inference_step(
-            batch_input, metrics="test" if evaluate else None
-        )
+        batch_result = model.inference_step(batch_input, metrics="test" if evaluate else None)
 
     # batch_input['batch_size'] is a tensor -> convert to Python int
     batch_size = int(batch_input["batch_size"].detach().cpu().item())
@@ -1760,9 +1763,7 @@ def process_batch_to_tabular_row(
     pred_mzs_batched = batch_result["pred_mzs"]
     # `inference_step` always returns L1-normalized intensities, so the base-peak rescale
     # is all that is owed.
-    pred_ints_batched = batched_mf1000_normalize(
-        batch_result["pred_ints"], pred_batch_idxs_batched
-    )
+    pred_ints_batched = batched_mf1000_normalize(batch_result["pred_ints"], pred_batch_idxs_batched)
 
     # prepare
     # Index arrays can be requested by an annotation column alone (formula strings, cc
@@ -1852,9 +1853,7 @@ def process_batch_to_tabular_row(
                 "pred_node_formula_probs", "pred_node_formula_logprobs", joint_batch_idxs
             ),
             pred_node_batch_idxs=batch_result.get("pred_node_batch_idxs"),
-            pred_node_probs=_prob(
-                "pred_node_probs", "pred_node_logprobs", pred_node_batch_idxs
-            ),
+            pred_node_probs=_prob("pred_node_probs", "pred_node_logprobs", pred_node_batch_idxs),
             pred_node_node_idxs=(
                 None if pred_node_batch_idxs is None else batch_result.get("pred_node_node_idxs")
             ),
@@ -2179,8 +2178,8 @@ class PredArrays:
 def batch_filter_by_peak_intensity(
     arrays: PredArrays,
     min_peak_int: float,
-    frag_formula_cumsizes,
-    frag_num_nodes,
+    frag_formula_cumsizes: th.Tensor,
+    frag_num_nodes: th.Tensor,
     filter_stats: dict | None = None,
 ) -> PredArrays:
     """Drop low-intensity peaks, cascade to formulas/nodes, and rebase indices per molecule.
@@ -2374,14 +2373,12 @@ def batch_filter_by_peak_intensity(
             )
         if pred_joint_node_idxs is not None:
             pred_joint_node_idxs = pred_joint_node_idxs - frag_num_nodes[pred_joint_batch_idxs]
-    if pred_node_batch_idxs is not None:
-        if pred_node_node_idxs is not None:
-            pred_node_node_idxs = pred_node_node_idxs - frag_num_nodes[pred_node_batch_idxs]
-    if pred_formula_batch_idxs is not None:
-        if pred_formula_formula_idxs is not None:
-            pred_formula_formula_idxs = (
-                pred_formula_formula_idxs - frag_formula_cumsizes[pred_formula_batch_idxs]
-            )
+    if pred_node_batch_idxs is not None and pred_node_node_idxs is not None:
+        pred_node_node_idxs = pred_node_node_idxs - frag_num_nodes[pred_node_batch_idxs]
+    if pred_formula_batch_idxs is not None and pred_formula_formula_idxs is not None:
+        pred_formula_formula_idxs = (
+            pred_formula_formula_idxs - frag_formula_cumsizes[pred_formula_batch_idxs]
+        )
 
     return PredArrays(
         pred_batch_idxs=valid_pred_batch_idx,

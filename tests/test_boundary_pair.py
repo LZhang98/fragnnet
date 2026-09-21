@@ -4,7 +4,6 @@ import torch as th
 
 from fragnnet.utils.frag_utils import compute_boundary_pair_idxs
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -35,12 +34,11 @@ def test_linear_chain_single_cut():
       frag 1 (left): atoms {0,1}   → cut bond (1, 2): inside=1, outside=2
       frag 2 (right): atom {2}     → cut bond (2, 1): inside=2, outside=1
     """
-    mask_size = 3
     frag_node_mask = th.tensor(
         [
-            [True, True, True],   # root
+            [True, True, True],  # root
             [True, True, False],  # left: atoms 0,1
-            [False, False, True], # right: atom 2
+            [False, False, True],  # right: atom 2
         ],
         dtype=th.bool,
     )
@@ -67,7 +65,6 @@ def test_linear_chain_single_cut():
 
 def test_root_always_empty():
     """Root fragment (all atoms) produces zero pairs."""
-    mask_size = 4
     frag_node_mask = th.tensor([[True, True, True, True]], dtype=th.bool)
     mol_edge_index = th.tensor([[0, 1, 1, 2, 2, 3], [1, 0, 2, 1, 3, 2]], dtype=th.long)
     mol_num_nodes = _prefix_sum([4])
@@ -123,17 +120,14 @@ def test_two_cuts_two_pairs():
     Linear chain 0-1-2-3. Fragment: atoms {1,2} (middle two).
     Cut bonds: (1,0) and (2,3).
     """
-    mask_size = 4
     frag_node_mask = th.tensor(
         [
-            [True, True, True, True],    # root
+            [True, True, True, True],  # root
             [False, True, True, False],  # middle frag: atoms 1,2
         ],
         dtype=th.bool,
     )
-    mol_edge_index = th.tensor(
-        [[0, 1, 1, 2, 2, 3], [1, 0, 2, 1, 3, 2]], dtype=th.long
-    )
+    mol_edge_index = th.tensor([[0, 1, 1, 2, 2, 3], [1, 0, 2, 1, 3, 2]], dtype=th.long)
     mol_num_nodes = _prefix_sum([4])
     frag_num_nodes = _prefix_sum([2])
 
@@ -163,12 +157,11 @@ def test_two_molecule_batch():
     mol1: 0-1-2 (3 atoms, global 2,3,4). Frags: root {0,1,2}, frag {2}.
       cut bond → frag {2}: inside=4 (global), outside=3 (global)
     """
-    mask_size = 3
     frag_node_mask = th.tensor(
         [
-            [True, True, False],   # mol0 root
+            [True, True, False],  # mol0 root
             [True, False, False],  # mol0 frag: atom 0
-            [True, True, True],    # mol1 root
+            [True, True, True],  # mol1 root
             [False, False, True],  # mol1 frag: atom 2 (local)
         ],
         dtype=th.bool,

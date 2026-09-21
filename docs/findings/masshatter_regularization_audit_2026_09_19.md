@@ -261,13 +261,18 @@ variance. Treat the `ctxnorm` arm as scale equalization, not as a fix for this c
 
 ## 3. Generalization and optimization
 
-### 3.1 `lr_schedule_type: cosine` is silently ignored — still live (probe 6)
+### 3.1 `lr_schedule_type: cosine` was silently ignored — FIXED 2026-09-21 (probe 6)
 
-`SpectrumPL.configure_optimizers`
-([spectrum_pl.py:1766-1771](../../src/fragnnet/pl_model/spectrum_pl.py#L1766-L1771)) calls
-`build_lr_scheduler` without `schedule_type`, `total_steps` or `min_lr_ratio`, so it takes the
-`"exponential"` default. `FragnnetPL` forwards all three
-([fragnnet_pl.py:1530-1537](../../src/fragnnet/pl_model/fragnnet_pl.py#L1530-L1537)).
+> **Resolved.** `SpectrumPL.configure_optimizers`
+> ([spectrum_pl.py:1782-1815](../../src/fragnnet/pl_model/spectrum_pl.py#L1782-L1815)) now
+> forwards `schedule_type`, `total_steps` and `min_lr_ratio`, so MASShatter gets the configured
+> schedule. The numbers below describe runs from before that date, which all trained on
+> exponential decay whatever their config declared.
+
+As measured on 2026-09-19, `SpectrumPL.configure_optimizers` called
+`build_lr_scheduler` without `schedule_type`, `total_steps` or `min_lr_ratio`, so it took the
+`"exponential"` default. `FragnnetPL` forwarded all three
+([fragnnet_pl.py:1511](../../src/fragnnet/pl_model/fragnnet_pl.py#L1511)).
 Asking for cosine with `lr_total_steps: 100000` and `lr_min_ratio: 0.01`:
 
 | step | MASShatter actually gets | cosine as configured |
@@ -278,8 +283,9 @@ Asking for cosine with `lr_total_steps: 100000` and `lr_min_ratio: 0.01`:
 
 A 38x discrepancy at the end of training. This was recorded in the
 [unmerged overfitting audit](masshatter_unmerged_overfitting_2026_09_16.md) on 2026-09-16 and
-is unchanged in the working tree. That audit's own "next discriminating measurement" is an
-LR-decay arm, so this must be fixed first or that experiment measures the wrong schedule.
+was fixed on 2026-09-21. That audit's own "next discriminating measurement" is an LR-decay arm,
+which is now unblocked. Any MASShatter run started before 2026-09-21 used exponential decay
+regardless of its `lr_schedule_type`, so cross-date LR comparisons are invalid.
 
 ### 3.2 Weight decay reaches normalization gains, biases and embeddings (probe 7)
 

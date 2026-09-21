@@ -51,4 +51,4 @@ def test_num_heavy_elements_matches_whitelist():
     """NUM_HEAVY_ELEMENTS must equal len(ELEMENT_TO_VE)."""
     from fragnnet.utils.frag_utils import ELEMENT_TO_VE, NUM_HEAVY_ELEMENTS
 
-    assert NUM_HEAVY_ELEMENTS == len(ELEMENT_TO_VE)
+    assert len(ELEMENT_TO_VE) == NUM_HEAVY_ELEMENTS

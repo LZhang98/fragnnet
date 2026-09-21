@@ -1,0 +1,43 @@
+# Enforcement gate for docs/rules/python.md.
+#
+# Hooks run on STAGED FILES ONLY, which is what that rule file asks for: "Apply formatting
+# only to task-related changes; do not run broad automatic fixes on unrelated code." A repo
+# -wide `black .` would rewrite most of the tree, so it is deliberately not configured here.
+#
+# The vendored baselines under src/fragnnet/{iceberg,graff,massformer} are third-party ports
+# kept close to upstream, so they are excluded rather than reformatted.
+#
+# Install once per checkout:
+#   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/pre-commit install
+# Run against everything on demand (not automatic):
+#   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/pre-commit run --all-files
+
+exclude: '^(src/fragnnet/(iceberg|graff|massformer)/|notebooks/|wandb/)'
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.12
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+        stages: [manual]
+
+  - repo: https://github.com/psf/black
+    rev: 25.12.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: debug-statements

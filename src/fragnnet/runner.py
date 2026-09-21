@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import tempfile
+from collections.abc import Sequence
 from multiprocessing import Manager
 
 import lightning as L
@@ -177,7 +178,8 @@ def load_config(
     """
     custom_d = None
     if custom_fp is not None:
-        assert os.path.isfile(custom_fp), custom_fp
+        if not os.path.isfile(custom_fp):
+            raise FileNotFoundError(f"custom config not found: {custom_fp}")
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader) or {}
 
@@ -247,7 +249,7 @@ def load_config(
     return config_d
 
 
-def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
+def init_dataset(config_d: dict, splits: Sequence[str] = ("train", "val")) -> tuple:
     """
     Instantiate dataset objects for the requested data splits using the configured model.
 
@@ -309,9 +311,9 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     use_mass_shatter_batch_sampler = (
         config_d["model_type"] == "mass_shatter" and config_d["mass_shatter_batch_sampler"]
     )
-    assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), (
-        "Cannot use both group_sampler and simple_group_sampler"
-    )
+    assert not (
+        config_d["group_sampler"] and config_d["simple_group_sampler"]
+    ), "Cannot use both group_sampler and simple_group_sampler"
     print(f"> init_dataloader for split {split}")
     dl_param_d = {
         "dataset": ds,

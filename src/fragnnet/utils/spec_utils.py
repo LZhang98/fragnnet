@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 
 import numpy as np
@@ -16,6 +17,8 @@ from fragnnet.utils.misc_utils import (
     th_setdiff1d,
     validate_bin_geometry,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def weighted_mean_by_batch(
@@ -72,9 +75,7 @@ _expected_mk_ratio = isotope_utils._expected_mk_ratio
 _parse_adduct_counts = isotope_utils._parse_adduct_counts
 detect_isotope_peaks = isotope_utils.detect_isotope_peaks
 detect_isotope_peaks_formula_aware = isotope_utils.detect_isotope_peaks_formula_aware
-detect_isotope_peaks_for_training_cleanup = (
-    isotope_utils.detect_isotope_peaks_for_training_cleanup
-)
+detect_isotope_peaks_for_training_cleanup = isotope_utils.detect_isotope_peaks_for_training_cleanup
 detect_isotope_peaks_for_training = isotope_utils.detect_isotope_peaks_for_training
 dag_formula_source = isotope_utils.dag_formula_source
 subformula_formula_source = isotope_utils.subformula_formula_source
@@ -90,11 +91,12 @@ try:
     )
 
     _torch_linear_assignment = True
-    print("torch_linear_assignment found; using GPU-accelerated batch linear assignment")
+    logger.info("torch_linear_assignment found; using GPU-accelerated batch linear assignment")
 except ImportError:
     _torch_linear_assignment = False
-    print(
-        "torch_linear_assignment not found; falling back to scipy.optimize.linear_sum_assignment (slower, CPU-only)"
+    logger.info(
+        "torch_linear_assignment not found; falling back to "
+        "scipy.optimize.linear_sum_assignment (slower, CPU-only)"
     )
 
 
@@ -104,7 +106,7 @@ _assignment_device_logged = False
 def _log_assignment_device_once(device) -> None:
     global _assignment_device_logged
     if not _assignment_device_logged:
-        print(f"torch_linear_assignment running on device: {device}")
+        logger.info("torch_linear_assignment running on device: %s", device)
         _assignment_device_logged = True
 
 
@@ -156,22 +158,27 @@ def get_ints_transform_func(ints_transform: str) -> Callable[[th.Tensor], th.Ten
 
         def _func(ints: th.Tensor) -> th.Tensor:
             return th.log10(ints + 1.0)
+
     elif ints_transform == "log10t3":
 
         def _func(ints: th.Tensor) -> th.Tensor:
             return th.log10(ints / 3.0 + 1.0)
+
     elif ints_transform == "loge":
 
         def _func(ints: th.Tensor) -> th.Tensor:
             return th.log(ints + 1.0)
+
     elif ints_transform == "sqrt":
 
         def _func(ints: th.Tensor) -> th.Tensor:
             return th.sqrt(ints)
+
     elif ints_transform == "none":
 
         def _func(ints: th.Tensor) -> th.Tensor:
             return ints
+
     else:
         raise ValueError(f"Invalid ints_transform: {ints_transform}")
     return _func
@@ -477,7 +484,7 @@ def batched_bin_func(
             bin_spec = scatter_logsumexp(ints, bin_idxs, dim_size=num_bins * batch_size)
         bin_spec = bin_spec.reshape(batch_size, num_bins)
         if agg in ["sum", "amax"] and th.any(th.all(bin_spec == 0.0, dim=1)):
-            print("> warning: bin_spec is all zeros!")
+            logger.warning("bin_spec is all zeros!")
             mask = th.zeros_like(bin_spec, dtype=th.bool)
             mask[:, 0] = 1.0
             mask = mask * th.all(bin_spec == 0.0, dim=1, keepdim=True)
@@ -754,7 +761,9 @@ def round_aggregate_peaks(
     return sorted_mzs[start_idxs], round_ints, sorted_batch_idxs[start_idxs]
 
 
-def scipy_linear_sum_assignment(matrix: th.Tensor, maximize: bool = False) -> tuple[th.Tensor, th.Tensor]:
+def scipy_linear_sum_assignment(
+    matrix: th.Tensor, maximize: bool = False
+) -> tuple[th.Tensor, th.Tensor]:
     """Solve linear assignment via scipy (CPU fallback).
 
     Args:
@@ -885,12 +894,12 @@ def batch_cos_hun_helper(
         batch item.
     """
     if remove_prec_peak:
-        assert batch_true_ints.shape == batch_true_prec_mask.shape, (
-            f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
-        )
-        assert batch_pred_ints.shape == batch_pred_prec_mask.shape, (
-            f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
-        )
+        assert (
+            batch_true_ints.shape == batch_true_prec_mask.shape
+        ), f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
+        assert (
+            batch_pred_ints.shape == batch_pred_prec_mask.shape
+        ), f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
         batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
         batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
     assert len(batch_true_ints.shape) == 2
@@ -907,9 +916,8 @@ def batch_cos_hun_helper(
     sub_mask = batch_match_mask[
         batch_idx[..., None], true_batch_pos_idx[:, :, None], pred_batch_pos_idx[:, None, :]
     ]
-    sub_score = (
-        batch_true_ints[batch_idx, true_batch_pos_idx][..., None]
-        * (batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :])
+    sub_score = batch_true_ints[batch_idx, true_batch_pos_idx][..., None] * (
+        batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :]
     )
     assert sub_mask.shape == sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
     batch_score = sub_mask * sub_score
@@ -964,12 +972,12 @@ def batch_jss_hun_helper(
         batch item.
     """
     if remove_prec_peak:
-        assert batch_true_ints.shape == batch_true_prec_mask.shape, (
-            f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
-        )
-        assert batch_pred_ints.shape == batch_pred_prec_mask.shape, (
-            f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
-        )
+        assert (
+            batch_true_ints.shape == batch_true_prec_mask.shape
+        ), f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
+        assert (
+            batch_pred_ints.shape == batch_pred_prec_mask.shape
+        ), f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
         batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
         batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
     # Convert to probability vectors per spectrum:
@@ -988,9 +996,8 @@ def batch_jss_hun_helper(
     sub_mask = batch_match_mask[
         batch_idx[..., None], true_batch_pos_idx[:, :, None], pred_batch_pos_idx[:, None, :]
     ]
-    sub_score = (
-        batch_true_ints[batch_idx, true_batch_pos_idx][..., None]
-        + (batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :])
+    sub_score = batch_true_ints[batch_idx, true_batch_pos_idx][..., None] + (
+        batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :]
     )
     assert sub_mask.shape == sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
     # Hungarian score uses additive mass on feasible matches:

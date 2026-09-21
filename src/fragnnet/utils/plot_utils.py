@@ -342,13 +342,11 @@ def plot_spectra_sparse(
         height_ratios = [1, 2, 2]
 
     # Adding extra subplot so both plots have common x-axis and y-axis labels
-    y_pad = int(2.0 * size)
-    x_pad = int(size)
     tick_size = int(0.8 * size)
     font_size = int(0.8 * size)
 
     # defualt colors
-    if colors == None or len(colors) < 2:
+    if colors is None or len(colors) < 2:
         colors = ["#52B4FA", "#E63434"]
 
     # set up gridspec
@@ -362,7 +360,7 @@ def plot_spectra_sparse(
         mol_im = get_mol_im(smiles)
         mol_im_arr = np.array(mol_im)
         mol_im_ax = fig.add_subplot(gs[0])
-        mol_cim = mol_im_ax.imshow(mol_im_arr)
+        mol_im_ax.imshow(mol_im_arr)
         mol_im_ax.axis("off")
         ylabel_y = bottom + (height_ratios[-1] / sum(height_ratios)) * (top - bottom)
     else:
@@ -453,7 +451,7 @@ def plot_spectra_sparse(
         patches.Patch(facecolor=colors[0], label="Ground Truth", alpha=1.0),
         patches.Patch(facecolor=colors[1], label="Predicted", alpha=1.0),
     ]
-    leg = ax_top.legend(handles=handles, **leg_kws)
+    ax_top.legend(handles=handles, **leg_kws)
 
     if fp is not None:
         fig.savefig(fp)

@@ -4,6 +4,7 @@ FragGNNMet Model for MS/MS Spectrum Prediction
 
 import logging
 import math
+from typing import Any
 
 import numpy as np
 import torch as th
@@ -100,12 +101,15 @@ def _aggregate_formula_support(
     Returns [num_formulae] logits and validity; absent formulas receive zero logits.
     """
     valid = joint_valid_mask.bool()
-    represented = scatter_reduce(
-        valid.to(joint_logits),
-        joint_formula_idxs,
-        reduce="amax",
-        dim_size=formula_mask.numel(),
-    ).bool() & formula_mask.bool()
+    represented = (
+        scatter_reduce(
+            valid.to(joint_logits),
+            joint_formula_idxs,
+            reduce="amax",
+            dim_size=formula_mask.numel(),
+        ).bool()
+        & formula_mask.bool()
+    )
     logits = scatter_reduce(
         joint_logits.masked_fill(~valid, LOG_ZERO(joint_logits.dtype)),
         joint_formula_idxs,
@@ -269,7 +273,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         mol_max_degree: int | None = None,
         mol_max_spatial_distance: int | None = None,
         mol_multi_hop_max_distance: int | None = None,
-    ):
+    ) -> None:
         # nn.Module init
         super().__init__()
 
@@ -324,7 +328,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             ctx_in = sum(active_dims)
             if ctx_in == 0:
                 raise ValueError("context_embedding=True requires at least one metadata enabled")
-            self.context_insert_locations = {loc.strip() for loc in context_insert_location.split(",")}
+            self.context_insert_locations = {
+                loc.strip() for loc in context_insert_location.split(",")
+            }
             invalid = self.context_insert_locations - {"mol", "mlp"}
             if invalid:
                 raise ValueError(f"context_insert_location must be mol/mlp, got {invalid}")
@@ -478,9 +484,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # ELEMENT_TO_VE rather than hardcoded so it stays correct if the element list changes.
             # H is appended last in ELEMENTS and is monovalent. Stored doubled (v_i - 2, not
             # (v_i - 2)/2) so the contraction stays in integer arithmetic; see the forward.
-            _val = th.tensor(
-                [ELEMENT_TO_VE[e] for e in HEAVY_ELEMENTS] + [1], dtype=th.long
-            )
+            _val = th.tensor([ELEMENT_TO_VE[e] for e in HEAVY_ELEMENTS] + [1], dtype=th.long)
             if _val.shape[0] != self.num_elements:
                 raise ValueError(
                     f"rdbe valence table has {_val.shape[0]} entries but num_elements="
@@ -496,7 +500,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.mlp_output_dim *= 2
 
         # define interstage
-        assert cc_interstage_type in [
+        valid_cc_interstage_types = [
             "add",
             "sub",
             "linear",
@@ -505,6 +509,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "mlp",
             "bilinear",
         ]
+        if cc_interstage_type not in valid_cc_interstage_types:
+            raise ValueError(
+                f"unknown cc_interstage_type {cc_interstage_type!r}; "
+                f"expected one of {valid_cc_interstage_types}"
+            )
         self.cc_interstage_type = cc_interstage_type
         if self.cc_interstage_type == "linear":
             self.cc_interstage = nn.Linear(mol_pool_out_size * 2, mol_pool_out_size)
@@ -591,7 +600,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if self.frag_embed_combine == "cat":
             mlp_input_dim = 2 * self.frag_embedder.hidden_size
         else:
-            assert self.frag_embed_combine == "avg", self.frag_embed_combine
+            if self.frag_embed_combine != "avg":
+                raise ValueError(
+                    f"unknown frag_embed_combine {self.frag_embed_combine!r}; "
+                    'expected "cat" or "avg"'
+                )
             mlp_input_dim = self.frag_embedder.hidden_size
         mlp_input_dim += (
             self.ce_mlp_input_dim
@@ -646,7 +659,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.ion_channel_factorized = bool(ion_channel_factorized)
         self.ion_channel_adduct_gated = bool(ion_channel_adduct_gated)
         self.ion_channel_rank = int(ion_channel_rank)
-        if self.candidate_ion_head and (self.ion_channel_factorized or self.ion_channel_adduct_gated):
+        if self.candidate_ion_head and (
+            self.ion_channel_factorized or self.ion_channel_adduct_gated
+        ):
             raise ValueError(
                 "candidate_ion_head and ion_channel_factorized/ion_channel_adduct_gated are "
                 "mutually exclusive"
@@ -664,8 +679,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
             self.candidate_cmf_flag_embedder = get_embedder(int_embedder, max_count_int=2)
             self.candidate_ion_feature_dim += (
-                self.candidate_h_channel_embedder.num_dim
-                + self.candidate_cmf_flag_embedder.num_dim
+                self.candidate_h_channel_embedder.num_dim + self.candidate_cmf_flag_embedder.num_dim
             )
             if self.candidate_ion_formula_features:
                 if (
@@ -676,9 +690,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                         "candidate_ion_formula_features requires base_formula and h_counts in "
                         "frag_node_feats"
                     )
-                self.candidate_ion_feature_dim += (
-                    self.num_elements * self.formula_embedder.num_dim
-                )
+                self.candidate_ion_feature_dim += self.num_elements * self.formula_embedder.num_dim
             if self.candidate_ion_neutral_loss_features:
                 if not self.candidate_ion_formula_features:
                     raise ValueError(
@@ -689,9 +701,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     raise ValueError(
                         "candidate_ion_neutral_loss_features requires depth in frag_node_feats"
                     )
-                self.candidate_ion_feature_dim += (
-                    self.num_elements * self.formula_embedder.num_dim
-                )
+                self.candidate_ion_feature_dim += self.num_elements * self.formula_embedder.num_dim
         else:
             self.candidate_h_channel_embedder = None
             self.candidate_cmf_flag_embedder = None
@@ -699,9 +709,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if self.ion_channel_factorized or self.ion_channel_adduct_gated:
             if self.ion_channel_rank <= 0:
                 raise ValueError(f"ion_channel_rank must be positive, got {ion_channel_rank}")
-            self.ion_channel_node_proj = nn.Linear(
-                mlp_input_dim, self.ion_channel_rank, bias=False
-            )
+            self.ion_channel_node_proj = nn.Linear(mlp_input_dim, self.ion_channel_rank, bias=False)
             self.ion_channel_embed = nn.Embedding(self.mlp_output_dim, self.ion_channel_rank)
             # Identity start: residual is zero, but node_proj receives gradients immediately
             # because ion_channel_embed is nonzero.
@@ -750,7 +758,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     formula_support_initial_probability
                     / (1.0 - formula_support_initial_probability)
                 )
-                assert self.formula_support_module.output_layer is not None
+                if self.formula_support_module.output_layer is None:
+                    raise ValueError(
+                        "formula_support_initial_probability requires a formula support "
+                        "module with an output layer"
+                    )
                 nn.init.zeros_(self.formula_support_module.output_layer.weight)
                 nn.init.constant_(
                     self.formula_support_module.output_layer.bias, initial_support_logit
@@ -867,10 +879,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.cc_interstage_use_rest = cc_interstage_use_rest
 
         if self.bin_output:
-            self.register_buffer("mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res), persistent=False)
+            self.register_buffer(
+                "mz_bins", th.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res), persistent=False
+            )
 
         # this is required
-        assert "h_formulae_idx" in self.frag_node_feats
+        if "h_formulae_idx" not in self.frag_node_feats:
+            raise ValueError(
+                "frag_params.pyg_node_feats must include 'h_formulae_idx'; "
+                f"got {sorted(self.frag_node_feats)}"
+            )
 
         # Pre-compute h_counts as a buffer — fixed for the lifetime of the model.
         # Layout: [0, -1, +1, -2, +2, ..., -num_hs, +num_hs]
@@ -923,9 +941,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         assert self.inst_insert_location != "frag", "inst_insert_location=frag not supported"
 
     def _frag_mode_location_check(self):
-        assert self.frag_mode_insert_location != "frag", (
-            "frag_mode_insert_location=frag not supported"
-        )
+        assert (
+            self.frag_mode_insert_location != "frag"
+        ), "frag_mode_insert_location=frag not supported"
 
     def _compute_mol_feats_sizes(self):
         """method compute mol feature size
@@ -1084,16 +1102,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 root_formula[:, self.num_elements - 1] = root_h_counts
                 precursor_formula[frag_node_batch_idxs[root_mask]] = root_formula
                 frag_node_batch_chunk = frag_node_batch_idxs[node_start:node_end]
-                neutral_loss_formula = (
-                    precursor_formula[frag_node_batch_chunk]
-                    .unsqueeze(1)
-                    .expand(N, H, -1)
-                    - candidate_formula.reshape(N, H, self.num_elements)
-                )
+                neutral_loss_formula = precursor_formula[frag_node_batch_chunk].unsqueeze(1).expand(
+                    N, H, -1
+                ) - candidate_formula.reshape(N, H, self.num_elements)
                 candidate_parts.append(
-                    self.formula_embedder(
-                        neutral_loss_formula.reshape(N * H, self.num_elements)
-                    )
+                    self.formula_embedder(neutral_loss_formula.reshape(N * H, self.num_elements))
                 )
 
         candidate_feats = th.cat(candidate_parts, dim=1)
@@ -1102,9 +1115,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             candidate_feats.dtype
         )
         frag_embed_expanded = (
-            frag_embed_chunk.unsqueeze(1)
-            .expand(N, H, frag_embed_chunk.shape[1])
-            .reshape(N * H, -1)
+            frag_embed_chunk.unsqueeze(1).expand(N, H, frag_embed_chunk.shape[1]).reshape(N * H, -1)
         )
         return th.cat([frag_embed_expanded, candidate_feats], dim=1)
 
@@ -1171,14 +1182,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             logits.append(chunk_logits)
         return th.cat(logits, dim=0)
 
-    def get_compile(self, **kwargs):
+    def get_compile(self, **kwargs: Any) -> nn.Module:
         if check_pyg_full_compile():
             return th.compile(self, **kwargs)
         else:
             self.compile_submodules(**kwargs)
             return self
 
-    def compile_submodules(self, **kwargs):
+    def compile_submodules(self, **kwargs: Any) -> None:
         """pyg does not support dynamic shape compiling"""
         self.formula_embedder = th.compile(self.formula_embedder, **kwargs)
         self.depth_embedder = th.compile(self.depth_embedder, **kwargs)
@@ -1238,8 +1249,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         spec_frag_mode: th.Tensor | None = None,
         spec_prec_type_str: np.ndarray | None = None,
         return_explainability_tensors: bool = True,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """forward methods for joint predictor
 
         Args:
@@ -1317,7 +1328,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             ace = None
             ace_batch_idxs = None
         ce_embed = self.embed_ce(
-            spec_ce, spec_ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs,
+            spec_ce,
+            spec_ce_batch_idxs,
+            batch_size,
+            ace=ace,
+            ace_batch_idxs=ace_batch_idxs,
             ce_weights=kwargs.get("spec_ce_weights"),
             ace_weights=kwargs.get("spec_ace_weights"),
         )
@@ -1641,12 +1656,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # neutral loss formula: precursor_formula - fragment_formula
         # precursor is the root node (depth bit 0 set); broadcast its base_formula to all nodes
         if "neutral_loss_formula" in self.frag_node_feats:
-            assert "base_formula" in self.frag_node_feats, (
-                "neutral_loss_formula requires base_formula in frag_node_feats"
-            )
-            assert "depth" in self.frag_node_feats, (
-                "neutral_loss_formula requires depth in frag_node_feats"
-            )
+            assert (
+                "base_formula" in self.frag_node_feats
+            ), "neutral_loss_formula requires base_formula in frag_node_feats"
+            assert (
+                "depth" in self.frag_node_feats
+            ), "neutral_loss_formula requires depth in frag_node_feats"
             depth_raw = get_node_feats(frag_x, frag_node_feat_idxs, "depth").reshape(
                 batch_frag_num_nodes, -1
             )
@@ -2091,7 +2106,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     batch_frag_num_nodes, -1
                 )
                 depth_idx = depth_raw.argmax(dim=1).clamp(0, self.num_depth)  # (n_nodes,)
-                bias_per_depth = self.depth_ce_bias_layer(ce_embed)            # (batch, num_depth+1)
+                bias_per_depth = self.depth_ce_bias_layer(ce_embed)  # (batch, num_depth+1)
                 per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
                 frag_joint_logits = frag_joint_logits + per_node_bias.unsqueeze(-1)
             if self.frag_competition_head is not None:
@@ -2269,9 +2284,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 bias_per_depth = self.depth_ce_bias_layer(ce_embed)
                 # Bias P(n): a constant shift of every P(f|n) logit cancels
                 # under the per-node softmax.
-                frag_node_logits = frag_node_logits + bias_per_depth[
-                    frag_node_batch_idxs, depth_idx
-                ]
+                frag_node_logits = (
+                    frag_node_logits + bias_per_depth[frag_node_batch_idxs, depth_idx]
+                )
             frag_node_logprobs = scatter_logsoftmax(frag_node_logits, frag_node_batch_idxs)
 
             # log p(f,n) = log p(f|n) + log p(n)
@@ -2331,11 +2346,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_formula_support_logits = None
         frag_formula_support_valid_mask = None
         if frag_joint_support_logits is not None:
-            frag_formula_support_logits, frag_formula_support_valid_mask = _aggregate_formula_support(
-                frag_joint_support_logits.flatten(),
-                frag_joint_formula_idxs,
-                frag_joint_mask,
-                frag_formula_mask,
+            frag_formula_support_logits, frag_formula_support_valid_mask = (
+                _aggregate_formula_support(
+                    frag_joint_support_logits.flatten(),
+                    frag_joint_formula_idxs,
+                    frag_joint_mask,
+                    frag_formula_mask,
+                )
             )
 
         # OOS Stuff
@@ -2704,12 +2721,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             out_d["pred_joint_h_idxs"] = frag_real_joint_h_idxs  # [J]
 
         if self.output_formula_str:
-            assert frag_formula_str is not None, (
-                "frag_formula_strs must be provided if output_formula_str=True"
-            )
-            assert spec_prec_type_str is not None, (
-                "spec_prec_type_strs must be provided if output_formula_str=True"
-            )
+            assert (
+                frag_formula_str is not None
+            ), "frag_formula_strs must be provided if output_formula_str=True"
+            assert (
+                spec_prec_type_str is not None
+            ), "spec_prec_type_strs must be provided if output_formula_str=True"
             assert frag_formula_str.shape[0] == frag_real_formula_logprobs.shape[0]
             prec_type_delta_comp = formula_row_prec_deltas(
                 spec_prec_type_str,
@@ -2718,9 +2735,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 max_h_transfer=self.num_hs,
             )
             pred_formula_str = [
-                combine_formulae(frag_formula_str[i], prec_type_delta_comp[i])
-                if frag_formula_str[i] != ""
-                else ""
+                (
+                    combine_formulae(frag_formula_str[i], prec_type_delta_comp[i])
+                    if frag_formula_str[i] != ""
+                    else ""
+                )
                 for i in range(len(frag_formula_str))
             ]
             pred_formula_str = np.array(pred_formula_str)
