@@ -1,18 +1,42 @@
-# ARM c4a_pre0920_arch -- 4 h exploration campaign, 2026-09-21.
-# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: mass_shatter_candidate_charge_feature, mass_shatter_candidate_mass_features.
-# The candidate mass/charge feature and h-transfer-bound keys below are PINNED at their
-# 2026-09-20 template values, not inherited, so a later default flip cannot move this
-# comparison underneath it.
+# ARM c4a_bundle_off -- exploration campaign, 2026-09-21.
+# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml.
+# Differs from the base by: mass_shatter_candidate_mass_features, mass_shatter_candidate_charge_feature,
+# mass_shatter_boundary_bond_encoder, and the a_charge atom feature -- all OFF.
 #
-# Both 2026-09-20 candidate features off: the pre-2026-09-20 intensity-head architecture.
-# This is the bridge arm. Every historical MASShatter number was trained here, so without
-# it the campaign's absolute cosines cannot be placed against the 83-run leaderboard.
-# Read it against c4a_base_s1 for the joint effect and against A3/A4 for additivity.
+# ALL-OFF control for the 2026-09-20 feature bundle. Every config-level component is pinned OFF.
+# Together with c4a_base_s1 this brackets the bundle; the four leave-one-out arms
+# (no_mass_feats / no_charge_feat / no_bbe / no_acharge) attribute it. All keys are PINNED, not
+# inherited, so a later template default flip cannot move the comparison underneath it --
+# boundary_bond_encoder rode the default unpinned in every c4 arm until 2026-09-21, which is the
+# defect this campaign exists to avoid.
 #
-wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_pre0920_arch
+# The bundle is worth +0.0073 val cosine at matched epoch 64 (`tkkesus9` 0.7232 vs the 2026-09-19
+# reg-sweep control mean 0.7159), measured once, as a bundle. This arm is the other end of it.
+#
+# RENAMED 2026-09-21 from `c4a_pre0920_arch`, which was a false label twice over: as written it
+# turned off only two of the five components and silently inherited boundary_bond_encoder True,
+# so it was neither a pre-0920 state nor a bundle control.
+#
+# IT IS STILL NOT A PRE-0920 ARCHITECTURE, and cannot be one from config alone. The fifth bundle
+# component is the `a_degree` one-hot repair in commit 97c41abc (2026-09-20 12:00): before it,
+# AtomDegree.featurize passed the list [degree, total_degree] into one_hot_encoding, so 12 of
+# a_degree's 14 columns were pinned to the unknown bucket and carried no information. The repair
+# kept the feature name and the 14-column width, so NO config can express the old behaviour --
+# a true pre-0920 run needs a pre-97c41abc checkout. Read this arm as "bundle off, a_degree
+# repair still in". That also means it is NOT a bridge to the 83-run historical leaderboard.
+#
+# h_transfer_bound stays `valence`, matching every other c4a arm: measured free (-0.0002 at ep64)
+# so it is held constant rather than ablated.
+#
+# HORIZON (2026-09-21): 128 epochs, not 630. The horizon probe `tkkesus9` ran the full schedule
+# and val cosine SATURATES BY ~EPOCH 100: 0.7232@64 -> 0.7292@100 -> 0.7287@300 -> 0.7309@629,
+# so the last 529 epochs buy +0.0017, inside the 0.0016 control replicate floor. 128 epochs
+# (~1.8 h at the measured 70 ep/h) reaches the plateau; the saved wall clock buys n>=2 replicates,
+# which is what this family needs at a 0.003-0.005 replicate floor.
+wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_bundle_off
 wandb_group: nist20_mass_shatter_campaign4h
 wandb_tags:
-- c4a_pre0920_arch
+- c4a_bundle_off
 - campaign_4h_2026_09_21
 - mass_shatter
 - cuda_candidates
@@ -94,7 +118,6 @@ mol_params:
   - a_num_hs
   - a_mass
   - a_chiral
-  - a_charge
   pyg_edge_feats:
   - b_degree
   - b_ring
@@ -169,8 +192,8 @@ devices: 1
 num_workers: 6
 precision: 32
 use_tensor_float32: true
-min_epochs: 378
-max_epochs: 630
+min_epochs: 128
+max_epochs: 128
 debug_overfit: false
 compile: false
 pl_enable_progress_bar: true
@@ -194,5 +217,6 @@ compute_train_auxiliary_metrics: false
 mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
+mass_shatter_boundary_bond_encoder: false
 mass_shatter_candidate_mass_features: false
 mass_shatter_candidate_charge_feature: false
