@@ -309,8 +309,6 @@ profiler_active_steps: 12
 profiler_repeat: 0
 profiler_skip_first_steps: 0
 compile: False
-num_log_train_images: 0
-num_log_val_images: 0
 deterministic: False
 drop_last: False
 num_sanity_val_steps: 0

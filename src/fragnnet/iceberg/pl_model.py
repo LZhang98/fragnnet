@@ -126,11 +126,9 @@ class IcebergGenPL(SpectrumPL):
 
     def _update_results(self, batch_results, split):
         if split == "train":
-            num_log_images = self.hparams.num_log_train_images
             results_attr = "train_results"
             counter_attr = "train_counter"
         elif split == "val":
-            num_log_images = self.hparams.num_log_val_images
             results_attr = "val_results"
             counter_attr = "val_counter"
         else:
@@ -167,14 +165,6 @@ class IcebergGenPL(SpectrumPL):
                 mean_metrics[k] = th.mean(v, dim=0)
                 std_metrics[k] = th.std(v, dim=0)
         return mean_metrics, std_metrics
-
-    def _log_images(self, split):
-        if split == "train":
-            num_log_images = self.hparams.num_log_train_images
-        elif split == "val":
-            num_log_images = self.hparams.num_log_val_images
-        if num_log_images > 0:
-            raise NotImplementedError("Logging images is not supported for IcebergGenPL")
 
     def predict_mol(
         self,

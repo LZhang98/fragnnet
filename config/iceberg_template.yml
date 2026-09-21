@@ -490,5 +490,3 @@ iceberg_encode_forms: False
 iceberg_fix_batch_bug: False
 
 magma_dp: data/magma  # MAGMA annotation data directory
-num_log_train_images: 0
-num_log_val_images: 0

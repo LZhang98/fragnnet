@@ -239,11 +239,10 @@ class TestSparseCrossEntropyVecPerSample:
 class TestSpectrumPLEvalTensorGating:
     """Tests for the validation eval-tensor gate in SpectrumPL."""
 
-    def _fake_pl(self, active_metric_names, auxiliary_metric_names, raw_epoch=False):
+    def _fake_pl(self, active_metric_names, auxiliary_metric_names):
         return SimpleNamespace(
             auxiliary_metric_names=set(auxiliary_metric_names),
             _get_active_metric_names=lambda split: set(active_metric_names),
-            _should_store_raw_epoch_results=lambda split: raw_epoch,
         )
 
     def test_ce_metadata_alone_does_not_require_eval_tensors(self):
@@ -254,11 +253,6 @@ class TestSpectrumPLEvalTensorGating:
     def test_auxiliary_metrics_require_eval_tensors(self):
         """Auxiliary validation metrics still require eval spectra."""
         fake = self._fake_pl(active_metric_names={"loss", "cos_sim_0.01"}, auxiliary_metric_names={"cos_sim_0.01"})
-        assert SpectrumPL._needs_eval_tensors(fake, "val")
-
-    def test_raw_epoch_results_require_eval_tensors(self):
-        """Image/raw-spectrum logging still requires eval spectra."""
-        fake = self._fake_pl(active_metric_names={"loss"}, auxiliary_metric_names=set(), raw_epoch=True)
         assert SpectrumPL._needs_eval_tensors(fake, "val")
 
 

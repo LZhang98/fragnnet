@@ -25,11 +25,9 @@ from fragnnet.utils.misc_utils import (
     flatten_lol,
     safelog,
     scatter_l1normalize,
-    th_temp_generator,
     to_cpu,
 )
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
-from fragnnet.utils.plot_utils import plot_spectra_sparse
 from fragnnet.utils.spec_utils import (
     batch_cos_hun_helper,
     batch_jss_hun_helper,
@@ -1828,11 +1826,6 @@ class SpectrumPL(L.LightningModule):
         object.__setattr__(self, "_cached_ds_maps", (idx_to_inst, idx_to_prec, inst_to_idx))
         return self._cached_ds_maps
 
-    def _should_store_raw_epoch_results(self, split: str) -> bool:
-        """Return whether raw spectra/IDs must be retained for epoch-end logging."""
-        num_log_images = getattr(self.hparams, f"num_log_{split}_images", 0)
-        return num_log_images > 0
-
     def _should_store_ce_metadata(self, split: str) -> bool:
         """Return whether CE/adduct/instrument metadata must be retained."""
         return bool(self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"))
@@ -1840,8 +1833,7 @@ class SpectrumPL(L.LightningModule):
     def _should_store_metric_vectors(self, split: str) -> bool:
         """Return whether per-example metric tensors must be retained for a split."""
         return bool(
-            self._should_store_raw_epoch_results(split)
-            or self._should_store_ce_metadata(split)
+            self._should_store_ce_metadata(split)
             or self.hparams.log_hist_metrics
             or self.hparams.track_datapoint_metrics
         )
@@ -1854,7 +1846,7 @@ class SpectrumPL(L.LightningModule):
         """Return whether eval spectra must be materialized for this split."""
         active_metric_names = self._get_active_metric_names(split)
         need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
-        return bool(need_aux_metrics or self._should_store_raw_epoch_results(split))
+        return bool(need_aux_metrics)
 
     def _get_active_metric_names(self, split: str) -> set[str]:
         """Return the metric names that should be computed and reduced for a split."""
@@ -1865,19 +1857,6 @@ class SpectrumPL(L.LightningModule):
     def _get_result_keys(self, split: str) -> list[str]:
         """Return the minimal set of batch-result keys required for a split."""
         keys = []
-        if self._should_store_raw_epoch_results(split):
-            keys.extend(
-                [
-                    "unique_ids",
-                    "smiles",
-                    "true_mzs",
-                    "true_logprobs",
-                    "true_unique_ids",
-                    "pred_mzs",
-                    "pred_logprobs",
-                    "pred_unique_ids",
-                ]
-            )
         if self._should_store_ce_metadata(split):
             keys.extend(
                 [
@@ -1996,20 +1975,7 @@ class SpectrumPL(L.LightningModule):
         # filter keys (filtering first to save time/memory)
         keys = self._get_result_keys(split)
         unique_ids = batch_results.pop("unique_id")
-        true_batch_idxs = batch_results.pop("true_batch_idxs", None)
-        pred_batch_idxs = batch_results.pop("pred_batch_idxs", None)
         batch_results = {k: v for k, v in batch_results.items() if k in keys}
-        # update unique IDs only when raw spectra are retained for image logging
-        if (
-            self._should_store_raw_epoch_results(split)
-            and true_batch_idxs is not None
-            and pred_batch_idxs is not None
-        ):
-            true_unique_ids = unique_ids[true_batch_idxs]
-            pred_unique_ids = unique_ids[pred_batch_idxs]
-            batch_results["unique_ids"] = unique_ids
-            batch_results["true_unique_ids"] = true_unique_ids
-            batch_results["pred_unique_ids"] = pred_unique_ids
         # check all metrics
         if self._should_store_metric_vectors(split):
             assert all([metric_name in batch_results for metric_name in active_metric_names])
@@ -2285,77 +2251,12 @@ class SpectrumPL(L.LightningModule):
             # Full table at test time for detailed inspection.
             wandb_logger.experiment.log({f"{split}_adduct_inst_ce_table": table})
 
-    def _log_images(self, split):
-        """
-        Log example spectra as images to WandB for the given split.
-        """
-        results = getattr(self, f"{split}_results")
-        num_log_images = getattr(self.hparams, f"num_log_{split}_images")
-        if num_log_images <= 0 or results is None:
-            return
-        counter = getattr(self, f"{split}_counter")
-        num_log_images = min(num_log_images, counter)
-        wandb_logger = self._get_wandb_logger()
-        if wandb_logger is None:
-            return
-        # randomly sample unique_ids
-        unique_ids = th.unique(results["unique_ids"], sorted=True)
-        if num_log_images == unique_ids.shape[0]:
-            sample_idxs = th.arange(num_log_images)
-            sample_unique_ids = unique_ids
-        else:
-            # use a non-global torch Generator for deterministic selection
-            with th_temp_generator(420) as gen:
-                sample_idxs = th.randperm(unique_ids.shape[0], generator=gen)[:num_log_images]
-            sample_unique_ids = unique_ids[sample_idxs]
-        # plot images
-        for i in range(num_log_images):
-            unique_id = sample_unique_ids[i].item()
-            unique_idx = th.nonzero(results["unique_ids"] == unique_id, as_tuple=False).item()
-            true_mask = results["true_unique_ids"] == unique_id
-            pred_mask = results["pred_unique_ids"] == unique_id
-            smiles = results["smiles"][unique_idx]
-            loss = results["loss"][unique_idx].item()
-            if "cos_sim" in results:
-                cos_sim = results["cos_sim"][unique_idx].item()
-            else:
-                cos_sim = np.nan
-            if "wrecall" in results:
-                wrecall = results["wrecall"][unique_idx].item()
-            else:
-                wrecall = np.nan
-            # note: these are already untransformed and normalized (with possibility of oos)
-            true_mzs = results["true_mzs"][true_mask]
-            true_ints = th.exp(results["true_logprobs"][true_mask])
-            pred_mzs = results["pred_mzs"][pred_mask]
-            pred_ints = th.exp(results["pred_logprobs"][pred_mask])
-            # cast to numpy
-            true_mzs = true_mzs.numpy()
-            true_ints = true_ints.numpy()
-            pred_mzs = pred_mzs.numpy()
-            pred_ints = pred_ints.numpy()
-            assert np.isclose(np.sum(true_ints), 1.0), np.sum(true_ints)
-            assert np.isclose(np.sum(pred_ints), 1.0), np.sum(pred_ints)
-            # plot
-            data = plot_spectra_sparse(
-                true_mzs, true_ints, pred_mzs, pred_ints, smiles, return_data=True
-            )
-            wandb_logger.log_image(
-                key=f"{split}_example_{i}",
-                caption=[
-                    f"unique_id = {unique_id}, epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"
-                ],
-                images=[data],
-            )
-
     def on_train_epoch_start(self):
         self._seed_dataloader(self.current_epoch)
 
     def on_train_epoch_end(self):
         # consolidate results
         self._consolidate_results("train")
-        # log images
-        self._log_images("train")
         # reset
         self.train_results = None
         self._reset_running_metrics("train")
@@ -2365,8 +2266,6 @@ class SpectrumPL(L.LightningModule):
         if not self.trainer.sanity_checking:
             # consolidate results
             self._consolidate_results("val")
-            # log images
-            self._log_images("val")
         # reset
         self.val_results = None
         self._reset_running_metrics("val")
