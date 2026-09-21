@@ -3,7 +3,7 @@ import os
 import re
 import subprocess
 
-from fragnnet.runner import model_template_fp
+from fragnnet.runner import resolve_template_path
 
 
 def _normalize_profile_name(name: str) -> str:
@@ -509,7 +509,7 @@ def main(args):
                     if line.startswith("model_type:"):
                         model_type = line.split(" #")[0].strip().split(":")[-1].strip()
                         break
-        config_template_fp = model_template_fp(config_template_fp, model_type)
+        config_template_fp = resolve_template_path(config_template_fp, model_type)
         config_d["config_template"] = config_template_fp
 
     # parse configs

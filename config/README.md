@@ -14,7 +14,7 @@ There is **no shared base**. Each `config/<model>_template.yml` is complete on i
 own, so a MASShatter run never carries `frag_params` and a FraGNNet run never carries the 73
 `mass_shatter_*` keys. The template is chosen by `model_type` - from the custom config, else from
 the checkpoint, else `frag_gnn`. Several model types share a template (`iceberg_gen` and
-`iceberg_inten`, `clip` and `spec_mol_clip_pretraining`); the mapping is `MODEL_CONFIG_TEMPLATE`
+`iceberg_inten`, `clip` and `spec_mol_clip_pretraining`); the mapping is `TEMPLATE_STEM_BY_MODEL_TYPE`
 in [runner.py](../src/fragnnet/runner.py). Passing a single file instead of the directory uses
 that file directly, which is how a template saved inside a checkpoint resolves.
 

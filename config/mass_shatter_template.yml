@@ -159,7 +159,7 @@ mol_params:
 # ============================================================================
 # Model Architecture
 # ============================================================================
-# Model type. Full list: MODEL_CONFIG_TEMPLATE in src/fragnnet/runner.py -- frag_gnn (aliases
+# Model type. Full list: TEMPLATE_STEM_BY_MODEL_TYPE in src/fragnnet/runner.py -- frag_gnn (aliases
 # fraggnet, fragnnet), mass_shatter, neims, massformer, iceberg_gen, iceberg_inten, graff,
 # precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
 model_type: mass_shatter

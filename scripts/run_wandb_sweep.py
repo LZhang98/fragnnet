@@ -3,7 +3,7 @@ import logging
 import os
 
 import wandb
-from fragnnet.runner import init_run, load_config
+from fragnnet.runner import load_config, run_training
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -43,7 +43,7 @@ if __name__ == "__main__":
             config_d = load_config(args.template_fp, args.custom_fp, None)
             wandb_name = f"{config_d['wandb_name']}_{args.job_name_postfix}"
             override = [f"wandb_name={wandb_name}"]
-        init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, override)
+        run_training(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, override)
 
     # Only load config if needed for agent (avoid wandb calls in job mode)
     if args.job_id or os.path.exists(os.path.join("job_id", f"{args.job_id}.id")):

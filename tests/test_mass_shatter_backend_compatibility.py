@@ -247,7 +247,7 @@ def test_runner_logs_resolved_backend_after_saved_wandb_config_merge(
 
     monkeypatch.setattr(runner, "ModelCheckpoint", stop_after_model)
     with caplog.at_level(logging.INFO), pytest.raises(SetupComplete):
-        runner.init_run(str(template), None, "offline", "test", None)
+        runner.run_training(str(template), None, "offline", "test", None)
 
     assert init_kwargs["resume"] == ("must" if resume else "allow")
     assert run.summary["mass_shatter_candidate_backend_resolved"] == "cuda"

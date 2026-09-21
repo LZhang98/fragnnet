@@ -1,6 +1,6 @@
 import argparse
 
-from fragnnet.runner import init_run
+from fragnnet.runner import run_training
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -29,4 +29,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    model = init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, args.override)
+    model = run_training(
+        args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, args.override
+    )

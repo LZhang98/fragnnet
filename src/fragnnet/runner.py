@@ -39,7 +39,7 @@ from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 # Each model_type resolves to one self-contained `config/<name>_template.yml`.
 # Several model types share a template because they share the same settings.
-MODEL_CONFIG_TEMPLATE = {
+TEMPLATE_STEM_BY_MODEL_TYPE = {
     "frag_gnn": "fragnnet",
     "fragnnet": "fragnnet",
     "mass_shatter": "mass_shatter",
@@ -54,7 +54,6 @@ MODEL_CONFIG_TEMPLATE = {
     "clip": "clip",
     "spec_mol_clip_pretraining": "clip",
 }
-DEFAULT_TEMPLATE_DIR = "config"
 # What a config that declares no `model_type` means. The single shared template used to carry
 # this as its default; with one template per model it has to be named.
 DEFAULT_MODEL_TYPE = "frag_gnn"
@@ -70,18 +69,37 @@ OPEN_CONFIG_MAPPINGS = frozenset(
     }
 )
 
+# Valid values and model-gated keys checked by `validate_sampler_config`.
+VALID_SIMPLE_GROUP_SAMPLER_TYPES = frozenset(
+    {
+        "group",
+        "mol",
+        "group_mol",
+        "adduct_inst_type",
+        "adduct_inst_type_group",
+        "adduct_inst_type_frag_mode",
+        "adduct_inst_type_frag_mode_group",
+    }
+)
+VALID_BATCH_SAMPLER_TYPES = frozenset({"spec_mol_frag", "ce_context"})
+MASS_SHATTER_SAMPLER_KEYS = (
+    "mass_shatter_batch_sampler",
+    "mass_shatter_share_proposal_across_ev",
+    "mass_shatter_unique_fragment_mode",
+)
 
-def model_template_fp(template_fp: str, model_type: str | None) -> str:
+
+def resolve_template_path(template_path: str, model_type: str | None) -> str:
     """Resolve the template file for ``model_type``.
 
-    ``template_fp`` is normally the template directory, and the model picks the file inside it.
-    A path to a file is used as-is, which is how a template saved inside a checkpoint still
+    ``template_path`` is normally the template directory, and the model picks the file inside
+    it. A path to a file is used as-is, which is how a template saved inside a checkpoint still
     resolves.
 
     Args:
-        template_fp: Template directory, or a single template file.
+        template_path: Template directory, or a single template file.
         model_type: Model type declared by the custom config or checkpoint. Only needed when
-            ``template_fp`` is a directory.
+            ``template_path`` is a directory.
 
     Returns:
         Path to the template to load.
@@ -91,25 +109,28 @@ def model_template_fp(template_fp: str, model_type: str | None) -> str:
             is unknown.
         FileNotFoundError: If the resolved template does not exist.
     """
-    if os.path.isfile(template_fp):
-        return template_fp
-    if not os.path.isdir(template_fp):
-        raise FileNotFoundError(f"no config template at {template_fp}")
+    if os.path.isfile(template_path):
+        return template_path
+    if not os.path.isdir(template_path):
+        raise FileNotFoundError(f"no config template at {template_path}")
     if model_type is None:
         model_type = DEFAULT_MODEL_TYPE
-    if model_type not in MODEL_CONFIG_TEMPLATE:
+    if model_type not in TEMPLATE_STEM_BY_MODEL_TYPE:
         raise ValueError(
-            f"unknown model_type {model_type!r}; known types: {sorted(MODEL_CONFIG_TEMPLATE)}"
+            f"unknown model_type {model_type!r}; "
+            f"known types: {sorted(TEMPLATE_STEM_BY_MODEL_TYPE)}"
         )
-    resolved = os.path.join(template_fp, f"{MODEL_CONFIG_TEMPLATE[model_type]}_template.yml")
-    if not os.path.isfile(resolved):
+    resolved_fp = os.path.join(
+        template_path, f"{TEMPLATE_STEM_BY_MODEL_TYPE[model_type]}_template.yml"
+    )
+    if not os.path.isfile(resolved_fp):
         raise FileNotFoundError(
-            f"missing config template for model_type {model_type!r}: {resolved}"
+            f"missing config template for model_type {model_type!r}: {resolved_fp}"
         )
-    return resolved
+    return resolved_fp
 
 
-def _load_foreign_template_keys(resolved_template_fp: str, config_d: dict) -> set[str] | None:
+def _find_foreign_template_keys(resolved_template_fp: str, config_d: dict) -> set[str] | None:
     """Return the keys other models' templates declare and this one does not.
 
     Templates are self-contained, so they share most keys; only the difference identifies a key
@@ -124,22 +145,22 @@ def _load_foreign_template_keys(resolved_template_fp: str, config_d: dict) -> se
         next to the resolved one. A run whose working directory holds a single staged template
         has nothing to compare against, which is not the same as every other key being a typo.
     """
-    template_dir = os.path.dirname(resolved_template_fp) or "."
+    template_dp = os.path.dirname(resolved_template_fp) or "."
     siblings = [
         path
-        for path in sorted(glob.glob(os.path.join(template_dir, "*_template.yml")))
+        for path in sorted(glob.glob(os.path.join(template_dp, "*_template.yml")))
         if os.path.abspath(path) != os.path.abspath(resolved_template_fp)
     ]
     if not siblings:
         return None
-    keys: set[str] = set()
+    sibling_keys: set[str] = set()
     for path in siblings:
         with open(path) as template_file:
-            keys.update(yaml.load(template_file, Loader=yaml.FullLoader) or {})
-    return keys - set(config_d)
+            sibling_keys.update(yaml.load(template_file, Loader=yaml.FullLoader) or {})
+    return sibling_keys - set(config_d)
 
 
-def unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -> list[str]:
+def find_unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -> list[str]:
     """Collect dotted paths in ``custom_d`` that the resolved config does not declare.
 
     Recurses into nested sections so a typo inside ``spec_params`` is caught as loudly as one
@@ -165,12 +186,12 @@ def unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -> lis
             and isinstance(value, dict)
             and isinstance(config_d[key], dict)
         ):
-            unknown.extend(unknown_config_keys(value, config_d[key], path))
+            unknown.extend(find_unknown_config_keys(value, config_d[key], path))
     return sorted(unknown)
 
 
 def load_config(
-    template_fp: str,
+    template_path: str,
     custom_fp: str | None,
     override: list | None,
     model_type: str | None = None,
@@ -183,7 +204,7 @@ def load_config(
     saved inside a checkpoint resolves.
 
     Args:
-        template_fp: Template directory, or a single template file.
+        template_path: Template directory, or a single template file.
         custom_fp: Path to the experiment config YAML, or None.
         override: ``key=value`` strings; dotted keys address nested sections.
         model_type: Model type to resolve the template with when the custom config does not
@@ -203,7 +224,7 @@ def load_config(
 
     # 1. The model decides which template to read.
     resolved_model_type = (custom_d or {}).get("model_type") or model_type
-    resolved_template_fp = model_template_fp(template_fp, resolved_model_type)
+    resolved_template_fp = resolve_template_path(template_path, resolved_model_type)
     with open(resolved_template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
     if resolved_model_type is None:
@@ -230,9 +251,9 @@ def load_config(
     # worse than letting a typo through.
     if custom_d is not None:
         migrate_mass_shatter_proposal_method(custom_d)
-        unknown = unknown_config_keys(custom_d, config_d)
+        unknown = find_unknown_config_keys(custom_d, config_d)
         if unknown:
-            foreign_keys = _load_foreign_template_keys(resolved_template_fp, config_d)
+            foreign_keys = _find_foreign_template_keys(resolved_template_fp, config_d)
             if foreign_keys is None:
                 logging.warning(
                     "%s sets keys model_type %r does not declare, and no other model template "
@@ -244,39 +265,39 @@ def load_config(
                     unknown,
                 )
             else:
-                inert = [key for key in unknown if key.split(".")[0] in foreign_keys]
-                undeclared = [key for key in unknown if key not in inert]
-                if undeclared:
-                    raise ValueError(f"{custom_fp} sets keys no model declares: {undeclared}")
+                inert_keys = [key for key in unknown if key.split(".")[0] in foreign_keys]
+                undeclared_keys = [key for key in unknown if key not in inert_keys]
+                if undeclared_keys:
+                    raise ValueError(f"{custom_fp} sets keys no model declares: {undeclared_keys}")
                 logging.warning(
                     "%s sets keys owned by another model; they are inert for model_type %r: %s",
                     custom_fp,
                     resolved_model_type,
-                    inert,
+                    inert_keys,
                 )
         config_d = deep_update(config_d, custom_d)
 
     # override
     if override is not None:
-        for item in override:
-            key, value = item.split("=", 1)
-            if key in ("mass_shatter_proposal_type", "mass_shatter_proposal_method"):
-                proposal_override = {key: yaml.safe_load(value)}
+        for override_item in override:
+            dotted_key, value = override_item.split("=", 1)
+            if dotted_key in ("mass_shatter_proposal_type", "mass_shatter_proposal_method"):
+                proposal_override = {dotted_key: yaml.safe_load(value)}
                 migrate_mass_shatter_proposal_method(proposal_override)
                 config_d.update(proposal_override)
                 continue
-            keys = key.split(".")
-            cur = config_d
-            for k in keys[:-1]:
-                if k in cur:
-                    cur = cur[k]
+            key_path = dotted_key.split(".")
+            section = config_d
+            for section_key in key_path[:-1]:
+                if section_key in section:
+                    section = section[section_key]
                 else:
-                    msg = f"{k} not in config"
+                    msg = f"{section_key} not in config"
                     raise KeyError(msg)
 
-            print(f"Updating {keys[-1]} from {cur[keys[-1]]} to {value}", flush=True)
+            print(f"Updating {key_path[-1]} from {section[key_path[-1]]} to {value}", flush=True)
             # here is not safe way to load, but I'll skip this issue now
-            cur[keys[-1]] = yaml.safe_load(value)
+            section[key_path[-1]] = yaml.safe_load(value)
 
     return config_d
 
@@ -308,7 +329,7 @@ def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
     # Get the expected data dict types for this dataset
     data_dict_types = dataset_cls.get_data_dict_types()
 
-    dses = []
+    datasets = []
     for split in splits:
         # Use multiprocessing manager dicts if requested, else regular dicts
         if config_d["num_workers"] > 0 and config_d["share_memory"]:
@@ -318,9 +339,9 @@ def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
             data_sds = {k: {} for k in data_dict_types}
         # Instantiate the dataset for this split
         ds = dataset_cls(split=split, **{**data_sds, **config_d})
-        dses.append(ds)
+        datasets.append(ds)
 
-    return tuple(dses)
+    return tuple(datasets)
 
 
 def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
@@ -341,7 +362,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     # Only `mass_shatter_template.yml` declares `mass_shatter_batch_sampler`. The model type
     # settles the question before the key is read, so another model's config - which does not
     # carry the key at all - reads as off rather than raising KeyError.
-    mass_shatter_batch_sampler = (
+    use_mass_shatter_batch_sampler = (
         config_d["model_type"] == "mass_shatter" and config_d["mass_shatter_batch_sampler"]
     )
     assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), (
@@ -371,7 +392,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if split == "train":
         # Choose sampler for training
-        if mass_shatter_batch_sampler or config_d["batch_sampler_type"] == "ce_context":
+        if use_mass_shatter_batch_sampler or config_d["batch_sampler_type"] == "ce_context":
             sampler = None
         elif config_d["group_sampler"]:
             sampler = GroupSampler(
@@ -410,7 +431,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     # Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
     # Prefer formula-based hard negative dynamic sampler when enabled (train only)
 
-    if mass_shatter_batch_sampler:
+    if use_mass_shatter_batch_sampler:
         return_batch_at = (
             config_d["train_batch_size"] if split == "train" else config_d["eval_batch_size"]
         )
@@ -514,21 +535,12 @@ def validate_sampler_config(config_d: dict) -> None:
         ValueError: If the sampler configuration is invalid.
     """
 
-    _VALID_SIMPLE_GROUP_SAMPLER_TYPES = {
-        "group",
-        "mol",
-        "group_mol",
-        "adduct_inst_type",
-        "adduct_inst_type_group",
-        "adduct_inst_type_frag_mode",
-        "adduct_inst_type_frag_mode_group",
-    }
     if (
         config_d.get("simple_group_sampler")
-        and config_d.get("simple_group_sampler_type") not in _VALID_SIMPLE_GROUP_SAMPLER_TYPES
+        and config_d.get("simple_group_sampler_type") not in VALID_SIMPLE_GROUP_SAMPLER_TYPES
     ):
         raise ValueError(
-            f"simple_group_sampler_type must be one of {sorted(_VALID_SIMPLE_GROUP_SAMPLER_TYPES)} "
+            f"simple_group_sampler_type must be one of {sorted(VALID_SIMPLE_GROUP_SAMPLER_TYPES)} "
             f"(got '{config_d['simple_group_sampler_type']}')"
         )
 
@@ -537,47 +549,42 @@ def validate_sampler_config(config_d: dict) -> None:
     # key there is a broken template rather than a disabled feature, and for every other model a
     # historical config may still carry the key - inert, but loud if it is actually switched on.
     is_mass_shatter = config_d["model_type"] == "mass_shatter"
-    _MASS_SHATTER_SAMPLER_KEYS = (
-        "mass_shatter_batch_sampler",
-        "mass_shatter_share_proposal_across_ev",
-        "mass_shatter_unique_fragment_mode",
-    )
     if not is_mass_shatter:
-        enabled_elsewhere = [key for key in _MASS_SHATTER_SAMPLER_KEYS if config_d.get(key)]
+        enabled_elsewhere = [key for key in MASS_SHATTER_SAMPLER_KEYS if config_d.get(key)]
         if enabled_elsewhere:
             raise ValueError(
                 f"{enabled_elsewhere} require model_type='mass_shatter' "
                 f"(got '{config_d['model_type']}')"
             )
-    mass_shatter_batch_sampler = is_mass_shatter and config_d["mass_shatter_batch_sampler"]
-    share_proposal = is_mass_shatter and config_d["mass_shatter_share_proposal_across_ev"]
-    unique_fragment_mode = is_mass_shatter and config_d["mass_shatter_unique_fragment_mode"]
+    use_mass_shatter_batch_sampler = is_mass_shatter and config_d["mass_shatter_batch_sampler"]
+    share_proposal_across_ev = is_mass_shatter and config_d["mass_shatter_share_proposal_across_ev"]
+    use_unique_fragments = is_mass_shatter and config_d["mass_shatter_unique_fragment_mode"]
 
-    if not isinstance(mass_shatter_batch_sampler, bool):
+    if not isinstance(use_mass_shatter_batch_sampler, bool):
         raise ValueError("mass_shatter_batch_sampler must be boolean")
-    if not isinstance(share_proposal, bool):
+    if not isinstance(share_proposal_across_ev, bool):
         raise ValueError("mass_shatter_share_proposal_across_ev must be boolean")
-    enabled_batch_samplers = int(mass_shatter_batch_sampler) + sum(
+    num_enabled_batch_samplers = int(use_mass_shatter_batch_sampler) + sum(
         int(config_d[key])
         for key in (
             "dynamic_batch_sampler",
             "dual_group_dynamic_batch_sampler",
         )
     )
-    if enabled_batch_samplers > 1:
+    if num_enabled_batch_samplers > 1:
         raise ValueError(
             "mass_shatter_batch_sampler, dynamic_batch_sampler, and "
             "dual_group_dynamic_batch_sampler are mutually exclusive"
         )
 
-    if mass_shatter_batch_sampler:
+    if use_mass_shatter_batch_sampler:
         if not config_d["automatic_optimization"]:
             raise ValueError("mass_shatter_batch_sampler requires automatic_optimization=True")
-        mass_shatter_max = config_d["mass_shatter_batch_sampler_max"]
+        mass_shatter_batch_sampler_max = config_d["mass_shatter_batch_sampler_max"]
         if (
-            isinstance(mass_shatter_max, bool)
-            or not isinstance(mass_shatter_max, int)
-            or mass_shatter_max <= 0
+            isinstance(mass_shatter_batch_sampler_max, bool)
+            or not isinstance(mass_shatter_batch_sampler_max, int)
+            or mass_shatter_batch_sampler_max <= 0
         ):
             raise ValueError("mass_shatter_batch_sampler_max must be a positive integer")
 
@@ -597,11 +604,10 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["dynamic_batch_sampler_max"] is None:
             raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
 
-    valid_batch_sampler_types = {"spec_mol_frag", "ce_context"}
-    if config_d["batch_sampler_type"] not in valid_batch_sampler_types:
+    if config_d["batch_sampler_type"] not in VALID_BATCH_SAMPLER_TYPES:
         raise ValueError(
             "batch_sampler_type must be one of "
-            f"{sorted(valid_batch_sampler_types)} (got '{config_d['batch_sampler_type']}')"
+            f"{sorted(VALID_BATCH_SAMPLER_TYPES)} (got '{config_d['batch_sampler_type']}')"
         )
 
     if config_d["batch_sampler_type"] == "ce_context":
@@ -615,7 +621,7 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
 
-    if config_d["batch_sampler_type"] == "ce_context" or mass_shatter_batch_sampler:
+    if config_d["batch_sampler_type"] == "ce_context" or use_mass_shatter_batch_sampler:
         if config_d["devices"] != 1:
             raise ValueError("CE-context batch samplers require devices=1")
         spectra_per_context = config_d["ce_context_spectra_per_context"]
@@ -636,7 +642,7 @@ def validate_sampler_config(config_d: dict) -> None:
                 f"{sorted(missing_inst_types)}"
             )
 
-    if share_proposal and not mass_shatter_batch_sampler:
+    if share_proposal_across_ev and not use_mass_shatter_batch_sampler:
         raise ValueError(
             "mass_shatter_share_proposal_across_ev requires mass_shatter_batch_sampler=True"
         )
@@ -649,12 +655,12 @@ def validate_sampler_config(config_d: dict) -> None:
     ):
         raise ValueError("cross_ev_fragment_loss_weight must be a non-negative number")
     if cross_ev_weight > 0:
-        if not share_proposal:
+        if not share_proposal_across_ev:
             raise ValueError(
                 "cross_ev_fragment_loss_weight > 0 requires "
                 "mass_shatter_share_proposal_across_ev=True"
             )
-        if not unique_fragment_mode:
+        if not use_unique_fragments:
             raise ValueError(
                 "cross_ev_fragment_loss_weight > 0 requires mass_shatter_unique_fragment_mode=True"
             )
@@ -667,7 +673,7 @@ def validate_sampler_config(config_d: dict) -> None:
     ):
         raise ValueError("ce_pair_loss_weight must be a non-negative number")
     if pair_weight > 0:
-        if not (config_d["batch_sampler_type"] == "ce_context" or mass_shatter_batch_sampler):
+        if not (config_d["batch_sampler_type"] == "ce_context" or use_mass_shatter_batch_sampler):
             raise ValueError("ce_pair_loss_weight > 0 requires a CE-context batch sampler")
         confidence = config_d["ce_pair_min_endpoint_confidence"]
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
@@ -842,14 +848,14 @@ def validate_sampler_config(config_d: dict) -> None:
                 f"Dual-group dynamic batch sampler cannot be used with automatic optimization "
                 f"(got automatic_optimization={config_d['automatic_optimization']})"
             )
-        dual_mode = config_d.get("dual_group_dynamic_batch_sampler_mode")
-        if dual_mode not in ["frag_node", "frag_edge"]:
+        dual_group_sampler_mode = config_d.get("dual_group_dynamic_batch_sampler_mode")
+        if dual_group_sampler_mode not in ["frag_node", "frag_edge"]:
             raise ValueError(
                 f"Dual-group dynamic batch sampler only supports frag_node or frag_edge mode "
-                f"(got '{dual_mode}')"
+                f"(got '{dual_group_sampler_mode}')"
             )
-        dual_max = config_d.get("dual_group_dynamic_batch_sampler_max")
-        if dual_max is None:
+        dual_group_sampler_max = config_d.get("dual_group_dynamic_batch_sampler_max")
+        if dual_group_sampler_max is None:
             raise ValueError(
                 "Dual-group dynamic batch sampler requires dual_group_dynamic_batch_sampler_max to be set"
             )
@@ -878,13 +884,13 @@ def log_cuda_info() -> None:
         logger.info("CUDA not available, running on CPU")
 
 
-def init_run(
-    template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
+def run_training(
+    template_path: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
 ) -> L.LightningModule:
     """
-    Main entry point for initializing and running a training/validation/testing job.
+    Main entry point for running a training/validation/testing job.
     Args:
-        template_fp (str): Path to the template YAML config file.
+        template_path (str): Template directory, or a single template file.
         custom_fp (str | None): Path to the custom YAML config file (can be None).
         wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
         job_id (str): Unique job identifier for checkpointing and wandb.
@@ -907,7 +913,7 @@ def init_run(
     log_cuda_info()
 
     # load config
-    config_d = load_config(template_fp, custom_fp, override)
+    config_d = load_config(template_path, custom_fp, override)
 
     # set random seeds
     seed_everything(config_d["seed"], workers=True)
@@ -924,7 +930,7 @@ def init_run(
     if wandb_mode != "disabled":
         import wandb
 
-        wandb_d = {
+        wandb_init_d = {
             "project": config_d["wandb_project"],
             "name": config_d["wandb_name"],
             "group": config_d["wandb_group"],
@@ -939,25 +945,25 @@ def init_run(
             if os.path.isfile(job_id_fp):
                 is_resume = True
                 with open(job_id_fp) as job_id_file:
-                    parts = job_id_file.read().strip().split(";", 1)
-                run_id = parts[0]
-                old_wandb_dp = parts[1] if len(parts) > 1 else None
+                    job_id_fields = job_id_file.read().strip().split(";", 1)
+                run_id = job_id_fields[0]
+                old_wandb_dp = job_id_fields[1] if len(job_id_fields) > 1 else None
             else:
                 is_resume = False
                 run_id = None
                 old_wandb_dp = None
-            wandb_d["id"] = run_id
-            wandb_d["resume"] = "must" if run_id is not None else "allow"
-            wandb_d["config"] = config_d
+            wandb_init_d["id"] = run_id
+            wandb_init_d["resume"] = "must" if run_id is not None else "allow"
+            wandb_init_d["config"] = config_d
         else:
             is_resume = False
             job_id_fp = None
             old_wandb_dp = None
-            wandb_d["config"] = config_d
-        wandb.init(**wandb_d)
+            wandb_init_d["config"] = config_d
+        wandb.init(**wandb_init_d)
         assert wandb.run is not None, wandb.run
-        wandb_d["offline"] = wandb_mode == "offline"
-        wandb_logger = WandbLogger(**wandb_d)
+        wandb_logger_d = {**wandb_init_d, "offline": wandb_mode == "offline"}
+        wandb_logger = WandbLogger(**wandb_logger_d)
         if job_id_fp:
             os.makedirs(os.path.dirname(job_id_fp), exist_ok=True)
             with open(job_id_fp, "w+") as job_id_file:
@@ -966,22 +972,23 @@ def init_run(
         # configs can be nested up to 2 levels
         saved_run_config = dict(wandb.config)
         migrate_mass_shatter_proposal_method(saved_run_config)
-        for k in list(config_d.keys()):
-            if k in saved_run_config:
-                if isinstance(config_d[k], dict):
+        for key in list(config_d.keys()):
+            if key in saved_run_config:
+                if isinstance(config_d[key], dict):
                     # nested
-                    assert isinstance(saved_run_config[k], dict)
-                    for kk in list(config_d[k].keys()):
-                        if kk in saved_run_config[k]:
-                            if config_d[k][kk] != saved_run_config[k][kk]:
+                    assert isinstance(saved_run_config[key], dict)
+                    for sub_key in list(config_d[key].keys()):
+                        if sub_key in saved_run_config[key]:
+                            if config_d[key][sub_key] != saved_run_config[key][sub_key]:
                                 print(
-                                    f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {saved_run_config[k][kk]}"
+                                    f"> config diff -- {key}->{sub_key}: "
+                                    f"{config_d[key][sub_key]} vs {saved_run_config[key][sub_key]}"
                                 )
-                            config_d[k][kk] = saved_run_config[k][kk]
+                            config_d[key][sub_key] = saved_run_config[key][sub_key]
                 else:
-                    if config_d[k] != saved_run_config[k]:
-                        print(f"> config diff -- {k}: {config_d[k]} vs {saved_run_config[k]}")
-                    config_d[k] = saved_run_config[k]
+                    if config_d[key] != saved_run_config[key]:
+                        print(f"> config diff -- {key}: {config_d[key]} vs {saved_run_config[key]}")
+                    config_d[key] = saved_run_config[key]
         loggers.append(wandb_logger)
     else:
         is_resume = False
@@ -1026,10 +1033,11 @@ def init_run(
 
     # setup callbacks
     callbacks = []
+    # Names the on-disk checkpoint and profile directories when wandb is disabled.
+    run_name = job_id if job_id else config_d.get("wandb_name", "run")
     if wandb_mode != "disabled":
         ckpt_dp = os.path.realpath(os.path.join(wandb.run.dir, "ckpt"))
     else:
-        run_name = job_id if job_id else config_d.get("wandb_name", "run")
         logging.info(
             "wandb is disabled; checkpoints will be saved to "
             f"ckpts/{run_name} — concurrent runs with the same name will collide."
@@ -1048,34 +1056,34 @@ def init_run(
         for old_ckpt_fp in old_ckpt_fps:
             new_ckpt_fp = os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp))
             # modify checkpoint metadata (hacky)
-            new_ckpt_data = th.load(old_ckpt_fp, weights_only=False)
+            ckpt_data = th.load(old_ckpt_fp, weights_only=False)
             ckpt_callback_data = None
-            for k, v in new_ckpt_data["callbacks"].items():
-                if k.startswith("ModelCheckpoint"):
-                    ckpt_callback_data = v
+            for callback_key, callback_state in ckpt_data["callbacks"].items():
+                if callback_key.startswith("ModelCheckpoint"):
+                    ckpt_callback_data = callback_state
                     break
             assert ckpt_callback_data is not None
-            ckpt_keys = [
+            ckpt_path_keys = [
                 "best_model_path",
                 "last_model_path",
                 "dirpath",
                 "kth_best_model_path",
             ]
-            for k in ckpt_keys:
-                if k in ckpt_callback_data:
-                    ckpt_callback_data[k] = ckpt_callback_data[k].replace(
+            for path_key in ckpt_path_keys:
+                if path_key in ckpt_callback_data:
+                    ckpt_callback_data[path_key] = ckpt_callback_data[path_key].replace(
                         os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
                     )
             if "best_k_models" in ckpt_callback_data:
-                for k in list(ckpt_callback_data["best_k_models"].keys()):
-                    new_k = k.replace(
+                for old_path in list(ckpt_callback_data["best_k_models"].keys()):
+                    new_path = old_path.replace(
                         os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
                     )
-                    ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data[
+                    ckpt_callback_data["best_k_models"][new_path] = ckpt_callback_data[
                         "best_k_models"
-                    ].pop(k)
+                    ].pop(old_path)
             # save modified checkpoint in new wandb dir
-            th.save(new_ckpt_data, new_ckpt_fp)
+            th.save(ckpt_data, new_ckpt_fp)
     if not config_d["disable_checkpoints"]:
         checkpoint_callback = ModelCheckpoint(
             dirpath=ckpt_dp,
@@ -1138,9 +1146,9 @@ def init_run(
     # setup datasets — test is intentionally excluded here and loaded after
     # training to avoid holding the test set in memory throughout the run.
     logging.info("setup dataset")
-    dses = init_dataset(config_d, splits=["train", "val"])
-    train_ds = dses[0]
-    val_ds = dses[1]
+    datasets = init_dataset(config_d, splits=["train", "val"])
+    train_ds = datasets[0]
+    val_ds = datasets[1]
 
     # check config for sampler
     validate_sampler_config(config_d)
@@ -1234,17 +1242,17 @@ def init_run(
     else:
         logging.info("fit model")
         if is_resume:
-            ckpt_fp = os.path.join(ckpt_dp, "last.ckpt")
-            if os.path.isfile(ckpt_fp):
-                logging.info(f"resuming from checkpoint: {ckpt_fp}")
+            resume_ckpt_fp = os.path.join(ckpt_dp, "last.ckpt")
+            if os.path.isfile(resume_ckpt_fp):
+                logging.info(f"resuming from checkpoint: {resume_ckpt_fp}")
             else:
                 logging.warning(
                     f"Resume requested but last.ckpt not found in {ckpt_dp}, starting from epoch 0"
                 )
-                ckpt_fp = None
+                resume_ckpt_fp = None
         else:
-            ckpt_fp = None
-        trainer.fit(model, train_dl, val_dl, ckpt_path=ckpt_fp)
+            resume_ckpt_fp = None
+        trainer.fit(model, train_dl, val_dl, ckpt_path=resume_ckpt_fp)
     logging.info("callback metrics")
 
     if not trainer.interrupted and config_d["eval_test_split"]:
@@ -1272,11 +1280,11 @@ def init_run(
 
         # Temporarily move checkpoints out of the way before wandb.finish()
         # to prevent wandb from syncing them if we don't want to keep them
-        temp_ckpt_dir = None
+        temp_ckpt_tmpdir = None
         if not config_d["upload_checkpoints"] and not config_d["delete_checkpoints"]:
-            temp_ckpt_dir = tempfile.TemporaryDirectory()
+            temp_ckpt_tmpdir = tempfile.TemporaryDirectory()
             for ckpt_fp in ckpt_fps:
-                shutil.move(ckpt_fp, os.path.join(temp_ckpt_dir.name, os.path.basename(ckpt_fp)))
+                shutil.move(ckpt_fp, os.path.join(temp_ckpt_tmpdir.name, os.path.basename(ckpt_fp)))
 
     if wandb_mode != "disabled":
         wandb.finish()
@@ -1288,11 +1296,11 @@ def init_run(
             ckpt_fps = glob.glob(os.path.join(ckpt_dp, "*.ckpt"))
             for ckpt_fp in ckpt_fps:
                 os.remove(ckpt_fp)
-        elif temp_ckpt_dir is not None:
+        elif temp_ckpt_tmpdir is not None:
             # Restore checkpoints that were temporarily moved
-            for ckpt_fp in glob.glob(os.path.join(temp_ckpt_dir.name, "*.ckpt")):
+            for ckpt_fp in glob.glob(os.path.join(temp_ckpt_tmpdir.name, "*.ckpt")):
                 shutil.move(ckpt_fp, os.path.join(ckpt_dp, os.path.basename(ckpt_fp)))
-            temp_ckpt_dir.cleanup()
+            temp_ckpt_tmpdir.cleanup()
 
     # cleanup job tracking file
     if job_id_fp:

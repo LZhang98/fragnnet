@@ -47,7 +47,7 @@ def main() -> None:
     ]
     config_d = load_config(args.template_fp, args.custom_fp, override)
 
-    # Build the model before the dataset, matching init_run: init_dataset mutates the
+    # Build the model before the dataset, matching run_training: init_dataset mutates the
     # shared nested config dicts, which changes the featuriser dims the model derives.
     device = th.device(args.device)
     model = get_model_cls(config_d["model_type"])(**config_d)

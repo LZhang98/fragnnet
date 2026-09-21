@@ -284,7 +284,7 @@ Only after the Step 4 gate passes:
   `remove_isotope_subformula_ppm`, defaulting to `none` / the instrument tolerance.
 - Keep `remove_isotope_use_dag_formula`, `remove_isotope_dag_dp`, `remove_isotope_dag_compressed`
   and `remove_isotope_protect_dag_mono` declared and ignored, marked deprecated in the YAML
-  comment. Removing them breaks `unknown_config_keys` for historical configs and checkpoints.
+  comment. Removing them breaks `find_unknown_config_keys` for historical configs and checkpoints.
 - **Do not re-add `frag_dp` to any non-FraGNNet template.** Removing that dependency is the point
   of the plan.
 - The `NOT HOOKED UP` banner comes off only when the user decides to re-enable the feature, which

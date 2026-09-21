@@ -12,10 +12,10 @@ import pytest
 import yaml
 
 from fragnnet.runner import (
-    MODEL_CONFIG_TEMPLATE,
+    TEMPLATE_STEM_BY_MODEL_TYPE,
+    find_unknown_config_keys,
     load_config,
-    model_template_fp,
-    unknown_config_keys,
+    resolve_template_path,
 )
 
 TEMPLATE_DIR = "config"
@@ -32,8 +32,8 @@ def templates() -> dict[str, dict]:
 
 class TestTemplateLayout:
     def test_every_model_type_resolves_to_a_template(self):
-        for model_type in MODEL_CONFIG_TEMPLATE:
-            assert os.path.isfile(model_template_fp(TEMPLATE_DIR, model_type))
+        for model_type in TEMPLATE_STEM_BY_MODEL_TYPE:
+            assert os.path.isfile(resolve_template_path(TEMPLATE_DIR, model_type))
 
     def test_each_template_is_complete_on_its_own(self, templates):
         """No shared base: a template must carry everything a run needs."""
@@ -60,11 +60,11 @@ class TestTemplateLayout:
 
     def test_unknown_model_type_is_rejected(self):
         with pytest.raises(ValueError, match="unknown model_type"):
-            model_template_fp(TEMPLATE_DIR, "no_such_model")
+            resolve_template_path(TEMPLATE_DIR, "no_such_model")
 
     def test_no_model_type_means_fragnnet(self):
         """What the single shared template used to declare as its default."""
-        assert model_template_fp(TEMPLATE_DIR, None) == os.path.join(
+        assert resolve_template_path(TEMPLATE_DIR, None) == os.path.join(
             TEMPLATE_DIR, "fragnnet_template.yml"
         )
 
@@ -187,8 +187,8 @@ class TestValidation:
         assert "ORBITRAP" in resolved["spec_params"]["merge_tolerance_by_inst"]
         assert "train" in resolved["spec_params"]["split_filters"]
 
-    def test_unknown_config_keys_reports_dotted_paths(self):
-        unknown = unknown_config_keys({"a": 1, "b": {"c": 2, "d": 3}}, {"b": {"c": 0}})
+    def test_find_unknown_config_keys_reports_dotted_paths(self):
+        unknown = find_unknown_config_keys({"a": 1, "b": {"c": 2, "d": 3}}, {"b": {"c": 0}})
 
         assert unknown == ["a", "b.d"]
 
@@ -205,7 +205,7 @@ def test_every_tracked_config_still_resolves():
             continue  # pre-existing malformed config, not this layout's concern
         if not isinstance(custom, dict):
             continue
-        if custom.get("model_type", "frag_gnn") not in MODEL_CONFIG_TEMPLATE:
+        if custom.get("model_type", "frag_gnn") not in TEMPLATE_STEM_BY_MODEL_TYPE:
             continue
         try:
             load_config(TEMPLATE_DIR, path, None)
