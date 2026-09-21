@@ -670,6 +670,12 @@ class MassShatterContextEncoder(nn.Module):
         if normalization == "layer":
             projector_layers.append(nn.LayerNorm(context_dim))
         self.projector = nn.Sequential(*projector_layers)
+        # Width of the collision-energy slice of the concatenated features, before the
+        # projector mixes it with adduct/instrument/mode. Conditioning the candidate
+        # attention on THIS rather than on the projected context keeps the experiment about
+        # collision energy instead of about metadata in general.
+        ce_width = self.ce_insert_size if self.use_ce_embedding else 1
+        self.ce_feature_dim = ce_width * (int(self.use_nce) + int(self.use_ace))
 
     def _embed_ce_values(
         self,
@@ -726,7 +732,8 @@ class MassShatterContextEncoder(nn.Module):
         include_collision_energy: bool = True,
         nce_weights: th.Tensor | None = None,
         ace_weights: th.Tensor | None = None,
-    ) -> th.Tensor:
+        return_ce_features: bool = False,
+    ) -> th.Tensor | tuple[th.Tensor, th.Tensor]:
         """Return one conditioning vector per spectrum.
 
         Args:
@@ -756,6 +763,7 @@ class MassShatterContextEncoder(nn.Module):
         if precursor_types.shape[0] != batch_size:
             raise ValueError("precursor_types must contain one index per spectrum")
         features = [self.precursor_embedding(precursor_types)]
+        ce_feature_start = None
 
         if self.instrument_embedding is not None:
             if instrument_types is None:
@@ -765,6 +773,8 @@ class MassShatterContextEncoder(nn.Module):
             if fragmentation_modes is None:
                 raise ValueError("fragmentation_modes are required by the configured context")
             features.append(self.fragmentation_mode_embedding(fragmentation_modes.reshape(-1)))
+        if self.use_nce or self.use_ace:
+            ce_feature_start = len(features)
         if self.use_nce:
             if not include_collision_energy:
                 ce_width = self.ce_insert_size if self.use_ce_embedding else 1
@@ -805,7 +815,12 @@ class MassShatterContextEncoder(nn.Module):
                         ace_weights,
                     )
                 )
-        return self.projector(th.cat(features, dim=1))
+        context = self.projector(th.cat(features, dim=1))
+        if not return_ce_features:
+            return context
+        if ce_feature_start is None:
+            raise ValueError("CE features were requested but the context carries no CE input")
+        return context, th.cat(features[ce_feature_start:], dim=1)
 
 
 class MassShatterModel(nn.Module):
@@ -920,6 +935,8 @@ class MassShatterModel(nn.Module):
         intensity_norm_placement: str = "post",
         intensity_qk_norm: bool = False,
         intensity_mass_pair_bias: bool = False,
+        intensity_ce_pair_bias: bool = False,
+        intensity_ce_film: bool = False,
         bond_endpoint_aggregation: str = "mean",
         gnn_residual_activation: str = "relu",
         candidate_charge_feature: bool = False,
@@ -1363,6 +1380,7 @@ class MassShatterModel(nn.Module):
         )
         self.candidate_mass_features = candidate_mass_features
         self.intensity_mass_pair_bias = intensity_mass_pair_bias
+        self.intensity_ce_conditioned = intensity_ce_pair_bias or intensity_ce_film
         self.candidate_charge_feature = candidate_charge_feature
         self.boundary_bond_encoder = (
             CutBondEncoder(
@@ -1424,6 +1442,9 @@ class MassShatterModel(nn.Module):
             norm_placement=intensity_norm_placement,
             qk_norm=intensity_qk_norm,
             mass_pair_bias=intensity_mass_pair_bias,
+            ce_pair_bias=intensity_ce_pair_bias,
+            ce_film=intensity_ce_film,
+            ce_feature_dim=self.context_encoder.ce_feature_dim,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
@@ -2111,7 +2132,7 @@ class MassShatterModel(nn.Module):
             )
         batch_size = int(mol_pyg.ptr.numel() - 1)
         precursor_type_indices = spec_prec_type.reshape(-1)
-        context = self.context_encoder(
+        context_outputs = self.context_encoder(
             batch_size=batch_size,
             precursor_types=precursor_type_indices,
             instrument_types=spec_inst_type,
@@ -2122,7 +2143,12 @@ class MassShatterModel(nn.Module):
             ace_batch_indices=spec_ace_batch_idxs,
             nce_weights=spec_nce_weights,
             ace_weights=spec_ace_weights,
+            return_ce_features=self.intensity_ce_conditioned,
         )
+        if self.intensity_ce_conditioned:
+            context, spectrum_ce_features = context_outputs
+        else:
+            context, spectrum_ce_features = context_outputs, None
 
         # 1. Encode each intact precursor once and score every chemical bond.
         atom_inputs = (
@@ -2629,6 +2655,7 @@ class MassShatterModel(nn.Module):
                 component_neutral_masses=(
                     fragment_neutral_masses if self.intensity_mass_pair_bias else None
                 ),
+                ce_features=spectrum_ce_features,
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
             )
@@ -2753,6 +2780,7 @@ class MassShatterModel(nn.Module):
                 component_neutral_masses=(
                     fragment_neutral_masses if self.intensity_mass_pair_bias else None
                 ),
+                ce_features=spectrum_ce_features,
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
             )

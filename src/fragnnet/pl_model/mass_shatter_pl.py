@@ -994,6 +994,8 @@ class MassShatterPL(SpectrumPL):
             intensity_norm_placement=(self.hparams.mass_shatter_intensity_norm_placement),
             intensity_qk_norm=self.hparams.mass_shatter_intensity_qk_norm,
             intensity_mass_pair_bias=self.hparams.mass_shatter_intensity_mass_pair_bias,
+            intensity_ce_pair_bias=self.hparams.mass_shatter_intensity_ce_pair_bias,
+            intensity_ce_film=self.hparams.mass_shatter_intensity_ce_film,
             bond_endpoint_aggregation=(self.hparams.mass_shatter_bond_endpoint_aggregation),
             gnn_residual_activation=self.hparams.gnn_residual_activation,
             intensity_output=self.hparams.mass_shatter_intensity_output,

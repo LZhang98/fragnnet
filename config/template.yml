@@ -792,6 +792,18 @@ mass_shatter_intensity_qk_norm: False
 # weights start at zero, so enabling this is a no-op at step 0 and safe on a warm start.
 # Requires attention_type: full; the induced layer routes through latents that carry no mass.
 mass_shatter_intensity_mass_pair_bias: False
+# Collision-energy conditioning of the candidate ATTENTION itself, as opposed to the
+# per-candidate token. Both are zero-initialized, so enabling either is a no-op at step 0.
+# `ce_pair_bias` makes the neutral-loss RBF weights a function of collision energy, so
+# w_r(CE) is directly readable after training -- it answers "which neutral-loss relations
+# govern competition at which energy" whether or not cosine moves. It requires
+# mass_pair_bias. `ce_film` modulates the query/key streams instead, which is more general
+# and less interpretable. Both require attention_type: full.
+# NOTE the standing tension: project_ce_extent_allocation_null and
+# project_stage0_branching_headroom_model both measured CE-INVARIANT error, while the
+# 2026-09-21 CE decomposition found realization falling monotonically with energy.
+mass_shatter_intensity_ce_pair_bias: False
+mass_shatter_intensity_ce_film: False
 # How the bond head pools incident-bond messages onto an atom. "mean" is historical; a mean
 # cannot separate a quaternary carbon from a methyl, which is GIN's expressiveness argument
 # for "sum". "sqrt" keeps degree signal without the raw scale growth.

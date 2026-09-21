@@ -61,12 +61,15 @@ class _InducedCandidateAttentionLayer(nn.Module):
         dropout: float,
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
+        ce_feature_dim: int = 0,
     ) -> None:
         super().__init__()
         if norm_placement not in {"post", "pre"}:
             raise ValueError(f"unknown norm_placement: {norm_placement}")
         if qk_norm:
             raise ValueError("qk_norm requires attention_type='full'")
+        if ce_feature_dim:
+            raise ValueError("ce_film requires attention_type='full'")
         self.norm_placement = norm_placement
         self.latent_attention = nn.MultiheadAttention(
             model_dim,
@@ -102,9 +105,12 @@ class _InducedCandidateAttentionLayer(nn.Module):
         inducing_tokens: th.Tensor | None,
         candidate_padding_mask: th.Tensor,
         pair_bias: th.Tensor | None = None,
+        ce_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor]:
         if pair_bias is not None:
             raise ValueError("induced candidate attention cannot apply a pairwise bias")
+        if ce_features is not None:
+            raise ValueError("induced candidate attention cannot apply CE modulation")
         if inducing_tokens is None:
             raise ValueError("induced candidate attention requires a latent token set")
         # Pre-norm normalizes the query stream only; keys and values arrive already
@@ -175,6 +181,7 @@ class _FullCandidateAttentionLayer(nn.Module):
         dropout: float,
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
+        ce_feature_dim: int = 0,
     ) -> None:
         super().__init__()
         if norm_placement not in {"post", "pre"}:
@@ -185,6 +192,7 @@ class _FullCandidateAttentionLayer(nn.Module):
             num_heads,
             dropout=dropout,
             qk_norm=qk_norm,
+            ce_feature_dim=ce_feature_dim,
         )
         self.candidate_attention_norm = nn.LayerNorm(model_dim)
         self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
@@ -201,6 +209,7 @@ class _FullCandidateAttentionLayer(nn.Module):
         inducing_tokens: th.Tensor | None,
         candidate_padding_mask: th.Tensor,
         pair_bias: th.Tensor | None = None,
+        ce_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor | None]:
         # Padded slots are masked as keys, so they never reach a real candidate even
         # though their own rows keep accumulating values. Every molecule contributes at
@@ -213,6 +222,7 @@ class _FullCandidateAttentionLayer(nn.Module):
             attention_input,
             candidate_padding_mask,
             pair_bias=pair_bias,
+            ce_features=ce_features,
         )
         if pre:
             candidate_tokens = candidate_tokens + self.dropout(candidate_updates)
@@ -258,10 +268,17 @@ class PairwiseMassBias(nn.Module):
     candidate budget costs one head-multiple more memory than the attention itself.
     """
 
-    def __init__(self, num_centres: int = len(_NEUTRAL_LOSS_CENTRES), signed: bool = True) -> None:
+    def __init__(
+        self,
+        num_centres: int = len(_NEUTRAL_LOSS_CENTRES),
+        signed: bool = True,
+        ce_feature_dim: int = 0,
+    ) -> None:
         super().__init__()
         if num_centres <= 0:
             raise ValueError("num_centres must be positive")
+        if ce_feature_dim < 0:
+            raise ValueError("ce_feature_dim must be nonnegative")
         centres = th.tensor(_NEUTRAL_LOSS_CENTRES, dtype=th.float32)
         if num_centres <= centres.numel():
             centres = centres[:num_centres]
@@ -279,8 +296,21 @@ class PairwiseMassBias(nn.Module):
         self.centres = nn.Parameter(centres.clone())
         self.log_widths = nn.Parameter(th.full((centres.numel(),), math.log(4.0)))
         self.weights = nn.Parameter(th.zeros(centres.numel()))
+        # Collision energy changes WHICH neutral-loss relations dominate, so the RBF
+        # weights may depend on it. Zero-initialized, so enabling this keeps the module a
+        # no-op at step 0, and after training w_r(CE) is directly readable.
+        self.ce_weights: nn.Linear | None = None
+        if ce_feature_dim > 0:
+            self.ce_weights = nn.Linear(ce_feature_dim, centres.numel())
+            nn.init.zeros_(self.ce_weights.weight)
+            nn.init.zeros_(self.ce_weights.bias)
 
-    def forward(self, masses: th.Tensor, valid: th.Tensor) -> th.Tensor:
+    def forward(
+        self,
+        masses: th.Tensor,
+        valid: th.Tensor,
+        ce_features: th.Tensor | None = None,
+    ) -> th.Tensor:
         """Return an additive ``(molecules, 1, candidates, candidates)`` attention bias.
 
         Args:
@@ -293,16 +323,23 @@ class PairwiseMassBias(nn.Module):
         """
         if masses.ndim != 2 or valid.shape != masses.shape:
             raise ValueError("masses and valid must be aligned (molecules, candidates) tensors")
+        if (self.ce_weights is not None) != (ce_features is not None):
+            raise ValueError("ce_features must be supplied exactly when CE conditioning is on")
         deltas = masses.unsqueeze(2) - masses.unsqueeze(1)
         if not self.signed:
             deltas = deltas.abs()
         widths = self.log_widths.exp().clamp(min=1e-3)
+        weights = self.weights.unsqueeze(0)
+        if self.ce_weights is not None and ce_features is not None:
+            if ce_features.shape[0] != masses.shape[0]:
+                raise ValueError("ce_features must contain one row per molecule")
+            weights = weights + self.ce_weights(ce_features.to(masses))
         bias = deltas.new_zeros(deltas.shape)
         # Accumulate one centre at a time: materializing (..., num_centres) would cost
         # num_centres times the pair tensor, which dominates at the candidate budget.
         for index in range(self.centres.numel()):
             offset = (deltas - self.centres[index]) / widths[index]
-            bias = bias + self.weights[index] * th.exp(-0.5 * offset * offset)
+            bias = bias + weights[:, index].reshape(-1, 1, 1) * th.exp(-0.5 * offset * offset)
         pair_valid = valid.unsqueeze(2) & valid.unsqueeze(1)
         return (bias * pair_valid).unsqueeze(1)
 
@@ -322,10 +359,13 @@ class _BiasedSelfAttention(nn.Module):
         num_heads: int,
         dropout: float,
         qk_norm: bool = False,
+        ce_feature_dim: int = 0,
     ) -> None:
         super().__init__()
         if model_dim % num_heads != 0:
             raise ValueError("model_dim must be divisible by num_heads")
+        if ce_feature_dim < 0:
+            raise ValueError("ce_feature_dim must be nonnegative")
         self.model_dim = model_dim
         self.num_heads = num_heads
         self.head_dim = model_dim // num_heads
@@ -338,12 +378,21 @@ class _BiasedSelfAttention(nn.Module):
         nn.init.zeros_(self.out_proj.bias)
         self.q_norm = nn.LayerNorm(self.head_dim) if qk_norm else None
         self.k_norm = nn.LayerNorm(self.head_dim) if qk_norm else None
+        # FiLM on the query and key streams from collision energy: CE then changes WHICH
+        # candidates attend to which, not just how each is embedded. Zero-initialized, so
+        # the modulation starts as the identity.
+        self.ce_film: nn.Linear | None = None
+        if ce_feature_dim > 0:
+            self.ce_film = nn.Linear(ce_feature_dim, 4 * model_dim)
+            nn.init.zeros_(self.ce_film.weight)
+            nn.init.zeros_(self.ce_film.bias)
 
     def forward(
         self,
         tokens: th.Tensor,
         key_padding_mask: th.Tensor,
         pair_bias: th.Tensor | None = None,
+        ce_features: th.Tensor | None = None,
     ) -> th.Tensor:
         """Attend over candidates.
 
@@ -366,6 +415,16 @@ class _BiasedSelfAttention(nn.Module):
             ).transpose(1, 2)
 
         query, key, value = split(query), split(key), split(value)
+        if (self.ce_film is not None) != (ce_features is not None):
+            raise ValueError("ce_features must be supplied exactly when ce_film is on")
+        if self.ce_film is not None and ce_features is not None:
+            modulation = self.ce_film(ce_features.to(tokens))
+            query_scale, query_shift, key_scale, key_shift = (
+                part.reshape(num_molecules, self.num_heads, 1, self.head_dim)
+                for part in modulation.chunk(4, dim=-1)
+            )
+            query = query * (1.0 + query_scale) + query_shift
+            key = key * (1.0 + key_scale) + key_shift
         if self.q_norm is not None and self.k_norm is not None:
             query = self.q_norm(query)
             key = self.k_norm(key)
@@ -489,6 +548,9 @@ class CandidateIntensityTransformerHead(nn.Module):
         qk_norm: bool = False,
         mass_pair_bias: bool = False,
         mass_pair_bias_centres: int = len(_NEUTRAL_LOSS_CENTRES),
+        ce_pair_bias: bool = False,
+        ce_film: bool = False,
+        ce_feature_dim: int = 0,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -511,6 +573,13 @@ class CandidateIntensityTransformerHead(nn.Module):
             )
         if qk_norm and attention_type != "full":
             raise ValueError("qk_norm requires attention_type='full'")
+        if ce_film and attention_type != "full":
+            raise ValueError("ce_film requires attention_type='full'")
+        if ce_pair_bias and not mass_pair_bias:
+            raise ValueError("ce_pair_bias modulates mass_pair_bias, which is off")
+        if (ce_pair_bias or ce_film) and ce_feature_dim <= 0:
+            raise ValueError("CE-conditioned attention requires a positive ce_feature_dim")
+        self.ce_conditioned = ce_pair_bias or ce_film
         if attention_type == "induced" and num_inducing_points <= 0:
             raise ValueError("num_inducing_points must be positive for induced attention")
         if context_dim < 0:
@@ -567,12 +636,19 @@ class CandidateIntensityTransformerHead(nn.Module):
                     dropout,
                     norm_placement=norm_placement,
                     qk_norm=qk_norm,
+                    ce_feature_dim=ce_feature_dim if ce_film else 0,
                 )
                 for _ in range(num_layers)
             ]
         )
+        self.ce_film = ce_film
         self.mass_pair_bias = (
-            PairwiseMassBias(num_centres=mass_pair_bias_centres) if mass_pair_bias else None
+            PairwiseMassBias(
+                num_centres=mass_pair_bias_centres,
+                ce_feature_dim=ce_feature_dim if ce_pair_bias else 0,
+            )
+            if mass_pair_bias
+            else None
         )
         self.component_residual_head = nn.Linear(model_dim, 1)
         nn.init.zeros_(self.component_residual_head.weight)
@@ -651,6 +727,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         component_batch_indices: th.Tensor,
         batch_size: int,
         token_masses: th.Tensor | None = None,
+        ce_features: th.Tensor | None = None,
     ) -> th.Tensor:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -712,13 +789,21 @@ class CandidateIntensityTransformerHead(nn.Module):
                 device=tokens.device,
             )
             padding_mask[local_batch_indices, positions] = False
+            # Spectrum-level CE rows, gathered onto this bucket's molecules.
+            bucket_ce_features = None if ce_features is None else ce_features[molecule_index_tensor]
             pair_bias = None
             if self.mass_pair_bias is not None:
                 if token_masses is None:
                     raise ValueError("mass_pair_bias is enabled but token masses were not provided")
                 padded_masses = token_masses.new_zeros((len(molecule_indices), bucket_limit))
                 padded_masses[local_batch_indices, positions] = token_masses[bucket_token_indices]
-                pair_bias = self.mass_pair_bias(padded_masses, ~padding_mask)
+                pair_bias = self.mass_pair_bias(
+                    padded_masses,
+                    ~padding_mask,
+                    ce_features=(
+                        bucket_ce_features if self.mass_pair_bias.ce_weights is not None else None
+                    ),
+                )
 
             # 2. Contextualize candidates, either through a fixed-size inducing set or
             # by direct candidate-to-candidate attention.
@@ -733,6 +818,7 @@ class CandidateIntensityTransformerHead(nn.Module):
                     inducing_tokens,
                     padding_mask,
                     pair_bias=pair_bias,
+                    ce_features=bucket_ce_features if self.ce_film else None,
                 )
             contextualized[bucket_token_indices] = padded_tokens[
                 local_batch_indices,
@@ -757,6 +843,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         context: th.Tensor | None = None,
         return_support_logits: bool = False,
         component_neutral_masses: th.Tensor | None = None,
+        ce_features: th.Tensor | None = None,
         mass_features: th.Tensor | None = None,
         charge_feature: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
@@ -840,6 +927,12 @@ class CandidateIntensityTransformerHead(nn.Module):
         if charge_feature is not None:
             features.append(charge_feature.to(fragment_embeddings).unsqueeze(1))
         tokens = self.input_projection(th.cat(features, dim=1))
+        if self.ce_conditioned != (ce_features is not None):
+            raise ValueError(
+                "ce_features must be supplied exactly when CE-conditioned attention is on"
+            )
+        if ce_features is not None and ce_features.shape[0] != batch_size:
+            raise ValueError("ce_features must contain one row per spectrum")
         if (self.mass_pair_bias is not None) != (component_neutral_masses is not None):
             raise ValueError(
                 "component_neutral_masses must be supplied exactly when mass_pair_bias is on"
@@ -855,6 +948,7 @@ class CandidateIntensityTransformerHead(nn.Module):
             token_masses=(
                 None if component_neutral_masses is None else component_neutral_masses.to(tokens)
             ),
+            ce_features=ce_features,
         )
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(

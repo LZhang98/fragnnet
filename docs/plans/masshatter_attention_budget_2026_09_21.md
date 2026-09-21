@@ -25,6 +25,8 @@ candidate attention stack *is* the allocator.
 | Normalization placement | `mass_shatter_intensity_norm_placement` | `post` |
 | Query/key LayerNorm | `mass_shatter_intensity_qk_norm` | `False` |
 | Neutral-loss pair bias | `mass_shatter_intensity_mass_pair_bias` | `False` |
+| CE-conditioned pair bias | `mass_shatter_intensity_ce_pair_bias` | `False` |
+| CE-FiLM on queries/keys | `mass_shatter_intensity_ce_film` | `False` |
 
 - **`_BiasedSelfAttention`** (`model/bond_fragment_heads.py`) replaces `nn.MultiheadAttention`
   inside `_FullCandidateAttentionLayer`. Parameter names mirror the stock module
@@ -44,6 +46,26 @@ candidate attention stack *is* the allocator.
   is A/B-comparable from one checkpoint.
 - Pair bias and QK-norm **require `attention_type: full`** and raise otherwise — the induced
   layer routes information through latents that carry no mass of their own.
+
+### CE-conditioned attention
+
+Added on request after the first pass, overriding the Phase-0 gate.
+
+- **`ce_pair_bias`** makes the neutral-loss RBF weights a learned function of collision
+  energy: `w_r = w_r_base + W_ce·ce`. It requires `mass_pair_bias`, and its value does not
+  depend on cosine moving — after training, `intensity_head.mass_pair_bias.ce_weights` is
+  directly readable and answers *which neutral-loss relations govern competition at which
+  energy*. That makes the arm informative in both directions, which matters given the
+  standing disagreement about whether the error is CE-dependent at all.
+- **`ce_film`** modulates the query and key streams per spectrum, so collision energy
+  changes *which* candidates attend to which rather than only how each is embedded. More
+  general, less interpretable.
+- Both condition on the **raw CE block** of the context features, not the projected context
+  vector. `MassShatterContextEncoder` now exposes `ce_feature_dim` and returns that slice via
+  `return_ce_features=True`, so the experiment is about collision energy rather than about
+  adduct/instrument/mode metadata in general.
+- Both are zero-initialized, so enabling either is an exact no-op at step 0 (pinned by a
+  test across all three combinations) and safe on a warm start.
 
 ### Phase 3 — bond head and budget
 
@@ -76,6 +98,9 @@ candidate attention stack *is* the allocator.
 | `a2_full_attention` | full candidate attention | 8.147M |
 | `a3_full_massbias` | full + neutral-loss pair bias | 8.147M |
 | `a4_full_massbias_prenorm_qknorm` | all four attention changes | 8.147M |
+| `a5_ce_pair_bias` | CE-conditioned neutral-loss bias | 8.147M |
+| `a6_ce_film` | CE-FiLM on queries/keys | 8.214M |
+| `a7_ce_both` | both CE mechanisms + pre-norm | 8.215M |
 | `b1_bond_sum` | sum-pooled incident bonds | 9.217M |
 | `b2_identity_residual` | ungated GNN residual | 9.217M |
 | `b3_wd_groups` | weight-decay groups | 9.217M |
@@ -85,6 +110,15 @@ candidate attention stack *is* the allocator.
 how much there is. Run `a2` before `a3`/`a4` so a pair-bias win can be attributed, and
 screen at ~128 epochs — val cosine saturates near ep100.
 
+### Read the CE arms against a standing disagreement
+
+`[[project_ce_extent_allocation_null]]` and `[[project_stage0_branching_headroom_model]]`
+both measured **CE-invariant** error, while the 2026-09-21 CE decomposition found
+realization falling monotonically with energy (88.4% of oracle at NCE<20 → 75.6% at 120+).
+That is unresolved, so run `a3` before `a5`: the pair difference isolates the CE dependence
+itself. `intensity_head.mass_pair_bias.ce_weights` then gives a read on it that does not
+depend on the cosine moving — a flat `w_r(CE)` is evidence for the CE-invariant side.
+
 ## Not implemented here
 
 - **Atom-overlap / containment bias** (Jaccard on candidate atom masks). Needs ragged
@@ -92,13 +126,10 @@ screen at ~128 epochs — val cosine saturates near ep100.
   only a per-candidate scalar, so it landed first.
 - **Same-ring-system bias.** Depends on `frag/ring_system_cuts.py` plumbing that is built
   but not wired into the model.
-- **CE-conditioned attention.** Explicitly gated on the Phase 0 measurements, since
-  `[[project_ce_extent_allocation_null]]` and `[[project_stage0_branching_headroom_model]]`
-  both concluded the error is CE-invariant.
 
 ## Verification
 
-3,824 tests pass (`-k "not cuda and not benchmark and not slow"`). 18 new tests in
+3,831 tests pass (`-k "not cuda and not benchmark and not slow"`). 25 new tests in
 `tests/test_masshatter_attention_and_budget.py` cover drop-in equivalence, the zero-init
 no-op property, padding safety, name-stability across norm placements, the guardrails, the
 aggregation modes, the residual-branch behaviour, and the weight-decay split. `ruff check`

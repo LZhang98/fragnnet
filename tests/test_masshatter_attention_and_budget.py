@@ -320,3 +320,99 @@ def test_weight_decay_split_exempts_norms_biases_and_free_tokens() -> None:
         assert id(parameter) in exempt
     # Every trainable parameter is covered exactly once.
     assert len(decay) + len(no_decay) == len(list(stub.parameters()))
+
+
+# --------------------------------------------------------------- CE-conditioned attention
+
+CE_DIM = 5
+
+
+def _ce_head(**overrides) -> CandidateIntensityTransformerHead:
+    th.manual_seed(3)
+    return CandidateIntensityTransformerHead(
+        **HEAD_KWARGS,
+        attention_type="full",
+        ce_feature_dim=CE_DIM,
+        **overrides,
+    )
+
+
+def test_ce_pair_bias_requires_the_mass_bias_and_full_attention() -> None:
+    with pytest.raises(ValueError, match="ce_pair_bias modulates"):
+        _ce_head(ce_pair_bias=True)
+    with pytest.raises(ValueError, match="ce_film requires"):
+        CandidateIntensityTransformerHead(**HEAD_KWARGS, ce_film=True, ce_feature_dim=CE_DIM)
+    with pytest.raises(ValueError, match="positive ce_feature_dim"):
+        CandidateIntensityTransformerHead(**HEAD_KWARGS, attention_type="full", ce_film=True)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"mass_pair_bias": True, "ce_pair_bias": True},
+        {"ce_film": True},
+        {"mass_pair_bias": True, "ce_pair_bias": True, "ce_film": True},
+    ],
+)
+def test_ce_conditioning_is_a_no_op_at_initialization(overrides: dict) -> None:
+    """Zero-initialized CE projections must leave step 0 identical to the unconditioned head."""
+    needs_masses = overrides.get("mass_pair_bias", False)
+    th.manual_seed(3)
+    baseline = CandidateIntensityTransformerHead(
+        **HEAD_KWARGS, attention_type="full", mass_pair_bias=needs_masses
+    )
+    conditioned = _ce_head(**overrides)
+    conditioned.load_state_dict(baseline.state_dict(), strict=False)
+    baseline.eval()
+    conditioned.eval()
+
+    inputs = _head_inputs()
+    masses = th.tensor([180.0, 162.0, 152.0, 134.0]) if needs_masses else None
+    ce_features = th.randn(1, CE_DIM)
+    reference = baseline(*inputs, batch_size=1, num_masks=4, component_neutral_masses=masses)
+    with_ce = conditioned(
+        *inputs,
+        batch_size=1,
+        num_masks=4,
+        component_neutral_masses=masses,
+        ce_features=ce_features,
+    )
+    for left, right in zip(reference, with_ce):
+        assert th.allclose(left, right, atol=1e-6)
+
+
+def test_ce_pair_bias_makes_the_bias_depend_on_collision_energy() -> None:
+    bias_module = PairwiseMassBias(ce_feature_dim=CE_DIM)
+    masses = th.tensor([[100.0, 82.0, 72.0]]).expand(2, 3).contiguous()
+    valid = th.ones(2, 3, dtype=th.bool)
+    low_then_high = th.tensor([[1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0, 0.0]])
+
+    assert th.count_nonzero(bias_module(masses, valid, ce_features=low_then_high)) == 0
+    with th.no_grad():
+        bias_module.ce_weights.weight[:, 0] = 1.0
+        bias_module.ce_weights.weight[:, 1] = -1.0
+    bias = bias_module(masses, valid, ce_features=low_then_high)
+    # Identical candidate masses, different collision energies -> different competition.
+    assert not th.allclose(bias[0], bias[1])
+
+
+def test_ce_film_changes_attention_once_weighted() -> None:
+    head = _ce_head(ce_film=True)
+    head.eval()
+    inputs = _head_inputs()
+    ce_features = th.randn(1, CE_DIM)
+    before = head(*inputs, batch_size=1, num_masks=4, ce_features=ce_features)[2]
+    with th.no_grad():
+        for layer in head.layers:
+            th.nn.init.normal_(layer.candidate_attention.ce_film.weight, std=0.5)
+    after = head(*inputs, batch_size=1, num_masks=4, ce_features=ce_features)[2]
+    assert not th.allclose(before, after)
+
+
+def test_ce_features_are_required_exactly_when_conditioning_is_on() -> None:
+    conditioned = _ce_head(ce_film=True)
+    with pytest.raises(ValueError, match="ce_features must be supplied"):
+        conditioned(*_head_inputs(), batch_size=1, num_masks=4)
+    plain = CandidateIntensityTransformerHead(**HEAD_KWARGS, attention_type="full")
+    with pytest.raises(ValueError, match="ce_features must be supplied"):
+        plain(*_head_inputs(), batch_size=1, num_masks=4, ce_features=th.randn(1, CE_DIM))
