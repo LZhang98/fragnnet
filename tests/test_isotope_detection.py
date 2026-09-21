@@ -20,13 +20,14 @@ import numpy as np
 import pytest
 
 from fragnnet.utils import isotope_utils
-from fragnnet.utils.formula_utils import C13_SPACING
+from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
 from fragnnet.utils.isotope_utils import (
     _expected_mk_ratio,
     _parse_adduct_counts,
     dag_formula_source,
     detect_isotope_peaks_for_training,
     detect_isotope_peaks_for_training_cleanup,
+    detect_isotope_peaks_formula_aware,
     estimate_coisolation_fraction_from_precursor,
     subformula_formula_source,
 )
@@ -1101,3 +1102,222 @@ class TestRatioGate:
     def test_unknown_rule_raises(self):
         with pytest.raises(ValueError, match="unknown candidate_rule"):
             isotope_utils._ratio_gate(0.1, np.array([0.1]), 0.5, 2.0, "mean")
+
+
+# ---------------------------------------------------------------------------
+# Regular-isotope branch: characterization of the 2026-09-20 audit findings
+# ---------------------------------------------------------------------------
+
+
+class TestRegularIsotopeBranchKnownDefects:
+    """Pin the audited behaviour of `detect_isotope_peaks_formula_aware` and its caller.
+
+    These tests assert what the code does today, not what it should do. Each one names the
+    defect it records, so a fix inverts the assertion rather than discovering the behaviour
+    again. See ``docs/plans/subformula_isotope_detection_plan.md`` and
+    ``docs/reference/detect_isotope_peaks_tuning.md``. The whole branch is off in every
+    template, which is why these are recorded rather than fixed.
+    """
+
+    CL37 = 1.99705  # true 37Cl - 35Cl spacing
+    BR81 = 1.99795  # true 81Br - 79Br spacing
+    COARSE_M2 = 2.00671  # what the coarse generator reports for every formula
+
+    def test_coarse_generator_gives_every_formula_the_same_m2_offset(self):
+        """DEFECT 1: the M+2 offset ignores which heavy isotope carries it."""
+        from fragnnet.utils.formula_utils import isotope_offsets_from_formula
+
+        for formula in ("C10H8Br2", "C6H5Cl", "C20H30N2O3"):
+            offsets = dict(isotope_offsets_from_formula(parse_formula(formula), max_isotope=2))
+            m2_offset = next(off for off in offsets if off > 1.5)
+
+            assert m2_offset == pytest.approx(self.COARSE_M2, abs=1e-5)
+        # The real spacings it should have used differ by ~9 mDa, far outside FT's 4 mDa.
+        assert pytest.approx(0.00876, abs=1e-5) == self.COARSE_M2 - self.BR81
+        assert pytest.approx(0.00966, abs=1e-5) == self.COARSE_M2 - self.CL37
+
+    def test_real_bromine_m2_is_unmatchable_at_the_ft_window(self):
+        """DEFECT 1: at the tolerance FT actually uses, the biggest isotope peak is missed."""
+        element_counts = parse_formula("C10H8Br2")
+        m0 = 285.899
+        mzs = np.array([m0, m0 + _NM, m0 + self.BR81])
+        ints = np.array([100.0, 11.0, 195.0])
+
+        ft_mask = detect_isotope_peaks_formula_aware(mzs, ints, element_counts, mz_tol=0.004)
+        loose_mask = detect_isotope_peaks_formula_aware(mzs, ints, element_counts, mz_tol=0.02)
+
+        assert not ft_mask[2], "M+2 unexpectedly matched at 4 mDa - defect 1 may be fixed"
+        assert loose_mask[2], "the docstring example only holds at the loose default"
+        assert ft_mask[1] and loose_mask[1], "the 13C M+1 is matched either way"
+
+    def test_a_ladder_collapses_because_a_flagged_peak_can_still_be_a_parent(self):
+        """DEFECT 3: no cascade guard, so everything above the first peak goes."""
+        m0 = 285.899
+        mzs = m0 + np.arange(5) * _NM
+        ints = np.array([100.0, 80.0, 60.0, 40.0, 20.0])
+
+        mask = detect_isotope_peaks_formula_aware(
+            mzs, ints, parse_formula("C20H30N2O3"), mz_tol=0.004
+        )
+
+        assert mask.tolist() == [False, True, True, True, True]
+
+    def test_the_monoisotopic_parent_is_the_most_intense_peak_not_the_nearest(self):
+        """DEFECT 5: picking the strongest parent lowers the observed ratio, easing the gate."""
+        m0 = 285.899
+        # Two candidate parents inside the window; the nearer one is far weaker.
+        mzs = np.array([m0 - 0.003, m0, m0 + _NM])
+        ints = np.array([1000.0, 1.0, 20.0])
+
+        mask = detect_isotope_peaks_formula_aware(
+            mzs,
+            ints,
+            parse_formula("C20H30N2O3"),
+            mz_tol=0.004,
+            intensity_ratio_lo=0.5,
+            intensity_ratio_hi=2.0,
+        )
+
+        # Against the nearest parent (1.0) the ratio would be 20; against the strongest
+        # (1000.0) it is 0.02. Expected M+1 is 0.228, so only the second passes [0.5x, 2x].
+        assert not mask[2]
+
+    def test_the_cleanup_caller_disables_the_intensity_ratio_gate(self):
+        """DEFECT 5: an M+1 at 37x its expected ratio is still removed as an isotope.
+
+        The monotonicity check still applies, so the observed ratio has to stay under 1; the
+        ratio gate is what would have caught a ratio that is merely far too large for the
+        formula, and the cleanup passes [0.0, inf] for it.
+        """
+        element_counts = parse_formula("C2H6O")  # expected M+1 ~= 0.024
+        m0 = 46.0419
+        mzs = np.array([m0, m0 + _NM])
+        ints = np.array([1000.0, 900.0])  # ratio 0.9, i.e. ~37x the expected 0.024
+
+        gated = detect_isotope_peaks_formula_aware(
+            mzs, ints, element_counts, mz_tol=0.004, check_intensity=True
+        )
+        as_cleanup_calls_it = detect_isotope_peaks_formula_aware(
+            mzs,
+            ints,
+            element_counts,
+            mz_tol=0.004,
+            check_intensity=True,
+            intensity_ratio_lo=0.0,
+            intensity_ratio_hi=np.inf,
+        )
+
+        assert not gated[1]
+        assert as_cleanup_calls_it[1]
+
+    @pytest.mark.parametrize(
+        ("inst_type", "expected_removed"),
+        [("FT", 0), ("QTOF", 3), ("IT", 3)],
+    )
+    def test_the_regular_branch_is_not_instrument_gated(self, inst_type, expected_removed):
+        """DEFECT 4: `_INST_MZ_TOL`'s None means "never filter", but becomes 0.02 Da here.
+
+        An H-transfer ladder is what the 4 mDa FT window exists to protect, and it is exactly
+        what the non-FT fallback deletes.
+        """
+        m0 = 285.899
+        mzs = m0 + np.arange(4) * 1.007825  # +H steps, 4.47 mDa off the 13C spacing
+        ints = np.array([100.0, 80.0, 60.0, 40.0])
+
+        mask = detect_isotope_peaks_for_training_cleanup(
+            mzs,
+            ints,
+            prec_mz=400.0,
+            inst_type=inst_type,
+            formula="C20H30N2O3",
+            prec_type="[M+H]+",
+            remove_regular_isotopes=True,
+            remove_coisolation=False,
+        )
+
+        assert int(mask.sum()) == expected_removed
+
+
+class TestDagFormulaSourceEdges:
+    def test_missing_arrays_give_no_candidates(self):
+        assert dag_formula_source(None, None)(100.0) == []
+
+    def test_mismatched_array_lengths_give_no_candidates(self):
+        source = dag_formula_source(np.array([100.0, 200.0]), np.array(["CH4"], dtype=object))
+
+        assert source(100.0) == []
+
+    def test_an_empty_formula_string_is_not_a_candidate(self):
+        source = dag_formula_source(np.array([100.0]), np.array([""], dtype=object))
+
+        assert source(100.0) == []
+
+    def test_an_unparseable_formula_is_dropped_rather_than_raised(self):
+        source = dag_formula_source(np.array([100.0]), np.array(["not-a-formula"], dtype=object))
+
+        assert source(100.0) == []
+
+    def test_the_closest_node_wins_inside_the_window(self):
+        source = dag_formula_source(
+            np.array([100.000, 100.010]), np.array(["CH4", "C2H6"], dtype=object), 0.015
+        )
+
+        assert source(100.009) == [parse_formula("C2H6")]
+
+
+class TestFragmentExpectedRatios:
+    def test_one_ratio_per_candidate(self):
+        ratios = isotope_utils._fragment_expected_ratios(
+            100.0, 1, parse_formula("C10H22"), {}, 1.00728, 142.17,
+            formula_source=lambda _mz: [{"C": 5, "H": 11}, {"C": 9, "H": 11}],
+        )
+
+        assert ratios.shape == (2,)
+        assert ratios[0] == pytest.approx(5 * 0.01103 + 11 * 0.000149, rel=1e-6)
+        assert ratios[1] > ratios[0]
+
+    def test_an_empty_source_falls_back_to_the_scaled_precursor(self):
+        proxy = isotope_utils._fragment_expected_ratios(
+            100.0, 1, parse_formula("C10H22"), {}, 1.00728, 142.17, formula_source=None
+        )
+        empty = isotope_utils._fragment_expected_ratios(
+            100.0, 1, parse_formula("C10H22"), {}, 1.00728, 142.17,
+            formula_source=lambda _mz: [],
+        )
+
+        assert empty.shape == (1,)
+        assert empty == pytest.approx(proxy)
+
+    def test_a_zero_precursor_mass_does_not_divide(self):
+        """The caller guards this, but the fallback must not depend on that guard."""
+        ratios = isotope_utils._fragment_expected_ratios(
+            100.0, 1, parse_formula("C10H22"), {}, 0.0, 0.0, formula_source=None
+        )
+
+        assert np.isfinite(ratios).all()
+
+    def test_an_adduct_carrier_reaches_the_m2_ratio(self):
+        """A retained Cl is all-or-nothing, and the ion composition is what carries it."""
+        with_cl = isotope_utils._fragment_expected_ratios(
+            100.0, 2, parse_formula("C5H12O"), {}, 0.0, 88.09,
+            formula_source=lambda _mz: [{"C": 2, "H": 5, "O": 1, "Cl": 1}],
+        )
+        without_cl = isotope_utils._fragment_expected_ratios(
+            100.0, 2, parse_formula("C5H12O"), {}, 0.0, 88.09,
+            formula_source=lambda _mz: [{"C": 2, "H": 5, "O": 1}],
+        )
+
+        assert with_cl[0] == pytest.approx(without_cl[0] + 0.3220, abs=1e-6)
+
+    def test_an_even_candidate_count_tests_a_ratio_no_composition_predicts(self):
+        """`median` of two is their mean, so with an even count it tests a fictional fragment.
+
+        Documented rather than fixed: it is the behaviour the DAG-matching arms were measured
+        with, and it only differs from picking a side when the candidates disagree sharply.
+        """
+        expected = np.array([0.02, 0.10])
+
+        # 0.058 matches neither candidate under a tight window, but sits on their mean.
+        assert isotope_utils._ratio_gate(0.058, expected, 0.9, 1.1, "median")
+        assert not isotope_utils._ratio_gate(0.058, expected, 0.9, 1.1, "any")
+        assert isotope_utils._ratio_point(expected) == pytest.approx(0.06)

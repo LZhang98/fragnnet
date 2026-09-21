@@ -254,3 +254,120 @@ def test_bad_subformula_tolerance_is_rejected_at_setup(mz_tol):
 
     with pytest.raises(ValueError, match="remove_isotope_subformula_mz_tol must be positive"):
         dataset._setup_isotope_peak_cleanup()
+
+
+def test_protect_known_mono_keeps_a_peak_the_subformula_source_explains():
+    """The highest-precision arm, reachable from config: an H-gain alternative wins the peak.
+
+    72.0894 is one 13C step above the C5H11 fragment, and also within 4 mDa of C5H12 - the
+    H-gain ion the FT window is meant to separate. Protection is what that ambiguity buys.
+    """
+    import torch as th
+
+    from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
+    from fragnnet.utils.isotope_utils import _expected_mk_ratio
+
+    formula, frag_mz = "C10H22", 71.086
+    r_prec = _expected_mk_ratio(parse_formula(formula), 1.0, k=1)
+    r_frag = _expected_mk_ratio(parse_formula("C5H11"), 1.0, k=1)
+    observed_ratio = r_frag / (1.0 + (r_prec - r_frag))
+
+    spec_entry = pd.Series(
+        {
+            "group_id": 1,
+            "mol_id": 1,
+            "prec_type": "[M+H]+",
+            "inst_type": "FT",
+            "prec_mz": 143.179,
+        }
+    )
+    mzs = th.tensor([frag_mz, frag_mz + C13_SPACING], dtype=th.float64)
+    ints = th.tensor([2000.0, observed_ratio * 2000.0], dtype=th.float64)
+
+    def run(protect: bool):
+        dataset = _dataset(
+            remove_isotope_formula_source="subformula",
+            remove_isotope_max_isotope=2,
+            remove_regular_isotope_peaks=False,
+            remove_coisolation_peaks=True,
+            remove_isotope_regular_mz_tol=None,
+            remove_isotope_min_coiso_fraction=0.05,
+            remove_isotope_max_leak_factor=1.5,
+            remove_isotope_precursor_envelope_lo=0.2,
+            remove_isotope_precursor_envelope_hi=5.0,
+            remove_isotope_protect_known_mono=protect,
+        )
+        dataset.mol_df = pd.DataFrame({"mol_id": [1], "formula": [formula]}).set_index(
+            "mol_id", drop=False
+        )
+        dataset.group_coiso_fraction_by_k = {}
+        return dataset._remove_isotope_peaks_from_spec(spec_entry, mzs, ints)[0]
+
+    assert run(protect=False).tolist() == [frag_mz]
+    assert len(run(protect=True)) == 2
+
+
+def test_the_dataset_hands_the_detector_its_configured_rule_and_protection(monkeypatch):
+    """The knobs are useless if they stop at `spec_params`."""
+    import torch as th
+
+    from fragnnet.dataset import base_dataset as base_dataset_module
+
+    captured = {}
+
+    def fake_cleanup(*_args, **kwargs):
+        captured.update(kwargs)
+        return np.zeros(2, dtype=bool)
+
+    monkeypatch.setattr(
+        base_dataset_module, "detect_isotope_peaks_for_training_cleanup", fake_cleanup
+    )
+    dataset = _dataset(
+        remove_isotope_formula_source="subformula",
+        remove_isotope_candidate_rule="all",
+        remove_isotope_protect_known_mono=True,
+        remove_isotope_max_isotope=2,
+        remove_regular_isotope_peaks=False,
+        remove_coisolation_peaks=True,
+        remove_isotope_regular_mz_tol=None,
+        remove_isotope_min_coiso_fraction=0.05,
+        remove_isotope_max_leak_factor=1.5,
+        remove_isotope_precursor_envelope_lo=0.2,
+        remove_isotope_precursor_envelope_hi=5.0,
+    )
+    dataset.mol_df = pd.DataFrame({"mol_id": [1], "formula": ["C10H22"]}).set_index(
+        "mol_id", drop=False
+    )
+    dataset.group_coiso_fraction_by_k = {}
+    spec_entry = pd.Series(
+        {
+            "group_id": 1,
+            "mol_id": 1,
+            "prec_type": "[M+H]+",
+            "inst_type": "FT",
+            "prec_mz": 143.179,
+        }
+    )
+
+    dataset._remove_isotope_peaks_from_spec(
+        spec_entry,
+        th.tensor([71.086, 72.0894], dtype=th.float64),
+        th.tensor([2000.0, 50.0], dtype=th.float64),
+    )
+
+    assert captured["candidate_rule"] == "all"
+    assert captured["protect_known_mono"] is True
+    assert captured["formula_source"](71.086) == [{"C": 5, "H": 11}]
+
+
+def test_wiring_the_dag_path_requires_knowing_how_the_dags_are_stored():
+    """`frag_params['compressed']` is required, not guessed: reading them wrong is silent."""
+    spec_params = {
+        "remove_isotope_peaks": True,
+        "remove_isotope_formula_source": "dag",
+        "remove_isotope_dag_dp": None,
+        "remove_isotope_dag_compressed": False,
+    }
+
+    with pytest.raises(KeyError, match="compressed"):
+        wire_isotope_dag_paths(spec_params, "data/frag/x/dags", {})

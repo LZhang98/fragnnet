@@ -1,11 +1,24 @@
 # MASShatter regularization and normalization sweep (Fir, one-hour boxes)
 
-> **Status:** PROPOSED · **Updated:** 2026-09-19
+> **Status:** EXECUTED, NO PROMOTIONS · **Updated:** 2026-09-21
 > Nine sweep configs written and verified locally (eight arms plus the 2g slice variant); replicate
 > floor, throughput and the GPU-memory / slice-sizing table measured from existing W&B runs.
 > **Stage A was submitted on Fir on 2026-09-19 and crashed**; the cause is fixed in
-> `spectrum_pl.py` (see [Stage A incident](#stage-a-incident-2026-09-19--out-of-range-predicted-peaks))
-> and Stage A must be resubmitted from a checkout carrying that fix.
+> `spectrum_pl.py` (see [Stage A incident](#stage-a-incident-2026-09-19--out-of-range-predicted-peaks)).
+>
+> **Resubmitted and completed 2026-09-19/20. Read the
+> [campaign read-out](../findings/masshatter_campaign_readout_2026_09_21.md) before acting on this
+> plan.** Six of eight arms produced data — `_drop02` was killed by the pre-fix bug and `_ctxnorm`
+> was never submitted. A1-A5 pass (`E* = 64`, controls agree to 0.0016); **A6 does not**: the 2g
+> pilot OOM'd and the fan-out proceeded on `3g.40gb` by default rather than by measurement, so the
+> slice ratio is still unmeasured. Result: **0 promote, 5 hold, 1 reject (`drop03`, −0.0149)**, all
+> at 10% of the 630-epoch schedule with every arm still climbing.
+>
+> Two statements below are now stale. The claim that `configure_optimizers` drops
+> `lr_schedule_type` / `lr_total_steps` / `lr_min_ratio` was true when written and was **fixed in
+> `031c370d` with `tests/test_lr_schedule_forwarding.py`** — an LR arm is no longer blocked. The
+> hydrogen-transfer bound and the decoder-free intensity head are now **template defaults**
+> (`mass_shatter_h_transfer_bound: valence`, `mass_shatter_intensity_atom_decoder_num_layers: 0`).
 
 Executes the "sweep second" half of the
 [regularization audit](../findings/masshatter_regularization_audit_2026_09_19.md), whose census

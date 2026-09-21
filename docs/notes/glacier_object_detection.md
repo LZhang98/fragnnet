@@ -1,6 +1,6 @@
 # GLACIER (Wang, Wang & Coley, MIT — arXiv 2606.29161)
 
-> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-20
+> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-21
 >
 > Literature notes on "GLACIER: Rethinking Mass Spectrum Prediction as an Object Detection
 > Problem". Read the **bin-width caveat** before quoting any of its NIST'20 numbers.
@@ -446,3 +446,121 @@ binary attention masks restrict each fragment's attention to its own atoms. Loss
 spectral distance plus an auxiliary loss on heuristically-labeled fragment patterns. Claims ~8x
 inference speedup over the two-stage model. Intensities are predicted unbinned and re-binned at
 inference, which they argue lets one model serve multiple bin widths.
+
+## Design comparison — FraGNNet / MASShatter vs GLACIER (2026-09-21)
+
+Read against `research/masshatter-ion-h-selection` @ `92a0943a`, the production FraGNNet config
+`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml`, and GLACIER Sections 3.2-3.4
+plus Appendices C-D. Architecture only — none of this is a measured result.
+
+| stage | FraGNNet (prod, `pqx7ywc9`) | MASShatter | GLACIER |
+|---|---|---|---|
+| fragment proposal | offline combinatorial BFS depth 3 + 16 SMARTS / 7 NL prepass rules, cached DAG | learned **per-bond** Bernoulli -> rank whole cut masks -> connected components | learned **per-atom** boundary detection: DETR query tokens -> affinity matrix `S` -> LinSATNet top-k' (k<=3) -> delete breakpoint atoms -> connected components |
+| proposal supervision | none (enumeration) | proposal-coverage loss + support BCE | Hungarian set-matching to MAGMa-derived boundary patterns, per-decoder-layer aux losses decayed 0.9 |
+| backbone | GINE x4 @384 on the mol graph | GINE_GSA x2 @384 (1.81M, a measured plateau) | Graphormer, shared, one pass |
+| fragment embedding | pool its own atoms' embeddings via the `cc` mask; `cc_interstage: direct`, `cc_interstage_use_rest: False` (no molecule or complement context) | 3x384 pooled + 128 context | "dynamic embedding" pool + masked TransformerDecoder over its own atoms (eq. 7) |
+| **fragment <-> fragment** | `frag_gnn_type: NodeMLP`, `pyg_edges: False` -> no DAG message passing. Only interaction is **subtracting the per-spectrum max-pooled fragment vector** (`src/fragnnet/model/fragnnet_model.py:1956-1962`) | **ISAB**, 64 inducing points, 3 layers (49.5% of the intensity head) | **full TransformerEncoder over the fragment set** (eq. 8) |
+| intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
+| output law | **softmax over the joint (fragment x formula) grid** + OOS sink; 9 H-shifts (+/-4) x {CRF, CMF} | charge head -> ion-mode / H-channel head | **independent sigmoids**, 13 H-shifts (+/-6) x {CRF, CMF} = 26, summed at exact m/z then binned (eqs. 15-16) |
+| loss | Gaussian-density CE at **instrument tolerance** (FT 10 ppm / QTOF 20 ppm) | spectral CE (JSS ~= CE) + support BCE | cosine on **0.1 Da bins** + MAGMa teacher-forced auxiliary, weight `w_magma` annealed 1 -> 0 |
+| conditioning | CE (NCE+ACE), adduct, instrument, frag-mode at encoder input + CE FiLM + mode affine on logits | same context encoder | adduct + CE only, but injected into node embeddings **and edge-level attention biases**; no instrument feature |
+| params | - | 22.7M merged / 8.43M unmerged | not published |
+
+### 1. Fragment competition is the gap
+
+GLACIER gives every fragment full self-attention over the whole candidate set *before* emitting
+intensity. MASShatter gives it rank-64 induced attention. FraGNNet gives it **one max-pooled
+vector, subtracted** — a rank-1 set statistic — after which every logit is computed independently
+and the joint softmax normalizes them. A softmax is a *constraint* on allocation, not a
+*mechanism* for it.
+
+[`findings/glacier_gap_ce_decomposition_2026_09_21.md`](../findings/glacier_gap_ce_decomposition_2026_09_21.md)
+measured that the entire 0.077 gap is CE-dependent **allocation** against a ceiling we already
+hold (oracle 0.9492; realization 88.4% at NCE<20 falling to 75.6% at 120+). FraGNNet has no
+architectural site where "this fragment wins at NCE 120 and that one does not" can be computed.
+That is the cleanest design-to-measurement match in this comparison.
+
+### 2. Head inputs — mostly already built, off by default
+
+GLACIER eq. 14's three inputs map onto existing code:
+
+| GLACIER eq. 14 | FraGNNet | MASShatter |
+|---|---|---|
+| psi(fragment formula) | `base_formula` — **in prod** | absent (no composition vector) |
+| psi(root - fragment formula) | `neutral_loss_formula` — implemented, only in the `_neutral_loss` config arm | absent |
+| OHE(n_broken) | `num_cut_bonds` — implemented, only in the `_cut_bond` arms | `cut_counts` (raw scalar, not one-hot) |
+| root token `G` | `cc_interstage_use_rest` / context embedding, both off in prod | 128-d context |
+
+So for FraGNNet this is a **config edit, not a build**. For MASShatter, absolute mass arrived
+2026-09-20 as a template default; composition, the neutral-loss complement, a sinusoidal/RBF mass
+encoding and any pairwise `dm_ij` attention bias are still absent — see
+`[[project_masshatter_architecture_lit_review]]`, whose "mass-blind" section is amended for this.
+
+### 3. Proposal: ours is strictly more expressive, and it is not the bottleneck
+
+Their k<=3 **breakpoint-atom** parameterization cannot express two cuts landing on the same
+boundary atom; deleting boundary atoms recovers the queried fragment exactly while mangling its
+complement; and the reachable space is bounded by MAGMa labels, with no analog of the xanthone
+4-cut, morphinan 5-ring, retro-Diels-Alder or the 7 neutral-loss rules. Their gain here is the
+~8x inference speedup, not accuracy, and our own oracle says coverage is not binding.
+**Do not trade the DAG for a learned proposer to chase this number.**
+
+### 3b. MAGMa is a weak teacher, and it bounds more of GLACIER than the paper admits
+
+Their whole fragment branch is supervised by MAGMa labels (eq. 2 derives the breakpoint patterns
+from MAGMa subgraphs; `L_fragment` matches queries to them). Read what MAGMa actually is, from the
+implementation they use — `ms-pred/src/ms_pred/magma/fragmentation.py`, parameters
+`FRAGMENT_ENGINE_PARAMS = {"max_broken_bonds": 6, "max_tree_depth": 3}`:
+
+- Fragments are **atom bitmasks of the intact molecule reached by deleting bonds** — connected
+  substructures only. MAGMa **cannot form a bond**, so no skeletal rearrangement, no
+  retro-Diels-Alder product, no ring contraction, nothing in our 16 SMARTS prepass rules or the
+  7 neutral-loss rules. Hydrogens are not modelled at all; they enter as a `+/-h` correction on the
+  formula with a bond-order-weighted penalty (`score_fragment`, `atom_pass_stats`).
+- **`max_tree_depth: 3`.** Their labels are depth-3, the same depth as our d3 DAG. The claim to
+  "generate fragments with various depth in a single forward pass" is about inference cost; the
+  supervision is not deeper than our enumeration.
+- **`max_broken_bonds: 6` is where their "13 hydrogen shift states" comes from** (`2*6+1`, and
+  `shift_bucket_inds` is literally that array). Their `+/-6` window is an inherited MAGMa constant,
+  not a chemical choice — worth knowing before treating our `num_hs: 4` (9 states) as the
+  under-specified side.
+- MAGMa labels are **peak-driven assignments over a mass-degenerate substructure set**: many
+  substructures share a formula, so the Hungarian matching in eq. 5 optimizes against an
+  ambiguous target.
+
+The `w_magma` anneal is supposed to free the detector from this. But once `w_magma -> 0` the only
+remaining gradient is **cosine on 0.1 Da bins**, which cannot tell a rearranged fragment from an
+isobaric non-rearranged one — the coarse grid and the weak teacher fail in the same direction.
+So end-to-end training can re-weight fragments MAGMa already proposes; it has no signal that would
+teach a rearrangement MAGMa cannot express. This is the strongest form of the section-3 point:
+their proposal stage is not merely less expressive than a DAG, it is trained toward a labeling
+that excludes the chemistry a DAG plus prepass rules exists to capture.
+
+### 4. Output law and supervision resolution — our real advantage, invisible under their metric
+
+We fit a normalized distribution against exact masses at instrument tolerance, so fragment
+*identity* receives gradient. Their eq. 16 sums fragments into a bin, so at 0.1 Da the
+CO / N2 / C2H4 split gets **no gradient at all**, and independent sigmoids never have to allocate
+a fixed budget. Eq. 16 lets them re-read at any bin width post hoc, but they never trained the
+distinction — which is why their Appendix F shows retrieval improving at 0.01 Da while cosine
+prefers the coarse grid.
+
+Two smaller asymmetries: their CE reaches the *interaction* (edge-level attention bias) while ours
+reaches only the encoder input and an output FiLM — though neither injects CE into
+fragment-to-fragment attention, which is where the CE decomposition points. And their
+MAGMa -> end-to-end anneal is a curriculum we have only as a stub (`dag_curriculum` configs).
+
+### Consequence for the ranked plan
+
+This adds an item 0 to the ranking in
+[`findings/glacier_gap_ce_decomposition_2026_09_21.md`](../findings/glacier_gap_ce_decomposition_2026_09_21.md):
+
+0. **Give FraGNNet a real fragment-set interaction.** Replace `frag_pool_combine: subtract` with
+   attention over the fragment set — `set_transformer` already exists in `build_pool_module`, and
+   the `concat` readout cell from `[[project_frag_pool_concat_readout]]` is built and untrained.
+   It is the only one of GLACIER's three mechanisms with no production analog on our side, and the
+   one the CE finding points at.
+1. Marginal sibling-ranking loss on P(n) — unchanged; attacks the same allocation defect from the
+   loss side rather than the architecture side.
+2. Composition-aware head: enable `neutral_loss_formula` + `num_cut_bonds` on FraGNNet
+   (config-only); add a formula vector and a `dm_ij` bias to MASShatter's candidate tokens.

@@ -661,3 +661,117 @@ def test_subformula_candidates_stay_bounded_for_a_large_precursor():
     )
 
     assert 0 < len(candidates) < 500
+
+
+@pytest.mark.parametrize(
+    ("formula", "precursor_type"),
+    [
+        ("C9H8O4", "[M+H]+"),
+        ("C17H19NO3", "[M+H]+"),
+        ("C12H17BrN2OS", "[M+H]+"),
+        ("C16H13ClN2O", "[M-H]-"),
+        ("C6H12O6", "[M+Na]+"),
+        ("CH4O", "[M+Cl]-"),
+    ],
+)
+def test_every_candidate_is_in_the_window_and_inside_the_budget(formula, precursor_type):
+    """Two invariants the decomposer must never break, over random m/z rather than picked ones."""
+    import random
+
+    rng = random.Random(7)
+    charge = clean_spectra_utils._precursor_ion_charge(precursor_type)
+    tolerance_da = 0.004
+    precursor_counts = clean_spectra_utils.parse_formula(formula)
+    comp_diffs = clean_spectra_utils._precursor_ion_budgets(precursor_type)
+    budget_ceiling = {
+        element: max(
+            precursor_counts.get(element, 0) + max(diff.get(element, 0), 0) for diff in comp_diffs
+        )
+        for element in set(precursor_counts) | {e for diff in comp_diffs for e in diff}
+    }
+    precursor_mz = data_utils.formula_to_mass(formula) + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[
+        precursor_type
+    ]
+
+    n_seen = 0
+    for _ in range(150):
+        query = rng.uniform(50.0, max(precursor_mz, 60.0))
+        for counts in clean_spectra_utils.subformula_candidates(
+            query, formula, precursor_type, tolerance_da
+        ):
+            n_seen += 1
+            mass = (
+                sum(count * data_utils.ELEMENT_TO_MASS[e] for e, count in counts.items())
+                - charge * clean_spectra_utils.ELECTRON_MASS
+            )
+            assert abs(mass - query) <= tolerance_da + 1e-9
+            assert all(count > 0 for count in counts.values())
+            for element, count in counts.items():
+                assert count <= budget_ceiling.get(element, 0), (element, counts)
+    assert n_seen > 0, "no candidate was produced at all, so nothing was checked"
+
+
+def test_a_wider_window_only_adds_candidates():
+    """Tolerance is a window, so widening it must be monotone."""
+    tight = clean_spectra_utils.subformula_candidates(200.0, "C17H19NO3", "[M+H]+", 0.004)
+    wide = clean_spectra_utils.subformula_candidates(200.0, "C17H19NO3", "[M+H]+", 0.05)
+
+    tight_keys = {tuple(sorted(c.items())) for c in tight}
+    wide_keys = {tuple(sorted(c.items())) for c in wide}
+
+    assert tight_keys <= wide_keys
+    assert len(wide_keys) > len(tight_keys)
+
+
+def test_the_precursor_ion_is_a_candidate_at_its_own_mz():
+    protonated_mz = (
+        data_utils.formula_to_mass("C9H8O4")
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    )
+
+    candidates = clean_spectra_utils.subformula_candidates(
+        protonated_mz, "C9H8O4", "[M+H]+", 0.004
+    )
+
+    assert candidates == [{"C": 9, "H": 9, "O": 4}]
+
+
+def test_one_mz_can_carry_two_carbon_counts():
+    """The real ambiguity behind `remove_isotope_candidate_rule`: N-for-CH2-style swaps.
+
+    C6H6N3 and C8H8O differ by 1.35 mDa here, inside FT's window, and by two carbons - so the
+    expected M+1 ratio differs by a third depending on which one the peak really is.
+    """
+    candidates = clean_spectra_utils.subformula_candidates(
+        120.0530, "C20H25N3O", "[M+H]+", 0.004
+    )
+
+    assert {"C": 6, "H": 6, "N": 3} in candidates
+    assert {"C": 8, "H": 8, "O": 1} in candidates
+    assert {c["C"] for c in candidates} == {6, 8}
+
+
+def test_candidates_are_distinct():
+    """One composition is reachable by several enumeration routes; it must come back once."""
+    candidates = clean_spectra_utils.subformula_candidates(
+        150.0, "C17H19NO3", "[M+H]+", 0.05
+    )
+
+    keys = [tuple(sorted(c.items())) for c in candidates]
+
+    assert len(keys) == len(set(keys))
+
+
+def test_a_query_below_every_ion_has_no_candidates():
+    assert clean_spectra_utils.subformula_candidates(1.0, "C9H8O4", "[M+H]+", 0.004) == []
+
+
+def test_a_query_above_the_precursor_has_no_candidates():
+    precursor_mz = (
+        data_utils.formula_to_mass("C9H8O4")
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    )
+
+    assert clean_spectra_utils.subformula_candidates(
+        precursor_mz + 5.0, "C9H8O4", "[M+H]+", 0.004
+    ) == []

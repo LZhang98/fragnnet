@@ -62,8 +62,10 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   The checkout was clean at audit start, so the
   uncommitted-work description in the workflow-adoption handoff above is historical.
 
-- [MASShatter regularization sweep](plans/masshatter_regularization_sweep_plan.md) (2026-09-19)
-  is the PROPOSED execution of that audit's sweep half: eight one-hour `fir:h100-3g.40gb` jobs on the
+- [MASShatter regularization sweep](plans/masshatter_regularization_sweep_plan.md) is **EXECUTED with
+  no promotions**; read the [campaign read-out](findings/masshatter_campaign_readout_2026_09_21.md)
+  (2026-09-21) before acting on the plan. It was the execution of that audit's sweep half:
+  eight one-hour `fir:h100-3g.40gb` jobs on the
   merged MA/MI base `nist20_ma_mi_merged_fast_batch512_cuda_lb64`, comprising the six prepared
   one-knob arms (`layernorm`, `graphnorm`, `drop02`, `drop03`, `wd10`, `ctxnorm`) plus two controls,
   all with `compute_train_auxiliary_metrics: true` so a train cosine is logged for the first time in
@@ -82,8 +84,37 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   exclusion no longer applies. The plan records that the
   `cc_*` dropouts listed as unswept are FraGNNet-only and inert for MASShatter. Configs resolved and
   one job script generated and syntax-checked locally outside the repository; nothing was generated
-  in `slurm_scripts/` and no job was submitted. Next: generate and submit the `ms_reg_ctrl_a` pilot
-  on Fir and report its five gates before fanning out.
+  in `slurm_scripts/` and no job was submitted at plan time.
+  **Outcome (2026-09-19/20).** Six of eight arms produced data: `_drop02` was killed by the
+  out-of-range predicted-peak bug about 70 minutes before its fix landed in `ffe5d53a`, and
+  `_ctxnorm` was never submitted. A1-A5 pass — train cosine logged for the first time, `E* = 64`,
+  controls agree to 0.0016, backend resolved `cuda` on all ten jobs. **A6 fails**: the 2g pilot
+  OOM'd in `calculate_match_mzs` and the fan-out went ahead on `3g.40gb` three minutes later, so
+  the slice ratio is still unmeasured. Read-out: 0 promote, 5 hold, 1 reject (`drop03`, −0.0149 vs
+  the control mean). Only `wd10` (gap 0.122) and `drop03` (0.113) move the train/val gap off the
+  control's 0.128; `layernorm` and `graphnorm` are exactly null. Every arm was still climbing at
+  the one-hour wall, at 10% of its 630-epoch schedule, and the best validation epoch is the last
+  epoch for all eight.
+  **Horizon probe read out 2026-09-21 (`tkkesus9`, full 630 epochs, 8.97 h, 70 ep/h): val cosine
+  saturates by ~epoch 100, not 630.** 0.7232@64 -> 0.7292@100 -> 0.7287@300 -> 0.7309@629, so the
+  last 529 epochs buy **+0.0017**, inside the 0.0016 control replicate floor; the nominal peak
+  0.7318@555 is noise. The sweep's +0.0034/10ep extrapolation decays immediately -- total headroom
+  past ep64 was only +0.008. **The ep64 nulls therefore stand, and the correct screen length is
+  ~128 epochs (~1.8 h), not 630 (~9 h)**; the saved wall clock should buy n>=2 replicates, since
+  at a 0.003-0.005 replicate floor an n=1 arm cannot resolve what this family produces. The
+  train/val gap **never plateaus** (0.55@64 -> 0.61@100 -> 0.81@300 -> 0.88@600) and validation
+  loss actively degrades after ~ep100 (-2.526 -> -2.424) while train loss keeps falling: pure
+  memorization, hidden by the best-val-cosine checkpoint. Caveat: the probe carries the
+  2026-09-20 feature bundle, so its curve cannot be overlaid on the §1 arms to retro-size that
+  screen -- the saturation shape is the transferable result, not the absolute level.
+  **Proposal warmup is null-to-harmful on `ma_mi`** (`jvaj1lyw` vs `tkkesus9`: the only differing
+  resolved-config key is `mass_shatter_proposal_only_until_epoch: 4`, same seed). Best-vs-best
+  -0.0004, final -0.0021, and behind at every usable horizon: -0.0113@100, -0.0130@300,
+  -0.0062@500, catching up only in the last ~80 epochs. The +0.0071 that motivated it was on the
+  merged `nist20_inchikey` split and does not transfer; the four prepared `c4c_pwarm_*` arms are
+  answered and should not run.
+  Next: run the `c4a_*` bundle-attribution arms, then the now-unblocked LR-schedule arms
+  (`c4b_*`), then refill the `_drop02` / `_ctxnorm` holes.
 - [MASShatter regularization audit](findings/masshatter_regularization_audit_2026_09_19.md)
   (2026-09-19) establishes that regularization and optimization have effectively never been varied:
   across 226 `model_type = mass_shatter` W&B runs, `mass_shatter_head_dropout`, `weight_decay`, `lr`,
@@ -141,10 +172,25 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   incompatible** (atom width 70 -> 71 and a changed intensity-head input width), and molecular
   preprocessing caches must be regenerated for `atom_gasteiger_charges`. Validation: full suite
   3,890 passed, 1 skipped, 2 xfailed; 29 new tests; the lead merged config resolves and runs a
-  finite forward pass. Nothing was trained: these are corrections and new inputs, not measured
-  improvements. Next: run the new default against the previous base arm at matched epochs,
-  against the 0.003 replicate floor, before treating any of it as a gain. `a_radical` and
-  `a_chiral` were deliberately left in place; the audit §11 records why.
+  finite forward pass. `a_radical` and `a_chiral` were deliberately left in place; the audit §11
+  records why.
+  **Measured 2026-09-21: the bundle is worth +0.0073 val cosine at matched epoch 64**, clearing
+  both the 0.003 floor this entry asked for and the 0.0016 control replicate floor. The horizon
+  probe `tkkesus9` (`..._lb64_long_control`, `nist20_ma_mi_inchikey`) is the first run carrying
+  the new defaults: 0.7232@64 against the 2026-09-19 regularization-sweep control mean 0.7159
+  (`ri3zm215` 0.7152 / `7cdsx970` 0.7167). A full resolved-config diff of `ri3zm215` -> `tkkesus9`
+  leaves exactly six substantive keys, all from audit §11: `a_charge`,
+  `mass_shatter_boundary_bond_encoder`, `mass_shatter_candidate_mass_features`,
+  `mass_shatter_candidate_charge_feature`, `h_transfer_bound` none->valence (independently
+  measured free at -0.0002, so ~no contribution), and the `a_degree` one-hot repair, which is
+  **invisible in the config** -- same name and same 14-column width, but 12 columns were dead
+  before `97c41abc`. (`daa36f63` "update features" is comment reflow only, no behaviour change.)
+  **This is a bundle, not an attribution**, at n=1 against n=2 controls and riding ~2,400 lines of
+  other `src/` churn between the two batches, so no single component is established. The
+  `c4a_*` arms isolate it: full bundle + seed replicate, four leave-one-out arms
+  (`no_mass_feats`, `no_charge_feat`, `no_bbe`, `no_acharge`) and an all-off `c4a_bundle_off`
+  control. Corollary: **every null in the 2026-09-19 regularization sweep was measured on the old,
+  partly-dead feature set**, so those knobs are re-openable in principle.
 - **Config layout: one template for every model** (2026-09-20).
   `config/template.yml` declares every model's keys - the 271 shared ones (paths, `spec_params`,
   `mol_params`, trainer, loss, logging, eval) plus all 258 model-owned ones - so every run
