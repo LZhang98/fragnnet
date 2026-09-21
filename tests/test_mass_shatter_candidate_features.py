@@ -127,7 +127,7 @@ def test_candidate_mass_features_are_log_mass_and_precursor_fraction() -> None:
     batch = _build_batch((smiles,))
     model = _build_model(batch, candidate_mass_features=True)
     num_atoms = Chem.MolFromSmiles(smiles).GetNumAtoms()
-    mass_features, charge_feature = model._candidate_scalar_features(
+    mass_features, charge_feature, _ = model._candidate_scalar_features(
         batch,
         th.arange(num_atoms),
         th.zeros(num_atoms, dtype=th.long),
@@ -147,7 +147,7 @@ def test_candidate_mass_fraction_tracks_fragment_size() -> None:
     """A proper fragment scores strictly below the intact precursor."""
     batch = _build_batch(("CCO",))
     model = _build_model(batch, candidate_mass_features=True)
-    mass_features, _ = model._candidate_scalar_features(
+    mass_features, _, _ = model._candidate_scalar_features(
         batch,
         th.tensor([0, 1, 2, 0]),
         th.tensor([0, 0, 0, 1]),
@@ -168,7 +168,7 @@ def test_candidate_charge_feature_sums_gasteiger_charges() -> None:
     """
     batch = _build_batch(("CCO",))
     model = _build_model(batch, candidate_charge_feature=True)
-    _, charge_feature = model._candidate_scalar_features(
+    _, charge_feature, _ = model._candidate_scalar_features(
         batch,
         th.tensor([0, 1, 2, 2]),
         th.tensor([0, 0, 0, 1]),

@@ -1799,14 +1799,60 @@ class SpectrumPL(L.LightningModule):
 
         return results
 
+    def _split_weight_decay_parameters(self) -> tuple[list[th.nn.Parameter], list[th.nn.Parameter]]:
+        """Split parameters into weight-decayed and decay-exempt groups.
+
+        Exempt: every parameter of a normalization module, every bias, and any parameter
+        whose tensor is one-dimensional (which covers learned scale/offset vectors and
+        free token parameters registered outside a module).
+
+        Returns:
+            ``(decay, no_decay)`` parameter lists covering every trainable parameter once.
+        """
+        norm_module_parameters: set[int] = set()
+        for module in self.modules():
+            if isinstance(
+                module, (th.nn.LayerNorm, th.nn.GroupNorm, th.nn.modules.batchnorm._NormBase)
+            ):
+                norm_module_parameters.update(id(p) for p in module.parameters(recurse=False))
+        decay: list[th.nn.Parameter] = []
+        no_decay: list[th.nn.Parameter] = []
+        for name, parameter in self.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            if (
+                id(parameter) in norm_module_parameters
+                or name.endswith("bias")
+                or parameter.ndim <= 1
+            ):
+                no_decay.append(parameter)
+            else:
+                decay.append(parameter)
+        return decay, no_decay
+
     def configure_optimizers(self) -> dict[str, Any]:
         """
         Configure optimizer and learning rate scheduler for Lightning.
         """
         optimizer_cls = get_optimizer_class(self.hparams.optimizer)
-        optimizer = optimizer_cls(
-            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
-        )
+        weight_decay = self.hparams.weight_decay
+        if getattr(self.hparams, "weight_decay_exclude_norm_bias", False):
+            # A single parameter group applies weight decay to every tensor, including
+            # LayerNorm/BatchNorm weights, all biases, and free learned tokens such as the
+            # candidate transformer's inducing set (initialized at std=model_dim**-0.5 and
+            # then pulled toward zero on every step). Standard practice excludes all three.
+            decay_parameters, no_decay_parameters = self._split_weight_decay_parameters()
+            parameter_groups = [
+                {"params": decay_parameters, "weight_decay": weight_decay},
+                {"params": no_decay_parameters, "weight_decay": 0.0},
+            ]
+            optimizer = optimizer_cls(
+                parameter_groups, lr=self.hparams.lr, weight_decay=weight_decay
+            )
+        else:
+            optimizer = optimizer_cls(
+                self.parameters(), lr=self.hparams.lr, weight_decay=weight_decay
+            )
         ret = {
             "optimizer": optimizer,
         }

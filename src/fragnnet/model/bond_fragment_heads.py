@@ -59,8 +59,15 @@ class _InducedCandidateAttentionLayer(nn.Module):
         num_heads: int,
         feedforward_dim: int,
         dropout: float,
+        norm_placement: Literal["post", "pre"] = "post",
+        qk_norm: bool = False,
     ) -> None:
         super().__init__()
+        if norm_placement not in {"post", "pre"}:
+            raise ValueError(f"unknown norm_placement: {norm_placement}")
+        if qk_norm:
+            raise ValueError("qk_norm requires attention_type='full'")
+        self.norm_placement = norm_placement
         self.latent_attention = nn.MultiheadAttention(
             model_dim,
             num_heads,
@@ -94,27 +101,52 @@ class _InducedCandidateAttentionLayer(nn.Module):
         candidate_tokens: th.Tensor,
         inducing_tokens: th.Tensor | None,
         candidate_padding_mask: th.Tensor,
+        pair_bias: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor]:
+        if pair_bias is not None:
+            raise ValueError("induced candidate attention cannot apply a pairwise bias")
         if inducing_tokens is None:
             raise ValueError("induced candidate attention requires a latent token set")
+        # Pre-norm normalizes the query stream only; keys and values arrive already
+        # normalized from the previous block, so no extra norm modules are introduced and
+        # the parameter count is identical across the two placements.
+        pre = self.norm_placement == "pre"
+        latent_query = self.latent_attention_norm(inducing_tokens) if pre else inducing_tokens
         latent_updates, _ = self.latent_attention(
-            inducing_tokens,
+            latent_query,
             candidate_tokens,
             candidate_tokens,
             key_padding_mask=candidate_padding_mask,
             need_weights=False,
         )
-        inducing_tokens = self.latent_attention_norm(inducing_tokens + self.dropout(latent_updates))
-        inducing_tokens = self.latent_feedforward_norm(
-            inducing_tokens + self.dropout(self.latent_feedforward(inducing_tokens))
-        )
+        if pre:
+            inducing_tokens = inducing_tokens + self.dropout(latent_updates)
+            inducing_tokens = inducing_tokens + self.dropout(
+                self.latent_feedforward(self.latent_feedforward_norm(inducing_tokens))
+            )
+        else:
+            inducing_tokens = self.latent_attention_norm(
+                inducing_tokens + self.dropout(latent_updates)
+            )
+            inducing_tokens = self.latent_feedforward_norm(
+                inducing_tokens + self.dropout(self.latent_feedforward(inducing_tokens))
+            )
 
+        candidate_query = (
+            self.candidate_attention_norm(candidate_tokens) if pre else candidate_tokens
+        )
         candidate_updates, _ = self.candidate_attention(
-            candidate_tokens,
+            candidate_query,
             inducing_tokens,
             inducing_tokens,
             need_weights=False,
         )
+        if pre:
+            candidate_tokens = candidate_tokens + self.dropout(candidate_updates)
+            candidate_tokens = candidate_tokens + self.dropout(
+                self.candidate_feedforward(self.candidate_feedforward_norm(candidate_tokens))
+            )
+            return candidate_tokens, inducing_tokens
         candidate_tokens = self.candidate_attention_norm(
             candidate_tokens + self.dropout(candidate_updates)
         )
@@ -141,13 +173,18 @@ class _FullCandidateAttentionLayer(nn.Module):
         num_heads: int,
         feedforward_dim: int,
         dropout: float,
+        norm_placement: Literal["post", "pre"] = "post",
+        qk_norm: bool = False,
     ) -> None:
         super().__init__()
-        self.candidate_attention = nn.MultiheadAttention(
+        if norm_placement not in {"post", "pre"}:
+            raise ValueError(f"unknown norm_placement: {norm_placement}")
+        self.norm_placement = norm_placement
+        self.candidate_attention = _BiasedSelfAttention(
             model_dim,
             num_heads,
             dropout=dropout,
-            batch_first=True,
+            qk_norm=qk_norm,
         )
         self.candidate_attention_norm = nn.LayerNorm(model_dim)
         self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
@@ -163,17 +200,26 @@ class _FullCandidateAttentionLayer(nn.Module):
         candidate_tokens: th.Tensor,
         inducing_tokens: th.Tensor | None,
         candidate_padding_mask: th.Tensor,
+        pair_bias: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor | None]:
         # Padded slots are masked as keys, so they never reach a real candidate even
         # though their own rows keep accumulating values. Every molecule contributes at
         # least one real candidate, so no query row attends over a fully masked key set.
-        candidate_updates, _ = self.candidate_attention(
-            candidate_tokens,
-            candidate_tokens,
-            candidate_tokens,
-            key_padding_mask=candidate_padding_mask,
-            need_weights=False,
+        pre = self.norm_placement == "pre"
+        attention_input = (
+            self.candidate_attention_norm(candidate_tokens) if pre else candidate_tokens
         )
+        candidate_updates = self.candidate_attention(
+            attention_input,
+            candidate_padding_mask,
+            pair_bias=pair_bias,
+        )
+        if pre:
+            candidate_tokens = candidate_tokens + self.dropout(candidate_updates)
+            candidate_tokens = candidate_tokens + self.dropout(
+                self.candidate_feedforward(self.candidate_feedforward_norm(candidate_tokens))
+            )
+            return candidate_tokens, inducing_tokens
         candidate_tokens = self.candidate_attention_norm(
             candidate_tokens + self.dropout(candidate_updates)
         )
@@ -181,6 +227,164 @@ class _FullCandidateAttentionLayer(nn.Module):
             candidate_tokens + self.dropout(self.candidate_feedforward(candidate_tokens))
         )
         return candidate_tokens, inducing_tokens
+
+
+# Common neutral-loss masses (Da). Used only to initialize the learnable RBF centres of
+# :class:`PairwiseMassBias`; the model is free to move them.
+_NEUTRAL_LOSS_CENTRES = (
+    0.0,
+    2.0157,  # H2
+    17.0265,  # NH3
+    18.0106,  # H2O
+    27.9949,  # CO
+    28.0313,  # C2H4
+    43.9898,  # CO2
+    46.0055,  # HCOOH
+)
+
+
+class PairwiseMassBias(nn.Module):
+    """Additive attention bias on the signed mass difference between two candidates.
+
+    Candidate competition in MS/MS is structured along a mass axis: a fragment and its
+    water-loss or CO-loss daughter compete for the same ion current, and that relation is
+    a fixed mass offset regardless of the molecule. Content-based attention over GNN
+    embeddings has to rediscover it for every scaffold, so the relation is supplied here
+    as a radial-basis bias, the MS/MS analog of the Gaussian distance kernels used by
+    3-D molecular transformers.
+
+    The bias is shared across heads. A per-head variant would require materializing an
+    ``(molecules, heads, candidates, candidates)`` tensor, which at the configured
+    candidate budget costs one head-multiple more memory than the attention itself.
+    """
+
+    def __init__(self, num_centres: int = len(_NEUTRAL_LOSS_CENTRES), signed: bool = True) -> None:
+        super().__init__()
+        if num_centres <= 0:
+            raise ValueError("num_centres must be positive")
+        centres = th.tensor(_NEUTRAL_LOSS_CENTRES, dtype=th.float32)
+        if num_centres <= centres.numel():
+            centres = centres[:num_centres]
+        else:
+            extra = th.linspace(
+                float(centres[-1]) + 10.0,
+                float(centres[-1]) + 10.0 * (num_centres - centres.numel()),
+                num_centres - centres.numel(),
+            )
+            centres = th.cat([centres, extra])
+        self.signed = signed
+        if signed:
+            # Losing a neutral and gaining one are different events, so mirror the centres.
+            centres = th.cat([centres, -centres[1:]])
+        self.centres = nn.Parameter(centres.clone())
+        self.log_widths = nn.Parameter(th.full((centres.numel(),), math.log(4.0)))
+        self.weights = nn.Parameter(th.zeros(centres.numel()))
+
+    def forward(self, masses: th.Tensor, valid: th.Tensor) -> th.Tensor:
+        """Return an additive ``(molecules, 1, candidates, candidates)`` attention bias.
+
+        Args:
+            masses: ``(molecules, candidates)`` neutral candidate masses; padded slots may
+                hold anything, they are zeroed by ``valid``.
+            valid: ``(molecules, candidates)`` boolean, True for real candidates.
+
+        Returns:
+            The bias, broadcastable over attention heads.
+        """
+        if masses.ndim != 2 or valid.shape != masses.shape:
+            raise ValueError("masses and valid must be aligned (molecules, candidates) tensors")
+        deltas = masses.unsqueeze(2) - masses.unsqueeze(1)
+        if not self.signed:
+            deltas = deltas.abs()
+        widths = self.log_widths.exp().clamp(min=1e-3)
+        bias = deltas.new_zeros(deltas.shape)
+        # Accumulate one centre at a time: materializing (..., num_centres) would cost
+        # num_centres times the pair tensor, which dominates at the candidate budget.
+        for index in range(self.centres.numel()):
+            offset = (deltas - self.centres[index]) / widths[index]
+            bias = bias + self.weights[index] * th.exp(-0.5 * offset * offset)
+        pair_valid = valid.unsqueeze(2) & valid.unsqueeze(1)
+        return (bias * pair_valid).unsqueeze(1)
+
+
+class _BiasedSelfAttention(nn.Module):
+    """Batch-first multi-head self-attention accepting an additive pairwise bias.
+
+    Parameter names mirror :class:`torch.nn.MultiheadAttention` (``in_proj_weight``,
+    ``in_proj_bias``, ``out_proj``) so that a checkpoint trained with the stock module
+    loads into this one unchanged. ``qk_norm`` adds new parameters and is therefore only
+    checkpoint-compatible in the direction of enabling it.
+    """
+
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        dropout: float,
+        qk_norm: bool = False,
+    ) -> None:
+        super().__init__()
+        if model_dim % num_heads != 0:
+            raise ValueError("model_dim must be divisible by num_heads")
+        self.model_dim = model_dim
+        self.num_heads = num_heads
+        self.head_dim = model_dim // num_heads
+        self.dropout = dropout
+        self.in_proj_weight = nn.Parameter(th.empty(3 * model_dim, model_dim))
+        self.in_proj_bias = nn.Parameter(th.zeros(3 * model_dim))
+        nn.init.xavier_uniform_(self.in_proj_weight)
+        self.out_proj = nn.Linear(model_dim, model_dim)
+        nn.init.xavier_uniform_(self.out_proj.weight)
+        nn.init.zeros_(self.out_proj.bias)
+        self.q_norm = nn.LayerNorm(self.head_dim) if qk_norm else None
+        self.k_norm = nn.LayerNorm(self.head_dim) if qk_norm else None
+
+    def forward(
+        self,
+        tokens: th.Tensor,
+        key_padding_mask: th.Tensor,
+        pair_bias: th.Tensor | None = None,
+    ) -> th.Tensor:
+        """Attend over candidates.
+
+        Args:
+            tokens: ``(molecules, candidates, model_dim)``.
+            key_padding_mask: ``(molecules, candidates)`` boolean, True where padded.
+            pair_bias: optional additive bias broadcastable to
+                ``(molecules, heads, candidates, candidates)``.
+
+        Returns:
+            The attention output, shaped like ``tokens``.
+        """
+        num_molecules, num_candidates, _ = tokens.shape
+        projected = F.linear(tokens, self.in_proj_weight, self.in_proj_bias)
+        query, key, value = projected.chunk(3, dim=-1)
+
+        def split(tensor: th.Tensor) -> th.Tensor:
+            return tensor.reshape(
+                num_molecules, num_candidates, self.num_heads, self.head_dim
+            ).transpose(1, 2)
+
+        query, key, value = split(query), split(key), split(value)
+        if self.q_norm is not None and self.k_norm is not None:
+            query = self.q_norm(query)
+            key = self.k_norm(key)
+        attention_mask = th.zeros(
+            (num_molecules, 1, 1, num_candidates),
+            dtype=tokens.dtype,
+            device=tokens.device,
+        ).masked_fill(key_padding_mask[:, None, None, :], float("-inf"))
+        if pair_bias is not None:
+            attention_mask = attention_mask + pair_bias
+        attended = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attention_mask,
+            dropout_p=self.dropout if self.training else 0.0,
+        )
+        attended = attended.transpose(1, 2).reshape(num_molecules, num_candidates, self.model_dim)
+        return self.out_proj(attended)
 
 
 class IonModeProposalHead(nn.Module):
@@ -281,6 +485,10 @@ class CandidateIntensityTransformerHead(nn.Module):
         use_mass_features: bool = False,
         use_charge_feature: bool = False,
         unique_fragment_tokens: bool = False,
+        norm_placement: Literal["post", "pre"] = "post",
+        qk_norm: bool = False,
+        mass_pair_bias: bool = False,
+        mass_pair_bias_centres: int = len(_NEUTRAL_LOSS_CENTRES),
     ) -> None:
         super().__init__()
         dimensions = (
@@ -296,6 +504,13 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("transformer dimensions and layer counts must be positive")
         if attention_type not in {"induced", "full"}:
             raise ValueError(f"unknown attention_type: {attention_type}")
+        if mass_pair_bias and attention_type != "full":
+            raise ValueError(
+                "mass_pair_bias requires attention_type='full'; the induced layer exchanges "
+                "information through latents that carry no mass of their own"
+            )
+        if qk_norm and attention_type != "full":
+            raise ValueError("qk_norm requires attention_type='full'")
         if attention_type == "induced" and num_inducing_points <= 0:
             raise ValueError("num_inducing_points must be positive for induced attention")
         if context_dim < 0:
@@ -350,9 +565,14 @@ class CandidateIntensityTransformerHead(nn.Module):
                     num_heads,
                     feedforward_dim,
                     dropout,
+                    norm_placement=norm_placement,
+                    qk_norm=qk_norm,
                 )
                 for _ in range(num_layers)
             ]
+        )
+        self.mass_pair_bias = (
+            PairwiseMassBias(num_centres=mass_pair_bias_centres) if mass_pair_bias else None
         )
         self.component_residual_head = nn.Linear(model_dim, 1)
         nn.init.zeros_(self.component_residual_head.weight)
@@ -430,6 +650,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         tokens: th.Tensor,
         component_batch_indices: th.Tensor,
         batch_size: int,
+        token_masses: th.Tensor | None = None,
     ) -> th.Tensor:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -491,6 +712,13 @@ class CandidateIntensityTransformerHead(nn.Module):
                 device=tokens.device,
             )
             padding_mask[local_batch_indices, positions] = False
+            pair_bias = None
+            if self.mass_pair_bias is not None:
+                if token_masses is None:
+                    raise ValueError("mass_pair_bias is enabled but token masses were not provided")
+                padded_masses = token_masses.new_zeros((len(molecule_indices), bucket_limit))
+                padded_masses[local_batch_indices, positions] = token_masses[bucket_token_indices]
+                pair_bias = self.mass_pair_bias(padded_masses, ~padding_mask)
 
             # 2. Contextualize candidates, either through a fixed-size inducing set or
             # by direct candidate-to-candidate attention.
@@ -504,6 +732,7 @@ class CandidateIntensityTransformerHead(nn.Module):
                     padded_tokens,
                     inducing_tokens,
                     padding_mask,
+                    pair_bias=pair_bias,
                 )
             contextualized[bucket_token_indices] = padded_tokens[
                 local_batch_indices,
@@ -527,6 +756,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_masks: int,
         context: th.Tensor | None = None,
         return_support_logits: bool = False,
+        component_neutral_masses: th.Tensor | None = None,
         mass_features: th.Tensor | None = None,
         charge_feature: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
@@ -610,10 +840,21 @@ class CandidateIntensityTransformerHead(nn.Module):
         if charge_feature is not None:
             features.append(charge_feature.to(fragment_embeddings).unsqueeze(1))
         tokens = self.input_projection(th.cat(features, dim=1))
+        if (self.mass_pair_bias is not None) != (component_neutral_masses is not None):
+            raise ValueError(
+                "component_neutral_masses must be supplied exactly when mass_pair_bias is on"
+            )
+        if component_neutral_masses is not None and component_neutral_masses.shape != (
+            num_components,
+        ):
+            raise ValueError("component_neutral_masses must contain one mass per component")
         tokens = self._contextualize_by_molecule(
             tokens,
             component_batch_indices,
             batch_size,
+            token_masses=(
+                None if component_neutral_masses is None else component_neutral_masses.to(tokens)
+            ),
         )
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(
@@ -787,10 +1028,14 @@ class BondFocusedBreakHead(nn.Module):
         num_layers: int,
         dropout: float,
         num_mixtures: int = 1,
+        endpoint_aggregation: Literal["mean", "sum", "sqrt"] = "mean",
     ) -> None:
         super().__init__()
         if min(atom_embedding_dim, bond_state_dim, head_hidden_dim) <= 0:
             raise ValueError("atom, bond-state, and head dimensions must be positive")
+        if endpoint_aggregation not in {"mean", "sum", "sqrt"}:
+            raise ValueError(f"unknown endpoint_aggregation: {endpoint_aggregation}")
+        self.endpoint_aggregation = endpoint_aggregation
         if bond_feature_dim < 0 or context_dim < 0:
             raise ValueError("bond feature and context dimensions must be nonnegative")
         if num_layers <= 0:
@@ -924,7 +1169,13 @@ class BondFocusedBreakHead(nn.Module):
                 endpoint_indices,
                 endpoint_bond_states,
             )
-            atom_messages = atom_messages / endpoint_counts.clamp(min=1).unsqueeze(1)
+            # Degree normalization. ``mean`` is the historical default; GIN's expressiveness
+            # argument prefers ``sum``, since a mean cannot distinguish a quaternary carbon
+            # from a methyl. ``sqrt`` keeps some degree signal without the raw scale growth.
+            if self.endpoint_aggregation == "mean":
+                atom_messages = atom_messages / endpoint_counts.clamp(min=1).unsqueeze(1)
+            elif self.endpoint_aggregation == "sqrt":
+                atom_messages = atom_messages / endpoint_counts.clamp(min=1).sqrt().unsqueeze(1)
             atom_states = atom_norm(
                 atom_states + atom_update(th.cat([atom_states, atom_messages], dim=1))
             )

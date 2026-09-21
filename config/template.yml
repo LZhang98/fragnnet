@@ -213,6 +213,14 @@ lr_schedule_type: exponential  # "exponential" or "cosine"
 lr_total_steps: null           # required for cosine; set to max_epochs * steps_per_epoch
 lr_min_ratio: 0.0              # cosine: final LR as fraction of peak (e.g. 0.01)
 weight_decay: 0.01
+# Exclude normalization weights, biases and 1-D parameters (e.g. the candidate
+# transformer's inducing tokens) from weight decay by putting them in a second optimizer
+# group. False keeps the historical single-group behaviour.
+weight_decay_exclude_norm_bias: False
+# Activation applied to a GNN layer's residual branch before the skip add. "relu" is
+# historical and makes every layer strictly additive per coordinate -- it can never
+# attenuate the residual stream. "identity" removes that restriction.
+gnn_residual_activation: relu  # ["relu", "identity", "gelu"]
 lr_decay_rate: 0.95
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
@@ -771,6 +779,23 @@ mass_shatter_intensity_transformer_num_inducing_points: 64
 # full uses direct candidate-to-candidate attention (quadratic, exact pairwise interaction)
 # and ignores num_inducing_points.
 mass_shatter_intensity_transformer_attention: induced  # ["induced", "full"]
+# Normalization placement inside the candidate transformer. "post" is the historical
+# residual form (LN after the skip add); "pre" normalizes the branch input instead, which
+# is the configuration that tolerates a constant LR with no warmup. Parameter counts and
+# names are identical, so the two are A/B-comparable from the same checkpoint.
+mass_shatter_intensity_norm_placement: post  # ["post", "pre"]
+# Per-head query/key LayerNorm. Adds parameters, so it is enable-only for a warm start.
+# Requires attention_type: full.
+mass_shatter_intensity_qk_norm: False
+# Additive attention bias on the signed mass difference between two candidates, as a sum
+# of learnable RBFs initialized on common neutral losses (H2O, NH3, CO, CO2, ...). The
+# weights start at zero, so enabling this is a no-op at step 0 and safe on a warm start.
+# Requires attention_type: full; the induced layer routes through latents that carry no mass.
+mass_shatter_intensity_mass_pair_bias: False
+# How the bond head pools incident-bond messages onto an atom. "mean" is historical; a mean
+# cannot separate a quaternary carbon from a methyl, which is GIN's expressiveness argument
+# for "sum". "sqrt" keeps degree signal without the raw scale growth.
+mass_shatter_bond_endpoint_aggregation: mean  # ["mean", "sum", "sqrt"]
 # REMOVED 2026-09-19. The fragment-to-atom decoder gave no epoch-matched cosine gain at
 # 1.8x the wall clock, so it was deleted. The key is retained because load_config requires
 # every custom-config key to exist here; any value other than 0 now fails at setup.

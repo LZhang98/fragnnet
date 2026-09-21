@@ -1,7 +1,25 @@
 # MASShatter 4 h exploration campaign (2026-09-21)
 
-> **Status:** PREPARED, NOT SUBMITTED · **Created:** 2026-09-21
-> 20 arms x 4 h on `fir:h100-3g.40gb`, all single-key diffs from one base.
+> **Status:** SUBMITTED 2026-09-21 · **Created:** 2026-09-21
+> 20 arms x **3 h** on `fir:h100-3g.40gb`, all single-key diffs from one base.
+>
+> **Box cut 4 h -> 3 h after submission.** Justified by the `long_control` result that landed the
+> same day: val cosine **saturates around epoch 100**, and the last 529 of 630 epochs buy +0.0017.
+> At ~1 min/epoch a 3 h box reaches ~170 epochs, comfortably past saturation. Applied in place with
+> `scontrol update TimeLimit=3:00:00`; the GPU slice was already the 40 GB `h100_3g.40gb`.
+>
+> **Tier C is superseded and should be cancelled.** `jvaj1lyw` vs `tkkesus9` (single key,
+> `proposal_only_until_epoch: 4`, same seed) shows proposal warmup does **not** transfer to ma_mi:
+> best-vs-best -0.0004, final -0.0021, and behind at every readable horizon (-0.0113@100,
+> -0.0130@300, -0.0062@500). The +0.0071 that motivated Tier C was on the merged `nist20_inchikey`
+> split. Do not fall back to e0=2 -- warmup loses at every epoch a real screen would read.
+>
+> **Tier A caveat discovered after writing.** The 2026-09-20 change is worth **+0.0073** at matched
+> ep64 (`ri3zm215` -> `tkkesus9`), but it is a BUNDLE of 6 keys, one of which is the `a_degree`
+> one-hot repair in `97c41abc` that is **invisible in the config** (same name, same 14 columns, 12
+> previously pinned to the unknown bucket). `c4a_pre0920_arch` therefore does **not** reconstruct the
+> pre-2026-09-20 architecture -- it still carries the repaired `a_degree`. It ablates the two
+> candidate features only, and must be described that way.
 > Read with the [campaign read-out](../findings/masshatter_campaign_readout_2026_09_21.md)
 > and the [regularization sweep plan](masshatter_regularization_sweep_plan.md).
 
@@ -24,8 +42,8 @@ placed against the existing leaderboard.
 
 The second premise is exposure. Every arm of the previous sweep was still climbing at the one-hour
 wall, at 10% of its schedule, and the best validation epoch was the last epoch for all eight. The
-200-epoch merged runs peak at epochs 117-181, so a 4 h box (~180-270 epochs, see the throughput
-risk below) is the cheapest length that plausibly contains the peak.
+200-epoch merged runs peak at epochs 117-181, and `long_control` has since shown ma_mi val cosine
+saturating around epoch 100, so a 3 h box (~170 epochs) contains the peak with margin.
 
 ## Arms
 

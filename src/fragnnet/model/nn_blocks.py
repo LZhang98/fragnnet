@@ -115,6 +115,33 @@ class ZerosAggregation(nn.Module):
         return th.zeros_like(agg)
 
 
+_RESIDUAL_ACTIVATIONS = ("relu", "identity", "gelu")
+
+
+def _validate_residual_activation(activation: str) -> str:
+    """Validate the activation applied to a GNN residual branch before the skip add."""
+    if activation not in _RESIDUAL_ACTIVATIONS:
+        raise ValueError(
+            f"residual_activation must be one of {_RESIDUAL_ACTIVATIONS}, got {activation!r}"
+        )
+    return activation
+
+
+def _residual_branch(activation: str, value: th.Tensor) -> th.Tensor:
+    """Apply the configured branch activation.
+
+    ``relu`` reproduces the historical behaviour, in which a layer can only ADD
+    per-coordinate mass to the residual stream and can never attenuate it. ``identity``
+    removes that restriction; ``gelu`` keeps a nonlinearity while allowing negative
+    contributions.
+    """
+    if activation == "relu":
+        return F.relu(value)
+    if activation == "gelu":
+        return F.gelu(value)
+    return value
+
+
 class GNN(nn.Module):
     """
     Generic GNN Class.
@@ -143,6 +170,9 @@ class GNN(nn.Module):
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
         self.hidden_size = hidden_size
         self.edge_feats_size = edge_feats_size
         self.node_feats_size = node_feats_size
@@ -163,6 +193,7 @@ class GNN(nn.Module):
                 num_layers=self.num_layers,
                 dropout=self.dropout,
                 normalization=self.normalization,
+                residual_activation=self.residual_activation,
             )
         elif self.gnn_type == "GINE_GSA":
             self.gnn = GINE_GSA(
@@ -214,6 +245,7 @@ class GNN(nn.Module):
                 num_layers=self.num_layers,
                 dropout=self.dropout,
                 normalization=self.normalization,
+                residual_activation=self.residual_activation,
             )
         elif self.gnn_type == "MPNN":
             self.gnn = MPNN(
@@ -812,6 +844,9 @@ class GINE(nn.Module):
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
         if edge_feats_size < 0:
             raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
 
@@ -860,7 +895,9 @@ class GINE(nn.Module):
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x, edge_index, edge_attr)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
-            x = F.relu(dropout(layer_out)) + x  # Residual connection
+            x = (
+                _residual_branch(self.residual_activation, dropout(layer_out)) + x
+            )  # Residual connection
         return x
 
 
@@ -974,6 +1011,9 @@ class GatedGINE(nn.Module):
             ValueError: If gate_mode is not "static" or "dynamic", or ctx_dim is not positive.
         """
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
         if gate_mode not in ("static", "dynamic"):
             raise ValueError(f"gate_mode must be 'static' or 'dynamic', got {gate_mode!r}")
         if ctx_dim <= 0:
@@ -1059,7 +1099,9 @@ class GatedGINE(nn.Module):
                 )
             layer_out = layer(x, edge_index, edge_attr, gate)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
-            x = F.relu(dropout(layer_out)) + x  # Residual connection
+            x = (
+                _residual_branch(self.residual_activation, dropout(layer_out)) + x
+            )  # Residual connection
         return x
 
 
@@ -1185,6 +1227,9 @@ class GINE_GSA(nn.Module):
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
         if hidden_size % num_heads != 0:
             raise ValueError(
                 f"hidden_size ({hidden_size}) must be divisible by num_heads ({num_heads})"
@@ -1254,7 +1299,7 @@ class GINE_GSA(nn.Module):
             # Local message passing (same residual pattern as GINE)
             local_out = layer(x, edge_index, edge_attr)
             local_out = self.norm_fn(local_out, batch_index, norm)
-            local_out = F.relu(dropout(local_out)) + x
+            local_out = _residual_branch(self.residual_activation, dropout(local_out)) + x
 
             # Exact global self-attention within each graph
             N, C = local_out.shape
@@ -1284,6 +1329,9 @@ class MPNN(nn.Module):
         https://arxiv.org/abs/1704.01212
         """
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
         if edge_feats_size < 0:
             raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
@@ -1318,7 +1366,7 @@ class MPNN(nn.Module):
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x, edge_index, edge_attr)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
-            x = F.relu(dropout(layer_out)) + x
+            x = _residual_branch(self.residual_activation, dropout(layer_out)) + x
         return x
 
 
@@ -1355,6 +1403,9 @@ class GAT(nn.Module):
             is_concat (bool, optional). concatenated multihead attetion, Defaults to True
         """
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
         if edge_feats_size < 0:
             raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
@@ -1395,7 +1446,7 @@ class GAT(nn.Module):
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x, edge_index, edge_attr)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
-            x = F.relu(dropout(layer_out)) + x
+            x = _residual_branch(self.residual_activation, dropout(layer_out)) + x
         return x
 
 
@@ -1441,6 +1492,9 @@ class NodeMLP(nn.Module):
     ) -> None:
         """NodeMLP"""
         super().__init__()
+        self.residual_activation = _validate_residual_activation(
+            kwargs.get("residual_activation", "relu")
+        )
 
         if edge_feats_size < 0:
             raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
@@ -1490,7 +1544,7 @@ class NodeMLP(nn.Module):
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
-            x = F.relu(dropout(layer_out)) + x
+            x = _residual_branch(self.residual_activation, dropout(layer_out)) + x
         return x
 
 

@@ -991,6 +991,11 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_intensity_transformer_attention
             ),
             intensity_transformer_dropout=(self.hparams.mass_shatter_intensity_transformer_dropout),
+            intensity_norm_placement=(self.hparams.mass_shatter_intensity_norm_placement),
+            intensity_qk_norm=self.hparams.mass_shatter_intensity_qk_norm,
+            intensity_mass_pair_bias=self.hparams.mass_shatter_intensity_mass_pair_bias,
+            bond_endpoint_aggregation=(self.hparams.mass_shatter_bond_endpoint_aggregation),
+            gnn_residual_activation=self.hparams.gnn_residual_activation,
             intensity_output=self.hparams.mass_shatter_intensity_output,
             use_mask_residuals=self.hparams.mass_shatter_use_mask_residuals,
             use_base_probability_feature=(not self.hparams.mass_shatter_proposal_anchored),

@@ -652,7 +652,9 @@ class MassShatterContextEncoder(nn.Module):
         input_dim += metadata_embedding_dim * int(self.instrument_embedding is not None)
         input_dim += metadata_embedding_dim * int(self.fragmentation_mode_embedding is not None)
         if normalization not in ("none", "layer"):
-            raise ValueError(f"context normalization must be 'none' or 'layer', got {normalization!r}")
+            raise ValueError(
+                f"context normalization must be 'none' or 'layer', got {normalization!r}"
+            )
         if not 0.0 <= dropout <= 1.0:
             raise ValueError(f"context dropout must be in [0, 1], got {dropout}")
         # The context vector conditions the GNN and every head, but its input scale
@@ -915,6 +917,11 @@ class MassShatterModel(nn.Module):
         context_in_gnn: bool = False,
         boundary_bond_encoder: bool = False,
         candidate_mass_features: bool = False,
+        intensity_norm_placement: str = "post",
+        intensity_qk_norm: bool = False,
+        intensity_mass_pair_bias: bool = False,
+        bond_endpoint_aggregation: str = "mean",
+        gnn_residual_activation: str = "relu",
         candidate_charge_feature: bool = False,
     ) -> None:
         """Initialize the MASShatter model.
@@ -1281,6 +1288,7 @@ class MassShatterModel(nn.Module):
             normalization=precursor_normalization,
             dropout=precursor_dropout,
             num_heads=precursor_num_heads,
+            residual_activation=gnn_residual_activation,
             **graphormer_structural_kwargs,
         )
         self.proposal_encoder = (
@@ -1293,6 +1301,7 @@ class MassShatterModel(nn.Module):
                 normalization=precursor_normalization,
                 dropout=precursor_dropout,
                 num_heads=precursor_num_heads,
+                residual_activation=gnn_residual_activation,
                 **graphormer_structural_kwargs,
             )
             if separate_proposal_encoder
@@ -1339,6 +1348,7 @@ class MassShatterModel(nn.Module):
                 num_layers=bond_num_layers,
                 dropout=head_dropout,
                 num_mixtures=proposal_num_mixtures,
+                endpoint_aggregation=bond_endpoint_aggregation,
             )
         self.proposal_mixture_head = (
             BernoulliMixtureWeightHead(
@@ -1352,6 +1362,7 @@ class MassShatterModel(nn.Module):
             else None
         )
         self.candidate_mass_features = candidate_mass_features
+        self.intensity_mass_pair_bias = intensity_mass_pair_bias
         self.candidate_charge_feature = candidate_charge_feature
         self.boundary_bond_encoder = (
             CutBondEncoder(
@@ -1410,6 +1421,9 @@ class MassShatterModel(nn.Module):
             use_mass_features=candidate_mass_features,
             use_charge_feature=candidate_charge_feature,
             unique_fragment_tokens=unique_fragment_mode,
+            norm_placement=intensity_norm_placement,
+            qk_norm=intensity_qk_norm,
+            mass_pair_bias=intensity_mass_pair_bias,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
@@ -1783,7 +1797,7 @@ class MassShatterModel(nn.Module):
         component_batch_indices: th.Tensor,
         num_components: int,
         batch_size: int,
-    ) -> tuple[th.Tensor | None, th.Tensor | None]:
+    ) -> tuple[th.Tensor | None, th.Tensor | None, th.Tensor | None]:
         """Build the optional per-candidate mass and charge scalars.
 
         Args:
@@ -1795,12 +1809,15 @@ class MassShatterModel(nn.Module):
             batch_size: Number of spectra in the batch.
 
         Returns:
-            ``(mass_features, charge_feature)``; each is None when its flag is off.
-            ``mass_features`` is ``(num_components, 2)`` holding ``log1p(neutral mass)`` and the
-            fraction of the intact precursor mass. ``charge_feature`` is ``(num_components,)``.
+            ``(mass_features, charge_feature, component_masses)``; each is None when nothing
+            needs it. ``mass_features`` is ``(num_components, 2)`` holding ``log1p(neutral
+            mass)`` and the fraction of the intact precursor mass. ``charge_feature`` is
+            ``(num_components,)``. ``component_masses`` is the raw neutral mass per component,
+            required by the candidate transformer's pairwise mass bias.
         """
         mass_features = None
-        if self.candidate_mass_features:
+        component_masses = None
+        if self.candidate_mass_features or self.intensity_mass_pair_bias:
             component_masses = _component_neutral_masses(
                 mol_pyg,
                 atom_indices,
@@ -1812,13 +1829,14 @@ class MassShatterModel(nn.Module):
                 (precursor_masses > 0).all(),
                 "every precursor must have a positive neutral mass",
             )
-            mass_features = th.stack(
-                (
-                    th.log1p(component_masses),
-                    component_masses / precursor_masses[component_batch_indices],
-                ),
-                dim=1,
-            )
+            if self.candidate_mass_features:
+                mass_features = th.stack(
+                    (
+                        th.log1p(component_masses),
+                        component_masses / precursor_masses[component_batch_indices],
+                    ),
+                    dim=1,
+                )
         charge_feature = None
         if self.candidate_charge_feature:
             atom_charges = mol_pyg.atom_gasteiger_charges
@@ -1827,7 +1845,7 @@ class MassShatterModel(nn.Module):
                 atom_component_indices,
                 atom_charges[atom_indices],
             )
-        return mass_features, charge_feature
+        return mass_features, charge_feature, component_masses
 
     def _eligible_smarts_templates(
         self,
@@ -2539,7 +2557,11 @@ class MassShatterModel(nn.Module):
                 atom_fragment_indices,
                 num_fragments,
             )
-            fragment_mass_features, fragment_charge_feature = self._candidate_scalar_features(
+            (
+                fragment_mass_features,
+                fragment_charge_feature,
+                fragment_neutral_masses,
+            ) = self._candidate_scalar_features(
                 mol_pyg,
                 fragment_atom_indices,
                 atom_fragment_indices,
@@ -2604,6 +2626,9 @@ class MassShatterModel(nn.Module):
                 num_masks=num_fragments,
                 context=context[fragment_batch_indices],
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
+                component_neutral_masses=(
+                    fragment_neutral_masses if self.intensity_mass_pair_bias else None
+                ),
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
             )
@@ -2684,7 +2709,11 @@ class MassShatterModel(nn.Module):
                 candidates.atom_component_indices,
                 num_fragments,
             )
-            fragment_mass_features, fragment_charge_feature = self._candidate_scalar_features(
+            (
+                fragment_mass_features,
+                fragment_charge_feature,
+                fragment_neutral_masses,
+            ) = self._candidate_scalar_features(
                 mol_pyg,
                 candidates.atom_indices,
                 candidates.atom_component_indices,
@@ -2721,6 +2750,9 @@ class MassShatterModel(nn.Module):
                 num_masks=num_masks,
                 context=context[fragment_batch_indices],
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
+                component_neutral_masses=(
+                    fragment_neutral_masses if self.intensity_mass_pair_bias else None
+                ),
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
             )
