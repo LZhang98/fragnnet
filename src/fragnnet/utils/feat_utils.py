@@ -780,17 +780,11 @@ def batch_mols_frags(
         boundary_pair_out_idxs.append(frag_pyg_item.boundary_pair_out_local + mol_offsets)
 
     # Initialize lists
-    frag_formula_peak_idxs = (
-        []
-    )  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
+    frag_formula_peak_idxs = []  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
     frag_formula_peak_mzs = []
     frag_formula_peak_probs = []
-    frag_formula_sizes = (
-        []
-    )  # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
-    frag_formula_peak_sizes = (
-        []
-    )  # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
+    frag_formula_sizes = []  # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
+    frag_formula_peak_sizes = []  # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
 
     # Loop through the mz and probs for each sample
     for mzs, probs in zip(formula_peak_mzs_list, formula_peak_probs_list):
