@@ -780,7 +780,7 @@ class TestInstTolScoresRequireConfig:
     `_common_step` only computes them when `inst_tol_lookup` is not None, but they are
     registered as metric names regardless, so the exporters wrote a column of -1 for every
     spectrum and the run reported success. `inst_type_loss_tol` is null in
-    `config/*_template.yml` while `run_save_inference_eval.py` asks for `cos_hun_inst_tol` by
+    `config/template.yml` while `run_save_inference_eval.py` asks for `cos_hun_inst_tol` by
     default, so the broken combination is the one you get by not thinking about it.
     """
 

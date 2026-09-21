@@ -103,7 +103,7 @@ def capture_trained_logits(
 ) -> tuple[MolecularBatch, th.Tensor]:
     """Return one batch and the trained bond logits its proposal path produces.
 
-    The checkpoint's saved hyperparameters are filled from `config/*_template.yml` where keys are
+    The checkpoint's saved hyperparameters are filled from `config/template.yml` where keys are
     absent, then loaded non-strictly: only encoder, bond-break-head and charge-head tensors must
     match, so a checkpoint predating the current intensity head remains usable. A forward hook
     captures the bond logits, and the rest of the forward is allowed to fail because the

@@ -72,8 +72,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 TOLERANCE = 1.0e-5  # relative ratio (== 10 ppm), matches default loss_tolerance_rel
-TOLERANCE_MIN_MZ = 200.0  # matches config/*_template.yml loss_tolerance_min_mz
-LOG_MIN = 1.0e-9  # matches config/*_template.yml log_min
+TOLERANCE_MIN_MZ = 200.0  # matches config/template.yml loss_tolerance_min_mz
+LOG_MIN = 1.0e-9  # matches config/template.yml log_min
 # Per-instrument tolerance override, matches inst_type_loss_tol in
 # config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml. Instrument types not
 # listed here (IT, QQQ, Other, ...) fall back to the global TOLERANCE/TOLERANCE_MIN_MZ.

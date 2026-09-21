@@ -29,9 +29,9 @@
 
 ## Boundaries and canonical references
 
-- Configuration: [config/](../config/) holds one self-contained `<model>_template.yml`
-  template per model, selected by `model_type`; there is no shared base.
-  [config README](../config/README.md) documents the resolution order, duplication and validation.
+- Configuration: [config/](../config/) holds one `template.yml` that declares every model's
+  keys, so each run resolves the same schema and `model_type` selects code rather than config.
+  [config README](../config/README.md) documents the resolution order, where a key goes, and validation.
 - Fragment generation: [frag/](../src/fragnnet/frag/) includes Python and Cython code;
   [DAG/prepass reference](reference/frag_gen_prepass.md) explains the FraGNNet workflow.
   Cython changes require checking the build in [setup.py](../setup.py) and rebuilding in the

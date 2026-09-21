@@ -37,25 +37,28 @@ from fragnnet.utils.pl_utils import ConsoleLogger, migrate_mass_shatter_proposal
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
-# Each model_type resolves to one self-contained `config/<name>_template.yml`.
-# Several model types share a template because they share the same settings.
-TEMPLATE_STEM_BY_MODEL_TYPE = {
-    "frag_gnn": "fragnnet",
-    "fragnnet": "fragnnet",
-    "mass_shatter": "mass_shatter",
-    "neims": "neims",
-    "massformer": "massformer",
-    "iceberg_gen": "iceberg",
-    "iceberg_inten": "iceberg",
-    "graff": "graff",
-    "precursor": "precursor",
-    "gnn": "gnn",
-    "mces_pretraining": "mces",
-    "clip": "clip",
-    "spec_mol_clip_pretraining": "clip",
-}
-# What a config that declares no `model_type` means. The single shared template used to carry
-# this as its default; with one template per model it has to be named.
+# Every model reads the same `config/template.yml`, so shared code can read any key without
+# checking `model_type` first. This set only guards against a typo in `model_type` itself.
+VALID_MODEL_TYPES = frozenset(
+    {
+        "frag_gnn",
+        "fragnnet",
+        "mass_shatter",
+        "neims",
+        "massformer",
+        "iceberg_gen",
+        "iceberg_inten",
+        "graff",
+        "precursor",
+        "gnn",
+        "mces_pretraining",
+        "clip",
+        "spec_mol_clip_pretraining",
+    }
+)
+TEMPLATE_FILENAME = "template.yml"
+# What a config that declares no `model_type` means, and what `config/template.yml` declares.
+# Only reached by a template that omits the key, e.g. a minimal one saved beside a checkpoint.
 DEFAULT_MODEL_TYPE = "frag_gnn"
 
 # Mappings whose sub-keys are data (instrument names, split names), not schema. Custom
@@ -89,75 +92,29 @@ MASS_SHATTER_SAMPLER_KEYS = (
 )
 
 
-def resolve_template_path(template_path: str, model_type: str | None) -> str:
-    """Resolve the template file for ``model_type``.
+def resolve_template_path(template_path: str) -> str:
+    """Resolve the config template.
 
-    ``template_path`` is normally the template directory, and the model picks the file inside
-    it. A path to a file is used as-is, which is how a template saved inside a checkpoint still
-    resolves.
+    ``template_path`` is normally the config directory holding ``template.yml``. A path to a
+    file is used as-is, which is how a template saved inside a checkpoint still resolves.
 
     Args:
-        template_path: Template directory, or a single template file.
-        model_type: Model type declared by the custom config or checkpoint. Only needed when
-            ``template_path`` is a directory.
+        template_path: Config directory, or a single template file.
 
     Returns:
         Path to the template to load.
 
     Raises:
-        ValueError: If a directory was given without a resolvable ``model_type``, or the type
-            is unknown.
-        FileNotFoundError: If the resolved template does not exist.
+        FileNotFoundError: If no template exists at that path.
     """
     if os.path.isfile(template_path):
         return template_path
     if not os.path.isdir(template_path):
         raise FileNotFoundError(f"no config template at {template_path}")
-    if model_type is None:
-        model_type = DEFAULT_MODEL_TYPE
-    if model_type not in TEMPLATE_STEM_BY_MODEL_TYPE:
-        raise ValueError(
-            f"unknown model_type {model_type!r}; "
-            f"known types: {sorted(TEMPLATE_STEM_BY_MODEL_TYPE)}"
-        )
-    resolved_fp = os.path.join(
-        template_path, f"{TEMPLATE_STEM_BY_MODEL_TYPE[model_type]}_template.yml"
-    )
+    resolved_fp = os.path.join(template_path, TEMPLATE_FILENAME)
     if not os.path.isfile(resolved_fp):
-        raise FileNotFoundError(
-            f"missing config template for model_type {model_type!r}: {resolved_fp}"
-        )
+        raise FileNotFoundError(f"missing config template: {resolved_fp}")
     return resolved_fp
-
-
-def _find_foreign_template_keys(resolved_template_fp: str, config_d: dict) -> set[str] | None:
-    """Return the keys other models' templates declare and this one does not.
-
-    Templates are self-contained, so they share most keys; only the difference identifies a key
-    that belongs to another model.
-
-    Args:
-        resolved_template_fp: The template this run resolved.
-        config_d: That template's contents.
-
-    Returns:
-        Top-level keys declared only by the other templates, or None when no other template sits
-        next to the resolved one. A run whose working directory holds a single staged template
-        has nothing to compare against, which is not the same as every other key being a typo.
-    """
-    template_dp = os.path.dirname(resolved_template_fp) or "."
-    siblings = [
-        path
-        for path in sorted(glob.glob(os.path.join(template_dp, "*_template.yml")))
-        if os.path.abspath(path) != os.path.abspath(resolved_template_fp)
-    ]
-    if not siblings:
-        return None
-    sibling_keys: set[str] = set()
-    for path in siblings:
-        with open(path) as template_file:
-            sibling_keys.update(yaml.load(template_file, Loader=yaml.FullLoader) or {})
-    return sibling_keys - set(config_d)
 
 
 def find_unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -> list[str]:
@@ -196,25 +153,27 @@ def load_config(
     override: list | None,
     model_type: str | None = None,
 ) -> dict:
-    """Resolve a model template, the experiment config, and CLI overrides.
+    """Resolve the config template, the experiment config, and CLI overrides.
 
-    Each model has one self-contained ``config/<name>_template.yml``, chosen by
-    ``model_type`` - taken from the custom config, else from ``model_type``. Passing a single
-    template file instead of the directory uses that file directly, which is how a template
-    saved inside a checkpoint resolves.
+    Every model reads the same ``config/template.yml``. Passing a single template file instead
+    of the directory uses that file directly, which is how a template saved inside a checkpoint
+    resolves.
+
+    ``model_type`` comes from the custom config, else from the ``model_type`` argument (the type
+    recorded in a checkpoint), else from the template.
 
     Args:
-        template_path: Template directory, or a single template file.
+        template_path: Config directory, or a single template file.
         custom_fp: Path to the experiment config YAML, or None.
         override: ``key=value`` strings; dotted keys address nested sections.
-        model_type: Model type to resolve the template with when the custom config does not
-            declare one, e.g. the type recorded in a checkpoint.
+        model_type: Model type to fall back on when the custom config does not declare one,
+            e.g. the type recorded in a checkpoint.
 
     Returns:
         The resolved configuration dictionary.
 
     Raises:
-        ValueError: If the custom config sets keys no model declares.
+        ValueError: If ``model_type`` is unknown, or the custom config sets undeclared keys.
     """
     custom_d = None
     if custom_fp is not None:
@@ -222,13 +181,23 @@ def load_config(
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader) or {}
 
-    # 1. The model decides which template to read.
-    resolved_model_type = (custom_d or {}).get("model_type") or model_type
-    resolved_template_fp = resolve_template_path(template_path, resolved_model_type)
+    # 1. Load the template every model shares.
+    resolved_template_fp = resolve_template_path(template_path)
     with open(resolved_template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
-    if resolved_model_type is None:
-        resolved_model_type = config_d.get("model_type")
+    # A caller-supplied model_type (a checkpoint's) outranks the template default, so an
+    # inference config that stays silent about the model does not silently become frag_gnn.
+    resolved_model_type = (
+        (custom_d or {}).get("model_type")
+        or model_type
+        or config_d.get("model_type")
+        or DEFAULT_MODEL_TYPE
+    )
+    if resolved_model_type not in VALID_MODEL_TYPES:
+        raise ValueError(
+            f"unknown model_type {resolved_model_type!r}; known types: {sorted(VALID_MODEL_TYPES)}"
+        )
+    config_d["model_type"] = resolved_model_type
 
     migrate_mass_shatter_proposal_method(config_d)
     # Compatibility boundary for templates saved before candidate backends existed.
@@ -243,38 +212,14 @@ def load_config(
         if "mass_shatter_fast_gnn_max_boundary_cuts" not in config_d:
             config_d["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
 
-    # 2. Validate and merge the custom config. A key another model's template declares is inert
-    # here but is not a typo: configs are tracked experiment records, and historical ones predate
-    # the split. Those are reported and kept; only keys no template declares are an error.
-    # Telling the two apart needs the sibling templates on disk; without them the check is
-    # reported and skipped, because failing a submitted job over a key that is merely inert is
-    # worse than letting a typo through.
+    # 2. Validate and merge the custom config. The template declares every model's keys, so a
+    # key it does not declare is a typo rather than another model's setting. Validation recurses
+    # into nested sections, so a typo inside `spec_params` fails as loudly as one at the top.
     if custom_d is not None:
         migrate_mass_shatter_proposal_method(custom_d)
         unknown = find_unknown_config_keys(custom_d, config_d)
         if unknown:
-            foreign_keys = _find_foreign_template_keys(resolved_template_fp, config_d)
-            if foreign_keys is None:
-                logging.warning(
-                    "%s sets keys model_type %r does not declare, and no other model template "
-                    "sits next to %s to tell a foreign key from a typo; keeping them "
-                    "unvalidated: %s",
-                    custom_fp,
-                    resolved_model_type,
-                    resolved_template_fp,
-                    unknown,
-                )
-            else:
-                inert_keys = [key for key in unknown if key.split(".")[0] in foreign_keys]
-                undeclared_keys = [key for key in unknown if key not in inert_keys]
-                if undeclared_keys:
-                    raise ValueError(f"{custom_fp} sets keys no model declares: {undeclared_keys}")
-                logging.warning(
-                    "%s sets keys owned by another model; they are inert for model_type %r: %s",
-                    custom_fp,
-                    resolved_model_type,
-                    inert_keys,
-                )
+            raise ValueError(f"{custom_fp} sets keys the template does not declare: {unknown}")
         config_d = deep_update(config_d, custom_d)
 
     # override
@@ -359,9 +304,8 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         DataLoader: Configured PyTorch DataLoader for the dataset.
     """
     split = ds.split
-    # Only `mass_shatter_template.yml` declares `mass_shatter_batch_sampler`. The model type
-    # settles the question before the key is read, so another model's config - which does not
-    # carry the key at all - reads as off rather than raising KeyError.
+    # `mass_shatter_batch_sampler` is MASShatter's; gating on the model type keeps a historical
+    # config that still carries the key from selecting a sampler the model cannot use.
     use_mass_shatter_batch_sampler = (
         config_d["model_type"] == "mass_shatter" and config_d["mass_shatter_batch_sampler"]
     )
@@ -544,10 +488,9 @@ def validate_sampler_config(config_d: dict) -> None:
             f"(got '{config_d['simple_group_sampler_type']}')"
         )
 
-    # Only `mass_shatter_template.yml` declares the `mass_shatter_*` sampler keys. The model type
-    # decides whether they are read at all: for MASShatter the reads are hard, because a missing
-    # key there is a broken template rather than a disabled feature, and for every other model a
-    # historical config may still carry the key - inert, but loud if it is actually switched on.
+    # The `mass_shatter_*` sampler keys are MASShatter's. Every model's config carries them, so
+    # the reads are hard; the model type decides whether they mean anything. For another model a
+    # historical config may still set one - inert, but loud if it is actually switched on.
     is_mass_shatter = config_d["model_type"] == "mass_shatter"
     if not is_mass_shatter:
         enabled_elsewhere = [key for key in MASS_SHATTER_SAMPLER_KEYS if config_d.get(key)]

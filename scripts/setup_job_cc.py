@@ -499,17 +499,9 @@ def main(args):
     if custom_config_fp is not None:
         config_d["config"] = custom_config_fp
 
-    # Templates are per model, so a directory has to be narrowed to one file before it can be
-    # read for data paths. The custom config names the model; without one, fall back to FraGNNet.
+    # A directory has to be narrowed to the template file before it can be read for data paths.
     if os.path.isdir(config_template_fp):
-        model_type = "frag_gnn"
-        if custom_config_fp is not None:
-            with open(custom_config_fp) as custom_file:
-                for line in custom_file:
-                    if line.startswith("model_type:"):
-                        model_type = line.split(" #")[0].strip().split(":")[-1].strip()
-                        break
-        config_template_fp = resolve_template_path(config_template_fp, model_type)
+        config_template_fp = resolve_template_path(config_template_fp)
         config_d["config_template"] = config_template_fp
 
     # parse configs
@@ -691,23 +683,6 @@ def main(args):
                     f"if [[ ! -f ${{WORKING_DIR}}/{path_value} ]]; then",
                     f'    echo "ERROR: checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
                     "    exit 1",
-                    "fi",
-                ]
-            )
-        elif name == "config_template":
-            # `config/` is not staged wholesale, so the resolved template arrives alone. The
-            # sibling templates have to come with it: `load_config` reads them to tell a key
-            # owned by another model from a typo, and without them a historical config that
-            # carries a foreign key fails validation on the node but passes locally.
-            print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
-            sibling_glob = os.path.join(os.path.dirname(path_value), "*_template.yml")
-            script_lines.extend(
-                [
-                    f"# copy {name} file from {path_value} to slurm tmp dir",
-                    f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
-                    "# copy the other model templates so config validation can see them",
-                    f'if compgen -G "${{FRAGNNET_DP}}/{sibling_glob}" > /dev/null; then',
-                    f"    rsync -av --relative ${{FRAGNNET_DP}}/./{sibling_glob} ${{WORKING_DIR}}",
                     "fi",
                 ]
             )

@@ -69,7 +69,7 @@ def _base_config(**overrides) -> dict:
 
 class TestValidateSamplerConfig:
     def test_non_mass_shatter_config_omits_mass_shatter_keys(self):
-        """Only mass_shatter_template.yml declares these; other templates omit them entirely."""
+        """A checkpoint's hparams predate these keys; validation must not require them."""
         cfg = _base_config()
         for key in (
             "mass_shatter_batch_sampler",

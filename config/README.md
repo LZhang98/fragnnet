@@ -5,33 +5,49 @@
 A run's configuration resolves in three steps, each overriding the previous:
 
 ```
-config/<model>_template.yml   the complete defaults for that model_type
-your custom config            the experiment
---override key=value          temporary changes for one invocation
+config/template.yml   the defaults for every model
+your custom config    the experiment
+--override key=value  temporary changes for one invocation
 ```
 
-There is **no shared base**. Each `config/<model>_template.yml` is complete on its
-own, so a MASShatter run never carries `frag_params` and a FraGNNet run never carries the 73
-`mass_shatter_*` keys. The template is chosen by `model_type` - from the custom config, else from
-the checkpoint, else `frag_gnn`. Several model types share a template (`iceberg_gen` and
-`iceberg_inten`, `clip` and `spec_mol_clip_pretraining`); the mapping is `TEMPLATE_STEM_BY_MODEL_TYPE`
-in [runner.py](../src/fragnnet/runner.py). Passing a single file instead of the directory uses
-that file directly, which is how a template saved inside a checkpoint resolves.
+**One template, one schema.** `config/template.yml` declares every model's keys, so a FraGNNet
+run carries the 73 `mass_shatter_*` keys and a MASShatter run carries `frag_params` - inert, and
+deliberately so. Shared code can then read any key without first asking what model this is, and
+a key can never go missing for one model while another model's code still reads it. That failure
+mode is what the per-model split (2026-09-20, reverted) kept producing: a key moved into one
+model's template while its reader stayed in shared code, breaking every other model at runtime
+rather than at validation time.
 
-The cost of dropping the base is duplication: the ~180 keys every model needs are repeated in
-each template, so **a shared default has to be changed in every template that uses it**.
-`tests/test_config_templates.py` checks a sample of them for drift.
+`model_type` names the model - from the custom config, else from the checkpoint, else the
+template's `frag_gnn`. It selects code, not config; `VALID_MODEL_TYPES` in
+[runner.py](../src/fragnnet/runner.py) only guards against a typo in the value. Passing a single
+file instead of the directory uses that file directly, which is how a template saved inside a
+checkpoint resolves.
 
-Ownership follows the reader, not the prefix. `precursor_pair_*` is the `SpectrumPL` loss rather
-than `model_type: precursor`, `mces_fp` is the MCES dataset's path, and `ann_params` belongs to
-GrAFF - each lives in the templates that read it.
+### Where a key goes
 
-Custom configs are validated against the resolved template, **recursively**: a typo inside
-`spec_params` fails as loudly as one at the top level. Mappings whose sub-keys are data rather
-than schema (`merge_tolerance_by_inst`, `split_filters`, `inst_type_loss_tol`,
-`ce_context_ce_key_by_inst`) are not descended into. A key that only another model's template
-declares is inert rather than wrong - configs are tracked experiment records and historical ones
-predate this split - so it is reported and kept. Only a key no template declares is an error.
+The template is the shared core first, then one clearly-marked block per model. A model's own
+keys stay **flat and prefixed** (`mass_shatter_*`, `iceberg_*`, `mf_*`, `graff_*`, `clip_*`,
+`mces_*`, `neims_*`) and live in that model's block. Nesting them under a per-model mapping would
+invalidate the hparams of every trained checkpoint, which is why the same idea was reverted for
+`conditioning_params`. `gnn` and `precursor` have no keys of their own and run entirely on the
+shared core.
+
+`tests/test_config_templates.py` enforces this rather than trusting it: a prefixed key must sit
+in its own model's block and nowhere else, and the handful of unprefixed keys that belong to a
+model (`magma_params`, `magma_dp`, `ann_params`, `ann_fp`, `spectrum_encoder_params`,
+`retrieval_eval_size`) are declared there by name. Adding an unprefixed key to a model's block
+means editing that list, which is the moment to ask whether it should be prefixed instead.
+
+Ownership follows the reader, not the prefix, when the two disagree: `precursor_pair_*` is the
+`SpectrumPL` loss rather than `model_type: precursor`, so it lives in the shared core.
+
+Custom configs are validated against the template, **recursively**: a typo inside `spec_params`
+fails as loudly as one at the top level. Mappings whose sub-keys are data rather than schema
+(`merge_tolerance_by_inst`, `split_filters`, `inst_type_loss_tol`, `ce_context_ce_key_by_inst`)
+are not descended into. Because the template declares every model's keys, a key it does not
+declare is a typo - there is no longer an inert-versus-unknown distinction to make, and none
+that depends on which files a cluster job happened to stage.
 
 ## Sections
 
@@ -41,7 +57,7 @@ Config is grouped by who consumes it, not by topic:
 | --- | --- |
 | `spec_params` | what the dataset loads from the spectrum table: merging, cleanup, which metadata columns, the adduct/instrument/mode vocabularies |
 | `mol_params` | how a molecule becomes a graph: atom and bond feature lists, fingerprints, preprocessing |
-| `frag_params` | FraGNNet's fragment DAG (model-owned; absent for every other model) |
+| `frag_params` | FraGNNet's fragment DAG (read only by FraGNNet; inert for every other model) |
 
 Metadata conditioning stays at the top level: `ce_insert_*`, `prec_insert_*`, `inst_insert_*`,
 `frag_mode_insert_*`, `context_*`, `int_embedder` and the NCE/ACE normalization statistics.
@@ -51,7 +67,7 @@ separate by design: they decide what the *dataset* loads, not how it is embedded
 
 Note that `mol_params.pyg_node_feats` (atom features: `a_onehot`, `a_degree`, ...) and
 `frag_params.pyg_node_feats` (fragment-DAG node features: `cc`, `base_formula`, ...) are
-different vocabularies that share a key name. A model only ever resolves the block it reads.
+different vocabularies that share a key name. A model only ever reads the block it consumes.
 
 
 ## Setting up a Training Run

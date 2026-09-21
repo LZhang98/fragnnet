@@ -209,7 +209,7 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     (data_dp / "mol.pkl").touch()
     (data_dp / "split").mkdir()
     (checkpoint_dp / "model.ckpt").touch()
-    (config_dp / "mass_shatter_template.yml").write_text(
+    (config_dp / "template.yml").write_text(
         "model_type: mass_shatter\n"
         "finetune: False\n"
         "spec_fp: data/spec.pkl\n"
@@ -263,11 +263,11 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     assert 'exit "${CHANNEL_AUDIT_STATUS}"' in script
 
 
-def test_job_script_stages_every_model_template(tmp_path):
-    """`load_config` reads the sibling templates to tell a foreign key from a typo.
+def test_job_script_stages_the_template(tmp_path):
+    """`config/` is never staged wholesale, so the template has to be copied by name.
 
-    Staging only the resolved template made that check fail closed on the node: a historical
-    config carrying another model's key passed locally and raised on the cluster.
+    With one template there is nothing else for validation to read, so what the node sees and
+    what the submitting machine saw are the same file.
     """
     repo_root = Path(__file__).resolve().parents[1]
     project = tmp_path / "project"
@@ -279,7 +279,7 @@ def test_job_script_stages_every_model_template(tmp_path):
     (data_dp / "mol.pkl").touch()
     (data_dp / "split").mkdir()
     (data_dp / "dags").mkdir()
-    (config_dp / "fragnnet_template.yml").write_text(
+    (config_dp / "template.yml").write_text(
         "model_type: frag_gnn\n"
         "finetune: False\n"
         "spec_fp: data/spec.pkl\n"
@@ -287,7 +287,6 @@ def test_job_script_stages_every_model_template(tmp_path):
         "split_dp: data/split\n"
         "frag_dp: data/dags\n"
     )
-    (config_dp / "mass_shatter_template.yml").write_text("model_type: mass_shatter\n")
     (config_dp / "custom.yml").write_text("model_type: frag_gnn\n")
 
     subprocess.run(
@@ -310,11 +309,5 @@ def test_job_script_stages_every_model_template(tmp_path):
     )
 
     script = (project / "slurm_scripts" / "template_staging.sh").read_text()
-    assert (
-        "rsync -av --relative ${FRAGNNET_DP}/./config/fragnnet_template.yml ${WORKING_DIR}"
-        in script
-    )
-    assert 'if compgen -G "${FRAGNNET_DP}/config/*_template.yml" > /dev/null; then' in script
-    assert (
-        "    rsync -av --relative ${FRAGNNET_DP}/./config/*_template.yml ${WORKING_DIR}" in script
-    )
+    assert "rsync -av --relative ${FRAGNNET_DP}/./config/template.yml ${WORKING_DIR}" in script
+    assert "*_template.yml" not in script

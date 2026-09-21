@@ -97,7 +97,7 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   then measure the BatchNorm candidate-set gap on a trained checkpoint before any new training arm.
   It also records the 2026-09-19 decision to drop the atom decoder going forward: epoch-matched it
   costs no cosine (-0.0018, inside the replicate floor) while running 1.8x faster per epoch, and
-  `config/mass_shatter_template.yml` already defaults it to 0, so the recommended normalization arm
+  `config/template.yml` already defaults it to 0, so the recommended normalization arm
   needs no config change. The decoder code path remains for checkpoint compatibility.
   Probes: `scripts/debug/probe_masshatter_regularization.py`. Audit only; no training run,
   no model-code change.
@@ -141,37 +141,56 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   improvements. Next: run the new default against the previous base arm at matched epochs,
   against the 0.003 replicate floor, before treating any of it as a gain. `a_radical` and
   `a_chiral` were deliberately left in place; the audit §11 records why.
-- **Config layout: one self-contained template per model** (2026-09-20).
-  `config/<model>_template.yml` holds that model's complete defaults - the 310 shared keys
-  (paths, `spec_params`, `mol_params`, trainer, loss, logging, eval) plus its own private keys
-  (110 across nine templates) - selected by `model_type` in the custom config, else an explicit
-  `model_type` argument, else `frag_gnn`. A MASShatter run therefore no longer carries `frag_params`
-  (the duplicate `pyg_node_feats` that made the two feature vocabularies easy to confuse) and a
-  FraGNNet run no longer carries 73 `mass_shatter_*` keys. Custom configs are now validated
-  **recursively**, closing a measured hole: a typo inside `spec_params` used to be accepted
-  silently. Ownership follows the reader, not the prefix - `precursor_pair_*` is the `SpectrumPL`
-  loss and `mces_fp` is the MCES dataset's path, and `ann_params` belongs to GrAFF. Historical
-  configs were not rewritten: `config/` is tracked experiment provenance, so a key only another
-  model's template declares is reported and kept rather than rejected, and passing a single
-  template file instead of the directory (a checkpoint's saved template) resolves directly. Validation surfaced 18
-  configs that set keys no template declares; **14 were already rejected before this change** and
-  4 are newly caught nested typos (`config/clip/nist20_spec_mol_{clip,siglip,soft_clip}_pretraining.yml`
-  set undeclared `spectrum_encoder_params.*` sub-keys, `config/debug/debug_tiny_new_frag_mol_feats.yml`
-  sets `frag_params.pyg_pe_embed_k`). None were edited. Nesting the metadata-conditioning keys
-  into a `conditioning_params` section was tried in the same session and **reverted**: it
-  invalidates every trained checkpoint for no behavioural gain, so `ce_insert_*`,
-  `prec_insert_*`, `inst_insert_*`, `frag_mode_insert_*`, `context_*` and the NCE/ACE statistics
-  stay at the top level of each template. Five keys that no code reads were deleted from the
-  templates and from the 203 configs that set them: `wandb_root_dir`,
-  `nb_formula_normalized_entropy_weight`, `group_sampler_type` (a leftover from the rename to
-  `simple_group_sampler_type`, which is the key `runner.py` actually validates),
-  `debug_val_loop_trigger` and `debug_bypass_train_val`. Directories renamed on request:
-  `config/models` -> `config/models_template` and `config/masshatter` -> `config/massshatter`;
-  the per-model templates were then flattened out of that directory to
-  `config/<model>_template.yml`, so the template directory a run resolves against is `config/`.
-  Validation: full suite 3,906 passed, 1 skipped, 2 xfailed. Still open: which
-  conditioning mechanism survives is the
-  [conditioning refactor](plans/conditioning_refactor_plan.md)'s question, not this layout's.
+- **Config layout: one template for every model** (2026-09-20).
+  `config/template.yml` declares every model's keys - the 271 shared ones (paths, `spec_params`,
+  `mol_params`, trainer, loss, logging, eval) plus all 258 model-owned ones - so every run
+  resolves the same 529-key schema and shared code can read any key without first checking
+  `model_type`. `model_type` selects code, not config: from the custom config, else an explicit
+  `model_type` argument (a checkpoint's), else `frag_gnn`; `VALID_MODEL_TYPES` in `runner.py`
+  only guards against a typo in the value. The file is the shared core followed by one
+  clearly-marked block per model, with model keys flat and prefixed; `tests/test_config_templates.py`
+  enforces that a prefixed key sits only in its own block and that the six unprefixed exceptions
+  (`magma_params`, `magma_dp`, `ann_params`, `ann_fp`, `spectrum_encoder_params`,
+  `retrieval_eval_size`) are declared by name.
+
+  This **replaces the per-model split** attempted earlier the same day, which gave each
+  `model_type` its own self-contained `config/<model>_template.yml`. The split's only benefits
+  were trimmer hparams and foreign-key warnings; its cost was a new failure class - a key moved
+  into one model's template while its reader stayed in shared code, breaking every other model at
+  runtime rather than at validation time. That fired for `num_log_*` and the `mass_shatter_*`
+  sampler keys, plus a cluster-staging variant (validation read sibling templates the job never
+  staged) and a latent one where 8 of 10 templates declared `model_type: frag_gnn`, so a
+  non-FraGNNet checkpoint merged with a silent custom config became `frag_gnn`. It also cost
+  5,133 lines of YAML against 922, with 271 keys duplicated tenfold behind a drift guard that
+  covered 28% of them. One schema removes the class: nothing can be present for one model and
+  absent for another. The caller-supplied `model_type` now outranks the template default, which
+  fixes the checkpoint case; a regression test pins it.
+
+  Kept from the split, because neither depends on the file layout: **recursive validation** of
+  custom configs (a typo inside `spec_params` used to be accepted silently) and the `model_type`
+  known-set check. Dropped: the inert-versus-unknown distinction and the sibling-template glob -
+  with one schema, a key the template does not declare is simply a typo, and a cluster job stages
+  one file whose validation cannot differ from the submitting machine's.
+
+  Historical configs were not rewritten: `config/` is tracked experiment provenance. Validation
+  surfaces the same 18 configs that set keys no template has ever declared - 14 were already
+  rejected before any of this work, 4 are nested typos that only recursive validation catches
+  (`config/clip/nist20_spec_mol_{clip,siglip,soft_clip}_pretraining.yml` set undeclared
+  `spectrum_encoder_params.*` sub-keys, `config/debug/debug_tiny_new_frag_mol_feats.yml` sets
+  `frag_params.pyg_pe_embed_k`). None were edited. Nesting the metadata-conditioning keys into a
+  `conditioning_params` section was tried and **reverted** - it invalidates every trained
+  checkpoint for no behavioural gain - and the same argument rules out nesting model keys under
+  per-model mappings. Five keys no code reads were deleted from the template and from the 203
+  configs that set them: `wandb_root_dir`, `nb_formula_normalized_entropy_weight`,
+  `group_sampler_type` (a leftover from the rename to `simple_group_sampler_type`, which is what
+  `runner.py` validates), `debug_val_loop_trigger` and `debug_bypass_train_val`. The image-logging
+  keys `num_log_train_images`/`num_log_val_images` were deleted with their code: both were 0 in
+  every template, no config set them, and `SpectrumPL._log_images` was their only reader.
+  Directories renamed on request: `config/models` -> `config/models_template` and
+  `config/masshatter` -> `config/massshatter`. Validation: full suite green; `debug_tiny_merged`
+  and `debug_tiny_mass_shatter` train end-to-end. Still open: which conditioning mechanism
+  survives is the [conditioning refactor](plans/conditioning_refactor_plan.md)'s question, not
+  this layout's.
 - [Model improvement roadmap](plans/model_improvement_plan.md) remains the canonical source
   for research priorities and acceptance criteria. Its banner is dated 2026-07-24; reconcile
   its proposed next action with current code and artifacts before resuming it.

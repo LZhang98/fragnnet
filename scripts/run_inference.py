@@ -182,7 +182,7 @@ if __name__ == "__main__":
         type=int,
         default=16,
         help="Fixed batch size for evaluation/inference; ignored when --dynamic_batch_max is set. "
-        "Matches eval_batch_size in config/*_template.yml. Note that 1 is not just slow: it "
+        "Matches eval_batch_size in config/template.yml. Note that 1 is not just slow: it "
         "also feeds return_batch_at in init_dataloader, so a config with "
         "dynamic_batch_sampler=True would flush after every sample and never reach "
         "dynamic_batch_sampler_max",
@@ -194,7 +194,7 @@ if __name__ == "__main__":
         help="If set, pack batches greedily up to this many frag_node/frag_edge "
         "(see --dynamic_batch_limited_by) instead of using a fixed --batch_size. "
         "Uses IterableSpecMolFragDataset, which batches lazily as it streams. "
-        "In frag_node units, config/*_template.yml uses 100000 for training.",
+        "In frag_node units, config/template.yml uses 100000 for training.",
     )
     parser.add_argument(
         "--dynamic_batch_limited_by",

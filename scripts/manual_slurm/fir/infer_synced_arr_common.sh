@@ -59,7 +59,7 @@ MODEL_CKPT=${MODEL_CKPT:-}
 WANDB_RUN_ID=${WANDB_RUN_ID:-}
 MODEL_SAVE_DP=${MODEL_SAVE_DP:-${FRAGNNET_DP}/saved_ckpts}
 # The checkpoint's training config. SET THIS for any checkpoint not trained against the
-# current code: get_config_from_ckpt merges config/*_template.yml ONLY when custom_fp is
+# current code: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is
 # given, so otherwise config_d is the ckpt's saved hparams alone and every config key
 # added since it was trained is missing -> model init dies on self.hparams.<new_key>
 # (e.g. AttributeError: ... has no attribute 'depth_ce_bias').
@@ -252,7 +252,7 @@ else
     cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
     cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/
     mkdir -p ${WORKING_DIR}/config
-    cp ${FRAGNNET_DP}/config/*_template.yml ${WORKING_DIR}/config/
+    cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
     pip install --no-deps -I ${WORKING_DIR}
     cd ${WORKING_DIR}
 fi

@@ -1,9 +1,22 @@
-# mass_shatter configuration template
+# ==========================================================================
+# FraGNNet / MASShatter configuration template
+# ==========================================================================
 #
-# Self-contained: this file is the complete default configuration for `model_type: mass_shatter`.
-# A run resolves as: this template -> your custom config -> CLI --override.
-# Keys shared with the other templates in this directory are duplicated by design; a shared
-# default has to be changed in each file that uses it.
+# One template for every model. A run resolves as:
+#
+#     config/template.yml  ->  your custom config  ->  CLI --override
+#
+# Every model reads this same schema, so shared code can read any key without
+# checking model_type first. A model's own keys are inert for the others.
+#
+# Layout: the shared core comes first, grouped by who consumes it, then one
+# clearly-marked block per model. Model-owned keys stay flat and prefixed
+# (mass_shatter_*, iceberg_*, mf_*, graff_*, clip_*) -- nesting them would
+# invalidate the hparams of every trained checkpoint. `gnn` and `precursor`
+# have no keys of their own; they run entirely on the shared core.
+#
+# Ownership is enforced by tests/test_config_templates.py, which checks that
+# each key sits in the section of the model that reads it.
 # ============================================================================
 # Wandb
 # ============================================================================
@@ -19,6 +32,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey  # Train/val/test split directory
+frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
 
 # ============================================================================
 # Data Processing Parameters
@@ -162,7 +176,7 @@ mol_params:
 # Model type. Full list: TEMPLATE_STEM_BY_MODEL_TYPE in src/fragnnet/runner.py -- frag_gnn (aliases
 # fraggnet, fragnnet), mass_shatter, neims, massformer, iceberg_gen, iceberg_inten, graff,
 # precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
-model_type: mass_shatter
+model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
 int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
 int_embedder_tight: False  # Use tight integer range for embeddings
@@ -275,8 +289,8 @@ log_every_n_steps: 0
 # ============================================================================
 primary_loss_weight: 1.0
 # Online adjacent-CE base-winner supervision. The v1 loss is training-only and, when enabled,
-# requires either batch_sampler_type: ce_context or mass_shatter_batch_sampler: True, plus
-# ce_pair_min_endpoint_confidence set and target_rel_ints_thresh in (0, 1).
+# requires batch_sampler_type: ce_context, plus ce_pair_min_endpoint_confidence set and
+# target_rel_ints_thresh in (0, 1).
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
 # Reserved for the replicate audit; non-null values fail until the table is wired.
@@ -287,7 +301,7 @@ ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 # Same-fragment adjacent-eV delta supervision for MASShatter. Requires shared
 # proposals, unique-fragment mode, and CE-context batches.
 cross_ev_fragment_loss_weight: 0.0
-# nb (isotope) option; False disables it.
+# nb (isotope) options; set the nb_* entropy weights below to 0 to disable.
 nb_iso: False
 # DAG-based models only; MASShatter has no OOS class.
 predict_oos: False
@@ -348,9 +362,10 @@ frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 context_embedding: False
 context_embedding_dim: 64       # width of the produced context vector
 context_embedding_hidden_dim: 64  # hidden width of the combining MLP
-# This model's Lightning wrapper passes spec_params.nce/ace as the model's use_nce/use_ace
-# arguments; these top-level keys do not override that wiring. When both model arguments
-# are True, the two CE embeddings are concatenated, doubling the CE dim.
+# Read only by the FraGNNet/MASShatter/NEIMS/MassFormer wrappers, which pass spec_params.nce/ace
+# as the model's use_nce/use_ace arguments; these top-level keys do not override that wiring.
+# When both model arguments are True, the two CE embeddings are concatenated, doubling the CE
+# dim. Every other model's wrapper reads neither key.
 use_nce: True
 use_ace: False
 
@@ -459,9 +474,223 @@ precursor_pair_absent_intensity_floor: 0.01
 precursor_pair_eligible_inst_types: [FT]
 precursor_pair_eligible_prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
 
+# ==========================================================================
+# FraGNNet only
+# model_type: frag_gnn (aliases fraggnet, fragnnet)
+# ==========================================================================
+frag_params:
+  pyg: True
+  pyg_node_feats:
+    - cc              # mol_embedder atom embeddings pooled over fragment atoms
+    - base_formula    # fragment's elemental formula (one-hot)
+    - depth           # depth of fragment in the DAG
+    - h_formulae_idx  # index into list of possible H-shifted formulae
+    # - cmf_h_formulae_idx  # CMF-derived H-formula index (filled at dataset load time)
+    # - h_counts            # explicit H counts per fragment atom
+    # - nb_iso_idx          # isotope index; requires nb_iso=True
+    # - num_cut_bonds       # how many bonds were broken to make this fragment. NO-OP on plain
+    #                       # single-bond BFS DAGs (cut count == depth there); only informative
+    #                       # on multi-cut DAGs (_mbfs / _ringmerge / SMARTS prepass)
+    # - rdbe                # ring-and-double-bond equivalents, 1 + sum_i n_i*(v_i-2)/2.
+    #                       # REQUIRES base_formula + h_counts (base_formula has no H column);
+    #                       # h_counts adds a DAG column but contributes 0 feature dims
+    # - neutral_loss_formula # precursor formula minus this fragment's; REQUIRES base_formula + depth
+    # - frag_q              # summed Gasteiger charge over the fragment's atoms; computed on-the-fly
+    # - out_degree          # DAG out-degree of the fragment node
+    # - in_degree           # DAG in-degree of the fragment node
+    # - num_heavy_atoms     # heavy-atom count of the fragment
+    # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
+    # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; superseded by cut_bond
+    # - cut_bond            # cut bonds as (retained, lost) pairs; see cut_bond_hidden_dim below
+  pyg_edge_feats:
+    - cc
+    - base_formula
+    # - h_range
+  pyg_edges: True
+  pyg_bigraph: True
+  num_isotopes: 1
+  formula_peak_mzs: True
+  formula_peak_probs: True
+  formula_str: False
+  compressed: True
+  preload: False
+  preprocess: False
+  # Per-molecule LRU of processed neutral DAGs, used whenever preload/preprocess are off
+  # (which apply_inference_config forces for every inference run). __getitem__ is
+  # per-spectrum but a DAG is per-molecule, so without this every collision energy of a
+  # molecule re-reads and re-builds the same graph. 0 disables.
+  cache_size: 16
+  include_cmf: False
+
+num_depth: 5  # Maximum fragmentation depth for DAG
+num_elements: 17  # Number of elements including H (16 heavy: 11 base + As + B + Hg + Sn + Pb)
+# GINE_GATED: each bond's message is scaled by a context-conditioned scalar gate in [0, 2], so
+# which bonds conduct can change with CE/adduct instead of context only rescaling the output.
+# Requires context_embedding: True (supplies the conditioning vector). Zero-init => gate == 1.0
+# at init, i.e. bit-identical to GINE, so it is a strict superset. Ignored for other gnn_types.
+mol_msg_gate_mode: static  # ["static", "dynamic"] — static: one gate from (bond, context),
+                           # reused every layer. dynamic: recomputed per layer, also sees the
+                           # live hidden states (x_src, x_dst); subsumes static, costs one gate
+                           # MLP per layer.
+mol_msg_gate_hidden_dim: 64  # Hidden width of the gate MLP(s)
+# Hidden width of the cut_bond encoder MLP (frag_params.pyg_node_feats: cut_bond).
+# cut_bond replaces boundary_pair: boundary_pair encodes a cut bond as Linear(cat(in, out)),
+# which is additive and commutes through pooling, so the pooled feature collapses to
+# Linear(mean(inside_atoms), mean(outside_atoms)) and WHICH atom bonded to which is lost.
+# cut_bond adds an in*out interaction plus a hidden nonlinearity. Same output width and
+# pooling as boundary_pair, and it reuses the same precomputed cut-bond indices, so it is a
+# drop-in swap needing no DAG regeneration.
+cut_bond_hidden_dim: 256
+
 # ============================================================================
-# mass_shatter-specific configuration
+# Inter-stage Configuration (Mol → Frag connection)
 # ============================================================================
+cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "mlp", "bilinear"]
+cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
+cc_feature_dropout: 0.0  # Training-only batch-level dropout for full-fragment cc node feature group
+# Training-only dropout over pooled cc embedding dimensions. One inverted-dropout mask is shared
+# across all fragments in the batch, so it directly regularizes the mean-pooled cc fingerprint.
+cc_channel_dropout: 0.0
+# Training-only PER-ATOM dropout on the cc mask: independently drop each atom from a fragment's
+# atom-membership set, so the pooled cc embedding sees a random subset of the fragment's atoms.
+# Regularizes against memorizing exact atom sets (aimed at the train->val gap). Much finer-grained
+# than cc_feature_dropout (which drops the whole cc group for the whole batch on one scalar draw).
+# boundary_cc / boundary_pair keep the true mask. Fragments are never fully emptied.
+cc_atom_dropout: 0.0
+
+# ============================================================================
+# Fragment GNN Configuration
+# ============================================================================
+frag_hidden_size: 256  # Hidden dimension for fragment GNN
+frag_num_layers: 4  # Number of GNN layers for fragment encoding
+frag_gnn_type: GINE  # GNN architecture for fragments: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GAT", "GATv2", "GGNN", "MPNN", "NodeMLP"]
+frag_dropout: 0.0  # Dropout rate for fragment GNN
+frag_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]
+frag_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "set_transformer", "equilibrium", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
+frag_embed_combine: cat  # How to combine fragment embeddings: ["cat", "avg"]
+frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "concat", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
+
+# ============================================================================
+# MLP/Output Configuration
+# ============================================================================
+mlp_output_format: formula  # Output format: ["formula", "peak"]
+candidate_ion_head: False  # Score each (node, H/formula-channel) candidate row with ion identity features, then reshape to the usual logits
+candidate_ion_formula_features: True  # Add reconstructed candidate formula features; requires h_counts in frag_params.pyg_node_feats
+candidate_ion_neutral_loss_features: True  # Add precursor_formula - candidate_formula features; requires depth and candidate formula features
+candidate_ion_chunk_size: 32768  # Candidate rows scored at once; lower this if large DAGs OOM
+candidate_ion_checkpoint: True  # Checkpoint candidate chunks during training to avoid retaining every chunk activation
+ion_channel_factorized: False  # Cheap alternative: keep per-node H logits and add a low-rank learned H/CMF-channel residual
+ion_channel_adduct_gated: False  # Adduct-conditioned variant: gate the low-rank node factor by spec_prec_type for a node x channel x adduct residual (mutually exclusive with ion_channel_factorized)
+ion_channel_rank: 32
+# FraGNNet-only supervised support gate. A separate sigmoid head attenuates the
+# existing joint intensity logits; the spectrum remains normalized by softmax.
+fragnnet_formula_support: False
+fragnnet_formula_support_initial_probability: 0.99
+fragnnet_formula_support_loss_weight: 0.0
+fragnnet_formula_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+fragnnet_formula_support_threshold: 0.5  # Absolute sigmoid probability; hard selection is eval/inference-only
+# Rank fragments by their aggregate real-channel logits, then use a context-conditioned
+# transformer to add one residual shared by every valid channel of each selected fragment.
+frag_competition: False
+frag_competition_top_k: 128
+frag_competition_hidden_dim: 64
+frag_competition_layers: 2
+frag_competition_heads: 4
+frag_competition_dropout: 0.1
+# Detaching shared-model inputs avoids unstable gradients from the competition transformer.
+frag_competition_detach_encoder: True
+frag_competition_max_delta: 5.0
+mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
+bin_output: False
+# H(P(formula)): penalizes spread across empirical formulas. Indirect effect on peak sparsity
+# since multiple nodes can share the same formula. Raw scale — grows with number of formulas.
+formula_entropy_weight: 0.0
+# H(P(node)): penalizes spread across DAG fragment nodes. Most direct lever for reducing tiny
+# peaks — pushes the model to concentrate mass on fewer fragments. Raw scale — grows with DAG size.
+node_entropy_weight: 0.0
+# H(P(node | formula)): penalizes uncertainty in which node is chosen given a formula.
+# Reduces "when a formula fires, its mass spreads across multiple nodes". Raw scale.
+node_formula_entropy_weight: 0.0
+# H(P(formula | node)): penalizes uncertainty in formula assignment given a node.
+# Reduces ambiguity in formula labeling per fragment node. Raw scale.
+formula_node_entropy_weight: 0.0
+# H(P(node, formula)): joint entropy = H(node) + H(node|formula). Penalizes both marginal
+# node spread and per-formula node spread together. Raw scale.
+joint_entropy_weight: 0.0
+# Same as formula_entropy_weight but normalized to [0,1] by log(num_formulas).
+# Preferred over raw — comparable across molecules with different formula counts.
+formula_normalized_entropy_weight: 0.0
+# Same as node_entropy_weight but normalized to [0,1] by log(num_nodes).
+# Preferred over raw — comparable across molecules with different DAG sizes.
+# Start here when tuning for peak sparsity (e.g. 0.01).
+node_normalized_entropy_weight: 0.0
+# Same as node_formula_entropy_weight but normalized to [0,1].
+node_formula_normalized_entropy_weight: 0.0
+# Same as formula_node_entropy_weight but normalized to [0,1].
+formula_node_normalized_entropy_weight: 0.0
+# Same as joint_entropy_weight but normalized to [0,1].
+joint_normalized_entropy_weight: 0.0
+# pairwise losses
+pairwise_cosine_loss_weight: 0.0 
+pairwise_jss_loss_weight: 0.0
+pairwise_cross_entropy_loss_weight: 0.0
+# cross-matrix JSS contrastive: JSS-sqrt(real_i, pred_j), InfoNCE row-wise
+cross_jss_contrastive_loss_weight: 0.0
+cross_jss_contrastive_temperature: 0.07
+cross_jss_contrastive_sqrt: true
+nb_node_entropy_weight: 0.0
+nb_node_formula_entropy_weight: 0.0
+nb_formula_node_entropy_weight: 0.0
+nb_joint_entropy_weight: 0.0
+nb_node_normalized_entropy_weight: 0.0
+nb_node_formula_normalized_entropy_weight: 0.0
+nb_formula_node_normalized_entropy_weight: 0.0
+nb_joint_normalized_entropy_weight: 0.0
+nb_node_node_entropy_weight: 0.0
+nb_node_node_normalized_entropy_weight: 0.0
+# edge losses
+skip_edge_loss: True
+edge_h_range_loss_weight: 0.0
+edge_h_transfer_loss_weight: 0.0
+edge_h_range_loss_fn: linear # do not make exponential!
+edge_h_transfer_loss_fn: linear
+edge_entropy_weight: 0.0
+edge_normalized_entropy_weight: 0.0
+mask_null_formula: True
+null_loss: False
+null_loss_weight: 1.0
+frag_mode_scale: False           # Enable mode-conditioned affine output scaling layer
+# Note: frag_modes list is declared under spec_params.frag_modes (e.g. ["HCD", "CID"]);
+# unknown modes fall back to embedding index num_frag_modes.
+
+# CE-conditioned FiLM output scaling (temperature-style)
+ce_scale: False              # Enable CE-conditioned FiLM scaler on logits before softmax
+ce_scaler_hidden_dim: 64     # Hidden dim of the CE→FiLM MLP
+depth_ce_bias: False         # §3c: CE×depth prior — per-depth logit bias conditioned on CE
+
+# Categorical FiLM output scaling (adduct type and acquisition stratum)
+adduct_scale: False           # §3a: Enable adduct-type FiLM output scaling (prec_type token)
+stratum_scale: False          # §3b: Enable combined inst/frag_mode/adduct FiLM output scaling
+stratum_scaler_embed_dim: 16  # Embedding dim for each categorical axis in StratumScaler
+finetune_pretrained_ckpt: none
+finetune_strict_load: True
+finetune_freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
+finetune_freeze_components: ["mol_embedder", "mol_pool"] # Optional
+finetune_shared_all: False  # Whether to share all components, if False, specify below
+finetune_shared_components: ['mol_embedder', 'mol_pool'] # Optional 
+finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
+debug_zero_loss: False
+# Skip the frag_real_* / nb_iso explainability marginals (P(n), P(f), P(f|n), P(n|f), P(h)) on
+# TRAINING forwards to cut the forward-pass memory peak. Those marginals are consumed only by the
+# entropy aux losses and by eval/inference, so this is a no-op on the trained model when they are
+# off. Refuses to enable while an explainability loss is active. Eval/val/inference always compute
+# them (so aux metrics are unaffected). Only enable when train aux metrics also don't need them.
+skip_train_explainability: False
+
+# ==========================================================================
+# MASShatter only
+# model_type: mass_shatter
+# ==========================================================================
 mass_shatter_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
 mass_shatter_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
 mass_shatter_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precursor always kept.
@@ -641,3 +870,130 @@ mass_shatter_share_proposal_across_ev: False
 mass_shatter_batch_sampler: False
 # Maximum summed directed molecular edges per MASShatter CE-context batch.
 mass_shatter_batch_sampler_max: null
+
+# ==========================================================================
+# ICEBERG only
+# model_type: iceberg_gen, iceberg_inten
+# ==========================================================================
+magma_params:
+  pe_embed_k: 0
+  root_encode: gnn
+  add_hs: False
+  binned_targs: False
+  mz_bin_res: 0.1
+  mz_max: 1500.0
+  sum_ints: True
+  adduct_form_deltas: False
+  preprocess: False
+# ============================================================================
+# iceberg model
+# ============================================================================
+iceberg_hidden_size: 256
+iceberg_num_layers: 3
+iceberg_num_set_layers: 1
+iceberg_num_frag_set_layers: 0
+iceberg_num_mlp_layers: 0
+iceberg_num_gnn_layers: 0
+iceberg_dropout: 0.0
+iceberg_gnn_type: GGNN
+iceberg_pool_type: avg
+iceberg_inject_early: False
+iceberg_embed_adduct: False
+iceberg_encode_forms: False
+iceberg_fix_batch_bug: False
+
+magma_dp: data/magma  # MAGMA annotation data directory
+
+# ==========================================================================
+# MassFormer only
+# model_type: massformer
+# ==========================================================================
+mf_flag: False
+mf_pt_weight_decay: 0.0
+mf_fix_num_pt_layers: 0
+mf_reinit_num_pt_layers: -1
+mf_reinit_layernorm: True
+mf_lr_schedule: True
+mf_tot_updates: 400
+mf_warmup_frac: 0.1
+mf_high_lr: 0.0002
+mf_low_lr: 0.000000001
+
+# ==========================================================================
+# NEIMS only
+# model_type: neims
+# ==========================================================================
+neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
+
+# ==========================================================================
+# GrAFF only
+# model_type: graff
+# ==========================================================================
+graff_encoder_dim: 512
+graff_decoder_dim: 1024
+graff_encoder_depth: 6
+graff_decoder_depth: 2
+graff_eig_dim: 32
+graff_eig_depth: 2
+graff_dropout: 0.1
+graff_min_probability: 0.0
+graff_min_mz: 0.0
+
+# Annotation dataset parameters: read by the GrAFF dataset and PL model.
+ann_params:
+  max_isotope: 2
+  library_size: 1000 #10000
+  num_eigs: 8
+  filter_peaks: False
+  filter_peaks_tol: 1.0
+  library_splits:
+    - train
+  formula_str: False
+  # Absolute m/z error threshold (Da). Spectra with any annotation whose
+  # |peak_mz - exact_mz| exceeds this value are dropped entirely.
+  # Set to null to disable. Default: 0.1 Da.
+  huge_mz_diff_threshold: 0.1
+  # Relative m/z error threshold (fraction, not ppm). Individual annotations
+  # whose |peak_mz - exact_mz| / max(peak_mz, 200) exceeds this value are
+  # pruned (spectrum is kept). Equivalent to ~10 ppm at the 200 Da floor.
+  # Set to null to disable. Default: 1e-5.
+  big_mz_diff_ppm_threshold:
+  library_fp:
+  preprocess: False
+
+ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
+
+# ==========================================================================
+# CLIP pretraining only
+# model_type: clip, spec_mol_clip_pretraining
+# ==========================================================================
+clip_temperature: 0.07
+clip_embed_dim: 256
+clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
+clip_loss_type: clip  # ["clip", "siglip", "soft_clip"]; soft_clip requires mol_params.fingerprint=True
+spectrum_encoder_params:
+  encoder_type: set_transformer
+  input_dim: 2
+  hidden_dim: 256
+  embed_dim: 256
+  num_layers: 2
+  num_heads: 4
+  num_inds: 32
+  dropout: 0.1
+  normalization: layer
+
+retrieval_eval_size:  # max spectra for retrieval eval; null = disabled (CLIP models only)
+
+# ==========================================================================
+# MCES pretraining only
+# model_type: mces_pretraining
+# ==========================================================================
+mces_min: 1
+mces_max: 15
+mces_mean: 12
+mces_std: 2
+mces_normalization: zscore  # options: none, zscore, minmax
+mces_embed_combine: concat_avg  # options: ["concat_avg", "concat", "abs_diff", "signed_diff", "cross_attn"]
+
+# A data path, but only the MCES dataset reads it, so it stays with the other mces keys.
+mces_fp: data/proc/mces/mces_pairs.pkl # MCES pairs file
