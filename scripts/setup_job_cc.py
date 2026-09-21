@@ -3,7 +3,9 @@ import os
 import re
 import subprocess
 
-from fragnnet.runner import resolve_template_path
+# Kept local so this script runs on a login node without the fragnnet package installed.
+# Mirrors ``fragnnet.runner.TEMPLATE_FILENAME``.
+TEMPLATE_FILENAME = "template.yml"
 
 
 def _normalize_profile_name(name: str) -> str:
@@ -501,7 +503,9 @@ def main(args):
 
     # A directory has to be narrowed to the template file before it can be read for data paths.
     if os.path.isdir(config_template_fp):
-        config_template_fp = resolve_template_path(config_template_fp)
+        config_template_fp = os.path.join(config_template_fp, TEMPLATE_FILENAME)
+        if not os.path.isfile(config_template_fp):
+            raise FileNotFoundError(f"missing config template: {config_template_fp}")
         config_d["config_template"] = config_template_fp
 
     # parse configs
