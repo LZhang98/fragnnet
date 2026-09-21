@@ -1,14 +1,21 @@
 # ARM c4a_base_s2 -- 4 h exploration campaign, 2026-09-21.
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: seed.
-# The candidate mass/charge feature and h-transfer-bound keys below are PINNED at their
-# 2026-09-20 template values, not inherited, so a later default flip cannot move this
-# comparison underneath it.
+# The candidate mass/charge feature, boundary-bond-encoder and h-transfer-bound keys below
+# are PINNED, not inherited, so a later default flip cannot move this comparison underneath
+# it. boundary_bond_encoder was NOT pinned before 2026-09-21 and silently rode the template
+# default (True) in every c4 arm; that is the defect this campaign exists to avoid.
 #
 # Tier A replicate. Identical to c4a_base_s1 but for the seed, which fixes the replicate
 # floor at ~200+ epochs. The existing 0.003-0.005 floor was measured at 20-64 epochs; the
 # campaign read-out notes that a one-hour n=1 arm cannot resolve the effects this family
 # produces, so the floor at the new horizon is a precondition for reading every other arm.
 #
+# HORIZON (2026-09-21): resized 630 -> 128 epochs. The horizon probe `tkkesus9` ran the full
+# 630-epoch schedule and val cosine SATURATES BY ~EPOCH 100: 0.7232@64 -> 0.7292@100 ->
+# 0.7287@300 -> 0.7309@629, i.e. the last 529 epochs buy +0.0017, inside the 0.0016 control
+# replicate floor. 128 epochs (~1.8 h at the measured 70 ep/h) reaches the plateau, so the
+# saved wall clock is spent on n>=2 replicates instead -- which is what this family actually
+# needs at a 0.003-0.005 replicate floor.
 wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s2
 wandb_group: nist20_mass_shatter_campaign4h
 wandb_tags:
@@ -169,8 +176,8 @@ devices: 1
 num_workers: 6
 precision: 32
 use_tensor_float32: true
-min_epochs: 378
-max_epochs: 630
+min_epochs: 128
+max_epochs: 128
 debug_overfit: false
 compile: false
 pl_enable_progress_bar: true
@@ -194,5 +201,6 @@ compute_train_auxiliary_metrics: false
 mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
+mass_shatter_boundary_bond_encoder: true
 mass_shatter_candidate_mass_features: true
 mass_shatter_candidate_charge_feature: true
