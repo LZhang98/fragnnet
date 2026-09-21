@@ -109,7 +109,7 @@ def model_template_fp(template_fp: str, model_type: str | None) -> str:
     return resolved
 
 
-def _other_model_keys(resolved_template_fp: str, config_d: dict) -> set[str]:
+def _load_foreign_template_keys(resolved_template_fp: str, config_d: dict) -> set[str] | None:
     """Return the keys other models' templates declare and this one does not.
 
     Templates are self-contained, so they share most keys; only the difference identifies a key
@@ -120,13 +120,20 @@ def _other_model_keys(resolved_template_fp: str, config_d: dict) -> set[str]:
         config_d: That template's contents.
 
     Returns:
-        Top-level keys declared only by the other templates.
+        Top-level keys declared only by the other templates, or None when no other template sits
+        next to the resolved one. A run whose working directory holds a single staged template
+        has nothing to compare against, which is not the same as every other key being a typo.
     """
     template_dir = os.path.dirname(resolved_template_fp) or "."
+    siblings = [
+        path
+        for path in sorted(glob.glob(os.path.join(template_dir, "*_template.yml")))
+        if os.path.abspath(path) != os.path.abspath(resolved_template_fp)
+    ]
+    if not siblings:
+        return None
     keys: set[str] = set()
-    for path in sorted(glob.glob(os.path.join(template_dir, "*_template.yml"))):
-        if os.path.abspath(path) == os.path.abspath(resolved_template_fp):
-            continue
+    for path in siblings:
         with open(path) as template_file:
             keys.update(yaml.load(template_file, Loader=yaml.FullLoader) or {})
     return keys - set(config_d)
@@ -218,21 +225,35 @@ def load_config(
     # 2. Validate and merge the custom config. A key another model's template declares is inert
     # here but is not a typo: configs are tracked experiment records, and historical ones predate
     # the split. Those are reported and kept; only keys no template declares are an error.
+    # Telling the two apart needs the sibling templates on disk; without them the check is
+    # reported and skipped, because failing a submitted job over a key that is merely inert is
+    # worse than letting a typo through.
     if custom_d is not None:
         migrate_mass_shatter_proposal_method(custom_d)
         unknown = unknown_config_keys(custom_d, config_d)
         if unknown:
-            foreign_keys = _other_model_keys(resolved_template_fp, config_d)
-            inert = [key for key in unknown if key.split(".")[0] in foreign_keys]
-            undeclared = [key for key in unknown if key not in inert]
-            if undeclared:
-                raise ValueError(f"{custom_fp} sets keys no model declares: {undeclared}")
-            logging.warning(
-                "%s sets keys owned by another model; they are inert for model_type %r: %s",
-                custom_fp,
-                resolved_model_type,
-                inert,
-            )
+            foreign_keys = _load_foreign_template_keys(resolved_template_fp, config_d)
+            if foreign_keys is None:
+                logging.warning(
+                    "%s sets keys model_type %r does not declare, and no other model template "
+                    "sits next to %s to tell a foreign key from a typo; keeping them "
+                    "unvalidated: %s",
+                    custom_fp,
+                    resolved_model_type,
+                    resolved_template_fp,
+                    unknown,
+                )
+            else:
+                inert = [key for key in unknown if key.split(".")[0] in foreign_keys]
+                undeclared = [key for key in unknown if key not in inert]
+                if undeclared:
+                    raise ValueError(f"{custom_fp} sets keys no model declares: {undeclared}")
+                logging.warning(
+                    "%s sets keys owned by another model; they are inert for model_type %r: %s",
+                    custom_fp,
+                    resolved_model_type,
+                    inert,
+                )
         config_d = deep_update(config_d, custom_d)
 
     # override
@@ -317,6 +338,12 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         DataLoader: Configured PyTorch DataLoader for the dataset.
     """
     split = ds.split
+    # Only `mass_shatter_template.yml` declares `mass_shatter_batch_sampler`. The model type
+    # settles the question before the key is read, so another model's config - which does not
+    # carry the key at all - reads as off rather than raising KeyError.
+    mass_shatter_batch_sampler = (
+        config_d["model_type"] == "mass_shatter" and config_d["mass_shatter_batch_sampler"]
+    )
     assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), (
         "Cannot use both group_sampler and simple_group_sampler"
     )
@@ -344,7 +371,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if split == "train":
         # Choose sampler for training
-        if config_d["mass_shatter_batch_sampler"] or config_d["batch_sampler_type"] == "ce_context":
+        if mass_shatter_batch_sampler or config_d["batch_sampler_type"] == "ce_context":
             sampler = None
         elif config_d["group_sampler"]:
             sampler = GroupSampler(
@@ -383,7 +410,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     # Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
     # Prefer formula-based hard negative dynamic sampler when enabled (train only)
 
-    if config_d["mass_shatter_batch_sampler"]:
+    if mass_shatter_batch_sampler:
         return_batch_at = (
             config_d["train_batch_size"] if split == "train" else config_d["eval_batch_size"]
         )
@@ -505,12 +532,34 @@ def validate_sampler_config(config_d: dict) -> None:
             f"(got '{config_d['simple_group_sampler_type']}')"
         )
 
-    if not isinstance(config_d["mass_shatter_batch_sampler"], bool):
+    # Only `mass_shatter_template.yml` declares the `mass_shatter_*` sampler keys. The model type
+    # decides whether they are read at all: for MASShatter the reads are hard, because a missing
+    # key there is a broken template rather than a disabled feature, and for every other model a
+    # historical config may still carry the key - inert, but loud if it is actually switched on.
+    is_mass_shatter = config_d["model_type"] == "mass_shatter"
+    _MASS_SHATTER_SAMPLER_KEYS = (
+        "mass_shatter_batch_sampler",
+        "mass_shatter_share_proposal_across_ev",
+        "mass_shatter_unique_fragment_mode",
+    )
+    if not is_mass_shatter:
+        enabled_elsewhere = [key for key in _MASS_SHATTER_SAMPLER_KEYS if config_d.get(key)]
+        if enabled_elsewhere:
+            raise ValueError(
+                f"{enabled_elsewhere} require model_type='mass_shatter' "
+                f"(got '{config_d['model_type']}')"
+            )
+    mass_shatter_batch_sampler = is_mass_shatter and config_d["mass_shatter_batch_sampler"]
+    share_proposal = is_mass_shatter and config_d["mass_shatter_share_proposal_across_ev"]
+    unique_fragment_mode = is_mass_shatter and config_d["mass_shatter_unique_fragment_mode"]
+
+    if not isinstance(mass_shatter_batch_sampler, bool):
         raise ValueError("mass_shatter_batch_sampler must be boolean")
-    enabled_batch_samplers = sum(
+    if not isinstance(share_proposal, bool):
+        raise ValueError("mass_shatter_share_proposal_across_ev must be boolean")
+    enabled_batch_samplers = int(mass_shatter_batch_sampler) + sum(
         int(config_d[key])
         for key in (
-            "mass_shatter_batch_sampler",
             "dynamic_batch_sampler",
             "dual_group_dynamic_batch_sampler",
         )
@@ -521,9 +570,7 @@ def validate_sampler_config(config_d: dict) -> None:
             "dual_group_dynamic_batch_sampler are mutually exclusive"
         )
 
-    if config_d["mass_shatter_batch_sampler"]:
-        if config_d["model_type"] != "mass_shatter":
-            raise ValueError("mass_shatter_batch_sampler requires model_type='mass_shatter'")
+    if mass_shatter_batch_sampler:
         if not config_d["automatic_optimization"]:
             raise ValueError("mass_shatter_batch_sampler requires automatic_optimization=True")
         mass_shatter_max = config_d["mass_shatter_batch_sampler_max"]
@@ -568,7 +615,7 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
 
-    if config_d["batch_sampler_type"] == "ce_context" or config_d["mass_shatter_batch_sampler"]:
+    if config_d["batch_sampler_type"] == "ce_context" or mass_shatter_batch_sampler:
         if config_d["devices"] != 1:
             raise ValueError("CE-context batch samplers require devices=1")
         spectra_per_context = config_d["ce_context_spectra_per_context"]
@@ -589,18 +636,10 @@ def validate_sampler_config(config_d: dict) -> None:
                 f"{sorted(missing_inst_types)}"
             )
 
-    share_proposal = config_d["mass_shatter_share_proposal_across_ev"]
-    if not isinstance(share_proposal, bool):
-        raise ValueError("mass_shatter_share_proposal_across_ev must be boolean")
-    if share_proposal:
-        if config_d["model_type"] != "mass_shatter":
-            raise ValueError(
-                "mass_shatter_share_proposal_across_ev requires model_type='mass_shatter'"
-            )
-        if not config_d["mass_shatter_batch_sampler"]:
-            raise ValueError(
-                "mass_shatter_share_proposal_across_ev requires mass_shatter_batch_sampler=True"
-            )
+    if share_proposal and not mass_shatter_batch_sampler:
+        raise ValueError(
+            "mass_shatter_share_proposal_across_ev requires mass_shatter_batch_sampler=True"
+        )
 
     cross_ev_weight = config_d["cross_ev_fragment_loss_weight"]
     if (
@@ -615,7 +654,7 @@ def validate_sampler_config(config_d: dict) -> None:
                 "cross_ev_fragment_loss_weight > 0 requires "
                 "mass_shatter_share_proposal_across_ev=True"
             )
-        if not config_d["mass_shatter_unique_fragment_mode"]:
+        if not unique_fragment_mode:
             raise ValueError(
                 "cross_ev_fragment_loss_weight > 0 requires mass_shatter_unique_fragment_mode=True"
             )
@@ -628,9 +667,7 @@ def validate_sampler_config(config_d: dict) -> None:
     ):
         raise ValueError("ce_pair_loss_weight must be a non-negative number")
     if pair_weight > 0:
-        if not (
-            config_d["batch_sampler_type"] == "ce_context" or config_d["mass_shatter_batch_sampler"]
-        ):
+        if not (config_d["batch_sampler_type"] == "ce_context" or mass_shatter_batch_sampler):
             raise ValueError("ce_pair_loss_weight > 0 requires a CE-context batch sampler")
         confidence = config_d["ce_pair_min_endpoint_confidence"]
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):

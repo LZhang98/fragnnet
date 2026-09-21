@@ -6,6 +6,7 @@ See ``config/README.md``.
 
 import glob
 import os
+import shutil
 
 import pytest
 import yaml
@@ -132,6 +133,38 @@ class TestValidation:
 
         assert resolved["frag_params"] == {"preprocess": True}
         assert "inert" in caplog.text
+
+    def test_lone_staged_template_keeps_unknown_keys(self, tmp_path, caplog):
+        """A cluster job stages only its own template; it cannot tell a foreign key from a typo.
+
+        `setup_job_cc.py` rsyncs the resolved template into the working directory on its own,
+        so the foreign-key check has nothing to compare against. Failing a submitted run over
+        a key that is merely inert would be worse than letting a typo through.
+        """
+        staged = tmp_path / "config"
+        staged.mkdir()
+        shutil.copy(f"{TEMPLATE_DIR}/fragnnet_template.yml", staged)
+        custom = tmp_path / "custom.yml"
+        custom.write_text(
+            yaml.safe_dump({"model_type": "frag_gnn", "mass_shatter_batch_sampler": True})
+        )
+
+        resolved = load_config(str(staged), str(custom), None)
+
+        assert resolved["mass_shatter_batch_sampler"] is True
+        assert "unvalidated" in caplog.text
+
+    def test_typo_is_still_rejected_when_siblings_are_staged(self, tmp_path):
+        """The degradation is about a missing comparison set, not about dropping the check."""
+        staged = tmp_path / "config"
+        staged.mkdir()
+        for path in glob.glob(f"{TEMPLATE_DIR}/*_template.yml"):
+            shutil.copy(path, staged)
+        custom = tmp_path / "custom.yml"
+        custom.write_text(yaml.safe_dump({"model_type": "frag_gnn", "lrr": 1.0}))
+
+        with pytest.raises(ValueError, match="no model declares.*lrr"):
+            load_config(str(staged), str(custom), None)
 
     def test_open_mappings_accept_new_sub_keys(self, tmp_path):
         """Instrument and split names are data, not schema."""

@@ -155,6 +155,9 @@ roadmap. It links the analyses that justify each item.
 | [lz_part2.md](notes/lz_part2.md) | Continuation of the above, starting at §4 (spectrum-to-DAG generation). |
 | [aime_deepms2reasoner.md](notes/aime_deepms2reasoner.md) | AIMe / DeepMS2Reasoner (bioRxiv 2026): NIST20 split 80/10/10 by full InChIKey, and why its published cosines are not comparable to ours (formula-filtered targets). |
 | [glacier_object_detection.md](notes/glacier_object_detection.md) | GLACIER (arXiv 2606.29161): single-stage fragment detection; all its NIST'20 numbers are **0.1 Da binned**, and the FraGNNet row is a third-party re-evaluation. |
+| [molspecflow.md](notes/molspecflow.md) | MolSpecFlow (bioRxiv 2026): joint molecule↔spectrum flow model; **no code**, simulation numbers at 0.1 Da, "+35% SOTA" is relative (3.11% vs 2.30% Top-1). |
+| [massspecgym_in_the_wild_audit.md](notes/massspecgym_in_the_wild_audit.md) | **Read before any MassSpecGym comparison.** 17/26 papers had evaluation issues; a spectrum-blind PubChem ranking scores 49.98% HR@1. v1.5 fixes, pinned metrics, and what we must control for. |
+| [spurious_evaluations_spectraverse.md](notes/spurious_evaluations_spectraverse.md) | **Spectraverse is Skinnider's benchmark.** A spectrum-blind structure-only model gets 26.9% top-1 under a conventional structure-disjoint split (our split style) vs 1.9% on Spectraverse's generative decoys. |
 
 ## Curated analysis logs
 

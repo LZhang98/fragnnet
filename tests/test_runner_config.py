@@ -68,6 +68,45 @@ def _base_config(**overrides) -> dict:
 
 
 class TestValidateSamplerConfig:
+    def test_non_mass_shatter_config_omits_mass_shatter_keys(self):
+        """Only mass_shatter_template.yml declares these; other templates omit them entirely."""
+        cfg = _base_config()
+        for key in (
+            "mass_shatter_batch_sampler",
+            "mass_shatter_batch_sampler_max",
+            "mass_shatter_share_proposal_across_ev",
+            "mass_shatter_unique_fragment_mode",
+        ):
+            del cfg[key]
+        validate_sampler_config(cfg)
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "mass_shatter_batch_sampler",
+            "mass_shatter_share_proposal_across_ev",
+            "mass_shatter_unique_fragment_mode",
+        ],
+    )
+    def test_mass_shatter_key_enabled_on_another_model_raises(self, key):
+        """A historical config may carry the key, but switching it on is never silently ignored."""
+        with pytest.raises(ValueError, match=f"{key}.*model_type='mass_shatter'"):
+            validate_sampler_config(_base_config(model_type="frag_gnn", **{key: True}))
+
+    def test_mass_shatter_key_missing_from_mass_shatter_config_raises(self):
+        """For MASShatter the reads are hard: a missing key is a broken template, not an off switch."""
+        cfg = _base_config(
+            model_type="mass_shatter",
+            dynamic_batch_sampler=False,
+            mass_shatter_batch_sampler=True,
+            mass_shatter_batch_sampler_max=8192,
+            automatic_optimization=True,
+        )
+        del cfg["mass_shatter_unique_fragment_mode"]
+
+        with pytest.raises(KeyError, match="mass_shatter_unique_fragment_mode"):
+            validate_sampler_config(cfg)
+
     def test_mass_shatter_shared_proposal_cross_ev_config_passes(self):
         validate_sampler_config(
             _base_config(

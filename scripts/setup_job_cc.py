@@ -694,6 +694,23 @@ def main(args):
                     "fi",
                 ]
             )
+        elif name == "config_template":
+            # `config/` is not staged wholesale, so the resolved template arrives alone. The
+            # sibling templates have to come with it: `load_config` reads them to tell a key
+            # owned by another model from a typo, and without them a historical config that
+            # carries a foreign key fails validation on the node but passes locally.
+            print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
+            sibling_glob = os.path.join(os.path.dirname(path_value), "*_template.yml")
+            script_lines.extend(
+                [
+                    f"# copy {name} file from {path_value} to slurm tmp dir",
+                    f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
+                    "# copy the other model templates so config validation can see them",
+                    f'if compgen -G "${{FRAGNNET_DP}}/{sibling_glob}" > /dev/null; then',
+                    f"    rsync -av --relative ${{FRAGNNET_DP}}/./{sibling_glob} ${{WORKING_DIR}}",
+                    "fi",
+                ]
+            )
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(

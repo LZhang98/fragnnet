@@ -275,8 +275,8 @@ log_every_n_steps: 0
 # ============================================================================
 primary_loss_weight: 1.0
 # Online adjacent-CE base-winner supervision. The v1 loss is training-only and, when enabled,
-# requires either batch_sampler_type: ce_context or mass_shatter_batch_sampler: True, plus
-# ce_pair_min_endpoint_confidence set and target_rel_ints_thresh in (0, 1).
+# requires batch_sampler_type: ce_context, plus ce_pair_min_endpoint_confidence set and
+# target_rel_ints_thresh in (0, 1).
 ce_pair_loss_weight: 0.0
 ce_pair_min_endpoint_confidence: null
 # Reserved for the replicate audit; non-null values fail until the table is wired.
@@ -308,6 +308,8 @@ profiler_active_steps: 12
 profiler_repeat: 0
 profiler_skip_first_steps: 0
 compile: False
+num_log_train_images: 0
+num_log_val_images: 0
 deterministic: False
 drop_last: False
 num_sanity_val_steps: 0

@@ -261,3 +261,60 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     )
     assert "CHANNEL_AUDIT_STATUS=$?" in script
     assert 'exit "${CHANNEL_AUDIT_STATUS}"' in script
+
+
+def test_job_script_stages_every_model_template(tmp_path):
+    """`load_config` reads the sibling templates to tell a foreign key from a typo.
+
+    Staging only the resolved template made that check fail closed on the node: a historical
+    config carrying another model's key passed locally and raised on the cluster.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    project = tmp_path / "project"
+    config_dp = project / "config"
+    data_dp = project / "data"
+    config_dp.mkdir(parents=True)
+    data_dp.mkdir()
+    (data_dp / "spec.pkl").touch()
+    (data_dp / "mol.pkl").touch()
+    (data_dp / "split").mkdir()
+    (data_dp / "dags").mkdir()
+    (config_dp / "fragnnet_template.yml").write_text(
+        "model_type: frag_gnn\n"
+        "finetune: False\n"
+        "spec_fp: data/spec.pkl\n"
+        "mol_fp: data/mol.pkl\n"
+        "split_dp: data/split\n"
+        "frag_dp: data/dags\n"
+    )
+    (config_dp / "mass_shatter_template.yml").write_text("model_type: mass_shatter\n")
+    (config_dp / "custom.yml").write_text("model_type: frag_gnn\n")
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(repo_root / "scripts" / "setup_job_cc.py"),
+            "--job_name=template_staging",
+            "--python_script_fp=./scripts/run_pl_model_fit.py",
+            "--frag_gnn_dp=./",
+            "--script_dp=slurm_scripts",
+            "--job_dp=jobs",
+            "--script_kwargs",
+            "custom_fp=config/custom.yml",
+            "wandb_mode=disabled",
+        ],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    script = (project / "slurm_scripts" / "template_staging.sh").read_text()
+    assert (
+        "rsync -av --relative ${FRAGNNET_DP}/./config/fragnnet_template.yml ${WORKING_DIR}"
+        in script
+    )
+    assert 'if compgen -G "${FRAGNNET_DP}/config/*_template.yml" > /dev/null; then' in script
+    assert (
+        "    rsync -av --relative ${FRAGNNET_DP}/./config/*_template.yml ${WORKING_DIR}" in script
+    )
