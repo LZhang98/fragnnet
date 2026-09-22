@@ -19,7 +19,22 @@ difference from `c4a_base_s1` besides their own keys, because `h_transfer_bound`
 defaults now; that schedule is why the ran arms were killed mid-run, and the five unrun arms
 (`b1_bond_sum`, `a2_full_attention`, `a4`, `a5`, `b4`) need it set to 128 before submission.
 `b4_budget_rebalance` is **not** a one-key arm -- it moves `bond_num_layers` 3 -> 1 while widening
-the intensity head and the latent set. RWSE is the only item with nothing implemented and stays
+the intensity head and the latent set.
+
+**Fixed and measured 2026-09-22, same request.** The five unrun arms are now `min_epochs`/
+`max_epochs` 128; the six that already ran were left at 630 so their config still matches the run
+in the index. Each unrun arm now resolves to exactly its own keys against `c4a_base_s1` (`a2`,
+`b1` one key; `a5` three; `a4` four; `b4` three) and all five construct. Constructing every arm
+then surfaced an **unstated capacity confound**: `attention_type: full` deletes the induced layer's
+latent attention block, feed-forward and inducing tokens, so every arm that sets it also cuts the
+intensity head -- the module the campaign identifies as the allocator -- by **43.6%** (`a3`,
+8,145,026 total) or **40.8%** (`a6`/`a7`). `a1`, `b1`, `b2` and `b3` are parameter-identical to the
+9,215,573-param base and read directly; `a3`, `a6` and `a7` are *not* a mass/CE-bias test but
+"bias + full attention + a 41-44% smaller head", so `a6` ties `a1` for the campaign's best number
+(0.7364) while running 40.8% less allocator. None of the three is attributable until
+`a2_full_attention` supplies the topology-only control, which promotes `a2` to co-lead with `b1`.
+Same class of defect as the 2026-09-13 candidate-attention audit's capacity finding. RWSE is the
+only item with nothing implemented and stays
 blocked on porting the `random_walk_pe` `shape=` fix, which is on `feiw_v2` and
 `project/spectraverse_benchmark` but **not on this branch**. The plan excludes the scheduler
 forwarding repair, which is fixed in `031c370d`. Validation: relative links resolve, Ruff not

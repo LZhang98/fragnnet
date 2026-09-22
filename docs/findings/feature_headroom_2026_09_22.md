@@ -7,6 +7,12 @@
 > real headroom is externally-derived quantum knowledge (bond dissociation energies, protonation
 > sites), and the repository's own reference test caps any bond-environment-only signal at
 > **~18% of observed branching**. Read this before adding an atom or bond feature.
+>
+> **Second pass, shortcut framing.** Derivability is the wrong criterion on its own: a feature
+> can be derivable and still not be the function the model fits. The charge-retention test below
+> looked for a shortcut a "correct" feature would displace and **did not find one** — but it did
+> find a real shortcut elsewhere, `depth` standing in for cut count, whose correct feature is
+> already implemented and switched off.
 
 Follows the 2026-09-22 [GLACIER parity work](../notes/glacier_object_detection.md), which closed
 the gap to a competitor's feature list. This asks the next question — whether *anyone's* feature
@@ -114,6 +120,81 @@ question about the loss, not about features. Not investigated here.
 4. The residual in every decomposition points the same way: **CE-dependent allocation**, per
    [`glacier_gap_ce_decomposition_2026_09_21.md`](glacier_gap_ce_decomposition_2026_09_21.md) and
    [`branching_headroom`](../plans/fluxmpnn_plan.md).
+
+## Second pass: shortcut learning (2026-09-22)
+
+The derivability criterion above answers "does this feature add information". It does not answer
+"is this the function the model actually fits" — a feature can be perfectly derivable and still
+lose to an easier, non-causal correlate. That is a sharper criterion and it deserves its own
+test, because this repository has a **documented instance** of exactly that failure: FluxMPNN's
+learned β collapsed onto a near-deterministic bond-type lookup, explaining ~72% of its own
+variance but only ~18% of real branching. Note what the fix was not: the shortcut there *was* a
+bond-environment feature, so adding more of the same class would have deepened it.
+
+### Test: charge retention, the most mechanism-loaded choice the model makes
+
+`scripts/debug/debug_charge_retention_shortcut.py`. For a cleavage that produced an observed
+ion, which half keeps the charge? Built from NIST's own peak annotations, no model in the loop:
+for each annotated product of an `[M+H]+` spectrum the complementary ion is computed exactly
+from the formulas and looked up in the same spectrum, scoring **zero when absent** so outright
+wins count. Restricted to precursors with exactly one nitrogen, which holds composition fixed
+while letting the nitrogen's **basicity class** vary — a structural property no element count
+can express. 1,524,474 splits over 6,430 molecules.
+
+The competing hypotheses: the **shortcut** is "the bigger half keeps the charge"; the
+**mechanism** is the mobile proton model, "the half holding the basic site keeps it".
+
+| feature group | random molecules | InChIKey split | scaffold split |
+|---|---:|---:|---:|
+| size and mass only (the shortcut) | 0.7837 | 0.7659 | 0.7584 |
+| composition of both halves | 0.8491 | 0.8387 | 0.8266 |
+| composition + nitrogen basicity class | 0.8529 | 0.8364 | **0.8275** |
+
+**Two null results, both against the missing-feature story.**
+
+1. **The mechanistic feature adds nothing.** Basicity class is worth +0.004 AUC on a random
+   split, **−0.002 on the InChIKey split** and +0.001 on scaffolds. Composition of both halves
+   has already absorbed it. Per-class retention rates do vary (nitro 0.320, aliphatic amine
+   0.390, amide 0.390, nitrile 0.420, aromatic N 0.537, at constant nitrogen count) — so class
+   is not nothing — but it is not orthogonal to composition.
+2. **The shortcut is not brittle.** If size/mass were a shortcut in the damaging sense, its
+   skill would decay faster than the causal features when the structures change. It does not:
+   random → scaffold costs size/mass −0.025, composition −0.023, composition+class −0.025. All
+   three degrade identically.
+
+So on this axis there is no shortcut for a correct feature to displace. That does not clear the
+model — it locates the question elsewhere.
+
+### A real shortcut, with a free fix that is switched off
+
+`depth` standing in for **how many bonds were broken**. On the production DAG
+(`nist20_ma_mi_d3_h4_isoFalse_smpFalse`, plain single-bond BFS) the two are identical, so
+`depth` is an unbiased proxy and the model is rewarded for learning it. They stop being
+identical the moment the DAG is built any other way: the SMARTS ring-cleavage rules break four
+bonds in one BFS step, so a 4-cut xanthone node and a 1-cut node are both depth 1. The comment
+at [`fragnnet_model.py:1719`](../../src/fragnnet/model/fragnnet_model.py#L1719) already says so
+in as many words — "`depth` is NOT a proxy".
+
+The correct feature, `num_cut_bonds`, is implemented, derived from indices already batched on
+every forward pass ("costs no data and no DAG regeneration"), and **off in every config**,
+including `fraggnn_d3_ma_mi_nist20_amolc_all_prepass_new_mol_feats.yml` — the SMARTS-prepass run
+(`alvhehe2`), which is precisely the run where `depth` is a broken proxy, and which **lost** to
+its non-prepass comparator. That loss is at minimum confounded by this; it is a cheap,
+falsifiable prediction that re-running the prepass arm with `num_cut_bonds` on closes part of
+the gap. The same applies to the `_mbfs` and `_ringmerge` DAGs.
+
+This is the shape a genuine shortcut takes here, and it is worth noting what it is not: not a
+missing chemical descriptor, but a **data-construction artifact** that makes a cheap feature
+accidentally sufficient on one DAG and wrong on another.
+
+### What would actually settle it
+
+Feature-availability experiments cannot establish what a trained model relies on. The instrument
+that can is an intervention on a checkpoint — corrupt or randomize one feature group at a time
+and measure the prediction shift on train versus held-out structures. This repository already
+has the pattern in the `cc`-corruption probe (fragment identity is genuinely used: cosine
+0.82 → 0.61 under mask randomization). Running it across feature groups needs a production
+checkpoint, which is not in the local tree.
 
 ## What this did not test
 

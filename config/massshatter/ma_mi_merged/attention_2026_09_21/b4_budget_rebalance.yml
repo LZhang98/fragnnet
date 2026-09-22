@@ -170,8 +170,8 @@ devices: 1
 num_workers: 6
 precision: 32
 use_tensor_float32: true
-min_epochs: 378
-max_epochs: 630
+min_epochs: 128
+max_epochs: 128
 debug_overfit: false
 compile: false
 pl_enable_progress_bar: true

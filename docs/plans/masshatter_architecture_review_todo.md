@@ -1,0 +1,190 @@
+# MASShatter architecture review — remaining todo
+
+> **Status:** ACTIVE · **Updated:** 2026-09-22
+>
+> Tracks only what is still open from the 2026-09-19 code-vs-literature review of the MASShatter
+> stack. Five of its seven items were implemented on 2026-09-20/21, all default-off; six arms ran
+> in the 2026-09-21 campaign but **were killed at the wall clock between epochs 179 and 210 and
+> have never been read at the 128-epoch screen length**, so none of them has a verdict yet.
+> Three of those six also carry an unmeasured **41–44% cut to the intensity head** (§1), so they
+> are not one-key arms at all. The five unrun arms were put on the 128-epoch screen on 2026-09-22.
+> This doc does not cover the escape, candidate-token, loss-objective or regularization lines.
+
+## Scope
+
+The review named seven architecture-level gaps. Their current state:
+
+| # | Review item | Implemented | Arm run | Verdict |
+| --- | --- | --- | --- | --- |
+| 1 | Candidate head is mass-blind | partly (scalars + pair bias; composition off) | `a3` | **unread** |
+| 2 | Post-LN under constant unwarmed LR | yes (`pre`, QK-norm; scheduler fixed) | `a1`, `a6`, `a7` | **unread** |
+| 3 | GNN residual branch is ReLU-gated | yes (`gnn_residual_activation`) | `b2` | **unread** |
+| 4 | RWSE off in every config | no — blocked on a one-line port | none | open |
+| 5 | Bond head aggregates with a mean | yes (`bond_endpoint_aggregation`) | none | open |
+| 6 | Induced-vs-full at a 256 budget | yes (`attention_type: full`) | none as a control | open, and it **confounds `a3`/`a6`/`a7`** |
+| 7 | Weight decay on norms, biases, latents | yes (`weight_decay_exclude_norm_bias`) | `b3` | **unread** |
+
+Two reference points for everything below. The screen length is **128 epochs**, confirmed on 15
+arms (median +0.0031 from epoch 128 to best). The replicate floor for this family is
+**0.003–0.005**, and the two `c4a_base` replicates span 0.0007 at epoch 127, which is tighter than
+the family's history — a margin measured against them alone is flattered.
+
+---
+
+## 1. Read the six arms that already ran, at matched epoch 128
+
+**No GPU cost. Do this before submitting anything else in this doc.**
+
+`a1_prenorm`, `a3_full_massbias`, `a6_ce_film`, `a7_ce_both`, `b2_identity_residual` and
+`b3_wd_groups` are in the
+[overfit read-out](../findings/masshatter_overfit_readout_2026_09_22.md) run index with best
+validation cosine over 179–210 epochs, against finished 127-epoch arms. `a1` and `a6` lead the
+whole 25-run set at 0.7364, but that number is not comparable to the `c4a_base_s1` 0.7282 it would
+be promoted over. Four of the seven review items are waiting on this read.
+
+- Pull `val_cos_sim_0.01_epoch/mean` at epoch 128 for the six arms and both `c4a_base` replicates.
+- Report each arm's delta to the control mean, and say explicitly whether it clears 0.005.
+- `a1` is also the only non-control run instrumented for §3 of the read-out (best primary-loss
+  epoch 120 against best-cosine epoch 182), so record its gap alongside the cosine.
+
+**Gate:** any arm inside ±0.005 at matched epoch is a null at this exposure, not a rejection —
+record it as `hold` the way the 09-21 sweep did, and do not re-run it without a mechanism.
+
+### Half the ran arms carry an unstated capacity confound
+
+Measured 2026-09-22 by constructing every arm from its resolved config. `attention_type: full`
+deletes the induced layer's latent attention block, its feed-forward and the inducing tokens, so
+**every arm that sets it is also a large capacity cut to the module the campaign identifies as the
+allocator**:
+
+| Arm | Total params | vs base | Intensity head | vs base |
+| --- | --- | --- | --- | --- |
+| `c4a_base_s1` | 9,215,573 | — | 2,457,355 | — |
+| `a1_prenorm` | 9,215,573 | +0 | 2,457,355 | +0.0% |
+| `b2_identity_residual` | 9,215,573 | +0 | 2,457,355 | +0.0% |
+| `b3_wd_groups` | 9,215,573 | +0 | 2,457,355 | +0.0% |
+| `a3_full_massbias` | 8,145,026 | −1,070,547 | 1,386,808 | **−43.6%** |
+| `a6_ce_film` | 8,212,565 | −1,003,008 | 1,454,347 | **−40.8%** |
+| `a7_ce_both` | 8,213,105 | −1,002,468 | 1,454,887 | **−40.8%** |
+
+So `a1`, `b2` and `b3` are clean one-key arms and read directly against the control. `a3`, `a6`
+and `a7` are **not** "does the mass/CE bias help" — they are "mass/CE bias, plus full attention,
+plus a 41–44% smaller intensity head". That cuts both ways: `a6` ties `a1` for the best number in
+the 25-run set while running 40.8% less allocator, which is itself informative, but none of the
+three can be attributed until `a2_full_attention` supplies the topology-only control. This is the
+same class of defect the 2026-09-13 candidate-attention audit caught once already.
+
+**Consequence for §2:** `a2` is not optional and is not third in line. Promote it with `b1`.
+
+## 2. Submit the five prepared arms that have never run
+
+None of the five appears in any run index. At ~1 min/epoch a 128-epoch screen is about 2.2 h on the
+box the campaign used. The jobs are generated by
+`scripts/manual_slurm/fir/submit_masshatter_attention.sh [lead|conditional|rebalance|all]`, which
+defaults to the `b1` + `a2` lead pair and refuses any config that has drifted off `max_epochs: 128`.
+
+**Horizon — FIXED 2026-09-22.** Every config in `attention_2026_09_21/` was written before the
+128-epoch screen was adopted and carried `min_epochs: 378 / max_epochs: 630`. Submitted as-is
+against a 3 h box they are killed mid-schedule around epoch 170, which is exactly what happened to
+`a1`, `a3`, `a6`, `a7`, `b2` and `b3` (killed at 179–210) and why §1 exists. The five unrun arms are
+now `128/128`. The six that already ran were **left at 630 on purpose**, so their config still
+matches the run in the index; set the horizon at submission time if any of them is replicated.
+
+With that fixed, each unrun arm resolves to exactly its own keys against `c4a_base_s1` and nothing
+else — verified by resolving both through `load_config` and diffing: `a2` and `b1` differ by one
+key, `a5` by three, `a4` by four, `b4` by three. `h_transfer_bound`, `boundary_bond_encoder`,
+`candidate_mass_features` and `candidate_charge_feature` are template defaults now and resolve
+identically whether or not an arm sets them. All five construct at 128/128.
+
+| Arm | Key | Review item | Why it is worth the box |
+| --- | --- | --- | --- |
+| `b1_bond_sum` | `bond_endpoint_aggregation: sum` | 5 | The bond head is 41.9% of the 9.22M parameter budget and aggregates incident bonds with a degree-normalized mean, which is strictly less expressive than the sum the surrounding GINEConv was chosen for. Nothing else in the stack tests this. |
+| `a2_full_attention` | `attention_type: full` | 6 | **Co-lead with `b1`.** The only control for the −41 to −44% intensity-head cut that `a3`, `a6` and `a7` all carry (§1). Without it, three of the six ran arms — including one of the two campaign leaders — cannot be attributed at all. Note it is 8,144,981 params against the base 9,215,573, so it tests full attention *at reduced capacity*, not at matched capacity. |
+| `a4_full_massbias_prenorm_qknorm` | four keys | 1, 2 | The stacked arm, and it also carries the capacity cut. Only worth submitting if at least one of `a1`/`a3` clears the floor in §1. |
+| `a5_ce_pair_bias` | `intensity_ce_pair_bias` | 1 | Completes the CE triple with `a6`/`a7`. Run `a3` first so the pair difference isolates CE. |
+| `b4_budget_rebalance` | `bond_num_layers: 1`, `transformer_dim: 384`, `num_inducing_points: 128` | — | Not a review item, and **not a one-key arm** — it moves capacity from the bond head to the intensity head and widens the latent set at the same time, so a result cannot be attributed. Listed only because it shares the box and the base. Lowest priority; split it before running it. |
+
+Order: **`b1` and `a2` first.** `b1` is parameter-identical to the base, so it is the cleanest
+one-key arm in the whole set; `a2` unblocks the reading of three arms that already ran. `a4` and
+`a5` are conditional on §1.
+
+**Note on `a3`/`a5`/`a6`/`a7`:** `PairwiseMassBias` weights initialize to zero, so these are exact
+no-ops at step 0 and safe on a warm start. The diagnostic for the CE arms is
+`intensity_head.mass_pair_bias.ce_weights` read out of the checkpoint — a flat `w_r(CE)` is
+informative about [CE-invariance](../findings/masshatter_overfit_readout_2026_09_22.md) whether or
+not cosine moves, so these arms pay out in both directions.
+
+## 3. Port the RWPE shape fix, then screen RWSE
+
+**The only review item with nothing implemented.** Two steps, in order.
+
+1. **Port the fix.** `random_walk_pe` at [feat_utils.py:1003](../../src/fragnnet/utils/feat_utils.py)
+   still builds its adjacency with `scipy.sparse.csr_matrix((data, (row, col)))` and lets scipy
+   infer the shape from the largest index. The one-argument fix (`shape=(g.num_nodes, g.num_nodes)`)
+   exists on `feiw_v2` and `project/spectraverse_benchmark` and is **not** on this branch.
+   `pyg_bigraph: True` saves connected molecules, but a zero-bond molecule raises. Port it with its
+   tests before setting the flag anywhere.
+2. **Screen it.** `pyg_pe_embed_k` is `0` in `config/template.yml` and in all MASShatter configs.
+   MASShatter builds mol graphs live in the dataset, so this is **config-only — no preprocessing and
+   no cache regeneration**. Prepare one arm at `k: 16`, matching the FraGNNet `*new_mol_feats*`
+   configs.
+
+**Mechanism, which is MASShatter-specific:** the bond-break head must separate 1-WL-equivalent
+bonds — para-substituted rings, alkyl chains — that fragment differently. This is a proposal-side
+change, so read `val_candidate_wrecall` alongside cosine, not cosine alone.
+
+**Caveat before betting on it:** the encoder is a measured plateau over width, depth and
+architecture ([head capacity](../findings/masshatter_campaign_readout_2026_09_21.md)). RWSE is
+untried because it changes *input features*, not capacity, which is the one axis that plateau never
+covered — but that is an argument for it being unmeasured, not for it working.
+
+## 4. Feed composition into the candidate token
+
+Item 1 is only partly closed. `mass_shatter_candidate_mass_features` and
+`..._charge_feature` landed 2026-09-20 and are on by default, so absolute mass now reaches the
+head. Still missing: any **composition** vector and the **neutral-loss complement** formula.
+
+- `mass_shatter_candidate_composition_features` (GLACIER eq. 14's `psi(r_form - f_k)`) is
+  implemented and off by default; `c4a_complement_composition` is prepared and has never run.
+- Submit it as a 128-epoch arm alongside §2.
+
+**Two smaller items in the same token, neither prepared:**
+
+- `cut_counts` is fed raw into the input projection at
+  [bond_fragment_heads.py:501](../../src/fragnnet/model/bond_fragment_heads.py) and `:977` while
+  component sizes get `log1p` on the adjacent line. Make it consistent, or state why not.
+- Absolute mass arrives as two raw scalars. A sinusoidal or RBF encoding is the standard treatment
+  and is what the pair bias already does for *relative* mass. Untested either way.
+
+## 5. Decide the mask-residual shortcut, or drop it from this list
+
+`mass_shatter_use_mask_residuals: True` in production lets the intensity transformer override the
+bond model's base probability, which [§6.1.1 of the MASShatter plan](masshatter_plan.md) argues can
+improve allocation while starving candidate selection of supervision.
+
+This is the weakest item in the review and may already be moot: production also sets
+`proposal_selection_only: true` and `proposal_anchored: true`, and the
+[head-input asymmetry finding](../findings/masshatter_head_input_asymmetry_2026_09_22.md) shows the
+proposal branch is detached in every current `ma_mi_merged` arm. Reference configs exist only on
+the older unmerged/merged bases.
+
+**Action:** read those three interactions against the current base and either write a matched arm
+on `c4a_base_s1` or close this item with the reason. Do not port the old reference configs.
+
+---
+
+## What this doc deliberately excludes
+
+- The scheduler forwarding repair — **fixed in `031c370d`, verified 2026-09-21**. `lr_schedule_type`
+  and `lr_total_steps` now reach `build_lr_scheduler`. Do not list it as an action again.
+- Mixed precision. The CUDA candidate backend requires `precision: 32-true`, and bf16 has known
+  `index_add` and normalization failures on this model.
+- The LR-decay family (`d1`–`d3`), regularization arms, loss objectives, the intensity escape and
+  the candidate-token cut-set work. Those are tracked in their own plans and in the
+  [overfit read-out's](../findings/masshatter_overfit_readout_2026_09_22.md) ordered interventions.
+
+## Sources
+
+- [Attention rework + parameter budget](masshatter_attention_budget_2026_09_21.md) — what landed for items 1, 2, 3, 5 and 7, and the arm definitions.
+- [4 h exploration campaign](masshatter_campaign_4h_2026_09_21.md) — the base config, the box, and why 128 epochs.
+- [Overfit read-out](../findings/masshatter_overfit_readout_2026_09_22.md) — the run index these arms sit in, and the replicate floor.
