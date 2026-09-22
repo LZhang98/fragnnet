@@ -775,3 +775,123 @@ def test_a_query_above_the_precursor_has_no_candidates():
     assert clean_spectra_utils.subformula_candidates(
         precursor_mz + 5.0, "C9H8O4", "[M+H]+", 0.004
     ) == []
+
+
+def test_filter_above_precursor_keeps_the_precursor_within_tolerance():
+    peaks = [(100.0, 1.0), (199.999, 2.0), (200.0, 5.0), (200.0015, 1.0), (201.0034, 3.0)]
+
+    kept = clean_spectra_utils.filter_above_precursor_peaks(peaks, 200.0, 10.0, 200.0)
+
+    # 10 ppm at m/z 200 is 0.002 Da, so the precursor and anything inside that window stay,
+    # while the M+1 isotopologue one neutron above is dropped.
+    assert kept == [(100.0, 1.0), (199.999, 2.0), (200.0, 5.0), (200.0015, 1.0)]
+
+
+def test_filter_above_precursor_applies_the_low_mass_floor():
+    peaks = [(100.0, 1.0), (100.0015, 2.0)]
+
+    with_floor = clean_spectra_utils.filter_above_precursor_peaks(peaks, 100.0, 10.0, 200.0)
+    without_floor = clean_spectra_utils.filter_above_precursor_peaks(peaks, 100.0, 10.0, 0.0)
+
+    # The floor widens the cutoff to 10 ppm of 200 Da (0.002), which keeps the second peak;
+    # without it the cutoff is 10 ppm of 100 Da (0.001) and the peak is dropped.
+    assert len(with_floor) == 2
+    assert len(without_floor) == 1
+
+
+def test_filter_above_precursor_leaves_spectra_without_a_precursor_untouched():
+    peaks = [(100.0, 1.0), (900.0, 2.0)]
+
+    assert clean_spectra_utils.filter_above_precursor_peaks(peaks, float("nan"), 10.0) == peaks
+    assert clean_spectra_utils.filter_above_precursor_peaks(peaks, 0.0, 10.0) == peaks
+
+
+def test_filter_above_precursor_rejects_a_nonpositive_tolerance():
+    with pytest.raises(ValueError, match="tolerance_ppm must be positive"):
+        clean_spectra_utils.filter_above_precursor_peaks([(100.0, 1.0)], 200.0, 0.0)
+
+
+def test_above_precursor_cleanup_runs_per_instrument_and_reports_retention():
+    spec_df = pd.DataFrame(
+        {
+            "mol_id": [0, 0],
+            "prec_type": ["[M]+", "[M]+"],
+            "inst_type": ["FT", "QTOF"],
+            "prec_mz": [400.0, 400.0],
+            # Same peaks for both: one below, the precursor, and one a neutron above it.
+            "peaks": [
+                [(200.0, 1.0), (400.0, 4.0), (401.0034, 2.0)],
+                [(200.0, 1.0), (400.0, 4.0), (401.0034, 2.0)],
+            ],
+        }
+    )
+    mol_df = pd.DataFrame({"mol_id": [0], "formula": ["CH4"]})
+
+    cleaned, stats = clean_spectra_utils.clean_spectra_with_stats(
+        spec_df,
+        mol_df,
+        merge_peak_signals=False,
+        merge_ppm=20.0,
+        filter_by_subformula=False,
+        subformula_ppm=5.0,
+        drop_empty_spectra=False,
+        filter_above_precursor=True,
+        above_precursor_use_instrument_tolerance=True,
+    )
+
+    # FT (10 ppm) and QTOF (20 ppm, 750 Da floor) both cut well inside one neutron mass.
+    assert [mz for mz, _ in cleaned.loc[0, "peaks"]] == [200.0, 400.0]
+    assert [mz for mz, _ in cleaned.loc[1, "peaks"]] == [200.0, 400.0]
+    assert stats["parameters"]["filter_above_precursor_peaks"] is True
+    assert stats["after_above_precursor_filter"]["peaks"] == 4
+    assert stats["above_precursor_retention"]["aggregate_peak_fraction"] == pytest.approx(4 / 6)
+    assert stats["above_precursor_retention"]["spectra_with_base_peak_retained"] == 2
+    assert "above_precursor_retention_by_inst_type" in stats
+
+
+def test_above_precursor_filter_requires_a_precursor_mz_column():
+    spec_df = pd.DataFrame({"mol_id": [0], "prec_type": ["[M]+"], "peaks": [[(100.0, 1.0)]]})
+    mol_df = pd.DataFrame({"mol_id": [0], "formula": ["CH4"]})
+
+    with pytest.raises(ValueError, match="prec_mz"):
+        clean_spectra_utils.clean_spectra_with_stats(
+            spec_df,
+            mol_df,
+            merge_peak_signals=False,
+            merge_ppm=20.0,
+            filter_by_subformula=False,
+            subformula_ppm=5.0,
+            drop_empty_spectra=False,
+            filter_above_precursor=True,
+            above_precursor_use_instrument_tolerance=False,
+        )
+
+
+def test_above_precursor_filter_runs_before_subformula_filtering():
+    # The peak above the precursor is a valid CH4 subformula ion, so only the ordering of the
+    # two filters can remove it: the above-precursor cut must fire first.
+    spec_df = pd.DataFrame(
+        {
+            "mol_id": [0],
+            "prec_type": ["[M]+"],
+            "inst_type": ["FT"],
+            "prec_mz": [15.0],
+            "peaks": [[(12.0, 3.0), (16.0313, 1.0)]],
+        }
+    )
+    mol_df = pd.DataFrame({"mol_id": [0], "formula": ["CH4"]})
+
+    cleaned = clean_spectra_utils.clean_spectra(
+        spec_df,
+        mol_df,
+        merge_peak_signals=False,
+        merge_ppm=20.0,
+        filter_by_subformula=True,
+        subformula_ppm=5.0,
+        drop_empty_spectra=False,
+        use_instrument_tolerance=True,
+        filter_above_precursor=True,
+        above_precursor_use_instrument_tolerance=True,
+    )
+
+    assert [mz for mz, _ in cleaned.loc[0, "peaks"]] == [12.0]

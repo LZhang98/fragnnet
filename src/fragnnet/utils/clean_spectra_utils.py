@@ -293,6 +293,43 @@ def filter_subformula_peaks(
     return filtered
 
 
+def filter_above_precursor_peaks(
+    peaks: list[tuple[float, float]],
+    prec_mz: float,
+    tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Drop peaks above the precursor m/z.
+
+    Fragmentation cannot place an analyte ion above its own precursor, so everything beyond
+    the cutoff is co-isolation, background, a multiply-charged species, or the precursor's own
+    isotopologue ladder. All four are outside the support of a monoisotopic candidate set, and
+    keeping them means grading the model on intensity it structurally cannot produce.
+
+    The cutoff is ``prec_mz`` widened by one matching tolerance, which is the same rule
+    ``scripts/eval/dag_oracle_scores.py`` applies for its ``1_above_prec`` tier, so a cleaned
+    target and the oracle ceilings quoted against it are finally measured on the same peaks.
+
+    A spectrum with no usable precursor m/z is returned unchanged rather than emptied.
+
+    Args:
+        peaks: ``(m/z, intensity)`` pairs.
+        prec_mz: Precursor m/z; NaN or nonpositive leaves the spectrum untouched.
+        tolerance_ppm: Cutoff half-width in ppm, applied at the precursor m/z.
+        tolerance_min_mz: Divisor floor, so low-mass precursors get an absolute floor.
+
+    Returns:
+        The peaks at or below the cutoff, in input order.
+    """
+    if tolerance_ppm <= 0:
+        raise ValueError("tolerance_ppm must be positive")
+    if prec_mz is None or not math.isfinite(prec_mz) or prec_mz <= 0.0:
+        return [(float(peak[0]), float(peak[1])) for peak in peaks]
+
+    cutoff = prec_mz + tolerance_ppm * 1e-6 * max(prec_mz, tolerance_min_mz)
+    return [(float(peak[0]), float(peak[1])) for peak in peaks if float(peak[0]) <= cutoff]
+
+
 def _budget_ion_candidates(
     neutral_counts: dict[str, int],
     comp_diff,
@@ -628,6 +665,9 @@ def clean_spectra(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
+    filter_above_precursor: bool = False,
+    above_precursor_ppm: float = 10.0,
+    above_precursor_use_instrument_tolerance: bool = True,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -641,6 +681,9 @@ def clean_spectra(
         use_instrument_tolerance,
         use_merge_instrument_tolerance,
         merge_method,
+        filter_above_precursor,
+        above_precursor_ppm,
+        above_precursor_use_instrument_tolerance,
     )
     return cleaned_df
 
@@ -656,6 +699,9 @@ def clean_spectra_with_stats(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
+    filter_above_precursor: bool = False,
+    above_precursor_ppm: float = 10.0,
+    above_precursor_use_instrument_tolerance: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
     if merge_method is None:
@@ -669,8 +715,12 @@ def clean_spectra_with_stats(
     required_spec_columns = {"peaks"}
     if filter_by_subformula:
         required_spec_columns.update({"mol_id", "prec_type"})
-    if (merge_peak_signals and use_merge_instrument_tolerance) or (
-        filter_by_subformula and use_instrument_tolerance
+    if filter_above_precursor:
+        required_spec_columns.add("prec_mz")
+    if (
+        (merge_peak_signals and use_merge_instrument_tolerance)
+        or (filter_by_subformula and use_instrument_tolerance)
+        or (filter_above_precursor and above_precursor_use_instrument_tolerance)
     ):
         required_spec_columns.add("inst_type")
     missing_spec_columns = required_spec_columns - set(spec_df.columns)
@@ -688,6 +738,9 @@ def clean_spectra_with_stats(
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
             "subformula_instrument_tolerance": use_instrument_tolerance,
+            "filter_above_precursor_peaks": filter_above_precursor,
+            "above_precursor_ppm": above_precursor_ppm,
+            "above_precursor_instrument_tolerance": above_precursor_use_instrument_tolerance,
             "drop_empty_spectra": drop_empty_spectra,
         },
         "input": summarize_spectra(spec_df),
@@ -751,7 +804,49 @@ def clean_spectra_with_stats(
                     summarize_retention_by_columns(before_merge, result, ["prec_type", "inst_type"])
                 )
 
-    # 3. Retain only peaks explained by a feasible molecular subformula.
+    # 3. Drop everything above the precursor m/z.
+    if filter_above_precursor:
+        before_above_precursor_filter = result.copy()
+        if above_precursor_use_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No above-precursor instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            trimmed_peaks = (
+                filter_above_precursor_peaks(
+                    peaks,
+                    precursor_mz,
+                    INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
+                    INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                )
+                for peaks, precursor_mz, instrument_type in zip(
+                    result["peaks"], result["prec_mz"], result["inst_type"], strict=True
+                )
+            )
+        else:
+            trimmed_peaks = (
+                filter_above_precursor_peaks(peaks, precursor_mz, above_precursor_ppm)
+                for peaks, precursor_mz in zip(
+                    result["peaks"], result["prec_mz"], strict=True
+                )
+            )
+        result.loc[:, "peaks"] = pd.Series(trimmed_peaks, index=result.index, dtype=object)
+        stats["after_above_precursor_filter"] = summarize_spectra(result)
+        stats["above_precursor_retention"] = summarize_retention(
+            before_above_precursor_filter, result
+        )
+        if "prec_type" in result:
+            stats["above_precursor_retention_by_prec_type"] = summarize_retention_by_column(
+                before_above_precursor_filter, result, "prec_type"
+            )
+        if "inst_type" in result:
+            stats["above_precursor_retention_by_inst_type"] = summarize_retention_by_column(
+                before_above_precursor_filter, result, "inst_type"
+            )
+
+    # 4. Retain only peaks explained by a feasible molecular subformula.
     if filter_by_subformula:
         before_subformula_filter = result.copy()
         if use_instrument_tolerance:
@@ -882,6 +977,17 @@ def parse_args() -> argparse.Namespace:
         help="Use FraGNNet FT/QTOF tolerance and m/z floors instead of --subformula-ppm",
     )
     parser.add_argument(
+        "--filter-above-precursor-peaks",
+        action="store_true",
+        help="Drop peaks above the precursor m/z (also removes the precursor isotopologue ladder)",
+    )
+    parser.add_argument("--above-precursor-ppm", type=float, default=10.0)
+    parser.add_argument(
+        "--above-precursor-inst-tol",
+        action="store_true",
+        help="Use FraGNNet FT/QTOF tolerance and m/z floors instead of --above-precursor-ppm",
+    )
+    parser.add_argument(
         "--drop-empty-spectra",
         action="store_true",
         help="Drop spectra with no peaks after the selected operations",
@@ -893,8 +999,15 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    if not args.merge_peaks and not args.filter_subformula_peaks:
-        raise ValueError("Enable --merge-peaks, --filter-subformula-peaks, or both")
+    if (
+        not args.merge_peaks
+        and not args.filter_subformula_peaks
+        and not args.filter_above_precursor_peaks
+    ):
+        raise ValueError(
+            "Enable at least one of --merge-peaks, --filter-subformula-peaks, "
+            "--filter-above-precursor-peaks"
+        )
     if args.filter_subformula_peaks and args.mol_fp is None:
         raise ValueError("--mol-fp is required with --filter-subformula-peaks")
     if not args.stats_only and args.output_fp is None:
@@ -924,6 +1037,9 @@ def main() -> None:
         use_instrument_tolerance=args.subformula_inst_tol,
         use_merge_instrument_tolerance=args.merge_inst_tol,
         merge_method=args.merge_method,
+        filter_above_precursor=args.filter_above_precursor_peaks,
+        above_precursor_ppm=args.above_precursor_ppm,
+        above_precursor_use_instrument_tolerance=args.above_precursor_inst_tol,
     )
     stats["selection"] = {
         "precursor_types": args.precursor_types,

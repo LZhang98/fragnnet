@@ -98,6 +98,9 @@ def _spectrum_cleanup_params(**overrides) -> dict:
         "filter_subformula_peaks": False,
         "subformula_ppm": 5.0,
         "subformula_use_instrument_tolerance": True,
+        "filter_above_precursor_peaks": False,
+        "above_precursor_ppm": 10.0,
+        "above_precursor_use_instrument_tolerance": True,
         "drop_empty_spectra": True,
     }
     defaults.update(overrides)
@@ -577,6 +580,45 @@ class TestCombinedFilter:
 
 
 class TestSpectrumCleanup:
+    def test_above_precursor_filter_runs_during_dataframe_preprocessing(self):
+        """The above-precursor cut must reach the target through spec_params, not just the util."""
+        # 101.0 is the precursor, 102.0034 its M+1 isotopologue, 150.0 a co-isolated species.
+        peaks = [(50.0, 1.0), (101.0, 5.0), (102.0034, 2.0), (150.0, 3.0)]
+        spec_df = _make_spec_df(
+            [
+                {
+                    "spec_id": 1,
+                    "mol_id": 1,
+                    "group_id": 1,
+                    "prec_type": "[M+H]+",
+                    "inst_type": "FT",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": 101.0,
+                    "peaks": peaks,
+                }
+            ]
+        )
+        mol_df = _make_mol_df([1])
+
+        off = _run_setup_dfs(
+            spec_df,
+            mol_df,
+            "train",
+            _base_spec_params(**_spectrum_cleanup_params()),
+        )[0]
+        on = _run_setup_dfs(
+            spec_df,
+            mol_df,
+            "train",
+            _base_spec_params(
+                **_spectrum_cleanup_params(filter_above_precursor_peaks=True)
+            ),
+        )[0]
+
+        assert [mz for mz, _ in off.loc[0, "peaks"]] == [50.0, 101.0, 102.0034, 150.0]
+        assert [mz for mz, _ in on.loc[0, "peaks"]] == [50.0, 101.0]
+
     def test_template_cleanup_settings_only_drop_preexisting_empty_spectra(self):
         peaks = [(100.0, 1.0), (100.001, 2.0)]
         spec_df = _make_spec_df(

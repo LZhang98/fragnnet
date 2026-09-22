@@ -438,6 +438,9 @@ class BaseDataset(Dataset):
             "filter_subformula_peaks",
             "subformula_ppm",
             "subformula_use_instrument_tolerance",
+            "filter_above_precursor_peaks",
+            "above_precursor_ppm",
+            "above_precursor_use_instrument_tolerance",
             "drop_empty_spectra",
         }
         configured_cleanup_params = cleanup_param_names.intersection(spec_params)
@@ -452,6 +455,7 @@ class BaseDataset(Dataset):
             cleanup_enabled = (
                 spec_params["centroid_peaks"]
                 or spec_params["filter_subformula_peaks"]
+                or spec_params["filter_above_precursor_peaks"]
                 or spec_params["drop_empty_spectra"]
             )
             if cleanup_enabled:
@@ -466,6 +470,11 @@ class BaseDataset(Dataset):
                     use_instrument_tolerance=spec_params["subformula_use_instrument_tolerance"],
                     use_merge_instrument_tolerance=spec_params["centroid_use_instrument_tolerance"],
                     merge_method=spec_params["centroid_method"],
+                    filter_above_precursor=spec_params["filter_above_precursor_peaks"],
+                    above_precursor_ppm=spec_params["above_precursor_ppm"],
+                    above_precursor_use_instrument_tolerance=spec_params[
+                        "above_precursor_use_instrument_tolerance"
+                    ],
                 )
                 mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
 

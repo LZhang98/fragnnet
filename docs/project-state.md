@@ -4,6 +4,23 @@
 
 ## Current handoff
 
+Above-precursor target filter (2026-09-22). **LANDED in the working tree.** `spec_params` gains
+`filter_above_precursor_peaks` / `above_precursor_ppm` /
+`above_precursor_use_instrument_tolerance`, default off, applied in `clean_spectra` after
+centroiding and before subformula filtering, with the same per-instrument tolerance and the same
+retention statistics as its two sibling cleanups, plus the standalone CLI flags. The cutoff is
+`prec_mz` widened by one matching tolerance -- deliberately the same rule
+`scripts/eval/dag_oracle_scores.py` uses for its `1_above_prec` tier, which was the default for
+every published oracle number while the training target kept those peaks. **Turning it on also
+removes the precursor isotopologue ladder**, which is 72% of the affected intensity and is real
+analyte signal; that is intended while isotopes are unmodelled (`num_isotopes` is 1 everywhere,
+every DAG `isoFalse`), but it changes the target, so **cosines are not comparable across this
+flag**. Validation: full suite 4,167 passed / 1 skipped / 2 xfailed; Ruff clean on every changed
+file; 9 new tests; end-to-end on the real merged MA/MI val split the above-precursor intensity
+goes **0.00899 -> 0.00000** and 10,339 of 792,217 peaks are removed, matching the 0.0090 predicted
+by the split probe. Three existing `spec_params` fixtures needed the new required keys, which is
+the intended strict-required behaviour. No run launched.
+
 ICEBERG/GLACIER parity (2026-09-22). Closing the gaps behind "do they have a larger model, more
 features?". **Model size:** GLACIER publishes none — no hidden dim, layer count or parameter
 count, only `4xNVIDIA A5000`; its own baseline ICEBERG 2.0 is 7.0M on NIST'20 (measured from the
