@@ -39,8 +39,11 @@ from fragnnet.model.candidate_support import (
 )
 from fragnnet.model.loss import (
     ce_switch_pair_bce,
+    conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
+    sparse_outside_window_intensity_fraction,
     sparse_peak_list_distance,
+    validate_hellinger_auxiliary_weights,
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
@@ -1154,8 +1157,10 @@ class MassShatterPL(SpectrumPL):
                 this training path supports.
         """
         accepted_loss_types = {
+            "conditional_cross_entropy",
             "cross_entropy",
             "cosine_distance",
+            "hellinger_distance",
             "jss_distance",
             "kl_distance",
         }
@@ -1172,13 +1177,17 @@ class MassShatterPL(SpectrumPL):
         }:
             raise ValueError("mass_shatter_intensity_transformer_attention must be induced or full")
         independent_output = self.hparams.mass_shatter_intensity_output == "independent"
+        cross_entropy_loss = self.hparams.loss_type in {
+            "conditional_cross_entropy",
+            "cross_entropy",
+        }
         if self.hparams.precursor_pair_loss_weight != 0.0:
             raise ValueError(
                 "MASShatter does not support precursor_pair_loss_weight; set it to 0.0"
             )
-        if independent_output and self.hparams.loss_type == "cross_entropy":
+        if independent_output and cross_entropy_loss:
             raise ValueError("independent intensity output requires a direct spectral loss")
-        if self.hparams.loss_type != "cross_entropy" and (
+        if not cross_entropy_loss and (
             self.hparams.mass_shatter_base_ce_weight != 0.0 or self.hparams.mass_shatter_log_base_ce
         ):
             raise ValueError("direct spectral losses do not support the base Gaussian CE")
@@ -1216,6 +1225,11 @@ class MassShatterPL(SpectrumPL):
             raise ValueError(
                 "mass_shatter_intensity_entropy_match_weight must be finite and nonnegative"
             )
+        validate_hellinger_auxiliary_weights(
+            spectral_leak_loss_weight=self.hparams.spectral_leak_loss_weight,
+            spectral_ce_auxiliary_weight=self.hparams.spectral_ce_auxiliary_weight,
+            loss_type=self.hparams.loss_type,
+        )
         if (
             not math.isfinite(self.hparams.mass_shatter_kl_epsilon)
             or not 0.0 < self.hparams.mass_shatter_kl_epsilon < 1.0
@@ -1409,7 +1423,7 @@ class MassShatterPL(SpectrumPL):
             self.hparams.mass_shatter_log_base_ce or self.hparams.mass_shatter_base_ce_weight > 0.0
         )
         sparse_ce_fn = None
-        if self.hparams.loss_type == "cross_entropy":
+        if cross_entropy_loss or self.hparams.spectral_ce_auxiliary_weight > 0.0:
             sparse_ce_fn = get_sparse_cross_entropy_fn(
                 dist=self.hparams.output_distribution,
                 vectorized=self.hparams.loss_vectorized,
@@ -1525,15 +1539,18 @@ class MassShatterPL(SpectrumPL):
                     th.finfo(proposal_true_intensities.dtype).tiny
                 ).log()
             prediction_reference = pred_logprobs if pred_logprobs is not None else pred_intensities
-            spectrum_ce = None
+            coverage_weighted_spec_ce = None
+            conditional_spec_ce = None
+            spectral_ce_auxiliary = None
+            spectral_leak_loss = None
             entropy_match = None
-            if self.hparams.loss_type == "cross_entropy":
+            if cross_entropy_loss:
                 if pred_logprobs is None:
                     raise ValueError("cross_entropy requires probability output")
                 if sparse_ce_fn is None:
                     raise RuntimeError("sparse CE was not configured")
                 # The legacy control retains its Gaussian/peak-marginal behavior.
-                spectrum_ce, _, _, _ = sparse_ce_fn(
+                coverage_weighted_spec_ce, _, true_oos_logprobs, _ = sparse_ce_fn(
                     true_mzs,
                     true_logprobs,
                     true_batch_idxs,
@@ -1544,7 +1561,15 @@ class MassShatterPL(SpectrumPL):
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
-                primary_loss = spectrum_ce
+                conditional_spec_ce = conditional_in_support_cross_entropy(
+                    coverage_weighted_spec_ce,
+                    true_oos_logprobs,
+                )
+                primary_loss = (
+                    conditional_spec_ce
+                    if self.hparams.loss_type == "conditional_cross_entropy"
+                    else coverage_weighted_spec_ce
+                )
             else:
                 primary_loss, entropy_match = sparse_peak_list_distance(
                     true_mzs,
@@ -1585,6 +1610,54 @@ class MassShatterPL(SpectrumPL):
             if entropy_match is not None:
                 loss = (
                     loss + self.hparams.mass_shatter_intensity_entropy_match_weight * entropy_match
+                )
+            if self.hparams.spectral_leak_loss_weight > 0.0:
+                spectral_leak_loss = sparse_outside_window_intensity_fraction(
+                    true_mzs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_intensities,
+                    pred_batch_idxs,
+                    batch_size=batch_size,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                    loss_batch_size=self.hparams.loss_batch_size,
+                )
+                loss = loss + self.hparams.spectral_leak_loss_weight * spectral_leak_loss
+            if self.hparams.spectral_ce_auxiliary_weight > 0.0:
+                if sparse_ce_fn is None:
+                    raise RuntimeError("sparse CE auxiliary was not configured")
+                pred_totals = scatter_reduce(
+                    src=pred_intensities,
+                    index=pred_batch_idxs,
+                    reduce="sum",
+                    dim_size=batch_size,
+                    default=0.0,
+                )
+                # Clamp the divisor, not the quotient. A spectrum whose predicted
+                # intensities sum to zero would otherwise yield NaN here, and the
+                # clamp below cannot repair a NaN.
+                intensity_tiny = th.finfo(pred_intensities.dtype).tiny
+                pred_ce_probs = pred_intensities / pred_totals[pred_batch_idxs].clamp_min(
+                    intensity_tiny
+                )
+                pred_ce_logprobs = pred_ce_probs.clamp_min(intensity_tiny).log()
+                spectral_ce_auxiliary, _, _, _ = sparse_ce_fn(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_ce_logprobs,
+                    pred_batch_idxs,
+                    pred_ce_logprobs.new_zeros(batch_size),
+                    tol_per_sample=tolerance_per_sample,
+                    min_mz_per_sample=minimum_mz_per_sample,
+                )
+                loss = loss + (
+                    self.hparams.spectral_ce_auxiliary_weight * spectral_ce_auxiliary
                 )
             support_metrics: dict[str, th.Tensor] = {}
             channel_targets = None
@@ -1705,7 +1778,7 @@ class MassShatterPL(SpectrumPL):
                 loss = loss + self.hparams.cross_ev_fragment_loss_weight * cross_ev_fragment_loss
             if base_ce_enabled:
                 base_pred_logprobs = kwargs["base_pred_logprobs"]
-                base_spec_ce, _, _, _ = sparse_ce_fn(
+                base_coverage_weighted_spec_ce, _, base_true_oos_logprobs, _ = sparse_ce_fn(
                     true_mzs,
                     true_logprobs,
                     true_batch_idxs,
@@ -1716,7 +1789,15 @@ class MassShatterPL(SpectrumPL):
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
-                base_primary_loss = base_spec_ce
+                base_conditional_spec_ce = conditional_in_support_cross_entropy(
+                    base_coverage_weighted_spec_ce,
+                    base_true_oos_logprobs,
+                )
+                base_primary_loss = (
+                    base_conditional_spec_ce
+                    if self.hparams.loss_type == "conditional_cross_entropy"
+                    else base_coverage_weighted_spec_ce
+                )
                 loss = loss + self.hparams.mass_shatter_base_ce_weight * base_primary_loss
             # The candidate-generation values below are monitoring only and detached:
             # retained_mask_probability is how much of the Bernoulli mask distribution
@@ -1838,11 +1919,19 @@ class MassShatterPL(SpectrumPL):
             ):
                 diagnostic = kwargs[diagnostic_name]
                 loss_values[diagnostic_name] = diagnostic.detach().to(prediction_reference)
-            if spectrum_ce is not None:
-                loss_values["spec_ce"] = spectrum_ce
+            if cross_entropy_loss:
+                # Compatibility alias for existing dashboards and checkpoints. New
+                # analyses should use one of the two explicit names below.
+                loss_values["spec_ce"] = primary_loss
+                loss_values["coverage_weighted_spec_ce"] = coverage_weighted_spec_ce
+                loss_values["conditional_spec_ce"] = conditional_spec_ce
             else:
                 loss_values["spec_peak_distance"] = primary_loss
                 loss_values["spec_entropy_match"] = entropy_match
+                if spectral_leak_loss is not None:
+                    loss_values["spectral_leak_loss"] = spectral_leak_loss
+                if spectral_ce_auxiliary is not None:
+                    loss_values["spectral_ce_auxiliary"] = spectral_ce_auxiliary
             if proposal_loss_enabled:
                 loss_values["proposal_loss"] = proposal_loss
             if ion_h_support_loss_enabled:
@@ -1855,9 +1944,11 @@ class MassShatterPL(SpectrumPL):
             if base_ce_enabled:
                 loss_values.update(
                     {
-                        "base_spec_ce": base_spec_ce,
+                        "base_coverage_weighted_spec_ce": base_coverage_weighted_spec_ce,
+                        "base_conditional_spec_ce": base_conditional_spec_ce,
+                        "base_spec_ce": base_primary_loss,
                         "base_primary_loss": base_primary_loss,
-                        "base_ce_gain": base_spec_ce.detach() - spectrum_ce.detach(),
+                        "base_ce_gain": base_primary_loss.detach() - primary_loss.detach(),
                     }
                 )
 
@@ -1991,10 +2082,16 @@ class MassShatterPL(SpectrumPL):
                     *_ION_H_REQUIRED_K_METRIC_NAMES,
                 ]
             )
-        if self.hparams.loss_type == "cross_entropy":
-            loss_names.append("spec_ce")
+        if self.hparams.loss_type in {"conditional_cross_entropy", "cross_entropy"}:
+            loss_names.extend(
+                ["spec_ce", "coverage_weighted_spec_ce", "conditional_spec_ce"]
+            )
         else:
             loss_names.extend(["spec_peak_distance", "spec_entropy_match"])
+            if self.hparams.spectral_leak_loss_weight > 0.0:
+                loss_names.append("spectral_leak_loss")
+            if self.hparams.spectral_ce_auxiliary_weight > 0.0:
+                loss_names.append("spectral_ce_auxiliary")
         if self.hparams.ce_pair_loss_weight != 0.0:
             loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
         if proposal_loss_enabled:
@@ -2008,6 +2105,8 @@ class MassShatterPL(SpectrumPL):
         if base_ce_enabled:
             loss_names.extend(
                 [
+                    "base_coverage_weighted_spec_ce",
+                    "base_conditional_spec_ce",
                     "base_spec_ce",
                     "base_primary_loss",
                     "base_ce_gain",

@@ -1,10 +1,12 @@
 # MASShatter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IN PROGRESS — UNIQUE-FRAGMENT PATHWAY MARGINALIZATION IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-08-23
+> **Status:** IMPLEMENTED CORE WITH ACTIVE EXPERIMENTAL VARIANTS &nbsp;·&nbsp; **Updated:** 2026-09-21
 >
-> Replace fixed-depth D3/D4 fragment enumeration at inference with one molecular
-> encoding pass, independent bond-break probabilities, top-K cut-mask search,
-> component-level charge retention, and a conditional hydrogen-transfer head.
+> The fixed-depth D3/D4 inference path has been replaced in MASShatter by one-pass
+> precursor encoding, probability-ranked candidate generation, chemically valid ion
+> channels, and candidate-conditional intensity prediction. This document retains
+> its original design and staged-history sections below; the current implementation
+> snapshot is authoritative for present behavior.
 
 ## Objective
 
@@ -17,6 +19,85 @@ The model's canonical public name is **MASShatter**. Code uses
 `MassShatterModel`, `MassShatterPL`, and `model_type: mass_shatter`; generic
 bond-mask and neural-head utilities retain descriptive names because they are
 reusable components rather than the complete model.
+
+## Current implementation snapshot (source-verified 2026-09-21)
+
+The production code is `MassShatterModel` in
+[`src/fragnnet/model/mass_shatter_model.py`](../../src/fragnnet/model/mass_shatter_model.py)
+and its Lightning/loss integration is `MassShatterPL` in
+[`src/fragnnet/pl_model/mass_shatter_pl.py`](../../src/fragnnet/pl_model/mass_shatter_pl.py).
+The resolved configuration contract is declared in
+[`config/template.yml`](../../config/template.yml). A run's actual behavior is
+its resolved configuration; the defaults below are not a claim about every
+historical checkpoint.
+
+```
+precursor graph + spectrum metadata
+  -> molecular GNN (optionally a separate proposal GNN; optional context at GNN input)
+  -> one or more Bernoulli bond-logit fields + normalized mixture weights
+  -> probability-ranked cut masks (default) or experimental connected-fragment beam
+  -> connected components / candidate atom sets
+  -> charge retention and chemically valid CRF/CMF, delta-H channels
+  -> duplicate-pathway marginalization in unique-fragment mode
+  -> candidate intensity transformer
+  -> sparse m/z prediction with normalized probabilities or independent intensities
+```
+
+### Implemented mainline
+
+- **Proposal.** `cut_masks` is the default proposal method. It ranks complete
+  Bernoulli cut masks exactly within the requested prefix; `proposal_num_mixtures`
+  can represent a normalized mixture of Bernoulli fields. The candidate builder
+  supports CPU by default and an opt-in CUDA backend for its documented restricted
+  mode. `connected_fragment_beam` is implemented but remains experimental; it has
+  different reachability and probability semantics and is not a drop-in scientific
+  replacement for cut masks.
+- **Candidate identity.** Ordinary mode retains ranked mask/component pathways.
+  In unique-fragment mode, enumeration continues toward a distinct atom-set target,
+  and duplicate pathways are combined with `logsumexp` before intensity scoring.
+  Candidate count, target fill, pathway duplication, cut-count, coverage, and timing
+  diagnostics are returned by the model.
+- **Chemistry.** Components receive charge-retention scores and all chemically valid
+  CRF channels plus enabled CMF and hydrogen-transfer channels. The current CMF
+  contract emits the full configured valid H-transfer ladder, suppresses degenerate
+  duplicate CRF/CMF channels, and excludes in-source-loss channels. SMARTS templates
+  are an optional additional candidate source.
+- **Intensity.** A candidate-set transformer scores the generated ion channels.
+  It supports induced attention by default and full attention only with the bounded
+  unique-fragment representation. Candidate mass and charge features are enabled by
+  the template defaults. The obsolete atom decoder is disabled and rejected by the
+  Lightning-module configuration validation.
+- **Output and loss.** The legacy/default `probability` output normalizes over the
+  generated candidate set and returns `pred_logprobs`; unmatched observed signal is
+  a coverage diagnostic, not an OOS class. The optional `independent` output returns
+  nonnegative `pred_intensities` and requires the compatible unique-fragment,
+  proposal-selection-only setup. MASShatter accepts the historical CE/JSS loss paths
+  and the separately named `conditional_cross_entropy` path; the latter is currently
+  implemented in the working tree and has not yet been established as a trained-model
+  improvement.
+
+### Compatibility and experimental status
+
+- Feature and candidate-input changes made on 2026-09-20 (including repaired
+  `a_degree`, candidate mass features, charge features, and boundary encoding) make
+  all earlier MASShatter checkpoints incompatible for scientific comparison without
+  retraining. See the [feature-set audit](../reference/masshatter_feature_set_audit.md).
+- The current default candidate backend is CPU. CUDA construction is an optimization
+  path with explicit mode restrictions, not an implicit change in candidate semantics;
+  see the [backend guide](../guides/benchmark_masshatter_cpu.md).
+- The connected-fragment beam, shared-across-CE proposals, proposal-only warmup,
+  channel hard selection, and alternate intensity/loss formulations are implemented
+  experimental controls. Their measured status and next checks belong in the linked
+  findings and newer plans, especially the [improvement plan](masshatter_improvement_plan.md),
+  [loss review](../findings/loss_setup_review_2026_09_13.md), and
+  [campaign read-out](../findings/masshatter_campaign_readout_2026_09_21.md).
+
+### Documentation boundary
+
+Sections 1–9 retain the August design rationale, original staged implementation
+record, and proposals. Where they conflict with this snapshot or the linked current
+references, this snapshot and source win. The project-state entry is the current
+cross-document index: [MASShatter state](../project-state.md#research-navigation).
 
 ### Candidate-conditional spectrum correction (2026-08-23)
 

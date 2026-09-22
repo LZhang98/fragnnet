@@ -16,7 +16,7 @@ from fragnnet.utils.spec_utils import (
 
 @pytest.mark.parametrize(
     "objective",
-    ["cosine_distance", "jss_distance", "kl_distance"],
+    ["cosine_distance", "hellinger_distance", "jss_distance", "kl_distance"],
 )
 @pytest.mark.parametrize("matching", ["closest", "hungarian"])
 def test_identical_spectra_have_zero_loss(objective: str, matching: str) -> None:
@@ -64,6 +64,51 @@ def test_closest_matching_sums_many_predictions_at_one_observed_peak() -> None:
     primary.sum().backward()
 
     assert th.allclose(primary, th.zeros(1), atol=1e-7)
+    assert pred_intensities.grad is not None
+    assert th.isfinite(pred_intensities.grad).all()
+
+
+def test_hellinger_has_zero_safe_structural_support_and_recovery_gradient() -> None:
+    logits = th.tensor([-10.0, 0.0], dtype=th.float64, requires_grad=True)
+    pred_intensities = th.nn.functional.softplus(logits)
+
+    primary, _ = sparse_peak_list_distance(
+        th.tensor([100.0], dtype=th.float64),
+        th.tensor([1.0], dtype=th.float64),
+        th.zeros(1, dtype=th.long),
+        th.tensor([100.0, 150.0], dtype=th.float64),
+        pred_intensities,
+        th.zeros(2, dtype=th.long),
+        objective="hellinger_distance",
+        matching="closest",
+        tolerance=0.01,
+        relative=False,
+    )
+    primary.sum().backward()
+
+    th.testing.assert_close(primary, th.tensor([0.9919072577443437], dtype=th.float64))
+    assert logits.grad is not None
+    assert th.isfinite(logits.grad).all()
+    assert logits.grad[0] == pytest.approx(-0.004046014277967066)
+
+
+def test_hellinger_zero_predicted_coordinate_has_finite_backward() -> None:
+    pred_intensities = th.tensor([0.0, 1.0], requires_grad=True)
+    primary, _ = sparse_peak_list_distance(
+        th.tensor([100.0]),
+        th.tensor([1.0]),
+        th.zeros(1, dtype=th.long),
+        th.tensor([100.0, 150.0]),
+        pred_intensities,
+        th.zeros(2, dtype=th.long),
+        objective="hellinger_distance",
+        matching="closest",
+        tolerance=0.01,
+        relative=False,
+    )
+    primary.sum().backward()
+
+    th.testing.assert_close(primary, th.ones(1))
     assert pred_intensities.grad is not None
     assert th.isfinite(pred_intensities.grad).all()
 
@@ -306,7 +351,9 @@ def test_hungarian_drops_candidates_outside_all_tolerance_windows() -> None:
     assert baseline == pytest.approx(expected, abs=1e-6)
 
 
-@pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
+@pytest.mark.parametrize(
+    "objective", ["cosine_distance", "hellinger_distance", "jss_distance", "kl_distance"]
+)
 def test_instrument_tolerance_is_passed_to_peak_matching(objective: str) -> None:
     primary, _ = sparse_peak_list_distance(
         th.tensor([100.0, 100.0]),
@@ -499,6 +546,14 @@ def _sparse_peak_list_distance_loop_reference(
                 th.linalg.vector_norm(distance_pred) * th.linalg.vector_norm(distance_true)
             )
             primary_losses[batch_index] = 1.0 - similarity
+        elif objective == "hellinger_distance":
+            pred_distribution = distance_pred / distance_pred.sum()
+            true_distribution = distance_true / distance_true.sum()
+            # Plain sqrt of the product, with no zero-safe clamping. The production
+            # path clamps inside each factor to keep the backward finite at structural
+            # zeros; the two must still agree on value.
+            coefficient = (pred_distribution * true_distribution).sqrt().sum()
+            primary_losses[batch_index] = 1.0 - coefficient
         elif objective == "jss_distance":
             pred_distribution = distance_pred / distance_pred.sum()
             true_distribution = distance_true / distance_true.sum()
@@ -589,7 +644,10 @@ def _random_peak_lists(
 class TestPeakListDistanceMatchesLoopReference:
     """The chunked, padded implementation must agree with the per-spectrum loop."""
 
-    @pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
+    @pytest.mark.parametrize(
+        "objective",
+        ["cosine_distance", "hellinger_distance", "jss_distance", "kl_distance"],
+    )
     @pytest.mark.parametrize("matching", ["closest", "hungarian"])
     @pytest.mark.parametrize("loss_batch_size", [1, 3, 32])
     @pytest.mark.parametrize("seed", range(8))
@@ -746,7 +804,9 @@ def test_hungarian_tie_matches_exactly_one_of_the_tied_candidates() -> None:
 
 
 @pytest.mark.skipif(not th.cuda.is_available(), reason="requires CUDA")
-@pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
+@pytest.mark.parametrize(
+    "objective", ["cosine_distance", "hellinger_distance", "jss_distance", "kl_distance"]
+)
 @pytest.mark.parametrize("matching", ["closest", "hungarian"])
 def test_matches_reference_on_cuda(objective: str, matching: str) -> None:
     """CUDA agrees with the loop reference.
@@ -767,7 +827,9 @@ def test_matches_reference_on_cuda(objective: str, matching: str) -> None:
         assert th.allclose(entropy, ref_entropy, atol=1e-5, rtol=1e-4)
 
 
-@pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
+@pytest.mark.parametrize(
+    "objective", ["cosine_distance", "hellinger_distance", "jss_distance", "kl_distance"]
+)
 @pytest.mark.parametrize("matching", ["closest", "hungarian"])
 def test_wildly_uneven_spectra_match_reference(objective: str, matching: str) -> None:
     """Chunks narrowed by the padding guard still agree with the loop reference.
@@ -846,3 +908,83 @@ def test_spectrum_with_no_peaks_raises_like_reference() -> None:
         _sparse_peak_list_distance_loop_reference(
             *tensors, objective="jss_distance", matching="hungarian"
         )
+
+
+@pytest.mark.parametrize("matching", ["closest", "hungarian"])
+def test_hellinger_value_and_gradient_are_chunk_invariant(matching: str) -> None:
+    """Chunking is a padding choice, so it must not change values or gradients.
+
+    The Hellinger branch reduces over the padded chunk, and its zero-safe clamping
+    fires on exactly the padded coordinates that chunk width controls.
+    """
+    true_mzs, true_ints, true_idxs, pred_mzs, pred_ints, pred_idxs = _random_peak_lists(11)
+
+    values = []
+    gradients = []
+    for loss_batch_size in (1, 2, 5, 64):
+        chunked_ints = pred_ints.clone().requires_grad_(True)
+        primary, entropy = sparse_peak_list_distance(
+            true_mzs,
+            true_ints,
+            true_idxs,
+            pred_mzs,
+            chunked_ints,
+            pred_idxs,
+            objective="hellinger_distance",
+            matching=matching,
+            tolerance=1e-5,
+            relative=True,
+            loss_batch_size=loss_batch_size,
+        )
+        primary.sum().backward()
+        assert th.isfinite(primary).all()
+        assert th.isfinite(chunked_ints.grad).all()
+        values.append((primary, entropy))
+        gradients.append(chunked_ints.grad)
+
+    for primary, entropy in values[1:]:
+        th.testing.assert_close(primary, values[0][0])
+        th.testing.assert_close(entropy, values[0][1])
+    for gradient in gradients[1:]:
+        th.testing.assert_close(gradient, gradients[0])
+
+
+@pytest.mark.parametrize("matching", ["closest", "hungarian"])
+def test_hellinger_scores_each_spectrum_independently_of_the_batch(matching: str) -> None:
+    """A spectrum's loss must not depend on which spectra share its batch."""
+    true_mzs, true_ints, true_idxs, pred_mzs, pred_ints, pred_idxs = _random_peak_lists(13)
+    batch_size = int(true_idxs.max()) + 1
+
+    batched, _ = sparse_peak_list_distance(
+        true_mzs,
+        true_ints,
+        true_idxs,
+        pred_mzs,
+        pred_ints,
+        pred_idxs,
+        objective="hellinger_distance",
+        matching=matching,
+        tolerance=1e-5,
+        relative=True,
+        loss_batch_size=32,
+    )
+
+    alone = []
+    for batch_index in range(batch_size):
+        true_mask = true_idxs == batch_index
+        pred_mask = pred_idxs == batch_index
+        single, _ = sparse_peak_list_distance(
+            true_mzs[true_mask],
+            true_ints[true_mask],
+            th.zeros(int(true_mask.sum()), dtype=th.long),
+            pred_mzs[pred_mask],
+            pred_ints[pred_mask],
+            th.zeros(int(pred_mask.sum()), dtype=th.long),
+            objective="hellinger_distance",
+            matching=matching,
+            tolerance=1e-5,
+            relative=True,
+        )
+        alone.append(single)
+
+    th.testing.assert_close(batched, th.cat(alone))

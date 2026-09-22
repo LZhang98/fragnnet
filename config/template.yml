@@ -226,6 +226,12 @@ lr_warmup_steps: 1000
 lr_decay_steps: 5000
 optimizer: adamw
 output_distribution: gaussian
+# cross_entropy keeps the historical coverage-weighted sparse CE.
+# conditional_cross_entropy (MASShatter only) divides its in-support term by represented
+# target mass; spectra with no represented target peaks contribute zero to that term.
+# hellinger_distance uses 1 minus the Bhattacharyya coefficient on L1-normalized spectra.
+# That is the SQUARED Hellinger distance H^2, not sqrt(1 - BC); its values are not
+# comparable with published Hellinger numbers.
 loss_type: cross_entropy
 loss_vectorized: False
 loss_tolerance_rel: 0.00001 # 10 ppm
@@ -296,6 +302,10 @@ log_every_n_steps: 0
 # Loss Weights Configuration
 # ============================================================================
 primary_loss_weight: 1.0
+# Hellinger-only auxiliaries. The leak term is predicted intensity outside every true
+# tolerance window; CE is the historical coverage-weighted sparse Gaussian score.
+spectral_leak_loss_weight: 0.0
+spectral_ce_auxiliary_weight: 0.0
 # Online adjacent-CE base-winner supervision. The v1 loss is training-only and, when enabled,
 # requires batch_sampler_type: ce_context, plus ce_pair_min_endpoint_confidence set and
 # target_rel_ints_thresh in (0, 1).

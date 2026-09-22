@@ -18,7 +18,10 @@ from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
 from fragnnet.frag.mass_shatter_candidates import MassShatterStaticGraph
 from fragnnet.frag.mass_shatter_templates import build_mass_shatter_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.model.loss import (
+    conditional_in_support_cross_entropy,
+    get_sparse_cross_entropy_fn,
+)
 from fragnnet.model.nn_blocks import GINEGraphormer
 from fragnnet.pl_model import MassShatterPL, SpectrumPL
 from fragnnet.pl_model.mass_shatter_pl import (
@@ -160,6 +163,13 @@ def test_baseline_directory_contains_probability_ce_control() -> None:
     assert baseline_config["mass_shatter_proposal_only_until_epoch"] is None
     assert baseline_config["loss_type"] == "cross_entropy"
     assert baseline_config["wandb_name"].endswith("_baseline")
+
+
+def test_conditional_cross_entropy_has_explicit_metrics() -> None:
+    model, _ = _build_pl(loss_type="conditional_cross_entropy")
+
+    assert "coverage_weighted_spec_ce" in model.loss_names
+    assert "conditional_spec_ce" in model.loss_names
 
 
 @pytest.mark.parametrize("proposal_only_until_epoch", [True, -1, 1.5])
@@ -892,6 +902,7 @@ def test_candidate_metric_wrapper_does_not_repeat_loss_wrecall() -> None:
     "loss_type",
     [
         "cosine_distance",
+        "hellinger_distance",
         "jss_distance",
         "kl_distance",
     ],
@@ -939,6 +950,65 @@ def test_independent_peak_list_loss_avoids_gaussian_ce(matching: str, loss_type:
     assert "spec_entropy_match" in result
     assert pred_intensities.grad is not None
     assert th.isfinite(pred_intensities.grad).all()
+
+
+def test_hellinger_adds_leak_and_ce_auxiliaries_for_independent_output() -> None:
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=1.0,
+        mass_shatter_intensity_output="independent",
+        mass_shatter_peak_matching="hungarian",
+        mass_shatter_intensity_entropy_match_weight=0.0,
+        loss_type="hellinger_distance",
+        spectral_leak_loss_weight=0.3,
+        spectral_ce_auxiliary_weight=0.1,
+    )
+    true_mzs = th.tensor([100.0, 150.0])
+    true_intensities = th.tensor([0.75, 0.25])
+    pred_mzs = th.tensor([99.999, 100.001, 150.0, 200.0])
+    pred_intensities = th.tensor([0.25, 0.5, 0.2, 0.05], requires_grad=True)
+    true_batch_indices = th.zeros(2, dtype=th.long)
+    pred_batch_indices = th.zeros(4, dtype=th.long)
+
+    result = model.loss_fn(
+        true_mzs=true_mzs,
+        true_logprobs=true_intensities.log(),
+        true_intensities=true_intensities,
+        true_batch_idxs=true_batch_indices,
+        pred_mzs=pred_mzs,
+        pred_intensities=pred_intensities,
+        pred_batch_idxs=pred_batch_indices,
+        candidate_mzs_by_cut=pred_mzs,
+        candidate_batch_idxs_by_cut=pred_batch_indices,
+        candidate_cut_counts=th.tensor([1, 1, 2, 2]),
+        proposal_candidate_mzs=pred_mzs,
+        proposal_candidate_fragment_idxs=th.tensor([0, 0, 1, 2]),
+        proposal_fragment_logprobs=th.tensor([0.5, 0.25, 0.25]).log(),
+        proposal_fragment_batch_idxs=th.tensor([0, 0, 0]),
+        batch_size=1,
+        **_loss_diagnostics(),
+    )
+    expected = (
+        result["primary_loss"]
+        + 0.3 * result["spectral_leak_loss"]
+        + 0.1 * result["spectral_ce_auxiliary"]
+        + result["proposal_loss"]
+    )
+    th.testing.assert_close(result["loss"], expected)
+    th.testing.assert_close(result["spectral_leak_loss"], th.tensor([0.05]))
+    result["loss"].sum().backward()
+
+    assert th.isfinite(result["spectral_ce_auxiliary"]).all()
+    assert pred_intensities.grad is not None
+    assert th.isfinite(pred_intensities.grad).all()
+
+
+@pytest.mark.parametrize("weight_name", ["spectral_leak_loss_weight", "spectral_ce_auxiliary_weight"])
+def test_hellinger_auxiliary_weights_reject_other_mass_shatter_losses(weight_name: str) -> None:
+    with pytest.raises(ValueError, match="supported only with hellinger_distance"):
+        _build_pl(loss_type="jss_distance", **{weight_name: 0.1})
 
 
 def test_mass_shatter_pl_builds_configured_bond_focused_head() -> None:
@@ -2163,10 +2233,13 @@ def test_inference_cli_preserves_dag_model_filtering(
         )
 
 
+@pytest.mark.parametrize("loss_type", ["cross_entropy", "conditional_cross_entropy"])
 def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
     monkeypatch: pytest.MonkeyPatch,
+    loss_type: str,
 ) -> None:
     model, config = _build_pl(
+        loss_type=loss_type,
         mass_shatter_log_base_ce=True,
         mass_shatter_base_ce_weight=0.2,
         oos_loss=True,
@@ -2257,7 +2330,7 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
         pm_tolerance_multiple=config["pm_tolerance_multiple"],
         loss_batch_size=config["loss_batch_size"],
     )
-    expected_spec_ce, _, _, _ = sparse_ce_fn(
+    expected_coverage_weighted_spec_ce, _, expected_true_oos_logprobs, _ = sparse_ce_fn(
         true_mzs,
         true_logprobs,
         true_batch_indices,
@@ -2266,7 +2339,7 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
         pred_batch_indices,
         th.zeros(1),
     )
-    expected_base_spec_ce, _, _, _ = sparse_ce_fn(
+    expected_base_coverage_weighted_spec_ce, _, expected_base_true_oos_logprobs, _ = sparse_ce_fn(
         true_mzs,
         true_logprobs,
         true_batch_indices,
@@ -2276,12 +2349,35 @@ def test_mass_shatter_primary_loss_uses_candidate_only_sparse_cross_entropy(
         th.zeros(1),
     )
 
-    assert th.allclose(actual["spec_ce"], expected_spec_ce)
-    assert th.allclose(actual["base_spec_ce"], expected_base_spec_ce)
+    expected_conditional_spec_ce = conditional_in_support_cross_entropy(
+        expected_coverage_weighted_spec_ce,
+        expected_true_oos_logprobs,
+    )
+    expected_base_conditional_spec_ce = conditional_in_support_cross_entropy(
+        expected_base_coverage_weighted_spec_ce,
+        expected_base_true_oos_logprobs,
+    )
+    expected_primary = (
+        expected_conditional_spec_ce
+        if loss_type == "conditional_cross_entropy"
+        else expected_coverage_weighted_spec_ce
+    )
+    expected_base_primary = (
+        expected_base_conditional_spec_ce
+        if loss_type == "conditional_cross_entropy"
+        else expected_base_coverage_weighted_spec_ce
+    )
+
+    assert th.allclose(
+        actual["coverage_weighted_spec_ce"], expected_coverage_weighted_spec_ce
+    )
+    assert th.allclose(actual["conditional_spec_ce"], expected_conditional_spec_ce)
+    assert th.allclose(actual["spec_ce"], expected_primary)
+    assert th.allclose(actual["base_spec_ce"], expected_base_primary)
     assert "oos_ce" not in actual
     assert th.allclose(
         actual["loss"],
-        expected_spec_ce + 0.2 * expected_base_spec_ce,
+        expected_primary + 0.2 * expected_base_primary,
     )
     actual["loss"].sum().backward()
     assert base_pred_logprobs.grad is not None
@@ -2593,3 +2689,54 @@ def test_candidate_coverage_by_cut_count_reports_deep_cut_buckets() -> None:
     assert actual["candidate_precision_cut_6plus"].item() == pytest.approx(1.0)
     assert actual["candidate_recall_cut_4plus"].item() == pytest.approx(1.0)
     assert actual["candidate_wrecall_cut_4plus"].item() == pytest.approx(1.0)
+
+
+def test_hellinger_leak_auxiliary_stays_per_spectrum_across_a_batch() -> None:
+    """The leak term must carry one entry per spectrum.
+
+    A short leak vector broadcasts silently onto a per-spectrum loss, so the
+    second spectrum's leakage would otherwise be replaced by the first's.
+    """
+    model, _ = _build_pl(
+        mass_shatter_unique_fragment_mode=True,
+        mass_shatter_proposal_anchored=True,
+        mass_shatter_proposal_selection_only=True,
+        mass_shatter_proposal_loss_weight=1.0,
+        mass_shatter_intensity_output="independent",
+        mass_shatter_peak_matching="hungarian",
+        mass_shatter_intensity_entropy_match_weight=0.0,
+        loss_type="hellinger_distance",
+        spectral_leak_loss_weight=0.3,
+    )
+    true_mzs = th.tensor([100.0, 150.0, 300.0])
+    true_intensities = th.tensor([0.75, 0.25, 1.0])
+    true_batch_indices = th.tensor([0, 0, 1])
+    pred_mzs = th.tensor([99.999, 100.001, 150.0, 200.0, 300.0, 400.0])
+    pred_intensities = th.tensor([0.25, 0.5, 0.2, 0.05, 0.6, 0.4], requires_grad=True)
+    pred_batch_indices = th.tensor([0, 0, 0, 0, 1, 1])
+
+    result = model.loss_fn(
+        true_mzs=true_mzs,
+        true_logprobs=true_intensities.log(),
+        true_intensities=true_intensities,
+        true_batch_idxs=true_batch_indices,
+        pred_mzs=pred_mzs,
+        pred_intensities=pred_intensities,
+        pred_batch_idxs=pred_batch_indices,
+        candidate_mzs_by_cut=pred_mzs,
+        candidate_batch_idxs_by_cut=pred_batch_indices,
+        candidate_cut_counts=th.tensor([1, 1, 2, 2, 1, 2]),
+        proposal_candidate_mzs=pred_mzs,
+        proposal_candidate_fragment_idxs=th.tensor([0, 0, 1, 2, 3, 4]),
+        proposal_fragment_logprobs=th.tensor([0.5, 0.25, 0.25, 0.7, 0.3]).log(),
+        proposal_fragment_batch_idxs=th.tensor([0, 0, 0, 1, 1]),
+        batch_size=2,
+        **_loss_diagnostics(),
+    )
+    result["loss"].sum().backward()
+
+    # Spectrum 0 leaks only its 200 Da prediction; spectrum 1 leaks its 400 Da one.
+    assert result["spectral_leak_loss"].shape == (2,)
+    th.testing.assert_close(result["spectral_leak_loss"], th.tensor([0.05, 0.4]))
+    assert result["loss"].shape == (2,)
+    assert th.isfinite(pred_intensities.grad).all()

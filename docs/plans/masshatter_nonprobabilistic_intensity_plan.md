@@ -1,11 +1,12 @@
 # MASShatter — Non-Probabilistic Intensity Plan
 
-> **Status:** PROPOSED &nbsp;·&nbsp; **Updated:** 2026-08-29
+> **Status:** HELLINGER, LEAK, AND CE AUXILIARY IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-09-21
 >
 > Replace MASShatter's Gaussian probability-density objective with direct, tolerance-matched
 > peak-list training, compare cosine and Jensen-Shannon objectives with optional entropy matching,
 > then test whether independent nonnegative peak scores outperform the current
-> candidate-normalized intensity probabilities. Fragment proposal remains a separate problem.
+> candidate-normalized intensity probabilities. The direct-loss path is implemented; the dated
+> follow-up below narrows the next objective experiment. Fragment proposal remains separate.
 
 ## Decision
 
@@ -19,6 +20,138 @@ binned spectral similarity rather than calibrated likelihood.
 The abandoned binned-background mixture is not part of this plan. Do not add a background head,
 an OOS intensity class, a learned background mass, or an m/z density. Those mechanisms improve the
 accounting of a likelihood objective that is no longer the desired training target.
+
+## Follow-up objective amendment (2026-09-21)
+
+The implemented direct-loss path and the recovery-gradient probe in the
+[loss setup review](../findings/loss_setup_review_2026_09_13.md#what-is-loose-in-masshatter)
+change the next experiment. Linear-space cosine gives an absolute correct-logit gradient of only
+`0.0000655` in the two-peak Softplus probe, versus `0.000455` for normalized JSD and `0.395684`
+for the existing smoothed KL. This establishes weak recovery in that probe, not a training failure
+or evidence that KL's larger local gradient is unstable.
+
+The explicit Hellinger/Bhattacharyya objective is now implemented on the existing aligned vectors:
+
+```text
+P_s = p_s / sum(p_s)
+Y_s = y_s / sum(y_s)
+L_hel[s] = 1 - sum_i sqrt(P_s[i] * Y_s[i])
+```
+
+For a suppressed supported coordinate, the probability-level derivative scales as
+`1 / sqrt(P_s[i])`; after the output normalization and Softplus Jacobian, the restoring
+correct-logit gradient scales as `sqrt(P_s[i])` rather than `P_s[i]`. On the same probe, explicit
+Hellinger gives an absolute correct-logit gradient of `0.004046`, about 62 times linear cosine.
+This is the missing intermediate recovery behavior to test before adding a KL auxiliary.
+
+`ints_transform: sqrt` plus `loss_type: cosine_distance` is not an implementation of that gradient
+contract. `SpectrumPL.preproc_spec` square-roots training targets but deliberately leaves training
+predictions in their learned coordinates; it inverse-transforms predictions only for evaluation.
+The config changes the target geometry, but it does not place `sqrt` in the prediction-side
+autograd path. In addition, summing several candidate intensities into an aligned coordinate and
+then taking a square root is not equivalent to square-rooting candidates before aggregation.
+It is exposed as the separately named `loss_type: hellinger_distance`; keep `ints_transform` fixed
+in its control.
+
+The implementation uses a zero-safe formulation. The aligned vectors contain structural zeros,
+and a direct `sqrt(P_s * Y_s)` expression can produce undefined backward values at zero even when
+the mathematical contribution is zero. Clamping only inside each square-root factor and restoring
+structural-zero terms to exactly zero preserves positive-support values and yields finite gradients
+at exact zeros. Focused tests cover identical spectra under both matching modes, exact-zero predicted
+intensity, the analytical two-peak recovery value/gradient, and FraGNNet's sparse binned value and
+backward path. FraGNNet uses the same loss name with its existing sparse binned correspondence;
+MASShatter uses its configured closest or mass-Hungarian aligned support. No training comparison has
+been run.
+
+### Explicit false-intensity term
+
+The optional false-intensity term is implemented as
+
+```text
+L_total[s] = L_hel[s] + lambda_leak * L_out[s]
+L_out[s] = sum(predicted intensity outside every true tolerance window) / sum(predicted intensity)
+lambda_leak in {0, 0.3, 1, 3}
+```
+
+`spectral_leak_loss_weight` controls `lambda_leak` and defaults to zero. It is accepted only with
+`loss_type: hellinger_distance`; the proposed sweep remains an experiment rather than a default.
+Use the normalized fraction so independent-output models cannot lower the penalty by shrinking all
+scores. Do not reuse `unmatched_contribution` without another mask: under `closest` matching it is
+the outside-window intensity, but under Hungarian matching it also contains predictions inside a
+true window that lost the one-to-one assignment. Keep matching fixed across the sweep and log both
+outside-window intensity and assignment-unmatched intensity so the two error sources remain
+distinguishable. Hellinger already penalizes prediction-only mass, so this term changes its weight;
+it is not a new source of supervision.
+
+### CE auxiliary and decision order
+
+The CE auxiliary is implemented as `spectral_ce_auxiliary_weight`, defaults to zero, and is accepted
+only with Hellinger. It uses the historical coverage-weighted sparse Gaussian CE rather than the
+separately named conditional-CE primary experiment. MASShatter L1-normalizes independent Softplus
+scores before CE so the Gaussian mixture receives candidate probabilities; FraGNNet uses its native
+predicted probabilities and existing OOS behavior. A coefficient such as `0.1` is only an initial
+candidate: choose it from weighted per-term gradient norms on a fixed batch and report gradient
+agreement on shared parameters.
+Spectral CE cannot by itself identify calibrated latent fragment/channel probabilities when several
+explanations share one observed mass.
+
+Run the follow-up in this order:
+
+1. Compare explicit Hellinger with the matched linear-cosine and JSD controls using identical
+   alignment, support, transform, architecture, seed, and training budget.
+2. Select on plateau validation `cos_sim_0.01`, while treating materially worse weighted precision,
+   candidate coverage, or numerical stability as a failed tradeoff.
+3. Sweep `spectral_leak_loss_weight` over `{0, 0.3, 1, 3}` only if the Hellinger run shows the
+   predicted recovery improvement and leaves
+   a measured false-intensity problem.
+4. Enable `spectral_ce_auxiliary_weight` only for a named downstream calibration or retrieval
+   requirement, with its coefficient justified by measured gradients rather than its raw loss scale.
+
+### Prepared arms (2026-09-21, none submitted)
+
+MASShatter arms live in `config/massshatter/ma_mi_merged/loss_objective_2026_09_21/`. Each is
+derived from a committed config in the same lineage by changing only the keys named below, so
+every model, data, shape, seed and instrumentation key stays byte-identical to its control.
+`ints_transform` stays `none` and `mass_shatter_intensity_output` stays `probability` in all of
+them.
+
+| Arm | Derived from | Keys changed | Step |
+| --- | --- | --- | --- |
+| `h1_hellinger_closest` | `..._lb32_jss_closest` | `loss_type: hellinger_distance` | 1 |
+| `h2_cosine_closest` | `..._lb32_jss_closest` | `loss_type: cosine_distance` | 1 |
+| `h3_hellinger_hungarian` | `..._lb32_jss_closest` | `loss_type`, `mass_shatter_peak_matching: hungarian`, `loss_batch_size: 8` | 1 |
+| `h4_hellinger_leak_0p3` | `h1` | `spectral_leak_loss_weight: 0.3` | 3 |
+| `h5_hellinger_leak_1` | `h1` | `spectral_leak_loss_weight: 1.0` | 3 |
+| `h6_hellinger_leak_3` | `h1` | `spectral_leak_loss_weight: 3.0` | 3 |
+| `h7_hellinger_ce_aux_0p1` | `h1` | `spectral_ce_auxiliary_weight: 0.1` | 4 |
+| `c1_conditional_cross_entropy` | `..._lb32_ctrl_2g` | `loss_type: conditional_cross_entropy` | separate axis |
+
+Existing controls in the same lineage, already committed: `..._lb32_ctrl_2g` (`cross_entropy`),
+`..._lb32_jss_closest`, `..._lb32_kl_closest`, `..._lb8_jss_hungarian`, `..._lb8_kl_hungarian`.
+`lambda_leak = 0` is `h1`, so the sweep needs no fourth arm. `c1` is not part of the Hellinger
+comparison: it is still cross-entropy and the validator rejects either Hellinger-only auxiliary
+there.
+
+All eight set `min_epochs`/`max_epochs` to 128 rather than the lineage's 630, because validation
+cosine saturates near epoch 100 and the last 529 epochs buy +0.0017. Read every control at its
+own epoch 128 from W&B, not at its final epoch, and give only the selected objective a
+full-budget rerun.
+
+FraGNNet arms are `config/loss_funcs/fraggnn_d3_nist20_hellinger{,_leak1,_ce_aux0p1}.yml`,
+derived from `fraggnn_d3_nist20_jss.yml` the same way. That path is the sparse *binned*
+correspondence, not the tolerance-matched alignment, so its result does not transfer to
+MASShatter's or the reverse. Its DAG cache is not present on the workstation.
+
+Validation so far: all eleven resolve against `config/template.yml` and pass the loss-side
+validators; `h1`, `h2`, `h3`, `h4`, `h7` and `c1` each complete a one-epoch subsampled run on
+NIST20 with the expected loss terms logged, including the SciPy assignment fallback for `h3`.
+The CUDA assignment backend is still unexercised, so run
+`pytest tests/test_mass_shatter_peak_list_distance.py` on a cluster node before trusting `h3`.
+No campaign run has been submitted.
+
+The earlier A--G arms below remain the historical design that introduced the implemented direct
+losses. This amendment supersedes their raw-cosine-first ordering for the next experiment; it does
+not retrospectively change those controls or their interpretation.
 
 ## Current limitation
 

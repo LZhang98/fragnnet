@@ -517,7 +517,62 @@ random, and mixture controls. Preserve probability contracts; the existing exact
 does not extend to pairwise energies. No implementation or experiments started for this program.
 The spectrum stage retains its separate shared protocol and null-adjusted gate.
 
-Loss setup review (2026-09-13): the [loss review](findings/loss_setup_review_2026_09_13.md)
+Loss setup review revalidated (2026-09-21, `551a64ae`): the
+[current assessment](findings/loss_setup_review_2026_09_13.md#current-assessment-tighter-objectives-2026-09-21)
+reproduced all four FraGNNet defects on the starting source. Two vectorized-JSD defects are now
+fixed; the current focused suites report 393 passed and 6 skipped. CPU probes reverified. A
+separately named MASShatter
+`conditional_cross_entropy` path is now in the working tree while historical `cross_entropy`
+remains unchanged; both explicit CE variants are logged. FraGNNet's vectorized Hungarian JSD now
+uses the scalar JS-gain assignment and supports CPU fallback backward; regression probes agree
+within 1e-6. MASShatter direct losses and vectorized FraGNNet JSD share an explicit sparse-support
+alignment primitive while retaining their different matching policies. No training was run.
+Explicit zero-safe `hellinger_distance` is now wired into MASShatter's closest/Hungarian direct-loss
+path and FraGNNet's sparse binned path. Focused value and backward tests include exact structural
+zeros and reproduce the suppressed-correct-peak probe gradient of `-0.004046`; no Hellinger training
+run has been performed. The two auxiliaries are now implemented and default off:
+`spectral_leak_loss_weight` penalizes the
+normalized intensity outside every true tolerance window independently of Hungarian assignment,
+and `spectral_ce_auxiliary_weight` applies historical coverage-weighted sparse Gaussian CE. For
+independent MASShatter output, candidate scores are L1-normalized before CE. Both terms are restricted
+to Hellinger configurations and logged separately; their coefficient sweeps remain unrun.
+Next: correct the formula-validity contract and settle OOS semantics, then measure
+supported-peak ranking and per-term gradients before a targeted ranking experiment.
+The recorded campaign does not establish a benefit from a generic JSD-to-KL replacement.
+
+Second-pass loss audit (2026-09-21): the working-tree loss changes above were audited as changes
+rather than against the older defects; see the
+[second-pass section](findings/loss_setup_review_2026_09_13.md#second-pass-audit-of-the-working-tree-2026-09-21).
+Four defects in them are fixed: the vectorized Hungarian JSD returned NaN for a spectrum with
+observed but no predicted peaks (the emptiness guard is per chunk, and `551a64ae` scored the same
+input 0.0, a perfect score for an empty prediction); the infeasible-pair sentinel and the SciPy
+backend broke under float16/bfloat16 where a dropped `.float()` had been load-bearing; the leak
+term inferred `batch_size` from observed peaks, so a spectrum without observed peaks shortened the
+result and broadcast silently onto a per-spectrum loss; and the leak term ran an unbatched
+per-spectrum loop with three to four device synchronizations per spectrum. The leak term is now
+the chunked padded form (8.9x faster at batch 512 on CPU, values identical) and takes an explicit
+`batch_size`. **Compatibility: `jss_hun`, `jss_hun_sqrt`, `jss_hun_np`, and `jss_hun_inst_tol` move
+with the gain-matching change** — 40% of 300 random padded spectra change, mean +0.0165, maximum
++0.2653, never worse — so those metrics are not comparable across it. `cos_hun` is unaffected.
+Cleared on measurement: the shared alignment primitive is bit-identical to the code it replaced
+(`max |new - old| = 0` over 180 spectra, three objectives, both policies), vectorized and scalar
+JSD agree to 6.3e-07, sparse Hellinger matches a dense reference to 1.8e-07, and conditional CE
+agrees across the sequential and vectorized CE paths. `1 - BC` is the squared Hellinger distance
+`H^2`, recorded in the docstrings and config comment. Validation: full suite **4068 passed,
+1 skipped, 2 xfailed**; Ruff and `git diff --check` clean; CUDA assignment unavailable, so the
+CUDA backend and any training remain unrun.
+
+Both `hellinger_distance` paths were checked for batching and are batched: MASShatter's objective
+reduces inside the `loss_batch_size` chunk loop of `sparse_peak_list_distance`, and FraGNNet's
+binned `sparse_hellinger_distance` has no Python loop. The gap was coverage: the objective had
+been omitted from the four parameterizations in `tests/test_mass_shatter_peak_list_distance.py`,
+including the per-spectrum loop-reference harness, so its chunked reduction had never been
+compared against a reference. The reference now has an independently written Hellinger branch,
+the objective is parameterized everywhere the others are (+57 cases), and chunk invariance,
+batch-composition independence, per-spectrum gradient isolation, and a closed-form shared-bin
+case were added for both paths. Three mutations confirm the coverage bites.
+
+Original loss setup review (2026-09-13): the [loss review](findings/loss_setup_review_2026_09_13.md)
 reproduces new FraGNNet vectorized-JSS correspondence/backward defects, ignored OOS
 supervision under JSS, and invalid formula slots stealing support targets. MASShatter
 probes identify weak JSS recovery gradients, correspondence/support ambiguity, proposal-loss

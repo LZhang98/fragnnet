@@ -16,6 +16,7 @@ import torch as th
 
 from fragnnet.utils.misc_utils import EPS
 from fragnnet.utils.spec_utils import (
+    align_sparse_peak_support,
     batch_cos_hun_helper,
     batch_jss_hun_helper,
     cos_hun_helper,
@@ -23,6 +24,51 @@ from fragnnet.utils.spec_utils import (
     jss_hun_helper,
     ndcg_helper,
 )
+
+
+def test_align_sparse_peak_support_exposes_matching_policy() -> None:
+    true_mzs = th.tensor([[100.0]])
+    true_ints = th.tensor([[1.0]])
+    pred_mzs = th.tensor([[100.0, 100.001]])
+    pred_ints = th.tensor([[0.01, 0.99]])
+    true_valid = th.tensor([[True]])
+    pred_valid = th.tensor([[True, True]])
+    match_mask = th.tensor([[[True, True]]])
+
+    _, closest = align_sparse_peak_support(
+        true_mzs,
+        true_ints,
+        true_valid,
+        pred_mzs,
+        pred_ints,
+        pred_valid,
+        match_mask,
+        matching="closest",
+    )
+    _, mass_hungarian = align_sparse_peak_support(
+        true_mzs,
+        true_ints,
+        true_valid,
+        pred_mzs,
+        pred_ints,
+        pred_valid,
+        match_mask,
+        matching="mass_hungarian",
+    )
+    _, js_gain_hungarian = align_sparse_peak_support(
+        true_mzs,
+        true_ints,
+        true_valid,
+        pred_mzs,
+        pred_ints,
+        pred_valid,
+        match_mask,
+        matching="js_gain_hungarian",
+    )
+
+    th.testing.assert_close(closest, th.tensor([[1.0, 0.0, 0.0]]))
+    th.testing.assert_close(mass_hungarian, th.tensor([[0.01, 0.0, 0.99]]))
+    th.testing.assert_close(js_gain_hungarian, th.tensor([[0.99, 0.01, 0.0]]))
 
 
 class TestCosHunHelper:
@@ -1285,3 +1331,171 @@ class TestBatchJssHunHelper:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_align_sparse_peak_support_js_gain_supports_reduced_precision() -> None:
+    """The infeasible sentinel overflows float16 unless the score is promoted."""
+    match_mask = th.tensor([[[True, False], [False, False]]])
+    true_valid = th.ones(1, 2, dtype=th.bool)
+    pred_valid = th.ones(1, 2, dtype=th.bool)
+    results = {}
+    for dtype in (th.float32, th.float16, th.bfloat16):
+        _, aligned_pred = align_sparse_peak_support(
+            th.tensor([[100.0, 200.0]], dtype=dtype),
+            th.tensor([[0.6, 0.4]], dtype=dtype),
+            true_valid,
+            th.tensor([[100.0, 900.0]], dtype=dtype),
+            th.tensor([[0.5, 0.5]], dtype=dtype),
+            pred_valid,
+            match_mask,
+            matching="js_gain_hungarian",
+        )
+        results[dtype] = aligned_pred.float()
+
+    # The one feasible pair merges onto its observed slot; the rest stays unmatched.
+    th.testing.assert_close(results[th.float32], th.tensor([[0.5, 0.0, 0.0, 0.5]]))
+    for dtype in (th.float16, th.bfloat16):
+        th.testing.assert_close(results[dtype], results[th.float32], atol=1e-2, rtol=1e-2)
+
+
+@pytest.mark.parametrize("dtype", [th.float16, th.bfloat16, th.float64])
+def test_batch_jss_hun_helper_supports_reduced_precision(dtype) -> None:
+    """Mixed-precision callers must get a finite score, not a dtype error."""
+    match_mask = th.tensor([[[True, False], [False, False]]])
+    prec_mask = th.zeros(1, 2, dtype=th.bool)
+    reference = batch_jss_hun_helper(
+        th.tensor([[0.6, 0.4]]),
+        th.tensor([[0.5, 0.5]]),
+        match_mask,
+        match_mask.any(-1),
+        match_mask.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+
+    actual = batch_jss_hun_helper(
+        th.tensor([[0.6, 0.4]], dtype=dtype),
+        th.tensor([[0.5, 0.5]], dtype=dtype),
+        match_mask,
+        match_mask.any(-1),
+        match_mask.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+
+    assert th.isfinite(actual).all()
+    th.testing.assert_close(actual.double(), reference.double(), atol=1e-3, rtol=1e-3)
+
+
+@pytest.mark.parametrize("dtype", [th.float16, th.bfloat16, th.float64])
+def test_jss_hun_helper_supports_reduced_precision(dtype) -> None:
+    match_mask = th.tensor([[True, False], [False, False]])
+    prec_mask = th.zeros(2, dtype=th.bool)
+    reference = jss_hun_helper(
+        th.tensor([0.6, 0.4]),
+        th.tensor([0.5, 0.5]),
+        match_mask,
+        match_mask.any(-1),
+        match_mask.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+
+    actual = jss_hun_helper(
+        th.tensor([0.6, 0.4], dtype=dtype),
+        th.tensor([0.5, 0.5], dtype=dtype),
+        match_mask,
+        match_mask.any(-1),
+        match_mask.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+
+    assert th.isfinite(actual).all()
+    th.testing.assert_close(actual.double(), reference.double(), atol=1e-3, rtol=1e-3)
+
+
+def test_batch_jss_hun_helper_maximizes_js_gain_not_matched_mass() -> None:
+    """Hungarian must pick the pairing that minimizes JSD, not matched mass.
+
+    The additive-mass score ``P_u + Q_v`` is rank-one, so every complete pairing
+    of the same peaks scores identically and the choice falls to an arbitrary
+    tie-break. Here both pairings carry matched mass 2.0, but only the
+    intensity-aligned one reconstructs the permuted spectrum exactly.
+    """
+    true_ints = th.tensor([[0.9, 0.1]])
+    pred_ints = th.tensor([[0.1, 0.9]])
+    prec_mask = th.zeros(1, 2, dtype=th.bool)
+    all_feasible = th.ones(1, 2, 2, dtype=th.bool)
+
+    gain_matched = batch_jss_hun_helper(
+        true_ints,
+        pred_ints,
+        all_feasible,
+        all_feasible.any(-1),
+        all_feasible.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+    # Restricting feasibility to the diagonal forces the mass-tied alternative.
+    diagonal_only = th.tensor([[[True, False], [False, True]]])
+    identity_matched = batch_jss_hun_helper(
+        true_ints,
+        pred_ints,
+        diagonal_only,
+        diagonal_only.any(-1),
+        diagonal_only.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+
+    log2 = math.log(2.0)
+    assert gain_matched.item() == pytest.approx(log2, abs=1e-6)
+    assert identity_matched.item() < gain_matched.item()
+
+
+def test_batch_and_single_jss_hun_agree_on_gain_matching() -> None:
+    """The padded and single-pair helpers must share one matching objective."""
+    true_ints = th.tensor([0.9, 0.1])
+    pred_ints = th.tensor([0.1, 0.9])
+    match_mask = th.ones(2, 2, dtype=th.bool)
+    prec_mask = th.zeros(2, dtype=th.bool)
+
+    single = jss_hun_helper(
+        true_ints,
+        pred_ints,
+        match_mask,
+        match_mask.any(-1),
+        match_mask.any(-2),
+        False,
+        prec_mask,
+        prec_mask,
+        EPS,
+    )
+    batched = batch_jss_hun_helper(
+        true_ints[None],
+        pred_ints[None],
+        match_mask[None],
+        match_mask.any(-1)[None],
+        match_mask.any(-2)[None],
+        False,
+        prec_mask[None],
+        prec_mask[None],
+        EPS,
+    )
+
+    # Gain matching permutes the predictions back onto equal observed intensities.
+    assert single.item() == pytest.approx(math.log(2.0), abs=1e-6)
+    th.testing.assert_close(batched, single.reshape(1))

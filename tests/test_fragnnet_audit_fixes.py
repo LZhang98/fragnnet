@@ -133,3 +133,81 @@ def test_zero_joint_weights_allow_explanation_skipping(loss_config):
     pl = SimpleNamespace(hparams=SimpleNamespace(**config), metric_names=set())
     FraGNNetPL._setup_loss_names(pl)
     assert "joint_e" not in pl.loss_names
+
+
+def test_hellinger_distance_configures_fragnnet_sparse_loss(loss_config):
+    config = dict(
+        loss_config,
+        loss_type="hellinger_distance",
+        spectral_leak_loss_weight=0.3,
+        spectral_ce_auxiliary_weight=0.1,
+    )
+    pl = SimpleNamespace(
+        hparams=SimpleNamespace(**config),
+        metric_names=set(),
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+    pl._setup_loss_names = lambda: FraGNNetPL._setup_loss_names(pl)
+
+    FraGNNetPL._setup_loss_fn(pl)
+
+    assert pl.binned_loss is False
+    assert callable(pl.loss_fn)
+    assert "spectral_leak_loss" in pl.loss_names
+    assert "spectral_ce_auxiliary" in pl.loss_names
+
+
+def test_fragnnet_hellinger_auxiliaries_contribute_to_total_loss(loss_config):
+    th.manual_seed(0)
+    model = _build().eval()
+    output = model(**_forward_kwargs("CCCO", frag_node_feats=model.frag_node_feats))
+    config = dict(
+        loss_config,
+        loss_type="hellinger_distance",
+        spectral_leak_loss_weight=0.3,
+        spectral_ce_auxiliary_weight=0.1,
+    )
+    pl = SimpleNamespace(
+        hparams=SimpleNamespace(**config),
+        metric_names=set(),
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+    pl._setup_loss_names = lambda: FraGNNetPL._setup_loss_names(pl)
+    FraGNNetPL._setup_loss_fn(pl)
+
+    losses = pl.loss_fn(
+        true_mzs=output["pred_mzs"][:1].detach(),
+        true_logprobs=th.zeros(1),
+        true_batch_idxs=th.zeros(1, dtype=th.long),
+        batch_size=1,
+        **output,
+    )
+    expected = (
+        losses["primary_loss"]
+        + 0.3 * losses["spectral_leak_loss"]
+        + 0.1 * losses["spectral_ce_auxiliary"]
+    )
+
+    th.testing.assert_close(losses["loss"], expected)
+    assert th.isfinite(losses["spectral_leak_loss"]).all()
+    assert th.isfinite(losses["spectral_ce_auxiliary"]).all()
+
+
+@pytest.mark.parametrize("weight_name", ["spectral_leak_loss_weight", "spectral_ce_auxiliary_weight"])
+def test_hellinger_auxiliary_weights_reject_other_fragnnet_losses(loss_config, weight_name):
+    config = dict(loss_config, loss_type="jss_distance")
+    config[weight_name] = 0.1
+    pl = SimpleNamespace(
+        hparams=SimpleNamespace(**config),
+        metric_names=set(),
+        tolerance=1e-5,
+        relative=True,
+        tolerance_min_mz=200.0,
+    )
+
+    with pytest.raises(ValueError, match="supported only with hellinger_distance"):
+        FraGNNetPL._setup_loss_fn(pl)

@@ -15,16 +15,161 @@ from fragnnet.model.loss import (
     _compute_pair_ce_hun,
     _compute_pair_jss_hun,
     ce_switch_pair_bce,
+    conditional_in_support_cross_entropy,
     get_pairwise_cossim,
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
     get_pairwise_jss_sim_hun,
     precursor_contender_bce,
+    sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
+    sparse_outside_window_intensity_fraction,
     sparse_peak_list_distance,
 )
+from fragnnet.utils.spec_utils import batched_bin_func, calculate_match_mzs
+
+
+def test_sparse_hellinger_distance_matches_known_value_and_backward() -> None:
+    true_mzs = th.tensor([100.0, 150.0])
+    true_logprobs = th.tensor([0.75, 0.25]).log()
+    pred_mzs = th.tensor([100.0, 200.0])
+    pred_logprobs = th.tensor([0.25, 0.75]).log().requires_grad_()
+    batch_idxs = th.zeros(2, dtype=th.long)
+
+    distance = sparse_hellinger_distance(
+        true_mzs,
+        true_logprobs,
+        batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        batch_idxs,
+    )
+    distance.sum().backward()
+
+    th.testing.assert_close(distance, th.tensor([1.0 - math.sqrt(0.75 * 0.25)]))
+    assert pred_logprobs.grad is not None
+    assert th.isfinite(pred_logprobs.grad).all()
+    assert pred_logprobs.grad[0] < 0.0
+
+
+def test_outside_window_fraction_ignores_hungarian_assignment_competition() -> None:
+    pred_intensities = th.tensor([1.0, 2.0, 1.0], requires_grad=True)
+    fraction = sparse_outside_window_intensity_fraction(
+        th.tensor([100.0]),
+        th.zeros(1, dtype=th.long),
+        th.tensor([99.999, 100.001, 150.0]),
+        pred_intensities,
+        th.zeros(3, dtype=th.long),
+        batch_size=1,
+        tolerance=0.01,
+        relative=False,
+    )
+    fraction.sum().backward()
+
+    th.testing.assert_close(fraction, th.tensor([0.25]))
+    assert pred_intensities.grad is not None
+    assert th.isfinite(pred_intensities.grad).all()
+    assert pred_intensities.grad[2] > 0.0
+    assert pred_intensities.grad[:2].lt(0.0).all()
+
+
+def test_conditional_in_support_cross_entropy_removes_coverage_weight() -> None:
+    coverage_weighted_ce = th.tensor([1.78, 1.0, 0.0])
+    true_oos_logprobs = th.tensor([0.11, 0.5, 1.0]).log()
+
+    actual = conditional_in_support_cross_entropy(
+        coverage_weighted_ce,
+        true_oos_logprobs,
+    )
+
+    th.testing.assert_close(actual, th.tensor([2.0, 2.0, 0.0]))
+
+
+def test_conditional_in_support_cross_entropy_rejects_misaligned_inputs() -> None:
+    with pytest.raises(ValueError, match="must have matching shapes"):
+        conditional_in_support_cross_entropy(th.zeros(2), th.zeros(1))
+
+
+def test_vectorized_hungarian_jss_matches_scalar_on_ambiguous_pairs() -> None:
+    true_mzs = th.tensor([100.0, 100.0005, 100.001])
+    true_logprobs = th.tensor([0.8, 0.15, 0.05]).log()
+    pred_mzs = th.tensor([100.0002, 100.0007, 100.0012])
+    pred_logprobs = th.tensor([0.8, 0.15, 0.05]).log()
+    batch_idxs = th.zeros(3, dtype=th.long)
+
+    scalar = sparse_jensen_shannon_divergence_hungarian(
+        true_mzs,
+        true_logprobs,
+        batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        batch_idxs,
+    )
+    vectorized = sparse_jensen_shannon_divergence_hungarian_vec(
+        true_mzs,
+        true_logprobs,
+        batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        batch_idxs,
+    )
+
+    th.testing.assert_close(vectorized, scalar, atol=1e-6, rtol=1e-6)
+
+
+def test_vectorized_hungarian_jss_backward_uses_selected_original_values() -> None:
+    true_mzs = th.tensor([100.0])
+    true_logprobs = th.tensor([0.0])
+    pred_mzs = th.tensor([100.0, 100.001])
+    pred_logprobs = th.tensor([0.01, 0.99]).log().requires_grad_()
+
+    loss = sparse_jensen_shannon_divergence_hungarian_vec(
+        true_mzs,
+        true_logprobs,
+        th.zeros(1, dtype=th.long),
+        pred_mzs,
+        pred_logprobs,
+        th.zeros(2, dtype=th.long),
+    ).sum()
+    loss.backward()
+
+    assert pred_logprobs.grad is not None
+    assert th.isfinite(pred_logprobs.grad).all()
+    assert pred_logprobs.grad.abs().sum() > 0.0
+
+
+def test_vectorized_hungarian_jss_matches_scalar_for_ragged_chunks() -> None:
+    true_mzs = th.tensor([100.0, 200.0, 250.0])
+    true_logprobs = th.tensor([0.7, 0.2, 0.8]).log()
+    true_batch_idxs = th.tensor([0, 0, 1], dtype=th.long)
+    pred_mzs = th.tensor([100.0005, 150.0, 250.0005, 300.0])
+    pred_logprobs = th.tensor([0.6, 0.4, 0.9, 0.1]).log().requires_grad_()
+    pred_batch_idxs = th.tensor([0, 0, 1, 1], dtype=th.long)
+
+    scalar = sparse_jensen_shannon_divergence_hungarian(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+    vectorized = sparse_jensen_shannon_divergence_hungarian_vec(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+        loss_batch_size=1,
+    )
+
+    th.testing.assert_close(vectorized, scalar, atol=1e-6, rtol=1e-6)
+    vectorized.sum().backward()
+    assert pred_logprobs.grad is not None
+    assert th.isfinite(pred_logprobs.grad).all()
 
 
 @pytest.mark.parametrize("objective", ["cosine_distance", "jss_distance", "kl_distance"])
@@ -1065,3 +1210,640 @@ class TestPairwiseBinningGeometry:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def _reference_outside_window_fraction(
+    true_mzs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_intensities: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    batch_size: int,
+    tolerance: float,
+) -> th.Tensor:
+    """Straightforward per-spectrum reference for the batched leak term."""
+    fractions = []
+    for batch_index in range(batch_size):
+        batch_true = true_mzs[true_batch_idxs == batch_index]
+        batch_pred = pred_mzs[pred_batch_idxs == batch_index]
+        batch_ints = pred_intensities[pred_batch_idxs == batch_index]
+        total = float(batch_ints.sum())
+        if total == 0.0:
+            fractions.append(0.0)
+            continue
+        outside = 0.0
+        for mz, intensity in zip(batch_pred.tolist(), batch_ints.tolist(), strict=True):
+            if not any(abs(mz - true_mz) < tolerance for true_mz in batch_true.tolist()):
+                outside += intensity
+        fractions.append(outside / total)
+    return th.tensor(fractions)
+
+
+def test_outside_window_fraction_matches_per_spectrum_reference() -> None:
+    generator = th.Generator().manual_seed(17)
+    batch_size = 6
+    true_mzs, true_batch_idxs, pred_mzs, pred_intensities, pred_batch_idxs = [], [], [], [], []
+    for batch_index in range(batch_size):
+        observed = 100.0 + th.rand(4, generator=generator) * 50.0
+        true_mzs.append(observed)
+        true_batch_idxs.append(th.full((4,), batch_index))
+        # Two predictions land on observed peaks and three are spurious.
+        predicted = th.cat([observed[:2], 300.0 + th.rand(3, generator=generator) * 50.0])
+        pred_mzs.append(predicted)
+        pred_intensities.append(th.rand(5, generator=generator) + 0.1)
+        pred_batch_idxs.append(th.full((5,), batch_index))
+    true_mzs = th.cat(true_mzs)
+    true_batch_idxs = th.cat(true_batch_idxs).long()
+    pred_mzs = th.cat(pred_mzs)
+    pred_intensities = th.cat(pred_intensities)
+    pred_batch_idxs = th.cat(pred_batch_idxs).long()
+
+    actual = sparse_outside_window_intensity_fraction(
+        true_mzs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_intensities,
+        pred_batch_idxs,
+        batch_size=batch_size,
+        tolerance=0.001,
+        relative=False,
+        loss_batch_size=4,
+    )
+
+    expected = _reference_outside_window_fraction(
+        true_mzs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_intensities,
+        pred_batch_idxs,
+        batch_size,
+        0.001,
+    )
+    assert actual.shape == (batch_size,)
+    th.testing.assert_close(actual, expected)
+
+
+def test_outside_window_fraction_is_invariant_to_loss_batch_size() -> None:
+    generator = th.Generator().manual_seed(23)
+    batch_size = 5
+    true_mzs = th.cat([100.0 + th.rand(3, generator=generator) * 20.0 for _ in range(batch_size)])
+    true_batch_idxs = th.arange(batch_size).repeat_interleave(3)
+    pred_mzs = th.cat([100.0 + th.rand(4, generator=generator) * 20.0 for _ in range(batch_size)])
+    pred_batch_idxs = th.arange(batch_size).repeat_interleave(4)
+    pred_intensities = th.rand(4 * batch_size, generator=generator) + 0.1
+
+    results = [
+        sparse_outside_window_intensity_fraction(
+            true_mzs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_intensities,
+            pred_batch_idxs,
+            batch_size=batch_size,
+            tolerance=0.05,
+            relative=False,
+            loss_batch_size=chunk,
+        )
+        for chunk in (1, 2, 5, 64)
+    ]
+
+    for chunked in results[1:]:
+        th.testing.assert_close(chunked, results[0])
+
+
+def test_outside_window_fraction_tolerates_unsorted_batch_indices() -> None:
+    true_mzs = th.tensor([200.0, 100.0])
+    true_batch_idxs = th.tensor([1, 0])
+    pred_mzs = th.tensor([300.0, 100.0, 200.0])
+    pred_intensities = th.tensor([1.0, 3.0, 1.0])
+    pred_batch_idxs = th.tensor([1, 0, 1])
+
+    actual = sparse_outside_window_intensity_fraction(
+        true_mzs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_intensities,
+        pred_batch_idxs,
+        batch_size=2,
+        tolerance=0.01,
+        relative=False,
+    )
+
+    th.testing.assert_close(actual, th.tensor([0.0, 0.5]))
+
+
+def test_outside_window_fraction_keeps_one_entry_per_spectrum_when_observations_are_missing() -> (
+    None
+):
+    """A trailing spectrum without observed peaks must not shorten the result.
+
+    A short result broadcasts silently against a per-spectrum loss instead of
+    raising, so the length is the contract being locked here.
+    """
+    pred_intensities = th.tensor([1.0, 2.0], requires_grad=True)
+
+    actual = sparse_outside_window_intensity_fraction(
+        th.tensor([100.0]),
+        th.tensor([0]),
+        th.tensor([100.0, 500.0]),
+        pred_intensities,
+        th.tensor([0, 1]),
+        batch_size=2,
+        tolerance=0.01,
+        relative=False,
+    )
+    actual.sum().backward()
+
+    # Spectrum 0 is fully explained; spectrum 1 has no window to fall inside.
+    assert actual.shape == (2,)
+    th.testing.assert_close(actual, th.tensor([0.0, 1.0]))
+    assert th.isfinite(pred_intensities.grad).all()
+
+
+def test_outside_window_fraction_is_zero_without_predicted_intensity() -> None:
+    actual = sparse_outside_window_intensity_fraction(
+        th.tensor([100.0, 200.0]),
+        th.tensor([0, 1]),
+        th.tensor([100.0]),
+        th.tensor([1.0]),
+        th.tensor([0]),
+        batch_size=2,
+        tolerance=0.01,
+        relative=False,
+    )
+
+    assert actual.shape == (2,)
+    th.testing.assert_close(actual, th.zeros(2))
+
+
+def test_outside_window_fraction_rejects_batch_indices_outside_batch_size() -> None:
+    with pytest.raises(ValueError, match="predicted batch indices must be below batch_size"):
+        sparse_outside_window_intensity_fraction(
+            th.tensor([100.0]),
+            th.tensor([0]),
+            th.tensor([100.0, 200.0]),
+            th.tensor([1.0, 1.0]),
+            th.tensor([0, 3]),
+            batch_size=2,
+            tolerance=0.01,
+            relative=False,
+        )
+
+
+def test_outside_window_fraction_rejects_nonpositive_batch_size() -> None:
+    with pytest.raises(ValueError, match="batch_size must be > 0"):
+        sparse_outside_window_intensity_fraction(
+            th.tensor([100.0]),
+            th.tensor([0]),
+            th.tensor([100.0]),
+            th.tensor([1.0]),
+            th.tensor([0]),
+            batch_size=0,
+        )
+
+
+def test_outside_window_fraction_applies_per_sample_tolerance() -> None:
+    """The per-spectrum tolerance must follow the spectrum, not the chunk."""
+    true_mzs = th.tensor([100.0, 100.0])
+    true_batch_idxs = th.tensor([0, 1])
+    pred_mzs = th.tensor([100.04, 100.04])
+    pred_intensities = th.tensor([1.0, 1.0])
+    pred_batch_idxs = th.tensor([0, 1])
+
+    actual = sparse_outside_window_intensity_fraction(
+        true_mzs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_intensities,
+        pred_batch_idxs,
+        batch_size=2,
+        relative=False,
+        tol_per_sample=th.tensor([0.1, 0.01]),
+        min_mz_per_sample=th.tensor([200.0, 200.0]),
+    )
+
+    # 0.04 Da is inside the loose spectrum's window and outside the tight one's.
+    th.testing.assert_close(actual, th.tensor([0.0, 1.0]))
+
+
+def test_vectorized_hungarian_jss_scores_unpredicted_spectrum_as_maximum_distance() -> None:
+    """A spectrum with observations but no predictions must not poison the chunk.
+
+    The emptiness guard is per chunk, so this spectrum reaches the normalizer
+    with zero predicted mass; without a per-spectrum guard it returns NaN.
+    """
+    true_mzs = th.tensor([100.0, 150.0, 200.0])
+    true_logprobs = th.tensor([0.5, 0.5, 1.0]).log()
+    true_batch_idxs = th.tensor([0, 0, 1])
+    pred_mzs = th.tensor([100.0, 150.0])
+    pred_logprobs = th.tensor([0.5, 0.5]).log().requires_grad_()
+    pred_batch_idxs = th.tensor([0, 0])
+
+    vectorized = sparse_jensen_shannon_divergence_hungarian_vec(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+    vectorized.sum().backward()
+    scalar = sparse_jensen_shannon_divergence_hungarian(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs.detach(),
+        pred_batch_idxs,
+    )
+
+    assert th.isfinite(vectorized).all()
+    assert vectorized[1].item() == 1.0
+    th.testing.assert_close(vectorized, scalar, atol=1e-6, rtol=1e-6)
+    assert th.isfinite(pred_logprobs.grad).all()
+
+
+def test_vectorized_hungarian_jss_keeps_one_entry_per_unobserved_spectrum() -> None:
+    """The mirror case: a trailing spectrum with predictions but no observations.
+
+    Inferring the batch size from the observed peaks alone drops that spectrum, and a
+    short result broadcasts silently against a per-spectrum loss instead of raising,
+    so the length is the contract being locked here.
+    """
+    true_mzs = th.tensor([100.0, 150.0])
+    true_logprobs = th.tensor([0.5, 0.5]).log()
+    true_batch_idxs = th.tensor([0, 0])
+    pred_mzs = th.tensor([100.0, 150.0, 300.0])
+    pred_logprobs = th.tensor([0.5, 0.5, 1.0]).log().requires_grad_()
+    pred_batch_idxs = th.tensor([0, 0, 1])
+
+    vectorized = sparse_jensen_shannon_divergence_hungarian_vec(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+    vectorized.sum().backward()
+    scalar = sparse_jensen_shannon_divergence_hungarian(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs.detach(),
+        pred_batch_idxs,
+    )
+
+    assert vectorized.shape == (2,)
+    assert th.isfinite(vectorized).all()
+    assert vectorized[1].item() == 1.0
+    th.testing.assert_close(vectorized, scalar, atol=1e-6, rtol=1e-6)
+    assert th.isfinite(pred_logprobs.grad).all()
+
+
+def test_vectorized_hungarian_jss_rejects_two_empty_peak_lists() -> None:
+    empty_mzs = th.zeros(0)
+    empty_idxs = th.zeros(0, dtype=th.long)
+    with pytest.raises(ValueError, match="empty peak lists"):
+        sparse_jensen_shannon_divergence_hungarian_vec(
+            empty_mzs,
+            empty_mzs,
+            empty_idxs,
+            empty_mzs,
+            empty_mzs,
+            empty_idxs,
+        )
+
+
+def test_vectorized_hungarian_jss_matches_scalar_across_chunk_boundaries() -> None:
+    generator = th.Generator().manual_seed(29)
+    batch_size = 7
+    true_mzs, true_logprobs, true_batch_idxs = [], [], []
+    pred_mzs, pred_logprobs, pred_batch_idxs = [], [], []
+    for batch_index in range(batch_size):
+        num_true = int(th.randint(1, 6, (1,), generator=generator))
+        num_pred = int(th.randint(1, 6, (1,), generator=generator))
+        observed = 100.0 + th.rand(num_true, generator=generator) * 5.0
+        true_mzs.append(observed)
+        true_batch_idxs.append(th.full((num_true,), batch_index))
+        observed_ints = th.rand(num_true, generator=generator) + 0.05
+        true_logprobs.append((observed_ints / observed_ints.sum()).log())
+
+        shared = min(num_true, num_pred)
+        predicted = th.cat(
+            [
+                observed[:shared] + (th.rand(shared, generator=generator) - 0.5) * 2e-3,
+                100.0 + th.rand(num_pred - shared, generator=generator) * 5.0,
+            ]
+        )
+        pred_mzs.append(predicted)
+        pred_batch_idxs.append(th.full((num_pred,), batch_index))
+        predicted_ints = th.rand(num_pred, generator=generator) + 0.05
+        pred_logprobs.append((predicted_ints / predicted_ints.sum()).log())
+
+    args = (
+        th.cat(true_mzs),
+        th.cat(true_logprobs),
+        th.cat(true_batch_idxs).long(),
+        th.cat(pred_mzs),
+        th.cat(pred_logprobs),
+        th.cat(pred_batch_idxs).long(),
+    )
+    scalar = sparse_jensen_shannon_divergence_hungarian(*args)
+
+    for chunk in (1, 3, 7, 64):
+        vectorized = sparse_jensen_shannon_divergence_hungarian_vec(*args, loss_batch_size=chunk)
+        assert th.isfinite(vectorized).all()
+        th.testing.assert_close(vectorized, scalar, atol=1e-5, rtol=1e-5)
+
+
+def test_sparse_hellinger_distance_scores_each_spectrum_independently() -> None:
+    """Shared-bin pairing must stay inside a spectrum across a multi-spectrum batch."""
+    true_mzs = th.tensor([100.0, 150.0, 100.0, 200.0])
+    true_logprobs = th.tensor([0.75, 0.25, 0.5, 0.5]).log()
+    true_batch_idxs = th.tensor([0, 0, 1, 1])
+    # Spectrum 1 predicts only m/z 100, which spectrum 0 also occupies.
+    pred_mzs = th.tensor([100.0, 200.0, 100.0])
+    pred_logprobs = th.tensor([0.25, 0.75, 1.0]).log()
+    pred_batch_idxs = th.tensor([0, 0, 1])
+
+    actual = sparse_hellinger_distance(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+
+    expected = th.tensor(
+        [
+            1.0 - math.sqrt(0.75 * 0.25),
+            1.0 - math.sqrt(0.5 * 1.0),
+        ]
+    )
+    th.testing.assert_close(actual, expected)
+
+
+def test_outside_window_fraction_matches_reference_on_relative_ragged_batch() -> None:
+    """The production path: relative ppm tolerance, ragged spectra, per-instrument tolerances.
+
+    Padding is the risk here. Padded slots hold m/z 0 on both sides, and a relative
+    divisor floor would otherwise let them match each other.
+    """
+    generator = th.Generator().manual_seed(31)
+    batch_size = 7
+    true_mzs, true_batch_idxs, pred_mzs, pred_intensities, pred_batch_idxs = [], [], [], [], []
+    for batch_index in range(batch_size):
+        # Spectrum 3 has no observed peaks and spectrum 5 has no predictions.
+        num_true = 0 if batch_index == 3 else int(th.randint(1, 6, (1,), generator=generator))
+        num_pred = 0 if batch_index == 5 else int(th.randint(1, 8, (1,), generator=generator))
+        observed = 150.0 + th.rand(num_true, generator=generator) * 600.0
+        true_mzs.append(observed)
+        true_batch_idxs.append(th.full((num_true,), batch_index))
+        shared = min(num_true, num_pred)
+        predicted = th.cat(
+            [
+                observed[:shared] * (1 + (th.rand(shared, generator=generator) - 0.5) * 3e-5),
+                150.0 + th.rand(num_pred - shared, generator=generator) * 600.0,
+            ]
+        )
+        pred_mzs.append(predicted)
+        pred_batch_idxs.append(th.full((num_pred,), batch_index))
+        pred_intensities.append(th.rand(num_pred, generator=generator) + 0.01)
+    true_mzs = th.cat(true_mzs)
+    true_batch_idxs = th.cat(true_batch_idxs).long()
+    pred_mzs = th.cat(pred_mzs)
+    pred_intensities = th.cat(pred_intensities)
+    pred_batch_idxs = th.cat(pred_batch_idxs).long()
+    # FT and QTOF rows of a realistic inst_type_loss_tol table.
+    tol_per_sample = th.tensor([1e-5, 2e-5, 1e-5, 1e-5, 2e-5, 1e-5, 1e-5])
+    min_mz_per_sample = th.tensor([200.0, 750.0, 200.0, 200.0, 750.0, 200.0, 200.0])
+
+    expected = []
+    for batch_index in range(batch_size):
+        batch_true = true_mzs[true_batch_idxs == batch_index]
+        batch_pred_mask = pred_batch_idxs == batch_index
+        batch_ints = pred_intensities[batch_pred_mask]
+        if batch_ints.numel() == 0:
+            expected.append(0.0)
+            continue
+        if batch_true.numel() == 0:
+            expected.append(1.0)
+            continue
+        match_mask = th.as_tensor(
+            calculate_match_mzs(
+                batch_true,
+                pred_mzs[batch_pred_mask],
+                tolerance=float(tol_per_sample[batch_index]),
+                relative=True,
+                tolerance_min_mz=float(min_mz_per_sample[batch_index]),
+            ),
+            dtype=th.bool,
+        )
+        outside = ~match_mask.any(dim=0)
+        expected.append((batch_ints[outside].sum() / batch_ints.sum()).item())
+    expected = th.tensor(expected)
+
+    for chunk in (1, 3, 7, 64):
+        actual = sparse_outside_window_intensity_fraction(
+            true_mzs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_intensities,
+            pred_batch_idxs,
+            batch_size=batch_size,
+            relative=True,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+            loss_batch_size=chunk,
+        )
+        assert actual.shape == (batch_size,)
+        th.testing.assert_close(actual, expected)
+
+
+def _dense_binned_hellinger(
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_logprobs: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    mz_max: float = 1500.0,
+    mz_bin_res: float = 0.01,
+) -> th.Tensor:
+    """Dense reference: bin both spectra onto the full grid and reduce there."""
+    binned_true = batched_bin_func(
+        true_mzs, true_logprobs, true_batch_idxs, mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse"
+    ).exp()
+    binned_pred = batched_bin_func(
+        pred_mzs, pred_logprobs, pred_batch_idxs, mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse"
+    ).exp()
+    binned_true = binned_true / binned_true.sum(-1, keepdim=True)
+    binned_pred = binned_pred / binned_pred.sum(-1, keepdim=True)
+    return 1.0 - (binned_true.sqrt() * binned_pred.sqrt()).sum(-1)
+
+
+def _random_binned_spectra(seed: int, batch_size: int):
+    generator = th.Generator().manual_seed(seed)
+    grid = th.round(100.0 + th.arange(24) * 7.3, decimals=3)
+    true_mzs, true_logprobs, true_batch_idxs = [], [], []
+    pred_mzs, pred_logprobs, pred_batch_idxs = [], [], []
+    for batch_index in range(batch_size):
+        num_true = int(th.randint(1, 9, (1,), generator=generator))
+        num_pred = int(th.randint(1, 12, (1,), generator=generator))
+        # A small shared grid, so spectra collide in the same m/z bins on purpose.
+        observed = grid[th.randperm(grid.numel(), generator=generator)[:num_true]]
+        true_mzs.append(observed)
+        true_batch_idxs.append(th.full((num_true,), batch_index))
+        observed_ints = th.rand(num_true, generator=generator) + 0.02
+        true_logprobs.append((observed_ints / observed_ints.sum()).log())
+        # Overlap on the first few bins, then diverge. Every third spectrum shares nothing.
+        shared = 0 if batch_index % 3 == 2 else min(num_true, num_pred)
+        spurious = grid[th.randperm(grid.numel(), generator=generator)[: num_pred - shared]] + 400.0
+        predicted = th.cat([observed[:shared], spurious])
+        pred_mzs.append(predicted)
+        pred_batch_idxs.append(th.full((num_pred,), batch_index))
+        predicted_ints = th.rand(num_pred, generator=generator) + 0.02
+        pred_logprobs.append((predicted_ints / predicted_ints.sum()).log())
+    return (
+        th.cat(true_mzs),
+        th.cat(true_logprobs),
+        th.cat(true_batch_idxs).long(),
+        th.cat(pred_mzs),
+        th.cat(pred_logprobs),
+        th.cat(pred_batch_idxs).long(),
+    )
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_sparse_hellinger_distance_matches_dense_reference_over_a_batch(seed: int) -> None:
+    """The sparse shared-bin form must equal the dense whole-grid form per spectrum."""
+    args = _random_binned_spectra(seed, batch_size=9)
+
+    actual = sparse_hellinger_distance(*args)
+
+    assert actual.shape == (9,)
+    th.testing.assert_close(actual, _dense_binned_hellinger(*args), atol=1e-6, rtol=1e-5)
+
+
+def test_sparse_hellinger_distance_is_independent_of_batch_composition() -> None:
+    """Shared bins are matched on globally offset ids, so neighbours must not leak in.
+
+    Two spectra here occupy the same m/z bins. If the pairing used bin position
+    within a spectrum instead of the global id, their coefficients would mix.
+    """
+    args = _random_binned_spectra(7, batch_size=6)
+    true_mzs, true_logprobs, true_batch_idxs, pred_mzs, pred_logprobs, pred_batch_idxs = args
+
+    batched = sparse_hellinger_distance(*args)
+
+    alone = []
+    for batch_index in range(6):
+        true_mask = true_batch_idxs == batch_index
+        pred_mask = pred_batch_idxs == batch_index
+        alone.append(
+            sparse_hellinger_distance(
+                true_mzs[true_mask],
+                true_logprobs[true_mask],
+                th.zeros(int(true_mask.sum()), dtype=th.long),
+                pred_mzs[pred_mask],
+                pred_logprobs[pred_mask],
+                th.zeros(int(pred_mask.sum()), dtype=th.long),
+            )
+        )
+
+    th.testing.assert_close(batched, th.cat(alone), atol=1e-6, rtol=1e-5)
+
+
+def test_sparse_hellinger_distance_keeps_gradients_per_spectrum() -> None:
+    """Only the spectrum that owns a predicted peak may receive its gradient."""
+    true_mzs = th.tensor([100.0, 200.0])
+    true_logprobs = th.tensor([0.0, 0.0])
+    true_batch_idxs = th.tensor([0, 1])
+    # Both spectra predict m/z 100; only spectrum 0 observes it.
+    pred_mzs = th.tensor([100.0, 400.0, 100.0, 200.0])
+    pred_logprobs = th.tensor([0.5, 0.5, 0.5, 0.5]).log().requires_grad_()
+    pred_batch_idxs = th.tensor([0, 0, 1, 1])
+
+    distances = sparse_hellinger_distance(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+    # Differentiate spectrum 1 alone: spectrum 0's peaks must stay untouched.
+    distances[1].backward()
+
+    assert distances.shape == (2,)
+    assert th.isfinite(pred_logprobs.grad).all()
+    assert pred_logprobs.grad[:2].eq(0.0).all()
+    assert pred_logprobs.grad[2:].abs().sum() > 0.0
+
+
+def test_sparse_hellinger_distance_keeps_one_entry_per_unobserved_spectrum() -> None:
+    """A trailing spectrum with predictions but no observed peaks must still score.
+
+    Sizing the batch from the observed peaks alone leaves the out-of-range spectrum
+    index to trip a scatter assertion, so this locks both the length and the value:
+    sharing no bin means a zero coefficient and maximum distance.
+    """
+    true_mzs = th.tensor([100.0])
+    true_logprobs = th.tensor([0.0])
+    true_batch_idxs = th.tensor([0])
+    pred_mzs = th.tensor([100.0, 300.0])
+    pred_logprobs = th.tensor([0.0, 0.0]).requires_grad_()
+    pred_batch_idxs = th.tensor([0, 1])
+
+    actual = sparse_hellinger_distance(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+    actual.sum().backward()
+
+    assert actual.shape == (2,)
+    th.testing.assert_close(actual, th.tensor([0.0, 1.0]), atol=1e-6, rtol=1e-6)
+    assert th.isfinite(pred_logprobs.grad).all()
+
+
+def test_sparse_hellinger_distance_separates_spectra_that_share_bins() -> None:
+    """Three spectra reusing the same m/z values must not mix coefficients.
+
+    Every spectrum here occupies m/z 100, so pairing shared bins by position
+    inside a spectrum, or normalizing across the batch, would leak between them.
+    The expected values are closed form.
+    """
+    true_mzs = th.tensor([100.0, 200.0, 100.0, 200.0, 300.0])
+    true_logprobs = th.tensor([0.9, 0.1, 0.5, 0.5, 1.0]).log()
+    true_batch_idxs = th.tensor([0, 0, 1, 1, 2])
+    pred_mzs = th.tensor([100.0, 200.0, 100.0, 300.0, 100.0])
+    pred_logprobs = th.tensor([0.1, 0.9, 0.5, 0.5, 1.0]).log()
+    pred_batch_idxs = th.tensor([0, 0, 1, 1, 2])
+
+    actual = sparse_hellinger_distance(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+    )
+
+    expected = th.tensor(
+        [
+            # Both bins shared, intensities swapped.
+            1.0 - 2.0 * math.sqrt(0.9 * 0.1),
+            # Only m/z 100 is shared.
+            1.0 - math.sqrt(0.5 * 0.5),
+            # Nothing shared, even though m/z 100 is occupied by the other two.
+            1.0,
+        ]
+    )
+    th.testing.assert_close(actual, expected)

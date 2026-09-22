@@ -32,9 +32,12 @@ from fragnnet.model.loss import (
     sparse_cosine_distance_binned,
     sparse_cosine_distance_hungarian,
     sparse_entropy_fn,
+    sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
+    sparse_outside_window_intensity_fraction,
+    validate_hellinger_auxiliary_weights,
 )
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
@@ -403,6 +406,10 @@ class FraGNNetPL(SpectrumPL):
             loss_names.extend(["spec_ce", "oos_ce", "ios_ce"])
         elif "cross_entropy" in self.hparams.auxiliary_scores:
             loss_names.append("spec_ce")
+        if self.hparams.spectral_leak_loss_weight > 0.0:
+            loss_names.append("spectral_leak_loss")
+        if self.hparams.spectral_ce_auxiliary_weight > 0.0:
+            loss_names.append("spectral_ce_auxiliary")
         if self.hparams.fragnnet_formula_support_loss_weight > 0.0:
             loss_names.append("formula_support_loss")
 
@@ -546,6 +553,11 @@ class FraGNNetPL(SpectrumPL):
                 )
 
     def _setup_loss_fn(self):
+        validate_hellinger_auxiliary_weights(
+            spectral_leak_loss_weight=self.hparams.spectral_leak_loss_weight,
+            spectral_ce_auxiliary_weight=self.hparams.spectral_ce_auxiliary_weight,
+            loss_type=self.hparams.loss_type,
+        )
         support_weight = self.hparams.fragnnet_formula_support_loss_weight
         if not math.isfinite(support_weight) or support_weight < 0.0:
             raise ValueError("fragnnet_formula_support_loss_weight must be finite and nonnegative")
@@ -640,6 +652,25 @@ class FraGNNetPL(SpectrumPL):
                 mz_bin_res=self.hparams.mz_bin_res,
             )
 
+        def hellinger_dist_fn(
+            true_mzs: th.Tensor,
+            true_logprobs: th.Tensor,
+            true_batch_idxs: th.Tensor,
+            pred_mzs: th.Tensor,
+            pred_logprobs: th.Tensor,
+            pred_batch_idxs: th.Tensor,
+        ) -> th.Tensor:
+            return sparse_hellinger_distance(
+                true_mzs,
+                true_logprobs,
+                true_batch_idxs,
+                pred_mzs,
+                pred_logprobs,
+                pred_batch_idxs,
+                mz_max=self.hparams.mz_max,
+                mz_bin_res=self.hparams.mz_bin_res,
+            )
+
         # jensen-shannon distance hungarian
         def jss_dist_hun_fn(
             true_mzs: th.Tensor,
@@ -691,7 +722,11 @@ class FraGNNetPL(SpectrumPL):
         elif self.hparams.loss_type in [
             "cosine_distance_hungarian",
             "log_cosine_distance_hungarian",
-        ] or self.hparams.loss_type in ["jss_distance", "jss_distance_hungarian"]:
+        ] or self.hparams.loss_type in [
+            "hellinger_distance",
+            "jss_distance",
+            "jss_distance_hungarian",
+        ]:
             self.binned_loss = False
         else:
             raise ValueError(f"Unknown loss type {self.hparams.loss_type}")
@@ -887,6 +922,15 @@ class FraGNNetPL(SpectrumPL):
                     pred_logprobs,
                     pred_batch_idxs,
                 )
+            elif self.hparams.loss_type == "hellinger_distance":
+                primary_loss = hellinger_dist_fn(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                )
             elif self.hparams.loss_type == "jss_distance_hungarian":
                 primary_loss = jss_dist_hun_fn(
                     true_mzs,
@@ -901,6 +945,46 @@ class FraGNNetPL(SpectrumPL):
 
             loss = self.hparams.primary_loss_weight * primary_loss
             loss_d["primary_loss"] = primary_loss
+
+            if self.hparams.spectral_leak_loss_weight > 0.0:
+                spectral_leak_loss = sparse_outside_window_intensity_fraction(
+                    true_mzs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs.exp(),
+                    pred_batch_idxs,
+                    batch_size=pred_oos_logprobs.shape[0],
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                    loss_batch_size=self.hparams.loss_batch_size,
+                )
+                loss = loss + self.hparams.spectral_leak_loss_weight * spectral_leak_loss
+                loss_d["spectral_leak_loss"] = spectral_leak_loss
+
+            if self.hparams.spectral_ce_auxiliary_weight > 0.0:
+                auxiliary_ios_ce, auxiliary_oos_ce, _, _ = sparse_ce_fn(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    pred_oos_logprobs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
+                spectral_ce_auxiliary = (
+                    auxiliary_ios_ce + auxiliary_oos_ce
+                    if self.hparams.oos_loss
+                    else auxiliary_ios_ce
+                )
+                loss = loss + (
+                    self.hparams.spectral_ce_auxiliary_weight * spectral_ce_auxiliary
+                )
+                loss_d["spectral_ce_auxiliary"] = spectral_ce_auxiliary
 
             if self.hparams.fragnnet_formula_support:
                 formula_support_targets = _formula_support_targets(
@@ -1007,6 +1091,7 @@ class FraGNNetPL(SpectrumPL):
                 if self.hparams.loss_type in [
                     "cosine_distance",
                     "cosine_distance_hungarian",
+                    "hellinger_distance",
                     "jss_distance",
                     "jss_distance_hungarian",
                 ]:

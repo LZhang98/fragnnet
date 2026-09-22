@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 import torch as th
@@ -110,6 +111,20 @@ def _log_assignment_device_once(device) -> None:
         _assignment_device_logged = True
 
 
+def _as_scoring_dtype(tensor: th.Tensor) -> th.Tensor:
+    """Upcast half and bfloat16 tensors to float32 and leave float32/float64 alone.
+
+    Low-precision inputs arrive under mixed-precision training and break the peak
+    matching in three ways: SciPy cannot convert bfloat16, the CUDA assignment backend
+    has no half kernel, and the infeasible-pair sentinel plus the Jensen-Shannon log
+    terms want more headroom than half provides. Keeping the policy in one place means
+    a change to it cannot be applied to only some of the call sites.
+    """
+    if tensor.dtype not in (th.float32, th.float64):
+        return tensor.float()
+    return tensor
+
+
 def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
     """Solve a batched linear assignment problem, maximizing total score.
 
@@ -120,6 +135,7 @@ def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tenso
         Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
         K = min(rows, cols), giving the optimal assignment indices.
     """
+    batch_score = _as_scoring_dtype(batch_score)
     if _torch_linear_assignment:
         assignment = batch_linear_assignment(-batch_score)
         _log_assignment_device_once(batch_score.device)
@@ -139,6 +155,118 @@ def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tenso
     row_ind = th.tensor(np.stack(row_inds), device=device, dtype=th.long)
     col_ind = th.tensor(np.stack(col_inds), device=device, dtype=th.long)
     return row_ind, col_ind
+
+
+def align_sparse_peak_support(
+    true_mzs: th.Tensor,
+    true_intensities: th.Tensor,
+    true_valid: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_intensities: th.Tensor,
+    pred_valid: th.Tensor,
+    match_mask: th.Tensor,
+    *,
+    matching: Literal["closest", "mass_hungarian", "js_gain_hungarian"],
+) -> tuple[th.Tensor, th.Tensor]:
+    """Align padded sparse spectra onto a shared true-plus-unmatched support.
+
+    The matching policy is explicit because m/z-nearest correspondence and
+    Jensen-Shannon-gain correspondence are different objectives. Returned vectors
+    contain one position for every true peak plus one position for every predicted
+    peak; unmatched predictions occupy the latter positions.
+
+    Args:
+        true_mzs: Padded observed m/z values, shape ``(batch, num_true)``.
+        true_intensities: Padded observed intensities with the same shape.
+        true_valid: Valid observed-position mask, shape ``(batch, num_true)``.
+        pred_mzs: Padded predicted m/z values, shape ``(batch, num_pred)``.
+        pred_intensities: Padded predicted intensities with the same shape.
+        pred_valid: Valid predicted-position mask, shape ``(batch, num_pred)``.
+        match_mask: Feasible m/z pairs, shape ``(batch, num_true, num_pred)``.
+        matching: ``closest`` permits many predictions per true peak;
+            ``mass_hungarian`` maximizes cardinality then minimizes m/z distance;
+            ``js_gain_hungarian`` maximizes Jensen-Shannon gain.
+
+    Returns:
+        Observed and predicted aligned intensities, each of shape
+        ``(batch, num_true + num_pred)``.
+    """
+    if true_mzs.shape != true_intensities.shape or true_mzs.shape != true_valid.shape:
+        raise ValueError("true m/z, intensities, and validity must have matching shapes")
+    if pred_mzs.shape != pred_intensities.shape or pred_mzs.shape != pred_valid.shape:
+        raise ValueError("predicted m/z, intensities, and validity must have matching shapes")
+    expected_match_shape = (*true_mzs.shape, pred_mzs.shape[1])
+    if match_mask.shape != expected_match_shape:
+        raise ValueError(f"match_mask must have shape {expected_match_shape}")
+    if matching not in {"closest", "mass_hungarian", "js_gain_hungarian"}:
+        raise ValueError(f"unknown sparse peak matching policy: {matching}")
+
+    batch_size, max_true = true_mzs.shape
+    max_pred = pred_mzs.shape[1]
+    valid_pairs = match_mask & true_valid[:, :, None] & pred_valid[:, None, :]
+    mass_distance = (true_mzs[:, :, None] - pred_mzs[:, None, :]).abs()
+
+    if matching == "closest":
+        matched_pred = valid_pairs.any(dim=1)
+        matched_true_of_pred = mass_distance.masked_fill(~valid_pairs, th.inf).argmin(dim=1)
+    else:
+        if matching == "mass_hungarian":
+            feasible_distance = mass_distance.masked_fill(~valid_pairs, 0.0)
+            invalid_cost = (feasible_distance.flatten(1).amax(dim=1).detach() + 1.0) * (
+                min(max_true, max_pred) + 1
+            )
+            assignment_score = -th.where(
+                valid_pairs,
+                mass_distance,
+                invalid_cost[:, None, None].expand_as(mass_distance),
+            )
+        else:
+            true_probs = F.normalize(true_intensities, p=1, dim=1)
+            pred_probs = F.normalize(pred_intensities, p=1, dim=1)
+            pair_mass = true_probs[:, :, None] + pred_probs[:, None, :]
+            assignment_score = 0.5 * (
+                pair_mass * th.log(pair_mass + EPS)
+                - true_probs[:, :, None] * th.log(true_probs[:, :, None] + EPS)
+                - pred_probs[:, None, :] * th.log(pred_probs[:, None, :] + EPS)
+            )
+            # float() first: the infeasible sentinel overflows float16.
+            assignment_score = assignment_score.float().masked_fill(~valid_pairs, -1e9)
+
+        row_indices, column_indices = _solve_batch_assignment(assignment_score.detach())
+        expected_shape = (batch_size, min(max_true, max_pred))
+        if tuple(row_indices.shape) != expected_shape:
+            raise RuntimeError(
+                "batched linear assignment returned indices of shape "
+                f"{tuple(row_indices.shape)}, expected {expected_shape}"
+            )
+        batch_indices = th.arange(batch_size, device=true_mzs.device)[:, None]
+        valid_assignments = valid_pairs[batch_indices, row_indices, column_indices]
+        matched_pred = pred_valid.new_zeros(pred_valid.shape).scatter(
+            1, column_indices, valid_assignments
+        )
+        matched_true_of_pred = th.zeros(
+            (batch_size, max_pred), dtype=th.long, device=true_mzs.device
+        ).scatter(1, column_indices, row_indices)
+
+    matched_contribution = th.where(
+        matched_pred,
+        pred_intensities,
+        th.zeros_like(pred_intensities),
+    )
+    pred_at_true = pred_intensities.new_zeros((batch_size, max_true)).scatter_add(
+        1,
+        matched_true_of_pred,
+        matched_contribution,
+    )
+    unmatched_pred = th.where(
+        pred_valid & ~matched_pred,
+        pred_intensities,
+        th.zeros_like(pred_intensities),
+    )
+    return (
+        th.cat([true_intensities, true_intensities.new_zeros((batch_size, max_pred))], dim=1),
+        th.cat([pred_at_true, unmatched_pred], dim=1),
+    )
 
 
 def get_ints_transform_func(ints_transform: str) -> Callable[[th.Tensor], th.Tensor]:
@@ -980,6 +1108,10 @@ def batch_jss_hun_helper(
         ), f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
         batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
         batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
+    # The union-mixture bookkeeping below mixes bool-derived float32 masks into the
+    # intensity tensors, so score in float32 under mixed-precision training.
+    batch_true_ints = _as_scoring_dtype(batch_true_ints)
+    batch_pred_ints = _as_scoring_dtype(batch_pred_ints)
     # Convert to probability vectors per spectrum:
     #   P_i <- P_i / ||P_i||_1, Q_i <- Q_i / ||Q_i||_1
     batch_true_ints = F.normalize(batch_true_ints, p=1, dim=-1)
@@ -996,21 +1128,26 @@ def batch_jss_hun_helper(
     sub_mask = batch_match_mask[
         batch_idx[..., None], true_batch_pos_idx[:, :, None], pred_batch_pos_idx[:, None, :]
     ]
-    sub_score = batch_true_ints[batch_idx, true_batch_pos_idx][..., None] + (
-        batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :]
+    sub_true_ints = batch_true_ints[batch_idx, true_batch_pos_idx][..., None]
+    sub_pred_ints = batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :]
+    pair_mass = sub_true_ints + sub_pred_ints
+    pair_gain = 0.5 * (
+        pair_mass * th.log(pair_mass + EPS)
+        - sub_true_ints * th.log(sub_true_ints + EPS)
+        - sub_pred_ints * th.log(sub_pred_ints + EPS)
     )
-    assert sub_mask.shape == sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
-    # Hungarian score uses additive mass on feasible matches:
-    #   S_{uv} = 1[match(u,v)] * (P_u + Q_v)
-    batch_score = sub_mask.float() * sub_score
-    row_ind, col_ind = _solve_batch_assignment(batch_score)
+    assert sub_mask.shape == pair_gain.shape, f"{sub_mask.shape} {pair_gain.shape}"
+    # Match the scalar sparse-JSD objective: maximize the reduction in JSD from
+    # merging each feasible true/predicted pair onto one union-support position.
+    assignment_score = pair_gain.float().masked_fill(~sub_mask, -1e9)
+    row_ind, col_ind = _solve_batch_assignment(assignment_score.detach())
     # map ind to ori ind
     raw_row_ind = true_batch_pos_idx[batch_idx, row_ind]
     raw_col_ind = pred_batch_pos_idx[batch_idx, col_ind]
 
-    # Matched pair mass contribution from Hungarian assignment.
-    match_score = batch_score[batch_idx, row_ind, col_ind]
     match_mask = sub_mask[batch_idx, row_ind, col_ind]  # False means wrong match
+    # The union mixture uses P+Q mass after assignment, not the assignment gain.
+    match_score = pair_mass[batch_idx, row_ind, col_ind] * match_mask.float()
     unmatch_true_ints_mask = th.zeros_like(batch_true_match_mask)
     unmatch_pred_ints_mask = th.zeros_like(batch_pred_match_mask)
     unmatch_true_ints_mask[batch_idx, raw_row_ind] = (
@@ -1019,8 +1156,6 @@ def batch_jss_hun_helper(
     unmatch_pred_ints_mask[batch_idx, raw_col_ind] = match_mask
     unmatch_true_ints_mask = ~unmatch_true_ints_mask
     unmatch_pred_ints_mask = ~unmatch_pred_ints_mask
-    match_score = match_score * match_mask.float()
-
     # Union total mass before mixture scaling:
     #   Z = sum(match_score) + sum(unmatched P) + sum(unmatched Q)
     batch_score_sum = match_score.sum(-1)
@@ -1297,6 +1432,10 @@ def jss_hun_helper(
     if remove_prec_peak:
         b_true_ints = b_true_ints * (1 - b_true_prec_mask.float())
         b_pred_ints = b_pred_ints * (1 - b_pred_prec_mask.float())
+    # Score in float32 for the same reason as ``batch_jss_hun_helper``: the union
+    # bookkeeping mixes bool-derived float32 masks into the intensity tensors.
+    b_true_ints = _as_scoring_dtype(b_true_ints)
+    b_pred_ints = _as_scoring_dtype(b_pred_ints)
     # Convert to probability vectors:
     #   P <- P / ||P||_1, Q <- Q / ||Q||_1
     b_true_ints = F.normalize(b_true_ints, p=1, dim=0)
@@ -1309,20 +1448,25 @@ def jss_hun_helper(
     # Restrict assignment to matchable peaks; Hungarian returns one-to-one pairs.
     if b_matchable_true_idxs.numel() > 0 and b_matchable_pred_idxs.numel() > 0:
         b_sub_match_mask = b_match_mask[b_matchable_true_idxs][:, b_matchable_pred_idxs]
-        # Pair score for JSS matching:
-        #   S_{uv} = 1[match(u,v)] * (P_u + Q_v)
-        b_score = b_sub_match_mask * (
-            b_true_ints[b_matchable_true_idxs].unsqueeze(1)
-            + b_pred_ints[b_matchable_pred_idxs].unsqueeze(0)
+        sub_true_ints = b_true_ints[b_matchable_true_idxs].unsqueeze(1)
+        sub_pred_ints = b_pred_ints[b_matchable_pred_idxs].unsqueeze(0)
+        b_pair_mass = sub_true_ints + sub_pred_ints
+        b_pair_gain = 0.5 * (
+            b_pair_mass * th.log(b_pair_mass + EPS)
+            - sub_true_ints * th.log(sub_true_ints + EPS)
+            - sub_pred_ints * th.log(sub_pred_ints + EPS)
         )
-        b_true_idxs, b_pred_idxs = _solve_batch_assignment(b_score.unsqueeze(0))
+        b_assignment_score = b_pair_gain.float().masked_fill(~b_sub_match_mask, -1e9)
+        b_true_idxs, b_pred_idxs = _solve_batch_assignment(
+            b_assignment_score.detach().unsqueeze(0)
+        )
         b_true_idxs, b_pred_idxs = b_true_idxs[0], b_pred_idxs[0]
 
         b_raw_true_idxs = b_matchable_true_idxs[b_true_idxs]
         b_raw_pred_idxs = b_matchable_pred_idxs[b_pred_idxs]
         b_pair_match_mask = b_sub_match_mask[b_true_idxs, b_pred_idxs]
         # Keep only valid matched pairs (guard against padded/invalid indices).
-        b_match_score = b_score[b_true_idxs, b_pred_idxs] * b_pair_match_mask.float()
+        b_match_score = b_pair_mass[b_true_idxs, b_pred_idxs] * b_pair_match_mask.float()
     else:
         b_raw_true_idxs = th.empty(0, dtype=th.long, device=b_true_ints.device)
         b_raw_pred_idxs = th.empty(0, dtype=th.long, device=b_pred_ints.device)

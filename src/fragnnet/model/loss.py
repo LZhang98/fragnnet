@@ -31,8 +31,7 @@ from fragnnet.utils.misc_utils import (
     validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
-    _solve_batch_assignment,
-    batch_jss_hun_helper,
+    align_sparse_peak_support,
     batched_bin_func,
     calculate_match_mzs,
     jss_helper,
@@ -52,6 +51,266 @@ def _x_log_x(values: th.Tensor) -> th.Tensor:
     return values * values.clamp_min(th.finfo(values.dtype).tiny).log()
 
 
+def validate_hellinger_auxiliary_weights(
+    *,
+    spectral_leak_loss_weight: float,
+    spectral_ce_auxiliary_weight: float,
+    loss_type: str,
+) -> None:
+    """Validate the Hellinger-only auxiliary loss weights.
+
+    Both spectrum models expose the same two auxiliaries, so the rule lives here
+    instead of once per Lightning module, where the copies could drift apart.
+
+    Args:
+        spectral_leak_loss_weight: Weight on predicted intensity outside every
+            observed tolerance window.
+        spectral_ce_auxiliary_weight: Weight on the coverage-weighted sparse CE
+            auxiliary.
+        loss_type: Configured primary objective.
+
+    Raises:
+        ValueError: If a weight is not finite and nonnegative, or if a positive weight
+            is paired with a ``loss_type`` other than ``hellinger_distance``.
+    """
+    weights = {
+        "spectral_leak_loss_weight": spectral_leak_loss_weight,
+        "spectral_ce_auxiliary_weight": spectral_ce_auxiliary_weight,
+    }
+    for name, weight in weights.items():
+        if not math.isfinite(weight) or weight < 0.0:
+            raise ValueError(f"{name} must be finite and nonnegative")
+        if weight > 0.0 and loss_type != "hellinger_distance":
+            raise ValueError(f"{name} is supported only with hellinger_distance")
+
+
+def _spectra_in_batch(true_batch_idxs: th.Tensor, pred_batch_idxs: th.Tensor) -> int:
+    """Return the number of spectra covered by an observed/predicted peak index pair.
+
+    Inferring the count from the observed peaks alone drops a trailing spectrum that
+    holds predictions but no observations. Depending on the caller that either crashes
+    a scatter or silently shortens a per-spectrum loss vector, which then broadcasts
+    against the rest of the batch instead of raising.
+
+    Args:
+        true_batch_idxs: Spectrum index for each observed peak.
+        pred_batch_idxs: Spectrum index for each predicted peak.
+
+    Returns:
+        One more than the largest spectrum index present in either tensor.
+
+    Raises:
+        ValueError: If both peak lists are empty, which leaves the count undefined.
+    """
+    if true_batch_idxs.numel() == 0 and pred_batch_idxs.numel() == 0:
+        raise ValueError("cannot infer batch size from two empty peak lists")
+    largest = max(
+        int(true_batch_idxs.max().item()) if true_batch_idxs.numel() > 0 else -1,
+        int(pred_batch_idxs.max().item()) if pred_batch_idxs.numel() > 0 else -1,
+    )
+    return largest + 1
+
+
+def _bhattacharyya_coefficient(
+    pred_distribution: th.Tensor,
+    true_distribution: th.Tensor,
+    *,
+    dim: int,
+) -> th.Tensor:
+    """Return a zero-safe Bhattacharyya coefficient along ``dim``.
+
+    ``1 - BC`` is the squared Hellinger distance ``H^2``, which is what the
+    ``hellinger_distance`` objective reports.
+
+    Clamping is used only inside square roots. Structural-zero coordinates are
+    restored to exactly zero, which avoids undefined square-root gradients while
+    preserving the coefficient and gradients at every positive coordinate.
+    """
+    tiny = th.finfo(th.promote_types(pred_distribution.dtype, true_distribution.dtype)).tiny
+    positive_support = (pred_distribution > 0.0) & (true_distribution > 0.0)
+    terms = pred_distribution.clamp_min(tiny).sqrt() * true_distribution.clamp_min(tiny).sqrt()
+    return th.where(positive_support, terms, th.zeros_like(terms)).sum(dim=dim)
+
+
+def conditional_in_support_cross_entropy(
+    coverage_weighted_ce: th.Tensor,
+    true_oos_logprobs: th.Tensor,
+) -> th.Tensor:
+    """Remove target-coverage weighting from an in-support cross-entropy.
+
+    Sparse CE sums ``-t_i log(q_i)`` only over observed peaks represented by the
+    predicted support. Its magnitude and gradient are therefore multiplied by the
+    represented target mass. This function returns the conditional CE over that
+    represented mass. Spectra with no represented target mass return zero because
+    they contain no in-support intensity ratios to supervise.
+
+    Args:
+        coverage_weighted_ce: In-support CE per spectrum, shape ``(batch_size,)``.
+        true_oos_logprobs: Log target mass outside predicted support per spectrum,
+            shape ``(batch_size,)``.
+
+    Returns:
+        Conditional in-support CE per spectrum, shape ``(batch_size,)``.
+    """
+    if coverage_weighted_ce.shape != true_oos_logprobs.shape:
+        raise ValueError("in-support CE and target OOS mass must have matching shapes")
+    represented_mass = -th.expm1(true_oos_logprobs).clamp(max=0.0)
+    has_support = represented_mass > 0.0
+    safe_mass = represented_mass.clamp_min(th.finfo(coverage_weighted_ce.dtype).tiny)
+    return th.where(
+        has_support,
+        coverage_weighted_ce / safe_mass,
+        th.zeros_like(coverage_weighted_ce),
+    )
+
+
+def sparse_outside_window_intensity_fraction(
+    true_mzs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_intensities: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    *,
+    batch_size: int,
+    tolerance: float = 1e-5,
+    relative: bool = True,
+    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
+    loss_batch_size: int = 32,
+) -> th.Tensor:
+    """Return predicted intensity outside every observed tolerance window.
+
+    The result is normalized by total predicted intensity in each spectrum. It
+    depends only on m/z feasibility, not on closest or Hungarian assignment, so
+    an in-window prediction is never labeled leakage merely because another peak
+    won a one-to-one assignment.
+
+    Spectra are padded per chunk rather than looped over one at a time, so the
+    cost follows each chunk's peak-count tails instead of the batch size, and no
+    per-spectrum device synchronization is needed. ``batch_size`` is required
+    because the observed peaks alone do not determine it: a spectrum with no
+    observed peaks would otherwise shorten the result and broadcast silently
+    against a per-spectrum loss.
+
+    Degenerate spectra are defined rather than rejected. A spectrum with no
+    predicted intensity returns zero because it leaks nothing, and a spectrum
+    with no observed peaks returns one because no prediction can fall inside a
+    window. Both carry zero gradient.
+
+    Args:
+        true_mzs: Observed m/z values in flat batch form.
+        true_batch_idxs: Spectrum index for each observed peak.
+        pred_mzs: Predicted m/z values in flat batch form.
+        pred_intensities: Nonnegative predicted intensities.
+        pred_batch_idxs: Spectrum index for each predicted peak.
+        batch_size: Number of spectra in the batch, including empty ones.
+        tolerance: Relative or absolute matching tolerance.
+        relative: Interpret ``tolerance`` relative to observed m/z when true.
+        tolerance_min_mz: Divisor floor used by relative tolerance.
+        tol_per_sample: Optional tolerance per spectrum, shape ``(batch_size,)``.
+        min_mz_per_sample: Optional relative-tolerance floor per spectrum.
+        loss_batch_size: Spectra padded together per chunk; values below one use
+            a single chunk.
+
+    Returns:
+        Per-spectrum outside-window intensity fractions in ``[0, 1]``, shape
+        ``(batch_size,)``.
+
+    Raises:
+        ValueError: If tensor shapes disagree, ``batch_size`` is not positive, or
+            a batch index falls outside ``batch_size``.
+    """
+    if (tol_per_sample is None) != (min_mz_per_sample is None):
+        raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    if true_mzs.shape != true_batch_idxs.shape:
+        raise ValueError("observed m/z and batch indices must have matching shapes")
+    if pred_mzs.shape != pred_intensities.shape or pred_mzs.shape != pred_batch_idxs.shape:
+        raise ValueError("predicted peak tensors must have matching shapes")
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be > 0, got {batch_size}")
+    for name, batch_idxs in (("observed", true_batch_idxs), ("predicted", pred_batch_idxs)):
+        if batch_idxs.numel() > 0 and int(batch_idxs.max().item()) >= batch_size:
+            raise ValueError(f"{name} batch indices must be below batch_size {batch_size}")
+    if loss_batch_size <= 0:
+        loss_batch_size = batch_size
+
+    # 1. Group both peak lists by spectrum so every chunk is a contiguous slice.
+    true_sort_idx = th.argsort(true_batch_idxs)
+    true_mzs = true_mzs[true_sort_idx]
+    true_batch_idxs = true_batch_idxs[true_sort_idx]
+    pred_sort_idx = th.argsort(pred_batch_idxs)
+    pred_mzs = pred_mzs[pred_sort_idx]
+    pred_intensities = pred_intensities[pred_sort_idx]
+    pred_batch_idxs = pred_batch_idxs[pred_sort_idx]
+
+    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
+    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    true_cumsum = th.cat([true_batch_idxs.new_zeros(1), true_counts.cumsum(0)]).tolist()
+    pred_cumsum = th.cat([pred_batch_idxs.new_zeros(1), pred_counts.cumsum(0)]).tolist()
+
+    fractions = pred_intensities.new_zeros(batch_size)
+    tiny = th.finfo(pred_intensities.dtype).tiny
+
+    # 2. Pad each chunk, mark predictions covered by any observed window, and reduce.
+    for bl_lower in range(0, batch_size, loss_batch_size):
+        bl_upper = min(bl_lower + loss_batch_size, batch_size)
+        bl_batch_size = bl_upper - bl_lower
+        bl_true = slice(true_cumsum[bl_lower], true_cumsum[bl_upper])
+        bl_pred = slice(pred_cumsum[bl_lower], pred_cumsum[bl_upper])
+        bl_true_batch_idxs = true_batch_idxs[bl_true] - bl_lower
+        bl_pred_batch_idxs = pred_batch_idxs[bl_pred] - bl_lower
+
+        padded_pred_ints, pred_valid = _pad_flat_by_batch(
+            pred_intensities[bl_pred], bl_pred_batch_idxs, bl_batch_size, 0.0
+        )
+        padded_true_mzs, true_valid = _pad_flat_by_batch(
+            true_mzs[bl_true], bl_true_batch_idxs, bl_batch_size, 0.0
+        )
+        padded_pred_mzs, _ = _pad_flat_by_batch(
+            pred_mzs[bl_pred], bl_pred_batch_idxs, bl_batch_size, 0.0
+        )
+        total_intensity = padded_pred_ints.sum(dim=1)
+
+        if padded_true_mzs.shape[1] == 0 or padded_pred_mzs.shape[1] == 0:
+            # Nothing observed to cover a prediction, or nothing predicted at all.
+            inside_window = pred_valid.new_zeros(pred_valid.shape)
+        else:
+            tol_per_true = None
+            min_mz_per_true = None
+            if tol_per_sample is not None:
+                tol_per_true = (
+                    tol_per_sample[bl_lower:bl_upper]
+                    .to(padded_true_mzs.dtype)[:, None]
+                    .expand_as(padded_true_mzs)
+                )
+                min_mz_per_true = (
+                    min_mz_per_sample[bl_lower:bl_upper]
+                    .to(padded_true_mzs.dtype)[:, None]
+                    .expand_as(padded_true_mzs)
+                )
+            match_mask = calculate_match_mzs(
+                padded_true_mzs,
+                padded_pred_mzs,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+                tol_per_true=tol_per_true,
+                min_mz_per_true=min_mz_per_true,
+            )
+            match_mask = th.as_tensor(match_mask, device=pred_mzs.device, dtype=th.bool)
+            # Padded slots hold m/z 0 on both sides and would otherwise match.
+            match_mask = match_mask & true_valid[:, :, None] & pred_valid[:, None, :]
+            inside_window = match_mask.any(dim=1)
+
+        outside_intensity = th.where(
+            inside_window, th.zeros_like(padded_pred_ints), padded_pred_ints
+        ).sum(dim=1)
+        # Clamping keeps a spectrum with no predicted intensity at zero instead of 0/0.
+        fractions[bl_lower:bl_upper] = outside_intensity / total_intensity.clamp_min(tiny)
+    return fractions
+
+
 def sparse_peak_list_distance(
     true_mzs: th.Tensor,
     true_intensities: th.Tensor,
@@ -62,6 +321,7 @@ def sparse_peak_list_distance(
     *,
     objective: Literal[
         "cosine_distance",
+        "hellinger_distance",
         "jss_distance",
         "kl_distance",
     ],
@@ -109,6 +369,7 @@ def sparse_peak_list_distance(
     """
     if objective not in {
         "cosine_distance",
+        "hellinger_distance",
         "jss_distance",
         "kl_distance",
     }:
@@ -259,61 +520,15 @@ def sparse_peak_list_distance(
             )
         match_mask = th.as_tensor(match_mask, dtype=th.bool, device=device)
         match_mask = match_mask & true_valid[:, :, None] & pred_valid[:, None, :]
-        mass_distance = (padded_true_mzs[:, :, None] - padded_pred_mzs[:, None, :]).abs()
-
-        if matching == "closest":
-            # Every in-tolerance prediction joins its nearest observed peak, so several
-            # predictions may land on the same one.
-            matched_pred_mask = match_mask.any(dim=1)
-            matched_true_of_pred = mass_distance.masked_fill(~match_mask, th.inf).argmin(dim=1)
-        else:
-            # Invalid pairs receive a cost larger than every possible sum of valid
-            # distances, so assignment first maximizes valid cardinality and then
-            # minimizes total m/z distance.
-            feasible_distance = mass_distance.masked_fill(~match_mask, 0.0)
-            invalid_cost = (feasible_distance.flatten(1).amax(dim=1).detach() + 1.0) * (
-                min(max_true_peaks, max_pred_peaks) + 1
-            )
-            assignment_cost = th.where(
-                match_mask,
-                mass_distance,
-                invalid_cost[:, None, None].expand_as(mass_distance),
-            )
-            row_indices, column_indices = _solve_batch_assignment(-assignment_cost.detach())
-            # The two assignment backends are selected by whether torch_linear_assignment
-            # is installed, and only the scipy fallback can be exercised without it. Both
-            # document one index pair per row of a (batch, min(rows, cols)) result; check
-            # it rather than let a different layout scatter into the wrong peaks.
-            expected_shape = (bl_batch_size, min(max_true_peaks, max_pred_peaks))
-            if tuple(row_indices.shape) != expected_shape:
-                raise RuntimeError(
-                    "batched linear assignment returned indices of shape "
-                    f"{tuple(row_indices.shape)}, expected {expected_shape}"
-                )
-            chunk_rows = th.arange(bl_batch_size, device=device)[:, None]
-            valid_assignments = match_mask[chunk_rows, row_indices, column_indices]
-            matched_pred_mask = pred_valid.new_zeros(pred_valid.shape).scatter(
-                1, column_indices, valid_assignments
-            )
-            matched_true_of_pred = th.zeros(
-                (bl_batch_size, max_pred_peaks), dtype=th.long, device=device
-            ).scatter(1, column_indices, row_indices)
-
-        # Zeros are the identity for both the L1 normalizer and ``x log x``, so padded
-        # entries and unmatched slots contribute nothing to any objective below.
-        matched_contribution = th.where(
-            matched_pred_mask, padded_pred_ints, th.zeros_like(padded_pred_ints)
-        )
-        pred_at_true = padded_pred_ints.new_zeros((bl_batch_size, max_true_peaks)).scatter_add(
-            1, matched_true_of_pred, matched_contribution
-        )
-        unmatched_contribution = th.where(
-            pred_valid & ~matched_pred_mask, padded_pred_ints, th.zeros_like(padded_pred_ints)
-        )
-        aligned_pred = th.cat([pred_at_true, unmatched_contribution], dim=1)
-        aligned_true = th.cat(
-            [padded_true_ints, padded_true_ints.new_zeros((bl_batch_size, max_pred_peaks))],
-            dim=1,
+        aligned_true, aligned_pred = align_sparse_peak_support(
+            padded_true_mzs,
+            padded_true_ints,
+            true_valid,
+            padded_pred_mzs,
+            padded_pred_ints,
+            pred_valid,
+            match_mask,
+            matching="closest" if matching == "closest" else "mass_hungarian",
         )
 
         distance_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
@@ -331,7 +546,14 @@ def sparse_peak_list_distance(
         else:
             pred_distribution = distance_pred / distance_pred.sum(dim=1, keepdim=True)
             true_distribution = distance_true / distance_true.sum(dim=1, keepdim=True)
-            if objective == "jss_distance":
+            if objective == "hellinger_distance":
+                coefficient = _bhattacharyya_coefficient(
+                    pred_distribution,
+                    true_distribution,
+                    dim=1,
+                )
+                primary_losses[bl_lower:bl_upper] = 1.0 - coefficient
+            elif objective == "jss_distance":
                 mixture = 0.5 * (pred_distribution + true_distribution)
                 divergence = (
                     0.5 * _x_log_x(pred_distribution).sum(dim=1)
@@ -1132,7 +1354,12 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
     min_mz_per_sample: th.Tensor | None = None,
     loss_batch_size: int = 32,
 ) -> th.Tensor:
-    """Batched Jensen-Shannon distance with Hungarian peak matching."""
+    """Batched Jensen-Shannon distance with Hungarian peak matching.
+
+    The batch spans every spectrum referenced by either peak list. A spectrum with
+    no observed or no predicted mass scores one, matching the scalar
+    ``sparse_jensen_shannon_divergence_hungarian``.
+    """
     true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
         true_mzs, true_logprobs, true_batch_idxs, agg="lse"
     )
@@ -1148,7 +1375,7 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
     pred_logprobs = pred_logprobs[pred_sort_idx]
     pred_batch_idxs = pred_batch_idxs[pred_sort_idx]
 
-    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    batch_size = _spectra_in_batch(true_batch_idxs, pred_batch_idxs)
     if loss_batch_size is None or loss_batch_size <= 0:
         loss_batch_size = batch_size
     loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
@@ -1221,23 +1448,36 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
             jsd_hun[bl_lower:bl_upper] = 1.0 + graph_zero
             continue
 
-        batch_true_match_mask = batch_match_mask.any(dim=2)
-        batch_pred_match_mask = batch_match_mask.any(dim=1)
-        batch_true_prec_mask = th.zeros_like(batch_true_ints, dtype=th.bool)
-        batch_pred_prec_mask = th.zeros_like(batch_pred_ints, dtype=th.bool)
-
-        jss_hun = batch_jss_hun_helper(
+        aligned_true, aligned_pred = align_sparse_peak_support(
+            batch_true_mzs,
             batch_true_ints,
+            true_valid,
+            batch_pred_mzs,
             batch_pred_ints,
+            pred_valid,
             batch_match_mask,
-            batch_true_match_mask,
-            batch_pred_match_mask,
-            False,
-            batch_true_prec_mask,
-            batch_pred_prec_mask,
-            log_min,
+            matching="js_gain_hungarian",
         )
-        jsd_hun[bl_lower:bl_upper] = th.clamp(1.0 - jss_hun / log2, min=0.0, max=1.0)
+        # A chunk can mix comparable spectra with ones that hold no observed or no
+        # predicted mass. Clamping the normalizer keeps those rows finite instead of
+        # 0/0, because a NaN branch of th.where would still poison the backward pass.
+        true_total = aligned_true.sum(dim=1, keepdim=True)
+        pred_total = aligned_pred.sum(dim=1, keepdim=True)
+        distribution_tiny = th.finfo(aligned_pred.dtype).tiny
+        true_distribution = aligned_true / true_total.clamp_min(distribution_tiny)
+        pred_distribution = aligned_pred / pred_total.clamp_min(distribution_tiny)
+        mixture = 0.5 * (true_distribution + pred_distribution)
+        divergence = (
+            0.5 * _x_log_x(true_distribution).sum(dim=1)
+            + 0.5 * _x_log_x(pred_distribution).sum(dim=1)
+            - _x_log_x(mixture).sum(dim=1)
+        )
+        comparable = ((true_total > 0.0) & (pred_total > 0.0)).squeeze(1)
+        jsd_hun[bl_lower:bl_upper] = th.where(
+            comparable,
+            th.clamp(divergence / log2, min=0.0, max=1.0),
+            th.ones_like(divergence),
+        )
 
     return jsd_hun
 
@@ -1600,7 +1840,7 @@ def sparse_jensen_shannon_divergence_hungarian(
         pred_mzs, pred_logprobs, pred_batch_idxs, agg="lse"
     )
     # Get number of batches
-    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    batch_size = _spectra_in_batch(true_batch_idxs, pred_batch_idxs)
     jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
     LOG2 = math.log(2.0)  # precompute: avoids th.log(th.tensor(2.0)) inside the loop
 
@@ -1768,6 +2008,97 @@ def sparse_jensen_shannon_divergence(
     )
     # Return 1 - similarity to get the divergence (distance)
     return 1.0 - jss
+
+
+def sparse_hellinger_distance(
+    true_mzs: th.Tensor,
+    true_logprobs: th.Tensor,
+    true_batch_idxs: th.Tensor,
+    pred_mzs: th.Tensor,
+    pred_logprobs: th.Tensor,
+    pred_batch_idxs: th.Tensor,
+    mz_max: float = 1500.0,
+    mz_bin_res: float = 0.01,
+) -> th.Tensor:
+    """Compute the squared Hellinger distance from sparse binned spectra.
+
+    This uses the Bhattacharyya form ``1 - sum(sqrt(p_i * t_i))`` after
+    independently L1-normalizing each spectrum. That is ``H^2``, not the
+    literature's ``H = sqrt(1 - BC)``: the squared form is deliberate because its
+    gradient stays bounded as the spectra agree, but its magnitude is not
+    comparable with published Hellinger numbers. Only shared occupied bins need
+    to be materialized; prediction-only and target-only bins contribute zero to
+    the coefficient while still affecting normalization.
+
+    Degenerate spectra are defined rather than rejected: a spectrum that holds
+    predictions but no observed peaks shares no bin, so its coefficient is zero and
+    its distance is one. The batch therefore spans every spectrum referenced by
+    either peak list, not only the observed one.
+
+    Args:
+        true_mzs: Ground-truth m/z values.
+        true_logprobs: Ground-truth log intensities.
+        true_batch_idxs: Batch indices for ground-truth peaks.
+        pred_mzs: Predicted m/z values.
+        pred_logprobs: Predicted log intensities.
+        pred_batch_idxs: Batch indices for predicted peaks.
+        mz_max: Maximum m/z represented by the binning geometry.
+        mz_bin_res: Width of each m/z bin.
+
+    Returns:
+        Hellinger distance per spectrum, in ``[0, 1]``.
+    """
+    true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        mz_max=mz_max,
+        mz_bin_res=mz_bin_res,
+        agg="lse",
+        sparse=True,
+    )
+    pred_bin_idxs, pred_bin_logprobs, pred_bin_batch_idxs = batched_bin_func(
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+        mz_max=mz_max,
+        mz_bin_res=mz_bin_res,
+        agg="lse",
+        sparse=True,
+    )
+    batch_size = _spectra_in_batch(true_batch_idxs, pred_batch_idxs)
+    true_bin_logprobs = true_bin_logprobs - scatter_logsumexp(
+        true_bin_logprobs,
+        true_bin_batch_idxs,
+        dim_size=batch_size,
+    )[true_bin_batch_idxs]
+    pred_bin_logprobs = pred_bin_logprobs - scatter_logsumexp(
+        pred_bin_logprobs,
+        pred_bin_batch_idxs,
+        dim_size=batch_size,
+    )[pred_bin_batch_idxs]
+
+    # ``batched_bin_func`` offsets bin ids by ``batch_idx * num_bins`` and ``th.unique``
+    # returns them sorted, so the two selections below are the same bin set in the same
+    # order. Compare the bin ids themselves rather than only their spectra, because
+    # equal spectra would not prove equal bins.
+    pred_shared = th.isin(pred_bin_idxs, true_bin_idxs)
+    true_shared = th.isin(true_bin_idxs, pred_bin_idxs)
+    if th.any(pred_shared):
+        if not th.equal(pred_bin_idxs[pred_shared], true_bin_idxs[true_shared]):
+            raise RuntimeError("shared Hellinger bins must align elementwise")
+        terms = th.exp(0.5 * (pred_bin_logprobs[pred_shared] + true_bin_logprobs[true_shared]))
+        coefficient = scatter_reduce(
+            src=terms,
+            index=pred_bin_batch_idxs[pred_shared],
+            reduce="sum",
+            dim_size=batch_size,
+            default=0.0,
+        )
+    else:
+        graph_zero = pred_bin_logprobs.sum() * 0.0
+        coefficient = pred_bin_logprobs.new_zeros(batch_size) + graph_zero
+    return 1.0 - coefficient.clamp(min=0.0, max=1.0)
 
 
 ###########################################
