@@ -16,6 +16,8 @@ from fragnnet.model.bond_fragment_heads import (
     boundary_bond_endpoint_orientation,
     pool_boundary_bond_embeddings,
 )
+from fragnnet.model.mass_shatter_model import COMPOSITION_FEATURE_DIM
+from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
 from tests.test_mass_shatter_model import _build_batch, _build_model
 
 
@@ -127,7 +129,7 @@ def test_candidate_mass_features_are_log_mass_and_precursor_fraction() -> None:
     batch = _build_batch((smiles,))
     model = _build_model(batch, candidate_mass_features=True)
     num_atoms = Chem.MolFromSmiles(smiles).GetNumAtoms()
-    mass_features, charge_feature, _ = model._candidate_scalar_features(
+    mass_features, charge_feature, _, _ = model._candidate_scalar_features(
         batch,
         th.arange(num_atoms),
         th.zeros(num_atoms, dtype=th.long),
@@ -147,7 +149,7 @@ def test_candidate_mass_fraction_tracks_fragment_size() -> None:
     """A proper fragment scores strictly below the intact precursor."""
     batch = _build_batch(("CCO",))
     model = _build_model(batch, candidate_mass_features=True)
-    mass_features, _, _ = model._candidate_scalar_features(
+    mass_features, _, _, _ = model._candidate_scalar_features(
         batch,
         th.tensor([0, 1, 2, 0]),
         th.tensor([0, 0, 0, 1]),
@@ -168,7 +170,7 @@ def test_candidate_charge_feature_sums_gasteiger_charges() -> None:
     """
     batch = _build_batch(("CCO",))
     model = _build_model(batch, candidate_charge_feature=True)
-    _, charge_feature, _ = model._candidate_scalar_features(
+    _, charge_feature, _, _ = model._candidate_scalar_features(
         batch,
         th.tensor([0, 1, 2, 2]),
         th.tensor([0, 0, 0, 1]),
@@ -189,16 +191,128 @@ def test_candidate_charge_feature_sums_gasteiger_charges() -> None:
     assert charge_feature[1].item() != pytest.approx(charge_feature[0].item(), abs=1e-4)
 
 
+def test_complement_composition_is_the_precursor_minus_the_candidate() -> None:
+    """Ethanol C2H6O: the whole molecule loses nothing, a C fragment loses CH6O."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, candidate_composition_features=True)
+    carbon_column = CANONICAL_ELEMENT_ORDER.index("C")
+    hydrogen_column = CANONICAL_ELEMENT_ORDER.index("H")
+    oxygen_column = CANONICAL_ELEMENT_ORDER.index("O")
+
+    # Component 0 is the intact molecule; component 1 is the single terminal carbon.
+    *_, composition = model._candidate_scalar_features(
+        batch,
+        th.tensor([0, 1, 2, 0]),
+        th.tensor([0, 0, 0, 1]),
+        th.tensor([0, 0]),
+        2,
+        1,
+    )
+
+    assert composition.shape == (2, COMPOSITION_FEATURE_DIM)
+    counts = th.expm1(composition).round().long()
+    assert counts[0].sum().item() == 0, "the intact precursor loses nothing"
+    # Dropping the methyl carbon and its three hydrogens leaves CH3O behind.
+    assert counts[1, carbon_column].item() == 1
+    assert counts[1, oxygen_column].item() == 1
+    assert counts[1, hydrogen_column].item() == 3
+    assert counts[1].sum().item() == 5
+
+
+def test_complement_composition_separates_isobaric_neutral_losses() -> None:
+    """CO and C2H4 are 0.036 Da apart, inside one 0.1 Da bin, and differ only in formula.
+
+    This is the case GLACIER's ``psi(r_form - f_k)`` exists for. Pentan-2-one has candidates
+    for both: dropping the carbonyl {C1, O2} leaves CO behind, dropping the internal
+    {C3, C4} leaves C2H4. The two candidates are themselves near-isobaric (C4H10 58.078 vs
+    C3H6O 58.042), so the mass scalars barely move and cannot tell the losses apart.
+    """
+    batch = _build_batch(("CC(=O)CCC",))
+    model = _build_model(batch, candidate_mass_features=True, candidate_composition_features=True)
+    carbon_column = CANONICAL_ELEMENT_ORDER.index("C")
+    hydrogen_column = CANONICAL_ELEMENT_ORDER.index("H")
+    oxygen_column = CANONICAL_ELEMENT_ORDER.index("O")
+
+    # Candidate 0 keeps {0, 3, 4, 5} and loses CO; candidate 1 keeps {0, 1, 2, 5} and loses C2H4.
+    mass_features, _, _, composition = model._candidate_scalar_features(
+        batch,
+        th.tensor([0, 3, 4, 5, 0, 1, 2, 5]),
+        th.tensor([0, 0, 0, 0, 1, 1, 1, 1]),
+        th.tensor([0, 0]),
+        2,
+        1,
+    )
+    counts = th.expm1(composition).round().long()
+
+    # CO: one carbon, one oxygen, no hydrogen.
+    assert counts[0, carbon_column].item() == 1
+    assert counts[0, oxygen_column].item() == 1
+    assert counts[0, hydrogen_column].item() == 0
+    # C2H4: two carbons, four hydrogens, no oxygen.
+    assert counts[1, carbon_column].item() == 2
+    assert counts[1, oxygen_column].item() == 0
+    assert counts[1, hydrogen_column].item() == 4
+
+    # The scalars the head had before this feature put the two candidates in the same 0.1 Da
+    # bin; the composition rows are different vectors.
+    candidate_masses = th.expm1(mass_features[:, 0])
+    assert abs(candidate_masses[0].item() - candidate_masses[1].item()) < 0.1
+    assert not th.equal(counts[0], counts[1])
+
+
+def test_complement_composition_is_off_by_default() -> None:
+    """A new input must not ride into a running comparison."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch)
+    *_, composition = model._candidate_scalar_features(
+        batch,
+        th.arange(3),
+        th.zeros(3, dtype=th.long),
+        th.tensor([0]),
+        1,
+        1,
+    )
+
+    assert composition is None
+    assert model.intensity_head.composition_feature_dim == 0
+
+
+def test_complement_composition_counts_every_precursor_separately() -> None:
+    """Each candidate's complement comes from its own molecule, not the batch."""
+    batch = _build_batch(("CCO", "c1ccccc1"))
+    model = _build_model(batch, candidate_composition_features=True)
+    carbon_column = CANONICAL_ELEMENT_ORDER.index("C")
+    oxygen_column = CANONICAL_ELEMENT_ORDER.index("O")
+    num_ethanol_atoms = Chem.MolFromSmiles("CCO").GetNumAtoms()
+
+    # One candidate per molecule, each holding a single carbon.
+    *_, composition = model._candidate_scalar_features(
+        batch,
+        th.tensor([0, num_ethanol_atoms]),
+        th.tensor([0, 1]),
+        th.tensor([0, 1]),
+        2,
+        2,
+    )
+    counts = th.expm1(composition).round().long()
+
+    assert counts[0, oxygen_column].item() == 1, "ethanol's complement keeps the oxygen"
+    assert counts[1, oxygen_column].item() == 0, "benzene has no oxygen to lose"
+    assert counts[1, carbon_column].item() == 5, "benzene minus one carbon"
+
+
 @pytest.mark.parametrize("unique_fragment_tokens", [False, True])
 @pytest.mark.parametrize("use_base_probability_feature", [False, True])
 @pytest.mark.parametrize(
     ("use_mass_features", "use_charge_feature"), [(False, False), (True, True)]
 )
+@pytest.mark.parametrize("composition_feature_dim", [0, COMPOSITION_FEATURE_DIM])
 def test_intensity_head_input_width_tracks_enabled_features(
     unique_fragment_tokens: bool,
     use_base_probability_feature: bool,
     use_mass_features: bool,
     use_charge_feature: bool,
+    composition_feature_dim: int,
 ) -> None:
     """Constant inputs are dropped in unique mode and the new scalars are added."""
     head = CandidateIntensityTransformerHead(
@@ -215,6 +329,7 @@ def test_intensity_head_input_width_tracks_enabled_features(
         use_base_probability_feature=use_base_probability_feature,
         use_mass_features=use_mass_features,
         use_charge_feature=use_charge_feature,
+        composition_feature_dim=composition_feature_dim,
         unique_fragment_tokens=unique_fragment_tokens,
     )
     expected = 3 * 8 + 4 + 2  # embeddings, context, cut count, log atom count
@@ -226,6 +341,7 @@ def test_intensity_head_input_width_tracks_enabled_features(
         expected += 2
     if use_charge_feature:
         expected += 1
+    expected += composition_feature_dim
 
     assert head.input_projection[0].in_features == expected
 
@@ -275,6 +391,7 @@ def test_forward_runs_with_every_candidate_feature_enabled(unique_fragment_mode:
         boundary_bond_encoder=True,
         candidate_mass_features=True,
         candidate_charge_feature=True,
+        candidate_composition_features=True,
     )
     output = model(
         mol_pyg=batch,

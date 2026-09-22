@@ -14,6 +14,7 @@ from fragnnet.utils.feat_utils import (
     AtomChiral,
     AtomDegree,
     AtomFormal,
+    AtomFusedRing,
     AtomHybrid,
     AtomMass,
     AtomOneHot,
@@ -22,7 +23,9 @@ from fragnnet.utils.feat_utils import (
     AtomRingSize,
     BondConj,
     BondDegree,
+    BondFusedRing,
     BondRing,
+    BondRingSize,
     BondStereo,
     MolGraph,
     batch_mols_frags,
@@ -225,6 +228,37 @@ class TestAtomFeaturizers:
         feat = AtomRingSize.featurize(atom)
         assert feat == [0, 0, 0, 0, 1]  # inGe7=1
 
+    def test_atom_fused_ring_acyclic(self, ethanol_mol):
+        """Acyclic atoms are not fused."""
+        atom = ethanol_mol.GetAtomWithIdx(0)
+        feat = AtomFusedRing.featurize(atom)
+        assert len(feat) == AtomFusedRing.feat_size
+        assert feat == [1, 0]
+
+    def test_atom_fused_ring_single_ring(self, benzene_mol):
+        """A benzene atom is in one ring only, so it is not fused."""
+        atom = benzene_mol.GetAtomWithIdx(0)
+        feat = AtomFusedRing.featurize(atom)
+        assert feat == [1, 0]
+
+    def test_atom_fused_ring_naphthalene_junction(self):
+        """Only the two ring-junction atoms of naphthalene are fused."""
+        mol = Chem.MolFromSmiles("c1ccc2ccccc2c1")
+        ring_info = mol.GetRingInfo()
+        junctions = [i for i in range(mol.GetNumAtoms()) if ring_info.NumAtomRings(i) >= 2]
+        assert len(junctions) == 2
+        for idx in range(mol.GetNumAtoms()):
+            feat = AtomFusedRing.featurize(mol.GetAtomWithIdx(idx))
+            assert feat == ([0, 1] if idx in junctions else [1, 0])
+
+    def test_atom_fused_ring_spiro_junction(self):
+        """A spiro atom belongs to two rings and counts as fused."""
+        mol = Chem.MolFromSmiles("C1CCC2(CC1)CCCC2")  # spiro[4.5]decane
+        ring_info = mol.GetRingInfo()
+        spiro = [i for i in range(mol.GetNumAtoms()) if ring_info.NumAtomRings(i) >= 2]
+        assert len(spiro) == 1
+        assert AtomFusedRing.featurize(mol.GetAtomWithIdx(spiro[0])) == [0, 1]
+
     def test_atom_charge_size(self):
         """Test AtomCharge returns a single float."""
         from rdkit.Chem import AllChem
@@ -350,6 +384,70 @@ class TestBondFeaturizers:
         feat = BondConj.featurize(bond)
         assert len(feat) == BondConj.feat_size
         assert sum(feat) == 1
+
+
+    def test_bond_ring_size_acyclic(self, ethanol_mol):
+        """Acyclic bonds have all-zero ring size features."""
+        bond = ethanol_mol.GetBondWithIdx(0)
+        feat = BondRingSize.featurize(bond)
+        assert len(feat) == BondRingSize.feat_size
+        assert feat == [0, 0, 0, 0, 0]
+
+    def test_bond_ring_size_benzene(self, benzene_mol):
+        """Benzene bonds are in a 6-membered ring only."""
+        feat = BondRingSize.featurize(benzene_mol.GetBondWithIdx(0))
+        assert feat == [0, 0, 0, 1, 0]
+
+    def test_bond_ring_size_small_rings(self):
+        """Cyclopropane and cyclobutane bonds set the in3 and in4 bits."""
+        assert BondRingSize.featurize(Chem.MolFromSmiles("C1CC1").GetBondWithIdx(0)) == [
+            1, 0, 0, 0, 0
+        ]
+        assert BondRingSize.featurize(Chem.MolFromSmiles("C1CCC1").GetBondWithIdx(0)) == [
+            0, 1, 0, 0, 0
+        ]
+
+    def test_bond_ring_size_large_ring(self):
+        """Bonds in rings ≥7 set the inGe7 bit."""
+        feat = BondRingSize.featurize(Chem.MolFromSmiles("C1CCCCCC1").GetBondWithIdx(0))
+        assert feat == [0, 0, 0, 0, 1]
+
+    def test_bond_ring_size_multi_hot_across_ring_sizes(self):
+        """A bond shared by a 5- and a 6-ring sets both bits."""
+        mol = Chem.MolFromSmiles("C1CCC2CCCCC2C1")  # bicyclo[4.4.0], two fused 6-rings
+        ring_info = mol.GetRingInfo()
+        shared = [
+            b.GetIdx() for b in mol.GetBonds() if ring_info.NumBondRings(b.GetIdx()) >= 2
+        ]
+        assert len(shared) == 1
+        assert BondRingSize.featurize(mol.GetBondWithIdx(shared[0])) == [0, 0, 0, 1, 0]
+
+        indane = Chem.MolFromSmiles("C1Cc2ccccc2C1")  # fused 5- and 6-ring
+        ring_info = indane.GetRingInfo()
+        shared = [
+            b.GetIdx() for b in indane.GetBonds() if ring_info.NumBondRings(b.GetIdx()) >= 2
+        ]
+        assert len(shared) == 1
+        assert BondRingSize.featurize(indane.GetBondWithIdx(shared[0])) == [0, 0, 1, 1, 0]
+
+    def test_bond_fused_ring_acyclic_and_single_ring(self, ethanol_mol, benzene_mol):
+        """Acyclic and single-ring bonds are not fused."""
+        feat = BondFusedRing.featurize(ethanol_mol.GetBondWithIdx(0))
+        assert len(feat) == BondFusedRing.feat_size
+        assert feat == [1, 0]
+        assert BondFusedRing.featurize(benzene_mol.GetBondWithIdx(0)) == [1, 0]
+
+    def test_bond_fused_ring_naphthalene(self):
+        """Only the shared bond of naphthalene is fused."""
+        mol = Chem.MolFromSmiles("c1ccc2ccccc2c1")
+        ring_info = mol.GetRingInfo()
+        shared = [
+            b.GetIdx() for b in mol.GetBonds() if ring_info.NumBondRings(b.GetIdx()) >= 2
+        ]
+        assert len(shared) == 1
+        for bond in mol.GetBonds():
+            feat = BondFusedRing.featurize(bond)
+            assert feat == ([0, 1] if bond.GetIdx() in shared else [1, 0])
 
 
 class TestMolGraph:

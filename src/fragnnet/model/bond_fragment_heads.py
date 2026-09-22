@@ -543,6 +543,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         initial_oos_probability: float = 0.1,
         use_mass_features: bool = False,
         use_charge_feature: bool = False,
+        composition_feature_dim: int = 0,
         unique_fragment_tokens: bool = False,
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
@@ -590,6 +591,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
         if not math.isfinite(initial_oos_probability) or not (0.0 < initial_oos_probability < 1.0):
             raise ValueError("initial_oos_probability must be finite and in (0, 1)")
+        if composition_feature_dim < 0:
+            raise ValueError("composition_feature_dim must be nonnegative")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -600,6 +603,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.predict_oos = predict_oos
         self.use_mass_features = use_mass_features
         self.use_charge_feature = use_charge_feature
+        self.composition_feature_dim = composition_feature_dim
         # In unique-fragment mode every token is its own mask, so the per-mask component count is
         # 1 everywhere and the caller has no separate charge factor to report. Both inputs are
         # then constants and are dropped rather than projected.
@@ -613,6 +617,7 @@ class CandidateIntensityTransformerHead(nn.Module):
             input_dim += 2
         if use_charge_feature:
             input_dim += 1
+        input_dim += composition_feature_dim
         self.input_projection = nn.Sequential(
             nn.Linear(input_dim, model_dim),
             nn.SiLU(),
@@ -846,6 +851,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         ce_features: th.Tensor | None = None,
         mass_features: th.Tensor | None = None,
         charge_feature: th.Tensor | None = None,
+        composition_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -902,6 +908,19 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError(f"mass_features must have shape ({num_components}, 2)")
         if charge_feature is not None and charge_feature.shape != (num_components,):
             raise ValueError("charge_feature must contain one value per component")
+        if (self.composition_feature_dim > 0) != (composition_features is not None):
+            raise ValueError(
+                "composition_features must be supplied exactly when "
+                "composition_feature_dim is positive"
+            )
+        if composition_features is not None and composition_features.shape != (
+            num_components,
+            self.composition_feature_dim,
+        ):
+            raise ValueError(
+                f"composition_features must have shape ({num_components}, "
+                f"{self.composition_feature_dim})"
+            )
 
         features = [*embeddings]
         if context is not None:
@@ -926,6 +945,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             features.append(mass_features.to(fragment_embeddings))
         if charge_feature is not None:
             features.append(charge_feature.to(fragment_embeddings).unsqueeze(1))
+        if composition_features is not None:
+            features.append(composition_features.to(fragment_embeddings))
         tokens = self.input_projection(th.cat(features, dim=1))
         if self.ce_conditioned != (ce_features is not None):
             raise ValueError(

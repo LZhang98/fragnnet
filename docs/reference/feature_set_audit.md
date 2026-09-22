@@ -1,8 +1,12 @@
 # FraGNNet Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-06-09
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-22
 >
-> Which atom/bond/fragment/conditioning features are wired. Open gaps: `a_ring_size`, `b_ring`.
+> Which atom/bond/fragment/conditioning features are wired. The 2026-06-09 body below is
+> **stale on the "open gaps" line**: `a_ring_size` and `b_ring` are implemented and enabled in
+> 44 FraGNNet configs, and three further features were added on 2026-09-22 — see
+> [GLACIER feature parity](../notes/glacier_object_detection.md#closing-the-graph-feature-gap-2026-09-22)
+> for the current gap list and the measured liveness of each feature.
 
 Audited 2026-06-09 against branch `feiw_v2`. Covers atom/bond features, fragment node/edge features,
 and spectrum-level conditioning inputs.
@@ -22,7 +26,11 @@ and spectrum-level conditioning inputs.
 | `a_radical` | `GetNumRadicalElectrons()` | one-hot 0–4 | |
 | `a_ring` | `IsInRing()`, `GetIsAromatic()` | 2 binary bits | **only is_in_ring + is_aromatic; no ring size. When used with `a_ring_size`, the is_in_ring bits are redundant — consider splitting into `a_aromatic` + dropping `a_ring`** |
 | `a_mass` | `GetMass()` | continuous × 0.01 | |
-| `a_chiral` | `GetChiralTag()` | one-hot CW/CCW/OTHER/UNSPECIFIED | |
+| `a_chiral` | `GetChiralTag()` | one-hot CW/CCW/OTHER/UNSPECIFIED | **constant**: preprocessing strips stereochemistry, so every atom lands in the UNSPECIFIED bucket |
+
+Off by default, available in the feature registry: `a_ring_size`, `a_num_hs`, `a_charge`
+(Gasteiger), and `a_fused_ring` (atom in >=2 SSSR rings; added 2026-09-22, 6.5% of NIST20 atoms,
+40.3% of molecules).
 
 Optional positional encoding: `pyg_pe_embed_k` for random-walk PE (disabled by default).
 
@@ -31,9 +39,11 @@ Optional positional encoding: `pyg_pe_embed_k` for random-walk PE (disabled by d
 | Name | Enabled | Notes |
 |------|---------|-------|
 | `b_degree` | always | bond type: SINGLE/DOUBLE/TRIPLE/AROMATIC |
-| `b_stereo` | no | implemented, never enabled |
-| `b_ring` | no | implemented (`bond.IsInRing()`), never enabled |
-| `b_conj` | no | implemented, never enabled |
+| `b_stereo` | no | implemented, never enabled, and **measurably dead**: 0 of 127,249 sampled NIST20 bonds carry stereo because preprocessing strips it |
+| `b_ring` | 44 configs | implemented (`bond.IsInRing()`); enabled in the new-mol-feats family and in every MASShatter config |
+| `b_conj` | 44 configs | same family as `b_ring` |
+| `b_ring_size` | parity arm | added 2026-09-22; ring size membership `[in3, in4, in5, in6, inGe7]`, 50.3% of NIST20 bonds |
+| `b_fused_ring` | parity arm | added 2026-09-22; bond in >=2 SSSR rings, 3.6% of NIST20 bonds |
 
 ### Fragment node features (default template)
 

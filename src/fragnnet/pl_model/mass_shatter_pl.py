@@ -1070,6 +1070,9 @@ class MassShatterPL(SpectrumPL):
             boundary_bond_encoder=self.hparams.mass_shatter_boundary_bond_encoder,
             candidate_mass_features=self.hparams.mass_shatter_candidate_mass_features,
             candidate_charge_feature=self.hparams.mass_shatter_candidate_charge_feature,
+            candidate_composition_features=(
+                self.hparams.mass_shatter_candidate_composition_features
+            ),
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
         self._proposal_only_training = False

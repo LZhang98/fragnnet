@@ -1,6 +1,6 @@
 # GLACIER (Wang, Wang & Coley, MIT — arXiv 2606.29161)
 
-> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-21
+> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-22
 >
 > Literature notes on "GLACIER: Rethinking Mass Spectrum Prediction as an Object Detection
 > Problem". Read the **bin-width caveat** before quoting any of its NIST'20 numbers.
@@ -420,14 +420,97 @@ a_formal, a_radical, a_ring` (ring + aromatic), `a_mass, a_chiral, a_ring_size, 
 | GLACIER has | us |
 |---|---|
 | Degree one-hot + overflow | `a_degree`'s 12 one-hot columns were dead (list-vs-int); repaired in place 2026-09-20 at unchanged width |
-| Fused-ring, atoms and bonds | absent |
-| Bond ring-size multi-hot | atoms only (`a_ring_size`) |
-| Bond stereo | `b_stereo` registered, unused |
-| Gasteiger charge | `a_charge` registered, off in every MASShatter config |
+| Fused-ring, atoms and bonds | **added 2026-09-22** as `a_fused_ring` / `b_fused_ring` |
+| Bond ring-size multi-hot | **added 2026-09-22** as `b_ring_size`; was atoms only (`a_ring_size`) |
+| Bond stereo | `b_stereo` registered, unused, and **measurably dead** — see below |
+| Gasteiger charge | `a_charge`, on in the MASShatter base since 2026-09-20 |
 | - | we add `a_mass`, `a_radical` |
 
 Note the `feature_set_audit` "gaps `a_ring_size`, `b_ring`" line is **template-only** — MASShatter
 configs enable both, plus `b_conj` and `a_num_hs`. `config/*_template.yml` still has them commented.
+
+### Closing the head-input gap: the neutral-loss complement (2026-09-22)
+
+GLACIER's intensity head (eq. 14) is
+
+```
+t_k = MLP( G || psi(f_k) || psi(r_form - f_k) || OHE(n_broken_k) )
+```
+
+MASShatter already carried three of the four terms: the root context `G`, the candidate's own
+pooled representation, and `cut_counts` (= `n_broken`). The missing term was
+**`psi(r_form - f_k)`**, the elemental composition of the complementary neutral loss, now added
+as `mass_shatter_candidate_composition_features` (off by default; arm
+`..._c4a_complement_composition.yml`, a one-key diff from `c4a_base_s1`).
+
+The gap was narrower than "absent" and is worth stating precisely. The head already receives a
+mean-pooled **embedding** of the complement's atoms, and since 2026-09-20 the complement's
+**mass** through `candidate_mass_features`. Neither is a composition: a mean of learned atom
+vectors carries no exact counts, and the mass alone cannot separate a CO loss (27.9949) from a
+C2H4 loss (28.0313) — one 0.1 Da bin apart, which is the resolution GLACIER scores NIST'20 at.
+`test_complement_composition_separates_isobaric_neutral_losses` builds exactly that pair from
+pentan-2-one, where the two candidates are themselves near-isobaric (C4H10 58.078 vs C3H6O
+58.042) so the mass scalars barely move. The feature costs 18 columns on a 1,285-dim token.
+
+FraGNNet has had the same input available all along as the `neutral_loss_formula` fragment
+feature, with a written arm
+(`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_neutral_loss.yml`) that has never
+been run. **No production arm has been trained**; the only training is the toy smoke run below.
+
+### Closing the graph-feature gap (2026-09-22)
+
+The three features above were the only graph features GLACIER carries that we lacked **and** that
+carry signal on our data. They are registered in `feat_utils.py`, commented into
+`config/template.yml`, and enabled in two matched arms:
+`config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_ring_topology.yml`
+(single-purpose diff from `c4a_base_s1`) and
+`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml`. Both resolve
+to a **73-dim atom / 16-dim bond** input; the cost is ~9k parameters on FraGNNet (2.79M -> 2.80M)
+and ~3k on MASShatter, and no DAG regeneration, because mol graphs are built on the fly.
+**No production arm has been trained**; these are inputs, not results.
+
+#### Smoke coverage (2026-09-22)
+
+Two debug configs stack **all four** of the 2026-09-22 features at toy width, so one short run
+exercises every new code path -- both feature registries, the widened GNN input, and
+`_element_counts_by_group` feeding the widened intensity token:
+`config/debug/debug_tiny_mass_shatter_glacier_feats.yml` (MASShatter, unique-fragment mode and
+the CUDA candidate backend as in the c4a arms, 2 epochs) and
+`config/debug/debug_tiny_fraggnn_graph_feature_parity.yml` (FraGNNet, 5 epochs). Both ran green
+on `debug_tinyv4` with `detect_anomaly: true`, loss finite and falling, no NaN.
+
+The features are live rather than silently inert, confirmed three ways. Resolved widths move as
+claimed, 71 -> 73 atom and 9 -> 16 bond. On naphthalene the columns carry the right chemistry:
+2 of 10 atoms fused, 1 of 11 bonds fused, 11 of 11 bonds flagged `in6`. And the parameter counts
+separate cleanly, each arm's cost landing where it should:
+
+| arm | MASShatter (debug width, `model_dim` 64) | FraGNNet (debug width, `mol_hidden_size` 128) |
+|---|---|---|
+| neither | 339,470 | 1,202,466 |
+| ring topology | 340,494 (+1,024) | - |
+| complement composition | 340,622 (**+1,152 = 18 x 64**, the whole feature on the token) | n/a |
+| both | 341,646 (+2,176, exactly additive) | 1,205,538 (+3,072 = (13 + 11) x 128) |
+
+These are shape and finiteness checks on 40-64 spectra. They say the code runs; they say nothing
+about whether the features help.
+
+Liveness, measured on 5,000 NIST20 molecules (`data/proc/nist20/mol_df.pkl`, seed 0):
+
+| feature | coverage |
+|---|---|
+| `a_fused_ring` | 6.5% of atoms; **40.3% of molecules** contain at least one |
+| `b_fused_ring` | 3.6% of bonds |
+| `b_ring_size` | 50.3% of bonds are in a ring; 0.6 / 0.2 / 17.7 / 80.0 / 3.9% over [3, 4, 5, 6, >=7] |
+| `b_stereo` | **0 of 127,249 bonds** |
+
+**Bond stereo cannot be matched by enabling a feature.** Preprocessing strips stereochemistry, so
+every bond is `STEREONONE` and every atom `CHI_UNSPECIFIED` — verified here on NIST20, NIST23 and
+MassSpecGym alike, extending the atom-side finding in
+[`masshatter_feature_set_audit.md`](../reference/masshatter_feature_set_audit.md) §7.6 to bonds and
+to all three corpora. Enabling `b_stereo` would add 7 constant-zero columns. Matching GLACIER here
+means keeping isomeric SMILES through preprocessing, which is a preprocessing change under the
+authorization rule in [engineering rules](../rules/engineering.md) §6, and it would also revive the
+5 dead `a_chiral` columns that every model already pays for.
 
 ## Split
 
@@ -460,11 +543,11 @@ plus Appendices C-D. Architecture only — none of this is a measured result.
 | backbone | GINE x4 @384 on the mol graph | GINE_GSA x2 @384 (1.81M, a measured plateau) | Graphormer, shared, one pass |
 | fragment embedding | pool its own atoms' embeddings via the `cc` mask; `cc_interstage: direct`, `cc_interstage_use_rest: False` (no molecule or complement context) | 3x384 pooled + 128 context | "dynamic embedding" pool + masked TransformerDecoder over its own atoms (eq. 7) |
 | **fragment <-> fragment** | `frag_gnn_type: NodeMLP`, `pyg_edges: False` -> no DAG message passing. Only interaction is **subtracting the per-spectrum max-pooled fragment vector** (`src/fragnnet/model/fragnnet_model.py:1956-1962`) | **ISAB**, 64 inducing points, 3 layers (49.5% of the intensity head) | **full TransformerEncoder over the fragment set** (eq. 8) |
-| intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
+| intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index; `neutral_loss_formula` implemented, off, arm never run | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)**, **plus the complement composition since 2026-09-22 (opt-in)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
 | output law | **softmax over the joint (fragment x formula) grid** + OOS sink; 9 H-shifts (+/-4) x {CRF, CMF} | charge head -> ion-mode / H-channel head | **independent sigmoids**, 13 H-shifts (+/-6) x {CRF, CMF} = 26, summed at exact m/z then binned (eqs. 15-16) |
 | loss | Gaussian-density CE at **instrument tolerance** (FT 10 ppm / QTOF 20 ppm) | spectral CE (JSS ~= CE) + support BCE | cosine on **0.1 Da bins** + MAGMa teacher-forced auxiliary, weight `w_magma` annealed 1 -> 0 |
 | conditioning | CE (NCE+ACE), adduct, instrument, frag-mode at encoder input + CE FiLM + mode affine on logits | same context encoder | adduct + CE only, but injected into node embeddings **and edge-level attention biases**; no instrument feature |
-| params | - | 22.7M merged / 8.43M unmerged | not published |
+| params | **2.79M measured** (2.80M with the 2026-09-22 features) | **9.22M measured** at the `c4a_base_s1` geometry | **not published** — no hidden dim, layer count or parameter count anywhere in the paper; only `4xNVIDIA A5000` for training. Its own baseline, ICEBERG 2.0 on NIST'20, is **7.0M** (3.40M inten @256 + 3.59M gen @512) |
 
 ### 1. Fragment competition is the gap
 

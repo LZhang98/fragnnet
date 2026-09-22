@@ -78,6 +78,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
 )
+from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
 from fragnnet.utils.spec_utils import weighted_mean_by_batch
 
 
@@ -166,6 +167,65 @@ def _precursor_neutral_masses(mol_pyg: Batch, batch_size: int) -> th.Tensor:
     """Return the intact neutral mass of every precursor in the batch."""
     per_atom = _per_atom_neutral_masses(mol_pyg)
     return per_atom.new_zeros(batch_size).index_add(0, mol_pyg.batch, per_atom)
+
+
+# Element vocabulary for composition features: the canonical order plus one shared column for
+# anything outside it, matching the unknown bucket ``a_onehot`` gives unlisted elements.
+COMPOSITION_FEATURE_DIM = len(CANONICAL_ELEMENT_ORDER) + 1
+
+
+def _element_counts_by_group(
+    mol_pyg: Batch,
+    atom_indices: th.Tensor,
+    group_indices: th.Tensor,
+    num_groups: int,
+    element_columns: th.Tensor,
+    num_columns: int,
+    hydrogen_column: int,
+) -> th.Tensor:
+    """Count elements per group of atoms, hydrogens included.
+
+    Groups are components when called with a component-membership relation and molecules
+    when called with ``mol_pyg.batch``, so the same reduction produces both a fragment
+    composition and its precursor composition.
+
+    Hydrogen is counted twice over, exactly as the channel-validity routine counts it: an
+    explicit H atom contributes through its own atomic number, and every heavy atom
+    contributes its implicit hydrogen count.
+
+    Args:
+        mol_pyg: Batched precursor graphs carrying the per-atom chemistry fields.
+        atom_indices: Atom index of each membership entry.
+        group_indices: Group index of each membership entry.
+        num_groups: Number of groups.
+        element_columns: Lookup from atomic number to column, sized to cover every atomic
+            number the graphs can carry; unknown elements share the final column.
+        num_columns: Number of element columns, one past the largest value in
+            ``element_columns``. Passed rather than read off the tensor, which would cost a
+            device synchronization on every batch.
+        hydrogen_column: Column holding hydrogen counts.
+
+    Returns:
+        Element counts of shape ``(num_groups, num_columns)``.
+    """
+    atomic_numbers = mol_pyg.atom_atomic_numbers[atom_indices]
+    membership_columns = element_columns[atomic_numbers]
+    counts = th.zeros(
+        num_groups * num_columns,
+        dtype=th.long,
+        device=atom_indices.device,
+    )
+    counts.index_add_(
+        0,
+        group_indices * num_columns + membership_columns,
+        th.ones_like(membership_columns),
+    )
+    counts.index_add_(
+        0,
+        group_indices * num_columns + hydrogen_column,
+        mol_pyg.atom_hydrogen_counts[atom_indices].long(),
+    )
+    return counts.view(num_groups, num_columns)
 
 
 def _relative_fragment_keep_mask(
@@ -940,6 +1000,7 @@ class MassShatterModel(nn.Module):
         bond_endpoint_aggregation: str = "mean",
         gnn_residual_activation: str = "relu",
         candidate_charge_feature: bool = False,
+        candidate_composition_features: bool = False,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -1072,6 +1133,15 @@ class MassShatterModel(nn.Module):
                 partial charges, the MASShatter analogue of FraGNNet's ``frag_q``. Requires
                 ``a_charge`` in ``mol_params.pyg_node_feats``, which is what attaches
                 ``atom_gasteiger_charges`` to the graph.
+            candidate_composition_features: Give each candidate the elemental composition of
+                its complementary neutral loss -- the precursor formula minus the candidate's
+                own -- as ``log1p`` counts over the canonical element order. This is GLACIER's
+                ``psi(r_form - f_k)`` term (arXiv 2606.29161, eq. 14). The head already
+                receives a mean-pooled *embedding* of the complement's atoms, but a mean of
+                learned atom vectors does not carry exact counts, and neutral-loss identity is
+                exactly a count question: CO (27.9949) and C2H4 (28.0313) are one bin apart at
+                0.1 Da and a different formula. ``candidate_mass_features`` gives the
+                complement's mass only, which does not separate them either.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1382,6 +1452,7 @@ class MassShatterModel(nn.Module):
         self.intensity_mass_pair_bias = intensity_mass_pair_bias
         self.intensity_ce_conditioned = intensity_ce_pair_bias or intensity_ce_film
         self.candidate_charge_feature = candidate_charge_feature
+        self.candidate_composition_features = candidate_composition_features
         self.boundary_bond_encoder = (
             CutBondEncoder(
                 atom_dim=precursor_hidden_dim,
@@ -1438,6 +1509,9 @@ class MassShatterModel(nn.Module):
             initial_oos_probability=0.1,
             use_mass_features=candidate_mass_features,
             use_charge_feature=candidate_charge_feature,
+            composition_feature_dim=(
+                COMPOSITION_FEATURE_DIM if candidate_composition_features else 0
+            ),
             unique_fragment_tokens=unique_fragment_mode,
             norm_placement=intensity_norm_placement,
             qk_norm=intensity_qk_norm,
@@ -1456,7 +1530,12 @@ class MassShatterModel(nn.Module):
         *args: object,
     ) -> None:
         """Migrate derived legacy counts without restoring unsigned validity rules."""
-        for name in ("required_atomic_numbers", "crf_formula_deltas", "cmf_formula_deltas"):
+        for name in (
+            "required_atomic_numbers",
+            "crf_formula_deltas",
+            "cmf_formula_deltas",
+            "composition_element_columns",
+        ):
             state_dict[prefix + name] = self.get_buffer(name)
 
     def set_evaluation_ion_h_top_k(self, top_k: int) -> None:
@@ -1530,6 +1609,19 @@ class MassShatterModel(nn.Module):
             "required_atomic_numbers",
             th.tensor(required_atomic_numbers, dtype=th.long),
         )
+        # Composition features count the full element vocabulary, not the validity-only set
+        # above: that set holds just the elements an adduct can remove, so on the common
+        # adducts it is hydrogen alone. Unknown elements share the trailing column, the same
+        # bucket ``a_onehot`` gives them.
+        composition_columns = th.full(
+            (PERIODIC_TABLE.GetAtomicNumber("Og") + 1,),
+            len(CANONICAL_ELEMENT_ORDER),
+            dtype=th.long,
+        )
+        for column, element in enumerate(CANONICAL_ELEMENT_ORDER):
+            composition_columns[PERIODIC_TABLE.GetAtomicNumber(element)] = column
+        self.composition_hydrogen_column = CANONICAL_ELEMENT_ORDER.index("H")
+        self.register_buffer("composition_element_columns", composition_columns)
         self.register_buffer("crf_formula_deltas", formula_deltas(parsed_crf))
         self.register_buffer("cmf_formula_deltas", formula_deltas(parsed_cmf))
         self.register_buffer(
@@ -1818,8 +1910,8 @@ class MassShatterModel(nn.Module):
         component_batch_indices: th.Tensor,
         num_components: int,
         batch_size: int,
-    ) -> tuple[th.Tensor | None, th.Tensor | None, th.Tensor | None]:
-        """Build the optional per-candidate mass and charge scalars.
+    ) -> tuple[th.Tensor | None, th.Tensor | None, th.Tensor | None, th.Tensor | None]:
+        """Build the optional per-candidate mass, charge and composition features.
 
         Args:
             mol_pyg: Batched precursor graphs.
@@ -1830,11 +1922,13 @@ class MassShatterModel(nn.Module):
             batch_size: Number of spectra in the batch.
 
         Returns:
-            ``(mass_features, charge_feature, component_masses)``; each is None when nothing
-            needs it. ``mass_features`` is ``(num_components, 2)`` holding ``log1p(neutral
-            mass)`` and the fraction of the intact precursor mass. ``charge_feature`` is
-            ``(num_components,)``. ``component_masses`` is the raw neutral mass per component,
-            required by the candidate transformer's pairwise mass bias.
+            ``(mass_features, charge_feature, component_masses, composition_features)``; each
+            is None when nothing needs it. ``mass_features`` is ``(num_components, 2)`` holding
+            ``log1p(neutral mass)`` and the fraction of the intact precursor mass.
+            ``charge_feature`` is ``(num_components,)``. ``component_masses`` is the raw
+            neutral mass per component, required by the candidate transformer's pairwise mass
+            bias. ``composition_features`` is ``(num_components, composition_feature_dim)``
+            holding ``log1p`` element counts of the complementary neutral loss.
         """
         mass_features = None
         component_masses = None
@@ -1866,7 +1960,35 @@ class MassShatterModel(nn.Module):
                 atom_component_indices,
                 atom_charges[atom_indices],
             )
-        return mass_features, charge_feature, component_masses
+        composition_features = None
+        if self.candidate_composition_features:
+            # The complement is the precursor minus the candidate, so both sides are counted
+            # with the same reduction and the difference is exact by construction.
+            component_counts = _element_counts_by_group(
+                mol_pyg,
+                atom_indices,
+                atom_component_indices,
+                num_components,
+                self.composition_element_columns,
+                COMPOSITION_FEATURE_DIM,
+                self.composition_hydrogen_column,
+            )
+            precursor_counts = _element_counts_by_group(
+                mol_pyg,
+                th.arange(mol_pyg.batch.shape[0], device=mol_pyg.batch.device),
+                mol_pyg.batch,
+                batch_size,
+                self.composition_element_columns,
+                COMPOSITION_FEATURE_DIM,
+                self.composition_hydrogen_column,
+            )
+            complement_counts = precursor_counts[component_batch_indices] - component_counts
+            _validate_tensor_condition(
+                (complement_counts >= 0).all(),
+                "a candidate holds more atoms of some element than its precursor",
+            )
+            composition_features = th.log1p(complement_counts.to(mol_pyg.atom_monoisotopic_masses))
+        return mass_features, charge_feature, component_masses, composition_features
 
     def _eligible_smarts_templates(
         self,
@@ -2587,6 +2709,7 @@ class MassShatterModel(nn.Module):
                 fragment_mass_features,
                 fragment_charge_feature,
                 fragment_neutral_masses,
+                fragment_composition_features,
             ) = self._candidate_scalar_features(
                 mol_pyg,
                 fragment_atom_indices,
@@ -2658,6 +2781,7 @@ class MassShatterModel(nn.Module):
                 ce_features=spectrum_ce_features,
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
+                composition_features=fragment_composition_features,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             ion_h_support_logits = (
@@ -2740,6 +2864,7 @@ class MassShatterModel(nn.Module):
                 fragment_mass_features,
                 fragment_charge_feature,
                 fragment_neutral_masses,
+                fragment_composition_features,
             ) = self._candidate_scalar_features(
                 mol_pyg,
                 candidates.atom_indices,
@@ -2783,6 +2908,7 @@ class MassShatterModel(nn.Module):
                 ce_features=spectrum_ce_features,
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
+                composition_features=fragment_composition_features,
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             ion_h_support_logits = (

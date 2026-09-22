@@ -1,7 +1,9 @@
 # MASShatter Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-20 &nbsp;·&nbsp; findings §7.1-§7.8
-> are **FIXED for MASShatter** and are now the default; see §11. FraGNNet is unchanged.
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-22 &nbsp;·&nbsp; findings §7.1-§7.8
+> are **FIXED for MASShatter** and are now the default; see §11. §12 and §13 add the 2026-09-22
+> GLACIER parity work: graph features, which both models can now enable, and the candidate
+> token's complement composition.
 >
 > Which atom/bond/candidate/conditioning features MASShatter actually consumes.
 > Headline finding: **34 of 70 atom-feature columns were constant on NIST20**, 12 of them
@@ -335,3 +337,28 @@ forward pass. Ruff is clean on the changed files apart from one pre-existing B00
 
 Molecular preprocessing caches written before 2026-09-20 lack `atom_gasteiger_charges` and must
 be regenerated.
+
+## 12. GLACIER graph-feature parity (2026-09-22)
+
+Three features were added to the shared registry — `a_fused_ring`, `b_ring_size`, `b_fused_ring` —
+closing every graph-feature gap to GLACIER that carries signal on our data. The measured liveness
+of each, the arms that enable them (MASShatter `c4a_ring_topology`, FraGNNet
+`graph_feature_parity`), and why `b_stereo` cannot be closed without a preprocessing change are
+recorded once, in
+[GLACIER feature parity](../notes/glacier_object_detection.md#closing-the-graph-feature-gap-2026-09-22).
+The §7.6 finding above extends to bonds: NIST20, NIST23 and MassSpecGym all carry zero bond stereo
+and zero chiral tags. Nothing has been trained.
+
+## 13. Complement composition in the candidate token (2026-09-22)
+
+`mass_shatter_candidate_composition_features` (default **False**) adds the elemental composition
+of each candidate's complementary neutral loss, as `log1p` counts over `CANONICAL_ELEMENT_ORDER`
+plus one bucket for unlisted elements (18 columns). It is GLACIER's `psi(r_form - f_k)`; the
+rationale, the measurement it rests on and the matched arm are recorded in
+[the GLACIER note](../notes/glacier_object_detection.md#closing-the-head-input-gap-the-neutral-loss-complement-2026-09-22).
+
+This is a genuine addition to §7.2 rather than a duplicate of it. §7.2 gave the candidate its own
+mass; this gives the *complement* its composition. The precursor and component counts come from
+one reduction (`_element_counts_by_group`), so the difference is exact by construction, and the
+counting matches the channel-validity routine's treatment of hydrogen — explicit H atoms and the
+implicit H count of every heavy atom both count.

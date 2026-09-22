@@ -159,11 +159,14 @@ mol_params:
     # - a_ring_size # ring size membership: [in3, in4, in5, in6, inGe7]; no DAG recomputation needed
     # - a_charge    # Gasteiger partial charge (continuous); computed on-the-fly, no DAG recomputation needed
     # - a_num_hs    # total H count one-hot [0, 1, 2, 3, >=4]; complements a_degree (heavy-atom only)
+    # - a_fused_ring # atom in >=2 SSSR rings (2 bits); a ring-junction atom cannot be freed by one cut
   pyg_edge_feats:
     - b_degree
     # - b_ring      # bond ring membership (2 bits); no DAG recomputation needed
     # - b_conj      # bond conjugation (2 bits); no DAG recomputation needed
     # - b_stereo    # bond stereo one-hot (none/any/Z/E/cis/trans + unspecified); preprocessing strips stereo
+    # - b_ring_size # bond ring size membership [in3, in4, in5, in6, inGe7]; bond analogue of a_ring_size
+    # - b_fused_ring # bond in >=2 SSSR rings (2 bits); cleaving one cannot disconnect the molecule
   pyg_pe_embed_k: 0
   pyg_bigraph: True
   mf: False
@@ -765,6 +768,15 @@ mass_shatter_candidate_mass_features: True
 # molecular graph. Molecular preprocessing caches written before 2026-09-20 lack that field and
 # must be regenerated. DEFAULT since 2026-09-20; changes the intensity head's input width.
 mass_shatter_candidate_charge_feature: True
+# Elemental composition of the candidate's complementary neutral loss (precursor formula minus
+# the candidate's own), as log1p counts over the canonical element order plus one bucket for
+# unlisted elements. This is GLACIER's psi(r_form - f_k) term (arXiv 2606.29161, eq. 14). The
+# head already sees a mean-pooled EMBEDDING of the complement's atoms, but a mean of learned
+# vectors carries no exact counts, and `mass_shatter_candidate_mass_features` gives the
+# complement's mass only -- neither separates a CO loss (27.9949) from a C2H4 loss (28.0313).
+# Off by default so it cannot ride into a running comparison; changes the intensity head's
+# input width, so a checkpoint trained with it set differently will not load.
+mass_shatter_candidate_composition_features: False
 mass_shatter_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition

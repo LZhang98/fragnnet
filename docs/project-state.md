@@ -1,8 +1,26 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-17
+> **Status:** REFERENCE · **Updated:** 2026-09-22
 
 ## Current handoff
+
+ICEBERG/GLACIER parity (2026-09-22). Closing the gaps behind "do they have a larger model, more
+features?". **Model size:** GLACIER publishes none — no hidden dim, layer count or parameter
+count, only `4xNVIDIA A5000`; its own baseline ICEBERG 2.0 is 7.0M on NIST'20 (measured from the
+upstream configs), against FraGNNet 2.79M and MASShatter 9.22M (both measured). **Features:**
+ICEBERG carries strictly fewer than we do; GLACIER carried three we lacked, now added to the
+shared registry — `a_fused_ring`, `b_ring_size`, `b_fused_ring` — plus the candidate token's
+complement composition, `mass_shatter_candidate_composition_features` (GLACIER eq. 14's
+`psi(r_form - f_k)`), off by default. `b_stereo` cannot be matched by a feature: preprocessing
+strips stereochemistry, so 0 of 127,249 sampled NIST20 bonds carry any, on NIST23 and
+MassSpecGym alike. Three matched arms are prepared and **none has been run**:
+`c4a_ring_topology`, `c4a_complement_composition`, and FraGNNet `graph_feature_parity`.
+Details in [the GLACIER note](notes/glacier_object_detection.md); validation: full suite green,
+Ruff clean on every changed file; no evaluation, no cluster job. Two debug configs stack **all
+four** new features at toy width and both smoke-trained green on 2026-09-22 (2 and 5 epochs on
+`debug_tinyv4`, loss finite and falling, `detect_anomaly: true`, CUDA candidate backend):
+`config/debug/debug_tiny_mass_shatter_glacier_feats.yml` and
+`config/debug/debug_tiny_fraggnn_graph_feature_parity.yml`. Smoke runs, not measurements.
 
 The shared agent workflow is established: start at [AGENTS.md](../AGENTS.md), follow the
 [session workflow](workflow/session.md), and use the [architecture map](architecture.md).

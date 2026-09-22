@@ -87,6 +87,7 @@ def _build_model(
     boundary_bond_encoder: bool = False,
     candidate_mass_features: bool = False,
     candidate_charge_feature: bool = False,
+    candidate_composition_features: bool = False,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -159,6 +160,7 @@ def _build_model(
         boundary_bond_encoder=boundary_bond_encoder,
         candidate_mass_features=candidate_mass_features,
         candidate_charge_feature=candidate_charge_feature,
+        candidate_composition_features=candidate_composition_features,
     )
 
 
