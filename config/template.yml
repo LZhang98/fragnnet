@@ -800,6 +800,17 @@ mass_shatter_candidate_composition_features: False
 # ~1,285-dim token and adds no parameters of its own. Off by default; changes the intensity
 # head's input width, so a checkpoint trained with it set differently will not load.
 mass_shatter_candidate_cut_bond_features: False
+# Per candidate, how many pairs of its cut bonds meet at a shared atom, split by whether that
+# atom is retained or lost. Two cut bonds meeting at one atom is a relation BETWEEN cuts, which
+# mean pooling over per-bond encodings destroys and which no bond feature can express: a shared
+# RETAINED atom means one atom of the fragment lost two substituents, a shared LOST atom means the
+# fragment expelled a bridging atom (the CO/CH2/S extrusion shape). Measured on MASShatter's own
+# candidates (200 molecules, scripts/debug/debug_candidate_cut_descriptors.py): 46.0% of
+# candidates share a summed cut-bond vector with one that disagrees about whether ANY cuts are
+# adjacent, against 0.0% for the ring-sharing flag -- the pooled bond sum already implies ring
+# sharing, so adjacency is the part that is genuinely missing. Two columns, no parameters, no new
+# graph field. Off by default; changes the intensity head's input width.
+mass_shatter_candidate_cut_adjacency_features: False
 # Training-only PER-ATOM dropout on each candidate's atom-membership set, applied before the
 # component pool, so the pooled fragment embedding sees a random subset of the candidate's
 # atoms. Regularizes against memorizing exact atom sets (aimed at the train->val gap, which the

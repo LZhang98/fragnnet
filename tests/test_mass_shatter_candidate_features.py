@@ -3,6 +3,11 @@
 Covers the fixes recorded in ``docs/reference/masshatter_feature_set_audit.md`` §7.2, §7.4,
 §7.5 and §7.7: the degenerate endpoint-average boundary embedding, the mass-blind candidate
 token, the constant token columns in unique-fragment mode, and the unread required graph field.
+
+Also covers the two 2026-09-22 candidate-token changes from
+``docs/plans/masshatter_cut_set_features_plan.md``: the severed bonds' own input features,
+which mean pooling over atom endpoints destroys, and per-atom dropout on the component pool,
+which attacks the identity shortcut that pooling leaves behind.
 """
 
 import pytest
@@ -15,6 +20,7 @@ from fragnnet.model.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     boundary_bond_endpoint_orientation,
     pool_boundary_bond_embeddings,
+    pool_component_and_complement_embeddings,
 )
 from fragnnet.model.mass_shatter_model import COMPOSITION_FEATURE_DIM
 from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
@@ -392,6 +398,7 @@ def test_forward_runs_with_every_candidate_feature_enabled(unique_fragment_mode:
         candidate_mass_features=True,
         candidate_charge_feature=True,
         candidate_composition_features=True,
+        candidate_cut_bond_features=True,
     )
     output = model(
         mol_pyg=batch,
@@ -420,3 +427,428 @@ def test_forward_no_longer_requires_atom_formal_charges() -> None:
     )
 
     assert th.isfinite(output["pred_logprobs"]).all()
+
+
+def test_cut_bond_features_sum_and_average_the_severed_bonds() -> None:
+    """Phenethyl alcohol: two single cuts and two aromatic cuts, same count, different bonds."""
+    batch = _build_batch(("c1ccccc1CCO",))
+    model = _build_model(batch, candidate_cut_bond_features=True)
+    single = batch.chemical_bond_attr[5]
+    aromatic = batch.chemical_bond_attr[0]
+    assert not th.allclose(single, aromatic), "the fixture must separate the two bond orders"
+
+    # Candidate 0 is cut at the two single C-C bonds, candidate 1 at two bonds of one ring.
+    cut_features = model._cut_bond_features(
+        batch,
+        th.tensor([5, 6, 0, 1]),
+        th.tensor([0, 0, 1, 1]),
+        2,
+    )
+
+    width = batch.chemical_bond_attr.shape[1]
+    assert cut_features.shape == (2, 2 * width)
+    assert th.allclose(cut_features[0, :width], 2.0 * single)
+    assert th.allclose(cut_features[0, width:], single)
+    assert th.allclose(cut_features[1, :width], 2.0 * aromatic)
+    assert th.allclose(cut_features[1, width:], aromatic)
+    # The head's existing cut description -- the count -- is 2 for both.
+    assert not th.allclose(cut_features[0], cut_features[1])
+
+
+def test_cut_bond_features_are_zero_without_a_severed_bond() -> None:
+    """The intact precursor broke nothing, and scores nothing, rather than dividing by zero."""
+    batch = _build_batch(("c1ccccc1CCO",))
+    model = _build_model(batch, candidate_cut_bond_features=True)
+
+    cut_features = model._cut_bond_features(
+        batch,
+        th.tensor([], dtype=th.long),
+        th.tensor([], dtype=th.long),
+        1,
+    )
+
+    assert cut_features.shape == (1, 2 * batch.chemical_bond_attr.shape[1])
+    assert th.count_nonzero(cut_features) == 0
+
+
+def test_cut_bond_features_are_off_by_default() -> None:
+    """Off unless asked for, so the token width cannot move under a running comparison."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch)
+
+    assert model.intensity_head.cut_bond_feature_dim == 0
+    assert model._cut_bond_features(batch, th.tensor([0]), th.tensor([0]), 1) is None
+
+
+def test_cut_bond_features_widen_the_intensity_token() -> None:
+    """Enabling the feature adds twice the bond width to the head's input."""
+    batch = _build_batch(("CCO",))
+    baseline = _build_model(batch)
+    widened = _build_model(batch, candidate_cut_bond_features=True)
+    bond_width = batch.edge_attr.shape[1]
+
+    assert widened.intensity_head.cut_bond_feature_dim == 2 * bond_width
+    assert (
+        widened.intensity_head.input_projection[0].in_features
+        - baseline.intensity_head.input_projection[0].in_features
+        == 2 * bond_width
+    )
+
+
+@pytest.mark.parametrize("cut_bond_feature_dim", [0, 10])
+def test_intensity_head_input_width_tracks_cut_bond_features(cut_bond_feature_dim: int) -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=8,
+        context_dim=4,
+        model_dim=8,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=8,
+        num_inducing_points=2,
+        num_ion_modes=1,
+        num_h_shifts=3,
+        dropout=0.0,
+        use_base_probability_feature=False,
+        cut_bond_feature_dim=cut_bond_feature_dim,
+    )
+    # Embeddings, context, cut count, log atom count, log per-mask component count.
+    expected = 3 * 8 + 4 + 2 + 1 + cut_bond_feature_dim
+
+    assert head.input_projection[0].in_features == expected
+
+
+def test_intensity_head_requires_declared_cut_bond_features() -> None:
+    """Declaring the width and not supplying the tensor is an error, not a silent zero."""
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=4,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=4,
+        num_inducing_points=2,
+        num_ion_modes=1,
+        num_h_shifts=1,
+        dropout=0.0,
+        use_base_probability_feature=False,
+        cut_bond_feature_dim=6,
+    )
+    embeddings = th.zeros(2, 4)
+    with pytest.raises(ValueError, match="cut_bond_features must be supplied"):
+        head(
+            embeddings,
+            embeddings,
+            embeddings,
+            th.ones(2),
+            th.ones(2, dtype=th.long),
+            th.zeros(2),
+            th.zeros(2),
+            th.zeros(2, dtype=th.long),
+            th.arange(2),
+            batch_size=1,
+            num_masks=2,
+        )
+    with pytest.raises(ValueError, match="cut_bond_features must have shape"):
+        head(
+            embeddings,
+            embeddings,
+            embeddings,
+            th.ones(2),
+            th.ones(2, dtype=th.long),
+            th.zeros(2),
+            th.zeros(2),
+            th.zeros(2, dtype=th.long),
+            th.arange(2),
+            batch_size=1,
+            num_masks=2,
+            cut_bond_features=th.zeros(2, 5),
+        )
+
+
+def test_candidate_atom_dropout_is_inactive_outside_training() -> None:
+    """Evaluation pools the true atom set, so validation metrics stay deterministic."""
+    batch = _build_batch(("c1ccccc1CCO",))
+    model = _build_model(batch, candidate_atom_dropout=0.5)
+    model.eval()
+    atom_indices = th.arange(9)
+    component_indices = th.zeros(9, dtype=th.long)
+
+    kept_atoms, kept_components = model._candidate_atom_dropout(atom_indices, component_indices, 1)
+
+    assert th.equal(kept_atoms, atom_indices)
+    assert th.equal(kept_components, component_indices)
+
+
+def test_candidate_atom_dropout_is_inactive_at_probability_zero() -> None:
+    """The default is exactly the old behavior, in training as well."""
+    batch = _build_batch(("c1ccccc1CCO",))
+    model = _build_model(batch)
+    model.train()
+    atom_indices = th.arange(9)
+    component_indices = th.zeros(9, dtype=th.long)
+
+    kept_atoms, kept_components = model._candidate_atom_dropout(atom_indices, component_indices, 1)
+
+    assert th.equal(kept_atoms, atom_indices)
+    assert th.equal(kept_components, component_indices)
+
+
+def test_candidate_atom_dropout_drops_atoms_in_training() -> None:
+    """Roughly the requested share of membership entries is removed."""
+    batch = _build_batch(("c1ccccc1CCO",))
+    model = _build_model(batch, candidate_atom_dropout=0.5)
+    model.train()
+    th.manual_seed(17)
+    num_components = 200
+    atom_indices = th.arange(9).repeat(num_components)
+    component_indices = th.arange(num_components).repeat_interleave(9)
+
+    kept_atoms, kept_components = model._candidate_atom_dropout(
+        atom_indices, component_indices, num_components
+    )
+
+    assert kept_atoms.shape == kept_components.shape
+    kept_fraction = kept_atoms.numel() / atom_indices.numel()
+    assert 0.45 < kept_fraction < 0.65, kept_fraction
+    # Restoring emptied components can only raise the kept share above the nominal 0.5.
+    assert kept_fraction > 0.5 - 0.05
+    sizes = th.bincount(kept_components, minlength=num_components)
+    assert (sizes > 0).all(), "an empty pool has no mean"
+
+
+def test_candidate_atom_dropout_restores_a_candidate_it_emptied() -> None:
+    """At an extreme rate every candidate still pools its true atom set rather than none."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, candidate_atom_dropout=0.99)
+    model.train()
+    th.manual_seed(3)
+    atom_indices = th.tensor([0, 1, 2, 0, 1, 2])
+    component_indices = th.tensor([0, 0, 0, 1, 1, 1])
+
+    kept_atoms, kept_components = model._candidate_atom_dropout(atom_indices, component_indices, 2)
+
+    sizes = th.bincount(kept_components, minlength=2)
+    assert (sizes > 0).all()
+    for component in range(2):
+        kept = kept_atoms[kept_components == component]
+        # A component that lost every atom is restored whole, never left with a random rump.
+        if kept.numel() < 3:
+            assert kept.numel() >= 1
+        else:
+            assert sorted(kept.tolist()) == [0, 1, 2]
+
+
+def test_candidate_atom_dropout_keeps_the_precursor_partition() -> None:
+    """Dropped atoms move to the complement, so neither pool leaks the true atom set.
+
+    The complement is the precursor minus the candidate, so an exact complement beside a
+    corrupted candidate would leave the true candidate sum recoverable by subtraction.
+    """
+    batch = _build_batch(("c1ccccc1CCO",))
+    model = _build_model(batch, candidate_atom_dropout=0.5)
+    model.train()
+    th.manual_seed(29)
+    atom_embeddings = th.randn(batch.x.shape[0], 6)
+    atom_indices = th.arange(9)
+    component_indices = th.zeros(9, dtype=th.long)
+    kept_atoms, kept_components = model._candidate_atom_dropout(atom_indices, component_indices, 1)
+    assert kept_atoms.numel() < atom_indices.numel(), "the fixture must actually drop something"
+
+    component_sums, complement_sums = pool_component_and_complement_embeddings(
+        atom_embeddings,
+        kept_atoms,
+        kept_components,
+        th.zeros(1, dtype=th.long),
+        batch.batch,
+        num_components=1,
+        num_molecules=1,
+        reduction="sum",
+    )
+    exact_sums, _ = pool_component_and_complement_embeddings(
+        atom_embeddings,
+        atom_indices,
+        component_indices,
+        th.zeros(1, dtype=th.long),
+        batch.batch,
+        num_components=1,
+        num_molecules=1,
+        reduction="sum",
+    )
+
+    assert th.allclose(component_sums + complement_sums, atom_embeddings.sum(dim=0), atol=1e-5)
+    assert not th.allclose(component_sums, exact_sums)
+
+
+def test_candidate_atom_dropout_rejects_certain_dropout() -> None:
+    batch = _build_batch(("CCO",))
+    with pytest.raises(ValueError, match="candidate_atom_dropout must be in"):
+        _build_model(batch, candidate_atom_dropout=1.0)
+
+
+@pytest.mark.parametrize("unique_fragment_mode", [False, True])
+def test_forward_runs_with_cut_features_and_atom_dropout(unique_fragment_mode: bool) -> None:
+    """Both candidate modes train with the new token column and the pooled-atom dropout."""
+    batch = _build_batch(("CCOC", "CCO"))
+    model = _build_model(
+        batch,
+        max_masks=4,
+        max_enumerated_masks=8,
+        unique_fragment_mode=unique_fragment_mode,
+        candidate_cut_bond_features=True,
+        candidate_atom_dropout=0.3,
+    )
+    model.train()
+    th.manual_seed(7)
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([10.0, 40.0]),
+    )
+
+    assert th.isfinite(output["pred_logprobs"]).all()
+    output["pred_logprobs"].mean().backward()
+    assert model.intensity_head.input_projection[0].weight.grad.abs().sum() > 0
+
+
+def test_cut_adjacency_separates_a_retained_from_a_lost_shared_atom() -> None:
+    """Propane: keeping the middle carbon and losing it are the same two cut bonds.
+
+    Component 0 keeps atom 1, so both cuts meet at a RETAINED atom -- one atom lost two
+    substituents. Component 1 keeps atoms 0 and 2, so the same two cuts meet at a LOST atom --
+    the fragment expelled a bridging CH2. Every pooled cut descriptor represents these
+    identically; this feature does not.
+    """
+    batch = _build_batch(("CCC",))
+    model = _build_model(batch, candidate_cut_adjacency_features=True)
+
+    adjacency = model._cut_adjacency_features(
+        batch,
+        th.tensor([0, 1, 0, 1]),
+        th.tensor([0, 0, 1, 1]),
+        th.tensor([1, 0, 2]),
+        th.tensor([0, 1, 1]),
+        2,
+    )
+
+    assert adjacency.shape == (2, 2)
+    assert adjacency[0].tolist() == [1.0, 0.0]
+    assert adjacency[1].tolist() == [0.0, 1.0]
+
+
+def test_cut_adjacency_is_zero_for_a_ring_opening() -> None:
+    """Benzene: two cuts in one ring are not adjacent, so ring sharing is a different event."""
+    batch = _build_batch(("c1ccccc1",))
+    model = _build_model(batch, candidate_cut_adjacency_features=True)
+
+    # Component 0 keeps atoms 0-2: cuts are bonds (2,3) and (5,0), which share no atom.
+    # Component 1 keeps atom 0 alone: cuts are bonds (0,1) and (5,0), meeting at atom 0.
+    adjacency = model._cut_adjacency_features(
+        batch,
+        th.tensor([2, 5, 0, 5]),
+        th.tensor([0, 0, 1, 1]),
+        th.tensor([0, 1, 2, 0]),
+        th.tensor([0, 0, 0, 1]),
+        2,
+    )
+
+    assert adjacency[0].tolist() == [0.0, 0.0]
+    assert adjacency[1].tolist() == [1.0, 0.0]
+
+
+def test_cut_adjacency_is_zero_for_a_single_cut() -> None:
+    """One severed bond has no pair to be adjacent to, and no division by zero."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, candidate_cut_adjacency_features=True)
+
+    adjacency = model._cut_adjacency_features(
+        batch,
+        th.tensor([0]),
+        th.tensor([0]),
+        th.tensor([0]),
+        th.tensor([0]),
+        1,
+    )
+
+    assert adjacency.shape == (1, 2)
+    assert th.count_nonzero(adjacency) == 0
+
+
+def test_cut_adjacency_is_off_by_default_and_widens_the_token_by_two() -> None:
+    batch = _build_batch(("CCO",))
+    baseline = _build_model(batch)
+    widened = _build_model(batch, candidate_cut_adjacency_features=True)
+
+    assert baseline.intensity_head.cut_adjacency_feature_dim == 0
+    assert (
+        baseline._cut_adjacency_features(
+            batch, th.tensor([0]), th.tensor([0]), th.tensor([0]), th.tensor([0]), 1
+        )
+        is None
+    )
+    assert widened.intensity_head.cut_adjacency_feature_dim == 2
+    assert (
+        widened.intensity_head.input_projection[0].in_features
+        - baseline.intensity_head.input_projection[0].in_features
+        == 2
+    )
+
+
+def test_intensity_head_requires_declared_cut_adjacency_features() -> None:
+    head = CandidateIntensityTransformerHead(
+        fragment_embedding_dim=4,
+        context_dim=0,
+        model_dim=4,
+        num_layers=1,
+        num_heads=2,
+        feedforward_dim=4,
+        num_inducing_points=2,
+        num_ion_modes=1,
+        num_h_shifts=1,
+        dropout=0.0,
+        use_base_probability_feature=False,
+        cut_adjacency_feature_dim=2,
+    )
+    embeddings = th.zeros(2, 4)
+    with pytest.raises(ValueError, match="cut_adjacency_features must be supplied"):
+        head(
+            embeddings,
+            embeddings,
+            embeddings,
+            th.ones(2),
+            th.ones(2, dtype=th.long),
+            th.zeros(2),
+            th.zeros(2),
+            th.zeros(2, dtype=th.long),
+            th.arange(2),
+            batch_size=1,
+            num_masks=2,
+        )
+
+
+@pytest.mark.parametrize("unique_fragment_mode", [False, True])
+def test_forward_runs_with_the_full_cut_description(unique_fragment_mode: bool) -> None:
+    """Both cut blocks and the pooled-atom dropout together, in both candidate modes."""
+    batch = _build_batch(("CCOC", "CCO"))
+    model = _build_model(
+        batch,
+        max_masks=4,
+        max_enumerated_masks=8,
+        unique_fragment_mode=unique_fragment_mode,
+        boundary_bond_encoder=True,
+        candidate_cut_bond_features=True,
+        candidate_cut_adjacency_features=True,
+        candidate_atom_dropout=0.2,
+    )
+    model.train()
+    th.manual_seed(11)
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([10.0, 40.0]),
+    )
+
+    assert th.isfinite(output["pred_logprobs"]).all()
+    output["pred_logprobs"].mean().backward()
+    assert model.intensity_head.input_projection[0].weight.grad.abs().sum() > 0

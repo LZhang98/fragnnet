@@ -1003,6 +1003,7 @@ class MassShatterModel(nn.Module):
         intensity_escape: bool = False,
         candidate_composition_features: bool = False,
         candidate_cut_bond_features: bool = False,
+        candidate_cut_adjacency_features: bool = False,
         candidate_atom_dropout: float = 0.0,
     ) -> None:
         """Initialize the MASShatter model.
@@ -1154,6 +1155,10 @@ class MassShatterModel(nn.Module):
                 reaches the head only through atom endpoints, and an internal atom mixes all
                 of its incident bonds into one state, so the cut bond's own attributes are
                 not cleanly recoverable there. The sum is the multiset of broken bond types.
+            candidate_cut_adjacency_features: Give each candidate the number of its cut-bond
+                pairs that meet at a shared atom, split by whether that atom is retained or
+                lost. No bond feature can express this -- two cut bonds meeting at one atom is
+                a relation between cuts, and mean pooling over per-bond encodings destroys it.
             candidate_atom_dropout: Training-only probability of dropping each atom from a
                 candidate's membership set before the component pool, so the pooled fragment
                 and complement embeddings see a random subset. Regularizes against
@@ -1481,6 +1486,7 @@ class MassShatterModel(nn.Module):
         self.intensity_escape = intensity_escape
         self.candidate_composition_features = candidate_composition_features
         self.candidate_cut_bond_features = candidate_cut_bond_features
+        self.candidate_cut_adjacency_features = candidate_cut_adjacency_features
         self.candidate_atom_dropout = float(candidate_atom_dropout)
         self.boundary_bond_encoder = (
             CutBondEncoder(
@@ -1542,6 +1548,7 @@ class MassShatterModel(nn.Module):
                 COMPOSITION_FEATURE_DIM if candidate_composition_features else 0
             ),
             cut_bond_feature_dim=(2 * edge_feature_dim if candidate_cut_bond_features else 0),
+            cut_adjacency_feature_dim=(2 if candidate_cut_adjacency_features else 0),
             unique_fragment_tokens=unique_fragment_mode,
             norm_placement=intensity_norm_placement,
             qk_norm=intensity_qk_norm,
@@ -1973,6 +1980,75 @@ class MassShatterModel(nn.Module):
             for reduction in ("sum", "mean")
         ]
         return th.cat(pooled, dim=1)
+
+    def _cut_adjacency_features(
+        self,
+        mol_pyg: Batch,
+        boundary_bond_indices: th.Tensor,
+        boundary_component_indices: th.Tensor,
+        atom_indices: th.Tensor,
+        atom_component_indices: th.Tensor,
+        num_components: int,
+    ) -> th.Tensor | None:
+        """Count each candidate's cut-bond pairs that meet at a shared atom, by side.
+
+        Two cut bonds sharing an atom is a relation *between* cuts, so mean pooling over
+        per-bond encodings cannot express it and no bond feature carries it either. The side
+        matters chemically: a shared retained atom means one atom of the fragment lost two
+        substituents, while a shared lost atom means the fragment expelled a bridging atom --
+        the CO/CH2/S extrusion shape. Measured on 200 molecules / MASShatter's own candidates,
+        46.0% of candidates share a summed cut-bond vector with a candidate that disagrees on
+        whether any cuts are adjacent at all, against 0.0% for the ring-sharing flag.
+
+        Two bonds share at most one atom in a simple graph, so summing ``C(count, 2)`` over the
+        (component, atom) incidence counts each adjacent pair exactly once.
+
+        Args:
+            mol_pyg: Batched precursor graphs.
+            boundary_bond_indices: Bond index of each (bond, component) boundary pair.
+            boundary_component_indices: Component index of each boundary pair.
+            atom_indices: Atom index of each component-membership entry.
+            atom_component_indices: Component index of each membership entry.
+            num_components: Number of components.
+
+        Returns:
+            ``(num_components, 2)`` holding the retained-atom then lost-atom adjacent-pair
+            counts, or None when the feature is off.
+
+        Note:
+            This repeats the endpoint-orientation lookup that ``_boundary_embeddings`` performs
+            when the boundary bond encoder is on. The lookup is one sort of the membership
+            relation, so sharing it is an optimization for the batching audit, not a
+            correctness concern.
+        """
+        if not self.candidate_cut_adjacency_features:
+            return None
+        num_atoms = int(mol_pyg.batch.shape[0])
+        inside_atoms, outside_atoms = boundary_bond_endpoint_orientation(
+            mol_pyg.chemical_bond_index,
+            boundary_bond_indices,
+            boundary_component_indices,
+            atom_indices,
+            atom_component_indices,
+            num_atoms=num_atoms,
+        )
+        sides = []
+        for side_atoms in (inside_atoms, outside_atoms):
+            incidence_keys = boundary_component_indices * num_atoms + side_atoms
+            unique_keys, counts = th.unique(incidence_keys, return_counts=True)
+            adjacent_pairs = counts * (counts - 1) // 2
+            sides.append(
+                th.zeros(
+                    num_components,
+                    dtype=adjacent_pairs.dtype,
+                    device=adjacent_pairs.device,
+                ).index_add(
+                    0,
+                    th.div(unique_keys, num_atoms, rounding_mode="floor"),
+                    adjacent_pairs,
+                )
+            )
+        return th.stack(sides, dim=1).to(mol_pyg.x.dtype)
 
     def _candidate_atom_dropout(
         self,
@@ -2831,6 +2907,14 @@ class MassShatterModel(nn.Module):
                 boundary_fragment_indices,
                 num_fragments,
             )
+            fragment_cut_adjacency_features = self._cut_adjacency_features(
+                mol_pyg,
+                fragment_boundary_bond_indices,
+                boundary_fragment_indices,
+                fragment_atom_indices,
+                atom_fragment_indices,
+                num_fragments,
+            )
             (
                 fragment_mass_features,
                 fragment_charge_feature,
@@ -2909,6 +2993,7 @@ class MassShatterModel(nn.Module):
                 charge_feature=fragment_charge_feature,
                 composition_features=fragment_composition_features,
                 cut_bond_features=fragment_cut_bond_features,
+                cut_adjacency_features=fragment_cut_adjacency_features,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None
@@ -2999,6 +3084,14 @@ class MassShatterModel(nn.Module):
                 candidates.boundary_component_indices,
                 num_fragments,
             )
+            fragment_cut_adjacency_features = self._cut_adjacency_features(
+                mol_pyg,
+                candidates.boundary_bond_indices,
+                candidates.boundary_component_indices,
+                candidates.atom_indices,
+                candidates.atom_component_indices,
+                num_fragments,
+            )
             (
                 fragment_mass_features,
                 fragment_charge_feature,
@@ -3049,6 +3142,7 @@ class MassShatterModel(nn.Module):
                 charge_feature=fragment_charge_feature,
                 composition_features=fragment_composition_features,
                 cut_bond_features=fragment_cut_bond_features,
+                cut_adjacency_features=fragment_cut_adjacency_features,
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None

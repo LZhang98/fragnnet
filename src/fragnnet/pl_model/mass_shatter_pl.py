@@ -1077,6 +1077,9 @@ class MassShatterPL(SpectrumPL):
                 self.hparams.mass_shatter_candidate_composition_features
             ),
             candidate_cut_bond_features=self.hparams.mass_shatter_candidate_cut_bond_features,
+            candidate_cut_adjacency_features=(
+                self.hparams.mass_shatter_candidate_cut_adjacency_features
+            ),
             candidate_atom_dropout=self.hparams.mass_shatter_candidate_atom_dropout,
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)

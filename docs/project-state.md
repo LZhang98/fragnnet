@@ -4,6 +4,27 @@
 
 ## Current handoff
 
+Architecture-review todo consolidated (2026-09-22). **Documentation only; no code, config or
+run changed.** The 2026-09-19 code-vs-literature review's remaining items are now one list:
+[architecture review todo](plans/masshatter_architecture_review_todo.md). Five of its seven items
+were implemented 2026-09-20/21 and all default off. The blocking observation is that the six arms
+that did run (`a1`, `a3`, `a6`, `a7`, `b2`, `b3`) were killed at the wall clock between epochs 179
+and 210 and **have never been read at the 128-epoch screen length**, so four review items rest on a
+W&B read that costs no GPU -- `a1` and `a6` lead the 25-run set at 0.7364 but over a longer horizon
+than the 0.7282 control they would be promoted over. Verified while writing it: every config in
+`config/massshatter/ma_mi_merged/attention_2026_09_21/` still carries `min_epochs: 378 /
+max_epochs: 630`, and resolved against the current template that schedule is their **only**
+difference from `c4a_base_s1` besides their own keys, because `h_transfer_bound`,
+`boundary_bond_encoder`, `candidate_mass_features` and `candidate_charge_feature` are template
+defaults now; that schedule is why the ran arms were killed mid-run, and the five unrun arms
+(`b1_bond_sum`, `a2_full_attention`, `a4`, `a5`, `b4`) need it set to 128 before submission.
+`b4_budget_rebalance` is **not** a one-key arm -- it moves `bond_num_layers` 3 -> 1 while widening
+the intensity head and the latent set. RWSE is the only item with nothing implemented and stays
+blocked on porting the `random_walk_pe` `shape=` fix, which is on `feiw_v2` and
+`project/spectraverse_benchmark` but **not on this branch**. The plan excludes the scheduler
+forwarding repair, which is fixed in `031c370d`. Validation: relative links resolve, Ruff not
+applicable, no test run and none required for a documentation change. No run launched.
+
 MASShatter candidate-token changes (2026-09-22). **LANDED in the working tree, both keys default
 off, nothing trained.** Two one-key levers on the head that the
 [overfit read-out](findings/masshatter_overfit_readout_2026_09_22.md) blames for ~98% of the
@@ -24,9 +45,39 @@ emptied. Arms, each verified a one-key diff from `c4a_base_s1` at the same seed 
 **Correction to the [cut-set plan](plans/masshatter_cut_set_features_plan.md):** its item C
 (remove `use_base_probability_feature`) is not available as an arm -- `mass_shatter_pl.py:1008`
 derives it from `mass_shatter_proposal_anchored`, which is already `true` in `c4a_base_s1`, so the
-`c4a` token never carried `mask_log_probabilities`. Validation: 13 new tests, the candidate-feature
-file 47 pass, model + Lightning suites 269 pass, Ruff and Black clean on every changed file,
-configs resolved against the template. No run launched.
+`c4a` token never carried `mask_log_probabilities`.
+
+**Then the premise was remeasured on the right population, and it moved the design.**
+[Candidate cut descriptors](findings/masshatter_candidate_cut_descriptors_2026_09_22.md),
+`scripts/debug/debug_candidate_cut_descriptors.py`, 400 molecules / 73,045 of MASShatter's OWN
+candidates rather than the depth-3 DAG the plan measured: **86.9%** are cut at >= 2 bonds (the DAG
+said 96.8%) and the relational shares are about twice the DAG's -- **73.6%** of all candidates have
+two cuts sharing a ring, **68.4%** two cuts sharing an atom. Within-molecule candidates per
+descriptor bucket: cut count **47.5** -> pooled cut-bond sum **22.6** -> plus adjacency **10.4** ->
+plus both ring terms **10.4**. Given the bond sum, the ring-sharing flag has **0.000** residual
+ambiguity (the sum carries `b_ring` counts) while the adjacency flag has **0.489**. So the plan's
+item A was redirected: adjacency is the missing relation, and it needs no SSSR ring identity --
+which is not on the graph and would cost a new field plus a cache regeneration for 0.02-0.03 of
+bucket resolution. Shipped as **`mass_shatter_candidate_cut_adjacency_features`**: two columns,
+cut-bond pairs meeting at a shared atom, split by whether that atom is retained (one atom lost two
+substituents) or lost (the fragment expelled a bridging atom -- the CO/CH2/S extrusion shape).
+Arms `e4_cut_adjacency` and the stacked `e5_cut_bond_plus_adjacency` join e1-e3. **Counter-weight,
+recorded in the finding:** the 2026-07-23 bond-set probe found the *least* identifiable fragment
+descriptor generalized best, so resolving more candidates locates information the head cannot
+otherwise get -- it does not predict the sign on validation cosine.
+
+Validation: 19 new tests, the candidate-feature file 54 pass, **full suite 4,206 passed / 1
+skipped / 2 xfailed**, Ruff and Black clean on every changed file, all five arms verified as
+one-key (e5: two-key) diffs after template resolution. Smoke:
+`config/debug/debug_tiny_mass_shatter_cut_features.yml` stacks all three keys at toy width with
+dropout 0.3 and ran **green on `debug_tinyv4`**, 2 epochs, `detect_anomaly: true`, CUDA candidate
+backend, no NaN, loss falling (train -0.509 -> -0.754, val -0.806 -> -0.981). Decomposed one key
+at a time against the all-off control at three seeds: **every arm lands inside the control's own
+seed band** (val cosine 0.196-0.225), the cut-bond block gives the best train loss of the seven
+runs and adjacency the best val loss, and the only systematic effect is the dropout suppressing
+the training fit. Added columns do not make the toy fit harder; the risk they carry is
+generalization, not optimization. Parameter deltas land exactly on the token and are additive (+288 cut-bond, +32
+adjacency, +320 both, +0 dropout at test width). No production run launched.
 
 Feature and information audit (2026-09-22). **Documentation and diagnostics only; two of its
 own conclusions withdrawn.** Synthesis with a per-claim status table:
@@ -327,6 +378,17 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   -0.0062@500, catching up only in the last ~80 epochs. The +0.0071 that motivated it was on the
   merged `nist20_inchikey` split and does not transfer; the four prepared `c4c_pwarm_*` arms are
   answered and should not run.
+  **Re-read 2026-09-22 — that key does two things, and the second one is the story.** With
+  `separate_proposal_encoder: False` (true for both runs),
+  `set_proposal_input_gradients_enabled(proposal_only or proposal_encoder is None)` is `True` in
+  **every** epoch, so the key also un-detaches the proposal branch for the whole run. `jvaj1lyw`
+  is therefore the only `ma_mi_merged` run in which proposal supervision reaches the shared
+  encoder, and a 4-epoch freeze cannot explain a −0.0113 deficit at epoch 100 or −0.0132 at 400
+  in a run that saturates by epoch 100. **The persistent component is the gradient connection**,
+  so the detached proposal branch should be left alone. Corollary: the 38 configs with staging
+  *and* a shared encoder were all silently gradient-connected and are not clean tests of their
+  nominal variable. See
+  [head-input asymmetry §7](findings/masshatter_head_input_asymmetry_2026_09_22.md).
   Next: run the `c4a_*` bundle-attribution arms, then the now-unblocked LR-schedule arms
   (`c4b_*`), then refill the `_drop02` / `_ctxnorm` holes.
 - [MASShatter regularization audit](findings/masshatter_regularization_audit_2026_09_19.md)

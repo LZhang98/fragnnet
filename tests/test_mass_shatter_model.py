@@ -88,6 +88,9 @@ def _build_model(
     candidate_mass_features: bool = False,
     candidate_charge_feature: bool = False,
     candidate_composition_features: bool = False,
+    candidate_cut_bond_features: bool = False,
+    candidate_cut_adjacency_features: bool = False,
+    candidate_atom_dropout: float = 0.0,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -161,6 +164,9 @@ def _build_model(
         candidate_mass_features=candidate_mass_features,
         candidate_charge_feature=candidate_charge_feature,
         candidate_composition_features=candidate_composition_features,
+        candidate_cut_bond_features=candidate_cut_bond_features,
+        candidate_cut_adjacency_features=candidate_cut_adjacency_features,
+        candidate_atom_dropout=candidate_atom_dropout,
     )
 
 
