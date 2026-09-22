@@ -78,7 +78,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
 )
-from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
+from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER, CANONICAL_H_IDX
 from fragnnet.utils.spec_utils import weighted_mean_by_batch
 
 
@@ -1620,7 +1620,7 @@ class MassShatterModel(nn.Module):
         )
         for column, element in enumerate(CANONICAL_ELEMENT_ORDER):
             composition_columns[PERIODIC_TABLE.GetAtomicNumber(element)] = column
-        self.composition_hydrogen_column = CANONICAL_ELEMENT_ORDER.index("H")
+        self.composition_hydrogen_column = CANONICAL_H_IDX
         self.register_buffer("composition_element_columns", composition_columns)
         self.register_buffer("crf_formula_deltas", formula_deltas(parsed_crf))
         self.register_buffer("cmf_formula_deltas", formula_deltas(parsed_cmf))
