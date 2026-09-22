@@ -901,8 +901,10 @@ class MassShatterPL(SpectrumPL):
         )
         if legacy_oos_enabled:
             logger.warning(
-                "Ignoring legacy OOS settings for MASShatter; spectra are normalized "
-                "over generated candidates"
+                "Ignoring legacy OOS settings for MASShatter; the shared predict_oos/oos_loss "
+                "path is FraGNNet's. Use mass_shatter_intensity_escape for MASShatter's "
+                "escape coordinate (currently %s).",
+                self.hparams.mass_shatter_intensity_escape,
             )
         self.hparams.predict_oos = False
         self.hparams.oos_loss = False
@@ -1070,9 +1072,12 @@ class MassShatterPL(SpectrumPL):
             boundary_bond_encoder=self.hparams.mass_shatter_boundary_bond_encoder,
             candidate_mass_features=self.hparams.mass_shatter_candidate_mass_features,
             candidate_charge_feature=self.hparams.mass_shatter_candidate_charge_feature,
+            intensity_escape=self.hparams.mass_shatter_intensity_escape,
             candidate_composition_features=(
                 self.hparams.mass_shatter_candidate_composition_features
             ),
+            candidate_cut_bond_features=self.hparams.mass_shatter_candidate_cut_bond_features,
+            candidate_atom_dropout=self.hparams.mass_shatter_candidate_atom_dropout,
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
         self._proposal_only_training = False
@@ -1190,6 +1195,15 @@ class MassShatterPL(SpectrumPL):
             )
         if independent_output and cross_entropy_loss:
             raise ValueError("independent intensity output requires a direct spectral loss")
+        if self.hparams.mass_shatter_intensity_escape and not independent_output:
+            # Fail loudly rather than silently ignore: the escape only reaches the objective
+            # through sparse_peak_list_distance. A cross-entropy loss_type needs no separate
+            # check here, because independent output already rejects it directly above and
+            # the escape already requires independent output.
+            raise ValueError(
+                "mass_shatter_intensity_escape requires "
+                "mass_shatter_intensity_output: independent"
+            )
         if not cross_entropy_loss and (
             self.hparams.mass_shatter_base_ce_weight != 0.0 or self.hparams.mass_shatter_log_base_ce
         ):
@@ -1541,6 +1555,7 @@ class MassShatterPL(SpectrumPL):
                 proposal_true_logprobs = proposal_true_intensities.clamp_min(
                     th.finfo(proposal_true_intensities.dtype).tiny
                 ).log()
+            escape_intensities = kwargs.get("pred_escape_intensities")
             prediction_reference = pred_logprobs if pred_logprobs is not None else pred_intensities
             coverage_weighted_spec_ce = None
             conditional_spec_ce = None
@@ -1583,6 +1598,7 @@ class MassShatterPL(SpectrumPL):
                     pred_batch_idxs,
                     objective=self.hparams.loss_type,
                     matching=self.hparams.mass_shatter_peak_matching,
+                    pred_dump_intensities=escape_intensities,
                     tolerance=self.tolerance,
                     relative=self.relative,
                     tolerance_min_mz=self.tolerance_min_mz,
@@ -1931,6 +1947,16 @@ class MassShatterPL(SpectrumPL):
             else:
                 loss_values["spec_peak_distance"] = primary_loss
                 loss_values["spec_entropy_match"] = entropy_match
+                if escape_intensities is not None:
+                    # Without this the escape is invisible: the loss alone cannot say whether
+                    # the head learned the coverage deficit or parked at its initial 0.1.
+                    escape_total = escape_intensities + pred_intensities.new_zeros(
+                        batch_size
+                    ).index_add(0, pred_batch_idxs, pred_intensities)
+                    loss_values["escape_share"] = (
+                        escape_intensities
+                        / escape_total.clamp_min(th.finfo(escape_total.dtype).tiny)
+                    ).detach().to(prediction_reference)
                 if spectral_leak_loss is not None:
                     loss_values["spectral_leak_loss"] = spectral_leak_loss
                 if spectral_ce_auxiliary is not None:
@@ -2091,6 +2117,8 @@ class MassShatterPL(SpectrumPL):
             )
         else:
             loss_names.extend(["spec_peak_distance", "spec_entropy_match"])
+            if self.hparams.mass_shatter_intensity_escape:
+                loss_names.append("escape_share")
             if self.hparams.spectral_leak_loss_weight > 0.0:
                 loss_names.append("spectral_leak_loss")
             if self.hparams.spectral_ce_auxiliary_weight > 0.0:

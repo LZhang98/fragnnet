@@ -1000,7 +1000,10 @@ class MassShatterModel(nn.Module):
         bond_endpoint_aggregation: str = "mean",
         gnn_residual_activation: str = "relu",
         candidate_charge_feature: bool = False,
+        intensity_escape: bool = False,
         candidate_composition_features: bool = False,
+        candidate_cut_bond_features: bool = False,
+        candidate_atom_dropout: float = 0.0,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -1129,6 +1132,10 @@ class MassShatterModel(nn.Module):
             candidate_mass_features: Give each candidate its neutral fragment mass
                 (``log1p``) and its fraction of the intact precursor mass. Without these the
                 intensity head sees no mass or m/z at all.
+            intensity_escape: Give the intensity output an escape coordinate for observed
+                intensity no candidate can reach. The head emits one logit per spectrum; the
+                model converts it to a mass in ``pred_intensities`` units and returns it as
+                ``pred_escape_intensities`` for ``sparse_peak_list_distance``.
             candidate_charge_feature: Give each candidate the sum of its atoms' Gasteiger
                 partial charges, the MASShatter analogue of FraGNNet's ``frag_q``. Requires
                 ``a_charge`` in ``mol_params.pyg_node_feats``, which is what attaches
@@ -1142,6 +1149,16 @@ class MassShatterModel(nn.Module):
                 exactly a count question: CO (27.9949) and C2H4 (28.0313) are one bin apart at
                 0.1 Da and a different formula. ``candidate_mass_features`` gives the
                 complement's mass only, which does not separate them either.
+            candidate_cut_bond_features: Give each candidate the summed and averaged input
+                features of the bonds that were severed to make it. The boundary embedding
+                reaches the head only through atom endpoints, and an internal atom mixes all
+                of its incident bonds into one state, so the cut bond's own attributes are
+                not cleanly recoverable there. The sum is the multiset of broken bond types.
+            candidate_atom_dropout: Training-only probability of dropping each atom from a
+                candidate's membership set before the component pool, so the pooled fragment
+                and complement embeddings see a random subset. Regularizes against
+                memorizing exact atom sets; every other candidate input keeps the true
+                membership.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1178,6 +1195,11 @@ class MassShatterModel(nn.Module):
             raise ValueError("proposal_selection_only requires intensity residuals")
         if intensity_output not in {"probability", "independent"}:
             raise ValueError(f"unknown MASShatter intensity output: {intensity_output}")
+        if intensity_escape and intensity_output != "independent":
+            raise ValueError(
+                "intensity_escape requires the independent intensity output; the escape is "
+                "only read by the peak-list losses"
+            )
         if intensity_output == "independent" and not (
             unique_fragment_mode and proposal_selection_only
         ):
@@ -1195,6 +1217,10 @@ class MassShatterModel(nn.Module):
             )
         if separate_proposal_encoder and not proposal_selection_only:
             raise ValueError("separate_proposal_encoder requires proposal_selection_only")
+        if not 0.0 <= candidate_atom_dropout < 1.0:
+            raise ValueError(
+                f"candidate_atom_dropout must be in [0, 1), got {candidate_atom_dropout}"
+            )
         if (separate_ion_mode_proposal_head or separate_ion_h_support_head) and not (
             unique_fragment_mode and proposal_selection_only
         ):
@@ -1452,7 +1478,10 @@ class MassShatterModel(nn.Module):
         self.intensity_mass_pair_bias = intensity_mass_pair_bias
         self.intensity_ce_conditioned = intensity_ce_pair_bias or intensity_ce_film
         self.candidate_charge_feature = candidate_charge_feature
+        self.intensity_escape = intensity_escape
         self.candidate_composition_features = candidate_composition_features
+        self.candidate_cut_bond_features = candidate_cut_bond_features
+        self.candidate_atom_dropout = float(candidate_atom_dropout)
         self.boundary_bond_encoder = (
             CutBondEncoder(
                 atom_dim=precursor_hidden_dim,
@@ -1505,13 +1534,14 @@ class MassShatterModel(nn.Module):
             dropout=intensity_transformer_dropout,
             use_base_probability_feature=use_base_probability_feature,
             separate_ion_h_support_head=separate_ion_h_support_head,
-            predict_oos=False,
+            predict_oos=intensity_escape,
             initial_oos_probability=0.1,
             use_mass_features=candidate_mass_features,
             use_charge_feature=candidate_charge_feature,
             composition_feature_dim=(
                 COMPOSITION_FEATURE_DIM if candidate_composition_features else 0
             ),
+            cut_bond_feature_dim=(2 * edge_feature_dim if candidate_cut_bond_features else 0),
             unique_fragment_tokens=unique_fragment_mode,
             norm_placement=intensity_norm_placement,
             qk_norm=intensity_qk_norm,
@@ -1901,6 +1931,91 @@ class MassShatterModel(nn.Module):
             boundary_component_indices,
             num_components=num_components,
         )
+
+    def _cut_bond_features(
+        self,
+        mol_pyg: Batch,
+        boundary_bond_indices: th.Tensor,
+        boundary_component_indices: th.Tensor,
+        num_components: int,
+    ) -> th.Tensor | None:
+        """Pool the severed bonds' own input features into each candidate.
+
+        ``_boundary_embeddings`` reaches the intensity head through atom endpoints only, and an
+        internal atom mixes every one of its incident bonds into one state, so for an endpoint
+        of degree > 1 the cut bond's own attributes -- bond type, ring membership, conjugation,
+        ring size -- are not cleanly recoverable. The summed features are the multiset of broken
+        bond types ("two aromatic ring bonds and one single bond"); the mean is the same
+        quantity normalized by the cut count the head already receives.
+
+        Args:
+            mol_pyg: Batched precursor graphs.
+            boundary_bond_indices: Bond index of each (bond, component) boundary pair.
+            boundary_component_indices: Component index of each boundary pair.
+            num_components: Number of components.
+
+        Returns:
+            ``(num_components, 2 * edge_feature_dim)`` holding the summed then the averaged cut
+            features, or None when the feature is off. A candidate with no severed bonds -- the
+            intact precursor -- scores zero in both halves, which is the correct "nothing broken".
+        """
+        if not self.candidate_cut_bond_features:
+            return None
+        bond_features = mol_pyg.chemical_bond_attr
+        pooled = [
+            pool_boundary_bond_embeddings(
+                bond_features,
+                boundary_bond_indices,
+                boundary_component_indices,
+                num_components=num_components,
+                reduction=reduction,
+            )
+            for reduction in ("sum", "mean")
+        ]
+        return th.cat(pooled, dim=1)
+
+    def _candidate_atom_dropout(
+        self,
+        atom_indices: th.Tensor,
+        atom_component_indices: th.Tensor,
+        num_components: int,
+    ) -> tuple[th.Tensor, th.Tensor]:
+        """Drop a random share of each candidate's atoms before the component pool.
+
+        Training-only regularization against memorizing exact atom sets: the pooled fragment
+        embedding then sees a random subset of the candidate's atoms. The complement is derived
+        by subtracting the candidate from its precursor, so the dropped atoms move to the
+        complement side and both pools remain means over a well-formed atom set. Keeping the
+        complement exact instead would leave the true candidate sum recoverable as
+        ``precursor - complement``, which is the memorization route this targets. Every other
+        candidate input -- sizes, masses, charges, compositions, cut counts and the boundary
+        embedding -- keeps the true membership, so the intervention is confined to the pooled
+        component embeddings.
+
+        Args:
+            atom_indices: Atom index of each component-membership entry.
+            atom_component_indices: Component index of each membership entry.
+            num_components: Number of components.
+
+        Returns:
+            The retained ``(atom_indices, atom_component_indices)`` pair, unchanged outside
+            training. A component that loses every atom keeps all of them, since an empty pool
+            has no mean.
+        """
+        if not self.training or self.candidate_atom_dropout <= 0.0:
+            return atom_indices, atom_component_indices
+        keep = (
+            th.rand(atom_component_indices.shape, device=atom_component_indices.device)
+            >= self.candidate_atom_dropout
+        )
+        kept_component_indices = atom_component_indices[keep]
+        kept_sizes = th.zeros(
+            num_components,
+            dtype=th.long,
+            device=atom_component_indices.device,
+        ).index_add(0, kept_component_indices, th.ones_like(kept_component_indices))
+        keep |= (kept_sizes == 0)[atom_component_indices]
+        return atom_indices[keep], atom_component_indices[keep]
 
     def _candidate_scalar_features(
         self,
@@ -2686,10 +2801,15 @@ class MassShatterModel(nn.Module):
                 fragment_log_probabilities
                 - retained_proposal_log_normalizers[fragment_batch_indices]
             )
-            fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
-                atom_embeddings,
+            pooled_atom_indices, pooled_atom_fragment_indices = self._candidate_atom_dropout(
                 fragment_atom_indices,
                 atom_fragment_indices,
+                num_fragments,
+            )
+            fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
+                atom_embeddings,
+                pooled_atom_indices,
+                pooled_atom_fragment_indices,
                 fragment_batch_indices,
                 mol_pyg.batch,
                 num_components=num_fragments,
@@ -2703,6 +2823,12 @@ class MassShatterModel(nn.Module):
                 boundary_fragment_indices,
                 fragment_atom_indices,
                 atom_fragment_indices,
+                num_fragments,
+            )
+            fragment_cut_bond_features = self._cut_bond_features(
+                mol_pyg,
+                fragment_boundary_bond_indices,
+                boundary_fragment_indices,
                 num_fragments,
             )
             (
@@ -2782,8 +2908,10 @@ class MassShatterModel(nn.Module):
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
                 composition_features=fragment_composition_features,
+                cut_bond_features=fragment_cut_bond_features,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
+            escape_logits = intensity_outputs[-1] if self.intensity_escape else None
             ion_h_support_logits = (
                 intensity_outputs[3]
                 if self.intensity_head.ion_h_support_head is not None
@@ -2841,10 +2969,15 @@ class MassShatterModel(nn.Module):
             num_fragments = candidates.num_components
             fragment_batch_indices = candidates.component_batch_indices
             fragment_cut_counts = candidates.component_cut_counts
-            fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
-                atom_embeddings,
+            pooled_atom_indices, pooled_atom_component_indices = self._candidate_atom_dropout(
                 candidates.atom_indices,
                 candidates.atom_component_indices,
+                num_fragments,
+            )
+            fragment_embeddings, complement_embeddings = pool_component_and_complement_embeddings(
+                atom_embeddings,
+                pooled_atom_indices,
+                pooled_atom_component_indices,
                 fragment_batch_indices,
                 mol_pyg.batch,
                 num_components=num_fragments,
@@ -2858,6 +2991,12 @@ class MassShatterModel(nn.Module):
                 candidates.boundary_component_indices,
                 candidates.atom_indices,
                 candidates.atom_component_indices,
+                num_fragments,
+            )
+            fragment_cut_bond_features = self._cut_bond_features(
+                mol_pyg,
+                candidates.boundary_bond_indices,
+                candidates.boundary_component_indices,
                 num_fragments,
             )
             (
@@ -2909,8 +3048,10 @@ class MassShatterModel(nn.Module):
                 mass_features=fragment_mass_features,
                 charge_feature=fragment_charge_feature,
                 composition_features=fragment_composition_features,
+                cut_bond_features=fragment_cut_bond_features,
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
+            escape_logits = intensity_outputs[-1] if self.intensity_escape else None
             ion_h_support_logits = (
                 intensity_outputs[3]
                 if self.intensity_head.ion_h_support_head is not None
@@ -3318,6 +3459,20 @@ class MassShatterModel(nn.Module):
             output["pred_logprobs"] = pred_logprobs
         else:
             output["pred_intensities"] = pred_intensities
+            if escape_logits is not None:
+                # sigmoid(x) is the escape's share of (candidates + escape), so the mass it
+                # needs is that share's odds times the candidate mass -- and the odds of a
+                # sigmoid are just exp(x). Going through sigmoid and back would break under
+                # reduced precision: fp16 and bf16 round any guard of the form 1 - 1e-4 to
+                # exactly 1.0, so the share saturates and the odds become inf. Clamping the
+                # logit instead bounds the odds at ~8.1e3, which fp16 holds comfortably, and
+                # caps the escape share at 0.9999. At the head's initial bias the share is
+                # 0.1, near the measured unreachable fraction.
+                escape_odds = escape_logits.to(pred_intensities.dtype).clamp(max=9.0).exp()
+                candidate_mass = pred_intensities.new_zeros(batch_size).index_add(
+                    0, pred_batch_idxs, pred_intensities
+                )
+                output["pred_escape_intensities"] = candidate_mass * escape_odds
         if self.return_base_spectrum:
             output["base_pred_logprobs"] = base_pathway_log_probabilities.flatten()[
                 selected_flat_valid

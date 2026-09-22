@@ -544,6 +544,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         use_mass_features: bool = False,
         use_charge_feature: bool = False,
         composition_feature_dim: int = 0,
+        cut_bond_feature_dim: int = 0,
         unique_fragment_tokens: bool = False,
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
@@ -593,6 +594,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("initial_oos_probability must be finite and in (0, 1)")
         if composition_feature_dim < 0:
             raise ValueError("composition_feature_dim must be nonnegative")
+        if cut_bond_feature_dim < 0:
+            raise ValueError("cut_bond_feature_dim must be nonnegative")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -604,6 +607,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.use_mass_features = use_mass_features
         self.use_charge_feature = use_charge_feature
         self.composition_feature_dim = composition_feature_dim
+        self.cut_bond_feature_dim = cut_bond_feature_dim
         # In unique-fragment mode every token is its own mask, so the per-mask component count is
         # 1 everywhere and the caller has no separate charge factor to report. Both inputs are
         # then constants and are dropped rather than projected.
@@ -618,6 +622,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         if use_charge_feature:
             input_dim += 1
         input_dim += composition_feature_dim
+        input_dim += cut_bond_feature_dim
         self.input_projection = nn.Sequential(
             nn.Linear(input_dim, model_dim),
             nn.SiLU(),
@@ -716,6 +721,15 @@ class CandidateIntensityTransformerHead(nn.Module):
                 intensity_key = f"{prefix}ion_hydrogen_head.{parameter_name}"
                 if support_key not in state_dict and intensity_key in state_dict:
                     state_dict[support_key] = state_dict[intensity_key].clone()
+        if self.oos_head is not None:
+            # A checkpoint trained before the escape existed carries no oos_head. Restoring
+            # the constructor's initialization lets the escape be switched on over an existing
+            # base checkpoint instead of forcing a run from scratch; it starts, as a fresh head
+            # does, at zero weight and the configured initial escape probability.
+            for parameter_name in ("weight", "bias"):
+                escape_key = f"{prefix}oos_head.{parameter_name}"
+                if escape_key not in state_dict:
+                    state_dict[escape_key] = getattr(self.oos_head, parameter_name).detach().clone()
         super()._load_from_state_dict(
             state_dict,
             prefix,
@@ -852,6 +866,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         mass_features: th.Tensor | None = None,
         charge_feature: th.Tensor | None = None,
         composition_features: th.Tensor | None = None,
+        cut_bond_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -921,6 +936,19 @@ class CandidateIntensityTransformerHead(nn.Module):
                 f"composition_features must have shape ({num_components}, "
                 f"{self.composition_feature_dim})"
             )
+        if (self.cut_bond_feature_dim > 0) != (cut_bond_features is not None):
+            raise ValueError(
+                "cut_bond_features must be supplied exactly when cut_bond_feature_dim "
+                "is positive"
+            )
+        if cut_bond_features is not None and cut_bond_features.shape != (
+            num_components,
+            self.cut_bond_feature_dim,
+        ):
+            raise ValueError(
+                f"cut_bond_features must have shape ({num_components}, "
+                f"{self.cut_bond_feature_dim})"
+            )
 
         features = [*embeddings]
         if context is not None:
@@ -947,6 +975,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             features.append(charge_feature.to(fragment_embeddings).unsqueeze(1))
         if composition_features is not None:
             features.append(composition_features.to(fragment_embeddings))
+        if cut_bond_features is not None:
+            features.append(cut_bond_features.to(fragment_embeddings))
         tokens = self.input_projection(th.cat(features, dim=1))
         if self.ce_conditioned != (ce_features is not None):
             raise ValueError(
@@ -1004,7 +1034,9 @@ class CandidateIntensityTransformerHead(nn.Module):
             component_batch_indices,
             minlength=batch_size,
         ).to(tokens)
-        molecule_tokens = token_sums / token_counts.unsqueeze(1)
+        # A spectrum can contribute no components, which would divide by zero here; its
+        # pooled token is then the zero vector and the head falls back to its bias.
+        molecule_tokens = token_sums / token_counts.clamp_min(1.0).unsqueeze(1)
         return (*outputs, self.oos_head(molecule_tokens).squeeze(1))
 
 

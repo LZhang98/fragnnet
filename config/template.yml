@@ -790,6 +790,26 @@ mass_shatter_candidate_charge_feature: True
 # Off by default so it cannot ride into a running comparison; changes the intensity head's
 # input width, so a checkpoint trained with it set differently will not load.
 mass_shatter_candidate_composition_features: False
+# Summed and averaged input features of the bonds severed to make each candidate, pooled from
+# `chemical_bond_attr` (b_degree/b_ring/b_conj and any ring-topology features enabled in
+# mol_params). The boundary embedding reaches the intensity head through atom ENDPOINTS only --
+# `_boundary_embeddings` never reads the bond attributes -- and an internal atom mixes all of
+# its incident bonds into one state, so for an endpoint of degree > 1 the cut bond's own
+# attributes are not cleanly recoverable. The summed half is the multiset of broken bond types,
+# which also delivers how many cut bonds were ring bonds. Costs 2 * bond width columns on a
+# ~1,285-dim token and adds no parameters of its own. Off by default; changes the intensity
+# head's input width, so a checkpoint trained with it set differently will not load.
+mass_shatter_candidate_cut_bond_features: False
+# Training-only PER-ATOM dropout on each candidate's atom-membership set, applied before the
+# component pool, so the pooled fragment embedding sees a random subset of the candidate's
+# atoms. Regularizes against memorizing exact atom sets (aimed at the train->val gap, which the
+# 2026-09-22 read-out puts ~98% in intensity allocation rather than coverage). The complement is
+# the precursor minus the candidate, so dropped atoms move to the complement side and both pools
+# stay means over a well-formed atom set; keeping the complement exact would leave the true
+# candidate sum recoverable as precursor - complement. Sizes, masses, charges, compositions, cut
+# counts and the boundary embedding all keep the true membership. A candidate is never emptied.
+# The MASShatter analogue of `cc_atom_dropout`. No effect at eval, and no width change.
+mass_shatter_candidate_atom_dropout: 0.0
 mass_shatter_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition
@@ -848,6 +868,19 @@ mass_shatter_bond_endpoint_aggregation: mean  # ["mean", "sum", "sqrt"]
 # every custom-config key to exist here; any value other than 0 now fails at setup.
 mass_shatter_intensity_atom_decoder_num_layers: 0
 mass_shatter_intensity_transformer_dropout: 0.1
+# Escape ("dump") coordinate for the intensity output. Candidate coverage is not complete --
+# val wrecall is ~0.891 -- so part of the observed intensity sits at m/z values no candidate
+# reaches. Without an escape the predicted intensities normalize over candidates alone and the
+# model is forced to over-allocate everything it CAN reach by roughly 1/wrecall. With it, every
+# unreachable observed peak collapses into one coordinate whose mass the model predicts, which
+# removes a per-spectrum irreducible loss floor (1 - sqrt(t(S)) for Hellinger) that otherwise
+# weights training by how well enumeration happened to do on each molecule. It does NOT change
+# the optimal relative allocation over reachable peaks, so it is not a ranking change; and it
+# makes kl_distance finite on a coverage gap instead of relying on mass_shatter_kl_epsilon.
+# Requires mass_shatter_intensity_output: independent and a peak-list loss_type (the
+# cross_entropy path has its own out-of-support term). Head bias starts at logit(0.1), close to
+# the measured unreachable fraction. Changes the objective, so cosines are NOT comparable across it.
+mass_shatter_intensity_escape: False
 # Final spectrum representation. Independent mode is limited to the unique-fragment,
 # proposal-selection-only path and returns nonnegative normal-space intensities.
 mass_shatter_intensity_output: probability  # ["probability", "independent"]

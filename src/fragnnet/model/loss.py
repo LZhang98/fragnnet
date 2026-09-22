@@ -326,6 +326,7 @@ def sparse_peak_list_distance(
         "kl_distance",
     ],
     matching: Literal["closest", "hungarian"],
+    pred_dump_intensities: th.Tensor | None = None,
     tolerance: float = 1e-5,
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
@@ -343,6 +344,22 @@ def sparse_peak_list_distance(
     ``hungarian`` finds a minimum-distance one-to-one assignment. Unmatched peaks
     from either spectrum remain in the loss support.
 
+    ``pred_dump_intensities`` adds an escape coordinate. Without it the predicted
+    intensity must normalize over the candidate m/z values alone, while part of the
+    observed intensity sits at m/z values no candidate reaches -- so the model can
+    never place that mass and is forced to over-allocate everything it can reach. The
+    escape collapses every unreachable observed peak into one coordinate and lets the
+    model predict its mass, which removes a per-spectrum irreducible loss floor that
+    varies with coverage and therefore weights spectra by how well the enumeration
+    happened to do. Reachability is read from the tolerance ``match_mask``, not from
+    the predicted values, so a peak a candidate *could* explain stays in the support
+    even when the model assigns it nothing and a Hungarian assignment leaves it
+    unmatched. For ``kl_distance`` the escape also makes the divergence finite on
+    coverage gaps rather than relying on ``kl_epsilon`` smoothing. The escape coordinate
+    is part of the distribution, so the returned entropy mismatch scores it too; two
+    spectra with the same shape over reachable candidates but different escape shares
+    have different entropy mismatches, which is intended.
+
     Args:
         true_mzs: Observed m/z values in flat batch form.
         true_intensities: Nonnegative observed intensities.
@@ -353,6 +370,9 @@ def sparse_peak_list_distance(
         pred_batch_idxs: Spectrum index for each predicted peak.
         objective: Direct spectral objective.
         matching: M/z-only correspondence rule.
+        pred_dump_intensities: Optional nonnegative predicted escape mass per spectrum,
+            shape ``(batch_size,)``, in the same units as ``pred_intensities``. ``None``
+            keeps the historical behaviour exactly.
         tolerance: Relative or absolute matching tolerance.
         relative: Interpret ``tolerance`` relative to observed m/z when true.
         tolerance_min_mz: Floor used by relative tolerance.
@@ -382,6 +402,13 @@ def sparse_peak_list_distance(
         raise ValueError(f"loss_batch_size must be > 0, got {loss_batch_size}")
     if (tol_per_sample is None) != (min_mz_per_sample is None):
         raise ValueError("tol_per_sample and min_mz_per_sample must be provided together")
+    if pred_dump_intensities is not None:
+        if pred_dump_intensities.ndim != 1:
+            raise ValueError("pred_dump_intensities must be one-dimensional")
+        if not bool(th.isfinite(pred_dump_intensities).all().item()):
+            raise ValueError("pred_dump_intensities must be finite")
+        if bool((pred_dump_intensities < 0).any().item()):
+            raise ValueError("pred_dump_intensities must be nonnegative")
     tensors = {
         "true_mzs": true_mzs,
         "true_intensities": true_intensities,
@@ -427,6 +454,11 @@ def sparse_peak_list_distance(
     batch_size = int(true_batch_idxs.max().item()) + 1
     if pred_batch_idxs.min().item() < 0 or pred_batch_idxs.max().item() >= batch_size:
         raise ValueError("predicted batch indices reference a missing observed spectrum")
+    if pred_dump_intensities is not None and pred_dump_intensities.shape[0] != batch_size:
+        raise ValueError(
+            "pred_dump_intensities must hold one value per spectrum, got "
+            f"{pred_dump_intensities.shape[0]} for {batch_size} spectra"
+        )
 
     true_batch_counts = th.bincount(true_batch_idxs, minlength=batch_size)
     pred_batch_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
@@ -530,6 +562,29 @@ def sparse_peak_list_distance(
             match_mask,
             matching="closest" if matching == "closest" else "mass_hungarian",
         )
+
+        if pred_dump_intensities is not None:
+            # A true peak is reachable when some candidate falls inside its tolerance
+            # window, which is the match mask, never the predicted value: a candidate the
+            # model scored zero, or one a Hungarian assignment gave to a neighbour, is still
+            # reachable and must keep facing the loss.
+            reachable = match_mask.any(dim=2)
+            observed = aligned_true[:, :max_true_peaks]
+            dump_true = (observed * (~reachable)).sum(dim=1, keepdim=True)
+            # The tail holds unmatched predictions, whose observed side is structurally zero,
+            # so only the observed block needs masking and no full-width buffer is allocated.
+            aligned_true = th.cat(
+                (
+                    observed * reachable,
+                    aligned_true[:, max_true_peaks:],
+                    dump_true,
+                ),
+                dim=1,
+            )
+            dump_pred = (
+                pred_dump_intensities[bl_lower:bl_upper].reshape(-1, 1).to(aligned_pred.dtype)
+            )
+            aligned_pred = th.cat((aligned_pred, dump_pred), dim=1)
 
         distance_dtype = th.promote_types(aligned_pred.dtype, aligned_true.dtype)
         if distance_dtype in {th.float16, th.bfloat16}:

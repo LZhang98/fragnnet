@@ -4,6 +4,47 @@
 
 ## Current handoff
 
+MASShatter candidate-token changes (2026-09-22). **LANDED in the working tree, both keys default
+off, nothing trained.** Two one-key levers on the head that the
+[overfit read-out](findings/masshatter_overfit_readout_2026_09_22.md) blames for ~98% of the
+0.151 cosine gap (allocation, not coverage: train `wrecall` 0.8975 vs val 0.8911).
+**`mass_shatter_candidate_cut_bond_features`** pools `chemical_bond_attr[boundary_bond_indices]`
+per candidate, summed and averaged, because `_boundary_embeddings` builds its block from atom
+ENDPOINTS and never reads the bond attributes -- so a cut bond's own type/ring/conjugation reach
+the intensity head only through endpoint mixing, which an internal atom of degree > 1 destroys.
+The summed half is the multiset of broken bond types. Costs 2 x bond width (18 columns here,
+1,285 -> 1,303) and no parameters. **`mass_shatter_candidate_atom_dropout`** drops each atom from
+a candidate's membership set before the component pool, training only, attacking the identity that
+pooling leaves behind (the cc atom mask resolves 1.00 distinct fragments per descriptor bucket).
+Dropped atoms **migrate to the complement** rather than the complement being held exact, because
+the complement is precursor minus candidate and an exact one would leak the true candidate sum by
+subtraction; every other candidate input keeps the true membership, and a candidate is never
+emptied. Arms, each verified a one-key diff from `c4a_base_s1` at the same seed and 128 epochs:
+`config/massshatter/ma_mi_merged/candidate_token_2026_09_22/{e1_cut_bond_feats,e2_cc_atom_drop01,e3_cc_atom_drop02}.yml`.
+**Correction to the [cut-set plan](plans/masshatter_cut_set_features_plan.md):** its item C
+(remove `use_base_probability_feature`) is not available as an arm -- `mass_shatter_pl.py:1008`
+derives it from `mass_shatter_proposal_anchored`, which is already `true` in `c4a_base_s1`, so the
+`c4a` token never carried `mask_log_probabilities`. Validation: 13 new tests, the candidate-feature
+file 47 pass, model + Lightning suites 269 pass, Ruff and Black clean on every changed file,
+configs resolved against the template. No run launched.
+
+Feature and information audit (2026-09-22). **Documentation and diagnostics only; two of its
+own conclusions withdrawn.** Synthesis with a per-claim status table:
+[feature_information_audit_2026_09_22.md](findings/feature_information_audit_2026_09_22.md) --
+read it before any of its five parts. Headline results: GLACIER publishes **no model size at all**
+(ICEBERG 2.0 is 7.0M against FraGNNet 2.79M and MASShatter 9.22M, all measured); descriptor
+features are a **closed null** (MMFF/EState/Crippen/TPSA and the benzylic family are recoverable
+from current inputs at 0.93-1.00); `b_stereo` cannot be matched without a preprocessing change
+(0 of 127,249 bonds carry stereo); NIST ships an expert formula per peak covering **99.4% of
+intensity** that never reaches the loss. In the tree, untrained: three new atom/bond features with
+tests, `mass_shatter_candidate_composition_features` (off by default), three matched config arms,
+and five diagnostic scripts. Proposed, not built: three MASShatter candidate-token changes
+([cut-set plan](plans/masshatter_cut_set_features_plan.md)) -- **96.8%** of fragments are cut at
+>=2 bonds and **55.4%** have two cuts sharing a ring, which mean pooling cannot distinguish from
+unrelated cuts. **Retracted:** the proposal that MASShatter needs a structural teacher; coverage
+already transfers (train `wrecall` 0.8975 vs val 0.8911 against a 0.151 cosine gap). Validation:
+full suite green, Ruff clean, links checked. No run launched.
+
 Above-precursor target filter (2026-09-22). **LANDED in the working tree.** `spec_params` gains
 `filter_above_precursor_peaks` / `above_precursor_ppm` /
 `above_precursor_use_instrument_tolerance`, default off, applied in `clean_spectra` after
@@ -20,6 +61,144 @@ file; 9 new tests; end-to-end on the real merged MA/MI val split the above-precu
 goes **0.00899 -> 0.00000** and 10,339 of 792,217 peaks are removed, matching the 0.0090 predicted
 by the split probe. Three existing `spec_params` fixtures needed the new required keys, which is
 the intended strict-required behaviour. No run launched.
+
+Intensity escape / dump (2026-09-22), same request. **LANDED END TO END** behind
+`mass_shatter_intensity_escape`, default off, **never trained**.
+`sparse_peak_list_distance` takes `pred_dump_intensities` (shape `(batch_size,)`, same units as
+`pred_intensities`); when given it collapses every *unreachable* observed peak into one appended
+coordinate and lets the model predict that mass, with all four objectives and the entropy term
+running unchanged on the extended vectors. Motivation is the user's: `wrecall` is 0.891, so 10.9%
+of observed intensity sits where no candidate reaches and the predicted distribution -- normalized
+over candidates alone -- is forced to over-allocate everything it can reach. Worked exactly for
+Hellinger, the escape removes an irreducible per-spectrum loss floor of `1 - sqrt(t(S))` that
+varies with coverage and therefore weights training by how well enumeration did on that molecule;
+**it does not change the optimal relative allocation**, which is `q_i ∝ t_i` either way, so it is
+not a ranking change. It also makes `kl_distance` finite on a coverage gap rather than leaning on
+`kl_epsilon`. Reachability is read from the tolerance `match_mask`, never from predicted values,
+so a candidate the model scored zero -- or one a Hungarian assignment gave to a neighbour -- still
+faces the loss. **This dissolved the plan's open "where is the target computed" decision**: it is
+batch-time machinery that already exists, with no `spec_df` column and no `tolerance_consensus`
+merge interaction. Validation: full suite **4,177 passed / 1 skipped / 2 xfailed**, Ruff clean,
+10 new tests covering the algebra, the structural reachability rule, gradient flow, KL finiteness
+and input validation; `pred_dump_intensities=None` is bit-identical to the previous behaviour on
+all four objectives, under test. The model side is wired: `MassShatterModel` takes
+`intensity_escape` and drives the intensity head's existing `predict_oos`, hard-coded `False`
+until now; the head emits one logit per spectrum from its mean-pooled molecule token and the
+model returns `pred_escape_intensities`. Parameterization: the escape's share of `candidates + escape`
+is `sigmoid(logit)`, whose odds are just `exp(logit)`, so the emitted mass is
+`candidate_mass * exp(logit)` with the logit clamped at 9. A code review caught the first
+implementation going through `sigmoid` and back, which **broke under reduced precision**: fp16
+and bf16 round any `1 - 1e-4` guard to exactly `1.0`, so the share saturated and the odds became
+`inf`, crashing the step on the loss's finiteness check. The head's bias starts at `logit(0.1)`,
+so training begins with the escape holding 10% of the spectrum, close to the measured 0.109, and
+a test asserts it. The escape head also warm-starts from a checkpoint that predates it, matching
+what `ion_h_support_head` already did, so switching it on does not force a run from scratch. `MassShatterPL` **raises at
+setup** when the escape is requested with `mass_shatter_intensity_output: probability` or a
+cross-entropy `loss_type` rather than ignoring it -- silent override is how `predict_oos` went
+unnoticed on this model for months. The escape is reachable only in unique-fragment,
+proposal-selection-only mode, the only mode `independent` intensity output supports. Also fixed: the
+head's molecule pooling divided by a component count that can be zero, on a path that had never
+executed because `predict_oos` was hard-coded off at its only call site. Validation: full suite
+**4,184 passed / 1 skipped / 2 xfailed**, Ruff clean, 17 new tests in total for this item,
+including an end-to-end one that runs the real model, feeds its output through `loss_fn`, and
+shows the escape both reaches `sparse_peak_list_distance` and lowers the loss. **Smoke-trained green 2026-09-22**, not measured:
+`config/debug/debug_tiny_mass_shatter_intensity_escape.yml` and a matched control differing only
+in the flag, 64 toy spectra, 8 epochs, `detect_anomaly: true`, both exit 0. The head starts at
+0.1 by construction and reaches `escape_share` **0.591** against a true unreachable fraction
+`1 - wrecall` of **0.528**, so it tracks the coverage deficit; `wrecall`/`recall`/`precision` are
+identical to the last digit between arms, the control the design requires; Hellinger halves
+(0.746 -> 0.362) against a predicted floor of `1 - sqrt(0.4717)` = 0.313. **The loss drop is not
+a quality gain** -- the objective now includes a coordinate the model can trivially get right, so
+a lower number is guaranteed, and **cosine, the one metric whose definition did not change, went
+slightly DOWN (0.2236 -> 0.2022)**. That is noise at this scale but is what the algebra predicts:
+the escape is not a ranking change. `escape_share` is logged per spectrum whenever the escape is
+on, since otherwise the head is invisible. **Real comparison must be on cosine at matched epoch
+with replicates, never on the loss.** **Merged arms prepared, not submitted:**
+`config/massshatter/ma_mi_merged/intensity_escape_2026_09_22/` is a **one-knob ladder** off the
+loss-objective arm `h1_hellinger_closest.yml` (`oykkffls`, 0.7247), needed because `h1` keeps
+`intensity_output: probability` while the escape requires `independent` -- so `e0` (independent,
+escape off, 2 seeds) isolates the output mode against `h1` and `e1` (escape on, 2 seeds) isolates
+the escape against `e0`. Verified by resolving each config and constructing the model: the
+resolved diff is exactly the intended key at each step, and the escape adds **257 parameters** to
+a 9,217,181-parameter model with no change to the memory shape, so the lineage's
+`fir:h100-2g.20gb` profile still applies. Generation:
+`scripts/manual_slurm/fir/submit_masshatter_intensity_escape.sh [ladder|control]` (generates
+without submitting, validates configs and wheels first, syntax-checked). Nothing generated into
+`slurm_scripts/`, nothing submitted. The
+contaminant escape (`predict_oos` supervised by the subformula test, addressable population
+0.0156) is still unimplemented; see [the plan](plans/masshatter_supervised_escape_plan.md).
+Isotope detection is **deferred by user decision** (2026-09-22).
+
+Unexplained-intensity split (2026-09-22). Answering "what escape do we need for the peaks we
+cannot explain" by measuring the population first; read
+[the split](findings/unexplained_peak_split_2026_09_22.md). Over the full 15,257-spectrum
+`nist20_ma_mi_inchikey` val split, built through the run's own `spec_params` so the probed target
+is the trained target, the 10.89-point residual behind `val_wrecall` 0.8911 divides **73%
+coverage / 27% escape**: 2.91 points carry no precursor-bounded, nonnegative-RDBE subformula and
+therefore cannot come from the molecule, while **7.98 points are real analyte fragments the
+candidate enumeration misses**. The test is not vacuous -- a matched-mass donor formula rejects
+0.5993 where the true formula rejects 0.0291, a **20.6x** discrimination. The escape population
+is a diffuse small-peak background (an infeasible peak carries 0.21x a feasible one's intensity,
+half the mass is spread over 7.9% of spectra, 23.3% of spectra are entirely clean) with a ~1.6%
+tail where a dominant peak is non-analyte, **so a per-spectrum scalar escape is the wrong shape
+for it** -- which agrees independently with the read-out's proof that a scalar `predict_oos`
+cannot move a scale-invariant metric. Flat across adduct, instrument and fragmentation mode.
+**46.5% of the escape population is isotopologues, not contaminants** (0.0135: the precursor M+1..3
+ladder plus fragment isotopologues one or two neutron masses above an explainable peak), leaving a
+genuine noise population of **0.0156** -- 14.3% of the residual. That half wants isotope handling,
+which is scoped but never switched on (`remove_isotope_peaks` and friends are marked NOT HOOKED UP
+in `template.yml`; `num_isotopes` is 1 everywhere and every DAG is `isoFalse`), so the model is
+graded on peaks it structurally cannot produce. **Nothing removes peaks above the precursor**
+anywhere in the training or validation path, while every oracle script (`dag_oracle_scores.py`,
+`dag_oracle_decomposition.py`, `dominant_peak_diagnostic.py`) defaults to the `1_above_prec` tier
+that does -- so published oracle ceilings were measured on a target the model does not train on.
+A blanket above-precursor cut is nonetheless wrong: it removes 0.0090 of which 72% is the precursor
+isotopologue ladder, real signal; only 0.0025 is genuine co-isolation. **Priority is coverage, not
+escape** -- 7.98 points versus a 1.56-point contaminant population. Relevant existing machinery,
+all currently off for MASShatter: the `predict_oos` head is implemented in
+`bond_fragment_heads.py:678` but hard-coded off at `mass_shatter_model.py:1508` and force-disabled
+in `MassShatterPL`; `filter_subformula_peaks` is a hard per-peak version of this probe's test and
+has never run on this base (0 of 58 runs). New probe:
+`scripts/debug/debug_unexplained_peak_split.py`. Validation: Ruff clean; probe run end to end on
+the full split plus a 400-spectrum smoke run; no model code changed, no training launched.
+
+MASShatter overfit read-out (2026-09-22). Read-only W&B review of the 25 runs of 2026-09-21/22;
+read [the read-out](findings/masshatter_overfit_readout_2026_09_22.md) before launching another
+regularization, objective or schedule arm. The train/validation cosine gap reaches **0.151** by
+epoch 127 and never plateaus, but it is **not a coverage gap**: train and validation `wrecall`
+agree to 0.0064 against a 0.1507 cosine difference, worth ~0.0027 of achievable cosine at the
+local `wrecall`->`opt_cos_sim` slope measured on three 2026-08-26 runs, so **~98% of the
+generalization gap is intensity allocation among peaks the model already proposes**. FraGNNet on
+this exact split logged the oracle on both sides and agrees (train `opt_cos_sim` 0.9271 /
+validation 0.9243). Whether narrowing the gap helps is **untested, not refuted**: the
+four-objective ordering is algebraically forced (val-on-train slope 0.605 makes gap and
+validation rank together by construction), and in the 8-arm 09-21 regularization sweep
+corr(gap, val) = +0.72 collapses to **-0.67** once the single arm `drop03` is removed. `wd10`
+narrowed the gap without suppressing train cosine and moved validation **+0.0015** at 10%
+exposure -- one full-length run would settle it. Validation *primary* loss turns before
+validation cosine in all six instrumented runs but by **6 to 476 epochs** (the CE control leads
+by 6, i.e. not at all); the 630-epoch control ends **0.096 worse** than its epoch-79 optimum,
+non-monotonically, while its cosine moves **+0.0042** and never falls -- a calibration signal,
+not evidence that late training costs cosine. The 128-epoch screen length is confirmed on 15 arms
+(median +0.0031 from epoch 128 to best). **One live candidate:** the LR-decay arms, the first to
+get a real schedule after the 2026-09-21 forwarding fix -- `d3` (cosine decay + 1000-step warmup)
+reaches 0.7357 against a 0.7286 control mean whose replicates span 0.0007, but n=1; replicate
+before promoting. **Two instrumentation gaps block the next read:**
+`compute_train_auxiliary_metrics` is on in 4 of 25 runs and `opt_cos_sim` in none, and
+`c4a_base_s1/s2` carry a `train_aux_metrics` tag while their resolved config says `False`. Also
+pinned: the 0.73-vs-0.80 difference against `8v0i0fq7` is **scope plus the subformula target
+filter**, not a regression -- a 256-run cross-tab puts ~0.06 on adduct/instrument/fragmentation
+scope (4 adducts / FT+QTOF / HCD+CID vs `[M+H]+` / FT) and ~0.006 on `filter_subformula_peaks`,
+which is `True` in `8v0i0fq7` and `False` in **all 58** `nist20_ma_mi_inchikey` runs. The filter's
+share is not a matched eval: `clean_spectra` runs at dataset load, so each arm is scored against
+its own cleaned target. The read-out now also records the intensity-memorization threat model:
+candidate-set fingerprinting, unequal molecule exposure, CE conditioning proxies, population
+priors, and non-causal fragment proxies are plausible but not yet causally isolated. The current
+lead already excludes direct proposal probabilities, and unmerged runs also overfit, so neither
+removing that feature again nor simply unmerging is a supported fix. Next gate: eval-mode,
+molecule-balanced train/validation metrics with seen/unseen-scaffold slices, followed by matched
+`wd10`, instrumented `d3`, intensity-only capacity/dropout, molecule balancing, and QTOF CE arms.
+Documentation only; no code, config or run changed, and no training or evaluation was launched.
 
 ICEBERG/GLACIER parity (2026-09-22). Closing the gaps behind "do they have a larger model, more
 features?". **Model size:** GLACIER publishes none — no hidden dim, layer count or parameter

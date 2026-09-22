@@ -988,3 +988,161 @@ def test_hellinger_scores_each_spectrum_independently_of_the_batch(matching: str
         alone.append(single)
 
     th.testing.assert_close(batched, th.cat(alone))
+
+
+def _coverage_gap_batch():
+    """One spectrum whose second observed peak no candidate can reach.
+
+    Observed 100 (intensity 6) and 200 (intensity 4); the only candidate sits at 100, so
+    40% of the observed intensity is unreachable and `wrecall` is 0.6.
+    """
+    true_mzs = th.tensor([100.0, 200.0], dtype=th.float64)
+    true_ints = th.tensor([6.0, 4.0], dtype=th.float64)
+    true_batch = th.tensor([0, 0], dtype=th.long)
+    pred_mzs = th.tensor([100.0], dtype=th.float64)
+    pred_ints = th.tensor([1.0], dtype=th.float64)
+    pred_batch = th.tensor([0], dtype=th.long)
+    return true_mzs, true_ints, true_batch, pred_mzs, pred_ints, pred_batch
+
+
+def test_escape_absent_leaves_every_objective_bit_identical():
+    args = _coverage_gap_batch()
+    for objective in ("cosine_distance", "hellinger_distance", "jss_distance", "kl_distance"):
+        baseline = sparse_peak_list_distance(
+            *args, objective=objective, matching="closest", tolerance=1e-5
+        )
+        explicit_none = sparse_peak_list_distance(
+            *args,
+            objective=objective,
+            matching="closest",
+            pred_dump_intensities=None,
+            tolerance=1e-5,
+        )
+        assert th.equal(baseline[0], explicit_none[0])
+        assert th.equal(baseline[1], explicit_none[1])
+
+
+def test_escape_absorbs_the_unreachable_intensity_and_clears_the_loss_floor():
+    """With no escape the loss cannot reach zero; with a correctly sized one it can."""
+    args = _coverage_gap_batch()
+
+    without, _ = sparse_peak_list_distance(
+        *args, objective="hellinger_distance", matching="closest", tolerance=1e-5
+    )
+    # The predicted candidate mass is 1.0, so a dump of 4/6 puts 40% of the predicted
+    # distribution on the escape, exactly the unreachable observed fraction.
+    with_escape, _ = sparse_peak_list_distance(
+        *args,
+        objective="hellinger_distance",
+        matching="closest",
+        pred_dump_intensities=th.tensor([4.0 / 6.0], dtype=th.float64),
+        tolerance=1e-5,
+    )
+
+    assert without.item() == pytest.approx(1.0 - math.sqrt(0.6), abs=1e-9)
+    assert with_escape.item() == pytest.approx(0.0, abs=1e-9)
+
+
+def test_escape_is_optimal_exactly_at_the_unreachable_fraction():
+    args = _coverage_gap_batch()
+
+    def hellinger(dump):
+        value, _ = sparse_peak_list_distance(
+            *args,
+            objective="hellinger_distance",
+            matching="closest",
+            pred_dump_intensities=th.tensor([dump], dtype=th.float64),
+            tolerance=1e-5,
+        )
+        return value.item()
+
+    optimal = hellinger(4.0 / 6.0)
+    assert optimal < hellinger(0.1)
+    assert optimal < hellinger(0.4)
+    assert optimal < hellinger(1.0)
+    assert optimal < hellinger(3.0)
+
+
+def test_escape_does_not_rescue_a_reachable_peak_the_model_scored_zero():
+    """Reachability is structural: a candidate exists at 200, so its miss still costs."""
+    true_mzs = th.tensor([100.0, 200.0], dtype=th.float64)
+    true_ints = th.tensor([6.0, 4.0], dtype=th.float64)
+    true_batch = th.tensor([0, 0], dtype=th.long)
+    pred_mzs = th.tensor([100.0, 200.0], dtype=th.float64)
+    pred_ints = th.tensor([1.0, 0.0], dtype=th.float64)
+    pred_batch = th.tensor([0, 0], dtype=th.long)
+
+    value, _ = sparse_peak_list_distance(
+        true_mzs,
+        true_ints,
+        true_batch,
+        pred_mzs,
+        pred_ints,
+        pred_batch,
+        objective="hellinger_distance",
+        matching="closest",
+        pred_dump_intensities=th.tensor([4.0 / 6.0], dtype=th.float64),
+        tolerance=1e-5,
+    )
+
+    # The 200 peak is inside a candidate's tolerance window, so it stays in the support and
+    # the escape cannot absorb it; the loss must stay well away from zero.
+    assert value.item() > 0.1
+
+
+def test_escape_keeps_gradients_flowing_to_the_dump():
+    args = _coverage_gap_batch()
+    dump = th.tensor([0.2], dtype=th.float64, requires_grad=True)
+
+    value, _ = sparse_peak_list_distance(
+        *args,
+        objective="hellinger_distance",
+        matching="closest",
+        pred_dump_intensities=dump,
+        tolerance=1e-5,
+    )
+    value.sum().backward()
+
+    assert dump.grad is not None
+    assert th.isfinite(dump.grad).all()
+    assert dump.grad.item() < 0.0  # under-dumping, so increasing the dump reduces the loss
+
+
+def test_escape_makes_kl_finite_on_a_coverage_gap():
+    args = _coverage_gap_batch()
+
+    without, _ = sparse_peak_list_distance(
+        *args, objective="kl_distance", matching="closest", tolerance=1e-5
+    )
+    with_escape, _ = sparse_peak_list_distance(
+        *args,
+        objective="kl_distance",
+        matching="closest",
+        pred_dump_intensities=th.tensor([4.0 / 6.0], dtype=th.float64),
+        tolerance=1e-5,
+    )
+
+    assert th.isfinite(without).all()
+    assert with_escape.item() == pytest.approx(0.0, abs=1e-9)
+    assert with_escape.item() < without.item()
+
+
+@pytest.mark.parametrize(
+    "dump, match",
+    [
+        (th.tensor([[0.5]]), "one-dimensional"),
+        (th.tensor([float("nan")]), "finite"),
+        (th.tensor([-1.0]), "nonnegative"),
+        (th.tensor([0.5, 0.5]), "one value per spectrum"),
+    ],
+)
+def test_escape_rejects_malformed_input(dump, match):
+    args = _coverage_gap_batch()
+    with pytest.raises(ValueError, match=match):
+        sparse_peak_list_distance(
+            *args,
+            objective="hellinger_distance",
+            matching="closest",
+            pred_dump_intensities=dump.to(th.float64),
+            tolerance=1e-5,
+        )

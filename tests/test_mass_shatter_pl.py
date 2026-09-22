@@ -2740,3 +2740,206 @@ def test_hellinger_leak_auxiliary_stays_per_spectrum_across_a_batch() -> None:
     th.testing.assert_close(result["spectral_leak_loss"], th.tensor([0.05, 0.4]))
     assert result["loss"].shape == (2,)
     assert th.isfinite(pred_intensities.grad).all()
+
+
+def _escape_inputs(smiles: str = "c1ccccc1S(=O)c1ccccc1"):
+    """A two-spectrum batch of one molecule at two collision energies."""
+    template_path = Path(__file__).parents[1] / "config"
+    config = runner.load_config(str(template_path), None, None, model_type="mass_shatter")
+    params = config["mol_params"]
+    mol = Chem.MolFromSmiles(smiles)
+    graph = get_mol_graph(
+        mol,
+        params["pyg_node_feats"],
+        params["pyg_edge_feats"],
+        params["pyg_pe_embed_k"],
+        True,
+    )
+    batch = Batch.from_data_list([graph, graph])
+    static_graph = MassShatterStaticGraph(
+        chemical_bond_index=batch.chemical_bond_index,
+        atom_batch_indices=batch.batch,
+        atom_ptr=batch.ptr,
+    )
+    return {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_inst_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+        "static_graph": static_graph,
+    }
+
+
+# Independent intensity output is only reachable in unique-fragment, proposal-selection-only
+# mode, which is therefore the only branch the escape can run in.
+_INDEPENDENT_OUTPUT = {
+    "mass_shatter_intensity_output": "independent",
+    "loss_type": "hellinger_distance",
+    "mass_shatter_unique_fragment_mode": True,
+    "mass_shatter_proposal_selection_only": True,
+    # proposal_selection_only must not expose proposal probabilities to the intensity head,
+    # and requires a positive proposal loss weight.
+    "mass_shatter_proposal_anchored": True,
+    "mass_shatter_proposal_loss_weight": 0.1,
+}
+
+
+def _escape_pl(**overrides):
+    return _build_pl(
+        **_INDEPENDENT_OUTPUT, mass_shatter_intensity_escape=True, **overrides
+    )[0]
+
+
+def test_intensity_escape_is_off_by_default_and_emits_nothing() -> None:
+    pl, _ = _build_pl(**_INDEPENDENT_OUTPUT)
+
+    assert pl.model.intensity_escape is False
+    assert pl.model.intensity_head.oos_head is None
+    output = pl.model(**_escape_inputs())
+    assert "pred_escape_intensities" not in output
+
+
+def test_intensity_escape_emits_one_nonnegative_mass_per_spectrum() -> None:
+    pl = _escape_pl()
+
+    assert pl.model.intensity_head.oos_head is not None
+    output = pl.model(**_escape_inputs())
+    escape = output["pred_escape_intensities"]
+
+    assert escape.shape == (2,)
+    assert th.isfinite(escape).all()
+    assert (escape >= 0.0).all()
+
+
+def test_intensity_escape_starts_near_the_measured_unreachable_fraction() -> None:
+    """The head's bias is logit(0.1), so the escape's share of the total starts at ~0.1."""
+    pl = _escape_pl()
+    output = pl.model(**_escape_inputs())
+
+    escape = output["pred_escape_intensities"]
+    candidate_mass = output["pred_intensities"].new_zeros(2).index_add(
+        0, output["pred_batch_idxs"], output["pred_intensities"]
+    )
+    share = escape / (candidate_mass + escape)
+
+    assert share.tolist() == pytest.approx([0.1, 0.1], abs=1e-4)
+
+
+def test_intensity_escape_reaches_the_loss_and_carries_gradient() -> None:
+    pl = _escape_pl()
+    output = pl.model(**_escape_inputs())
+
+    output["pred_escape_intensities"].sum().backward()
+
+    assert pl.model.intensity_head.oos_head.bias.grad is not None
+    assert th.isfinite(pl.model.intensity_head.oos_head.bias.grad).all()
+
+
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        # Either the model constructor or the PL setup rejects this, depending on which runs
+        # first; the contract under test is that it is rejected, loudly, at setup.
+        (
+            {"mass_shatter_intensity_output": "probability", "loss_type": "hellinger_distance"},
+            "independent",
+        ),
+        (
+            {"mass_shatter_intensity_output": "probability", "loss_type": "cross_entropy"},
+            "independent",
+        ),
+        # Independent output already rejects a cross-entropy loss on its own, so the escape
+        # needs no separate check for it; this pins that the combination still cannot run.
+        (
+            {**_INDEPENDENT_OUTPUT, "loss_type": "cross_entropy"},
+            "independent intensity output requires a direct spectral loss",
+        ),
+    ],
+)
+def test_intensity_escape_refuses_incompatible_output_and_loss(overrides, match) -> None:
+    """Silently ignoring the flag is exactly how predict_oos went unnoticed for months."""
+    with pytest.raises(ValueError, match=match):
+        _build_pl(mass_shatter_intensity_escape=True, **overrides)
+
+
+@pytest.mark.parametrize("dtype", [th.float16, th.bfloat16, th.float32])
+@pytest.mark.parametrize("logit", [9.0, 12.0, 20.0, 100.0])
+def test_escape_odds_stay_finite_under_reduced_precision(dtype, logit) -> None:
+    """fp16 and bf16 round a `1 - 1e-4` guard to exactly 1.0, so a sigmoid-then-odds
+    formulation saturates and divides by zero. Pinning the arithmetic the model uses."""
+    escape_logits = th.tensor([logit], dtype=dtype)
+    candidate_mass = th.tensor([1.0], dtype=dtype)
+
+    escape = candidate_mass * escape_logits.clamp(max=9.0).exp()
+
+    assert th.isfinite(escape).all()
+    assert (escape > 0.0).all()
+    # The old formulation is the regression this guards against.
+    saturated = th.sigmoid(escape_logits).clamp(max=1.0 - 1e-4)
+    if dtype in (th.float16, th.bfloat16):
+        assert not th.isfinite(saturated / (1.0 - saturated)).all()
+
+
+def test_intensity_escape_stays_finite_for_a_saturated_head() -> None:
+    """End to end: a confidently saturated logit must still produce a usable escape mass."""
+    pl = _escape_pl()
+    th.nn.init.constant_(pl.model.intensity_head.oos_head.bias, 20.0)
+
+    escape = pl.model(**_escape_inputs())["pred_escape_intensities"]
+
+    assert th.isfinite(escape).all()
+    assert (escape > 0.0).all()
+
+
+def test_intensity_escape_head_warm_starts_from_a_checkpoint_without_it() -> None:
+    """Switching the escape on must not force training from scratch."""
+    baseline, _ = _build_pl(**_INDEPENDENT_OUTPUT)
+    assert baseline.model.intensity_head.oos_head is None
+    state = baseline.state_dict()
+    assert not any("oos_head" in key for key in state)
+
+    with_escape = _escape_pl()
+    with_escape.load_state_dict(state, strict=True)
+
+    # The restored head is the freshly initialized one: zero weight, logit(0.1) bias.
+    head = with_escape.model.intensity_head.oos_head
+    assert th.equal(head.weight, th.zeros_like(head.weight))
+    assert head.bias.item() == pytest.approx(math.log(0.1 / 0.9), abs=1e-5)
+
+
+def test_intensity_escape_reaches_sparse_peak_list_distance_through_the_loss() -> None:
+    """The end-to-end plumbing: model output -> train_d -> loss_fn -> pred_dump_intensities."""
+    pl = _escape_pl()
+    output = pl.model(**_escape_inputs())
+
+    # Two observed peaks per spectrum: one on a real candidate m/z, one at a mass no
+    # candidate reaches, so there is a coverage gap for the escape to absorb.
+    pred_mzs = output["pred_mzs"]
+    pred_batch_idxs = output["pred_batch_idxs"]
+    reachable = th.stack([pred_mzs[pred_batch_idxs == idx][0] for idx in (0, 1)])
+    unreachable = th.full_like(reachable, 1234.5678)
+    true_mzs = th.stack([reachable, unreachable], dim=1).flatten()
+    true_intensities = th.tensor([0.6, 0.4, 0.6, 0.4], dtype=pred_mzs.dtype)
+    true_batch_idxs = th.tensor([0, 0, 1, 1])
+
+    inputs = dict(output)
+    inputs.update(
+        true_mzs=true_mzs,
+        true_intensities=true_intensities,
+        true_logprobs=true_intensities.log(),
+        true_batch_idxs=true_batch_idxs,
+        batch_size=2,
+    )
+
+    with_escape = pl.loss_fn(**inputs)
+    without = dict(inputs)
+    without.pop("pred_escape_intensities")
+    without_escape = pl.loss_fn(**without)
+
+    assert "pred_escape_intensities" in inputs
+    assert th.isfinite(with_escape["loss"]).all()
+    # The escape moves the objective, which it can only do by reaching the loss.
+    assert not th.allclose(with_escape["primary_loss"], without_escape["primary_loss"])
+    # Half the observed intensity is unreachable, so without an escape the Hellinger loss
+    # cannot fall below its floor; with one the model has a route to beat it.
+    assert (with_escape["primary_loss"] < without_escape["primary_loss"]).all()
