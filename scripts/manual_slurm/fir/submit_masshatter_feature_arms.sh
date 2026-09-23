@@ -27,6 +27,10 @@
 # Wall time 3:00:00 for the MASShatter arms: the configs are min_epochs=max_epochs=128 and
 # c4a_base finished 127 epochs inside this wall at the measured ~70 epochs/hour (~1.8 h).
 #
+# Wall time 12:00:00 for fraggnn: the 6:00:00 box killed m8qgi0ft (2026-09-23) at epoch 77 of
+# max_epochs 100 after 5.96 h (~13 epochs/hour, no memory growth), so 100 epochs needs ~7.7 h.
+# 12 h is ~1.5x headroom; a rerun with the same j= resumes from its last.ckpt.
+#
 # Every arm passes j=<job_name> so a requeued job resumes from last.ckpt rather than restarting.
 
 set -euo pipefail
@@ -60,7 +64,7 @@ GLACIER_OVERRIDES=("" "" "")
 
 FRAGGNN_JOBS=(fg_fa_graph_feature_parity)
 FRAGGNN_CONFIGS=("config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml")
-FRAGGNN_TIMES=(6:00:00)
+FRAGGNN_TIMES=(12:00:00)
 FRAGGNN_OVERRIDES=("")
 
 REPLICATE_JOBS=(msh_fa_e4_cut_adjacency_s2 msh_fa_a2_full_attention_s2)
