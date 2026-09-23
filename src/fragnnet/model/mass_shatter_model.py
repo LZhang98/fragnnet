@@ -51,7 +51,7 @@ from fragnnet.frag.mass_shatter_templates import (
     MassShatterTemplate,
     filter_mass_shatter_templates,
 )
-from fragnnet.model.base_model import CutBondEncoder
+from fragnnet.model.base_model import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
@@ -2009,9 +2009,11 @@ class MassShatterModel(nn.Module):
             atom_component_indices,
             num_atoms=atom_embeddings.shape[0],
         )
-        bond_embeddings = self.boundary_bond_encoder(
-            atom_embeddings[inside_atoms],
-            atom_embeddings[outside_atoms],
+        bond_embeddings = encode_cut_bond_pairs(
+            self.boundary_bond_encoder,
+            atom_embeddings,
+            inside_atoms,
+            outside_atoms,
         )
         return pool_boundary_bond_embeddings(
             bond_embeddings,

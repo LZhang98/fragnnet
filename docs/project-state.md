@@ -4,6 +4,21 @@
 
 ## Current handoff
 
+**`CutBondEncoder` now encodes each directed cut bond once (2026-09-23).** Both callers,
+MASShatter's `boundary_bond_encoder` and FraGNNet's `cut_bond`, ran the encoder on every
+(fragment, cut bond) row, although its output depends only on the two endpoint embeddings. That
+is 9.8x repeated rows on a 24-molecule NIST20 MASShatter batch and 29x on the FraGNNet test DAG.
+The new `encode_cut_bond_pairs` in `base_model.py` encodes each distinct (inside, outside) pair
+once and gathers the rows back. Parameters are unchanged, so checkpoints load. Verified against
+the old code on the production-shaped MASShatter model: predictions within 9.5e-7, every
+non-negligible gradient within 4.2e-7 relative. The FraGNNet `cut_bond` test model is
+bit-identical. Encoder forward FLOPs fell from 20.1 to 2.1 GFLOP (MASShatter total 45.9 to 27.8).
+Expect little wall-clock from it: removing the encoder outright (`c4a_no_bbe`) saved only 6%
+per epoch. The model function is unchanged, so this does not touch the boundary block's
+[memorization](findings/masshatter/masshatter_memorization_route_probe_2026_09_23.md). Tests
+in `tests/test_cut_bond.py` and `tests/test_mass_shatter_candidate_features.py`, including
+per-row equivalence checks for both models that catch a planted orientation bug.
+
 **MASShatter memorization located in the intensity head's boundary block (2026-09-23); inference
 only, no training.** The pooled-embedding corruption probe gained `features` and `set` scopes and
 ran in eval mode on two production checkpoints, `6h67zps9` and `3bej6fq7` (unmerged `[M+H]+` FT,

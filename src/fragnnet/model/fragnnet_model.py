@@ -24,6 +24,7 @@ from fragnnet.model.base_model import (
     InstModel,
     PrecModel,
     StratumScaler,
+    encode_cut_bond_pairs,
 )
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.fragment_competition import TopKFragmentTransformer
@@ -1609,9 +1610,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 cut_in_global = cut_in_global[valid]
                 cut_out_global = cut_out_global[valid]
             if cut_frag_idxs.numel() > 0:
-                bond_embed = self.cut_bond_encoder(
-                    th.index_select(mol_embed_gnn, 0, cut_in_global),
-                    th.index_select(mol_embed_gnn, 0, cut_out_global),
+                bond_embed = encode_cut_bond_pairs(
+                    self.cut_bond_encoder,
+                    mol_embed_gnn,
+                    cut_in_global,
+                    cut_out_global,
                 )
                 cut_bond_out = self.mol_pool(bond_embed, cut_frag_idxs, dim_size=num_frags_total)
             else:

@@ -192,6 +192,39 @@ def test_model_boundary_embeddings_use_the_oriented_encoder() -> None:
     assert not th.allclose(pooled, endpoint_average[[0]])
 
 
+def test_forward_boundary_dedup_matches_per_row_encoding(monkeypatch) -> None:
+    """Encoding each directed cut bond once reproduces encoding every (fragment, bond) row."""
+    batch = _build_batch(("CCOC(=O)c1ccccc1", "CCO"))
+    model = _build_model(
+        batch,
+        max_masks=16,
+        max_enumerated_masks=64,
+        unique_fragment_mode=True,
+        boundary_bond_encoder=True,
+    ).eval()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([20.0, 40.0]),
+    }
+    encoded_rows = []
+    handle = model.boundary_bond_encoder.register_forward_hook(
+        lambda _module, args, _output: encoded_rows.append(len(args[0]))
+    )
+    with th.no_grad():
+        deduplicated = model(**inputs)["pred_logprobs"]
+        monkeypatch.setattr(
+            mass_shatter_model_module,
+            "encode_cut_bond_pairs",
+            lambda encoder, atoms, in_idx, out_idx: encoder(atoms[in_idx], atoms[out_idx]),
+        )
+        per_row = model(**inputs)["pred_logprobs"]
+    handle.remove()
+
+    assert encoded_rows[0] < encoded_rows[1]  # the batch repeats directed bonds: not vacuous
+    assert th.allclose(deduplicated, per_row, atol=1e-6)
+
+
 # --- c_mass -------------------------------------------------------------------------------
 
 

@@ -24,7 +24,8 @@ from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build as _build_fragnnet
 from torch_geometric.nn import global_mean_pool
 
-from fragnnet.model.base_model import CutBondEncoder
+import fragnnet.model.fragnnet_model as fragnnet_model_module
+from fragnnet.model.base_model import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.utils.frag_utils import (
     compute_boundary_pair_idxs,
     get_node_feats,
@@ -133,6 +134,62 @@ class TestPairingSurvivesPooling:
         assert th.allclose(real, collapsed, atol=1e-5)
 
 
+class TestEncodeCutBondPairs:
+    """``encode_cut_bond_pairs`` must equal per-row encoding while encoding each pair once."""
+
+    # Seven rows over three distinct directed pairs; (0, 1) and (1, 0) are one bond's two
+    # orientations and must stay distinct.
+    IN = th.tensor([0, 1, 0, 2, 0, 1, 2])
+    OUT = th.tensor([1, 0, 1, 3, 1, 0, 3])
+
+    def test_matches_per_row_encoding_with_repeats(self):
+        enc, atoms = _encoder(), _atoms(4)
+        rows = encode_cut_bond_pairs(enc, atoms, self.IN, self.OUT)
+        assert rows.shape == (self.IN.numel(), ATOM_DIM)
+        assert th.allclose(rows, enc(atoms[self.IN], atoms[self.OUT]), atol=1e-6)
+        assert not th.allclose(rows[0], rows[1], atol=1e-4)  # orientation kept
+
+    def test_encoder_sees_each_distinct_pair_once(self):
+        enc, atoms = _encoder(), _atoms(4)
+        seen_rows = []
+        handle = enc.register_forward_hook(lambda _m, args, _o: seen_rows.append(len(args[0])))
+        try:
+            encode_cut_bond_pairs(enc, atoms, self.IN, self.OUT)
+        finally:
+            handle.remove()
+        assert seen_rows == [3]
+
+    def test_gradients_match_per_row_encoding(self):
+        enc, weights = _encoder(), th.randn(self.IN.numel(), ATOM_DIM)
+        grads = []
+        for encode in (
+            lambda a: encode_cut_bond_pairs(enc, a, self.IN, self.OUT),
+            lambda a: enc(a[self.IN], a[self.OUT]),
+        ):
+            enc.zero_grad()
+            atoms = _atoms(4).requires_grad_(True)
+            (encode(atoms) * weights).sum().backward()
+            grads.append([atoms.grad, *(p.grad.clone() for p in enc.parameters())])
+        for dedup, per_row in zip(*grads):
+            assert th.allclose(dedup, per_row, atol=1e-5)
+
+    def test_empty_rows(self):
+        empty = th.zeros(0, dtype=th.long)
+        assert encode_cut_bond_pairs(_encoder(), _atoms(4), empty, empty).shape == (0, ATOM_DIM)
+
+    @pytest.mark.parametrize(
+        "in_idx, out_idx",
+        [
+            (th.tensor([0, 1]), th.tensor([1])),
+            (th.tensor([[0, 1]]), th.tensor([[1, 0]])),
+            (th.tensor([0, 1], dtype=th.int32), th.tensor([1, 0], dtype=th.int32)),
+        ],
+    )
+    def test_rejects_bad_indices(self, in_idx, out_idx):
+        with pytest.raises(ValueError):
+            encode_cut_bond_pairs(_encoder(), _atoms(4), in_idx, out_idx)
+
+
 def _forward_kwargs_with_cut_bonds(smiles: str = "CCOC(=O)c1ccccc1") -> dict:
     """Real forward batch plus the cut-bond indices the production batcher supplies.
 
@@ -197,3 +254,19 @@ class TestFraGNNetIntegration:
             b = pair(**kwargs)["pred_logprobs"]
         assert a.shape == b.shape
         assert not th.allclose(a, b, atol=1e-5)
+
+    def test_deduplicated_encoding_matches_per_row(self, monkeypatch):
+        """The forward's per-pair dedup reproduces encoding every cut-bond row separately."""
+        model = self._model([*self._BASE, "cut_bond"]).eval()
+        kwargs = _forward_kwargs_with_cut_bonds()
+        pairs = th.stack([kwargs["boundary_pair_in_idxs"], kwargs["boundary_pair_out_idxs"]])
+        assert th.unique(pairs, dim=1).shape[1] < pairs.shape[1]  # repeats exist: not vacuous
+        with th.no_grad():
+            deduplicated = model(**kwargs)["pred_logprobs"]
+            monkeypatch.setattr(
+                fragnnet_model_module,
+                "encode_cut_bond_pairs",
+                lambda encoder, atoms, in_idx, out_idx: encoder(atoms[in_idx], atoms[out_idx]),
+            )
+            per_row = model(**kwargs)["pred_logprobs"]
+        assert th.allclose(deduplicated, per_row, atol=1e-6)

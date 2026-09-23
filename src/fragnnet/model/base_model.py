@@ -884,3 +884,45 @@ class CutBondEncoder(nn.Module):
                 f"CutBondEncoder got atom width {in_embed.shape[-1]}, expected {self.atom_dim}"
             )
         return self.net(th.cat([in_embed, out_embed, in_embed * out_embed], dim=-1))
+
+
+def encode_cut_bond_pairs(
+    encoder: nn.Module,
+    atom_embeddings: th.Tensor,
+    in_indices: th.Tensor,
+    out_indices: th.Tensor,
+) -> th.Tensor:
+    """Encode (inside, outside) cut-bond pairs once per distinct pair, then gather per row.
+
+    A :class:`CutBondEncoder` output depends only on the two endpoint embeddings, and the
+    same directed bond recurs across every fragment that severs it: about 10x per row in
+    MASShatter merged batches, about 29x on the FraGNNet test DAG. Encoding each distinct
+    pair once and gathering the rows back gives the same values as
+    ``encoder(atom_embeddings[in_indices], atom_embeddings[out_indices])`` up to float
+    rounding, with the same parameters, at a fraction of the matmul work and activation
+    memory. Gradients from repeated rows accumulate through the gather.
+
+    Args:
+        encoder: The cut-bond encoder (a :class:`CutBondEncoder`, possibly compiled).
+        atom_embeddings: Atom embeddings of shape ``(num_atoms, atom_dim)``.
+        in_indices: Inside (retained) atom index per row, shape ``(num_rows,)``, ``long``.
+        out_indices: Outside (lost) atom index per row, shape ``(num_rows,)``, ``long``.
+
+    Returns:
+        Per-row encoding of shape ``(num_rows, out_dim)``, in the input row order.
+
+    Raises:
+        ValueError: If the index tensors are not matching one-dimensional ``long`` vectors.
+    """
+    if in_indices.ndim != 1 or in_indices.shape != out_indices.shape:
+        raise ValueError(
+            f"in_indices {tuple(in_indices.shape)} and out_indices "
+            f"{tuple(out_indices.shape)} must be matching 1-D vectors"
+        )
+    if in_indices.dtype != th.long or out_indices.dtype != th.long:
+        raise ValueError("cut-bond pair indices must have dtype torch.long")
+    unique_pairs, row_to_unique = th.unique(
+        th.stack((in_indices, out_indices)), dim=1, return_inverse=True
+    )
+    encoded = encoder(atom_embeddings[unique_pairs[0]], atom_embeddings[unique_pairs[1]])
+    return encoded[row_to_unique]
