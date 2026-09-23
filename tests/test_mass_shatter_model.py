@@ -1,5 +1,7 @@
 """End-to-end tests for the first trainable MASShatter model slice."""
 
+import itertools
+import math
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -19,10 +21,13 @@ from fragnnet.model.mass_shatter_model import (
     _absolute_binary_channel_keep_mask,
     _cmf_duplicate_crf_shift,
     _fixed_top_k_channel_keep_mask,
+    _fragment_release_log_probabilities,
     _ion_mode_logits_from_ion_h_support,
+    _missing_valid_fallback_mask,
     _relative_channel_keep_mask,
     _relative_fragment_keep_mask,
     _relative_joint_channel_keep_mask,
+    _top_k_fragment_keep_mask,
 )
 from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
@@ -55,6 +60,8 @@ def _build_model(
     max_enumerated_masks: int | None = None,
     min_mask_relative_probability: float = 0.0,
     min_fragment_relative_probability: float = 0.0,
+    fragment_selection: str = "mask_order",
+    selected_fragment_target: int | None = None,
     use_mask_residuals: bool = True,
     use_base_probability_feature: bool = True,
     return_base_spectrum: bool = False,
@@ -149,6 +156,8 @@ def _build_model(
         max_enumerated_masks=(max_masks if max_enumerated_masks is None else max_enumerated_masks),
         min_mask_relative_probability=min_mask_relative_probability,
         min_fragment_relative_probability=min_fragment_relative_probability,
+        fragment_selection=fragment_selection,
+        selected_fragment_target=selected_fragment_target,
         include_single_bond_cuts=True,
         max_h_transfer=max_h_transfer,
         h_transfer_bound=h_transfer_bound,
@@ -1691,6 +1700,321 @@ def test_fragment_probability_cutoff_filters_before_intensity_scoring() -> None:
     )
     assert proposal_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
     assert predicted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+
+
+def _connected_components(
+    num_atoms: int,
+    bonds: list[tuple[int, int]],
+    cut: Sequence[int],
+) -> set[frozenset[int]]:
+    parent = list(range(num_atoms))
+
+    def find(atom: int) -> int:
+        while parent[atom] != atom:
+            parent[atom] = parent[parent[atom]]
+            atom = parent[atom]
+        return atom
+
+    for (begin, end), is_cut in zip(bonds, cut):
+        if not is_cut:
+            parent[find(begin)] = find(end)
+    groups: dict[int, set[int]] = {}
+    for atom in range(num_atoms):
+        groups.setdefault(find(atom), set()).add(atom)
+    return {frozenset(group) for group in groups.values()}
+
+
+def _brute_force_fragment_probabilities(
+    smiles: str,
+    logits: th.Tensor,
+) -> tuple[int, list[tuple[int, int]], dict[frozenset[int], float], dict[frozenset[int], float]]:
+    """Enumerate every cut mask: each atom set's marginal and its intact-release probability."""
+    molecule = Chem.MolFromSmiles(smiles)
+    bonds = [(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()) for bond in molecule.GetBonds()]
+    cut_probabilities = th.sigmoid(logits.double()).tolist()
+    marginals: dict[frozenset[int], float] = {}
+    releases: dict[frozenset[int], float] = {}
+    for cut in itertools.product((0, 1), repeat=len(bonds)):
+        mask_probability = math.prod(
+            p if is_cut else 1.0 - p for p, is_cut in zip(cut_probabilities, cut)
+        )
+        for component in _connected_components(molecule.GetNumAtoms(), bonds, cut):
+            marginals[component] = marginals.get(component, 0.0) + mask_probability
+            interior_intact = not any(
+                is_cut
+                for (begin, end), is_cut in zip(bonds, cut)
+                if begin in component and end in component
+            )
+            if interior_intact:
+                releases[component] = releases.get(component, 0.0) + mask_probability
+    return molecule.GetNumAtoms(), bonds, marginals, releases
+
+
+@pytest.mark.parametrize("smiles", ["CC(C)CO", "C1CC1CO"])
+def test_release_probability_is_the_intact_event_and_bounds_the_atom_set_marginal(
+    smiles: str,
+) -> None:
+    generator = th.Generator().manual_seed(17)
+    num_bonds = Chem.MolFromSmiles(smiles).GetNumBonds()
+    logits = 1.5 * th.randn(num_bonds, generator=generator)
+    num_atoms, bonds, marginals, releases = _brute_force_fragment_probabilities(smiles, logits)
+    atom_sets = sorted(marginals, key=sorted)
+
+    atom_indices, atom_fragments, boundary_bonds, boundary_fragments = [], [], [], []
+    interior_counts = []
+    for fragment_index, atom_set in enumerate(atom_sets):
+        for atom in sorted(atom_set):
+            atom_indices.append(atom)
+            atom_fragments.append(fragment_index)
+        interior_counts.append(sum(begin in atom_set and end in atom_set for begin, end in bonds))
+        for bond_index, (begin, end) in enumerate(bonds):
+            if (begin in atom_set) != (end in atom_set):
+                boundary_bonds.append(bond_index)
+                boundary_fragments.append(fragment_index)
+    closed_form = _fragment_release_log_probabilities(
+        logits,
+        th.tensor(bonds, dtype=th.long).T,
+        num_atoms,
+        th.tensor(atom_indices, dtype=th.long),
+        th.tensor(atom_fragments, dtype=th.long),
+        th.tensor(boundary_bonds, dtype=th.long),
+        th.tensor(boundary_fragments, dtype=th.long),
+        len(atom_sets),
+    ).double()
+
+    release = th.tensor([releases[atom_set] for atom_set in atom_sets], dtype=th.float64)
+    marginal = th.tensor([marginals[atom_set] for atom_set in atom_sets], dtype=th.float64)
+    # A connected atom set contains a ring exactly when it has as many interior bonds as atoms.
+    cyclic = th.tensor(
+        [count >= len(atom_set) for count, atom_set in zip(interior_counts, atom_sets)]
+    )
+    assert th.allclose(closed_form.exp(), release, rtol=1e-5, atol=1e-8)
+    assert th.allclose(closed_form.exp()[~cyclic], marginal[~cyclic], rtol=1e-5, atol=1e-8)
+    # A ring bond inside the fragment can break without changing its atom set.
+    assert (closed_form.exp()[cyclic] < marginal[cyclic] - 1e-9).all()
+    assert bool(cyclic.any()) == ("1" in smiles)
+
+
+def test_top_k_fragment_keep_mask_keeps_forced_then_best_scores() -> None:
+    scores = th.tensor([0.1, 0.5, -th.inf, 0.3, 0.9, 0.2, 0.2, 0.7, 0.4, 0.0, 5.0, 1.0, 9.0, 3.0])
+    batch_indices = th.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3])
+    forced = th.tensor(
+        [True, False, False, False, False]
+        + [False, False, False, False]
+        + [True, True, True, False]
+        + [False]
+    )
+
+    keep = _top_k_fragment_keep_mask(scores, batch_indices, forced, batch_size=4, k=3)
+
+    # Molecule 0: the forced fragment plus the two best others; -inf never wins a slot.
+    # Molecule 1: the 0.2 tie breaks by pool order. Molecule 2: three forced fill the budget,
+    # so even the best-scoring free fragment is dropped. Molecule 3: fewer fragments than k.
+    assert keep.tolist() == [
+        True, True, False, False, True,
+        True, False, True, True,
+        True, True, True, False,
+        True,
+    ]  # fmt: skip
+    assert _top_k_fragment_keep_mask(scores, batch_indices, forced, batch_size=4, k=10).all()
+    with pytest.raises(ValueError, match="k must be positive"):
+        _top_k_fragment_keep_mask(scores, batch_indices, forced, batch_size=4, k=0)
+
+
+def test_marginal_selection_keeps_forced_fragments_and_scores_the_whole_pool() -> None:
+    batch = _build_batch(("CCCCO", "CCCO"))
+    model = _build_model(
+        batch,
+        max_masks=15,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        fragment_selection="marginal",
+        selected_fragment_target=11,
+    ).eval()
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 0]),
+        spec_nce=th.tensor([20.0, 25.0]),
+    )
+
+    # CCCCO has 15 contiguous atom sets, nine of them forced (the intact molecule and both
+    # sides of its four single cuts), so two slots go by release score. CCCO has only 10.
+    assert output["fragment_count_before_cutoff"].tolist() == [15.0, 10.0]
+    assert output["fragment_count_after_cutoff"].tolist() == [11.0, 10.0]
+    pool_batch = output["proposal_fragment_batch_idxs"]
+    assert th.bincount(pool_batch, minlength=2).tolist() == [15, 10]
+    pool_mass = th.zeros(2).index_add(0, pool_batch, output["proposal_fragment_logprobs"].exp())
+    assert pool_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+    assert th.isin(output["candidate_mzs_by_cut"], output["pool_candidate_mzs"]).all()
+    assert output["pool_candidate_mzs"].numel() > output["candidate_mzs_by_cut"].numel()
+    predicted_mass = th.zeros(2).index_add(
+        0,
+        output["pred_batch_idxs"],
+        output["pred_logprobs"].exp(),
+    )
+    assert predicted_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+
+
+def test_marginal_selection_budget_holds_when_release_scores_tie() -> None:
+    """Symmetric bonds give bit-identical release scores; K must still bound the kept set."""
+    batch = _build_batch(("c1ccccc1",))
+    kept_counts = []
+    for selected_fragment_target in range(1, 11):
+        model = _build_model(
+            batch,
+            max_masks=10,
+            unique_fragment_mode=True,
+            max_enumerated_masks=20,
+            use_base_probability_feature=False,
+            proposal_selection_only=True,
+            fragment_selection="marginal",
+            selected_fragment_target=selected_fragment_target,
+        ).eval()
+        with th.no_grad():
+            output = model(mol_pyg=batch, spec_prec_type=th.tensor([0]), spec_nce=th.tensor([25.0]))
+        assert output["fragment_count_before_cutoff"].tolist() == [10.0]
+        kept_counts.append(int(output["fragment_count_after_cutoff"].item()))
+
+    pool = output["proposal_fragment_logprobs"]
+    # The premise: several pool fragments share the top release score exactly.
+    assert int((pool == pool.max()).sum()) > 1
+    # Only the intact ring is forced (a single ring cut releases nothing), so K alone decides.
+    assert kept_counts == list(range(1, 11))
+
+
+def test_missing_valid_fallback_adds_one_fragment_only_where_none_is_kept() -> None:
+    scores = th.tensor([0.0, 2.0, 2.0, 2.0, 1.0, 5.0, 3.0, 3.0, 4.0])
+    valid = th.tensor([False, True, True, True, True, True, False, False, False])
+    keep = th.tensor([True, False, False, False, False, True, True, False, False])
+    batch_indices = th.tensor([0, 0, 0, 0, 1, 1, 2, 2, 2])
+
+    fallback = _missing_valid_fallback_mask(scores, valid, keep, batch_indices, batch_size=3)
+
+    # Molecule 0 keeps only an invalid fragment: exactly one of its three tied best valid
+    # fragments is added, the first in pool order. Molecule 1 already keeps a valid fragment.
+    # Molecule 2 has no valid fragment to add.
+    assert fallback.tolist() == [False, True, False, False, False, False, False, False, False]
+
+
+def test_marginal_selection_trains_the_proposal_on_fragments_outside_the_budget() -> None:
+    """Same kept set; only marginal mode lets an excluded fragment's peak reach the proposal."""
+    batch = _build_batch(("CCCCO",))
+    shared = {
+        "unique_fragment_mode": True,
+        "max_enumerated_masks": 16,
+        "use_base_probability_feature": False,
+        "proposal_selection_only": True,
+        # One channel per fragment keeps every atom set at a distinct mass.
+        "max_h_transfer": 0,
+        "include_cmf": False,
+    }
+    models = {
+        "marginal": _build_model(
+            batch,
+            max_masks=15,
+            fragment_selection="marginal",
+            selected_fragment_target=9,
+            **shared,
+        ),
+        "mask_order": _build_model(batch, max_masks=9, **shared),
+    }
+    outputs = {
+        name: model(mol_pyg=batch, spec_prec_type=th.tensor([0]), spec_nce=th.tensor([25.0]))
+        for name, model in models.items()
+    }
+    kept = outputs["marginal"]["candidate_mzs_by_cut"]
+    # Both keep exactly the intact molecule and the eight single-cut fragments.
+    assert th.equal(kept.sort().values, outputs["mask_order"]["candidate_mzs_by_cut"].sort().values)
+    pool = outputs["marginal"]["proposal_candidate_mzs"]
+    outside = (pool[:, None] - kept[None, :]).abs().min(dim=1).values > 1e-5 * pool.clamp(min=200.0)
+    assert outside.any()
+    true_mz = pool[outside][:1].detach()
+
+    results = {}
+    for name, model in models.items():
+        output = outputs[name]
+        loss = _proposal_coverage_loss(
+            true_mzs=true_mz,
+            true_logprobs=th.zeros(1),
+            true_batch_idxs=th.zeros(1, dtype=th.long),
+            candidate_mzs=output["proposal_candidate_mzs"],
+            candidate_fragment_idxs=output["proposal_candidate_fragment_idxs"],
+            fragment_logprobs=output["proposal_fragment_logprobs"],
+            fragment_batch_idxs=output["proposal_fragment_batch_idxs"],
+            batch_size=1,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
+        )
+        loss.sum().backward()
+        results[name] = (loss.item(), _parameter_gradient_sum(model.bond_break_head))
+
+    assert results["marginal"][0] > 0.0
+    assert results["marginal"][1] > 0.0
+    assert results["mask_order"] == (0.0, 0.0)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"fragment_selection": "marginal"}, "integer selected_fragment_target"),
+        (
+            {"fragment_selection": "marginal", "selected_fragment_target": 0},
+            "integer selected_fragment_target",
+        ),
+        (
+            {"fragment_selection": "marginal", "selected_fragment_target": 7},
+            "integer selected_fragment_target",
+        ),
+        (
+            {"fragment_selection": "marginal", "selected_fragment_target": True},
+            "integer selected_fragment_target",
+        ),
+        ({"selected_fragment_target": 3}, "only read by fragment_selection='marginal'"),
+        ({"fragment_selection": "ranked"}, "unknown fragment_selection"),
+        (
+            {
+                "fragment_selection": "marginal",
+                "selected_fragment_target": 3,
+                "proposal_selection_only": False,
+            },
+            "requires unique mode, proposal_selection_only",
+        ),
+        (
+            {
+                "fragment_selection": "marginal",
+                "selected_fragment_target": 3,
+                "min_fragment_relative_probability": 0.5,
+            },
+            "requires unique mode, proposal_selection_only",
+        ),
+        (
+            {
+                "fragment_selection": "marginal",
+                "selected_fragment_target": 3,
+                "proposal_num_mixtures": 2,
+            },
+            "requires unique mode, proposal_selection_only",
+        ),
+    ],
+)
+def test_marginal_fragment_selection_rejects_invalid_configurations(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    config: dict[str, object] = {
+        "max_masks": 6,
+        "unique_fragment_mode": True,
+        "max_enumerated_masks": 16,
+        "use_base_probability_feature": False,
+        "proposal_selection_only": True,
+    }
+    config.update(overrides)
+    with pytest.raises(ValueError, match=message):
+        _build_model(_build_batch(("CCCO",)), **config)
 
 
 def test_mask_residual_reallocates_only_retained_probability(

@@ -202,6 +202,10 @@ Completed: source-informed bond-cut design and user-requested ordering of the tw
 No implementation, configuration, checkpoint evaluation, or training for this plan. Unrelated
 SMARTS source/documentation edits in the working tree were preserved.
 
+The per-fragment efficiency variant (rank the enumerated pool by closed-form release probability,
+no pair terms) is implemented and untrained: see
+[fragment-marginal selection](masshatter_fragment_marginal_selection_plan.md) (2026-09-23).
+
 Next: identify the anchor checkpoint and fixed validation subset, align target/metric definitions,
 and measure current-support oracle versus predicted cosine. Establish finite-pool headroom or a
 predeclared efficiency opportunity before implementing the pair head. Follow the

@@ -448,6 +448,11 @@ def _channel_support_metrics(
     fragment_logprobs: th.Tensor | None,
 ) -> dict[str, th.Tensor]:
     """Measure responsibility-weighted fragment and channel support prevalence."""
+    if fragment_logprobs is not None and fragment_logprobs.shape != fragment_batch_idxs.shape:
+        raise ValueError(
+            "fragment_logprobs must hold one value per scored fragment, "
+            f"got {tuple(fragment_logprobs.shape)} for {tuple(fragment_batch_idxs.shape)}"
+        )
     valid_modes = chemical_valid_channels.any(dim=2)
     mode_targets = channel_targets.sum(dim=2).clamp(max=1.0)
     fragment_targets = channel_targets.flatten(start_dim=1).sum(dim=1).clamp(max=1.0)
@@ -842,6 +847,10 @@ class MassShatterPL(SpectrumPL):
                 kwargs["mass_shatter_fast_gnn_beam_width"] = 256
             if "mass_shatter_fast_gnn_max_boundary_cuts" not in kwargs:
                 kwargs["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
+            if "mass_shatter_fragment_selection" not in kwargs:
+                kwargs["mass_shatter_fragment_selection"] = "mask_order"
+            if "mass_shatter_selected_fragment_target" not in kwargs:
+                kwargs["mass_shatter_selected_fragment_target"] = None
         super().__init__(**kwargs)
 
     @classmethod
@@ -1065,6 +1074,8 @@ class MassShatterPL(SpectrumPL):
             min_fragment_relative_probability=(
                 self.hparams.mass_shatter_min_fragment_relative_probability
             ),
+            fragment_selection=self.hparams.mass_shatter_fragment_selection,
+            selected_fragment_target=self.hparams.mass_shatter_selected_fragment_target,
             include_single_bond_cuts=(self.hparams.mass_shatter_include_single_bond_cuts),
             max_h_transfer=self.hparams.mass_shatter_max_h_transfer,
             h_transfer_bound=self.hparams.mass_shatter_h_transfer_bound,
@@ -1818,7 +1829,7 @@ class MassShatterPL(SpectrumPL):
                     chemical_valid_channels=kwargs["ion_h_chemical_valid_channels"],
                     fragment_batch_idxs=kwargs["ion_h_fragment_batch_idxs"],
                     batch_size=batch_size,
-                    fragment_logprobs=kwargs["proposal_fragment_logprobs"],
+                    fragment_logprobs=kwargs["ion_h_fragment_proposal_logprobs"],
                 )
                 support_metrics.update(
                     _ion_h_required_k_metrics(
@@ -2297,6 +2308,11 @@ class MassShatterPL(SpectrumPL):
             else set()
         )
         coverage_metric_names.add("candidate_recall")
+        # Marginal selection keeps only part of the enumerated pool; the pool's own
+        # coverage is the ceiling for any selection from it.
+        pool_coverage = self.hparams.mass_shatter_fragment_selection == "marginal"
+        if pool_coverage:
+            coverage_metric_names.add("pool_candidate_wrecall")
         for metric_name in coverage_metric_names:
             self.metric_min_max[metric_name] = None
         self.auxiliary_metric_names.update(coverage_metric_names)
@@ -2309,6 +2325,8 @@ class MassShatterPL(SpectrumPL):
         )
         if cut_diagnostics:
             self.extra_metric_args.append("candidate_cut_counts")
+        if pool_coverage:
+            self.extra_metric_args.extend(["pool_candidate_mzs", "pool_candidate_batch_idxs"])
         if self.inst_tol_lookup is not None:
             self.batch_metric_args.add("spec_inst_type")
         base_metric_fn = self.metric_fn
@@ -2341,6 +2359,20 @@ class MassShatterPL(SpectrumPL):
             # The loss path already emits this key; returning it here would collide
             # when SpectrumPL merges validation/test auxiliary metrics.
             coverage.pop("candidate_wrecall")
+            if pool_coverage:
+                coverage["pool_candidate_wrecall"] = _candidate_weighted_recall(
+                    true_mzs=kwargs["true_mzs"],
+                    true_ints=kwargs["true_ints"],
+                    true_batch_idxs=kwargs["true_batch_idxs"],
+                    candidate_mzs=kwargs["pool_candidate_mzs"],
+                    candidate_batch_idxs=kwargs["pool_candidate_batch_idxs"],
+                    batch_size=kwargs["true_prec_mzs"].shape[0],
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
             metrics.update(coverage)
             return metrics
 

@@ -87,6 +87,26 @@ def test_attention_topology_migrates_legacy_checkpoints_and_requires_a_fresh_key
         MassShatterPL(**config)
 
 
+def test_fragment_selection_migrates_legacy_checkpoints_and_requires_a_fresh_key() -> None:
+    """Checkpoints from before marginal selection kept the whole pool; fresh configs declare it."""
+    legacy, config = _build_pl()
+    for key in ("mass_shatter_fragment_selection", "mass_shatter_selected_fragment_target"):
+        del config[key]
+    migrated = get_pl_hparams({"hyper_parameters": dict(config)})
+
+    assert migrated["mass_shatter_fragment_selection"] == "mask_order"
+    assert migrated["mass_shatter_selected_fragment_target"] is None
+    restored = MassShatterPL(**migrated)
+    restored.load_state_dict(legacy.state_dict(), strict=True)
+    assert restored.model.fragment_selection == "mask_order"
+    # The Lightning loader's legacy marker backfills the same values.
+    reloaded = MassShatterPL(_legacy_candidate_backend=True, **config)
+    assert reloaded.model.fragment_selection == "mask_order"
+    assert reloaded.model.selected_fragment_target is None
+    with pytest.raises(AttributeError, match="mass_shatter_fragment_selection"):
+        MassShatterPL(**config)
+
+
 def test_attention_topology_rejects_unknown_values() -> None:
     # The head validates during model construction, which precedes the loss-setup check.
     with pytest.raises(ValueError, match="unknown attention_type: inducing"):
@@ -1800,6 +1820,7 @@ def test_requested_channel_diagnostics_are_computed_during_training() -> None:
         ion_h_chemical_valid_channels=th.ones(2, 1, 1, dtype=th.bool),
         ion_h_support_logits=th.zeros(2, 1, 1),
         ion_h_fragment_batch_idxs=th.tensor([0, 0]),
+        ion_h_fragment_proposal_logprobs=proposal_fragment_logprobs,
         batch_size=1,
         **_loss_diagnostics(),
     )
@@ -1853,6 +1874,7 @@ def test_monitoring_switches_preserve_training_loss_and_gradients(
             ion_h_chemical_valid_channels=th.ones(2, 1, 1, dtype=th.bool),
             ion_h_support_logits=th.zeros(2, 1, 1),
             ion_h_fragment_batch_idxs=th.tensor([0, 0]),
+            ion_h_fragment_proposal_logprobs=proposal_logits.log_softmax(0),
             batch_size=1,
             **_loss_diagnostics(),
         )
@@ -2548,6 +2570,62 @@ def test_candidate_coverage_metrics_are_off_by_default() -> None:
     assert "candidate_batch_idxs_by_cut" not in model.extra_metric_args
 
 
+def test_marginal_fragment_selection_adds_the_pool_coverage_metric() -> None:
+    marginal, _ = _build_selection_only_pl(
+        mass_shatter_candidate_coverage_metrics=True,
+        mass_shatter_fragment_selection="marginal",
+        mass_shatter_selected_fragment_target=1,
+    )
+    mask_order, _ = _build_selection_only_pl(mass_shatter_candidate_coverage_metrics=True)
+
+    assert marginal.model.fragment_selection == "marginal"
+    assert marginal.model.selected_fragment_target == 1
+    assert "pool_candidate_wrecall" in marginal.metric_names
+    assert {"pool_candidate_mzs", "pool_candidate_batch_idxs"} <= set(marginal.extra_metric_args)
+    # Mask order keeps the whole pool, so its pool coverage would repeat candidate_wrecall.
+    assert "pool_candidate_wrecall" not in mask_order.metric_names
+    assert "pool_candidate_mzs" not in mask_order.extra_metric_args
+
+
+def test_fragment_selection_arms_differ_from_the_control_only_by_selection_keys() -> None:
+    merged_dir = Path(__file__).parents[1] / "config" / "massshatter" / "ma_mi_merged"
+    with (merged_dir / "nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml").open() as f:
+        control = yaml.safe_load(f)
+    monitoring = {
+        "wandb_name",
+        "wandb_group",
+        "wandb_tags",
+        "mass_shatter_candidate_coverage_metrics",
+        "mass_shatter_candidate_cut_diagnostics",
+    }
+    expected = {
+        "f1_mask_order_u128": {"mass_shatter_unique_fragment_target": 128},
+        "f2_marginal_k128_pool256": {
+            "mass_shatter_fragment_selection": "marginal",
+            "mass_shatter_selected_fragment_target": 128,
+        },
+        "f3_marginal_k128_pool512": {
+            "mass_shatter_fragment_selection": "marginal",
+            "mass_shatter_selected_fragment_target": 128,
+            "mass_shatter_unique_fragment_target": 512,
+        },
+    }
+    absent = object()
+    for name, selection_keys in expected.items():
+        with (merged_dir / "fragment_selection_2026_09_23" / f"{name}.yml").open() as f:
+            arm = yaml.safe_load(f)
+        changed = {
+            key
+            for key in set(control) | set(arm)
+            if control.get(key, absent) != arm.get(key, absent)
+        }
+        assert changed == monitoring | set(selection_keys), name
+        assert {key: arm[key] for key in selection_keys} == selection_keys
+        assert arm["mass_shatter_candidate_coverage_metrics"] is True
+        assert arm["mass_shatter_candidate_cut_diagnostics"] is True
+        assert arm["seed"] == control["seed"]
+
+
 def test_loss_fn_omits_candidate_wrecall_when_coverage_is_disabled() -> None:
     model, _ = _build_pl()
 
@@ -2943,6 +3021,67 @@ def test_intensity_escape_reaches_sparse_peak_list_distance_through_the_loss() -
     # Half the observed intensity is unreachable, so without an escape the Hellinger loss
     # cannot fall below its floor; with one the model has a route to beat it.
     assert (with_escape["primary_loss"] < without_escape["primary_loss"]).all()
+
+
+@pytest.mark.parametrize("proposal_mode", ["mask_order", "marginal", "joint"])
+def test_channel_support_metrics_run_through_the_loss_in_every_proposal_mode(
+    proposal_mode: str,
+) -> None:
+    """The metric's fragment weights must match the kept fragments, not the proposal loss.
+
+    Marginal selection hands the proposal loss the whole enumerated pool, and the joint mode
+    emits no proposal-loss tensors at all; both used to break the support metric.
+    """
+    overrides: dict[str, object] = {
+        "mass_shatter_unique_fragment_mode": True,
+        "mass_shatter_unique_fragment_target": 12,
+        "mass_shatter_ranked_mask_budget": 64,
+        "mass_shatter_channel_support_metrics": True,
+        # The vectorized sparse CE is the production loss path.
+        "loss_vectorized": True,
+    }
+    if proposal_mode == "joint":
+        pl, _ = _build_pl(**overrides)
+    else:
+        if proposal_mode == "marginal":
+            overrides.update(
+                mass_shatter_fragment_selection="marginal",
+                mass_shatter_selected_fragment_target=4,
+            )
+        pl, _ = _build_selection_only_pl(**overrides)
+    output = pl.model(**_escape_inputs())
+    kept_weights = output["ion_h_fragment_proposal_logprobs"]
+    assert kept_weights.shape == output["ion_h_fragment_batch_idxs"].shape
+    kept_mass = th.zeros(2).index_add(0, output["ion_h_fragment_batch_idxs"], kept_weights.exp())
+    assert kept_mass.tolist() == pytest.approx([1.0, 1.0], abs=2e-6)
+    if proposal_mode == "marginal":
+        # The two index spaces really differ: the proposal scores the whole pool.
+        assert output["proposal_fragment_batch_idxs"].numel() > kept_weights.numel()
+    elif proposal_mode == "mask_order":
+        # Mask order keeps the metric's historical weights exactly.
+        assert th.equal(kept_weights, output["proposal_fragment_logprobs"])
+    else:
+        assert "proposal_fragment_logprobs" not in output
+
+    pred_mzs = output["pred_mzs"]
+    pred_batch_idxs = output["pred_batch_idxs"]
+    # Observed m/z arrive from the dataset in float32; exact candidate masses are float64.
+    true_mzs = th.stack([pred_mzs[pred_batch_idxs == index][0] for index in (0, 1)]).float()
+    true_intensities = th.ones(2)
+    inputs = dict(output)
+    inputs.update(
+        true_mzs=true_mzs,
+        true_intensities=true_intensities,
+        true_logprobs=true_intensities.log(),
+        true_batch_idxs=th.tensor([0, 1]),
+        batch_size=2,
+    )
+    result = pl.loss_fn(**inputs)
+
+    weighted_precision = result["fragment_weighted_precision"]
+    assert weighted_precision.shape == (2,)
+    assert ((weighted_precision > 0.0) & (weighted_precision <= 1.0 + 1e-6)).all()
+    assert th.isfinite(result["loss"]).all()
 
 
 def _build_selection_only_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:

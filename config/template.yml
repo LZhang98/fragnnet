@@ -744,6 +744,15 @@ mass_shatter_mask_selection_threads: 4  # CPU threads shared by mask selection a
   # the physical core count, minus what num_workers already uses. 1 disables threading.
 mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
 mass_shatter_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.
+mass_shatter_fragment_selection: mask_order  # mask_order | marginal: which pool fragments reach the intensity head.
+  # mask_order keeps every fragment the enumeration produced (the unique target is the budget).
+  # marginal treats the unique target as a POOL, keeps the precursor and single cuts plus the
+  # highest closed-form release probabilities P(boundary cut, interior intact) up to
+  # mass_shatter_selected_fragment_target, and trains the proposal coverage loss on the whole
+  # pool. Requires unique mode, proposal_selection_only, one mixture, cut_masks, SMARTS off, a
+  # zero fragment floor and share_proposal_across_ev off.
+  # See docs/plans/masshatter_fragment_marginal_selection_plan.md.
+mass_shatter_selected_fragment_target: null  # marginal only: fragments kept per precursor, <= unique target; null otherwise.
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4
 # Which of FraGNNet's hydrogen-transfer bounds MASShatter applies to a candidate channel.

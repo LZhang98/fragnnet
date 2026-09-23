@@ -271,4 +271,9 @@ def get_pl_hparams(ckpt: dict) -> dict:
             hyper_parameters["mass_shatter_fast_gnn_beam_width"] = 256
         if "mass_shatter_fast_gnn_max_boundary_cuts" not in hyper_parameters:
             hyper_parameters["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
+        # Checkpoints from before marginal fragment selection kept the whole enumerated pool.
+        if "mass_shatter_fragment_selection" not in hyper_parameters:
+            hyper_parameters["mass_shatter_fragment_selection"] = "mask_order"
+        if "mass_shatter_selected_fragment_target" not in hyper_parameters:
+            hyper_parameters["mass_shatter_selected_fragment_target"] = None
     return hyper_parameters

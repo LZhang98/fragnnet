@@ -4,6 +4,17 @@
 
 ## Current handoff
 
+**MASShatter fragment-marginal selection implemented (2026-09-23); nothing trained or submitted.**
+A U128 cap loses cosine because it truncates the pool in mask order, and the proposal loss gives
+zero gradient to peaks only the cut-off fragments explain. The new opt-in
+`mass_shatter_fragment_selection: marginal` keeps the forced precursor/single cuts plus the top
+`mass_shatter_selected_fragment_target` fragments by closed-form release probability, and scores
+the proposal loss on the whole enumerated pool. Default `mask_order` is unchanged; the full suite
+passes (4,271, after two review fixes). Three arms against `c4a_base` are prepared: `f1` mask-order U128, `f2` marginal
+K128 from U256, `f3` from U512. Generator: `scripts/manual_slurm/fir/submit_masshatter_fragment_selection.sh`.
+Reading rules and open points:
+[plan](plans/masshatter_fragment_marginal_selection_plan.md).
+
 **FraGNNet FT contender-pair Stage A prepared for Fir (2026-09-23).** Configs and a generation-only
 script; **nothing submitted.** Four arms from `fraggnn_d3_ma_mi_nist20_amolc_all.yml` (the
 `jnokddr9` config): `c0` original sampler, `c1` `ce_context` sampler control, `p1`/`p2`

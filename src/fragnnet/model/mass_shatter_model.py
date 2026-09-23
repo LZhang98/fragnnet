@@ -180,6 +180,163 @@ def _relative_fragment_keep_mask(
     )
 
 
+def _fragment_release_log_probabilities(
+    bond_logits: th.Tensor,
+    chemical_bond_index: th.Tensor,
+    num_atoms: int,
+    fragment_atom_indices: th.Tensor,
+    atom_fragment_indices: th.Tensor,
+    fragment_boundary_bond_indices: th.Tensor,
+    boundary_fragment_indices: th.Tensor,
+    num_fragments: int,
+) -> th.Tensor:
+    """Return the closed-form probability that each fragment is released intact.
+
+    Under the independent Bernoulli bond model, atom set ``F`` is released with its
+    interior intact when every bond crossing its boundary ``dF`` is cut and every bond
+    with both endpoints in ``F`` is not::
+
+        log P_release(F) = sum_{b in dF} log sigmoid(l_b) + sum_{b in int F} log sigmoid(-l_b)
+
+    Bonds elsewhere in the precursor do not affect the event, so no mask enumeration is
+    involved. The interior sum needs no per-fragment bond scan: adding the intact log
+    probability of every bond incident to an atom of ``F`` counts each interior bond twice
+    and each boundary bond once, so
+    ``sum_{int F} = (sum_{a in F} S_a - sum_{b in dF} log sigmoid(-l_b)) / 2`` with
+    ``S_a = sum_{b incident to a} log sigmoid(-l_b)``.
+
+    For an acyclic fragment this is the exact atom-set marginal. For a fragment containing a
+    ring it is a lower bound, because one ring bond inside ``F`` can break without changing
+    the atom set.
+
+    Args:
+        bond_logits: Cut logit per chemical bond, shape ``(num_bonds,)``.
+        chemical_bond_index: Global endpoint atoms per chemical bond, shape ``(2, num_bonds)``.
+        num_atoms: Number of atoms in the batch.
+        fragment_atom_indices: Global atom index of every fragment membership, shape ``(M,)``.
+        atom_fragment_indices: Fragment index of every membership, shape ``(M,)``.
+        fragment_boundary_bond_indices: Global bond index of every boundary membership,
+            shape ``(D,)``.
+        boundary_fragment_indices: Fragment index of every boundary membership, shape ``(D,)``.
+        num_fragments: Number of fragments.
+
+    Returns:
+        ``log P_release`` per fragment in float32, shape ``(num_fragments,)``.
+    """
+    if bond_logits.ndim != 1 or chemical_bond_index.shape != (2, bond_logits.shape[0]):
+        raise ValueError("release probabilities need one logit per chemical bond")
+    logits = bond_logits.float()
+    cut_log_probabilities = F.logsigmoid(logits)
+    intact_log_probabilities = F.logsigmoid(-logits)
+    atom_intact_sums = (
+        logits.new_zeros(num_atoms)
+        .index_add(0, chemical_bond_index[0], intact_log_probabilities)
+        .index_add(0, chemical_bond_index[1], intact_log_probabilities)
+    )
+    incident_intact = logits.new_zeros(num_fragments).index_add(
+        0, atom_fragment_indices, atom_intact_sums[fragment_atom_indices]
+    )
+    boundary_cut = logits.new_zeros(num_fragments).index_add(
+        0, boundary_fragment_indices, cut_log_probabilities[fragment_boundary_bond_indices]
+    )
+    boundary_intact = logits.new_zeros(num_fragments).index_add(
+        0, boundary_fragment_indices, intact_log_probabilities[fragment_boundary_bond_indices]
+    )
+    return boundary_cut + 0.5 * (incident_intact - boundary_intact)
+
+
+def _top_k_fragment_keep_mask(
+    scores: th.Tensor,
+    fragment_batch_indices: th.Tensor,
+    forced: th.Tensor,
+    batch_size: int,
+    k: int,
+) -> th.Tensor:
+    """Keep every forced fragment plus the highest-scoring others, up to ``k`` per molecule.
+
+    A molecule with at least ``k`` forced fragments keeps exactly its forced set. Ties are
+    broken by pool order, so the selection is deterministic.
+
+    Args:
+        scores: Ranking score per fragment; ``-inf`` ranks last. Shape ``(num_fragments,)``.
+        fragment_batch_indices: Molecule index per fragment, shape ``(num_fragments,)``.
+        forced: Fragments kept regardless of score, shape ``(num_fragments,)``.
+        batch_size: Number of molecules.
+        k: Fragment budget per molecule.
+
+    Returns:
+        Boolean keep mask, shape ``(num_fragments,)``.
+    """
+    if scores.shape != fragment_batch_indices.shape or forced.shape != scores.shape:
+        raise ValueError("scores, batch indices and forced flags must align")
+    if forced.dtype != th.bool or fragment_batch_indices.dtype != th.long:
+        raise ValueError("forced must be boolean and batch indices torch.long")
+    if k < 1:
+        raise ValueError(f"k must be positive, got {k}")
+    # 1. Forced fragments sort first, then descending score, then pool order, per molecule.
+    ranked_scores = scores.detach().float().masked_fill(forced, th.inf)
+    order = th.argsort(ranked_scores, descending=True, stable=True)
+    order = order[th.argsort(fragment_batch_indices[order], stable=True)]
+    # 2. Rank within each molecule and keep max(k, forced count) of them.
+    counts = th.bincount(fragment_batch_indices, minlength=batch_size)
+    starts = th.cumsum(counts, dim=0) - counts
+    sorted_batch = fragment_batch_indices[order]
+    rank = th.arange(order.numel(), device=order.device) - starts[sorted_batch]
+    forced_counts = th.bincount(fragment_batch_indices[forced], minlength=batch_size)
+    keep_sorted = rank < th.clamp(forced_counts, min=k)[sorted_batch]
+    keep = th.zeros_like(forced)
+    keep[order] = keep_sorted
+    return keep
+
+
+def _missing_valid_fallback_mask(
+    scores: th.Tensor,
+    valid: th.Tensor,
+    keep: th.Tensor,
+    fragment_batch_indices: th.Tensor,
+    batch_size: int,
+) -> th.Tensor:
+    """Return one best valid fragment for each molecule whose kept set has none.
+
+    A selection must not leave a molecule without a fragment that can form an ion. Exactly one
+    fragment is added, the first in pool order among the highest-scoring valid ones: matching
+    the maximum score instead would re-admit a whole group of exactly tied fragments, which
+    closed-form release scores produce on every symmetric substructure.
+
+    Args:
+        scores: Ranking score per fragment, shape ``(num_fragments,)``.
+        valid: Fragments with at least one chemically valid channel, shape ``(num_fragments,)``.
+        keep: Current keep mask, shape ``(num_fragments,)``.
+        fragment_batch_indices: Molecule index per fragment, shape ``(num_fragments,)``.
+        batch_size: Number of molecules.
+
+    Returns:
+        Boolean mask with at most one True per molecule, shape ``(num_fragments,)``.
+    """
+    num_fragments = scores.shape[0]
+    kept_valid_counts = th.bincount(fragment_batch_indices[keep & valid], minlength=batch_size)
+    masked_scores = scores.detach().float().masked_fill(~valid, -th.inf)
+    best_scores = masked_scores.new_full((batch_size,), -th.inf).scatter_reduce(
+        0, fragment_batch_indices, masked_scores, reduce="amax", include_self=True
+    )
+    candidates = (
+        valid
+        & (masked_scores == best_scores[fragment_batch_indices])
+        & (kept_valid_counts == 0)[fragment_batch_indices]
+    )
+    fragment_indices = th.arange(num_fragments, device=scores.device)
+    first_candidate = fragment_indices.new_full((batch_size,), num_fragments).scatter_reduce(
+        0,
+        fragment_batch_indices[candidates],
+        fragment_indices[candidates],
+        reduce="amin",
+        include_self=True,
+    )
+    fallback = th.zeros_like(valid)
+    fallback[first_candidate[first_candidate < num_fragments]] = True
+    return fallback
+
+
 def _relative_channel_keep_mask(
     logits: th.Tensor,
     valid_mask: th.Tensor,
@@ -894,6 +1051,8 @@ class MassShatterModel(nn.Module):
         fast_gnn_max_boundary_cuts: int = 3,
         min_mask_relative_probability: float,
         min_fragment_relative_probability: float,
+        fragment_selection: Literal["mask_order", "marginal"] = "mask_order",
+        selected_fragment_target: int | None = None,
         include_single_bond_cuts: bool,
         max_h_transfer: int,
         h_transfer_bound: str = "none",
@@ -1024,6 +1183,13 @@ class MassShatterModel(nn.Module):
             min_fragment_relative_probability: MAP-relative probability floor below
                 which a marginalized unique fragment is dropped before intensity
                 scoring. Zero disables fragment pruning.
+            fragment_selection: Which unique fragments of the enumerated pool reach the
+                intensity head. ``mask_order`` keeps the whole pool the enumeration
+                produced. ``marginal`` keeps the forced precursor and single-cut
+                fragments plus the highest closed-form release probabilities up to
+                ``selected_fragment_target``, and trains the proposal on the whole pool.
+            selected_fragment_target: Fragments kept per precursor in ``marginal`` mode;
+                must be ``None`` in ``mask_order`` mode.
             include_single_bond_cuts: Enumerate single-bond cuts in the ranked masks.
             max_h_transfer: Largest hydrogen transfer per fragment, in either
                 direction.
@@ -1164,6 +1330,38 @@ class MassShatterModel(nn.Module):
             )
         if min_fragment_relative_probability > 0.0 and not unique_fragment_mode:
             raise ValueError("min_fragment_relative_probability requires unique_fragment_mode")
+        if fragment_selection not in {"mask_order", "marginal"}:
+            raise ValueError(f"unknown fragment_selection: {fragment_selection!r}")
+        if fragment_selection == "mask_order" and selected_fragment_target is not None:
+            raise ValueError(
+                "selected_fragment_target is only read by fragment_selection='marginal'"
+            )
+        if fragment_selection == "marginal":
+            if (
+                isinstance(selected_fragment_target, bool)
+                or not isinstance(selected_fragment_target, int)
+                or not 1 <= selected_fragment_target <= max_masks
+            ):
+                raise ValueError(
+                    "marginal fragment selection needs an integer selected_fragment_target in "
+                    f"[1, unique_fragment_target={max_masks}], got {selected_fragment_target!r}"
+                )
+            # The release score is closed-form for one plain Bernoulli over cut masks, and the
+            # selection only decides membership, so the proposal must not also shape intensity.
+            if (
+                not unique_fragment_mode
+                or not proposal_selection_only
+                or proposal_num_mixtures != 1
+                or proposal_method != "cut_masks"
+                or use_smarts_templates
+                or min_fragment_relative_probability != 0.0
+                or share_proposal_across_ev
+            ):
+                raise ValueError(
+                    "marginal fragment selection requires unique mode, proposal_selection_only, "
+                    "one mixture, cut_masks, SMARTS off, a zero fragment probability floor and "
+                    "share_proposal_across_ev off"
+                )
         for name, value in (
             ("min_ion_mode_relative_probability", min_ion_mode_relative_probability),
             ("min_ion_h_relative_probability", min_ion_h_relative_probability),
@@ -1243,6 +1441,8 @@ class MassShatterModel(nn.Module):
         self.fast_gnn_max_boundary_cuts = fast_gnn_max_boundary_cuts
         self.min_mask_relative_probability = min_mask_relative_probability
         self.min_fragment_relative_probability = min_fragment_relative_probability
+        self.fragment_selection = fragment_selection
+        self.selected_fragment_target = selected_fragment_target
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
         self.h_transfer_bound = h_transfer_bound
@@ -2413,6 +2613,8 @@ class MassShatterModel(nn.Module):
         fragment_count_after_cutoff = bond_logits.new_zeros(batch_size)
         retained_fragment_probability = bond_logits.new_zeros(batch_size)
         fragment_cutoff_pruned_fraction = bond_logits.new_zeros(batch_size)
+        # Marginal fragment selection replaces the proposal outputs with whole-pool ones.
+        pool_proposal_outputs: dict[str, th.Tensor] = {}
         learned_ion_mode_proposal_logits: th.Tensor | None = None
         if self.unique_fragment_mode:
             (
@@ -2497,27 +2699,86 @@ class MassShatterModel(nn.Module):
                 # count FraGNNet's `update_bonds` computes.
                 fragment_cut_counts,
             )
-            fragment_keep = _relative_fragment_keep_mask(
-                fragment_log_probabilities,
-                fragment_batch_indices,
-                batch_size,
-                self.min_fragment_relative_probability,
-            )
-            # A probability cutoff must not discard the last realizable fragment.
             valid_fragments = valid_channels.flatten(1).any(dim=1)
-            valid_scores = fragment_log_probabilities.detach().masked_fill(
-                ~valid_fragments, -th.inf
-            )
-            best_valid_scores = valid_scores.new_full((batch_size,), -th.inf).scatter_reduce(
-                0,
-                fragment_batch_indices,
-                valid_scores,
-                reduce="amax",
-                include_self=True,
-            )
-            fragment_keep |= valid_fragments & (
-                valid_scores == best_valid_scores[fragment_batch_indices]
-            )
+            if self.fragment_selection == "marginal":
+                # Rank the pool by each fragment's own release probability, not by the mask
+                # that first produced it, and train the proposal on the whole pool.
+                selection_scores = _fragment_release_log_probabilities(
+                    bond_logits,
+                    mol_pyg.chemical_bond_index,
+                    mol_pyg.batch.numel(),
+                    fragment_atom_indices,
+                    atom_fragment_indices,
+                    fragment_boundary_bond_indices,
+                    boundary_fragment_indices,
+                    num_fragments,
+                )
+                # Mask order places the intact and single-cut masks first; keep them too.
+                forced_fragments = fragment_cut_counts <= int(self.include_single_bond_cuts)
+                fragment_keep = _top_k_fragment_keep_mask(
+                    selection_scores.masked_fill(~valid_fragments, -th.inf),
+                    fragment_batch_indices,
+                    forced_fragments,
+                    batch_size,
+                    self.selected_fragment_target,
+                )
+                pool_flat_valid = valid_channels.flatten()
+                pool_candidate_fragment_idxs = (
+                    th.arange(num_fragments, device=fragment_batch_indices.device)
+                    .reshape(-1, 1, 1)
+                    .expand_as(valid_channels)
+                    .flatten()[pool_flat_valid]
+                )
+                pool_candidate_mzs = ion_mzs.flatten()[pool_flat_valid]
+                pool_release_log_normalizers = _segment_logsumexp(
+                    selection_scores,
+                    fragment_batch_indices,
+                    batch_size,
+                )
+                pool_proposal_outputs = {
+                    "proposal_candidate_mzs": pool_candidate_mzs,
+                    "proposal_candidate_fragment_idxs": pool_candidate_fragment_idxs,
+                    "proposal_fragment_logprobs": (
+                        selection_scores - pool_release_log_normalizers[fragment_batch_indices]
+                    ),
+                    "proposal_fragment_batch_idxs": fragment_batch_indices,
+                    "pool_candidate_mzs": pool_candidate_mzs,
+                    "pool_candidate_batch_idxs": fragment_batch_indices[
+                        pool_candidate_fragment_idxs
+                    ],
+                }
+            else:
+                fragment_keep = _relative_fragment_keep_mask(
+                    fragment_log_probabilities,
+                    fragment_batch_indices,
+                    batch_size,
+                    self.min_fragment_relative_probability,
+                )
+            # A probability cutoff must not discard the last realizable fragment.
+            if self.fragment_selection == "marginal":
+                # Release scores tie exactly on symmetric substructures, so the fallback adds
+                # a single fragment, and only where the budget kept no realizable one.
+                fragment_keep |= _missing_valid_fallback_mask(
+                    selection_scores,
+                    valid_fragments,
+                    fragment_keep,
+                    fragment_batch_indices,
+                    batch_size,
+                )
+            else:
+                valid_scores = fragment_log_probabilities.detach().masked_fill(
+                    ~valid_fragments, -th.inf
+                )
+                best_valid_scores = valid_scores.new_full((batch_size,), -th.inf).scatter_reduce(
+                    0,
+                    fragment_batch_indices,
+                    valid_scores,
+                    reduce="amax",
+                    include_self=True,
+                )
+                fragment_keep |= valid_fragments & (
+                    valid_scores == best_valid_scores[fragment_batch_indices]
+                )
             ion_mzs = ion_mzs[fragment_keep]
             valid_channels = valid_channels[fragment_keep]
             fragment_count_before_cutoff = th.bincount(
@@ -3154,6 +3415,10 @@ class MassShatterModel(nn.Module):
             "ion_h_support_logits": ion_h_support_logits,
             "ion_mode_proposal_logits": ion_mode_proposal_logits,
             "ion_h_fragment_batch_idxs": fragment_batch_indices,
+            # Proposal probability of each fragment the intensity head scores, aligned with
+            # ion_h_fragment_batch_idxs. The proposal-loss tensors cannot stand in for it:
+            # marginal selection gives those the whole enumerated pool.
+            "ion_h_fragment_proposal_logprobs": base_fragment_log_probabilities,
             "valid_ion_h_count": valid_ion_h_count,
             "retained_ion_h_count": retained_ion_h_count,
             "retained_ion_h_probability": retained_ion_h_probability,
@@ -3247,4 +3512,5 @@ class MassShatterModel(nn.Module):
                     "proposal_fragment_batch_idxs": fragment_batch_indices,
                 }
             )
+        output.update(pool_proposal_outputs)
         return output
