@@ -72,13 +72,15 @@ spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey
 spec_params:
-  # UNMERGED: one row per spectrum, not one per molecule-group. The merge_* keys below are
+  # UNMERGED: one row per spectrum, not one per molecule-group. The other merge_* keys below are
   # inert while this is false; they are kept because they are part of the required key group.
+  # merge_keep_ces is NOT inert: _check_ce_params asserts it is false when merge is off and
+  # nce/ace is on (merge_keep_ces: true crashed zsjs6a5j at model setup).
   # Consequence: NOTHING here is comparable to a merged cosine. The merged/unmerged split is
   # the confound docs record as "never like-for-like" (1.01 vs 18.55 rows per molecule), and
   # the unmerged family has its own recorded ceiling near 0.688-0.693.
   merge: false
-  merge_keep_ces: true
+  merge_keep_ces: false
   nce: true
   ace: false
   prec_type: true
