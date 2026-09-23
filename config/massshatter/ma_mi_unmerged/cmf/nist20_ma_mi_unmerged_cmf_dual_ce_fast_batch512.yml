@@ -3,7 +3,7 @@
 # LR remains 0.001; losses, candidate budgets, precision and validation batch size
 # are unchanged. BatchNorm statistics and optimizer steps per epoch will differ.
 # Prepared for L40S; batch-512 memory, throughput and convergence are not yet measured.
-# See docs/findings/masshatter_training_speed_2026_09_17.md.
+# See docs/findings/masshatter/masshatter_training_speed_2026_09_17.md.
 wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:

@@ -11,17 +11,17 @@
 
 Audited the MASShatter loss composition as of `86cbf98d` ("mass shatter loss refactor"):
 
-- [`sparse_peak_list_distance`](../../src/fragnnet/model/loss.py) and its padding and chunking
+- [`sparse_peak_list_distance`](../../../src/fragnnet/model/loss.py) and its padding and chunking
   helpers `_build_padded_batch_layout`, `_pad_flat_with_layout`, `_build_loss_chunks`.
-- [`round_aggregate_peaks`](../../src/fragnnet/utils/spec_utils.py), rewritten in the same commit.
+- [`round_aggregate_peaks`](../../../src/fragnnet/utils/spec_utils.py), rewritten in the same commit.
 - The `_setup_loss_fn` validation block, the `loss_fn` closure, and every auxiliary term it can
-  add in [`mass_shatter_pl.py`](../../src/fragnnet/pl_model/mass_shatter_pl.py).
+  add in [`mass_shatter_pl.py`](../../../src/fragnnet/pl_model/mass_shatter_pl.py).
 
 The objective-level semantics (JSS vs KL gradient behaviour, matching and support ambiguity,
 unmatched-intensity invariance) were already reviewed in
-[loss_setup_review_2026_09_13.md](loss_setup_review_2026_09_13.md) and are not repeated.
+[loss_setup_review_2026_09_13.md](../loss_setup_review_2026_09_13.md) and are not repeated.
 Throughput context is in
-[masshatter_direct_loss_batching_plan.md](../plans/masshatter/masshatter_direct_loss_batching_plan.md).
+[masshatter_direct_loss_batching_plan.md](../../plans/masshatter/masshatter_direct_loss_batching_plan.md).
 
 Tests run: `tests/test_mass_shatter_peak_list_distance.py` and
 `tests/test_spec_utils_preprocessing.py` (298 passed), `tests/test_mass_shatter_pl.py`
@@ -117,7 +117,7 @@ independent of `loss_batch_size`.
 The pre-refactor `sparse_peak_list_distance` had no `loss_batch_size` parameter (`git show
 HEAD^`), so on the direct-loss arms the key only ever affected the unused CE path. Every
 checked-in direct-loss config, for example
-[`nist20_merged_independent_jss_hattr_gaussian.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_independent_jss_hattr_gaussian.yml),
+[`nist20_merged_independent_jss_hattr_gaussian.yml`](../../../config/massshatter/merged/channel_selection/nist20_merged_independent_jss_hattr_gaussian.yml),
 sets `loss_batch_size: 8`. Given finding 1 that value is close to optimal for `hungarian` and
 leaves roughly 2x on the table for `closest`. It is worth re-tuning per matching mode rather
 than inheriting the CE arm's value, and the plan's claim that the key "does not change the loss"
@@ -159,7 +159,7 @@ batching them is the same segment-reduction rewrite already applied twice in thi
 
 **Applied 2026-09-19:** `mass_shatter_channel_diagnostics` is now `False` in all 47 configs under
 `config/massshatter/` that set it, matching the template default and the precedent already set by
-[`..._warmup_e0_4_dense_subformula_fast.yml`](../../config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast.yml).
+[`..._warmup_e0_4_dense_subformula_fast.yml`](../../../config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast.yml).
 `mass_shatter_channel_support_metrics` is `True` in no config, so both loops are now off
 everywhere. The objective is unchanged: `channel_targets_enabled` is also the OR of the support
 and ion-mode loss weights, and those arms keep `mass_shatter_ion_h_support_loss_weight: 0.1`.
@@ -181,7 +181,7 @@ current runs.
   hard-coded-tolerance-duplicate pattern that bit the subformula filter.
 - `true_intensities = kwargs.get("true_intensities", true_logprobs.exp())`
   (`mass_shatter_pl.py:1500`) hides a required field behind a default, against the dict-access
-  rule in [python.md](../rules/python.md). `SpectrumPL` always supplies the key and its value is
+  rule in [python.md](../../rules/python.md). `SpectrumPL` always supplies the key and its value is
   exactly `true_logprobs.exp()` (`spectrum_pl.py:1309`), so the fallback is dead today.
 
 ## Suggested order

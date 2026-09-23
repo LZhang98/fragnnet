@@ -4,7 +4,7 @@
 > candidate-only measurement of the predicted size and topology prior. No training and no code
 > changes. Speed numbers are quoted from the existing
 > [beam speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
-> [FastGNN proposal plan](../plans/masshatter/masshatter_fast_gnn_proposal.md).
+> [FastGNN proposal plan](../../plans/masshatter/masshatter_fast_gnn_proposal.md).
 
 ## Result
 
@@ -149,7 +149,7 @@ the trained model puts ring-bond probability, not a modelling assumption.
 `cut_masks` selection is exact top-K under its own objective (heap enumeration over subsets).
 The beam is approximate under its own: finite beam width, dedup underfill, connected
 complements only. The plan's
-[connected-fragment audit](../plans/masshatter/masshatter_fast_gnn_proposal.md#connected-fragment-audit-2026-09-17)
+[connected-fragment audit](../../plans/masshatter/masshatter_fast_gnn_proposal.md#connected-fragment-audit-2026-09-17)
 records two graphs where a higher-scoring reachable fragment was lost. So the beam trades an
 exact search over masks for an approximate search over fragments.
 
@@ -411,7 +411,7 @@ revision.
 ## Reproducing this analysis
 
 All measurements come from
-[scripts/debug/analyze_proposal_fragment_coverage.py](../../scripts/debug/analyze_proposal_fragment_coverage.py),
+[scripts/debug/analyze_proposal_fragment_coverage.py](../../../scripts/debug/analyze_proposal_fragment_coverage.py),
 run from the repository root with the configured `FRAGNNET-GPU` interpreter. Candidate
 construction only: no checkpoint, training or spectra are involved.
 
@@ -459,7 +459,7 @@ directly comparable across sections.
 ### Provenance and limits
 
 - One batch of 32 molecules from the train split of the
-  [unmerged CMF beam arm config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml),
+  [unmerged CMF beam arm config](../../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml),
   in-memory subsample 256, seed 397623. Atom counts 10 / 17 / 40 (min / median / max), 669
   bonds. CPU, `FRAGNNET-GPU` interpreter.
 - Beam: `max_fragments = beam_width = 256`, `max_boundary_cuts = 5` unless varied.
@@ -489,7 +489,7 @@ directly comparable across sections.
 - One batch, one molecule-size distribution, candidate construction only. No training, no
   spectral accuracy and no timing conclusions are drawn here.
 - Measurements are reproduced by
-  [scripts/debug/analyze_proposal_fragment_coverage.py](../../scripts/debug/analyze_proposal_fragment_coverage.py);
+  [scripts/debug/analyze_proposal_fragment_coverage.py](../../../scripts/debug/analyze_proposal_fragment_coverage.py);
   see the reproduction commands above. The script loads one batch through
   `init_dataset`/`init_dataloader`, generates logits, calls `build_fast_gnn_candidates` and
   `build_mass_shatter_candidates` on the same tensors, and summarizes
@@ -497,18 +497,18 @@ directly comparable across sections.
 
 ## Mechanisms that already exist in MASShatter
 
-Reviewed [mass_shatter_fast_gnn.py](../../src/fragnnet/frag/mass_shatter_fast_gnn.py) against
+Reviewed [mass_shatter_fast_gnn.py](../../../src/fragnnet/frag/mass_shatter_fast_gnn.py) against
 the existing candidate machinery. Nine of about thirteen distinct mechanisms have an existing
 counterpart:
 
 | Beam mechanism | Existing part |
 | --- | --- |
-| `_connected_complements`: dense `(mols, ≤256, atoms)` reachability plus up to `max_atoms` `bmm` steps | Union-find connected components: `connected_component_atom_masks_many` and `build_component_arrays_raw` in [mass_shatter_core.pyx](../../src/fragnnet/frag/mass_shatter_core.pyx); the `connected_components` kernel via [`build_cuda_topology_device_masks`](../../src/fragnnet/frag/mass_shatter_cuda_topology.py) |
+| `_connected_complements`: dense `(mols, ≤256, atoms)` reachability plus up to `max_atoms` `bmm` steps | Union-find connected components: `connected_component_atom_masks_many` and `build_component_arrays_raw` in [mass_shatter_core.pyx](../../../src/fragnnet/frag/mass_shatter_core.pyx); the `connected_components` kernel via [`build_cuda_topology_device_masks`](../../../src/fragnnet/frag/mass_shatter_cuda_topology.py) |
 | Final boundary/internal membership assembly | `build_component_arrays_raw` / `assemble_tile` already emit `atom_indices`, `atom_component_indices`, `boundary_bond_indices`, `boundary_component_indices` in the adapter's layout |
 | `_unique_rows_lex`, three call sites, `C` stable argsorts each | Hash-based atom-set dedup inside `build_component_arrays_raw`; the `deduplicate_tile` CUDA kernel; CPU `_compare_bitsets` + `_merge_sort_indices` |
 | 63-bit word packing and unpacking | The codebase's 64-bit bitset convention plus `unpack_component_memberships_raw`. The 63-versus-64-bit split is gratuitous divergence |
-| `_group_rank` and its keep masks | `top_mixture_bond_sets_raw` stable rank; the `rank_masks` CUDA kernel; the fragment-cutoff compaction pattern in [mass_shatter_model.py](../../src/fragnnet/model/mass_shatter_model.py) |
-| Live differentiable rescoring by `index_add` of `logsigmoid` | [`_score_mask_log_probabilities`](../../src/fragnnet/frag/mass_shatter_candidates.py), which also carries mixture support |
+| `_group_rank` and its keep masks | `top_mixture_bond_sets_raw` stable rank; the `rank_masks` CUDA kernel; the fragment-cutoff compaction pattern in [mass_shatter_model.py](../../../src/fragnnet/model/mass_shatter_model.py) |
+| Live differentiable rescoring by `index_add` of `logsigmoid` | [`_score_mask_log_probabilities`](../../../src/fragnnet/frag/mass_shatter_candidates.py), which also carries mixture support |
 | Input validation block | Duplicates the validation in `build_mass_shatter_candidates` and the contiguity/uniqueness checks in `_prepare_graph_batch` |
 | `mol_atom_count` / `mol_atom_offset` rebuilt by `bincount` | `atom_ptr` is the same thing, and the caller already computes `counts` from it |
 | Bond-to-molecule `argsort` | PyG batches already group bonds by molecule; the other builders use per-molecule bond lists instead of re-sorting |
@@ -666,7 +666,7 @@ device-to-host synchronization on every iteration, inside every chunk, inside ev
 audit names that host-visible equality test as a main contributor. `_search` synchronizes
 further at `recorded.any()`, `int(counts.max().item())`, `int(keep_rank.max().item())` and at
 each boolean-mask index. This is the failure mode the
-[MASShatter GPU audit](../plans/masshatter/masshatter_gpu_audit.md) catalogues. It is independent of the
+[MASShatter GPU audit](../../plans/masshatter/masshatter_gpu_audit.md) catalogues. It is independent of the
 union-find question: an asynchronous fixed-iteration or count-based convergence test would
 remove the syncs without changing the algorithm.
 
@@ -703,7 +703,7 @@ is a cheaper route to nearly the same objective or a more expensive one.
   claim is made about predicted spectra.
 - Timing figures for the 447 ms complement regression and the CUDA `cut_masks` comparison are
   quoted from the [speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
-  [plan](../plans/masshatter/masshatter_fast_gnn_proposal.md) and inherit their contracts. Timings measured
+  [plan](../../plans/masshatter/masshatter_fast_gnn_proposal.md) and inherit their contracts. Timings measured
   here are single-run CPU wall times, not synchronized benchmarks.
 - One checkpoint, one epoch, one batch per scan; batches of 16 and 32 molecules. The reference
   universe is the union of the selectors' own pools, so it under-represents fragments none of

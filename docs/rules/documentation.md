@@ -13,7 +13,7 @@
   | --- | --- |
   | `docs/guides/` | How to run a specific operation |
   | `docs/reference/` | Detailed current system behavior |
-  | `docs/findings/` | Measurements, evidence, and conclusions |
+  | `docs/findings/` | Measurements, evidence, and conclusions: FraGNNet/DAG findings in `fragnnet/`, MASShatter findings in `masshatter/`, cross-model and shared-data findings at top level |
   | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASShatter plans in `masshatter/`, cross-model plans at top level |
   | `docs/notes/` | Scratch and literature notes |
   | `docs/figures/` | Figures referenced by documentation |
@@ -21,8 +21,8 @@
   | `docs/workflow/` | Shared development and experiment procedures |
 
 - Keep the architecture map, current-state entry point, and documentation index at `docs/`
-  top level. The curated `findings/missing_peak_findings.md` and
-  `findings/missing_peak_findings_m-h.md` analyses are append-only. Use their `/analyze-subclass` and
+  top level. The curated `findings/fragnnet/missing_peak_findings.md` and
+  `findings/fragnnet/missing_peak_findings_m-h.md` analyses are append-only. Use their `/analyze-subclass` and
   `/analyze-subclass-mh` procedures when available; if unavailable, read the procedure and
   resolve how to preserve its append-only contract before changing the logs.
 - Every project document needs a status banner directly below its H1. Include an update date

@@ -49,7 +49,7 @@ _SHARED_MASS_SHATTER_NL_RULE_NAMES = (
 # preprocessing behavior.
 # Evidence and admission gates: docs/reference/masshatter_smarts_rules.md.
 # Unimplemented candidates and mapping limits:
-# docs/findings/masshatter_smarts_review_2026_09_13.md.
+# docs/findings/masshatter/masshatter_smarts_review_2026_09_13.md.
 # - Phenylalanine oxygen transfer: https://doi.org/10.3389/fchem.2022.1094329
 # - Aryl-sulfonamide oxygen transfer: https://doi.org/10.1016/j.ijms.2018.09.033
 # - Prazole-sulfone rearrangement: https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/

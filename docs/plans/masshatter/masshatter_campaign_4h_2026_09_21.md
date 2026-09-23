@@ -20,7 +20,7 @@
 > previously pinned to the unknown bucket). `c4a_pre0920_arch` therefore does **not** reconstruct the
 > pre-2026-09-20 architecture -- it still carries the repaired `a_degree`. It ablates the two
 > candidate features only, and must be described that way.
-> Read with the [campaign read-out](../../findings/masshatter_campaign_readout_2026_09_21.md)
+> Read with the [campaign read-out](../../findings/masshatter/masshatter_campaign_readout_2026_09_21.md)
 > and the [regularization sweep plan](masshatter_regularization_sweep_plan.md).
 
 ## Why this campaign exists

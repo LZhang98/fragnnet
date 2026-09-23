@@ -23,8 +23,8 @@
 
 ## 1. The term as it runs today
 
-[`_proposal_coverage_loss`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L298), added to the
-objective at [`:1769-1776`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L1769-L1776):
+[`_proposal_coverage_loss`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L298), added to the
+objective at [`:1769-1776`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L1769-L1776):
 
 ```
 L_proposal = - Σ_{covered peaks p}  w_p · log Σ_{distinct fragments f covering p} P(f)
@@ -35,10 +35,10 @@ with five properties that each matter downstream:
 | property | code | consequence |
 |---|---|---|
 | a peak and a fragment "match" when their **m/z** fall inside `inst_type_loss_tol` | `matched_peak_candidate_pairs` | fragment identity is never read (§5) |
-| each unique fragment counts **once per peak**, however many ion/H channels matched | [`:372`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L372) | the term is H-independent by design |
-| `w_p` is the **observed intensity** (`true_logprobs.exp()`), unless `proposal_barcode_target` | [`:401-404`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L401-L404) | barcode is on in 4/224 configs, 0/86 `ma_mi_merged` |
-| **uncovered peaks contribute zero**, not a penalty | [`:395`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L395), [`:406-410`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L406-L410) | the blind spot (§3) |
-| the result is tied back to `fragment_logprobs` with weight 0 so it stays differentiable | [`:413`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L413) | a fully-uncovered batch backpropagates exact zeros |
+| each unique fragment counts **once per peak**, however many ion/H channels matched | [`:372`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L372) | the term is H-independent by design |
+| `w_p` is the **observed intensity** (`true_logprobs.exp()`), unless `proposal_barcode_target` | [`:401-404`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L401-L404) | barcode is on in 4/224 configs, 0/86 `ma_mi_merged` |
+| **uncovered peaks contribute zero**, not a penalty | [`:395`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L395), [`:406-410`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L406-L410) | the blind spot (§3) |
+| the result is tied back to `fragment_logprobs` with weight 0 so it stays differentiable | [`:413`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L413) | a fully-uncovered batch backpropagates exact zeros |
 
 Live config census, 224 files under `config/massshatter/**` resolved against
 `config/template.yml` (template defaults: weight `0.0`, `selection_only False`):
@@ -62,14 +62,14 @@ current lineage stands.
 
 | claim | verdict | source |
 |---|---|---|
-| Uncovered target peaks contribute nothing to the loss | **CONFIRMED**, re-run today (§3) | [loss setup review](loss_setup_review_2026_09_13.md#auxiliary-weights-proposal-coverage-and-warmup-need-separate-interpretation) |
+| Uncovered target peaks contribute nothing to the loss | **CONFIRMED**, re-run today (§3) | [loss setup review](../loss_setup_review_2026_09_13.md#auxiliary-weights-proposal-coverage-and-warmup-need-separate-interpretation) |
 | Proposal loss measures candidate coverage | **FALSE.** Zero coverage attains the global minimum | same |
 | Proposal supervision trains the encoder | **FALSE.** Detached in 140/224 configs, 81/86 `ma_mi_merged` | [head-input asymmetry §3](masshatter_head_input_asymmetry_2026_09_22.md) |
 | Connecting that gradient would help | **EVIDENCE AGAINST**: −0.011@100, −0.013@400, same seed, one key, 630 ep | [head-input asymmetry §7.1](masshatter_head_input_asymmetry_2026_09_22.md) |
 | `proposal_only_until_epoch` only stages training | **FALSE.** With a shared encoder it also un-detaches the branch permanently; **38 configs confounded** | same |
 | The loss reads which fragment a candidate is | **NO** — m/z only, and 2.75 connected fragments share each formula | [identity supervision](masshatter_identity_supervision_2026_09_22.md) |
 | …so MASShatter needs a structural teacher | **RETRACTED** by its own source | same |
-| A 0.1 coefficient means a 10% gradient contribution | **UNMEASURED.** Named as the required check in 2026-09-13, never run (§6) | [loss setup review](loss_setup_review_2026_09_13.md) |
+| A 0.1 coefficient means a 10% gradient contribution | **UNMEASURED.** Named as the required check in 2026-09-13, never run (§6) | [loss setup review](../loss_setup_review_2026_09_13.md) |
 | The per-spectrum proposal loop costs current runs | **NO.** Batched 2026-09-18; the surviving loop is the shared-eV variant and it is off everywhere | [loss audit §5](masshatter_loss_audit_2026_09_19.md) |
 | `_shared_group_proposal_coverage_loss` / `_cross_ev_fragment_delta_loss` are correct | **UNAUDITED.** Gated off by default, so only their cost was checked | same |
 | U256 truncation is the practical cause of missing coverage | **WITHDRAWN** by its own source — U256 is reached in 5-13% of molecules, and E1024→E4096 buys 43-46 fragments for **0.0066 wrecall** | [proposal review](masshatter_proposal_review_2026_09_13.md#live-wb-follow-up-u256-is-usually-not-reached) |
@@ -110,7 +110,7 @@ this is fixable at all.
 
 ## 4. There is no one-key ablation of the proposal loss (new)
 
-`_setup_loss_fn` ([`:1375-1409`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L1375-L1409))
+`_setup_loss_fn` ([`:1375-1409`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L1375-L1409))
 enforces a chain that makes the weight non-independent:
 
 - `proposal_selection_only` **requires** `proposal_loss_weight > 0`;
@@ -123,12 +123,12 @@ So turning the term off in a `ma_mi_merged` arm is a **three-key diff** — weig
 switch: it decides the spectrum itself,
 `corrected_fragment_logits = fragment_residuals` versus
 `fragment_log_probabilities + fragment_residuals`
-([`mass_shatter_model.py:2681-2685`](../../src/fragnnet/model/mass_shatter_model.py#L2681-L2685));
+([`mass_shatter_model.py:2681-2685`](../../../src/fragnnet/model/mass_shatter_model.py#L2681-L2685));
 and because the same chain forces `proposal_anchored: False`, the base-probability column also
 enters the candidate token (`use_base_probability_feature = not proposal_anchored`,
-[`mass_shatter_pl.py:1010`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L1010) — the
+[`mass_shatter_pl.py:1010`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L1010) — the
 constructor rejects that column *with* selection-only, so the two cannot be separated,
-[`mass_shatter_model.py:1082-1086`](../../src/fragnnet/model/mass_shatter_model.py#L1082-L1086)).
+[`mass_shatter_model.py:1082-1086`](../../../src/fragnnet/model/mass_shatter_model.py#L1082-L1086)).
 
 **Consequence.** Every "proposal loss" comparison this repository can run is a comparison of two
 different output architectures. The 178 configs that enable the term all use weight exactly
@@ -145,10 +145,10 @@ tuned value, it is an untested one.
 
 **It trains two head MLPs.** `detach_proposal_inputs = proposal_selection_only and not
 proposal_input_gradients_enabled`
-([`mass_shatter_model.py:2181-2183`](../../src/fragnnet/model/mass_shatter_model.py#L2181-L2183)),
+([`mass_shatter_model.py:2181-2183`](../../../src/fragnnet/model/mass_shatter_model.py#L2181-L2183)),
 and `proposal_input_gradients_enabled` starts `False` and is written only by
 `_apply_staged_training`, which returns early for a null warmup
-([`mass_shatter_pl.py:1127-1138`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L1127-L1138)):
+([`mass_shatter_pl.py:1127-1138`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L1127-L1138)):
 
 | steady-state routing | configs | `ma_mi_merged` |
 |---|---:|---:|
@@ -187,7 +187,7 @@ Ordered by how much the answer would change what we do.
    intensity actually falls in case C or is attenuated as in case G is unmeasured, and
    **`candidate_wrecall` — the metric that would show it — has been off by default since
    `17d95fb3` (2026-09-18) and is off in all 86 `ma_mi_merged` configs**, gated at
-   [`mass_shatter_pl.py:2179`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L2179). Before
+   [`mass_shatter_pl.py:2179`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L2179). Before
    that commit it was computed unconditionally, which is where the older `val_candidate_wrecall`
    figures quoted in the proposal review come from. **Note the name collision:**
    `candidate_wrecall` (what the *candidate set* can reach) is not the spectrum metric `wrecall`
@@ -195,7 +195,7 @@ Ordered by how much the answer would change what we do.
    [overfit read-out](masshatter_overfit_readout_2026_09_22.md); the "coverage already transfers"
    argument rests on the latter.
 4. **The two gated variants.** `_shared_group_proposal_coverage_loss`
-   ([`:563`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L563), gated by
+   ([`:563`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L563), gated by
    `share_proposal_across_ev`) and `_cross_ev_fragment_delta_loss` have had a cost and gating
    check only; their semantics have never been reviewed, and both are off in every config.
 5. **`proposal_barcode_target`.** Four configs, all pre-`tolerance_consensus`, so their results
@@ -226,7 +226,7 @@ Ordered by how much the answer would change what we do.
 
 Consolidates, and does not replace:
 
-- [loss_setup_review_2026_09_13.md](loss_setup_review_2026_09_13.md) — canonical for the
+- [loss_setup_review_2026_09_13.md](../loss_setup_review_2026_09_13.md) — canonical for the
   blind-spot counterexample, the gradient-routing warning, and the auxiliary-weight caveats.
   Also covers FraGNNet defects outside this doc's scope.
 - [masshatter_proposal_review_2026_09_13.md](masshatter_proposal_review_2026_09_13.md) — the

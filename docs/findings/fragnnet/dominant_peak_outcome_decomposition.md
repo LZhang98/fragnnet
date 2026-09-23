@@ -8,7 +8,7 @@
 > open by [`fragment_intensity_ranking_findings.md`](fragment_intensity_ranking_findings.md).
 >
 > Companion proposed work: the
-> [ion × collision-energy matrix experiment plan](../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md).
+> [ion × collision-energy matrix experiment plan](../../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md).
 
 **Date:** 2026-08-12
 **Script:** `scripts/eval/dominant_peak_diagnostic.py`
@@ -150,7 +150,7 @@ intensity ratio, while retaining both precursor-win and fragment-win examples.
 The sweep operates on the intensity-filtered prediction export. Its reconstructed zero-bias cosine
 was 0.879 versus 0.883 stored before export filtering (difference -0.0029), small enough not to alter
 the selected zero-bias conclusion. Script:
-[`precursor_bias_sweep.py`](../../scripts/eval/precursor_bias_sweep.py). Output:
+[`precursor_bias_sweep.py`](../../../scripts/eval/precursor_bias_sweep.py). Output:
 `output/diagnostics/precursor_bias_9t63zils_val.csv`.
 
 What beats the precursor in that failing cohort (NCE < 40, true base ≠ precursor, n=23,205, hit
@@ -219,8 +219,8 @@ hiding a large pool of DAG-covered-but-discarded dominant peaks.
 1. **A ranking/competition objective is the right target, and it is not CE-gated.** The dominant
    failure exists at every energy and saturates by NCE 60, so it is not primarily a CE-conditioning
    problem. This supports the
-   [sibling-ranking target plan](../plans/fragnnet/sibling_ranking_target_plan.md) and the
-   [global fragment intensity ranking plan](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md)
+   [sibling-ranking target plan](../../plans/fragnnet/sibling_ranking_target_plan.md) and the
+   [global fragment intensity ranking plan](../../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md)
    over further CE-conditioned modules — consistent with
    [`ce_extent_headroom_finding.md`](ce_extent_headroom_finding.md) being null.
 2. **The confusions are local and chemically structured.** Misses concentrate on single
@@ -243,7 +243,7 @@ hiding a large pool of DAG-covered-but-discarded dominant peaks.
 ## Companion experiment plan
 
 The proposed ion × collision-energy matrix work lives in
-[`ion_collision_energy_matrix_experiment_plan.md`](../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md).
+[`ion_collision_energy_matrix_experiment_plan.md`](../../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md).
 V1 keeps training sparse and uses the matrix as its diagnostic contract; V2 joint multi-CE decoding
 is gated on a positive matched V1 result.
 

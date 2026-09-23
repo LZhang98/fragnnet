@@ -5,7 +5,7 @@
 > argues against continuing the line: on trained bond logits the beam's captured probability
 > mass is flat at 0.8695 across a fourfold budget increase against 1.0000 for `cut_masks`,
 > because it is complete below half the molecule and structurally limited above it. See the
-> [reuse and equivalence finding](../../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md).
+> [reuse and equivalence finding](../../findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md).
 > Spectral accuracy remains unmeasured and no training run was performed. Whether to mark this
 > plan `STOPPED` is a pending decision for the user; in the meantime the four prepared arms and
 > the three-hour launcher should **not** be submitted as configured.
@@ -281,7 +281,7 @@ working-tree implementation on chains with extra five-atom ring-closing bonds, r
 
 These probes expose the extra sorting/connectivity cost; they do not measure CUDA or training
 throughput. The local script is `/tmp/benchmark_connected_beam_fix.py` (ephemeral).
-The [subsequent real-graph speed audit](../../findings/connected_fragment_beam_speed_2026_09_17.md)
+The [subsequent real-graph speed audit](../../findings/masshatter/connected_fragment_beam_speed_2026_09_17.md)
 measures GPU candidate time 238.7 → 732.1 ms and forward/backward time 744.4 → 1,252.3 ms at
 batch 128 / beam 256. Complement connectivity dominates; stable sorting is a smaller cost.
 All six previously skipped CUDA regressions passed. Next: reduce unnecessary complement
@@ -326,7 +326,7 @@ predate the selection fixes in the preceding audit section and need a new baseli
 
 ## Real-precursor throughput measurement (2026-09-17)
 
-The [speed audit](../../findings/connected_fragment_beam_speed_2026_09_17.md) measures this
+The [speed audit](../../findings/masshatter/connected_fragment_beam_speed_2026_09_17.md) measures this
 option before and after the complement-scoring fix. This section adds the missing baseline:
 the same construction against `cut_masks` on real sampled precursors.
 
@@ -377,7 +377,7 @@ whole-step throughput or quality evaluation ran for this measurement.
 
 > **Status:** PROPOSED, EVIDENCE AGAINST · Design recorded from review, then measured on
 > 2026-09-17 and not supported. Do not implement from this section without reading the
-> [coverage ceiling measurement](../../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md#coverage-per-unit-budget-and-the-architectural-mass-ceiling):
+> [coverage ceiling measurement](../../findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md#coverage-per-unit-budget-and-the-architectural-mass-ceiling):
 > the beam's captured probability mass saturates near 0.70 at any budget against 0.983 for
 > `cut_masks`, because it is complete below half the molecule and structurally blind above it,
 > where 64% of the mass lies. That ceiling is architectural, so the scoring and charge changes
@@ -385,7 +385,7 @@ whole-step throughput or quality evaluation ran for this measurement.
 > the current score; it is no longer a recommended build.
 
 Direction set by the user after the
-[reuse and equivalence finding](../../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md):
+[reuse and equivalence finding](../../findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md):
 keep the connected-fragment beam as a **candidate enumerator**, and restore a learned charge
 component instead of the implicit prior that the current score carries.
 
@@ -457,7 +457,7 @@ drops.
 3. Matched comparison against `cut_masks` at equal fragment target: coverage, spectral
    accuracy, candidate time and peak memory. The fragment size and ring-count half of this gate
    was run on 2026-09-17 and confirms the prior, with both obvious confounds excluded; see the
-   [measured section](../../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md#measured-emitted-fragment-distributions-2026-09-17).
+   [measured section](../../findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md#measured-emitted-fragment-distributions-2026-09-17).
    Synthetic logits were used, so a checkpoint-logit confirmation remains open.
 4. Existing connected-fragment checkpoints become diagnostic-only under the scoring change, as
    the earlier fragment-probability alignment already required.
@@ -569,7 +569,7 @@ sbatch slurm_scripts/msh_merged_jss_cfb_256_3h.sh
 ```
 
 Read `candidate_wrecall` (train) and `candidate_recall` (val) against the 0.8695 captured-mass
-ceiling the [2026-09-17 finding](../../findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md)
+ceiling the [2026-09-17 finding](../../findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md)
 measured on trained `cut_masks` logits, and read `val_cos_sim_0.01_epoch/mean` against
 `8v0i0fq7` at matched wall clock and matched epoch. Three hours is scheduler wall time against
 `max_epochs: 200`, so this truncates well short of the baseline's epoch 140 best; it is a

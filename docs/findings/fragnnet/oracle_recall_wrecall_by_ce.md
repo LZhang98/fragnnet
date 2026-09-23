@@ -31,11 +31,11 @@ plus the CE grouping. All figures below regenerate from the per-spectrum CSV via
 
 ## Coverage vs collision energy, by adduct
 
-![recall and wrecall vs CE by adduct](../figures/oracle_recall_wrecall_by_ce_adduct.png)
+![recall and wrecall vs CE by adduct](../../figures/oracle_recall_wrecall_by_ce_adduct.png)
 
 ## The mean falls but the median holds (tail-broadening)
 
-![wrecall mean vs median by CE](../figures/oracle_wrecall_mean_vs_median_by_ce.png)
+![wrecall mean vs median by CE](../../figures/oracle_wrecall_mean_vs_median_by_ce.png)
 
 ## Full distribution per CE bin (violin)
 
@@ -45,7 +45,7 @@ grows steadily. recall is visibly broader (a wide body plus a low-value tail), c
 many small unmatched satellite peaks. Violins are colored light→dark by energy; the black bar
 is the median.
 
-![recall and wrecall distributions by CE (violin)](../figures/oracle_recall_wrecall_violin_by_ce.png)
+![recall and wrecall distributions by CE (violin)](../../figures/oracle_recall_wrecall_violin_by_ce.png)
 
 ### By adduct
 
@@ -55,11 +55,11 @@ near 1.0 across the whole range; QTOF `[M+Cl]-` has too few spectra to show.
 
 wrecall:
 
-![wrecall distributions by CE and adduct (violin)](../figures/oracle_wrecall_violin_by_ce_adduct.png)
+![wrecall distributions by CE and adduct (violin)](../../figures/oracle_wrecall_violin_by_ce_adduct.png)
 
 recall:
 
-![recall distributions by CE and adduct (violin)](../figures/oracle_recall_violin_by_ce_adduct.png)
+![recall distributions by CE and adduct (violin)](../../figures/oracle_recall_violin_by_ce_adduct.png)
 
 ## Per-spectrum scatter vs CE, by adduct
 
@@ -72,11 +72,11 @@ no data.
 
 wrecall:
 
-![wrecall vs CE scatter by adduct](../figures/oracle_wrecall_scatter_by_ce_adduct.png)
+![wrecall vs CE scatter by adduct](../../figures/oracle_wrecall_scatter_by_ce_adduct.png)
 
 recall:
 
-![recall vs CE scatter by adduct](../figures/oracle_recall_scatter_by_ce_adduct.png)
+![recall vs CE scatter by adduct](../../figures/oracle_recall_scatter_by_ce_adduct.png)
 
 ## Overall by CE
 

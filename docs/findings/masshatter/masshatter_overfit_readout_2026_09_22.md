@@ -214,7 +214,7 @@ the model sat at 0.7043 validation.
 support ceiling is an extrapolation (~0.95 from the slope above), not a measurement. Adding
 `opt_cos_sim` to `auxiliary_scores` on the next control costs one metric and settles it. It
 is not the same quantity as the 0.937/0.959 `cos_hun` figures in
-[the DAG oracle ceiling note](dag_oracle_ceiling_nist20.md) — that is a model-free DAG
+[the DAG oracle ceiling note](../fragnnet/dag_oracle_ceiling_nist20.md) — that is a model-free DAG
 coverage bound under Hungarian matching on the test split; `opt_cos_sim` is a per-run bound
 on the support the model actually emits.
 
@@ -251,13 +251,13 @@ is not diffuse) and it finds the right peaks as often as the candidate set allow
 Several independent probes already point at the same defect and are worth reading together
 rather than re-running:
 
-- [Dominant-peak outcome decomposition](dominant_peak_outcome_decomposition.md) — base-peak
+- [Dominant-peak outcome decomposition](../fragnnet/dominant_peak_outcome_decomposition.md) — base-peak
   failure is 7:1 ranking versus DAG coverage; misses are one neutral loss away.
-- [Fragment intensity ranking findings](fragment_intensity_ranking_findings.md) — the error
+- [Fragment intensity ranking findings](../fragnnet/fragment_intensity_ranking_findings.md) — the error
   is rank/identity, not calibration (status: provisional nodeMLP evidence).
-- [cc-corruption probe](cc_corruption_probe_finding.md) — fragment identity *is* represented
+- [cc-corruption probe](../fragnnet/cc_corruption_probe_finding.md) — fragment identity *is* represented
   and used; the gap is comparative scoring, not features.
-- [GLACIER gap CE decomposition](glacier_gap_ce_decomposition_2026_09_21.md) — the remaining
+- [GLACIER gap CE decomposition](../fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) — the remaining
   gap is concentrated at high collision energy, where branching decisions multiply.
 
 None of the 25 arms above changes the comparative-scoring mechanism. They change how hard,
@@ -357,8 +357,8 @@ mechanism. The current audit leaves five credible routes:
 | Global candidate-set fingerprint | The intensity transformer jointly attends over all selected candidates, so candidate identities and their configuration can identify a molecule even without an explicit molecule ID. The allocator is sufficiently expressive to reach 0.8805 train cosine while stopping at 0.7298 on validation. | **Plausible, unisolated.** Requires a smaller-head or candidate-subset intervention. |
 | Unequal repeated exposure by molecule | On the active merged training split, 15,514 molecules produce 45,639 conditioning groups. Groups per molecule range from 1 to 10; the 37.3% of molecules with at least four groups contribute 58.0% of all groups. The active configuration uses neither molecule-balanced sampling nor loss weighting. | **Measured exposure imbalance; causal effect untested.** |
 | Conditioning shortcuts | QTOF rows usually lack raw NCE, so the dataset derives it from ACE, precursor m/z and charge. Among 5,254 validation QTOF rows, only 5 carry raw NCE; derived NCE correlates −0.517 with precursor m/z while raw ACE correlates +0.015. The NCE embedding can therefore act partly as a precursor-mass feature. | **Measured proxy; causal effect untested.** |
-| Population and precursor priors | On the exact merged validation target, a precursor-only predictor reaches mean cosine 0.275 (median 0.178; p90 0.754), and the [dominant-peak decomposition](dominant_peak_outcome_decomposition.md) shows the model over-calls the precursor at low CE. These priors are useful on average but can replace fragment-specific ranking. | **Measured shortcut behavior; contribution to the 0.151 gap unresolved.** |
-| Non-causal fragment proxies | MASShatter exposes cut count and component size while mean pooling loses relational cut topology; [the cut-set audit](../plans/masshatter/masshatter_cut_set_features_plan.md) finds 96.8% of fragments have at least two cuts and 55.4% have two cuts sharing a ring. FraGNNet's legacy `depth` is a proxy for cut count on plain BFS DAGs and does not retain that meaning for SMARTS/multicut DAGs. | **Representation defect measured; memorization effect untested.** |
+| Population and precursor priors | On the exact merged validation target, a precursor-only predictor reaches mean cosine 0.275 (median 0.178; p90 0.754), and the [dominant-peak decomposition](../fragnnet/dominant_peak_outcome_decomposition.md) shows the model over-calls the precursor at low CE. These priors are useful on average but can replace fragment-specific ranking. | **Measured shortcut behavior; contribution to the 0.151 gap unresolved.** |
+| Non-causal fragment proxies | MASShatter exposes cut count and component size while mean pooling loses relational cut topology; [the cut-set audit](../../plans/masshatter/masshatter_cut_set_features_plan.md) finds 96.8% of fragments have at least two cuts and 55.4% have two cuts sharing a ring. FraGNNet's legacy `depth` is a proxy for cut count on plain BFS DAGs and does not retain that meaning for SMARTS/multicut DAGs. | **Representation defect measured; memorization effect untested.** |
 
 Two tempting explanations are already ruled out or materially weakened:
 
@@ -373,7 +373,7 @@ Two tempting explanations are already ruled out or materially weakened:
   unmerging is not currently a supported prevention strategy.
 
 Do not remove or broadly corrupt fragment identity to address this. The
-[cc-corruption probe](cc_corruption_probe_finding.md) shows that identity is load-bearing for
+[cc-corruption probe](../fragnnet/cc_corruption_probe_finding.md) shows that identity is load-bearing for
 FraGNNet. The intervention should remove opportunities to memorize allocation, not remove the
 chemical information needed for transferable ranking.
 

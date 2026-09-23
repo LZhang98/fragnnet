@@ -28,8 +28,8 @@ Here `G` supplies molecular/fragment embeddings, `c` supplies acquisition condit
 `y` supplies proposed peak intensities. Energy is a learned compatibility score, not a physical
 bond-dissociation energy. Ranking training does not yield calibrated spectrum probabilities.
 
-The [fragment ranking findings](../findings/fragment_intensity_ranking_findings.md) and
-[dominant-peak decomposition](../findings/dominant_peak_outcome_decomposition.md) motivate
+The [fragment ranking findings](../findings/fragnnet/fragment_intensity_ranking_findings.md) and
+[dominant-peak decomposition](../findings/fragnnet/dominant_peak_outcome_decomposition.md) motivate
 testing intensity allocation within existing support. Their measurements are not evidence
 that an EBM will improve performance. Compare successful results with the
 [minimal FT ranking-loss plan](fragnnet/ft_contender_pair_minimal_training_plan.md) and the existing

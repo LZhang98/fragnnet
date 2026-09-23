@@ -8,7 +8,7 @@
 > screen on 2026-09-22 — `a1_prenorm` **passes cleanly** (+0.0056), `a6_ce_film` passes but carries
 > a 40.8% intensity-head cut, `b2_identity_residual` is a **rejection** (−0.0062) and
 > `b3_wd_groups` an exact null. Full numbers and method in the
-> [epoch-128 read-out](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+> [epoch-128 read-out](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md).
 > Items 4, 5 and 6 stay open and the five unrun arms were put on the 128-epoch screen on
 > 2026-09-22. This doc does not cover the escape, candidate-token, loss-objective or
 > regularization lines.
@@ -37,7 +37,7 @@ the family's history — a margin measured against them alone is flattered.
 ## 1. Read the six arms that already ran, at matched epoch 128 — **DONE 2026-09-22**
 
 Full method, robustness checks and the primary-loss table are in the
-[epoch-128 read-out](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md). Numbers
+[epoch-128 read-out](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md). Numbers
 below are the tail mean of epochs 118–127 against a control mean of 0.7270 (replicates 0.7266 /
 0.7273, spread 0.0007). Gate was ±0.005.
 
@@ -98,7 +98,7 @@ same class of defect the 2026-09-13 candidate-attention audit caught once alread
 ### §2's lead pair has now run (2026-09-22)
 
 Both finished at 127 epochs against the same 0.7270 control; numbers and method in
-[epoch-128 read-out §3](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+[epoch-128 read-out §3](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md).
 
 - **`b1_bond_sum` is a null: −0.0013.** The degree-normalized mean on the bond head costs nothing
   measurable. Item closed; do not re-run it.
@@ -167,7 +167,7 @@ under a constant LR and neither has been run with the other.
 **Note on `a3`/`a5`/`a6`/`a7`:** `PairwiseMassBias` weights initialize to zero, so these are exact
 no-ops at step 0 and safe on a warm start. The diagnostic for the CE arms is
 `intensity_head.mass_pair_bias.ce_weights` read out of the checkpoint — a flat `w_r(CE)` is
-informative about [CE-invariance](../../findings/masshatter_overfit_readout_2026_09_22.md) whether or
+informative about [CE-invariance](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) whether or
 not cosine moves, so these arms pay out in both directions.
 
 ## 3. Port the RWPE shape fix, then screen RWSE
@@ -190,7 +190,7 @@ bonds — para-substituted rings, alkyl chains — that fragment differently. Th
 change, so read `val_candidate_wrecall` alongside cosine, not cosine alone.
 
 **Caveat before betting on it:** the encoder is a measured plateau over width, depth and
-architecture ([head capacity](../../findings/masshatter_campaign_readout_2026_09_21.md)). RWSE is
+architecture ([head capacity](../../findings/masshatter/masshatter_campaign_readout_2026_09_21.md)). RWSE is
 untried because it changes *input features*, not capacity, which is the one axis that plateau never
 covered — but that is an argument for it being unmeasured, not for it working.
 
@@ -221,7 +221,7 @@ improve allocation while starving candidate selection of supervision.
 
 This is the weakest item in the review and may already be moot: production also sets
 `proposal_selection_only: true` and `proposal_anchored: true`, and the
-[head-input asymmetry finding](../../findings/masshatter_head_input_asymmetry_2026_09_22.md) shows the
+[head-input asymmetry finding](../../findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md) shows the
 proposal branch is detached in every current `ma_mi_merged` arm. Reference configs exist only on
 the older unmerged/merged bases.
 
@@ -238,11 +238,11 @@ on `c4a_base_s1` or close this item with the reason. Do not port the old referen
   `index_add` and normalization failures on this model.
 - The LR-decay family (`d1`–`d3`), regularization arms, loss objectives, the intensity escape and
   the candidate-token cut-set work. Those are tracked in their own plans and in the
-  [overfit read-out's](../../findings/masshatter_overfit_readout_2026_09_22.md) ordered interventions.
+  [overfit read-out's](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) ordered interventions.
 
 ## Sources
 
 - [Attention rework + parameter budget](masshatter_attention_budget_2026_09_21.md) — what landed for items 1, 2, 3, 5 and 7, and the arm definitions.
 - [4 h exploration campaign](masshatter_campaign_4h_2026_09_21.md) — the base config, the box, and why 128 epochs.
-- [Overfit read-out](../../findings/masshatter_overfit_readout_2026_09_22.md) — the run index these arms sit in, and the replicate floor.
-- [Epoch-128 read-out](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md) — **closes §1**: the six ran arms against both controls at matched epoch, with the horizon/hardware/seed confound checks.
+- [Overfit read-out](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) — the run index these arms sit in, and the replicate floor.
+- [Epoch-128 read-out](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md) — **closes §1**: the six ran arms against both controls at matched epoch, with the horizon/hardware/seed confound checks.

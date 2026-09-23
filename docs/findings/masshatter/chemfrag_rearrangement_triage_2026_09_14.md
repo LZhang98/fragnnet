@@ -37,12 +37,12 @@ Two probes, both run on the `FRAGNNET-GPU` interpreter over `data/proc/nist23/mo
    between mapped heavy atoms was collected and keyed by atom-map pair, restricted to map
    numbers that are heavy on both sides. A non-empty symmetric difference means the transform
    forms or breaks a heavy-atom bond. This is exactly admission gate 1 in the
-   [SMARTS rule catalog](../reference/masshatter_smarts_rules.md#scope-and-admission-rule):
+   [SMARTS rule catalog](../../reference/masshatter_smarts_rules.md#scope-and-admission-rule):
    a rule is useful only when it creates a new heavy-atom assembly.
 2. **Precursor-matchability probe.** The reactant half of each transform was compiled with
    `MolFromSmarts` and matched against every molecule, with and without `Chem.AddHs`.
    The prepass runs at depth 0 on the neutral precursor
-   ([multi_cut_bfs.pyx:851](../../src/fragnnet/frag/multi_cut_bfs.pyx#L851)), so a template
+   ([multi_cut_bfs.pyx:851](../../../src/fragnnet/frag/multi_cut_bfs.pyx#L851)), so a template
    that cannot match there cannot be used as written.
 
 3. **Charge-relaxation probe.** Charge primitives (`[+-]\d*`) and, separately, open-valence
@@ -178,7 +178,7 @@ any neutral precursor.
 | 32 | Vinyl cation + ketene → alkyne + acylium | no | no | Gate 1; H-transfer channel |
 
 Transform #22 is the allylic 1,3-H shift that the
-[rearrangement review](../reference/rearrangement_smarts.md#rules-removed) already removed
+[rearrangement review](../../reference/rearrangement_smarts.md#rules-removed) already removed
 as a thermally forbidden concerted sigmatropic shift. ChemFrag's inclusion of it is not by
 itself a reason to reinstate it; a stepwise or ion-catalysed gas-phase pathway would need its
 own evidence.
@@ -229,7 +229,7 @@ Three things must happen before any implementation:
 FraGNNet DAG nodes are atom masks of the precursor; the 26 skeleton-preserving transforms
 produce no new mask, and the 6 skeleton-changing ones cannot match the neutral precursor and
 do not specify a cut. The
-[integration decision](../reference/rearrangement_smarts.md#coverage-vs-current-bfs-integration-decision)
+[integration decision](../../reference/rearrangement_smarts.md#coverage-vs-current-bfs-integration-decision)
 already reached the same conclusion for the Cope and Claisen isomerizations.
 
 **A charged-species rearrangement stage.** This is where 26 of the 32 would have to live, and

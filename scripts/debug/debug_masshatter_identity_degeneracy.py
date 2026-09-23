@@ -19,7 +19,7 @@ unrestricted multi-cut masks can build. Composition ambiguity is therefore a low
 MASShatter, and so is substructure degeneracy.
 
 Results and their interpretation:
-``docs/findings/masshatter_identity_supervision_2026_09_22.md``.
+``docs/findings/masshatter/masshatter_identity_supervision_2026_09_22.md``.
 
 Usage:
     python scripts/debug/debug_masshatter_identity_degeneracy.py

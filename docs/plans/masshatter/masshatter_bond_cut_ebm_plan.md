@@ -14,7 +14,7 @@ separate until each has been evaluated, then compare their combination.
 This document owns the bond-cut experiment. The
 [shared spectrum-reranking design](../energy_based_spectrum_reranking_plan.md) owns the later
 intensity experiment; its intensity-perturbation oracle is not the bond-cut gate below.
-The [proposal review](../../findings/masshatter_proposal_review_2026_09_13.md) remains the canonical
+The [proposal review](../../findings/masshatter/masshatter_proposal_review_2026_09_13.md) remains the canonical
 source for coverage, redundancy, budget, and mixture findings. Its recorded E4096 gains are
 modest and setup-dependent; underfilling U256 alone is not evidence that an EBM will help.
 

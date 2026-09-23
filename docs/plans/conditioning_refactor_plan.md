@@ -14,7 +14,7 @@ confirms a completed GNN + heads run and SMARTS attempts. No matching full-metad
 heads-only run appeared in the inspected recent runs; routing benefit remains unresolved.
 The no-training statements below describe the earlier preparation handoff.
 
-The [pre-run design audit](../findings/masshatter_context_design_audit.md) identified ACE clipping
+The [pre-run design audit](../findings/masshatter/masshatter_context_design_audit.md) identified ACE clipping
 and row-order-dependent ACE selection. Both are now fixed in the new merged pair: `ace_max: 300`
 and opt-in weighted CE aggregation, supported by both models. Historical configurations and
 checkpoint behavior retain legacy aggregation. See the audit follow-up for validation results.

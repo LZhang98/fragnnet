@@ -11,7 +11,7 @@
 # difference. ~98% of the gap is which candidate gets the intensity, not which candidates
 # exist, and the candidate token is what drives that choice.
 # See docs/plans/masshatter/masshatter_cut_set_features_plan.md and
-# docs/findings/masshatter_overfit_readout_2026_09_22.md.
+# docs/findings/masshatter/masshatter_overfit_readout_2026_09_22.md.
 #
 # The mechanism. The candidate token's first two blocks are mean pools over the candidate's
 # atoms and over its complement -- 768 of 1,285 columns, and the most identifiable thing the

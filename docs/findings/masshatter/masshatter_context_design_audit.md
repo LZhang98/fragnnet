@@ -16,7 +16,7 @@ CE corrections; later numbered sections preserve the original pre-fix findings.
 
 ## Implemented follow-up: CE corrections (2026-09-08)
 
-Both configs in the [matched merged pair](../plans/conditioning_refactor_plan.md) now set
+Both configs in the [matched merged pair](../../plans/conditioning_refactor_plan.md) now set
 `ace_max: 300` and `spec_params.merge_ce_aggregation: weighted`. The global defaults and
 historical experiment configs are unchanged. Duplicate proposal-sharing YAML keys were removed.
 
@@ -30,7 +30,7 @@ stepped-schedule overweighting without changing spectral targets or merge groupi
 The new mode requires retained CE, tolerance consensus, and equal CE target weighting.
 `legacy` remains the default, and the checkpoint reader explicitly supplies it for old saved
 configs. Weighted batch fields are documented in the
-[data reference](../reference/dataloader_data.md). The wider ACE embedding in the new pair
+[data reference](../../reference/dataloader_data.md). The wider ACE embedding in the new pair
 requires fresh training. The GNN concatenation and its initialization are unchanged; a separate
 zero-initialized projection remains an untested suggestion, not part of these fixes.
 
@@ -52,7 +52,7 @@ No training or scheduler jobs were launched and no dataset artifacts were modifi
 ## 1. High priority: ACE silently saturates at 100 eV
 
 Both merged configs inherit `ace_max: 100`. The
-[context encoder](../../src/fragnnet/model/mass_shatter_model.py) clamps ACE before integer
+[context encoder](../../../src/fragnnet/model/mass_shatter_model.py) clamps ACE before integer
 featurization, so all readings above 100 receive the same embedding input. This limit was
 originally documented as a rough QTOF range; the selected data are FT/HCD.
 
@@ -80,7 +80,7 @@ not necessary to resolve this saturation.
 
 ## 2. High priority: merged ACE depends on source-row order
 
-The [merger](../../src/fragnnet/utils/proc_utils.py) averages targets within each primary NCE
+The [merger](../../../src/fragnnet/utils/proc_utils.py) averages targets within each primary NCE
 schedule, but obtains CE context with `drop_duplicates([group_id, _merge_ce_key])`. When two
 replicates share NCE but have different ACE, their peaks both contribute while only the first
 ACE is retained. Enabling ACE exposes this existing asymmetry.
@@ -224,4 +224,4 @@ d86e29f4c4602a61d14c84f47355bcc2ebe52dd4c773defe5ce499ed8fa3dceb
 
 Next: run a short real-data GPU smoke check of the corrected pair before the matched training
 comparison. Findings 1–2 are fixed as documented above; the initialization refinement is deferred.
-The [conditioning plan](../plans/conditioning_refactor_plan.md) remains the experiment entry point.
+The [conditioning plan](../../plans/conditioning_refactor_plan.md) remains the experiment entry point.

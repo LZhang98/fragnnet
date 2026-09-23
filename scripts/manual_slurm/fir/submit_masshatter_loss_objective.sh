@@ -16,7 +16,7 @@
 # the controls the arms are read against.
 #
 # Wall times are derived from the measured 51 s/epoch for this exact shape on 2g
-# (docs/findings/masshatter_campaign_readout_2026_09_21.md, run ppk9k8l9 = 68 epochs/hour):
+# (docs/findings/masshatter/masshatter_campaign_readout_2026_09_21.md, run ppk9k8l9 = 68 epochs/hour):
 #   128 epochs x 51 s ~= 109 min for cross_entropy.
 # The direct-loss arms carry an older 1.46x penalty that was attributed to the unbatched
 # per-spectrum loop in sparse_peak_list_distance -- that loop is now chunked, so 1.46x is an

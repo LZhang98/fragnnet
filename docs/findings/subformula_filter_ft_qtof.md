@@ -272,7 +272,7 @@ separate quantities and must not be substituted for each other.
 
 ### Implication for MASShatter and EBM priorities
 
-The [proposal review](masshatter_proposal_review_2026_09_13.md) records roughly 94% candidate
+The [proposal review](masshatter/masshatter_proposal_review_2026_09_13.md) records roughly 94% candidate
 weighted recall for filtered merged MASShatter runs. Against this saved D4 reference, that is
 numerically about two percentage points lower, so the observed MASShatter coverage is strong.
 The two values are **not a matched gap estimate**: target merging/cleaning, evaluation IDs,

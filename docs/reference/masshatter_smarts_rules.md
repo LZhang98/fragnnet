@@ -9,7 +9,7 @@ records the rules currently enabled, and keeps literature candidates separate fr
 validated code. It is intentionally narrower than the general
 [rearrangement review](rearrangement_smarts.md).
 
-The [2026-09-13 set and literature audit](../findings/masshatter_smarts_review_2026_09_13.md)
+The [2026-09-13 set and literature audit](../findings/masshatter/masshatter_smarts_review_2026_09_13.md)
 records current eligibility checks, passing tests, and positive-ion expansion priorities.
 Paper URLs are also attached to the seven newer executable rule definitions in
 [`mass_shatter_templates.py`](../../src/fragnnet/frag/mass_shatter_templates.py).

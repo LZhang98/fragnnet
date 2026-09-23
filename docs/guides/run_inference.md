@@ -382,7 +382,7 @@ python scripts/run_inference.py \
   spectra carry (p50 11, p90 45). **Prefer 10.0 for predicted libraries** - same score, ~3x
   smaller output. Keep it low only if you need to recover DAG support from the export, which
   even 1.0 largely prevents (see
-  [dominant_peak_outcome_decomposition.md](../findings/dominant_peak_outcome_decomposition.md)).
+  [dominant_peak_outcome_decomposition.md](../findings/fragnnet/dominant_peak_outcome_decomposition.md)).
 - `--disable_preproc`: Disable dataset preprocessing to save memory (default: True). This
   forces both `frag_params.preprocess` and `frag_params.preload` off, so DAGs are read and
   processed on access. Since `__getitem__` is per-spectrum while a DAG is per-molecule, the
@@ -615,7 +615,7 @@ default in `scripts/manual_slurm/fir/infer_synced_arr*.sh`.
 Keep the threshold low only if you need to recover DAG support from the export: even 1.0 leaves
 the median spectrum with just 5.3% of its candidate m/z, so peak-coverage analysis needs a
 low-threshold re-run, not a re-filter. See
-[dominant_peak_outcome_decomposition.md](../findings/dominant_peak_outcome_decomposition.md).
+[dominant_peak_outcome_decomposition.md](../findings/fragnnet/dominant_peak_outcome_decomposition.md).
 
 Sweep it yourself with [scripts/debug/debug_peak_count_diag.py](../../scripts/debug/debug_peak_count_diag.py),
 which reports peak counts and `cos_hun` at `[0, 1, 5, 10, 20, 50]`. Ground-truth peak counts per

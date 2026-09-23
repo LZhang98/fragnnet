@@ -4,6 +4,19 @@
 
 ## Current handoff
 
+**Proposal early-stop arms read; both nulls, and the family is closed (2026-09-23).** Read-only
+W&B query, nothing changed but the docs. Tail mean 118-127 against the 0.7270 control: `p1`
+freeze@32 `s5i5qqlz` **+0.0010**, `p3` proposal wd 0.1 `w1dj2ahw` **+0.0020**. `p2` is not worth
+submitting. The useful by-product is that `p1` measured the shared encoder drifting under
+frozen proposal heads. Train proposal loss rises in every block after epoch 32 (+0.082 in
+total), and about a third of the control's late val-proposal degradation survives the freeze.
+That means a clean freeze needs `separate_proposal_encoder`. It does **not** mean the shared
+encoder costs cosine. Proposal loss and cosine are decoupled across the four runs, and the one
+same-seed, one-key separate-vs-shared test (`esb2fqhg`/`d7s0yb72`, 2026-08-21, old merged
+lineage, never recorded before) is **−0.0008**. A separate-encoder arm is a one-key 128-epoch
+test with a null prior, ranked behind the `a1_prenorm` and `d3` replicates.
+[Plan § Results](plans/masshatter/masshatter_proposal_early_stop_plan.md#results-p1-and-p3-at-the-128-epoch-screen-2026-09-23).
+
 **SMARTS usage audited end to end (2026-09-23); read-only, nothing changed but one new probe.**
 No production model uses a SMARTS rule. In MASShatter, the eleven compound ring-cut rules add
 only a merged neutral byproduct (chance-floor intensity); their use is forcing a 4-bond mask.
@@ -107,7 +120,7 @@ puts a much coarser floor under the *mechanistic* columns: **0.011 on the loss d
 the train/val loss gap**. The turn *epoch* is reproducible (78 vs 78 at fixed seed, 52 vs 66 across
 seeds), so `a1_prenorm`'s turn at epoch 120 stands; but the "2.6x drift cut" is ~1.7 floor-widths
 and should be read as directional, and the drift ordering among `a3`/`a6`/`b2`/`a7` is inside the
-floor. Full tables in [epoch-128 read-out §3](findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+floor. Full tables in [epoch-128 read-out §3](findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md).
 
 **Next.** `a5_ce_pair_bias` and `a4` are what remain of review item 1, and a seed replicate of
 `a1_prenorm` is now clearly worth a box — it and `d3` are the two live candidates and both are n=1.
@@ -129,7 +142,7 @@ W&B query, no GPU, nothing changed by that read. Recommendation recorded in the 
 
 Proposal early stop and proposal-only weight decay implemented (2026-09-22, later the same day).
 **Code and config; no run launched, no GPU used.** The
-[overfit read-out §3](findings/masshatter_overfit_readout_2026_09_22.md) records that the
+[overfit read-out §3](findings/masshatter/masshatter_overfit_readout_2026_09_22.md) records that the
 validation **proposal** term degrades +0.06 to +0.14 and **turns at epochs 26-47** while the
 spectrum term keeps improving to 52-120 — two branches on one training schedule. Under
 `proposal_selection_only: true` the proposal reads detached inputs, so its loss updates the
@@ -161,7 +174,7 @@ the same control as the architecture arms (tail mean of epochs 118-127, control 
 replicate spread 0.0007, gate ±0.005): `e4_cut_adjacency` **+0.0032**, `e5_cut_bond_plus_adjacency`
 +0.0021, `e3_cc_atom_drop02` +0.0002, `e2_cc_atom_drop01` −0.0009, `e1_cut_bond_feats` −0.0010.
 **Not one clears the floor.** Adjacency is the only arm with a sign, which is the direction the
-[descriptor measurement](findings/masshatter_candidate_cut_descriptors_2026_09_22.md) predicted
+[descriptor measurement](findings/masshatter/masshatter_candidate_cut_descriptors_2026_09_22.md) predicted
 (0.489 residual ambiguity against 0.000 for ring-sharing), so the mechanism argument survives and
 the effect does not. Two patterns repeat from the architecture read: **stacking costs** — `e5` =
 `e1` + `e4` scores 0.0011 *below* `e4` alone, as `a7` scored below `a1` and `a6` — and **narrowing
@@ -187,7 +200,7 @@ floor, which is worth having given how much weight the 0.0007 control spread car
 
 `b1_bond_sum` (`3bqnobq1`) and `a2_full_attention` launched at 128/128 epochs and were at epoch 20
 when this was written — too early to read. Numbers, method and confound checks in
-[epoch-128 read-out §2](findings/masshatter_architecture_arms_epoch128_2026_09_22.md). Banners
+[epoch-128 read-out §2](findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md). Banners
 corrected on the [cut-set plan](plans/masshatter/masshatter_cut_set_features_plan.md) (now SCREENED, ALL NULL)
 and the [escape plan](plans/masshatter/masshatter_supervised_escape_plan.md) (now IMPLEMENTED, SCREENED NULL).
 Validation: relative links resolve, Ruff not applicable, no test run and none required for a
@@ -200,7 +213,7 @@ item in the previous handoff: the six arms killed at the wall clock between epoc
 have verdicts against both `c4a_base` replicates at matched epoch. Numbers are the tail mean of
 epochs 118-127 against a control mean of **0.7270** (replicates 0.7266 / 0.7273, spread 0.0007),
 gate ±0.005 — full method and robustness checks in the
-[epoch-128 read-out](findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+[epoch-128 read-out](findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md).
 
 **`a1_prenorm` +0.0056 PASSES and it is the clean one** — parameter-identical to the base, one key,
 and the first such arm in this family to clear the floor. It is also the strongest mechanistic
@@ -276,7 +289,7 @@ applicable, no test run and none required for a documentation change. No run lau
 
 MASShatter candidate-token changes (2026-09-22). **LANDED in the working tree, both keys default
 off, nothing trained.** Two one-key levers on the head that the
-[overfit read-out](findings/masshatter_overfit_readout_2026_09_22.md) blames for ~98% of the
+[overfit read-out](findings/masshatter/masshatter_overfit_readout_2026_09_22.md) blames for ~98% of the
 0.151 cosine gap (allocation, not coverage: train `wrecall` 0.8975 vs val 0.8911).
 **`mass_shatter_candidate_cut_bond_features`** pools `chemical_bond_attr[boundary_bond_indices]`
 per candidate, summed and averaged, because `_boundary_embeddings` builds its block from atom
@@ -297,7 +310,7 @@ derives it from `mass_shatter_proposal_anchored`, which is already `true` in `c4
 `c4a` token never carried `mask_log_probabilities`.
 
 **Then the premise was remeasured on the right population, and it moved the design.**
-[Candidate cut descriptors](findings/masshatter_candidate_cut_descriptors_2026_09_22.md),
+[Candidate cut descriptors](findings/masshatter/masshatter_candidate_cut_descriptors_2026_09_22.md),
 `scripts/debug/debug_candidate_cut_descriptors.py`, 400 molecules / 73,045 of MASShatter's OWN
 candidates rather than the depth-3 DAG the plan measured: **86.9%** are cut at >= 2 bonds (the DAG
 said 96.8%) and the relational shares are about twice the DAG's -- **73.6%** of all candidates have
@@ -431,7 +444,7 @@ Isotope detection is **deferred by user decision** (2026-09-22).
 
 Unexplained-intensity split (2026-09-22). Answering "what escape do we need for the peaks we
 cannot explain" by measuring the population first; read
-[the split](findings/unexplained_peak_split_2026_09_22.md). Over the full 15,257-spectrum
+[the split](findings/masshatter/unexplained_peak_split_2026_09_22.md). Over the full 15,257-spectrum
 `nist20_ma_mi_inchikey` val split, built through the run's own `spec_params` so the probed target
 is the trained target, the 10.89-point residual behind `val_wrecall` 0.8911 divides **73%
 coverage / 27% escape**: 2.91 points carry no precursor-bounded, nonnegative-RDBE subformula and
@@ -463,7 +476,7 @@ has never run on this base (0 of 58 runs). New probe:
 the full split plus a 400-spectrum smoke run; no model code changed, no training launched.
 
 MASShatter overfit read-out (2026-09-22). Read-only W&B review of the 25 runs of 2026-09-21/22;
-read [the read-out](findings/masshatter_overfit_readout_2026_09_22.md) before launching another
+read [the read-out](findings/masshatter/masshatter_overfit_readout_2026_09_22.md) before launching another
 regularization, objective or schedule arm. The train/validation cosine gap reaches **0.151** by
 epoch 127 and never plateaus, but it is **not a coverage gap**: train and validation `wrecall`
 agree to 0.0064 against a 0.1507 cosine difference, worth ~0.0027 of achievable cosine at the
@@ -553,7 +566,7 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   persistence before launching; resolve the unmerged anchor/warmup policy before its matched
   control. The plan includes [Vulcan generation and submission commands](plans/masshatter/masshatter_improvement_plan.md#vulcan-commands-for-the-five-config-screen)
   for all five configs with a three-hour allocation. No runs were launched for this plan.
-- [MASShatter code audit](findings/masshatter_code_audit.md) records three reproduced
+- [MASShatter code audit](findings/masshatter/masshatter_code_audit.md) records three reproduced
   issues at `0b5ad3f4`: standalone SMARTS inference, charged-component masses, and
   SMARTS proposal gradient isolation. All three fixes and regression tests are present
   at `77fdbea2`. A continued audit reproduced two additional inference blockers:
@@ -577,7 +590,7 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   uncommitted-work description in the workflow-adoption handoff above is historical.
 
 - [MASShatter regularization sweep](plans/masshatter/masshatter_regularization_sweep_plan.md) is **EXECUTED with
-  no promotions**; read the [campaign read-out](findings/masshatter_campaign_readout_2026_09_21.md)
+  no promotions**; read the [campaign read-out](findings/masshatter/masshatter_campaign_readout_2026_09_21.md)
   (2026-09-21) before acting on the plan. It was the execution of that audit's sweep half:
   eight one-hour `fir:h100-3g.40gb` jobs on the
   merged MA/MI base `nist20_ma_mi_merged_fast_batch512_cuda_lb64`, comprising the six prepared
@@ -637,10 +650,10 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   so the detached proposal branch should be left alone. Corollary: the 38 configs with staging
   *and* a shared encoder were all silently gradient-connected and are not clean tests of their
   nominal variable. See
-  [head-input asymmetry §7](findings/masshatter_head_input_asymmetry_2026_09_22.md).
+  [head-input asymmetry §7](findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md).
   Next: run the `c4a_*` bundle-attribution arms, then the now-unblocked LR-schedule arms
   (`c4b_*`), then refill the `_drop02` / `_ctxnorm` holes.
-- [MASShatter regularization audit](findings/masshatter_regularization_audit_2026_09_19.md)
+- [MASShatter regularization audit](findings/masshatter/masshatter_regularization_audit_2026_09_19.md)
   (2026-09-19) establishes that regularization and optimization have effectively never been varied:
   across 226 `model_type = mass_shatter` W&B runs, `mass_shatter_head_dropout`, `weight_decay`, `lr`,
   `gradient_clip_val` and `train_sample_weight` are identical in all of them, and only two runs vary
@@ -790,7 +803,7 @@ The [connected-fragment audit](plans/masshatter/masshatter_fast_gnn_proposal.md#
 found two selection issues now fixed in the working tree: stable beam ties remove padding
 dependence, and complements are scored before output-budget pruning. Permanent regressions
 and model/backend checks: 220 passed, 11 skipped in the sandbox; the six proposal CUDA checks
-subsequently passed outside it. The [real-graph speed audit](findings/connected_fragment_beam_speed_2026_09_17.md)
+subsequently passed outside it. The [real-graph speed audit](findings/masshatter/connected_fragment_beam_speed_2026_09_17.md)
 measured candidate time 238.7 → 732.1 ms and forward/backward time 744.4 → 1,252.3 ms at batch
 128 / beam 256 on RTX 2070 SUPER. Complement connectivity dominates; peak whole-step allocation
 stays near 2.83 GB. Next: reduce unnecessary connectivity checks without changing selection,
@@ -809,7 +822,7 @@ for the profile and the proposed restructuring. Next: screen this arm on accurac
 restructure complement connectivity before making any speed claim; no training run was launched.
 
 MASShatter training speed (2026-09-17): the
-[s3gy1ro4 audit](findings/masshatter_training_speed_2026_09_17.md) identifies monitoring-only
+[s3gy1ro4 audit](findings/masshatter/masshatter_training_speed_2026_09_17.md) identifies monitoring-only
 channel attribution and base CE as removable overhead. A matched fast config and reusable
 benchmark are prepared; batch-128 local GPU forward/backward throughput improved by 1.40×.
 Scientific losses and checkpoint shapes are unchanged; the two diagnostic families are disabled
@@ -824,14 +837,14 @@ with LR unchanged; its effective batch doubles to 512 and its GPU validation rem
 MASShatter proposal loss (2026-09-18): the per-spectrum proposal coverage loop is now a
 batched whole-batch match, measured 118.6 ms to 2.4 ms per call locally at production shapes
 with the previous loop kept as the test reference; see the same
-[training-speed finding](findings/masshatter_training_speed_2026_09_17.md). No end-to-end
+[training-speed finding](findings/masshatter/masshatter_training_speed_2026_09_17.md). No end-to-end
 training-step measurement was run.
 
 The [candidate-backend plan](plans/masshatter/masshatter_candidate_backend_plan.md) is active. CPU numeric
 construction now releases the GIL and shares a persistent thread pool; local full-training
 throughput improved about 9.3% with exact candidate/gradient checks. The score-free selector
 specialization was removed after failing its throughput gate. Membership compaction and streaming
-are deferred by the current projections. The same [speed finding](findings/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17)
+are deferred by the current projections. The same [speed finding](findings/masshatter/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17)
 records results and limits. Batch256 fits locally; batch512 runs out of memory on the 8 GB GPU.
 [Three-hour L40S benchmark commands](guides/benchmark_masshatter_cpu.md) are prepared; no jobs were
 submitted. CPU remains the default. The exact optional CUDA backend now passes local candidate,
@@ -876,12 +889,12 @@ Four CPU selection threads are enabled, but the new parallel topology/CUDA imple
 not reflected in those runs. Monitoring-only fast128 reduces epoch time from 44.5 to 33.5 minutes;
 256/512 take 32.1/31.8 minutes, so larger batches alone leave the CPU bottleneck. The old CPU
 batch512 run does fit L40S (about 14.76 GB median sampled allocation); new-backend L40S acceptance
-remains open. See the [live follow-up](findings/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17).
+remains open. See the [live follow-up](findings/masshatter/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17).
 Next: launch a fresh job from transferred updated source; running job-local installs will not
 pick up these working-tree changes. No remote jobs were modified by this read-only audit.
 
 Unmerged generalization audit (2026-09-16): the
-[27-run W&B census](findings/masshatter_unmerged_overfitting_2026_09_16.md) supports
+[27-run W&B census](findings/masshatter/masshatter_unmerged_overfitting_2026_09_16.md) supports
 widening train/validation loss gaps in mature runs, with modest continued cosine gains.
 The current `s3gy1ro4` run was still improving at epoch 8. No train cosine is logged.
 This audit corrects the anchor provenance below: `ef7fl5c6` is **merged**, not unmerged.
@@ -955,7 +968,7 @@ guard and its `pred_intensities` output contract are preserved. Validation: 3,23
 inference smoke check; no GPU run or evaluation was performed for the merge.
 
 Candidate attention topology audit (2026-09-13): the
-[audit section](findings/masshatter_code_audit.md#candidate-attention-topology-audit-2026-09-13)
+[audit section](findings/masshatter/masshatter_code_audit.md#candidate-attention-topology-audit-2026-09-13)
 records seven findings on the uncommitted `full` candidate-attention arm, all fixed in the
 working tree: a hyperparameter fallback default plus a missing `get_pl_hparams` migration,
 corrected A/B parameter counts, an unstated capacity confound, a missing unique-fragment guard,
@@ -1005,7 +1018,7 @@ check joint-loss gradients and the all-channels-open failure mode on synthetic c
 then compare on matched validation support and intensity metrics. Documentation only;
 no implementation, config change, or training run.
 
-MASShatter SMARTS review (2026-09-13): the [set/literature review](findings/masshatter_smarts_review_2026_09_13.md)
+MASShatter SMARTS review (2026-09-13): the [set/literature review](findings/masshatter/masshatter_smarts_review_2026_09_13.md)
 confirms 26 rules, 19 legacy rules without enforced ionization guards, and a pyrimidine
 gap in the carbamate family. Positive-ion oxygen-transfer and prazole-sulfone candidates
 are supported literature leads, not measured coverage gains. Validation: 75 SMARTS tests
@@ -1013,7 +1026,7 @@ passed on CPU plus registry/matching probes. Next: measure existing rules' incre
 coverage on filtered validation peaks before adding narrowly mapped rules. No model edits
 or training ran.
 
-MASShatter proposal review (2026-09-13): the [proposal review](findings/masshatter_proposal_review_2026_09_13.md)
+MASShatter proposal review (2026-09-13): the [proposal review](findings/masshatter/masshatter_proposal_review_2026_09_13.md)
 prioritizes support diagnostics before encoder expansion and separates established loss/routing
 limitations from exploration, diversity, and mixture hypotheses. A fresh 155-run W&B query
 and eight full validation histories support selection-only in a close same-seed historical
@@ -1128,7 +1141,7 @@ heads-only comparison is missing from the inspected runs. SMARTS warmup failed a
 known construction guard. Next: matched-seed confirmation and the missing controls;
 recover the missing report for metric definitions, run links, and provenance limitations.
 
-SMARTS merged readiness (2026-09-09): the [readiness audit](findings/masshatter_code_audit.md#smarts-merged-run-readiness-2026-09-09)
+SMARTS merged readiness (2026-09-09): the [readiness audit](findings/masshatter/masshatter_code_audit.md#smarts-merged-run-readiness-2026-09-09)
 passed 494 CPU tests (5 skipped) and a synthetic SMARTS + merged NCE + GNN-context
 forward/backward probe. The current merged configs are blocked by their proposal-only
 warmup, which explicitly rejects SMARTS. The requested no-warmup SMARTS config is now
@@ -1137,7 +1150,7 @@ differences passed. Next: perform a real-data GPU smoke check. No runs launched.
 The subsequently requested [SMARTS warmup config](../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
 is also prepared, with proposal-only epochs 0–15. The SMARTS/proposal-only-warmup
 construction guard is now removed and validated (2026-09-11): see the
-[guard-removal finding](findings/masshatter_code_audit.md#smarts-proposal-only-warmup-guard-removed-2026-09-11)
+[guard-removal finding](findings/masshatter/masshatter_code_audit.md#smarts-proposal-only-warmup-guard-removed-2026-09-11)
 for the new PL-level gradient-isolation regression tests. Construction now succeeds.
 Next: a real-data GPU smoke check before launching this arm.
 
@@ -1152,13 +1165,13 @@ Follow-up: the user requested context at the merged MASShatter GNN input. The op
 migration. A matched full-metadata merged heads-only versus GNN+heads pair is prepared;
 existing experiment configs are unchanged. Validation: 182 passed, 5 skipped, both merged
 configs constructed, intended-only resolved diffs and Ruff passed. No runs launched.
-The [pre-run design audit](findings/masshatter_context_design_audit.md) now confirms homogeneous
+The [pre-run design audit](findings/masshatter/masshatter_context_design_audit.md) now confirms homogeneous
 groups, but all selected rows are `[M+H]+`/FT/HCD. It found ACE saturation at 100 eV in 21.42% of
 selected training groups and row-order-dependent ACE selection for same-NCE replicates. Actual
 GINE-EFA forward/backward checks at epochs 15/16 were finite; no quality evaluation ran.
 CE fixes are now implemented: the new pair uses ACE up to 300 eV and order-invariant weighted
 CE aggregation, with both models consuming the weights and legacy behavior preserved. The
-[audit follow-up](findings/masshatter_context_design_audit.md) records regression and source-data
+[audit follow-up](findings/masshatter/masshatter_context_design_audit.md) records regression and source-data
 checks. GNN initialization remains unchanged. Next: a real-data GPU smoke check before training.
 
 FraGNNet formula-support crash follow-up (2026-09-07): W&B runs
@@ -1194,7 +1207,7 @@ procedure linked from INSTALL.md. Commands and profiles were checked against rep
 no cluster connection, submission, or training validation was performed.
 
 Connected-fragment beam review (2026-09-17): the
-[reuse and equivalence finding](findings/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md)
+[reuse and equivalence finding](findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md)
 records that the beam objective is `log P(mask = ∂f)` minus the complement's intact term, so it
 matches `cut_masks` up to replacing the charge head with a fixed prior, ring-reconnection terms
 that vanish for induced-acyclic fragments, and exact-versus-approximate search. Nine of about

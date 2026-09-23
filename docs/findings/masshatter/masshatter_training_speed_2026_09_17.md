@@ -7,8 +7,8 @@
 ## Result and implementation
 
 The initial measured improvement was to disable **monitoring-only** channel attribution and
-base-spectrum CE. The [fast config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml)
-differs from the [s3gy1ro4 control](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml)
+base-spectrum CE. The [fast config](../../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml)
+differs from the [s3gy1ro4 control](../../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml)
 in exactly four resolved keys: W&B name/tags and these existing switches:
 
 ```yaml
@@ -69,13 +69,13 @@ Removing those latent pathways would alter proposal marginalization unless equiv
 
 ## Why monitoring costs so much
 
-In [mass_shatter_pl.py](../../src/fragnnet/pl_model/mass_shatter_pl.py), the loss closure computes
+In [mass_shatter_pl.py](../../../src/fragnnet/pl_model/mass_shatter_pl.py), the loss closure computes
 channel attribution, support metrics and required-top-k quantiles whenever channel diagnostics
 are requested. This happens even with `compute_train_auxiliary_metrics: False`, because these
 metrics are registered as loss metrics. In this run both channel-support loss weights are zero:
 the entire attribution calculation is for monitoring.
 
-[candidate_support.py](../../src/fragnnet/model/candidate_support.py) loops over spectra, repeatedly
+[candidate_support.py](../../../src/fragnnet/model/candidate_support.py) loops over spectra, repeatedly
 compacts GPU tensors, matches dense channels to observed peaks, and reads GPU scalar conditions.
 Required-top-k diagnostics add per-spectrum masking and quantiles. The baseline also evaluates
 Gaussian CE a second time for base-spectrum logging despite `mass_shatter_base_ce_weight: 0`.
@@ -96,7 +96,7 @@ RTX 2070 SUPER (8 GB), not the run's L40S.
 The recorded run config matches the current resolved control except for the local template's
 additional empty `spec_params.split_filters` mapping; no active filter differs.
 
-The final [benchmark](../../scripts/debug/benchmark_mass_shatter_training.py) loads a seeded
+The final [benchmark](../../../scripts/debug/benchmark_mass_shatter_training.py) loads a seeded
 1,024-spectrum sample of the same NIST20 MA/MI training split, prepares four fixed batches of
 128, and repeats each configuration from identical seeded initialization and dropout seeds.
 It uses two PyTorch CPU threads, FP32, four warmup batches and twelve measured batches. CUDA is
@@ -146,10 +146,10 @@ From the repository root, with the configured environment:
 ```
 
 The benchmark supports CPU fallback and `--batch-size` for smaller devices. For a new production
-job use the fast config through the [cluster submission procedure](../guides/submit_cluster_runs.md),
+job use the fast config through the [cluster submission procedure](../../guides/submit_cluster_runs.md),
 with a new job ID. To preserve the current run's training progress, use a controlled checkpoint
 resume instead: inspect the resolved config **after W&B initialization** before continuing, because
-[runner.py](../../src/fragnnet/runner.py) copies W&B config values back into the local config.
+[runner.py](../../../src/fragnnet/runner.py) copies W&B config values back into the local config.
 A changed local YAML or CLI override alone is not proof that a resumed run uses the new flags.
 The remote checkpoint and resumed behavior were not tested or modified here.
 
@@ -161,7 +161,7 @@ were not run; production model code and scientific objectives are unchanged.
 
 ## Larger-microbatch follow-up (2026-09-17)
 
-At the user's request, the [batch-256 config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml)
+At the user's request, the [batch-256 config](../../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml)
 changes `train_batch_size: 128 → 256` and `accumulate_grad_batches: 2 → 1` relative to the fast
 config. Only those two settings and W&B name/tags differ. Effective batch size remains 256 on
 one GPU; LR, validation batch size, losses, precision and candidate budgets stay fixed.
@@ -206,13 +206,13 @@ was launched. No convergence or validation-quality comparison was performed.
 Next: compare 128×2 and 256×1 on L40S using spectra/second, epoch time, peak memory and sampled GPU
 utilization, with the same monitoring settings. If testing 512×1 afterward, record that effective
 batch size doubles to 512; its optimization comparison is separate. Profile the remaining topology
-and packing under the [existing performance gates](../plans/masshatter/masshatter_topology_assembly_performance_plan.md)
+and packing under the [existing performance gates](../../plans/masshatter/masshatter_topology_assembly_performance_plan.md)
 to address the CPU interval between GPU stages. Mixed precision and smaller enumeration budgets
 remain separate experiments.
 
 ## Batch-512 config prepared (2026-09-17)
 
-The requested [batch-512 config](../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512.yml)
+The requested [batch-512 config](../../../config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512.yml)
 differs from the batch-256 variant only in `train_batch_size` and W&B name/tags.
 Accumulation remains 1, so effective batch size is 512 on one GPU. LR remains 0.001;
 validation batch size remains 64, precision remains FP32, and both monitoring switches stay off.
@@ -222,7 +222,7 @@ convergence comparison remain pending.
 
 ## Candidate-sampling follow-up (2026-09-17, source audit)
 
-The subsequent [implementation plan](../plans/masshatter/masshatter_candidate_backend_plan.md) records the
+The subsequent [implementation plan](../../plans/masshatter/masshatter_candidate_backend_plan.md) records the
 user-selected sequence: CPU improvements first, then a separately selectable GPU backend.
 At the time of this source audit the opportunities below were unimplemented. The later
 [implementation measurements](#cpu-implementation-and-full-training-measurements-2026-09-17) record
@@ -275,10 +275,10 @@ raw unique-array views are compacted; private local buffers are consumed on thei
 to avoid duplicate remapping allocations. CPU remains the default. Kernel source was rebuilt
 before validation; no scheduler job or W&B training run was created.
 
-The new [full-training harness](../../scripts/debug/benchmark_mass_shatter_full_training.py)
+The new [full-training harness](../../../scripts/debug/benchmark_mass_shatter_full_training.py)
 includes production data loading, device transfer, loss/backward, accumulation, gradient clipping,
 AdamW updates and step scheduling when configured. It excludes W&B/Lightning logging, validation
-and checkpoints. [L40S instructions](../guides/benchmark_masshatter_cpu.md) freeze code and rebuild
+and checkpoints. [L40S instructions](../../guides/benchmark_masshatter_cpu.md) freeze code and rebuild
 native kernels on the target; all suggested allocations remain **three hours**.
 
 Local environment: RTX 2070 SUPER 8 GB, PyTorch 2.4.1+cu121, FP32, seed 397623, six DataLoader
@@ -287,7 +287,7 @@ start from seeded weights, **not the mature `s3gy1ro4` checkpoint**. Both varian
 `f6138e2da037139ad598d6200563cb8bf2a10c6f7845ae2aa56b1a1f6dd06570` and identical ordered spectrum IDs.
 The baseline uses the original Python/native pair from `a237afe79a24df1347918653e757f43306dcefb8`.
 Complete resolved settings, source/binary hashes, input file path/size/mtime, IDs and commands are
-in the [local artifacts](../../output/masshatter_cpu_2026_09_17/); dataset contents were not hashed.
+in the [local artifacts](../../../output/masshatter_cpu_2026_09_17/); dataset contents were not hashed.
 
 ### Stage decisions
 
@@ -402,7 +402,7 @@ The local B1, B2 and aggregate GPU gates pass. An explicit `mass_shatter_candida
 setting now defaults to `cpu`, with `cuda` available for the supported FP32/unique/single-mixture
 configuration. No trainable tensor names or shapes changed. Three matching opt-in configs and
 inference/checkpoint override instructions are in the
-[benchmark guide](../guides/benchmark_masshatter_cpu.md#select-the-optional-cuda-backend).
+[benchmark guide](../../guides/benchmark_masshatter_cpu.md#select-the-optional-cuda-backend).
 Public API, real Lightning checkpoint migration and resolved W&B backend logging checks passed.
 L40S speed/memory acceptance and long-run convergence remain unmeasured; no remote jobs were
 submitted.

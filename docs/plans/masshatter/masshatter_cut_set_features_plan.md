@@ -8,14 +8,14 @@
 > `e4_cut_adjacency` **+0.0032**, `e5_cut_bond_plus_adjacency` +0.0021, `e3_cc_atom_drop02`
 > +0.0002, `e2_cc_atom_drop01` −0.0009, `e1_cut_bond_feats` −0.0010 — every one a hold, and
 > stacking (`e5`) scores *below* adjacency alone. Numbers and caveats in the
-> [epoch-128 read-out §2](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+> [epoch-128 read-out §2](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md).
 > The mechanism argument below is untouched by this: adjacency was predicted to be the only
 > non-redundant relation and it is the only arm with a sign. What is refuted is that resolving
 > more candidates per descriptor bucket buys validation cosine — which is what the plan's own
 > 2026-07-23 counter-weight warned. `e6_ring_topology_cut_bond` was never submitted.
 >
 > **The premise numbers below are superseded.** They came from the depth-3 BFS DAG; the
-> [candidate-descriptor measurement](../../findings/masshatter_candidate_cut_descriptors_2026_09_22.md)
+> [candidate-descriptor measurement](../../findings/masshatter/masshatter_candidate_cut_descriptors_2026_09_22.md)
 > recomputes them on MASShatter's own candidates (86.9% multi-cut, 73.6% same-ring, 68.4%
 > adjacent) and redirects item A from ring topology to adjacency.
 >
@@ -39,7 +39,7 @@ below, which are different in kind:
   because pooling is applied after the fact.
 
 Both matter for MASShatter specifically, because the
-[2026-09-22 read-out](../../findings/masshatter_overfit_readout_2026_09_22.md) puts ~98% of the
+[2026-09-22 read-out](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) puts ~98% of the
 generalization gap in *intensity allocation among peaks the model already proposes* — which is
 exactly what the candidate token drives.
 
@@ -262,7 +262,7 @@ Merged mode is a development harness. Every arm built in the 2026-09-21/22 campa
 merged-only — `config/massshatter/ma_mi_unmerged/` holds just `baseline`, `cmf`,
 `context_ablation` and `unique_fragment` — and so is the evidence this plan leans on: the
 train `wrecall` 0.8975 / validation 0.8911 against a 0.151 cosine gap comes from the merged
-read-out. The [unmerged audit](../../findings/masshatter_unmerged_overfitting_2026_09_16.md) shows a
+read-out. The [unmerged audit](../../findings/masshatter/masshatter_unmerged_overfitting_2026_09_16.md) shows a
 growing generalization gap on its 27 runs too, so the direction agrees, but there is **no unmerged
 coverage-versus-allocation decomposition**; do not assume the 98% figure transfers.
 
@@ -298,7 +298,7 @@ The split that matters for screening:
 
 Each as a one-key diff from `c4a_base_s1` at the same seed, matching the `c4a` campaign
 convention, screened at **128 epochs** — confirmed in the
-[2026-09-22 read-out](../../findings/masshatter_overfit_readout_2026_09_22.md), which measures a
+[2026-09-22 read-out](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md), which measures a
 median +0.0031 between epoch 128 and best across 15 arms, at the replicate floor.
 
 ## Implementation state, 2026-09-22
@@ -370,7 +370,7 @@ At the `c4a_base_s1` geometry the token goes 1,285 -> 1,303 (cut-bond), 1,287 (a
 ## What would falsify the premise
 
 Partly answered without a checkpoint: the
-[candidate-descriptor measurement](../../findings/masshatter_candidate_cut_descriptors_2026_09_22.md)
+[candidate-descriptor measurement](../../findings/masshatter/masshatter_candidate_cut_descriptors_2026_09_22.md)
 shows the information is genuinely absent from the token rather than already encoded — but note
 its own warning, that the 2026-07-23 probe found the *least* identifiable fragment descriptor
 generalized best. Resolving more candidates is evidence the head cannot otherwise obtain the

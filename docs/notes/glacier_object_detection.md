@@ -85,7 +85,7 @@ Every model in the lineage passes 100 (ICEBERG, SCARF, MassFormer, GrAFF-MS, GNN
 CFM-ID passes 1000. **The argparse default of 20 is never used by any run script** — so the
 earlier "top-20 coverage" reading of their 0.887 is WRONG, and any of our numbers computed under
 default-20 behaviour are at the wrong protocol (this includes the protocol-sensitivity table in
-[`dag_oracle_ceiling_nist20.md`](../findings/dag_oracle_ceiling_nist20.md), which should be
+[`dag_oracle_ceiling_nist20.md`](../findings/fragnnet/dag_oracle_ceiling_nist20.md), which should be
 recomputed at 100).
 
 `--max-peaks` truncates the **prediction** to its N strongest bins before cosine and before the
@@ -557,7 +557,7 @@ vector, subtracted** — a rank-1 set statistic — after which every logit is c
 and the joint softmax normalizes them. A softmax is a *constraint* on allocation, not a
 *mechanism* for it.
 
-[`findings/glacier_gap_ce_decomposition_2026_09_21.md`](../findings/glacier_gap_ce_decomposition_2026_09_21.md)
+[`findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md`](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md)
 measured that the entire 0.077 gap is CE-dependent **allocation** against a ceiling we already
 hold (oracle 0.9492; realization 88.4% at NCE<20 falling to 75.6% at 120+). FraGNNet has no
 architectural site where "this fragment wins at NCE 120 and that one does not" can be computed.
@@ -636,7 +636,7 @@ MAGMa -> end-to-end anneal is a curriculum we have only as a stub (`dag_curricul
 ### Consequence for the ranked plan
 
 This adds an item 0 to the ranking in
-[`findings/glacier_gap_ce_decomposition_2026_09_21.md`](../findings/glacier_gap_ce_decomposition_2026_09_21.md):
+[`findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md`](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md):
 
 0. **Give FraGNNet a real fragment-set interaction.** Replace `frag_pool_combine: subtract` with
    attention over the fragment set — `set_transformer` already exists in `build_pool_module`, and

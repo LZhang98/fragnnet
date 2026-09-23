@@ -32,7 +32,7 @@ below; the linked follow-up explicitly adds selector improvements and a later op
 - Stage 2 is now implemented in the CPU-first follow-up: numeric GIL release, one persistent
   executor, local zero-based outputs and deterministic group remapping. Local full-training
   throughput improved about 9.3%; the canonical L40S gate remains open. See the
-  [current evidence](../../findings/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17).
+  [current evidence](../../findings/masshatter/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17).
   Stage 4 is deferred by the current upload-only projection; Stage 5 remains unimplemented.
 
 ## Why now

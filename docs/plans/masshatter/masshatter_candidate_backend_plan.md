@@ -21,7 +21,7 @@ and altered chemistry are separate experiments. Keep U256, E4096 and FP32 for th
 
 ## Established evidence and current state
 
-The [training-speed finding](../../findings/masshatter_training_speed_2026_09_17.md) is the canonical
+The [training-speed finding](../../findings/masshatter/masshatter_training_speed_2026_09_17.md) is the canonical
 source for W&B run `s3gy1ro4`, phase timings, the reduced-monitoring baseline, and batch-128/256/512
 configs. Its host timers identify topology and assembly as larger targets than selection; they
 are not isolated CUDA timings or predictions of recoverable wall time. The local larger-batch
@@ -258,13 +258,13 @@ frozen at `/tmp/msh_cpu_reference_20260917`; the isolated A1 pair is at
   Correctness checks passed; local full-training gain is 9.26% versus original CPU, with the
   separate score specialization removed. The aggregate 10% target and L40S gate remain open.
 - A3/A4: deferred by current projections; see the canonical
-  [CPU measurements](../../findings/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17).
+  [CPU measurements](../../findings/masshatter/masshatter_training_speed_2026_09_17.md#cpu-implementation-and-full-training-measurements-2026-09-17).
 - CPU full suite: 3,322 passed, 22 skipped, 2 xfailed. Final CPU reference frozen at
   `/tmp/msh_cpu_final_reference_20260917`; three-hour target commands are in the
   [benchmark guide](../../guides/benchmark_masshatter_cpu.md).
 - B1: native CUDA topology and model integration pass exact candidate and gradient checks.
   The first matched full-training test is 5.72% faster than improved CPU; see the canonical
-  [GPU measurements](../../findings/masshatter_training_speed_2026_09_17.md#optional-gpu-candidate-construction-2026-09-17-in-progress).
+  [GPU measurements](../../findings/masshatter/masshatter_training_speed_2026_09_17.md#optional-gpu-candidate-construction-2026-09-17-in-progress).
   Exact pointer jumping/larger tiles raised the measured gain to 7.02% before GPU selection.
 - B2: exact GPU ranking, direct device CSR and live scoring pass complete candidate/model
   differentials. Full GPU construction is 20.57% faster than improved CPU and 12.66% faster

@@ -14,7 +14,7 @@ correctness review, not an exhaustive security, chemistry, or performance certif
 Used `/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python`. No production source,
 configuration, tests, datasets, installed packages, or installed extension binaries
 were changed during this audit. No training jobs or W&B queries were launched.
-The prior [MASShatter audit](masshatter_code_audit.md) records already fixed issues
+The prior [MASShatter audit](masshatter/masshatter_code_audit.md) records already fixed issues
 and the user-deferred CPU bfloat16 mixture limitation; these are not new findings.
 
 ## 1. P1: Compiled checkpoints load random FraGNNet weights through inference setup

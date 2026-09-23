@@ -90,7 +90,7 @@ precursor graph + spectrum metadata
   experimental controls. Their measured status and next checks belong in the linked
   findings and newer plans, especially the [improvement plan](masshatter_improvement_plan.md),
   [loss review](../../findings/loss_setup_review_2026_09_13.md), and
-  [campaign read-out](../../findings/masshatter_campaign_readout_2026_09_21.md).
+  [campaign read-out](../../findings/masshatter/masshatter_campaign_readout_2026_09_21.md).
 
 ### Documentation boundary
 

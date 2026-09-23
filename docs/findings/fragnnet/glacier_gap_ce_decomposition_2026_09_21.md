@@ -50,7 +50,7 @@ training data.** The entire gap is CE-dependent intensity allocation.
    strongly CE-dependent (same-NCE floor 0.11 -> 0.68 at max NCE gap) — the same mechanism reached
    from a different direction. **Run first.**
 2. **Composition-aware intensity head** — fragment formula + neutral-loss complement +
-   broken-bond count (GLACIER eq. 14; see [`notes/glacier_object_detection.md`](../notes/glacier_object_detection.md)).
+   broken-bond count (GLACIER eq. 14; see [`notes/glacier_object_detection.md`](../../notes/glacier_object_detection.md)).
    Our candidate head is blind to all three, and these are exactly the signals that discriminate
    competing candidates.
 3. **Intensity-head capacity on the per-CE arm** — 384x3/FF1024/ind128/ad4 + `independent` +
@@ -73,4 +73,4 @@ before committing to a CE-conditioned module, since one of those findings says t
 Scripts: `scratchpad/ce_decomp.py` (model, 0.1 Da, sum-pooled, NCE-stratified) and the oracle join
 against `data/eval/oracle_cos_nist20_default/oracle_cos_default.csv`. Bin-width and pooling
 conventions replicate `ms_pred.common.bin_spectra` — see
-[`notes/glacier_object_detection.md`](../notes/glacier_object_detection.md).
+[`notes/glacier_object_detection.md`](../../notes/glacier_object_detection.md).

@@ -14,7 +14,7 @@ rather than only the kept prefix.
 Accept the mechanism when, on the merged `c4a_base` lineage at 128 epochs:
 
 1. `f2` (marginal K128 from a U256 pool) reaches validation cosine within the
-   [128-epoch screen gate](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md)
+   [128-epoch screen gate](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md)
    (±0.005 of the 0.7270 control tail mean) at lower hours per epoch than the control, and
 2. `f2` beats `f1` (mask-order U128) on both `val_candidate_wrecall` and cosine.
 
@@ -82,7 +82,7 @@ The current fragment probability is itself a partial sum: `fragment_log_probabil
 [mass_shatter_model.py](../../../src/fragnnet/model/mass_shatter_model.py) is a log-sum over only the
 pathways enumerated before the stop. A fixed-checkpoint cutoff on it cost 0.0075 cosine while
 retaining 99.58% of proposal mass
-([channel selection findings](../../findings/masshatter_channel_selection_findings.md)), so it is not
+([channel selection findings](../../findings/masshatter/masshatter_channel_selection_findings.md)), so it is not
 a usable ranking as it stands.
 
 ## Design

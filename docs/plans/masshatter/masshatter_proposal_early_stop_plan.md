@@ -1,16 +1,18 @@
 # MASShatter proposal early stop and proposal-only weight decay
 
-> **Status:** IMPLEMENTED, NOT TRAINED · **Updated:** 2026-09-22
-> Two knobs landed behind new template keys, both default off, plus three matched 128-epoch
-> arms that have never been submitted. No run launched, no GPU used, no checkpoint touched.
-> The premise is measured; the effect is not. Read §5 before quoting an expected direction —
-> the same read-out that motivates this work also predicts it may be a null.
+> **Status:** CLOSED NULL · **Updated:** 2026-09-23
+> Two knobs landed behind new template keys, both default off. `p1` (freeze@32) and `p3`
+> (proposal wd 0.1) ran the 128-epoch screen and are **both cosine nulls** (+0.0010, +0.0020
+> against 0.7270, gate ±0.005). `p2` was never submitted. `p1` also measured the shared encoder
+> moving under frozen proposal heads, which is the limitation §1 predicted. Read
+> [Results](#results-p1-and-p3-at-the-128-epoch-screen-2026-09-23) before proposing a separate
+> proposal encoder on the strength of it.
 
 ## Objective
 
 Let the proposal branch and the intensity branch stop training at different epochs, or carry
 different weight decay, because the
-[2026-09-22 overfit read-out](../../findings/masshatter_overfit_readout_2026_09_22.md) measured
+[2026-09-22 overfit read-out](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) measured
 that they overfit on different schedules and the training loop gives them one schedule.
 
 ### Acceptance criteria
@@ -26,11 +28,11 @@ that they overfit on different schedules and the training loop gives them one sc
 
 | Fact | Source |
 |---|---|
-| The validation **proposal** term degrades +0.06 to +0.14 and turns at **epochs 26-47**; the spectrum term turns at **52-120** | [overfit read-out §3](../../findings/masshatter_overfit_readout_2026_09_22.md) |
+| The validation **proposal** term degrades +0.06 to +0.14 and turns at **epochs 26-47**; the spectrum term turns at **52-120** | [overfit read-out §3](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) |
 | The proposal branch is **44.8% of the parameters** — 4,128,642 of 9,217,181 at `c4a_base_s1` (`BondFocusedBreakHead` 3,865,473 + `AtomChargeAffinityHead` 263,169) | measured 2026-09-22, this work |
-| Under `proposal_selection_only: true` the proposal reads `.detach()`ed atom embeddings and context, so `proposal_loss_weight: 0.1` updates the proposal heads **and nothing else** | [head-input asymmetry §4.4](../../findings/masshatter_head_input_asymmetry_2026_09_22.md) |
-| `weight_decay` is `0.01` and identical in **all** 232 `mass_shatter` runs; it has never been swept per branch | [regularization audit](../../findings/masshatter_regularization_audit_2026_09_19.md) |
-| Coverage is **not** the gap: train `wrecall` 0.8975 vs val 0.8911, worth ~0.0027 of cosine against a 0.151 train/val cosine difference | [overfit read-out §4.1](../../findings/masshatter_overfit_readout_2026_09_22.md) |
+| Under `proposal_selection_only: true` the proposal reads `.detach()`ed atom embeddings and context, so `proposal_loss_weight: 0.1` updates the proposal heads **and nothing else** | [head-input asymmetry §4.4](../../findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md) |
+| `weight_decay` is `0.01` and identical in **all** 232 `mass_shatter` runs; it has never been swept per branch | [regularization audit](../../findings/masshatter/masshatter_regularization_audit_2026_09_19.md) |
+| Coverage is **not** the gap: train `wrecall` 0.8975 vs val 0.8911, worth ~0.0027 of cosine against a 0.151 train/val cosine difference | [overfit read-out §4.1](../../findings/masshatter/masshatter_overfit_readout_2026_09_22.md) |
 
 The detach is what makes this a clean intervention rather than a joint-training change. It is
 also why the existing staged-training knob is not the answer: `mass_shatter_proposal_only_until_epoch`
@@ -45,7 +47,7 @@ the answer is no, for three reasons that are each independently sufficient.
 630-epoch configs and were killed at the wall clock near epoch 205, so their W&B summaries
 (0.7316 / 0.7301 / 0.7181) are last-logged values at unmatched epochs and had never been placed
 against the control. Re-read as the tail mean of epochs 118-127, same method as the
-[epoch-128 read-out](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md), against
+[epoch-128 read-out](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md), against
 the same control (`c4a_base_s1` 0.7266, `c4a_base_s2` 0.7273, mean **0.7270**, gate ±0.005):
 
 | arm | `proposal_only_until_epoch` | tail mean 118-127 | vs control |
@@ -55,7 +57,7 @@ the same control (`c4a_base_s1` 0.7266, `c4a_base_s2` 0.7273, mean **0.7270**, g
 | `c4c_pwarm_e15` (`c25ayosq`) | 15 | 0.7174 | **−0.0096** |
 
 Two nulls and one rejection, non-monotone — the same shape as the merged-lineage warm-up sweep
-the [campaign read-out](../../findings/masshatter_campaign_readout_2026_09_21.md) called "measured
+the [campaign read-out](../../findings/masshatter/masshatter_campaign_readout_2026_09_21.md) called "measured
 nothing", now with a cost that appears once the warm-up is long. The horizon does not confound
 it: all four runs carry `lr_schedule: false` at a constant `lr: 1e-3`, so nothing reads
 `max_epochs`, and every arm shares seed 397623 with `c4a_base_s1`. `c4c_pwarm_e9` was configured
@@ -66,7 +68,7 @@ and never submitted.
 `proposal_encoder is None` in every `ma_mi_merged` config, so setting the key to any integer
 un-detaches the proposal branch for the **whole** run, not just the warm-up epochs. The one
 clean same-seed test of that rewiring measured **−0.0113 at epoch 100 and −0.0132 at epoch 400**
-([head-input asymmetry §7.1](../../findings/masshatter_head_input_asymmetry_2026_09_22.md)). Every
+([head-input asymmetry §7.1](../../findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md)). Every
 warm-up arm above is therefore confounded with a change already measured as harmful, and a clean
 warm-up test would first need `separate_proposal_encoder: true`.
 
@@ -155,7 +157,7 @@ late drift never cost cosine.
    proposal heads carry `head_dropout: 0.1` (their normalization is LayerNorm, so nothing else
    changes). Training-time candidate selection therefore becomes deterministic after the
    boundary. That is a second, unseparated change in the same arm — and plausibly a *help*,
-   given the [regularization audit's](../../findings/masshatter_regularization_audit_2026_09_19.md)
+   given the [regularization audit's](../../findings/masshatter/masshatter_regularization_audit_2026_09_19.md)
    train/eval candidate-set divergence. `p3` has no such side effect, which is one more reason
    to run it alongside the freeze arms rather than instead of them.
 3. **The premise predicts a null.** Coverage is already flat train-to-val, so if these arms move
@@ -165,16 +167,76 @@ late drift never cost cosine.
    late degradation was calibration the ranking metric never saw, exactly as §3 of the read-out
    argues for the spectrum term.
 
+## Results: p1 and p3 at the 128-epoch screen (2026-09-23)
+
+Read-only W&B query, no GPU. Both runs finished all 128 epochs, both carry seed 397623 (the same
+seed as `c4a_base_s1`), and both were read by the family's method: the tail mean of epochs
+118-127 against `c4a_base_s1` `5qws8g9x` and `c4a_base_s2` `6plumx6r`.
+
+| run | cosine | vs control 0.7270 | val proposal loss | train proposal loss | `val_wrecall` | val primary loss |
+|---|---:|---:|---:|---:|---:|---:|
+| `c4a_base_s1` `5qws8g9x` | 0.7266 | — | 2.2769 | 1.7709 | 0.8911 | −2.7251 |
+| `c4a_base_s2` `6plumx6r` | 0.7273 | — | 2.2776 | 1.7778 | 0.8912 | −2.7264 |
+| `p1` freeze@32 `s5i5qqlz` | 0.7280 | **+0.0010** | **2.2546** | **2.0166** | 0.8888 | −2.7166 |
+| `p3` proposal wd 0.1 `w1dj2ahw` | 0.7290 | **+0.0020** | 2.2845 | 1.7651 | 0.8912 | −2.7318 |
+
+**Both are cosine nulls.** The seed-matched deltas against `c4a_base_s1` are +0.0014 and
++0.0024, both inside the ±0.005 gate. `p2` is not worth a box: it was only informative if `p1`
+showed a sign.
+
+**`p3` barely touched the proposal.** Its train proposal loss (1.7651) matches the control
+(1.77), and its validation proposal loss is the worst of the four. At `lr: 1e-3`, a 0.1 decay did
+not constrain the fit.
+
+**`p1` measured the shared encoder drifting under the frozen heads.** From epoch 32 nothing the
+proposal owns updates, yet its **train** proposal loss rises in every 16-epoch block after the
+boundary: 1.940, 1.951, 1.965, 1.980, 1.998, 2.014. That is +0.082 from the epoch 32-35 mean to
+the tail. The first-epoch drop (1.974 → 1.934 at epoch 32) is the head dropout switching off
+(limitation 2). The rise after it can only come from `precursor_encoder` and `context_encoder`,
+which keep training on the spectrum objective. Limitation 1 predicted this, and here is its
+size. Relative to the epoch 28-35 mean:
+
+| run | Δ val proposal loss | Δ `val_wrecall` |
+|---|---:|---:|
+| `c4a_base_s1` | +0.041 | +0.0021 |
+| `c4a_base_s2` | +0.050 | +0.0023 |
+| `p1` | **+0.016** | **−0.0004** |
+
+Freezing the heads removes about two thirds of the late validation-proposal degradation. The
+remaining third is encoder drift. It also forfeits the +0.002 coverage gain that the control's
+heads earn by continuing to track the encoder. None of this reaches cosine.
+
+**What this does and does not say about a separate proposal backbone.** It shows that, with a
+shared encoder, the proposal cannot be held fixed or scheduled independently. A clean freeze
+therefore needs `mass_shatter_separate_proposal_encoder: true`. It does **not** show that the
+shared encoder costs cosine, for three reasons:
+
+1. **Proposal loss and cosine are decoupled across these four runs.** `p3` has the worst
+   validation proposal loss and the best cosine; `p1` has the best proposal loss and the second
+   best. Removing a drift that cosine does not see is not a lever on cosine.
+2. **The one direct test is a null.** `esb2fqhg` (separate encoder) against `d7s0yb72` (shared)
+   is the 2026-08-21 merged pair from the [separate proposal encoder
+   ablation](masshatter_plan.md#separate-proposal-encoder-ablation-2026-08-23). The two runs share
+   seed 397623, and their resolved W&B configs differ only in
+   `mass_shatter_separate_proposal_encoder`. Both crashed, at epochs 136 and 143. Tail mean over
+   the last ten common epochs (128-137): 0.7409 against 0.7417, **−0.0008**. Validation proposal
+   loss matched too (3.236 against 3.257 at epoch 135). The pair predates the 2026-09-03 target
+   change, uses `gine_efa384` with learned OOS, and was not previously recorded. Take its sign as
+   the prior, not its value.
+3. **The shared part is small.** The proposal already has its own message passing:
+   `BondFocusedBreakHead` runs three bond-centric update layers (3,865,473 parameters). What it
+   shares is the two-layer atom encoder (1,808,256 parameters, per the
+   [regularization audit §2.5](../../findings/masshatter/masshatter_regularization_audit_2026_09_19.md)).
+   A separate encoder adds a second copy of that, +20% on 9,217,181. It is also detached today, so
+   the proposal is a readout of a spectrum-trained encoder. Under V3 the proposal loss would train
+   its own encoder, which is the substantive change. The context vector would still be shared
+   ([head-input asymmetry §4.6](../../findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md)).
+
 ## Next concrete check
 
-Submit **`p1` and `p3`** on the 128-epoch screen against the two existing `c4a_base` replicates
-(control 0.7270, spread 0.0007, gate ±0.005), reading the tail mean of epochs 118-127 and
-`val_wrecall` alongside. They test the two different mechanisms — stop at the turn, or pull on
-the same parameters continuously. Hold `p2` (freeze@64) for the follow-up: it is only informative
-once `p1` shows a sign, where it separates "the epoch matters" from "any late freeze works".
-Nothing has been submitted.
-
-If `p1` passes, the freeze's eval-mode side effect (§limitation 2) still has to be separated from
-the parameter freeze itself; the cheapest separation is a variant that clears `requires_grad`
-without calling `.eval()` on the proposal heads, which is a one-line change to
-`_set_modules_trainable`'s caller and not currently exposed.
+Nothing in this family is queued. If the separate-encoder question is worth a box, the test is
+one key: `mass_shatter_separate_proposal_encoder: true` against `c4a_base_s1` at 128 epochs, read
+by tail mean with `val_wrecall`. Add a second arm with the freeze on top only if a truly static
+candidate set is itself the question. The prior from `esb2fqhg`/`d7s0yb72` is null. The
+`a1_prenorm` replicate and the `d3` LR-schedule replicate are the live candidates, and both
+rank ahead of it.

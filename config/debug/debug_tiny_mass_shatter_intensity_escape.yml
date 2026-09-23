@@ -4,7 +4,7 @@
 # observed intensity sits at m/z values no candidate reaches. Without an escape the predicted
 # intensities normalize over candidates alone and the model must over-allocate everything it
 # CAN reach. See docs/plans/masshatter/masshatter_supervised_escape_plan.md and the sizing in
-# docs/findings/unexplained_peak_split_2026_09_22.md.
+# docs/findings/masshatter/unexplained_peak_split_2026_09_22.md.
 #
 # Pair this with debug_tiny_mass_shatter_intensity_escape_control.yml, which is identical
 # except mass_shatter_intensity_escape. This is a SMOKE run on 64 toy spectra: it checks the

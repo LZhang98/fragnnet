@@ -18,8 +18,8 @@
 > **See also:** what the objective can and cannot see is consolidated with the loss-side reviews
 > in [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
 
-MASShatter-focused follow-up to [feature headroom](feature_headroom_2026_09_22.md) and the
-[unused information inventory](unused_information_inventory_2026_09_22.md). Those measured
+MASShatter-focused follow-up to [feature headroom](../feature_headroom_2026_09_22.md) and the
+[unused information inventory](../unused_information_inventory_2026_09_22.md). Those measured
 FraGNNet's DAG; MASShatter has no DAG, so the conclusions do not transfer and are re-derived here.
 
 ## What the objective can and cannot see
@@ -42,7 +42,7 @@ monoisotopic `[M+H]+` peaks, 10 ppm:
 | **composition** — two different formulas in one tolerance window | 5.2% of peaks, **3.2% of matched intensity** | yes, and NIST ships one |
 | **substructure** — one formula reachable as several connected fragments | **mean 2.75 per formula**, p50 2.56, p90 3.97, max 8.87; **82.3% of molecules** average ≥2 | **no** — identical m/z and identical composition |
 
-This **corrects the ranking in the [inventory](unused_information_inventory_2026_09_22.md)** as it
+This **corrects the ranking in the [inventory](../unused_information_inventory_2026_09_22.md)** as it
 applies to MASShatter. NIST's annotations are the largest unused data in the repository, but they
 are *formula* labels, and formula ambiguity is only 3.2% of MASShatter's matched intensity. They
 are worth little to its proposal head. The degeneracy that matters here is structural, and no
@@ -86,7 +86,7 @@ expresses no rearrangement, nothing from our SMARTS or neutral-loss rules, and i
 our d3.
 
 The MASShatter plan already names exactly this, as step 2 of its staged training
-([`masshatter_plan.md`](../plans/masshatter/masshatter_plan.md) §7.1):
+([`masshatter_plan.md`](../../plans/masshatter/masshatter_plan.md) §7.1):
 
 > **Optional supervised warm start.** If trusted fragment atom masks are available, supervise
 > boundary-bond breaks, charge retention, and `(mode, delta_H)` directly. Existing D3/D4
@@ -141,7 +141,7 @@ costless under the metric. It can only bite three ways, none established:
    `c4a_complement_composition`, one-key diffs from `c4a_base_s1` at the same seed, ~5k
    parameters. Cheap screen fodder, not a bet.
 3. **Not** a DAG-as-teacher warm start, on this evidence.
-4. **Not** more descriptor features — closed in [feature headroom](feature_headroom_2026_09_22.md).
+4. **Not** more descriptor features — closed in [feature headroom](../feature_headroom_2026_09_22.md).
 5. **Not** NIST formula supervision for the proposal head — worth 3.2% of matched intensity here,
    though it stays valuable for the DAG-based models and as a rule-mining residual.
 

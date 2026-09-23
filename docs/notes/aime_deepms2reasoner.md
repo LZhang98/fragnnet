@@ -174,7 +174,7 @@ tables are fully specified and are what our 2026-09-20 audit should be read agai
 1. What does our test cosine become under their 5 ppm formula filter + unexplained-peak discard?
    That is the only way to read 0.83 against our numbers.
 2. Their expansion is probability-mass-bounded rather than depth-bounded. Our measured ceiling
-   work ([`dag_oracle_ceiling_nist20.md`](../findings/dag_oracle_ceiling_nist20.md)) says d3
+   work ([`dag_oracle_ceiling_nist20.md`](../findings/fragnnet/dag_oracle_ceiling_nist20.md)) says d3
    coverage is already high at 0.1 Da, so the gain would have to come from ranking, not support.
 3. Formula-coordinate inverted indexing is directly reusable for our retrieval work regardless of
    the predictor.

@@ -47,15 +47,33 @@ Shuffle draws are seeded per batch and shared across conditions, so ``cc_shuffle
 Note that ``candidate_atom_dropout`` is training-only and the model is in eval mode here, so
 it is inactive and cannot interact with these corruptions.
 
+Two further scopes cover the head's other memorization routes, so one pass over a checkpoint
+ranks every in-head route side by side:
+
+  features  the candidate descriptor block (``mass_shatter_candidate_features``, e.g. cut
+            count, size, mass, charge), corrupted with the same three modes. These columns
+            are few but exact, and mass plus size alone can index a fragment within its
+            molecule.
+  set       the candidate-set fingerprint. ``set_drop`` hides a random ``--set_drop_fraction``
+            of each molecule's candidates from the attention KEYS in every layer while still
+            scoring them, so each candidate's own token is untouched and only the set context
+            it is contextualized against changes. At least one candidate per molecule stays
+            visible. If allocation is looked up from the exact candidate configuration, train
+            loses more than validation here.
+
 Validation status. The mechanics are verified end to end on a 128-molecule toy model
 (``config/debug/debug_tiny_mass_shatter_cut_features.yml``, hidden 64, 60 epochs, the same
 ``inchikey_s`` split key production uses). That run is far too small to say anything about
 the production model, but it does show the readout discriminates: corrupting the cc pools
 left the train/validation gap unchanged (gap_closed -0.015) while corrupting the boundary
 block closed 76-99% of it. A production checkpoint is required for the real answer.
+The ``features`` and ``set`` scopes (added 2026-09-23) are verified only mechanically: unit
+tests in ``tests/test_debug_pooled_embedding_memorization.py`` (``set_drop`` at fraction 0 is
+exactly the identity under both attention types) and one end-to-end pass on a 6-epoch toy
+checkpoint of the same config, which had not overfit and so says nothing about memorization.
 
 Results and their interpretation:
-``docs/findings/masshatter_head_input_asymmetry_2026_09_22.md`` (section 7.1b).
+``docs/findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md`` (section 7.1b).
 
 Usage:
     python scripts/debug/debug_pooled_embedding_memorization.py \
@@ -106,6 +124,13 @@ SCOPE_POSITIONS: dict[str, tuple[int, ...]] = {
     "boundary": (BOUNDARY_ARG,),
     "all": (FRAGMENT_ARG, COMPLEMENT_ARG, BOUNDARY_ARG),
 }
+# Blocks the head receives by keyword rather than position.
+SCOPE_KWARGS: dict[str, tuple[str, ...]] = {"features": ("candidate_features",)}
+# Not a block: masks candidates out of the attention keys (see the module docstring).
+SET_SCOPE = "set"
+SET_MODE = "drop"
+# Positional layout of both candidate attention layers' forward.
+LAYER_PADDING_MASK_ARG = 2
 MODES = ("molmean", "shuffle", "zero")
 BASE_METRICS = ("loss", "primary_loss")
 
@@ -126,22 +151,60 @@ class Condition:
     def positions(self) -> tuple[int, ...]:
         if self.scope is None:
             return ()
-        return SCOPE_POSITIONS[self.scope]
+        return SCOPE_POSITIONS.get(self.scope, ())
+
+    @property
+    def kwargs(self) -> tuple[str, ...]:
+        if self.scope is None:
+            return ()
+        return SCOPE_KWARGS.get(self.scope, ())
 
 
 def build_conditions(scopes: list[str], modes: list[str]) -> list[Condition]:
-    """Return the uncorrupted reference followed by every requested scope/mode pair."""
-    unknown_scopes = [scope for scope in scopes if scope not in SCOPE_POSITIONS]
+    """Return the uncorrupted reference followed by every requested scope/mode pair.
+
+    The ``set`` scope has a single mode of its own and ignores ``modes``.
+    """
+    known_scopes = {*SCOPE_POSITIONS, *SCOPE_KWARGS, SET_SCOPE}
+    unknown_scopes = [scope for scope in scopes if scope not in known_scopes]
     if unknown_scopes:
         raise ValueError(f"Unknown corruption scopes: {unknown_scopes}")
     unknown_modes = [mode for mode in modes if mode not in MODES]
     if unknown_modes:
         raise ValueError(f"Unknown corruption modes: {unknown_modes}")
     conditions = [Condition("none", None, None)]
-    conditions.extend(
-        Condition(f"{scope}_{mode}", scope, mode) for scope in scopes for mode in modes
-    )
+    for scope in scopes:
+        if scope == SET_SCOPE:
+            conditions.append(Condition(f"{SET_SCOPE}_{SET_MODE}", SET_SCOPE, SET_MODE))
+            continue
+        conditions.extend(Condition(f"{scope}_{mode}", scope, mode) for mode in modes)
     return conditions
+
+
+def drop_from_keys(
+    padding_mask: th.Tensor,
+    fraction: float,
+    generator: th.Generator,
+) -> th.Tensor:
+    """Mark a random fraction of each molecule's real candidates as padding.
+
+    Args:
+        padding_mask: ``(num_molecules, num_slots)`` bool, True on padded slots.
+        fraction: Probability that a real candidate is hidden from the keys.
+        generator: CPU generator for the draw.
+
+    Returns:
+        A mask of the same shape that is True on padded AND hidden slots. Each row keeps its
+        first real candidate visible if the draw would have hidden all of them.
+    """
+    real = ~padding_mask
+    draws = th.rand(padding_mask.shape, generator=generator).to(padding_mask.device)
+    hidden = real & (draws < fraction)
+    emptied = (real & ~hidden).sum(dim=1) == 0
+    first_real = real.to(th.uint8).argmax(dim=1)
+    rows = th.nonzero(emptied, as_tuple=False).flatten()
+    hidden[rows, first_real[rows]] = False
+    return padding_mask | hidden
 
 
 def _within_molecule_permutation(
@@ -193,17 +256,28 @@ class PooledEmbeddingCorruptor:
     features) is disturbed.
     """
 
-    def __init__(self, head: th.nn.Module, seed: int) -> None:
+    def __init__(self, head: th.nn.Module, seed: int, set_drop_fraction: float) -> None:
+        if not 0.0 <= set_drop_fraction < 1.0:
+            raise ValueError(f"set_drop_fraction must be in [0, 1), got {set_drop_fraction}")
         self.head = head
         self.seed = seed
+        self.set_drop_fraction = set_drop_fraction
         self._original_forward = head.forward
+        self._original_layer_forwards = [layer.forward for layer in head.layers]
         self.condition = Condition("none", None, None)
         self.batch_index = 0
         self._installed = False
+        self._generator: th.Generator | None = None
+        # Every layer of one bucket receives the same padding-mask tensor; reuse one draw
+        # for all of them so a hidden candidate stays hidden through the whole stack.
+        self._mask_source: th.Tensor | None = None
+        self._mask_value: th.Tensor | None = None
 
     def install(self) -> None:
         self._assert_argument_layout()
         self.head.forward = self._forward  # type: ignore[method-assign]
+        for layer, original in zip(self.head.layers, self._original_layer_forwards):
+            layer.forward = self._layer_forward(original)  # type: ignore[method-assign]
         self._installed = True
 
     def _assert_argument_layout(self) -> None:
@@ -222,10 +296,24 @@ class PooledEmbeddingCorruptor:
                     f"{parameters[position] if position < len(parameters) else '<missing>'}, "
                     f"expected {name}; update this probe's argument layout."
                 )
+        for names in SCOPE_KWARGS.values():
+            missing = [name for name in names if name not in parameters]
+            if missing:
+                raise ValueError(f"Intensity head has no keyword arguments {missing}")
+        for layer in self.head.layers:
+            layer_parameters = list(inspect.signature(type(layer).forward).parameters)[1:]
+            if layer_parameters[LAYER_PADDING_MASK_ARG] != "candidate_padding_mask":
+                raise ValueError(
+                    f"{type(layer).__name__} argument {LAYER_PADDING_MASK_ARG} is "
+                    f"{layer_parameters[LAYER_PADDING_MASK_ARG]}, expected "
+                    "candidate_padding_mask; update this probe's layer layout."
+                )
 
     def restore(self) -> None:
         if self._installed:
             self.head.forward = self._original_forward  # type: ignore[method-assign]
+            for layer, original in zip(self.head.layers, self._original_layer_forwards):
+                layer.forward = original  # type: ignore[method-assign]
             self._installed = False
 
     def __enter__(self) -> PooledEmbeddingCorruptor:
@@ -249,6 +337,15 @@ class PooledEmbeddingCorruptor:
             raise ValueError("component_batch_indices is not the expected long vector")
         # One draw per batch, shared by every condition, so nested scopes stay comparable.
         generator = th.Generator().manual_seed(self.seed * 1_000_003 + self.batch_index)
+        if self.condition.scope == SET_SCOPE:
+            self._generator = generator
+            self._mask_source = None
+            try:
+                return self._original_forward(*args, **kwargs)
+            finally:
+                self._generator = None
+                self._mask_source = None
+                self._mask_value = None
         patched = list(args)
         for position in self.condition.positions:
             patched[position] = corrupt_block(
@@ -258,7 +355,37 @@ class PooledEmbeddingCorruptor:
                 self.condition.mode,
                 generator,
             )
-        return self._original_forward(*patched, **kwargs)
+        patched_kwargs = dict(kwargs)
+        for name in self.condition.kwargs:
+            if patched_kwargs.get(name) is None:
+                raise ValueError(
+                    f"Scope {self.condition.scope} corrupts {name}, which this model does not "
+                    "pass to the intensity head; drop the scope for this config."
+                )
+            patched_kwargs[name] = corrupt_block(
+                patched_kwargs[name],
+                batch_indices,
+                batch_size,
+                self.condition.mode,
+                generator,
+            )
+        return self._original_forward(*patched, **patched_kwargs)
+
+    def _layer_forward(self, original: Any) -> Any:
+        def forward(*args: Any, **kwargs: Any) -> Any:
+            if self._generator is None:
+                return original(*args, **kwargs)
+            padding_mask = args[LAYER_PADDING_MASK_ARG]
+            if padding_mask is not self._mask_source:
+                self._mask_source = padding_mask
+                self._mask_value = drop_from_keys(
+                    padding_mask, self.set_drop_fraction, self._generator
+                )
+            patched = list(args)
+            patched[LAYER_PADDING_MASK_ARG] = self._mask_value
+            return original(*patched, **kwargs)
+
+        return forward
 
 
 class WeightedMetricAccumulator:
@@ -371,8 +498,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb_run_id", default=None)
     parser.add_argument("--model_save_dp", default=None)
     parser.add_argument("--splits", nargs="+", default=["train", "val"])
-    parser.add_argument("--scopes", nargs="+", default=["cc", "boundary", "all"])
+    parser.add_argument(
+        "--scopes", nargs="+", default=["cc", "boundary", "all", "features", SET_SCOPE]
+    )
     parser.add_argument("--modes", nargs="+", default=list(MODES))
+    parser.add_argument(
+        "--set_drop_fraction",
+        type=float,
+        default=0.5,
+        help="fraction of each molecule's candidates hidden from attention keys under set_drop",
+    )
     parser.add_argument(
         "--batch_cutoff",
         type=int,
@@ -424,7 +559,9 @@ def main() -> None:
     model.eval()
 
     rows: list[dict[str, Any]] = []
-    with PooledEmbeddingCorruptor(model.model.intensity_head, config_d["seed"]) as corruptor:
+    with PooledEmbeddingCorruptor(
+        model.model.intensity_head, config_d["seed"], args.set_drop_fraction
+    ) as corruptor:
         for split in args.splits:
             # Reseed per split so the batch sampler and any stochastic dataset step repeat.
             seed_everything(config_d["seed"], workers=True)
@@ -474,7 +611,7 @@ def report(frame: pd.DataFrame, metrics: tuple[str, ...]) -> None:
     table["gap_closed"] = reference["gap"] - table["gap"]
     logger.info("\n%s\n%s", cosine, table.to_string(float_format=lambda v: f"{v:.4f}"))
     logger.info(
-        "Read: gap_closed > 0 and train_drop > val_drop means the pooled block carried "
+        "Read: gap_closed > 0 and train_drop > val_drop means the corrupted route carried "
         "memorized signal. Equal drops mean it is a generalizing feature."
     )
 

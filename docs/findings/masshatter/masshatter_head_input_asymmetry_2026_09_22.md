@@ -22,7 +22,7 @@
 > **See also:** the detachment census and the §7.1 gradient-connection result are consolidated
 > with the loss-side reviews in [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
 
-Companion to the [feature set audit](../reference/masshatter_feature_set_audit.md), which
+Companion to the [feature set audit](../../reference/masshatter_feature_set_audit.md), which
 documents the intensity-head candidate token in §4 but never states what the proposal heads
 receive, and to the [proposal review](masshatter_proposal_review_2026_09_13.md), which covers
 candidate *selection* rather than head *inputs*.
@@ -40,8 +40,8 @@ One `precursor_encoder` GNN, one `MassShatterContextEncoder`, then two branches:
 With `separate_proposal_encoder: False` (the whole `ma_mi_merged` lineage),
 `proposal_atom_embeddings` **is** `atom_embeddings` and `proposal_context` **is** `context`,
 optionally detached
-([`mass_shatter_model.py:2506-2512`](../../src/fragnnet/model/mass_shatter_model.py#L2506-L2512),
-[`:2534`](../../src/fragnnet/model/mass_shatter_model.py#L2534)). The same tensors, same values,
+([`mass_shatter_model.py:2506-2512`](../../../src/fragnnet/model/mass_shatter_model.py#L2506-L2512),
+[`:2534`](../../../src/fragnnet/model/mass_shatter_model.py#L2534)). The same tensors, same values,
 same dropout draw.
 
 ## 2. What each head actually receives
@@ -71,11 +71,11 @@ arm (plus `2 × edge_feature_dim` in the one `cut_bond_features` arm); the bond 
 ## 3. Gradient routing — the census
 
 `detach_proposal_inputs = proposal_selection_only and not proposal_input_gradients_enabled`
-([`:2417-2419`](../../src/fragnnet/model/mass_shatter_model.py#L2417-L2419)).
+([`:2417-2419`](../../../src/fragnnet/model/mass_shatter_model.py#L2417-L2419)).
 `proposal_input_gradients_enabled` initializes to `False`
-([`:1364`](../../src/fragnnet/model/mass_shatter_model.py#L1364)) and is only ever written by
+([`:1364`](../../../src/fragnnet/model/mass_shatter_model.py#L1364)) and is only ever written by
 `_apply_staged_training`, which **returns early when `proposal_only_until_epoch is None`**
-([`mass_shatter_pl.py:1124-1137`](../../src/fragnnet/pl_model/mass_shatter_pl.py#L1124-L1137)).
+([`mass_shatter_pl.py:1124-1137`](../../../src/fragnnet/pl_model/mass_shatter_pl.py#L1124-L1137)).
 
 Resolving all 223 configs against the template (2026-09-22 snapshot; the tree is actively growing, so re-run before quoting):
 
@@ -110,14 +110,14 @@ representation selected for allocating intensity among already-chosen fragments.
    the intensity head then scores them with no knowledge of how confident the proposal was.
 
 3. **`IonModeProposalHead` is the only proposal head with fragment-level inputs, and it is a
-   stripped copy** — `3·384 + 128 + 2` ([`bond_fragment_heads.py:466-471`](../../src/fragnnet/model/bond_fragment_heads.py#L466-L471)).
+   stripped copy** — `3·384 + 128 + 2` ([`bond_fragment_heads.py:466-471`](../../../src/fragnnet/model/bond_fragment_heads.py#L466-L471)).
    No mass, charge, composition or cut-bond features, no cross-candidate attention. Off in all
    6 configs that set `separate_ion_mode_proposal_head`.
 
 4. **`candidate_atom_dropout` does not reach the proposal pool.** The intensity path pools
-   `pooled_atom_indices` ([`:2804-2815`](../../src/fragnnet/model/mass_shatter_model.py#L2804-L2815));
+   `pooled_atom_indices` ([`:2804-2815`](../../../src/fragnnet/model/mass_shatter_model.py#L2804-L2815));
    the ion-mode proposal head pools raw `fragment_atom_indices`
-   ([`:2851-2860`](../../src/fragnnet/model/mass_shatter_model.py#L2851-L2860)). The
+   ([`:2851-2860`](../../../src/fragnnet/model/mass_shatter_model.py#L2851-L2860)). The
    `_candidate_atom_dropout` docstring claims the intervention is "confined to the pooled
    component embeddings" — proposal-side pooled component embeddings escape it. Latent while
    that head is off; a silent inconsistency the moment both are on.
@@ -125,15 +125,15 @@ representation selected for allocating intensity among already-chosen fragments.
 5. **The proposal boundary pool keeps the degenerate construction.** Intensity boundary
    embeddings route through `boundary_bond_encoder`, which exists precisely because
    endpoint-averaged bond embeddings collapse under the subsequent mean pool
-   ([feature set audit §7.4](../reference/masshatter_feature_set_audit.md)). The proposal-side
-   pool ([`:2865-2875`](../../src/fragnnet/model/mass_shatter_model.py#L2865-L2875)) uses the
+   ([feature set audit §7.4](../../reference/masshatter_feature_set_audit.md)). The proposal-side
+   pool ([`:2865-2875`](../../../src/fragnnet/model/mass_shatter_model.py#L2865-L2875)) uses the
    plain endpoint mean.
 
 ### 4.6 There is no separate proposal *context* encoder
 
 `separate_proposal_encoder` gives the proposal branch its own GNN, but nothing gives it its own
 `MassShatterContextEncoder`. Even under V3, `proposal_context = context.detach()`
-([`:2610`](../../src/fragnnet/model/mass_shatter_model.py#L2610)) — the detach stops the
+([`:2610`](../../../src/fragnnet/model/mass_shatter_model.py#L2610)) — the detach stops the
 gradient, it does not give the branch its own conditioning. The vector every proposal head reads
 is therefore shaped 100% by the intensity objective, in every configuration this repository has.
 
@@ -143,22 +143,22 @@ is therefore shaped 100% by the intensity objective, in every configuration this
 `shared_context` with `include_collision_energy=False`. The bond, charge, mixture and mechanism
 heads read that CE-free vector. The ion-mode proposal head instead reads `proposal_context`,
 built from the **full CE-conditioned `context`**
-([`:2551-2556`](../../src/fragnnet/model/mass_shatter_model.py#L2551-L2556), consumed at
-[`:2964`](../../src/fragnnet/model/mass_shatter_model.py#L2964)). One proposal head is
+([`:2551-2556`](../../../src/fragnnet/model/mass_shatter_model.py#L2551-L2556), consumed at
+[`:2964`](../../../src/fragnnet/model/mass_shatter_model.py#L2964)). One proposal head is
 CE-conditioned while the rest are not, which contradicts the sharing invariant. Dormant: the head
 is off in 223/223 and sharing is on in 2.
 
 ## 5. Checked and clean
 
 - `share_proposal_across_ev` feeds `mol_pyg.x` rather than `atom_inputs` to `precursor_encoder`
-  ([`:2400`](../../src/fragnnet/model/mass_shatter_model.py#L2400)), which would silently drop
+  ([`:2400`](../../../src/fragnnet/model/mass_shatter_model.py#L2400)), which would silently drop
   context. The constructor rejects `context_in_gnn + share_proposal_across_ev`
-  ([`:1367`](../../src/fragnnet/model/mass_shatter_model.py#L1367)), so it cannot fire.
+  ([`:1367`](../../../src/fragnnet/model/mass_shatter_model.py#L1367)), so it cannot fire.
 - The shared-layout path validates that grouped spectra carry identical atom features, bond
   features, bond topology, adduct, instrument and fragmentation mode before reusing one
   proposal forward.
 - `separate_proposal_encoder` is rejected without `proposal_selection_only`
-  ([`:1218`](../../src/fragnnet/model/mass_shatter_model.py#L1218)), so V3 cannot be half-enabled.
+  ([`:1218`](../../../src/fragnnet/model/mass_shatter_model.py#L1218)), so V3 cannot be half-enabled.
 
 ## 6. Limits
 
@@ -206,7 +206,7 @@ both `separate_proposal_encoder: False`. Verified live against W&B, `val_cos_sim
 **The confound does not survive the shape.** The single key bundles a 4-epoch intensity-head
 freeze with the permanent gradient connection, so a deficit at epoch 32 is uninformative. But
 validation cosine on this lineage **saturates by ~epoch 100** ([horizon probe
-`tkkesus9`](../project-state.md) — 0.7292@100 against 0.7309@629, the last 529 epochs buying
+`tkkesus9`](../../project-state.md) — 0.7292@100 against 0.7309@629, the last 529 epochs buying
 +0.0017). A four-epoch initialization handicap cannot still be worth −0.0113
 at epoch 100 and −0.0132 at epoch 400 in a run that stopped improving at 100. The persistent
 component is the gradient connection, not the freeze.
@@ -237,11 +237,11 @@ train/validation gap in the head this token feeds. **It is untested: W&B returns
 fragment and complement pools (768 columns) and deliberately leaves the **boundary embedding
 exact** — the docstring says so, and the call site passes raw `fragment_atom_indices` rather than
 the dropped `pooled_atom_indices`
-([`:2820-2831`](../../src/fragnnet/model/mass_shatter_model.py#L2820-L2831)). That is another
+([`:2820-2831`](../../../src/fragnnet/model/mass_shatter_model.py#L2820-L2831)). That is another
 **384 identity-bearing columns**, and with `boundary_bond_encoder: True` (221/223) it encodes
 oriented (retained, lost) endpoint pairs for the severed bonds — a set that, given the precursor,
 largely determines the fragment. Mean pooling over cut bonds blunts this (the §7.4 degeneracy in
-the [feature set audit](../reference/masshatter_feature_set_audit.md)), so the channel is
+the [feature set audit](../../reference/masshatter_feature_set_audit.md)), so the channel is
 weakened, not closed.
 
 **Consequence:** a null from `e2`/`e3` would be ambiguous — consistent with "pooling is not the
@@ -335,7 +335,7 @@ Ranked, with the reason each is not larger:
    in sign, and §7.1 is a reason to expect coupling the branches to cost rather than pay.
 
 5. **Nothing on the feature axis.** Adding descriptor features to either head is closed by
-   [feature headroom](feature_headroom_2026_09_22.md) (0.93–1.00 held-out recoverability from
+   [feature headroom](../feature_headroom_2026_09_22.md) (0.93–1.00 held-out recoverability from
    current inputs), and the proposal branch's structural limit — independent per-bond Bernoullis
    with no cross-fragment competition, `proposal_num_mixtures: 1` in 223/223 — is the same line
    the connected-fragment beam and FluxMPNN work already closed.

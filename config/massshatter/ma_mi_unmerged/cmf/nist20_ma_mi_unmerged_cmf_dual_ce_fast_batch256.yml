@@ -3,7 +3,7 @@
 # BatchNorm statistics and dropout draws can change with microbatch composition;
 # this is not a bitwise-equivalent continuation. LR and scientific losses stay fixed.
 # Validation batch size remains 64. Confirm throughput and peak VRAM on L40S.
-# See docs/findings/masshatter_training_speed_2026_09_17.md.
+# See docs/findings/masshatter/masshatter_training_speed_2026_09_17.md.
 wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:

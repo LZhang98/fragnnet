@@ -86,5 +86,5 @@ on the size of the effect**. The direction is not in doubt; the magnitude is.
 
 Re-run `debug_annotation_vs_dag_identity.py` at corpus scale, stratified by collision energy and
 adduct, to pin the mismatch magnitude and see whether it concentrates where the
-[CE decomposition](glacier_gap_ce_decomposition_2026_09_21.md) says our loss already is. Nothing
+[CE decomposition](fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) says our loss already is. Nothing
 here has been trained.

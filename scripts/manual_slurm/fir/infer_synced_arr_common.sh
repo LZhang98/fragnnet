@@ -85,7 +85,7 @@ BATCH_SIZE=${BATCH_SIZE:-16}
 # difference between a ~3x larger export and the same score.
 # Trade-off: the export is then even further from the DAG support, so peak-coverage
 # analysis off these files is not possible - see
-# docs/findings/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
+# docs/findings/fragnnet/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
 MIN_INTENSITY=${MIN_INTENSITY:-10.0}
 SAVE_FORMAT=${SAVE_FORMAT:-pkl}
 # Peaks + fragment annotation. MIN_INTENSITY prunes peaks, formulas, the joint grid and

@@ -118,7 +118,7 @@ question about the loss, not about features. Not investigated here.
    18% ceiling applies to them too. That ranks them below the CE-allocation work, and they should
    not be started on a feature argument.
 4. The residual in every decomposition points the same way: **CE-dependent allocation**, per
-   [`glacier_gap_ce_decomposition_2026_09_21.md`](glacier_gap_ce_decomposition_2026_09_21.md) and
+   [`glacier_gap_ce_decomposition_2026_09_21.md`](fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) and
    [`branching_headroom`](../plans/fragnnet/fluxmpnn_plan.md).
 
 ## Second pass: shortcut learning (2026-09-22)

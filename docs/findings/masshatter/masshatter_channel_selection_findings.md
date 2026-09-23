@@ -23,9 +23,9 @@ and counted as skipped, rather than included in metric denominators.
 The completed validation sweep used checkpoint `tq4bdn3g` with:
 
 - config
-  [`nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml);
+  [`nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml`](../../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml);
 - results
-  [`h_support_fragment_channel_sweep_tq4bdn3g.csv`](../../output/eval/h_support_fragment_channel_sweep_tq4bdn3g.csv);
+  [`h_support_fragment_channel_sweep_tq4bdn3g.csv`](../../../output/eval/h_support_fragment_channel_sweep_tq4bdn3g.csv);
 - 4,222 merged NIST20 validation spectra;
 - 256 unique-fragment target, 1,024-mask budget, two proposal mixtures;
 - barcode proposal supervision disabled;
@@ -156,7 +156,7 @@ a_i = softplus(z_i)
 ```
 
 in
-[`mass_shatter_model.py`](../../src/fragnnet/model/mass_shatter_model.py). `softplus(z)` is
+[`mass_shatter_model.py`](../../../src/fragnnet/model/mass_shatter_model.py). `softplus(z)` is
 strictly positive for every finite `z`, so every chemically valid candidate receives nonzero
 intensity. A sufficiently negative logit produces a very small value but never an exact zero, and
 its gradient also becomes small because the derivative of softplus is sigmoid.
@@ -191,7 +191,7 @@ uses sigmoid intensity outputs, then explicitly masks chemically invalid or padd
 zero. A sigmoid is also strictly positive for finite logits. ICEBERG obtains effective sparsity
 primarily from its upstream fragment generator and inference-time fragment threshold rather than
 from the intensity activation. The vendored implementation has the same activation-and-mask
-pattern in [`iceberg/model.py`](../../src/fragnnet/iceberg/model.py).
+pattern in [`iceberg/model.py`](../../../src/fragnnet/iceberg/model.py).
 
 [GLACIER](https://github.com/coleygroup/ms-pred/blob/main/src/ms_pred/glacier/joint_model.py)
 similarly separates fragment detection from intensity prediction. Its detected fragment objects
@@ -343,11 +343,11 @@ The first matched experiments now use the established NIST20 MA/MI depth-3 basel
 per-CE spectra, CMF candidates, instrument/fragmentation-mode conditioning, and instrument-aware
 mass tolerances. They keep its cross-entropy objective and add support BCE with weight `0.1`:
 
-- [`fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_gaussian.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_gaussian.yml)
-- [`fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml)
+- [`fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_gaussian.yml`](../../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_gaussian.yml)
+- [`fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml`](../../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml)
 
 Compare them with
-[`fraggnn_d3_ma_mi_nist20_amolc_all.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml)
+[`fraggnn_d3_ma_mi_nist20_amolc_all.yml`](../../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml)
 using cosine similarity, recall, weighted recall, emitted peak count, and threshold curves.
 
 ## Barcode follow-up
@@ -356,7 +356,7 @@ Barcode proposal supervision may concentrate fragment probability on observation
 fragment identities, so the same diagnostics must be repeated on a matched barcode model. The
 new training config is:
 
-[`nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml)
+[`nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml`](../../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_barcode_h_support_w01.yml)
 
 It matches the no-barcode U256/E1024/Mix2 H-support configuration except for experiment identity,
 tags, `mass_shatter_proposal_barcode_target: True`, and the corrected merged-target construction
@@ -393,7 +393,7 @@ The legacy `exact_sum` method remains the template default for checkpoint reprod
 the consensus construction changes training targets, it requires a newly trained checkpoint.
 
 The matched no-barcode control is
-[`nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml`](../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml).
+[`nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml`](../../../config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_consensus_h_support_w01.yml).
 It differs from the barcode consensus arm only in experiment metadata and
 `mass_shatter_proposal_barcode_target: False`, allowing the barcode effect to be isolated.
 

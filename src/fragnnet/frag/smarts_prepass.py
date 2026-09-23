@@ -428,7 +428,7 @@ FRAG_RULES: list[SmartsFragRule] = [
     # 10/12), keeping the aromatic ring + phenol + bridge ring + one cyclohexane
     # CH2 intact as one connected piece. This targets the N-free aromatic-core
     # cascade (fluorenone/fluorenol-type, formula C13HxO after H-shift) documented
-    # in docs/findings/missing_peak_findings.md as the dominant morphinan miss category --
+    # in docs/findings/fragnnet/missing_peak_findings.md as the dominant morphinan miss category --
     # distinct from desoxymorphinan_ring_cleavage's small aliphatic-core product.
     # Cuts: (3,4)+(6,1) release the amine arm; (10,11)+(11,12) excise the lone
     # cyclohexane CH2.

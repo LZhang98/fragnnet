@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the 2026-09-22 candidate-token campaign.
 # Plan: docs/plans/masshatter/masshatter_cut_set_features_plan.md.
-# Measurement behind it: docs/findings/masshatter_candidate_cut_descriptors_2026_09_22.md.
+# Measurement behind it: docs/findings/masshatter/masshatter_candidate_cut_descriptors_2026_09_22.md.
 #
 # STAGE selects which arms are generated:
 #   all       all seven arms (default).

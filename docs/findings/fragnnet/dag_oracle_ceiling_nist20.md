@@ -52,7 +52,7 @@ DAG fragment coverage alone, independent of how well any model predicts intensit
   JSS-maximizing prediction (no simple closed form exists there), but tractable and consistent
   with existing `wrecall`-style metrics in this codebase.
 
-Script: [`scripts/eval/dag_oracle_scores.py`](../../scripts/eval/dag_oracle_scores.py). Takes
+Script: [`scripts/eval/dag_oracle_scores.py`](../../../scripts/eval/dag_oracle_scores.py). Takes
 ~90s per DAG variant on the full test split with `--n_jobs 10`. Four tolerance conventions are
 scored per spectrum:
 
@@ -120,7 +120,7 @@ sit above GLACIER's achieved 0.887, so candidate support is not the binding cons
 protocol. The `--max-peaks 20` provenance is still **unconfirmed** for the paper's own runs — the
 caution above stands. Note also that GLACIER's FraGNNet row (0.717 random / 0.654 scaffold) is
 adapted from Wang et al. (ICEBERG 2.0), not produced under our evaluation protocol.
-See [`notes/glacier_object_detection.md`](../notes/glacier_object_detection.md).
+See [`notes/glacier_object_detection.md`](../../notes/glacier_object_detection.md).
 
 **2026-09-20, SECOND update — the `--max-peaks` provenance is now RESOLVED, and it is 100, not 20.**
 `run_scripts/glacier/02_predict_inten.py` (upstream `coleygroup/ms-pred`) passes

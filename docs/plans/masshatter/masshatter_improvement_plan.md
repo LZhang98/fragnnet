@@ -14,7 +14,7 @@ conditioning, and the existing unmerged InChIKey split and target preprocessing.
 This is the MASShatter-specific execution sequence under the
 [model improvement roadmap](../model_improvement_plan.md). Use the detailed
 [intensity plan](masshatter_nonprobabilistic_intensity_plan.md) for output and loss contracts,
-the [channel-selection findings](../../findings/masshatter_channel_selection_findings.md) for support
+the [channel-selection findings](../../findings/masshatter/masshatter_channel_selection_findings.md) for support
 semantics and pruning evidence, and the
 [performance plan](masshatter_topology_assembly_performance_plan.md) for throughput gates.
 For this task, the sequence below replaces the older intensity plan's initial cosine-first queue.
@@ -32,11 +32,11 @@ It does not declare a winning output parameterization or supersede compatibility
   0.7750 at epoch 42. It used a separate proposal encoder and no proposal warmup;
   the JSS runs used shared encoder features and proposal-only training through epoch 15.
   Their comparison does not isolate the loss. The necessity of warmup is unresolved.
-- The [channel-selection findings](../../findings/masshatter_channel_selection_findings.md)
+- The [channel-selection findings](../../findings/masshatter/masshatter_channel_selection_findings.md)
   distinguish output clutter, soft fragment attribution, and mass-compatible support.
   Their historical pruning numbers require chemistry revalidation. High retained proposal
   probability did not guarantee preserved spectral coverage.
-- The [code audit](../../findings/masshatter_code_audit.md) records chemistry, gradient-routing,
+- The [code audit](../../findings/masshatter/masshatter_code_audit.md) records chemistry, gradient-routing,
   and inference corrections. Re-evaluate affected checkpoints on corrected code before using
   their metrics as current references. Merged consensus targets also differ from historical
   exact-union targets and must not be compared as if the training data were identical.
@@ -114,7 +114,7 @@ the default production rule.
 
 Report weighted recall, count recall, cosine/JSS, precision, and emitted peak count after equal-mass
 aggregation, including the standard exported-intensity cutoff and CE/adduct slices. Use the
-[findings' proposed threshold gate](../../findings/masshatter_channel_selection_findings.md#preserve-the-recall-advantage):
+[findings' proposed threshold gate](../../findings/masshatter/masshatter_channel_selection_findings.md#preserve-the-recall-advantage):
 weighted-recall decrease at most 0.005 and absolute cosine decrease at most 0.001 versus dense
 output. These are proposed acceptance limits, not demonstrated unmerged outcomes. Keep dense
 output if no positive threshold passes; raw precision alone is insufficient.
@@ -148,7 +148,7 @@ mode signal, using the existing channel-selection plan's gates.
 ## Current state and next check
 
 Throughput update (2026-09-17): the
-[s3gy1ro4 measurement](../../findings/masshatter_training_speed_2026_09_17.md) supplies a fast config
+[s3gy1ro4 measurement](../../findings/masshatter/masshatter_training_speed_2026_09_17.md) supplies a fast config
 that disables only monitoring-only channel attribution and base CE. The local batch-128
 forward/backward benchmark improves by 1.40× with unchanged scientific objectives. Next: confirm
 the gain on L40S and verify the resolved flags when resuming; W&B config restoration can supersede
@@ -168,20 +168,20 @@ same finding for its config and pending L40S memory/throughput check.
 - **Measured CPU gain:** full-training throughput increased from 219.93 to 240.29 spectra/s
   (+9.3%) on the local RTX 2070 SUPER at batch 128 with accumulation 2. Candidate identities,
   ordering, chemistry, and live probability gradients are preserved. See the
-  [canonical measurements](../../findings/masshatter_training_speed_2026_09_17.md) and
+  [canonical measurements](../../findings/masshatter/masshatter_training_speed_2026_09_17.md) and
   [CPU-first, optional-GPU implementation plan](masshatter_candidate_backend_plan.md).
 - **Optional GPU backend — implemented and validated locally:** select
   `mass_shatter_candidate_backend: cuda` for supported configurations. CPU remains the
   correctness reference; L40S acceptance is pending in the implementation plan.
 - **Next: roll out the CPU change and measure it on L40S.** The
-  [live W&B audit](../../findings/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17)
+  [live W&B audit](../../findings/masshatter/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17)
   shows that the running fast jobs still use the earlier code: four selection workers with
   serial topology/assembly. Launch a fresh job from updated source; existing jobs use their
   own copied installation. Verify the resolved backend and the new
   `candidate_topology_assembly_batch_ms` metric before comparing throughput.
 
 Generalization audit update (2026-09-16): the
-[complete unmerged census](../../findings/masshatter_unmerged_overfitting_2026_09_16.md)
+[complete unmerged census](../../findings/masshatter/masshatter_unmerged_overfitting_2026_09_16.md)
 supersedes claims of a universal unmerged ceiling and corrects the anchor provenance:
 `ef7fl5c6` is merged. Mature unmerged runs develop widening loss gaps, but missing
 train cosine prevents measuring the cosine generalization gap. Next diagnostic:

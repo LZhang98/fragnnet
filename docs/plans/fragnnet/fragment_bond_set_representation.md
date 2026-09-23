@@ -47,7 +47,7 @@ Two measured facts motivate revisiting this:
   (3.00 edges/node avg). See `docs/plans/fragnnet/bond_breakability_mask_plan.md`. Any real D4/D5 extension needs
   cheaper nodes, not fewer edges.
 - **The representation is load-bearing.** The cc-corruption probe drops cos 0.82 → 0.61 under mask
-  randomization (`docs/findings/cc_corruption_probe_finding.md`), so whatever replaces cc has to carry
+  randomization (`docs/findings/fragnnet/cc_corruption_probe_finding.md`), so whatever replaces cc has to carry
   comparable information.
 
 ## 2. The proposal

@@ -35,7 +35,7 @@ motivates finding 4.
 
 `MassShatterPL` read the new topology through
 `self.hparams.get("mass_shatter_intensity_transformer_attention", "induced")` in both
-`_setup_model` and `_setup_loss_fn`. The [Python rules](../rules/python.md) forbid a
+`_setup_model` and `_setup_loss_fn`. The [Python rules](../../rules/python.md) forbid a
 fallback default for a model hyperparameter, and every other `mass_shatter_*` key in that
 file uses direct attribute access. Fixed by direct attribute access plus an explicit
 migration in `get_pl_hparams`, matching the `mass_shatter_context_in_gnn` precedent, so
@@ -97,7 +97,7 @@ input feature is a constant.
 
 Both remain live in the legacy pathway-token mode. Removing them would change
 `input_projection`'s input width and the state-dict keys, invalidating every existing
-MASShatter checkpoint, which the [engineering rules](../rules/engineering.md) put behind
+MASShatter checkpoint, which the [engineering rules](../../rules/engineering.md) put behind
 explicit authorization and compatibility work. Documented at the head and the call site
 instead; the removal is still open if the user wants it.
 
@@ -167,7 +167,7 @@ autocast failure, tracked separately below, reproduced identically before this c
 
 This clears the blocker recorded in the SMARTS merged-run readiness audit below and in
 `docs/project-state.md`. The prepared
-[SMARTS warmup config](../../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
+[SMARTS warmup config](../../../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15.yml)
 can now construct. No training was launched and no real-data GPU smoke check was run;
 that remains the next step before comparing results against the no-warmup SMARTS arm.
 
@@ -186,7 +186,7 @@ gradients present were finite. This used the small model-test factory, not the f
 **Current merged warmup configs cannot enable SMARTS directly.**
 `MassShatterPL._setup_model` explicitly rejects SMARTS with any non-null
 `mass_shatter_proposal_only_until_epoch`; the current
-[merged context pair](../plans/conditioning_refactor_plan.md#merged-masshatter-context-at-gnn-input)
+[merged context pair](../../plans/conditioning_refactor_plan.md#merged-masshatter-context-at-gnn-input)
 sets that boundary to 15. Existing regression coverage verifies the rejection.
 The supported configuration is `mass_shatter_smarts_templates: True` with
 `mass_shatter_proposal_only_until_epoch: null`. For a controlled SMARTS comparison,
@@ -204,7 +204,7 @@ throughput, full-config training, and held-out quality remain unverified. Next: 
 matched schedule, then run a real-data GPU smoke check before the merged experiment.
 
 Config follow-up: prepared the requested
-[SMARTS merged GNN-context config](../../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_no_warmup.yml)
+[SMARTS merged GNN-context config](../../../config/massshatter/merged/smarts/nist20_merged_full_metadata_context_gnn_heads_smarts_no_warmup.yml)
 with SMARTS enabled and proposal-only warmup disabled. Runner-resolved comparison against
 the GNN-context arm confirms only those two behavior settings and W&B name/group/tags differ.
 The full resolved `MassShatterPL` constructs successfully with its mechanism head and GNN
@@ -220,7 +220,7 @@ is deferred because bfloat16 is not used in the current workflow.
 
 ### 6. P2: `run_inference_pkl` rejects its prediction-only intensity output
 
-The separate [run_inference_pkl API](../../src/fragnnet/utils/script_utils.py) invokes
+The separate [run_inference_pkl API](../../../src/fragnnet/utils/script_utils.py) invokes
 `model.inference_step` when `evaluate=False`. That step returns already processed
 `pred_ints`. However, the `pred_ints` token branch at lines 955–960 insists on
 `pred_logprobs` and raises instead of consuming the available intensities.
@@ -244,10 +244,10 @@ before the fix. Validation: **90 passed** across `test_mass_shatter_pl.py` and
 
 ### 7. P2: CPU bfloat16 autocast rejects valid proposal mixture weights
 
-[BernoulliMixtureWeightHead](../../src/fragnnet/model/mass_shatter_model.py) runs
+[BernoulliMixtureWeightHead](../../../src/fragnnet/model/mass_shatter_model.py) runs
 `log_softmax` without specifying a computation dtype. Under CPU bfloat16 autocast,
 its returned log weights remain bfloat16. The
-[candidate builder](../../src/fragnnet/frag/mass_shatter_candidates.py) then converts
+[candidate builder](../../../src/fragnnet/frag/mass_shatter_candidates.py) then converts
 them to float64 and requires their log normalizer to be within `1e-6` of zero.
 Bfloat16 rounding routinely exceeds this tolerance even for the head's own output.
 
@@ -321,10 +321,10 @@ fixes are summarized above; the findings below preserve the pre-fix evidence.
 
 ### 4. P1: Inference CLI still requires DAG files for MASShatter
 
-[run_inference.py](../../scripts/run_inference.py) skips DAG generation for MASShatter
+[run_inference.py](../../../scripts/run_inference.py) skips DAG generation for MASShatter
 but unconditionally lists `config_d['frag_dp']`, filters molecule and spectrum tables
 to IDs found there, and constructs `SpecMolFragDataset`. MASShatter's canonical
-dataset selection in [setup_utils.py](../../src/fragnnet/utils/setup_utils.py) is
+dataset selection in [setup_utils.py](../../../src/fragnnet/utils/setup_utils.py) is
 `SpecMolDataset`; external DAG files are not an input to its candidate generation.
 
 Executing the CLI's exact filtering statements (AST nodes at lines 357–361) with
@@ -339,7 +339,7 @@ dispatch. Verify the CLI produces predictions for molecules with no DAG files.
 
 ### 5. P1: Tabular export crashes for independent intensity output
 
-[process_batch_to_tabular_row](../../src/fragnnet/utils/script_utils.py) unconditionally
+[process_batch_to_tabular_row](../../../src/fragnnet/utils/script_utils.py) unconditionally
 reads `batch_result['pred_logprobs']` at line 1512. The standard CLI calls it through
 `run_inference_tabular_iter` with `evaluate=False`, which takes raw `predict_step`
 output. Independent MASShatter returns `pred_intensities`, not `pred_logprobs`.
@@ -357,7 +357,7 @@ intensity transform. Cover the actual tabular export path with independent outpu
 ### Remaining mass-filter consistency issue
 
 `mass_shatter_has_valid_ion` in
-[formula_utils.py](../../src/fragnnet/utils/formula_utils.py) still subtracts summed
+[formula_utils.py](../../../src/fragnnet/utils/formula_utils.py) still subtracts summed
 formal charge times electron mass before applying the ion delta. It is only a
 positive-mass feasibility check, not the source of predicted masses. The discrepancy
 is reproducible for the artificial `[H+]`, `[M-H]-`, zero-H-transfer/no-CMF case:
@@ -428,10 +428,10 @@ and `_build_model` from `tests/test_mass_shatter_model.py` via `runpy.run_path`.
 
 ## 1. Standalone inference silently omits SMARTS mechanisms
 
-[Model forward](../../src/fragnnet/model/mass_shatter_model.py) initializes empty templates
+[Model forward](../../../src/fragnnet/model/mass_shatter_model.py) initializes empty templates
 and populates them only when `static_graph.smarts_templates` exists. That sidecar is built
-by [MassShatterPL.transfer_batch_to_device](../../src/fragnnet/pl_model/mass_shatter_pl.py).
-However, [standalone inference](../../src/fragnnet/utils/script_utils.py), including
+by [MassShatterPL.transfer_batch_to_device](../../../src/fragnnet/pl_model/mass_shatter_pl.py).
+However, [standalone inference](../../../src/fragnnet/utils/script_utils.py), including
 `process_batch_to_tabular_row`, uses `to_device` directly and bypasses that hook.
 Consequently, enabling `mass_shatter_smarts_templates` changes training support but does
 not enable those mechanisms in the ordinary standalone inference path.

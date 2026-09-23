@@ -10,11 +10,11 @@
 > and is an exact null so far**: `e1_escape` vs `e0_independent`, two seeds each, read at their
 > common epoch 118 while still running — 0.7225 against 0.7225, **Δ +0.0000**, seed spreads
 > 0.0001 and 0.0003. The tightest null in this family. See the
-> [epoch-128 read-out §2](../../findings/masshatter_architecture_arms_epoch128_2026_09_22.md);
+> [epoch-128 read-out §2](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md);
 > re-read at completion.
 > The *contaminant* escape (§4) is `predict_oos` supervised by the subformula test, and remains
 > unimplemented.
-> Sizing comes from [the unexplained-peak split](../../findings/unexplained_peak_split_2026_09_22.md).
+> Sizing comes from [the unexplained-peak split](../../findings/masshatter/unexplained_peak_split_2026_09_22.md).
 
 ## 1. Why supervise it
 

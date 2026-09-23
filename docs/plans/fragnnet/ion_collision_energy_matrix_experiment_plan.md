@@ -7,7 +7,7 @@
 > The precursor contender loss already exists; V1 adds an eligible-normalized reduction and tests a
 > new full-trajectory objective against the shipped adjacent-CE switch loss. V2 is gated on V1.
 
-Empirical basis: [dominant-peak outcome decomposition](../../findings/dominant_peak_outcome_decomposition.md).
+Empirical basis: [dominant-peak outcome decomposition](../../findings/fragnnet/dominant_peak_outcome_decomposition.md).
 
 The precursor default and general fragment-intensity misranking can be represented in one object
 without assuming they have one cause. For each acquisition `group_id`, construct a ragged matrix

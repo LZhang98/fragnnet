@@ -5,8 +5,8 @@
 > Empirical findings for complementary cuts, sibling competition, global base-peak selection,
 > and collision-energy-dependent fragment ranking. Experiment specifications and promotion gates
 > live in the separate
-> [`complementary-cut`](../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) and
-> [`global-ranking`](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) plans.
+> [`complementary-cut`](../../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) and
+> [`global-ranking`](../../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) plans.
 
 ## Bottom line
 
@@ -492,6 +492,6 @@ control with an unfiltered export and a same-context replicate floor.
 
 Global base-peak and CE-dependent intensity ordering are higher-priority. Test adjacent-CE
 contender-pair supervision according to
-[`global_fragment_intensity_ranking_experiment_plan.md`](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md)
+[`global_fragment_intensity_ranking_experiment_plan.md`](../../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md)
 before building a set-level competition head; the head is justified only if the target contains
 held-out signal the flat scorer cannot realize.

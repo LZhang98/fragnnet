@@ -85,7 +85,7 @@ spec_params:
   # same cutoff scripts/eval/dag_oracle_scores.py applies for its `1_above_prec` tier, which is
   # the default tier for every oracle number in docs/findings - so with this off, the published
   # ceilings are measured on a target the model does not train on. Measured on the merged MA/MI
-  # val split (docs/findings/unexplained_peak_split_2026_09_22.md): 0.0090 of target intensity
+  # val split (docs/findings/masshatter/unexplained_peak_split_2026_09_22.md): 0.0090 of target intensity
   # sits above the precursor, of which 0.0065 is the precursor's OWN isotopologue ladder (real
   # analyte signal that a monoisotopic candidate set can never match) and 0.0025 is co-isolation
   # or multiply-charged material. Turning this on therefore also removes the precursor isotope

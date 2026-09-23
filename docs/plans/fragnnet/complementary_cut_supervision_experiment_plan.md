@@ -8,7 +8,7 @@
 > add conserved flow or a cut-specific head.
 >
 > Empirical results and reproduction details live in
-> [`fragment_intensity_ranking_findings.md`](../../findings/fragment_intensity_ranking_findings.md).
+> [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md).
 
 ## Decision
 
@@ -100,7 +100,7 @@ The current evidence is a soft negative for immediate cut-loss training: respons
 concentrates on pairs the provisional NodeMLP already predicts well, and the absolute cut oracle
 recovers only 3.37% of exact current-DAG intensity headroom. Global base-peak and CE-dependent
 intensity ordering remain higher-priority. See
-[`fragment_intensity_ranking_findings.md`](../../findings/fragment_intensity_ranking_findings.md) for
+[`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md) for
 measurements, controls, limitations, and reproduction commands.
 
 This plan remains useful as the specification for a matched GINE-1 decision. Do not begin Phase 3
@@ -440,7 +440,7 @@ be `(FluxMPNN + cut KL) - (flat GINE + cut KL)`.
 - `model_improvement_plan.md` supplies the evaluation and promotion contract.
 - `fluxmpnn_plan.md` on `research/flux_mpnn` defines the exact matched GINE-1 OFF control.
 - `scripts/eval/dag_oracle_decomposition.py` supplies the relative intensity-headroom denominator.
-- [`fragment_intensity_ranking_findings.md`](../../findings/fragment_intensity_ranking_findings.md)
+- [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md)
   records the provisional NodeMLP measurements, controls, limitations, and reproduction commands
   that motivate the gates in this plan.
 - [`global_fragment_intensity_ranking_experiment_plan.md`](global_fragment_intensity_ranking_experiment_plan.md)

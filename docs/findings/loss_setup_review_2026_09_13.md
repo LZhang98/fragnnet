@@ -3,7 +3,7 @@
 > **Status:** FINDING · **Updated:** 2026-09-21 · CPU counterexamples reverified at `551a64ae`. A second pass audited the working-tree changes themselves and fixed four defects in them, including a vectorized-JSD NaN. A third pass fixed the mirror of the leak term's batch-size defect in three more functions and collapsed two duplicated guards. **`jss_hun*` is not comparable across this change.** OOS and formula-validity fixes remain pending.
 >
 > **Proposal coverage:** this review is canonical for the blind-spot counterexample; it is
-> consolidated with three other reviews, and re-run against live code, in [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
+> consolidated with three other reviews, and re-run against live code, in [MASShatter proposal loss — consolidated audit](masshatter/masshatter_proposal_loss_audit_2026_09_22.md).
 
 ## Current assessment: tighter objectives (2026-09-21)
 
@@ -104,7 +104,7 @@ occurrence probabilities; increasing its weight does not fix its attribution amb
    weak-peak recall, false intensity, and retrieval. Use the existing roadmap's validation
    gates, with an identical sampler at zero pair weight for CE-context comparisons.
 
-The [campaign read-out](masshatter_campaign_readout_2026_09_21.md) reports loss-family
+The [campaign read-out](masshatter/masshatter_campaign_readout_2026_09_21.md) reports loss-family
 differences within replicate variation. That is historical recorded evidence, not a fresh
 W&B query in this audit. It argues against another broad CE/JSD/KL sweep without a measured
 mechanism. The older sibling-ranking plan is a distinct node-marginal proposal, not an
@@ -391,7 +391,7 @@ less identifiable, so better training loss alone is insufficient evidence of imp
 ## Recommended order and acceptance checks
 
 **Live-evidence follow-up (2026-09-13):** the
-[proposal review](masshatter_proposal_review_2026_09_13.md#recent-matched-loss-runs-do-not-establish-kl-superiority)
+[proposal review](masshatter/masshatter_proposal_review_2026_09_13.md#recent-matched-loss-runs-do-not-establish-kl-superiority)
 now verifies an existing matched JSS/KL pair in W&B. Its results are close, with no
 established KL advantage. The synthetic gradient mechanism above remains valid, but
 another JSS/KL training comparison is not the next default action. Preserve selection-only

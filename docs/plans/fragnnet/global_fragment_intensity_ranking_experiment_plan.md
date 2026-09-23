@@ -37,7 +37,7 @@ competition head initially either. First test whether a direct global-ranking ob
 held-out error.
 
 The empirical basis is in
-[`fragment_intensity_ranking_findings.md`](../../findings/fragment_intensity_ranking_findings.md).
+[`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md).
 Complementary-cut supervision is a separate, lower-priority experiment specified in
 [`complementary_cut_supervision_experiment_plan.md`](complementary_cut_supervision_experiment_plan.md).
 
@@ -1213,7 +1213,7 @@ coverage rather than forcing the ranking head to solve an unrealizable target.
 
 ## Relationship to existing work
 
-- [`fragment_intensity_ranking_findings.md`](../../findings/fragment_intensity_ranking_findings.md)
+- [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md)
   supplies the empirical defect, CE-transition statistics, and limitations.
 - [`model_improvement_plan.md`](../model_improvement_plan.md) supplies the three-seed promotion and
   retrieval-protection contract.

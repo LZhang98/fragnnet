@@ -156,7 +156,7 @@ representation problem. It is **comparative scoring**: with `pyg_edges: False`, 
 scored by an independent per-node MLP, and nothing relates same-size siblings except the
 global-softmax normalizer. This closes the "more features / richer encoder" branch and green-lights
 `FragmentCompetitionHead` as the correctly-aimed bet. Full detail and reproduce steps:
-`docs/findings/cc_corruption_probe_finding.md`.
+`docs/findings/fragnnet/cc_corruption_probe_finding.md`.
 
 ## Caveats
 

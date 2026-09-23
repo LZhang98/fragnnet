@@ -2,7 +2,7 @@
 
 > **Status:** FINDING — measurement only, nothing trained &nbsp;·&nbsp; **Updated:** 2026-09-22
 >
-> Recomputes the [cut-set plan](../plans/masshatter/masshatter_cut_set_features_plan.md)'s premise on the
+> Recomputes the [cut-set plan](../../plans/masshatter/masshatter_cut_set_features_plan.md)'s premise on the
 > right population and **changes what the plan should build**. The plan's item A led with
 > ring-sharing cut pairs; on MASShatter's own candidates the pooled cut-bond sum already
 > determines the ring-sharing flag (**0.0%** residual ambiguity) while it leaves the adjacency

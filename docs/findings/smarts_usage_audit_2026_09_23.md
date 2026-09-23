@@ -22,7 +22,7 @@
    concentrated in 1,429 molecules (4.1%). It is large per molecule (aminobenzothiazole
    `[M-H]-`: 27% of a spectrum). SMARTS is a coverage device, and coverage is not what
    limits either model on this split
-   ([overfit read-out](masshatter_overfit_readout_2026_09_22.md)).
+   ([overfit read-out](masshatter/masshatter_overfit_readout_2026_09_22.md)).
 4. **Four defects, one of them silent**, plus two provenance traps in the DAG stats that
    past comparisons relied on (§3, §4).
 
@@ -33,7 +33,7 @@
 | MASShatter templates → `SmartsMechanismHead` (rule embedding in the per-mask mechanism softmax) | `mass_shatter_smarts_templates`, default `False` (`config/template.yml:775`) | **Off everywhere.** On only in the two `config/massshatter/merged/smarts/` configs, which never ran on real data (last handoff item: "Next: a real-data GPU smoke check"). |
 | MASShatter CUDA candidate backend | `mass_shatter_candidate_backend: cuda` (103 recent configs, incl. `c4a_base_s1`) | Refuses SMARTS at construction (`mass_shatter_model.py:1398-1411`, `mass_shatter_cuda_full_candidates.py:182`). |
 | MASShatter `fragment_selection: marginal`, `connected_fragment_beam` | new 2026-09-23 selection | Also refuse SMARTS (`mass_shatter_model.py:1351-1396`). |
-| MASShatter standalone inference | `script_utils` uses `to_device`, not the PL hook | Silently drops SMARTS mechanisms ([code audit §1](masshatter_code_audit.md#1-standalone-inference-silently-omits-smarts-mechanisms)); still open. |
+| MASShatter standalone inference | `script_utils` uses `to_device`, not the PL hook | Silently drops SMARTS mechanisms ([code audit §1](masshatter/masshatter_code_audit.md#1-standalone-inference-silently-omits-smarts-mechanisms)); still open. |
 | FraGNNet DAG prepass (`FRAG_RULES` + `NL_RULES`, all or nothing) | `smarts_prepass` at DAG build → `..._smpTrue` DAGs | Production configs (`fraggnn_d3_ma_mi_nist20_amolc_all.yml`, all four `ce_pair_2026_09_23` arms) read `..._smpFalse`. Only `new_dags/..._prepass.yml` and `d3_new_features/..._prepass_new_mol_feats.yml` (`alvhehe2`, lost) read `smpTrue`. |
 | FraGNNet node features | — | No rule identity reaches the model (`prepass_rule_id` removed 2026-04-14). The only prepass signal is the depth one-hot, which is wrong for prepass nodes while `num_cut_bonds` is off ([feature headroom](feature_headroom_2026_09_22.md)). |
 | Atom/bond/molecule features | — | No SMARTS-based feature in `feat_utils.py`; MACCS keys are NEIMS-only. |
@@ -56,7 +56,7 @@ Production matcher (`GetSubstructMatches`, default `uniquify=True`) over the 35,
 
 The broad rules yield **99.0%** of FraGNNet prepass partitions. So the `alvhehe2` verdict
 ("the prepass adds noise") and the +0.0006 oracle cos
-([DAG oracle ceiling](dag_oracle_ceiling_nist20.md)) are measurements of `crf12`/`crf13`.
+([DAG oracle ceiling](fragnnet/dag_oracle_ceiling_nist20.md)) are measurements of `crf12`/`crf13`.
 **A curated-rules-only DAG has never been built or scored.**
 
 Dead or near-dead rules:
@@ -230,7 +230,7 @@ core, which `benzopyranone_*` never matches because it requires the 2-one.
 1. **Measure before porting anything to CUDA.** The 2026-09-13 review's coverage check was
    never run. On the fixed validation IDs at the production budget, measure how much of the
    7.98 feasible-but-missed points
-   ([unexplained-peak split](unexplained_peak_split_2026_09_22.md)) two things recover:
+   ([unexplained-peak split](masshatter/unexplained_peak_split_2026_09_22.md)) two things recover:
    - the new-assembly products;
    - the forced ring-rule masks, i.e. is each mask already inside the U-cap pool?
 

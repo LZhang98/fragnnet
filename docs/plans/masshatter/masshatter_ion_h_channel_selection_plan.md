@@ -216,7 +216,7 @@ trains with JSS + 0.1 fragment proposal coverage loss + 0.1 balanced ion/H suppo
 BCE. It gates independent intensity with the support sigmoid. Its
 [W&B run](https://wandb.ai/frag-gnn/frag-gnn/runs/8v0i0fq7) leads the inspected
 single-seed filtered screen at best validation binned cosine 0.80099, but reports
-crashed. See the [proposal review](../../findings/masshatter_proposal_review_2026_09_13.md#selection-only-versus-joint-training-live-wb-comparison)
+crashed. See the [proposal review](../../findings/masshatter/masshatter_proposal_review_2026_09_13.md#selection-only-versus-joint-training-live-wb-comparison)
 for selection-only and intensity-head comparisons and their provenance limits.
 
 **Question:** Can one joint selection objective train both the fragment proposal

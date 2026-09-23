@@ -3,7 +3,7 @@
 # the unweighted base-spectrum CE. Spectral/proposal losses, validation cosine,
 # chemistry, candidate budgets, precision, batch sizes and optimization stay fixed.
 # These two diagnostic families are disabled in validation as well as training.
-# See docs/findings/masshatter_training_speed_2026_09_17.md for matched measurements.
+# See docs/findings/masshatter/masshatter_training_speed_2026_09_17.md for matched measurements.
 wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:

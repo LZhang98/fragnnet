@@ -17,25 +17,25 @@ the encoder. The current loss can be low despite poor candidate coverage, and de
 selection limits direct supervision for fragments outside the selected support. Whether
 these mechanisms materially limit trained-model quality remains unmeasured.
 
-This review complements the [MASShatter improvement plan](../plans/masshatter/masshatter_improvement_plan.md)
+This review complements the [MASShatter improvement plan](../../plans/masshatter/masshatter_improvement_plan.md)
 and its support-oracle gate. It does not replace the existing experiment queue. The
-[loss setup review](loss_setup_review_2026_09_13.md#auxiliary-weights-proposal-coverage-and-warmup-need-separate-interpretation)
+[loss setup review](../loss_setup_review_2026_09_13.md#auxiliary-weights-proposal-coverage-and-warmup-need-separate-interpretation)
 is the canonical source for previously reproduced proposal-loss and gradient-routing
 counterexamples; those probes were not rerun for this review.
 
 ## Current implementation
 
-- [MassShatterModel](../../src/fragnnet/model/mass_shatter_model.py) predicts bond-cut
+- [MassShatterModel](../../../src/fragnnet/model/mass_shatter_model.py) predicts bond-cut
   logits and optional molecule-level Bernoulli-mixture weights. Proposal inputs can come
   from shared molecular features or a separate proposal encoder.
-- [Candidate construction](../../src/fragnnet/frag/mass_shatter_candidates.py),
+- [Candidate construction](../../../src/fragnnet/frag/mass_shatter_candidates.py),
   `build_mass_shatter_candidates`, selects mask identities from detached logits on CPU,
   then recomputes their probabilities from live tensors. Selected cut/intact decisions
   retain gradients; the discrete selection operation itself does not.
 - Unique-fragment enumeration retains a prefix reaching the requested number of distinct
   atom sets, subject to the enumeration budget and forced-mask policy. Pathways producing
   the same atom set are marginalized before the intensity transformer.
-- [Proposal supervision](../../src/fragnnet/pl_model/mass_shatter_pl.py),
+- [Proposal supervision](../../../src/fragnnet/pl_model/mass_shatter_pl.py),
   `_proposal_coverage_loss`, rewards probability assigned to fragments whose valid ion/H
   channels match observed peaks. A fragment counts at most once per target peak.
 
@@ -118,7 +118,7 @@ multi-cut molecules. Adopt additional capacity only for reproducible quality or 
 
 Select one recoverable checkpoint and a fixed validation subset. Record code, configuration,
 dataset/split identity, evaluation IDs, and tolerances under the
-[session workflow](../workflow/session.md). Preserve preprocessing and acquisition conditioning.
+[session workflow](../../workflow/session.md). Preserve preprocessing and acquisition conditioning.
 
 Compare current candidate support with a larger enumeration pool while keeping proposal
 weights fixed. Record actual retained fragment counts: a larger enumeration ceiling need
@@ -325,7 +325,7 @@ support BCE/gating, the same seed, and the same warmup:
 Both report crashed; JSS has history through epoch 170 and KL through 164. Over
 common epochs 155–164, coverage differs by only about 0.002 percentage points and
 JSS cosine averages 0.000962 higher. The different gradient behavior reproduced in
-the [loss review](loss_setup_review_2026_09_13.md) is therefore not sufficient reason
+the [loss review](../loss_setup_review_2026_09_13.md) is therefore not sufficient reason
 to claim KL is the better loss or repeat this existing comparison without a new question.
 
 The shorter-warmup [JSS run](https://wandb.ai/frag-gnn/frag-gnn/runs/8v0i0fq7) has best
@@ -343,7 +343,7 @@ objective learns the relative signal over retained fragment/ion/H candidates.
 Do not reconnect proposal probabilities as mandatory intensity multipliers merely to
 reduce the number of losses; this would change the separation supported by the pair above.
 
-The [existing intensity head](../../src/fragnnet/model/bond_fragment_heads.py) already
+The [existing intensity head](../../../src/fragnnet/model/bond_fragment_heads.py) already
 uses candidate-set attention and optional atom cross-attention. Its candidate tokens are
 fragment-level; ion/H logits are emitted by a final linear head. An explicit ion/H
 candidate decoder is a possible extension, not an implemented or validated improvement.
@@ -369,7 +369,7 @@ configuration differences, and essential values above are the portable evidence.
 
 ## D4 reference and revised coverage interpretation
 
-The [saved subformula-filtered D4 comparison](subformula_filter_ft_qtof.md#saved-subformula-filtered-d3d4-comparison-verified-2026-09-13)
+The [saved subformula-filtered D4 comparison](../subformula_filter_ft_qtof.md#saved-subformula-filtered-d3d4-comparison-verified-2026-09-13)
 was verified from its per-spectrum artifact. It supports viewing the filtered MASShatter coverage
 above as strong, while its separate cleaning, population, and target construction prevent a matched
 gap estimate. The canonical finding records the metrics, exclusions, and provenance limits.

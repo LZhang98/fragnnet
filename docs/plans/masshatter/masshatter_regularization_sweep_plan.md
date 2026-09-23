@@ -22,7 +22,7 @@
 > `spectrum_pl.py` (see [Stage A incident](#stage-a-incident-2026-09-19--out-of-range-predicted-peaks)).
 >
 > **Resubmitted and completed 2026-09-19/20. Read the
-> [campaign read-out](../../findings/masshatter_campaign_readout_2026_09_21.md) before acting on this
+> [campaign read-out](../../findings/masshatter/masshatter_campaign_readout_2026_09_21.md) before acting on this
 > plan.** Six of eight arms produced data — `_drop02` was killed by the pre-fix bug and `_ctxnorm`
 > was never submitted. A1-A5 pass (`E* = 64`, controls agree to 0.0016); **A6 does not**: the 2g
 > pilot OOM'd and the fan-out proceeded on `3g.40gb` by default rather than by measurement, so the
@@ -36,10 +36,10 @@
 > (`mass_shatter_h_transfer_bound: valence`, `mass_shatter_intensity_atom_decoder_num_layers: 0`).
 
 Executes the "sweep second" half of the
-[regularization audit](../../findings/masshatter_regularization_audit_2026_09_19.md), whose census
+[regularization audit](../../findings/masshatter/masshatter_regularization_audit_2026_09_19.md), whose census
 established that `mass_shatter_head_dropout`, `weight_decay`, `lr` and `gradient_clip_val` are
 identical in all 226 (now 232) `model_type: mass_shatter` runs, and that
-[the overfit audit's](../../findings/masshatter_unmerged_overfitting_2026_09_16.md) instrument gate
+[the overfit audit's](../../findings/masshatter/masshatter_unmerged_overfitting_2026_09_16.md) instrument gate
 is still closed.
 
 ## Objective
@@ -88,7 +88,7 @@ promotes on mechanism plus margin, never on margin alone.
 
 The same config ran at **2.37 min/epoch** (`iep3gc9f`, 2026-09-18 05:52) and **0.95 min/epoch**
 (`zzm0p7dv`, same day 14:20) — 2.5x, from the batched proposal-coverage loss landing in between
-(see the [training-speed finding](../../findings/masshatter_training_speed_2026_09_17.md#batched-proposal-coverage-loss-2026-09-18)).
+(see the [training-speed finding](../../findings/masshatter/masshatter_training_speed_2026_09_17.md#batched-proposal-coverage-loss-2026-09-18)).
 Epoch counts inside a
 fixed hour ranged 30-56 across those four runs. **Every comparison in this plan is at matched
 epoch.** Wall-clock is a budget here, not a variable.

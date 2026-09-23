@@ -16,7 +16,7 @@ gradient than one whose candidates already work.
 
 No model, checkpoint or dataset is involved; this calls the production loss function directly
 with hand-built tensors. Results are recorded in
-``docs/findings/masshatter_proposal_loss_audit_2026_09_22.md`` section 3.
+``docs/findings/masshatter/masshatter_proposal_loss_audit_2026_09_22.md`` section 3.
 """
 
 from __future__ import annotations

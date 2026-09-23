@@ -119,7 +119,7 @@ Batch 512 exceeds the local 8 GB GPU with either backend; its memory headroom is
 
 Merged epochs are cheap per epoch, but the configs cap at 630 epochs, so a one-hour allocation is
 a partial run, not a finished one. The arithmetic, from the measured L40S epoch intervals in the
-[training-speed finding](../findings/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17)
+[training-speed finding](../findings/masshatter/masshatter_training_speed_2026_09_17.md#live-fast-run-follow-up-earlier-candidate-code-still-running-2026-09-17)
 (33.52 / 32.07 / 31.85 min at 128/256/512, validation included, on the unmerged rows):
 
 | Quantity | Unmerged | Merged | Ratio |

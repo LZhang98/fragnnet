@@ -42,7 +42,7 @@ Monotonic. Fully randomizing the atom-membership mask costs **−0.21 cos (−26
 "model ignores atom identity, coasts on formula/size" failure mode. Corrupting precise atom
 membership degrades predictions smoothly and substantially.
 
-So the CE→identity gap (see `docs/findings/ce_extent_headroom_finding.md`: the model gets fragmentation
+So the CE→identity gap (see `docs/findings/fragnnet/ce_extent_headroom_finding.md`: the model gets fragmentation
 *extent* right at all energies but picks the wrong fragment *at* that extent, increasingly so at
 high CE) is **not** a case of an unused representation. The atom-identity signal is present and
 consumed. The deficit is therefore in how fragments are *scored against each other*, not in whether

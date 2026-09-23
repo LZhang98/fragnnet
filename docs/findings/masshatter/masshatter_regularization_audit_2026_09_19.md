@@ -63,7 +63,7 @@ Cross-tabulating the two settings that do vary against `mol_gnn_type`:
 - All **7** `mol_dropout: 0.05` runs are Graphormer. Dropout co-varies with the encoder.
 - **12 of 13** `mol_normalization: layer` runs are Graphormer or GINE_GRAPHORMER, where
   `layer` is *forced*: `Graphormer.__init__` raises `"Graphormer requires mol_normalization:
-  layer"` ([nn_blocks.py:403](../../src/fragnnet/model/nn_blocks.py#L403)).
+  layer"` ([nn_blocks.py:403](../../../src/fragnnet/model/nn_blocks.py#L403)).
 
 That leaves two unconfounded runs, both created 2026-08-18 with `spec_params.merge_method`
 absent, i.e. before `tolerance_consensus` changed the merged validation target around
@@ -96,12 +96,12 @@ These exist on disk and are absent from all 226 runs:
 
 - **Placement (probe 2).** `F.relu(dropout(x))` equals `dropout(F.relu(x))` exactly
   (max difference 0.000e+00), because ReLU is positively homogeneous. The GINE residual at
-  [nn_blocks.py:846](../../src/fragnnet/model/nn_blocks.py#L846) is not a bug.
+  [nn_blocks.py:846](../../../src/fragnnet/model/nn_blocks.py#L846) is not a bug.
 - **Coverage (probe 1).** The production encoder holds 2 `nn.Dropout` modules, both at p=0.1.
   There is no dropout on `input_project`, so MASShatter has no input-feature dropout analogue
   of FraGNNet's `cc_atom_dropout`.
 - **Test coverage.** Every model test builds with `precursor_normalization="layer"` and
-  `dropout=0.0` ([test_mass_shatter_model.py:93-109](../../tests/test_mass_shatter_model.py#L93-L109)).
+  `dropout=0.0` ([test_mass_shatter_model.py:93-109](../../../tests/test_mass_shatter_model.py#L93-L109)).
   The production combination (BatchNorm, dropout 0.1) is untested.
 
 ## 2. Normalization
@@ -178,8 +178,8 @@ contribute less. Only `none` breaks the proportionality. GINE and GINE_GSA are i
 
 **This corrects a claim made earlier in this session.** The effect follows from normalizing the
 branch before the residual add
-([nn_blocks.py:846](../../src/fragnnet/model/nn_blocks.py#L846),
-[nn_blocks.py:1250](../../src/fragnnet/model/nn_blocks.py#L1250)) and is *not* specific to
+([nn_blocks.py:846](../../../src/fragnnet/model/nn_blocks.py#L846),
+[nn_blocks.py:1250](../../../src/fragnnet/model/nn_blocks.py#L1250)) and is *not* specific to
 BatchNorm. Switching `batch` to `layer` or `graph` does not address it. Only pre-norm plus a
 learned branch gate would; the intensity head's `component_residual_head` and
 `mask_residual_head` are both zero-initialized, so that pattern is already in the repository.
@@ -190,12 +190,12 @@ With `mol_num_layers: 2` in 205 of 226 runs this is survivable; it is a plausibl
 ### 2.4 Context normalization is off everywhere
 
 `mass_shatter_context_normalization` is never `layer` in any of the 226 runs, although the
-projector comment at [mass_shatter_model.py:603](../../src/fragnnet/model/mass_shatter_model.py#L603)
+projector comment at [mass_shatter_model.py:603](../../../src/fragnnet/model/mass_shatter_model.py#L603)
 explicitly flags that its input scale varies with the number of CE readings a merged
 acquisition group contributed (median 4, max 86). One 128-d context vector is broadcast to
 every bond, atom and candidate token of a molecule, so this is the model's highest-leverage
 and least-regularized path. Note that the wired `mass_shatter_context_dropout` is unit dropout
-*inside* the projector MLP ([mass_shatter_model.py:610](../../src/fragnnet/model/mass_shatter_model.py#L610));
+*inside* the projector MLP ([mass_shatter_model.py:610](../../../src/fragnnet/model/mass_shatter_model.py#L610));
 whole-vector metadata dropout, the variant that would test reliance on acquisition metadata,
 is not implemented.
 
@@ -239,7 +239,7 @@ the GNN fix a local change rather than a new design.
 `concat(normalized_embedding, unnormalized_context)`.
 
 **The `context_encoder` has no normalization, and the source comment explaining why it might
-need one is wrong.** [mass_shatter_model.py:603](../../src/fragnnet/model/mass_shatter_model.py#L603)
+need one is wrong.** [mass_shatter_model.py:603](../../../src/fragnnet/model/mass_shatter_model.py#L603)
 says the projector's input scale "varies with how many CE readings a merged acquisition group
 contributed (median 4, max 86)". Measured (probe 10), it does not — both CE paths mean-pool, so
 magnitude is flat:
@@ -264,7 +264,7 @@ variance. Treat the `ctxnorm` arm as scale equalization, not as a fix for this c
 ### 3.1 `lr_schedule_type: cosine` was silently ignored — FIXED 2026-09-21 (probe 6)
 
 > **Resolved.** `SpectrumPL.configure_optimizers`
-> ([spectrum_pl.py:1782-1815](../../src/fragnnet/pl_model/spectrum_pl.py#L1782-L1815)) now
+> ([spectrum_pl.py:1782-1815](../../../src/fragnnet/pl_model/spectrum_pl.py#L1782-L1815)) now
 > forwards `schedule_type`, `total_steps` and `min_lr_ratio`, so MASShatter gets the configured
 > schedule. The numbers below describe runs from before that date, which all trained on
 > exponential decay whatever their config declared.
@@ -272,7 +272,7 @@ variance. Treat the `ctxnorm` arm as scale equalization, not as a fix for this c
 As measured on 2026-09-19, `SpectrumPL.configure_optimizers` called
 `build_lr_scheduler` without `schedule_type`, `total_steps` or `min_lr_ratio`, so it took the
 `"exponential"` default. `FragnnetPL` forwarded all three
-([fragnnet_pl.py:1511](../../src/fragnnet/pl_model/fragnnet_pl.py#L1511)).
+([fragnnet_pl.py:1511](../../../src/fragnnet/pl_model/fragnnet_pl.py#L1511)).
 Asking for cosine with `lr_total_steps: 100000` and `lr_min_ratio: 0.01`:
 
 | step | MASShatter actually gets | cosine as configured |

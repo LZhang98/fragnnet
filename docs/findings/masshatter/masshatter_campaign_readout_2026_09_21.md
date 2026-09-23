@@ -38,7 +38,7 @@ naive `dropna` on the validation key silently drops every train-side row.
 
 ## 1. Regularization sweep Stage A/B read-out
 
-Executes [the sweep plan](../plans/masshatter/masshatter_regularization_sweep_plan.md). Group
+Executes [the sweep plan](../../plans/masshatter/masshatter_regularization_sweep_plan.md). Group
 `nist20_mass_shatter_reg_sweep`, 10 jobs on `fir:h100-3g.40gb`, split `nist20_ma_mi_inchikey`.
 
 ### Acceptance criteria
@@ -106,7 +106,7 @@ fitting speed for late generalization — which is exactly what `drop03` is doin
 ### Two arms produced no data
 
 - **`_drop02` (`6d3ajnpe`) failed on the out-of-range peak bug**, not on OOM:
-  `AssertionError: (tensor(1501.7432), 1500)` at [spec_utils.py:433](../../src/fragnnet/utils/spec_utils.py#L433),
+  `AssertionError: (tensor(1501.7432), 1500)` at [spec_utils.py:433](../../../src/fragnnet/utils/spec_utils.py#L433),
   reached through the train-side auxiliary metrics. This is the incident the plan already
   root-caused; the guard landed in `ffe5d53a` at 20:02, about 70 minutes *after* this arm started.
   The dropout axis therefore has data at 0.1 and 0.3 and a hole at 0.2 — the midpoint that would

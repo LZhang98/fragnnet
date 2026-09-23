@@ -11,7 +11,7 @@
 # pytest tests/test_mass_shatter_peak_list_distance.py on a cluster node before trusting these.
 #
 # loss_batch_size is 8 here, not the control's 32. Per-mode tuning, from
-# docs/findings/masshatter_loss_audit_2026_09_19.md finding 1: on the real ragged merged
+# docs/findings/masshatter/masshatter_loss_audit_2026_09_19.md finding 1: on the real ragged merged
 # peak-count distribution every spectrum is padded to its chunk's widest peak list, so hungarian
 # gets WORSE as the chunk widens (116 ms at lb8 -> 442 ms at lb64), the opposite of the
 # uniform-input benchmark; closest peaks near 32 and stays there. lb only changes float

@@ -13,7 +13,7 @@ relevant to ESI-CID MS/MS spectrum prediction (FraGNNet context).
 
 | Tool / Paper | Type | Rearrangement Coverage |
 |---|---|---|
-| **ChemFrag** (Schüler et al., *J. Mass Spectrom.* 2018 + 2025) | SMARTS-based rules (44 cleavage + 16 rearrangement rules) | [2025 article and supporting Tables S1/S2](https://doi.org/10.1002/jms.5129) describe rules, including steroid methyl migration. Complete machine-readable rule availability remains unverified; see the [current review](../findings/masshatter_smarts_review_2026_09_13.md#other-rule-collections-to-compare). |
+| **ChemFrag** (Schüler et al., *J. Mass Spectrom.* 2018 + 2025) | SMARTS-based rules (44 cleavage + 16 rearrangement rules) | [2025 article and supporting Tables S1/S2](https://doi.org/10.1002/jms.5129) describe rules, including steroid methyl migration. Complete machine-readable rule availability remains unverified; see the [current review](../findings/masshatter/masshatter_smarts_review_2026_09_13.md#other-rule-collections-to-compare). |
 | **MS2Analyzer** (Ma et al., *Anal. Chem.* 2014) | Neutral-loss mass lookup only | 147 neutral losses as masses; SMARTS used internally for validation but not published or downloadable |
 | **BioTransformer** (Djoumbou-Feunang et al., 2019) | SMIRKS + SMARTS | Phase I/II metabolic reactions; heavy overlap with MS/MS losses |
 | **PPGB_MS2** (Zheng et al., GitHub) | SMARTS | 28 rules (all audited in project MEMORY.md) |

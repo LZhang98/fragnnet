@@ -3,7 +3,7 @@
 # does weight_decay 0.1 narrow the train/validation gap at full screen length without
 # suppressing train cosine?
 # Plans: docs/plans/masshatter/masshatter_regularization_sweep_plan.md
-#        docs/findings/masshatter_overfit_readout_2026_09_22.md, section 7.2 item 1 / section 8 item 3
+#        docs/findings/masshatter/masshatter_overfit_readout_2026_09_22.md, section 7.2 item 1 / section 8 item 3
 #
 # STAGE selects which jobs are generated:
 #   wd10     (default) BOTH jobs -- the arm and its train-metric control. Submit them together.

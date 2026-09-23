@@ -290,7 +290,7 @@ two of them.
 
 The hungarian arms run `lb8` against the closest arms' `lb32`. This is the one place the arms
 deliberately leave the control, and it follows finding 1 of
-[the loss audit](../../findings/masshatter_loss_audit_2026_09_19.md): on the real ragged merged
+[the loss audit](../../findings/masshatter/masshatter_loss_audit_2026_09_19.md): on the real ragged merged
 peak-count distribution (p50 25, p99 343, max 1168) every spectrum is padded to its chunk's widest
 peak list, so **hungarian gets worse as the chunk widens** — 116 ms at `lb8` against 442 ms at
 `lb64` — the opposite of this plan's uniform-input benchmark, while `closest` improves to about 32
