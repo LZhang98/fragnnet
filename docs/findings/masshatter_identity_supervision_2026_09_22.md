@@ -14,6 +14,9 @@
 > gap), MASShatter converges perfectly well without a teacher so GLACIER's "Not Converged" does
 > not transfer, and same-formula isomers are summed at one m/z, so choosing between them changes
 > the predicted spectrum by nothing.
+>
+> **See also:** what the objective can and cannot see is consolidated with the loss-side reviews
+> in [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
 
 MASShatter-focused follow-up to [feature headroom](feature_headroom_2026_09_22.md) and the
 [unused information inventory](unused_information_inventory_2026_09_22.md). Those measured

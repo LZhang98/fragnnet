@@ -1,8 +1,18 @@
 # MASShatter candidate features: what pooling destroys, and the shortcut it leaves behind
 
-> **Status:** PARTLY IMPLEMENTED — B0, an adjacency form of A, and G are in the tree behind
-> default-off keys, five matched arms built, nothing trained &nbsp;·&nbsp;
-> **Updated:** 2026-09-22
+> **Status:** SCREENED, ALL NULL — B0, an adjacency form of A, and G are in the tree behind
+> default-off keys; all five matched arms ran the 128-epoch screen on 2026-09-22 and **none moved
+> validation cosine** &nbsp;·&nbsp; **Updated:** 2026-09-22
+>
+> **Result first.** Against a 0.7270 control (replicate spread 0.0007, gate ±0.005):
+> `e4_cut_adjacency` **+0.0032**, `e5_cut_bond_plus_adjacency` +0.0021, `e3_cc_atom_drop02`
+> +0.0002, `e2_cc_atom_drop01` −0.0009, `e1_cut_bond_feats` −0.0010 — every one a hold, and
+> stacking (`e5`) scores *below* adjacency alone. Numbers and caveats in the
+> [epoch-128 read-out §2](../findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+> The mechanism argument below is untouched by this: adjacency was predicted to be the only
+> non-redundant relation and it is the only arm with a sign. What is refuted is that resolving
+> more candidates per descriptor bucket buys validation cosine — which is what the plan's own
+> 2026-07-23 counter-weight warned. `e6_ring_topology_cut_bond` was never submitted.
 >
 > **The premise numbers below are superseded.** They came from the depth-3 BFS DAG; the
 > [candidate-descriptor measurement](../findings/masshatter_candidate_cut_descriptors_2026_09_22.md)
@@ -90,7 +100,9 @@ Bucket resolution: cut-bond sum 22.55 candidates per within-molecule bucket, add
 `b_ring` flag and, in the ring-topology arm, `b_ring_size`. Shipping them means a new graph field
 and a molecular-cache regeneration, for 0.02–0.03 of bucket resolution.
 
-So A ships as **`mass_shatter_candidate_cut_adjacency_features`**: two columns, the number of
+So A ships as the **`c_cut_adjacency`** candidate feature (landed as
+`mass_shatter_candidate_cut_adjacency_features`, folded into the feature list 2026-09-22): two
+columns, the number of
 cut-bond pairs meeting at a shared atom, split by whether that atom is retained or lost. Two
 bonds share at most one atom, so summing `C(count, 2)` over the (component, atom) incidence counts
 each pair exactly once. The split is worth its column (12.28 -> 10.44) and separates two different
@@ -295,15 +307,17 @@ Both landed keys are **off by default**, so no existing comparison moves under t
 
 | key | arm | what it does | width |
 |---|---|---|---|
-| `mass_shatter_candidate_cut_bond_features` | `e1_cut_bond_feats` | B0: pooled `chemical_bond_attr[boundary_bond_indices]`, sum and mean | +2x bond width (18 here; 1,285 -> 1,303) |
-| `mass_shatter_candidate_cut_adjacency_features` | `e4_cut_adjacency`, `e5_cut_bond_plus_adjacency` | A: cut-bond pairs meeting at a shared atom, split retained/lost | +2 |
+| `c_cut_bonds` | `e1_cut_bond_feats` | B0: pooled `chemical_bond_attr[boundary_bond_indices]`, sum and mean | +2x bond width (18 here; 1,285 -> 1,303) |
+| `c_cut_adjacency` | `e4_cut_adjacency`, `e5_cut_bond_plus_adjacency` | A: cut-bond pairs meeting at a shared atom, split retained/lost | +2 |
 | `mass_shatter_candidate_atom_dropout` | `e2_cc_atom_drop01`, `e3_cc_atom_drop02` | G: per-atom dropout on the component pool, training only | none |
 
-Code: `MassShatterModel._cut_bond_features`, `._cut_adjacency_features` and
-`._candidate_atom_dropout`, wired into **both** candidate paths (unique-fragment and legacy
-pathway-token); `CandidateIntensityTransformerHead` gains `cut_bond_feature_dim`,
-`cut_adjacency_feature_dim` and their two arguments, validated the same way as the composition
-block. The adjacency helper reuses `boundary_bond_endpoint_orientation`, which repeats the
+Code: the `c_cut_bonds` and `c_cut_adjacency` specs in `src/fragnnet/model/candidate_features.py`
+plus `MassShatterModel._candidate_atom_dropout`, wired into **both** candidate paths
+(unique-fragment and legacy pathway-token). Both features were originally their own
+`MassShatterModel` builders and their own `CandidateIntensityTransformerHead` width arguments;
+the [candidate feature list refactor](masshatter_candidate_feature_list_plan.md) of 2026-09-22
+folded them into one `mass_shatter_candidate_features` list entry each and one
+`candidate_feature_dim`. The adjacency builder reuses `boundary_bond_endpoint_orientation`, which repeats the
 membership sort `_boundary_embeddings` already does when the boundary encoder is on — one sort of
 the membership relation, an item for the batching audit rather than a correctness concern.
 Configs:
@@ -316,8 +330,8 @@ Both feature keys change the token width, so a checkpoint trained without one wi
 an arm that has it.
 
 **Smoke coverage.** `config/debug/debug_tiny_mass_shatter_cut_features.yml` stacks all three keys
-at toy width with `candidate_atom_dropout: 0.3`, so one run exercises `_cut_bond_features`,
-`_cut_adjacency_features` with its endpoint-orientation lookup, `_candidate_atom_dropout`
+at toy width with `candidate_atom_dropout: 0.3`, so one run exercises the `c_cut_bonds` and
+`c_cut_adjacency` builders with the latter's endpoint-orientation lookup, `_candidate_atom_dropout`
 including the restore-an-emptied-candidate branch, and both widened token blocks. Two epochs on
 `debug_tinyv4`, 64 spectra, `detect_anomaly: true`, CUDA candidate backend, unique-fragment mode:
 green, no NaN, loss falling (train -0.509 -> -0.754, validation -0.806 -> -0.981).

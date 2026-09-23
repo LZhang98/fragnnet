@@ -2943,3 +2943,252 @@ def test_intensity_escape_reaches_sparse_peak_list_distance_through_the_loss() -
     # Half the observed intensity is unreachable, so without an escape the Hellinger loss
     # cannot fall below its floor; with one the model has a route to beat it.
     assert (with_escape["primary_loss"] < without_escape["primary_loss"]).all()
+
+
+def _build_selection_only_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
+    """Build a proposal-selection-only PL module, the mode both proposal knobs require."""
+    overrides: dict[str, object] = {
+        "mass_shatter_unique_fragment_mode": True,
+        "mass_shatter_proposal_selection_only": True,
+        "mass_shatter_proposal_anchored": True,
+        "mass_shatter_proposal_loss_weight": 0.1,
+    }
+    overrides.update(config_overrides)
+    return _build_pl(**overrides)
+
+
+@pytest.mark.parametrize("frozen_from_epoch", [True, -1, 1.5])
+def test_proposal_early_stop_rejects_invalid_values(frozen_from_epoch: object) -> None:
+    with pytest.raises(
+        ValueError,
+        match="mass_shatter_proposal_frozen_from_epoch must be null or a nonnegative integer",
+    ):
+        _build_selection_only_pl(mass_shatter_proposal_frozen_from_epoch=frozen_from_epoch)
+
+
+@pytest.mark.parametrize(
+    ("config_overrides", "message"),
+    [
+        (
+            {"mass_shatter_proposal_selection_only": False},
+            "mass_shatter_proposal_selection_only=True",
+        ),
+        (
+            {"mass_shatter_proposal_loss_weight": 0.0},
+            "positive mass_shatter_proposal_loss_weight",
+        ),
+        (
+            {"mass_shatter_proposal_only_until_epoch": 2},
+            "cannot be combined",
+        ),
+    ],
+)
+def test_proposal_early_stop_rejects_incompatible_configs(
+    config_overrides: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _build_selection_only_pl(
+            mass_shatter_proposal_frozen_from_epoch=4,
+            **config_overrides,
+        )
+
+
+@pytest.mark.parametrize("proposal_weight_decay", [True, -0.1, float("nan"), float("inf")])
+def test_proposal_weight_decay_rejects_invalid_values(proposal_weight_decay: object) -> None:
+    with pytest.raises(
+        ValueError,
+        match="mass_shatter_proposal_weight_decay must be null or a finite nonnegative float",
+    ):
+        _build_selection_only_pl(mass_shatter_proposal_weight_decay=proposal_weight_decay)
+
+
+def test_proposal_branch_modules_exclude_the_shared_encoders() -> None:
+    """The early stop and the proposal decay must not reach the intensity branch."""
+    pl, _ = _build_selection_only_pl()
+
+    branch_modules = pl._proposal_branch_modules()
+    assert pl.model.bond_break_head in branch_modules
+    assert pl.model.charge_head in branch_modules
+    # `_proposal_modules` adds the two encoders the intensity branch also reads.
+    assert pl.model.context_encoder in pl._proposal_modules()
+    assert pl.model.context_encoder not in branch_modules
+    assert pl.model.precursor_encoder not in branch_modules
+    assert pl.model.intensity_head not in branch_modules
+
+    branch_parameter_ids = {id(p) for module in branch_modules for p in module.parameters()}
+    shared_parameter_ids = {
+        id(parameter)
+        for module in (
+            pl.model.precursor_encoder,
+            pl.model.context_encoder,
+            pl.model.intensity_head,
+        )
+        for parameter in module.parameters()
+    }
+    assert not branch_parameter_ids & shared_parameter_ids
+
+
+def test_proposal_early_stop_is_inactive_when_unset() -> None:
+    pl, _ = _build_selection_only_pl()
+
+    pl._apply_proposal_early_stop(epoch=1000)
+
+    assert all(p.requires_grad for p in pl.model.bond_break_head.parameters())
+    assert pl.model.bond_break_head.training
+
+
+def test_proposal_early_stop_freezes_only_the_proposal_branch() -> None:
+    """After the boundary the proposal term updates nothing; intensity keeps training."""
+    smiles = "c1ccccc1S(=O)c1ccccc1"
+    pl, config = _build_selection_only_pl(
+        mass_shatter_unique_fragment_target=4,
+        mass_shatter_ranked_mask_budget=8,
+        mass_shatter_proposal_frozen_from_epoch=2,
+    )
+    params = config["mol_params"]
+    graph = get_mol_graph(
+        Chem.MolFromSmiles(smiles),
+        params["pyg_node_feats"],
+        params["pyg_edge_feats"],
+        params["pyg_pe_embed_k"],
+        True,
+    )
+    batch = Batch.from_data_list([graph, graph])
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_inst_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+        "static_graph": MassShatterStaticGraph(
+            chemical_bond_index=batch.chemical_bond_index,
+            atom_batch_indices=batch.batch,
+            atom_ptr=batch.ptr,
+        ),
+    }
+
+    def gradient_sum(module: th.nn.Module) -> float:
+        return sum(
+            parameter.grad.abs().sum().item()
+            for parameter in module.parameters()
+            if parameter.grad is not None
+        )
+
+    # 1. Before the boundary the proposal objective trains the proposal branch, and only it:
+    #    selection-only mode detaches the proposal's inputs from the shared encoders.
+    pl._apply_proposal_early_stop(epoch=1)
+    output = pl.model(**inputs)
+    (-output["proposal_fragment_logprobs"].mean()).backward()
+    assert gradient_sum(pl.model.bond_break_head) > 0.0
+    assert gradient_sum(pl.model.precursor_encoder) == 0.0
+    assert gradient_sum(pl.model.context_encoder) == 0.0
+
+    # 2. From the boundary the same objective updates nothing at all, which is what makes
+    #    leaving it in the loss safe: the frozen heads were its last trainable leaves.
+    pl.model.zero_grad(set_to_none=True)
+    pl._apply_proposal_early_stop(epoch=2)
+    output = pl.model(**inputs)
+    # The two distributions are normalized from one stacked tensor, so the proposal term
+    # still walks the shared graph -- depositing exact zeros, not an update.
+    (-output["proposal_fragment_logprobs"].mean()).backward(retain_graph=True)
+    assert gradient_sum(pl.model.bond_break_head) == 0.0
+    assert gradient_sum(pl.model.charge_head) == 0.0
+    assert gradient_sum(pl.model.precursor_encoder) == 0.0
+    assert gradient_sum(pl.model.context_encoder) == 0.0
+
+    # 3. The spectrum objective is untouched, including the encoders the proposal shares.
+    output["pred_logprobs"].mean().backward()
+    assert gradient_sum(pl.model.intensity_head) > 0.0
+    assert gradient_sum(pl.model.precursor_encoder) > 0.0
+    assert gradient_sum(pl.model.context_encoder) > 0.0
+    assert gradient_sum(pl.model.bond_break_head) == 0.0
+
+
+def test_proposal_weight_decay_applies_only_to_the_proposal_branch() -> None:
+    pl, _ = _build_selection_only_pl(mass_shatter_proposal_weight_decay=0.25)
+
+    optimizer = pl.configure_optimizers()["optimizer"]
+    groups = {group["weight_decay"]: group["params"] for group in optimizer.param_groups}
+
+    assert sorted(groups) == [pl.hparams.weight_decay, 0.25]
+    proposal_parameter_ids = {
+        id(parameter)
+        for module in pl._proposal_branch_modules()
+        for parameter in module.parameters()
+    }
+    assert {id(parameter) for parameter in groups[0.25]} == proposal_parameter_ids
+    # Every remaining parameter keeps the global decay, and none is counted twice.
+    assert len(groups[pl.hparams.weight_decay]) + len(groups[0.25]) == len(list(pl.parameters()))
+
+
+def test_unset_proposal_weight_decay_keeps_a_single_optimizer_group() -> None:
+    """The historical single-group optimizer must survive untouched when nothing opts in."""
+    pl, _ = _build_selection_only_pl()
+
+    optimizer = pl.configure_optimizers()["optimizer"]
+
+    assert len(optimizer.param_groups) == 1
+    assert optimizer.param_groups[0]["weight_decay"] == pytest.approx(pl.hparams.weight_decay)
+    assert len(optimizer.param_groups[0]["params"]) == len(list(pl.parameters()))
+
+
+def test_proposal_weight_decay_defers_to_the_norm_bias_exemption() -> None:
+    """A decay-exempt tensor stays exempt whichever branch it belongs to."""
+    pl, _ = _build_selection_only_pl(
+        mass_shatter_proposal_weight_decay=0.25,
+        weight_decay_exclude_norm_bias=True,
+    )
+
+    optimizer = pl.configure_optimizers()["optimizer"]
+    groups = {group["weight_decay"]: group["params"] for group in optimizer.param_groups}
+
+    assert sorted(groups) == [0.0, pl.hparams.weight_decay, 0.25]
+    exempt_ids = {id(parameter) for parameter in groups[0.0]}
+    assert all(parameter.ndim >= 2 for parameter in groups[0.25])
+    proposal_parameter_ids = {
+        id(parameter)
+        for module in pl._proposal_branch_modules()
+        for parameter in module.parameters()
+    }
+    assert proposal_parameter_ids & exempt_ids
+    assert {id(parameter) for parameter in groups[0.25]} == proposal_parameter_ids - exempt_ids
+
+
+def test_proposal_early_stop_arms_are_single_key_diffs_from_the_control() -> None:
+    """Each arm must change exactly one resolved key, the trap the 09-22 handoff records."""
+    config_root = Path(__file__).parents[1] / "config"
+    base_fp = (
+        config_root
+        / "massshatter"
+        / "ma_mi_merged"
+        / "nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml"
+    )
+    base = runner.load_config(str(config_root), str(base_fp), None)
+    arm_dir = config_root / "massshatter" / "ma_mi_merged" / "proposal_early_stop_2026_09_22"
+    arm_paths = sorted(arm_dir.glob("*.yml"))
+    metadata_keys = {"wandb_name", "wandb_group", "wandb_tags"}
+
+    assert [path.stem for path in arm_paths] == [
+        "p1_proposal_freeze_e32",
+        "p2_proposal_freeze_e64",
+        "p3_proposal_wd10",
+    ]
+    expected = {
+        "p1_proposal_freeze_e32": ("mass_shatter_proposal_frozen_from_epoch", 32),
+        "p2_proposal_freeze_e64": ("mass_shatter_proposal_frozen_from_epoch", 64),
+        "p3_proposal_wd10": ("mass_shatter_proposal_weight_decay", 0.1),
+    }
+    for arm_path in arm_paths:
+        config = runner.load_config(str(config_root), str(arm_path), None)
+        assert set(config) == set(base)
+        diff = {
+            key: config[key]
+            for key in config
+            if config[key] != base[key] and key not in metadata_keys
+        }
+        assert diff == dict([expected[arm_path.stem]]), arm_path.name
+        # Both knobs need selection-only mode and a live proposal loss to be meaningful.
+        assert config["mass_shatter_proposal_selection_only"] is True
+        assert config["mass_shatter_proposal_loss_weight"] == pytest.approx(0.1)
+        assert config["max_epochs"] == 128
+        assert arm_path.stem in config["wandb_tags"]

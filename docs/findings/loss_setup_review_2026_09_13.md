@@ -1,6 +1,9 @@
 # FraGNNet and MASShatter loss setup review
 
 > **Status:** FINDING · **Updated:** 2026-09-21 · CPU counterexamples reverified at `551a64ae`. A second pass audited the working-tree changes themselves and fixed four defects in them, including a vectorized-JSD NaN. A third pass fixed the mirror of the leak term's batch-size defect in three more functions and collapsed two duplicated guards. **`jss_hun*` is not comparable across this change.** OOS and formula-validity fixes remain pending.
+>
+> **Proposal coverage:** this review is canonical for the blind-spot counterexample; it is
+> consolidated with three other reviews, and re-run against live code, in [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
 
 ## Current assessment: tighter objectives (2026-09-21)
 

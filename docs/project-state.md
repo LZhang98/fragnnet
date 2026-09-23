@@ -4,6 +4,160 @@
 
 ## Current handoff
 
+**`a2_full_attention` and `b1_bond_sum` read; §1's capacity confound resolved, and the family's
+reproducibility floor measured (2026-09-22).** Read-only W&B query, no GPU, nothing changed.
+Both lead-pair arms finished at 127 epochs on the same screen (tail mean 118-127, control
+**0.7270**, gate ±0.005), so the question the previous handoff left open is answered.
+**`b1_bond_sum` is a null at −0.0013** — the degree-normalized mean is not costing anything, do
+not re-run it. `a2_full_attention` lands at **+0.0030**, and as the topology-only control it
+splits `a6_ce_film`'s +0.0063 about evenly: **+0.0030 from `attention_type: full` itself
+(at 41% fewer intensity-head parameters) and +0.0033 from CE-FiLM**. Neither half clears the gate
+alone. The sharper result is `a3`: **the pairwise mass bias is an exact null (−0.0002) at matched
+topology**, so all of `a3`'s earlier +0.0028 was the attention change, and the review's
+mass-blindness item is *not* answered by that term. `a1_prenorm` (+0.0056, one key, no capacity
+change) is still the only clean single-key PASS and is now also the cheaper of the two leaders.
+
+The accidental duplicate finally pays for itself. `xyessyn1` and `cgomm8v4` are the same config
+and the **same seed** (`deterministic: False` in both — the `deterministic` W&B *tag* on these runs
+is wrong), and they diverge from epoch 0 and never reconverge. **The floor depends entirely on the
+statistic:** 0.0025 mean |Δ| on a single epoch (0.0053 at epoch 64), 0.00036 on the tail mean of
+118-127, 0.00001 on best ≤127. That **validates the 118-127 tail mean every verdict in this family
+uses** — its run-to-run floor is tighter than the 0.0007 cross-seed control spread — and rules out
+single-epoch reads, which carry more noise than five of the eleven arm effects on record. It also
+puts a much coarser floor under the *mechanistic* columns: **0.011 on the loss drift and 0.014 on
+the train/val loss gap**. The turn *epoch* is reproducible (78 vs 78 at fixed seed, 52 vs 66 across
+seeds), so `a1_prenorm`'s turn at epoch 120 stands; but the "2.6x drift cut" is ~1.7 floor-widths
+and should be read as directional, and the drift ordering among `a3`/`a6`/`b2`/`a7` is inside the
+floor. Full tables in [epoch-128 read-out §3](findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+
+**Next.** `a5_ce_pair_bias` and `a4` are what remain of review item 1, and a seed replicate of
+`a1_prenorm` is now clearly worth a box — it and `d3` are the two live candidates and both are n=1.
+Promote nothing on a single-epoch read; the gate on tail-mean comparisons could be tightened well
+below ±0.005, but not on one duplicate pair.
+
+**Proposal warm-up read at the matched screen and rejected as the alternative (2026-09-22).**
+Asked whether to freeze the proposal branch or warm it up and lean on weight decay. The three
+`c4c_pwarm` arms had never been read at the 128-epoch screen — they ran 630-epoch configs and
+were killed near epoch 205, so their summaries were last-logged values at unmatched epochs.
+Tail mean of epochs 118-127 against the same 0.7270 control (gate ±0.005): `e2` **+0.0008**,
+`e4` **+0.0012**, `e15` **−0.0096** — two nulls and a rejection, non-monotone, and the horizon
+does not confound it (all carry `lr_schedule: false` at constant `lr: 1e-3`, all seed 397623).
+On top of that the key un-detaches the proposal branch for the whole run whenever the encoder is
+shared, which is every `ma_mi_merged` config, and that rewiring measured −0.0113@100 / −0.0132@400
+on its own. Warm-up also treats the start of the run where the defect is at epochs 26-47. Read-only
+W&B query, no GPU, nothing changed by that read. Recommendation recorded in the plan: run `p1`
+(freeze@32) and `p3` (proposal wd 0.1), hold `p2`, drop warm-up.
+
+Proposal early stop and proposal-only weight decay implemented (2026-09-22, later the same day).
+**Code and config; no run launched, no GPU used.** The
+[overfit read-out §3](findings/masshatter_overfit_readout_2026_09_22.md) records that the
+validation **proposal** term degrades +0.06 to +0.14 and **turns at epochs 26-47** while the
+spectrum term keeps improving to 52-120 — two branches on one training schedule. Under
+`proposal_selection_only: true` the proposal reads detached inputs, so its loss updates the
+proposal heads and nothing else, and those heads are **44.8% of the parameters** (4,128,642 of
+9,217,181 at `c4a_base_s1`). Two template keys now let them stop or decay on their own, both
+default `null`: `mass_shatter_proposal_frozen_from_epoch` freezes the proposal-only modules from a
+chosen epoch, and `mass_shatter_proposal_weight_decay` gives them their own decay through a new
+`_weight_decay_overrides` hook that leaves `SpectrumPL.configure_optimizers` single-group when
+nothing opts in. Neither touches `precursor_encoder` or `context_encoder`; a forward/backward test
+asserts the proposal objective updates **nothing** past the boundary while the spectrum objective
+still reaches the intensity head and both encoders. Three one-key 128-epoch arms are written and
+verified in `config/massshatter/ma_mi_merged/proposal_early_stop_2026_09_22/` (`p1` freeze@32,
+`p2` freeze@64, `p3` proposal wd 0.1) and **none has been submitted**. Two limitations belong in
+the read and are in the [plan](plans/masshatter_proposal_early_stop_plan.md): the shared encoders
+keep training, so the proposal *function* still drifts (a static proposal needs
+`separate_proposal_encoder`, off everywhere), and freezing also puts the heads in eval mode, which
+drops their `head_dropout: 0.1` — a second, unseparated change that `p3` does not carry. The same
+read-out predicts these may be nulls, since coverage is already flat train-to-val; read
+`val_wrecall` next to cosine. Validation: full `pytest tests -q` clean, `ruff check` clean on the
+four changed Python files, Black deliberately not run (those files were already not Black-clean at
+`HEAD`). No run launched.
+
+Feature and escape arms read (2026-09-22, later the same day). **The plans' "nothing trained"
+and "No production run launched" lines were stale — the arms had been submitted, and six of them
+now have verdicts. All six are nulls.** Read-only W&B query, no GPU, nothing changed in the tree.
+
+**The five candidate-token feature arms finished at 127 epochs**, on the same screen and against
+the same control as the architecture arms (tail mean of epochs 118-127, control **0.7270**,
+replicate spread 0.0007, gate ±0.005): `e4_cut_adjacency` **+0.0032**, `e5_cut_bond_plus_adjacency`
++0.0021, `e3_cc_atom_drop02` +0.0002, `e2_cc_atom_drop01` −0.0009, `e1_cut_bond_feats` −0.0010.
+**Not one clears the floor.** Adjacency is the only arm with a sign, which is the direction the
+[descriptor measurement](findings/masshatter_candidate_cut_descriptors_2026_09_22.md) predicted
+(0.489 residual ambiguity against 0.000 for ring-sharing), so the mechanism argument survives and
+the effect does not. Two patterns repeat from the architecture read: **stacking costs** — `e5` =
+`e1` + `e4` scores 0.0011 *below* `e4` alone, as `a7` scored below `a1` and `a6` — and **narrowing
+the loss gap is still not the objective**: `e2` has the narrowest train/val primary-loss gap of the
+seven runs (0.5719 vs a 0.6191 control mean) and the lowest cosine of the five, the third instance
+after `b3_wd_groups` and `drop03`. Coverage is flat again (`val_wrecall` spread 0.0006).
+`e6_ring_topology_cut_bond` was never submitted.
+
+**The intensity escape is an exact null at n=2 vs n=2.** `e1_escape` against `e0_independent`, two
+seeds each on the `batch256x2_lb32` base, read at their common epoch 118 while still running:
+0.7225 against 0.7225, **Δ +0.0000**, seed spreads 0.0001 and 0.0003. Re-read at completion, but
+nothing in the trajectory suggests a late separation.
+
+**Two caveats worth carrying forward.** (1) Each e-arm differs from `c4a_base_s1` by **eight**
+resolved keys, not one — seven new keys resolving to `False`/`0` plus three inert `spec_params`
+additions from the above-precursor filter. All are no-ops at those values so the comparison holds,
+but check whether `spec_params` participates in any dataset cache identity before the next such
+arm: new inert keys in a hashed dict are how a "one-key" arm quietly changes its inputs.
+(2) **`a2_full_attention` was submitted twice at the same seed 397623** (`xyessyn1` on `fc11018`,
+`cgomm8v4` on `fc10906`) — a duplicate, not a replicate, costing a box that `a5_ce_pair_bias` or an
+`a1_prenorm` replicate could have used. It does accidentally measure the run-to-run reproducibility
+floor, which is worth having given how much weight the 0.0007 control spread carries.
+
+`b1_bond_sum` (`3bqnobq1`) and `a2_full_attention` launched at 128/128 epochs and were at epoch 20
+when this was written — too early to read. Numbers, method and confound checks in
+[epoch-128 read-out §2](findings/masshatter_architecture_arms_epoch128_2026_09_22.md). Banners
+corrected on the [cut-set plan](plans/masshatter_cut_set_features_plan.md) (now SCREENED, ALL NULL)
+and the [escape plan](plans/masshatter_supervised_escape_plan.md) (now IMPLEMENTED, SCREENED NULL).
+Validation: relative links resolve, Ruff not applicable, no test run and none required for a
+documentation change. No run launched.
+
+Architecture arms read at the matched 128-epoch screen (2026-09-22). **Documentation only; a
+read-only W&B query, no GPU, no code, config or run changed.** This closes §1 of the
+[architecture review todo](plans/masshatter_architecture_review_todo.md), which was the blocking
+item in the previous handoff: the six arms killed at the wall clock between epochs 179 and 210 now
+have verdicts against both `c4a_base` replicates at matched epoch. Numbers are the tail mean of
+epochs 118-127 against a control mean of **0.7270** (replicates 0.7266 / 0.7273, spread 0.0007),
+gate ±0.005 — full method and robustness checks in the
+[epoch-128 read-out](findings/masshatter_architecture_arms_epoch128_2026_09_22.md).
+
+**`a1_prenorm` +0.0056 PASSES and it is the clean one** — parameter-identical to the base, one key,
+and the first such arm in this family to clear the floor. It is also the strongest mechanistic
+result in the set: it moves the validation primary-loss optimum from epoch 52/66 to **120** and
+cuts the post-turn drift **2.6x** (+0.0121 from its own optimum against a +0.0318 control mean),
+which is exactly what the review predicted for post-LN under a constant unwarmed LR.
+**`b2_identity_residual` is a rejection at −0.0062** — keep the ReLU gate on the GNN residual
+branch, do not re-run it. **`b3_wd_groups` is an exact cosine null (−0.0002)** that still narrows
+both the drift and the train/val loss gap, so it is a hold, not a rejection.
+`a6_ce_film` posts the best number (**+0.0063**) but carries the **−40.8% intensity-head cut** that
+`attention_type: full` imposes, so it stayed unattributable until `a2_full_attention` ran —
+which it since has; see the current handoff and §3 of the read-out. `a7_ce_both` (+0.0035) and `a3_full_massbias` (+0.0028) are
+holds.
+
+**Three things the read establishes beyond the gate.** (1) The 630-vs-128 horizon does **not**
+confound the comparison: all eight runs have `lr_schedule: False` at a constant `lr: 1e-3`, so
+nothing in the optimizer reads `max_epochs` and the horizon decided only when the job stopped. Two
+further metadata traps are harmless but worth knowing — the `vulcan_l40s` tag on the six arms is
+**wrong** (`run.metadata['gpu']` says all eight ran on Fir H100, within 35 minutes of each other),
+and all six arms carry `c4a_base_s1`'s seed 397623, so each is a seed-matched paired comparison.
+(2) The effects are **not additive**: `a7`, which stacks pre-LN onto CE-FiLM and both bias terms,
+scores below `a1` and `a6` individually; and among the three arms that share the identical attention
+change, CE-FiLM beats the mass pair bias by **+0.0035** at matched capacity and matched topology,
+which makes CE the live half of review item 1. (3) **Coverage moves in none of them** —
+`val_wrecall` spans 0.0006 across all eight runs while cosine spans 0.0125 — an eight-run
+confirmation of the overfit read-out's allocation-not-coverage conclusion on a population it did
+not cover.
+
+**Next.** `b1_bond_sum` and `a2_full_attention` remain the lead pair, `a5_ce_pair_bias` gains
+priority over `a4`, and a seed replicate of `a1_prenorm` is now worth a box: it is n=1 against an
+n=2 control whose 0.0007 spread is tighter than this family's history, the same caveat the `d3`
+LR-decay result carries, and `a1` and `d3` are the two live candidates that both act on
+optimization under a constant LR and have never been run together. Validation: relative links
+resolve, Ruff not applicable, no test run and none required for a documentation change. No run
+launched.
+
 Architecture-review todo consolidated (2026-09-22). **Documentation only; no code, config or
 run changed.** The 2026-09-19 code-vs-literature review's remaining items are now one list:
 [architecture review todo](plans/masshatter_architecture_review_todo.md). Five of its seven items
@@ -11,7 +165,8 @@ were implemented 2026-09-20/21 and all default off. The blocking observation is 
 that did run (`a1`, `a3`, `a6`, `a7`, `b2`, `b3`) were killed at the wall clock between epochs 179
 and 210 and **have never been read at the 128-epoch screen length**, so four review items rest on a
 W&B read that costs no GPU -- `a1` and `a6` lead the 25-run set at 0.7364 but over a longer horizon
-than the 0.7282 control they would be promoted over. Verified while writing it: every config in
+than the 0.7282 control they would be promoted over. **That read was done later the same day; see
+the handoff entry above for its verdicts.** Verified while writing it: every config in
 `config/massshatter/ma_mi_merged/attention_2026_09_21/` still carries `min_epochs: 378 /
 max_epochs: 630`, and resolved against the current template that schedule is their **only**
 difference from `c4a_base_s1` besides their own keys, because `h_transfer_bound`,

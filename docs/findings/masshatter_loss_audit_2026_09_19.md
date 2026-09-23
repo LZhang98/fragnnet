@@ -3,6 +3,9 @@
 > **Status:** FINDING · **Updated:** 2026-09-19 · Reviewed `86cbf98d` (clean tree). Measured on a
 > local RTX 2070S without `torch_linear_assignment`, so Hungarian magnitudes are the SciPy
 > fallback and need a cluster re-measure. No code, configuration, or training state changed.
+>
+> **Proposal coverage:** the proposal term's objective-level properties are consolidated in
+> [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
 
 ## Scope
 

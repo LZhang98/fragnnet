@@ -20,10 +20,15 @@ def _pl(**overrides):
     config.update(optimizer="adamw", lr=1e-3, weight_decay=0.01, lr_schedule=True)
     config.update(overrides)
     parameter = th.nn.Parameter(th.zeros(1))
-    return SimpleNamespace(
+    stub = SimpleNamespace(
         hparams=SimpleNamespace(**config),
         parameters=lambda: iter([parameter]),
+        _weight_decay_overrides=lambda: {},
     )
+    # Bind the real grouping helper rather than stubbing it out, so this stub keeps
+    # exercising the parameter-group branch `configure_optimizers` actually takes.
+    stub._weight_decay_parameter_groups = lambda: SpectrumPL._weight_decay_parameter_groups(stub)
+    return stub
 
 
 def _lr_at(scheduler, optimizer, step: int) -> float:

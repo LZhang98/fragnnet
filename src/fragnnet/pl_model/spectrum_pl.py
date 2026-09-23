@@ -1830,22 +1830,55 @@ class SpectrumPL(L.LightningModule):
                 decay.append(parameter)
         return decay, no_decay
 
+    def _weight_decay_overrides(self) -> dict[int, float]:
+        """Return per-parameter weight decay overrides, keyed by ``id(parameter)``.
+
+        An empty mapping, the default, leaves every parameter on ``weight_decay``. A
+        subclass overrides this to give one branch of the model its own decay.
+        """
+        return {}
+
+    def _weight_decay_parameter_groups(self) -> list[dict[str, Any]] | None:
+        """Build optimizer parameter groups when some parameter needs its own decay.
+
+        Returns:
+            One group per distinct weight decay, or None when a single global group
+            covers the model, which keeps the historical single-group optimizer exactly.
+        """
+        weight_decay = self.hparams.weight_decay
+        exclude_norm_bias = getattr(self.hparams, "weight_decay_exclude_norm_bias", False)
+        overrides = self._weight_decay_overrides()
+        if not exclude_norm_bias and not overrides:
+            return None
+        if exclude_norm_bias:
+            # A single parameter group applies weight decay to every tensor, including
+            # LayerNorm/BatchNorm weights, all biases, and free learned tokens such as the
+            # candidate transformer's inducing set (initialized at std=model_dim**-0.5 and
+            # then pulled toward zero on every step). Standard practice excludes all three.
+            decay_parameters, no_decay_parameters = self._split_weight_decay_parameters()
+        else:
+            decay_parameters = list(self.parameters())
+            no_decay_parameters = []
+        # The norm/bias exemption wins over an override: a decay-exempt tensor stays exempt
+        # whichever branch it belongs to, so overrides only redistribute the decayed group.
+        grouped: dict[float, list[th.nn.Parameter]] = {}
+        for parameter in decay_parameters:
+            grouped.setdefault(overrides.get(id(parameter), weight_decay), []).append(parameter)
+        if no_decay_parameters:
+            grouped.setdefault(0.0, []).extend(no_decay_parameters)
+        return [
+            {"params": parameters, "weight_decay": group_weight_decay}
+            for group_weight_decay, parameters in grouped.items()
+        ]
+
     def configure_optimizers(self) -> dict[str, Any]:
         """
         Configure optimizer and learning rate scheduler for Lightning.
         """
         optimizer_cls = get_optimizer_class(self.hparams.optimizer)
         weight_decay = self.hparams.weight_decay
-        if getattr(self.hparams, "weight_decay_exclude_norm_bias", False):
-            # A single parameter group applies weight decay to every tensor, including
-            # LayerNorm/BatchNorm weights, all biases, and free learned tokens such as the
-            # candidate transformer's inducing set (initialized at std=model_dim**-0.5 and
-            # then pulled toward zero on every step). Standard practice excludes all three.
-            decay_parameters, no_decay_parameters = self._split_weight_decay_parameters()
-            parameter_groups = [
-                {"params": decay_parameters, "weight_decay": weight_decay},
-                {"params": no_decay_parameters, "weight_decay": 0.0},
-            ]
+        parameter_groups = self._weight_decay_parameter_groups()
+        if parameter_groups is not None:
             optimizer = optimizer_cls(
                 parameter_groups, lr=self.hparams.lr, weight_decay=weight_decay
             )

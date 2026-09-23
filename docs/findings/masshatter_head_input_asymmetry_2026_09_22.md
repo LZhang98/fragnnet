@@ -18,6 +18,9 @@
 > token. At toy scale the train/validation asymmetry sits entirely in the **boundary block** —
 > the 384 columns `candidate_atom_dropout` deliberately leaves exact — while the cc pools
 > behave like a generalizing feature. Needs a production checkpoint to mean anything.
+>
+> **See also:** the detachment census and the §7.1 gradient-connection result are consolidated
+> with the loss-side reviews in [MASShatter proposal loss — consolidated audit](masshatter_proposal_loss_audit_2026_09_22.md).
 
 Companion to the [feature set audit](../reference/masshatter_feature_set_audit.md), which
 documents the intensity-head candidate token in §4 but never states what the proposal heads

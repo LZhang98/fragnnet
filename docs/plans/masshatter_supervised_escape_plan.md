@@ -1,12 +1,17 @@
 # MASShatter supervised escape channel
 
-> **Status:** PROPOSED · **Updated:** 2026-09-22
+> **Status:** IMPLEMENTED, SCREENED NULL · **Updated:** 2026-09-22
 > Design of record for giving MASShatter somewhere to put intensity it cannot place on a
 > candidate. **Two escapes, two targets, two purposes.** The *intensity* escape (§3) is the one
 > that changes training: `wrecall` is 0.891, so 10.9% of observed intensity sits at m/z values
 > no candidate reaches, and a predicted distribution normalized over candidates alone is forced
 > to over-allocate everything it *can* reach. **It is fully implemented end to end as of
-> 2026-09-22** behind `mass_shatter_intensity_escape`, default off, and has never been trained.
+> 2026-09-22** behind `mass_shatter_intensity_escape`, default off. **It has now been screened
+> and is an exact null so far**: `e1_escape` vs `e0_independent`, two seeds each, read at their
+> common epoch 118 while still running — 0.7225 against 0.7225, **Δ +0.0000**, seed spreads
+> 0.0001 and 0.0003. The tightest null in this family. See the
+> [epoch-128 read-out §2](../findings/masshatter_architecture_arms_epoch128_2026_09_22.md);
+> re-read at completion.
 > The *contaminant* escape (§4) is `predict_oos` supervised by the subformula test, and remains
 > unimplemented.
 > Sizing comes from [the unexplained-peak split](../findings/unexplained_peak_split_2026_09_22.md).
