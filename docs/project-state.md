@@ -4,6 +4,33 @@
 
 ## Current handoff
 
+**`mh_ft_clean` cross-eval run (2026-09-23); target cleaning is a CLOSED NULL, and run-to-run
+variance is the largest lever measured; inference only.** Both checkpoints were scored against
+both targets on val and test: `6h67zps9` (f1, cleaned target) and `3bej6fq7` (f0). On the raw
+target, f1 − f0 is +0.0001 (val) and +0.0007 (test), inside ±0.003. The W&B +0.0054 is the easier
+target, +0.0048 to +0.0052 for either checkpoint. So the ~0.006 the 0.73-vs-0.80 cross-tab gives
+`filter_subformula_peaks` is denominator too. The two runs disagree per spectrum, with a median
+prediction cosine of 0.94 and a 10th percentile of 0.65, and averaging their predictions adds
+**+0.020** on both splits, rising with CE. Two adjacent checkpoints of one run add +0.008.
+**Averaging those two checkpoints' weights beats each run's best checkpoint by +0.0029 / +0.0036
+with no training.** Next: an EMA/SWA weight average over the last epochs (nothing in `src/`
+does this) and a `d3` replicate, then a seed pair to price the between-run share.
+[Finding](findings/masshatter/masshatter_target_cleaning_cross_eval_2026_09_23.md).
+
+**MASShatter encoder-simplification arm `g1` prepared (2026-09-23); nothing submitted.** One
+5-layer GINE_GSA atom encoder replaces the control's 2 GINE_GSA layers plus the 3-block
+`BondFocusedBreakHead`. Bonds are scored from their endpoints, and the boundary `CutBondEncoder`
+is off. The resolved diff against `c4a_base_s1` is those three keys (`mol_num_layers` 2 → 5,
+`mass_shatter_bond_num_layers` 3 → 0, `mass_shatter_boundary_bond_encoder` off) plus naming.
+Parameters fall from 9.22M to 7.69M: encoder +2.67M, bond head −3.40M, `CutBondEncoder` −0.79M.
+No run since the 2026-09-03 target change has used more than 2 mol layers or 0 bond layers. The
+boundary key alone is `c4a_no_bbe`, a null (0.7246). With it off, the head still receives an
+endpoint-mean boundary block, so `g1` does not remove the block the memorization probe points
+at. Verified by a one-epoch CPU smoke on `debug_tinyv4`. There is no GPU timing, because the local
+GPU was busy. Read the 118–127 tail mean against the 0.7270 control, together with hours per
+epoch. Config: `config/massshatter/ma_mi_merged/encoder_simplify_2026_09_23/`. Generator:
+`scripts/manual_slurm/fir/submit_masshatter_encoder_simplify.sh`.
+
 **`CutBondEncoder` now encodes each directed cut bond once (2026-09-23).** Both callers,
 MASShatter's `boundary_bond_encoder` and FraGNNet's `cut_bond`, ran the encoder on every
 (fragment, cut bond) row, although its output depends only on the two endpoint embeddings. That
