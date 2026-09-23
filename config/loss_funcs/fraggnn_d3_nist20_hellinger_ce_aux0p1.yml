@@ -1,5 +1,5 @@
 # FraGNNet Hellinger + spectral_ce_auxiliary_weight 0.1 -- 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "CE auxiliary and decision order".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "CE auxiliary and decision order".
 #
 # GATED, AND THE COEFFICIENT IS PROVISIONAL: the plan requires it be chosen from measured
 # per-term gradient norms on a fixed batch, not from the raw loss scale. 0.1 is a placeholder.

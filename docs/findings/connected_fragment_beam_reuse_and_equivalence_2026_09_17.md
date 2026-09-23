@@ -4,7 +4,7 @@
 > candidate-only measurement of the predicted size and topology prior. No training and no code
 > changes. Speed numbers are quoted from the existing
 > [beam speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
-> [FastGNN proposal plan](../plans/masshatter_fast_gnn_proposal.md).
+> [FastGNN proposal plan](../plans/masshatter/masshatter_fast_gnn_proposal.md).
 
 ## Result
 
@@ -149,7 +149,7 @@ the trained model puts ring-bond probability, not a modelling assumption.
 `cut_masks` selection is exact top-K under its own objective (heap enumeration over subsets).
 The beam is approximate under its own: finite beam width, dedup underfill, connected
 complements only. The plan's
-[connected-fragment audit](../plans/masshatter_fast_gnn_proposal.md#connected-fragment-audit-2026-09-17)
+[connected-fragment audit](../plans/masshatter/masshatter_fast_gnn_proposal.md#connected-fragment-audit-2026-09-17)
 records two graphs where a higher-scoring reachable fragment was lost. So the beam trades an
 exact search over masks for an approximate search over fragments.
 
@@ -666,7 +666,7 @@ device-to-host synchronization on every iteration, inside every chunk, inside ev
 audit names that host-visible equality test as a main contributor. `_search` synchronizes
 further at `recorded.any()`, `int(counts.max().item())`, `int(keep_rank.max().item())` and at
 each boolean-mask index. This is the failure mode the
-[MASShatter GPU audit](../plans/masshatter_gpu_audit.md) catalogues. It is independent of the
+[MASShatter GPU audit](../plans/masshatter/masshatter_gpu_audit.md) catalogues. It is independent of the
 union-find question: an asynchronous fixed-iteration or count-based convergence test would
 remove the syncs without changing the algorithm.
 
@@ -703,7 +703,7 @@ is a cheaper route to nearly the same objective or a more expensive one.
   claim is made about predicted spectra.
 - Timing figures for the 447 ms complement regression and the CUDA `cut_masks` comparison are
   quoted from the [speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
-  [plan](../plans/masshatter_fast_gnn_proposal.md) and inherit their contracts. Timings measured
+  [plan](../plans/masshatter/masshatter_fast_gnn_proposal.md) and inherit their contracts. Timings measured
   here are single-run CPU wall times, not synchronized benchmarks.
 - One checkpoint, one epoch, one batch per scan; batches of 16 and 32 molecules. The reference
   universe is the union of the selectors' own pools, so it under-represents fragments none of

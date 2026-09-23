@@ -6,7 +6,7 @@ For each DAG edge, the actual broken bond(s) are reconstructed from the parent/c
 bitmasks (node "cc" feature) against the source RDKit mol (data/proc/<dset>/mol_df.pkl),
 then classified into a (in_ring, element_pair, alpha_hetero) bucket. This lets us test
 "mask bucket X at depth d" policies directly against real recall loss, globally aggregated
-(no CE split), per docs/plans/bond_breakability_mask_plan.md step 3.
+(no CE split), per docs/plans/fragnnet/bond_breakability_mask_plan.md step 3.
 
 Usage:
     python scripts/debug/debug_dag_bond_descriptor_stats.py \

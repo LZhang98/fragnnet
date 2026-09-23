@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the 2026-09-23 fragment-selection arms.
-# Plan: docs/plans/masshatter_fragment_marginal_selection_plan.md.
+# Plan: docs/plans/masshatter/masshatter_fragment_marginal_selection_plan.md.
 #
 #   f1_mask_order_u128        naive U128: the unique target alone drops to 128 (mask order).
 #   f2_marginal_k128_pool256  marginal selection: keep 128 of the control's U256 pool by

@@ -1,7 +1,7 @@
 """Tests for the complementary-cut pair target builder.
 
 Covers the builder-verification list in
-``docs/plans/complementary_cut_supervision_experiment_plan.md``: the target
+``docs/plans/fragnnet/complementary_cut_supervision_experiment_plan.md``: the target
 uses raw intensity while responsibility only moves the group weight, sub-LOD and mass-aliased
 pairs produce no gradient, a one-sided supra-LOD peak yields a soft target rather than ``(1, 0)``,
 and stronger evidence moves the target monotonically away from ``0.5``.

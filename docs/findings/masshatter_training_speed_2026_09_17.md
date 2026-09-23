@@ -206,7 +206,7 @@ was launched. No convergence or validation-quality comparison was performed.
 Next: compare 128×2 and 256×1 on L40S using spectra/second, epoch time, peak memory and sampled GPU
 utilization, with the same monitoring settings. If testing 512×1 afterward, record that effective
 batch size doubles to 512; its optimization comparison is separate. Profile the remaining topology
-and packing under the [existing performance gates](../plans/masshatter_topology_assembly_performance_plan.md)
+and packing under the [existing performance gates](../plans/masshatter/masshatter_topology_assembly_performance_plan.md)
 to address the CPU interval between GPU stages. Mixed precision and smaller enumeration budgets
 remain separate experiments.
 
@@ -222,7 +222,7 @@ convergence comparison remain pending.
 
 ## Candidate-sampling follow-up (2026-09-17, source audit)
 
-The subsequent [implementation plan](../plans/masshatter_candidate_backend_plan.md) records the
+The subsequent [implementation plan](../plans/masshatter/masshatter_candidate_backend_plan.md) records the
 user-selected sequence: CPU improvements first, then a separately selectable GPU backend.
 At the time of this source audit the opportunities below were unimplemented. The later
 [implementation measurements](#cpu-implementation-and-full-training-measurements-2026-09-17) record

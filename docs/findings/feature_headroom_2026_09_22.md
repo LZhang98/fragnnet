@@ -68,8 +68,8 @@ local bond-type context. All of it is already computable from what we feed the e
 ## Two existing measurements bound the rest of the argument
 
 **A bond-environment-only scorer is capped at ~18% of observed branching.** The reference test
-recorded in [`fragment_bond_set_representation.md`](../plans/fragment_bond_set_representation.md)
-§6.3 (summarized in [`fluxmpnn_plan.md`](../plans/fluxmpnn_plan.md)) decomposed *observed*
+recorded in [`fragment_bond_set_representation.md`](../plans/fragnnet/fragment_bond_set_representation.md)
+§6.3 (summarized in [`fluxmpnn_plan.md`](../plans/fragnnet/fluxmpnn_plan.md)) decomposed *observed*
 branching over radius-0/1/2 bond environments on 200 molecules / 296,042 alias-free sibling
 groups: noise-corrected ICC
 0.0214 → 0.1277 → **0.1817**. Bond environment explains ~72% of the model's *learned* β but only
@@ -119,7 +119,7 @@ question about the loss, not about features. Not investigated here.
    not be started on a feature argument.
 4. The residual in every decomposition points the same way: **CE-dependent allocation**, per
    [`glacier_gap_ce_decomposition_2026_09_21.md`](glacier_gap_ce_decomposition_2026_09_21.md) and
-   [`branching_headroom`](../plans/fluxmpnn_plan.md).
+   [`branching_headroom`](../plans/fragnnet/fluxmpnn_plan.md).
 
 ## Second pass: shortcut learning (2026-09-22)
 

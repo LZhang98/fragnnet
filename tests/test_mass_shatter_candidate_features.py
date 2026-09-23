@@ -5,7 +5,7 @@ Covers the fixes recorded in ``docs/reference/masshatter_feature_set_audit.md`` 
 token, the constant token columns in unique-fragment mode, and the unread required graph field.
 
 Also covers the two 2026-09-22 candidate-token changes from
-``docs/plans/masshatter_cut_set_features_plan.md``: the severed bonds' own input features,
+``docs/plans/masshatter/masshatter_cut_set_features_plan.md``: the severed bonds' own input features,
 which mean pooling over atom endpoints destroys, and per-atom dropout on the component pool,
 which attacks the identity shortcut that pooling leaves behind.
 

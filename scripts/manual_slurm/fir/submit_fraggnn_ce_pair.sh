@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the FraGNNet FT contender-pair Stage A pilot,
 # 2026-09-23.
-# Plan: docs/plans/ft_contender_pair_minimal_training_plan.md (Run matrix, Stage A)
+# Plan: docs/plans/fragnnet/ft_contender_pair_minimal_training_plan.md (Run matrix, Stage A)
 #       docs/findings/fragment_intensity_ranking_findings.md
 #
 # Question: does the online adjacent-CE winner-switch BCE (`ce_pair_loss_weight`) improve held-out

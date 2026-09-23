@@ -53,7 +53,7 @@ Therefore, the next budget goes to reproducibility, objective alignment, regular
 ranking supervision—not larger encoders, more CE-depth machinery, or generic DAG expansion.
 
 The measured global base-mass and adjacent-CE ranking experiment is specified in
-[`global_fragment_intensity_ranking_experiment_plan.md`](global_fragment_intensity_ranking_experiment_plan.md).
+[`global_fragment_intensity_ranking_experiment_plan.md`](fragnnet/global_fragment_intensity_ranking_experiment_plan.md).
 
 **Immediate priority:** localize the ranking error using the local `9t63zils` baseline checkpoint.
 This is read-only, requires no new training, and determines which later intervention is correctly
@@ -207,7 +207,7 @@ after each shows an independent gain.
 
 ### 3. Add direct sibling-ranking supervision when `P(n)` dominates
 
-Use the design in [sibling_ranking_target_plan.md](sibling_ranking_target_plan.md):
+Use the design in [sibling_ranking_target_plan.md](fragnnet/sibling_ranking_target_plan.md):
 
 1. build the offline alias-free target cache;
 2. report cache size, group coverage, explained intensity, and retained-versus-dropped composition;
@@ -226,7 +226,7 @@ intervention has bounded reach.
 
 Before changing spectrum targets, evaluate large-scale molecular representation pretraining if the
 ClassyFire molecule and atom-level corpus is ready. Follow
-[classyfire_atom_pretraining_plan.md](classyfire_atom_pretraining_plan.md):
+[classyfire_atom_pretraining_plan.md](fragnnet/classyfire_atom_pretraining_plan.md):
 
 1. pretrain a FraGNNet-compatible `mol_embedder` on 1M molecules;
 2. compare molecule-level, atom-level, combined, and combined-plus-cut/JEPA objectives;
@@ -299,10 +299,10 @@ after the reconstruction baseline is reproducible.
 - [DAG oracle ceiling](../findings/dag_oracle_ceiling_nist20.md)
 - [Intensity error diagnostic script](../../scripts/eval/intensity_error_diagnostic.py)
 - [CE extent headroom finding](../findings/ce_extent_headroom_finding.md)
-- [Fragment representation audit](fragment_bond_set_representation.md)
-- [Sibling-ranking target design](sibling_ranking_target_plan.md)
-- [ClassyFire atom-level pretraining plan](classyfire_atom_pretraining_plan.md)
-- [FluxMPNN results and interpretation](fluxmpnn_plan.md)
+- [Fragment representation audit](fragnnet/fragment_bond_set_representation.md)
+- [Sibling-ranking target design](fragnnet/sibling_ranking_target_plan.md)
+- [ClassyFire atom-level pretraining plan](fragnnet/classyfire_atom_pretraining_plan.md)
+- [FluxMPNN results and interpretation](fragnnet/fluxmpnn_plan.md)
 - [NIST data-quality plan](nist_data_quality_plan.md)
 - [Pairwise and retrieval loss findings](../reference/pairwise_loss.md)
 

@@ -84,10 +84,10 @@ occurrence probabilities; increasing its weight does not fix its attribution amb
    evaluation predictions; it is not just a reporting option.
 3. Preserve the primary full-spectrum objective and test targeted soft ranking supervision
    where supported dominant peaks are misordered. The existing
-   [FT contender-pair plan](../plans/ft_contender_pair_minimal_training_plan.md) and shipped
+   [FT contender-pair plan](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md) and shipped
    `ce_pair_loss_weight` path provide the narrow starting point for unmerged CE-resolved
    spectra. They do not provide a merged-spectrum solution. For merged spectra, the
-   [global mass-ranking proposal](../plans/global_fragment_intensity_ranking_experiment_plan.md#target-a--confidence-weighted-global-base-mass-ranking)
+   [global mass-ranking proposal](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md#target-a--confidence-weighted-global-base-mass-ranking)
    is an untested alternative, requiring its coverage/ambiguity gates first.
 4. Use observed soft ratios between disjoint, supported mass groups: with predicted summed
    intensities `p_a, p_b`, target `t = q_a/(q_a+q_b)`, and
@@ -215,7 +215,7 @@ separate decision about the whole FraGNNet loss family.
 Reviewed clean revision `fe417a2f990a7041f80d63306cdc5f3f1512c051`, model/Lightning
 loss wiring, shared loss helpers, representative checked-in configurations, and the
 [model roadmap](../plans/model_improvement_plan.md) and
-[MASShatter plan](../plans/masshatter_improvement_plan.md).
+[MASShatter plan](../plans/masshatter/masshatter_improvement_plan.md).
 Configurations below establish available setups, not the identity of a running experiment.
 No model code, configuration, data, environment, or training state was changed.
 
@@ -357,7 +357,7 @@ predicted masses `[100,100.001]` with intensities `[0.01,0.99]`, all in toleranc
 | MASShatter closest, many-to-one | 0 |
 | FraGNNet scalar JS-gain Hungarian | 0.00501817 |
 
-This is an intentional [design choice](../plans/masshatter_nonprobabilistic_intensity_plan.md),
+This is an intentional [design choice](../plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md),
 not an accidental MASShatter implementation bug. Diagnose the frequency/intensity of
 ambiguous matches, then compare existing `closest` and `hungarian` settings if needed.
 Fix correspondence across a JSS/KL comparison. Many-to-one matching also makes attribution
@@ -370,7 +370,7 @@ less identifiable, so better training loss alone is insufficient evidence of imp
   separately normalizes positive and negative mass. Two targets `[0.5,0.5]` have
   optimal sigmoids `[0.5,0.5]`; adding 98 zero-target channels shifts those same two
   optimal sigmoids to `[0.99,0.99]`. This known limitation is recorded in the
-  [support plan](../plans/masshatter_ion_h_channel_selection_plan.md). Validate support
+  [support plan](../plans/masshatter/masshatter_ion_h_channel_selection_plan.md). Validate support
   and final-intensity threshold curves before selecting a floor or changing BCE.
 - **A 0.1 coefficient does not establish a 10% gradient contribution.** Measure
   weighted per-term gradient norms and their agreement on shared parameters. Also
@@ -409,7 +409,7 @@ and diagnose intensity allocation on fixed support before selecting a new interv
    the existing roadmap's seed and validation gates. No run was launched here.
 
 Do not revive generic false-peak or log1p-Huber additions without new evidence: the
-[earlier plan](../plans/false_peak_loss_plan.md) records null or harmful outcomes under
+[earlier plan](../plans/fragnnet/false_peak_loss_plan.md) records null or harmful outcomes under
 its historical protocol. Likewise, the [spectral entropy paper](https://www.nature.com/articles/s41592-021-01331-z)
 supports a library-search similarity method; it does not establish the optimal training
 objective for either model.

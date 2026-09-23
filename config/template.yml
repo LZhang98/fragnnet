@@ -751,7 +751,7 @@ mass_shatter_fragment_selection: mask_order  # mask_order | marginal: which pool
   # mass_shatter_selected_fragment_target, and trains the proposal coverage loss on the whole
   # pool. Requires unique mode, proposal_selection_only, one mixture, cut_masks, SMARTS off, a
   # zero fragment floor and share_proposal_across_ev off.
-  # See docs/plans/masshatter_fragment_marginal_selection_plan.md.
+  # See docs/plans/masshatter/masshatter_fragment_marginal_selection_plan.md.
 mass_shatter_selected_fragment_target: null  # marginal only: fragments kept per precursor, <= unique target; null otherwise.
 mass_shatter_include_single_bond_cuts: True
 mass_shatter_max_h_transfer: 4

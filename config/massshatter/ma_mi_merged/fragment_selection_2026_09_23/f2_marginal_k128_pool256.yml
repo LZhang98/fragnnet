@@ -13,7 +13,7 @@
 # coverage per cut count and, in marginal mode, val_pool_candidate_wrecall, and change nothing
 # the model trains on. The control never logged them, so compare coverage among the arms.
 #
-# Plan and reading rules: docs/plans/masshatter_fragment_marginal_selection_plan.md.
+# Plan and reading rules: docs/plans/masshatter/masshatter_fragment_marginal_selection_plan.md.
 wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_f2_marginal_k128_pool256
 wandb_group: nist20_mass_shatter_fragment_selection
 wandb_tags:

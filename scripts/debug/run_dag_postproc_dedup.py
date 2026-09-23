@@ -2,7 +2,7 @@
 (base_formula, h_min, h_max) is already supplied by another surviving node, then
 write a deduplicated copy of the tar.
 
-Dedup rule (see docs/plans/dag_full_recall_tractability_plan.md and conversation record for
+Dedup rule (see docs/plans/fragnnet/dag_full_recall_tractability_plan.md and conversation record for
 how this was derived and validated):
   - cutoff = the DAG's actual max node depth (true leaves only, per-molecule).
   - Nodes with depth < cutoff are NEVER removed (keeps the DAG's connectivity intact;

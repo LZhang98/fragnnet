@@ -16,7 +16,7 @@
 # so ~10.9% of observed intensity sits at m/z no candidate reaches, and a predicted distribution
 # normalized over candidates alone must over-allocate everything it CAN reach. The escape
 # collapses every unreachable observed peak into one coordinate whose mass the model predicts.
-# Design and algebra: docs/plans/masshatter_supervised_escape_plan.md. Sizing:
+# Design and algebra: docs/plans/masshatter/masshatter_supervised_escape_plan.md. Sizing:
 # docs/findings/unexplained_peak_split_2026_09_22.md.
 #
 # SELECT ON val_cos_sim_0.01_epoch/mean ONLY. The escape changes the objective -- it adds a

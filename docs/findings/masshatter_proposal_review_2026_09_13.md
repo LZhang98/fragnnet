@@ -17,7 +17,7 @@ the encoder. The current loss can be low despite poor candidate coverage, and de
 selection limits direct supervision for fragments outside the selected support. Whether
 these mechanisms materially limit trained-model quality remains unmeasured.
 
-This review complements the [MASShatter improvement plan](../plans/masshatter_improvement_plan.md)
+This review complements the [MASShatter improvement plan](../plans/masshatter/masshatter_improvement_plan.md)
 and its support-oracle gate. It does not replace the existing experiment queue. The
 [loss setup review](loss_setup_review_2026_09_13.md#auxiliary-weights-proposal-coverage-and-warmup-need-separate-interpretation)
 is the canonical source for previously reproduced proposal-loss and gradient-routing

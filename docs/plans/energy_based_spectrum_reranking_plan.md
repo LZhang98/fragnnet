@@ -11,9 +11,9 @@ quality from ranking quality before considering a generative EBM or iterative in
 
 This document owns the common export contract, proposal/null pools, gates, ranking objective,
 controls, and decisions. The initial anchor below is FraGNNet; the
-[MASShatter delta](masshatter_energy_based_model_plan.md) changes only model-specific setup and
+[MASShatter delta](masshatter/masshatter_energy_based_model_plan.md) changes only model-specific setup and
 records conditional refinement. The MASShatter program now evaluates
-[bond-cut modeling first](masshatter_bond_cut_ebm_plan.md), then applies this spectrum protocol
+[bond-cut modeling first](masshatter/masshatter_bond_cut_ebm_plan.md), then applies this spectrum protocol
 with the selected proposal model frozen. Apply the spectrum gates separately to each anchor.
 
 FraGNNet already normalizes fragment/formula logits in
@@ -32,7 +32,7 @@ The [fragment ranking findings](../findings/fragment_intensity_ranking_findings.
 [dominant-peak decomposition](../findings/dominant_peak_outcome_decomposition.md) motivate
 testing intensity allocation within existing support. Their measurements are not evidence
 that an EBM will improve performance. Compare successful results with the
-[minimal FT ranking-loss plan](ft_contender_pair_minimal_training_plan.md) and the existing
+[minimal FT ranking-loss plan](fragnnet/ft_contender_pair_minimal_training_plan.md) and the existing
 [fragment competition head](../../src/fragnnet/model/fragment_competition.py).
 
 ### Prior output-correction null

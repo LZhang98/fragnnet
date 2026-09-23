@@ -86,7 +86,7 @@ expresses no rearrangement, nothing from our SMARTS or neutral-loss rules, and i
 our d3.
 
 The MASShatter plan already names exactly this, as step 2 of its staged training
-([`masshatter_plan.md`](../plans/masshatter_plan.md) §7.1):
+([`masshatter_plan.md`](../plans/masshatter/masshatter_plan.md) §7.1):
 
 > **Optional supervised warm start.** If trusted fragment atom masks are available, supervise
 > boundary-bond breaks, charge retention, and `(mode, delta_H)` directly. Existing D3/D4

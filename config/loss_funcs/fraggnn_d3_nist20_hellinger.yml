@@ -1,5 +1,5 @@
 # FraGNNet explicit Hellinger -- 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
 #
 # Derived from fraggnn_d3_nist20_jss.yml by changing exactly loss_type (plus name/tags), so that
 # arm and its _hun / _sqrt siblings are the matched controls. This is the FraGNNet half of the

@@ -1,5 +1,5 @@
 # Arm of the regularization/normalization sweep -- see
-# docs/plans/masshatter_regularization_sweep_plan.md. Every config in the sweep sets
+# docs/plans/masshatter/masshatter_regularization_sweep_plan.md. Every config in the sweep sets
 # compute_train_auxiliary_metrics: true so the train cosine is logged next to the validation
 # cosine; no MASShatter run before this sweep has ever logged one. Compare arms at matched
 # epoch against ..._ctrl_a / ..._ctrl_b, never at matched wall clock and never against the

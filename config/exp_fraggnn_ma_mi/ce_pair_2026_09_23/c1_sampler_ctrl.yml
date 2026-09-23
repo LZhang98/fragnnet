@@ -219,7 +219,7 @@ loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 32              # sub-batch size for vectorized loss
 
 # ============================================================================
-# FT contender-pair Stage A (docs/plans/ft_contender_pair_minimal_training_plan.md)
+# FT contender-pair Stage A (docs/plans/fragnnet/ft_contender_pair_minimal_training_plan.md)
 # Shared by all four arms. The pair loss requires target_rel_ints_thresh in (0, 1), and the
 # same key drops peaks below 1% of base from the train AND validation targets, so every arm
 # carries it and `jnokddr9` (0.0) is not a matched control.

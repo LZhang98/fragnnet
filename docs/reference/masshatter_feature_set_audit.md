@@ -262,7 +262,7 @@ legacy checkpoint configs.
 
 None of these are measured wins. Each needs a matched arm, read against the measured same-seed
 replicate floor (0.003 val cosine) recorded in the
-[regularization sweep plan](../plans/masshatter_regularization_sweep_plan.md).
+[regularization sweep plan](../plans/masshatter/masshatter_regularization_sweep_plan.md).
 
 ## 10. Which of these apply to FraGNNet
 

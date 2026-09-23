@@ -1,6 +1,6 @@
 # Documentation rules
 
-> **Status:** REFERENCE · **Updated:** 2026-09-07
+> **Status:** REFERENCE · **Updated:** 2026-09-23
 > Placement and maintenance conventions for project documentation.
 
 - Put code documentation in docstrings and config documentation in YAML comments under `config/`.
@@ -14,7 +14,7 @@
   | `docs/guides/` | How to run a specific operation |
   | `docs/reference/` | Detailed current system behavior |
   | `docs/findings/` | Measurements, evidence, and conclusions |
-  | `docs/plans/` | Proposed, active, completed, or stopped work |
+  | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASShatter plans in `masshatter/`, cross-model plans at top level |
   | `docs/notes/` | Scratch and literature notes |
   | `docs/figures/` | Figures referenced by documentation |
   | `docs/rules/` | Shared constraints |

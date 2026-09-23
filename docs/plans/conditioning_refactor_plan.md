@@ -76,7 +76,7 @@ change merge grouping or target construction silently if this check fails.
 
 Use the prepared full-metadata, dual-CE mask1024 config as the conditioning baseline. It retains
 the existing unmerged mask1024 architecture; it does not settle the newer U256 encoder/warmup comparison in the
-[MASShatter improvement plan](masshatter_improvement_plan.md).
+[MASShatter improvement plan](masshatter/masshatter_improvement_plan.md).
 
 | Arm | Config | Conditioning |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ family, then confirm promising treatments with matched seeds. Compare held-out
 cosine and loss at equal optimizer progress; report CE/adduct/instrument/mode slices, train–validation
 gap, and formula retrieval. For MASShatter also report candidate weighted recall and emitted peak
 count so proposal coverage is separated from intensity quality. Use the existing
-[fragment-context routing plan](fragment_context_gate_experiment_plan.md) for switch diagnostics
+[fragment-context routing plan](fragnnet/fragment_context_gate_experiment_plan.md) for switch diagnostics
 and the gate experiment's go/stop rules. No new layer is justified solely by a training gain.
 
 Local validation with `FRAGNNET-GPU`: all four configs passed template resolution, sampler
@@ -273,7 +273,7 @@ re-ranking-capable and non-redundant.
 
 With `context_insert_location: mol,mlp`, the nonlinear formula MLP already provides
 fragment-specific context responses. The separate
-[`fragment_context_gate_experiment_plan.md`](fragment_context_gate_experiment_plan.md) first tests
+[`fragment_context_gate_experiment_plan.md`](fragnnet/fragment_context_gate_experiment_plan.md) first tests
 that existing route with a zero-code `mol` versus `mol,mlp` ablation. A final-logit multiplicative
 replacement is considered only after a positive result, as an ordering/optimization experiment—not
 as new fragment × context capacity.

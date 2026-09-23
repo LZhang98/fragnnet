@@ -19,7 +19,7 @@
    connect predictions to losses and training/evaluation. FraGNNet uses fragmentation DAGs;
    MASShatter has separate candidate construction in [frag/](../src/fragnnet/frag/) and its
    own model and Lightning module. GRAFF, ICEBERG, and MassFormer have separate package directories.
-   MASShatter also offers [FastGNN-style connected-fragment proposals](plans/masshatter_fast_gnn_proposal.md),
+   MASShatter also offers [FastGNN-style connected-fragment proposals](plans/masshatter/masshatter_fast_gnn_proposal.md),
    sharing its chemistry and intensity model while changing proposal score semantics.
    MASShatter defaults to CPU candidate construction; its optional CUDA backend performs exact
    selection and topology for the supported modes. See the

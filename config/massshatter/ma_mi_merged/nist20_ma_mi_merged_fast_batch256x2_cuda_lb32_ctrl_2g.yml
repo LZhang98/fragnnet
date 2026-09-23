@@ -1,5 +1,5 @@
 # 2g.20gb SLICE VARIANT of ..._lb64_ctrl_a.yml -- see
-# docs/plans/masshatter_regularization_sweep_plan.md, Stage A.
+# docs/plans/masshatter/masshatter_regularization_sweep_plan.md, Stage A.
 # The 20 GB MIG slice cannot hold the 512 x lb64 arm (26.9 GiB measured), so the microbatch drops
 # to 256 with accumulate_grad_batches: 2, keeping the EFFECTIVE batch at 512 and the optimizer
 # math of the lb64 lineage. loss_batch_size follows to 32 and num_workers to 3 (the profile has
@@ -13,7 +13,7 @@
 # this shape may be compared against the four 512 x lb64 L40S replicates.
 # If this shape is selected, EVERY arm in the sweep must be run with the same five keys.
 # Arm of the regularization/normalization sweep -- see
-# docs/plans/masshatter_regularization_sweep_plan.md. Every config in the sweep sets
+# docs/plans/masshatter/masshatter_regularization_sweep_plan.md. Every config in the sweep sets
 # compute_train_auxiliary_metrics: true so the train cosine is logged next to the validation
 # cosine; no MASShatter run before this sweep has ever logged one. Compare arms at matched
 # epoch against ..._ctrl_a / ..._ctrl_b, never at matched wall clock and never against the

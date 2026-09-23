@@ -21,7 +21,7 @@
 | There is a real shortcut in the feature set | **Yes, one.** `depth` proxies cut count on the plain BFS DAG and breaks on any multi-cut DAG. `num_cut_bonds` is the correct feature, is free, and is off in the prepass run where `depth` is wrong | [feature headroom](feature_headroom_2026_09_22.md) |
 | We hold information we never use | **Yes.** NIST ships an expert formula per peak covering **99.4% of intensity** on 68.4% of spectra, read only by the GrAFF baseline; ClassyFire is materialized for 100% of molecules; `in_degree` has never run in production | [inventory](unused_information_inventory_2026_09_22.md) |
 | MASShatter needs a structural teacher | **RETRACTED.** Coverage already transfers (train `wrecall` 0.8975 vs val 0.8911 against a 0.151 cosine gap); GLACIER's "Not Converged" is a property of its DETR/LinSATNet proposal, not ours; same-formula isomers sum at one m/z so choosing between them changes the spectrum by nothing | [identity supervision](masshatter_identity_supervision_2026_09_22.md) |
-| MASShatter's candidate token is missing cut information | **Open, measured.** **96.8%** of fragments are cut at ≥2 bonds and **55.4%** have two cuts sharing a ring, which mean pooling represents identically to unrelated cuts | [cut-set plan](../plans/masshatter_cut_set_features_plan.md) |
+| MASShatter's candidate token is missing cut information | **Open, measured.** **96.8%** of fragments are cut at ≥2 bonds and **55.4%** have two cuts sharing a ring, which mean pooling represents identically to unrelated cuts | [cut-set plan](../plans/masshatter/masshatter_cut_set_features_plan.md) |
 
 ## The one distinction that organises all of it
 
@@ -59,7 +59,7 @@ clean on every changed file.
 The three MASShatter candidate-token changes, in the order they should be tried — remove
 `use_base_probability_feature` (config only), add cut-set topology scalars, then feed the break
 head's discarded per-bond states forward with a detached control. See the
-[cut-set plan](../plans/masshatter_cut_set_features_plan.md).
+[cut-set plan](../plans/masshatter/masshatter_cut_set_features_plan.md).
 
 ## Corrections made during this work
 

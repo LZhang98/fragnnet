@@ -38,7 +38,7 @@ naive `dropna` on the validation key silently drops every train-side row.
 
 ## 1. Regularization sweep Stage A/B read-out
 
-Executes [the sweep plan](../plans/masshatter_regularization_sweep_plan.md). Group
+Executes [the sweep plan](../plans/masshatter/masshatter_regularization_sweep_plan.md). Group
 `nist20_mass_shatter_reg_sweep`, 10 jobs on `fir:h100-3g.40gb`, split `nist20_ma_mi_inchikey`.
 
 ### Acceptance criteria

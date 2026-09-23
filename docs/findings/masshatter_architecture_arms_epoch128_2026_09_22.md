@@ -12,7 +12,7 @@
 > and 0.011–0.014 on the loss-drift columns §1 reads mechanistically.** **§2 (added later the same day) reads
 > the five candidate-token feature arms and the intensity-escape pair, which the plans still
 > recorded as "nothing trained" — they had in fact launched, and all six are nulls.**
-> §1 closes §1 of the [architecture review todo](../plans/masshatter_architecture_review_todo.md):
+> §1 closes §1 of the [architecture review todo](../plans/masshatter/masshatter_architecture_review_todo.md):
 > the six arms that ran in the 2026-09-21 campaign and were killed at the wall clock between
 > epochs 179 and 210 are now read against both `c4a_base` replicates at matched epoch.
 > **Two arms clear the replicate floor (`a1_prenorm` +0.0056, `a6_ce_film` +0.0063), one is a
@@ -179,7 +179,7 @@ with the other; they are the two candidates worth replicating and then combining
 ## 2. The candidate-token feature arms and the intensity escape — added 2026-09-22
 
 **These runs existed and the plans did not know it.** The
-[cut-set plan](../plans/masshatter_cut_set_features_plan.md) banner said "five matched arms built,
+[cut-set plan](../plans/masshatter/masshatter_cut_set_features_plan.md) banner said "five matched arms built,
 nothing trained" and the project-state entry for the candidate-token work said "No production run
 launched". Both were written before the arms were submitted at 19:57–20:01 UTC on 2026-09-22. Five
 finished at 127 epochs, on the same screen and against the same `c4a_base` control as §1. Read the
@@ -387,6 +387,6 @@ the query is three calls against `wandb.Api()` and is cheaper to rewrite than to
 
 ## Sources
 
-- [Architecture review todo](../plans/masshatter_architecture_review_todo.md) — §1 is what this closes; §1's capacity table is the source of the parameter counts.
+- [Architecture review todo](../plans/masshatter/masshatter_architecture_review_todo.md) — §1 is what this closes; §1's capacity table is the source of the parameter counts.
 - [Overfit read-out](masshatter_overfit_readout_2026_09_22.md) — the run index, the replicate floor, the primary-loss method in §3, and the coverage conclusion in §4.1.
 - [Campaign read-out](masshatter_campaign_readout_2026_09_21.md) — the 128-epoch screen length and the alternating-step logging trap.

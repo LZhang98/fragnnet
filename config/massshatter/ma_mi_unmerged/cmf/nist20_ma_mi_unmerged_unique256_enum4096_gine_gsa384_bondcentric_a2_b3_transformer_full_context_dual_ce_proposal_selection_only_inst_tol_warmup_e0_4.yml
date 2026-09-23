@@ -13,9 +13,9 @@
 #      FT and QTOF only, zero IT rows. The IT slot only widened the embedding table.
 #   3. mass_shatter_channel_diagnostics: True, so the valid/attributed/retained ion-H
 #      channel counts are logged. These are the metrics that show the CMF alignment.
-# This is step 1 of docs/plans/masshatter_improvement_plan.md ("establish a corrected
+# This is step 1 of docs/plans/masshatter/masshatter_improvement_plan.md ("establish a corrected
 # unmerged control") and the convergence prerequisite that blocks Arm C in
-# docs/plans/masshatter_ion_h_channel_selection_plan.md.
+# docs/plans/masshatter/masshatter_ion_h_channel_selection_plan.md.
 wandb_name: nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol_warmup_e0_4
 wandb_group: nist20_mass_shatter_l40s
 wandb_tags:

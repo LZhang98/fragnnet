@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the proposal early-stop arms, 2026-09-23.
-# Plan: docs/plans/masshatter_proposal_early_stop_plan.md
+# Plan: docs/plans/masshatter/masshatter_proposal_early_stop_plan.md
 #       docs/findings/masshatter_overfit_readout_2026_09_22.md, section 3
 #
 # Question: the validation PROPOSAL term turns at epochs 26-47 while the spectrum term keeps

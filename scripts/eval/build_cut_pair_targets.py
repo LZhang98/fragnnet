@@ -1,6 +1,6 @@
 """Build complementary-cut pair targets (``q_cut_evidence``) for fragment intensity ranking.
 
-Phase 1 of ``docs/plans/complementary_cut_supervision_experiment_plan.md``. For every spectrum and
+Phase 1 of ``docs/plans/fragnnet/complementary_cut_supervision_experiment_plan.md``. For every spectrum and
 every DAG parent, this script finds child pairs ``(A, B)`` that exactly partition the parent's
 atoms, scores the relative *observable evidence* for each side, and emits a ragged cache in the
 same schema the sibling-ranking loss already consumes, plus a sidecar audit report.

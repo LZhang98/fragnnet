@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "Prepared arms".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Prepared arms".
 #
 # STAGE selects which arms are generated:
 #   step1  h1/h2/h3 + c1 -- the only arms the plan authorizes now.

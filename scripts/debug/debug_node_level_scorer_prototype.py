@@ -1,4 +1,4 @@
-"""Step 5 (revised) of docs/plans/dag_full_recall_tractability_plan.md: score depth-4 NODES
+"""Step 5 (revised) of docs/plans/fragnnet/dag_full_recall_tractability_plan.md: score depth-4 NODES
 directly from features intrinsic to the fragment itself (element composition, size,
 aromaticity, ring membership, boundary-bond count), instead of deriving a node score from
 its incoming BOND edges and having to combine multiple redundant routes' scores (max /

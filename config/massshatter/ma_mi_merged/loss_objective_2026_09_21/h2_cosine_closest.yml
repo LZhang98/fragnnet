@@ -1,5 +1,5 @@
 # Arm h2 -- linear cosine, closest matching. 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
 #
 # The matched linear-cosine control step 1 of the plan requires. The lineage has
 # cross_entropy, jss_distance and kl_distance arms but has never run cosine_distance, so
@@ -14,7 +14,7 @@
 # coordinates, so sqrt never enters the prediction-side autograd path. Do not substitute it.
 #
 # Budget: 128 epochs, not the lineage's 630. Validation cosine saturates near epoch 100
-# (docs/plans/masshatter_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
+# (docs/plans/masshatter/masshatter_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
 # buy +0.0017). Read every control at ITS epoch 128 from W&B, never at its final epoch, and
 # give only the selected objective a full-budget rerun.
 #

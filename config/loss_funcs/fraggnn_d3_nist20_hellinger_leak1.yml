@@ -1,5 +1,5 @@
 # FraGNNet Hellinger + spectral_leak_loss_weight 1.0 -- 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "Explicit false-intensity term".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Explicit false-intensity term".
 #
 # GATED on fraggnn_d3_nist20_hellinger.yml reporting first. Single probe value, not a sweep:
 # the MASShatter lambda_leak sweep {0, 0.3, 1, 3} lives in the loss_objective_2026_09_21 folder,

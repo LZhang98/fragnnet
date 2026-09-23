@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the five UNRUN arms of the 2026-09-21
 # attention / budget campaign.
-# Plan: docs/plans/masshatter_architecture_review_todo.md, section 2.
+# Plan: docs/plans/masshatter/masshatter_architecture_review_todo.md, section 2.
 #
 # STAGE selects which arms are generated:
 #   lead        b1 + a2 (default). The plan's co-leads. `b1` is parameter-identical to

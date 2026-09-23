@@ -1,5 +1,5 @@
 # Arm h6 -- Hellinger + spectral_leak_loss_weight 3.0. 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "Explicit false-intensity term".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Explicit false-intensity term".
 #
 # GATED. Step 3 of the plan: submit only after h1 shows the predicted recovery improvement AND
 # leaves a measured false-intensity problem. Submitting this before h1 reports wastes the slice.
@@ -21,7 +21,7 @@
 # support is a failure, not a win.
 #
 # Budget: 128 epochs, not the lineage's 630. Validation cosine saturates near epoch 100
-# (docs/plans/masshatter_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
+# (docs/plans/masshatter/masshatter_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
 # buy +0.0017). Read every control at ITS epoch 128 from W&B, never at its final epoch, and
 # give only the selected objective a full-budget rerun.
 #

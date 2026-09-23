@@ -1,5 +1,5 @@
 # Arm h1 -- explicit Hellinger, closest matching. 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
+# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
 #
 # THE primary arm. Derived from ..._lb32_jss_closest.yml by changing exactly loss_type
 # (plus name/tags/epochs); every model, data, shape and instrumentation key is byte-identical,
@@ -23,7 +23,7 @@
 # under `independent`, and keeping it avoids the 6-key CE-vs-direct-loss bundle confound.
 #
 # Budget: 128 epochs, not the lineage's 630. Validation cosine saturates near epoch 100
-# (docs/plans/masshatter_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
+# (docs/plans/masshatter/masshatter_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
 # buy +0.0017). Read every control at ITS epoch 128 from W&B, never at its final epoch, and
 # give only the selected objective a full-budget rerun.
 #

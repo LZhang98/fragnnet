@@ -136,7 +136,7 @@ beaten by >10% at top-1 and top-10.
 - **No fixed maximum depth.** Pathways are expanded by probability mass, with canonical graph
   hashing merging equivalent states, so the DAG grows where the model puts probability. Contrast
   with our fixed d3/d4 enumeration — this is the same axis as
-  [`bond_breakability_mask_plan`](../plans/bond_breakability_mask_plan.md) fan-out control, solved by learned expansion instead.
+  [`bond_breakability_mask_plan`](../plans/fragnnet/bond_breakability_mask_plan.md) fan-out control, solved by learned expansion instead.
 - Markovian factorization over the DAG; KL-divergence loss against the experimental spectrum;
   curriculum learning from low-mass to high-mass compounds.
 - Conditioned on global experimental metadata including collision energy.

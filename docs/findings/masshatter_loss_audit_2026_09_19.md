@@ -21,7 +21,7 @@ The objective-level semantics (JSS vs KL gradient behaviour, matching and suppor
 unmatched-intensity invariance) were already reviewed in
 [loss_setup_review_2026_09_13.md](loss_setup_review_2026_09_13.md) and are not repeated.
 Throughput context is in
-[masshatter_direct_loss_batching_plan.md](../plans/masshatter_direct_loss_batching_plan.md).
+[masshatter_direct_loss_batching_plan.md](../plans/masshatter/masshatter_direct_loss_batching_plan.md).
 
 Tests run: `tests/test_mass_shatter_peak_list_distance.py` and
 `tests/test_spec_utils_preprocessing.py` (298 passed), `tests/test_mass_shatter_pl.py`
