@@ -1,6 +1,6 @@
 # ARM c4a_complement_composition -- 4 h exploration campaign, 2026-09-21.
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml. Differs from the base by
-# exactly one key: mass_shatter_candidate_composition_features: true. Same seed as
+# exactly one list entry: c_nl_composition. Same seed as
 # c4a_base_s1, so the pair is a matched comparison.
 #
 # GLACIER intensity-head parity, eq. 14 (arXiv 2606.29161, Appendix C/D):
@@ -12,7 +12,7 @@
 #
 # Why the existing inputs do not already cover it. The head receives a mean-pooled EMBEDDING
 # of the complement's atoms, but a mean of learned atom vectors carries no exact counts, and
-# `candidate_mass_features` gives the complement's MASS only. Neutral-loss identity is a count
+# the `c_mass` entry gives the complement's MASS only. Neutral-loss identity is a count
 # question: CO (27.9949) and C2H4 (28.0313) sit in one 0.1 Da bin and differ only in formula.
 # The regression test `test_complement_composition_separates_isobaric_neutral_losses` builds
 # exactly that pair from pentan-2-one, where the two candidates are themselves near-isobaric
@@ -206,6 +206,9 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
-mass_shatter_candidate_composition_features: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+- c_nl_composition

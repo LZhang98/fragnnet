@@ -771,46 +771,28 @@ mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mech
 # told apart. This is the defect FraGNNet fixed for `boundary_pair` with CutBondEncoder, which
 # this reuses. DEFAULT since 2026-09-20; pre-existing checkpoints predate the extra parameters.
 mass_shatter_boundary_bond_encoder: True
-# Give every candidate its neutral fragment mass (log1p) and its fraction of the intact
-# precursor mass. Without these no mass, m/z or composition reaches a learned parameter at all:
-# the candidate token is otherwise pooled embeddings plus a cut count and an atom count.
-# DEFAULT since 2026-09-20; changes the intensity head's input width.
-mass_shatter_candidate_mass_features: True
-# Sum of the candidate's Gasteiger partial charges, the analogue of FraGNNet's `frag_q`.
-# Independent of the `a_charge` atom feature: `atom_gasteiger_charges` is attached to every
-# molecular graph. Molecular preprocessing caches written before 2026-09-20 lack that field and
-# must be regenerated. DEFAULT since 2026-09-20; changes the intensity head's input width.
-mass_shatter_candidate_charge_feature: True
-# Elemental composition of the candidate's complementary neutral loss (precursor formula minus
-# the candidate's own), as log1p counts over the canonical element order plus one bucket for
-# unlisted elements. This is GLACIER's psi(r_form - f_k) term (arXiv 2606.29161, eq. 14). The
-# head already sees a mean-pooled EMBEDDING of the complement's atoms, but a mean of learned
-# vectors carries no exact counts, and `mass_shatter_candidate_mass_features` gives the
-# complement's mass only -- neither separates a CO loss (27.9949) from a C2H4 loss (28.0313).
-# Off by default so it cannot ride into a running comparison; changes the intensity head's
-# input width, so a checkpoint trained with it set differently will not load.
-mass_shatter_candidate_composition_features: False
-# Summed and averaged input features of the bonds severed to make each candidate, pooled from
-# `chemical_bond_attr` (b_degree/b_ring/b_conj and any ring-topology features enabled in
-# mol_params). The boundary embedding reaches the intensity head through atom ENDPOINTS only --
-# `_boundary_embeddings` never reads the bond attributes -- and an internal atom mixes all of
-# its incident bonds into one state, so for an endpoint of degree > 1 the cut bond's own
-# attributes are not cleanly recoverable. The summed half is the multiset of broken bond types,
-# which also delivers how many cut bonds were ring bonds. Costs 2 * bond width columns on a
-# ~1,285-dim token and adds no parameters of its own. Off by default; changes the intensity
-# head's input width, so a checkpoint trained with it set differently will not load.
-mass_shatter_candidate_cut_bond_features: False
-# Per candidate, how many pairs of its cut bonds meet at a shared atom, split by whether that
-# atom is retained or lost. Two cut bonds meeting at one atom is a relation BETWEEN cuts, which
-# mean pooling over per-bond encodings destroys and which no bond feature can express: a shared
-# RETAINED atom means one atom of the fragment lost two substituents, a shared LOST atom means the
-# fragment expelled a bridging atom (the CO/CH2/S extrusion shape). Measured on MASShatter's own
-# candidates (200 molecules, scripts/debug/debug_candidate_cut_descriptors.py): 46.0% of
-# candidates share a summed cut-bond vector with one that disagrees about whether ANY cuts are
-# adjacent, against 0.0% for the ring-sharing flag -- the pooled bond sum already implies ring
-# sharing, so adjacency is the part that is genuinely missing. Two columns, no parameters, no new
-# graph field. Off by default; changes the intensity head's input width.
-mass_shatter_candidate_cut_adjacency_features: False
+# Descriptor columns appended to each candidate's intensity token, concatenated in registry
+# order regardless of the order listed here. `src/fragnnet/model/candidate_features.py` holds
+# the specs and documents what each one measures and why. An unknown or duplicated name raises
+# at model construction, which is also where the resolved layout is logged.
+#   c_cut_count       1                                bonds severed
+#   c_size            1                                log1p atom count
+#   c_mass            2                                log1p neutral mass, precursor fraction
+#   c_charge          1                                summed Gasteiger partial charges
+#   c_nl_composition  18                               log1p complement element counts
+#   c_cut_bonds       2 x edge_feature_dim             severed-bond attributes, sum then mean
+#   c_cut_adjacency   2                                adjacent cut pairs, retained then lost
+# The token also carries the pooled fragment/complement/boundary embeddings, the context vector,
+# and -- only when mass_shatter_proposal_anchored is off -- the proposal log-probability
+# columns. None of those are governed by this list.
+# `c_charge` requires atom_gasteiger_charges, absent from molecular caches written before
+# 2026-09-20; `c_nl_composition` and `c_cut_bonds` widen the token, so a checkpoint trained
+# with a different list will not load.
+mass_shatter_candidate_features:
+  - c_cut_count
+  - c_size
+  - c_mass
+  - c_charge
 # Training-only PER-ATOM dropout on each candidate's atom-membership set, applied before the
 # component pool, so the pooled fragment embedding sees a random subset of the candidate's
 # atoms. Regularizes against memorizing exact atom sets (aimed at the train->val gap, which the
@@ -934,6 +916,17 @@ mass_shatter_separate_proposal_encoder: False
 # Train only proposal selection through this zero-indexed epoch, then jointly train
 # proposal and intensity. Null keeps joint training throughout.
 mass_shatter_proposal_only_until_epoch: null
+# Early-stop the proposal branch: from this zero-indexed epoch onward its parameters stop
+# updating while the intensity branch keeps training. The validation proposal term turns at
+# epochs 26-47 where the spectrum term keeps improving to 52-120, so the two branches want
+# different horizons. Only proposal-only modules freeze -- the shared molecular and context
+# encoders keep training on the spectrum objective, so the proposal function still drifts
+# unless mass_shatter_separate_proposal_encoder is on. Null trains the proposal throughout.
+mass_shatter_proposal_frozen_from_epoch: null
+# Weight decay applied to proposal-only parameters instead of the global `weight_decay`.
+# Null keeps one decay for the whole model. Under weight_decay_exclude_norm_bias the
+# norm/bias exemption still wins, so this decays only the proposal branch's matrices.
+mass_shatter_proposal_weight_decay: null
 mass_shatter_separate_ion_mode_proposal_head: False
 # Declare the score semantics separately from head construction. The current
 # balanced-BCE proposal/support losses require these flags when their heads are enabled.

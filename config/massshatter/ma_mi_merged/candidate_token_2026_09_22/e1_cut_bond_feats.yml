@@ -1,5 +1,5 @@
 # Arm e1 -- the severed bonds' own input features in the candidate token. Differs from the
-# base by exactly one key: mass_shatter_candidate_cut_bond_features.
+# base by exactly one list entry: c_cut_bonds.
 #
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml, same seed (397623), same
 # 128-epoch box, so the pair is a matched comparison. Read c4a_base_s1 as the control; its two
@@ -220,8 +220,11 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
 
-# Arm override, the only key not in c4a_base_s1:
-mass_shatter_candidate_cut_bond_features: true
+# Arm override, the only entry not in c4a_base_s1:
+- c_cut_bonds

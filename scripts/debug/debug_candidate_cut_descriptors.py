@@ -36,7 +36,7 @@ from torch_geometric.data import Batch
 from fragnnet.frag.mass_shatter_candidates import build_mass_shatter_candidates
 from fragnnet.utils.feat_utils import get_mol_graph
 
-# The c4a_base_s1 bond feature set, which is what `mass_shatter_candidate_cut_bond_features`
+# The c4a_base_s1 bond feature set, which is what the `c_cut_bonds` candidate feature
 # pools. Atom features are irrelevant here and are kept minimal.
 NODE_FEATS = ["a_onehot"]
 EDGE_FEATS = ["b_degree", "b_ring", "b_conj"]
@@ -170,7 +170,7 @@ def main(num_molecules: int = 100) -> None:
                 {
                     "size": len(atom_set),
                     "cuts": len(cuts),
-                    # Exactly the feature `mass_shatter_candidate_cut_bond_features` sums; the
+                    # Exactly the feature the `c_cut_bonds` candidate feature sums; the
                     # mean half adds nothing once the cut count is known.
                     "cut_sum": tuple(bond_attr[cuts].sum(axis=0).tolist()),
                     "topology": topology,

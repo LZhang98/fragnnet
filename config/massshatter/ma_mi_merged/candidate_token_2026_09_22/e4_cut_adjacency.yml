@@ -1,5 +1,5 @@
-# Arm e4 -- adjacency of the cut set, alone. Differs from the base by exactly one key:
-# mass_shatter_candidate_cut_adjacency_features.
+# Arm e4 -- adjacency of the cut set, alone. Differs from the base by exactly one list entry:
+# c_cut_adjacency.
 #
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml, same seed (397623), same
 # 128-epoch box. Read c4a_base_s1 as the control; its two replicates span 0.0007 val cosine,
@@ -214,8 +214,11 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
 
-# Arm override, the only key not in c4a_base_s1:
-mass_shatter_candidate_cut_adjacency_features: true
+# Arm override, the only entry not in c4a_base_s1:
+- c_cut_adjacency

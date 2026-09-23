@@ -1,6 +1,6 @@
 # ARM c4a_bundle_off -- exploration campaign, 2026-09-21.
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml.
-# Differs from the base by: mass_shatter_candidate_mass_features, mass_shatter_candidate_charge_feature,
+# Differs from the base by: dropping c_mass and c_charge from mass_shatter_candidate_features,
 # mass_shatter_boundary_bond_encoder, and the a_charge atom feature -- all OFF.
 #
 # ALL-OFF control for the 2026-09-20 feature bundle. Every config-level component is pinned OFF.
@@ -218,5 +218,6 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: false
-mass_shatter_candidate_mass_features: false
-mass_shatter_candidate_charge_feature: false
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size

@@ -1,6 +1,6 @@
 # ARM c4d_wd10 -- 4 h exploration campaign, 2026-09-21.
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: weight_decay.
-# The candidate mass/charge feature and h-transfer-bound keys below are PINNED at their
+# The candidate feature list and h-transfer-bound keys below are PINNED at their
 # 2026-09-20 template values, not inherited, so a later default flip cannot move this
 # comparison underneath it.
 #
@@ -194,5 +194,8 @@ compute_train_auxiliary_metrics: false
 mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge

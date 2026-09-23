@@ -1,6 +1,6 @@
 # Tiny smoke config for the 2026-09-22 GLACIER-parity features, ALL of them on at once:
 #   mol_params:  a_fused_ring, b_ring_size, b_fused_ring   (the c4a_ring_topology arm)
-#   head:        mass_shatter_candidate_composition_features (the c4a_complement_composition arm)
+#   head:        c_nl_composition                          (the c4a_complement_composition arm)
 # The two production arms are single-purpose diffs from `c4a_base_s1`; this config deliberately
 # stacks both so one short run exercises every new code path: the two feature registries in
 # feat_utils.py, the widened GNN input, `_element_counts_by_group`, and the widened intensity
@@ -12,8 +12,10 @@
 #
 # Run the paired control by overriding the new keys off, which is the only difference that
 # matters here:
-#   --override mass_shatter_candidate_composition_features=False
-# (the feature lists are overridden by editing, not by CLI, since they are nested lists).
+#   --override "mass_shatter_candidate_features=[c_cut_count, c_size, c_mass, c_charge]"
+# (a CLI override is the one place the inline list form is correct; config bodies use the
+# block form. The mol_params feature lists are still edited rather than overridden, since
+# they are nested.)
 wandb_name: debug_tiny_mass_shatter_glacier_feats
 wandb_group: glacier_feature_parity_smoke
 wandb_tags: [debug, mass_shatter, glacier_parity, ring_topology_feats, complement_composition]
@@ -105,10 +107,12 @@ mass_shatter_candidate_backend: cuda
 # Pinned, not inherited: these three are what the new features sit next to in the intensity
 # token, so a later default flip must not silently change what this smoke test covers.
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
-# NEW 2026-09-22: psi(r_form - f_k), +18 columns on the intensity token.
-mass_shatter_candidate_composition_features: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+- c_nl_composition
 
 loss_type: cross_entropy
 predict_oos: false

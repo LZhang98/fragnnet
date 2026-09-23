@@ -1,10 +1,10 @@
 # Tiny smoke config for the 2026-09-22 candidate-token changes, ALL THREE on at once:
-#   mass_shatter_candidate_cut_bond_features    the severed bonds' own input features (arm e1)
-#   mass_shatter_candidate_cut_adjacency_features  cut pairs meeting at a shared atom (arm e4)
-#   mass_shatter_candidate_atom_dropout         per-atom dropout on the component pool (arms e2/e3)
+#   c_cut_bonds       the severed bonds' own input features (arm e1)
+#   c_cut_adjacency   cut pairs meeting at a shared atom (arm e4)
+#   mass_shatter_candidate_atom_dropout  per-atom dropout on the component pool (arms e2/e3)
 # The production arms in config/massshatter/ma_mi_merged/candidate_token_2026_09_22/ are
 # single-key diffs from `c4a_base_s1`; this config deliberately stacks all three so one short run
-# exercises every new code path: `_cut_bond_features`, `_cut_adjacency_features` (including the
+# exercises every new code path: the c_cut_bonds and c_cut_adjacency builders (including the
 # boundary endpoint orientation it reuses), `_candidate_atom_dropout`, and the two widened blocks
 # of the intensity token in CandidateIntensityTransformerHead.
 #
@@ -14,8 +14,7 @@
 #
 # The dropout is training-only and never empties a candidate, so it is exercised by the fit loop
 # and is inert in the validation pass; a clean run therefore covers both branches. Paired control:
-#   --override mass_shatter_candidate_cut_bond_features=False \
-#              mass_shatter_candidate_cut_adjacency_features=False \
+#   --override "mass_shatter_candidate_features=[c_cut_count, c_size, c_mass, c_charge]" \
 #              mass_shatter_candidate_atom_dropout=0.0
 wandb_name: debug_tiny_mass_shatter_cut_features
 wandb_group: candidate_token_smoke
@@ -105,14 +104,13 @@ mass_shatter_candidate_backend: cuda
 # Pinned, not inherited: these three are what the new blocks sit next to in the intensity token,
 # so a later default flip must not silently change what this smoke test covers.
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
-
-# NEW 2026-09-22, the subject of this config.
-# +18 columns on the intensity token (2 x the 9-dim bond width: sum then mean).
-mass_shatter_candidate_cut_bond_features: true
-# +2 columns: adjacent cut pairs at a retained atom, then at a lost atom.
-mass_shatter_candidate_cut_adjacency_features: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+- c_cut_bonds
+- c_cut_adjacency
 # No width change; training-only, and higher than any production arm so the restore-an-emptied-
 # candidate branch is actually exercised: 40 of 184 unique candidates on debug_tinyv4 are
 # single-atom, an expected restore rate of 0.070 per candidate at this p.

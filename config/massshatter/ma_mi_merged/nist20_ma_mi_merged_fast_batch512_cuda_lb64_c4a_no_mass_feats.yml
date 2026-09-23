@@ -1,14 +1,14 @@
 # ARM c4a_no_mass_feats -- 4 h exploration campaign, 2026-09-21.
-# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: mass_shatter_candidate_mass_features.
+# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: dropping c_mass from mass_shatter_candidate_features.
 # The candidate mass/charge feature, boundary-bond-encoder and h-transfer-bound keys below
 # are PINNED, not inherited, so a later default flip cannot move this comparison underneath
 # it. boundary_bond_encoder was NOT pinned before 2026-09-21 and silently rode the template
 # default (True) in every c4 arm; that is the defect this campaign exists to avoid.
 #
-# Ablates `mass_shatter_candidate_mass_features`, ON by default since 2026-09-20 and never
-# A/B'd. The template states that without it 'no mass, m/z or composition reaches a learned
-# parameter at all' -- the mass-blindness the architecture review called the largest gap in
-# the stack. Changes the intensity head's input width. Measures what the fix bought.
+# Drops the `c_mass` entry from `mass_shatter_candidate_features`, ON by default since
+# 2026-09-20 and never A/B'd. The template states that without it 'no mass, m/z or composition
+# reaches a learned parameter at all' -- the mass-blindness the architecture review called the
+# largest gap in the stack. Changes the intensity head's input width. Measures what the fix bought.
 #
 # HORIZON (2026-09-21): resized 630 -> 128 epochs. The horizon probe `tkkesus9` ran the full
 # 630-epoch schedule and val cosine SATURATES BY ~EPOCH 100: 0.7232@64 -> 0.7292@100 ->
@@ -202,5 +202,7 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: false
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_charge

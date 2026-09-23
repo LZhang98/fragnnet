@@ -1,12 +1,18 @@
 # MASShatter candidate features as one declared list
 
-> **Status:** PROPOSED — design only, no code written · **Updated:** 2026-09-22
+> **Status:** IMPLEMENTED 2026-09-22, untrained · **Updated:** 2026-09-22
 >
-> Replace the six per-feature boolean config keys that govern MASShatter's candidate token with
+> Replace the five per-feature boolean config keys that govern MASShatter's candidate token with
 > a single ordered list of feature names, backed by one spec table. Adding a candidate
-> descriptor should be one spec entry plus one config-list entry, not edits in nine places.
-> No checkpoints exist for any of these keys, so this carries **no compatibility burden** and
+> descriptor is now one spec entry plus one config-list entry, not edits in nine places.
+> No checkpoints exist for any of these keys, so this carried **no compatibility burden** and
 > no migration shim.
+>
+> **Landed:** new `src/fragnnet/model/candidate_features.py`; the head takes one
+> `candidate_feature_dim` and one `candidate_features` tensor; `MassShatterModel` takes
+> `candidate_features: Sequence[str]`; 33 configs rewritten; the five old keys deleted from
+> `config/template.yml`. Behaviour-preserving: all 229 MASShatter configs resolve to the token
+> they had before, 1,285 columns across the production family. Full suite 4,244 passed.
 
 ## The problem, counted
 
@@ -72,14 +78,26 @@ only in their own section, and the
 [shared-reader trap](masshatter_cut_set_features_plan.md) is the reason not to invent a nested
 `mass_shatter_params:` mapping for it.
 
+**The name keeps the `mass_shatter_` prefix.** A bare `candidate_features` is the shorter read,
+but `config/template.yml` is one flat schema shared by every model, and FraGNNet already declares
+`candidate_ion_head`, `candidate_ion_formula_features`, `candidate_ion_neutral_loss_features`,
+`candidate_ion_chunk_size` and `candidate_ion_checkpoint` unprefixed in its own section. An
+unprefixed `candidate_features` beside them reads as "the candidate features" for either model.
+The prefix is also what `test_config_templates.py` keys its section rule on: an unprefixed key in
+a model section has to be added to `MODEL_SECTIONS`, whose comment says that is "the moment to
+ask whether it should be prefixed instead". Dropping the prefix is one line in that tuple if
+preferred.
+
 Consequences worth stating:
 
 - `deep_update` replaces a list wholesale rather than merging it, so an arm config declares the
   **whole** token. The campaign diff stays one key, and reading the config tells you the token
   without cross-referencing five booleans against the template defaults.
-- `--override mass_shatter_candidate_features='[c_cut_count, c_size]'` parses through the
+- A CLI override is the one place the inline form is unavoidable:
+  `--override "mass_shatter_candidate_features=[c_cut_count, c_size]"` parses through the
   existing `yaml.safe_load` override path, replacing the three-line `--override` recipe in
-  `config/debug/debug_tiny_mass_shatter_cut_features.yml`.
+  `config/debug/debug_tiny_mass_shatter_cut_features.yml`. Config files always use the
+  block form.
 - `find_unknown_config_keys` does not inspect list contents, so a misspelled entry must raise at
   model construction. That is the right place: the error can name the known features.
 
@@ -94,7 +112,12 @@ mass_shatter_candidate_cut_bond_features: true
 
 # after
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_features: [c_cut_count, c_size, c_mass, c_charge, c_cut_bonds]
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+- c_cut_bonds
 ```
 
 ### 2. One spec table, in one new module
@@ -130,7 +153,7 @@ class CandidateFeatureInputs:
 @dataclass(frozen=True)
 class CandidateFeatureSpec:
     name: str
-    width: Callable[[CandidateFeatureDims], int]
+    width: Callable[[int], int]             # given the precursor bond-feature width
     build: Callable[[CandidateFeatureInputs], th.Tensor]
     requires: tuple[str, ...] = ()          # graph fields the builder reads
 
@@ -203,7 +226,7 @@ are not list-governed named explicitly, so the next reader does not have to redi
 | `c_size` | 1 | unconditional column | `log1p(component_sizes)` |
 | `c_mass` | 2 | `mass_shatter_candidate_mass_features` | `log1p(neutral mass)`, precursor fraction |
 | `c_charge` | 1 | `mass_shatter_candidate_charge_feature` | summed Gasteiger charges |
-| `c_nl_composition` | `len(CANONICAL_ELEMENT_ORDER) + 1` | `..._composition_features` | `log1p` complement element counts |
+| `c_nl_composition` | `len(CANONICAL_ELEMENT_ORDER) + 1` = 18 | `..._composition_features` | `log1p` complement element counts |
 | `c_cut_bonds` | `2 * edge_feature_dim` | `..._cut_bond_features` | summed + averaged `chemical_bond_attr` |
 | `c_cut_adjacency` | 2 | `..._cut_adjacency_features` | adjacent cut pairs, retained / lost |
 | `c_free_valence` | 1 | *(not built)* | [cut-set plan item D](masshatter_cut_set_features_plan.md), `atom_free_valence_slots` |
@@ -223,15 +246,24 @@ Order is the registry tuple, so two configs listing the same features in differe
 bit-identical tokens.
 
 Declare the registry in today's append order so the production token is unchanged:
-`[c_cut_count, c_size, c_mass, c_charge]` → 5 columns → 3×384 + 128 + 5 = **1,285** at the
+`c_cut_count`, `c_size`, `c_mass`, `c_charge` → 5 columns → 3×384 + 128 + 5 = **1,285** at the
 `c4a_base_s1` geometry, the same width and the same column order as the current base. The
 in-flight `e1`–`e5` arms keep their widths too.
 
-One order does change: with `use_base_probability_feature` on (a `proposal_anchored: false`
-lineage, none currently running), the proposal columns today sit *between* `size` and `mass`,
-and afterwards they precede the whole descriptor block. A permuted concatenation into one
-`nn.Linear` is equivalent up to a weight permutation, so this affects only which random init a
-given seed draws. Worth one line in the module docstring; not worth preserving.
+One order does change. `c_cut_count` and `c_size` used to sit immediately after the context and
+*ahead* of the proposal-derived columns (the per-mask component count and the base charge/mask
+log-probabilities), while every other descriptor sat after them; the whole descriptor block now
+follows those columns. That is visible whenever `mass_shatter_unique_fragment_mode` or
+`mass_shatter_proposal_anchored` is False.
+
+**Corrected 2026-09-22, after the review:** the plan first said "none currently running", which
+is true of the `ma_mi` lineage — every arm there pins both keys True — but false of the
+repository. Both flags are `config/template.yml` **defaults**, so
+`config/debug/debug_tiny_mass_shatter.yml` and `config/nist20_merged_inchikey/mass_shatter/s0.yml`
+inherit them and do reach the reordered token. Concatenating into one `nn.Linear` makes this a
+permutation of weight columns: it changes which weight a given seed initializes and nothing
+else, and no checkpoint predates it. Stated precisely in the module docstring rather than
+preserved.
 
 ### 7. Validation
 
@@ -258,7 +290,7 @@ nothing is added to `migrate_legacy_hparams`. A stale config then fails
 
 | Site | Count | Change |
 |---|---:|---|
-| `config/template.yml` | 5 keys out, 1 in | list default `[c_cut_count, c_size, c_mass, c_charge]` |
+| `config/template.yml` | 5 keys out, 1 in | list default `c_cut_count`, `c_size`, `c_mass`, `c_charge` |
 | configs setting mass/charge | 32 | two or three lines → one list |
 | configs setting composition / cut-bond / cut-adjacency | 3 / 4 / 4 (overlapping) | one extra list entry |
 | `mass_shatter_pl.py` | 1 | five passthroughs → one |
@@ -324,7 +356,7 @@ YAML documents the key and the catalogue, per the
 #   c_size            1                                log1p atom count
 #   c_mass            2                                log1p neutral mass, precursor fraction
 #   c_charge          1                                summed Gasteiger partial charges
-#   c_nl_composition  19                               log1p complement element counts
+#   c_nl_composition  18                               log1p complement element counts
 #   c_cut_bonds       2 x edge_feature_dim (18 here)   severed-bond attributes, sum then mean
 #   c_cut_adjacency   2                                adjacent cut pairs, retained then lost
 # The token also carries the pooled fragment/complement/boundary embeddings, the context vector,
@@ -333,7 +365,11 @@ YAML documents the key and the catalogue, per the
 # `c_charge` requires atom_gasteiger_charges, absent from molecular caches written before
 # 2026-09-20; `c_nl_composition` and `c_cut_bonds` widen the token, so a checkpoint trained with
 # a different list will not load.
-mass_shatter_candidate_features: [c_cut_count, c_size, c_mass, c_charge]
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
 ```
 
 ### `nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml` — the control
@@ -346,7 +382,11 @@ mass_shatter_candidate_charge_feature: true
 
 # after
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_features: [c_cut_count, c_size, c_mass, c_charge]
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
 ```
 
 Both resolve to the same 5 descriptor columns and the same 1,285-wide token. The list is
@@ -369,7 +409,12 @@ mass_shatter_candidate_cut_bond_features: true
 mass_shatter_boundary_bond_encoder: true
 
 # Arm override: the only list entry not in c4a_base_s1 (+18 columns, token 1,303).
-mass_shatter_candidate_features: [c_cut_count, c_size, c_mass, c_charge, c_cut_bonds]
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+- c_cut_bonds
 ```
 
 ### `e5_cut_bond_plus_adjacency.yml` — the stacked arm
@@ -385,14 +430,20 @@ mass_shatter_candidate_features:
 - c_cut_adjacency
 ```
 
-Flow and block style are equivalent; block style earns its place once an arm adds more than one
-entry, because the git diff then shows one added line per added feature.
+One entry per line throughout, never the inline `[a, b]` form: the git diff then shows one
+added line per added feature, and an arm's entire difference from its control is a single
+`+ c_cut_bonds` line.
 
 ### `c4a_complement_composition.yml`
 
 ```yaml
 # Arm override: GLACIER's psi(r_form - f_k) term (+19 columns, token 1,304).
-mass_shatter_candidate_features: [c_cut_count, c_size, c_mass, c_charge, c_nl_composition]
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+- c_nl_composition
 ```
 
 ### `config/debug/debug_tiny_mass_shatter_cut_features.yml` — the smoke config
@@ -431,4 +482,5 @@ mass_shatter_candidate_atom_dropout: 0.3
 ```
 
 The `--override` value passes through the existing `yaml.safe_load` in `load_config`, so the
-quoted flow list parses without any new parsing code.
+quoted inline list parses without any new parsing code. It is the only place an inline list
+appears; every config file writes the block form.

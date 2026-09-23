@@ -541,11 +541,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         separate_ion_h_support_head: bool = False,
         predict_oos: bool = False,
         initial_oos_probability: float = 0.1,
-        use_mass_features: bool = False,
-        use_charge_feature: bool = False,
-        composition_feature_dim: int = 0,
-        cut_bond_feature_dim: int = 0,
-        cut_adjacency_feature_dim: int = 0,
+        candidate_feature_dim: int = 0,
         unique_fragment_tokens: bool = False,
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
@@ -593,12 +589,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
         if not math.isfinite(initial_oos_probability) or not (0.0 < initial_oos_probability < 1.0):
             raise ValueError("initial_oos_probability must be finite and in (0, 1)")
-        if composition_feature_dim < 0:
-            raise ValueError("composition_feature_dim must be nonnegative")
-        if cut_bond_feature_dim < 0:
-            raise ValueError("cut_bond_feature_dim must be nonnegative")
-        if cut_adjacency_feature_dim < 0:
-            raise ValueError("cut_adjacency_feature_dim must be nonnegative")
+        if candidate_feature_dim < 0:
+            raise ValueError("candidate_feature_dim must be nonnegative")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -607,27 +599,19 @@ class CandidateIntensityTransformerHead(nn.Module):
         self.use_base_probability_feature = use_base_probability_feature
         self.attention_type = attention_type
         self.predict_oos = predict_oos
-        self.use_mass_features = use_mass_features
-        self.use_charge_feature = use_charge_feature
-        self.composition_feature_dim = composition_feature_dim
-        self.cut_bond_feature_dim = cut_bond_feature_dim
-        self.cut_adjacency_feature_dim = cut_adjacency_feature_dim
+        # Descriptor columns the caller builds from the resolved `candidate_features` specs;
+        # the head needs only their total width, and zero means the token carries no descriptor
+        # block at all.
+        self.candidate_feature_dim = candidate_feature_dim
         # In unique-fragment mode every token is its own mask, so the per-mask component count is
         # 1 everywhere and the caller has no separate charge factor to report. Both inputs are
         # then constants and are dropped rather than projected.
         self.unique_fragment_tokens = unique_fragment_tokens
-        input_dim = 3 * fragment_embedding_dim + context_dim + 2
+        input_dim = 3 * fragment_embedding_dim + context_dim + candidate_feature_dim
         if not unique_fragment_tokens:
             input_dim += 1
         if use_base_probability_feature:
             input_dim += 1 if unique_fragment_tokens else 2
-        if use_mass_features:
-            input_dim += 2
-        if use_charge_feature:
-            input_dim += 1
-        input_dim += composition_feature_dim
-        input_dim += cut_bond_feature_dim
-        input_dim += cut_adjacency_feature_dim
         self.input_projection = nn.Sequential(
             nn.Linear(input_dim, model_dim),
             nn.SiLU(),
@@ -855,8 +839,6 @@ class CandidateIntensityTransformerHead(nn.Module):
         fragment_embeddings: th.Tensor,
         complement_embeddings: th.Tensor,
         boundary_embeddings: th.Tensor,
-        cut_counts: th.Tensor,
-        component_sizes: th.Tensor,
         charge_log_probabilities: th.Tensor,
         mask_log_probabilities: th.Tensor,
         component_batch_indices: th.Tensor,
@@ -868,11 +850,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         return_support_logits: bool = False,
         component_neutral_masses: th.Tensor | None = None,
         ce_features: th.Tensor | None = None,
-        mass_features: th.Tensor | None = None,
-        charge_feature: th.Tensor | None = None,
-        composition_features: th.Tensor | None = None,
-        cut_bond_features: th.Tensor | None = None,
-        cut_adjacency_features: th.Tensor | None = None,
+        candidate_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule."""
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
@@ -885,16 +863,9 @@ class CandidateIntensityTransformerHead(nn.Module):
                 "fragment, complement, and boundary embeddings must have matching "
                 f"shape (num_components, {self.fragment_embedding_dim})"
             )
-        scalar_features = (
-            cut_counts,
-            component_sizes,
-            charge_log_probabilities,
-            mask_log_probabilities,
-        )
+        scalar_features = (charge_log_probabilities, mask_log_probabilities)
         if any(feature.shape != (num_components,) for feature in scalar_features):
             raise ValueError("candidate scalar features must contain one value per component")
-        if component_sizes.dtype != th.long:
-            raise ValueError("component_sizes must have dtype torch.long")
         if component_mask_indices.shape != (num_components,):
             raise ValueError("component_mask_indices must contain one index per component")
         if component_mask_indices.dtype != th.long:
@@ -919,65 +890,22 @@ class CandidateIntensityTransformerHead(nn.Module):
         elif context is None or context.shape != (num_components, self.context_dim):
             raise ValueError(f"context must have shape ({num_components}, {self.context_dim})")
 
-        if self.use_mass_features != (mass_features is not None):
-            raise ValueError("mass_features must be supplied exactly when use_mass_features is on")
-        if self.use_charge_feature != (charge_feature is not None):
+        if (self.candidate_feature_dim > 0) != (candidate_features is not None):
             raise ValueError(
-                "charge_feature must be supplied exactly when use_charge_feature is on"
+                "candidate_features must be supplied exactly when candidate_feature_dim is positive"
             )
-        if mass_features is not None and mass_features.shape != (num_components, 2):
-            raise ValueError(f"mass_features must have shape ({num_components}, 2)")
-        if charge_feature is not None and charge_feature.shape != (num_components,):
-            raise ValueError("charge_feature must contain one value per component")
-        if (self.composition_feature_dim > 0) != (composition_features is not None):
-            raise ValueError(
-                "composition_features must be supplied exactly when "
-                "composition_feature_dim is positive"
-            )
-        if composition_features is not None and composition_features.shape != (
+        if candidate_features is not None and candidate_features.shape != (
             num_components,
-            self.composition_feature_dim,
+            self.candidate_feature_dim,
         ):
             raise ValueError(
-                f"composition_features must have shape ({num_components}, "
-                f"{self.composition_feature_dim})"
-            )
-        if (self.cut_bond_feature_dim > 0) != (cut_bond_features is not None):
-            raise ValueError(
-                "cut_bond_features must be supplied exactly when cut_bond_feature_dim "
-                "is positive"
-            )
-        if cut_bond_features is not None and cut_bond_features.shape != (
-            num_components,
-            self.cut_bond_feature_dim,
-        ):
-            raise ValueError(
-                f"cut_bond_features must have shape ({num_components}, "
-                f"{self.cut_bond_feature_dim})"
-            )
-        if (self.cut_adjacency_feature_dim > 0) != (cut_adjacency_features is not None):
-            raise ValueError(
-                "cut_adjacency_features must be supplied exactly when "
-                "cut_adjacency_feature_dim is positive"
-            )
-        if cut_adjacency_features is not None and cut_adjacency_features.shape != (
-            num_components,
-            self.cut_adjacency_feature_dim,
-        ):
-            raise ValueError(
-                f"cut_adjacency_features must have shape ({num_components}, "
-                f"{self.cut_adjacency_feature_dim})"
+                f"candidate_features must have shape ({num_components}, "
+                f"{self.candidate_feature_dim})"
             )
 
         features = [*embeddings]
         if context is not None:
             features.append(context)
-        features.extend(
-            (
-                cut_counts.to(fragment_embeddings).unsqueeze(1),
-                th.log1p(component_sizes.to(fragment_embeddings)).unsqueeze(1),
-            )
-        )
         if not self.unique_fragment_tokens:
             features.append(
                 th.log1p(
@@ -988,16 +916,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             if not self.unique_fragment_tokens:
                 features.append(charge_log_probabilities.to(fragment_embeddings).unsqueeze(1))
             features.append(mask_log_probabilities.to(fragment_embeddings).unsqueeze(1))
-        if mass_features is not None:
-            features.append(mass_features.to(fragment_embeddings))
-        if charge_feature is not None:
-            features.append(charge_feature.to(fragment_embeddings).unsqueeze(1))
-        if composition_features is not None:
-            features.append(composition_features.to(fragment_embeddings))
-        if cut_bond_features is not None:
-            features.append(cut_bond_features.to(fragment_embeddings))
-        if cut_adjacency_features is not None:
-            features.append(cut_adjacency_features.to(fragment_embeddings))
+        if candidate_features is not None:
+            features.append(candidate_features.to(fragment_embeddings))
         tokens = self.input_projection(th.cat(features, dim=1))
         if self.ce_conditioned != (ce_features is not None):
             raise ValueError(

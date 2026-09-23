@@ -138,8 +138,6 @@ def test_support_and_oos_logits_have_distinct_output_slots() -> None:
         th.randn(2, 4),
         th.randn(2, 4),
         th.randn(2, 4),
-        th.tensor([1, 1]),
-        th.tensor([2, 2]),
         th.zeros(2),
         th.zeros(2),
         th.tensor([0, 0]),
@@ -175,8 +173,6 @@ def test_candidate_intensity_transformer_is_permutation_equivariant(
     fragment_embeddings = th.randn(7, 6)
     complement_embeddings = th.randn(7, 6)
     boundary_embeddings = th.randn(7, 6)
-    cut_counts = th.tensor([1, 2, 1, 3, 2, 1, 2])
-    component_sizes = th.tensor([2, 3, 1, 4, 2, 1, 3])
     charge_log_probabilities = th.randn(7)
     mask_log_probabilities = th.randn(7)
     component_batch_indices = th.tensor([0, 0, 0, 1, 1, 1, 1])
@@ -188,8 +184,6 @@ def test_candidate_intensity_transformer_is_permutation_equivariant(
         fragment_embeddings,
         complement_embeddings,
         boundary_embeddings,
-        cut_counts,
-        component_sizes,
         charge_log_probabilities,
         mask_log_probabilities,
         component_batch_indices,
@@ -202,8 +196,6 @@ def test_candidate_intensity_transformer_is_permutation_equivariant(
         fragment_embeddings[permutation],
         complement_embeddings[permutation],
         boundary_embeddings[permutation],
-        cut_counts[permutation],
-        component_sizes[permutation],
         charge_log_probabilities[permutation],
         mask_log_probabilities[permutation],
         component_batch_indices[permutation],
@@ -241,8 +233,6 @@ def test_candidate_intensity_transformer_backpropagates() -> None:
         fragment_embeddings,
         th.randn(5, 4),
         th.randn(5, 4),
-        th.tensor([1, 2, 1, 2, 3]),
-        th.tensor([2, 3, 1, 2, 4]),
         th.randn(5),
         th.randn(5),
         th.tensor([0, 0, 1, 1, 1]),
@@ -279,8 +269,6 @@ def test_candidate_intensity_transformer_can_exclude_base_probability_feature() 
         th.randn(4, 4),
         th.randn(4, 4),
         th.randn(4, 4),
-        th.tensor([1, 2, 1, 2]),
-        th.tensor([2, 3, 1, 2]),
     )
     component_batch_indices = th.tensor([0, 0, 0, 0])
     component_mask_indices = th.tensor([0, 0, 1, 2])
@@ -304,7 +292,7 @@ def test_candidate_intensity_transformer_can_exclude_base_probability_feature() 
         num_masks=3,
     )
 
-    assert head.input_projection[0].in_features == 3 * 4 + 3
+    assert head.input_projection[0].in_features == 3 * 4 + 1
     for baseline_output, perturbed_output in zip(baseline, perturbed, strict=True):
         assert th.allclose(baseline_output, perturbed_output)
 
@@ -405,8 +393,6 @@ def test_candidate_intensity_transformer_isolates_molecules(
     common_args = (
         complement_embeddings,
         boundary_embeddings,
-        th.tensor([1, 2, 1, 2, 3]),
-        th.tensor([2, 3, 1, 2, 4]),
         th.randn(5),
         th.randn(5),
         th.tensor([0, 0, 1, 1, 1]),

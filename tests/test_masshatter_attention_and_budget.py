@@ -40,8 +40,6 @@ def _head_inputs(num_components: int = 4) -> tuple:
         th.randn(num_components, 4),
         th.randn(num_components, 4),
         th.randn(num_components, 4),
-        th.tensor([1, 2, 1, 3][:num_components]),
-        th.tensor([2, 3, 4, 2][:num_components]),
         th.zeros(num_components),
         th.zeros(num_components),
         th.zeros(num_components, dtype=th.long),

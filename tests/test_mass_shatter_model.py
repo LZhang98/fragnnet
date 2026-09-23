@@ -1,5 +1,6 @@
 """End-to-end tests for the first trainable MASShatter model slice."""
 
+from collections.abc import Sequence
 from dataclasses import replace
 
 import numpy as np
@@ -85,11 +86,7 @@ def _build_model(
     candidate_backend: str = "cpu",
     proposal_method: str = "cut_masks",
     boundary_bond_encoder: bool = False,
-    candidate_mass_features: bool = False,
-    candidate_charge_feature: bool = False,
-    candidate_composition_features: bool = False,
-    candidate_cut_bond_features: bool = False,
-    candidate_cut_adjacency_features: bool = False,
+    candidate_features: Sequence[str] = ("c_cut_count", "c_size"),
     candidate_atom_dropout: float = 0.0,
 ) -> MassShatterModel:
     th.manual_seed(903)
@@ -161,11 +158,7 @@ def _build_model(
         candidate_backend=candidate_backend,
         proposal_method=proposal_method,
         boundary_bond_encoder=boundary_bond_encoder,
-        candidate_mass_features=candidate_mass_features,
-        candidate_charge_feature=candidate_charge_feature,
-        candidate_composition_features=candidate_composition_features,
-        candidate_cut_bond_features=candidate_cut_bond_features,
-        candidate_cut_adjacency_features=candidate_cut_adjacency_features,
+        candidate_features=candidate_features,
         candidate_atom_dropout=candidate_atom_dropout,
     )
 

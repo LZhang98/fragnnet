@@ -28,6 +28,7 @@ from fragnnet.frag.mass_shatter_templates import (
     build_mass_shatter_templates,
 )
 from fragnnet.model import MassShatterModel
+from fragnnet.model.candidate_features import describe_candidate_features
 from fragnnet.model.candidate_support import (
     balanced_binary_support_loss as _balanced_binary_support_loss,
 )
@@ -891,6 +892,7 @@ class MassShatterPL(SpectrumPL):
                     "mass_shatter_proposal_only_until_epoch requires a positive "
                     "mass_shatter_proposal_loss_weight"
                 )
+        self._check_proposal_early_stop_params(proposal_only_until_epoch)
         legacy_oos_enabled = (
             self.hparams.predict_oos
             or self.hparams.oos_loss
@@ -1070,21 +1072,72 @@ class MassShatterPL(SpectrumPL):
             charge_pooling=self.hparams.mass_shatter_charge_pooling,
             use_smarts_templates=self.hparams.mass_shatter_smarts_templates,
             boundary_bond_encoder=self.hparams.mass_shatter_boundary_bond_encoder,
-            candidate_mass_features=self.hparams.mass_shatter_candidate_mass_features,
-            candidate_charge_feature=self.hparams.mass_shatter_candidate_charge_feature,
             intensity_escape=self.hparams.mass_shatter_intensity_escape,
-            candidate_composition_features=(
-                self.hparams.mass_shatter_candidate_composition_features
-            ),
-            candidate_cut_bond_features=self.hparams.mass_shatter_candidate_cut_bond_features,
-            candidate_cut_adjacency_features=(
-                self.hparams.mass_shatter_candidate_cut_adjacency_features
-            ),
+            candidate_features=self.hparams.mass_shatter_candidate_features,
             candidate_atom_dropout=self.hparams.mass_shatter_candidate_atom_dropout,
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
+        logger.info(
+            "Resolved MASShatter candidate token: %s",
+            describe_candidate_features(
+                self.model.candidate_feature_specs,
+                edge_feature_dim,
+            ),
+        )
         self._proposal_only_training = False
         self._check_ce_params()
+
+    def _check_proposal_early_stop_params(self, proposal_only_until_epoch: int | None) -> None:
+        """Validate the proposal early-stop epoch and the proposal-only weight decay.
+
+        Args:
+            proposal_only_until_epoch: The already-validated proposal warm-up boundary, used
+                only to reject combining the warm-up with the early stop.
+
+        Raises:
+            ValueError: If either hyperparameter is outside its domain, or the early stop is
+                requested for a configuration where freezing the proposal branch would also
+                change what the intensity branch optimizes.
+        """
+        frozen_from_epoch = self.hparams.mass_shatter_proposal_frozen_from_epoch
+        if frozen_from_epoch is not None and (
+            isinstance(frozen_from_epoch, bool)
+            or not isinstance(frozen_from_epoch, int)
+            or frozen_from_epoch < 0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_frozen_from_epoch must be null or a nonnegative integer"
+            )
+        if frozen_from_epoch is not None:
+            if not self.hparams.mass_shatter_proposal_selection_only:
+                # Outside selection-only mode the proposal probabilities multiply into the
+                # spectrum, so the primary loss keeps pulling on the proposal heads and
+                # freezing them would change the intensity path rather than early-stop one
+                # objective.
+                raise ValueError(
+                    "mass_shatter_proposal_frozen_from_epoch requires "
+                    "mass_shatter_proposal_selection_only=True"
+                )
+            if self.hparams.mass_shatter_proposal_loss_weight <= 0.0:
+                raise ValueError(
+                    "mass_shatter_proposal_frozen_from_epoch requires a positive "
+                    "mass_shatter_proposal_loss_weight"
+                )
+            if proposal_only_until_epoch is not None:
+                raise ValueError(
+                    "mass_shatter_proposal_frozen_from_epoch and "
+                    "mass_shatter_proposal_only_until_epoch cannot be combined"
+                )
+        proposal_weight_decay = self.hparams.mass_shatter_proposal_weight_decay
+        if proposal_weight_decay is not None and (
+            isinstance(proposal_weight_decay, bool)
+            or not isinstance(proposal_weight_decay, (int, float))
+            or not math.isfinite(proposal_weight_decay)
+            or proposal_weight_decay < 0.0
+        ):
+            raise ValueError(
+                "mass_shatter_proposal_weight_decay must be null or a finite nonnegative float"
+            )
 
     def _proposal_modules(self) -> tuple[th.nn.Module, ...]:
         """Return modules whose outputs determine proposal candidate selection."""
@@ -1103,6 +1156,37 @@ class MassShatterPL(SpectrumPL):
             self.model.mechanism_head,
         )
         return tuple(module for module in modules if module is not None)
+
+    def _proposal_branch_modules(self) -> tuple[th.nn.Module, ...]:
+        """Return the modules that only the proposal branch uses.
+
+        This is ``_proposal_modules`` without the two encoders the intensity branch shares.
+        Freezing or re-decaying ``precursor_encoder`` and ``context_encoder`` would change
+        what the spectrum objective optimizes, which neither the proposal early stop nor the
+        proposal weight decay intends. ``proposal_encoder`` appears only when
+        ``separate_proposal_encoder`` gives the proposal its own GNN, where it is
+        proposal-only by construction.
+        """
+        modules = (
+            self.model.proposal_encoder,
+            self.model.bond_break_head,
+            self.model.proposal_mixture_head,
+            self.model.charge_head if self.model.proposal_method == "cut_masks" else None,
+            self.model.ion_mode_proposal_head,
+            self.model.mechanism_head,
+        )
+        return tuple(module for module in modules if module is not None)
+
+    def _weight_decay_overrides(self) -> dict[int, float]:
+        """Give proposal-only parameters their own weight decay when one is configured."""
+        proposal_weight_decay = self.hparams.mass_shatter_proposal_weight_decay
+        if proposal_weight_decay is None:
+            return {}
+        return {
+            id(parameter): float(proposal_weight_decay)
+            for module in self._proposal_branch_modules()
+            for parameter in module.parameters()
+        }
 
     def _intensity_modules(self) -> tuple[th.nn.Module, ...]:
         """Return modules trained by the final spectrum-intensity objective."""
@@ -1150,10 +1234,32 @@ class MassShatterPL(SpectrumPL):
         else:
             self._set_modules_trainable(self._intensity_modules(), trainable=True)
 
+    def _apply_proposal_early_stop(self, epoch: int) -> None:
+        """Stop updating the proposal branch from its configured epoch onward.
+
+        The validation proposal term turns at epochs 26-47 while the spectrum term keeps
+        improving to epoch 52-120, so the branches want different horizons; this holds the
+        proposal at the epoch it stops generalizing and lets the intensity head train on.
+        Only proposal-only modules freeze. ``mass_shatter_proposal_selection_only`` is
+        required, so the proposal reads detached inputs and its term contributes no gradient
+        anywhere once these parameters are frozen -- the loss is left unchanged, and the
+        logged ``proposal_loss`` stays comparable across the boundary. The shared encoders
+        keep training on the spectrum objective, so the proposal *function* still drifts
+        unless ``separate_proposal_encoder`` gives it its own GNN.
+        """
+        frozen_from_epoch = self.hparams.mass_shatter_proposal_frozen_from_epoch
+        if frozen_from_epoch is None:
+            return
+        self._set_modules_trainable(
+            self._proposal_branch_modules(),
+            trainable=epoch < frozen_from_epoch,
+        )
+
     def on_train_epoch_start(self) -> None:
         """Seed the loader and apply the configured staged-training phase."""
         super().on_train_epoch_start()
         self._apply_staged_training(self.current_epoch)
+        self._apply_proposal_early_stop(self.current_epoch)
 
     def _setup_loss_fn(self) -> None:
         """Configure legacy CE or a direct clustered peak-list objective.

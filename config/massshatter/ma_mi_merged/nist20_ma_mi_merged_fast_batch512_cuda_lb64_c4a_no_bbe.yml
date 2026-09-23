@@ -207,5 +207,8 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: false
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge

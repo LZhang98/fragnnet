@@ -212,9 +212,12 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
 
-# Arm overrides, the two keys not in c4a_base_s1 (this arm is the stack):
-mass_shatter_candidate_cut_bond_features: true
-mass_shatter_candidate_cut_adjacency_features: true
+# Arm overrides, the two entries not in c4a_base_s1 (this arm is the stack):
+- c_cut_bonds
+- c_cut_adjacency

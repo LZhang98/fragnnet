@@ -67,6 +67,14 @@ from fragnnet.model.bond_fragment_heads import (
     pool_boundary_bond_embeddings,
     pool_component_and_complement_embeddings,
 )
+from fragnnet.model.candidate_features import (
+    CandidateFeatureInputs,
+    build_candidate_features,
+    candidate_feature_required_graph_fields,
+    candidate_feature_width,
+    component_neutral_masses,
+    resolve_candidate_features,
+)
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN
 from fragnnet.utils.formula_utils import (
@@ -78,7 +86,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
 )
-from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER, CANONICAL_H_IDX
+from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
 from fragnnet.utils.spec_utils import weighted_mean_by_batch
 
 
@@ -129,103 +137,6 @@ def _mean_values_by_batch(
         "every spectrum must have at least one CE value",
     )
     return sums / counts
-
-
-def _per_atom_neutral_masses(mol_pyg: Batch) -> th.Tensor:
-    """Return each atom's monoisotopic mass including its implicit hydrogens."""
-    return mol_pyg.atom_monoisotopic_masses + (
-        mol_pyg.atom_hydrogen_counts.to(mol_pyg.atom_monoisotopic_masses) * H_MASS
-    )
-
-
-def _component_neutral_masses(
-    mol_pyg: Batch,
-    atom_indices: th.Tensor,
-    atom_component_indices: th.Tensor,
-    num_components: int,
-) -> th.Tensor:
-    """Sum neutral elemental masses over each component's atoms.
-
-    Args:
-        mol_pyg: Batched precursor graphs carrying the chemistry fields.
-        atom_indices: Atom index of each membership entry.
-        atom_component_indices: Component index of each membership entry.
-        num_components: Number of components.
-
-    Returns:
-        Neutral fragment mass per component, shape ``(num_components,)``.
-    """
-    per_atom = _per_atom_neutral_masses(mol_pyg)
-    return per_atom.new_zeros(num_components).index_add(
-        0,
-        atom_component_indices,
-        per_atom[atom_indices],
-    )
-
-
-def _precursor_neutral_masses(mol_pyg: Batch, batch_size: int) -> th.Tensor:
-    """Return the intact neutral mass of every precursor in the batch."""
-    per_atom = _per_atom_neutral_masses(mol_pyg)
-    return per_atom.new_zeros(batch_size).index_add(0, mol_pyg.batch, per_atom)
-
-
-# Element vocabulary for composition features: the canonical order plus one shared column for
-# anything outside it, matching the unknown bucket ``a_onehot`` gives unlisted elements.
-COMPOSITION_FEATURE_DIM = len(CANONICAL_ELEMENT_ORDER) + 1
-
-
-def _element_counts_by_group(
-    mol_pyg: Batch,
-    atom_indices: th.Tensor,
-    group_indices: th.Tensor,
-    num_groups: int,
-    element_columns: th.Tensor,
-    num_columns: int,
-    hydrogen_column: int,
-) -> th.Tensor:
-    """Count elements per group of atoms, hydrogens included.
-
-    Groups are components when called with a component-membership relation and molecules
-    when called with ``mol_pyg.batch``, so the same reduction produces both a fragment
-    composition and its precursor composition.
-
-    Hydrogen is counted twice over, exactly as the channel-validity routine counts it: an
-    explicit H atom contributes through its own atomic number, and every heavy atom
-    contributes its implicit hydrogen count.
-
-    Args:
-        mol_pyg: Batched precursor graphs carrying the per-atom chemistry fields.
-        atom_indices: Atom index of each membership entry.
-        group_indices: Group index of each membership entry.
-        num_groups: Number of groups.
-        element_columns: Lookup from atomic number to column, sized to cover every atomic
-            number the graphs can carry; unknown elements share the final column.
-        num_columns: Number of element columns, one past the largest value in
-            ``element_columns``. Passed rather than read off the tensor, which would cost a
-            device synchronization on every batch.
-        hydrogen_column: Column holding hydrogen counts.
-
-    Returns:
-        Element counts of shape ``(num_groups, num_columns)``.
-    """
-    atomic_numbers = mol_pyg.atom_atomic_numbers[atom_indices]
-    membership_columns = element_columns[atomic_numbers]
-    counts = th.zeros(
-        num_groups * num_columns,
-        dtype=th.long,
-        device=atom_indices.device,
-    )
-    counts.index_add_(
-        0,
-        group_indices * num_columns + membership_columns,
-        th.ones_like(membership_columns),
-    )
-    counts.index_add_(
-        0,
-        group_indices * num_columns + hydrogen_column,
-        mol_pyg.atom_hydrogen_counts[atom_indices].long(),
-    )
-    return counts.view(num_groups, num_columns)
 
 
 def _relative_fragment_keep_mask(
@@ -991,7 +902,6 @@ class MassShatterModel(nn.Module):
         use_smarts_templates: bool,
         context_in_gnn: bool = False,
         boundary_bond_encoder: bool = False,
-        candidate_mass_features: bool = False,
         intensity_norm_placement: str = "post",
         intensity_qk_norm: bool = False,
         intensity_mass_pair_bias: bool = False,
@@ -999,11 +909,8 @@ class MassShatterModel(nn.Module):
         intensity_ce_film: bool = False,
         bond_endpoint_aggregation: str = "mean",
         gnn_residual_activation: str = "relu",
-        candidate_charge_feature: bool = False,
         intensity_escape: bool = False,
-        candidate_composition_features: bool = False,
-        candidate_cut_bond_features: bool = False,
-        candidate_cut_adjacency_features: bool = False,
+        candidate_features: Sequence[str] = ("c_cut_count", "c_size"),
         candidate_atom_dropout: float = 0.0,
     ) -> None:
         """Initialize the MASShatter model.
@@ -1130,35 +1037,16 @@ class MassShatterModel(nn.Module):
                 average is degenerate: it collapses to half the mean inside plus half the mean
                 outside atom, so which atom was bonded to which is discarded and the retained
                 and lost sides are indistinguishable.
-            candidate_mass_features: Give each candidate its neutral fragment mass
-                (``log1p``) and its fraction of the intact precursor mass. Without these the
-                intensity head sees no mass or m/z at all.
             intensity_escape: Give the intensity output an escape coordinate for observed
                 intensity no candidate can reach. The head emits one logit per spectrum; the
                 model converts it to a mass in ``pred_intensities`` units and returns it as
                 ``pred_escape_intensities`` for ``sparse_peak_list_distance``.
-            candidate_charge_feature: Give each candidate the sum of its atoms' Gasteiger
-                partial charges, the MASShatter analogue of FraGNNet's ``frag_q``. Requires
-                ``a_charge`` in ``mol_params.pyg_node_feats``, which is what attaches
-                ``atom_gasteiger_charges`` to the graph.
-            candidate_composition_features: Give each candidate the elemental composition of
-                its complementary neutral loss -- the precursor formula minus the candidate's
-                own -- as ``log1p`` counts over the canonical element order. This is GLACIER's
-                ``psi(r_form - f_k)`` term (arXiv 2606.29161, eq. 14). The head already
-                receives a mean-pooled *embedding* of the complement's atoms, but a mean of
-                learned atom vectors does not carry exact counts, and neutral-loss identity is
-                exactly a count question: CO (27.9949) and C2H4 (28.0313) are one bin apart at
-                0.1 Da and a different formula. ``candidate_mass_features`` gives the
-                complement's mass only, which does not separate them either.
-            candidate_cut_bond_features: Give each candidate the summed and averaged input
-                features of the bonds that were severed to make it. The boundary embedding
-                reaches the head only through atom endpoints, and an internal atom mixes all
-                of its incident bonds into one state, so the cut bond's own attributes are
-                not cleanly recoverable there. The sum is the multiset of broken bond types.
-            candidate_cut_adjacency_features: Give each candidate the number of its cut-bond
-                pairs that meet at a shared atom, split by whether that atom is retained or
-                lost. No bond feature can express this -- two cut bonds meeting at one atom is
-                a relation between cuts, and mean pooling over per-bond encodings destroys it.
+            candidate_features: Names of the descriptor columns appended to each candidate's
+                intensity token, resolved against
+                :data:`~fragnnet.model.candidate_features.CANDIDATE_FEATURE_SPECS`, which
+                documents what each one measures. The list is a set: columns are concatenated
+                in that module's canonical order, not the order given here. The default is the
+                pair of columns that used to be unconditional.
             candidate_atom_dropout: Training-only probability of dropping each atom from a
                 candidate's membership set before the component pool, so the pooled fragment
                 and complement embeddings see a random subset. Regularizes against
@@ -1479,14 +1367,14 @@ class MassShatterModel(nn.Module):
             if proposal_num_mixtures > 1
             else None
         )
-        self.candidate_mass_features = candidate_mass_features
         self.intensity_mass_pair_bias = intensity_mass_pair_bias
         self.intensity_ce_conditioned = intensity_ce_pair_bias or intensity_ce_film
-        self.candidate_charge_feature = candidate_charge_feature
         self.intensity_escape = intensity_escape
-        self.candidate_composition_features = candidate_composition_features
-        self.candidate_cut_bond_features = candidate_cut_bond_features
-        self.candidate_cut_adjacency_features = candidate_cut_adjacency_features
+        self.candidate_feature_specs = resolve_candidate_features(candidate_features)
+        self.candidate_feature_dim = candidate_feature_width(
+            self.candidate_feature_specs,
+            edge_feature_dim,
+        )
         self.candidate_atom_dropout = float(candidate_atom_dropout)
         self.boundary_bond_encoder = (
             CutBondEncoder(
@@ -1542,13 +1430,7 @@ class MassShatterModel(nn.Module):
             separate_ion_h_support_head=separate_ion_h_support_head,
             predict_oos=intensity_escape,
             initial_oos_probability=0.1,
-            use_mass_features=candidate_mass_features,
-            use_charge_feature=candidate_charge_feature,
-            composition_feature_dim=(
-                COMPOSITION_FEATURE_DIM if candidate_composition_features else 0
-            ),
-            cut_bond_feature_dim=(2 * edge_feature_dim if candidate_cut_bond_features else 0),
-            cut_adjacency_feature_dim=(2 if candidate_cut_adjacency_features else 0),
+            candidate_feature_dim=self.candidate_feature_dim,
             unique_fragment_tokens=unique_fragment_mode,
             norm_placement=intensity_norm_placement,
             qk_norm=intensity_qk_norm,
@@ -1657,7 +1539,6 @@ class MassShatterModel(nn.Module):
         )
         for column, element in enumerate(CANONICAL_ELEMENT_ORDER):
             composition_columns[PERIODIC_TABLE.GetAtomicNumber(element)] = column
-        self.composition_hydrogen_column = CANONICAL_H_IDX
         self.register_buffer("composition_element_columns", composition_columns)
         self.register_buffer("crf_formula_deltas", formula_deltas(parsed_crf))
         self.register_buffer("cmf_formula_deltas", formula_deltas(parsed_cmf))
@@ -1802,7 +1683,7 @@ class MassShatterModel(nn.Module):
 
         # CRF/CMF deltas below apply the output ion's electron correction once,
         # irrespective of precursor atom formal charges.
-        component_masses = _component_neutral_masses(
+        component_masses = component_neutral_masses(
             mol_pyg,
             atom_indices,
             atom_fragment_indices,
@@ -1939,117 +1820,6 @@ class MassShatterModel(nn.Module):
             num_components=num_components,
         )
 
-    def _cut_bond_features(
-        self,
-        mol_pyg: Batch,
-        boundary_bond_indices: th.Tensor,
-        boundary_component_indices: th.Tensor,
-        num_components: int,
-    ) -> th.Tensor | None:
-        """Pool the severed bonds' own input features into each candidate.
-
-        ``_boundary_embeddings`` reaches the intensity head through atom endpoints only, and an
-        internal atom mixes every one of its incident bonds into one state, so for an endpoint
-        of degree > 1 the cut bond's own attributes -- bond type, ring membership, conjugation,
-        ring size -- are not cleanly recoverable. The summed features are the multiset of broken
-        bond types ("two aromatic ring bonds and one single bond"); the mean is the same
-        quantity normalized by the cut count the head already receives.
-
-        Args:
-            mol_pyg: Batched precursor graphs.
-            boundary_bond_indices: Bond index of each (bond, component) boundary pair.
-            boundary_component_indices: Component index of each boundary pair.
-            num_components: Number of components.
-
-        Returns:
-            ``(num_components, 2 * edge_feature_dim)`` holding the summed then the averaged cut
-            features, or None when the feature is off. A candidate with no severed bonds -- the
-            intact precursor -- scores zero in both halves, which is the correct "nothing broken".
-        """
-        if not self.candidate_cut_bond_features:
-            return None
-        bond_features = mol_pyg.chemical_bond_attr
-        pooled = [
-            pool_boundary_bond_embeddings(
-                bond_features,
-                boundary_bond_indices,
-                boundary_component_indices,
-                num_components=num_components,
-                reduction=reduction,
-            )
-            for reduction in ("sum", "mean")
-        ]
-        return th.cat(pooled, dim=1)
-
-    def _cut_adjacency_features(
-        self,
-        mol_pyg: Batch,
-        boundary_bond_indices: th.Tensor,
-        boundary_component_indices: th.Tensor,
-        atom_indices: th.Tensor,
-        atom_component_indices: th.Tensor,
-        num_components: int,
-    ) -> th.Tensor | None:
-        """Count each candidate's cut-bond pairs that meet at a shared atom, by side.
-
-        Two cut bonds sharing an atom is a relation *between* cuts, so mean pooling over
-        per-bond encodings cannot express it and no bond feature carries it either. The side
-        matters chemically: a shared retained atom means one atom of the fragment lost two
-        substituents, while a shared lost atom means the fragment expelled a bridging atom --
-        the CO/CH2/S extrusion shape. Measured on 200 molecules / MASShatter's own candidates,
-        46.0% of candidates share a summed cut-bond vector with a candidate that disagrees on
-        whether any cuts are adjacent at all, against 0.0% for the ring-sharing flag.
-
-        Two bonds share at most one atom in a simple graph, so summing ``C(count, 2)`` over the
-        (component, atom) incidence counts each adjacent pair exactly once.
-
-        Args:
-            mol_pyg: Batched precursor graphs.
-            boundary_bond_indices: Bond index of each (bond, component) boundary pair.
-            boundary_component_indices: Component index of each boundary pair.
-            atom_indices: Atom index of each component-membership entry.
-            atom_component_indices: Component index of each membership entry.
-            num_components: Number of components.
-
-        Returns:
-            ``(num_components, 2)`` holding the retained-atom then lost-atom adjacent-pair
-            counts, or None when the feature is off.
-
-        Note:
-            This repeats the endpoint-orientation lookup that ``_boundary_embeddings`` performs
-            when the boundary bond encoder is on. The lookup is one sort of the membership
-            relation, so sharing it is an optimization for the batching audit, not a
-            correctness concern.
-        """
-        if not self.candidate_cut_adjacency_features:
-            return None
-        num_atoms = int(mol_pyg.batch.shape[0])
-        inside_atoms, outside_atoms = boundary_bond_endpoint_orientation(
-            mol_pyg.chemical_bond_index,
-            boundary_bond_indices,
-            boundary_component_indices,
-            atom_indices,
-            atom_component_indices,
-            num_atoms=num_atoms,
-        )
-        sides = []
-        for side_atoms in (inside_atoms, outside_atoms):
-            incidence_keys = boundary_component_indices * num_atoms + side_atoms
-            unique_keys, counts = th.unique(incidence_keys, return_counts=True)
-            adjacent_pairs = counts * (counts - 1) // 2
-            sides.append(
-                th.zeros(
-                    num_components,
-                    dtype=adjacent_pairs.dtype,
-                    device=adjacent_pairs.device,
-                ).index_add(
-                    0,
-                    th.div(unique_keys, num_atoms, rounding_mode="floor"),
-                    adjacent_pairs,
-                )
-            )
-        return th.stack(sides, dim=1).to(mol_pyg.x.dtype)
-
     def _candidate_atom_dropout(
         self,
         atom_indices: th.Tensor,
@@ -2092,94 +1862,6 @@ class MassShatterModel(nn.Module):
         ).index_add(0, kept_component_indices, th.ones_like(kept_component_indices))
         keep |= (kept_sizes == 0)[atom_component_indices]
         return atom_indices[keep], atom_component_indices[keep]
-
-    def _candidate_scalar_features(
-        self,
-        mol_pyg: Batch,
-        atom_indices: th.Tensor,
-        atom_component_indices: th.Tensor,
-        component_batch_indices: th.Tensor,
-        num_components: int,
-        batch_size: int,
-    ) -> tuple[th.Tensor | None, th.Tensor | None, th.Tensor | None, th.Tensor | None]:
-        """Build the optional per-candidate mass, charge and composition features.
-
-        Args:
-            mol_pyg: Batched precursor graphs.
-            atom_indices: Atom index of each component-membership entry.
-            atom_component_indices: Component index of each membership entry.
-            component_batch_indices: Spectrum index per component.
-            num_components: Number of components.
-            batch_size: Number of spectra in the batch.
-
-        Returns:
-            ``(mass_features, charge_feature, component_masses, composition_features)``; each
-            is None when nothing needs it. ``mass_features`` is ``(num_components, 2)`` holding
-            ``log1p(neutral mass)`` and the fraction of the intact precursor mass.
-            ``charge_feature`` is ``(num_components,)``. ``component_masses`` is the raw
-            neutral mass per component, required by the candidate transformer's pairwise mass
-            bias. ``composition_features`` is ``(num_components, composition_feature_dim)``
-            holding ``log1p`` element counts of the complementary neutral loss.
-        """
-        mass_features = None
-        component_masses = None
-        if self.candidate_mass_features or self.intensity_mass_pair_bias:
-            component_masses = _component_neutral_masses(
-                mol_pyg,
-                atom_indices,
-                atom_component_indices,
-                num_components,
-            )
-            precursor_masses = _precursor_neutral_masses(mol_pyg, batch_size)
-            _validate_tensor_condition(
-                (precursor_masses > 0).all(),
-                "every precursor must have a positive neutral mass",
-            )
-            if self.candidate_mass_features:
-                mass_features = th.stack(
-                    (
-                        th.log1p(component_masses),
-                        component_masses / precursor_masses[component_batch_indices],
-                    ),
-                    dim=1,
-                )
-        charge_feature = None
-        if self.candidate_charge_feature:
-            atom_charges = mol_pyg.atom_gasteiger_charges
-            charge_feature = atom_charges.new_zeros(num_components).index_add(
-                0,
-                atom_component_indices,
-                atom_charges[atom_indices],
-            )
-        composition_features = None
-        if self.candidate_composition_features:
-            # The complement is the precursor minus the candidate, so both sides are counted
-            # with the same reduction and the difference is exact by construction.
-            component_counts = _element_counts_by_group(
-                mol_pyg,
-                atom_indices,
-                atom_component_indices,
-                num_components,
-                self.composition_element_columns,
-                COMPOSITION_FEATURE_DIM,
-                self.composition_hydrogen_column,
-            )
-            precursor_counts = _element_counts_by_group(
-                mol_pyg,
-                th.arange(mol_pyg.batch.shape[0], device=mol_pyg.batch.device),
-                mol_pyg.batch,
-                batch_size,
-                self.composition_element_columns,
-                COMPOSITION_FEATURE_DIM,
-                self.composition_hydrogen_column,
-            )
-            complement_counts = precursor_counts[component_batch_indices] - component_counts
-            _validate_tensor_condition(
-                (complement_counts >= 0).all(),
-                "a candidate holds more atoms of some element than its precursor",
-            )
-            composition_features = th.log1p(complement_counts.to(mol_pyg.atom_monoisotopic_masses))
-        return mass_features, charge_feature, component_masses, composition_features
 
     def _eligible_smarts_templates(
         self,
@@ -2435,8 +2117,14 @@ class MassShatterModel(nn.Module):
             "batch",
             "ptr",
         )
-        if self.candidate_charge_feature:
-            required_graph_fields = (*required_graph_fields, "atom_gasteiger_charges")
+        required_graph_fields = (
+            *required_graph_fields,
+            *(
+                field
+                for field in candidate_feature_required_graph_fields(self.candidate_feature_specs)
+                if field not in required_graph_fields
+            ),
+        )
         missing = [field for field in required_graph_fields if not hasattr(mol_pyg, field)]
         if missing:
             raise ValueError(
@@ -2901,37 +2589,27 @@ class MassShatterModel(nn.Module):
                 atom_fragment_indices,
                 num_fragments,
             )
-            fragment_cut_bond_features = self._cut_bond_features(
-                mol_pyg,
-                fragment_boundary_bond_indices,
-                boundary_fragment_indices,
-                num_fragments,
+            # The TRUE atom membership, never the subset `_candidate_atom_dropout` returned
+            # above: that dropout perturbs the pooled embeddings alone, and every descriptor
+            # here keeps the real atom set.
+            candidate_inputs = CandidateFeatureInputs(
+                mol_pyg=mol_pyg,
+                atom_indices=fragment_atom_indices,
+                atom_component_indices=atom_fragment_indices,
+                boundary_bond_indices=fragment_boundary_bond_indices,
+                boundary_component_indices=boundary_fragment_indices,
+                component_batch_indices=fragment_batch_indices,
+                cut_counts=fragment_cut_counts,
+                composition_element_columns=self.composition_element_columns,
+                num_components=num_fragments,
+                batch_size=batch_size,
+                dtype=fragment_embeddings.dtype,
             )
-            fragment_cut_adjacency_features = self._cut_adjacency_features(
-                mol_pyg,
-                fragment_boundary_bond_indices,
-                boundary_fragment_indices,
-                fragment_atom_indices,
-                atom_fragment_indices,
-                num_fragments,
+            fragment_candidate_features = build_candidate_features(
+                self.candidate_feature_specs,
+                candidate_inputs,
             )
-            (
-                fragment_mass_features,
-                fragment_charge_feature,
-                fragment_neutral_masses,
-                fragment_composition_features,
-            ) = self._candidate_scalar_features(
-                mol_pyg,
-                fragment_atom_indices,
-                atom_fragment_indices,
-                fragment_batch_indices,
-                num_fragments,
-                batch_size,
-            )
-            fragment_sizes = th.bincount(
-                atom_fragment_indices,
-                minlength=num_fragments,
-            )
+            fragment_sizes = candidate_inputs.component_sizes
             if self.ion_mode_proposal_head is not None:
                 (
                     proposal_fragment_embeddings,
@@ -2975,8 +2653,6 @@ class MassShatterModel(nn.Module):
                 fragment_embeddings,
                 complement_embeddings,
                 boundary_embeddings,
-                fragment_cut_counts,
-                fragment_sizes,
                 th.zeros_like(fragment_log_probabilities),
                 fragment_log_probabilities,
                 fragment_batch_indices,
@@ -2986,14 +2662,12 @@ class MassShatterModel(nn.Module):
                 context=context[fragment_batch_indices],
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
                 component_neutral_masses=(
-                    fragment_neutral_masses if self.intensity_mass_pair_bias else None
+                    candidate_inputs.component_neutral_masses
+                    if self.intensity_mass_pair_bias
+                    else None
                 ),
                 ce_features=spectrum_ce_features,
-                mass_features=fragment_mass_features,
-                charge_feature=fragment_charge_feature,
-                composition_features=fragment_composition_features,
-                cut_bond_features=fragment_cut_bond_features,
-                cut_adjacency_features=fragment_cut_adjacency_features,
+                candidate_features=fragment_candidate_features,
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None
@@ -3078,37 +2752,25 @@ class MassShatterModel(nn.Module):
                 candidates.atom_component_indices,
                 num_fragments,
             )
-            fragment_cut_bond_features = self._cut_bond_features(
-                mol_pyg,
-                candidates.boundary_bond_indices,
-                candidates.boundary_component_indices,
-                num_fragments,
+            # The TRUE atom membership; see the unique-fragment branch above.
+            candidate_inputs = CandidateFeatureInputs(
+                mol_pyg=mol_pyg,
+                atom_indices=candidates.atom_indices,
+                atom_component_indices=candidates.atom_component_indices,
+                boundary_bond_indices=candidates.boundary_bond_indices,
+                boundary_component_indices=candidates.boundary_component_indices,
+                component_batch_indices=fragment_batch_indices,
+                cut_counts=fragment_cut_counts,
+                composition_element_columns=self.composition_element_columns,
+                num_components=num_fragments,
+                batch_size=batch_size,
+                dtype=fragment_embeddings.dtype,
             )
-            fragment_cut_adjacency_features = self._cut_adjacency_features(
-                mol_pyg,
-                candidates.boundary_bond_indices,
-                candidates.boundary_component_indices,
-                candidates.atom_indices,
-                candidates.atom_component_indices,
-                num_fragments,
+            fragment_candidate_features = build_candidate_features(
+                self.candidate_feature_specs,
+                candidate_inputs,
             )
-            (
-                fragment_mass_features,
-                fragment_charge_feature,
-                fragment_neutral_masses,
-                fragment_composition_features,
-            ) = self._candidate_scalar_features(
-                mol_pyg,
-                candidates.atom_indices,
-                candidates.atom_component_indices,
-                fragment_batch_indices,
-                num_fragments,
-                batch_size,
-            )
-            fragment_sizes = th.bincount(
-                candidates.atom_component_indices,
-                minlength=num_fragments,
-            )
+            fragment_sizes = candidate_inputs.component_sizes
             original_component_mask_log_probabilities = candidates.mask_log_probabilities[
                 candidates.component_mask_indices
             ]
@@ -3124,8 +2786,6 @@ class MassShatterModel(nn.Module):
                 fragment_embeddings,
                 complement_embeddings,
                 boundary_embeddings,
-                fragment_cut_counts,
-                fragment_sizes,
                 charge_log_probabilities + component_mechanism_log_probabilities,
                 original_component_mask_log_probabilities,
                 fragment_batch_indices,
@@ -3135,14 +2795,12 @@ class MassShatterModel(nn.Module):
                 context=context[fragment_batch_indices],
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
                 component_neutral_masses=(
-                    fragment_neutral_masses if self.intensity_mass_pair_bias else None
+                    candidate_inputs.component_neutral_masses
+                    if self.intensity_mass_pair_bias
+                    else None
                 ),
                 ce_features=spectrum_ce_features,
-                mass_features=fragment_mass_features,
-                charge_feature=fragment_charge_feature,
-                composition_features=fragment_composition_features,
-                cut_bond_features=fragment_cut_bond_features,
-                cut_adjacency_features=fragment_cut_adjacency_features,
+                candidate_features=fragment_candidate_features,
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None

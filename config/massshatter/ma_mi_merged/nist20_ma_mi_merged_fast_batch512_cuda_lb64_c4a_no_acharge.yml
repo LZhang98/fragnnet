@@ -1,6 +1,6 @@
 # ARM c4a_no_acharge -- 4 h exploration campaign, 2026-09-21.
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: (nothing but wandb naming).
-# The candidate mass/charge feature, boundary-bond-encoder and h-transfer-bound keys below
+# The candidate feature list, boundary-bond-encoder and h-transfer-bound keys below
 # are PINNED, not inherited, so a later default flip cannot move this comparison underneath
 # it. boundary_bond_encoder was NOT pinned before 2026-09-21 and silently rode the template
 # default (True) in every c4 arm; that is the defect this campaign exists to avoid.
@@ -11,7 +11,7 @@
 # lift can be attributed. h_transfer_bound is measured free (-0.0002) and contributes ~0.
 #
 # Removes: the `a_charge` atom feature from mol_params.pyg_node_feats (atom width 71 -> 70).
-# Distinct from mass_shatter_candidate_charge_feature, which conditions the intensity head;
+# Distinct from c_charge, which conditions the intensity head;
 # this one is a Gasteiger partial charge on every atom node. Added to all 177 MASShatter
 # configs on 2026-09-20 and never ablated. Turning it off also drops the needs_gasteiger
 # preprocessing requirement.
@@ -207,5 +207,8 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge

@@ -94,12 +94,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # Positional layout of CandidateIntensityTransformerHead.forward, which MassShatterModel
-# calls with nine positional arguments. Asserted against the live signature at install time.
+# calls with seven positional arguments. Asserted against the live signature at install time.
 FRAGMENT_ARG = 0
 COMPLEMENT_ARG = 1
 BOUNDARY_ARG = 2
-BATCH_INDEX_ARG = 7
-NUM_POSITIONAL_ARGS = 9
+BATCH_INDEX_ARG = 5
+NUM_POSITIONAL_ARGS = 7
 
 SCOPE_POSITIONS: dict[str, tuple[int, ...]] = {
     "cc": (FRAGMENT_ARG, COMPLEMENT_ARG),

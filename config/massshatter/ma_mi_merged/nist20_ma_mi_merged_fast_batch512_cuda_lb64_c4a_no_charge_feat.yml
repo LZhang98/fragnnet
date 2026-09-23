@@ -1,12 +1,12 @@
 # ARM c4a_no_charge_feat -- 4 h exploration campaign, 2026-09-21.
-# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: mass_shatter_candidate_charge_feature.
+# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: dropping c_charge from mass_shatter_candidate_features.
 # The candidate mass/charge feature, boundary-bond-encoder and h-transfer-bound keys below
 # are PINNED, not inherited, so a later default flip cannot move this comparison underneath
 # it. boundary_bond_encoder was NOT pinned before 2026-09-21 and silently rode the template
 # default (True) in every c4 arm; that is the defect this campaign exists to avoid.
 #
-# Ablates `mass_shatter_candidate_charge_feature` (summed Gasteiger partial charges, the
-# analogue of FraGNNet's `frag_q`), ON by default since 2026-09-20 and never A/B'd.
+# Drops the `c_charge` entry (summed Gasteiger partial charges, the analogue of FraGNNet's
+# `frag_q`) from `mass_shatter_candidate_features`, ON by default since 2026-09-20 and never A/B'd.
 # Independent of the `a_charge` atom feature. Changes the intensity head's input width.
 #
 # HORIZON (2026-09-21): resized 630 -> 128 epochs. The horizon probe `tkkesus9` ran the full
@@ -201,5 +201,7 @@ mass_shatter_candidate_backend: cuda
 
 # Campaign override(s) not present in the base file:
 mass_shatter_boundary_bond_encoder: true
-mass_shatter_candidate_mass_features: true
-mass_shatter_candidate_charge_feature: false
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
