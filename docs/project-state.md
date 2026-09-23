@@ -1,8 +1,22 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-22
+> **Status:** REFERENCE · **Updated:** 2026-09-23
 
 ## Current handoff
+
+**FraGNNet FT contender-pair Stage A prepared for Fir (2026-09-23).** Configs and a generation-only
+script; **nothing submitted.** Four arms from `fraggnn_d3_ma_mi_nist20_amolc_all.yml` (the
+`jnokddr9` config): `c0` original sampler, `c1` `ce_context` sampler control, `p1`/`p2`
+`ce_pair_loss_weight` 1.5 / 6.0. The weights come from a measured initial gradient ratio
+g = 0.0344 on ~406-spectrum steps (5% / 20% targets). Two things change the matrix from the plan's
+reading. First, `target_rel_ints_thresh` (required by the pair loss) also filters the
+**validation** target, so all four arms carry 0.01 and `jnokddr9` is not the control. Second, the
+original group sampler shows only 138,875 of 287,721 train spectra per epoch, so the context arms
+run 48 epochs to match c0's 100 on spectra seen. The primary read is p1/p2 vs c1. Details, open
+gate items and costs:
+[plan § Stage A preparation](plans/ft_contender_pair_minimal_training_plan.md#stage-a-preparation-2026-09-23).
+Generator: `scripts/manual_slurm/fir/submit_fraggnn_ce_pair.sh` (run on Fir; needs the DAG tarball
+and `wheels/` there).
 
 **`a5_ce_pair_bias` and the full-length `wd10` arm prepared for Fir (2026-09-22).** Config and
 script only; **nothing submitted, no GPU used, no run launched.** Two arms, three jobs.

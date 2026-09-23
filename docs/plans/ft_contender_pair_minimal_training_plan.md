@@ -1,10 +1,12 @@
 # Minimal FT contender-pair training plan
 
-> **Status:** PROPOSED — CACHE-FREE CONTEXT-BATCHED IMPLEMENTATION
-> &nbsp;·&nbsp; **Updated:** 2026-08-12
+> **Status:** ACTIVE — STAGE A PREPARED, NOT SUBMITTED
+> &nbsp;·&nbsp; **Updated:** 2026-09-23
 >
 > Add one online auxiliary loss to the existing NodeMLP model. Do not change the model
-> architecture or write a persistent ranking-target cache.
+> architecture or write a persistent ranking-target cache. The four Stage A configs and their Fir
+> generator exist and were verified locally; no job has run. See
+> [Stage A preparation](#stage-a-preparation-2026-09-23).
 
 ## Goal
 
@@ -234,6 +236,69 @@ keys; training code must not supply fallback hyperparameters. In the mechanics-o
 a positive pair-loss weight requires a non-null confidence threshold and rejects a non-null
 reliability threshold because the reliability table is not wired yet. Before the promotion pilot,
 replace that guard with the audited reliability lookup and require both thresholds.
+
+## Stage A preparation (2026-09-23)
+
+Configs: [`config/exp_fraggnn_ma_mi/ce_pair_2026_09_23/`](../../config/exp_fraggnn_ma_mi/ce_pair_2026_09_23/).
+Generator (generation only, runs on a Fir login node):
+[`scripts/manual_slurm/fir/submit_fraggnn_ce_pair.sh`](../../scripts/manual_slurm/fir/submit_fraggnn_ce_pair.sh).
+Nothing submitted. Measurements below were taken on the local workstation with scratch probes
+(not committed); the train-split numbers use the full split, the gradient and timing numbers a
+random 12% of train molecules with all their spectra (1,862 molecules, 34,921 spectra).
+
+**Baseline.** Baseline 0 is still
+[`fraggnn_d3_ma_mi_nist20_amolc_all.yml`](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
+Its most recent run is `jnokddr9` (2026-09-14, Vulcan L40S, 100 epochs in 7.8 h, peak 34.2 GB,
+best val `cos_sim_0.01` 0.7093, still rising +0.0016 over its last ten epochs). The 0.7398
+`s3iimtqi` run is not a matched comparator: April code, a different DAG directory and
+`ce_insert_type`.
+
+**`target_rel_ints_thresh` is not only a contender floor.** The pair loss requires it in (0, 1),
+and `SpectrumPL.preproc_spec` applies the same relative filter to the train target **and** the
+validation target. Every arm, controls included, therefore carries `0.01`, and `jnokddr9` (0.0)
+cannot serve as the original control. A fresh `c0` is part of the matrix.
+
+**Sampler budget.** The original sampler (`simple_group_sampler`, group type) shows only
+138,875 of 287,721 train spectra per epoch (542 steps of exactly 256). `ce_context` emits all
+287,721, and because context batches average ~236 spectra while a step fires at >=256, it takes
+709 steps of ~406 spectra. The context arms run **48 epochs** (13.81M spectra vs c0's 13.89M), so
+c0 and c1 match on spectra seen and wall clock, not on optimizer steps (34.0k vs 54.2k).
+c1, p1 and p2 match each other on everything except the pair weight.
+
+**Edge budget.** `ce_context` requires `frag_edge`. At 1,500,000 edges the per-batch node maximum
+is 281,988 against the original sampler's 322,399, so peak memory should not exceed c0's.
+
+**Gradient calibration.** At initialization, backpropagating the two components separately
+through the training reduction: per-batch ratio median 0.060, but the pair gradient is weakly
+aligned with the primary (cosine 0.09) and adds less coherently across batches, so the ratio
+depends on accumulation. Accumulated over ~406-spectrum windows (one real step), **g = 0.0344**
+(23 steps, p10 0.029, p90 0.045). `lambda_weak = 0.05 / g ≈ 1.5`, `lambda_medium = 0.20 / g ≈ 6.0`.
+
+**Coverage.** 0.165 eligible endpoints per spectrum, i.e. about 23.7k co-located transitions
+per epoch, against the >=5,000 gate. The remaining gate items (>=500 validation molecules, no
+molecule above 1% of pair weight, ambiguity below 0.1%) were not measured.
+
+**Cost.** The pair term adds +17.5% per train step (0.357 vs 0.303 s, identical weights and
+batches) from CPU-side target discovery, ~0.8 ms per spectrum. Wall time is 16 h for c0/c1 and
+20 h for p1/p2 on `fir:h100-3g.40gb`; no FraGNNet run of this config has been timed on that slice.
+
+| arm | sampler | epochs | `ce_pair_loss_weight` | job |
+| --- | --- | ---: | ---: | --- |
+| `c0_orig_ctrl` | original | 100 | 0 | `fg_cep_c0_orig_ctrl` |
+| `c1_sampler_ctrl` | `ce_context` | 48 | 0 | `fg_cep_c1_sampler_ctrl` |
+| `p1_pair_weak` | `ce_context` | 48 | 1.5 | `fg_cep_p1_pair_weak` |
+| `p2_pair_medium` | `ce_context` | 48 | 6.0 | `fg_cep_p2_pair_medium` |
+
+All four add `log_adduct_inst_ce_metrics: True` (validation logging only). Resolved-config
+diffs verified through `load_config`: c0 − baseline is the two shared keys; c1 − c0 is the four
+sampler/budget keys; p1/p2 − c1 is `ce_pair_loss_weight` and
+`ce_pair_min_endpoint_confidence: 0.2` alone.
+
+**Still open before promotion, not before this pilot:** the singleton reliability audit and the
+detection-limit floor (the mechanics-only `target_rel_ints_thresh` floor stands in), the tiny
+overfit check, and in-training logging of the realized gradient ratio (g above is
+initialization-only). The DAG tarball `data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse.tar` must
+exist in the Fir checkout; the generator stages it and fails at generation if it is absent.
 
 ## Run matrix
 
