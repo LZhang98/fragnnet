@@ -1,6 +1,21 @@
 # MASShatter regularization and normalization sweep (Fir, one-hour boxes)
 
-> **Status:** EXECUTED, NO PROMOTIONS · **Updated:** 2026-09-21
+> **Status:** EXECUTED, NO PROMOTIONS; ONE ARM REOPENED · **Updated:** 2026-09-22
+> **`wd10` is the one unsettled item and it is now prepared at full screen length.**
+> The 2026-09-19 screen read it at epoch 64-65 in a **one-hour** box, i.e. ~10% of the 630-epoch
+> horizon it was configured for, and it was the only arm that narrowed the train/validation gap
+> without suppressing train cosine while moving validation the right way — inside a ±0.007 screen.
+> `config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4d_wd10.yml`
+> (never run) was moved to **128/128** on 2026-09-22 with `compute_train_auxiliary_metrics: true`,
+> and a matched control `..._c4a_base_s1_trainaux.yml` was written, because `c4a_base_s1/s2` have
+> that key **off** and therefore supply no train cosine to compare against. Resolved diff between
+> the two new configs is **`weight_decay` alone**. Generate with
+> `scripts/manual_slurm/fir/submit_masshatter_regularization.sh wd10`.
+> **These are `fir:h100-80gb` jobs, not 3g.40gb**: the train metric takes peak GPU from 30.4 to
+> ~37.2 GiB against a 37.25 GiB slice. `kalc4mzo` is **not** this arm's predecessor — it ran
+> before the 2026-09-20 default flip, so it trained a different architecture.
+> Note the prior does not favour this arm: three arms have now narrowed the gap and lost
+> (`drop03`, `b3_wd_groups`, `e2_cc_atom_drop01`). It is run to close the question.
 > Nine sweep configs written and verified locally (eight arms plus the 2g slice variant); replicate
 > floor, throughput and the GPU-memory / slice-sizing table measured from existing W&B runs.
 > **Stage A was submitted on Fir on 2026-09-19 and crashed**; the cause is fixed in

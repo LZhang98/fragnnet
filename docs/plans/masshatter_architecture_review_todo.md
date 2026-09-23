@@ -142,6 +142,16 @@ restates them. All five construct at 128/128.
 | `a5_ce_pair_bias` | `intensity_ce_pair_bias` | 1 | Completes the CE triple with `a6`/`a7`. §1 raised its value: at matched capacity and matched topology `a6` (CE-FiLM) beats `a3` (mass pair bias) by **+0.0035**, so CE conditioning is the live half of review item 1 and `a5` separates FiLM from a pair bias as the route. |
 | `b4_budget_rebalance` | `bond_num_layers: 1`, `transformer_dim: 384`, `num_inducing_points: 128` | — | Not a review item, and **not a one-key arm** — it moves capacity from the bond head to the intensity head and widens the latent set at the same time, so a result cannot be attributed. Listed only because it shares the box and the base. Lowest priority; split it before running it. |
 
+**`a5` prepared for submission on its own (2026-09-22).** `submit_masshatter_attention.sh` now
+has an **`a5` stage** that generates `a5_ce_pair_bias` alone, because the `conditional` stage also
+generates `a4` and the epoch-128 read argued against `a4` in the same motion that raised `a5`:
+stacking has now cost twice in this family (`a7` below both `a1` and `a6`; `e5` below `e4`).
+`a5` resolves to **three** keys against `c4a_base_s1` — `attention_type: full`,
+`intensity_mass_pair_bias`, `intensity_ce_pair_bias` — so **read it against `a3_full_massbias`
+(`4fg0x5vw`), which holds the first two without the CE term.** `a5` − `a3` isolates the CE pair
+bias; `a5` − control does not, and would re-credit it with the +0.0030 that belongs to the
+topology change.
+
 Order: **`b1` and `a2` first.** `b1` is parameter-identical to the base, so it is the cleanest
 one-key arm in the whole set; `a2` unblocks the reading of three arms that already ran — and after
 §1 that matters more, because `a6` is the campaign's best arm and `a2` is what decides whether that

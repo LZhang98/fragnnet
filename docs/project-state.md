@@ -4,6 +4,50 @@
 
 ## Current handoff
 
+**`a5_ce_pair_bias` and the full-length `wd10` arm prepared for Fir (2026-09-22).** Config and
+script only; **nothing submitted, no GPU used, no run launched.** Two arms, three jobs.
+
+**`a5`** needed no config change (already 128/128). `submit_masshatter_attention.sh` gained an
+**`a5` stage** so it can be generated without `a4`, which the epoch-128 read argued against in the
+same motion that raised `a5`. `a5` resolves to **three** keys against `c4a_base_s1`, so it must be
+**read against `a3_full_massbias` (`4fg0x5vw`)**, not the control — `a3` holds
+`attention_type: full` and the mass pair bias without the CE term, and `a5` − `a3` is the only
+contrast that isolates `intensity_ce_pair_bias`. `fir:h100-3g.40gb`, 3 h.
+
+**`wd10` cost more than it looked and the reason is memory, not wall clock.** The question is the
+train/validation gap, which needs a **train** cosine, and `compute_train_auxiliary_metrics` is
+**false** in `c4a_base_s1/s2` — so the existing control supplies a matched val cosine and no
+matched train cosine at all. `ctrl_a`/`ctrl_b` do have it on but predate the 2026-09-20 default
+flip, so they are a different architecture. Two new/edited configs, both never run:
+`..._c4d_wd10.yml` moved 630 → **128/128** with the metric on, and a new
+`..._c4a_base_s1_trainaux.yml`. Resolved diffs verified: control − base = that key alone,
+**arm − control = `weight_decay` alone**. Same seed 397623, so the control's val cosine is also a
+third same-seed replicate of `c4a_base_s1`. Generator:
+`scripts/manual_slurm/fir/submit_masshatter_regularization.sh wd10`.
+
+**Both wd10 jobs are `fir:h100-80gb`, not the 3g.40gb slice, and that doubles their price (12.2
+vs 6.1 each).** Measured from the W&B system stream on 2026-09-22: the metric takes peak GPU from
+**30.4 GiB** (`c4a_base_s1`, off) to **36.2–37.2 GiB** (`ri3zm215`, `kalc4mzo`, on), against a
+3g.40gb slice's **37.25 GiB** — under 40 MiB of headroom before the CUDA context. Slice size does
+not affect the metric, only throughput, and every read here is at matched epoch. The same
+measurement clears the wall-clock worry: the key costs **+6%** per epoch (0.91 vs 0.86 min/epoch),
+so 128 epochs is ~1.95 h in a 3 h box. **The 2026-09-19 arms died at epoch 64-65 because they had
+a one-hour box, not because of this key** — that screen was ~10% exposure.
+
+Two cautions carried into the read. `kalc4mzo` is **not** this arm's predecessor: it ran
+2026-09-19, before the three candidate/h-transfer defaults flipped, so re-resolving its config
+today inherits defaults it never trained with. And the prior does not favour the arm — **three
+arms have now narrowed the gap and lost** (`drop03`, `b3_wd_groups`, `e2_cc_atom_drop01`); it is
+run to close the question, not because it is expected to win. Also noted while copying:
+`c4a_base_s1.yml` carries a `train_aux_metrics` W&B **tag** while the key is `false`, the wrong
+tag the overfit read-out already caught; the copy's tag was corrected, the original left alone so
+it still matches its indexed run.
+
+Validation: both new configs parse and resolve; `max_epochs: 128` and the train-metric key
+asserted by the generator; `bash -n` clean on both scripts; resolved one-key diffs verified
+through `load_config`. Job generation itself must run on Fir — the wheel preflight needs
+`wheels/`, which is Git-ignored and absent from this checkout.
+
 **`a2_full_attention` and `b1_bond_sum` read; §1's capacity confound resolved, and the family's
 reproducibility floor measured (2026-09-22).** Read-only W&B query, no GPU, nothing changed.
 Both lead-pair arms finished at 127 epochs on the same screen (tail mean 118-127, control

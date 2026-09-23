@@ -10,6 +10,13 @@
 #   conditional a4 + a5. GATED on section 1 of the plan: submit only after the epoch-128 read
 #               of the six arms that already ran, and only if at least one of `a1`/`a3`
 #               clears the 0.005 floor. `a5` is read against `a3`, so `a3` must be read first.
+#               The gate opened on 2026-09-22 (`a1` +0.0056), but prefer the `a5` stage below:
+#               that read also made `a4` a poor bet.
+#   a5          `a5_ce_pair_bias` alone -- the last unrun arm with a mechanism behind it.
+#               READ IT AGAINST `a3_full_massbias` (`4fg0x5vw`), NOT against the control: it
+#               carries `attention_type: full` and the mass pair bias too, and `a3` is the arm
+#               that holds both of those without the CE term. `a5` - `a3` isolates
+#               `intensity_ce_pair_bias`; `a5` - control does not.
 #   rebalance   b4. Lowest priority and NOT a one-key arm -- it moves bond_num_layers 3 -> 1
 #               while widening the intensity head (256 -> 384) and the latent set (64 -> 128),
 #               so a result cannot be attributed. Split it before believing anything it says.
@@ -61,6 +68,14 @@ COND_JOBS=(msh_at_a4_stacked msh_at_a5_ce_pair)
 COND_CONFIGS=(a4_full_massbias_prenorm_qknorm.yml a5_ce_pair_bias.yml)
 COND_TIMES=(3:00:00 3:00:00)
 
+# `a5` alone. The epoch-128 read closed the question `a4` was queued for -- stacking has now
+# cost twice in this family (`a7` below both `a1` and `a6`; `e5` below `e4`) -- while `a5`
+# became MORE valuable, because `a2` showed the mass pair bias is an exact null at matched
+# topology (-0.0002) and CE-FiLM is worth +0.0033, making CE the live half of review item 1.
+A5_JOBS=(msh_at_a5_ce_pair)
+A5_CONFIGS=(a5_ce_pair_bias.yml)
+A5_TIMES=(3:00:00)
+
 REBAL_JOBS=(msh_at_b4_rebalance)
 REBAL_CONFIGS=(b4_budget_rebalance.yml)
 REBAL_TIMES=(4:00:00)
@@ -68,11 +83,12 @@ REBAL_TIMES=(4:00:00)
 case "${STAGE}" in
     lead)        JOB_NAMES=("${LEAD_JOBS[@]}"); CONFIGS=("${LEAD_CONFIGS[@]}"); TIMES=("${LEAD_TIMES[@]}") ;;
     conditional) JOB_NAMES=("${COND_JOBS[@]}"); CONFIGS=("${COND_CONFIGS[@]}"); TIMES=("${COND_TIMES[@]}") ;;
+    a5)          JOB_NAMES=("${A5_JOBS[@]}"); CONFIGS=("${A5_CONFIGS[@]}"); TIMES=("${A5_TIMES[@]}") ;;
     rebalance)   JOB_NAMES=("${REBAL_JOBS[@]}"); CONFIGS=("${REBAL_CONFIGS[@]}"); TIMES=("${REBAL_TIMES[@]}") ;;
     all)         JOB_NAMES=("${LEAD_JOBS[@]}" "${COND_JOBS[@]}" "${REBAL_JOBS[@]}")
                  CONFIGS=("${LEAD_CONFIGS[@]}" "${COND_CONFIGS[@]}" "${REBAL_CONFIGS[@]}")
                  TIMES=("${LEAD_TIMES[@]}" "${COND_TIMES[@]}" "${REBAL_TIMES[@]}") ;;
-    *) echo "Usage: $0 [lead|conditional|rebalance|all]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [lead|conditional|a5|rebalance|all]" >&2; exit 1 ;;
 esac
 
 cd "${REPO_ROOT}"
