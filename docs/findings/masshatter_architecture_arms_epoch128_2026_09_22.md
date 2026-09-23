@@ -1,6 +1,9 @@
 # MASShatter architecture arms, read at the matched 128-epoch screen, 2026-09-22
 
-> **Status:** FINDING · **Updated:** 2026-09-22
+> **Status:** FINDING · **Updated:** 2026-09-23
+> **§4 (added 2026-09-23) re-checks every full-attention run from raw history and reads the
+> 630-epoch arms past 127 against the horizon probe: full attention alone is +0.0017 to +0.0030
+> depending on the control, and `a1`/`a6` settle 0.006–0.008 above it by epoch 200.**
 > Three reads at the same screen against the same control. **§3 (added last) reads
 > `a2_full_attention` and `b1_bond_sum`, which resolves §1's capacity confound — `a6_ce_film`'s
 > +0.0063 is half topology and half CE-FiLM, and the pairwise mass bias is an exact null at
@@ -330,6 +333,50 @@ Two consequences for §1:
   spread among `a3` (+0.0362), `a6` (+0.0386), `b2` (+0.0431) and `a7` (+0.0450) is inside it.
   The same applies to §2's claim that `e2` has "the narrowest train/validation gap" — 0.5719 vs a
   0.6191 control mean is 3.4 floor-widths and survives, but the seven-run *ordering* does not.
+
+## 4. Full attention re-checked, and read past epoch 127 — added 2026-09-23
+
+Recomputed from raw W&B history (`scan_history`, last value per epoch), not from the tables
+above. Five runs have ever trained with `mass_shatter_intensity_transformer_attention: full`, all
+on this lineage and seed 397623: `a2` twice, `a3`, `a6`, `a7`. The older merged-track A/B config
+(`config/massshatter/merged/intensity_attention/..._full_attention.yml`) was never run. Resolved
+config against `c4a_base_s1`: `a2` differs only in the attention key (plus ten inert
+new-default keys); `a3`/`a6`/`a7` bundle it with other changes, as §1 says. The §1/§3 tail means
+reproduce to 1e-4.
+
+**Cost.** Full attention is not slower: 0.817 min/epoch (`a2`) against 0.828–0.838 for the two
+controls, at 41% fewer intensity-head parameters. The pairwise-bias arms (`a3`, `a7`) cost
+0.965–0.970.
+
+**Past 127 against the horizon probe.** `a1`, `a3`, `a6` and `a7` carried 630-epoch configs and
+ran to epochs 179–209 before they were killed; both `c4a` controls stop at 127. The only
+seed-matched control past 127 is `tkkesus9` (`long_control`), whose resolved config equals
+`c4a_base_s1` except for the epoch horizon (the eight keys it lacks were added later and default
+to the control's values). It is **not** an exact control: it ran on earlier code (0.99 vs 0.83
+min/epoch) and its 118–127 tail mean is 0.7283, **0.0017 above same-seed `c4a_s1`**, about four
+times §3.1's same-code floor. Epoch-matched window means, Δ against `tkkesus9`:
+
+| window | `tkkesus9` | `a1` pre-LN (induced) | `a3` full + mass bias | `a6` full + CE-FiLM | `a7` full + all |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 118–127 | 0.7283 | +0.0043 | +0.0015 | +0.0050 | +0.0022 |
+| 140–149 | 0.7270 | +0.0063 | +0.0034 | +0.0065 | +0.0050 |
+| 160–169 | 0.7277 | +0.0057 | +0.0045 | +0.0055 | +0.0047 |
+| 170–178 | 0.7275 | +0.0063 | +0.0045 | +0.0061 | +0.0054 |
+| 190–199 | 0.7278 | +0.0063 | — | +0.0068 | — |
+| 200–204 | 0.7278 | +0.0077 | — | +0.0070 | — |
+
+**What this adds.**
+
+1. **Topology alone stays below the gate, and its size depends on the control.** `a2` is
+   +0.0030 against the `c4a` mean but +0.0017 against `tkkesus9`. No full-attention-only run
+   exists past 127.
+2. **The §1/§3 orderings hold past the screen.** The control is flat at ~0.7275 from 118 to
+   204, while `a1` and `a6` keep climbing and settle 0.006–0.008 above it. `a3` (the null mass
+   bias on top of full attention) trails `a6` throughout, and `a7` trails both `a1` and `a6`
+   although it contains both of their keys. That is the stacking cost §1 reported, now across
+   80 more epochs.
+3. **Untested:** pre-LN + full attention alone. `a7` is the only run combining them, and it also
+   carries CE-FiLM and both pairwise biases.
 
 ## Reproduction
 
