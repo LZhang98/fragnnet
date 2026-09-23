@@ -306,6 +306,12 @@ contribution. `shuffle` damages more in every scope (`boundary_shuffle` 0.1899 v
 confidently wrong information while a zero vector reads closer to no information. The
 probe's docstring was corrected.
 
+**Production result (2026-09-23).** The probe has now run on two production checkpoints
+(`6h67zps9`, `3bej6fq7`; unmerged `[M+H]+` FT, not `c4a_base_s1`), and the toy-scale ranking
+holds. At matched validation damage, boundary corruption leaves a 0.022 train/validation gap
+against 0.059-0.086 for the cc pools, out of an eval-mode gap of 0.19. See the
+[memorization route probe](masshatter_memorization_route_probe_2026_09_23.md).
+
 ### 7.2 What is actually worth doing
 
 Ranked, with the reason each is not larger:
@@ -320,6 +326,8 @@ Ranked, with the reason each is not larger:
    like a generalizing feature while the boundary block carries the whole train/validation
    asymmetry. If that holds at production scale, `e2`/`e3` are aimed at the wrong columns and
    `candidate_atom_dropout` should be extended to the boundary pool before it is swept.
+   **Done 2026-09-23; it holds on two production checkpoints**
+   ([route probe](masshatter_memorization_route_probe_2026_09_23.md)).
 
 3. **Fix the two dormant proposal-side defects** (§4.4, §4.5). `ion_mode_proposal_head` is
    `None` in **223/223** configs, so neither is live today — they are traps that would silently

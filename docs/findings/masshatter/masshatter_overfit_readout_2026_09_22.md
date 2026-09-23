@@ -360,6 +360,13 @@ mechanism. The current audit leaves five credible routes:
 | Population and precursor priors | On the exact merged validation target, a precursor-only predictor reaches mean cosine 0.275 (median 0.178; p90 0.754), and the [dominant-peak decomposition](../fragnnet/dominant_peak_outcome_decomposition.md) shows the model over-calls the precursor at low CE. These priors are useful on average but can replace fragment-specific ranking. | **Measured shortcut behavior; contribution to the 0.151 gap unresolved.** |
 | Non-causal fragment proxies | MASShatter exposes cut count and component size while mean pooling loses relational cut topology; [the cut-set audit](../../plans/masshatter/masshatter_cut_set_features_plan.md) finds 96.8% of fragments have at least two cuts and 55.4% have two cuts sharing a ring. FraGNNet's legacy `depth` is a proxy for cut count on plain BFS DAGs and does not retain that meaning for SMARTS/multicut DAGs. | **Representation defect measured; memorization effect untested.** |
 
+**Update 2026-09-23.** An inference-only corruption probe on two production checkpoints ranks the
+routes inside the intensity head. The per-candidate **boundary block** carries most of the
+train-only allocation, while the cc pools and candidate descriptors act as generalizing features.
+The candidate-set fingerprint carries under 11% of the gap. Those checkpoints are unmerged
+`[M+H]+` FT, and the data-side routes above remain untested. See the
+[memorization route probe](masshatter_memorization_route_probe_2026_09_23.md).
+
 Two tempting explanations are already ruled out or materially weakened:
 
 - **Direct proposal-score leakage is absent in the current lead.** With

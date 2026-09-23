@@ -4,6 +4,19 @@
 
 ## Current handoff
 
+**MASShatter memorization located in the intensity head's boundary block (2026-09-23); inference
+only, no training.** The pooled-embedding corruption probe gained `features` and `set` scopes and
+ran in eval mode on two production checkpoints, `6h67zps9` and `3bej6fq7` (unmerged `[M+H]+` FT,
+not the merged `c4a_base` lineage). Both give a train/validation cosine gap of 0.19 and a
+coverage difference of 0.007. At matched validation damage, corrupting the boundary block leaves
+a 0.022 gap, against 0.059-0.086 for the fragment/complement pools. The pools and the candidate
+descriptors act as generalizing features. The candidate-set fingerprint carries under 11% of the
+gap. So the null `e2`/`e3` `candidate_atom_dropout` arms regularized the wrong columns. Next:
+extend that dropout to the boundary pool, or add dropout of the whole block, on the merged
+128-epoch screen with train metrics on. Not answered: the data-side routes, and whether the
+encoder or the head's weights hold the identity.
+[Finding](findings/masshatter/masshatter_memorization_route_probe_2026_09_23.md).
+
 **Proposal early-stop arms read; both nulls, and the family is closed (2026-09-23).** Read-only
 W&B query, nothing changed but the docs. Tail mean 118-127 against the 0.7270 control: `p1`
 freeze@32 `s5i5qqlz` **+0.0010**, `p3` proposal wd 0.1 `w1dj2ahw` **+0.0020**. `p2` is not worth
