@@ -2591,27 +2591,32 @@ def test_fragment_selection_arms_differ_from_the_control_only_by_selection_keys(
     merged_dir = Path(__file__).parents[1] / "config" / "massshatter" / "ma_mi_merged"
     with (merged_dir / "nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml").open() as f:
         control = yaml.safe_load(f)
-    monitoring = {
-        "wandb_name",
-        "wandb_group",
-        "wandb_tags",
-        "mass_shatter_candidate_coverage_metrics",
-        "mass_shatter_candidate_cut_diagnostics",
-    }
+    naming = {"wandb_name", "wandb_group", "wandb_tags"}
+    coverage = {"mass_shatter_candidate_coverage_metrics", "mass_shatter_candidate_cut_diagnostics"}
+    # Arm -> (selection keys, whether it adds the coverage metrics the control never ran).
     expected = {
-        "f1_mask_order_u128": {"mass_shatter_unique_fragment_target": 128},
-        "f2_marginal_k128_pool256": {
-            "mass_shatter_fragment_selection": "marginal",
-            "mass_shatter_selected_fragment_target": 128,
-        },
-        "f3_marginal_k128_pool512": {
-            "mass_shatter_fragment_selection": "marginal",
-            "mass_shatter_selected_fragment_target": 128,
-            "mass_shatter_unique_fragment_target": 512,
-        },
+        "f1_mask_order_u128": ({"mass_shatter_unique_fragment_target": 128}, True),
+        "f2_marginal_k128_pool256": (
+            {
+                "mass_shatter_fragment_selection": "marginal",
+                "mass_shatter_selected_fragment_target": 128,
+            },
+            True,
+        ),
+        "f3_marginal_k128_pool512": (
+            {
+                "mass_shatter_fragment_selection": "marginal",
+                "mass_shatter_selected_fragment_target": 128,
+                "mass_shatter_unique_fragment_target": 512,
+            },
+            True,
+        ),
+        # The budget ladder keeps the control's monitoring so hours per epoch compare directly.
+        "f4_mask_order_u64": ({"mass_shatter_unique_fragment_target": 64}, False),
+        "f5_mask_order_u128_ctlmon": ({"mass_shatter_unique_fragment_target": 128}, False),
     }
     absent = object()
-    for name, selection_keys in expected.items():
+    for name, (selection_keys, adds_coverage) in expected.items():
         with (merged_dir / "fragment_selection_2026_09_23" / f"{name}.yml").open() as f:
             arm = yaml.safe_load(f)
         changed = {
@@ -2619,10 +2624,9 @@ def test_fragment_selection_arms_differ_from_the_control_only_by_selection_keys(
             for key in set(control) | set(arm)
             if control.get(key, absent) != arm.get(key, absent)
         }
-        assert changed == monitoring | set(selection_keys), name
+        assert changed == naming | (coverage if adds_coverage else set()) | set(selection_keys), name
         assert {key: arm[key] for key in selection_keys} == selection_keys
-        assert arm["mass_shatter_candidate_coverage_metrics"] is True
-        assert arm["mass_shatter_candidate_cut_diagnostics"] is True
+        assert arm["wandb_name"].endswith(name)
         assert arm["seed"] == control["seed"]
 
 

@@ -161,10 +161,49 @@ the existing `c4a_base_s1`/`s2` runs are the control.
 | `f1_mask_order_u128` | U128 | What naive U128 costs on current code. |
 | `f2_marginal_k128_pool256` | marginal, K128 | Does marginal ranking recover U256 at K128? |
 | `f3_marginal_k128_pool512` | marginal, K128, U512 | Does a larger pool help at the same K? |
+| `f4_mask_order_u64` | U64, control monitoring | Budget ladder, added after the early read: is U64 still free, and faster? |
+| `f5_mask_order_u128_ctlmon` | U128, control monitoring | `f1` without the coverage metrics: the clean U128 wall-clock. |
+
+`f1`–`f3` run the coverage and cut-bucket metrics; `f4`/`f5` keep the control's monitoring
+so their hours per epoch compare directly with `c4a_base`. Generate the ladder with
+`submit_masshatter_fragment_selection.sh ladder`.
 
 Read `val_cos_sim_0.01_epoch/mean` as the 118–127 tail mean against the control, as in the
 screen read-out, together with `val_candidate_wrecall`, `val_pool_candidate_wrecall` and hours
 per epoch.
+
+### Runs and early read (2026-09-23, PROVISIONAL)
+
+Running on Fir, started 18:51–18:55 UTC: `f1` [`uorwhapr`](https://wandb.ai/frag-gnn/frag-gnn/runs/uorwhapr),
+`f2` [`u7youmib`](https://wandb.ai/frag-gnn/frag-gnn/runs/u7youmib), `f3`
+[`9nxd8y8y`](https://wandb.ai/frag-gnn/frag-gnn/runs/9nxd8y8y). Control: `c4a_base_s1`
+`5qws8g9x`, `s2` `6plumx6r`. Read at the latest common validation epoch (27); single-epoch
+floor 0.0025, so none of the cosine differences is resolved yet.
+
+| | f1 mask U128 | f2 marginal K128/U256 | f3 marginal K128/U512 | control s1 / s2 |
+| --- | ---: | ---: | ---: | ---: |
+| Cosine, mean of epochs 23–27 | 0.7103 | 0.7094 | 0.7067 | 0.7093 / 0.7096 |
+| Fragments pool → kept | 126 → 126 | 243 → 126 | 406 → 126 | 242 → 242 |
+| `val_candidate_wrecall` (kept) | 0.8797 | 0.8796 | 0.8788 | not logged |
+| `val_pool_candidate_wrecall` | — | 0.9000 | 0.9106 | — |
+| Kept coverage, 3-cut / 4+-cut buckets | 0.202 / 0.117 | 0.207 / 0.083 | 0.209 / 0.078 | not logged |
+| Seconds per epoch (train + validation) | 55.1 | 58.2 | 66.4 | 50.1 / 49.2 |
+
+What it says so far:
+
+- **Marginal ranking recovers none of the pool's extra coverage at K128.** The kept set covers
+  the same 0.880 under mask order and under release-score ranking, while the U256 and U512 pools
+  it ranks from cover 0.900 and 0.911. Release ranking keeps fewer 4+-cut fragments than mask
+  order.
+- **The U128 penalty of the August sweep is not visible on current code.** August had U128
+  0.0095 behind U256 by epoch 27 (0.6835 vs 0.6930, held to epoch 116); here `f1` sits on the
+  control. Its coverage deficit is also smaller: about 0.020 against the U256 pool, not 0.041.
+- **Speed is confounded.** Only the arms run the coverage and cut-bucket validation metrics, and
+  all three are slower per epoch than the control, including `f1` with half the fragments.
+  Among the arms, marginal selection costs +6% (`f2`) and +20% (`f3`) over `f1`.
+
+Re-read at the 118–127 tail before drawing a conclusion; the pool-wide proposal loss may still
+reshape the ranking.
 
 ## Current state
 

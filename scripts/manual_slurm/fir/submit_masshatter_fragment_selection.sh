@@ -7,6 +7,12 @@
 #                             closed-form release probability; proposal loss on the whole pool.
 #   f3_marginal_k128_pool512  f2 from a U512 pool at the same K and E4096.
 #
+# STAGE (first argument) selects which arms are generated:
+#   arms    f1, f2, f3 (default) -- submitted 2026-09-23 as uorwhapr, u7youmib, 9nxd8y8y.
+#   ladder  f4_mask_order_u64, f5_mask_order_u128_ctlmon -- the budget ladder, run with the
+#           CONTROL'S monitoring (no coverage/cut-bucket metrics) so hours per epoch compare
+#           directly with c4a_base. f5 is f1 without the extra metrics: the clean U128 speed.
+#
 # NO CONTROL JOB IS GENERATED. `c4a_base_s1`/`s2` already ran and are the control (tail mean
 # 0.7270, the two replicates spanning 0.0007). Every arm is a diff of `c4a_base_s1` at the same
 # seed; the arms also switch on the (monitoring-only) candidate coverage and cut-bucket metrics,
@@ -32,6 +38,7 @@
 
 set -euo pipefail
 
+STAGE="${1:-arms}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SCRIPT_DIR="${REPO_ROOT}/slurm_scripts/masshatter_fragment_selection"
 JOB_DIR="${REPO_ROOT}/jobs"
@@ -39,12 +46,24 @@ CAMPAIGN_DIR="config/massshatter/ma_mi_merged/fragment_selection_2026_09_23"
 ACCOUNT="rrg-dwishart"
 EMAIL="fw4@ualberta.ca"
 
-JOB_NAMES=(msh_fs_f1_mask_u128 msh_fs_f2_marg_k128_p256 msh_fs_f3_marg_k128_p512)
-CONFIGS=(
-    "${CAMPAIGN_DIR}/f1_mask_order_u128.yml"
-    "${CAMPAIGN_DIR}/f2_marginal_k128_pool256.yml"
-    "${CAMPAIGN_DIR}/f3_marginal_k128_pool512.yml"
-)
+case "${STAGE}" in
+    arms)
+        JOB_NAMES=(msh_fs_f1_mask_u128 msh_fs_f2_marg_k128_p256 msh_fs_f3_marg_k128_p512)
+        CONFIGS=(
+            "${CAMPAIGN_DIR}/f1_mask_order_u128.yml"
+            "${CAMPAIGN_DIR}/f2_marginal_k128_pool256.yml"
+            "${CAMPAIGN_DIR}/f3_marginal_k128_pool512.yml"
+        )
+        ;;
+    ladder)
+        JOB_NAMES=(msh_fs_f4_mask_u64 msh_fs_f5_mask_u128_ctlmon)
+        CONFIGS=(
+            "${CAMPAIGN_DIR}/f4_mask_order_u64.yml"
+            "${CAMPAIGN_DIR}/f5_mask_order_u128_ctlmon.yml"
+        )
+        ;;
+    *) echo "Usage: $0 [arms|ladder]" >&2; exit 1 ;;
+esac
 
 cd "${REPO_ROOT}"
 
