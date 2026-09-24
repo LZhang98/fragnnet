@@ -4,6 +4,15 @@
 
 ## Current handoff
 
+**Run-to-run variance is epistemic (2026-09-24); offline only.** On the f0/f1 unmerged
+`[M+H]+`/FT val exports, agreement between the two runs falls from 0.94 to 0.75, and the
+ensemble gain rises from +0.005 to +0.034, as a val molecule's nearest-train-neighbour Tanimoto
+drops from above 0.8 to below 0.3. This holds within every NCE bin. Adding the 17,006 NIST23-only
+`[M+H]+`/FT molecules to training is estimated at about +0.018 (correlational). See
+[the finding](findings/masshatter/masshatter_variance_novelty_2026_09_24.md). Next checks: a pure
+seed pair, and whether removing the boundary block (`n1`, not built) raises run-to-run agreement.
+A mixture-of-experts version is a later option; the finding notes the design constraint.
+
 **MASShatter MSGYM config moved to the best measured recipe (2026-09-23); smoke-tested, nothing
 submitted.** `config/massshatter/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml`
 had never been trained. It now resolves to `c4a_base_s1` plus `a1_prenorm` plus the `d3` cosine
