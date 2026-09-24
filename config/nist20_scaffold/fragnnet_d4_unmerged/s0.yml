@@ -25,7 +25,7 @@ mol_params:
 
 # model stuff
 frag_gnn_type: NodeMLP
-num_depth: 4
+num_depth: 5
 num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
