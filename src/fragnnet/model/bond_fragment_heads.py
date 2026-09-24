@@ -550,6 +550,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         ce_pair_bias: bool = False,
         ce_film: bool = False,
         ce_feature_dim: int = 0,
+        input_dropout: float = 0.0,
+        sink_dim: int = 0,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -591,6 +593,12 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("initial_oos_probability must be finite and in (0, 1)")
         if candidate_feature_dim < 0:
             raise ValueError("candidate_feature_dim must be nonnegative")
+        if not 0.0 <= input_dropout < 1.0:
+            raise ValueError(f"input_dropout must be in [0, 1), got {input_dropout}")
+        if sink_dim < 0:
+            raise ValueError(f"sink_dim must be nonnegative, got {sink_dim}")
+        if sink_dim > 0 and not unique_fragment_tokens:
+            raise ValueError("the memorization sink requires unique-fragment tokens")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -617,6 +625,9 @@ class CandidateIntensityTransformerHead(nn.Module):
             nn.SiLU(),
             nn.LayerNorm(model_dim),
         )
+        # Training-only dropout on the projected token, the first layer every candidate route
+        # passes through. Applied in `forward` so `input_projection` keeps its state-dict keys.
+        self.input_dropout = float(input_dropout)
         self.inducing_tokens: nn.Parameter | None = None
         if attention_type == "induced":
             self.inducing_tokens = nn.Parameter(th.empty(1, num_inducing_points, model_dim))
@@ -676,6 +687,14 @@ class CandidateIntensityTransformerHead(nn.Module):
                 self.oos_head.bias,
                 math.log(initial_oos_probability / (1.0 - initial_oos_probability)),
             )
+        # Memorization sink: the shared feature map `phi` that a per-molecule vector reads, as
+        # in `forward`'s `sink_vectors`. Built on a forked RNG so enabling it leaves every other
+        # parameter's initialization unchanged.
+        self.sink_dim = sink_dim
+        self.sink_projection: nn.Linear | None = None
+        if sink_dim > 0:
+            with th.random.fork_rng(devices=[]):
+                self.sink_projection = nn.Linear(model_dim, sink_dim, bias=False)
 
     def _load_from_state_dict(
         self,
@@ -851,8 +870,15 @@ class CandidateIntensityTransformerHead(nn.Module):
         component_neutral_masses: th.Tensor | None = None,
         ce_features: th.Tensor | None = None,
         candidate_features: th.Tensor | None = None,
+        sink_vectors: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
-        """Return intensity logits and, when enabled, one OOS logit per molecule."""
+        """Return intensity logits and, when enabled, one OOS logit per molecule.
+
+        ``sink_vectors`` are the memorization-sink rows of each candidate's molecule, shape
+        ``(num_components, sink_dim)``. When given, each mask residual gains
+        ``sink_vector · phi(token)``, averaged over the mask's components like the mask token;
+        with ``None`` (evaluation, or before the sink starts) the head is the shared model.
+        """
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
         if any(
@@ -918,7 +944,16 @@ class CandidateIntensityTransformerHead(nn.Module):
             features.append(mask_log_probabilities.to(fragment_embeddings).unsqueeze(1))
         if candidate_features is not None:
             features.append(candidate_features.to(fragment_embeddings))
+        if (sink_vectors is not None) and (
+            self.sink_projection is None or sink_vectors.shape != (num_components, self.sink_dim)
+        ):
+            raise ValueError(
+                f"sink_vectors must have shape ({num_components}, {self.sink_dim}) and need a "
+                "head built with sink_dim > 0"
+            )
         tokens = self.input_projection(th.cat(features, dim=1))
+        if self.input_dropout > 0.0:
+            tokens = F.dropout(tokens, p=self.input_dropout, training=self.training)
         if self.ce_conditioned != (ce_features is not None):
             raise ValueError(
                 "ce_features must be supplied exactly when CE-conditioned attention is on"
@@ -950,6 +985,14 @@ class CandidateIntensityTransformerHead(nn.Module):
         )
         mask_tokens = mask_token_sums / mask_component_counts.to(tokens).unsqueeze(1)
         mask_residuals = self.mask_residual_head(mask_tokens).squeeze(1)
+        if sink_vectors is not None:
+            # Bilinear in the sink row, so a zero row (unseen molecule) adds exactly nothing.
+            sink_logits = (sink_vectors.to(tokens) * self.sink_projection(tokens)).sum(dim=1)
+            mask_residuals = mask_residuals + tokens.new_zeros(num_masks).index_add(
+                0,
+                component_mask_indices,
+                sink_logits,
+            ) / mask_component_counts.to(tokens)
         ion_hydrogen_logits = self.ion_hydrogen_head(tokens).reshape(
             num_components,
             self.num_ion_modes,

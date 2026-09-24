@@ -1072,6 +1072,12 @@ class MassShatterModel(nn.Module):
         candidate_features: Sequence[str] = ("c_cut_count", "c_size"),
         candidate_atom_dropout: float = 0.0,
         candidate_boundary_dropout: float = 0.0,
+        candidate_boundary_block: bool = True,
+        boundary_local_layers: int = 0,
+        boundary_encoder_dropout: float = 0.0,
+        intensity_input_dropout: float = 0.0,
+        memorization_sink_dim: int = 0,
+        memorization_sink_num_molecules: int = 0,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -1226,6 +1232,24 @@ class MassShatterModel(nn.Module):
                 as-is. Aimed at the boundary block because an inference-time corruption probe
                 located most of the train-only intensity allocation there. The proposal branch
                 and the candidate descriptors are untouched.
+            candidate_boundary_block: False feeds a zero boundary block to the intensity head in
+                training and evaluation alike, which removes the block. A rerouting test for the
+                memorization-route plan, so it rejects the options that act on the block.
+            boundary_local_layers: 0 builds the boundary block from the shared encoder's atom
+                embeddings. ``k > 0`` builds it from a separate ``k``-layer plain GINE over the
+                raw atom features, with no global attention and no context, so the cut term sees
+                only the cut site's ``k``-hop chemistry and cannot name the molecule. Requires
+                ``boundary_bond_encoder``.
+            boundary_encoder_dropout: Training-only dropout on the ``CutBondEncoder`` hidden
+                layer. Requires ``boundary_bond_encoder``.
+            intensity_input_dropout: Training-only dropout on the projected candidate token.
+            memorization_sink_dim: Width of the per-molecule memorization sink; 0 disables it.
+                A zero-initialized row per molecule adds ``row · phi(token)`` to each candidate's
+                residual when ``forward`` receives ``memorization_sink_indices`` (training only).
+                Without indices the model is exactly the shared model. Requires
+                ``unique_fragment_mode``.
+            memorization_sink_num_molecules: Rows in the sink table, indexed by ``mol_id``; must
+                exceed the largest ``mol_id`` passed. Set together with ``memorization_sink_dim``.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1292,6 +1316,31 @@ class MassShatterModel(nn.Module):
             raise ValueError(
                 f"candidate_boundary_dropout must be in [0, 1), got {candidate_boundary_dropout}"
             )
+        if not candidate_boundary_block and (
+            boundary_bond_encoder or boundary_local_layers > 0 or candidate_boundary_dropout > 0.0
+        ):
+            raise ValueError(
+                "candidate_boundary_block: False removes the boundary block; turn off "
+                "boundary_bond_encoder, boundary_local_layers and candidate_boundary_dropout"
+            )
+        if boundary_local_layers < 0:
+            raise ValueError(
+                f"boundary_local_layers must be nonnegative, got {boundary_local_layers}"
+            )
+        if (boundary_local_layers > 0 or boundary_encoder_dropout > 0.0) and not (
+            boundary_bond_encoder
+        ):
+            raise ValueError(
+                "boundary_local_layers and boundary_encoder_dropout require boundary_bond_encoder"
+            )
+        if memorization_sink_dim < 0 or memorization_sink_num_molecules < 0:
+            raise ValueError("memorization sink dimensions must be nonnegative")
+        if (memorization_sink_dim > 0) != (memorization_sink_num_molecules > 0):
+            raise ValueError(
+                "memorization_sink_dim and memorization_sink_num_molecules are set together"
+            )
+        if memorization_sink_dim > 0 and not unique_fragment_mode:
+            raise ValueError("the memorization sink requires unique_fragment_mode")
         if (separate_ion_mode_proposal_head or separate_ion_h_support_head) and not (
             unique_fragment_mode and proposal_selection_only
         ):
@@ -1589,15 +1638,41 @@ class MassShatterModel(nn.Module):
         )
         self.candidate_atom_dropout = float(candidate_atom_dropout)
         self.candidate_boundary_dropout = float(candidate_boundary_dropout)
+        self.candidate_boundary_block = candidate_boundary_block
         self.boundary_bond_encoder = (
             CutBondEncoder(
                 atom_dim=precursor_hidden_dim,
                 hidden_dim=head_hidden_dim,
                 out_dim=precursor_hidden_dim,
+                dropout=boundary_encoder_dropout,
             )
             if boundary_bond_encoder
             else None
         )
+        # The optional modules below use a forked RNG, so enabling one leaves every other
+        # parameter's initialization exactly as in the configuration without it.
+        self.boundary_local_encoder: GNN | None = None
+        if boundary_local_layers > 0:
+            with th.random.fork_rng(devices=[]):
+                self.boundary_local_encoder = GNN(
+                    node_feats_size=node_feature_dim,
+                    edge_feats_size=edge_feature_dim,
+                    hidden_size=precursor_hidden_dim,
+                    num_layers=boundary_local_layers,
+                    gnn_type="GINE",
+                    normalization=precursor_normalization,
+                    dropout=precursor_dropout,
+                    residual_activation=gnn_residual_activation,
+                )
+        self.memorization_sink: nn.Embedding | None = None
+        if memorization_sink_dim > 0:
+            with th.random.fork_rng(devices=[]):
+                self.memorization_sink = nn.Embedding(
+                    memorization_sink_num_molecules,
+                    memorization_sink_dim,
+                )
+            # Zero rows: an unseen molecule, and every molecule at the start, add nothing.
+            nn.init.zeros_(self.memorization_sink.weight)
         self.charge_head = AtomChargeAffinityHead(
             precursor_hidden_dim,
             context_dim,
@@ -1651,6 +1726,8 @@ class MassShatterModel(nn.Module):
             ce_pair_bias=intensity_ce_pair_bias,
             ce_film=intensity_ce_film,
             ce_feature_dim=self.context_encoder.ce_feature_dim,
+            input_dropout=intensity_input_dropout,
+            sink_dim=memorization_sink_dim,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
@@ -2315,6 +2392,7 @@ class MassShatterModel(nn.Module):
         spec_ace_weights: th.Tensor | None = None,
         static_graph: MassShatterStaticGraph | None = None,
         proposal_group_ids: th.Tensor | None = None,
+        memorization_sink_indices: th.Tensor | None = None,
     ) -> dict[str, th.Tensor]:
         """Generate a sparse monoisotopic spectrum for every precursor.
 
@@ -2336,6 +2414,10 @@ class MassShatterModel(nn.Module):
                 transfer, so mask selection only has to move the bond logits back.
                 Must include matched ``smarts_templates`` when SMARTS is enabled;
                 an empty tuple per molecule explicitly represents no matches.
+            proposal_group_ids: Spectrum group ids; required by ``share_proposal_across_ev``.
+            memorization_sink_indices: Sink row (``mol_id``) per spectrum, shape
+                ``(batch_size,)``. Only a model with a memorization sink accepts it; ``None``
+                runs the shared model, which is what evaluation always does.
 
         Returns:
             Dictionary with the sparse prediction contract plus diagnostics:
@@ -2416,6 +2498,33 @@ class MassShatterModel(nn.Module):
                 mol_pyg.edge_index,
                 mol_pyg.edge_attr,
             )
+        # The boundary block reads the shared embeddings, or a local cut-site encoder that sees
+        # only raw atom features and k hops, so the cut term cannot name the molecule.
+        boundary_atom_embeddings = (
+            atom_embeddings
+            if self.boundary_local_encoder is None
+            else self.boundary_local_encoder(
+                mol_pyg.x,
+                mol_pyg.batch,
+                mol_pyg.edge_index,
+                mol_pyg.edge_attr,
+            )
+        )
+        sink_rows = None
+        if memorization_sink_indices is not None:
+            if self.memorization_sink is None:
+                raise ValueError("memorization_sink_indices given to a model without a sink")
+            memorization_sink_indices = memorization_sink_indices.reshape(-1)
+            if memorization_sink_indices.shape != (batch_size,):
+                raise ValueError("memorization_sink_indices must hold one index per spectrum")
+            _validate_tensor_condition(
+                (
+                    (memorization_sink_indices >= 0)
+                    & (memorization_sink_indices < self.memorization_sink.num_embeddings)
+                ).all(),
+                "memorization_sink_indices must lie in [0, memorization_sink_num_molecules)",
+            )
+            sink_rows = self.memorization_sink(memorization_sink_indices)
         # ``chemical_bond_index`` is the undirected single-entry-per-bond view of the
         # graph (``edge_index`` is directed), so either endpoint identifies the molecule.
         bond_batch_indices = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]
@@ -2881,15 +2990,19 @@ class MassShatterModel(nn.Module):
                 num_components=num_fragments,
                 num_molecules=batch_size,
             )
-            boundary_embeddings = self._boundary_embeddings(
-                mol_pyg,
-                atom_embeddings,
-                chemical_bond_embeddings,
-                fragment_boundary_bond_indices,
-                boundary_fragment_indices,
-                fragment_atom_indices,
-                atom_fragment_indices,
-                num_fragments,
+            boundary_embeddings = (
+                self._boundary_embeddings(
+                    mol_pyg,
+                    boundary_atom_embeddings,
+                    chemical_bond_embeddings,
+                    fragment_boundary_bond_indices,
+                    boundary_fragment_indices,
+                    fragment_atom_indices,
+                    atom_fragment_indices,
+                    num_fragments,
+                )
+                if self.candidate_boundary_block
+                else fragment_embeddings.new_zeros(fragment_embeddings.shape)
             )
             # The TRUE atom membership, never the subset `_candidate_atom_dropout` returned
             # above: that dropout perturbs the pooled embeddings alone, and every descriptor
@@ -2970,6 +3083,7 @@ class MassShatterModel(nn.Module):
                 ),
                 ce_features=spectrum_ce_features,
                 candidate_features=fragment_candidate_features,
+                sink_vectors=None if sink_rows is None else sink_rows[fragment_batch_indices],
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None
@@ -3044,15 +3158,19 @@ class MassShatterModel(nn.Module):
                 num_components=num_fragments,
                 num_molecules=batch_size,
             )
-            boundary_embeddings = self._boundary_embeddings(
-                mol_pyg,
-                atom_embeddings,
-                chemical_bond_embeddings,
-                candidates.boundary_bond_indices,
-                candidates.boundary_component_indices,
-                candidates.atom_indices,
-                candidates.atom_component_indices,
-                num_fragments,
+            boundary_embeddings = (
+                self._boundary_embeddings(
+                    mol_pyg,
+                    boundary_atom_embeddings,
+                    chemical_bond_embeddings,
+                    candidates.boundary_bond_indices,
+                    candidates.boundary_component_indices,
+                    candidates.atom_indices,
+                    candidates.atom_component_indices,
+                    num_fragments,
+                )
+                if self.candidate_boundary_block
+                else fragment_embeddings.new_zeros(fragment_embeddings.shape)
             )
             # The TRUE atom membership; see the unique-fragment branch above.
             candidate_inputs = CandidateFeatureInputs(

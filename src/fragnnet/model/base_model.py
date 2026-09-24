@@ -835,23 +835,29 @@ class CutBondEncoder(nn.Module):
         >>> frag = mol_pool(bonds, bond_frag_idxs, dim_size=num_frags)
     """
 
-    def __init__(self, atom_dim: int, hidden_dim: int, out_dim: int) -> None:
+    def __init__(self, atom_dim: int, hidden_dim: int, out_dim: int, dropout: float = 0.0) -> None:
         """Initialize CutBondEncoder.
 
         Args:
             atom_dim: Width of one atom embedding from the mol encoder.
             hidden_dim: Hidden width of the bond MLP.
             out_dim: Width of the per-bond output encoding.
+            dropout: Training-only dropout on the hidden layer. It is applied in ``forward``
+                rather than added to ``net``, so the state-dict keys, and every checkpoint
+                written before it existed, are unchanged. 0.0 draws no random numbers.
 
         Raises:
-            ValueError: If any dimension is not positive.
+            ValueError: If any dimension is not positive or ``dropout`` is outside [0, 1).
         """
         super().__init__()
         for name, dim in (("atom_dim", atom_dim), ("hidden_dim", hidden_dim), ("out_dim", out_dim)):
             if dim <= 0:
                 raise ValueError(f"CutBondEncoder {name} must be positive, got {dim}")
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError(f"CutBondEncoder dropout must be in [0, 1), got {dropout}")
         self.atom_dim = atom_dim
         self.out_dim = out_dim
+        self.dropout = float(dropout)
         # 3 * atom_dim: [in, out, in * out] -- the product is what makes the bond more than the
         # sum of its atoms; the hidden nonlinearity is what stops pooling collapsing the pairing.
         self.net = nn.Sequential(
@@ -883,7 +889,11 @@ class CutBondEncoder(nn.Module):
             raise ValueError(
                 f"CutBondEncoder got atom width {in_embed.shape[-1]}, expected {self.atom_dim}"
             )
-        return self.net(th.cat([in_embed, out_embed, in_embed * out_embed], dim=-1))
+        features = th.cat([in_embed, out_embed, in_embed * out_embed], dim=-1)
+        hidden = self.net[1](self.net[0](features))
+        if self.dropout > 0.0:
+            hidden = F.dropout(hidden, p=self.dropout, training=self.training)
+        return self.net[2](hidden)
 
 
 def encode_cut_bond_pairs(

@@ -1087,6 +1087,14 @@ class MassShatterPL(SpectrumPL):
             candidate_features=self.hparams.mass_shatter_candidate_features,
             candidate_atom_dropout=self.hparams.mass_shatter_candidate_atom_dropout,
             candidate_boundary_dropout=self.hparams.mass_shatter_candidate_boundary_dropout,
+            candidate_boundary_block=self.hparams.mass_shatter_candidate_boundary_block,
+            boundary_local_layers=self.hparams.mass_shatter_boundary_local_layers,
+            boundary_encoder_dropout=self.hparams.mass_shatter_boundary_encoder_dropout,
+            intensity_input_dropout=self.hparams.mass_shatter_intensity_input_dropout,
+            memorization_sink_dim=self.hparams.mass_shatter_memorization_sink_dim,
+            memorization_sink_num_molecules=(
+                self.hparams.mass_shatter_memorization_sink_num_molecules
+            ),
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
         logger.info(
@@ -2379,6 +2387,31 @@ class MassShatterPL(SpectrumPL):
 
         self.metric_fn = metric_fn
 
+    def _memorization_sink_indices(self, batch_kwargs: dict) -> th.Tensor | None:
+        """Return the memorization-sink row of each spectrum in a training batch, else None.
+
+        The sink is a training-only random effect indexed by ``mol_id``. Evaluation, inference,
+        and the epochs before ``mass_shatter_memorization_sink_start_epoch`` get ``None``, which
+        runs the shared model.
+
+        Args:
+            batch_kwargs: The collated batch; ``mol_id`` holds one raw id per spectrum.
+
+        Returns:
+            Long tensor of shape ``(batch_size,)`` on the batch's device, or ``None``.
+        """
+        if (
+            self.hparams.mass_shatter_memorization_sink_dim == 0
+            or not self.training
+            or self.current_epoch < self.hparams.mass_shatter_memorization_sink_start_epoch
+        ):
+            return None
+        return th.tensor(
+            [int(mol_id) for mol_id in batch_kwargs["mol_id"]],
+            dtype=th.long,
+            device=batch_kwargs["spec_prec_type"].device,
+        )
+
     def forward(self, **batch_kwargs) -> dict[str, th.Tensor]:
         """Select the MASShatter inputs from SpectrumPL's collated batch.
 
@@ -2417,6 +2450,7 @@ class MassShatterPL(SpectrumPL):
                 if self.hparams.mass_shatter_share_proposal_across_ev
                 else None
             ),
+            memorization_sink_indices=self._memorization_sink_indices(batch_kwargs),
         )
         if (
             self.hparams.mass_shatter_share_proposal_across_ev

@@ -826,6 +826,34 @@ mass_shatter_candidate_atom_dropout: 0.0
 # intensity allocation there, while candidate_atom_dropout above leaves it exact. Proposal branch
 # and candidate descriptors are untouched. 0.0 draws no random numbers (bit-identical default).
 mass_shatter_candidate_boundary_dropout: 0.0
+# --- Memorization-route plan, Step 1 (docs/plans/masshatter/masshatter_memorization_route_plan.md).
+# Every key below is off at its default: the model is unchanged and draws no extra random numbers.
+# False feeds the intensity head a ZERO boundary block in training and evaluation, i.e. removes
+# the block (arm r0, the rerouting test). The keys that act on the block must then be off:
+# mass_shatter_boundary_bond_encoder, mass_shatter_boundary_local_layers and
+# mass_shatter_candidate_boundary_dropout.
+mass_shatter_candidate_boundary_block: True
+# 0 builds the boundary block from the shared encoder's globally attended atom embeddings. k > 0
+# builds it from a separate k-layer plain GINE over the raw atom features, with no global attention
+# and no context, so the cut term sees only the cut site's k-hop chemistry and cannot name the
+# molecule (arm r1). Requires mass_shatter_boundary_bond_encoder: True.
+mass_shatter_boundary_local_layers: 0
+# Training-only dropout on the CutBondEncoder hidden layer (arm k1). Requires
+# mass_shatter_boundary_bond_encoder: True.
+mass_shatter_boundary_encoder_dropout: 0.0
+# Training-only dropout on the projected candidate token, before candidate attention (arm k1).
+mass_shatter_intensity_input_dropout: 0.0
+# Memorization sink (arm m1): a zero-initialized row per molecule, indexed by mol_id, adds
+# row . phi(token) to each candidate's intensity residual in TRAINING only, from the start epoch
+# on. Validation, test and inference never use it, so they score the shared model. 0 disables it.
+# Requires mass_shatter_unique_fragment_mode and spec_params.unique_id (which puts mol_id in the
+# batch).
+mass_shatter_memorization_sink_dim: 0
+# Rows in the sink table; must exceed the largest mol_id trained on (NIST20 split files reach
+# 35024). Set together with mass_shatter_memorization_sink_dim.
+mass_shatter_memorization_sink_num_molecules: 0
+# First training epoch (0-based) at which the sink is applied.
+mass_shatter_memorization_sink_start_epoch: 0
 mass_shatter_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition

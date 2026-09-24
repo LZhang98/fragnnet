@@ -96,6 +96,12 @@ def _build_model(
     candidate_features: Sequence[str] = ("c_cut_count", "c_size"),
     candidate_atom_dropout: float = 0.0,
     candidate_boundary_dropout: float = 0.0,
+    candidate_boundary_block: bool = True,
+    boundary_local_layers: int = 0,
+    boundary_encoder_dropout: float = 0.0,
+    intensity_input_dropout: float = 0.0,
+    memorization_sink_dim: int = 0,
+    memorization_sink_num_molecules: int = 0,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -171,6 +177,12 @@ def _build_model(
         candidate_features=candidate_features,
         candidate_atom_dropout=candidate_atom_dropout,
         candidate_boundary_dropout=candidate_boundary_dropout,
+        candidate_boundary_block=candidate_boundary_block,
+        boundary_local_layers=boundary_local_layers,
+        boundary_encoder_dropout=boundary_encoder_dropout,
+        intensity_input_dropout=intensity_input_dropout,
+        memorization_sink_dim=memorization_sink_dim,
+        memorization_sink_num_molecules=memorization_sink_num_molecules,
     )
 
 

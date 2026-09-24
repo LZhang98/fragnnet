@@ -1,6 +1,6 @@
 # Which intensity-head input carries MASShatter's memorization?
 
-> **Status:** FINDING · **Updated:** 2026-09-23
+> **Status:** FINDING · **Updated:** 2026-09-24
 > Inference-only corruption probe on two production checkpoints, no training. The train-only
 > part of the intensity allocation sits in the **boundary block**, the pooled embedding of the
 > severed bonds' endpoints. Corrupting it removes about 89% of the 0.19 eval-mode train/validation
@@ -125,6 +125,18 @@ one intact should produce.
 control, inside the ±0.005 gate. It does not test this result. `boundary_bond_encoder: false`
 changes how the boundary block is built but still feeds a boundary block to the head, and that
 run logged no train cosine.
+
+**Which module this is (checked 2026-09-24).** The probe corrupts the intensity head's
+positional argument `boundary_embeddings`. With `boundary_bond_encoder: true`, which is on in
+both checkpoints and in the toy check, that tensor is `CutBondEncoder([in, out, in*out])` applied
+to each (fragment, cut bond) pair and mean-pooled per fragment
+(`MassShatterModel._boundary_embeddings`). The same class, in a different instance, is
+FraGNNet's `cut_bond` feature. The FraGNNet
+[bond-set plan §7.2](../../plans/fragnnet/fragment_bond_set_representation.md#72-generalization-gap-by-representation)
+reached the matching verdict offline in July: the cut-bond encoder arm had the largest
+train→val gap of any arm, and raw static cut-bond features had a 3.5x smaller one. Commit
+`0f99e7e4` now encodes each directed pair once instead of once per row (9.8x fewer rows on a
+merged batch). That computes the same function, so it does not change this result.
 
 ## Limits
 
