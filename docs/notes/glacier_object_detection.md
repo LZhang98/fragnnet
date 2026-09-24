@@ -1,6 +1,6 @@
 # GLACIER (Wang, Wang & Coley, MIT — arXiv 2606.29161)
 
-> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-22
+> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-23
 >
 > Literature notes on "GLACIER: Rethinking Mass Spectrum Prediction as an Object Detection
 > Problem". Read the **bin-width caveat** before quoting any of its NIST'20 numbers.
@@ -394,8 +394,11 @@ Graphormer over the heavy-atom graph.
   embedding; **Gasteiger charge**.
 - **Bond**: type one-hot + other; conjugation; ring membership; **ring-size multi-hot**;
   **fused-ring**; stereo one-hot + other.
-- **Metadata**: adduct one-hot and collision energy sinusoidally encoded, projected into *both*
-  node embeddings and edge-level attention biases (Section 3.1). No instrument feature.
+- **Metadata**: adduct one-hot, collision energy sinusoidally encoded, and an instrument one-hot
+  (`embed-instrument: True` in the NIST'20 config). Section 3.1 reads as if metadata reaches
+  "node embeddings and edge-level attention biases", but the code (`molecular_embedding`,
+  `318bb7b`) concatenates it onto the **atom inputs only**; the attention bias is built from
+  bond features and shortest-path distance alone. Corrected 2026-09-23.
 - RDKit features are computed **once at molecule level and reused across fragments** — pitched
   explicitly as an advantage over ICEBERG's per-fragment embeddings.
 
@@ -410,6 +413,57 @@ fragment formula, the **neutral-loss complement** (root formula minus fragment f
 That is exactly the two design gaps in our 2026-09-20 feature audit: our candidate intensity head
 is mass- and composition-blind while `ion_mzs` is already in scope, and the cut bonds reach
 intensity scoring only through the GNN.
+
+### How the embeddings are built, read from code (`318bb7b`, 2026-09-23)
+
+Source: `src/ms_pred/glacier/{joint_model,dataset}.py`, `src/ms_pred/graphormer/graphormer_layers.py`
+and `src/ms_pred/nn_utils/form_embedder.py` at `samgoldman97/ms-pred` `318bb7b`, with the NIST'20
+config. Widths were checked by instantiating `JointModel`.
+
+1. **Atoms: computed once per molecule, and never specific to a fragment.** Each atom has 88 input
+   features: element (18 + other), degree, formal charge, hybridization, aromaticity, H count,
+   ring membership, ring sizes 3-8, fused ring, chirality, Gasteiger charge, element group (8) and
+   a 14-step random-walk positional encoding. The metadata is concatenated onto every atom: adduct
+   (one-hot + element-group multi-hot), CE (64-dim sinusoid; zeros when CE is missing) and
+   instrument one-hot. That gives 178 columns, projected by `Linear(178, 256)` and added to a
+   degree embedding.
+2. **Bonds never become node inputs.** The 28 bond features pass through `Linear(28, 8)`, one scalar
+   per attention head, and are averaged along the shortest path (at most 10 hops) into a per-head
+   attention bias, plus a shortest-path-distance bias. Bond chemistry therefore only decides how
+   strongly atom i attends to atom j. Five full-attention layers follow, plus a graph token `G`.
+3. **The fragment token contains no atoms and no cut site.**
+   `t_k = Linear(G ‖ psi(f_k) ‖ psi(r - f_k) ‖ onehot(n_broken, 0..6))`, i.e. 256 + 144 + 144 + 7 =
+   551 → 256. `psi` is a **fixed** abs-sine code, 8 dims per element count over 18 elements (H
+   included). It is close to a binary code of the exact integer, so "exactly one O and two H lost"
+   is a distinct pattern. Two fragments of one molecule with the same formula and cut count start
+   from the same token. The neutral-loss term `psi(r - f_k)` is the same vector in every molecule.
+4. **Atoms enter only through attention restricted to the fragment's own atoms.** The intensity
+   decoder has 4 layers. Each token cross-attends to the molecule's final atom embeddings, masked
+   to its own atoms, and self-attends across all of the molecule's fragments in the same layers.
+   Three full self-attention layers over the fragments follow. The atom embeddings do not depend
+   on the fragment, so nothing marks which atoms sit at a cut. The cut site is visible only as
+   `n_broken` and implicitly through which atoms are included. The pooling is learned and depends
+   on the query, which carries the formula and `n_broken`.
+5. **Output.** 26 sigmoids (±6 H × CRF/CMF) are masked to the shifts the fragment's own H count and
+   the molecule's remaining H can supply (capped at 6), and placed at exact masses.
+
+Versus the MASShatter token (`c4a_base`):
+
+| | GLACIER | MASShatter |
+|---|---|---|
+| atoms | learned attention over its own atoms | mean pools of the fragment's atoms and of the complement's atoms |
+| cut site | `n_broken` only | **boundary block**: `CutBondEncoder` MLP on `[in, out, in·out]` of the cut bonds' endpoint embeddings; plus `c_cut_count` |
+| fragment formula | `psi(f_k)`, exact counts | none; `c_mass` (log1p mass, precursor fraction) |
+| neutral loss | `psi(r - f_k)`, exact counts | none by default; `c_nl_composition` (log1p counts) built, `c4a_complement_composition` never run |
+| molecule | learned graph token `G` (carries the metadata) | metadata-only context vector |
+
+GLACIER's token is **formula-first**. The parts that transfer across molecules (formula, neutral
+loss, cut count) form the query, and molecule-specific atom detail enters only through attention.
+Ours is **embedding-first**: three pooled 384-dim embeddings, one of them a sharp cut-site
+embedding, and no formula. That cut-site embedding is where the
+[memorization probe](../findings/masshatter/masshatter_memorization_route_probe_2026_09_23.md)
+located most of the train/val gap. GLACIER is not immune to memorization either, since `G` plus
+the formula can key a (molecule, formula) pair, and no train/val gap is reported for it.
 
 ### Versus our MASShatter feature set
 
@@ -438,7 +492,10 @@ t_k = MLP( G || psi(f_k) || psi(r_form - f_k) || OHE(n_broken_k) )
 ```
 
 MASShatter already carried three of the four terms: the root context `G`, the candidate's own
-pooled representation, and `cut_counts` (= `n_broken`). The missing term was
+pooled representation, and `cut_counts` (= `n_broken`). Two of those matches are loose
+(2026-09-23). Our context vector is metadata only (adduct, instrument, frag mode, CE), whereas `G`
+is a learned whole-molecule embedding. And `psi(f_k)` is the fragment's exact **formula**, while
+ours is a pooled atom embedding plus `c_mass`; we have no fragment-composition feature at all. The missing term was
 **`psi(r_form - f_k)`**, the elemental composition of the complementary neutral loss, now added
 as `mass_shatter_candidate_composition_features` (off by default; arm
 `..._c4a_complement_composition.yml`, a one-key diff from `c4a_base_s1`).
@@ -546,8 +603,9 @@ plus Appendices C-D. Architecture only — none of this is a measured result.
 | intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index; `neutral_loss_formula` implemented, off, arm never run | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)**, **plus the complement composition since 2026-09-22 (opt-in)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
 | output law | **softmax over the joint (fragment x formula) grid** + OOS sink; 9 H-shifts (+/-4) x {CRF, CMF} | charge head -> ion-mode / H-channel head | **independent sigmoids**, 13 H-shifts (+/-6) x {CRF, CMF} = 26, summed at exact m/z then binned (eqs. 15-16) |
 | loss | Gaussian-density CE at **instrument tolerance** (FT 10 ppm / QTOF 20 ppm) | spectral CE (JSS ~= CE) + support BCE | cosine on **0.1 Da bins** + MAGMa teacher-forced auxiliary, weight `w_magma` annealed 1 -> 0 |
-| conditioning | CE (NCE+ACE), adduct, instrument, frag-mode at encoder input + CE FiLM + mode affine on logits | same context encoder | adduct + CE only, but injected into node embeddings **and edge-level attention biases**; no instrument feature |
-| params | **2.79M measured** (2.80M with the 2026-09-22 features) | **9.22M measured** at the `c4a_base_s1` geometry | **not published** — no hidden dim, layer count or parameter count anywhere in the paper; only `4xNVIDIA A5000` for training. Its own baseline, ICEBERG 2.0 on NIST'20, is **7.0M** (3.40M inten @256 + 3.59M gen @512) |
+| conditioning | CE (NCE+ACE), adduct, instrument, frag-mode at encoder input + CE FiLM + mode affine on logits | same context encoder | adduct (one-hot + element-group multi-hot), CE (64-dim sinusoid) and instrument one-hot, concatenated onto every atom's input features; nothing in the attention biases (code, corrected 2026-09-23) |
+| params | **2.77M measured** (2,772,290 trainable; 2.78M with the 2026-09-22 features) | **9.22M measured** (9,215,573 trainable) at the `c4a_base_s1` geometry: bond head 3.87M, intensity head 2.46M, encoder 1.81M, boundary encoder 0.79M | not in the paper, **15.11M measured** (15,105,694 trainable, 2026-09-23): upstream `ms_pred.glacier.joint_model.JointModel` at `samgoldman97/ms-pred` `318bb7b` with `configs/glacier/joint_train_nist20.yaml`. Fragment decoder (200 slots, 4 layers) 4.26M, intensity decoder 4.21M, Graphormer x5 @256 4.01M, fragment-set encoder 2.37M. ICEBERG 2.0 at the same commit and its NIST'20 configs: **7.06M** (gen 3.64M + inten 3.43M) |
+| training recipe | — | AdamW wd 0.01, dropout 0.1, **constant** lr 1e-3, batch 512 merged spectra, fixed 128 epochs, best-val-cosine checkpoint | wd **0**, dropout 0.1, lr 4e-4 with 2000-step warmup and 0.9 decay, batch **16**, early stopping on val loss (patience 5), grad clip 5 (hardcoded in `train_joint.py`). ICEBERG: wd 0 / 1e-7, dropout 0.2 / 0.1, warmup + exponential decay, batch 32, patience 5 |
 
 ### 1. Fragment competition is the gap
 
@@ -628,9 +686,11 @@ a fixed budget. Eq. 16 lets them re-read at any bin width post hoc, but they nev
 distinction — which is why their Appendix F shows retrieval improving at 0.01 Da while cosine
 prefers the coarse grid.
 
-Two smaller asymmetries: their CE reaches the *interaction* (edge-level attention bias) while ours
-reaches only the encoder input and an output FiLM — though neither injects CE into
-fragment-to-fragment attention, which is where the CE decomposition points. And their
+Two smaller asymmetries: their CE reaches only the encoder input, and through it every atom
+embedding and the root token `G` that seeds each fragment token. The paper's Section 3.1 wording
+suggested CE also reaches the edge-level attention bias, but the code does not do that (corrected
+2026-09-23). Ours reaches the encoder input and an output FiLM. Neither injects CE into
+fragment-to-fragment attention directly, which is where the CE decomposition points. And their
 MAGMa -> end-to-end anneal is a curriculum we have only as a stub (`dag_curriculum` configs).
 
 ### Consequence for the ranked plan

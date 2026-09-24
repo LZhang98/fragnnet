@@ -1,6 +1,10 @@
 # MASShatter architecture arms, read at the matched 128-epoch screen, 2026-09-22
 
 > **Status:** FINDING · **Updated:** 2026-09-23
+> **§5 (added 2026-09-23) reads `g1`, one 5-layer GINE_GSA encoder with no bond-refinement
+> head and no `CutBondEncoder`. It is a REJECTION: −0.0160 against the control, −0.0136 against
+> the two-key `c4a_no_bbe` contrast, and below both controls at every epoch. The loss is
+> intensity fit on both splits, not the proposal.**
 > **§4 (added 2026-09-23) re-checks every full-attention run from raw history and reads the
 > 630-epoch arms past 127 against the horizon probe: full attention alone is +0.0017 to +0.0030
 > depending on the control, and `a1`/`a6` settle 0.006–0.008 above it by epoch 200.**
@@ -378,11 +382,90 @@ times §3.1's same-code floor. Epoch-matched window means, Δ against `tkkesus9`
 3. **Untested:** pre-LN + full attention alone. `a7` is the only run combining them, and it also
    carries CE-FiLM and both pairwise biases.
 
+## 5. Encoder simplification arm `g1` (added 2026-09-23)
+
+Run `xb9ic2pp` from
+`config/massshatter/ma_mi_merged/encoder_simplify_2026_09_23/g1_gine_gsa5_no_bond_head.yml`:
+seed 397623 (paired with `c4a_base_s1`), Fir H100 MIG, 128 epochs, finished. Same method as §1
+(`scan_history`, last value per epoch). Resolved against `c4a_base_s1`, it differs by three
+keys:
+
+- `mol_num_layers` 2 → 5.
+- `mass_shatter_bond_num_layers` 3 → 0, which swaps `BondFocusedBreakHead` for
+  `EndpointBondBreakHead`.
+- `mass_shatter_boundary_bond_encoder` off.
+
+Against `c4a_no_bbe` (`pkavjg8z`, same seed) only the first two differ. The two keys missing
+from `pkavjg8z`'s W&B config (`mass_shatter_fragment_selection`,
+`mass_shatter_selected_fragment_target`) were added later, and their defaults are the only
+behavior that existed then. So `g1` − `no_bbe` is a paired two-key contrast. Parameters fall
+from 9,217,181 to 7,694,493: encoder +2,665,728, bond head −3,401,088, `CutBondEncoder`
+−787,328. The intensity and charge heads are unchanged.
+
+Tail means over epochs 118–127 unless the row says otherwise:
+
+| | `g1` | `c4a_no_bbe` | `c4a_base_s1` | `c4a_base_s2` |
+| --- | ---: | ---: | ---: | ---: |
+| val cosine | **0.7110** | 0.7246 | 0.7266 | 0.7273 |
+| best ≤ 127 | 0.7160 @ 111 | 0.7263 @ 123 | 0.7282 @ 122 | 0.7289 @ 123 |
+| val cosine @ 32 / 64 / 100 | 0.6846 / 0.7057 / 0.7039 | 0.7111 / 0.7208 / 0.7232 | 0.7168 / 0.7202 / 0.7258 | 0.7162 / 0.7195 / 0.7272 |
+| val primary loss | −2.6506 | −2.6969 | −2.7251 | −2.7264 |
+| train primary loss | −3.2310 | −3.3105 | −3.3484 | −3.3414 |
+| val proposal loss | 2.2753 | 2.2649 | 2.2769 | 2.2776 |
+| train proposal loss | 2.2103 | 1.8291 | 1.7709 | 1.7778 |
+| `val_wrecall` | 0.8880 | 0.8917 | 0.8911 | 0.8912 |
+| retained mask probability (val) | 0.8146 | 0.8713 | 0.8729 | 0.8760 |
+| min/epoch (`_runtime` / 128) | 0.819 | 0.802 | 0.857 | 0.847 |
+
+**What it shows.**
+
+1. **Rejected.** The arm is −0.0160 against the control mean, −0.0156 against `c4a_base_s1`
+   (paired), and −0.0136 against `no_bbe`: about three times the gate. It is below both
+   controls at all 128 epochs (closest −0.0017) and above `no_bbe` at one. The screen did not
+   cut it off early: its 10-epoch windows from 88 to 127 read 0.7113, 0.6977, 0.7132 and
+   0.7110. Speed does not rescue it either. It is 4% faster per epoch than the controls and
+   trails them at every epoch.
+2. **The loss is in intensity fit, on both splits.** Primary loss is worse on train (+0.117
+   against the control mean) and on val (+0.075), both far outside §3.2's 0.011–0.014 floor.
+   So the arm fits the intensities worse; it does not just generalize worse. Its train/val
+   primary-loss gap narrows to 0.580, against 0.614–0.623, while cosine falls. That is the
+   fourth time in this file that a narrower gap has not paid. `val_wrecall` drops 0.003,
+   outside the ±0.0006 span of §1's eight runs but small.
+3. **The likely cause is encoder depth, but the two keys are not separated.** In both arms the
+   proposal reads the encoder `.detach()`ed (see the
+   [head-input asymmetry](masshatter_head_input_asymmetry_2026_09_22.md)). The encoder is
+   therefore trained by the intensity loss alone either way, and removing the bond head cannot
+   change what trains it. The bond head reaches the spectrum only through which fragments are
+   selected. That selection did change: the selected masks hold 0.815 of the proposal's mask
+   mass, against 0.873. But coverage moved by only 0.003 `wrecall`. So most of the −0.0136
+   against `no_bbe` is probably the 2 → 5 depth acting on the intensity head. This is n=1, and
+   the isolating arms are one key each on `c4a_base`: `mass_shatter_bond_num_layers: 0` or
+   `mol_num_layers: 5`.
+4. **The refinement head generalizes better early, then memorizes.** Val proposal loss:
+
+   | epoch | `g1` | `c4a_no_bbe` | `c4a_base_s1` | `c4a_base_s2` |
+   | --- | ---: | ---: | ---: | ---: |
+   | 16 | 2.574 | 2.245 | 2.231 | 2.262 |
+   | 32 | 2.331 | 2.230 | 2.233 | 2.209 |
+   | best | 2.253 @ 85 | 2.205 @ 49 | 2.222 @ 35 | 2.207 @ 35 |
+   | tail 118–127 | 2.275 | 2.265 | 2.277 | 2.278 |
+
+   The three-block head reaches a lower val proposal loss, sooner, and the endpoint head never
+   gets there. The two meet at the tail only because the refinement runs' val proposal loss
+   rises after epochs 35–49 while their train proposal loss keeps falling to 1.77–1.83
+   (`g1`: 2.21). Equal tail val loss does not mean the 3.40M parameters buy only train fit. It
+   matches the late proposal degradation the
+   [proposal early-stop arms](../../plans/masshatter/masshatter_proposal_early_stop_plan.md)
+   measured.
+
 ## Reproduction
 
 `scan_history` over the run IDs in the tables above plus `5qws8g9x` / `6plumx6r`, keys
 `val_cos_sim_0.01_epoch/mean`, `val_primary_loss_epoch/mean`, `train_primary_loss_epoch/mean`,
-`val_wrecall_epoch/mean`, forward-filled by `epoch`. No script was added to the repository;
+`val_wrecall_epoch/mean`, forward-filled by `epoch`. §5 adds `xb9ic2pp` and `pkavjg8z` and the
+keys `val_proposal_loss_epoch/mean`, `train_proposal_loss_epoch/mean`,
+`val_retained_mask_probability_epoch/mean` and `_runtime`; its parameter counts come from
+building `MassShatterPL` from each resolved config. No script was added to the repository;
 the query is three calls against `wandb.Api()` and is cheaper to rewrite than to maintain.
 
 ## Sources

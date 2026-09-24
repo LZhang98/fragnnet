@@ -4,6 +4,20 @@
 
 ## Current handoff
 
+**MassSpecGym GLACIER-parity features arm prepared (2026-09-24); nothing submitted.**
+`config/massshatter/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_glacier_feats.yml`
+is the running MSGYM config (`1imawkx1`: val `cos_sim_0.01` 0.568 best at epoch 38/128) plus the
+four GLACIER-parity features that were never trained anywhere: `a_fused_ring`, `b_ring_size`,
+`b_fused_ring`, and `c_nl_composition` (neutral-loss element counts, GLACIER's formula term).
+`upload_checkpoints` is on. The resolved diff is exactly those keys plus naming. The model grows by
+11k parameters (intensity token 1,285 to 1,303 inputs). All 16,967 MSGYM molecules featurize, and
+a 2-epoch smoke on a 256-spectrum subsample trains (batch 32; the production batch 512 does not fit
+the local 8 GB card). Read against `1imawkx1` on the same val set, then on the simulation test set.
+Data note: `ms_gym_benchmark_1_5` is exactly MassSpecGym's official simulation-challenge set
+(`simulation_challenge == True`, 119,029 `[M+H]+` spectra, all with CE). The other 112,075 spectra
+lack CE on 97.6% of rows. GLACIER trained on all 231,104 for retrieval and does not say which test
+population its 0.58 cosine covers. Generate on Fir with `setup_job_cc.py` (`fir:h100-3g.40gb`).
+
 **Run-to-run variance is epistemic (2026-09-24); offline only.** On the f0/f1 unmerged
 `[M+H]+`/FT val exports, agreement between the two runs falls from 0.94 to 0.75, and the
 ensemble gain rises from +0.005 to +0.034, as a val molecule's nearest-train-neighbour Tanimoto
@@ -12,6 +26,14 @@ drops from above 0.8 to below 0.3. This holds within every NCE bin. Adding the 1
 [the finding](findings/masshatter/masshatter_variance_novelty_2026_09_24.md). Next checks: a pure
 seed pair, and whether removing the boundary block (`n1`, not built) raises run-to-run agreement.
 A mixture-of-experts version is a later option; the finding notes the design constraint.
+
+**Formula-only baseline measured (2026-09-23); offline only.** On the f1 (`6h67zps9`) unmerged
+`[M+H]+`/FT exports, a predictor that sees only formulas and NCE reaches 0.38-0.40 val cosine
+(lookup) / 0.46 (learned) against the model's 0.76. Blending it into the model adds +0.005, most
+of it above NCE 60, so the transferable formula signal is small and mostly already in the model.
+See [the finding](findings/masshatter/masshatter_formula_only_baseline_2026_09_23.md). A
+formula-first token without the boundary block (`n1`/`n2`, not built) should therefore be judged
+as removing a memorizing input, not as adding formula information.
 
 **MASShatter MSGYM config moved to the best measured recipe (2026-09-23); smoke-tested, nothing
 submitted.** `config/massshatter/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml`
@@ -66,19 +88,19 @@ with no training.** Next: an EMA/SWA weight average over the last epochs (nothin
 does this) and a `d3` replicate, then a seed pair to price the between-run share.
 [Finding](findings/masshatter/masshatter_target_cleaning_cross_eval_2026_09_23.md).
 
-**MASShatter encoder-simplification arm `g1` prepared (2026-09-23); nothing submitted.** One
-5-layer GINE_GSA atom encoder replaces the control's 2 GINE_GSA layers plus the 3-block
-`BondFocusedBreakHead`. Bonds are scored from their endpoints, and the boundary `CutBondEncoder`
-is off. The resolved diff against `c4a_base_s1` is those three keys (`mol_num_layers` 2 → 5,
-`mass_shatter_bond_num_layers` 3 → 0, `mass_shatter_boundary_bond_encoder` off) plus naming.
-Parameters fall from 9.22M to 7.69M: encoder +2.67M, bond head −3.40M, `CutBondEncoder` −0.79M.
-No run since the 2026-09-03 target change has used more than 2 mol layers or 0 bond layers. The
-boundary key alone is `c4a_no_bbe`, a null (0.7246). With it off, the head still receives an
-endpoint-mean boundary block, so `g1` does not remove the block the memorization probe points
-at. Verified by a one-epoch CPU smoke on `debug_tinyv4`. There is no GPU timing, because the local
-GPU was busy. Read the 118–127 tail mean against the 0.7270 control, together with hours per
-epoch. Config: `config/massshatter/ma_mi_merged/encoder_simplify_2026_09_23/`. Generator:
-`scripts/manual_slurm/fir/submit_masshatter_encoder_simplify.sh`.
+**MASShatter encoder-simplification arm `g1` read (2026-09-23): a REJECTION.** Read-only W&B
+query. `xb9ic2pp` replaces the control's 2 GINE_GSA layers and 3-block `BondFocusedBreakHead`
+with one 5-layer encoder and an endpoint bond head, and turns the boundary `CutBondEncoder` off
+(9.22M → 7.69M parameters). Its 118–127 tail mean is **0.7110**: −0.0160 against the 0.7270
+control, and −0.0136 against `c4a_no_bbe`, which differs from it only in the two depth keys. It
+is below both controls at all 128 epochs, and being 4% faster per epoch does not rescue it. The
+loss is intensity fit: primary loss is worse on train and on val, while the tail val proposal
+loss is level. The proposal reads the encoder detached, so the bond head cannot change what
+trains the encoder, and the likely cause is the 5-layer encoder. The two keys are not
+separated; the one-key arms that would isolate them are `mass_shatter_bond_num_layers: 0` and
+`mol_num_layers: 5`. The refinement head also reaches a lower val proposal loss than the
+endpoint head by epoch 35, then drifts up; equal tail loss does not make it pure train fit.
+[Finding §5](findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md#5-encoder-simplification-arm-g1-added-2026-09-23).
 
 **`CutBondEncoder` now encodes each directed cut bond once (2026-09-23).** Both callers,
 MASShatter's `boundary_bond_encoder` and FraGNNet's `cut_bond`, ran the encoder on every

@@ -4,6 +4,8 @@
 > launched. §1-§6 are read off live code on `research/masshatter-ion-h-selection` and a census of
 > all 223 `config/massshatter/**` files resolved against `config/template.yml`; §7 re-reads an
 > existing 630-epoch run pair against that wiring and reaches the practical conclusion.
+> **Corrected 2026-09-23:** §7.2 item 4 called the base-probability column a one-key test. It
+> is not: with `proposal_selection_only: True` the model refuses to build.
 >
 > **No.** They share the same encoder output tensor and the same context vector, but they
 > consume them at different granularity, and in the **entire current `ma_mi_merged` production
@@ -335,12 +337,19 @@ Ranked, with the reason each is not larger:
    component embedding and not the other, and the proposal boundary pool would use the
    construction `boundary_bond_encoder` exists to replace. Cheap, correctness only.
 
-4. **Try the base-probability column** (`proposal_anchored: False`, one key). It is on in
-   **0 of 85** `ma_mi_merged` configs, so the intensity head has never seen how confident the
-   proposal was on this lineage, while `proposal_selection_only: True` also keeps that
-   probability out of the output. **Caveat that keeps this at rank 4:** it opens a gradient path
-   from the intensity loss *into* the proposal heads — the reverse of §7.1's coupling, untested
-   in sign, and §7.1 is a reason to expect coupling the branches to cost rather than pay.
+4. **The base-probability column is not a one-key test** (corrected 2026-09-23; this item
+   first said it was). All 96 `ma_mi_merged` configs set `proposal_anchored: True`, so the
+   intensity head has never seen how confident the proposal was on this lineage. But
+   `proposal_anchored: False` together with `proposal_selection_only: True` raises at model
+   construction ("proposal_selection_only cannot expose proposal probabilities to the intensity
+   transformer", `MassShatterModel.__init__`); verified on `c4a_base_s1`. Turning the column on
+   also needs `proposal_selection_only: False`, and that key does two more things. It adds the
+   proposal log-probability back into the output (`log P + residual`), and it clears
+   `detach_proposal_inputs`, which reconnects the proposal loss to the encoder. That is §7.1's
+   coupling, measured at −0.011 to −0.013. So the existing keys give a three-mechanism bundle
+   that contains a known loss. The column alone would need new code, for example a detached
+   column that `proposal_selection_only` permits. The original caveat still applies: the
+   column opens a gradient path from the intensity loss into the proposal heads.
 
 5. **Nothing on the feature axis.** Adding descriptor features to either head is closed by
    [feature headroom](../feature_headroom_2026_09_22.md) (0.93–1.00 held-out recoverability from
