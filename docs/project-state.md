@@ -4,6 +4,19 @@
 
 ## Current handoff
 
+**MASShatter MSGYM config moved to the best measured recipe (2026-09-23); smoke-tested, nothing
+submitted.** `config/massshatter/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml`
+had never been trained. It now resolves to `c4a_base_s1` plus `a1_prenorm` plus the `d3` cosine
+schedule (warmup 1000, floor 1%), with MSGYM data, `[M+H]+` only, no CMF, `nce_max: 300`. It
+runs 128 epochs of 194 steps (`lr_total_steps: 24832`, was 174/290 constant LR). The three
+2026-09-20 defaults are pinned. Resolved-config diffs against `a1`, `d3` and `c4a_base_s1` show
+only those keys. Unmerged is kept, since the MSGYM benchmark scores per spectrum. A 2-epoch smoke
+fit on a 256-spectrum subsample finished (9.2M parameters, loss falling), and the checkpoint
+records `pre`/`cosine` and ends at 1e-5. Caveats: `a1`+`d3` together is untested, `d3` is n=1,
+and there is no MASShatter MSGYM baseline to read it against. The unmerged NIST20 parent
+`6ks7v8ce` took about 5 h for that step count on an L40S (0.73 s/step, 26.6 GiB peak).
+Generate on Fir with `setup_job_cc.py` (`fir:h100-3g.40gb`, `j=<job_name>` for resume).
+
 **`mh_ft_clean` cross-eval run (2026-09-23); target cleaning is a CLOSED NULL, and run-to-run
 variance is the largest lever measured; inference only.** Both checkpoints were scored against
 both targets on val and test: `6h67zps9` (f1, cleaned target) and `3bej6fq7` (f0). On the raw

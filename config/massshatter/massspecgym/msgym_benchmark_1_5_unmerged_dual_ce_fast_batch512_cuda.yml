@@ -1,8 +1,8 @@
 # MASShatter on MassSpecGym v1.5 (benchmark subset), forked from
-# config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml.
-# Architecture, candidate enumeration, loss and batching are unchanged from that arm, so the two
-# runs stay comparable; only the data, the metadata vocabularies, the CE range and the epoch
-# budget differ.
+# config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml
+# (run 6ks7v8ce). Candidate enumeration, loss and batching are unchanged from that arm; the data,
+# metadata vocabularies and CE range differ (1-3 below), and on 2026-09-23 the recipe was moved
+# to the best measured NIST20 settings (4-6 below). This config has never been trained.
 #
 # Measured from data/proc/ms_gym_benchmark_1_5/spec_df.pkl (2026-09-20):
 #   118,991 spectra / 16,960 molecules / 19,409 groups.
@@ -29,9 +29,34 @@
 #    clamp onto one embedding row; at 300, 0.79% do. ace_max stays 300 -- only 0.01% of the raw
 #    ACE values (max 358.4) exceed it.
 #
-# 3. min_epochs/max_epochs 174/290 against the nist20 arm's 60/100. Exposure-matched: 287,721
-#    nist20 ma_mi train spectra against 99,306 here is a 2.90x ratio at identical batch size, so
-#    matched epochs give matched gradient steps. Same convention as the merged arm's 378/630.
+# 3. min_epochs/max_epochs 128/128 (was 174/290, exposure-matched to the parent's 100 epochs).
+#    drop_last is off, so an epoch is ceil(99,306 / 512) = 194 steps and 128 epochs = 24,832.
+#    The parent (562 steps/epoch, constant LR) had plateaued by ~17k steps: 0.6988 @ep20,
+#    0.6999 @ep30, 0.7033 @ep99. 128 epochs is past that on steps and on passes per molecule
+#    (12,310 train molecules here at 8.07 spectra each; 15,514 at 18.55 in nist20 ma_mi).
+#    The cosine schedule (5) needs a fixed length, so min == max.
+#
+# 4. mass_shatter_intensity_norm_placement: pre. `a1_prenorm` (q4t4udee) is the only clean
+#    single-key PASS of the 128-epoch merged screen: +0.0056 tail mean (118-127) against the
+#    0.7270 control, parameter-identical, and it halves the calibration drift.
+#    docs/findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md
+#
+# 5. Cosine LR to 1% of peak with the template's 1000-step linear warmup, i.e. arm
+#    `d3_cosine_warmup1000` (rcfzf67p): best <=127 0.7357 against a 0.7286 control mean; d1/d2
+#    (no warmup) reached 0.7329/0.7326. n=1. lr_total_steps = 128 x 194 = 24,832; change it
+#    with max_epochs. The schedule clamps at the floor, so an overshoot is harmless.
+#    docs/findings/masshatter/masshatter_overfit_readout_2026_09_22.md
+#    4 + 5 together are UNTESTED: every NIST20 read above changed one of them alone, and a7
+#    showed attention-side gains are not additive.
+#
+# 6. The three 2026-09-20 defaults (h_transfer_bound valence, boundary_bond_encoder, the
+#    candidate feature list) are PINNED at the values c4a_base_s1 pins, so a later default flip
+#    cannot move this run. They equal today's template defaults; the architecture is unchanged.
+#
+# Measured and deliberately NOT applied: a1+a6 attention stacks (not additive), the subformula
+# target filter (a denominator effect), candidate atom dropout, wd/dropout arms, g1 encoder
+# simplification (all nulls or rejections). EMA (ema_decay), boundary-block dropout and
+# fragment-marginal selection exist but have not been trained yet.
 #
 # frag_modes keeps HCD next to CID although msgym is 100% CID, matching
 # config/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
@@ -48,7 +73,6 @@ wandb_tags:
 - unique_fragments_256
 - max_enumerated_masks_4096
 - pathway_marginalization
-- deterministic
 - instrument_tolerance
 - gine_gsa384
 - bond_centric
@@ -64,7 +88,10 @@ wandb_tags:
 - frag_mode_embed
 - m+h
 - no_cmf
-- exposure_matched_epochs
+- prenorm
+- lr_decay
+- cosine_schedule
+- warmup
 - proposal_selection_only
 - proposal_loss_0.1
 - candidate_conditional
@@ -126,6 +153,7 @@ mass_shatter_unique_fragment_mode: true
 mass_shatter_ranked_mask_budget: 4096
 mass_shatter_include_single_bond_cuts: true
 mass_shatter_max_h_transfer: 4
+mass_shatter_h_transfer_bound: valence
 mass_shatter_include_cmf: false
 mass_shatter_charge_pooling: logsumexp
 mass_shatter_context_dim: 128
@@ -175,14 +203,18 @@ automatic_optimization: true
 gradient_clip_val: 5.0
 lr: 0.001
 weight_decay: 0.01
-lr_schedule: false
+lr_schedule: true
+lr_schedule_type: cosine
+lr_total_steps: 24832
+lr_min_ratio: 0.01
+lr_warmup_steps: 1000
 accelerator: gpu
 devices: 1
 num_workers: 6
 precision: 32
 use_tensor_float32: true
-min_epochs: 174
-max_epochs: 290
+min_epochs: 128
+max_epochs: 128
 debug_overfit: false
 compile: false
 pl_enable_progress_bar: true
@@ -197,6 +229,15 @@ auxiliary_scores:
 - wprecision
 eval_mz_bin_res:
 - 0.01
+compute_train_auxiliary_metrics: false
 
 # Explicit opt-in; unsupported modes/devices fail instead of falling back.
 mass_shatter_candidate_backend: cuda
+
+mass_shatter_boundary_bond_encoder: true
+mass_shatter_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+mass_shatter_intensity_norm_placement: pre
