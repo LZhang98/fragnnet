@@ -95,6 +95,7 @@ def _build_model(
     boundary_bond_encoder: bool = False,
     candidate_features: Sequence[str] = ("c_cut_count", "c_size"),
     candidate_atom_dropout: float = 0.0,
+    candidate_boundary_dropout: float = 0.0,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -169,6 +170,7 @@ def _build_model(
         boundary_bond_encoder=boundary_bond_encoder,
         candidate_features=candidate_features,
         candidate_atom_dropout=candidate_atom_dropout,
+        candidate_boundary_dropout=candidate_boundary_dropout,
     )
 
 

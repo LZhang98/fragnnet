@@ -1071,6 +1071,7 @@ class MassShatterModel(nn.Module):
         intensity_escape: bool = False,
         candidate_features: Sequence[str] = ("c_cut_count", "c_size"),
         candidate_atom_dropout: float = 0.0,
+        candidate_boundary_dropout: float = 0.0,
     ) -> None:
         """Initialize the MASShatter model.
 
@@ -1218,6 +1219,13 @@ class MassShatterModel(nn.Module):
                 and complement embeddings see a random subset. Regularizes against
                 memorizing exact atom sets; every other candidate input keeps the true
                 membership.
+            candidate_boundary_dropout: Training-only probability of dropping a candidate's
+                whole boundary block from the intensity token. A dropped block is zeroed and
+                kept blocks are scaled by ``1 / (1 - p)`` (inverted dropout), so the expected
+                input to the token projection is unchanged and evaluation uses the block
+                as-is. Aimed at the boundary block because an inference-time corruption probe
+                located most of the train-only intensity allocation there. The proposal branch
+                and the candidate descriptors are untouched.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1279,6 +1287,10 @@ class MassShatterModel(nn.Module):
         if not 0.0 <= candidate_atom_dropout < 1.0:
             raise ValueError(
                 f"candidate_atom_dropout must be in [0, 1), got {candidate_atom_dropout}"
+            )
+        if not 0.0 <= candidate_boundary_dropout < 1.0:
+            raise ValueError(
+                f"candidate_boundary_dropout must be in [0, 1), got {candidate_boundary_dropout}"
             )
         if (separate_ion_mode_proposal_head or separate_ion_h_support_head) and not (
             unique_fragment_mode and proposal_selection_only
@@ -1576,6 +1588,7 @@ class MassShatterModel(nn.Module):
             edge_feature_dim,
         )
         self.candidate_atom_dropout = float(candidate_atom_dropout)
+        self.candidate_boundary_dropout = float(candidate_boundary_dropout)
         self.boundary_bond_encoder = (
             CutBondEncoder(
                 atom_dim=precursor_hidden_dim,
@@ -2064,6 +2077,32 @@ class MassShatterModel(nn.Module):
         ).index_add(0, kept_component_indices, th.ones_like(kept_component_indices))
         keep |= (kept_sizes == 0)[atom_component_indices]
         return atom_indices[keep], atom_component_indices[keep]
+
+    def _candidate_boundary_dropout(self, boundary_embeddings: th.Tensor) -> th.Tensor:
+        """Drop each candidate's whole boundary block with the configured probability.
+
+        Inverted dropout at the block level: each row is zeroed with probability ``p`` and
+        the surviving rows are scaled by ``1 / (1 - p)``, so ``E[output] = input`` and the
+        token projection, which starts with a linear layer, sees the same expected input in
+        training and evaluation. Training-only; the default ``p = 0`` returns the input
+        without drawing random numbers, so existing configurations are bit-identical.
+
+        Args:
+            boundary_embeddings: Boundary block per candidate, shape
+                ``(num_components, hidden)``.
+
+        Returns:
+            Tensor of the same shape: the input outside training or at ``p = 0``, otherwise
+            the input with dropped rows zeroed and kept rows rescaled.
+        """
+        if not self.training or self.candidate_boundary_dropout <= 0.0:
+            return boundary_embeddings
+        keep_scale = F.dropout(
+            boundary_embeddings.new_ones((boundary_embeddings.shape[0], 1)),
+            p=self.candidate_boundary_dropout,
+            training=True,
+        )
+        return boundary_embeddings * keep_scale
 
     def _eligible_smarts_templates(
         self,
@@ -2915,7 +2954,7 @@ class MassShatterModel(nn.Module):
             intensity_outputs = self.intensity_head(
                 fragment_embeddings,
                 complement_embeddings,
-                boundary_embeddings,
+                self._candidate_boundary_dropout(boundary_embeddings),
                 th.zeros_like(fragment_log_probabilities),
                 fragment_log_probabilities,
                 fragment_batch_indices,
@@ -3048,7 +3087,7 @@ class MassShatterModel(nn.Module):
             intensity_outputs = self.intensity_head(
                 fragment_embeddings,
                 complement_embeddings,
-                boundary_embeddings,
+                self._candidate_boundary_dropout(boundary_embeddings),
                 charge_log_probabilities + component_mechanism_log_probabilities,
                 original_component_mask_log_probabilities,
                 fragment_batch_indices,

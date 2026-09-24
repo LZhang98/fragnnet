@@ -34,7 +34,11 @@ from fragnnet.dataset.data_sampler import (
 )
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
-from fragnnet.utils.pl_utils import ConsoleLogger, migrate_mass_shatter_proposal_method
+from fragnnet.utils.pl_utils import (
+    ConsoleLogger,
+    ExponentialMovingAverage,
+    migrate_mass_shatter_proposal_method,
+)
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
@@ -1040,6 +1044,8 @@ def run_training(
             save_top_k=config_d["checkpoint_save_top_k"],
         )
         callbacks.append(checkpoint_callback)
+    if config_d["ema_decay"] is not None:
+        callbacks.append(ExponentialMovingAverage(config_d["ema_decay"]))
 
     # setup profiler
     logging.info("setup profiler")

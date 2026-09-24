@@ -1131,6 +1131,115 @@ def test_candidate_atom_dropout_does_not_perturb_descriptor_columns(
     assert th.equal(no_dropout, with_dropout)
 
 
+# --- candidate boundary dropout ----------------------------------------------------------------
+
+
+def test_candidate_boundary_dropout_is_inactive_outside_training() -> None:
+    """Evaluation feeds the true boundary block, so validation metrics stay deterministic."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, candidate_boundary_dropout=0.5)
+    model.eval()
+    boundary = th.randn(7, 5)
+
+    assert th.equal(model._candidate_boundary_dropout(boundary), boundary)
+
+
+def test_candidate_boundary_dropout_is_inactive_at_probability_zero() -> None:
+    """The default returns the input and draws no random numbers, so old runs are bit-identical."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch)
+    model.train()
+    boundary = th.randn(7, 5)
+    rng_before = th.get_rng_state()
+
+    output = model._candidate_boundary_dropout(boundary)
+
+    assert th.equal(output, boundary)
+    assert th.equal(th.get_rng_state(), rng_before)
+
+
+def test_candidate_boundary_dropout_drops_whole_blocks_with_inverted_scaling() -> None:
+    """Each row is all zero or the input times 1/(1-p), and about p of the rows are dropped."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, candidate_boundary_dropout=0.25)
+    model.train()
+    th.manual_seed(11)
+    boundary = th.rand(2000, 6) + 0.5  # strictly positive, so a zero entry means dropped
+
+    output = model._candidate_boundary_dropout(boundary)
+
+    assert output.shape == boundary.shape
+    dropped = (output == 0).all(dim=1)
+    kept = ~dropped
+    assert not ((output == 0).any(dim=1) & kept).any(), "a block is dropped whole or not at all"
+    assert th.allclose(output[kept], boundary[kept] / 0.75)
+    assert dropped.float().mean().item() == pytest.approx(0.25, abs=0.03)
+    # Inverted scaling keeps the expected block, which is what the token's linear layer sees.
+    assert output.mean().item() == pytest.approx(boundary.mean().item(), rel=0.05)
+
+
+def test_candidate_boundary_dropout_rejects_certain_dropout() -> None:
+    batch = _build_batch(("CCO",))
+    with pytest.raises(ValueError, match="candidate_boundary_dropout must be in"):
+        _build_model(batch, candidate_boundary_dropout=1.0)
+
+
+@pytest.mark.parametrize("unique_fragment_mode", [False, True])
+def test_candidate_boundary_dropout_reaches_only_the_intensity_token(
+    unique_fragment_mode: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In training the head's boundary input is the dropped block; at eval it is untouched.
+
+    Also pins that the rate adds no parameters: at eval a dropout model and a default model built
+    from the same seed give identical predictions.
+    """
+    batch = _build_batch(("CCOC", "CCO"))
+    kwargs = {
+        "max_masks": 4,
+        "max_enumerated_masks": 8,
+        "unique_fragment_mode": unique_fragment_mode,
+    }
+    captured: list[tuple[th.Tensor, ...]] = []
+
+    def _forward(model: MassShatterModel) -> dict[str, th.Tensor]:
+        return model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0, 0]),
+            spec_nce=th.tensor([10.0, 40.0]),
+        )
+
+    dropout_model = _build_model(batch, candidate_boundary_dropout=0.5, **kwargs)
+    default_model = _build_model(batch, **kwargs)
+    real_head_forward = dropout_model.intensity_head.forward
+
+    def _spy(fragment, complement, boundary, *args, **head_kwargs):
+        captured.append((fragment, complement, boundary))
+        return real_head_forward(fragment, complement, boundary, *args, **head_kwargs)
+
+    monkeypatch.setattr(dropout_model.intensity_head, "forward", _spy)
+
+    dropout_model.eval()
+    default_model.eval()
+    eval_output = _forward(dropout_model)
+    assert th.allclose(eval_output["pred_logprobs"], _forward(default_model)["pred_logprobs"])
+    eval_boundary = captured[-1][2]
+
+    dropout_model.train()
+    th.manual_seed(5)
+    train_output = _forward(dropout_model)
+    train_boundary = captured[-1][2]
+
+    assert train_boundary.shape == eval_boundary.shape
+    dropped = (train_boundary == 0).all(dim=1) & (eval_boundary != 0).any(dim=1)
+    kept = ~(train_boundary == 0).all(dim=1)
+    assert dropped.any(), "the fixture must actually drop a block"
+    assert th.allclose(train_boundary[kept], 2.0 * eval_boundary[kept], atol=1e-6)
+    assert th.isfinite(train_output["pred_logprobs"]).all()
+    train_output["pred_logprobs"].mean().backward()
+    assert dropout_model.intensity_head.input_projection[0].weight.grad.abs().sum() > 0
+
+
 @pytest.mark.parametrize("unique_fragment_mode", [False, True])
 def test_forward_runs_with_an_empty_candidate_feature_list(unique_fragment_mode: bool) -> None:
     """A token with no descriptor block at all is new, and has to survive the model forward."""

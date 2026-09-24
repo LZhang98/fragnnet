@@ -11,6 +11,16 @@
 #   control  c4a_base_s1_trainaux alone. This is also recommendation 1 of the overfit read-out
 #            ("turn on the two metrics that make this answerable on the next control"), so it
 #            is worth having even if the wd10 arm is dropped.
+#   transfer the 2026-09-23 ranking-transfer screen: the same control plus t2 below.
+#   t2       t2_ema998 alone (EMA of the weights, decay 0.998).
+#
+# RANKING-TRANSFER ARMS (2026-09-23, plan docs/plans/masshatter/masshatter_ranking_transfer_plan.md).
+# The val ranking error is a generalization failure (train ranking gap 0.011 vs val 0.121), so
+# this arm tries to make the ranking transfer rather than add a ranking loss. It is one key off
+# c4a_base_s1_trainaux, the SAME control job as the wd10 stage: submit that control once, whichever
+# stages you run. Read t2's train/val gap with care -- its train metrics measure the raw weights
+# while validation measures the average. The boundary-block dropout arm t1 was dropped on
+# 2026-09-24: molecule identity reaches every head input, so blocking one can reroute the lookup.
 #
 # WHY TWO JOBS. The question is about the train/validation gap, so it needs a TRAIN cosine.
 # `compute_train_auxiliary_metrics` is False in c4a_base_s1/s2, so the existing control supplies
@@ -72,13 +82,22 @@ CTRL_JOBS=(msh_rg_base_s1_trainaux)
 CTRL_CONFIGS=("${MS_DIR}/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1_trainaux.yml")
 CTRL_TIMES=(3:00:00)
 
+TRANSFER_DIR="${MS_DIR}/ranking_transfer_2026_09_23"
+T2_JOBS=(msh_rt_t2_ema998)
+T2_CONFIGS=("${TRANSFER_DIR}/t2_ema998.yml")
+T2_TIMES=(3:00:00)
+
 case "${STAGE}" in
     wd10)    JOB_NAMES=("${CTRL_JOBS[@]}" "${ARM_JOBS[@]}")
              CONFIGS=("${CTRL_CONFIGS[@]}" "${ARM_CONFIGS[@]}")
              TIMES=("${CTRL_TIMES[@]}" "${ARM_TIMES[@]}") ;;
     arm)     JOB_NAMES=("${ARM_JOBS[@]}"); CONFIGS=("${ARM_CONFIGS[@]}"); TIMES=("${ARM_TIMES[@]}") ;;
     control) JOB_NAMES=("${CTRL_JOBS[@]}"); CONFIGS=("${CTRL_CONFIGS[@]}"); TIMES=("${CTRL_TIMES[@]}") ;;
-    *) echo "Usage: $0 [wd10|arm|control]" >&2; exit 1 ;;
+    transfer) JOB_NAMES=("${CTRL_JOBS[@]}" "${T2_JOBS[@]}")
+             CONFIGS=("${CTRL_CONFIGS[@]}" "${T2_CONFIGS[@]}")
+             TIMES=("${CTRL_TIMES[@]}" "${T2_TIMES[@]}") ;;
+    t2)      JOB_NAMES=("${T2_JOBS[@]}"); CONFIGS=("${T2_CONFIGS[@]}"); TIMES=("${T2_TIMES[@]}") ;;
+    *) echo "Usage: $0 [wd10|arm|control|transfer|t2]" >&2; exit 1 ;;
 esac
 
 cd "${REPO_ROOT}"

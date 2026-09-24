@@ -112,8 +112,10 @@ target:
 | val   |      0.7318 |           0.7518 | **+0.0200** [+0.0195, +0.0205] |
 | test  |      0.7370 |           0.7568 | **+0.0198** [+0.0193, +0.0203] |
 
-The singles here are recomputed from the saved peaks, which the export thresholds at 0.1% of
-base peak. They match the pipeline's own cosine to within 1e-4.
+The singles here are recomputed from the saved peaks and match the pipeline's own cosine to
+within 1e-4. The export holds the full candidate set, about 1,900 peaks per spectrum.
+`--min_peak_int` is silently a no-op for MASShatter: the filter at `script_utils.py:2236` runs
+only when `frag_formula_peak_idxs` exists, and MASShatter does not emit it.
 
 The gain lives where the runs disagree. On val:
 

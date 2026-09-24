@@ -1086,6 +1086,7 @@ class MassShatterPL(SpectrumPL):
             intensity_escape=self.hparams.mass_shatter_intensity_escape,
             candidate_features=self.hparams.mass_shatter_candidate_features,
             candidate_atom_dropout=self.hparams.mass_shatter_candidate_atom_dropout,
+            candidate_boundary_dropout=self.hparams.mass_shatter_candidate_boundary_dropout,
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
         logger.info(

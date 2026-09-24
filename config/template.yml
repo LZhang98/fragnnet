@@ -233,6 +233,13 @@ weight_decay: 0.01
 # transformer's inducing tokens) from weight decay by putting them in a second optimizer
 # group. False keeps the historical single-group behaviour.
 weight_decay_exclude_norm_bias: False
+# Exponential moving average of the weights, per optimizer step (null = off). Validation, the
+# best-checkpoint choice and every saved checkpoint's state_dict use the AVERAGE; the training
+# weights are stored beside it and restored on resume (fragnnet.utils.pl_utils.
+# ExponentialMovingAverage). Mean age of the average is decay/(1-decay) steps, so pick decay
+# from the run's steps per epoch: the merged ma_mi batch-512 lineage runs 90 steps/epoch, where
+# 0.998 averages over ~5.5 epochs. Train-side auxiliary metrics still measure the raw weights.
+ema_decay: null
 # Activation applied to a GNN layer's residual branch before the skip add. "relu" is
 # historical and makes every layer strictly additive per coordinate -- it can never
 # attenuate the residual stream. "identity" removes that restriction.
@@ -812,6 +819,13 @@ mass_shatter_candidate_features:
 # counts and the boundary embedding all keep the true membership. A candidate is never emptied.
 # The MASShatter analogue of `cc_atom_dropout`. No effect at eval, and no width change.
 mass_shatter_candidate_atom_dropout: 0.0
+# Training-only dropout of each candidate's WHOLE boundary block (the pooled embedding of the
+# severed bonds' endpoints) from the intensity token. A dropped block is zeroed and kept blocks
+# are scaled by 1/(1-p), so the token projection sees the same expected input at eval. Aimed at
+# the boundary block because the 2026-09-23 memorization probe located most of the train-only
+# intensity allocation there, while candidate_atom_dropout above leaves it exact. Proposal branch
+# and candidate descriptors are untouched. 0.0 draws no random numbers (bit-identical default).
+mass_shatter_candidate_boundary_dropout: 0.0
 mass_shatter_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition

@@ -2,6 +2,7 @@ import copy
 import logging
 
 import numpy as np
+import torch as th
 from lightning.fabric.loggers.logger import rank_zero_experiment
 from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.loggers import Logger
@@ -225,6 +226,147 @@ class PrintGradCallback(Callback):
                 p_grads.append(p.grad.norm().item())
         logging.info(p_grads[:10])
         logging.info("grad_norm: %s", np.mean(p_grads))
+
+
+class ExponentialMovingAverage(Callback):
+    """Validate, select and save an exponential moving average of the module's weights.
+
+    The average covers every floating-point entry of the LightningModule's ``state_dict``, which
+    means the parameters and the BatchNorm running statistics. Integer buffers such as
+    ``num_batches_tracked`` are not averaged. It is updated once per optimizer step:
+
+    ``a_t = d_t * a_{t-1} + (1 - d_t) * w_t``, with ``d_t = min(decay, (1 + t) / (10 + t))``,
+
+    where ``t`` counts updates. The warm-up term keeps early averages from being dominated by
+    the initialization; after about ``10 / (1 - decay)`` updates ``d_t = decay`` and the
+    average's mean age is ``decay / (1 - decay)`` steps.
+
+    The averaged weights are copied into the module at the start of every validation epoch,
+    and the training weights are put back before the next training batch. So validation
+    metrics, ``ModelCheckpoint``'s choice of best checkpoint and ``trainer.test(ckpt_path=...)``
+    all see the average. Every saved ``checkpoint["state_dict"]`` holds the average too, so
+    inference loads it without knowing about this callback. The training weights are saved
+    under ``checkpoint["ema_training_state_dict"]`` and restored on resume, so a requeued run
+    continues training from exactly where it stopped. On resume the average itself is read
+    back from ``checkpoint["state_dict"]`` rather than stored a second time.
+
+    Args:
+        decay: Per-optimizer-step decay, strictly between 0 and 1.
+
+    Raises:
+        ValueError: If ``decay`` is outside (0, 1).
+    """
+
+    def __init__(self, decay: float) -> None:
+        if not 0.0 < decay < 1.0:
+            raise ValueError(f"EMA decay must be in (0, 1), got {decay}")
+        self.decay = float(decay)
+        self.num_updates = 0
+        self._last_global_step = -1
+        self._average: dict[str, th.Tensor] | None = None
+        # Set while the average is in the module (from a validation epoch to the next batch).
+        self._training_weights: dict[str, th.Tensor] | None = None
+        # Training weights read from a checkpoint, applied in on_fit_start after restore.
+        self._resume_training_weights: dict[str, th.Tensor] | None = None
+
+    @staticmethod
+    def _float_state(pl_module) -> dict[str, th.Tensor]:
+        # state_dict() tensors share storage with the live parameters and buffers, so an
+        # in-place copy_ into them writes the module.
+        return {k: v for k, v in pl_module.state_dict().items() if v.is_floating_point()}
+
+    def _swap_in_average(self, pl_module) -> None:
+        if self._average is None or self._training_weights is not None:
+            return
+        state = self._float_state(pl_module)
+        with th.no_grad():
+            self._training_weights = {k: v.detach().clone() for k, v in state.items()}
+            for key, value in state.items():
+                value.copy_(self._average[key])
+
+    def _restore_training_weights(self, pl_module) -> None:
+        if self._training_weights is None:
+            return
+        with th.no_grad():
+            for key, value in self._float_state(pl_module).items():
+                value.copy_(self._training_weights[key])
+        self._training_weights = None
+
+    def on_fit_start(self, trainer, pl_module) -> None:
+        """Start the average from the current weights, or put resumed training weights back."""
+        state = self._float_state(pl_module)
+        if self._resume_training_weights is not None:
+            if set(self._resume_training_weights) != set(state):
+                raise ValueError("EMA training weights in the checkpoint do not match the module")
+            with th.no_grad():
+                for key, value in state.items():
+                    value.copy_(self._resume_training_weights[key])
+            self._resume_training_weights = None
+        if self._average is None:
+            self._average = {k: v.detach().clone() for k, v in state.items()}
+        else:
+            if set(self._average) != set(state):
+                raise ValueError("EMA average in the checkpoint does not match the module")
+            self._average = {k: v.to(state[k]) for k, v in self._average.items()}
+        self._last_global_step = trainer.global_step
+
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx: int) -> None:
+        """Put the training weights back if a validation epoch left the average in place."""
+        self._restore_training_weights(pl_module)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx: int) -> None:
+        """Fold the new weights into the average once per optimizer step."""
+        # Gradient accumulation and skipped steps leave global_step unchanged.
+        if trainer.global_step == self._last_global_step:
+            return
+        self._last_global_step = trainer.global_step
+        self.num_updates += 1
+        decay = min(self.decay, (1.0 + self.num_updates) / (10.0 + self.num_updates))
+        with th.no_grad():
+            for key, value in self._float_state(pl_module).items():
+                self._average[key].lerp_(value, 1.0 - decay)
+
+    def on_validation_epoch_start(self, trainer, pl_module) -> None:
+        """Validate the averaged weights."""
+        self._swap_in_average(pl_module)
+
+    def on_fit_end(self, trainer, pl_module) -> None:
+        """Leave the average in the module, matching what the checkpoints hold."""
+        self._swap_in_average(pl_module)
+
+    def on_save_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
+        """Save the average as the model weights and the training weights beside it."""
+        if self._average is None:
+            return
+        state_dict = checkpoint["state_dict"]
+        if self._training_weights is not None:
+            # The module, and therefore state_dict, already holds the average.
+            training_weights = self._training_weights
+        else:
+            training_weights = {k: state_dict[k] for k in self._average}
+            for key, value in self._average.items():
+                state_dict[key] = value.detach().clone()
+        checkpoint["ema_training_state_dict"] = {
+            k: v.detach().clone() for k, v in training_weights.items()
+        }
+
+    def on_load_checkpoint(self, trainer, pl_module, checkpoint: dict) -> None:
+        """Read the average and the training weights back from a checkpoint of this callback."""
+        training_weights = checkpoint["ema_training_state_dict"]
+        self._resume_training_weights = training_weights
+        self._average = {k: checkpoint["state_dict"][k].detach().clone() for k in training_weights}
+
+    def state_dict(self) -> dict:
+        """Return the scalar state; the tensors ride in the checkpoint itself."""
+        return {"decay": self.decay, "num_updates": self.num_updates}
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        """Restore the update count, refusing a checkpoint written with another decay."""
+        if state_dict["decay"] != self.decay:
+            raise ValueError(
+                f"checkpoint EMA decay {state_dict['decay']} differs from configured {self.decay}"
+            )
+        self.num_updates = state_dict["num_updates"]
 
 
 def get_pl_hparams(ckpt: dict) -> dict:

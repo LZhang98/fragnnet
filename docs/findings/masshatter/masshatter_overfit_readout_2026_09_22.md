@@ -367,6 +367,30 @@ The candidate-set fingerprint carries under 11% of the gap. Those checkpoints ar
 `[M+H]+` FT, and the data-side routes above remain untested. See the
 [memorization route probe](masshatter_memorization_route_probe_2026_09_23.md).
 
+**Update 2026-09-24.** Two more routes were measured offline on the same unmerged `[M+H]+`/FT
+checkpoint `6h67zps9`, using its eval-mode train-sample export (25,600 spectra, 10,913 molecules)
+and val export from the
+[ranking decomposition](masshatter_ranking_decomposition_2026_09_23.md).
+
+- **Unequal exposure is not a driver on this lineage.** Molecules contribute 12.4 training spectra
+  on average (p10 8, p90 16, p99 26). Train `cos_sim_0.01` is flat across exposure inside every NCE
+  bin (0.91-0.95 from 4 spectra to more than 24), and Spearman(train cosine, spectra per molecule)
+  is 0.058. Every training molecule is memorized about equally. Molecule-balanced weighting
+  (§7.2 item 4) has little to act on here. The merged MA/MI split, with 1-10 groups per molecule,
+  is unmeasured.
+- **The precursor prior is a fallback, not a competing shortcut.** At NCE ≤ 20 on train, the
+  base-peak hit rate is 0.90 when the base peak is not the precursor. The predicted top is the
+  precursor in 59.7% of spectra against a true 63.1%. On val the same hit rate is 0.42, the
+  precursor is over-called (70.6% against 64.0%), and 69% of those misses predict it. The
+  model knows each training molecule's labile bond and falls back to the population prior only
+  on unseen molecules.
+
+With the fingerprint below 11% and the QTOF NCE proxy absent from `[M+H]+`/FT, the measured
+shortcut on this lineage is a per-molecule allocation lookup. The boundary block carries most of
+it at the head's input, but molecule identity reaches every pooled input through the shared atom
+embeddings. Blocking one input can therefore reroute the lookup instead of removing it, which the
+`e2` null and the `c4a_no_bbe` null are consistent with.
+
 Two tempting explanations are already ruled out or materially weakened:
 
 - **Direct proposal-score leakage is absent in the current lead.** With

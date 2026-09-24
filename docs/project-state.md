@@ -26,6 +26,33 @@ and there is no MASShatter MSGYM baseline to read it against. The unmerged NIST2
 `6ks7v8ce` took about 5 h for that step count on an L40S (0.73 s/step, 26.6 GiB peak).
 Generate on Fir with `setup_job_cc.py` (`fir:h100-3g.40gb`, `j=<job_name>` for resume).
 
+**Shortcut-reduction screen prepared (2026-09-24); nothing submitted.** The shortcut audit
+(overfit read-out §7) now leaves one measured shortcut on unmerged `[M+H]+`/FT: a per-molecule
+allocation lookup. Exposure is flat (Spearman 0.058), the precursor prior is only a fallback on
+unseen molecules, and the fingerprint is under 11%. Identity reaches every head input, so the arms
+limit the allocator or remove optimizer noise instead of blocking one input: `h1` intensity-transformer
+dropout 0.2, `h2` width 128 (head 2.46M → 0.97M), `u2` EMA 0.999 (new `ema_decay` key and
+`ExponentialMovingAverage` callback), all one key off `f0` with the existing run `3bej6fq7` as
+control (tail mean 0.7298). The merged `t2` EMA arm stays. The boundary-block dropout arms `t1`/`u1`
+were dropped for rerouting; the key stays, off by default. Read the val and train-sample ranking
+gaps and the novelty bins offline, not only the tail mean. Generators:
+`submit_masshatter_mh_ft_ranking_transfer.sh` and `submit_masshatter_regularization.sh transfer`.
+[Plan](plans/masshatter/masshatter_ranking_transfer_plan.md).
+
+**MASShatter still has the ranking problem (2026-09-23); offline, on the cross-eval exports.**
+For `6h67zps9` on its cleaned target, the cosine gap is coverage 0.014, **ranking 0.121** and
+calibration ceiling 0.104. Ranking is the part no order-preserving rescale can fix. The base peak
+is hit 56.7%, under-ranked 41.6% and uncovered 1.7%, and test replicates to 0.01. Ranking doubles
+with CE, while calibration is flat. The low-CE precursor default FraGNNet showed is present:
+0.88 vs 0.42 base-peak hit at NCE ≤ 20. Unlike FraGNNet, the predictions are slightly too sharp,
+and a global `P^0.75` adds +0.007 on test for free. Neither averaging nor target cleaning moves
+the ranking gap below about 0.11. The lever is a ranking objective on the candidate
+distribution; none exists in `src/`. **Update:** on a 25.6k train sample the ranking gap is 0.011
+and the base-peak hit rate 84.5%, bin by bin. The ranking error is a generalization failure, so
+a train-set ranking loss has little to fit. Target transfer instead: boundary-block
+regularization, variance reduction, and priors that generalize.
+[Finding](findings/masshatter/masshatter_ranking_decomposition_2026_09_23.md).
+
 **`mh_ft_clean` cross-eval run (2026-09-23); target cleaning is a CLOSED NULL, and run-to-run
 variance is the largest lever measured; inference only.** Both checkpoints were scored against
 both targets on val and test: `6h67zps9` (f1, cleaned target) and `3bej6fq7` (f0). On the raw
