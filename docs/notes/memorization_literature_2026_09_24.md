@@ -1,17 +1,17 @@
-# Addressing memorization: literature mapped onto MASShatter
+# Addressing memorization: literature mapped onto MASSter
 
 > **Status:** NOTE · **Updated:** 2026-09-24
 >
 > A literature search for the
-> [memorization-route plan](../plans/masshatter/masshatter_memorization_route_plan.md). Each
+> [memorization-route plan](../plans/masster/masster_memorization_route_plan.md). Each
 > method family is mapped onto the mechanism the
-> [route map](../findings/masshatter/masshatter_route_map_2026_09_24.md) measured:
+> [route map](../findings/masster/masster_route_map_2026_09_24.md) measured:
 >
 > - the encoder's global attention writes a per-(molecule, atom) key;
 > - the boundary block reads it;
 > - each molecule's key recurs across about 12 spectra per epoch.
 >
-> The note lists what each method would change in MASShatter. None of these methods has been
+> The note lists what each method would change in MASSter. None of these methods has been
 > run here except weight EMA. §1-7 cover graph-model and optimizer work. §8 (second pass) covers
 > general memorization research: repetition, goldfish-style loss masking, noise injection, label
 > smoothing, resets, grokking, distillation, invariance and activity cliffs. §9 (third pass, run
@@ -98,7 +98,7 @@ These are route-agnostic.
   2024).
 
 Candidate: `c1` using molecule-disjoint micro-batches as the environments. RM3 is the cheap
-version, and matters here because MASShatter's per-batch overhead is sync-bound.
+version, and matters here because MASSter's per-batch overhead is sync-bound.
 
 ## 5. Flatten the minimum and average the weights
 
@@ -108,7 +108,7 @@ version, and matters here because MASShatter's per-batch overhead is sync-bound.
   about 2x compute; ESAM brings that down to about 1.4x.
 
 Status here: weight EMA already passed on both lineages (+0.0094 unmerged, +0.0097 merged,
-[ranking-transfer tail read](../plans/masshatter/masshatter_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24)).
+[ranking-transfer tail read](../plans/masster/masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24)).
 SAM is an optional later arm.
 
 ## 6. Augment inputs, with caution
@@ -135,7 +135,7 @@ features. `a_charge` precision is null.
 ## 8. General literature (second pass, 2026-09-24)
 
 Sections 1-7 lean on graph-model work. This pass covers memorization research in general. Each
-item says what it would mean for MASShatter.
+item says what it would mean for MASSter.
 
 ### Why memorization happens, and where it sits
 
@@ -162,7 +162,7 @@ item says what it would mean for MASShatter.
 - **Goldfish loss** (Hans et al., 2024). A fixed pseudo-random subset of targets per training
   example is excluded from the loss. Those targets are never memorized, which cut extractable
   memorization with little benchmark cost.
-  - MASShatter version: hash (molecule, target peak) to exclude, say, 25% of each molecule's
+  - MASSter version: hash (molecule, target peak) to exclude, say, 25% of each molecule's
     peaks in every exposure. No lookup can then reproduce that molecule's full allocation, and
     the excluded peaks must be predicted by transfer.
   - The loss must drop the masked candidates from **both** the target and the predicted
@@ -175,7 +175,7 @@ item says what it would mean for MASShatter.
   - Repeating 0.1% of the data 100 times degraded an 800M-parameter model to the level of one
     half its size (Hernandez et al., 2022).
 
-  MASShatter analogue: each molecule recurs about 12 times per epoch across NCE. Our exposure
+  MASSter analogue: each molecule recurs about 12 times per epoch across NCE. Our exposure
   check found train cosine flat from 4 to 24+ spectra per molecule, which argues against
   exposure being the lever here. Sampling a few CE spectra per molecule per epoch is still a
   cheap test.
@@ -190,25 +190,25 @@ item says what it would mean for MASShatter.
   a function of the embedding. This is the principled form of **noise on the global message**,
   the continuous sibling of global-message dropout.
 - **Label smoothing** (Müller et al., 2019; Lukasik et al., 2020) prevents overconfidence and acts
-  like loss correction under noise. MASShatter is measurably over-sharp: entropy 0.12-0.15 nats
+  like loss correction under noise. MASSter is measurably over-sharp: entropy 0.12-0.15 nats
   below the target, and `P^0.75` adds +0.007. Mixing each target with a small share of a smooth
   prior (uniform over candidates, or the formula prior) is a cheap arm aimed at both the
   sharpness and the memorization.
 - **mixup** (Zhang et al., 2018) reduces memorization of corrupt labels. Mixing across molecules
   has no natural form for candidate-set spectra, so low priority.
 - **Consistency regularization (R-Drop)** (Liang et al., 2021) makes two stochastic passes agree.
-  The natural MASShatter form is agreement across two candidate-subset views, already listed in
+  The natural MASSter form is agreement across two candidate-subset views, already listed in
   the overfit read-out §7.2. It costs about 2x the forward pass.
 
 ### Training procedure
 
 - **Early-learning regularization (ELR)** (Liu et al., 2020) steers training toward the model's
-  own early predictions, which fit shared patterns before memorization. The MASShatter version is
+  own early predictions, which fit shared patterns before memorization. The MASSter version is
   an EMA of per-spectrum predictions from early epochs as a soft target. Storage is heavy with
   variable candidate sets. Optional.
 - **Layer reinitialization and later-layer forgetting** (Alabdulmohsin et al., 2021; Sarfi et
   al., 2023). Periodically reinitializing some layers favours general rules over memorization and
-  finds flatter minima. MASShatter version: periodically reset the key reader (the cut-bond
+  finds flatter minima. MASSter version: periodically reset the key reader (the cut-bond
   encoder) or the global-attention projections. Cheap as a callback; the evidence is mostly
   small-data image classification.
 - **Self-distillation** (born-again networks; Furlanello et al., 2018): a student of the same size
@@ -240,7 +240,7 @@ item says what it would mean for MASShatter.
   struggle on near-identical molecules with different properties. Descriptor-based methods beat
   deep models there. Activity-cliff prediction accuracy tracked memorization of shared compounds,
   not model complexity.
-- MASShatter angle: the variance-novelty table shows val molecules above 0.9 Tanimoto scoring
+- MASSter angle: the variance-novelty table shows val molecules above 0.9 Tanimoto scoring
   *below* the 0.8-0.9 bin (0.823 against 0.836). That is a possible copy-the-neighbour signature.
   An activity-cliff-style metric (near-identical molecule pairs with dissimilar spectra) would
   measure it directly.
@@ -263,7 +263,7 @@ Links go to the Consensus paper pages.
   - Token-level masking of attention connections beat both on GLUE
     ([Wu et al., 2023](https://consensus.app/papers/details/0a60925464795e5d85033e154c66b2ad/?utm_source=claude_desktop)).
 
-  MASShatter version: DropKey on the two GSA layers, so each atom's global message is built from
+  MASSter version: DropKey on the two GSA layers, so each atom's global message is built from
   a random subset of the molecule's atoms. This weakens molecule identity in the message but does
   not remove it. Global-message dropout (substituting the batch mean) removes it for the dropped
   molecules. DropKey is a fourth option for decision B.
@@ -287,7 +287,7 @@ Links go to the Consensus paper pages.
   - Ghost Noise Injection reproduces BatchNorm's small-batch noise without the train/eval
     mismatch
     ([Kosson et al., 2023](https://consensus.app/papers/details/6481da5f59b35e6b9486e6bfac4d8537/?utm_source=claude_desktop)).
-    This one matters here: the MASShatter encoder uses BatchNorm, and the regularization audit
+    This one matters here: the MASSter encoder uses BatchNorm, and the regularization audit
     flagged BatchNorm train/eval skew.
 - **Counter-evidence to keep in view.**
   - MassFormer was built on the premise that global graph-transformer attention helps spectrum
@@ -300,7 +300,7 @@ Links go to the Consensus paper pages.
     ([Li et al., 2024](https://consensus.app/papers/details/4df8964cf45f52c39f6da58ab964871b/?utm_source=claude_desktop)).
 
   The route map does not contradict these. MassFormer was pretrained and evaluated on a different
-  split, and our finding is that MASShatter's global message carries identity, not that global
+  split, and our finding is that MASSter's global message carries identity, not that global
   context is useless. `r2` is the test. If it loses val, the next step is a gated, noisy or
   DropKey global message, not dropping global attention.
 
@@ -319,7 +319,7 @@ Links go to the Consensus paper pages.
   ([2024](https://consensus.app/papers/details/c2eab26151aa549da0dda71ee448d417/?utm_source=claude_desktop)).
   MMbeddings treat the embedding as a latent random effect with a KL term
   ([Simchoni et al., 2025](https://consensus.app/papers/details/c939977d027951daa4a864ad9c00951a/?utm_source=claude_desktop)).
-- **MASShatter version: a variational sink.** `m1` with a Gaussian posterior per molecule and a
+- **MASSter version: a variational sink.** `m1` with a Gaussian posterior per molecule and a
   KL term to N(0, σ²I), with σ learned. The KL replaces fixed weight decay with estimated
   shrinkage (refinement 1 in the plan).
 - **Removing memorization after training is entangled; isolating it by design works.**
@@ -338,7 +338,7 @@ Links go to the Consensus paper pages.
     memorization.
   - Averaging only micro-batches whose gradients agree (by cosine) improved validation and
     reduced noisy-label memorization.
-  - MASShatter version: split each 512-spectrum batch into molecule-disjoint micro-batches and
+  - MASSter version: split each 512-spectrum batch into molecule-disjoint micro-batches and
     average only the agreeing ones. It joins RM3 and AND-mask in ranked item 6. It costs one
     backward pass per micro-batch.
 - **Large initial learning rate, then decay.**
@@ -349,15 +349,15 @@ Links go to the Consensus paper pages.
     patterns
     ([You et al., 2019](https://consensus.app/papers/details/1854350148d55eebbad2aa6144b284d9/?utm_source=claude_desktop)).
 
-  A molecule-identity key is exactly such an easy-to-fit patch. Every MASShatter run, the Step 1
+  A molecule-identity key is exactly such an easy-to-fit patch. Every MASSter run, the Step 1
   arms included, uses a constant `lr: 1e-3` with no warmup or decay. The one LR-decay arm with a
   result, `d3` (cosine decay with a 1000-step warmup; merged lineage; n=1), gained +0.0072
-  ([overfit read-out](../findings/masshatter/masshatter_overfit_readout_2026_09_22.md)). See
+  ([overfit read-out](../findings/masster/masster_overfit_readout_2026_09_22.md)). See
   decision C in the plan.
 - **Ratio of learning rate to batch size.** A higher ratio finds wider minima and generalizes
   better
   ([Jastrzebski et al., 2017](https://consensus.app/papers/details/0b56e7d01e37542d9bd407110220adf3/?utm_source=claude_desktop)).
-  Not a lever here: smaller batches are sync-bound and expensive in MASShatter.
+  Not a lever here: smaller batches are sync-bound and expensive in MASSter.
 - **Fisher-trace penalty**
   ([Jastrzebski et al., 2020](https://consensus.app/papers/details/767ce4dd209d5ebca07f65660eabae5b/?utm_source=claude_desktop)).
   An explicit penalty on the Fisher trace improved generalization and slowed learning of
@@ -384,7 +384,7 @@ Links go to the Consensus paper pages.
 - **Excluding low-loss samples.** Dropping the lowest-loss samples from each batch reduced
   memorization in diffusion models
   ([Liu et al., 2024](https://consensus.app/papers/details/28140902b3b25d8ca1cdab3ffafe500f/?utm_source=claude_desktop)).
-  In MASShatter, low train loss does not separate memorized molecules from easy ones, so this
+  In MASSter, low train loss does not separate memorized molecules from easy ones, so this
   needs a per-molecule memorization score (see Diagnostics). Not recommended alone.
 - **Shard soup.**
   - Averaging the weights of models trained on disjoint data shards gave anti-memorization
@@ -394,7 +394,7 @@ Links go to the Consensus paper pages.
   - Weight averaging needs a shared starting point
     ([model soups, Wortsman et al., 2022](https://consensus.app/papers/details/952fef9c9a8a582d9f8d1b28278ff064/?utm_source=claude_desktop);
     [DiWA, Ramé et al., 2022](https://consensus.app/papers/details/a0aa1572ef3550c4af5f8118a9efe303/?utm_source=claude_desktop)).
-  - MASShatter version: branch K runs from one early checkpoint (before the gap opens, about
+  - MASSter version: branch K runs from one early checkpoint (before the gap opens, about
     epoch 8), train each on a molecule-disjoint shard, and average the weights. Each molecule's
     lookup lives in one of the K models and is diluted to 1/K. Shared chemistry is in all of them.
   - Measured bounds: a 2-checkpoint weight average gave +0.003 and a 2-run ensemble +0.020. Each
@@ -433,7 +433,7 @@ Links go to the Consensus paper pages.
 - In LLM fine-tuning, memorization rises in the first few epochs, before the validation optimum,
   and an early memorization score works as a stopping signal
   ([Slack et al., 2025](https://consensus.app/papers/details/b058d18dd06158e48be927580800ba5b/?utm_source=claude_desktop)).
-- MASShatter's gap grows steadily after about epoch 8. So read each arm's gap trajectory, not
+- MASSter's gap grows steadily after about epoch 8. So read each arm's gap trajectory, not
   only its final gap. A run meant for layer rewinding should save checkpoints at epochs 4, 8
   and 16.
 
@@ -481,7 +481,7 @@ Links go to the Consensus paper pages.
   ([Cui et al., 2026](https://consensus.app/papers/details/0afc5a69e14a552994d62e28b3759a08/?utm_source=claude_desktop)).
   It is the training-side counterpart of the pair metric. Not ranked.
 
-## Ranking for MASShatter, given our measurements
+## Ranking for MASSter, given our measurements
 
 Updated after §9.
 

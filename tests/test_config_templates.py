@@ -27,7 +27,7 @@ TEMPLATE_FP = os.path.join(TEMPLATE_DIR, "template.yml")
 # Adding an unprefixed key to a model's section means declaring it here, which is the moment to
 # ask whether it should be prefixed instead.
 MODEL_SECTIONS = {
-    "MASShatter only": ("mass_shatter_", ()),
+    "MASSter only": ("masster_", ()),
     "ICEBERG only": ("iceberg_", ("magma_params", "magma_dp")),
     "MassFormer only": ("mf_", ()),
     "NEIMS only": ("neims_", ()),
@@ -79,7 +79,7 @@ class TestTemplateLayout:
         """One schema: no model can lose a key another model's code reads."""
         for key in ("frag_params", "magma_params", "ann_params", "mf_flag", "spec_params"):
             assert key in template, key
-        assert any(key.startswith("mass_shatter_") for key in template)
+        assert any(key.startswith("masster_") for key in template)
         assert any(key.startswith("iceberg_") for key in template)
 
     def test_no_duplicate_top_level_keys(self, sections):
@@ -115,7 +115,7 @@ class TestTemplateLayout:
     def test_every_model_type_is_accounted_for(self, sections):
         """Every known model either owns a section or is declared core-only."""
         owned = {
-            "mass_shatter",
+            "masster",
             "iceberg_gen",
             "iceberg_inten",
             "massformer",
@@ -137,26 +137,26 @@ class TestResolution:
     def test_a_single_template_file_is_used_directly(self, tmp_path):
         """How a template saved inside a checkpoint still resolves."""
         template = tmp_path / "saved_template.yml"
-        template.write_text(yaml.safe_dump({"model_type": "mass_shatter", "lr": 0.25}))
+        template.write_text(yaml.safe_dump({"model_type": "masster", "lr": 0.25}))
 
         assert load_config(str(template), None, None)["lr"] == 0.25
 
     def test_every_model_resolves_the_same_schema(self):
         """What the per-model split could not give: no model is missing another's key."""
         frag = load_config(TEMPLATE_DIR, None, None, model_type="frag_gnn")
-        shatter = load_config(TEMPLATE_DIR, None, None, model_type="mass_shatter")
+        shatter = load_config(TEMPLATE_DIR, None, None, model_type="masster")
 
         assert set(frag) == set(shatter)
-        assert "mass_shatter_max_h_transfer" in frag
+        assert "masster_max_h_transfer" in frag
         assert "frag_params" in shatter
 
     def test_custom_model_type_wins(self, tmp_path):
         custom = tmp_path / "custom.yml"
-        custom.write_text(yaml.safe_dump({"model_type": "mass_shatter", "lr": 0.5}))
+        custom.write_text(yaml.safe_dump({"model_type": "masster", "lr": 0.5}))
 
         resolved = load_config(TEMPLATE_DIR, str(custom), None)
 
-        assert resolved["model_type"] == "mass_shatter"
+        assert resolved["model_type"] == "masster"
         assert resolved["lr"] == 0.5
 
     def test_checkpoint_model_type_outranks_the_template_default(self, tmp_path):
@@ -186,7 +186,7 @@ class TestResolution:
             TEMPLATE_DIR,
             None,
             ["ce_insert_type=embed", "spec_params.nce=true"],
-            model_type="mass_shatter",
+            model_type="masster",
         )
 
         assert resolved["ce_insert_type"] == "embed"
@@ -196,7 +196,7 @@ class TestResolution:
 class TestValidation:
     def test_top_level_typo_is_rejected(self, tmp_path):
         custom = tmp_path / "custom.yml"
-        custom.write_text(yaml.safe_dump({"model_type": "mass_shatter", "lrr": 1.0}))
+        custom.write_text(yaml.safe_dump({"model_type": "masster", "lrr": 1.0}))
 
         with pytest.raises(ValueError, match="does not declare.*lrr"):
             load_config(TEMPLATE_DIR, str(custom), None)
@@ -205,7 +205,7 @@ class TestValidation:
         """A typo inside a section fails as loudly as one at the top level."""
         custom = tmp_path / "custom.yml"
         custom.write_text(
-            yaml.safe_dump({"model_type": "mass_shatter", "spec_params": {"ncee": True}})
+            yaml.safe_dump({"model_type": "masster", "spec_params": {"ncee": True}})
         )
 
         with pytest.raises(ValueError, match=r"spec_params\.ncee"):
@@ -215,13 +215,13 @@ class TestValidation:
         """One schema: a historical config carrying another model's key is valid, not a typo."""
         custom = tmp_path / "custom.yml"
         custom.write_text(
-            yaml.safe_dump({"model_type": "neims", "mass_shatter_batch_sampler": False})
+            yaml.safe_dump({"model_type": "neims", "masster_batch_sampler": False})
         )
 
         resolved = load_config(TEMPLATE_DIR, str(custom), None)
 
         assert resolved["model_type"] == "neims"
-        assert resolved["mass_shatter_batch_sampler"] is False
+        assert resolved["masster_batch_sampler"] is False
 
     def test_a_staged_template_validates_the_same_way(self, tmp_path):
         """A cluster job stages one file; validation no longer depends on its neighbours."""
@@ -241,7 +241,7 @@ class TestValidation:
         custom.write_text(
             yaml.safe_dump(
                 {
-                    "model_type": "mass_shatter",
+                    "model_type": "masster",
                     "spec_params": {
                         "merge_tolerance_by_inst": {"ORBITRAP": {"rel": 1e-5, "min_mz": 200.0}},
                         "split_filters": {"train": {"filter_prec_types": True}},

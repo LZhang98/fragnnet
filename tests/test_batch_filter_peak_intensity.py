@@ -1,7 +1,7 @@
 """`min_peak_int` must filter peaks even when there is no peak -> formula map.
 
 `batch_filter_by_peak_intensity` used to gate the peak filter itself on
-`frag_formula_peak_idxs`, which only DAG models (FraGNNet) provide. For MASShatter the
+`frag_formula_peak_idxs`, which only DAG models (FraGNNet) provide. For MASSter the
 threshold was a silent no-op and exports kept every candidate. The formula cascade still
 needs the map; the peak axis does not.
 """

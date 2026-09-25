@@ -1,7 +1,7 @@
 # Architecture map
 
-> **Status:** REFERENCE · **Updated:** 2026-09-17 · MASShatter backend boundary updated;
-> other boundaries last verified against source on 2026-09-07.
+> **Status:** REFERENCE · **Updated:** 2026-09-25 · MASShatter renamed MASSter; MASSter backend
+> boundary updated 2026-09-17; other boundaries last verified against source on 2026-09-07.
 
 ## Entry points and data flow
 
@@ -17,13 +17,16 @@
    is a starting point; check actual consumers before changing a field or shape.
 4. [Models](../src/fragnnet/model/) implement prediction; [Lightning modules](../src/fragnnet/pl_model/)
    connect predictions to losses and training/evaluation. FraGNNet uses fragmentation DAGs;
-   MASShatter has separate candidate construction in [frag/](../src/fragnnet/frag/) and its
+   MASSter has separate candidate construction in [frag/](../src/fragnnet/frag/) and its
    own model and Lightning module. GRAFF, ICEBERG, and MassFormer have separate package directories.
-   MASShatter also offers [FastGNN-style connected-fragment proposals](plans/masshatter/masshatter_fast_gnn_proposal.md),
+   MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
+   declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
+   in [pl_utils.py](../src/fragnnet/utils/pl_utils.py) renames them wherever a config is loaded.
+   MASSter also offers [FastGNN-style connected-fragment proposals](plans/masster/masster_fast_gnn_proposal.md),
    sharing its chemistry and intensity model while changing proposal score semantics.
-   MASShatter defaults to CPU candidate construction; its optional CUDA backend performs exact
+   MASSter defaults to CPU candidate construction; its optional CUDA backend performs exact
    selection and topology for the supported modes. See the
-   [backend and benchmark guide](guides/benchmark_masshatter_cpu.md) for limits and validation.
+   [backend and benchmark guide](guides/benchmark_masster_cpu.md) for limits and validation.
 5. [Inference](../scripts/run_inference.py) is documented in the [inference guide](guides/run_inference.md).
    [Evaluation scripts](../scripts/eval/) and [findings](findings/) connect artifacts to analysis.
 

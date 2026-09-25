@@ -433,7 +433,7 @@ def main(args):
     is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
     is_inference_eval_script = "run_save_inference_eval.py" in args.python_script_fp
     is_channel_selection_audit = (
-        "mass_shatter_ion_h_top_k_sweep.py" in args.python_script_fp
+        "masster_ion_h_top_k_sweep.py" in args.python_script_fp
     )
 
     # parse script kwargs

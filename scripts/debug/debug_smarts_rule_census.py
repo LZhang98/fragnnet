@@ -5,7 +5,7 @@ Three read-only measurements behind docs/findings/smarts_usage_audit_2026_09_23.
 - ``census``: per rule, how many ``mol_df`` molecules match and how many distinct partitions
   the production matcher yields, against the same matcher with ``uniquify=False``. A gap
   means RDKit's default uniquification drops a valid embedding (a mirror direction).
-- ``sides``: for every MASShatter template, split its two components into the one an
+- ``sides``: for every MASSter template, split its two components into the one an
   ordinary cut of the same bonds already produces and the one only the template produces,
   then report the spectrum intensity each explains. This says whether a rule's *new*
   assembly is the chemically meaningful ion or a merged neutral byproduct.
@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem, RDLogger
 
-from fragnnet.frag import mass_shatter_templates as mst
+from fragnnet.frag import masster_templates as mst
 from fragnnet.frag.smarts_prepass import (
     FRAG_RULES,
     NL_RULES,
@@ -93,8 +93,8 @@ def _partition_key(pair) -> tuple:
 
 def census(mol_df: pd.DataFrame) -> pd.DataFrame:
     """Count matches and yielded partitions per rule, default vs ``uniquify=False``."""
-    frag_rules = list(FRAG_RULES) + list(mst._MASS_SHATTER_ONLY_FRAG_RULES)
-    nl_rules = list(NL_RULES) + list(mst._MASS_SHATTER_ONLY_NL_RULES)
+    frag_rules = list(FRAG_RULES) + list(mst._MASSTER_ONLY_FRAG_RULES)
+    nl_rules = list(NL_RULES) + list(mst._MASSTER_ONLY_NL_RULES)
     counts = collections.defaultdict(collections.Counter)
     for mol in mol_df.mol:
         if mol is None:
@@ -144,7 +144,7 @@ def census(mol_df: pd.DataFrame) -> pd.DataFrame:
                 mols_losing_parts=int(bool(every - default)),
             )
     rows = [
-        {"rule": rule.name, "in_masshatter": rule.name in mst.MASS_SHATTER_RULE_NAMES}
+        {"rule": rule.name, "in_masster": rule.name in mst.MASSTER_RULE_NAMES}
         | dict(counts[rule.name])
         for rule in frag_rules + nl_rules
     ]
@@ -186,7 +186,7 @@ def sides(mol_df: pd.DataFrame, spectra_by_mol) -> pd.DataFrame:
     for mol_id, mol in zip(mol_df.mol_id, mol_df.mol):
         if mol is None or mol_id not in spectra_by_mol.groups:
             continue
-        for template in mst.build_mass_shatter_templates(mol):
+        for template in mst.build_masster_templates(mol):
             # 1. Components an ordinary cut of the template's bonds already produces.
             cut = Chem.RWMol(mol)
             for bond_index in sorted(template.broken_bond_indices, reverse=True):

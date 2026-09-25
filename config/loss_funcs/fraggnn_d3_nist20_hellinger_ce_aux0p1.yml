@@ -1,10 +1,10 @@
 # FraGNNet Hellinger + spectral_ce_auxiliary_weight 0.1 -- 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "CE auxiliary and decision order".
+# Plan: docs/plans/masster/masster_nonprobabilistic_intensity_plan.md, "CE auxiliary and decision order".
 #
 # GATED, AND THE COEFFICIENT IS PROVISIONAL: the plan requires it be chosen from measured
 # per-term gradient norms on a fixed batch, not from the raw loss scale. 0.1 is a placeholder.
 #
-# This hybrid is more interesting on FraGNNet than on MASShatter, because cross_entropy is
+# This hybrid is more interesting on FraGNNet than on MASSter, because cross_entropy is
 # FraGNNet's NATIVE objective: the arm asks whether Hellinger's recovery gradient and CE's
 # density accounting are complementary or redundant on the same head.
 #
@@ -14,11 +14,11 @@
 # the auxiliary here, which makes this arm the one place OOS supervision re-enters a
 # non-cross-entropy FraGNNet run. Logged as spectral_ce_auxiliary.
 #
-# FraGNNet's Hellinger is a DIFFERENT implementation from MASShatter's: it is the sparse BINNED
+# FraGNNet's Hellinger is a DIFFERENT implementation from MASSter's: it is the sparse BINNED
 # correspondence at mz_bin_res 0.01, not a tolerance-matched alignment. Only shared occupied bins
 # contribute to the Bhattacharyya coefficient; prediction-only and target-only bins contribute
 # zero while still counting in the normalization. A spectrum with predictions but no observed
-# peaks shares no bin and scores exactly 1. Do not read a MASShatter Hellinger result as
+# peaks shares no bin and scores exactly 1. Do not read a MASSter Hellinger result as
 # evidence about this path or the reverse.
 #
 # `1 - BC` is the SQUARED Hellinger distance H^2, not sqrt(1 - BC). Its scale is not comparable

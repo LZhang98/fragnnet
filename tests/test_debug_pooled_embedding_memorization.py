@@ -277,7 +277,7 @@ def test_encoder_corruptor_rewrites_only_the_intensity_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The proposal and the candidate set stay exact; only the intensity allocation moves."""
-    from tests.test_mass_shatter_model import _build_batch, _build_model
+    from tests.test_masster_model import _build_batch, _build_model
 
     batch = _build_batch(("CCOC", "CCO"))
     model = _build_model(
@@ -289,7 +289,7 @@ def test_encoder_corruptor_rewrites_only_the_intensity_path(
         unique_fragment_mode=True,
     ).eval()
     conditions = {c.label: c for c in PROBE.build_conditions(["gsa"], ["molmean"])}
-    original_pool = PROBE.mass_shatter_model_module.pool_component_and_complement_embeddings
+    original_pool = PROBE.masster_model_module.pool_component_and_complement_embeddings
 
     def _forward() -> dict[str, th.Tensor]:
         return model(
@@ -310,14 +310,14 @@ def test_encoder_corruptor_rewrites_only_the_intensity_path(
     assert th.equal(rewritten["bond_break_logits"], clean["bond_break_logits"])
     assert th.equal(rewritten["pred_mzs"], clean["pred_mzs"])
     assert not th.allclose(rewritten["pred_logprobs"], clean["pred_logprobs"])
-    assert PROBE.mass_shatter_model_module.pool_component_and_complement_embeddings is (
+    assert PROBE.masster_model_module.pool_component_and_complement_embeddings is (
         original_pool
     )
     assert not encoder._hooks
 
 
 def test_encoder_corruptor_refuses_a_model_it_cannot_rewrite_exactly() -> None:
-    from tests.test_mass_shatter_model import _build_batch, _build_model
+    from tests.test_masster_model import _build_batch, _build_model
 
     batch = _build_batch(("CCO",))
     model = _build_model(batch, precursor_gnn_type="GINE_GSA", boundary_bond_encoder=False)

@@ -906,7 +906,7 @@ def encode_cut_bond_pairs(
 
     A :class:`CutBondEncoder` output depends only on the two endpoint embeddings, and the
     same directed bond recurs across every fragment that severs it: about 10x per row in
-    MASShatter merged batches, about 29x on the FraGNNet test DAG. Encoding each distinct
+    MASSter merged batches, about 29x on the FraGNNet test DAG. Encoding each distinct
     pair once and gathering the rows back gives the same values as
     ``encoder(atom_embeddings[in_indices], atom_embeddings[out_indices])`` up to float
     rounding, with the same parameters, at a fraction of the matmul work and activation

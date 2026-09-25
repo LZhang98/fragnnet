@@ -1,7 +1,7 @@
 """Compare `connected_fragment_beam` and `cut_masks` candidate selection on the same logits.
 
 Reproduces the measurements recorded in
-`docs/findings/masshatter/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md`. Both selectors
+`docs/findings/masster/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md`. Both selectors
 receive identical bond logits and a matched *unique-fragment* budget, so only the selection
 objective differs. Three scans are available:
 
@@ -13,10 +13,10 @@ objective differs. Three scans are available:
   universe, plus a decomposition of unreached mass by fragment size.
 - ``implementations``: exact emitted-set comparison against an alternative beam module supplied
   with ``--beam-implementation``, for example a historical revision extracted with
-  ``git show <rev>:src/fragnnet/frag/mass_shatter_fast_gnn.py``.
+  ``git show <rev>:src/fragnnet/frag/masster_fast_gnn.py``.
 
 Bond logits are synthetic by default, so the sweep tests whether *any* learned logits could
-remove the effect. Pass ``--checkpoint`` to capture **trained** bond logits from a MASShatter
+remove the effect. Pass ``--checkpoint`` to capture **trained** bond logits from a MASSter
 checkpoint instead; only the encoder and bond-break head are required, so a checkpoint whose
 intensity head has since changed shape still works. This is candidate construction only: no
 optimizer step is taken and no spectrum is predicted.
@@ -40,21 +40,22 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.frag.mass_shatter_candidates import (
-    MassShatterCandidateBatch,
-    build_mass_shatter_candidates,
+from fragnnet.frag.masster_candidates import (
+    MassterCandidateBatch,
+    build_masster_candidates,
 )
-from fragnnet.frag.mass_shatter_fast_gnn import build_fast_gnn_candidates
-from fragnnet.model.mass_shatter_model import MassShatterModel
-from fragnnet.pl_model import MassShatterPL
+from fragnnet.frag.masster_fast_gnn import build_fast_gnn_candidates
+from fragnnet.model.masster_model import MassterModel
+from fragnnet.pl_model import MassterPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
+from fragnnet.utils.pl_utils import migrate_legacy_masster_name
 
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = (
-    "config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml"
+    "config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml"
 )
-# Production ratio: mass_shatter_ranked_mask_budget / mass_shatter_unique_fragment_target.
+# Production ratio: masster_ranked_mask_budget / masster_unique_fragment_target.
 ENUMERATION_SLACK = 16
 # (mu, sigma) for the synthetic bond-logit sweep, from near-stable to near-even cutting.
 LOGIT_SCENARIOS: tuple[tuple[str, float, float], ...] = (
@@ -113,12 +114,15 @@ def capture_trained_logits(
         ValueError: The proposal path did not load completely, or no logits were captured.
     """
     checkpoint = th.load(checkpoint_path, map_location="cpu", weights_only=False)
-    config = _deep_fill(dict(checkpoint["hyper_parameters"]), load_config("config", None, None))
+    hparams = dict(checkpoint["hyper_parameters"])
+    # Rename pre-rename keys first, or the template's defaults would fill in over them.
+    migrate_legacy_masster_name(hparams)
+    config = _deep_fill(hparams, load_config("config", None, None))
     config.update(num_workers=0, share_memory=False, pl_enable_progress_bar=False)
     config["train_batch_size"] = batch_size
     config["subsample_params"]["subsample_size"] = subsample_size
 
-    model = MassShatterPL(**config)
+    model = MassterPL(**config)
     result = model.load_state_dict(checkpoint["state_dict"], strict=False)
     unloaded = [key for key in result.missing_keys if "intensity_head" not in key]
     if unloaded:
@@ -194,7 +198,7 @@ def select_beam(batch: MolecularBatch, logits: th.Tensor, budget: int, cuts: int
 
 def select_cut_masks(batch: MolecularBatch, logits: th.Tensor, budget: int):
     """Run `cut_masks` at the same unique-fragment budget with the production enumeration slack."""
-    return build_mass_shatter_candidates(
+    return build_masster_candidates(
         logits,
         batch.chemical_bond_index,
         batch.atom_batch_indices,
@@ -208,7 +212,7 @@ def select_cut_masks(batch: MolecularBatch, logits: th.Tensor, budget: int):
 
 
 def fragment_table(
-    candidates: MassShatterCandidateBatch,
+    candidates: MassterCandidateBatch,
     batch: MolecularBatch,
     intact_baseline: th.Tensor,
     logits: th.Tensor,
@@ -233,7 +237,7 @@ def fragment_table(
         _boundary_bond_indices,
         boundary_fragment_indices,
         _cut_counts,
-    ) = MassShatterModel._unique_component_memberships(candidates)
+    ) = MassterModel._unique_component_memberships(candidates)
     num_fragments = candidates.num_unique_components
     membership = th.zeros(num_fragments, batch.num_atoms, dtype=th.bool)
     membership[atom_fragment_indices, fragment_atom_indices] = True
@@ -567,7 +571,7 @@ class _Absorbing:
 def load_beam_implementation(module_path: Path, max_stubs: int = 8):
     """Import an alternative beam module and return it.
 
-    Accepts either a revision of `mass_shatter_fast_gnn` exposing ``build_fast_gnn_candidates``,
+    Accepts either a revision of `masster_fast_gnn` exposing ``build_fast_gnn_candidates``,
     or the standalone research prototype exposing ``enumerate_node_combos``. Research prototypes
     often import packages that are not installed here while their search function is pure tensor
     code, so absent top-level modules are stubbed and the import retried.
@@ -787,7 +791,7 @@ def main() -> None:
         "--checkpoint",
         type=Path,
         default=None,
-        help="capture trained bond logits from this MASShatter checkpoint instead of sampling",
+        help="capture trained bond logits from this MASSter checkpoint instead of sampling",
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

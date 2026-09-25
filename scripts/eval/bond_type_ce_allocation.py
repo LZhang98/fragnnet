@@ -1,6 +1,6 @@
-"""Does MASShatter get the bond-type response to CE right but the molecule's own bond wrong?
+"""Does MASSter get the bond-type response to CE right but the molecule's own bond wrong?
 
-The ICEBERG-2 check (Extended Data Fig. 3a), run on MASShatter and extended to the question
+The ICEBERG-2 check (Extended Data Fig. 3a), run on MASSter and extended to the question
 the intensity-displacement plan cares about. One checkpoint is evaluated in eval mode on a
 train slice and a validation slice. For every retained fragment the probe records the bonds
 severed at its boundary, the model's fragment mass (summed over ion/H channels) and the
@@ -25,7 +25,7 @@ Target mass at an m/z shared by several channels is split equally among them (mo
 Usage (repository root, local GPU):
 
     python scripts/eval/bond_type_ce_allocation.py \
-        --custom_fp config/massshatter/mh_ft_clean_2026_09_22/f1_mh_ft_all_filters.yml \
+        --custom_fp config/masster/mh_ft_clean_2026_09_22/f1_mh_ft_all_filters.yml \
         --model_ckpt saved_ckpts/f1_mh_ft_all_filters_6h67zps9.ckpt \
         --batch_cutoff 40 --eval_batch_size 256 --out_fp bond_type_f1.pkl
 """
@@ -56,7 +56,7 @@ PRECURSOR = "precursor"
 
 
 class FragmentCapture:
-    """Record per-fragment validity and boundary bonds from one MASShatter forward pass.
+    """Record per-fragment validity and boundary bonds from one MASSter forward pass.
 
     Wraps two methods of the model instance. In the unique-fragment path,
     ``_fragment_masses_and_valid_channels`` runs on the enumerated fragments and
@@ -360,8 +360,8 @@ def get_args() -> argparse.Namespace:
 def main() -> None:
     args = get_args()
     config_d = load_config(args.template_fp, args.custom_fp, [])
-    if config_d["model_type"] != "mass_shatter" or not config_d["mass_shatter_unique_fragment_mode"]:
-        raise ValueError("needs a unique-fragment MASShatter config")
+    if config_d["model_type"] != "masster" or not config_d["masster_unique_fragment_mode"]:
+        raise ValueError("needs a unique-fragment MASSter config")
     config_d = apply_inference_config(
         config_d, disable_preproc=True, eval_batch_size=args.eval_batch_size, num_workers=args.num_workers
     )

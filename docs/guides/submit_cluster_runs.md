@@ -144,8 +144,8 @@ The existing [Vulcan subformula-filter launcher](../../scripts/manual_slurm/vulc
 is a minimal, generation-only example: a single `setup_job_cc.py` invocation that writes the job
 script for one config without submitting it. It hard-codes an account and a `vulcan:l40s` profile,
 so copy and edit it rather than invoking it as-is. Other launchers submit on invocation: the
-[Vulcan architecture launcher](../../scripts/manual_slurm/vulcan/submit_masshatter_merged_architectures.sh)
-validates its config list, generates eight MASShatter scripts, then **submits all eight**. It is an
+[Vulcan architecture launcher](../../scripts/manual_slurm/vulcan/submit_masster_merged_architectures.sh)
+validates its config list, generates eight MASSter scripts, then **submits all eight**. It is an
 experiment-specific batch launcher, not a generation-only example; inspect its configs, account, and
 resource budget before invoking it. Check any launcher for an `sbatch` call and a `--no_submit` flag
 before running one. [Fir manual scripts](../../scripts/manual_slurm/fir/) also include preprocessing

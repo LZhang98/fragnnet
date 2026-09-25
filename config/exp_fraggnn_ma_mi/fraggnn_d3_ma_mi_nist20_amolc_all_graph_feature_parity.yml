@@ -101,7 +101,7 @@ spec_params:
 mol_params:
   preprocess: True
   # GLACIER graph-feature parity (arXiv 2606.29161, Appendix A Tables 6-7). The prod config
-  # inherits the template's 8 atom features and bond type alone; MASShatter has carried the
+  # inherits the template's 8 atom features and bond type alone; MASSter has carried the
   # first five of the additions below since 2026-09-20 and FraGNNet never picked them up.
   # All eight are computed on the fly from the molecule, so no DAG regeneration is needed.
   # Not added: b_stereo. It is measurably dead on our data (0 of 127,249 sampled NIST20 bonds

@@ -13,8 +13,8 @@
   | --- | --- |
   | `docs/guides/` | How to run a specific operation |
   | `docs/reference/` | Detailed current system behavior |
-  | `docs/findings/` | Measurements, evidence, and conclusions: FraGNNet/DAG findings in `fragnnet/`, MASShatter findings in `masshatter/`, cross-model and shared-data findings at top level |
-  | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASShatter plans in `masshatter/`, cross-model plans at top level |
+  | `docs/findings/` | Measurements, evidence, and conclusions: FraGNNet/DAG findings in `fragnnet/`, MASSter findings in `masster/`, cross-model and shared-data findings at top level |
+  | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASSter plans in `masster/`, cross-model plans at top level |
   | `docs/notes/` | Scratch and literature notes |
   | `docs/figures/` | Figures referenced by documentation |
   | `docs/rules/` | Shared constraints |

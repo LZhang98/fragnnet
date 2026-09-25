@@ -1,7 +1,7 @@
 # Energy-based spectrum reranking experiment
 
 > **Status:** PROPOSED · **Updated:** 2026-09-13
-> Shared design of record for FraGNNet and MASShatter reranking; no implementation or runs.
+> Shared design of record for FraGNNet and MASSter reranking; no implementation or runs.
 
 ## Objective and rationale
 
@@ -11,9 +11,9 @@ quality from ranking quality before considering a generative EBM or iterative in
 
 This document owns the common export contract, proposal/null pools, gates, ranking objective,
 controls, and decisions. The initial anchor below is FraGNNet; the
-[MASShatter delta](masshatter/masshatter_energy_based_model_plan.md) changes only model-specific setup and
-records conditional refinement. The MASShatter program now evaluates
-[bond-cut modeling first](masshatter/masshatter_bond_cut_ebm_plan.md), then applies this spectrum protocol
+[MASSter delta](masster/masster_energy_based_model_plan.md) changes only model-specific setup and
+records conditional refinement. The MASSter program now evaluates
+[bond-cut modeling first](masster/masster_bond_cut_ebm_plan.md), then applies this spectrum protocol
 with the selected proposal model frozen. Apply the spectrum gates separately to each anchor.
 
 FraGNNet already normalizes fragment/formula logits in
@@ -57,7 +57,7 @@ relative metric quality, whereas that head directly emitted per-bag logit correc
 a different optimization and inference test, but it shares the risk that frozen representations
 cannot support useful correction. Require the null-adjusted pool gate and a matched direct
 correction control; a positive raw oracle does not rebut the prior null. The FraGNNet ranking
-finding also does not establish that MASShatter has the same error decomposition.
+finding also does not establish that MASSter has the same error decomposition.
 
 ## 1. Freeze the baseline and data contract
 
@@ -77,7 +77,7 @@ finding also does not establish that MASShatter has the same error decomposition
   experiment manifest rather than depending on the ambiguous help. This disables the export
   intensity filter only: audit upstream model pruning, zero handling, and serialization to verify
   complete retained chemical support. Inspect the
-  [correctness audit](../findings/fragnnet_masshatter_audit_2026_09_12.md) and reconcile
+  [correctness audit](../findings/fragnnet_masster_audit_2026_09_12.md) and reconcile
   relevant checkpoint, export, and metric issues against current code before measuring.
 - Aggregate candidate ions/fragments into predicted peak-mass groups using the existing mass
   convention. Pool all associated fragment embeddings for a mass; do not assign an observed

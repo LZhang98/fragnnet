@@ -1,0 +1,212 @@
+# 2g.20gb SLICE VARIANT of ..._lb64_ctrl_a.yml -- see
+# docs/plans/masster/masster_regularization_sweep_plan.md, Stage A.
+# The 20 GB MIG slice cannot hold the 512 x lb64 arm (26.9 GiB measured), so the microbatch drops
+# to 256 with accumulate_grad_batches: 2, keeping the EFFECTIVE batch at 512 and the optimizer
+# math of the lb64 lineage. loss_batch_size follows to 32 and num_workers to 3 (the profile has
+# 3 CPUs). Measured peak for 256 x lb32 is 12.7 GiB (run 0sfedmop), leaving ~6.8 GiB of the
+# ~19.5 GiB usable slice -- ample for the merged peak-count tail (sigma 1.29, max 1168).
+#
+# CAVEAT, and it is on the axis under study: BatchNorm statistics are computed per MICROBATCH, so
+# 256 is not 512 for `mol_normalization: batch`, which is exactly what the _layernorm and
+# _graphnorm arms are testing. Uniform microbatch across all arms keeps the sweep internally
+# valid, but effect sizes measured here do not transfer to a 512-microbatch run, and nothing in
+# this shape may be compared against the four 512 x lb64 L40S replicates.
+# If this shape is selected, EVERY arm in the sweep must be run with the same five keys.
+# Arm of the regularization/normalization sweep -- see
+# docs/plans/masster/masster_regularization_sweep_plan.md. Every config in the sweep sets
+# compute_train_auxiliary_metrics: true so the train cosine is logged next to the validation
+# cosine; no MASSter run before this sweep has ever logged one. Compare arms at matched
+# epoch against ..._ctrl_a / ..._ctrl_b, never at matched wall clock and never against the
+# 2026-09-18 L40S runs. loss_batch_size and num_workers are slice-dependent and are set at
+# launch (2g.20gb needs loss_batch_size=16, num_workers=3); they do not change the loss.
+# loss_batch_size 64 counterpart of nist20_ma_mi_merged_fast_batch512_cuda.yml (the arm it derives from
+# used 8; template default is 32). Only loss_batch_size, wandb_name and tags
+# differ. Measured cost: the merged peak-count tail (sigma 1.29, max 1168) makes
+# the padded loss tensors spiky -- budget ~+4 GB over lbs=8 at microbatch 256.
+# CUDA candidate counterpart of nist20_ma_mi_merged_fast_batch512.yml.
+# Exact FP32 single-mixture selection/topology; CPU remains the template default.
+# Local correctness/throughput checks passed; L40S acceptance is pending.
+# Requires an existing compatible CUDA toolkit for the first native build.
+# See docs/guides/benchmark_masster_merged_control.md for scope and confounds.
+wandb_name: nist20_ma_mi_merged_fast_batch256x2_cuda_lb32_ctrl_2g
+wandb_group: nist20_mass_shatter_reg_sweep
+wandb_tags:
+- masster
+- cuda_candidates
+- fir_h100_mig
+- nist20_ma_mi
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- m-h
+- m+na
+- m+cl
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- loss_batch_32
+- microbatch_256
+- effective_batch_512
+- merged
+- merged_consensus
+- nce_only
+- no_cmf
+- exposure_matched_epochs
+- reg_sweep_2026_09_19
+- slice_pilot_2g
+- train_aux_metrics
+seed: 397623
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+spec_params:
+  merge: true
+  merge_keep_ces: true
+  nce: true
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  - '[M-H]-'
+  - '[M+Na]+'
+  - '[M+Cl]-'
+  inst_type: true
+  inst_types:
+  - FT
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 32
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol:
+  FT:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 2
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 3
+precision: 32
+use_tensor_float32: true
+min_epochs: 378
+max_epochs: 630
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Sweep instrumentation: also compute auxiliary_scores on train, so train_cos_sim_0.01_epoch/mean
+# is logged and the train/val gap is readable. The eval tensors are built sparse
+# (spectrum_pl.py:619-629), so this costs throughput, not GPU memory.
+compute_train_auxiliary_metrics: true
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda

@@ -4,7 +4,7 @@ Data samplers for spectrum-molecule-fragment datasets.
 Includes:
 - SpecMolFragDynamicBatchSampler: Dynamic batching to avoid OOM
 - CEContextDynamicBatchSampler: Full-coverage bounded adjacent-CE batching
-- MassShatterCEContextDynamicBatchSampler: Adjacent-CE batching by molecular edges
+- MassterCEContextDynamicBatchSampler: Adjacent-CE batching by molecular edges
 - GroupSampler: Sample K specs per group_id
 - get_group_sampler: WeightedRandomSampler factory
 """
@@ -731,8 +731,8 @@ class CEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
         return np.asarray(metadata, dtype=np.int64).reshape(-1, 2)
 
 
-class MassShatterCEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
-    """Pack adjacent-CE MASShatter spectra using molecular graph edges.
+class MassterCEContextDynamicBatchSampler(_CEContextBatchSamplerBase):
+    """Pack adjacent-CE MASSter spectra using molecular graph edges.
 
     This sampler never reads fragment-DAG graphs or precomputed DAG size metadata.
     """

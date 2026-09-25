@@ -5,7 +5,7 @@ from .data_sampler import (
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GroupSampler,
-    MassShatterCEContextDynamicBatchSampler,
+    MassterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
@@ -21,7 +21,7 @@ __all__ = [
     "DualGroupDynamicBatchSampler",
     "FormulaPrecTypeGroupSampler",
     "GroupSampler",
-    "MassShatterCEContextDynamicBatchSampler",
+    "MassterCEContextDynamicBatchSampler",
     "SpecMolFragDynamicBatchSampler",
     "get_group_sampler",
     "IterableSpecMolFragDataset",

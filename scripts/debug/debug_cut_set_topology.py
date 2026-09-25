@@ -1,4 +1,4 @@
-"""How much of the candidate set can MASShatter's pooled boundary NOT tell apart?
+"""How much of the candidate set can MASSter's pooled boundary NOT tell apart?
 
 The intensity token summarizes a candidate's cut bonds as a COUNT (`cut_counts`) plus a mean over
 per-bond encodings. Mean pooling is permutation-invariant and additive, so any relationship
@@ -10,10 +10,10 @@ This counts, over real depth-3 DAG fragments, how often that distinction exists 
 
 Caveat on transfer: the fragments here come from the depth-3 BFS DAG, where cut count is bounded
 by the enumeration depth, so the cut-count DISTRIBUTION is an artifact of that enumeration and is
-not MASShatter's. MASShatter ranks unrestricted multi-bond cut masks, so it sees at least as many
+not MASSter's. MASSter ranks unrestricted multi-bond cut masks, so it sees at least as many
 multi-cut candidates. Re-run against real candidate batches before quoting the distribution.
 
-Results and their interpretation: ``docs/plans/masshatter/masshatter_cut_set_features_plan.md``.
+Results and their interpretation: ``docs/plans/masster/masster_cut_set_features_plan.md``.
 
 Usage:
     python scripts/debug/debug_cut_set_topology.py

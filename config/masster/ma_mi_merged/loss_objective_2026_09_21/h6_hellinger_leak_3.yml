@@ -1,0 +1,215 @@
+# Arm h6 -- Hellinger + spectral_leak_loss_weight 3.0. 2026-09-21 loss-objective campaign.
+# Plan: docs/plans/masster/masster_nonprobabilistic_intensity_plan.md, "Explicit false-intensity term".
+#
+# GATED. Step 3 of the plan: submit only after h1 shows the predicted recovery improvement AND
+# leaves a measured false-intensity problem. Submitting this before h1 reports wastes the slice.
+#
+#   L_total[s] = L_hel[s] + lambda_leak * L_out[s]
+#   L_out[s]   = (predicted intensity outside EVERY true tolerance window) / (total predicted)
+#
+# lambda_leak sweeps {0, 0.3, 1, 3}; lambda_leak = 0 is h1_hellinger_closest.yml, so do not
+# add a fourth arm for it. Derived from h1 by adding exactly spectral_leak_loss_weight.
+#
+# The term is the NORMALIZED fraction, so an independent-output model cannot lower it by
+# shrinking every score. It depends only on m/z feasibility, never on the assignment, so an
+# in-window prediction is never charged as leakage for losing a one-to-one match. Matching is
+# held at `closest` across the whole sweep for that reason.
+#
+# Hellinger already penalizes prediction-only mass; this term REWEIGHTS that penalty rather
+# than adding a new source of supervision. Watch spectral_leak_loss and spec_peak_distance
+# separately in W&B -- a lambda that drives the leak term to zero by collapsing the predicted
+# support is a failure, not a win.
+#
+# Budget: 128 epochs, not the lineage's 630. Validation cosine saturates near epoch 100
+# (docs/plans/masster/masster_regularization_sweep_plan.md, 2026-09-21: the last 529 of 630 epochs
+# buy +0.0017). Read every control at ITS epoch 128 from W&B, never at its final epoch, and
+# give only the selected objective a full-budget rerun.
+#
+# These are merged tolerance_consensus targets (post 2026-09-03). Nothing here compares to
+# earlier merged cosines or to the 512-microbatch L40S replicates.
+wandb_name: nist20_ma_mi_merged_fast_batch256x2_cuda_lb32_hellinger_leak_3
+wandb_group: nist20_mass_shatter_loss_objective
+wandb_tags:
+- masster
+- cuda_candidates
+- fir_h100_mig
+- nist20_ma_mi
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- m-h
+- m+na
+- m+cl
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- loss_batch_32
+- microbatch_256
+- effective_batch_512
+- merged
+- merged_consensus
+- nce_only
+- no_cmf
+- exposure_matched_epochs
+- loss_objective_2026_09_21
+- hellinger_distance
+- peak_matching_closest
+- train_aux_metrics
+- spectral_leak_3.0
+seed: 397623
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+spec_params:
+  merge: true
+  merge_keep_ces: true
+  nce: true
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  - '[M-H]-'
+  - '[M+Na]+'
+  - '[M+Cl]-'
+  inst_type: true
+  inst_types:
+  - FT
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: hellinger_distance
+masster_peak_matching: closest
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 32
+primary_loss_weight: 1.0
+spectral_leak_loss_weight: 3.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol:
+  FT:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 2
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 3
+precision: 32
+use_tensor_float32: true
+min_epochs: 128
+max_epochs: 128
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Sweep instrumentation: also compute auxiliary_scores on train, so train_cos_sim_0.01_epoch/mean
+# is logged and the train/val gap is readable. The eval tensors are built sparse
+# (spectrum_pl.py:619-629), so this costs throughput, not GPU memory.
+compute_train_auxiliary_metrics: true
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda

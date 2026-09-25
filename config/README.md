@@ -11,7 +11,7 @@ your custom config    the experiment
 ```
 
 **One template, one schema.** `config/template.yml` declares every model's keys, so a FraGNNet
-run carries the 73 `mass_shatter_*` keys and a MASShatter run carries `frag_params` - inert, and
+run carries the 73 `masster_*` keys and a MASSter run carries `frag_params` - inert, and
 deliberately so. Shared code can then read any key without first asking what model this is, and
 a key can never go missing for one model while another model's code still reads it. That failure
 mode is what the per-model split (2026-09-20, reverted) kept producing: a key moved into one
@@ -27,7 +27,7 @@ checkpoint resolves.
 ### Where a key goes
 
 The template is the shared core first, then one clearly-marked block per model. A model's own
-keys stay **flat and prefixed** (`mass_shatter_*`, `iceberg_*`, `mf_*`, `graff_*`, `clip_*`,
+keys stay **flat and prefixed** (`masster_*`, `iceberg_*`, `mf_*`, `graff_*`, `clip_*`,
 `mces_*`, `neims_*`) and live in that model's block. Nesting them under a per-model mapping would
 invalidate the hparams of every trained checkpoint, which is why the same idea was reverted for
 `conditioning_params`. `gnn` and `precursor` have no keys of their own and run entirely on the

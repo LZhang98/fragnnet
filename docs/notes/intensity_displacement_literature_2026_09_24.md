@@ -2,8 +2,8 @@
 
 > **Status:** NOTE · **Updated:** 2026-09-24
 > A literature search for the
-> [intensity-displacement plan](../plans/masshatter/masshatter_intensity_displacement_plan.md),
-> read against its [Phase 0 finding](../findings/masshatter/masshatter_intensity_displacement_phase0_2026_09_24.md).
+> [intensity-displacement plan](../plans/masster/masster_intensity_displacement_plan.md),
+> read against its [Phase 0 finding](../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md).
 > It covers three areas: forward MS/MS predictors, fragmentation energetics, and proteomics
 > intensity models. §7 is a second pass that corrects two first-pass claims. Generic
 > memorization and regularization work is in the
@@ -47,7 +47,7 @@ lability to new molecules, and is any of the shared bias data-side rather than m
   FIORA does similar: a precursor-stability logit competes with per-bond fragment logits in one
   softmax ([FIORA, bioRxiv full text](https://www.biorxiv.org/content/10.1101/2024.04.22.590551.full.pdf),
   [Nat. Commun. 2025](https://www.nature.com/articles/s41467-025-57422-4)).
-- **Where MASShatter differs.** Its precursor is a candidate token whose score is a free residual
+- **Where MASSter differs.** Its precursor is a candidate token whose score is a free residual
   of the global transformer. With `proposal_selection_only: true`, nothing ties that score to the
   lability of the molecule's bonds.
 - **Nobody fits a continuous breakdown curve.**
@@ -82,7 +82,7 @@ precursor-versus-contender.
 - **Where the lesson applies here.** The MassSpecGym GLACIER-parity arm (`..._glacier_feats.yml`,
   prepared, not submitted) adds `c_nl_composition`, the complement's element counts. That is the
   input form of GRAFF-MS's lesson. The
-  [formula-only baseline](../findings/masshatter/masshatter_formula_only_baseline_2026_09_23.md)
+  [formula-only baseline](../findings/masster/masster_formula_only_baseline_2026_09_23.md)
   found formula information adds +0.005 overall. Phase 0 says its value is concentrated in the
   low-CE precursor decision. Read that arm on the low-NCE precursor split specifically, not only
   on mean cosine.
@@ -125,7 +125,7 @@ precursor-versus-contender.
   MassSpecGym numbers
   ([arXiv 2606.29161](https://arxiv.org/html/2606.29161v1); [our note](glacier_object_detection.md)).
 - **Consequence.** Keep 2A's identity-blind path **additive**, next to the global head, not a
-  replacement. The [route map](../findings/masshatter/masshatter_route_map_2026_09_24.md) finding
+  replacement. The [route map](../findings/masster/masster_route_map_2026_09_24.md) finding
   that global attention writes the memorization key argues for a separate identity-blind path.
   The literature does not show that removing global attention helps.
 - **Proteomics is consistent with this.** Every strongly generalizing peptide model computes

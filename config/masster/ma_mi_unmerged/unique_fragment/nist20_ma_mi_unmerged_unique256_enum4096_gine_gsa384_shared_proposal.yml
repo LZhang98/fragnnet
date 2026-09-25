@@ -1,0 +1,150 @@
+wandb_name: nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_shared_proposal
+wandb_group: nist20_mass_shatter_l40s
+wandb_tags:
+  - masster
+  - nist20_ma_mi
+  - unmerged
+  - unique_fragments_256
+  - max_enumerated_masks_4096
+  - proposal_selection_only
+  - separate_proposal_encoder
+  - shared_proposal_across_ev
+
+seed: 397623
+
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+spec_params:
+  merge: False
+  merge_keep_ces: False
+  nce: True
+  ace: False
+  prec_type: True
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+    - "[M+Cl]-"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
+  preprocess: True
+mol_params:
+  preprocess: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_ring_size
+    - a_num_hs
+    - a_mass
+    - a_chiral
+    - a_charge
+  pyg_edge_feats:
+    - b_degree
+    - b_ring
+    - b_conj
+
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: True
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: True
+masster_max_h_transfer: 4
+masster_include_cmf: True
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: True
+masster_proposal_anchored: True
+masster_log_base_ce: True
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: True
+masster_proposal_selection_only: True
+masster_proposal_loss_weight: 0.1
+masster_separate_proposal_encoder: True
+masster_share_proposal_across_ev: True
+masster_batch_sampler: True
+masster_batch_sampler_max: 8192
+
+loss_type: cross_entropy
+predict_oos: False
+oos_loss: False
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 8
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+cross_ev_fragment_loss_weight: 0.0
+inst_type_loss_tol:
+  FT: {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}
+
+# Keep adjacent CE spectra together. The graph budget counts directed molecular
+# edges; tune it downward if the first run approaches the device memory limit.
+ce_context_spectra_per_context: 5
+ce_context_ce_key_by_inst:
+  FT: nce
+  QTOF: ace
+  IT: nce
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 128
+eval_batch_size: 64
+accumulate_grad_batches: 2
+automatic_optimization: True
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: False
+
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: True
+min_epochs: 60
+max_epochs: 100
+debug_overfit: False
+compile: False
+pl_enable_progress_bar: True
+upload_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+  - cos_sim
+  - recall
+  - precision
+  - wrecall
+  - wprecision
+eval_mz_bin_res:
+  - 0.01

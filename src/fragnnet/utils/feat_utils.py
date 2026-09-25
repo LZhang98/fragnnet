@@ -360,7 +360,7 @@ class AtomDegree(FeatBase):
         Until 2026-09-20 ``featurize`` passed the pair ``[degree, total_degree]`` into
         ``one_hot_encoding``. A list never equals an ``int``, so all 12 one-hot columns were
         pinned to the unknown bucket and carried no information -- see §7.1 of
-        ``docs/reference/masshatter_feature_set_audit.md``. The fix keeps the 14-column width,
+        ``docs/reference/masster_feature_set_audit.md``. The fix keeps the 14-column width,
         so a checkpoint trained before that date still loads but reads different inputs; such
         checkpoints must be retrained.
     """

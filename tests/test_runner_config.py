@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from fragnnet.dataset import MassShatterCEContextDynamicBatchSampler
+from fragnnet.dataset import MassterCEContextDynamicBatchSampler
 from fragnnet.runner import init_dataloader, validate_sampler_config
 
 
@@ -42,10 +42,10 @@ def _base_config(**overrides) -> dict:
         "ce_pair_eligible_inst_types": ["FT"],
         "ce_pair_eligible_prec_types": ["[M+H]+"],
         "cross_ev_fragment_loss_weight": 0.0,
-        "mass_shatter_share_proposal_across_ev": False,
-        "mass_shatter_unique_fragment_mode": False,
-        "mass_shatter_batch_sampler": False,
-        "mass_shatter_batch_sampler_max": None,
+        "masster_share_proposal_across_ev": False,
+        "masster_unique_fragment_mode": False,
+        "masster_batch_sampler": False,
+        "masster_batch_sampler_max": None,
         "precursor_pair_loss_weight": 0.0,
         "precursor_pair_nce_min": 0.0,
         "precursor_pair_nce_max": 20.0,
@@ -68,14 +68,14 @@ def _base_config(**overrides) -> dict:
 
 
 class TestValidateSamplerConfig:
-    def test_non_mass_shatter_config_omits_mass_shatter_keys(self):
+    def test_non_masster_config_omits_masster_keys(self):
         """A checkpoint's hparams predate these keys; validation must not require them."""
         cfg = _base_config()
         for key in (
-            "mass_shatter_batch_sampler",
-            "mass_shatter_batch_sampler_max",
-            "mass_shatter_share_proposal_across_ev",
-            "mass_shatter_unique_fragment_mode",
+            "masster_batch_sampler",
+            "masster_batch_sampler_max",
+            "masster_share_proposal_across_ev",
+            "masster_unique_fragment_mode",
         ):
             del cfg[key]
         validate_sampler_config(cfg)
@@ -83,68 +83,68 @@ class TestValidateSamplerConfig:
     @pytest.mark.parametrize(
         "key",
         [
-            "mass_shatter_batch_sampler",
-            "mass_shatter_share_proposal_across_ev",
-            "mass_shatter_unique_fragment_mode",
+            "masster_batch_sampler",
+            "masster_share_proposal_across_ev",
+            "masster_unique_fragment_mode",
         ],
     )
-    def test_mass_shatter_key_enabled_on_another_model_raises(self, key):
+    def test_masster_key_enabled_on_another_model_raises(self, key):
         """A historical config may carry the key, but switching it on is never silently ignored."""
-        with pytest.raises(ValueError, match=f"{key}.*model_type='mass_shatter'"):
+        with pytest.raises(ValueError, match=f"{key}.*model_type='masster'"):
             validate_sampler_config(_base_config(model_type="frag_gnn", **{key: True}))
 
-    def test_mass_shatter_key_missing_from_mass_shatter_config_raises(self):
-        """For MASShatter the reads are hard: a missing key is a broken template, not an off switch."""
+    def test_masster_key_missing_from_masster_config_raises(self):
+        """For MASSter the reads are hard: a missing key is a broken template, not an off switch."""
         cfg = _base_config(
-            model_type="mass_shatter",
+            model_type="masster",
             dynamic_batch_sampler=False,
-            mass_shatter_batch_sampler=True,
-            mass_shatter_batch_sampler_max=8192,
+            masster_batch_sampler=True,
+            masster_batch_sampler_max=8192,
             automatic_optimization=True,
         )
-        del cfg["mass_shatter_unique_fragment_mode"]
+        del cfg["masster_unique_fragment_mode"]
 
-        with pytest.raises(KeyError, match="mass_shatter_unique_fragment_mode"):
+        with pytest.raises(KeyError, match="masster_unique_fragment_mode"):
             validate_sampler_config(cfg)
 
-    def test_mass_shatter_shared_proposal_cross_ev_config_passes(self):
+    def test_masster_shared_proposal_cross_ev_config_passes(self):
         validate_sampler_config(
             _base_config(
-                model_type="mass_shatter",
+                model_type="masster",
                 dynamic_batch_sampler=False,
-                mass_shatter_batch_sampler=True,
-                mass_shatter_batch_sampler_max=8192,
+                masster_batch_sampler=True,
+                masster_batch_sampler_max=8192,
                 automatic_optimization=True,
-                mass_shatter_share_proposal_across_ev=True,
-                mass_shatter_unique_fragment_mode=True,
+                masster_share_proposal_across_ev=True,
+                masster_unique_fragment_mode=True,
                 cross_ev_fragment_loss_weight=0.1,
             )
         )
 
-    def test_mass_shatter_ce_context_requires_automatic_optimization(self):
+    def test_masster_ce_context_requires_automatic_optimization(self):
         with pytest.raises(ValueError, match="automatic_optimization=True"):
             validate_sampler_config(
                 _base_config(
-                    model_type="mass_shatter",
+                    model_type="masster",
                     dynamic_batch_sampler=False,
-                    mass_shatter_batch_sampler=True,
-                    mass_shatter_batch_sampler_max=8192,
+                    masster_batch_sampler=True,
+                    masster_batch_sampler_max=8192,
                     automatic_optimization=False,
                 )
             )
 
-    def test_mass_shatter_sampler_requires_its_own_budget(self):
-        with pytest.raises(ValueError, match="mass_shatter_batch_sampler_max"):
+    def test_masster_sampler_requires_its_own_budget(self):
+        with pytest.raises(ValueError, match="masster_batch_sampler_max"):
             validate_sampler_config(
                 _base_config(
-                    model_type="mass_shatter",
+                    model_type="masster",
                     dynamic_batch_sampler=False,
-                    mass_shatter_batch_sampler=True,
+                    masster_batch_sampler=True,
                     automatic_optimization=True,
                 )
             )
 
-    def test_mass_shatter_ce_context_uses_same_sampler_for_validation(self):
+    def test_masster_ce_context_uses_same_sampler_for_validation(self):
         class EvalDataset:
             split = "val"
             ce_key = "nce"
@@ -176,10 +176,10 @@ class TestValidateSamplerConfig:
                 return lambda samples: samples
 
         config = _base_config(
-            model_type="mass_shatter",
+            model_type="masster",
             dynamic_batch_sampler=False,
-            mass_shatter_batch_sampler=True,
-            mass_shatter_batch_sampler_max=5,
+            masster_batch_sampler=True,
+            masster_batch_sampler_max=5,
             automatic_optimization=True,
             num_workers=0,
             pin_memory=False,
@@ -192,17 +192,17 @@ class TestValidateSamplerConfig:
 
         assert isinstance(
             dataloader.batch_sampler,
-            MassShatterCEContextDynamicBatchSampler,
+            MassterCEContextDynamicBatchSampler,
         )
         assert list(dataloader.batch_sampler) == [[0], [1]]
 
-    def test_mass_shatter_shared_proposal_requires_context_batches(self):
-        with pytest.raises(ValueError, match="mass_shatter_batch_sampler"):
+    def test_masster_shared_proposal_requires_context_batches(self):
+        with pytest.raises(ValueError, match="masster_batch_sampler"):
             validate_sampler_config(
                 _base_config(
-                    model_type="mass_shatter",
+                    model_type="masster",
                     dynamic_batch_sampler=False,
-                    mass_shatter_share_proposal_across_ev=True,
+                    masster_share_proposal_across_ev=True,
                 )
             )
 
@@ -210,12 +210,12 @@ class TestValidateSamplerConfig:
         with pytest.raises(ValueError, match="unique_fragment_mode"):
             validate_sampler_config(
                 _base_config(
-                    model_type="mass_shatter",
+                    model_type="masster",
                     dynamic_batch_sampler=False,
-                    mass_shatter_batch_sampler=True,
-                    mass_shatter_batch_sampler_max=8192,
+                    masster_batch_sampler=True,
+                    masster_batch_sampler_max=8192,
                     automatic_optimization=True,
-                    mass_shatter_share_proposal_across_ev=True,
+                    masster_share_proposal_across_ev=True,
                     cross_ev_fragment_loss_weight=0.1,
                 )
             )
@@ -635,12 +635,12 @@ class TestSimpleGroupSamplerTypeValidation:
         )
 
 
-class TestMassShatterWorkerPersistence:
-    """MASShatter keeps DataLoader workers alive across epochs.
+class TestMassterWorkerPersistence:
+    """MASSter keeps DataLoader workers alive across epochs.
 
     SpecMolDataset carries no frag_pl_sd/frag_pp_sd caches, so the FraGNNet
     memory-explosion workaround (respawning workers every epoch) only costs
-    MASShatter its spectrum/molecule preprocessing caches.
+    MASSter its spectrum/molecule preprocessing caches.
     """
 
     class _Dataset:
@@ -656,7 +656,7 @@ class TestMassShatterWorkerPersistence:
     def _config(self, **overrides):
         settings = {
             "dynamic_batch_sampler": False,
-            "mass_shatter_batch_sampler": False,
+            "masster_batch_sampler": False,
             "automatic_optimization": True,
             "num_workers": 2,
             "pin_memory": False,
@@ -668,8 +668,8 @@ class TestMassShatterWorkerPersistence:
         settings.update(overrides)
         return _base_config(**settings)
 
-    def test_mass_shatter_uses_persistent_workers(self):
-        loader = init_dataloader(self._Dataset(), self._config(model_type="mass_shatter"))
+    def test_masster_uses_persistent_workers(self):
+        loader = init_dataloader(self._Dataset(), self._config(model_type="masster"))
         assert loader.persistent_workers is True
 
     def test_frag_gnn_does_not_use_persistent_workers(self):
@@ -678,6 +678,6 @@ class TestMassShatterWorkerPersistence:
 
     def test_single_process_loading_stays_non_persistent(self):
         loader = init_dataloader(
-            self._Dataset(), self._config(model_type="mass_shatter", num_workers=0)
+            self._Dataset(), self._config(model_type="masster", num_workers=0)
         )
         assert loader.persistent_workers is False

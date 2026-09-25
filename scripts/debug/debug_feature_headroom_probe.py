@@ -10,7 +10,7 @@ encoder holds after two rounds, and report held-out skill on a molecule-grouped 
 High skill means the feature is derivable, so adding it buys inductive bias at best and costs
 input width; low skill means it carries information the graph does not contain. The probe is a
 lower bound on what the production encoders can derive: FraGNNet runs 4 GINE layers and
-MASShatter adds exact per-graph global attention, both strictly more expressive than a
+MASSter adds exact per-graph global attention, both strictly more expressive than a
 two-hop mean.
 
 Results and their interpretation: ``docs/findings/feature_headroom_2026_09_22.md``.

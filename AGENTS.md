@@ -1,7 +1,7 @@
 # Agent entry point
 
 FraGNNet predicts tandem mass spectra from molecular structures; this repository also
-contains MASShatter and baseline models.
+contains MASSter and baseline models.
 
 Before planning or editing:
 

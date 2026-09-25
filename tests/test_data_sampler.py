@@ -17,7 +17,7 @@ from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GroupSampler,
-    MassShatterCEContextDynamicBatchSampler,
+    MassterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
 )
 
@@ -245,7 +245,7 @@ class TestCEContextDynamicBatchSampler:
                 limited_by="frag_node",
             )
 
-    def test_supports_molecular_edge_budget_for_mass_shatter(self):
+    def test_supports_molecular_edge_budget_for_masster(self):
         class MolContextDataset(CEContextDataset):
             calls = 0
 
@@ -260,7 +260,7 @@ class TestCEContextDynamicBatchSampler:
 
         rows = [self._row(1, 10), self._row(1, 20)]
         ds = MolContextDataset(rows, [(4, 3), (4, 3)])
-        sampler = MassShatterCEContextDynamicBatchSampler(
+        sampler = MassterCEContextDynamicBatchSampler(
             ds,
             max_num=6,
             ce_key_by_inst=self.CE_KEY_BY_INST,

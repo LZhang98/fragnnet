@@ -144,7 +144,7 @@ PREC_TYPE_TO_CMF_COMP_DIFF = {
 }
 
 
-def mass_shatter_has_valid_ion(
+def masster_has_valid_ion(
     mol: Chem.Mol,
     precursor_type: str,
     max_h_transfer: int,
@@ -153,14 +153,14 @@ def mass_shatter_has_valid_ion(
 ) -> bool:
     """Check whether an uncut component can supply any configured ion channel.
 
-    Counts and masses match MASShatter's graph chemistry. If a connected component
+    Counts and masses match MASSter's graph chemistry. If a connected component
     cannot supply the removed elements, none of its smaller fragments can either.
     This check runs on CPU before spectra enter a training/evaluation batch.
 
     When ``h_transfer_bound`` is not ``"none"``, hydrogen transfer draws from the
     complementary neutral fragment, so a component can gain at most the hydrogens the rest of
     the molecule holds -- none for a single-component molecule. This keeps the filter's notion
-    of reachability aligned with ``MassShatterModel``'s; leave it at the model's own setting.
+    of reachability aligned with ``MassterModel``'s; leave it at the model's own setting.
     Only hydrogen-free molecules change verdict (2 of 35,025 in NIST20), and correctly so: a
     molecule with no hydrogen cannot form ``[M-H]-``.
 
@@ -169,7 +169,7 @@ def mass_shatter_has_valid_ion(
         precursor_type: Adduct string.
         max_h_transfer: Width of the hydrogen-transfer ladder.
         include_cmf: Whether charge-migration channels are enabled.
-        h_transfer_bound: Matching ``mass_shatter_h_transfer_bound`` setting. The valence
+        h_transfer_bound: Matching ``masster_h_transfer_bound`` setting. The valence
             term needs per-fragment cut counts and so does not apply to this whole-component
             admissibility check; ``"valence"`` therefore behaves as ``"complement"`` here.
     """

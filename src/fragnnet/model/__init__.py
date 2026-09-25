@@ -3,7 +3,7 @@
 from .base_model import CEModel, InstModel, PrecModel
 from .fragnnet_model import FraGNNetModel
 from .gnn_model import GNNModel
-from .mass_shatter_model import MassShatterModel
+from .masster_model import MassterModel
 from .mol_encoder import MolEncoder
 from .neims_model import NeimsModel
 from .precursor_model import PrecursorModel

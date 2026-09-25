@@ -24,7 +24,7 @@ from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GroupSampler,
-    MassShatterCEContextDynamicBatchSampler,
+    MassterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
@@ -37,7 +37,9 @@ from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
 from fragnnet.utils.pl_utils import (
     ConsoleLogger,
     ExponentialMovingAverage,
-    migrate_mass_shatter_proposal_method,
+    migrate_legacy_masster_key,
+    migrate_legacy_masster_name,
+    migrate_masster_proposal_method,
 )
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -48,7 +50,7 @@ VALID_MODEL_TYPES = frozenset(
     {
         "frag_gnn",
         "fragnnet",
-        "mass_shatter",
+        "masster",
         "neims",
         "massformer",
         "iceberg_gen",
@@ -90,10 +92,10 @@ VALID_SIMPLE_GROUP_SAMPLER_TYPES = frozenset(
     }
 )
 VALID_BATCH_SAMPLER_TYPES = frozenset({"spec_mol_frag", "ce_context"})
-MASS_SHATTER_SAMPLER_KEYS = (
-    "mass_shatter_batch_sampler",
-    "mass_shatter_share_proposal_across_ev",
-    "mass_shatter_unique_fragment_mode",
+MASSTER_SAMPLER_KEYS = (
+    "masster_batch_sampler",
+    "masster_share_proposal_across_ev",
+    "masster_unique_fragment_mode",
 )
 
 
@@ -186,11 +188,14 @@ def load_config(
             raise FileNotFoundError(f"custom config not found: {custom_fp}")
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader) or {}
+        migrate_legacy_masster_name(custom_d)
 
     # 1. Load the template every model shares.
     resolved_template_fp = resolve_template_path(template_path)
     with open(resolved_template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
+    # A template saved inside a pre-rename checkpoint still spells MASSter `mass_shatter`.
+    migrate_legacy_masster_name(config_d)
     # A caller-supplied model_type (a checkpoint's) outranks the template default, so an
     # inference config that stays silent about the model does not silently become frag_gnn.
     resolved_model_type = (
@@ -205,24 +210,24 @@ def load_config(
         )
     config_d["model_type"] = resolved_model_type
 
-    migrate_mass_shatter_proposal_method(config_d)
+    migrate_masster_proposal_method(config_d)
     # Compatibility boundary for templates saved before candidate backends existed.
     # Add the schema key before custom config validation and CLI overrides.
-    if resolved_model_type == "mass_shatter":
-        if "mass_shatter_candidate_backend" not in config_d:
-            config_d["mass_shatter_candidate_backend"] = "cpu"
-        if "mass_shatter_proposal_method" not in config_d:
-            config_d["mass_shatter_proposal_method"] = "cut_masks"
-        if "mass_shatter_fast_gnn_beam_width" not in config_d:
-            config_d["mass_shatter_fast_gnn_beam_width"] = 256
-        if "mass_shatter_fast_gnn_max_boundary_cuts" not in config_d:
-            config_d["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
+    if resolved_model_type == "masster":
+        if "masster_candidate_backend" not in config_d:
+            config_d["masster_candidate_backend"] = "cpu"
+        if "masster_proposal_method" not in config_d:
+            config_d["masster_proposal_method"] = "cut_masks"
+        if "masster_fast_gnn_beam_width" not in config_d:
+            config_d["masster_fast_gnn_beam_width"] = 256
+        if "masster_fast_gnn_max_boundary_cuts" not in config_d:
+            config_d["masster_fast_gnn_max_boundary_cuts"] = 3
 
     # 2. Validate and merge the custom config. The template declares every model's keys, so a
     # key it does not declare is a typo rather than another model's setting. Validation recurses
     # into nested sections, so a typo inside `spec_params` fails as loudly as one at the top.
     if custom_d is not None:
-        migrate_mass_shatter_proposal_method(custom_d)
+        migrate_masster_proposal_method(custom_d)
         unknown = find_unknown_config_keys(custom_d, config_d)
         if unknown:
             raise ValueError(f"{custom_fp} sets keys the template does not declare: {unknown}")
@@ -232,9 +237,10 @@ def load_config(
     if override is not None:
         for override_item in override:
             dotted_key, value = override_item.split("=", 1)
-            if dotted_key in ("mass_shatter_proposal_type", "mass_shatter_proposal_method"):
+            dotted_key = migrate_legacy_masster_key(dotted_key)
+            if dotted_key in ("masster_proposal_type", "masster_proposal_method"):
                 proposal_override = {dotted_key: yaml.safe_load(value)}
-                migrate_mass_shatter_proposal_method(proposal_override)
+                migrate_masster_proposal_method(proposal_override)
                 config_d.update(proposal_override)
                 continue
             key_path = dotted_key.split(".")
@@ -310,10 +316,10 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         DataLoader: Configured PyTorch DataLoader for the dataset.
     """
     split = ds.split
-    # `mass_shatter_batch_sampler` is MASShatter's; gating on the model type keeps a historical
+    # `masster_batch_sampler` is MASSter's; gating on the model type keeps a historical
     # config that still carries the key from selecting a sampler the model cannot use.
-    use_mass_shatter_batch_sampler = (
-        config_d["model_type"] == "mass_shatter" and config_d["mass_shatter_batch_sampler"]
+    use_masster_batch_sampler = (
+        config_d["model_type"] == "masster" and config_d["masster_batch_sampler"]
     )
     assert not (
         config_d["group_sampler"] and config_d["simple_group_sampler"]
@@ -327,7 +333,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     }
     if (
         config_d["num_workers"] > 0
-        and config_d["model_type"] == "mass_shatter"
+        and config_d["model_type"] == "masster"
         and config_d["automatic_optimization"]
     ):
         # Keep workers and their preprocessing caches alive; matches the exemption from
@@ -342,7 +348,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if split == "train":
         # Choose sampler for training
-        if use_mass_shatter_batch_sampler or config_d["batch_sampler_type"] == "ce_context":
+        if use_masster_batch_sampler or config_d["batch_sampler_type"] == "ce_context":
             sampler = None
         elif config_d["group_sampler"]:
             sampler = GroupSampler(
@@ -381,13 +387,13 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     # Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
     # Prefer formula-based hard negative dynamic sampler when enabled (train only)
 
-    if use_mass_shatter_batch_sampler:
+    if use_masster_batch_sampler:
         return_batch_at = (
             config_d["train_batch_size"] if split == "train" else config_d["eval_batch_size"]
         )
-        batch_sampler = MassShatterCEContextDynamicBatchSampler(
+        batch_sampler = MassterCEContextDynamicBatchSampler(
             ds,
-            max_num=config_d["mass_shatter_batch_sampler_max"],
+            max_num=config_d["masster_batch_sampler_max"],
             ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
             spectra_per_context=config_d["ce_context_spectra_per_context"],
             return_batch_at=return_batch_at,
@@ -494,26 +500,26 @@ def validate_sampler_config(config_d: dict) -> None:
             f"(got '{config_d['simple_group_sampler_type']}')"
         )
 
-    # The `mass_shatter_*` sampler keys are MASShatter's. Every model's config carries them, so
+    # The `masster_*` sampler keys are MASSter's. Every model's config carries them, so
     # the reads are hard; the model type decides whether they mean anything. For another model a
     # historical config may still set one - inert, but loud if it is actually switched on.
-    is_mass_shatter = config_d["model_type"] == "mass_shatter"
-    if not is_mass_shatter:
-        enabled_elsewhere = [key for key in MASS_SHATTER_SAMPLER_KEYS if config_d.get(key)]
+    is_masster = config_d["model_type"] == "masster"
+    if not is_masster:
+        enabled_elsewhere = [key for key in MASSTER_SAMPLER_KEYS if config_d.get(key)]
         if enabled_elsewhere:
             raise ValueError(
-                f"{enabled_elsewhere} require model_type='mass_shatter' "
+                f"{enabled_elsewhere} require model_type='masster' "
                 f"(got '{config_d['model_type']}')"
             )
-    use_mass_shatter_batch_sampler = is_mass_shatter and config_d["mass_shatter_batch_sampler"]
-    share_proposal_across_ev = is_mass_shatter and config_d["mass_shatter_share_proposal_across_ev"]
-    use_unique_fragments = is_mass_shatter and config_d["mass_shatter_unique_fragment_mode"]
+    use_masster_batch_sampler = is_masster and config_d["masster_batch_sampler"]
+    share_proposal_across_ev = is_masster and config_d["masster_share_proposal_across_ev"]
+    use_unique_fragments = is_masster and config_d["masster_unique_fragment_mode"]
 
-    if not isinstance(use_mass_shatter_batch_sampler, bool):
-        raise ValueError("mass_shatter_batch_sampler must be boolean")
+    if not isinstance(use_masster_batch_sampler, bool):
+        raise ValueError("masster_batch_sampler must be boolean")
     if not isinstance(share_proposal_across_ev, bool):
-        raise ValueError("mass_shatter_share_proposal_across_ev must be boolean")
-    num_enabled_batch_samplers = int(use_mass_shatter_batch_sampler) + sum(
+        raise ValueError("masster_share_proposal_across_ev must be boolean")
+    num_enabled_batch_samplers = int(use_masster_batch_sampler) + sum(
         int(config_d[key])
         for key in (
             "dynamic_batch_sampler",
@@ -522,20 +528,20 @@ def validate_sampler_config(config_d: dict) -> None:
     )
     if num_enabled_batch_samplers > 1:
         raise ValueError(
-            "mass_shatter_batch_sampler, dynamic_batch_sampler, and "
+            "masster_batch_sampler, dynamic_batch_sampler, and "
             "dual_group_dynamic_batch_sampler are mutually exclusive"
         )
 
-    if use_mass_shatter_batch_sampler:
+    if use_masster_batch_sampler:
         if not config_d["automatic_optimization"]:
-            raise ValueError("mass_shatter_batch_sampler requires automatic_optimization=True")
-        mass_shatter_batch_sampler_max = config_d["mass_shatter_batch_sampler_max"]
+            raise ValueError("masster_batch_sampler requires automatic_optimization=True")
+        masster_batch_sampler_max = config_d["masster_batch_sampler_max"]
         if (
-            isinstance(mass_shatter_batch_sampler_max, bool)
-            or not isinstance(mass_shatter_batch_sampler_max, int)
-            or mass_shatter_batch_sampler_max <= 0
+            isinstance(masster_batch_sampler_max, bool)
+            or not isinstance(masster_batch_sampler_max, int)
+            or masster_batch_sampler_max <= 0
         ):
-            raise ValueError("mass_shatter_batch_sampler_max must be a positive integer")
+            raise ValueError("masster_batch_sampler_max must be a positive integer")
 
     if config_d["dynamic_batch_sampler"]:
         if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
@@ -570,7 +576,7 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["dag_size_curriculum"]:
             raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
 
-    if config_d["batch_sampler_type"] == "ce_context" or use_mass_shatter_batch_sampler:
+    if config_d["batch_sampler_type"] == "ce_context" or use_masster_batch_sampler:
         if config_d["devices"] != 1:
             raise ValueError("CE-context batch samplers require devices=1")
         spectra_per_context = config_d["ce_context_spectra_per_context"]
@@ -591,9 +597,9 @@ def validate_sampler_config(config_d: dict) -> None:
                 f"{sorted(missing_inst_types)}"
             )
 
-    if share_proposal_across_ev and not use_mass_shatter_batch_sampler:
+    if share_proposal_across_ev and not use_masster_batch_sampler:
         raise ValueError(
-            "mass_shatter_share_proposal_across_ev requires mass_shatter_batch_sampler=True"
+            "masster_share_proposal_across_ev requires masster_batch_sampler=True"
         )
 
     cross_ev_weight = config_d["cross_ev_fragment_loss_weight"]
@@ -607,11 +613,11 @@ def validate_sampler_config(config_d: dict) -> None:
         if not share_proposal_across_ev:
             raise ValueError(
                 "cross_ev_fragment_loss_weight > 0 requires "
-                "mass_shatter_share_proposal_across_ev=True"
+                "masster_share_proposal_across_ev=True"
             )
         if not use_unique_fragments:
             raise ValueError(
-                "cross_ev_fragment_loss_weight > 0 requires mass_shatter_unique_fragment_mode=True"
+                "cross_ev_fragment_loss_weight > 0 requires masster_unique_fragment_mode=True"
             )
 
     pair_weight = config_d["ce_pair_loss_weight"]
@@ -622,7 +628,7 @@ def validate_sampler_config(config_d: dict) -> None:
     ):
         raise ValueError("ce_pair_loss_weight must be a non-negative number")
     if pair_weight > 0:
-        if not (config_d["batch_sampler_type"] == "ce_context" or use_mass_shatter_batch_sampler):
+        if not (config_d["batch_sampler_type"] == "ce_context" or use_masster_batch_sampler):
             raise ValueError("ce_pair_loss_weight > 0 requires a CE-context batch sampler")
         confidence = config_d["ce_pair_min_endpoint_confidence"]
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
@@ -920,7 +926,8 @@ def run_training(
         # update config results (primarily for wandb)
         # configs can be nested up to 2 levels
         saved_run_config = dict(wandb.config)
-        migrate_mass_shatter_proposal_method(saved_run_config)
+        migrate_legacy_masster_name(saved_run_config)
+        migrate_masster_proposal_method(saved_run_config)
         for key in list(config_d.keys()):
             if key in saved_run_config:
                 if isinstance(config_d[key], dict):
@@ -968,17 +975,17 @@ def run_training(
     model_cls = get_model_cls(config_d["model_type"])
     model = model_cls(**config_d)
     model.train()
-    if config_d["model_type"] == "mass_shatter":
-        resolved_proposal = config_d["mass_shatter_proposal_method"]
+    if config_d["model_type"] == "masster":
+        resolved_proposal = config_d["masster_proposal_method"]
         resolved_backend = (
             "torch_device"
             if resolved_proposal == "connected_fragment_beam"
             else model.model.candidate_backend
         )
-        logging.info("Resolved MASShatter candidate backend: %s", resolved_backend)
+        logging.info("Resolved MASSter candidate backend: %s", resolved_backend)
         if wandb_mode != "disabled":
-            wandb.run.summary["mass_shatter_candidate_backend_resolved"] = resolved_backend
-            wandb.run.summary["mass_shatter_proposal_method_resolved"] = resolved_proposal
+            wandb.run.summary["masster_candidate_backend_resolved"] = resolved_backend
+            wandb.run.summary["masster_proposal_method_resolved"] = resolved_proposal
 
     # setup callbacks
     callbacks = []
@@ -1158,11 +1165,11 @@ def run_training(
         trainer_param_d["accumulate_grad_batches"] = config_d["accumulate_grad_batches"]
         trainer_param_d["gradient_clip_val"] = config_d["gradient_clip_val"]
         trainer_param_d["gradient_clip_algorithm"] = config_d["gradient_clip_algorithm"]
-        if config_d["num_workers"] > 0 and config_d["model_type"] != "mass_shatter":
+        if config_d["num_workers"] > 0 and config_d["model_type"] != "masster":
             # little hack to prevent memory explosion
             # https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
             # https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
-            # MASShatter is exempt: it uses SpecMolDataset, which has no frag_pl_sd/frag_pp_sd
+            # MASSter is exempt: it uses SpecMolDataset, which has no frag_pl_sd/frag_pp_sd
             # fragment caches, so worker RSS stays bounded and respawning only discards the
             # spectrum/molecule preprocessing caches.
             trainer_param_d["reload_dataloaders_every_n_epochs"] = 1

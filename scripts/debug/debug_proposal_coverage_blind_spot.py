@@ -1,4 +1,4 @@
-"""What does MASShatter's proposal coverage loss reward, exactly?
+"""What does MASSter's proposal coverage loss reward, exactly?
 
 ``_proposal_coverage_loss`` sums ``-w_p * log(coverage_p)`` over the observed peaks that at
 least one proposed fragment reaches, where ``w_p`` is the peak's observed intensity and
@@ -16,7 +16,7 @@ gradient than one whose candidates already work.
 
 No model, checkpoint or dataset is involved; this calls the production loss function directly
 with hand-built tensors. Results are recorded in
-``docs/findings/masshatter/masshatter_proposal_loss_audit_2026_09_22.md`` section 3.
+``docs/findings/masster/masster_proposal_loss_audit_2026_09_22.md`` section 3.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import logging
 
 import torch as th
 
-from fragnnet.pl_model.mass_shatter_pl import _proposal_coverage_loss
+from fragnnet.pl_model.masster_pl import _proposal_coverage_loss
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

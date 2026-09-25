@@ -73,7 +73,7 @@ zero-shot under MCES >= 10 is arguably their strongest result — MSG leaderboar
 MSG's own train split.
 
 Consequences for us:
-- **Do not compare 0.83 to our `cos_hun`** (per-CE CV 0.786, merged MASShatter ~0.80). Ours is
+- **Do not compare 0.83 to our `cos_hun`** (per-CE CV 0.786, merged MASSter ~0.80). Ours is
   scored against raw experimental peaks. The comparison is not like-for-like and is not close to
   neutral — it favours their number.
 - The *relative* ranking inside their paper is internally fair: all baselines were retrained and

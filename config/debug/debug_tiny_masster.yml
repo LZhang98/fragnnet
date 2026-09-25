@@ -1,0 +1,106 @@
+wandb_name: debug_tiny_masster
+wandb_group: mass_shatter_smoke
+wandb_tags:
+  - debug
+  - masster
+
+model_type: masster
+seed: 42
+
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+subsample_params:
+  subsample_size: 0
+  subsample_seed: 42
+  train: true
+  val: true
+  test: true
+  secondary: true
+
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  preprocess: false
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+  inst_type: true
+  inst_types:
+    - FT
+    - QTOF
+  frag_mode: true
+  frag_modes:
+    - HCD
+    - CID
+
+mol_params:
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  preprocess: false
+
+mol_gnn_type: GINE
+mol_hidden_size: 64
+mol_num_layers: 2
+mol_normalization: layer
+mol_dropout: 0.0
+masster_selected_mask_limit: 8
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 2
+masster_include_cmf: true
+masster_charge_pooling: logsumexp
+masster_context_dim: 32
+masster_metadata_embedding_dim: 8
+masster_head_hidden_dim: 64
+masster_head_dropout: 0.0
+
+loss_type: cross_entropy
+predict_oos: true
+oos_tolerance_multiple: 1
+oos_loss: true
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 8
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+formula_prec_type_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 2
+eval_batch_size: 2
+accumulate_grad_batches: 1
+automatic_optimization: true
+
+accelerator: cpu
+devices: 1
+precision: 32
+min_epochs: 1
+max_epochs: 2
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+disable_checkpoints: true
+auxiliary_scores:
+  - cos_sim
+  - precision
+eval_mz_bin_res:
+  - 0.01

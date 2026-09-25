@@ -6,14 +6,14 @@
 
 ## Answer
 
-1. **No production model uses a SMARTS rule today.** MASShatter's templates are off and
+1. **No production model uses a SMARTS rule today.** MASSter's templates are off and
    cannot be turned on in any current arm, and production FraGNNet trains on the no-prepass
    DAG (§1).
 2. **The registry holds two different kinds of rule, and only one of them is new chemistry
-   for MASShatter.**
+   for MASSter.**
    - The eleven compound ring-cut rules shared with FraGNNet cut existing bonds. Their
      intended ion is an ordinary fragment of the cut mask. The only piece they add in
-     MASShatter is the *merged neutral byproduct*, which explains intensity at the chance
+     MASSter is the *merged neutral byproduct*, which explains intensity at the chance
      floor.
    - The neutral-loss rules (and `pyridyl_carbamate_alkyl_transfer`) produce retained atom
      sets that no cut can. Seven of them explain real intensity well above that floor (§2).
@@ -22,7 +22,7 @@
    concentrated in 1,429 molecules (4.1%). It is large per molecule (aminobenzothiazole
    `[M-H]-`: 27% of a spectrum). SMARTS is a coverage device, and coverage is not what
    limits either model on this split
-   ([overfit read-out](masshatter/masshatter_overfit_readout_2026_09_22.md)).
+   ([overfit read-out](masster/masster_overfit_readout_2026_09_22.md)).
 4. **Four defects, one of them silent**, plus two provenance traps in the DAG stats that
    past comparisons relied on (§3, §4).
 
@@ -30,15 +30,15 @@
 
 | Path | Switch | Production state |
 | --- | --- | --- |
-| MASShatter templates → `SmartsMechanismHead` (rule embedding in the per-mask mechanism softmax) | `mass_shatter_smarts_templates`, default `False` (`config/template.yml:775`) | **Off everywhere.** On only in the two `config/massshatter/merged/smarts/` configs, which never ran on real data (last handoff item: "Next: a real-data GPU smoke check"). |
-| MASShatter CUDA candidate backend | `mass_shatter_candidate_backend: cuda` (103 recent configs, incl. `c4a_base_s1`) | Refuses SMARTS at construction (`mass_shatter_model.py:1398-1411`, `mass_shatter_cuda_full_candidates.py:182`). |
-| MASShatter `fragment_selection: marginal`, `connected_fragment_beam` | new 2026-09-23 selection | Also refuse SMARTS (`mass_shatter_model.py:1351-1396`). |
-| MASShatter standalone inference | `script_utils` uses `to_device`, not the PL hook | Silently drops SMARTS mechanisms ([code audit §1](masshatter/masshatter_code_audit.md#1-standalone-inference-silently-omits-smarts-mechanisms)); still open. |
+| MASSter templates → `SmartsMechanismHead` (rule embedding in the per-mask mechanism softmax) | `masster_smarts_templates`, default `False` (`config/template.yml:775`) | **Off everywhere.** On only in the two `config/masster/merged/smarts/` configs, which never ran on real data (last handoff item: "Next: a real-data GPU smoke check"). |
+| MASSter CUDA candidate backend | `masster_candidate_backend: cuda` (103 recent configs, incl. `c4a_base_s1`) | Refuses SMARTS at construction (`masster_model.py:1398-1411`, `masster_cuda_full_candidates.py:182`). |
+| MASSter `fragment_selection: marginal`, `connected_fragment_beam` | new 2026-09-23 selection | Also refuse SMARTS (`masster_model.py:1351-1396`). |
+| MASSter standalone inference | `script_utils` uses `to_device`, not the PL hook | Silently drops SMARTS mechanisms ([code audit §1](masster/masster_code_audit.md#1-standalone-inference-silently-omits-smarts-mechanisms)); still open. |
 | FraGNNet DAG prepass (`FRAG_RULES` + `NL_RULES`, all or nothing) | `smarts_prepass` at DAG build → `..._smpTrue` DAGs | Production configs (`fraggnn_d3_ma_mi_nist20_amolc_all.yml`, all four `ce_pair_2026_09_23` arms) read `..._smpFalse`. Only `new_dags/..._prepass.yml` and `d3_new_features/..._prepass_new_mol_feats.yml` (`alvhehe2`, lost) read `smpTrue`. |
 | FraGNNet node features | — | No rule identity reaches the model (`prepass_rule_id` removed 2026-04-14). The only prepass signal is the depth one-hot, which is wrong for prepass nodes while `num_cut_bonds` is off ([feature headroom](feature_headroom_2026_09_22.md)). |
 | Atom/bond/molecule features | — | No SMARTS-based feature in `feat_utils.py`; MACCS keys are NEIMS-only. |
 
-Past the proposal probability, the MASShatter rule index goes nowhere. It is not a candidate
+Past the proposal probability, the MASSter rule index goes nowhere. It is not a candidate
 feature or an intensity-token input, and nothing logs template firing or the intensity
 template candidates explain.
 
@@ -71,7 +71,7 @@ Dead or near-dead rules:
 
 ### 2.2 Which side of a template is new, and does it explain peaks
 
-Each MASShatter template has two components, split below into two groups:
+Each MASSter template has two components, split below into two groups:
 
 - **ordinary**: the component that the same bond cut already produces as a connected
   component;
@@ -98,15 +98,15 @@ neutral byproduct. Examples:
 | The other six ring rules | ≤ 0.003 · ≤ 5.5% | ≤ 0.002 · ≤ 4.8% | ≤ 0.009 · ≤ 6.1% | ≤ 0.006 · ≤ 9.5% |
 
 The template-only column sets the **chance floor of this test: mean ≤ 0.007, 0–8% of
-spectra**. In MASShatter these rules add a junk candidate. Their only useful effect is
+spectra**. In MASSter these rules add a junk candidate. Their only useful effect is
 *forcing* the 4-bond cut mask into the pool, which the Python backend does
-(`mass_shatter_candidates.py:838-854`). The catalog's description of what they add
-([`masshatter_smarts_rules.md`](../reference/masshatter_smarts_rules.md), e.g. "reassembly of
+(`masster_candidates.py:838-854`). The catalog's description of what they add
+([`masster_smarts_rules.md`](../reference/masster_smarts_rules.md), e.g. "reassembly of
 the two outer aromatic pieces") describes the byproduct. In FraGNNet both sides become DAG
 nodes, so the ordinary side is the useful node there.
 
 **New-assembly rules.** Here the template-only side is the product with the new bond.
-"Admitted" marks the modes the MASShatter eligibility table allows.
+"Admitted" marks the modes the MASSter eligibility table allows.
 
 | Rule | Mols (+/−) | Product `[M+H]+` | Product `[M-H]-` |
 | --- | --- | --- | --- |
@@ -122,7 +122,7 @@ nodes, so the ordinary side is the useful node there.
 
 `aryl_sulfonate_so3` has no row because both of its components are ordinary, which confirms
 the catalog's suspicion that it adds no assembly. `n_phenylbenzamide_co_smiles` is the
-most-matched MASShatter-only rule (632 molecules) and sits at the floor in the only mode it is
+most-matched MASSter-only rule (632 molecules) and sits at the floor in the only mode it is
 admitted for.
 
 **Unregistered variants** (same method):
@@ -177,12 +177,12 @@ core, which `benzopyranone_*` never matches because it requires the 2-one.
 
 ## 3. Defects
 
-1. **`sulfoxide_so_loss` is dead in both DAG and MASShatter.** The cause is recorded in local
+1. **`sulfoxide_so_loss` is dead in both DAG and MASSter.** The cause is recorded in local
    notes since 2026-08-22 and still unfixed. The unit tests pass because they parse raw SMILES
    instead of `data_utils.mol_from_smiles` output. No test runs any rule on a standardized
    molecule, which is the check that would have caught this.
 2. **`uniquify=True` drops valid embeddings in both anthraquinone rules**, in DAG and
-   MASShatter alike:
+   MASSter alike:
    - `anthraquinone_bis_co_loss` yields 134 partitions where every embedding gives 268;
    - `anthraquinone_ring_c4_plus_ch_loss` yields 134 where every embedding gives 536;
    - all 133 matched molecules are affected, and no other rule loses any.
@@ -230,12 +230,12 @@ core, which `benzopyranone_*` never matches because it requires the 2-one.
 1. **Measure before porting anything to CUDA.** The 2026-09-13 review's coverage check was
    never run. On the fixed validation IDs at the production budget, measure how much of the
    7.98 feasible-but-missed points
-   ([unexplained-peak split](masshatter/unexplained_peak_split_2026_09_22.md)) two things recover:
+   ([unexplained-peak split](masster/unexplained_peak_split_2026_09_22.md)) two things recover:
    - the new-assembly products;
    - the forced ring-rule masks, i.e. is each mask already inside the U-cap pool?
 
    §2.2 bounds the first at about 0.1% of intensity corpus-wide.
-2. **If MASShatter takes SMARTS at all, split the two kinds.**
+2. **If MASSter takes SMARTS at all, split the two kinds.**
    - Ring rules become **forced masks only**, with no mechanism and no byproduct component.
    - Only new-assembly rules keep an alternative partition.
    - That shrinks the CUDA port to a forced-mask list plus a handful of disconnected product
@@ -244,7 +244,7 @@ core, which `benzopyranone_*` never matches because it requires the 2-one.
 3. **Prune by evidence, not by literature.**
    - Drop or park `n_phenylbenzamide_co_smiles` and `diarylvinyl_c2h2_loss` (both at the floor).
    - The same goes for the four zero-support rules. Removing any of them shifts the one-based
-     rule indices and `MASS_SHATTER_NUM_RULES`, which sizes the rule embedding. No SMARTS
+     rule indices and `MASSTER_NUM_RULES`, which sizes the rule embedding. No SMARTS
      checkpoint exists yet, so now is the cheap time.
    - Add the primary-sulfonamide SO2 loss for `[M-H]-`.
 4. **Fix the three matching defects together, behind a DAG version bump.** They are the
@@ -258,11 +258,11 @@ core, which `benzopyranone_*` never matches because it requires the 2-one.
      substructure. That turns the manual `add-smarts-rule` loop into a ranked candidate list,
      and it targets exactly the kind of rule §2 shows is worth having.
    - Ring-cut residuals, including every class in §2.3, are reachable by enumeration. For
-     MASShatter, which has no cut-size cap, they are a budget question, not a rule question.
+     MASSter, which has no cut-size cap, they are a budget question, not a rule question.
 6. **For FraGNNet, the untested arm is curated-rules-only.** It would drop the three broad
    rules and turn `num_cut_bonds` on. The `alvhehe2` loss says nothing about it. It is
    bounded above by ring-merge and multi-cut DAGs on every ring rule's molecules, though, so
-   it ranks below the MASShatter items.
+   it ranks below the MASSter items.
 
 ## 6. Method and limits
 

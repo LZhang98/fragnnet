@@ -6,7 +6,7 @@
 > The current evaluation scope also includes `[M+Na]+` and `[M+Cl]-`; the existing numerical
 > tables remain the two-adduct baseline until the four-adduct run is complete.
 > The 2026-09-16 section at the end measures the Cl/Na budget fix on all four adducts and
-> records the MASShatter scope; it does not restate the 5 ppm tables.
+> records the MASSter scope; it does not restate the 5 ppm tables.
 
 ## Question
 
@@ -265,23 +265,23 @@ DAG-available population, mean weighted recall is 92.54% for D3 and 96.00% for D
 | `[M+H]+`, FT, validation IDs only | 57,816 | 91.18% | **96.10%** | — |
 
 Validation membership uses `data/split/nist20_ma_mi_inchikey/val_ids.csv`; it does not imply that
-these individually cleaned spectra reproduce merged MASShatter validation targets. Overall
+these individually cleaned spectra reproduce merged MASSter validation targets. Overall
 unweighted peak recall is 86.59% for D3 and 92.75% for D4. Weighted recall measures covered target
 intensity; oracle cosine measures ideal intensity assignment on reachable support. They are
 separate quantities and must not be substituted for each other.
 
-### Implication for MASShatter and EBM priorities
+### Implication for MASSter and EBM priorities
 
-The [proposal review](masshatter/masshatter_proposal_review_2026_09_13.md) records roughly 94% candidate
-weighted recall for filtered merged MASShatter runs. Against this saved D4 reference, that is
-numerically about two percentage points lower, so the observed MASShatter coverage is strong.
+The [proposal review](masster/masster_proposal_review_2026_09_13.md) records roughly 94% candidate
+weighted recall for filtered merged MASSter runs. Against this saved D4 reference, that is
+numerically about two percentage points lower, so the observed MASSter coverage is strong.
 The two values are **not a matched gap estimate**: target merging/cleaning, evaluation IDs,
 acquisition mix, channel chemistry, matching, and metric aggregation must be aligned first.
-D4 is not a universal ceiling on MASShatter chemistry or search.
+D4 is not a universal ceiling on MASSter chemistry or search.
 
-Do not treat the entire remaining 6% of MASShatter intensity as recoverable through better
+Do not treat the entire remaining 6% of MASSter intensity as recoverable through better
 bond-cut scores, or claim that an EBM would recover the numerical two-point difference. Before
-an architecture change, measure the current MASShatter support oracle and learned cosine on
+an architecture change, measure the current MASSter support oracle and learned cosine on
 identical targets. A large support-oracle versus predicted-cosine gap prioritizes intensity
 assignment. Bond-cut modeling needs demonstrated additional support, lower cost at preserved
 coverage, or better downstream spectra at matched coverage; nominal U256 underfilling is not
@@ -291,7 +291,7 @@ order, not evidence that it offers the largest improvement.
 Validation: reaggregated all six D3/D4 metric means and matched the summary to absolute tolerance
 `1e-12`; verified spectrum-ID uniqueness, cleaned-input ID equality, missing-DAG zero coverage,
 and metadata joins. Slice means were recomputed from the saved CSV and cleaned-input metadata.
-No scientific comparison with a MASShatter checkpoint was run. Next: a matched support/intensity
+No scientific comparison with a MASSter checkpoint was run. Next: a matched support/intensity
 comparison, preserving this historical artifact rather than silently replacing its protocol.
 
 ## Reproduction
@@ -439,19 +439,19 @@ instrument-tolerance contract, not the 5 ppm tables above):
 | `[M+Na]+` | QTOF | 78.7% | 93.6% | 0 |
 | `[M+Cl]-` | FT | 90.9% | 98.7% | 0 |
 
-### MASShatter scope
+### MASSter scope
 
-The fix reaches MASShatter through the shared `BaseDataset` cleanup with no code change, but it
-was inert for every MASShatter config: all of them point at `data/split/nist20_inchikey`, which
+The fix reaches MASSter through the shared `BaseDataset` cleanup with no code change, but it
+was inert for every MASSter config: all of them point at `data/split/nist20_inchikey`, which
 holds 209,698 `[M+H]+`/FT spectra and no Na, Cl, QTOF, or IT. `data/split/nist20_ma_mi_inchikey`
 carries 480,002 spectra over all four adducts and FT+QTOF (45,976 Na/Cl; **no IT rows**, so the
 FT/QTOF-only `INSTRUMENT_TOLERANCES` table covers it and does not raise).
 
-MASShatter's own channel enumeration agrees with the filter on which adducts have a real
+MASSter's own channel enumeration agrees with the filter on which adducts have a real
 charge-migration channel: at `max_h_transfer=4`, `cmf_precursor_valid` is True for `[M+Na]+` and
 `[M+Cl]-` and False for `[M+H]+`/`[M-H]-`, whose CMF state duplicates CRF h_shift -1/+1 — the same
 reason `_precursor_ion_budgets` gives those two adducts a single budget. Over all sub-multisets of
-a C6H8N2O3 stand-in, the filter rejects 21.6% of the channels MASShatter can emit for `[M+H]+`
+a C6H8N2O3 stand-in, the filter rejects 21.6% of the channels MASSter can emit for `[M+H]+`
 against 24.5%/21.4% for `[M+Na]+`/`[M+Cl]-`; the rejects are over-hydrogenated negative-RDBE
-channels, so the filter is stricter in the same way for every adduct and creates no MASShatter-
+channels, so the filter is stricter in the same way for every adduct and creates no MASSter-
 specific asymmetry.

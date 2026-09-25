@@ -9,7 +9,7 @@ are listed below and passed to `scripts/run_wandb_sweep.py` with `--custom_fp`.
 | [nist20_d3_ma_mi_sweep_2.yml](./nist20_d3_ma_mi_sweep_2.yml) | `config/sweeps/nist20_d3_ma_mi_2.yml` | Follow-up NIST20 D3 MA/MI sweep over hidden sizes, dropout, LR, weight decay, and node entropy |
 | [nist20_d3_ma_mi_sweep_sqrt.yml](./nist20_d3_ma_mi_sweep_sqrt.yml) | `config/sweeps/nist20_d3_ma_mi_sqrt.yml` | NIST20 D3 MA/MI sweep using sqrt-bin evaluation setup |
 | [nist20_d3_ma_mi_focused_sweep.yml](./nist20_d3_ma_mi_focused_sweep.yml) | `config/sweeps/nist20_d3_ma_mi_focused.yml` | Focused follow-up sweep for molecular encoder width (`256/384/512`) and safer architecture defaults |
-| [masshatter/merged_u256_mix2_no_barcode_h_support.yml](./masshatter/merged_u256_mix2_no_barcode_h_support.yml) | `config/massshatter/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml` | U256/Mix2/no-barcode ion/H support-loss weight grid (`0.03/0.1/0.3`) |
+| [masster/merged_u256_mix2_no_barcode_h_support.yml](./masster/merged_u256_mix2_no_barcode_h_support.yml) | `config/masster/merged/channel_selection/nist20_merged_u256_e1024_mix2_no_barcode_h_support_w01.yml` | U256/Mix2/no-barcode ion/H support-loss weight grid (`0.03/0.1/0.3`) |
 | [nist20_d3_ma_mi_frag_competition_sweep.yml](./nist20_d3_ma_mi_frag_competition_sweep.yml) | `config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_frag_competition.yml` | Head-only sweep over fragment top-K, transformer width, and dropout |
 
 Older merged-data benchmark sweeps are under [merged/](./merged/).

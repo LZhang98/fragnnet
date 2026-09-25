@@ -13,5 +13,5 @@ from .neims_pl import NeimsPL
 from .precursor_pl import PrecursorPL
 from .gnn_pl import GNNPL
 from .mces_pl import MCESPL
-from .mass_shatter_pl import MassShatterPL
+from .masster_pl import MassterPL
 from .spectrum_mol_clip_pl import SpectrumMolClipPL

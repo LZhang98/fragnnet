@@ -1,6 +1,6 @@
 """Split the unexplained intensity of a merged target into "not this molecule" and "coverage gap".
 
-MASShatter reaches 89.1% of validation intensity with its candidate set (`val_wrecall`), and
+MASSter reaches 89.1% of validation intensity with its candidate set (`val_wrecall`), and
 the 2026-09-22 overfit read-out established that the remaining ~11% is the only true coverage
 ceiling. That residual has two populations needing opposite fixes:
 
@@ -47,7 +47,7 @@ rate means the test discriminates and the infeasible population is real.
 
 Usage:
     python scripts/debug/debug_unexplained_peak_split.py \
-        --custom_fp config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml \
+        --custom_fp config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml \
         --split val \
         --measured_wrecall 0.8911
 """

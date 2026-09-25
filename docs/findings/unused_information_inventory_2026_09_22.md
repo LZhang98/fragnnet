@@ -16,7 +16,7 @@ descriptor features. This asks the complementary question: not "what could we co
 
 | source | size | used today |
 |---|---|---|
-| **NIST peak annotations** (`ann_df.pkl`, `ann_products` / `ann_losses` / `ann_isotopes`) | 397,057 spectra = **68.4%** of the `ma_mi` subset; **95.8%** of peaks; **99.4%** of intensity | `src/fragnnet/graff/` (a baseline) and isotope-detection tuning. **Never in FraGNNet or MASShatter training** |
+| **NIST peak annotations** (`ann_df.pkl`, `ann_products` / `ann_losses` / `ann_isotopes`) | 397,057 spectra = **68.4%** of the `ma_mi` subset; **95.8%** of peaks; **99.4%** of intensity | `src/fragnnet/graff/` (a baseline) and isotope-detection tuning. **Never in FraGNNet or MASSter training** |
 | **ClassyFire taxonomy** (`data/classyfire/nist20_mol_classyfire.pkl`) | **100%** of 35,025 molecules: 20 superclasses, 341 classes, 795 subclasses, 1,497 direct parents, plus a **2,301-term substituent inventory**, mean 21.9 terms/molecule | never a model input. A [pretraining plan](../plans/fragnnet/classyfire_atom_pretraining_plan.md) exists, PROPOSED / NOT STARTED |
 | **DAG route structure** (`in_degree`, `out_degree` fragment features) | implemented; 87.7% of nodes are multi-parent, so `in_degree` has real variance | present only in `config/template.yml` (commented) and one debug config. **Never in a production run** |
 | **Replicate spectra** (`group_id` + identical mol/adduct/instrument/CE) | 26,205 cells with ≥2 replicates, covering **12.1%** of spectra | merging only; no per-peak reliability weight |

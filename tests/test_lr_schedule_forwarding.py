@@ -2,7 +2,7 @@
 
 `lr_schedule_type`, `lr_total_steps` and `lr_min_ratio` used to be dropped between the config
 and `build_lr_scheduler`, so a run asking for cosine annealing trained on exponential decay
-instead. Six MASShatter runs in 2026-09 carried `lr_schedule_type: cosine` and were inert.
+instead. Six MASSter runs in 2026-09 carried `lr_schedule_type: cosine` and were inert.
 """
 
 import math

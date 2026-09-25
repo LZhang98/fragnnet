@@ -3,7 +3,7 @@
 Stages:
 
 ``score``
-    Score one prediction file against the split's targets with a MASShatter checkpoint's
+    Score one prediction file against the split's targets with a MASSter checkpoint's
     ``metric_fn``: targets from ``model.preproc_spec`` (pred=False), predictions L1-normalized,
     the eval's tolerance table and flags. Metrics: ``cos_sim_0.01``, ``cos_hun``,
     ``cos_hun_inst_tol``, each linear and sqrt. Two sources:
@@ -23,7 +23,7 @@ Stages:
     together, since they are not independent).
 
 Example (MSGYM test, see
-docs/findings/masshatter/masshatter_msgym_vs_glacier_released_ckpt_2026_09_24.md):
+docs/findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md):
 
     python scripts/eval/compare_msgym_predictions.py score --config <cfg> --ckpt <ckpt> \
         --split test --export <predictions_test.hdf5> --out ours.pkl
@@ -278,7 +278,7 @@ def get_args() -> argparse.Namespace:
     sub = p.add_subparsers(dest="stage", required=True)
     s = sub.add_parser("score", help="score one prediction file with the model's metric_fn")
     s.add_argument("--config", required=True, help="experiment config the targets are built with")
-    s.add_argument("--ckpt", required=True, help="MASShatter checkpoint providing metric_fn")
+    s.add_argument("--ckpt", required=True, help="MASSter checkpoint providing metric_fn")
     s.add_argument("--split", default="test")
     src = s.add_mutually_exclusive_group(required=True)
     src.add_argument("--export", help="run_save_inference_eval.py HDF5")

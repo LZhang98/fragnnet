@@ -57,10 +57,10 @@ if __name__ == "__main__":
     )
     parser.add_argument("--custom_fp", type=str, default=None, help="Path to custom config file")
     parser.add_argument(
-        "--mass_shatter_candidate_backend",
+        "--masster_candidate_backend",
         choices=("cpu", "cuda"),
         default=None,
-        help="Override only MASShatter candidate construction after loading checkpoint settings",
+        help="Override only MASSter candidate construction after loading checkpoint settings",
     )
     # Model checkpoint loading
     parser.add_argument(
@@ -246,12 +246,12 @@ if __name__ == "__main__":
         custom_fp=custom_fp,
         template_fp=template_fp,
     )
-    if args.mass_shatter_candidate_backend is not None:
-        if config_d["model_type"] != "mass_shatter":
-            parser.error("--mass_shatter_candidate_backend requires a MASShatter checkpoint")
-        config_d["mass_shatter_candidate_backend"] = args.mass_shatter_candidate_backend
-    if config_d["model_type"] == "mass_shatter":
-        print(f"> MASShatter candidate backend: {config_d['mass_shatter_candidate_backend']}")
+    if args.masster_candidate_backend is not None:
+        if config_d["model_type"] != "masster":
+            parser.error("--masster_candidate_backend requires a MASSter checkpoint")
+        config_d["masster_candidate_backend"] = args.masster_candidate_backend
+    if config_d["model_type"] == "masster":
+        print(f"> MASSter candidate backend: {config_d['masster_candidate_backend']}")
 
     # Load Input Data (molecules and spectra)
     print("> Loading mol_df")

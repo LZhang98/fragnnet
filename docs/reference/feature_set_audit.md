@@ -40,7 +40,7 @@ Optional positional encoding: `pyg_pe_embed_k` for random-walk PE (disabled by d
 |------|---------|-------|
 | `b_degree` | always | bond type: SINGLE/DOUBLE/TRIPLE/AROMATIC |
 | `b_stereo` | no | implemented, never enabled, and **measurably dead**: 0 of 127,249 sampled NIST20 bonds carry stereo because preprocessing strips it |
-| `b_ring` | 44 configs | implemented (`bond.IsInRing()`); enabled in the new-mol-feats family and in every MASShatter config |
+| `b_ring` | 44 configs | implemented (`bond.IsInRing()`); enabled in the new-mol-feats family and in every MASSter config |
 | `b_conj` | 44 configs | same family as `b_ring` |
 | `b_ring_size` | parity arm | added 2026-09-22; ring size membership `[in3, in4, in5, in6, inGe7]`, 50.3% of NIST20 bonds |
 | `b_fused_ring` | parity arm | added 2026-09-22; bond in >=2 SSSR rings, 3.6% of NIST20 bonds |

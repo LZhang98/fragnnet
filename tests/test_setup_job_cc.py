@@ -210,20 +210,20 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
     (data_dp / "split").mkdir()
     (checkpoint_dp / "model.ckpt").touch()
     (config_dp / "template.yml").write_text(
-        "model_type: mass_shatter\n"
+        "model_type: masster\n"
         "finetune: False\n"
         "spec_fp: data/spec.pkl\n"
         "mol_fp: data/mol.pkl\n"
         "split_dp: data/split\n"
     )
-    (config_dp / "custom.yml").write_text("model_type: mass_shatter\n")
+    (config_dp / "custom.yml").write_text("model_type: masster\n")
 
     subprocess.run(
         [
             sys.executable,
             str(repo_root / "scripts" / "setup_job_cc.py"),
             "--job_name=channel_audit",
-            "--python_script_fp=./scripts/eval/mass_shatter_ion_h_top_k_sweep.py",
+            "--python_script_fp=./scripts/eval/masster_ion_h_top_k_sweep.py",
             "--frag_gnn_dp=./",
             "--script_dp=slurm_scripts",
             "--job_dp=jobs",

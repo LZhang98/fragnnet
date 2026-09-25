@@ -4,11 +4,24 @@
 or ``getattr(self.hparams, ..., default)``. The keys are declared in the template now, so the
 reads are canonical and ``migrate_legacy_hparams`` supplies the old fallbacks for checkpoints
 saved before each key existed.
+
+MASSter was named MASShatter until 2026-09-25, so pre-rename configs, checkpoints and W&B runs
+spell its model type and keys ``mass_shatter``; ``migrate_legacy_masster_name`` renames them.
 """
 
-import pytest
+from pathlib import Path
 
-from fragnnet.utils.pl_utils import get_pl_hparams, migrate_legacy_hparams
+import pytest
+import yaml
+
+from fragnnet.runner import load_config
+from fragnnet.utils.pl_utils import (
+    get_pl_hparams,
+    migrate_legacy_hparams,
+    migrate_legacy_masster_name,
+)
+
+TEMPLATE_DIR = Path(__file__).parents[1] / "config"
 
 SHARED_LEGACY_DEFAULTS = {
     "mol_max_degree": None,
@@ -35,7 +48,7 @@ FRAGNNET_LEGACY_DEFAULTS = {
 @pytest.mark.parametrize(("key", "expected"), sorted(SHARED_LEGACY_DEFAULTS.items(), key=str))
 def test_shared_keys_backfill_for_every_model_type(key, expected):
     """A checkpoint from any model family gets the shared SpectrumPL keys."""
-    config = {"model_type": "mass_shatter"}
+    config = {"model_type": "masster"}
     migrate_legacy_hparams(config)
     assert config[key] == expected
 
@@ -47,9 +60,9 @@ def test_fragnnet_keys_backfill_only_for_fragnnet(key, expected):
     migrate_legacy_hparams(fragnnet_config)
     assert fragnnet_config[key] == expected
 
-    mass_shatter_config = {"model_type": "mass_shatter"}
-    migrate_legacy_hparams(mass_shatter_config)
-    assert key not in mass_shatter_config
+    masster_config = {"model_type": "masster"}
+    migrate_legacy_hparams(masster_config)
+    assert key not in masster_config
 
 
 def test_explicit_values_are_never_overwritten():
@@ -112,7 +125,7 @@ def test_report_metric_std_resolves_the_conflicting_fallbacks():
     so ``_accumulate_running_metrics`` subscripted ``None``. ``False`` is the template
     default and the allocation default, so both sites now agree.
     """
-    config = {"model_type": "mass_shatter"}
+    config = {"model_type": "masster"}
     migrate_legacy_hparams(config)
     assert config["report_metric_std"] is False
 
@@ -134,3 +147,45 @@ def test_migration_is_idempotent():
     once = dict(config)
     migrate_legacy_hparams(config)
     assert config == once
+
+
+def test_pre_rename_masster_spelling_is_renamed():
+    """``mass_shatter`` model type and keys carry their values to the MASSter names."""
+    config = {"model_type": "mass_shatter", "mass_shatter_head_dropout": 0.2, "lr": 1e-3}
+    migrate_legacy_masster_name(config)
+    assert config == {"model_type": "masster", "masster_head_dropout": 0.2, "lr": 1e-3}
+
+
+def test_current_masster_key_wins_over_pre_rename_key():
+    """An explicit current key beats the old spelling of the same key."""
+    config = {
+        "model_type": "masster",
+        "mass_shatter_head_dropout": 0.2,
+        "masster_head_dropout": 0.0,
+    }
+    migrate_legacy_masster_name(config)
+    assert config == {"model_type": "masster", "masster_head_dropout": 0.0}
+
+
+def test_get_pl_hparams_renames_a_pre_rename_checkpoint():
+    """Old keys are renamed before the backfill, so a saved value is not replaced by a default."""
+    ckpt = {
+        "hyper_parameters": {"model_type": "mass_shatter", "mass_shatter_candidate_backend": "cuda"}
+    }
+    hparams = get_pl_hparams(ckpt)
+    assert hparams["model_type"] == "masster"
+    assert hparams["masster_candidate_backend"] == "cuda"
+    assert "mass_shatter_candidate_backend" not in hparams
+    assert ckpt["hyper_parameters"]["model_type"] == "mass_shatter"
+
+
+def test_load_config_accepts_pre_rename_yaml_and_override(tmp_path):
+    """A pre-rename experiment YAML and CLI override resolve to the current MASSter keys."""
+    custom = tmp_path / "old_masster.yml"
+    old_config = {"model_type": "mass_shatter", "mass_shatter_head_dropout": 0.37}
+    custom.write_text(yaml.safe_dump(old_config))
+    config = load_config(str(TEMPLATE_DIR), str(custom), ["mass_shatter_max_h_transfer=2"])
+    assert config["model_type"] == "masster"
+    assert config["masster_head_dropout"] == pytest.approx(0.37)
+    assert config["masster_max_h_transfer"] == 2
+    assert not any(key.startswith("mass_shatter_") for key in config)

@@ -1,5 +1,5 @@
 # ==========================================================================
-# FraGNNet / MASShatter configuration template
+# FraGNNet / MASSter configuration template
 # ==========================================================================
 #
 # One template for every model. A run resolves as:
@@ -11,7 +11,7 @@
 #
 # Layout: the shared core comes first, grouped by who consumes it, then one
 # clearly-marked block per model. Model-owned keys stay flat and prefixed
-# (mass_shatter_*, iceberg_*, mf_*, graff_*, clip_*) -- nesting them would
+# (masster_*, iceberg_*, mf_*, graff_*, clip_*) -- nesting them would
 # invalidate the hparams of every trained checkpoint. `gnn` and `precursor`
 # have no keys of their own; they run entirely on the shared core.
 #
@@ -85,7 +85,7 @@ spec_params:
   # same cutoff scripts/eval/dag_oracle_scores.py applies for its `1_above_prec` tier, which is
   # the default tier for every oracle number in docs/findings - so with this off, the published
   # ceilings are measured on a target the model does not train on. Measured on the merged MA/MI
-  # val split (docs/findings/masshatter/unexplained_peak_split_2026_09_22.md): 0.0090 of target intensity
+  # val split (docs/findings/masster/unexplained_peak_split_2026_09_22.md): 0.0090 of target intensity
   # sits above the precursor, of which 0.0065 is the precursor's OWN isotopologue ladder (real
   # analyte signal that a monoisotopic candidate set can never match) and 0.0025 is co-isolation
   # or multiply-charged material. Turning this on therefore also removes the precursor isotope
@@ -190,7 +190,7 @@ mol_params:
 # Model Architecture
 # ============================================================================
 # Model type. Full list: TEMPLATE_STEM_BY_MODEL_TYPE in src/fragnnet/runner.py -- frag_gnn (aliases
-# fraggnet, fragnnet), mass_shatter, neims, massformer, iceberg_gen, iceberg_inten, graff,
+# fraggnet, fragnnet), masster, neims, massformer, iceberg_gen, iceberg_inten, graff,
 # precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
@@ -250,7 +250,7 @@ lr_decay_steps: 5000
 optimizer: adamw
 output_distribution: gaussian
 # cross_entropy keeps the historical coverage-weighted sparse CE.
-# conditional_cross_entropy (MASShatter only) divides its in-support term by represented
+# conditional_cross_entropy (MASSter only) divides its in-support term by represented
 # target mass; spectra with no represented target peaks contribute zero to that term.
 # hellinger_distance uses 1 minus the Bhattacharyya coefficient on L1-normalized spectra.
 # That is the SQUARED Hellinger distance H^2, not sqrt(1 - BC); its values are not
@@ -339,15 +339,15 @@ ce_pair_min_endpoint_reliability: null
 ce_pair_subset: switches
 ce_pair_eligible_inst_types: [FT]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
-# Same-fragment adjacent-eV delta supervision for MASShatter. Requires shared
+# Same-fragment adjacent-eV delta supervision for MASSter. Requires shared
 # proposals, unique-fragment mode, and CE-context batches.
 cross_ev_fragment_loss_weight: 0.0
 # nb (isotope) options; set the nb_* entropy weights below to 0 to disable.
 nb_iso: False
-# DAG-based models only; MASShatter has no OOS class.
+# DAG-based models only; MASSter has no OOS class.
 predict_oos: False
 oos_tolerance_multiple: -1
-# DAG-based models only; ignored by MASShatter's candidate-conditional loss.
+# DAG-based models only; ignored by MASSter's candidate-conditional loss.
 oos_loss: False
 # ============================================================================
 # PyTorch Lightning Configuration
@@ -403,7 +403,7 @@ frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 context_embedding: False
 context_embedding_dim: 64       # width of the produced context vector
 context_embedding_hidden_dim: 64  # hidden width of the combining MLP
-# Read only by the FraGNNet/MASShatter/NEIMS/MassFormer wrappers, which pass spec_params.nce/ace
+# Read only by the FraGNNet/MASSter/NEIMS/MassFormer wrappers, which pass spec_params.nce/ace
 # as the model's use_nce/use_ace arguments; these top-level keys do not override that wiring.
 # When both model arguments are True, the two CE embeddings are concatenated, doubling the CE
 # dim. Every other model's wrapper reads neither key.
@@ -432,7 +432,7 @@ ce_context_ce_key_by_inst:
 dag_size_curriculum: False
 dag_size_curriculum_start_fraction: 0.25
 dag_size_curriculum_epochs: 10  # Must be less than max_epochs when enabled.
-# MASShatter curriculum: begin with low-heavy-bond precursors and linearly add
+# MASSter curriculum: begin with low-heavy-bond precursors and linearly add
 # larger molecules. This is training-only and requires fixed-size, non-group batches.
 bond_size_curriculum: False
 bond_size_curriculum_start_fraction: 0.25
@@ -729,43 +729,43 @@ debug_zero_loss: False
 skip_train_explainability: False
 
 # ==========================================================================
-# MASShatter only
-# model_type: mass_shatter
+# MASSter only
+# model_type: masster
 # ==========================================================================
-mass_shatter_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
-mass_shatter_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
-mass_shatter_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precursor always kept.
+masster_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
+masster_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
+masster_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precursor always kept.
   # connected_fragment_beam: unique mode, one mixture, SMARTS/share_proposal_across_ev off, zero mask floor.
   # Runs on the model device. Uses unique_fragment_target as a strict cap including precursor.
   # candidate_backend, ranked_mask_budget, mask_selection_threads and forced single cuts
   # apply only to cut_masks; connected_fragment_beam searches up to ceil(molecule atoms / 2) then mirrors.
   # Probability normalizes boundary-cut/internal-intact scores over retained fragments.
-mass_shatter_candidate_backend: cpu  # cpu | cuda; independent of the model device.
+masster_candidate_backend: cpu  # cpu | cuda; independent of the model device.
   # Experimental CUDA: FP32, one mixture, unique mode, zero mask floors, SMARTS off.
-mass_shatter_unique_fragment_mode: False
-mass_shatter_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
-mass_shatter_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
-mass_shatter_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; must be >= the target.
-mass_shatter_mask_selection_threads: 4  # CPU threads shared by mask selection and topology/assembly.
+masster_unique_fragment_mode: False
+masster_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
+masster_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
+masster_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; must be >= the target.
+masster_mask_selection_threads: 4  # CPU threads shared by mask selection and topology/assembly.
   # Numeric kernels drop the GIL; >1 preserves exact candidates. Best near
   # the physical core count, minus what num_workers already uses. 1 disables threading.
-mass_shatter_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
-mass_shatter_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.
-mass_shatter_fragment_selection: mask_order  # mask_order | marginal: which pool fragments reach the intensity head.
+masster_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
+masster_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.
+masster_fragment_selection: mask_order  # mask_order | marginal: which pool fragments reach the intensity head.
   # mask_order keeps every fragment the enumeration produced (the unique target is the budget).
   # marginal treats the unique target as a POOL, keeps the precursor and single cuts plus the
   # highest closed-form release probabilities P(boundary cut, interior intact) up to
-  # mass_shatter_selected_fragment_target, and trains the proposal coverage loss on the whole
+  # masster_selected_fragment_target, and trains the proposal coverage loss on the whole
   # pool. Requires unique mode, proposal_selection_only, one mixture, cut_masks, SMARTS off, a
   # zero fragment floor and share_proposal_across_ev off.
-  # See docs/plans/masshatter/masshatter_fragment_marginal_selection_plan.md.
-mass_shatter_selected_fragment_target: null  # marginal only: fragments kept per precursor, <= unique target; null otherwise.
-mass_shatter_include_single_bond_cuts: True
-mass_shatter_max_h_transfer: 4
-# Which of FraGNNet's hydrogen-transfer bounds MASShatter applies to a candidate channel.
+  # See docs/plans/masster/masster_fragment_marginal_selection_plan.md.
+masster_selected_fragment_target: null  # marginal only: fragments kept per precursor, <= unique target; null otherwise.
+masster_include_single_bond_cuts: True
+masster_max_h_transfer: 4
+# Which of FraGNNet's hydrogen-transfer bounds MASSter applies to a candidate channel.
 #   none       - only element counts must stay nonnegative (historical behaviour). Hydrogen
 #                can be gained with no source, so the intact molecule reaches
-#                prec_mz + mass_shatter_max_h_transfer * H. Those channels are chemically
+#                prec_mz + masster_max_h_transfer * H. Those channels are chemically
 #                unreachable, but they act as negatives in the candidate softmax and they
 #                absorb M+1 isotope peaks, so dropping them is a trade, not a free win.
 #   complement - a gain may not exceed the hydrogens held by the complementary neutral
@@ -776,17 +776,17 @@ mass_shatter_max_h_transfer: 4
 #                control pair agreeing to 0.0016), while cutting retained ion-H channels 9.0%
 #                and epoch time 2.2%. `complement` measured -0.0009 and no speedup. Runs from
 #                before this date used `none` and have a larger candidate set.
-mass_shatter_h_transfer_bound: valence
-mass_shatter_include_cmf: True
-mass_shatter_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
-mass_shatter_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
+masster_h_transfer_bound: valence
+masster_include_cmf: True
+masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
+masster_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
 # Encode each severed bond from its (retained, lost) atom embeddings instead of averaging the
 # two endpoints. The average is degenerate: pooled over a fragment's cut bonds it equals
 # half the mean inside atom plus half the mean outside atom, so cutting a1-b1 + a2-b2 gives a
 # bit-identical embedding to cutting a1-b2 + a2-b1, and the retained and lost sides cannot be
 # told apart. This is the defect FraGNNet fixed for `boundary_pair` with CutBondEncoder, which
 # this reuses. DEFAULT since 2026-09-20; pre-existing checkpoints predate the extra parameters.
-mass_shatter_boundary_bond_encoder: True
+masster_boundary_bond_encoder: True
 # Descriptor columns appended to each candidate's intensity token, concatenated in registry
 # order regardless of the order listed here. `src/fragnnet/model/candidate_features.py` holds
 # the specs and documents what each one measures and why. An unknown or duplicated name raises
@@ -799,12 +799,12 @@ mass_shatter_boundary_bond_encoder: True
 #   c_cut_bonds       2 x edge_feature_dim             severed-bond attributes, sum then mean
 #   c_cut_adjacency   2                                adjacent cut pairs, retained then lost
 # The token also carries the pooled fragment/complement/boundary embeddings, the context vector,
-# and -- only when mass_shatter_proposal_anchored is off -- the proposal log-probability
+# and -- only when masster_proposal_anchored is off -- the proposal log-probability
 # columns. None of those are governed by this list.
 # `c_charge` requires atom_gasteiger_charges, absent from molecular caches written before
 # 2026-09-20; `c_nl_composition` and `c_cut_bonds` widen the token, so a checkpoint trained
 # with a different list will not load.
-mass_shatter_candidate_features:
+masster_candidate_features:
   - c_cut_count
   - c_size
   - c_mass
@@ -817,87 +817,87 @@ mass_shatter_candidate_features:
 # stay means over a well-formed atom set; keeping the complement exact would leave the true
 # candidate sum recoverable as precursor - complement. Sizes, masses, charges, compositions, cut
 # counts and the boundary embedding all keep the true membership. A candidate is never emptied.
-# The MASShatter analogue of `cc_atom_dropout`. No effect at eval, and no width change.
-mass_shatter_candidate_atom_dropout: 0.0
+# The MASSter analogue of `cc_atom_dropout`. No effect at eval, and no width change.
+masster_candidate_atom_dropout: 0.0
 # Training-only dropout of each candidate's WHOLE boundary block (the pooled embedding of the
 # severed bonds' endpoints) from the intensity token. A dropped block is zeroed and kept blocks
 # are scaled by 1/(1-p), so the token projection sees the same expected input at eval. Aimed at
 # the boundary block because the 2026-09-23 memorization probe located most of the train-only
 # intensity allocation there, while candidate_atom_dropout above leaves it exact. Proposal branch
 # and candidate descriptors are untouched. 0.0 draws no random numbers (bit-identical default).
-mass_shatter_candidate_boundary_dropout: 0.0
-# --- Memorization-route plan, Step 1 (docs/plans/masshatter/masshatter_memorization_route_plan.md).
+masster_candidate_boundary_dropout: 0.0
+# --- Memorization-route plan, Step 1 (docs/plans/masster/masster_memorization_route_plan.md).
 # Every key below is off at its default: the model is unchanged and draws no extra random numbers.
 # False feeds the intensity head a ZERO boundary block in training and evaluation, i.e. removes
 # the block (arm r0, the rerouting test). The keys that act on the block must then be off:
-# mass_shatter_boundary_bond_encoder, mass_shatter_boundary_local_layers and
-# mass_shatter_candidate_boundary_dropout.
-mass_shatter_candidate_boundary_block: True
+# masster_boundary_bond_encoder, masster_boundary_local_layers and
+# masster_candidate_boundary_dropout.
+masster_candidate_boundary_block: True
 # 0 builds the boundary block from the shared encoder's globally attended atom embeddings. k > 0
 # builds it from a separate k-layer plain GINE over the raw atom features, with no global attention
 # and no context, so the cut term sees only the cut site's k-hop chemistry and cannot name the
-# molecule (arm r1). Requires mass_shatter_boundary_bond_encoder: True.
-mass_shatter_boundary_local_layers: 0
+# molecule (arm r1). Requires masster_boundary_bond_encoder: True.
+masster_boundary_local_layers: 0
 # Training-only dropout on the CutBondEncoder hidden layer (arm k1). Requires
-# mass_shatter_boundary_bond_encoder: True.
-mass_shatter_boundary_encoder_dropout: 0.0
+# masster_boundary_bond_encoder: True.
+masster_boundary_encoder_dropout: 0.0
 # Training-only dropout on the projected candidate token, before candidate attention (arm k1).
-mass_shatter_intensity_input_dropout: 0.0
+masster_intensity_input_dropout: 0.0
 # Memorization sink (arm m1): a zero-initialized row per molecule, indexed by mol_id, adds
 # row . phi(token) to each candidate's intensity residual in TRAINING only, from the start epoch
 # on. Validation, test and inference never use it, so they score the shared model. 0 disables it.
-# Requires mass_shatter_unique_fragment_mode and spec_params.unique_id (which puts mol_id in the
+# Requires masster_unique_fragment_mode and spec_params.unique_id (which puts mol_id in the
 # batch).
-mass_shatter_memorization_sink_dim: 0
+masster_memorization_sink_dim: 0
 # Rows in the sink table; must exceed the largest mol_id trained on (NIST20 split files reach
-# 35024). Set together with mass_shatter_memorization_sink_dim.
-mass_shatter_memorization_sink_num_molecules: 0
+# 35024). Set together with masster_memorization_sink_dim.
+masster_memorization_sink_num_molecules: 0
 # First training epoch (0-based) at which the sink is applied.
-mass_shatter_memorization_sink_start_epoch: 0
+masster_memorization_sink_start_epoch: 0
 # Training-only noise on the shared encoder's global-attention message, applied after its norm
 # (arms gm1 and gm2). The route map found this message writes the per-molecule lookup key.
 # Substitution replaces an atom's whole message, per layer, by the batch mean with this probability
 # ([0, 1)); noise_std adds Gaussian noise scaled to each feature's batch standard deviation. Both
 # require mol_gnn_type: GINE_GSA; at 0.0 they draw no random numbers (bit-identical default).
-mass_shatter_global_message_substitution: 0.0
-mass_shatter_global_message_noise_std: 0.0
-mass_shatter_context_dim: 64
+masster_global_message_substitution: 0.0
+masster_global_message_noise_std: 0.0
+masster_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition
 # group contributed (merged rows pool a ladder: median 4, max 86), so `layer` appends a
 # LayerNorm to hold that output at a fixed scale. `none` keeps the original MLP.
-mass_shatter_context_normalization: none
+masster_context_normalization: none
 # Dropout inside the context projector; 0.0 keeps the original two-layer MLP unchanged.
-mass_shatter_context_dropout: 0.0
-mass_shatter_context_in_gnn: False  # Append spectrum context to atom inputs in both molecular GNNs; incompatible with share_proposal_across_ev.
-mass_shatter_metadata_embedding_dim: 16
-mass_shatter_head_hidden_dim: 256
-mass_shatter_head_dropout: 0.0
-mass_shatter_bond_num_layers: 0  # 0: endpoint baseline; >0: alternating bond/atom updates.
-mass_shatter_proposal_num_mixtures: 1  # 1 preserves the original Bernoulli proposal.
-mass_shatter_intensity_transformer_dim: 256
-mass_shatter_intensity_transformer_num_layers: 2
-mass_shatter_intensity_transformer_num_heads: 8
-mass_shatter_intensity_transformer_feedforward_dim: 512
-mass_shatter_intensity_transformer_num_inducing_points: 64
+masster_context_dropout: 0.0
+masster_context_in_gnn: False  # Append spectrum context to atom inputs in both molecular GNNs; incompatible with share_proposal_across_ev.
+masster_metadata_embedding_dim: 16
+masster_head_hidden_dim: 256
+masster_head_dropout: 0.0
+masster_bond_num_layers: 0  # 0: endpoint baseline; >0: alternating bond/atom updates.
+masster_proposal_num_mixtures: 1  # 1 preserves the original Bernoulli proposal.
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
 # Candidate contextualization topology. induced routes every candidate exchange through
 # num_inducing_points latents (linear in the candidate count, rank-capped at that count);
 # full uses direct candidate-to-candidate attention (quadratic, exact pairwise interaction)
 # and ignores num_inducing_points.
-mass_shatter_intensity_transformer_attention: induced  # ["induced", "full"]
+masster_intensity_transformer_attention: induced  # ["induced", "full"]
 # Normalization placement inside the candidate transformer. "post" is the historical
 # residual form (LN after the skip add); "pre" normalizes the branch input instead, which
 # is the configuration that tolerates a constant LR with no warmup. Parameter counts and
 # names are identical, so the two are A/B-comparable from the same checkpoint.
-mass_shatter_intensity_norm_placement: post  # ["post", "pre"]
+masster_intensity_norm_placement: post  # ["post", "pre"]
 # Per-head query/key LayerNorm. Adds parameters, so it is enable-only for a warm start.
 # Requires attention_type: full.
-mass_shatter_intensity_qk_norm: False
+masster_intensity_qk_norm: False
 # Additive attention bias on the signed mass difference between two candidates, as a sum
 # of learnable RBFs initialized on common neutral losses (H2O, NH3, CO, CO2, ...). The
 # weights start at zero, so enabling this is a no-op at step 0 and safe on a warm start.
 # Requires attention_type: full; the induced layer routes through latents that carry no mass.
-mass_shatter_intensity_mass_pair_bias: False
+masster_intensity_mass_pair_bias: False
 # Collision-energy conditioning of the candidate ATTENTION itself, as opposed to the
 # per-candidate token. Both are zero-initialized, so enabling either is a no-op at step 0.
 # `ce_pair_bias` makes the neutral-loss RBF weights a function of collision energy, so
@@ -908,17 +908,17 @@ mass_shatter_intensity_mass_pair_bias: False
 # NOTE the standing tension: project_ce_extent_allocation_null and
 # project_stage0_branching_headroom_model both measured CE-INVARIANT error, while the
 # 2026-09-21 CE decomposition found realization falling monotonically with energy.
-mass_shatter_intensity_ce_pair_bias: False
-mass_shatter_intensity_ce_film: False
+masster_intensity_ce_pair_bias: False
+masster_intensity_ce_film: False
 # How the bond head pools incident-bond messages onto an atom. "mean" is historical; a mean
 # cannot separate a quaternary carbon from a methyl, which is GIN's expressiveness argument
 # for "sum". "sqrt" keeps degree signal without the raw scale growth.
-mass_shatter_bond_endpoint_aggregation: mean  # ["mean", "sum", "sqrt"]
+masster_bond_endpoint_aggregation: mean  # ["mean", "sum", "sqrt"]
 # REMOVED 2026-09-19. The fragment-to-atom decoder gave no epoch-matched cosine gain at
 # 1.8x the wall clock, so it was deleted. The key is retained because load_config requires
 # every custom-config key to exist here; any value other than 0 now fails at setup.
-mass_shatter_intensity_atom_decoder_num_layers: 0
-mass_shatter_intensity_transformer_dropout: 0.1
+masster_intensity_atom_decoder_num_layers: 0
+masster_intensity_transformer_dropout: 0.1
 # Escape ("dump") coordinate for the intensity output. Candidate coverage is not complete --
 # val wrecall is ~0.891 -- so part of the observed intensity sits at m/z values no candidate
 # reaches. Without an escape the predicted intensities normalize over candidates alone and the
@@ -927,116 +927,116 @@ mass_shatter_intensity_transformer_dropout: 0.1
 # removes a per-spectrum irreducible loss floor (1 - sqrt(t(S)) for Hellinger) that otherwise
 # weights training by how well enumeration happened to do on each molecule. It does NOT change
 # the optimal relative allocation over reachable peaks, so it is not a ranking change; and it
-# makes kl_distance finite on a coverage gap instead of relying on mass_shatter_kl_epsilon.
-# Requires mass_shatter_intensity_output: independent and a peak-list loss_type (the
+# makes kl_distance finite on a coverage gap instead of relying on masster_kl_epsilon.
+# Requires masster_intensity_output: independent and a peak-list loss_type (the
 # cross_entropy path has its own out-of-support term). Head bias starts at logit(0.1), close to
 # the measured unreachable fraction. Changes the objective, so cosines are NOT comparable across it.
-mass_shatter_intensity_escape: False
+masster_intensity_escape: False
 # Final spectrum representation. Independent mode is limited to the unique-fragment,
 # proposal-selection-only path and returns nonnegative normal-space intensities.
-mass_shatter_intensity_output: probability  # ["probability", "independent"]
+masster_intensity_output: probability  # ["probability", "independent"]
 # Direct peak-list losses always coalesce numerical exact masses to four decimals,
 # then use one of these m/z-only correspondence rules inside instrument tolerance.
-mass_shatter_peak_matching: closest  # ["closest", "hungarian"]
+masster_peak_matching: closest  # ["closest", "hungarian"]
 # Fraction of predicted mass replaced by observed mass for stable KL(true || predicted).
-mass_shatter_kl_epsilon: 1.0e-4
-mass_shatter_intensity_entropy_match_weight: 0.0
-mass_shatter_use_mask_residuals: True  # False keeps original proposal mask probabilities.
+masster_kl_epsilon: 1.0e-4
+masster_intensity_entropy_match_weight: 0.0
+masster_use_mask_residuals: True  # False keeps original proposal mask probabilities.
 # Proposal-anchored mode keeps base-plus-residual scoring but hides the base
 # fragment probability from the transformer, closing the direct cancellation path.
-# It requires mass_shatter_base_ce_weight > 0 so the proposer remains supervised.
-mass_shatter_proposal_anchored: False
+# It requires masster_base_ce_weight > 0 so the proposer remains supervised.
+masster_proposal_anchored: False
 # Compute and log pre-residual spectrum CE when its loss weight is zero. This is
 # diagnostics-only; a positive base CE weight enables the computation automatically.
-mass_shatter_log_base_ce: False
+masster_log_base_ce: False
 # Auxiliary pre-residual sparse-CE coefficient. Use 0.0 for no training effect;
 # fixed weights above 0.1 reduced held-out cosine in the first matched sweeps.
-mass_shatter_base_ce_weight: 0.0
+masster_base_ce_weight: 0.0
 # Prevent base-only CE from updating the shared candidate transformer through its
 # ion/H probabilities. False preserves the behavior of existing runs.
-mass_shatter_detach_base_ion_h: False
+masster_detach_base_ion_h: False
 # V1 retrieval/ranking separation. True keeps the existing proposal generator
 # for candidate selection, but removes proposal probabilities from relative peak
 # intensity. The final spectrum is normalized over the selected candidates.
-mass_shatter_proposal_selection_only: False
+masster_proposal_selection_only: False
 # Intensity-weighted proposal-support loss. It counts each unique fragment once
 # per matched true peak, regardless of how many CRF/CMF or delta-H channels match.
-mass_shatter_proposal_loss_weight: 0.0
+masster_proposal_loss_weight: 0.0
 # Give every retained target peak equal weight in the proposal-support loss. This
 # affects proposal ranking only; the primary spectrum loss remains intensity-aware.
-mass_shatter_proposal_barcode_target: False
+masster_proposal_barcode_target: False
 # Proposal-target intensity transform. "same" preserves historical behavior by
 # reusing ints_transform; another standard transform is applied independently.
-mass_shatter_proposal_ints_transform: same
+masster_proposal_ints_transform: same
 # V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
 # Only supported with proposal-selection-only mode.
-mass_shatter_separate_proposal_encoder: False
+masster_separate_proposal_encoder: False
 # Train only proposal selection through this zero-indexed epoch, then jointly train
 # proposal and intensity. Null keeps joint training throughout.
-mass_shatter_proposal_only_until_epoch: null
+masster_proposal_only_until_epoch: null
 # Early-stop the proposal branch: from this zero-indexed epoch onward its parameters stop
 # updating while the intensity branch keeps training. The validation proposal term turns at
 # epochs 26-47 where the spectrum term keeps improving to 52-120, so the two branches want
 # different horizons. Only proposal-only modules freeze -- the shared molecular and context
 # encoders keep training on the spectrum objective, so the proposal function still drifts
-# unless mass_shatter_separate_proposal_encoder is on. Null trains the proposal throughout.
-mass_shatter_proposal_frozen_from_epoch: null
+# unless masster_separate_proposal_encoder is on. Null trains the proposal throughout.
+masster_proposal_frozen_from_epoch: null
 # Weight decay applied to proposal-only parameters instead of the global `weight_decay`.
 # Null keeps one decay for the whole model. Under weight_decay_exclude_norm_bias the
 # norm/bias exemption still wins, so this decays only the proposal branch's matrices.
-mass_shatter_proposal_weight_decay: null
-mass_shatter_separate_ion_mode_proposal_head: False
+masster_proposal_weight_decay: null
+masster_separate_ion_mode_proposal_head: False
 # Declare the score semantics separately from head construction. The current
 # balanced-BCE proposal/support losses require these flags when their heads are enabled.
-mass_shatter_ion_mode_proposal_binary_logits: False
-mass_shatter_min_ion_mode_relative_probability: 0.0
-mass_shatter_ion_mode_proposal_loss_weight: 0.0
-mass_shatter_separate_ion_h_support_head: False
-mass_shatter_ion_h_support_binary_logits: False
+masster_ion_mode_proposal_binary_logits: False
+masster_min_ion_mode_relative_probability: 0.0
+masster_ion_mode_proposal_loss_weight: 0.0
+masster_separate_ion_h_support_head: False
+masster_ion_h_support_binary_logits: False
 # Opt-in: scale independent-output intensities by the support head's sigmoid
 # probability, in both training and evaluation. Independent of the absolute
 # floor below; requires independent intensity output and binary support logits.
-mass_shatter_gate_independent_intensity_with_support: False
-mass_shatter_min_ion_h_relative_probability: 0.0
+masster_gate_independent_intensity_with_support: False
+masster_min_ion_h_relative_probability: 0.0
 # Evaluation-only absolute support floor. Unlike the relative floor, this may
 # remove every ion/H channel of an unsupported fragment; zero disables it.
-mass_shatter_min_ion_h_absolute_probability: 0.0
-mass_shatter_ion_h_support_loss_weight: 0.0
-mass_shatter_apply_channel_selection_in_training: False
+masster_min_ion_h_absolute_probability: 0.0
+masster_ion_h_support_loss_weight: 0.0
+masster_apply_channel_selection_in_training: False
 # Assign observed-peak evidence to the dense channel-selection support.
-mass_shatter_channel_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+masster_channel_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
 # Historical attribution uses detached intensity predictions as channel priors.
 # False makes support targets depend only on observed and candidate m/z values.
-mass_shatter_channel_support_use_intensity_prior: True
+masster_channel_support_use_intensity_prior: True
 # Compute dense observational channel metrics even without a support loss.
-mass_shatter_channel_diagnostics: False
+masster_channel_diagnostics: False
 # Log the per-spectrum channel support summaries: fragment_precision,
 # fragment_weighted_precision, {ion_mode,ion_h}_support_positive_rate and the
 # required_ion_h_top_k_* ranks. They iterate over the batch in Python, which costs more than
 # building the channel targets they summarize, and no loss consumes them. A support loss no
-# longer brings them along; mass_shatter_channel_diagnostics still implies them.
-mass_shatter_channel_support_metrics: False
+# longer brings them along; masster_channel_diagnostics still implies them.
+masster_channel_support_metrics: False
 # Log overall candidate coverage: candidate_wrecall (the enumerated candidates' intensity
 # ceiling, every step) and validation candidate_recall. Each costs one match-mask pass per
 # spectrum, so they are off by default; enabling them changes monitoring only, not the loss.
-mass_shatter_candidate_coverage_metrics: False
+masster_candidate_coverage_metrics: False
 # Log the candidate-generation speed trace (candidate_*_batch_ms, candidate_total_molecule_ms,
 # and their fast_gnn_* renames). The stage timers themselves are unconditional perf_counter
 # reads; this only controls whether the six per-batch series are logged.
-mass_shatter_candidate_timing_metrics: False
+masster_candidate_timing_metrics: False
 # Log per-cut-count candidate coverage (candidate_{recall,wrecall,precision}_cut_*) during
 # validation. The buckets add one match-mask pass per bucket per spectrum, so keep them off
 # unless the cut-depth breakdown is being studied. Requires the overall coverage metrics.
-mass_shatter_candidate_cut_diagnostics: False
+masster_candidate_cut_diagnostics: False
 # Experimental ablation: reuse one CE-independent proposal pass for spectra from the
 # same acquisition group and supervise it against their merged target. This inherits
 # the observed CE-distribution bias; keep False for the main model. Requires CE-context
 # batching; the intensity transformer and primary spectrum loss remain CE-aware.
-mass_shatter_share_proposal_across_ev: False
-# Use MASShatter's molecular-edge CE-context batch sampler.
-mass_shatter_batch_sampler: False
-# Maximum summed directed molecular edges per MASShatter CE-context batch.
-mass_shatter_batch_sampler_max: null
+masster_share_proposal_across_ev: False
+# Use MASSter's molecular-edge CE-context batch sampler.
+masster_batch_sampler: False
+# Maximum summed directed molecular edges per MASSter CE-context batch.
+masster_batch_sampler_max: null
 
 # ==========================================================================
 # ICEBERG only

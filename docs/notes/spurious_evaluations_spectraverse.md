@@ -75,7 +75,7 @@ and spectra (no auxiliary data), and report across **all ten** CV folds.
 - A strong FraGNNet *forward* result is explained by measured factors, none of them artifacts of
   this paper's concern (measured 2026-09-20):
   - **merged target** — `merge: True`, 5.03 spectra/group; worth ~0.11 cosine on identical
-    molecules per `[[project_masshatter_merged_vs_unmerged_root_cause]]`;
+    molecules per `[[project_masster_merged_vs_unmerged_root_cause]]`;
   - **2.2x more training structures** — 33,947 train molecules vs 15,514 in
     `nist20_ma_mi_inchikey`;
   - **richer conditioning enabled only there** — ACE, frag_mode, ce_scale, frag_mode_scale,

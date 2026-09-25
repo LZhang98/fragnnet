@@ -1,7 +1,7 @@
 """Phase 0 of the intensity-displacement plan: where does misplaced predicted intensity go?
 
-See ``docs/plans/masshatter/masshatter_intensity_displacement_plan.md`` §4. Works offline on
-MASShatter inference exports (``run_save_inference_eval.py`` HDF5, full candidate set) and dumped
+See ``docs/plans/masster/masster_intensity_displacement_plan.md`` §4. Works offline on
+MASSter inference exports (``run_save_inference_eval.py`` HDF5, full candidate set) and dumped
 eval targets (pickles with ``spec_id``, ``mol_id``, ``nce``, ``prec_mz``, ``peaks``). All quantities
 live in the candidate space of the ranking decomposition: candidates sharing an exact m/z (5
 decimals) are merged, and each true peak maps to its nearest candidate within tolerance (10 ppm,

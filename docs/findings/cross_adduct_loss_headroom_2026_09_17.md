@@ -2,7 +2,7 @@
 
 > **Status:** FINDING · **Updated:** 2026-09-17 · Model-free measurements on NIST20 only.
 > The data-side gate passes; the trained-model half of the gate is still open and blocked
-> on a multi-adduct MASShatter checkpoint.
+> on a multi-adduct MASSter checkpoint.
 
 ## Question
 
@@ -71,13 +71,13 @@ contexts, so the conclusion is not an artifact of an under-powered null.
 ## Limits
 
 - Model-free. This establishes that the effect is large, structured and not a fixed global
-  transform. It does **not** establish that a trained model fails to reproduce it: MASShatter's
+  transform. It does **not** establish that a trained model fails to reproduce it: MASSter's
   adduct conditioning enters the context and modulates the encoder over the molecule graph, so
   it is molecule-dependent and strictly more expressive than the `w(NL)` null used here. What a
   cross-adduct loss adds is *paired* supervision coupling the two spectra, which is a different
   signal from learning each adduct independently. Whether joint training beats independent
   training is the open half of the gate.
-- The remaining half needs a trained multi-adduct MASShatter checkpoint. Both checkpoints
+- The remaining half needs a trained multi-adduct MASSter checkpoint. Both checkpoints
   present in this checkout (`zlv0bli8`, `m14g0j35`) are `[M+H]+` only, so it could not be run
   here. The `ma_mi_unmerged/cmf` arms are the ones with all four adducts.
 - Neutral-equivalent mass uses a single proton shift per polarity. It does not model the full
@@ -99,6 +99,6 @@ Run the trained-model half against a multi-adduct checkpoint: measure the cross-
 intersection under the real top-256 proposals, and whether the model's predicted cross-adduct
 delta already matches the observed one. Only then implement. The chosen formulation is a delta
 loss on the shared fragment subset, keeping adduct-conditioned proposals; note that
-[mass_shatter_model.py](../../src/fragnnet/model/mass_shatter_model.py) asserts a single
+[masster_model.py](../../src/fragnnet/model/masster_model.py) asserts a single
 precursor type per shared-proposal group, and `group_id` today never spans adducts
 (0 of 76,164 groups), so both need a second grouping key.

@@ -1,0 +1,286 @@
+# ARM k1_s2 -- second-seed replicate of k1_key_dropout, 2026-09-25.
+# k1_key_dropout.yml with seed 811237 instead of 397623; nothing else.
+#
+# WHY A SECOND SEED. k1 (+0.0074 over c0) and weight EMA (u2, +0.0094 to +0.0116) are the only
+# levers that passed on this lineage, and each is n=1. The one same-recipe pair here (c0 against
+# f0 3bej6fq7) differs by 0.0022, just under the +0.003 gate. c0_s2, k1_s2 and u2_s2 repeat both
+# at seed 811237 (the seed c4a_base_s2 used) against a matched control, and c0_s2 against c0
+# (vcpho5qm) is a second estimate of the seed spread. Only `seed` changes; the split file is fixed,
+# so the data split is unchanged. The base header below still says seed 397623; the key wins.
+# CONTROL: c0_s2_control.yml (same seed), not c0.
+# READ (plan § Objective and acceptance): tail mean of val_cos_sim_0.01_epoch/mean over epochs
+# 54-63 against the control named above, at least +0.003; val_candidate_wrecall within 0.005.
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
+#
+# Base config follows: k1_key_dropout.yml.
+# ARM k1_key_dropout -- unmerged [M+H]+/FT, dropout on the key-forming layers, 2026-09-24.
+# masster_boundary_encoder_dropout 0.2 (CutBondEncoder hidden layer) and
+# masster_intensity_input_dropout 0.2 (the projected candidate token, before candidate
+# attention). Both layers have NO dropout in c0. Neither adds parameters; at eval the arm is c0's
+# architecture exactly. Encoder dropout (0.1), allocator attention dropout (0.1) and the proposal
+# heads are unchanged, unlike the global drop03 arm that raised three subsystems at once and
+# underfit (-0.0149).
+#
+# WHY. The probe puts the lookup key in the boundary block, and every candidate route passes the
+# token projection. Noise on the layers that form the key should stop an exact per-candidate key
+# forming, route by route. One arm with both rates: the question is whether key noise helps at all.
+#
+# CONTROL: c0_control.yml in this directory, the same-code control submitted with the arms
+# (f0_mh_ft_control.yml plus naming only). The earlier f0 run 3bej6fq7 (val cos_sim_0.01 tail
+# mean 0.7298 over epochs 54-63, best 0.7318) is on older code and is a reference, not the
+# control. Seed 397623, 64 epochs, raw target, verified through load_config.
+# TRAIN METRICS stay OFF (control match, 3g fit); the train side is read offline.
+# READ (plan § Objective and acceptance): (1) tail mean of val_cos_sim_0.01_epoch/mean over epochs
+# 54-63 against c0, at least +0.003; (2) offline ranking decomposition of the best checkpoint's val
+# export and a 25.6k train sample: the val ranking gap must fall; (3) the Step 0 route map re-run on
+# this checkpoint: no route's train/val asymmetry at matched validation damage may grow; (4) val
+# cosine by nearest-train Tanimoto bin, gain largest at <= 0.6; (5) val_candidate_wrecall within
+# 0.005 of c0. An arm that only lowers train fit is underfitting, not a pass.
+# (Inherited from k1: this replicate does NOT upload checkpoints; see below.)
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
+#
+# Control header follows.
+# CONTROL f0 -- [M+H]+/FT, no target cleaning
+#
+# [M+H]+ / FT only, on the CURRENT architecture (the c4a_base_s1 lineage: cuda candidate
+# backend, 2026-09-20 feature bundle, seed 397623), run UNMERGED at a 64-epoch screen. Derived from
+# config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml
+# by narrowing the scope and setting the cleanup switches. Nothing else is touched.
+#
+# SPLIT: data/split/nist20_inchikey ALREADY EXISTS and is already the [M+H]+/FT split --
+# 157,678 train / 52,020 val / 52,621 test spectra, 60.1/19.8/20.1 by 2D InChIKey. No new
+# split is needed and no new DAG: spec_fp, mol_fp and frag_dp are byte-identical to the ma_mi
+# lineage; only split_dp differs.
+#
+# inst_type_loss_tol deliberately keeps its FT *and* QTOF rows. It is a lookup table, not a
+# scope list, and a trimmed or unset table is what made cos_hun_inst_tol export -1.0.
+#
+# HORIZON, re-derived for unmerged. The 128-epoch screen was calibrated on MERGED runs. An
+# unmerged epoch sees ~18x the rows, and the two reference unmerged runs on this architecture
+# (6ks7v8ce, h0gvuf4f, same batch 512 / loss_batch 64) both plateau far earlier: at epoch 64
+# they sit 0.0043 and 0.0011 below their own best, and h0gvuf4f then DECLINES to -0.0043 by
+# epoch 99. So 64 epochs is the screen here, not 128.
+# COST: those runs measured 8.9 and 7.0 epochs/hour on ma_mi unmerged against 70.0 ep/h merged.
+# This split is 1.825x smaller (157,678 vs 287,721 spectra), giving ~12.8-16.2 ep/h, so 64
+# epochs is ~4.0-5.0 h. The job asks 6 h and passes j=<job_name>, so a requeue resumes.
+#
+# THIS PAIR IS NOT A LIKE-FOR-LIKE COSINE COMPARISON BY ITSELF. clean_spectra runs at dataset
+# load (base_dataset.py:430), so f1 is scored against its own cleaned target while f0 is scored
+# against the raw one. Removing peaks the model was failing on raises cosine by construction --
+# the same mechanism that appears as a uniform +0.026 val_candidate_wrecall in filtered vs
+# unfiltered pairs. To claim f1 is a real improvement, evaluate the f1 CHECKPOINT against f0's
+# UNFILTERED target. That cross-eval is the acceptance criterion, not this pair's delta.
+#
+# CONTROL: filters off. Prices the scope change separately from the cleaning.
+wandb_name: k1_s2
+wandb_group: nist20_mh_ft_memorization_route_2026_09_24
+wandb_tags:
+- no_filters
+- k1_s2
+- seed_811237
+- mh_ft_memorization_route_2026_09_24
+- key_dropout_0.2
+- masster
+- cuda_candidates
+- fir_h100_mig
+- nist20_mh_ft
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- adduct_embed
+- inst_type_embed
+- m+h
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- loss_batch_64
+- microbatch_512
+- effective_batch_512
+- unmerged
+- nce_only
+- no_cmf
+- exposure_matched_epochs
+seed: 811237
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  # UNMERGED: one row per spectrum, not one per molecule-group. The other merge_* keys below are
+  # inert while this is false; they are kept because they are part of the required key group.
+  # merge_keep_ces is NOT inert: _check_ce_params asserts it is false when merge is off and
+  # nce/ace is on (merge_keep_ces: true crashed flf0ako1 at model setup).
+  # Consequence: NOTHING here is comparable to a merged cosine. The merged/unmerged split is
+  # the confound docs record as "never like-for-like" (1.01 vs 18.55 rows per molecule), and
+  # the unmerged family has its own recorded ceiling near 0.688-0.693.
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - FT
+  frag_mode: false
+  frag_modes: []
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+  # --- target cleaning: OFF. Matched control for f1. ---
+  # Same scope, split, seed and architecture; only these switches differ.
+  centroid_peaks: false
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: false
+  centroid_method: common_overlap
+  filter_subformula_peaks: false
+  subformula_ppm: 5.0
+  subformula_use_instrument_tolerance: true
+  filter_above_precursor_peaks: false
+  above_precursor_ppm: 10.0
+  above_precursor_use_instrument_tolerance: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol:
+  FT:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 64
+max_epochs: 64
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+# NO CHECKPOINT UPLOAD: a seed replicate is read on W&B only (the tail mean against c0_s2); the
+# offline gates run on the seed-397623 checkpoints. Checkpointing stays on, so a requeued job
+# still resumes from last.ckpt, and the files stay in the job's checkout on Fir.
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Train-side auxiliary metrics off: see the header. This keeps peak GPU near 26.8 GiB so the run
+# fits a 3g.40gb slice, at the cost of the train cosine (and therefore the train/val gap).
+compute_train_auxiliary_metrics: false
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+# Campaign override(s) not present in the base file:
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+
+# MONITORING (every Step 1 config, c0 included; not in f0): log val/train
+# candidate_wrecall, the candidate set's intensity ceiling, so acceptance criterion 5
+# (coverage within 0.005 of c0) reads off W&B. Monitoring only; the loss is unchanged.
+masster_candidate_coverage_metrics: true
+
+# ARM KEYS (control: 0.0 and 0.0):
+masster_boundary_encoder_dropout: 0.2
+masster_intensity_input_dropout: 0.2

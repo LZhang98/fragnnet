@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-08
 >
-> MASShatter GNN context input implemented with a matched merged pair; no runs launched.
+> MASSter GNN context input implemented with a matched merged pair; no runs launched.
 > The combined FraGNNet context module is already implemented. Earlier refactor stages below
 > are historical proposals, not the current implementation status.
 
@@ -14,7 +14,7 @@ confirms a completed GNN + heads run and SMARTS attempts. No matching full-metad
 heads-only run appeared in the inspected recent runs; routing benefit remains unresolved.
 The no-training statements below describe the earlier preparation handoff.
 
-The [pre-run design audit](../findings/masshatter/masshatter_context_design_audit.md) identified ACE clipping
+The [pre-run design audit](../findings/masster/masster_context_design_audit.md) identified ACE clipping
 and row-order-dependent ACE selection. Both are now fixed in the new merged pair: `ace_max: 300`
 and opt-in weighted CE aggregation, supported by both models. Historical configurations and
 checkpoint behavior retain legacy aggregation. See the audit follow-up for validation results.
@@ -24,22 +24,22 @@ check; no training or held-out quality evaluation has run.
 
 ### Objective and constraints
 
-Give MASShatter full acquisition metadata and measure how existing context routes affect
+Give MASSter full acquisition metadata and measure how existing context routes affect
 held-out predictions before adding a conditioning layer. This is the user-selected scope.
 The user reports that existing runs already show benefit from **NCE + ACE + adduct + instrument
 + fragmentation mode**. Treat that full input set as fixed for the next conditioning experiments;
 do not make another metadata-availability ablation a prerequisite. Run IDs and effect sizes were
 not supplied in this session, so this is recorded user-provided evidence, not a new local result.
-The subsequent user request adds optional GNN context input for merged MASShatter below.
+The subsequent user request adds optional GNN context input for merged MASSter below.
 Target preprocessing and existing experiment configs remain unchanged.
 New arms require retraining: changing metadata vocabularies or injection widths changes parameter
 shapes, and disabling trained scalers changes predictions. Do not load an old checkpoint into a
 new arm and treat that as its trained result.
 
-### Merged MASShatter: context at GNN input
+### Merged MASSter: context at GNN input
 
 The user explicitly requested that merged spectra's context also enter the GNN. Implemented
-`mass_shatter_context_in_gnn`, default false, in the model and Lightning wrapper. When true,
+`masster_context_in_gnn`, default false, in the model and Lightning wrapper. When true,
 the existing per-spectrum context is indexed by atom batch and concatenated to atom features
 before the precursor GNN. The optional separate proposal GNN receives it as well; its context
 input follows the existing proposal-gradient detachment setting. Downstream heads retain context.
@@ -48,22 +48,22 @@ the new pair; legacy configs retain their original mean pooling.
 
 | Arm | Config | Context destinations |
 | --- | --- | --- |
-| Control | [Full metadata, heads only](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml) | Proposal and intensity heads |
-| Requested variant | [Full metadata, GNN + heads](../../config/massshatter/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml) | Atom inputs plus proposal and intensity heads |
+| Control | [Full metadata, heads only](../../config/masster/merged/context_ablation/nist20_merged_full_metadata_context_heads_only.yml) | Proposal and intensity heads |
+| Requested variant | [Full metadata, GNN + heads](../../config/masster/merged/context_ablation/nist20_merged_full_metadata_context_gnn_heads.yml) | Atom inputs plus proposal and intensity heads |
 
 Both derive from the merged probability-CE warmup control: U256/E1024, Gaussian cross-entropy,
 consensus targets, shared encoder, and proposal-only epochs 0–15. Both enable NCE, ACE, adduct,
 instrument, and fragmentation mode. Their resolved configurations differ only in the new switch
-and run name. This is the next MASShatter routing comparison; the unmerged configs below remain
+and run name. This is the next MASSter routing comparison; the unmerged configs below remain
 available separately. No claim about the optimal warmup policy or improved quality follows yet.
 
 Compatibility: false preserves GNN parameter shapes and the structural-only path. The repository's
-`get_pl_hparams` checkpoint reader explicitly migrates older MASShatter checkpoint configs to
+`get_pl_hparams` checkpoint reader explicitly migrates older MASSter checkpoint configs to
 false; fresh configs obtain the required key from the template. True widens input-layer weights
-and requires retraining. `mass_shatter_share_proposal_across_ev: True` is rejected with GNN context
+and requires retraining. `masster_share_proposal_across_ev: True` is rejected with GNN context
 input because that path reuses atom embeddings across spectra with potentially different context.
 
-Validation: 182 tests passed, 5 skipped across the MASShatter model, Lightning wrapper, and new
+Validation: 182 tests passed, 5 skipped across the MASSter model, Lightning wrapper, and new
 GNN-context tests. Checks cover merged CE routing, spectrum isolation, context gradients through
 atom embeddings, separate-proposal gradient isolation, and strict state loading after legacy
 checkpoint migration. Both resolved merged configs constructed successfully; their intended-only
@@ -72,23 +72,23 @@ evaluation ran. Before launch, verify acquisition metadata is homogeneous within
 the current merger retains one metadata row per group while aggregating CE readings. Do not
 change merge grouping or target construction silently if this check fails.
 
-### MASShatter: full-metadata baseline
+### MASSter: full-metadata baseline
 
 Use the prepared full-metadata, dual-CE mask1024 config as the conditioning baseline. It retains
 the existing unmerged mask1024 architecture; it does not settle the newer U256 encoder/warmup comparison in the
-[MASShatter improvement plan](masshatter/masshatter_improvement_plan.md).
+[MASSter improvement plan](masster/masster_improvement_plan.md).
 
 | Arm | Config | Conditioning |
 | --- | --- | --- |
-| M0 — historical reference | [Existing baseline](../../config/massshatter/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_gsa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
-| M1 — optional diagnostic, outside the next run queue | [NCE with categorical metadata](../../config/massshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_nce.yml) | NCE + adduct + instrument + mode |
-| M2 — selected conditioning baseline | [Full metadata, dual CE](../../config/massshatter/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce.yml) | NCE + ACE + adduct + instrument + mode |
+| M0 — historical reference | [Existing baseline](../../config/masster/ma_mi_unmerged/baseline/nist20_ma_mi_unmerged_mask1024_gine_gsa384_bondcentric_a2_b3_transformer_context_embed.yml) | NCE + adduct |
+| M1 — optional diagnostic, outside the next run queue | [NCE with categorical metadata](../../config/masster/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_nce.yml) | NCE + adduct + instrument + mode |
+| M2 — selected conditioning baseline | [Full metadata, dual CE](../../config/masster/ma_mi_unmerged/context_ablation/nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce.yml) | NCE + ACE + adduct + instrument + mode |
 
 M0/M1 remain available for diagnosis; the active sequence starts at M2. Instrument
 vocabulary is FT/QTOF/IT; mode vocabulary is HCD/CID with the existing unknown token. Keep the
 same 128-dimensional context, mask budget, loss, optimizer, split, and seed 397623. Global loss
 tolerance stays fixed (`inst_type_loss_tol: null`), so enabling instrument input does not also
-change the objective. Keep `mass_shatter_share_proposal_across_ev: False`: proposals and
+change the objective. Keep `masster_share_proposal_across_ev: False`: proposals and
 intensities both receive the spectrum's CE and metadata.
 
 The molecular encoder remains structural; existing nonlinear proposal and intensity heads mix
@@ -96,7 +96,7 @@ structural features with context. This already permits fragment-specific context
 The dataset computes both CE columns whenever either CE flag is enabled, filling missing NCE
 from ACE or vice versa using precursor m/z and charge. Dual CE is therefore not necessarily two
 independently measured signals. Keep this conversion unchanged for the screen.
-MASShatter context-routing comparisons retain all five inputs and CE-specific proposals.
+MASSter context-routing comparisons retain all five inputs and CE-specific proposals.
 The unmerged configs establish a separate baseline; the implemented merged routing pair is above.
 
 ### FraGNNet: routing and output scaling
@@ -112,7 +112,7 @@ All four use NCE, ACE, adduct, instrument, and mode with a 64-dimensional combin
 The off arms set `ce_scale`, `frag_mode_scale`, `adduct_scale`, `stratum_scale`, and
 `depth_ce_bias` false; the last three were already false in the controls. The new pair differs
 only in routing and run labels. Keep seed 42 inherited from the template, batching, tolerance,
-optimizer, and schedule matched within this family. MASShatter and FraGNNet families are
+optimizer, and schedule matched within this family. MASSter and FraGNNet families are
 within-model experiments, not a matched head-to-head comparison.
 
 The per-fragment MLP already learns nonlinear fragment/context interactions. Shared affine
@@ -129,11 +129,11 @@ Check instrument coverage and unknown-mode frequency on retained training/valida
 Use the [session workflow](../workflow/session.md) for provenance and
 [cluster guide](../guides/submit_cluster_runs.md) if jobs are subsequently authorized.
 
-Start with the full-metadata MASShatter baseline and the full-metadata FraGNNet routing/scaler
+Start with the full-metadata MASSter baseline and the full-metadata FraGNNet routing/scaler
 comparison; skip M0/M1 reruns unless a specific diagnostic requires them. Screen one seed per
 family, then confirm promising treatments with matched seeds. Compare held-out
 cosine and loss at equal optimizer progress; report CE/adduct/instrument/mode slices, train–validation
-gap, and formula retrieval. For MASShatter also report candidate weighted recall and emitted peak
+gap, and formula retrieval. For MASSter also report candidate weighted recall and emitted peak
 count so proposal coverage is separated from intensity quality. Use the existing
 [fragment-context routing plan](fragnnet/fragment_context_gate_experiment_plan.md) for switch diagnostics
 and the gate experiment's go/stop rules. No new layer is justified solely by a training gain.
@@ -141,7 +141,7 @@ and the gate experiment's go/stop rules. No new layer is justified solely by a t
 Local validation with `FRAGNNET-GPU`: all four configs passed template resolution, sampler
 validation, and actual Lightning/model construction. Resolved diffs contain only the intended
 metadata, scaler, routing, and run-label differences. Synthetic context checks verified finite
-outputs, dependence on every enabled metadata field, MASShatter gradients into every active
+outputs, dependence on every enabled metadata field, MASSter gradients into every active
 metadata encoder, multi-reading CE pooling, and the unknown-mode token. FraGNNet checks verified
 the requested insertion widths and absence of all output scalers/depth bias. The configured data,
 split, and DAG paths exist locally, but their contents and retained-row coverage were not audited.

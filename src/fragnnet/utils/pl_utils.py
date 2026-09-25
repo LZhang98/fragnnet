@@ -8,16 +8,45 @@ from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.utilities import rank_zero_only
 
+# MASSter was named MASShatter until 2026-09-25. Configs, checkpoints, W&B runs and sweeps from
+# before the rename declare `model_type: mass_shatter` and `mass_shatter_*` keys.
+LEGACY_MASSTER_MODEL_TYPE = "mass_shatter"
+_LEGACY_MASSTER_KEY_PREFIX = "mass_shatter_"
 
-def migrate_mass_shatter_proposal_method(config: dict) -> None:
+
+def migrate_legacy_masster_key(key: str) -> str:
+    """Return the current name of a config key that may predate the MASSter rename."""
+    if key.startswith(_LEGACY_MASSTER_KEY_PREFIX):
+        return "masster_" + key.removeprefix(_LEGACY_MASSTER_KEY_PREFIX)
+    return key
+
+
+def migrate_legacy_masster_name(config: dict) -> None:
+    """Rename pre-rename MASSter model type and ``mass_shatter_*`` keys at config boundaries.
+
+    Mutates the supplied mapping. The current key takes precedence when both spellings exist
+    (e.g. an explicit override on top of an old checkpoint). Only top-level keys are renamed;
+    MASSter keys are never nested.
+
+    Args:
+        config: Hyperparameter mapping from a config file, checkpoint, or W&B run.
+    """
+    if config.get("model_type") == LEGACY_MASSTER_MODEL_TYPE:
+        config["model_type"] = "masster"
+    for old_key in [key for key in config if key.startswith(_LEGACY_MASSTER_KEY_PREFIX)]:
+        value = config.pop(old_key)
+        config.setdefault(migrate_legacy_masster_key(old_key), value)
+
+
+def migrate_masster_proposal_method(config: dict) -> None:
     """Normalize the original proposal key/values at configuration boundaries.
 
     Mutates the supplied mapping. The canonical key takes precedence when both keys
     exist (e.g. an explicit checkpoint override). Missing keys remain missing so fresh
     model configurations still fail validation; legacy loaders supply defaults.
     """
-    old_key = "mass_shatter_proposal_type"
-    new_key = "mass_shatter_proposal_method"
+    old_key = "masster_proposal_type"
+    new_key = "masster_proposal_method"
     if old_key in config:
         old_value = config.pop(old_key)
         if new_key not in config:
@@ -379,43 +408,44 @@ def get_pl_hparams(ckpt: dict) -> dict:
         Deep copy of hyperparameters dictionary.
     """
     hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+    migrate_legacy_masster_name(hyper_parameters)
     migrate_legacy_hparams(hyper_parameters)
     # Old checkpoints retain first-replicate CE context unless explicitly migrated.
     if "spec_params" in hyper_parameters:
         spec_params = hyper_parameters["spec_params"]
         if "merge_ce_aggregation" not in spec_params:
             spec_params["merge_ce_aggregation"] = "legacy"
-    # Explicit checkpoint migration: pre-context-input MASShatter weights use the
+    # Explicit checkpoint migration: pre-context-input MASSter weights use the
     # structural-only GNN width. Fresh configs must declare this key via the template.
     if (
-        hyper_parameters.get("model_type") == "mass_shatter"
-        and "mass_shatter_context_in_gnn" not in hyper_parameters
+        hyper_parameters.get("model_type") == "masster"
+        and "masster_context_in_gnn" not in hyper_parameters
     ):
-        hyper_parameters["mass_shatter_context_in_gnn"] = False
-    # Explicit checkpoint migration: pre-attention-topology MASShatter weights carry the
+        hyper_parameters["masster_context_in_gnn"] = False
+    # Explicit checkpoint migration: pre-attention-topology MASSter weights carry the
     # induced latent set. Fresh configs must declare this key via the template.
     if (
-        hyper_parameters.get("model_type") == "mass_shatter"
-        and "mass_shatter_intensity_transformer_attention" not in hyper_parameters
+        hyper_parameters.get("model_type") == "masster"
+        and "masster_intensity_transformer_attention" not in hyper_parameters
     ):
-        hyper_parameters["mass_shatter_intensity_transformer_attention"] = "induced"
+        hyper_parameters["masster_intensity_transformer_attention"] = "induced"
     # Backend choice changes construction only; old checkpoints retain CPU semantics.
     if (
-        hyper_parameters.get("model_type") == "mass_shatter"
-        and "mass_shatter_candidate_backend" not in hyper_parameters
+        hyper_parameters.get("model_type") == "masster"
+        and "masster_candidate_backend" not in hyper_parameters
     ):
-        hyper_parameters["mass_shatter_candidate_backend"] = "cpu"
-    if hyper_parameters.get("model_type") == "mass_shatter":
-        migrate_mass_shatter_proposal_method(hyper_parameters)
-        if "mass_shatter_proposal_method" not in hyper_parameters:
-            hyper_parameters["mass_shatter_proposal_method"] = "cut_masks"
-        if "mass_shatter_fast_gnn_beam_width" not in hyper_parameters:
-            hyper_parameters["mass_shatter_fast_gnn_beam_width"] = 256
-        if "mass_shatter_fast_gnn_max_boundary_cuts" not in hyper_parameters:
-            hyper_parameters["mass_shatter_fast_gnn_max_boundary_cuts"] = 3
+        hyper_parameters["masster_candidate_backend"] = "cpu"
+    if hyper_parameters.get("model_type") == "masster":
+        migrate_masster_proposal_method(hyper_parameters)
+        if "masster_proposal_method" not in hyper_parameters:
+            hyper_parameters["masster_proposal_method"] = "cut_masks"
+        if "masster_fast_gnn_beam_width" not in hyper_parameters:
+            hyper_parameters["masster_fast_gnn_beam_width"] = 256
+        if "masster_fast_gnn_max_boundary_cuts" not in hyper_parameters:
+            hyper_parameters["masster_fast_gnn_max_boundary_cuts"] = 3
         # Checkpoints from before marginal fragment selection kept the whole enumerated pool.
-        if "mass_shatter_fragment_selection" not in hyper_parameters:
-            hyper_parameters["mass_shatter_fragment_selection"] = "mask_order"
-        if "mass_shatter_selected_fragment_target" not in hyper_parameters:
-            hyper_parameters["mass_shatter_selected_fragment_target"] = None
+        if "masster_fragment_selection" not in hyper_parameters:
+            hyper_parameters["masster_fragment_selection"] = "mask_order"
+        if "masster_selected_fragment_target" not in hyper_parameters:
+            hyper_parameters["masster_selected_fragment_target"] = None
     return hyper_parameters

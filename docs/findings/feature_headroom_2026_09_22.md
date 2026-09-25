@@ -35,7 +35,7 @@ Random forest for categorical targets, gradient boosting for continuous, held-ou
 by molecule**, 1,499 NIST20 molecules / 35,484 atoms / 37,479 bonds.
 
 This is a **lower bound** on what the production encoders can derive. FraGNNet runs 4 GINE
-layers; MASShatter runs GINE_GSA, which adds exact per-graph global attention. Both are strictly
+layers; MASSter runs GINE_GSA, which adds exact per-graph global attention. Both are strictly
 more expressive than a two-hop mean.
 
 ## Result: nothing in the descriptor families is new information

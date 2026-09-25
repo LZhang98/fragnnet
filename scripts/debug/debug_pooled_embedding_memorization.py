@@ -1,10 +1,10 @@
-"""Is the per-fragment mean pool MASShatter's memorization surface?
+"""Is the per-fragment mean pool MASSter's memorization surface?
 
 The candidate token is 1,285 columns and 1,152 of them (89.6%) are mean-pooled atom
 embeddings: the fragment's own atoms, its complement, and its severed bonds. They are the
 only per-candidate input that scales with molecular identity, and the cc atom mask alone
 identifies the fragment uniquely (1.00 distinct fragments per descriptor bucket, measured in
-``config/massshatter/ma_mi_merged/candidate_token_2026_09_22/e2_cc_atom_drop01.yml``). The
+``config/masster/ma_mi_merged/candidate_token_2026_09_22/e2_cc_atom_drop01.yml``). The
 2026-09-22 read-out puts ~98% of the 0.151 train/validation cosine gap in intensity
 allocation -- the head this token feeds. So the hypothesis is that the head memorizes a
 fragment-identity lookup that cannot transfer to unseen scaffolds.
@@ -50,7 +50,7 @@ it is inactive and cannot interact with these corruptions.
 Two further scopes cover the head's other memorization routes, so one pass over a checkpoint
 ranks every in-head route side by side:
 
-  features  the candidate descriptor block (``mass_shatter_candidate_features``, e.g. cut
+  features  the candidate descriptor block (``masster_candidate_features``, e.g. cut
             count, size, mass, charge), corrupted with the same three modes. These columns
             are few but exact, and mass plus size alone can index a fragment within its
             molecule.
@@ -62,7 +62,7 @@ ranks every in-head route side by side:
             loses more than validation here.
 
 Validation status. The mechanics are verified end to end on a 128-molecule toy model
-(``config/debug/debug_tiny_mass_shatter_cut_features.yml``, hidden 64, 60 epochs, the same
+(``config/debug/debug_tiny_masster_cut_features.yml``, hidden 64, 60 epochs, the same
 ``inchikey_s`` split key production uses). That run is far too small to say anything about
 the production model, but it does show the readout discriminates: corrupting the cc pools
 left the train/validation gap unchanged (gap_closed -0.015) while corrupting the boundary
@@ -73,12 +73,12 @@ exactly the identity under both attention types) and one end-to-end pass on a 6-
 checkpoint of the same config, which had not overfit and so says nothing about memorization.
 
 Results and their interpretation:
-``docs/findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md`` (section 7.1b).
+``docs/findings/masster/masster_head_input_asymmetry_2026_09_22.md`` (section 7.1b).
 
 Usage:
     python scripts/debug/debug_pooled_embedding_memorization.py \
         --model_ckpt ckpts/RUN/last.ckpt \
-        --custom_fp config/massshatter/ma_mi_merged/.../c4a_base_s1.yml \
+        --custom_fp config/masster/ma_mi_merged/.../c4a_base_s1.yml \
         --batch_cutoff 20 \
         --output_fp pooled_memorization.csv
 """
@@ -100,7 +100,7 @@ import torch as th
 from lightning import seed_everything
 from tqdm import tqdm
 
-import fragnnet.model.mass_shatter_model as mass_shatter_model_module
+import fragnnet.model.masster_model as masster_model_module
 from fragnnet.model.nn_blocks import GINE_GSA
 from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
@@ -115,7 +115,7 @@ from fragnnet.utils.setup_utils import get_dataset_cls
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Positional layout of CandidateIntensityTransformerHead.forward, which MassShatterModel
+# Positional layout of CandidateIntensityTransformerHead.forward, which MassterModel
 # calls with seven positional arguments. Asserted against the live signature at install time.
 FRAGMENT_ARG = 0
 COMPLEMENT_ARG = 1
@@ -503,7 +503,7 @@ class PooledEmbeddingCorruptor:
 class EncoderCorruptor:
     """Rewrite the atom embeddings the intensity path reads; the proposal keeps the exact ones.
 
-    MASShatter encodes each precursor once. The proposal scores bonds on a detached copy of
+    MASSter encodes each precursor once. The proposal scores bonds on a detached copy of
     those embeddings, and the intensity path pools them into the fragment, complement and
     boundary blocks. Under ``gsa`` or ``acharge`` the encoder runs twice: the exact output goes
     everywhere as usual, and a rewritten one replaces it in exactly two places, the component
@@ -514,7 +514,7 @@ class EncoderCorruptor:
     """
 
     def __init__(self, model: th.nn.Module, seed: int, charge_column: int | None) -> None:
-        """Wrap the ``MassShatterModel``; ``charge_column`` is the ``a_charge`` input column."""
+        """Wrap the ``MassterModel``; ``charge_column`` is the ``a_charge`` input column."""
         self.model = model
         self.seed = seed
         self.charge_column = charge_column
@@ -545,8 +545,8 @@ class EncoderCorruptor:
         encoder = self.model.precursor_encoder
         self._original_encoder_forward = encoder.forward
         encoder.forward = self._encoder_forward  # type: ignore[method-assign]
-        self._original_pool = mass_shatter_model_module.pool_component_and_complement_embeddings
-        mass_shatter_model_module.pool_component_and_complement_embeddings = self._pool
+        self._original_pool = masster_model_module.pool_component_and_complement_embeddings
+        masster_model_module.pool_component_and_complement_embeddings = self._pool
         self._original_boundary = self.model._boundary_embeddings
         self.model._boundary_embeddings = self._boundary  # type: ignore[method-assign]
         if isinstance(encoder.gnn, GINE_GSA):
@@ -560,7 +560,7 @@ class EncoderCorruptor:
         if not self._installed:
             return
         self.model.precursor_encoder.forward = self._original_encoder_forward
-        mass_shatter_model_module.pool_component_and_complement_embeddings = self._original_pool
+        masster_model_module.pool_component_and_complement_embeddings = self._original_pool
         self.model._boundary_embeddings = self._original_boundary
         for hook in self._hooks:
             hook.remove()
@@ -811,8 +811,8 @@ def main() -> None:
         use_cached=True,
     )
     config_d = load_config(args.template_fp, args.custom_fp, args.override)
-    if config_d["model_type"] != "mass_shatter":
-        raise ValueError(f"Expected model_type=mass_shatter, got {config_d['model_type']}")
+    if config_d["model_type"] != "masster":
+        raise ValueError(f"Expected model_type=masster, got {config_d['model_type']}")
     config_d["auxiliary_scores"] = list(
         dict.fromkeys([*config_d["auxiliary_scores"], "cos_sim", "wrecall"])
     )

@@ -7,11 +7,11 @@ peak -- the rule of ``spec_utils.batched_rel_filter_func``, i.e. ``target_rel_in
 
 - **Target:** exactly that function: the maximum is taken over all peaks, then peaks at or above
   ``mz_max`` are dropped.
-- **Prediction:** MASShatter emits several candidates at one m/z (connected fragments that share a
+- **Prediction:** MASSter emits several candidates at one m/z (connected fragments that share a
   formula), and the model sums them before scoring (``round_aggregate_peaks``, 4 decimals). The
   filter therefore acts on those aggregated peaks: a candidate survives when its peak does.
   Exports written after 2026-09-24 already hold summed peaks (the exporter aggregates
-  MASShatter candidates the same way), and the aggregation here is then a no-op.
+  MASSter candidates the same way), and the aggregation here is then a no-op.
 
 Each threshold is scored in three modes: ``both`` (the matched comparison), ``pred_only`` and
 ``target_only``; ``t = 0`` is the unfiltered row (mode ``none``). Two metrics:

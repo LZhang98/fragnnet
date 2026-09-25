@@ -1,0 +1,106 @@
+wandb_name: debug_tiny_masster_h_support
+wandb_group: mass_shatter_channel_selection_smoke
+wandb_tags: [debug, masster, h_support]
+
+model_type: masster
+seed: 42
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+subsample_params:
+  subsample_size: 64
+  subsample_seed: 42
+  train: true
+  val: true
+  test: true
+  secondary: true
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  preprocess: false
+  prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+"]
+  inst_type: true
+  inst_types: [FT, QTOF]
+  frag_mode: true
+  frag_modes: [HCD, CID]
+mol_params:
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  preprocess: false
+
+mol_gnn_type: GINE
+mol_hidden_size: 64
+mol_num_layers: 2
+mol_normalization: layer
+mol_dropout: 0.0
+masster_unique_fragment_mode: true
+masster_unique_fragment_target: 8
+masster_ranked_mask_budget: 16
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 2
+masster_include_cmf: true
+masster_charge_pooling: logsumexp
+masster_context_dim: 32
+masster_metadata_embedding_dim: 8
+masster_head_hidden_dim: 64
+masster_head_dropout: 0.0
+masster_proposal_anchored: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_separate_proposal_encoder: true
+masster_separate_ion_mode_proposal_head: false
+masster_min_ion_mode_relative_probability: 0.0
+masster_ion_mode_proposal_loss_weight: 0.0
+masster_separate_ion_h_support_head: true
+masster_ion_h_support_binary_logits: true
+masster_min_ion_h_relative_probability: 0.1
+masster_ion_h_support_loss_weight: 0.1
+masster_apply_channel_selection_in_training: false
+masster_channel_support_attribution: gaussian_posterior
+masster_channel_diagnostics: true
+
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 8
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+formula_prec_type_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 4
+eval_batch_size: 4
+accumulate_grad_batches: 1
+automatic_optimization: true
+accelerator: cpu
+devices: 1
+num_workers: 0
+precision: 32
+min_epochs: 1
+max_epochs: 2
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+disable_checkpoints: true
+eval_test_split: false
+auxiliary_scores: [cos_sim, precision, recall]
+eval_mz_bin_res: [0.01]

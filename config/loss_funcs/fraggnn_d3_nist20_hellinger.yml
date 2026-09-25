@@ -1,16 +1,16 @@
 # FraGNNet explicit Hellinger -- 2026-09-21 loss-objective campaign.
-# Plan: docs/plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
+# Plan: docs/plans/masster/masster_nonprobabilistic_intensity_plan.md, "Follow-up objective amendment".
 #
 # Derived from fraggnn_d3_nist20_jss.yml by changing exactly loss_type (plus name/tags), so that
 # arm and its _hun / _sqrt siblings are the matched controls. This is the FraGNNet half of the
-# objective test; the MASShatter half is
-# config/massshatter/ma_mi_merged/loss_objective_2026_09_21/h1_hellinger_closest.yml.
+# objective test; the MASSter half is
+# config/masster/ma_mi_merged/loss_objective_2026_09_21/h1_hellinger_closest.yml.
 #
-# FraGNNet's Hellinger is a DIFFERENT implementation from MASShatter's: it is the sparse BINNED
+# FraGNNet's Hellinger is a DIFFERENT implementation from MASSter's: it is the sparse BINNED
 # correspondence at mz_bin_res 0.01, not a tolerance-matched alignment. Only shared occupied bins
 # contribute to the Bhattacharyya coefficient; prediction-only and target-only bins contribute
 # zero while still counting in the normalization. A spectrum with predictions but no observed
-# peaks shares no bin and scores exactly 1. Do not read a MASShatter Hellinger result as
+# peaks shares no bin and scores exactly 1. Do not read a MASSter Hellinger result as
 # evidence about this path or the reverse.
 #
 # `1 - BC` is the SQUARED Hellinger distance H^2, not sqrt(1 - BC). Its scale is not comparable

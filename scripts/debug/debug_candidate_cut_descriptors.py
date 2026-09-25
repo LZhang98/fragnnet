@@ -1,11 +1,11 @@
-"""What does the candidate token's cut description resolve, on MASShatter's own candidates?
+"""What does the candidate token's cut description resolve, on MASSter's own candidates?
 
 Two questions, one population.
 
-1. The cut-set topology numbers in ``docs/plans/masshatter/masshatter_cut_set_features_plan.md`` (96.8% of
+1. The cut-set topology numbers in ``docs/plans/masster/masster_cut_set_features_plan.md`` (96.8% of
    fragments cut at >= 2 bonds, 55.4% with two cuts sharing a ring) were measured on the depth-3
    BFS DAG, where the cut count is bounded by enumeration depth. The plan says to recompute them
-   on real MASShatter candidates before quoting them. This does that.
+   on real MASSter candidates before quoting them. This does that.
 
 2. Whether the cut-set topology scalars (plan item A) add anything over the pooled cut-bond
    features that landed on 2026-09-22 (plan item B0). B0 feeds the SUM of the severed bonds'
@@ -13,8 +13,8 @@ Two questions, one population.
    "two ring bonds were cut" does not say "the same ring". The decisive number here is how often
    two candidates of one molecule share a summed cut-bond vector but differ in ring sharing.
 
-Method. Candidates come from ``build_mass_shatter_candidates`` at the production unique-fragment
-settings, so the population is MASShatter's own, not a DAG's. Bond logits are UNIFORM: mask
+Method. Candidates come from ``build_masster_candidates`` at the production unique-fragment
+settings, so the population is MASSter's own, not a DAG's. Bond logits are UNIFORM: mask
 ranking then depends only on how many bonds a mask cuts, which is the deterministic,
 model-independent part of the enumeration. A trained proposer concentrates on a few breakable
 bonds and would push mass toward higher cut counts among them, so the cut counts below are a
@@ -33,7 +33,7 @@ import pandas as pd
 import torch as th
 from torch_geometric.data import Batch
 
-from fragnnet.frag.mass_shatter_candidates import build_mass_shatter_candidates
+from fragnnet.frag.masster_candidates import build_masster_candidates
 from fragnnet.utils.feat_utils import get_mol_graph
 
 # The c4a_base_s1 bond feature set, which is what the `c_cut_bonds` candidate feature
@@ -47,13 +47,13 @@ RANKED_MASK_BUDGET = 4096
 
 
 def _candidate_atom_sets(mol) -> list[frozenset[int]]:
-    """Return one atom set per unique MASShatter candidate of this molecule."""
+    """Return one atom set per unique MASSter candidate of this molecule."""
     graph = get_mol_graph(mol, NODE_FEATS, EDGE_FEATS, 0, True)
     batch = Batch.from_data_list([graph])
     num_bonds = int(batch.chemical_bond_index.shape[1])
     if num_bonds == 0:
         return []
-    candidates = build_mass_shatter_candidates(
+    candidates = build_masster_candidates(
         th.zeros(num_bonds),
         batch.chemical_bond_index,
         batch.batch,
@@ -243,7 +243,7 @@ def main(num_molecules: int = 100) -> None:
         return
 
     print(f"molecules: {num_molecules}    cut candidates: {total:,}\n")
-    print("cut bonds per candidate (MASShatter candidates, uniform bond logits):")
+    print("cut bonds per candidate (MASSter candidates, uniform bond logits):")
     for key in sorted(cut_histogram):
         label = str(key) if key < 6 else ">=6"
         print(f"  {label:>3s} cut(s): {cut_histogram[key] / total:6.3f}")

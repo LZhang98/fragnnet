@@ -9,7 +9,7 @@ import pytest
 import torch as th
 
 from fragnnet.dataset.base_dataset import BaseDataset, _ce_list_to_stats
-from fragnnet.model.mass_shatter_model import MassShatterContextEncoder
+from fragnnet.model.masster_model import MassterContextEncoder
 from fragnnet.runner import load_config
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.proc_utils import merge_spec_df
@@ -138,8 +138,8 @@ def test_dataset_carries_weights_and_weighted_stats(tmp_path, spectra) -> None:
 
 
 @pytest.mark.parametrize("ce_type", ["embed", "id"])
-def test_mass_shatter_uses_weighted_ace_and_preserves_gradients(ce_type) -> None:
-    encoder = MassShatterContextEncoder(
+def test_masster_uses_weighted_ace_and_preserves_gradients(ce_type) -> None:
+    encoder = MassterContextEncoder(
         num_precursor_types=1,
         num_instrument_types=0,
         num_fragmentation_modes=0,
@@ -222,18 +222,18 @@ def test_invalid_reading_weights_fail(weights) -> None:
 
 
 def test_checkpoint_migration_and_merged_config_pair() -> None:
-    old = {"hyper_parameters": {"model_type": "mass_shatter", "spec_params": {"merge": True}}}
+    old = {"hyper_parameters": {"model_type": "masster", "spec_params": {"merge": True}}}
     snapshot = copy.deepcopy(old)
     assert get_pl_hparams(old)["spec_params"]["merge_ce_aggregation"] == "legacy"
     assert old == snapshot
     configs = [
         load_config("config", str(p), None)
-        for p in sorted(Path("config/massshatter/merged/context_ablation").glob("*.yml"))
+        for p in sorted(Path("config/masster/merged/context_ablation").glob("*.yml"))
     ]
     assert len(configs) == 2
     assert {k for k in configs[0] if configs[0][k] != configs[1][k]} == {
         "wandb_name",
-        "mass_shatter_context_in_gnn",
+        "masster_context_in_gnn",
     }
     for config in configs:
         assert config["ace_max"] == 300
@@ -249,12 +249,12 @@ def test_zero_weight_or_missing_ce_has_no_scaler_statistics() -> None:
         _ce_list_to_stats(th.tensor([10.0, 20.0]), th.tensor([1.0]))
 
 
-def test_mass_shatter_wrapper_passes_reading_weights() -> None:
+def test_masster_wrapper_passes_reading_weights() -> None:
     from rdkit import Chem
     from torch_geometric.data import Batch
 
     from fragnnet.utils.feat_utils import get_mol_graph
-    from tests.test_mass_shatter_pl import _build_pl
+    from tests.test_masster_pl import _build_pl
 
     config = load_config("config", None, None)
     spec_params = config["spec_params"]
@@ -297,7 +297,7 @@ def test_mass_shatter_wrapper_passes_reading_weights() -> None:
     assert th.isfinite(output["pred_logprobs"]).all()
 
 
-def _context_encoder(**overrides) -> MassShatterContextEncoder:
+def _context_encoder(**overrides) -> MassterContextEncoder:
     """Build a small context encoder, overriding only the fields under test."""
     kwargs = {
         "num_precursor_types": 2,
@@ -318,7 +318,7 @@ def _context_encoder(**overrides) -> MassShatterContextEncoder:
         "ace_std": 15,
     }
     kwargs.update(overrides)
-    return MassShatterContextEncoder(**kwargs)
+    return MassterContextEncoder(**kwargs)
 
 
 def test_context_projector_defaults_match_the_unnormalized_mlp() -> None:

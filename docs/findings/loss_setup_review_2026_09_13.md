@@ -1,9 +1,9 @@
-# FraGNNet and MASShatter loss setup review
+# FraGNNet and MASSter loss setup review
 
 > **Status:** FINDING · **Updated:** 2026-09-21 · CPU counterexamples reverified at `551a64ae`. A second pass audited the working-tree changes themselves and fixed four defects in them, including a vectorized-JSD NaN. A third pass fixed the mirror of the leak term's batch-size defect in three more functions and collapsed two duplicated guards. **`jss_hun*` is not comparable across this change.** OOS and formula-validity fixes remain pending.
 >
 > **Proposal coverage:** this review is canonical for the blind-spot counterexample; it is
-> consolidated with three other reviews, and re-run against live code, in [MASShatter proposal loss — consolidated audit](masshatter/masshatter_proposal_loss_audit_2026_09_22.md).
+> consolidated with three other reviews, and re-run against live code, in [MASSter proposal loss — consolidated audit](masster/masster_proposal_loss_audit_2026_09_22.md).
 
 ## Current assessment: tighter objectives (2026-09-21)
 
@@ -23,26 +23,26 @@ All four FraGNNet defects below are still present and reproduced with the config
 | Medium: formula-support target attribution | Adding an invalid exact-mass slot changes the valid Hungarian target from 1 to 0 and its logit gradient from -0.25 to +0.25. | Apply formula validity before target attribution, not only inside BCE. |
 
 These affect the named optional paths, not every FraGNNet configuration. The representative
-FraGNNet MA/MI baseline inherits Gaussian CE; the representative MASShatter
+FraGNNet MA/MI baseline inherits Gaussian CE; the representative MASSter
 `ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64.yml` explicitly uses Gaussian CE
 plus 0.1 proposal supervision. Neither is a JSD baseline. FraGNNet's model exports formula
 isotope masses before filtering them by support validity, so the target helper's missing
 validity input is not repaired upstream. Real-data incidence remains unmeasured.
 
-### What is loose in MASShatter
+### What is loose in MASSter
 
 Follow-up implementation: `loss_type: conditional_cross_entropy` now selects the in-support CE
 divided by represented target mass. The historical `cross_entropy` remains unchanged. Both paths
 log `coverage_weighted_spec_ce` and `conditional_spec_ce`; `spec_ce` remains a compatibility alias
 for the selected primary variant. A spectrum with zero represented target mass contributes zero
 conditional CE because it contains no supported intensity ratio to fit. OOS CE remains separate:
-MASShatter has no learned OOS probability, so adding its currently computed zero term would have
+MASSter has no learned OOS probability, so adding its currently computed zero term would have
 no effect. This is an experiment path, not a promoted default.
 
-MASShatter direct losses and FraGNNet vectorized Hungarian JSD now share
+MASSter direct losses and FraGNNet vectorized Hungarian JSD now share
 `align_sparse_peak_support`. Its explicit policies are `closest`, `mass_hungarian`, and
 `js_gain_hungarian`; the caller owns the downstream divergence and OOS semantics. This removes
-duplicated padded correspondence code without conflating MASShatter's m/z-based matching with
+duplicated padded correspondence code without conflating MASSter's m/z-based matching with
 FraGNNet's JSD-gain matching. The older scalar FraGNNet JSD entry point remains for compatibility.
 
 The direct peak-list objectives in `model/loss.py:sparse_peak_list_distance` retain the
@@ -63,7 +63,7 @@ uncapped log penalty for missing peaks. A future recovery term should operate on
 log intensities of supported mass groups and explicitly separate unreachable targets.
 
 Matching semantics can dominate the choice of divergence. For an observed peak at 100 and
-predictions at 100 and 100.001 with intensities 0.01 and 0.99, MASShatter mass-only Hungarian
+predictions at 100 and 100.001 with intensities 0.01 and 0.99, MASSter mass-only Hungarian
 JSD is 0.959531, closest matching gives 0, and FraGNNet scalar JS-gain Hungarian gives
 0.005018. These encode different correspondence assumptions. Do not treat their losses as
 comparable measures or automatically replace one with another; first measure ambiguous
@@ -104,7 +104,7 @@ occurrence probabilities; increasing its weight does not fix its attribution amb
    weak-peak recall, false intensity, and retrieval. Use the existing roadmap's validation
    gates, with an identical sampler at zero pair weight for CE-context comparisons.
 
-The [campaign read-out](masshatter/masshatter_campaign_readout_2026_09_21.md) reports loss-family
+The [campaign read-out](masster/masster_campaign_readout_2026_09_21.md) reports loss-family
 differences within replicate variation. That is historical recorded evidence, not a fresh
 W&B query in this audit. It argues against another broad CE/JSD/KL sweep without a measured
 mechanism. The older sibling-ranking plan is a distinct node-marginal proposal, not an
@@ -134,9 +134,9 @@ JS gain resolves it toward the pairing that actually minimizes JSD. **Do not com
 | The infeasible-pair sentinel `-1e9` overflows float16, and SciPy cannot convert bfloat16, so gain matching raised under mixed precision. The replaced code upcast through `sub_mask.float()`. | `_solve_batch_assignment` now solves in float32 for non-float32/64 inputs, and the three gain sites promote before masking. `batch_jss_hun_helper` and `jss_hun_helper` also had a pre-existing half-precision `index_put` dtype error at `551a64ae`; both now score in float32 and agree with the float32 result to 1e-3. |
 | The new leak term inferred `batch_size` from observed peaks, so a trailing spectrum without observed peaks shortened the result. Measured: two spectra returned shape `(1,)`, which then broadcasts silently onto a per-spectrum loss rather than raising. It also raised for a spectrum with no predicted peaks, which the primary loss tolerates. | `batch_size` is now a required argument supplied by both call sites, degenerate spectra are defined (no predicted intensity gives 0, no observed peaks gives 1, both with zero gradient), and out-of-range batch indices raise. |
 | The same observed-only `batch_size` inference the leak term was fixed for survived in `sparse_hellinger_distance` and in both Hungarian JSD paths, in the mirror direction: a trailing spectrum holding predictions but no observed peaks. Measured on `true_batch_idxs=[0]`, `pred_batch_idxs=[0, 1]`: Hellinger raised a bare `AssertionError` from `scatter_logsumexp`, and the vectorized JSD returned shape `(1,)` for two spectra, silently dropping one from the per-spectrum loss. | All three now size the batch from both peak lists through `_spectra_in_batch`, which raises when both lists are empty. Such a spectrum shares no support, so it scores 1.0; Hellinger returns `[0.0, 1.0]` and both JSD paths return `[~0, 1.0]`. Scalar and vectorized JSD stay bit-identical (`max |diff| = 0`) over 40 random well-formed batches. `sparse_cosine_distance_hungarian` keeps the old inference: it predates this change and nothing here touches it. |
-| The `spectral_leak_loss_weight`/`spectral_ce_auxiliary_weight` validation was byte-identical in `fragnnet_pl.py` and `mass_shatter_pl.py`, and the half/bfloat16 upcast guard was repeated at three sites in `spec_utils.py`. Either could be changed in one place only. | Collapsed into `validate_hellinger_auxiliary_weights` in `loss.py` and `_as_scoring_dtype` in `spec_utils.py`. The existing parametrized rejection tests for both models pass against the shared validator unchanged. |
-| The MASShatter CE auxiliary divided by `pred_totals[pred_batch_idxs]` and clamped the quotient, which cannot repair a NaN. Reachable only through a spectrum whose predicted intensities sum to zero, which `sparse_peak_list_distance` rejects first on the same branch, so the guard rested on a non-local invariant. | Clamps the divisor instead of the quotient, at the division site. |
-| The leak term ran an unbatched per-spectrum Python loop with three to four `.item()` synchronizations per spectrum, about 1.5-2k device syncs per step at batch 512. The same pattern is what `masshatter_loss_audit_2026_09_19.md` attributes the CE/JSS gap to. | Rewritten as the chunked padded form already used by the vectorized JSD, keyed on `loss_batch_size`; no per-spectrum synchronization remains. Chunk invariance is tested. |
+| The `spectral_leak_loss_weight`/`spectral_ce_auxiliary_weight` validation was byte-identical in `fragnnet_pl.py` and `masster_pl.py`, and the half/bfloat16 upcast guard was repeated at three sites in `spec_utils.py`. Either could be changed in one place only. | Collapsed into `validate_hellinger_auxiliary_weights` in `loss.py` and `_as_scoring_dtype` in `spec_utils.py`. The existing parametrized rejection tests for both models pass against the shared validator unchanged. |
+| The MASSter CE auxiliary divided by `pred_totals[pred_batch_idxs]` and clamped the quotient, which cannot repair a NaN. Reachable only through a spectrum whose predicted intensities sum to zero, which `sparse_peak_list_distance` rejects first on the same branch, so the guard rested on a non-local invariant. | Clamps the divisor instead of the quotient, at the division site. |
+| The leak term ran an unbatched per-spectrum Python loop with three to four `.item()` synchronizations per spectrum, about 1.5-2k device syncs per step at batch 512. The same pattern is what `masster_loss_audit_2026_09_19.md` attributes the CE/JSS gap to. | Rewritten as the chunked padded form already used by the vectorized JSD, keyed on `loss_batch_size`; no per-spectrum synchronization remains. Chunk invariance is tested. |
 
 Checked and cleared:
 
@@ -153,15 +153,15 @@ Checked and cleared:
 - **`conditional_in_support_cross_entropy` recovers represented mass stably.**
   `-expm1(oos_logprob)` is well conditioned where it matters and degrades to zero only below
   about 1e-8 represented mass, which is the correct value there. Sequential and vectorized CE
-  paths agree to 1e-6, and MASShatter forces `oos_loss` off, so no coverage-weighted OOS term
+  paths agree to 1e-6, and MASSter forces `oos_loss` off, so no coverage-weighted OOS term
   mixes with the conditional in-support term.
 
 **Both `hellinger_distance` paths are batched, and are now covered as such.** Neither was a
-per-spectrum loop: MASShatter's objective reduces inside the `loss_batch_size` chunk loop of
+per-spectrum loop: MASSter's objective reduces inside the `loss_batch_size` chunk loop of
 `sparse_peak_list_distance`, and FraGNNet's `sparse_hellinger_distance` has no Python loop at
 all (scatter-based, 10 ms for a 1024-spectrum batch of 61k predicted peaks on CPU). The gap was
 in the tests, not the code: `hellinger_distance` had been left out of the four objective
-parameterizations in `tests/test_mass_shatter_peak_list_distance.py`, including the
+parameterizations in `tests/test_masster_peak_list_distance.py`, including the
 `TestPeakListDistanceMatchesLoopReference` harness, so the chunked Hellinger reduction had never
 been compared against the per-spectrum reference. The reference now carries its own Hellinger
 branch, written as a plain `sqrt(p*t)` without the production zero-safe clamping so the two
@@ -189,22 +189,22 @@ separate decision about the whole FraGNNet loss family.
 ### Follow-up validation and limits
 
 - Re-ran `/tmp/loss_setup_probe_20260913.py` and `/tmp/fragnnet_loss_setup_review.py` after
-  inspecting their contents: all four FraGNNet counterexamples and the MASShatter gradient,
+  inspecting their contents: all four FraGNNet counterexamples and the MASSter gradient,
   matching, and clutter examples reproduced. These scratch scripts are not tracked artifacts;
   essential inputs and outputs are recorded here and in the original sections below.
-- `python -m pytest tests/test_loss.py tests/test_mass_shatter_peak_list_distance.py
+- `python -m pytest tests/test_loss.py tests/test_masster_peak_list_distance.py
   tests/test_fragnnet_formula_support.py tests/test_fragnnet_audit_regressions.py -q`:
   **260 passed, 6 skipped** using `FRAGNNET-GPU`. Passing existing tests does not cover or
   negate the reproduced defects.
 - After the conditional-CE and vectorized-JSD fixes, the focused loss, spectrum-helper,
-  MASShatter PL, formula-support, and FraGNNet audit suites report **251 passed**. Ruff and
+  MASSter PL, formula-support, and FraGNNet audit suites report **251 passed**. Ruff and
   `git diff --check` pass. CUDA assignment was not available.
-- After extracting shared sparse alignment, loss, spectrum-helper, MASShatter peak-list, and
-  MASShatter PL suites report **407 passed, 6 skipped**. Ruff passes; CUDA assignment was not
+- After extracting shared sparse alignment, loss, spectrum-helper, MASSter peak-list, and
+  MASSter PL suites report **407 passed, 6 skipped**. Ruff passes; CUDA assignment was not
   available.
 - CUDA was unavailable to these processes. No CUDA assignment validation, full suite,
   checkpoint/batch gradient survey, training, or validation-set model comparison was run.
-- MASShatter's separately named conditional-CE path, FraGNNet's vectorized JSD matching/backward
+- MASSter's separately named conditional-CE path, FraGNNet's vectorized JSD matching/backward
   corrections, and focused regressions are in the working tree; no preprocessing or default-config
   behavior changed. Next concrete action: fix FraGNNet validity masking and settle its OOS contract
   before implementing dependent behavior. Evaluate scientific loss changes with matched controls
@@ -215,13 +215,13 @@ separate decision about the whole FraGNNet loss family.
 Reviewed clean revision `fe417a2f990a7041f80d63306cdc5f3f1512c051`, model/Lightning
 loss wiring, shared loss helpers, representative checked-in configurations, and the
 [model roadmap](../plans/model_improvement_plan.md) and
-[MASShatter plan](../plans/masshatter/masshatter_improvement_plan.md).
+[MASSter plan](../plans/masster/masster_improvement_plan.md).
 Configurations below establish available setups, not the identity of a running experiment.
 No model code, configuration, data, environment, or training state was changed.
 
-The prior [correctness audit](fragnnet_masshatter_audit_2026_09_12.md) is historical:
+The prior [correctness audit](fragnnet_masster_audit_2026_09_12.md) is historical:
 its three FraGNNet loss/explanation defects are fixed in current source and their
-regressions pass. MASShatter now rejects unsupported precursor-pair supervision.
+regressions pass. MASSter now rejects unsupported precursor-pair supervision.
 The project state's linked `wandb_screen_2026_09_11.md` is absent in this checkout;
 its claimed run rankings were not independently verified here.
 
@@ -232,7 +232,7 @@ its claimed run rankings were not independently verified here.
 | [FraGNNet NIST20 baseline](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) | Inherits Gaussian cross entropy from the template; explicitly includes out-of-structure (OOS) CE. Primary weight 1; standard auxiliary weights zero. |
 | [FraGNNet NIST20 JSS/sqrt](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_jss_hun_sqrt.yml) | Vectorized Hungarian normalized JSD, square-root training targets, plus 0.01 node normalized entropy. OOS flags remain enabled, but JSS does not consume the OOS loss. |
 | [FraGNNet formula-support arm](../../config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_formula_support_hungarian.yml) | Gaussian CE plus 0.1 class-balanced formula-support BCE. |
-| [MASShatter JSS warmup 0–4](../../config/massshatter/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula.yml) | After warmup: normalized JSD + 0.1 proposal loss + 0.1 class-balanced support BCE. Raw-intensity targets, mass-only Hungarian alignment, Gaussian support responsibilities, support gate enabled, entropy weight and selection thresholds zero. Epochs 0–4 train proposal only; joint training starts at 5. |
+| [MASSter JSS warmup 0–4](../../config/masster/merged/warmup_duration/nist20_merged_independent_jss_warmup_e0_4_dense_subformula.yml) | After warmup: normalized JSD + 0.1 proposal loss + 0.1 class-balanced support BCE. Raw-intensity targets, mass-only Hungarian alignment, Gaussian support responsibilities, support gate enabled, entropy weight and selection thresholds zero. Epochs 0–4 train proposal only; joint training starts at 5. |
 
 `SpectrumPL.preproc_spec` transforms training **targets**, leaves training predictions
 in their learned output coordinates, and inverse-transforms predictions for evaluation.
@@ -316,7 +316,7 @@ Hungarian training actively suppresses the real matching formula. Filter formula
 isotope peaks by formula validity **before attribution**, then retain the BCE mask.
 This concerns support-enabled variants; real-data incidence remains unknown.
 
-## MASShatter: improvements supported by the setup review
+## MASSter: improvements supported by the setup review
 
 ### JSS gives weak recovery gradients to heavily suppressed correct peaks
 
@@ -347,18 +347,18 @@ precision/recall together. This invariance alone is not evidence of defective tr
 
 ### Matching and support supervision encode different ambiguity assumptions
 
-MASShatter's spectral Hungarian assignment is deliberately mass-only; Gaussian support
+MASSter's spectral Hungarian assignment is deliberately mass-only; Gaussian support
 responsibilities can label several plausible channels. For observed mass 100 and
 predicted masses `[100,100.001]` with intensities `[0.01,0.99]`, all in tolerance:
 
 | Correspondence | JSD |
 | --- | ---: |
-| MASShatter mass-only Hungarian | 0.959531 |
-| MASShatter closest, many-to-one | 0 |
+| MASSter mass-only Hungarian | 0.959531 |
+| MASSter closest, many-to-one | 0 |
 | FraGNNet scalar JS-gain Hungarian | 0.00501817 |
 
-This is an intentional [design choice](../plans/masshatter/masshatter_nonprobabilistic_intensity_plan.md),
-not an accidental MASShatter implementation bug. Diagnose the frequency/intensity of
+This is an intentional [design choice](../plans/masster/masster_nonprobabilistic_intensity_plan.md),
+not an accidental MASSter implementation bug. Diagnose the frequency/intensity of
 ambiguous matches, then compare existing `closest` and `hungarian` settings if needed.
 Fix correspondence across a JSS/KL comparison. Many-to-one matching also makes attribution
 less identifiable, so better training loss alone is insufficient evidence of improvement.
@@ -370,13 +370,13 @@ less identifiable, so better training loss alone is insufficient evidence of imp
   separately normalizes positive and negative mass. Two targets `[0.5,0.5]` have
   optimal sigmoids `[0.5,0.5]`; adding 98 zero-target channels shifts those same two
   optimal sigmoids to `[0.99,0.99]`. This known limitation is recorded in the
-  [support plan](../plans/masshatter/masshatter_ion_h_channel_selection_plan.md). Validate support
+  [support plan](../plans/masster/masster_ion_h_channel_selection_plan.md). Validate support
   and final-intensity threshold curves before selecting a floor or changing BCE.
 - **A 0.1 coefficient does not establish a 10% gradient contribution.** Measure
   weighted per-term gradient norms and their agreement on shared parameters. Also
   report raw loss values, candidate counts, and positive/negative support mass.
 - **Proposal loss is not candidate coverage.** `_proposal_coverage_loss` in
-  [mass_shatter_pl.py](../../src/fragnnet/pl_model/mass_shatter_pl.py), lines 330–343,
+  [masster_pl.py](../../src/fragnnet/pl_model/masster_pl.py), lines 330–343,
   omits uncovered target peaks. For equal-intensity targets at 100 and 200, candidates
   at both masses with probabilities 0.5 each give loss 0.693; a sole candidate at 100
   gives loss 0 with 50% weighted recall; a sole candidate at 300 gives loss 0 and
@@ -391,7 +391,7 @@ less identifiable, so better training loss alone is insufficient evidence of imp
 ## Recommended order and acceptance checks
 
 **Live-evidence follow-up (2026-09-13):** the
-[proposal review](masshatter/masshatter_proposal_review_2026_09_13.md#recent-matched-loss-runs-do-not-establish-kl-superiority)
+[proposal review](masster/masster_proposal_review_2026_09_13.md#recent-matched-loss-runs-do-not-establish-kl-superiority)
 now verifies an existing matched JSS/KL pair in W&B. Its results are close, with no
 established KL advantage. The synthetic gradient mechanism above remains valid, but
 another JSS/KL training comparison is not the next default action. Preserve selection-only
@@ -400,7 +400,7 @@ and diagnose intensity allocation on fixed support before selecting a new interv
 1. Correct FraGNNet's vectorized matching/backward contracts, invalid support-target
    competition, and OOS configuration contract. Require value/gradient counterexamples
    above to pass through the real PL path; preserve historical experiment provenance.
-2. On a fixed MASShatter batch, inspect candidate weighted recall, ambiguous matching,
+2. On a fixed MASSter batch, inspect candidate weighted recall, ambiguous matching,
    per-term gradient norms, and suppressed-but-supported correct peaks. This selects
    whether the next isolated comparison targets matching, coverage, or intensity recovery.
 3. When intensity recovery is the measured issue, run a matched existing JSS/KL comparison.
@@ -419,7 +419,7 @@ objective for either model.
 Configured interpreter: `/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python`.
 
 - `python -m pytest tests/test_loss.py -q`: **57 passed**.
-- `python -m pytest tests/test_mass_shatter_pl.py -q`: **95 passed**.
+- `python -m pytest tests/test_masster_pl.py -q`: **95 passed**.
 - `python -m pytest tests/test_fragnnet_formula_support.py tests/test_fragnnet_audit_fixes.py tests/test_fragnnet_audit_regressions.py -q`: **43 passed**.
 - New synthetic counterexamples called the actual helpers/PL loss closure. Scratch
   reproducers: `/tmp/loss_setup_probe_20260913.py` and
@@ -428,4 +428,4 @@ Configured interpreter: `/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python`.
   training, or fresh W&B query. Passing existing tests does not resolve the new counterexamples.
 
 Only this report and its documentation navigation/handoff were changed. Next action:
-implement the verified loss-contract fixes, then collect the bounded MASShatter diagnostics.
+implement the verified loss-contract fixes, then collect the bounded MASSter diagnostics.

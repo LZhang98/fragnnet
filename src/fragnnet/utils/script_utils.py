@@ -17,7 +17,7 @@ import torch as th
 from tqdm import tqdm
 
 from fragnnet.iceberg.pl_model import IcebergIntenPL
-from fragnnet.pl_model import FraGNNetPL, MassShatterPL
+from fragnnet.pl_model import FraGNNetPL, MassterPL
 from fragnnet.runner import load_config
 from fragnnet.utils.formula_utils import (
     formula_delta_to_signed_str,
@@ -1762,13 +1762,13 @@ def process_batch_to_tabular_row(
     pred_batch_idxs_batched = batch_result["pred_batch_idxs"]
     pred_mzs_batched = batch_result["pred_mzs"]
     pred_ints_raw = batch_result["pred_ints"]
-    # MASShatter returns one row per candidate fragment, and the connected fragments that share
+    # MASSter returns one row per candidate fragment, and the connected fragments that share
     # a formula (about 4.5 per peak at the 0.1% cut) sit at one m/z. Every score sums them before
     # matching (`round_aggregate_peaks` in `calculate_all_auxiliary_metrics`), so the export
     # does the same: one row per peak, `min_peak_int` below filters peaks rather than
     # candidates, and the base peak rescale is taken over peaks. The exact m/z is kept (not the
     # 4-decimal key), so a 0.01 Da rebinning of the export matches the model's `cos_sim_0.01`.
-    if isinstance(model, MassShatterPL):
+    if isinstance(model, MassterPL):
         pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregate_peaks_exact_mz(
             pred_mzs_batched,
             pred_ints_raw,
@@ -2201,7 +2201,7 @@ def batch_filter_by_peak_intensity(
     Filtering cascades along the DAG: peaks below `min_peak_int` go first, then the
     formulas only those peaks explained, then the joint cells of those formulas, then the
     nodes left with no joint cell. Without `frag_formula_peak_idxs` (models with no DAG
-    peak -> formula map, e.g. MASShatter) only the peaks are filtered, and any formula,
+    peak -> formula map, e.g. MASSter) only the peaks are filtered, and any formula,
     joint and node arrays pass through whole. Rebasing runs unconditionally afterwards, including
     when no filtering happened, because the caller's `pred_formula_strs` / `pred_node_ccs`
     lookups index a single molecule's table and so need per-molecule indices.
@@ -2249,7 +2249,7 @@ def batch_filter_by_peak_intensity(
     # 1. Filter the peaks themselves by intensity. This needs nothing but the peak axis,
     # so it runs whenever a threshold is set. It used to be gated on
     # frag_formula_peak_idxs as well, which made min_peak_int a silent no-op for every
-    # model without a DAG peak -> formula map (MASShatter exports kept all candidates).
+    # model without a DAG peak -> formula map (MASSter exports kept all candidates).
     if min_peak_int > 0:
         n_peaks_before = len(pred_ints)
         valid_peak_mask = pred_ints > min_peak_int

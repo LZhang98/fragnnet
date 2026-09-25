@@ -1,22 +1,22 @@
-"""Per-candidate descriptor columns for MASShatter's intensity token.
+"""Per-candidate descriptor columns for MASSter's intensity token.
 
 The candidate token that :class:`CandidateIntensityTransformerHead` projects is three pooled
 embeddings (fragment, complement, boundary) plus the spectrum context, plus a block of scalar
 descriptors of the candidate itself. This module owns that descriptor block: one spec per
-column group, resolved from the ``mass_shatter_candidate_features`` config list.
+column group, resolved from the ``masster_candidate_features`` config list.
 
 Two parts of the token are deliberately NOT governed by that list:
 
 * the pooled embeddings and the context vector, which are the token's backbone rather than
   descriptors — dropping one is an architecture change, not an ablation;
 * the proposal-derived columns (the per-mask component count and the base charge/mask
-  log-probabilities), whose presence follows ``mass_shatter_proposal_anchored`` and the
+  log-probabilities), whose presence follows ``masster_proposal_anchored`` and the
   unique-fragment mode rather than being chosen. Listing them would admit the incoherent
   configuration "anchored *and* base-probability column".
 
 Anything that parameterizes a module keeps its own scalar config key on that basis:
-``mass_shatter_boundary_bond_encoder`` selects how the boundary block is computed and
-``mass_shatter_candidate_atom_dropout`` regularizes the pooled embeddings; neither owns a
+``masster_boundary_bond_encoder`` selects how the boundary block is computed and
+``masster_candidate_atom_dropout`` regularizes the pooled embeddings; neither owns a
 descriptor column.
 
 Columns are concatenated in :data:`CANDIDATE_FEATURE_SPECS` order, not in the order the config
@@ -28,9 +28,9 @@ The block's position inside the token did move, and in one configuration that is
 head now appends the whole block last. Before, the cut count and the atom count sat immediately
 after the context and *ahead* of the proposal-derived columns (the per-mask component count and
 the base charge/mask log-probabilities), while every other descriptor sat after them. So under
-``mass_shatter_unique_fragment_mode: False`` or ``mass_shatter_proposal_anchored: False`` --
-both ``config/template.yml`` defaults, inherited by ``config/debug/debug_tiny_mass_shatter.yml``
-and ``config/nist20_merged_inchikey/mass_shatter/s0.yml`` -- those two columns now follow the
+``masster_unique_fragment_mode: False`` or ``masster_proposal_anchored: False`` --
+both ``config/template.yml`` defaults, inherited by ``config/debug/debug_tiny_masster.yml``
+and ``config/nist20_merged_inchikey/masster/s0.yml`` -- those two columns now follow the
 proposal columns instead of preceding them. Concatenating into one ``nn.Linear`` makes that a
 permutation of weight columns: it changes which weight a given seed initializes and nothing
 else, and no checkpoint predates it. Every ``ma_mi`` arm pins both keys True and is unaffected.
@@ -162,7 +162,7 @@ def element_counts_by_group(
 class CandidateFeatureInputs:
     """Everything a candidate feature builder may read, for one forward branch.
 
-    The two forward branches of :class:`MassShatterModel` name their tensors differently but
+    The two forward branches of :class:`MassterModel` name their tensors differently but
     carry the same relations, so each builds one of these and the builders stay branch-blind.
 
     ``atom_indices`` and ``atom_component_indices`` must be the TRUE membership, never the
@@ -451,7 +451,7 @@ def resolve_candidate_features(names: Sequence[str]) -> tuple[CandidateFeatureSp
     configs naming the same features build identical tokens.
 
     Args:
-        names: Feature names from ``mass_shatter_candidate_features``.
+        names: Feature names from ``masster_candidate_features``.
 
     Returns:
         The matching specs, in :data:`CANDIDATE_FEATURE_SPECS` order.
@@ -462,7 +462,7 @@ def resolve_candidate_features(names: Sequence[str]) -> tuple[CandidateFeatureSp
     """
     if isinstance(names, str):
         raise ValueError(
-            "mass_shatter_candidate_features must be a list of names, not a single string"
+            "masster_candidate_features must be a list of names, not a single string"
         )
     requested = list(names)
     duplicates = sorted({name for name in requested if requested.count(name) > 1})

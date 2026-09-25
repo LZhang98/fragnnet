@@ -179,7 +179,7 @@ an estimate from formula-isomer counts, not a measurement.
 | ours, merged | ~26,000 | 25,859 | 1.01 |
 
 Molecule counts are within 1.2%. The 20x impression comes from comparing their unmerged count
-against our merged setup (1.01 rows/mol, see `[[project_masshatter_merged_vs_unmerged_root_cause]]`).
+against our merged setup (1.01 rows/mol, see `[[project_masster_merged_vs_unmerged_root_cause]]`).
 The residual 10% is composition: theirs is all HCD in both polarities, ours spans FT/QTOF/IT over
 4 adducts. Against the older ms-pred NIST20 subset (35,129 spectra in the checked-in
 `split_1.tsv`, the ICEBERG 1.0 / SCARF era) GLACIER is ~15x larger — a change in extraction, not
@@ -451,9 +451,9 @@ config. Widths were checked by instantiating `JointModel`.
 5. **Output.** 26 sigmoids (±6 H × CRF/CMF) are masked to the shifts the fragment's own H count and
    the molecule's remaining H can supply (capped at 6), and placed at exact masses.
 
-Versus the MASShatter token (`c4a_base`):
+Versus the MASSter token (`c4a_base`):
 
-| | GLACIER | MASShatter |
+| | GLACIER | MASSter |
 |---|---|---|
 | atoms | learned attention over its own atoms | mean pools of the fragment's atoms and of the complement's atoms |
 | cut site | `n_broken` only | **boundary block**: `CutBondEncoder` MLP on `[in, out, in·out]` of the cut bonds' endpoint embeddings; plus `c_cut_count` |
@@ -465,13 +465,13 @@ GLACIER's token is **formula-first**. The parts that transfer across molecules (
 loss, cut count) form the query, and molecule-specific atom detail enters only through attention.
 Ours is **embedding-first**: three pooled 384-dim embeddings, one of them a sharp cut-site
 embedding, and no formula. That cut-site embedding is where the
-[memorization probe](../findings/masshatter/masshatter_memorization_route_probe_2026_09_23.md)
+[memorization probe](../findings/masster/masster_memorization_route_probe_2026_09_23.md)
 located most of the train/val gap. GLACIER is not immune to memorization either, since `G` plus
 the formula can key a (molecule, formula) pair, and no train/val gap is reported for it.
 
-### Versus our MASShatter feature set
+### Versus our MASSter feature set
 
-All 167 `model_type: mass_shatter` configs carry an identical set: `a_onehot, a_degree, a_hybrid,
+All 167 `model_type: masster` configs carry an identical set: `a_onehot, a_degree, a_hybrid,
 a_formal, a_radical, a_ring` (ring + aromatic), `a_mass, a_chiral, a_ring_size, a_num_hs`; bonds
 `b_degree` (type), `b_ring`, `b_conj`.
 
@@ -481,10 +481,10 @@ a_formal, a_radical, a_ring` (ring + aromatic), `a_mass, a_chiral, a_ring_size, 
 | Fused-ring, atoms and bonds | **added 2026-09-22** as `a_fused_ring` / `b_fused_ring` |
 | Bond ring-size multi-hot | **added 2026-09-22** as `b_ring_size`; was atoms only (`a_ring_size`) |
 | Bond stereo | `b_stereo` registered, unused, and **measurably dead** — see below |
-| Gasteiger charge | `a_charge`, on in the MASShatter base since 2026-09-20 |
+| Gasteiger charge | `a_charge`, on in the MASSter base since 2026-09-20 |
 | - | we add `a_mass`, `a_radical` |
 
-Note the `feature_set_audit` "gaps `a_ring_size`, `b_ring`" line is **template-only** — MASShatter
+Note the `feature_set_audit` "gaps `a_ring_size`, `b_ring`" line is **template-only** — MASSter
 configs enable both, plus `b_conj` and `a_num_hs`. `config/*_template.yml` still has them commented.
 
 ### Closing the head-input gap: the neutral-loss complement (2026-09-22)
@@ -495,13 +495,13 @@ GLACIER's intensity head (eq. 14) is
 t_k = MLP( G || psi(f_k) || psi(r_form - f_k) || OHE(n_broken_k) )
 ```
 
-MASShatter already carried three of the four terms: the root context `G`, the candidate's own
+MASSter already carried three of the four terms: the root context `G`, the candidate's own
 pooled representation, and `cut_counts` (= `n_broken`). Two of those matches are loose
 (2026-09-23). Our context vector is metadata only (adduct, instrument, frag mode, CE), whereas `G`
 is a learned whole-molecule embedding. And `psi(f_k)` is the fragment's exact **formula**, while
 ours is a pooled atom embedding plus `c_mass`; we have no fragment-composition feature at all. The missing term was
 **`psi(r_form - f_k)`**, the elemental composition of the complementary neutral loss, now added
-as `mass_shatter_candidate_composition_features` (off by default; arm
+as `masster_candidate_composition_features` (off by default; arm
 `..._c4a_complement_composition.yml`, a one-key diff from `c4a_base_s1`).
 
 The gap was narrower than "absent" and is worth stating precisely. The head already receives a
@@ -523,11 +523,11 @@ been run. **No production arm has been trained**; the only training is the toy s
 The three features above were the only graph features GLACIER carries that we lacked **and** that
 carry signal on our data. They are registered in `feat_utils.py`, commented into
 `config/template.yml`, and enabled in two matched arms:
-`config/massshatter/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_ring_topology.yml`
+`config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_ring_topology.yml`
 (single-purpose diff from `c4a_base_s1`) and
 `config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml`. Both resolve
 to a **73-dim atom / 16-dim bond** input; the cost is ~9k parameters on FraGNNet (2.79M -> 2.80M)
-and ~3k on MASShatter, and no DAG regeneration, because mol graphs are built on the fly.
+and ~3k on MASSter, and no DAG regeneration, because mol graphs are built on the fly.
 **No production arm has been trained**; these are inputs, not results.
 
 #### Smoke coverage (2026-09-22)
@@ -535,7 +535,7 @@ and ~3k on MASShatter, and no DAG regeneration, because mol graphs are built on 
 Two debug configs stack **all four** of the 2026-09-22 features at toy width, so one short run
 exercises every new code path -- both feature registries, the widened GNN input, and
 `_element_counts_by_group` feeding the widened intensity token:
-`config/debug/debug_tiny_mass_shatter_glacier_feats.yml` (MASShatter, unique-fragment mode and
+`config/debug/debug_tiny_masster_glacier_feats.yml` (MASSter, unique-fragment mode and
 the CUDA candidate backend as in the c4a arms, 2 epochs) and
 `config/debug/debug_tiny_fraggnn_graph_feature_parity.yml` (FraGNNet, 5 epochs). Both ran green
 on `debug_tinyv4` with `detect_anomaly: true`, loss finite and falling, no NaN.
@@ -545,7 +545,7 @@ claimed, 71 -> 73 atom and 9 -> 16 bond. On naphthalene the columns carry the ri
 2 of 10 atoms fused, 1 of 11 bonds fused, 11 of 11 bonds flagged `in6`. And the parameter counts
 separate cleanly, each arm's cost landing where it should:
 
-| arm | MASShatter (debug width, `model_dim` 64) | FraGNNet (debug width, `mol_hidden_size` 128) |
+| arm | MASSter (debug width, `model_dim` 64) | FraGNNet (debug width, `mol_hidden_size` 128) |
 |---|---|---|
 | neither | 339,470 | 1,202,466 |
 | ring topology | 340,494 (+1,024) | - |
@@ -567,7 +567,7 @@ Liveness, measured on 5,000 NIST20 molecules (`data/proc/nist20/mol_df.pkl`, see
 **Bond stereo cannot be matched by enabling a feature.** Preprocessing strips stereochemistry, so
 every bond is `STEREONONE` and every atom `CHI_UNSPECIFIED` — verified here on NIST20, NIST23 and
 MassSpecGym alike, extending the atom-side finding in
-[`masshatter_feature_set_audit.md`](../reference/masshatter_feature_set_audit.md) §7.6 to bonds and
+[`masster_feature_set_audit.md`](../reference/masster_feature_set_audit.md) §7.6 to bonds and
 to all three corpora. Enabling `b_stereo` would add 7 constant-zero columns. Matching GLACIER here
 means keeping isomeric SMILES through preprocessing, which is a preprocessing change under the
 authorization rule in [engineering rules](../rules/engineering.md) §6, and it would also revive the
@@ -591,13 +591,13 @@ spectral distance plus an auxiliary loss on heuristically-labeled fragment patte
 inference speedup over the two-stage model. Intensities are predicted unbinned and re-binned at
 inference, which they argue lets one model serve multiple bin widths.
 
-## Design comparison — FraGNNet / MASShatter vs GLACIER (2026-09-21)
+## Design comparison — FraGNNet / MASSter vs GLACIER (2026-09-21)
 
 Read against `research/masshatter-ion-h-selection` @ `92a0943a`, the production FraGNNet config
 `config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml`, and GLACIER Sections 3.2-3.4
 plus Appendices C-D. Architecture only — none of this is a measured result.
 
-| stage | FraGNNet (prod, `pqx7ywc9`) | MASShatter | GLACIER |
+| stage | FraGNNet (prod, `pqx7ywc9`) | MASSter | GLACIER |
 |---|---|---|---|
 | fragment proposal | offline combinatorial BFS depth 3 + 16 SMARTS / 7 NL prepass rules, cached DAG | learned **per-bond** Bernoulli -> rank whole cut masks -> connected components | learned **per-atom** boundary detection: DETR query tokens -> affinity matrix `S` -> LinSATNet top-k' (k<=3) -> delete breakpoint atoms -> connected components |
 | proposal supervision | none (enumeration) | proposal-coverage loss + support BCE | Hungarian set-matching to MAGMa-derived boundary patterns, per-decoder-layer aux losses decayed 0.9 |
@@ -614,7 +614,7 @@ plus Appendices C-D. Architecture only — none of this is a measured result.
 ### 1. Fragment competition is the gap
 
 GLACIER gives every fragment full self-attention over the whole candidate set *before* emitting
-intensity. MASShatter gives it rank-64 induced attention. FraGNNet gives it **one max-pooled
+intensity. MASSter gives it rank-64 induced attention. FraGNNet gives it **one max-pooled
 vector, subtracted** — a rank-1 set statistic — after which every logit is computed independently
 and the joint softmax normalizes them. A softmax is a *constraint* on allocation, not a
 *mechanism* for it.
@@ -629,17 +629,17 @@ That is the cleanest design-to-measurement match in this comparison.
 
 GLACIER eq. 14's three inputs map onto existing code:
 
-| GLACIER eq. 14 | FraGNNet | MASShatter |
+| GLACIER eq. 14 | FraGNNet | MASSter |
 |---|---|---|
 | psi(fragment formula) | `base_formula` — **in prod** | absent (no composition vector) |
 | psi(root - fragment formula) | `neutral_loss_formula` — implemented, only in the `_neutral_loss` config arm | absent |
 | OHE(n_broken) | `num_cut_bonds` — implemented, only in the `_cut_bond` arms | `cut_counts` (raw scalar, not one-hot) |
 | root token `G` | `cc_interstage_use_rest` / context embedding, both off in prod | 128-d context |
 
-So for FraGNNet this is a **config edit, not a build**. For MASShatter, absolute mass arrived
+So for FraGNNet this is a **config edit, not a build**. For MASSter, absolute mass arrived
 2026-09-20 as a template default; composition, the neutral-loss complement, a sinusoidal/RBF mass
 encoding and any pairwise `dm_ij` attention bias are still absent — see
-`[[project_masshatter_architecture_lit_review]]`, whose "mass-blind" section is amended for this.
+`[[project_masster_architecture_lit_review]]`, whose "mass-blind" section is amended for this.
 
 ### 3. Proposal: ours is strictly more expressive, and it is not the bottleneck
 
@@ -710,4 +710,4 @@ This adds an item 0 to the ranking in
 1. Marginal sibling-ranking loss on P(n) — unchanged; attacks the same allocation defect from the
    loss side rather than the architecture side.
 2. Composition-aware head: enable `neutral_loss_formula` + `num_cut_bonds` on FraGNNet
-   (config-only); add a formula vector and a `dm_ij` bias to MASShatter's candidate tokens.
+   (config-only); add a formula vector and a `dm_ij` bias to MASSter's candidate tokens.
