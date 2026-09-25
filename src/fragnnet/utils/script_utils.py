@@ -17,7 +17,7 @@ import torch as th
 from tqdm import tqdm
 
 from fragnnet.iceberg.pl_model import IcebergIntenPL
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.pl_model import FraGNNetPL, MassShatterPL
 from fragnnet.runner import load_config
 from fragnnet.utils.formula_utils import (
     formula_delta_to_signed_str,
@@ -34,7 +34,7 @@ from fragnnet.utils.misc_utils import (
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
-from fragnnet.utils.spec_utils import batched_mf1000_normalize
+from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, batched_mf1000_normalize
 
 logger = logging.getLogger(__name__)
 
@@ -1761,9 +1761,23 @@ def process_batch_to_tabular_row(
     # split peaks into batchs
     pred_batch_idxs_batched = batch_result["pred_batch_idxs"]
     pred_mzs_batched = batch_result["pred_mzs"]
+    pred_ints_raw = batch_result["pred_ints"]
+    # MASShatter returns one row per candidate fragment, and the connected fragments that share
+    # a formula (about 4.5 per peak at the 0.1% cut) sit at one m/z. Every score sums them before
+    # matching (`round_aggregate_peaks` in `calculate_all_auxiliary_metrics`), so the export
+    # does the same: one row per peak, `min_peak_int` below filters peaks rather than
+    # candidates, and the base peak rescale is taken over peaks. The exact m/z is kept (not the
+    # 4-decimal key), so a 0.01 Da rebinning of the export matches the model's `cos_sim_0.01`.
+    if isinstance(model, MassShatterPL):
+        pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregate_peaks_exact_mz(
+            pred_mzs_batched,
+            pred_ints_raw,
+            pred_batch_idxs_batched,
+            agg="sum" if model.hparams.sum_ints else "amax",
+        )
     # `inference_step` always returns L1-normalized intensities, so the base-peak rescale
     # is all that is owed.
-    pred_ints_batched = batched_mf1000_normalize(batch_result["pred_ints"], pred_batch_idxs_batched)
+    pred_ints_batched = batched_mf1000_normalize(pred_ints_raw, pred_batch_idxs_batched)
 
     # prepare
     # Index arrays can be requested by an annotation column alone (formula strings, cc
@@ -1822,7 +1836,7 @@ def process_batch_to_tabular_row(
 
     arrays = batch_filter_by_peak_intensity(
         PredArrays(
-            pred_batch_idxs=batch_result["pred_batch_idxs"],
+            pred_batch_idxs=pred_batch_idxs_batched,
             pred_ints=pred_ints_batched,
             pred_mzs=pred_mzs_batched,
             frag_formula_peak_mzs=batch_input.get("frag_formula_peak_mzs"),
@@ -2186,7 +2200,9 @@ def batch_filter_by_peak_intensity(
 
     Filtering cascades along the DAG: peaks below `min_peak_int` go first, then the
     formulas only those peaks explained, then the joint cells of those formulas, then the
-    nodes left with no joint cell. Rebasing runs unconditionally afterwards, including
+    nodes left with no joint cell. Without `frag_formula_peak_idxs` (models with no DAG
+    peak -> formula map, e.g. MASShatter) only the peaks are filtered, and any formula,
+    joint and node arrays pass through whole. Rebasing runs unconditionally afterwards, including
     when no filtering happened, because the caller's `pred_formula_strs` / `pred_node_ccs`
     lookups index a single molecule's table and so need per-molecule indices.
 
@@ -2230,26 +2246,20 @@ def batch_filter_by_peak_intensity(
     # array can never leave them dangling for the joint/node steps below.
     keep_mask_f = keep_mask_j = None
 
-    # 1. Filter by peak intensity
-    # This step identifies which formulas are associated with peaks that have intensity > min_peak_int.
-    # It uses frag_formula_peak_idxs which maps peaks to local formula indices.
-    if min_peak_int > 0 and frag_formula_peak_idxs is not None:
-        pred_peak_in_each_batch = th.bincount(pred_batch_idxs)
-        pred_peak_in_each_batch_cumsum = th.cumsum(pred_peak_in_each_batch, 0)
-        pred_peak_in_each_batch_cumsum_pad0 = th.cat(
-            [pred_peak_in_each_batch_cumsum.new_zeros(1), pred_peak_in_each_batch_cumsum], 0
-        )
+    # 1. Filter the peaks themselves by intensity. This needs nothing but the peak axis,
+    # so it runs whenever a threshold is set. It used to be gated on
+    # frag_formula_peak_idxs as well, which made min_peak_int a silent no-op for every
+    # model without a DAG peak -> formula map (MASShatter exports kept all candidates).
+    if min_peak_int > 0:
         n_peaks_before = len(pred_ints)
         valid_peak_mask = pred_ints > min_peak_int
-        # Filter peaks themselves
         pred_ints = pred_ints[valid_peak_mask]
         pred_mzs = pred_mzs[valid_peak_mask]
-        frag_formula_peak_idxs = frag_formula_peak_idxs[valid_peak_mask]
-        valid_local_f_idxs = frag_formula_peak_idxs  # here the idx is local not global
-
         valid_pred_batch_idx = pred_batch_idxs[valid_peak_mask]
         if frag_formula_peak_mzs is not None:  # Only if frag_formula_peak_mzs is available
             frag_formula_peak_mzs = frag_formula_peak_mzs[valid_peak_mask]
+        if frag_formula_peak_idxs is not None:
+            frag_formula_peak_idxs = frag_formula_peak_idxs[valid_peak_mask]
 
         if filter_stats is not None:
             n_peaks_after = int(valid_peak_mask.sum().item())
@@ -2264,6 +2274,18 @@ def batch_filter_by_peak_intensity(
                 (before_counts != after_counts).sum().item()
             )
             filter_stats["n_inst_total"] = filter_stats.get("n_inst_total", 0) + batch_size_local
+
+    # 2. Cascade to the formulas the surviving peaks explain. This needs
+    # frag_formula_peak_idxs, which maps each peak to a local formula index; without it
+    # the formula, joint and node arrays pass through whole.
+    if min_peak_int > 0 and frag_formula_peak_idxs is not None:
+        # Offsets come from the unfiltered peak axis, as the filtered one has gaps.
+        pred_peak_in_each_batch = th.bincount(pred_batch_idxs)
+        pred_peak_in_each_batch_cumsum = th.cumsum(pred_peak_in_each_batch, 0)
+        pred_peak_in_each_batch_cumsum_pad0 = th.cat(
+            [pred_peak_in_each_batch_cumsum.new_zeros(1), pred_peak_in_each_batch_cumsum], 0
+        )
+        valid_local_f_idxs = frag_formula_peak_idxs  # here the idx is local not global
 
         # Map local formula indices (0..N_formulas_in_mol) to global formula indices (if available)
         # b_pred_formula_formula_idxs contains the global indices for the formulas in this molecule
@@ -2311,7 +2333,7 @@ def batch_filter_by_peak_intensity(
                 + pred_peak_in_each_batch_cumsum_pad0[valid_pred_batch_idx]
             )
     # 3. Apply filtering to all formula-related tensors.
-    # Skipped wholesale when no peak filtering ran (min_peak_int <= 0, or no
+    # Skipped wholesale when step 2 did not run (min_peak_int <= 0, or no
     # frag_formula_peak_idxs to map peaks to formulas with); the rebase below still runs.
 
     # Filter formula predictions (P(f))

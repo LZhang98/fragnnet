@@ -889,6 +889,70 @@ def round_aggregate_peaks(
     return sorted_mzs[start_idxs], round_ints, sorted_batch_idxs[start_idxs]
 
 
+def aggregate_peaks_exact_mz(
+    mzs: th.Tensor, ints: th.Tensor, batch_idxs: th.Tensor, decimals: int = 4, agg: str = "sum"
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Aggregate peaks as ``round_aggregate_peaks`` does, but keep each peak's exact m/z.
+
+    Groups are the same: (batch index, m/z rounded to ``decimals``), with intensities reduced by
+    ``agg`` ("sum" or "amax"), so the peaks and intensities equal what the Hungarian scores see.
+    The m/z returned for a group is its members' shared exact m/z when they all have one (members
+    that share a formula do), and otherwise the intensity-weighted mean
+    ``sum_i(w_i * mz_i) / sum_i(w_i)``, falling back to the first member when every weight is 0.
+    So a 0.01 Da binning of the output sees the bins a binning of the unaggregated peaks would.
+
+    Args:
+        mzs: Exact m/z, shape (N,).
+        ints: Intensities (linear, nonnegative), shape (N,).
+        batch_idxs: Spectrum index of each peak, shape (N,).
+        decimals: Rounding that defines one peak. Defaults to 4, as in ``round_aggregate_peaks``.
+        agg: Intensity reduction within a peak, "sum" or "amax".
+
+    Returns:
+        (mzs, ints, batch_idxs) of the aggregated peaks, each shape (P,), ordered by batch index
+        and then by ascending rounded m/z.
+    """
+    if agg not in ("sum", "amax"):
+        raise ValueError(f"agg must be 'sum' or 'amax', got {agg!r}")
+    round_mzs = th.round(mzs, decimals=decimals)
+    order = th.argsort(round_mzs, stable=True)
+    order = order[th.argsort(batch_idxs[order], stable=True)]
+    sorted_round_mzs = round_mzs[order]
+    sorted_mzs = mzs[order]
+    sorted_ints = ints[order]
+    sorted_batch_idxs = batch_idxs[order]
+
+    group_starts = th.ones_like(sorted_batch_idxs, dtype=th.bool)
+    group_starts[1:] = (sorted_batch_idxs[1:] != sorted_batch_idxs[:-1]) | (
+        sorted_round_mzs[1:] != sorted_round_mzs[:-1]
+    )
+    subset_idxs = th.cumsum(group_starts, dim=0) - 1
+    start_idxs = th.nonzero(group_starts, as_tuple=True)[0]
+    dim_size = int(start_idxs.numel())
+
+    group_ints = scatter_reduce(src=sorted_ints, index=subset_idxs, reduce=agg, dim_size=dim_size)
+    weight_sums = scatter_reduce(
+        src=sorted_ints.to(sorted_mzs.dtype), index=subset_idxs, reduce="sum", dim_size=dim_size
+    )
+    weighted_mzs = scatter_reduce(
+        src=sorted_mzs * sorted_ints.to(sorted_mzs.dtype),
+        index=subset_idxs,
+        reduce="sum",
+        dim_size=dim_size,
+    )
+    first_mzs = sorted_mzs[start_idxs]
+    mean_mzs = weighted_mzs / weight_sums.clamp_min(th.finfo(sorted_mzs.dtype).tiny)
+    # A group whose members share one exact m/z returns it bit for bit, not a mean that can
+    # land an ulp away (and across a bin edge).
+    shared = scatter_reduce(
+        src=sorted_mzs, index=subset_idxs, reduce="amin", dim_size=dim_size, include_self=False
+    ) == scatter_reduce(
+        src=sorted_mzs, index=subset_idxs, reduce="amax", dim_size=dim_size, include_self=False
+    )
+    group_mzs = th.where(shared | (weight_sums <= 0), first_mzs, mean_mzs)
+    return group_mzs, group_ints, sorted_batch_idxs[start_idxs]
+
+
 def scipy_linear_sum_assignment(
     matrix: th.Tensor, maximize: bool = False
 ) -> tuple[th.Tensor, th.Tensor]:

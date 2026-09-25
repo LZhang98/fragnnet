@@ -39,7 +39,7 @@ from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, calculate_match_mzs
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassShatterPL, dict]:
@@ -2192,12 +2192,17 @@ def test_mass_shatter_cli_exports_without_dags(
     assert saved["spec_id"].tolist() == [101, 102]
     for index in range(2):
         mask = prediction["pred_batch_idxs"] == index
-        th.testing.assert_close(
-            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=prediction["pred_mzs"].dtype),
-            prediction["pred_mzs"][mask],
+        # sqrt-transformed scores are squared back to linear intensity; the export then sums
+        # candidates at one m/z (4 decimals), as every score does, keeps each peak's exact m/z,
+        # and rescales the summed peaks to a per-spectrum base peak of 1000.
+        linear = (weights[mask] / weights[mask].max()).square()
+        peak_mzs, peak_ints, _ = aggregate_peaks_exact_mz(
+            prediction["pred_mzs"][mask], linear, th.zeros(int(mask.sum()), dtype=th.long)
         )
-        # sqrt-transformed scores return to a per-spectrum base-peak scale of 1000.
-        expected = (weights[mask] / weights[mask].max()).square() * 1000.0
+        th.testing.assert_close(
+            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=peak_mzs.dtype), peak_mzs
+        )
+        expected = peak_ints / peak_ints.max() * 1000.0
         th.testing.assert_close(
             th.as_tensor(saved.iloc[index]["pred_ints"], dtype=expected.dtype),
             expected,
