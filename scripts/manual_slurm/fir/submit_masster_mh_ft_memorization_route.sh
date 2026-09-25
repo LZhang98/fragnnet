@@ -48,8 +48,9 @@
 # replicates (c0_s2, k1_s2, u2_s2).
 #
 # Profile fir:h100-3g.40gb, as for the f0/f1 pair these configs derive from: train-side auxiliary
-# metrics are off (peak ~26.8 GiB). 64 epochs measured at ~12.8-16.2 ep/h is ~4-5 h; 12 h gives
-# headroom for the coverage metrics, and j=<job_name> makes a requeued job resume from last.ckpt.
+# metrics are off (peak ~26.8 GiB). Wall time 5:00:00: all six Step 1 runs, coverage metrics on,
+# finished 64 epochs in 3.2-3.3 h (batch 2 runs at 3.0 min/epoch), so 5 h is ~1.5x headroom, and
+# j=<job_name> makes a requeued job resume from last.ckpt.
 
 set -euo pipefail
 
@@ -61,7 +62,7 @@ CONFIG_DIR="config/masster/mh_ft_memorization_route_2026_09_24"
 ACCOUNT="rrg-dwishart"
 EMAIL="fw4@ualberta.ca"
 PROFILE="fir:h100-3g.40gb"
-TIME="12:00:00"
+TIME="5:00:00"
 
 declare -A JOB_BY_ARM=(
     [c0]=msh_mhft_c0_control

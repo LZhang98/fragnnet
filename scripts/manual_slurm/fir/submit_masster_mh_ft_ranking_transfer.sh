@@ -30,8 +30,9 @@
 # upload_checkpoints is true in both configs, so the checkpoints land on W&B.
 #
 # Profile fir:h100-3g.40gb, as for the f0/f1 pair these configs derive from: train-side metrics are
-# off (peak ~26.8 GiB). 64 epochs measured at ~12.8-16.2 ep/h is ~4-5 h; 12 h gives headroom, and
-# j=<job_name> makes a requeued job resume from last.ckpt.
+# off (peak ~26.8 GiB). Wall time 5:00:00: these arms ran at 2.73-2.86 min/epoch and f0 at 2.99,
+# 64 epochs in ~2.9-3.2 h, so 5 h is ~1.5x headroom, and j=<job_name> makes a requeued job resume
+# from last.ckpt.
 
 set -euo pipefail
 
@@ -44,9 +45,9 @@ ACCOUNT="rrg-dwishart"
 EMAIL="fw4@ualberta.ca"
 PROFILE="fir:h100-3g.40gb"
 
-H1_JOBS=(msh_mhft_h1_head_dropout02);   H1_CONFIGS=(h1_head_dropout02.yml);   H1_TIMES=(12:00:00)
-H2_JOBS=(msh_mhft_h2_head_dim128);      H2_CONFIGS=(h2_head_dim128.yml);      H2_TIMES=(12:00:00)
-U2_JOBS=(msh_mhft_u2_ema999);           U2_CONFIGS=(u2_ema999.yml);           U2_TIMES=(12:00:00)
+H1_JOBS=(msh_mhft_h1_head_dropout02);   H1_CONFIGS=(h1_head_dropout02.yml);   H1_TIMES=(5:00:00)
+H2_JOBS=(msh_mhft_h2_head_dim128);      H2_CONFIGS=(h2_head_dim128.yml);      H2_TIMES=(5:00:00)
+U2_JOBS=(msh_mhft_u2_ema999);           U2_CONFIGS=(u2_ema999.yml);           U2_TIMES=(5:00:00)
 
 case "${STAGE}" in
     h1)   JOB_NAMES=("${H1_JOBS[@]}"); CONFIGS=("${H1_CONFIGS[@]}"); TIMES=("${H1_TIMES[@]}") ;;

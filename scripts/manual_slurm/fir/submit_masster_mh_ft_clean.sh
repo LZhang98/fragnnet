@@ -29,9 +29,8 @@
 # 64 EPOCHS, NOT 128. The 128-epoch screen was calibrated on merged runs; the two reference
 # unmerged runs at this batch/loss_batch (6ks7v8ce, h0gvuf4f) sit 0.0043 and 0.0011 below their
 # own best by epoch 64, and one declines after it.
-# 12 h wall. Measured rate here is ~12.8-16.2 ep/h (8.9 and 7.0 ep/h on ma_mi unmerged against
-# 70.0 merged, scaled by this split being 1.825x smaller), putting 64 epochs at ~4.0-5.0 h. So
-# 12 h is ~2.5x headroom and absorbs a slow node or a rate below the observed range.
+# 5 h wall. f0 (3bej6fq7) ran at 2.99 min/epoch, 64 epochs in ~3.2 h, and every later run on
+# these configs took 3.2-3.3 h, so 5 h is ~1.5x headroom.
 # j=<job_name> also means a requeue resumes from last.ckpt rather than restarting.
 #
 # Both arms set upload_checkpoints: true, so the checkpoints land in W&B artifacts and outlive
@@ -48,8 +47,8 @@ ACCOUNT="rrg-dwishart"
 EMAIL="fw4@ualberta.ca"
 PROFILE="fir:h100-3g.40gb"
 
-F0_JOBS=(msh_mhft_f0_control);      F0_CONFIGS=(f0_mh_ft_control.yml);      F0_TIMES=(12:00:00)
-F1_JOBS=(msh_mhft_f1_all_filters);  F1_CONFIGS=(f1_mh_ft_all_filters.yml);  F1_TIMES=(12:00:00)
+F0_JOBS=(msh_mhft_f0_control);      F0_CONFIGS=(f0_mh_ft_control.yml);      F0_TIMES=(5:00:00)
+F1_JOBS=(msh_mhft_f1_all_filters);  F1_CONFIGS=(f1_mh_ft_all_filters.yml);  F1_TIMES=(5:00:00)
 
 case "${STAGE}" in
     f0)   JOB_NAMES=("${F0_JOBS[@]}"); CONFIGS=("${F0_CONFIGS[@]}"); TIMES=("${F0_TIMES[@]}") ;;

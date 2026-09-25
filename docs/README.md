@@ -188,6 +188,7 @@ or inference code stay at the top of `plans/`.
 
 | Doc | Idea |
 |-----|------|
+| [annotation_aware_retrieval_plan.md](plans/annotation_aware_retrieval_plan.md) | **PROPOSED** (2026-09-25). Score MassSpecGym retrieval candidates by more than cosine. Step 1 has two scores: support explainability corrected for chance, and the query's log-likelihood under the full unthresholded prediction, both tested with spectrum-blind controls. Step 1 needs no annotation columns. Fragment-level scores and a reranker cross-fitted on val follow only if Step 1 passes. The population is the 9,734 `[M+H]+` val queries with a CE, which are the `ms_gym_benchmark_1_5` val split. There is no MSGYM retrieval scorer yet. |
 | [energy_based_spectrum_reranking_plan.md](plans/energy_based_spectrum_reranking_plan.md) | Shared design of record: null-adjusted oracle gate, ranking objective, matched controls; FraGNNet anchor. |
 | [masster_energy_based_model_plan.md](plans/masster/masster_energy_based_model_plan.md) | EBM program: bond-cut modeling first, spectrum reranking second; MASSter spectrum setup delta. |
 | [masster_bond_cut_ebm_plan.md](plans/masster/masster_bond_cut_ebm_plan.md) | Bond-cut-first diagnostic: D4 evidence limits the coverage premise; require support or efficiency headroom before pair-energy training. |

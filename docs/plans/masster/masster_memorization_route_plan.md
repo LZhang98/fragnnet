@@ -600,7 +600,7 @@ They are the first two options of decision B.
   The two-epoch val cosines are noise and are not read.
 
 **Generate on Fir:** `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh gm`
-(`fir:h100-3g.40gb`, 12 h, 64 epochs, seed 397623, no EMA). Read exactly as `k1`: the 54-63 tail
+(`fir:h100-3g.40gb`, 5 h, 64 epochs, seed 397623, no EMA). Read exactly as `k1`: the 54-63 tail
 against `c0` (+0.003 to pass), `wrecall` within 0.005, then the offline gates on the checkpoint.
 A pass stacks with EMA and with `k1` next.
 
@@ -675,7 +675,7 @@ costs loss whenever a swap fires.
   rename). Ruff is clean on the changed Python files.
 
 **Generate on Fir:** `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh swap`
-(`fir:h100-3g.40gb`, 12 h, 64 epochs, seed 397623, no EMA), or with the rest of batch 2. Read as
+(`fir:h100-3g.40gb`, 5 h, 64 epochs, seed 397623, no EMA), or with the rest of batch 2. Read as
 `gm1`: the 54-63 tail against `c0` (+0.003 to pass), `wrecall` within 0.005, then the offline
 gates on the checkpoint. Read `gm3` against `gm1` as well as against `c0`.
 

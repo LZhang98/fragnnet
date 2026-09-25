@@ -1027,6 +1027,12 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
 
 ## Research navigation
 
+- [Annotation-aware retrieval](plans/annotation_aware_retrieval_plan.md) is proposed
+  (2026-09-25), documentation only. It asks whether support, the low-intensity tail and fragment
+  annotations rank MassSpecGym candidates better than cosine. Step 1 runs on `ll04i00m` over the
+  9,734 `[M+H]+` val queries with a CE (the `ms_gym_benchmark_1_5` val split), needs no annotation
+  columns, and gates the rest. No MSGYM retrieval scorer exists yet. Next: write it and run cosine
+  on a 200-query sample.
 - [Energy-based spectrum reranking](plans/energy_based_spectrum_reranking_plan.md) is a proposed
   shared design of record with a FraGNNet anchor (2026-09-13). Next: reconcile the prior correction
   null, verify export with `--min_intensity -1`, and require oracle excess over matched random pools
