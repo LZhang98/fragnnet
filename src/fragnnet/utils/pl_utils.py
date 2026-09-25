@@ -279,18 +279,39 @@ class ExponentialMovingAverage(Callback):
     continues training from exactly where it stopped. On resume the average itself is read
     back from ``checkpoint["state_dict"]`` rather than stored a second time.
 
+    With ``switch_every_n_epochs`` set (Switch EMA), the average also becomes the training
+    weights at the start of every ``switch_every_n_epochs``-th epoch, so training continues from
+    it and the average feeds back into the trajectory. The optimizer state is kept. The switch
+    runs at the epoch's start rather than its end because checkpoints are written during the
+    preceding validation: a run resumed from one switches exactly as an uninterrupted run
+    would, and a run resumed mid-epoch does not switch a second time.
+
     Args:
         decay: Per-optimizer-step decay, strictly between 0 and 1.
+        switch_every_n_epochs: Epoch interval between switches, or None to never switch.
 
     Raises:
-        ValueError: If ``decay`` is outside (0, 1).
+        ValueError: If ``decay`` is outside (0, 1) or ``switch_every_n_epochs`` is not a
+            positive integer or None.
     """
 
-    def __init__(self, decay: float) -> None:
+    def __init__(self, decay: float, switch_every_n_epochs: int | None = None) -> None:
         if not 0.0 < decay < 1.0:
             raise ValueError(f"EMA decay must be in (0, 1), got {decay}")
+        if switch_every_n_epochs is not None and (
+            isinstance(switch_every_n_epochs, bool)
+            or not isinstance(switch_every_n_epochs, int)
+            or switch_every_n_epochs < 1
+        ):
+            raise ValueError(
+                f"EMA switch interval must be a positive integer or None, "
+                f"got {switch_every_n_epochs!r}"
+            )
         self.decay = float(decay)
+        self.switch_every_n_epochs = switch_every_n_epochs
         self.num_updates = 0
+        # Epoch at whose start the average last became the training weights (-1 = never).
+        self._last_switch_epoch = -1
         self._last_global_step = -1
         self._average: dict[str, th.Tensor] | None = None
         # Set while the average is in the module (from a validation epoch to the next batch).
@@ -338,6 +359,25 @@ class ExponentialMovingAverage(Callback):
                 raise ValueError("EMA average in the checkpoint does not match the module")
             self._average = {k: v.to(state[k]) for k, v in self._average.items()}
         self._last_global_step = trainer.global_step
+
+    def on_train_epoch_start(self, trainer, pl_module) -> None:
+        """Switch EMA: train on from the average at the start of every interval epoch."""
+        epoch = trainer.current_epoch
+        if (
+            self.switch_every_n_epochs is None
+            or epoch == 0
+            or epoch % self.switch_every_n_epochs != 0
+            # A run resumed mid-epoch already switched at this epoch's start.
+            or epoch == self._last_switch_epoch
+        ):
+            return
+        # A validation epoch may have left the average in the module. Either way, the training
+        # weights it would have restored are abandoned.
+        self._training_weights = None
+        with th.no_grad():
+            for key, value in self._float_state(pl_module).items():
+                value.copy_(self._average[key])
+        self._last_switch_epoch = epoch
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx: int) -> None:
         """Put the training weights back if a validation epoch left the average in place."""
@@ -387,15 +427,29 @@ class ExponentialMovingAverage(Callback):
 
     def state_dict(self) -> dict:
         """Return the scalar state; the tensors ride in the checkpoint itself."""
-        return {"decay": self.decay, "num_updates": self.num_updates}
+        return {
+            "decay": self.decay,
+            "switch_every_n_epochs": self.switch_every_n_epochs,
+            "num_updates": self.num_updates,
+            "last_switch_epoch": self._last_switch_epoch,
+        }
 
     def load_state_dict(self, state_dict: dict) -> None:
-        """Restore the update count, refusing a checkpoint written with another decay."""
+        """Restore the counters, refusing a checkpoint written with another decay or interval."""
+        if "switch_every_n_epochs" not in state_dict:
+            # Written before Switch EMA existed; that callback never switched.
+            state_dict = {**state_dict, "switch_every_n_epochs": None, "last_switch_epoch": -1}
         if state_dict["decay"] != self.decay:
             raise ValueError(
                 f"checkpoint EMA decay {state_dict['decay']} differs from configured {self.decay}"
             )
+        if state_dict["switch_every_n_epochs"] != self.switch_every_n_epochs:
+            raise ValueError(
+                f"checkpoint EMA switch interval {state_dict['switch_every_n_epochs']} differs "
+                f"from configured {self.switch_every_n_epochs}"
+            )
         self.num_updates = state_dict["num_updates"]
+        self._last_switch_epoch = state_dict["last_switch_epoch"]
 
 
 def get_pl_hparams(ckpt: dict) -> dict:

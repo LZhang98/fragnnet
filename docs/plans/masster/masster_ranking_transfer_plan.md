@@ -1,6 +1,8 @@
 # Reducing MASSter's per-molecule shortcut so its ranking transfers
 
-> **Status:** ACTIVE · **Updated:** 2026-09-24
+> **Status:** ACTIVE · **Updated:** 2026-09-25
+> **Switch-EMA arm `u3` built 2026-09-25, not submitted** ([section](#switch-ema-arm-u3-built-2026-09-25-not-submitted)):
+> `u2` plus `ema_switch_every_n_epochs: 1`, read against `u2`.
 > **All four arms ran; W&B tail read done ([below](#tail-read-from-wb-2026-09-24)).** A weight EMA
 > passes gate 1 on both lineages: `u2` +0.0094 over `3bej6fq7`, `t2` +0.0097 over `c4a_base_s1`,
 > above the control at every epoch in both. `h1` (allocator dropout 0.2) is rejected at −0.0067,
@@ -194,6 +196,73 @@ Next, in order:
    so the two may overlap. Test `t2` + `d3` against `d3` (`rcfzf67p`) on the merged screen.
 3. Promotion is a user decision. The `ema_decay` template default stays null, so any config
    that wants the average must set it.
+
+## Switch-EMA arm `u3` (built 2026-09-25, not submitted)
+
+**Why.** `u2`'s EMA changes only the weights that are validated and saved. The callback never
+writes the average into training, so `u2` trains exactly as its control and keeps the
+per-molecule lookup. Its val loss still rises late
+([memorization-route plan](masster_memorization_route_plan.md#batch-2-configs-2026-09-25-not-submitted)).
+Switch EMA (SEMA, Li et al., 2024) copies the average into the training weights at the start of
+every epoch, so the trajectory itself changes. The Hare & Tortoise reset is the same family. The
+[literature note](../../notes/memorization_literature_2026_09_24.md) demoted resets, since they add
+little once regularization is tuned (Zaidi et al., 2022). No reset had run here.
+
+**Mechanism and risk (pure-drift model, the callback's warmed-up recursion, 308 steps/epoch).**
+The average lags the training weights, so each switch pulls training back. The table gives how
+far the switched run's average has moved relative to `u2`'s, and the share of each tail epoch's
+movement kept. Directions with a restoring gradient undo the pull-back within the epoch, and
+there the switch only removes noise.
+
+| decay, switch interval | epoch 10 | epoch 63 | tail epoch kept |
+| --- | ---: | ---: | ---: |
+| 0.999, 1 epoch (`u3`) | 0.61 | 0.24 | 0.14 |
+| 0.999, 4 epochs | 0.88 | 0.55 | 0.46 |
+| 0.99, 1 epoch | 0.74 | 0.70 | 0.69 |
+
+So `u3` damps slow, persistent movement. That is where a per-molecule lookup keeps forming after
+val saturates (`u2` is flat from epoch 44). It can equally underfit, which shows as `u3` below
+`u2` at every epoch with the gap not closing. The 4-epoch interval is the fallback.
+
+**Implementation.**
+
+- `ExponentialMovingAverage(decay, switch_every_n_epochs)` in `fragnnet.utils.pl_utils`, with the
+  template key `ema_switch_every_n_epochs` (default null, requires `ema_decay`; the runner raises
+  otherwise). At the start of every n-th epoch (never epoch 0), the average is copied into every
+  floating-point state entry, BatchNorm statistics included. The optimizer state is kept. The
+  average continues its own recursion.
+- The switch runs at the epoch's start, not its end. Checkpoints are written during the
+  preceding validation, so a run resumed from one switches as an uninterrupted run would. The
+  callback state records the last switched epoch, so a mid-epoch resume does not switch twice.
+- The callback state now stores the interval and the last switched epoch. A checkpoint written
+  before this change (such as `u2`'s) loads as never switched, and resuming with a different
+  interval is refused, as a different decay already was.
+
+**Validation.**
+
+- `tests/test_ema_callback.py`: 6 new tests, 11 total. They cover invalid intervals; epochs 2 and
+  4 starting from the previous average when the interval is 2, and epochs 1 and 3 not switching;
+  no switch at epoch 0 or twice in one epoch; resume after epoch 2 matching an uninterrupted
+  4-epoch run bit for bit; a refused interval mismatch; and old callback state.
+- Two broken callbacks were run against the new tests. A callback with no switch fails both. One
+  that switches at epoch end passes the schedule test and fails the resume test.
+- Runner: `ema_switch_every_n_epochs=1` without `ema_decay` raises before any data loads. A
+  3-epoch CPU smoke on `debug_tiny_masster_cut_features.yml` with `ema_decay=0.9` and
+  `ema_switch_every_n_epochs=1` exits 0.
+- Config and runner tests pass (201 with the EMA tests). Ruff is clean on the changed Python.
+
+**Config and job.** `config/masster/mh_ft_ranking_transfer_2026_09_23/u3_switch_ema999.yml` is
+`u2_ema999.yml` plus one key and W&B naming, verified through `load_config`. Seed 397623, 64
+epochs, `upload_checkpoints: true`, train metrics off. Generate on Fir with
+`scripts/manual_slurm/fir/submit_masster_mh_ft_ranking_transfer.sh u3` (`fir:h100-3g.40gb`, 5 h).
+Locally the submitter's config checks pass and it stops at the missing `pyteomics` wheel, as
+before.
+
+**Read.** The control is `u2` (`c8hh9j1b`, tail 0.7392 over epochs 54-63, best 0.7394 at 56). The
+code has moved since `u2` only by default-off keys that draw nothing, as for `k1_ema`. Gate 1 is
++0.003 over `u2`, set against the 0.0022 `c0`/`f0` spread. Then run the offline gates on the
+checkpoint, as for `u2`. Do not read `u3` against `u2_s2`, which uses another seed. A pass needs a
+seed replicate.
 
 ## Open questions and next checks
 

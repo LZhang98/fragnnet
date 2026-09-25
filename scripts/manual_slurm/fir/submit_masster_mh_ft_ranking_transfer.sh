@@ -8,6 +8,8 @@
 #   h1   intensity-allocator dropout 0.1 -> 0.2   (masster_intensity_transformer_dropout)
 #   h2   intensity-allocator width 256 -> 128     (masster_intensity_transformer_dim; head 2.46M -> 0.97M)
 #   u2   EMA of the weights, decay 0.999          (ema_decay; ~3.2 epochs at 308 steps/epoch)
+#   u3   u2 plus Switch EMA, added 2026-09-25     (ema_switch_every_n_epochs: 1; the average
+#        becomes the training weights at the start of every epoch)
 # The boundary-block dropout arm (u1) was dropped on 2026-09-24: blocking one input can reroute the
 # lookup. The key stays in the code, off by default.
 # Plan: docs/plans/masster/masster_ranking_transfer_plan.md
@@ -17,11 +19,14 @@
 #   h1    h1_head_dropout02 alone.
 #   h2    h2_head_dim128 alone.
 #   u2    u2_ema999 alone.
+#   u3    u3_switch_ema999 alone. Not part of `all`, which is the 2026-09-24 batch.
 #
 # CONTROL IS AN EXISTING RUN. Each arm is f0_mh_ft_control.yml plus one key, so the control is
 # 3bej6fq7 (val cos_sim_0.01 tail mean 0.7298 over epochs 54-63, best 0.7318). No control job is
 # generated here. For an exact same-code control, regenerate f0 with
 # scripts/manual_slurm/fir/submit_masster_mh_ft_clean.sh f0.
+# u3 is the exception: it is u2_ema999.yml plus one key, so its control is u2 (c8hh9j1b, tail
+# mean 0.7392 over epochs 54-63).
 #
 # READING IT: the tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against 0.7298, then
 # the offline ranking decomposition of each best checkpoint's val export and a train sample (a
@@ -48,15 +53,17 @@ PROFILE="fir:h100-3g.40gb"
 H1_JOBS=(msh_mhft_h1_head_dropout02);   H1_CONFIGS=(h1_head_dropout02.yml);   H1_TIMES=(5:00:00)
 H2_JOBS=(msh_mhft_h2_head_dim128);      H2_CONFIGS=(h2_head_dim128.yml);      H2_TIMES=(5:00:00)
 U2_JOBS=(msh_mhft_u2_ema999);           U2_CONFIGS=(u2_ema999.yml);           U2_TIMES=(5:00:00)
+U3_JOBS=(msh_mhft_u3_switch_ema999);    U3_CONFIGS=(u3_switch_ema999.yml);    U3_TIMES=(5:00:00)
 
 case "${STAGE}" in
     h1)   JOB_NAMES=("${H1_JOBS[@]}"); CONFIGS=("${H1_CONFIGS[@]}"); TIMES=("${H1_TIMES[@]}") ;;
     h2)   JOB_NAMES=("${H2_JOBS[@]}"); CONFIGS=("${H2_CONFIGS[@]}"); TIMES=("${H2_TIMES[@]}") ;;
     u2)   JOB_NAMES=("${U2_JOBS[@]}"); CONFIGS=("${U2_CONFIGS[@]}"); TIMES=("${U2_TIMES[@]}") ;;
+    u3)   JOB_NAMES=("${U3_JOBS[@]}"); CONFIGS=("${U3_CONFIGS[@]}"); TIMES=("${U3_TIMES[@]}") ;;
     all)  JOB_NAMES=("${H1_JOBS[@]}" "${H2_JOBS[@]}" "${U2_JOBS[@]}")
           CONFIGS=("${H1_CONFIGS[@]}" "${H2_CONFIGS[@]}" "${U2_CONFIGS[@]}")
           TIMES=("${H1_TIMES[@]}" "${H2_TIMES[@]}" "${U2_TIMES[@]}") ;;
-    *) echo "Usage: $0 [all|h1|h2|u2]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [all|h1|h2|u2|u3]" >&2; exit 1 ;;
 esac
 
 cd "${REPO_ROOT}"
@@ -127,4 +134,8 @@ for job_name in "${JOB_NAMES[@]}"; do
     echo "  sbatch ${SCRIPT_DIR}/${job_name}.sh"
 done
 echo
-echo "Control is the existing run 3bej6fq7 (tail mean 0.7298, epochs 54-63); no control job needed."
+if [[ "${STAGE}" == "u3" ]]; then
+    echo "Control is the existing run u2 c8hh9j1b (tail mean 0.7392, epochs 54-63); no control job needed."
+else
+    echo "Control is the existing run 3bej6fq7 (tail mean 0.7298, epochs 54-63); no control job needed."
+fi

@@ -37,6 +37,17 @@ Directories: `config/masster/`, `docs/{findings,plans}/masster/`, `sweep/masster
   `config/massshatter/` minutes before it; they are now in `config/masster/`. The ignored
   `.claude/settings.json` still allowlists the old test paths.
 
+**Switch-EMA arm `u3` built (2026-09-25); not submitted, uncommitted.** `u2`'s EMA only changes
+which weights are validated, so it cannot touch the lookup. Switch EMA copies the average into
+the training weights at the start of every epoch. It is a new template key,
+`ema_switch_every_n_epochs` (default null, requires `ema_decay`), in `ExponentialMovingAverage`.
+The arm is `u3_switch_ema999.yml`, `u2` plus that key at 1, read against `u2` (`c8hh9j1b`, 0.7392).
+Risk: at 0.999, a per-epoch switch keeps ~14% of each late epoch's steady movement, so it may
+underfit; the fallback is a 4-epoch interval. 6 new callback tests (resume bit-identical to an
+uninterrupted run) and a CPU smoke pass. Generate on Fir with
+`submit_masster_mh_ft_ranking_transfer.sh u3`.
+[Plan](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
+
 **Global-message swap arms `gm3`-`gm6` built (2026-09-25); not submitted, uncommitted.** A
 feature-level CutMix that keeps the label: in training, the encoder's normalized global-attention
 message is replaced by another molecule's real, detached message, where `gm1` uses the batch

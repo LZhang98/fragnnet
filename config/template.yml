@@ -240,6 +240,12 @@ weight_decay_exclude_norm_bias: False
 # from the run's steps per epoch: the merged ma_mi batch-512 lineage runs 90 steps/epoch, where
 # 0.998 averages over ~5.5 epochs. Train-side auxiliary metrics still measure the raw weights.
 ema_decay: null
+# Switch EMA (null = off; requires ema_decay): at the start of every n-th epoch the average
+# becomes the training weights and training continues from it, so the average feeds back into
+# the trajectory instead of only being read out. The optimizer state is kept. A window longer
+# than the interval slows steady drift: at 0.999 and 308 steps/epoch, a per-epoch switch keeps
+# ~14% of each late epoch's movement in a pure-drift model.
+ema_switch_every_n_epochs: null
 # Activation applied to a GNN layer's residual branch before the skip add. "relu" is
 # historical and makes every layer strictly additive per coordinate -- it can never
 # attenuate the residual stream. "identity" removes that restriction.

@@ -1052,7 +1052,11 @@ def run_training(
         )
         callbacks.append(checkpoint_callback)
     if config_d["ema_decay"] is not None:
-        callbacks.append(ExponentialMovingAverage(config_d["ema_decay"]))
+        callbacks.append(
+            ExponentialMovingAverage(config_d["ema_decay"], config_d["ema_switch_every_n_epochs"])
+        )
+    elif config_d["ema_switch_every_n_epochs"] is not None:
+        raise ValueError("ema_switch_every_n_epochs requires ema_decay")
 
     # setup profiler
     logging.info("setup profiler")
