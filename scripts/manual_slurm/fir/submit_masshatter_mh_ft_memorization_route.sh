@@ -11,12 +11,17 @@
 #   r2   encoder without global attention   (mol_gnn_type: GINE)
 #   k1   dropout on the key-forming layers  (boundary_encoder_dropout, intensity_input_dropout 0.2)
 #   m1   per-molecule memorization sink     (sink_dim 16, 35,025 rows, from epoch 4; training only)
+# Added 2026-09-25, after the Step 1 read: training-only noise on the encoder's global-attention
+# message, where the route map found the key is written. Read against the c0 that already ran:
+#   gm1  global-message substitution        (mass_shatter_global_message_substitution: 0.3)
+#   gm2  Gaussian global-message noise      (mass_shatter_global_message_noise_std: 0.5)
 # Plan: docs/plans/masshatter/masshatter_memorization_route_plan.md
 #
 # STAGE:
 #   all   (default) c0, r0, r1, r2, k1 and m1.
 #   arms  r0, r1, r2, k1 and m1, when c0 is already running.
-#   c0 | r0 | r1 | r2 | k1 | m1   one job.
+#   gm    gm1 and gm2 (c0 vcpho5qm has already run).
+#   c0 | r0 | r1 | r2 | k1 | m1 | gm1 | gm2   one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -50,6 +55,8 @@ declare -A JOB_BY_ARM=(
     [r2]=msh_mhft_r2_no_gsa
     [k1]=msh_mhft_k1_key_dropout
     [m1]=msh_mhft_m1_sink
+    [gm1]=msh_mhft_gm1_message_substitution
+    [gm2]=msh_mhft_gm2_message_noise
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -58,13 +65,16 @@ declare -A CONFIG_BY_ARM=(
     [r2]=r2_no_gsa.yml
     [k1]=k1_key_dropout.yml
     [m1]=m1_sink.yml
+    [gm1]=gm1_message_substitution.yml
+    [gm2]=gm2_message_noise.yml
 )
 
 case "${STAGE}" in
     all)  ARMS=(c0 r0 r1 r2 k1 m1) ;;
     arms) ARMS=(r0 r1 r2 k1 m1) ;;
-    c0|r0|r1|r2|k1|m1) ARMS=("${STAGE}") ;;
-    *) echo "Usage: $0 [all|arms|c0|r0|r1|r2|k1|m1]" >&2; exit 1 ;;
+    gm)   ARMS=(gm1 gm2) ;;
+    c0|r0|r1|r2|k1|m1|gm1|gm2) ARMS=("${STAGE}") ;;
+    *) echo "Usage: $0 [all|arms|gm|c0|r0|r1|r2|k1|m1|gm1|gm2]" >&2; exit 1 ;;
 esac
 
 cd "${REPO_ROOT}"

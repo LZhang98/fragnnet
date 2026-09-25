@@ -195,3 +195,103 @@ def test_gine_gsa_keeps_molecules_independent() -> None:
     perturbed = encoder(perturbed_x, batch_index, edge_index, edge_attr)
 
     assert th.allclose(baseline[:3], perturbed[:3], atol=1e-5)
+
+
+# Training-only noise on the normalized global-attention message (memorization-route arms gm1 and
+# gm2). Off, it must draw nothing; on, it must act in training only and add no parameters.
+
+
+def _noisy_encoder(**kwargs) -> GINE_GSA:
+    th.manual_seed(21)
+    return GINE_GSA(
+        hidden_size=16,
+        node_feats_size=16,
+        edge_feats_size=3,
+        num_layers=2,
+        dropout=0.0,
+        normalization="batch",
+        num_heads=4,
+        **kwargs,
+    )
+
+
+def _encoder_inputs() -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+    th.manual_seed(22)
+    x = th.randn(5, 16)
+    batch_index = th.tensor([0, 0, 0, 1, 1])
+    edge_index = th.tensor([[0, 1, 1, 2, 3], [1, 0, 2, 1, 4]])
+    edge_attr = th.randn(edge_index.shape[1], 3)
+    return x, batch_index, edge_index, edge_attr
+
+
+def test_global_message_noise_off_draws_no_random_numbers_in_training() -> None:
+    encoder = _noisy_encoder().train()
+    inputs = _encoder_inputs()
+    rng_before = th.get_rng_state()
+
+    encoder(*inputs)
+
+    assert th.equal(th.get_rng_state(), rng_before)
+
+
+@pytest.mark.parametrize(
+    "option",
+    [{"global_message_substitution": 0.5}, {"global_message_noise_std": 0.5}],
+)
+def test_global_message_noise_is_training_only_and_adds_no_parameters(option: dict) -> None:
+    plain, noisy = _noisy_encoder(), _noisy_encoder(**option)
+    assert list(noisy.state_dict()) == list(plain.state_dict())
+    noisy.load_state_dict(plain.state_dict(), strict=True)
+    inputs = _encoder_inputs()
+
+    assert th.equal(noisy.eval()(*inputs), plain.eval()(*inputs))
+    th.manual_seed(5)
+    assert not th.allclose(noisy.train()(*inputs), plain.train()(*inputs))
+
+
+def test_global_message_substitution_swaps_whole_messages_for_the_detached_batch_mean() -> None:
+    encoder = _noisy_encoder(global_message_substitution=0.5)
+    th.manual_seed(6)
+    message = th.randn(64, 16, requires_grad=True)
+    th.manual_seed(7)
+
+    perturbed = encoder._perturb_global_message(message)
+    perturbed.sum().backward()
+
+    batch_mean = message.detach().mean(dim=0)
+    replaced = (perturbed == batch_mean).all(dim=1)
+    kept = (perturbed == message).all(dim=1)
+    assert (replaced ^ kept).all()
+    assert 16 < int(replaced.sum()) < 48
+    # The mean is detached, so a replaced atom's message gets no gradient.
+    assert th.equal(message.grad[replaced], th.zeros(int(replaced.sum()), 16))
+    assert th.equal(message.grad[kept], th.ones(int(kept.sum()), 16))
+
+
+def test_global_message_noise_scales_with_each_features_batch_std() -> None:
+    encoder = _noisy_encoder(global_message_noise_std=0.5)
+    th.manual_seed(8)
+    message = th.randn(20000, 16) * th.linspace(0.5, 4.0, 16)
+    message[:, 0] = 3.0
+    th.manual_seed(9)
+
+    noise = encoder._perturb_global_message(message) - message
+
+    # A constant feature has zero batch spread, so it gets no noise.
+    assert th.equal(noise[:, 0], th.zeros(20000))
+    expected_std = 0.5 * message[:, 1:].std(dim=0, unbiased=False)
+    assert th.allclose(noise[:, 1:].std(dim=0), expected_std, rtol=0.03)
+    assert (noise[:, 1:].mean(dim=0).abs() < 0.03 * expected_std).all()
+
+
+@pytest.mark.parametrize(
+    ("option", "message"),
+    [
+        ({"global_message_substitution": 1.0}, "must be in"),
+        ({"global_message_substitution": -0.1}, "must be in"),
+        ({"global_message_noise_std": -0.1}, "must be nonnegative"),
+    ],
+)
+def test_global_message_noise_rejects_invalid_settings(option: dict, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        _noisy_encoder(**option)

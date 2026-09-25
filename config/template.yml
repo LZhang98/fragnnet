@@ -854,6 +854,13 @@ mass_shatter_memorization_sink_dim: 0
 mass_shatter_memorization_sink_num_molecules: 0
 # First training epoch (0-based) at which the sink is applied.
 mass_shatter_memorization_sink_start_epoch: 0
+# Training-only noise on the shared encoder's global-attention message, applied after its norm
+# (arms gm1 and gm2). The route map found this message writes the per-molecule lookup key.
+# Substitution replaces an atom's whole message, per layer, by the batch mean with this probability
+# ([0, 1)); noise_std adds Gaussian noise scaled to each feature's batch standard deviation. Both
+# require mol_gnn_type: GINE_GSA; at 0.0 they draw no random numbers (bit-identical default).
+mass_shatter_global_message_substitution: 0.0
+mass_shatter_global_message_noise_std: 0.0
 mass_shatter_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition

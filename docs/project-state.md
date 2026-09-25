@@ -1,8 +1,40 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-23
+> **Status:** REFERENCE · **Updated:** 2026-09-25
 
 ## Current handoff
+
+**Global-message noise arms `gm1`/`gm2` built (2026-09-25); not submitted, uncommitted.**
+Training-only noise on the encoder's global-attention message, where the route map found the
+key is written. The code is in `GINE_GSA`, after the message's norm, and reaches the shared
+precursor encoder only.
+
+- `gm1`: `mass_shatter_global_message_substitution: 0.3` replaces an atom's message with the
+  detached batch mean.
+- `gm2`: `mass_shatter_global_message_noise_std: 0.5` adds Gaussian noise scaled to each
+  feature's batch standard deviation.
+
+Both keys are default-off, draw nothing at their defaults and add no parameters, so `c0`
+(`vcpho5qm`) is the control. Substitution is drawn per atom; the plan's per-molecule form is not
+built. There are 14 new tests, and the full suite passes (4,390). Each config resolves to one key
+against `c0` (9,212,861 parameters), and the 2-epoch smokes exit 0. Generate with
+`submit_masshatter_mh_ft_memorization_route.sh gm` on Fir.
+[Plan](plans/masshatter/masshatter_memorization_route_plan.md#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted).
+
+**Memorization-route Step 1 read from W&B (2026-09-24); read-only.** All six runs finished
+64 epochs in group `nist20_mh_ft_memorization_route_2026_09_24`, with checkpoints as run files.
+Tail (54-63) `val_cos_sim_0.01` against `c0` (`vcpho5qm`, 0.7276):
+
+- `k1_key_dropout` (`wg0nxymi`): **+0.0074**, above `c0` at 57 of 64 epochs; `wrecall` held.
+- `r2_no_gsa` (`9lt5s2u8`): +0.0006, a null with 1.18M fewer parameters.
+- `r1_local_cut`: −0.0029. `r0_no_boundary`: −0.0129. `m1_sink`: −0.0203, since the sink absorbs
+  transferable signal.
+
+`c0` sits 0.0022 below `f0` (`3bej6fq7`) on a config differing only in default-off keys, so
+that is the replicate floor. `k1` passes gates 1 and 5. Gates 2-4 need the route map and novelty
+bins on its checkpoint, and train-mode losses cannot rule out underfitting. Next: the route map
+on `k1`/`r2`/`r0`, a `k1` seed replicate, and a `k1` + EMA arm.
+[Plan read](plans/masshatter/masshatter_memorization_route_plan.md#step-1-tail-read-from-wb-2026-09-24).
 
 **MassSpecGym GLACIER-parity features arm prepared (2026-09-24); nothing submitted.**
 `config/massshatter/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_glacier_feats.yml`

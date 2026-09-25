@@ -1213,6 +1213,12 @@ class GINE_GSA(nn.Module):
         dropout (float): Dropout rate.
         normalization (str): Normalization type ("batch", "layer", "graph", "none").
         num_heads (int): Number of attention heads. Must divide hidden_size. Defaults to 4.
+        global_message_substitution (float): Training-only probability that an atom's whole
+            normalized global-attention message is replaced, per layer, by the batch mean
+            message, which carries no molecule identity. 0 (default) disables it.
+        global_message_noise_std (float): Training-only Gaussian noise on the normalized
+            global-attention message, as a multiple of each feature's batch standard
+            deviation. 0 (default) disables it.
     """
 
     def __init__(
@@ -1224,6 +1230,8 @@ class GINE_GSA(nn.Module):
         dropout: float,
         normalization: str,
         num_heads: int = 4,
+        global_message_substitution: float = 0.0,
+        global_message_noise_std: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -1236,9 +1244,19 @@ class GINE_GSA(nn.Module):
             )
         if edge_feats_size < 0:
             raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
+        if not 0.0 <= global_message_substitution < 1.0:
+            raise ValueError(
+                f"global_message_substitution must be in [0, 1), got {global_message_substitution}"
+            )
+        if global_message_noise_std < 0.0:
+            raise ValueError(
+                f"global_message_noise_std must be nonnegative, got {global_message_noise_std}"
+            )
 
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
+        self.global_message_substitution = global_message_substitution
+        self.global_message_noise_std = global_message_noise_std
 
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 
@@ -1309,9 +1327,38 @@ class GINE_GSA(nn.Module):
             gsa_out = _graph_softmax_attn(Q, K, V, batch_index, num_graphs).reshape(N, C)
             gsa_out = dropout(out_proj(F.relu(gsa_out)))
             gsa_out = self.norm_fn(gsa_out, batch_index, gsa_norm)
+            # After the norm, so its statistics neither absorb the noise nor carry it into eval.
+            if self.training:
+                gsa_out = self._perturb_global_message(gsa_out)
 
             x = local_out + gsa_out
         return x
+
+    def _perturb_global_message(self, message: th.Tensor) -> th.Tensor:
+        """Apply the training-only global-message noise; draw nothing when it is off.
+
+        Substitution sets ``m_i <- mean_j(m_j)`` with probability ``p`` per atom, the mean taken
+        over every atom in the batch and detached. Gaussian noise then sets
+        ``m_i <- m_i + sigma * s * eps_i`` with ``eps_i ~ N(0, I)`` and ``s`` the detached
+        per-feature standard deviation of ``m`` over the batch.
+
+        Args:
+            message: Normalized global-attention messages, shape (N, hidden_size).
+
+        Returns:
+            Perturbed messages, shape (N, hidden_size).
+        """
+        if self.global_message_substitution > 0.0:
+            replace = (
+                th.rand(message.shape[0], 1, device=message.device)
+                < self.global_message_substitution
+            )
+            batch_mean = message.detach().mean(dim=0, keepdim=True)
+            message = th.where(replace, batch_mean, message)
+        if self.global_message_noise_std > 0.0:
+            feature_std = message.detach().std(dim=0, unbiased=False, keepdim=True)
+            message = message + self.global_message_noise_std * feature_std * th.randn_like(message)
+        return message
 
 
 class MPNN(nn.Module):

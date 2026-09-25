@@ -3,9 +3,10 @@
 ``docs/plans/masshatter/masshatter_memorization_route_plan.md`` adds four default-off options, one
 per arm: removing the boundary block (``r0``), building it from a local cut-site encoder (``r1``),
 dropout on the layers that form a candidate's key (``k1``), and a per-molecule memorization sink
-used only in training (``m1``). Each must leave the model exactly unchanged at its default, act
-only where it says, and keep every other parameter's initialization, so an arm differs from its
-control by the option alone.
+used only in training (``m1``). Two later arms (``gm1``, ``gm2``) add training-only noise to the
+shared encoder's global-attention message. Each must leave the model exactly unchanged at its
+default, act only where it says, and keep every other parameter's initialization, so an arm
+differs from its control by the option alone.
 """
 
 from types import SimpleNamespace
@@ -373,3 +374,58 @@ def test_pl_passes_each_spectrums_mol_id_during_sink_training() -> None:
     assert indices.dtype == th.long
     assert indices.device == batch_kwargs["spec_prec_type"].device
     assert indices.tolist() == [12, 7, 12]
+
+
+# 6. Noise on the shared encoder's global-attention message (arms gm1 and gm2).
+
+GLOBAL_MESSAGE_OPTIONS = [
+    {"global_message_substitution": 0.3},
+    {"global_message_noise_std": 0.5},
+]
+
+
+@pytest.mark.parametrize("option", GLOBAL_MESSAGE_OPTIONS)
+def test_global_message_noise_reaches_only_the_shared_encoder(batch, option: dict) -> None:
+    model = _build_model(
+        batch,
+        precursor_gnn_type="GINE_GSA",
+        separate_proposal_encoder=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        **UNIQUE_KWARGS,
+        **option,
+    )
+    shared, proposal = model.precursor_encoder.gnn, model.proposal_encoder.gnn
+
+    assert shared.global_message_substitution == option.get("global_message_substitution", 0.0)
+    assert shared.global_message_noise_std == option.get("global_message_noise_std", 0.0)
+    assert proposal.global_message_substitution == 0.0
+    assert proposal.global_message_noise_std == 0.0
+
+
+@pytest.mark.parametrize("option", GLOBAL_MESSAGE_OPTIONS)
+def test_global_message_noise_model_is_its_control_at_evaluation(batch, option: dict) -> None:
+    """No parameters and no initialization draws: at eval the arm is its control."""
+    kwargs = {**UNIQUE_KWARGS, "precursor_gnn_type": "GINE_GSA"}
+    control, arm = _build_model(batch, **kwargs), _build_model(batch, **kwargs, **option)
+    control_state, arm_state = control.state_dict(), arm.state_dict()
+
+    assert list(arm_state) == list(control_state)
+    assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
+    assert th.equal(
+        _forward(arm.eval(), batch)["pred_logprobs"],
+        _forward(control.eval(), batch)["pred_logprobs"],
+    )
+    th.manual_seed(5)
+    trained_arm = _forward(arm.train(), batch)["pred_logprobs"]
+    th.manual_seed(5)
+    trained_control = _forward(control.train(), batch)["pred_logprobs"]
+    assert trained_arm.shape != trained_control.shape or not th.allclose(
+        trained_arm, trained_control
+    )
+
+
+@pytest.mark.parametrize("option", GLOBAL_MESSAGE_OPTIONS)
+def test_global_message_noise_requires_global_attention(batch, option: dict) -> None:
+    with pytest.raises(ValueError, match="require precursor_gnn_type GINE_GSA"):
+        _build_model(batch, precursor_gnn_type="GINE", **UNIQUE_KWARGS, **option)

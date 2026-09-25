@@ -1095,6 +1095,8 @@ class MassShatterPL(SpectrumPL):
             memorization_sink_num_molecules=(
                 self.hparams.mass_shatter_memorization_sink_num_molecules
             ),
+            global_message_substitution=self.hparams.mass_shatter_global_message_substitution,
+            global_message_noise_std=self.hparams.mass_shatter_global_message_noise_std,
         )
         logger.info("Resolved MASShatter proposal method: %s", self.model.proposal_method)
         logger.info(

@@ -102,6 +102,8 @@ def _build_model(
     intensity_input_dropout: float = 0.0,
     memorization_sink_dim: int = 0,
     memorization_sink_num_molecules: int = 0,
+    global_message_substitution: float = 0.0,
+    global_message_noise_std: float = 0.0,
 ) -> MassShatterModel:
     th.manual_seed(903)
     return MassShatterModel(
@@ -183,6 +185,8 @@ def _build_model(
         intensity_input_dropout=intensity_input_dropout,
         memorization_sink_dim=memorization_sink_dim,
         memorization_sink_num_molecules=memorization_sink_num_molecules,
+        global_message_substitution=global_message_substitution,
+        global_message_noise_std=global_message_noise_std,
     )
 
 

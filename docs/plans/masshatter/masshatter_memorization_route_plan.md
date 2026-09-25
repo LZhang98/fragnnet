@@ -1,8 +1,12 @@
 # Closing MASShatter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-24
-> **Step 1 is built, tested and smoke-run; nothing is submitted.** The five arms and their
-> same-code control are ready to generate on Fir (see [Step 1 implementation](#step-1-implementation-and-validation-2026-09-24)).
+> **Status:** ACTIVE · **Updated:** 2026-09-25
+> **Step 1 ran; W&B tail read done ([below](#step-1-tail-read-from-wb-2026-09-24)).** `k1` (key
+> dropout) passes gates 1 and 5 at +0.0074 over `c0`; gates 2-4 need the route map and novelty
+> bins on its checkpoint. `r2` (no global attention) is null at +0.0006. `r1` fails (−0.0029),
+> `r0` is −0.0129 and `m1` is −0.0203. The same-recipe `c0`/`f0` spread is 0.0022.
+> **Global-message noise arms `gm1`/`gm2` built 2026-09-25, not submitted**
+> ([section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted)).
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
 > lookup key, and the boundary block reads it
 > ([finding](../../findings/masshatter/masshatter_route_map_2026_09_24.md)). The collision census
@@ -70,7 +74,9 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
 
 - **A. Add `ema_decay: 0.999` to `c0` and every arm.** EMA passed on both lineages (+0.0094
   unmerged, +0.0097 merged). The weight-averaging literature (SWA, SWAD) supports it.
-- **B. Replace `k1` with a global-message regularizer.** Four options, all new code:
+- **B. Replace `k1` with a global-message regularizer.** Four options, all new code. The first
+  two are built as `gm1`/`gm2` (2026-09-25), with dropout drawn per atom rather than per molecule;
+  see [the section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted).
   - **global-message dropout**: in training, replace the global-attention message with the batch
     mean for a random share of molecules;
   - **global-message noise**: Gaussian noise on `gsa_out` in training. Noise injection is
@@ -277,7 +283,7 @@ Consequences for the plan:
   rejected.
 - Steps 2d (coarse mass) and 2e (tied ion/H) drop in priority.
 - A new targeted candidate is global-message dropout: in training, replace the global message
-  with the batch mean for a random share of molecules. It is not built.
+  with the batch mean for a random share of molecules. Built per atom as `gm1` on 2026-09-25.
 
 ## Step 1: first arms
 
@@ -473,3 +479,120 @@ enabling one leaves every other parameter's initialization exactly as in `c0`.
    f0's 4-5 h; the 12 h box covers it.
 2. Build Step 0 while they train, since acceptance criterion 3 reads it.
 3. The `m1` sink-on train read needs the export pass to feed sink indices. That is not built.
+
+## Step 1 tail read from W&B (2026-09-24)
+
+All six runs finished 64 epochs in 3.2-3.3 h each, submitted 2026-09-24 21:57 UTC in W&B group
+`nist20_mh_ft_memorization_route_2026_09_24`. Every run uploaded `ckpt/last.ckpt` and its best
+epoch as run files, not as artifacts. Metric: `val_cos_sim_0.01_epoch/mean`, tail = mean of
+epochs 54-63. "Above c0" counts the epochs at which the arm beats `c0`. The loss columns are the
+54-63 mean of `coverage_weighted_spec_ce`. Train losses are logged in train mode, with dropout,
+BatchNorm batch statistics and the `m1` sink all on, so the train-val loss gap is not the
+eval-mode cosine gap of criterion 3.
+
+| arm | run | tail | vs `c0` | best (epoch) | above c0 | `val_wrecall` vs c0 | train CE | val CE | gap |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `c0_control` | `vcpho5qm` | 0.7276 | — | 0.7292 (42) | — | 0.9396 | −3.564 | −2.881 | 0.683 |
+| `r0_no_boundary` | `qyjlg9tb` | 0.7147 | **−0.0129** | 0.7158 (60) | 0/64 | +0.0004 | −3.516 | −2.826 | 0.690 |
+| `r1_local_cut` | `s9p8neke` | 0.7247 | −0.0029 | 0.7258 (58) | 10/64 | −0.0005 | −3.558 | −2.864 | 0.694 |
+| `r2_no_gsa` | `9lt5s2u8` | 0.7283 | +0.0006 | 0.7297 (57) | 47/64 | +0.0001 | −3.558 | −2.889 | 0.669 |
+| `k1_key_dropout` | `wg0nxymi` | **0.7350** | **+0.0074** | 0.7365 (61) | 57/64 | +0.0004 | −3.484 | −2.920 | 0.564 |
+| `m1_sink` | `liwjgdq6` | 0.7074 | **−0.0203** | 0.7088 (56) | 3/64 | −0.0002 | −3.591 | −2.867 | 0.724 |
+| ref `f0` | `3bej6fq7` | 0.7298 | +0.0022 | 0.7318 (61) | 55/64 | +0.0005 | −3.565 | −2.889 | 0.676 |
+| ref `u2_ema999` | `c8hh9j1b` | 0.7392 | +0.0116 | 0.7394 (56) | 64/64 | +0.0007 | −3.566 | −2.923 | 0.643 |
+
+**The replicate floor is about 0.002.** `c0` differs from `f0` only in default-off keys and the
+coverage-monitoring flag. The code moved between them (the `CutBondEncoder` dedup), and `c0`
+sits 0.0022 below `f0`. That is the only same-recipe pair on this lineage, and it lies just under
+the +0.003 gate. The `c0` epoch-to-epoch change in the tail is 0.0009.
+
+Per arm, against the decision table:
+
+- **`k1` passes gates 1 and 5; gates 2-4 are open.** +0.0074 is 3.4x the `c0`/`f0` spread, and
+  `k1` is +0.0052 over `f0` as well. Its val CE is the lowest of the six (−2.920) and barely rises
+  after its minimum (+0.005 from epoch 36, against +0.022 for `c0`). The train-mode gap falls
+  0.683 → 0.564, but most of that is train loss raised by the dropout itself (+0.080), so it cannot
+  rule out underfitting. The eval-mode train cosine from the route map decides that. The table
+  row "stack with the best of `r0`/`r1`" has no partner, since neither passes. The stacking
+  partner is the weight EMA instead (`u2`, a variance lever, whereas `k1` acts on the key).
+- **`r2` is null on val with 1.18M fewer parameters.** Removing global attention (1.185M of
+  the encoder's 1.809M) changes val by +0.0006, keeps `wrecall`, and moves the loss gap only
+  0.683 → 0.669. So global attention is not needed for val, and removing it does not visibly
+  narrow the gap. That fits the key re-forming through local message passing. The row "`r2` gap
+  falls on every route" needs the route map on `9lt5s2u8`. Val CE bottoms at epoch 11, against 35
+  for `c0`. `r2` has 8.029M parameters against `c0`'s 9.213M.
+- **`r0` is not a removable channel.** Val is −0.0129, below `c0` at every epoch, and the
+  loss gap does not narrow (0.690). Whether this is rerouting (row 1) depends on another route
+  turning asymmetric, which only the route map on `qyjlg9tb` can show.
+- **`r1` fails gate 1** (−0.0029, above `c0` at 10 of 64 epochs, gap 0.694).
+- **`m1` is rejected as configured.** −0.0203, above `c0` at 3 of 64 epochs. The sink-on train
+  loss is the best of the six (−3.591) while val falls, so the sink absorbed transferable signal.
+  The plan's fallback is a later start or a larger sink weight decay. A −0.020 gap at the
+  current settings is weak grounds for a retry.
+
+### Next after the tail read
+
+1. Run the Step 0 route map on `wg0nxymi` (`k1`), `9lt5s2u8` (`r2`) and `qyjlg9tb` (`r0`)
+   against `vcpho5qm`, for gates 2-3 and the eval-mode train cosine.
+2. Novelty bins (gate 4) on the `k1` checkpoint.
+3. Replicate `k1` (second seed), and build a `k1` + `ema_decay: 0.999` arm on this same code.
+
+## Global-message noise arms `gm1` and `gm2` (built 2026-09-25, not submitted)
+
+**Why.** Step 1 put its one gain on noise, not removal. On the boundary path, removing the block
+(`r0`) cost −0.0129 while dropout on the key-forming layers (`k1`) gained +0.0074. Removing global
+attention (`r2`) held val but did not narrow the gap. The route map says the global-attention
+message writes the key. These two arms put `k1`-style training noise there and keep the path.
+They are the first two options of decision B.
+
+| arm | key against `c0` | what it does in training |
+| --- | --- | --- |
+| `gm1_message_substitution` | `mass_shatter_global_message_substitution: 0.3` | each atom's normalized global message, in each encoder layer, is replaced by the batch mean with probability 0.3 |
+| `gm2_message_noise` | `mass_shatter_global_message_noise_std: 0.5` | Gaussian noise of 0.5 × each feature's batch standard deviation is added to the normalized global message |
+
+**Design.**
+
+- **Where.** In `GINE_GSA.forward`, after the global message's norm and before
+  `x = local_out + gsa_out` ([`nn_blocks.py`](../../../src/fragnnet/model/nn_blocks.py)). The
+  norm's batch statistics therefore neither absorb the noise nor carry it into evaluation.
+- **`gm1` is the route map's `gsa` popmean intervention used as training noise.** The mean is
+  over every atom in the batch and detached, so a replaced atom's message gets no gradient.
+- **Per atom, not per molecule.** Decision B described a per-molecule draw ("a random share of
+  molecules"). The built form draws per atom, so a molecule's other atoms keep their message in
+  that layer. The per-molecule form is stronger and is not built. It is the next variant if `gm1`
+  is null.
+- **The encoder's element-wise dropout (0.1, before the norm) is unchanged.**
+- **Scope.** Only the shared precursor encoder gets the keys; a separate proposal encoder never
+  does. `c0` has none, so the proposal reads the same detached embeddings and trains on perturbed
+  ones. Read `val_candidate_wrecall` first.
+- **Guard.** Either key set with a non-`GINE_GSA` encoder raises.
+- **Neither arm adds parameters or initialization draws.** At its default each draws no random
+  numbers, so `c0` (`vcpho5qm`) is their control. The only training-path change since `c0` is
+  this one, default-off; the other uncommitted source edits are inference-only (the export
+  filter and a new peak-aggregation helper).
+- **Not built:** the per-molecule draw, the gated global message and DropKey (decision B's other
+  options).
+
+**Validation.**
+
+- 14 new tests:
+  - 8 in `tests/test_gine_gsa.py`: nothing is drawn when off; training-only with an unchanged
+    state dict; substitution swaps whole messages for the detached batch mean; the noise scale
+    matches each feature's batch standard deviation and a constant feature gets none; invalid
+    settings are rejected.
+  - 6 in `tests/test_mass_shatter_memorization_route.py`: only the shared encoder carries the keys;
+    at eval each arm equals its control bit for bit, with identical initialization, and differs
+    in training; the keys are rejected without `GINE_GSA`.
+- The full suite passes: 4,390 passed, 1 skipped, 2 xfailed. Ruff is clean on the changed lines.
+- **Resolved configs.** Through `load_config`, each arm differs from `c0` by its one key. Built
+  through `MassShatterPL` on CPU, `c0`, `gm1` and `gm2` all have 9,212,861 parameters, with the
+  setting on the shared `GINE_GSA` encoder and no separate proposal encoder.
+- **Smokes.** Two epochs each on `debug_tiny_mass_shatter_cut_features.yml` (a `GINE_GSA`
+  encoder), control and both keys by override, on the local RTX 2070 SUPER. All exited 0 at 340K
+  parameters, and the train loss moved off the control's (−0.7445 and −0.7523 against −0.7544).
+  The two-epoch val cosines are noise and are not read.
+
+**Generate on Fir:** `scripts/manual_slurm/fir/submit_masshatter_mh_ft_memorization_route.sh gm`
+(`fir:h100-3g.40gb`, 12 h, 64 epochs, seed 397623, no EMA). Read exactly as `k1`: the 54-63 tail
+against `c0` (+0.003 to pass), `wrecall` within 0.005, then the offline gates on the checkpoint.
+A pass stacks with EMA and with `k1` next.

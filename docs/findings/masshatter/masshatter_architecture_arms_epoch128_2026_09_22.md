@@ -1,6 +1,6 @@
 # MASShatter architecture arms, read at the matched 128-epoch screen, 2026-09-22
 
-> **Status:** FINDING · **Updated:** 2026-09-23
+> **Status:** FINDING · **Updated:** 2026-09-25
 > **§5 (added 2026-09-23) reads `g1`, one 5-layer GINE_GSA encoder with no bond-refinement
 > head and no `CutBondEncoder`. It is a REJECTION: −0.0160 against the control, −0.0136 against
 > the two-key `c4a_no_bbe` contrast, and below both controls at every epoch. The loss is
@@ -457,6 +457,15 @@ Tail means over epochs 118–127 unless the row says otherwise:
    matches the late proposal degradation the
    [proposal early-stop arms](../../plans/masshatter/masshatter_proposal_early_stop_plan.md)
    measured.
+5. **The one earlier one-key test did not favor the bond head (added 2026-09-25).** On
+   2026-08-16, `vb6vbxpg` (`nist20_merged_mask256_gine_efa384_bond2`,
+   `mass_shatter_bond_num_layers: 2`) was run against the endpoint head `18jmtpde` (key unset).
+   Same seed; the other differing keys are exploration and curriculum options at their off
+   values. Val cosine over epochs 30–37 was 0.6006 against 0.6047 for the endpoint head, and the
+   bond head was ahead at 12 of 38 matched epochs. The endpoint run crashed at epoch 37, so there
+   is no tail. This is the pre-2026-09-03 target and a much older model (val about 0.60), so it
+   does not transfer to `c4a` directly. It is the only one-key evidence for the head, though, and
+   the bond head was adopted without an epoch-matched win.
 
 ## Reproduction
 
