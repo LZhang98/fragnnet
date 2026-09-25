@@ -36,7 +36,254 @@ bins on its checkpoint, and train-mode losses cannot rule out underfitting. Next
 on `k1`/`r2`/`r0`, a `k1` seed replicate, and a `k1` + EMA arm.
 [Plan read](plans/masshatter/masshatter_memorization_route_plan.md#step-1-tail-read-from-wb-2026-09-24).
 
-**MassSpecGym GLACIER-parity features arm prepared (2026-09-24); nothing submitted.**
+**MASShatter exports now hold one row per peak (2026-09-24); uncommitted, behaviour change.**
+`process_batch_to_tabular_row` (`src/fragnnet/utils/script_utils.py`), which every exporter
+calls (`run_save_inference_eval.py`, `run_inference.py`, `run_save_inference.py`), used to write
+MASShatter's candidate rows: about 4.5 connected fragments share each peak's m/z at the 0.1% cut.
+For `MassShatterPL` only, it now sums candidates at one m/z with `round_aggregate_peaks` (4
+decimals, `sum_ints` aggregation), the step every score already takes, before the base-peak
+rescale and before `min_peak_int`. So exported peak counts are peak counts, the filter acts on
+summed peaks (a peak whose candidates are each below it but sum above it is kept), and the base
+peak is 1000 over peaks. Scores are unchanged. Peaks are sorted by m/z per spectrum (exact m/z
+kept; see the update below). On `3bej6fq7` test at the default `--min_peak_int 1.0` the median is 22-24
+peaks per spectrum against 20 true, where candidate rows gave 105. A 20-batch real export matches
+the offline peak-level 0.1% export on every spectrum whose prediction did not change between
+runs (up to float32 summation, ≤ 0.22 on the 0-1000 scale). Exports made before this carry
+candidate rows. Tests: 6 new in `tests/test_inference_masshatter_peak_aggregation.py`;
+`test_mass_shatter_cli_exports_without_dags` now expects summed peaks; full suite 4,373 passed.
+**Update (2026-09-24, late):** the export now calls `aggregate_peaks_exact_mz` (same 4-decimal
+groups, exact m/z kept, the intensity-weighted mean where members differ), not `round_aggregate_peaks`. The
+rounded m/z did change scores: on MSGYM test (`ll04i00m`), binned `cos_sim_0.01` moved on 378
+spectra (731 for sqrt; means +0.0001) as peaks crossed 0.01 Da bin edges, while the Hungarian
+scores matched. With exact m/z, an unfiltered aggregated export reproduces all six in-model
+scores to 4.8e-7 (median 924 peaks per spectrum against about 2,060 candidate rows).
+
+**Matched intensity filter and target cleanups measured on `3bej6fq7` test (2026-09-24); offline,
+uncommitted.** One unfiltered test prediction; every variant is a filter on the target. Dropping
+peaks at or below 0.5% / 1% of the base peak from both prediction and NIST20 target costs −0.0003 /
+−0.0009 `cos_hun`, the same on every target. The f1 cleanup adds +0.0050, mostly at high NCE. The
+literal ALEA-style cleanup (20 ppm centroid, fixed 5 ppm subformula) lowers the score by −0.025:
+without an m/z floor it deletes real low-mass fragments. The `output/cross_eval_mh_ft_clean_2026_09_23/`
+directory (exports, targets) was removed from the workstation this evening; the new test prediction
+and targets live in `output/massshatter_3bej6fq7_2026_09_24/`. New script
+`scripts/eval/matched_intensity_filter.py` (7 tests), figures and CSVs in
+`docs/figures/masshatter_matched_intensity_filter_test_*`. Tooling: the export's candidate-level
+`--min_peak_int` is fixed (entry above); `plot_predictions_hdf5.py`'s CE figures still silently
+drop NCE ≥ 70 (37% of this split).
+[Finding](findings/masshatter/masshatter_matched_intensity_filter_2026_09_24.md).
+
+**Export peak filter fixed for MASShatter (2026-09-24); uncommitted.** In
+`batch_filter_by_peak_intensity` (`src/fragnnet/utils/script_utils.py`), the peak filter was
+gated on `frag_formula_peak_idxs`, the DAG peak -> formula map only FraGNNet batches carry. So
+`--min_peak_int` did nothing for MASShatter: exports kept all ~2,000 candidates per spectrum.
+Now peaks are filtered whenever `min_peak_int > 0`. The formula, joint and node cascade still
+needs the map; without it those arrays pass through whole, as before. FraGNNet output is
+unchanged. **Behavior change:** `run_save_inference_eval.py` defaults to `--min_peak_int 1.0`
+(0.1% of base). With the m/z-aggregated export (entry above), that drops about 89% of peaks
+by default: median 924 to 65 per spectrum on MSGYM test. Any analysis that needs every peak must
+pass `--min_peak_int 0`. The earlier MASShatter exports (cross-eval, ranking decomposition,
+per-peak uncertainty) were effectively unfiltered candidate rows. Two export runs of one
+checkpoint differ on about 1.3% of spectra (up to 0.015) from GPU nondeterminism in the forward
+pass; means agree to 1e-5.
+
+Tests: 7 new in `tests/test_batch_filter_peak_intensity.py`; the pre-fix code keeps 9 of 9
+peaks in the key case. The 362 inference/export tests pass, and ruff is clean. A 3-batch
+MSGYM export printed the filter stats (88.1% removed, no spectrum emptied, minimum exported
+intensity 1.00003). Logged `cos_sim_0.01` is unaffected; 1-2 of 192 spectra move by up to
+1.4e-4 with the filter on or off, which is GPU nondeterminism. On the MSGYM test set a 0.1%
+cutoff costs −0.0001 on linear cosine; see the
+[MSGYM-vs-GLACIER finding](findings/masshatter/masshatter_msgym_vs_glacier_released_ckpt_2026_09_24.md#peak-over-prediction-added-2026-09-24).
+
+**MASShatter beats GLACIER's released MassSpecGym checkpoint on the benchmark's linear cosine
+(2026-09-24, corrected); inference only.** GLACIER outputs sqrt intensity: ms-pred trains it on
+sqrt(inten / max), so its output is squared for a linear comparison. On the 9,954-spectrum
+simulation test set, on the linear `cos_sim` MassSpecGym requires, computed with our exact
+`cos_sim_0.01`: `ll04i00m` 0.5713, GLACIER 0.5455, a gap of +0.026 (99.9% CI +0.009 to +0.044 by
+molecule). In sqrt space, where GLACIER trains and ms-pred evaluates, the gap is +0.011 (CI −0.002
+to +0.024); per-peak sqrt at a matched peak count gives +0.002 to +0.006. GLACIER's sqrt-space
+0.566-0.577 is close to its reported ~0.58. The lead is at high CE on FT (linear +0.050 above
+50 eV); in sqrt space GLACIER is level or slightly ahead at CE ≤ 35 and on QTOF. The checkpoint's
+3,098 steps per epoch fit training on the simulation train fold only. `ll04i00m` is not our best
+recipe (`1imawkx1` has no checkpoint), so the EMA arm's checkpoint is the next one to score.
+[Finding](findings/masshatter/masshatter_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+
+**MASShatter route map (2026-09-24): the encoder's global attention writes the per-molecule
+lookup key; inference only.** Step 0 of the memorization-route plan extended the probe to routes
+outside the token and ran it on `6h67zps9` and `3bej6fq7`, with 17 paired conditions and
+candidates held fixed. Replacing each atom's global-attention message with the batch mean costs
+train 2.6x what it costs val (the pools cost 1.2x), cutting the gap from 0.18 to 0.04 while val
+falls only 0.08-0.09. The boundary block reads the key (1.46x). The ion/H head is mostly
+generalizing, exact mass is weak and `a_charge` precision is null. The checkpoints agree to about
+0.01. Consequences:
+
+- `r2_no_gsa` has the strongest evidence of the Step 1 arms.
+- `k1` is weaker, since the key is written upstream of the head and `h1`'s allocator dropout was
+  rejected.
+- Global-message dropout is a new targeted candidate (not built).
+
+[Finding](findings/masshatter/masshatter_route_map_2026_09_24.md).
+
+**Memorization literature, three passes (2026-09-24); reading only.** The ranked list maps each
+method family onto the route map. The third pass (Consensus database) adds three things. First,
+an open decision C: every MASShatter run is constant `lr: 1e-3`, and a large initial rate with
+decay keeps easy-to-fit patterns (a molecule key) from being memorized first. `d3` gained
++0.0072 on the merged lineage (n=1). The proposal is a separate arm `s1`, not built. Second,
+DropKey and a nonparametric VIB as global-message options. Third, a variational sink. Periodic
+resets are demoted. MassFormer's pro-global-attention result is the counter-evidence `r2` tests.
+[Note](notes/memorization_literature_2026_09_24.md#9-consensus-pass-third-pass-2026-09-24) ·
+[change list](plans/masshatter/masshatter_memorization_route_plan.md#change-list-2026-09-24).
+
+**W&B checked (2026-09-24): a weight EMA is the first training-side lever to pass on both
+lineages; read-only.** Nothing is running. `u2_ema999` (`c8hh9j1b`, unmerged `[M+H]+`/FT)
+reaches a 54-63 tail of 0.7392 against 0.7298 (+0.0094). `t2_ema998` (`49ub2p8y`, merged)
+reaches a 118-127 tail of 0.7363 against 0.7266 for `c4a_base_s1` (+0.0097). The s1/s2 seed
+spread is 0.0007. Both arms beat their control at every epoch. `t2` at 128 epochs also beats the
+630-epoch `long_control` best (0.7318). `h1` allocator dropout 0.2 is rejected (−0.0067), and
+`h2` width 128 is null (−0.0015). `t2`'s train-metrics control was never submitted, and `t2`
+did not upload checkpoints. Next: the offline ranking decomposition and novelty bins on `u2`,
+then an EMA + `d3` stacking arm. Whether `ema_decay` becomes the screen default is an open
+decision. [Plan read](plans/masshatter/masshatter_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24).
+The MSGYM GLACIER-parity features arm is a null to slightly negative; see its entry below.
+
+**Per-peak uncertainty from ensemble spread probed (2026-09-24); offline only.** The four f0/f1
+raw-val checkpoints (two runs × two epochs) were clustered per peak at 10 ppm. Member votes
+predict whether a predicted peak exists in the target: 76% at 4/4 against 23% at 1/4. The spread
+is mostly spectrum-level, though. Within a spectrum, at matched intensity, the higher-spread peak
+errs more only 58-60% of the time, and per-peak features add +0.007 presence AUC over
+spectrum-level confidence (0.793 → 0.800). Raw μ ± 2σ covers 76% and is worst at NCE < 20, so
+intervals need held-out (conformal) calibration. 14% of squared error is in target peaks the
+model does not show, and replicate noise is about 10%. Uncertainty must therefore come from
+disagreement or held-out residuals, never from a head trained on training residuals. Next: a
+K = 4-5 seed set to see whether the per-peak signal grows with K, and a held-out error model with
+candidate descriptors. See [the finding](findings/masshatter/masshatter_per_peak_uncertainty_2026_09_24.md).
+
+**MASShatter memorization-route Step 1 built (2026-09-24); ran the same day, read above.** The probe found
+the per-molecule lookup in the boundary block. But every candidate input comes from the same
+globally attended atom embeddings (GINE_GSA), so a blocked input can re-form the key from the
+others. Step 1 has five arms, each a same-code control `c0` plus its own keys, in
+`config/massshatter/mh_ft_memorization_route_2026_09_24/`:
+
+- `r0` removes the boundary block (a rerouting test);
+- `r1` gives the cut term a one-layer local encoder with no global attention;
+- `r2` sets `mol_gnn_type: GINE`;
+- `k1` adds dropout 0.2 on the key-forming layers;
+- `m1` adds a per-molecule memorization sink, zero-initialized and training-only, so val scores
+  the shared model.
+
+Seven default-off template keys. At their defaults the model is unchanged, and the new modules
+use a forked RNG. 27 new tests pass, plus the 413 existing MASShatter tests. Two-epoch smokes of
+every option pass, and the `m1` checkpoint reloads strict. `c0` also logs candidate coverage.
+Generate on Fir with `submit_masshatter_mh_ft_memorization_route.sh all` (`fir:h100-3g.40gb`).
+Next: build Step 0 (the route map: encoder `gsa_out`, residual versus ion/H head, per descriptor,
+collision census) while they train, since reading the arms needs it.
+[Plan](plans/masshatter/masshatter_memorization_route_plan.md#step-1-implementation-and-validation-2026-09-24).
+
+**Intensity displacement, Phase 0 read (2026-09-24); offline, no training.** On the f0/f1
+unmerged `[M+H]+`/FT exports:
+
+- **Most of the misplaced intensity is shared bias.** 72.5% is common to both runs. After the
+  replicate target-noise floor, the reducible shared part is 67% (val) and 63% (test). Variance
+  reduction such as EMA can reach at most the 28% run-specific share.
+- **It is not neighbour confusion.** One-loss moves look enriched (1.75x) only against a naive
+  null. Against a null that keeps mass on the real peaks, every class is within 0.90-1.08x. The
+  wrong base-peak winner is a real peak 94% of the time and is no closer to the true base than a
+  random real peak.
+- **The one structured part is the precursor/parent fallback below NCE 60.** At NCE ≤ 20, 0.64 of
+  nested mass sits on the heavier member, against 0.19 for the null.
+- **Formula-level loss identity is complementary there.** A formula-only learner stacked with the
+  model lifts precursor-versus-contender AUC 0.798 → 0.829 (val) and 0.807 → 0.838 (test).
+
+Class-targeted arms dropped.
+[Finding](findings/masshatter/masshatter_intensity_displacement_phase0_2026_09_24.md) ·
+[plan](plans/masshatter/masshatter_intensity_displacement_plan.md).
+
+**Phase 1.4b, bond-local learner (2026-09-24): gate G1 for arm 2A not passed.** Identity-blind
+GBDT/MLP learners on bond-local features were fitted on 12,055 train molecules. Stacked onto
+f1's fragment scores at peak level and cross-fitted between val and test, they add
++0.0022 ± 0.0003 (val) and +0.0025 ± 0.0003 (test) group cosine over a fitted temperature.
+
+- **Beyond a stronger control.** With per-NCE temperature and precursor offsets as the
+  baseline, the gain is +0.0017 / +0.0028.
+- **Where it helps.** The gain is largest on novel molecules (+0.0032 / +0.0037) and at
+  NCE ≤ 40, and near zero above NCE 60.
+- **What it is not.** It is not precursor survival (0.0000) and not the bond-type × CE trend
+  (+0.0006).
+- **Alone, the learner orders bonds worse than the model.**
+
+The result is in the grey zone between FAIL (+0.002) and PASS (+0.005), so 2A is not submitted.
+One offline retry is open: a peak-level-trained learner with hashed environments.
+[Finding](findings/masshatter/masshatter_bond_local_learner_2026_09_24.md).
+
+**2026-09-23 run results recorded, plus two corrections (2026-09-24).** Read-only W&B and code
+reading; the only non-doc edit is a config comment.
+
+- **Fragment-marginal selection is CLOSED NULL.** Marginal K128 scores 0.0000 from U256 and
+  −0.0016 from U512, and loses to mask-order U128. The August U128 penalty does not reproduce:
+  mask-order U128 (`f5`) is +0.0007 at 0.52 against 0.85 min/epoch, so 1.65x faster. U64 costs
+  −0.0090. [Plan](plans/masshatter/masshatter_fragment_marginal_selection_plan.md#tail-read-2026-09-24-marginal-selection-fails-and-u128-is-a-free-speed-up).
+- **The feature bundle is worth 0.006, and no single component clears the gate.** `no_bbe`
+  −0.0024, `no_acharge` −0.0025, `no_charge_feat` −0.0012, `no_mass_feats` +0.0012,
+  `bundle_off` −0.0060.
+  [Campaign read-out §8](findings/masshatter/masshatter_campaign_readout_2026_09_21.md#8-the-bundles-leave-one-out-arms-read-at-the-128-epoch-screen-added-2026-09-24).
+- **Correction: `boundary_bond_encoder` was never removed on 2026-07-13.** That removal was
+  FraGNNet's uncommitted `BoundaryBondEncoder`. The MASShatter key dates from 2026-09-20, so the
+  `no_bbe` config's revert rule has no premise, and the encoder default is an open decision.
+- **The charge head is inert in `c4a`.** Its 263,169 parameters are trained by the proposal
+  loss and change neither the kept fragments nor the spectrum. §7.1's −0.01 gradient-connection
+  cost is a convergence delay: the connected run reaches its control by epochs 610–629.
+  [Head-input asymmetry §8](findings/masshatter/masshatter_head_input_asymmetry_2026_09_22.md#8-additions-2026-09-24).
+- **The memorization probe's boundary block is the `CutBondEncoder` output.** The 0f99e7e4
+  dedup does not change it.
+  [Probe](findings/masshatter/masshatter_memorization_route_probe_2026_09_23.md).
+
+Open decisions: whether to rebase screens on U128 for speed; whether `boundary_bond_encoder`
+stays on; and which merged boundary-block arm to run. Any such arm needs
+`compute_train_auxiliary_metrics: true` and `upload_checkpoints: true` so the probe can be run
+on it.
+
+**MassSpecGym GLACIER-parity features arm: RAN, no gain (W&B read 2026-09-24).** `ll04i00m`
+reaches a 118-127 val `cos_sim_0.01` tail of 0.5669 against 0.5695 for `1imawkx1` (−0.0026),
+and is below it at 101 of 128 epochs. Best checkpoints: 0.5705 (epoch 60) against 0.5754
+(epoch 62). Both runs peak near epoch 60 and plateau or drift down after it, so this MSGYM recipe
+is past its best by mid-schedule. `1imawkx1` has no uploaded checkpoints; `ll04i00m` does. Both
+are n=1 with no MSGYM seed replicate. Overfit timing in `1imawkx1`: val proposal loss is lowest
+at epoch 7 and val `coverage_weighted_spec_ce` (the primary loss) at epoch 14 (−1.793, ending at
+−1.580). Val cosine peaks at 62, while train loss falls to epoch 127. The CE rise is not coverage:
+`val_wrecall` is flat at 0.873-0.877 from epoch 8, and the conditional CE rises by the same
+amount. `val_wprecision` climbs from 0.59 to 0.71, which is consistent with predictions
+sharpening; a temperature fit on a checkpoint would test that. NIST `3bej6fq7` shows the same
+shape much more mildly (lowest at 27, then +0.027). Data lever, measured 2026-09-24: the
+`ms_gym_all_1_5` train fold adds 9,313 `[M+H]+` molecules (35,731 spectra, +76% over the
+benchmark's 12,304). None of them is in the benchmark val or test sets by 2D InChIKey. Only 21
+of them have a CE; missing CE becomes −1 and, under `abs-sines`, a dedicated learned extra
+embedding. **Scope decision (user, 2026-09-24): benchmark subset only; no extra MassSpecGym
+data.** How the ms-pred baselines handle missing CE on MassSpecGym (code at `318bb7b`,
+`iceberg_2.0` branch at `74b5103`, and the papers, read 2026-09-24):
+
+- **ICEBERG 2.0, as published:** known-CE spectra only, for training and testing (supplement
+  §S2, p. 8: "in line with the setting used by FraGNNet and the MassSpecGym 'spectrum simulation
+  challenge'"). The branch also has an unreported `msg_allev` config that reads pre-built
+  `[imputed]` eV spectra. No imputation code ships with it.
+- **ICEBERG 2.1 (`main`):** `msg_simulation` keeps the `simulation_challenge` rows whose CE
+  parses as a number (119,029 expected) and asserts that none are imputed. `msg_all`, for
+  retrieval, imputes by pseudo-labelling rather than interpolating
+  (`run_scripts/iceberg/msg_all/04_impute_missing_collision_energies.py`). A known-CE model
+  predicts each missing-CE spectrum at NCE 5-150 in steps of 5, the NCE with the best
+  entropy-similarity match wins, and the model retrains on real plus pseudo labels.
+- **GLACIER:** no imputation. `configs/glacier/joint_train_msg.yaml` trains on the base `msg`
+  dataset, and a NaN CE takes a fixed all-zero CE embedding (`joint_model.py`,
+  `collision_embed_merged`). The paper gives 231,104 spectra and 31,602 molecules, and says
+  neither how missing CE was handled nor which test rows its similarity numbers cover.
+
+Our raw `MassSpecGym1.5.tsv` has no `[imputed]` labels. All 119,029 `simulation_challenge` rows
+carry a numeric CE; 109,358 other rows have none. Our processed benchmark has 118,991 of the
+119,029 rows. **EMA arm built,
+not submitted:** `..._fast_batch512_cuda_ema999.yml` is the base plus `ema_decay: 0.999`
+(`upload_checkpoints` on). Its resolved diff against the base is that key plus naming, and the 5
+EMA callback tests pass. No local smoke was run; both the key and the config have trained on
+Fir. This is also the first EMA run with LR decay, since both NIST wins used a constant LR. The
+original preparation note follows.
+**Prepared (2026-09-24).**
 `config/massshatter/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_glacier_feats.yml`
 is the running MSGYM config (`1imawkx1`: val `cos_sim_0.01` 0.568 best at epoch 38/128) plus the
 four GLACIER-parity features that were never trained anywhere: `a_fused_ring`, `b_ring_size`,
@@ -80,7 +327,7 @@ and there is no MASShatter MSGYM baseline to read it against. The unmerged NIST2
 `6ks7v8ce` took about 5 h for that step count on an L40S (0.73 s/step, 26.6 GiB peak).
 Generate on Fir with `setup_job_cc.py` (`fir:h100-3g.40gb`, `j=<job_name>` for resume).
 
-**Shortcut-reduction screen prepared (2026-09-24); nothing submitted.** The shortcut audit
+**Shortcut-reduction screen prepared (2026-09-24); RAN, read in the top entry.** The shortcut audit
 (overfit read-out §7) now leaves one measured shortcut on unmerged `[M+H]+`/FT: a per-molecule
 allocation lookup. Exposure is flat (Spearman 0.058), the precursor prior is only a fallback on
 unseen molecules, and the fingerprint is under 11%. Identity reaches every head input, so the arms

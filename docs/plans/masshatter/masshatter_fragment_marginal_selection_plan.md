@@ -1,8 +1,10 @@
 # MASShatter fragment-marginal selection
 
-> **Status:** ACTIVE · **Updated:** 2026-09-23
+> **Status:** CLOSED NULL · **Updated:** 2026-09-24
 > Implemented behind `mass_shatter_fragment_selection: marginal`; default behaviour unchanged.
-> Not yet trained. Next: the three Fir arms in [§ Experiment](#experiment).
+> All five arms ran. Marginal ranking fails both acceptance criteria. Mask-order U128 matches
+> the control at 1.65x the speed, and the August U128 penalty does not reproduce. See the
+> [tail read](#tail-read-2026-09-24-marginal-selection-fails-and-u128-is-a-free-speed-up).
 
 ## Objective and acceptance criteria
 
@@ -205,6 +207,46 @@ What it says so far:
 Re-read at the 118–127 tail before drawing a conclusion; the pool-wide proposal loss may still
 reshape the ranking.
 
+### Tail read (2026-09-24): marginal selection fails, and U128 is a free speed-up
+
+All five arms finished 128 epochs at seed 397623 on the `fir:h100-3g.40gb` profile the
+generator uses for every arm. Each resolves against `c4a_base_s1` to its selection keys, the
+`f1`–`f3` diagnostic keys, and inert defaults. Tail means over epochs 118–127 against the 0.7270
+control (gate ±0.005). `val_wrecall` is the prediction-side weighted recall; `f4`, `f5` and the
+controls do not log `val_candidate_wrecall`.
+
+| | `f1` mask U128 | `f5` mask U128, control monitoring | `f2` marginal K128/U256 | `f3` marginal K128/U512 | `f4` mask U64 | control s1 / s2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| run | `uorwhapr` | `hrty7mdt` | `u7youmib` | `9nxd8y8y` | `3znrt3fk` | `5qws8g9x` / `6plumx6r` |
+| cosine | 0.7292 | 0.7277 | 0.7270 | 0.7254 | **0.7180** | 0.7266 / 0.7273 |
+| vs control | +0.0022 | +0.0007 | 0.0000 | −0.0016 | **−0.0090** | — |
+| fragments kept | 125.8 | 125.8 | 125.7 | 125.7 | 64.5 | 241.5 |
+| `val_candidate_wrecall` (kept) | 0.8845 | — | 0.8837 | 0.8832 | — | — |
+| `val_pool_candidate_wrecall` | — | — | 0.9029 | 0.9125 | — | — |
+| `val_wrecall` | 0.8694 | 0.8691 | 0.8687 | 0.8682 | 0.8233 | 0.8911 / 0.8912 |
+| min/epoch (`_runtime` / 128) | 0.94 | **0.52** | 1.00 | 1.13 | 0.37 | 0.86 / 0.85 |
+
+1. **The mechanism fails both acceptance criteria.** `f2` sits on the control, but it is not
+   faster (1.00 min/epoch, confounded by the coverage metrics it runs). It also loses to `f1` on
+   cosine (0.7270 against 0.7292) and on kept coverage (0.8837 against 0.8845). Release-score
+   ranking recovers none of the extra coverage its pools hold (0.903 and 0.913), which is what
+   the early read showed at epoch 27. A larger pool (`f3`) is slightly worse and 20% slower.
+2. **The August U128 penalty does not reproduce.** Halving the set to about 126 fragments costs
+   0.022 of `val_wrecall` and no cosine. The August sweep in the first established fact above ran
+   on August code and the pre-2026-09-03 target, and its cosine penalty does not transfer to this
+   base.
+3. **U128 is 1.65x faster per epoch at the same cosine.** `f5` runs the control's monitoring and
+   takes 0.52 min/epoch against 0.85–0.86. The coverage metrics are what make `f1`–`f3` slow:
+   `f1` is the same selection at 0.94. `f4` shows where the budget starts to bind: U64 is 2.3x
+   faster and loses 0.009.
+4. **A second same-seed pair.** `f1` and `f5` differ only in validation-diagnostic keys and land
+   0.0015 apart on the tail mean. That is wider than the 0.0004 floor from the one duplicate
+   pair in the [screen read-out §3.1](../../findings/masshatter/masshatter_architecture_arms_epoch128_2026_09_22.md).
+   Keep the ±0.005 gate.
+
+Read-only W&B query, no GPU used. The U128 speed result is n=1 per arm, from wall-clock on
+shared MIG hosts.
+
 ## Current state
 
 Implemented on `research/masshatter-ion-h-selection` (uncommitted working tree, 2026-09-23):
@@ -219,7 +261,8 @@ Implemented on `research/masshatter-ion-h-selection` (uncommitted working tree, 
 - `config/template.yml`: the two keys, defaulting to the old behaviour.
 - The three arm configs and the generate-only Fir script named in [§ Experiment](#experiment).
 
-Nothing trained or submitted. The CPU and CUDA candidate builders are untouched.
+All five arms ran on 2026-09-23; see the tail read above. The CPU and CUDA candidate builders
+are untouched.
 
 Open points:
 

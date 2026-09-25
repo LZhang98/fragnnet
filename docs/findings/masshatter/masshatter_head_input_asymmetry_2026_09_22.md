@@ -6,6 +6,9 @@
 > existing 630-epoch run pair against that wiring and reaches the practical conclusion.
 > **Corrected 2026-09-23:** §7.2 item 4 called the base-probability column a one-key test. It
 > is not: with `proposal_selection_only: True` the model refuses to build.
+> **Added 2026-09-24 (§8):** in `c4a` the charge head changes neither the kept fragments nor the
+> spectrum. And §7.1's −0.01 is a convergence delay: the connected run reaches its control by
+> epochs 610–629.
 >
 > **No.** They share the same encoder output tensor and the same context vector, but they
 > consume them at different granularity, and in the **entire current `ma_mi_merged` production
@@ -110,6 +113,7 @@ representation selected for allocating intensity among already-chosen fragments.
    proposal probability is discarded from the final spectrum; with `proposal_anchored: True`
    it is also absent from the candidate token. The proposal chooses *which* fragments exist;
    the intensity head then scores them with no knowledge of how confident the proposal was.
+   In `c4a` only the bond head does the choosing; the charge head changes nothing (§8.1).
 
 3. **`IonModeProposalHead` is the only proposal head with fragment-level inputs, and it is a
    stripped copy** — `3·384 + 128 + 2` ([`bond_fragment_heads.py:466-471`](../../../src/fragnnet/model/bond_fragment_heads.py#L466-L471)).
@@ -363,3 +367,61 @@ dormant inconsistencies. The live candidate is §7.1c's boundary-block result, w
 toy-scale hypothesis awaiting a production checkpoint, not a finding. That is consistent with the
 [overfit read-out](masshatter_overfit_readout_2026_09_22.md), which puts ~98% of the
 train/validation gap in intensity allocation rather than in anything the proposal branch controls.
+
+## 8. Additions, 2026-09-24
+
+### 8.1 In `c4a` the charge head changes nothing the model predicts
+
+"The proposal chooses which fragments exist" (§4 item 2) is true of the bond head only. Read
+off the code for the `c4a` configuration: unique-fragment mode, `cut_masks`,
+`fragment_selection: mask_order`, `min_fragment_relative_probability: 0.0`, anchored,
+selection-only.
+
+1. Candidates are built from `bond_logits` alone
+   ([`:2594`](../../../src/fragnnet/model/mass_shatter_model.py#L2594)). They are the forced
+   precursor and single-cut masks, then masks in exact descending joint bond probability, stopped
+   at the first 256 unique atom sets.
+2. `atom_charge_logits` enter only the proposal's fragment score, through
+   `latent_pathway_charge_log_probabilities`
+   ([`:2675`](../../../src/fragnnet/model/mass_shatter_model.py#L2675)).
+3. That score reaches three consumers:
+   - The relative-probability keep mask
+     ([`:2792`](../../../src/fragnnet/model/mass_shatter_model.py#L2792)) returns all-True at a
+     0.0 cutoff ([`:162`](../../../src/fragnnet/model/mass_shatter_model.py#L162)). `c4a_base_s1`
+     logs `fragment_cutoff_pruned_fraction` 0 on both splits.
+   - The intensity head receives it as `mask_log_probabilities`. It only shape-checks it unless
+     `use_base_probability_feature` is on
+     ([bond_fragment_heads.py:915](../../../src/fragnnet/model/bond_fragment_heads.py#L915)),
+     which `proposal_anchored` turns off.
+   - The proposal loss and the diagnostics.
+4. Under selection-only the final fragment logits are the intensity residuals
+   ([`:2983`](../../../src/fragnnet/model/mass_shatter_model.py#L2983)). With
+   `separate_ion_mode_proposal_head` off, ion-mode channel selection reads the intensity head's
+   ion/H support, not the charge head
+   ([`:3221`](../../../src/fragnnet/model/mass_shatter_model.py#L3221)).
+
+So the charge head's 263,169 parameters are trained by the proposal loss and change neither the
+kept set nor the spectrum. They would matter under a nonzero `min_fragment_relative_probability`.
+Marginal selection does not use them either: its release score has no charge term. The
+proposal's whole effect on predictions is the bond head's mask ranking.
+
+### 8.2 The §7.1 deficit is a convergence delay, not a lower endpoint
+
+Re-derived from raw history for `jvaj1lyw` − `tkkesus9` (one resolved key,
+`mass_shatter_proposal_only_until_epoch` 4 vs null), as 20-epoch window means of
+`val_cos_sim_0.01_epoch/mean`:
+
+| window | control | connected | delta |
+|---|---:|---:|---:|
+| 90–109 | 0.7268 | 0.7181 | −0.0086 |
+| 190–209 | 0.7281 | 0.7201 | −0.0079 |
+| 290–309 | 0.7287 | 0.7183 | −0.0104 |
+| 390–409 | 0.7288 | 0.7182 | −0.0106 |
+| 490–509 | 0.7289 | 0.7205 | −0.0084 |
+| 610–629 | 0.7292 | 0.7295 | **+0.0003** |
+
+§7.1's conclusion holds at every horizon a screen reads: connecting the gradient costs about
+0.01. But the connected run reaches the control by epochs 610–629, and the best epochs sit
+0.0004 apart. "The objectives fight over the representation" is not shown. What is shown is that
+coupling slows convergence by several hundred epochs. This is still n=1, bundled with the
+four-epoch intensity freeze.

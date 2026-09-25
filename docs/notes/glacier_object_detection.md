@@ -394,6 +394,10 @@ Graphormer over the heavy-atom graph.
   embedding; **Gasteiger charge**.
 - **Bond**: type one-hot + other; conjugation; ring membership; **ring-size multi-hot**;
   **fused-ring**; stereo one-hot + other.
+- **Missing CE** (added 2026-09-24): a NaN collision energy is replaced by a fixed all-zero CE
+  embedding (`collision_embed_merged`, `requires_grad = False`, in `molecular_embedding`), with
+  no imputation. `configs/glacier/joint_train_msg.yaml` trains on the base `msg` dataset, not
+  the `msg_simulation` subset.
 - **Metadata**: adduct one-hot, collision energy sinusoidally encoded, and an instrument one-hot
   (`embed-instrument: True` in the NIST'20 config). Section 3.1 reads as if metadata reaches
   "node embeddings and edge-level attention biases", but the code (`molecular_embedding`,

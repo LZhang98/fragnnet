@@ -1,13 +1,15 @@
 # Reducing MASShatter's per-molecule shortcut so its ranking transfers
 
 > **Status:** ACTIVE · **Updated:** 2026-09-24
-> Arms are ready; **nothing is submitted.** On unmerged `[M+H]+`/FT, where the problem was measured:
-> `h1` intensity-allocator dropout 0.2, `h2` intensity-allocator width 128, and `u2` an EMA of the
-> weights. Their control is the existing run `3bej6fq7`. On the merged lineage, `t2` (EMA) runs
-> against a train-metrics control. The boundary-block dropout arms (`t1`, `u1`) were **dropped on
-> 2026-09-24**: molecule identity reaches every head input, so blocking one input can reroute the
-> shortcut. Their code stays, off by default. Jobs: `submit_masshatter_mh_ft_ranking_transfer.sh`
-> (unmerged) and `submit_masshatter_regularization.sh transfer` (merged).
+> **All four arms ran; W&B tail read done ([below](#tail-read-from-wb-2026-09-24)).** A weight EMA
+> passes gate 1 on both lineages: `u2` +0.0094 over `3bej6fq7`, `t2` +0.0097 over `c4a_base_s1`,
+> above the control at every epoch in both. `h1` (allocator dropout 0.2) is rejected at −0.0067,
+> and `h2` (width 128) is null at −0.0015. Gates 2-3 (offline ranking decomposition and novelty
+> bins) are not read yet. `t2`'s train-metrics control `c4a_base_s1_trainaux` was never
+> submitted. The boundary-block dropout arms (`t1`, `u1`) were **dropped on 2026-09-24**: molecule
+> identity reaches every head input, so blocking one input can reroute the shortcut. Their code
+> stays, off by default. Jobs: `submit_masshatter_mh_ft_ranking_transfer.sh` (unmerged) and
+> `submit_masshatter_regularization.sh transfer` (merged).
 
 ## Objective and acceptance
 
@@ -137,6 +139,61 @@ memorization probe re-run on its checkpoint, to see where the lookup moved.
 3. Bin val cosine by nearest-train Tanimoto with the variance-novelty scripts.
 4. For EMA arms, take train metrics from the offline eval: logged train metrics measure the raw
    weights, validation the average.
+
+## Tail read from W&B (2026-09-24)
+
+Read-only W&B query of `val_cos_sim_0.01_epoch/mean`, last value per epoch. All runs use seed
+397623, except `c4a_base_s2` (811237). "Epochs above" counts matched epochs where the arm beats
+its control.
+
+| arm | run | tail mean | Δ vs control | epochs above | best (epoch) | min/epoch |
+| --- | --- | --- | --- | --- | --- | --- |
+| unmerged control `f0` | `3bej6fq7` | 0.7298 | — | — | 0.7318 (61) | 2.99 |
+| `h1_head_dropout02` | `rmlyskqj` | 0.7231 | **−0.0067** | 1/64 | 0.7257 (55) | 2.86 |
+| `h2_head_dim128` | `4jmgg2o0` | 0.7283 | −0.0015 | 6/64 | 0.7307 (61) | 2.73 |
+| `u2_ema999` | `c8hh9j1b` | **0.7392** | **+0.0094** | 64/64 | 0.7394 (56) | 2.84 |
+| merged control `c4a_base_s1` | `5qws8g9x` | 0.7266 | — | — | 0.7282 (122) | 0.86 |
+| `c4a_base_s2` (seed replicate) | `6plumx6r` | 0.7273 | +0.0007 | 53/128 | 0.7289 (123) | 0.85 |
+| `t2_ema998` | `49ub2p8y` | **0.7363** | **+0.0097** | 128/128 | 0.7373 (94) | 0.60 |
+
+Unmerged tail is epochs 54-63; merged tail is 118-127.
+
+- **EMA passes gate 1 on both lineages, by about 0.009-0.010.** That is twice the merged ±0.005
+  gate and 14x the s1/s2 seed spread. On the unmerged lineage it is 7x the control's mean
+  change between consecutive epochs (0.0013). The EMA scores come from the averaged weights:
+  `ExponentialMovingAverage.on_validation_epoch_start` swaps the average in. The arm leads from
+  epoch 0 (0.6066 vs 0.5844 unmerged) and holds at the plateau. Merged `t2` peaks at epoch 94 and
+  drifts to 0.7363 by 127. Unmerged `u2` is flat from epoch 44 (slope +0.0002 per 10 epochs; best 0.7394 at 56). (Corrected 2026-09-24: this sentence said it was still rising.) At 128 epochs `t2`
+  also beats the 630-epoch `long_control` (`tkkesus9`, best 0.7318 at epoch 555). For scale, on
+  the cross-eval exports a two-checkpoint weight average gave +0.003 and the f0+f1 two-run
+  ensemble +0.020 ([cross-eval](../../findings/masshatter/masshatter_target_cleaning_cross_eval_2026_09_23.md)).
+  Those numbers are best-checkpoint exports, not W&B tail means.
+- **`h1` is rejected.** It is below the control at 63 of 64 epochs. More dropout in the allocator
+  costs validation without a gain, as `drop03` did.
+- **`h2` is null.** At −0.0015 it is inside noise and below the control at 58 of 64 epochs. Cutting
+  the allocator from 2.46M to 0.97M parameters barely moves it. That agrees with capacity not
+  being the binding constraint. It ran 9% faster per epoch, but node-to-node spread is about 4-5%
+  (`h1` and `u2` were also faster than the control), so the speed-up is not established.
+- **Wall clock.** `t2` ran at 0.60 min/epoch against 0.86 for its control, but on
+  `fir:h100-80gb` rather than the control's `3g.40gb` slice. This is a hardware difference, not an
+  EMA effect.
+- **Caveats.** Each arm is n=1, and the unmerged lineage has no seed replicate. The arms ran on
+  code after `0f99e7e4` and the controls before it; that change is equal up to float rounding.
+  `t2`'s matched control `c4a_base_s1_trainaux` was **never submitted**. So `t2` has no matched
+  train cosine, and its logged train cosine (0.8767 tail) measures the raw weights anyway. `u2`
+  and `h1`/`h2` uploaded checkpoints to W&B; `t2` did not (`upload_checkpoints: false`), so its
+  checkpoint exists only on Fir.
+
+Next, in order:
+
+1. Offline gates 2-3 on `u2`, whose checkpoint is on W&B: the ranking decomposition on val and a
+   train sample, and the Tanimoto bins, both against `3bej6fq7`. The question is whether EMA
+   shrinks the val ranking gap and helps most on novel molecules. It should, if it removes the
+   optimizer-noise part of the [epistemic variance](../../findings/masshatter/masshatter_variance_novelty_2026_09_24.md).
+2. Whether EMA stacks with LR annealing. `d3`'s cosine decay also damps end-of-training noise,
+   so the two may overlap. Test `t2` + `d3` against `d3` (`rcfzf67p`) on the merged screen.
+3. Promotion is a user decision. The `ema_decay` template default stays null, so any config
+   that wants the average must set it.
 
 ## Open questions and next checks
 

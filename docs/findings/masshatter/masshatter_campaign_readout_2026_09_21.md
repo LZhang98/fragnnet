@@ -1,6 +1,9 @@
 # MASShatter W&B campaign read-out, 2026-09-17 to 2026-09-20
 
-> **Status:** FINDING · **Updated:** 2026-09-21 (America/Chicago)
+> **Status:** FINDING · **Updated:** 2026-09-24 (America/Chicago)
+> **§8 (added 2026-09-24) reads the bundle's leave-one-out arms: the bundle is worth 0.006 and no
+> single component clears the gate. §6 carries a correction: the "2026-07-13 removal" of
+> `boundary_bond_encoder` was a different FraGNNet idea.**
 > Read-only W&B review of the 41 runs since 2026-09-15. The regularization sweep produced
 > **no promotions and two missing arms**; the atom-decoder removal is **confirmed clock-matched
 > on an isolated pair**; the merged track has been flat inside its own replicate floor for 71 runs.
@@ -302,9 +305,13 @@ established: epoch 10 is exactly where the plan's four-replicate spread was wide
 the lift is a three-key bundle, not an isolation. `hbound valence` is measured at −0.0002, so
 whatever is happening is coming from the mass, charge or boundary-bond features.
 
-Note that `mass_shatter_boundary_bond_encoder` is a mechanism the user removed on 2026-07-13 as
-the weaker bet against the competition head. It is back on by default and is now inside this
-bundle.
+`mass_shatter_boundary_bond_encoder` is on by default and is now inside this bundle.
+**Correction 2026-09-24:** this paragraph used to say the key was "removed on 2026-07-13 as the
+weaker bet against the competition head". That removal was a different, FraGNNet-side idea,
+`BoundaryBondEncoder`, which was never committed. `CutBondEncoder` was added to FraGNNet the next
+day as the `cut_bond` feature. MASShatter reused it as `boundary_bond_encoder` on 2026-09-20 (the
+MASShatter model itself dates from 2026-08-14), and it became the template default on 2026-09-21.
+It has no earlier MASShatter removal to reverse.
 
 `jvaj1lyw` shows the expected proposal-only warmup signature — cosine near 0.06 through epoch 4,
 then catching up — and is still 0.025 behind the control at epoch 12. It carries the same three
@@ -320,6 +327,37 @@ new features, so it is not a clean warmup isolation either.
 - The dense `|true| × |pred|` tensor in `calculate_match_mzs` is the mechanism behind the
   "train-aux metrics cost 10-26 GiB" note, and it is what OOM'd the 2g pilot.
 
+## 8. The bundle's leave-one-out arms, read at the 128-epoch screen (added 2026-09-24)
+
+Read-only W&B query. All five arms ran 128 epochs at seed 397623, paired with `c4a_base_s1`.
+Each run's resolved config was checked against `c4a_base_s1`. The older
+`candidate_mass_features`/`candidate_charge_feature` keys map onto the `c_mass`/`c_charge` entries
+of the later `mass_shatter_candidate_features` list, and every other difference is an inert
+default. Tail mean over epochs 118–127 against the 0.7270 control (gate ±0.005), as in the
+[screen read-out](masshatter_architecture_arms_epoch128_2026_09_22.md):
+
+| arm | run | removes | cosine | vs control |
+| --- | --- | --- | ---: | ---: |
+| `c4a_bundle_off` | `9uec7nwx` | all four below | 0.7210 | **−0.0060** |
+| `c4a_no_acharge` | `fr4x7mgi` | `a_charge` atom input | 0.7245 | −0.0025 |
+| `c4a_no_bbe` | `pkavjg8z` | `boundary_bond_encoder` | 0.7246 | −0.0024 |
+| `c4a_no_charge_feat` | `gwvz8mdp` | `c_charge` candidate column | 0.7258 | −0.0012 |
+| `c4a_no_mass_feats` | `xp66b5ft` | `c_mass` candidate columns | 0.7282 | +0.0012 |
+
+- **The bundle is worth about 0.006 at the screen, and no single component carries it.** Each
+  removal lands inside the gate, and the four single-arm deltas sum to −0.0049 against the
+  bundle's −0.0060. The h-transfer bound was not part of `bundle_off`; §1 measured it at −0.0002.
+- **The early +0.014 shrinks to 0.006 at the tail.** §6 read it at epoch 12, against a different
+  control, near the epoch-10 point where the regularization plan's replicate spread was widest.
+- **`c4a_no_bbe` is also 6% faster per epoch** (0.80 against 0.85–0.86 min/epoch). Its
+  train-mode primary-loss gap is 0.6136 against a 0.6191 control mean, inside the 0.014 floor.
+  The run logged no train cosine and uploaded no checkpoint, so the
+  [memorization probe](masshatter_memorization_route_probe_2026_09_23.md) cannot be run on it.
+- **The `c4a_no_bbe` config's pre-registered rule does not apply.** Its header says the
+  "2026-07-13 removal stands" if the bundle's lift survives the arm. That removal never happened
+  on MASShatter (see the §6 correction), so the rule has no premise. Whether the encoder stays on
+  is an open decision that this screen does not settle.
+
 ## Next concrete checks
 
 Ordered by expected value, with the prepared artifact where one exists.
@@ -327,9 +365,9 @@ Ordered by expected value, with the prepared artifact where one exists.
 1. **Isolate the three new candidate features** (§6). They are the largest live signal in the
    campaign, they are on by default in every unpinned config from `99169f35` onward, and they have
    never been trained in isolation. One job per key against a pinned control — `mass_features`,
-   `charge_feature`, `boundary_bond_encoder` — settles which of the three is carrying +0.014 and
-   whether the boundary-bond encoder deserves the reversal of its 2026-07-13 removal. Until this
-   runs, no later result on this base is attributable.
+   `charge_feature`, `boundary_bond_encoder` — settles which of the three is carrying +0.014.
+   Until this runs, no later result on this base is attributable. **Ran; read in §8. No single
+   component clears the gate, and the bundle as a whole is worth 0.006.**
 2. **Let the horizon probe finish** (`tkkesus9`, ~10.4 h at 0.99 min/epoch). It no longer answers
    the question it was written for, but "where does val peak on the current default" is the more
    useful version of that question now. Budget a matched re-run on the pinned pre-`99169f35`
