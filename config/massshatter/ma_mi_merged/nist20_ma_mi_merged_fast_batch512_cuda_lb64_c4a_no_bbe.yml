@@ -10,10 +10,14 @@
 # control mean 0.7159) but is FIVE components at once; this arm removes exactly one so the
 # lift can be attributed. h_transfer_bound is measured free (-0.0002) and contributes ~0.
 #
-# Removes: mass_shatter_boundary_bond_encoder. This is the component with prior history --
-# it was removed on 2026-07-13 as the weaker bet against the competition head, and returned
-# on 2026-09-20 as a template default WITHOUT a decision. If the bundle's lift survives this
-# arm, the 2026-07-13 removal stands and the default should be reverted.
+# Removes: mass_shatter_boundary_bond_encoder, which became a template default on 2026-09-21
+# WITHOUT a decision.
+# CORRECTION 2026-09-24: this header used to say the key "was removed on 2026-07-13 as the
+# weaker bet against the competition head" and that the removal should stand if the bundle's
+# lift survived. The 2026-07-13 removal was a different FraGNNet idea (BoundaryBondEncoder);
+# this key reuses CutBondEncoder and first appeared in MASShatter on 2026-09-20, so there is no
+# earlier removal to stand. Result (tail 118-127): 0.7246, -0.0024 vs the 0.7270 control, inside
+# the gate. See docs/findings/masshatter/masshatter_campaign_readout_2026_09_21.md section 8.
 #
 # HORIZON (2026-09-21): resized 630 -> 128 epochs. The horizon probe `tkkesus9` ran the full
 # 630-epoch schedule and val cosine SATURATES BY ~EPOCH 100: 0.7232@64 -> 0.7292@100 ->

@@ -2,7 +2,7 @@
 # config/massshatter/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml
 # (run 6ks7v8ce). Candidate enumeration, loss and batching are unchanged from that arm; the data,
 # metadata vocabularies and CE range differ (1-3 below), and on 2026-09-23 the recipe was moved
-# to the best measured NIST20 settings (4-6 below). This config has never been trained.
+# to the best measured NIST20 settings (4-6 below). Trained as W&B 1imawkx1 (2026-09-24).
 #
 # Measured from data/proc/ms_gym_benchmark_1_5/spec_df.pkl (2026-09-20):
 #   118,991 spectra / 16,960 molecules / 19,409 groups.
@@ -55,8 +55,9 @@
 #
 # Measured and deliberately NOT applied: a1+a6 attention stacks (not additive), the subformula
 # target filter (a denominator effect), candidate atom dropout, wd/dropout arms, g1 encoder
-# simplification (all nulls or rejections). EMA (ema_decay), boundary-block dropout and
-# fragment-marginal selection exist but have not been trained yet.
+# simplification (all nulls or rejections). Boundary-block dropout was never trained, and
+# fragment-marginal selection closed null. EMA (ema_decay) passed on NIST20 after this was
+# written (2026-09-24) and is the _ema999 arm.
 #
 # frag_modes keeps HCD next to CID although msgym is 100% CID, matching
 # config/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
