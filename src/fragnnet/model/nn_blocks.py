@@ -116,6 +116,7 @@ class ZerosAggregation(nn.Module):
 
 
 _RESIDUAL_ACTIVATIONS = ("relu", "identity", "gelu")
+GLOBAL_MESSAGE_SWAP_UNITS = ("atom", "molecule", "feature")
 
 
 def _validate_residual_activation(activation: str) -> str:
@@ -1219,6 +1220,13 @@ class GINE_GSA(nn.Module):
         global_message_noise_std (float): Training-only Gaussian noise on the normalized
             global-attention message, as a multiple of each feature's batch standard
             deviation. 0 (default) disables it.
+        global_message_swap (float): Training-only probability, per layer, that a message is
+            replaced by another molecule's real message ("swap noise", a feature-level CutMix
+            that keeps the original label). 0 (default) disables it.
+        global_message_swap_unit (str): What one swap draw replaces: ``atom`` (an atom's whole
+            message, from a random atom in the batch), ``molecule`` (every atom of a molecule,
+            each from a random atom of one other molecule) or ``feature`` (one feature of one
+            atom, from the same feature of a random atom in the batch).
     """
 
     def __init__(
@@ -1232,6 +1240,8 @@ class GINE_GSA(nn.Module):
         num_heads: int = 4,
         global_message_substitution: float = 0.0,
         global_message_noise_std: float = 0.0,
+        global_message_swap: float = 0.0,
+        global_message_swap_unit: str = "atom",
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -1252,11 +1262,20 @@ class GINE_GSA(nn.Module):
             raise ValueError(
                 f"global_message_noise_std must be nonnegative, got {global_message_noise_std}"
             )
+        if not 0.0 <= global_message_swap < 1.0:
+            raise ValueError(f"global_message_swap must be in [0, 1), got {global_message_swap}")
+        if global_message_swap_unit not in GLOBAL_MESSAGE_SWAP_UNITS:
+            raise ValueError(
+                f"global_message_swap_unit must be one of {GLOBAL_MESSAGE_SWAP_UNITS}, "
+                f"got {global_message_swap_unit!r}"
+            )
 
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
         self.global_message_substitution = global_message_substitution
         self.global_message_noise_std = global_message_noise_std
+        self.global_message_swap = global_message_swap
+        self.global_message_swap_unit = global_message_swap_unit
 
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 
@@ -1329,21 +1348,26 @@ class GINE_GSA(nn.Module):
             gsa_out = self.norm_fn(gsa_out, batch_index, gsa_norm)
             # After the norm, so its statistics neither absorb the noise nor carry it into eval.
             if self.training:
-                gsa_out = self._perturb_global_message(gsa_out)
+                gsa_out = self._perturb_global_message(gsa_out, batch_index, num_graphs)
 
             x = local_out + gsa_out
         return x
 
-    def _perturb_global_message(self, message: th.Tensor) -> th.Tensor:
+    def _perturb_global_message(
+        self, message: th.Tensor, batch_index: th.Tensor, num_graphs: int
+    ) -> th.Tensor:
         """Apply the training-only global-message noise; draw nothing when it is off.
 
-        Substitution sets ``m_i <- mean_j(m_j)`` with probability ``p`` per atom, the mean taken
-        over every atom in the batch and detached. Gaussian noise then sets
-        ``m_i <- m_i + sigma * s * eps_i`` with ``eps_i ~ N(0, I)`` and ``s`` the detached
-        per-feature standard deviation of ``m`` over the batch.
+        Applied in order. Substitution sets ``m_i <- mean_j(m_j)`` with probability ``p`` per
+        atom, the mean taken over every atom in the batch and detached. Swap then replaces
+        messages by detached real messages of other atoms (see ``_swap_global_message``).
+        Gaussian noise then sets ``m_i <- m_i + sigma * s * eps_i`` with ``eps_i ~ N(0, I)`` and
+        ``s`` the detached per-feature standard deviation of ``m`` over the batch.
 
         Args:
             message: Normalized global-attention messages, shape (N, hidden_size).
+            batch_index: Graph assignment of each atom, sorted, shape (N,).
+            num_graphs: Number of graphs in the batch.
 
         Returns:
             Perturbed messages, shape (N, hidden_size).
@@ -1355,10 +1379,61 @@ class GINE_GSA(nn.Module):
             )
             batch_mean = message.detach().mean(dim=0, keepdim=True)
             message = th.where(replace, batch_mean, message)
+        if self.global_message_swap > 0.0:
+            message = self._swap_global_message(message, batch_index, num_graphs)
         if self.global_message_noise_std > 0.0:
             feature_std = message.detach().std(dim=0, unbiased=False, keepdim=True)
             message = message + self.global_message_noise_std * feature_std * th.randn_like(message)
         return message
+
+    def _swap_global_message(
+        self, message: th.Tensor, batch_index: th.Tensor, num_graphs: int
+    ) -> th.Tensor:
+        """Replace messages by other atoms' real messages with probability ``p``.
+
+        Unlike substitution by the batch mean, a swapped message is an in-distribution
+        message carrying another molecule's identity, so the head cannot tell when to trust it.
+        Donors are detached, so a swapped entry gets no gradient. The label is not mixed.
+
+        - ``atom``: ``m_i <- m_j`` with probability ``p`` per atom, ``j`` uniform over the
+          batch (``j`` is in atom ``i``'s own molecule with probability ``n_mol / N``).
+        - ``molecule``: with probability ``p`` per molecule, each of its atoms takes the message
+          of a uniformly drawn atom of one donor molecule, never the molecule itself. A batch
+          of one molecule has no donor and is returned unchanged.
+        - ``feature``: ``m_ic <- m_jc`` with probability ``p`` per entry, ``j`` drawn per entry.
+
+        Args:
+            message: Normalized global-attention messages, shape (N, hidden_size).
+            batch_index: Graph assignment of each atom, sorted, shape (N,).
+            num_graphs: Number of graphs in the batch.
+
+        Returns:
+            Messages with the swapped entries replaced, shape (N, hidden_size).
+        """
+        donors = message.detach()
+        num_atoms, device = message.shape[0], message.device
+        if self.global_message_swap_unit == "feature":
+            source = th.randint(num_atoms, message.shape, device=device)
+            swap = th.rand(message.shape, device=device) < self.global_message_swap
+            return th.where(swap, donors.gather(0, source), message)
+        if self.global_message_swap_unit == "atom":
+            source = th.randint(num_atoms, (num_atoms,), device=device)
+            swap = th.rand(num_atoms, 1, device=device) < self.global_message_swap
+            return th.where(swap, donors[source], message)
+        if num_graphs < 2:
+            return message
+        # 1. Pair each molecule with a different donor molecule.
+        shift = th.randint(1, num_graphs, (num_graphs,), device=device)
+        donor_graph = (th.arange(num_graphs, device=device) + shift) % num_graphs
+        # 2. Draw each atom's donor atom uniformly within its molecule's donor.
+        counts = th.bincount(batch_index, minlength=num_graphs)
+        starts = th.cumsum(counts, dim=0) - counts
+        atom_donor_graph = donor_graph[batch_index]
+        offset = (th.rand(num_atoms, device=device) * counts[atom_donor_graph]).long()
+        source = starts[atom_donor_graph] + offset
+        # 3. Swap whole molecules.
+        swap = th.rand(num_graphs, device=device) < self.global_message_swap
+        return th.where(swap[batch_index].unsqueeze(1), donors[source], message)
 
 
 class MPNN(nn.Module):

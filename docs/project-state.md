@@ -37,9 +37,32 @@ Directories: `config/masster/`, `docs/{findings,plans}/masster/`, `sweep/masster
   `config/massshatter/` minutes before it; they are now in `config/masster/`. The ignored
   `.claude/settings.json` still allowlists the old test paths.
 
-**Batch 2 configured (2026-09-25); not submitted, uncommitted.** Six jobs:
+**Global-message swap arms `gm3`-`gm6` built (2026-09-25); not submitted, uncommitted.** A
+feature-level CutMix that keeps the label: in training, the encoder's normalized global-attention
+message is replaced by another molecule's real, detached message, where `gm1` uses the batch
+mean. The head cannot tell when a swapped key is wrong, which it can with the mean. Labels are
+not mixed: a MASSter target is an allocation over one molecule's candidates.
 
-- `gm1` and `gm2` (below);
+- New keys `masster_global_message_swap` (probability) and `masster_global_message_swap_unit`
+  (`atom`, `molecule` or `feature`), in `GINE_GSA._swap_global_message`. Default-off, no
+  parameters, nothing drawn at 0, so `c0` (`vcpho5qm`) is the control.
+- Arms: `gm3` atom 0.3 (read against `gm1` too), `gm4` molecule 0.3, `gm5` feature 0.3, `gm6`
+  molecule 0.6. Each resolves to only its swap keys against `c0` (9,212,861 parameters), and the
+  2-epoch smokes exit 0.
+- Four arms against a 0.0022 spread: replicate any pass. `r2`'s null means the key may re-form
+  locally; gate 3 (route map on the checkpoint) checks it.
+- Generate with `submit_masster_mh_ft_memorization_route.sh swap` on Fir; `batch2` now includes
+  them. [Plan](plans/masster/masster_memorization_route_plan.md#global-message-swap-arms-gm3-gm6-built-2026-09-25-not-submitted).
+
+**Batch 2: the original six are RUNNING on Fir (read 2026-09-25, 20:30 UTC, epochs 23-27 of
+64); `gm3`-`gm6` are uncommitted and not submitted.** Early read, not the gate: `gm1` +0.0064 over
+`c0` but narrowing, `gm2` −0.0030 and widening, `k1_ema` +0.0039 over `u2`, and both replicates
+repeat their originals (`k1_s2` +0.0051, `u2_s2` +0.0122 against `c0_s2`, which sits +0.0011 from
+`c0`). Run ids and the table are in the
+[plan](plans/masster/masster_memorization_route_plan.md#batch-2-configs-2026-09-25-not-submitted).
+Configured as ten jobs:
+
+- `gm1` and `gm2` (below), and `gm3`-`gm6` (above);
 - `k1_ema` (`k1` + EMA), read against `u2`;
 - `c0_s2`, `k1_s2` and `u2_s2` at seed 811237, replicating `k1` and EMA against a matched control.
 

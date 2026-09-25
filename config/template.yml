@@ -861,6 +861,15 @@ masster_memorization_sink_start_epoch: 0
 # require mol_gnn_type: GINE_GSA; at 0.0 they draw no random numbers (bit-identical default).
 masster_global_message_substitution: 0.0
 masster_global_message_noise_std: 0.0
+# Swap noise on the same message (arms gm3-gm6), a feature-level CutMix that keeps the original
+# label: with this probability ([0, 1)) per layer, a message is replaced by another molecule's real,
+# detached message. Unlike the batch mean, a swapped message is in-distribution, so the head cannot
+# tell when the key is wrong. The unit is what one draw replaces: atom (an atom's whole message,
+# from a random batch atom), molecule (every atom of a molecule, each from a random atom of one
+# other molecule) or feature (one entry, from the same feature of a random batch atom). Requires
+# mol_gnn_type: GINE_GSA; at 0.0 it draws no random numbers, whatever the unit.
+masster_global_message_swap: 0.0
+masster_global_message_swap_unit: atom
 masster_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition

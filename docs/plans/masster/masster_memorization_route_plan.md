@@ -7,7 +7,10 @@
 > `r0` is −0.0129 and `m1` is −0.0203. The same-recipe `c0`/`f0` spread is 0.0022.
 > **Global-message noise arms `gm1`/`gm2` built 2026-09-25, not submitted**
 > ([section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted)).
-> **Batch 2 configured** ([section](#batch-2-configs-2026-09-25-not-submitted)): `gm1`, `gm2`,
+> **Global-message swap arms `gm3`-`gm6` built 2026-09-25, not submitted**: another molecule's
+> real message instead of the batch mean, a feature-level CutMix that keeps the label
+> ([section](#global-message-swap-arms-gm3-gm6-built-2026-09-25-not-submitted)).
+> **Batch 2 configured** ([section](#batch-2-configs-2026-09-25-not-submitted)): `gm1`-`gm6`,
 > `k1_ema` and seed-811237 replicates of `c0`, `k1` and EMA.
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
 > lookup key, and the boundary block reads it
@@ -79,6 +82,8 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
 - **B. Replace `k1` with a global-message regularizer.** Four options, all new code. The first
   two are built as `gm1`/`gm2` (2026-09-25), with dropout drawn per atom rather than per molecule;
   see [the section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted).
+  A fifth, swapping in another molecule's real message, is built as `gm3`-`gm6`, including the
+  per-molecule draw ([section](#global-message-swap-arms-gm3-gm6-built-2026-09-25-not-submitted)).
   - **global-message dropout**: in training, replace the global-attention message with the batch
     mean for a random share of molecules;
   - **global-message noise**: Gaussian noise on `gsa_out` in training. Noise injection is
@@ -599,9 +604,104 @@ They are the first two options of decision B.
 against `c0` (+0.003 to pass), `wrecall` within 0.005, then the offline gates on the checkpoint.
 A pass stacks with EMA and with `k1` next.
 
+## Global-message swap arms `gm3`-`gm6` (built 2026-09-25, not submitted)
+
+**Why.** The user's framing: MASSter overfits because its embedding identifies the molecule, so
+the fix is a feature-level CutMix. Standard CutMix mixes the labels too, and a MASSter target
+(an allocation over one molecule's own candidate set) has no natural mix
+([literature note](../../notes/memorization_literature_2026_09_24.md)). So only the message
+that carries identity is swapped, and the label stays the molecule's own: swap noise. Where to
+swap follows the route map. The global-attention message writes the key, and its inference-time
+swap (`gsa_xmol`) had the largest train-specific damage of any condition (train −0.27, val
+−0.12, gap 0.18 → 0.02-0.03). Atom inputs and the fragment/complement pools are generalizing
+routes (about 1.2x), and swapping them would change the chemistry the label describes.
+
+**Why a swap, next to `gm1`.** `gm1` substitutes the batch mean: one fixed vector the head can
+learn to recognise and route around while it keeps using the key on the other atoms. A swapped
+message is a real message, so the head cannot tell when the key is wrong, and relying on it
+costs loss whenever a swap fires.
+
+| arm | keys against `c0` | what one draw replaces in training |
+| --- | --- | --- |
+| `gm3_swap_atom` | `masster_global_message_swap: 0.3` (unit `atom`, the default) | an atom's whole message, from a random atom in the batch; `gm1`'s rate and draw, so `gm3` against `gm1` isolates an empty message against a wrong identity |
+| `gm4_swap_molecule` | swap 0.3, `masster_global_message_swap_unit: molecule` | every atom of a molecule, each from a random atom of one other molecule (never itself): a coherent wrong identity, the per-molecule form decision B described |
+| `gm5_swap_feature` | swap 0.3, unit `feature` | one (atom, feature) entry, from the same feature of a random batch atom (tabular-DAE swap noise) |
+| `gm6_swap_molecule_p06` | swap 0.6, unit `molecule` | as `gm4` at twice the rate: the dose arm on the strongest unit |
+
+**Design.**
+
+- **Where.** `GINE_GSA._swap_global_message`
+  ([`nn_blocks.py`](../../../src/fragnnet/model/nn_blocks.py)), called from
+  `_perturb_global_message` after substitution and before Gaussian noise, so at the same place
+  as `gm1`/`gm2`: after the message's norm, per encoder layer, training only.
+- **Donors are detached**, so a swapped entry gets no gradient, as `gm1`'s mean.
+- **The `atom` and `feature` donors are drawn over the whole batch**, so a donor falls in the
+  atom's own molecule with probability (atoms in the molecule) / (atoms in the batch), under 1%
+  at batch 512. The `molecule` unit excludes the molecule itself; a batch of one molecule is
+  returned unchanged.
+- **Same guarantees as `gm1`/`gm2`.** No parameters and no initialization draws; at swap 0 it
+  draws nothing whatever the unit, so `c0` (`vcpho5qm`) is the control. Only the shared encoder
+  gets the keys; the swap with a non-`GINE_GSA` encoder raises.
+- **Four arms against a 0.0022 same-recipe spread.** One may clear +0.003 by chance; replicate
+  any pass before promotion, as for `k1`.
+- **Risk.** `r2` (no global attention) held val (+0.0006) without narrowing the gap, so the key
+  may re-form in the 2-hop local embeddings. Gate 3, the route map on the arm's checkpoint, is
+  what catches that. The same risk applies to `gm1`/`gm2`.
+- **Not built:** a label-mixing CutMix. Its only form here trains on two molecules joined into
+  one disconnected graph against their summed spectrum. That changes candidate enumeration, the
+  precursor and the targets.
+
+**Validation.**
+
+- New tests in `tests/test_gine_gsa.py`: the atom swap takes whole detached messages from batch
+  atoms, at the drawn rate, with no gradient to swapped atoms; the molecule swap moves every atom
+  of a molecule to one other donor molecule, or none, and leaves a single molecule unchanged;
+  the feature swap takes each entry from its own feature column, independently per entry. The
+  existing tests now also cover the three units: nothing drawn when off, training only with an
+  unchanged state dict, and invalid settings rejected.
+- `tests/test_masster_memorization_route.py` runs its three `gm` model tests on the three units:
+  only the shared encoder carries the keys, each arm equals its control at eval, and the swap is
+  rejected without `GINE_GSA`.
+- **Resolved configs.** Through `load_config`, `gm3` differs from `c0` by the swap key alone and
+  `gm4`-`gm6` by the swap key and unit. Built through `MassterPL` on CPU, all have 9,212,861
+  parameters, with the setting on the shared `GINE_GSA` encoder and no separate proposal encoder.
+- **Smokes.** Two epochs each on `debug_tiny_masster_cut_features.yml`, control and the three
+  units at 0.3 by override, on the local RTX 2070 SUPER. All exited 0 at 340K parameters. The
+  epoch-1 train loss is −0.7544 for the control (as for `gm1`/`gm2`) and −0.7482 (atom), −0.7454
+  (molecule) and −0.7683 (feature) for the arms. The two-epoch numbers are not read.
+- The submitter's config checks pass for `swap` and `batch2`; locally it stops at the missing
+  `pyteomics` wheel before generating anything, as before.
+- Full suite: 4,414 passed, 1 skipped, 2 xfailed (20 new test cases over the 4,394 after the
+  rename). Ruff is clean on the changed Python files.
+
+**Generate on Fir:** `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh swap`
+(`fir:h100-3g.40gb`, 12 h, 64 epochs, seed 397623, no EMA), or with the rest of batch 2. Read as
+`gm1`: the 54-63 tail against `c0` (+0.003 to pass), `wrecall` within 0.005, then the offline
+gates on the checkpoint. Read `gm3` against `gm1` as well as against `c0`.
+
 ## Batch 2 configs (2026-09-25, not submitted)
 
-Six jobs: the two `gm` arms above, a stacking arm and a seed-811237 replicate of both passing
+**Update 2026-09-25, 20:30 UTC: the original six jobs are running** (created 19:02-19:15 UTC,
+same group): `gm1` `8ifz8p3t`, `gm2` `msmnydk7`, `k1_ema` `j4u25qfd`, `c0_s2` `1oxhvk0n`,
+`k1_s2` `e39ko0zr`, `u2_s2` `qwhsp2fg`. All run at 3.0 min/epoch, as `c0`. `gm3`-`gm6` exist
+only in the uncommitted working tree and are not submitted.
+
+Early read at epochs 23-27 of 64, not the gate. Each value is the mean `val_cos_sim_0.01` delta over
+the last 10 common epochs. The finished arms' early windows tracked their tails: `k1` +0.0057 at
+18-27 against +0.0074 at 54-63, and `u2` +0.0135 against +0.0116.
+
+| arm | control | epochs | delta | above control |
+| --- | --- | --- | ---: | --- |
+| `gm1` | `c0` | 18-27 | +0.0064 | 27 of 28 epochs; narrowing, +0.0100 at 21 to +0.0025 at 27 |
+| `gm2` | `c0` | 18-27 | −0.0030 | 2 of 28; widening, −0.0059 at 27 |
+| `k1_ema` | `u2` | 17-26 | +0.0039 | flat at +0.004 from epoch 19 |
+| `k1_s2` | `c0_s2` | 15-24 | +0.0051 | 18 of 25 (`k1`'s own early read: +0.0055) |
+| `u2_s2` | `c0_s2` | 14-23 | +0.0122 | 24 of 24 (`u2`'s own early read: +0.0139) |
+| `c0_s2` | `c0` | 16-25 | +0.0011 | seed spread; per epoch −0.0019 to +0.0036 |
+
+`val_candidate_wrecall` moves by at most 0.0008 in any pair.
+
+Ten jobs: the six `gm` arms above, a stacking arm and a seed-811237 replicate of both passing
 levers. All are unmerged `[M+H]+`/FT runs at 64 epochs on `fir:h100-3g.40gb`, in the same W&B
 group. Generate on Fir with
 `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh batch2`.
@@ -610,6 +710,10 @@ group. Generate on Fir with
 | --- | --- | --- | --- |
 | `gm1_message_substitution.yml` | `masster_global_message_substitution: 0.3` | `c0` (`vcpho5qm`) | uploaded |
 | `gm2_message_noise.yml` | `masster_global_message_noise_std: 0.5` | `c0` | uploaded |
+| `gm3_swap_atom.yml` | `masster_global_message_swap: 0.3` | `c0` | uploaded |
+| `gm4_swap_molecule.yml` | swap 0.3, unit `molecule` | `c0` | uploaded |
+| `gm5_swap_feature.yml` | swap 0.3, unit `feature` | `c0` | uploaded |
+| `gm6_swap_molecule_p06.yml` | swap 0.6, unit `molecule` | `c0` | uploaded |
 | `k1_ema.yml` | the two `k1` keys plus coverage monitoring, against `u2` | `u2_ema999` (`c8hh9j1b`) | uploaded |
 | `c0_s2_control.yml` | `seed: 811237` against `c0` | — | not uploaded |
 | `k1_s2.yml` | the two `k1` keys | `c0_s2` | not uploaded |
@@ -626,6 +730,7 @@ group. Generate on Fir with
   rest.
 - **Checks.** Each resolved config differs from its control by exactly the keys in the table,
   plus `seed` and `upload_checkpoints` against the seed-397623 base. The submitter's checks pass
-  for all six; the local run stops at the missing `pyteomics` wheel before generating anything.
+  for all ten (the four swap arms added the same day); the local run stops at the missing
+  `pyteomics` wheel before generating anything.
   A two-epoch smoke of `k1` + EMA, the one combination not run before, exits 0 on the debug
   config.

@@ -1080,6 +1080,8 @@ class MassterModel(nn.Module):
         memorization_sink_num_molecules: int = 0,
         global_message_substitution: float = 0.0,
         global_message_noise_std: float = 0.0,
+        global_message_swap: float = 0.0,
+        global_message_swap_unit: str = "atom",
     ) -> None:
         """Initialize the MASSter model.
 
@@ -1258,6 +1260,11 @@ class MassterModel(nn.Module):
             global_message_noise_std: Training-only Gaussian noise on the shared encoder's
                 global-attention message, in units of each feature's batch standard deviation.
                 Requires ``precursor_gnn_type: GINE_GSA``.
+            global_message_swap: Training-only probability, per layer, that the shared encoder's
+                global-attention message is replaced by another molecule's real message; the
+                label is not mixed. Requires ``precursor_gnn_type: GINE_GSA``.
+            global_message_swap_unit: What one swap draw replaces: ``atom``, ``molecule`` or
+                ``feature``; see ``GINE_GSA``.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1350,11 +1357,13 @@ class MassterModel(nn.Module):
         if memorization_sink_dim > 0 and not unique_fragment_mode:
             raise ValueError("the memorization sink requires unique_fragment_mode")
         if (
-            global_message_substitution > 0.0 or global_message_noise_std > 0.0
+            global_message_substitution > 0.0
+            or global_message_noise_std > 0.0
+            or global_message_swap > 0.0
         ) and precursor_gnn_type != "GINE_GSA":
             raise ValueError(
-                "global_message_substitution and global_message_noise_std require "
-                f"precursor_gnn_type GINE_GSA, got {precursor_gnn_type}"
+                "global_message_substitution, global_message_noise_std and global_message_swap "
+                f"require precursor_gnn_type GINE_GSA, got {precursor_gnn_type}"
             )
         if (separate_ion_mode_proposal_head or separate_ion_h_support_head) and not (
             unique_fragment_mode and proposal_selection_only
@@ -1573,6 +1582,8 @@ class MassterModel(nn.Module):
             residual_activation=gnn_residual_activation,
             global_message_substitution=global_message_substitution,
             global_message_noise_std=global_message_noise_std,
+            global_message_swap=global_message_swap,
+            global_message_swap_unit=global_message_swap_unit,
             **graphormer_structural_kwargs,
         )
         self.proposal_encoder = (

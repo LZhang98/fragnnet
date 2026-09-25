@@ -224,8 +224,9 @@ def _encoder_inputs() -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     return x, batch_index, edge_index, edge_attr
 
 
-def test_global_message_noise_off_draws_no_random_numbers_in_training() -> None:
-    encoder = _noisy_encoder().train()
+@pytest.mark.parametrize("option", [{}, {"global_message_swap_unit": "molecule"}])
+def test_global_message_noise_off_draws_no_random_numbers_in_training(option: dict) -> None:
+    encoder = _noisy_encoder(**option).train()
     inputs = _encoder_inputs()
     rng_before = th.get_rng_state()
 
@@ -236,7 +237,13 @@ def test_global_message_noise_off_draws_no_random_numbers_in_training() -> None:
 
 @pytest.mark.parametrize(
     "option",
-    [{"global_message_substitution": 0.5}, {"global_message_noise_std": 0.5}],
+    [
+        {"global_message_substitution": 0.5},
+        {"global_message_noise_std": 0.5},
+        {"global_message_swap": 0.5, "global_message_swap_unit": "atom"},
+        {"global_message_swap": 0.9, "global_message_swap_unit": "molecule"},
+        {"global_message_swap": 0.5, "global_message_swap_unit": "feature"},
+    ],
 )
 def test_global_message_noise_is_training_only_and_adds_no_parameters(option: dict) -> None:
     plain, noisy = _noisy_encoder(), _noisy_encoder(**option)
@@ -255,7 +262,7 @@ def test_global_message_substitution_swaps_whole_messages_for_the_detached_batch
     message = th.randn(64, 16, requires_grad=True)
     th.manual_seed(7)
 
-    perturbed = encoder._perturb_global_message(message)
+    perturbed = encoder._perturb_global_message(message, th.zeros(64, dtype=th.long), 1)
     perturbed.sum().backward()
 
     batch_mean = message.detach().mean(dim=0)
@@ -275,7 +282,7 @@ def test_global_message_noise_scales_with_each_features_batch_std() -> None:
     message[:, 0] = 3.0
     th.manual_seed(9)
 
-    noise = encoder._perturb_global_message(message) - message
+    noise = encoder._perturb_global_message(message, th.zeros(20000, dtype=th.long), 1) - message
 
     # A constant feature has zero batch spread, so it gets no noise.
     assert th.equal(noise[:, 0], th.zeros(20000))
@@ -284,12 +291,101 @@ def test_global_message_noise_scales_with_each_features_batch_std() -> None:
     assert (noise[:, 1:].mean(dim=0).abs() < 0.03 * expected_std).all()
 
 
+# Swap noise (arms gm3-gm6): replaced messages are other atoms' real, detached messages.
+
+
+def _molecule_batch(num_molecules: int = 120) -> th.Tensor:
+    """Sorted graph assignment with molecule sizes cycling through 1-5 atoms."""
+    sizes = th.arange(num_molecules) % 5 + 1
+    return th.repeat_interleave(th.arange(num_molecules), sizes)
+
+
+def _source_rows(perturbed: th.Tensor, message: th.Tensor) -> th.Tensor:
+    """Index of the ``message`` row equal to each ``perturbed`` row; raises if any has none."""
+    matches = (perturbed[:, None, :] == message[None, :, :]).all(dim=2)
+    assert (matches.sum(dim=1) == 1).all()
+    return matches.int().argmax(dim=1)
+
+
+def test_global_message_atom_swap_takes_whole_detached_messages_from_batch_atoms() -> None:
+    encoder = _noisy_encoder(global_message_swap=0.5, global_message_swap_unit="atom")
+    batch_index = _molecule_batch()
+    th.manual_seed(10)
+    message = th.randn(batch_index.shape[0], 16, requires_grad=True)
+    th.manual_seed(11)
+
+    perturbed = encoder._perturb_global_message(message, batch_index, 120)
+    perturbed.sum().backward()
+
+    source = _source_rows(perturbed.detach(), message.detach())
+    swapped = source != th.arange(batch_index.shape[0])
+    num_atoms = batch_index.shape[0]
+    assert 0.4 * num_atoms < int(swapped.sum()) < 0.6 * num_atoms
+    # Donors are detached, so a swapped atom's message gets no gradient.
+    assert th.equal(message.grad[swapped], th.zeros(int(swapped.sum()), 16))
+    assert th.equal(message.grad[~swapped], th.ones(int((~swapped).sum()), 16))
+
+
+def test_global_message_molecule_swap_moves_whole_molecules_to_one_other_donor() -> None:
+    encoder = _noisy_encoder(global_message_swap=0.5, global_message_swap_unit="molecule")
+    batch_index = _molecule_batch()
+    th.manual_seed(12)
+    message = th.randn(batch_index.shape[0], 16, requires_grad=True)
+    th.manual_seed(13)
+
+    perturbed = encoder._perturb_global_message(message, batch_index, 120)
+    perturbed.sum().backward()
+
+    source_graph = batch_index[_source_rows(perturbed.detach(), message.detach())]
+    swapped_molecules = 0
+    for graph in range(120):
+        atoms = batch_index == graph
+        donors = source_graph[atoms].unique()
+        # Every atom of a molecule is kept, or every atom comes from one other molecule.
+        assert donors.numel() == 1
+        if int(donors) == graph:
+            assert th.equal(perturbed[atoms], message[atoms])
+        else:
+            swapped_molecules += 1
+            assert th.equal(message.grad[atoms], th.zeros(int(atoms.sum()), 16))
+    assert 40 < swapped_molecules < 80
+
+
+def test_global_message_molecule_swap_leaves_a_single_molecule_unchanged() -> None:
+    encoder = _noisy_encoder(global_message_swap=0.9, global_message_swap_unit="molecule")
+    message = th.randn(4, 16)
+
+    perturbed = encoder._perturb_global_message(message, th.zeros(4, dtype=th.long), 1)
+
+    assert th.equal(perturbed, message)
+
+
+def test_global_message_feature_swap_takes_each_entry_from_the_same_feature() -> None:
+    encoder = _noisy_encoder(global_message_swap=0.5, global_message_swap_unit="feature")
+    batch_index = _molecule_batch()
+    th.manual_seed(14)
+    message = th.randn(batch_index.shape[0], 16)
+    th.manual_seed(15)
+
+    perturbed = encoder._perturb_global_message(message, batch_index, 120)
+
+    # Each entry is a value of its own feature column, and about half the entries moved.
+    assert (perturbed[:, None, :] == message[None, :, :]).any(dim=1).all()
+    changed = float((perturbed != message).float().mean())
+    assert 0.45 < changed < 0.55
+    # Entries are drawn independently, so a changed row mixes several donors.
+    assert ((perturbed != message).sum(dim=1) > 1).float().mean() > 0.9
+
+
 @pytest.mark.parametrize(
     ("option", "message"),
     [
         ({"global_message_substitution": 1.0}, "must be in"),
         ({"global_message_substitution": -0.1}, "must be in"),
         ({"global_message_noise_std": -0.1}, "must be nonnegative"),
+        ({"global_message_swap": 1.0}, "must be in"),
+        ({"global_message_swap": -0.1}, "must be in"),
+        ({"global_message_swap_unit": "graph"}, "must be one of"),
     ],
 )
 def test_global_message_noise_rejects_invalid_settings(option: dict, message: str) -> None:

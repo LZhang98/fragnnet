@@ -15,6 +15,12 @@
 # message, where the route map found the key is written. Read against the c0 that already ran:
 #   gm1  global-message substitution        (masster_global_message_substitution: 0.3)
 #   gm2  Gaussian global-message noise      (masster_global_message_noise_std: 0.5)
+# and swap noise on the same message, a feature-level CutMix that keeps the label: a swapped message
+# is another molecule's real message (masster_global_message_swap / _swap_unit):
+#   gm3  swap per atom                      (0.3, atom)
+#   gm4  swap per molecule                  (0.3, molecule)
+#   gm5  swap per feature entry             (0.3, feature)
+#   gm6  swap per molecule, higher rate     (0.6, molecule)
 # and the stacking and seed-replicate arms for the two levers that passed (k1 and weight EMA):
 #   k1_ema  k1 + ema_decay 0.999            (control: u2_ema999, c8hh9j1b, already ran)
 #   c0_s2   c0 at seed 811237               (control for the two replicates below)
@@ -27,8 +33,9 @@
 #   all   (default) c0, r0, r1, r2, k1 and m1.
 #   arms  r0, r1, r2, k1 and m1, when c0 is already running.
 #   gm    gm1 and gm2 (c0 vcpho5qm has already run).
-#   batch2  gm1, gm2, k1_ema, c0_s2, k1_s2 and u2_s2.
-#   c0 | r0 | r1 | r2 | k1 | m1 | gm1 | gm2 | k1_ema | c0_s2 | k1_s2 | u2_s2   one job.
+#   swap  gm3, gm4, gm5 and gm6 (c0 vcpho5qm has already run).
+#   batch2  gm1-gm6, k1_ema, c0_s2, k1_s2 and u2_s2.
+#   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2   one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -65,6 +72,10 @@ declare -A JOB_BY_ARM=(
     [m1]=msh_mhft_m1_sink
     [gm1]=msh_mhft_gm1_message_substitution
     [gm2]=msh_mhft_gm2_message_noise
+    [gm3]=msh_mhft_gm3_swap_atom
+    [gm4]=msh_mhft_gm4_swap_molecule
+    [gm5]=msh_mhft_gm5_swap_feature
+    [gm6]=msh_mhft_gm6_swap_molecule_p06
     [k1_ema]=msh_mhft_k1_ema
     [c0_s2]=msh_mhft_c0_s2
     [k1_s2]=msh_mhft_k1_s2
@@ -79,6 +90,10 @@ declare -A CONFIG_BY_ARM=(
     [m1]=m1_sink.yml
     [gm1]=gm1_message_substitution.yml
     [gm2]=gm2_message_noise.yml
+    [gm3]=gm3_swap_atom.yml
+    [gm4]=gm4_swap_molecule.yml
+    [gm5]=gm5_swap_feature.yml
+    [gm6]=gm6_swap_molecule_p06.yml
     [k1_ema]=k1_ema.yml
     [c0_s2]=c0_s2_control.yml
     [k1_s2]=k1_s2.yml
@@ -91,10 +106,11 @@ case "${STAGE}" in
     all)  ARMS=(c0 r0 r1 r2 k1 m1) ;;
     arms) ARMS=(r0 r1 r2 k1 m1) ;;
     gm)   ARMS=(gm1 gm2) ;;
-    batch2) ARMS=(gm1 gm2 k1_ema c0_s2 k1_s2 u2_s2) ;;
-    c0|r0|r1|r2|k1|m1|gm1|gm2|k1_ema|c0_s2|k1_s2|u2_s2) ARMS=("${STAGE}") ;;
+    swap) ARMS=(gm3 gm4 gm5 gm6) ;;
+    batch2) ARMS=(gm1 gm2 gm3 gm4 gm5 gm6 k1_ema c0_s2 k1_s2 u2_s2) ;;
+    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|batch2|c0|r0|r1|r2|k1|m1|gm1|gm2|k1_ema|c0_s2|k1_s2|u2_s2]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2]" >&2
         exit 1
         ;;
 esac

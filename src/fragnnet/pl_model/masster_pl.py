@@ -1098,6 +1098,8 @@ class MassterPL(SpectrumPL):
             ),
             global_message_substitution=self.hparams.masster_global_message_substitution,
             global_message_noise_std=self.hparams.masster_global_message_noise_std,
+            global_message_swap=self.hparams.masster_global_message_swap,
+            global_message_swap_unit=self.hparams.masster_global_message_swap_unit,
         )
         logger.info("Resolved MASSter proposal method: %s", self.model.proposal_method)
         logger.info(

@@ -104,6 +104,8 @@ def _build_model(
     memorization_sink_num_molecules: int = 0,
     global_message_substitution: float = 0.0,
     global_message_noise_std: float = 0.0,
+    global_message_swap: float = 0.0,
+    global_message_swap_unit: str = "atom",
 ) -> MassterModel:
     th.manual_seed(903)
     return MassterModel(
@@ -187,6 +189,8 @@ def _build_model(
         memorization_sink_num_molecules=memorization_sink_num_molecules,
         global_message_substitution=global_message_substitution,
         global_message_noise_std=global_message_noise_std,
+        global_message_swap=global_message_swap,
+        global_message_swap_unit=global_message_swap_unit,
     )
 
 
