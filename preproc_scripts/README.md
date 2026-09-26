@@ -61,6 +61,21 @@ python preproc_scripts/01_prepare_df.py \
     --mgf_file=spectraverse/spectraverse-0.0.1.mgf
 ```
 
+### Enveda-180
+This assumes the Enveda-180 release is in `data/raw/enveda-180/`. Use the `-filtered` export:
+it holds the same spectra as `enveda-180.jsonl.gz` with peaks below 1% of the base peak removed.
+Stepped-CE entries (`20,40,60`, `-60,-40,-20`) become ascending 20/40/60 eV in
+`col_energy`/`col_energy_extra_1`/`col_energy_extra_2`; the negative sign is polarity only.
+See [the dataset finding](../docs/findings/enveda_180_dataset_2026_09_25.md).
+
+```bash
+python preproc_scripts/01_prepare_df.py \
+    --input_format=enveda \
+    --output_format=csv \
+    --output_name=enveda_180 \
+    --jsonl_file=enveda-180/enveda-180-filtered.jsonl.gz
+```
+
 ## Step 2: Processing CSV into Pickle Files
 
 This step  reads the stage-1 CSVs, converts the data into binary format (pickle), writes pickles to `proc_dp` for training and evaluation.
@@ -129,6 +144,13 @@ python preproc_scripts/02_prepare_proc.py \
 	--proc_dp=data/proc/spectraverse \
     --dsets spectraverse
 ```
+### Enveda-180
+```bash
+python preproc_scripts/02_prepare_proc.py \
+    --proc_dp=data/proc/enveda_180 \
+    --dsets enveda_180
+```
+
 ## Step 3: Generating Fragmentation DAGs
 
 Multi-cut BFS now defaults to `--restrict_ring_open False`, allowing isolated rings

@@ -1,5 +1,7 @@
 import argparse
 import glob
+import gzip
+import json
 import logging
 import os
 import re
@@ -596,6 +598,76 @@ def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return spec_df, split_df
 
 
+ENVEDA_JSONL_KEY_DICT = {
+    "title": "dset_spec_id",
+    "pepmass": "prec_mz",
+    "adduct": "prec_type",
+    "instrument_type": "inst_type",
+    "instrument": "inst",
+    "iupac_name": "name",
+}
+ENVEDA_ION_MODE_DICT = {"ESI Positive": "P", "ESI Negative": "N"}
+CE_COLS = ["col_energy", "col_energy_extra_1", "col_energy_extra_2"]
+
+
+def parse_enveda_ce_str(ce_str: str) -> list[str]:
+    """Split an Enveda collision-energy field into ascending absolute energies.
+
+    Enveda writes negative-mode energies with the polarity sign ("-40") and stepped-CE
+    acquisitions as a comma-separated list ("20,40,60", "-60,-40,-20").
+
+    Args:
+        ce_str: Raw `collision_energies` value.
+
+    Returns:
+        Energies as "<value> eV" strings, lowest first, e.g. ["20 eV", "40 eV", "60 eV"].
+    """
+    energies = sorted(abs(float(ce)) for ce in ce_str.split(","))
+    return [f"{ce:g} eV" for ce in energies]
+
+
+def process_enveda(jsonl_fp: str) -> pd.DataFrame:
+    """Read an Enveda-180 JSON-lines export into the unified spectrum table.
+
+    Every spectrum is ESI MS2 from a Bruker timsTOF Pro 2 (CID). A multi-energy entry is a
+    stepped-CE acquisition with its own retention time and peaks, not a merge of the
+    single-energy spectra, so its energies fill `col_energy`, `col_energy_extra_1` and
+    `col_energy_extra_2` in ascending order. The MS1 isotope pattern is dropped.
+
+    Args:
+        jsonl_fp: Path to `enveda-180[-filtered].jsonl.gz`.
+
+    Returns:
+        One row per spectrum, `title` as `dset_spec_id`, other source fields kept as-is.
+    """
+    rows = []
+    with gzip.open(jsonl_fp, "rt") as jsonl_in:
+        for line in tqdm(jsonl_in, desc=f"> processing {jsonl_fp}"):
+            row = json.loads(line)
+            row["peaks"] = "\n".join(
+                f"{mz} {inten}" for mz, inten in zip(row.pop("mzs"), row.pop("intensities"))
+            )
+            del row["isotope_mzs"], row["isotope_intensities"]
+            energies = parse_enveda_ce_str(row.pop("collision_energies"))
+            if len(energies) > len(CE_COLS):
+                raise ValueError(f"{row['title']} has {len(energies)} collision energies")
+            row.update(zip(CE_COLS, energies))
+            row["stepped"] = len(energies) > 1
+            row["ion_mode"] = ENVEDA_ION_MODE_DICT[row.pop("ionmode")]
+            rows.append(row)
+
+    spec_df = pd.DataFrame(rows).rename(columns=ENVEDA_JSONL_KEY_DICT)
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["spec_type"] = "MS2"
+    spec_df["ion_type"] = "ESI"
+    spec_df["frag_mode"] = "CID"
+    # add extra columns for compatibility
+    for value in MSP_KEY_DICT.values():
+        if value not in spec_df.columns:
+            spec_df[value] = np.nan
+    return spec_df
+
+
 def process_nist_ei_csv(csv_fp: str) -> pd.DataFrame:
     spec_df = pd.read_csv(csv_fp)
     logger.info(f"Processing nist csv file {csv_fp}")
@@ -653,6 +725,7 @@ if __name__ == "__main__":
     parser.add_argument("--ms_meta_file", type=str, required=False)
     parser.add_argument("--mgf_file", type=str, required=False)
     parser.add_argument("--csv_file", type=str, required=False)
+    parser.add_argument("--jsonl_file", type=str, required=False)
 
     parser.add_argument(
         "--input_format",
@@ -668,6 +741,7 @@ if __name__ == "__main__":
             "pcdl_zip",
             "spectraverse",
             "nist_csv",
+            "enveda",
         ],
         required=True,
     )
@@ -749,6 +823,10 @@ if __name__ == "__main__":
         csv_fp = os.path.join(args.raw_data_dp, args.csv_file)
         assert os.path.isfile(csv_fp), csv_fp
         spec_df = process_nist_ei_csv(csv_fp)
+    elif args.input_format == "enveda":
+        jsonl_fp = os.path.join(args.raw_data_dp, args.jsonl_file)
+        assert os.path.isfile(jsonl_fp), jsonl_fp
+        spec_df = process_enveda(jsonl_fp)
     else:
         raise ValueError(f"Invalid input format: {args.input_format}")
 

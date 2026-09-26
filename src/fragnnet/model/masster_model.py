@@ -2421,6 +2421,7 @@ class MassterModel(nn.Module):
         static_graph: MassterStaticGraph | None = None,
         proposal_group_ids: th.Tensor | None = None,
         memorization_sink_indices: th.Tensor | None = None,
+        return_annotation: bool = False,
     ) -> dict[str, th.Tensor]:
         """Generate a sparse monoisotopic spectrum for every precursor.
 
@@ -2446,6 +2447,8 @@ class MassterModel(nn.Module):
             memorization_sink_indices: Sink row (``mol_id``) per spectrum, shape
                 ``(batch_size,)``. Only a model with a memorization sink accepts it; ``None``
                 runs the shared model, which is what evaluation always does.
+            return_annotation: Also return what each output pathway is, for the per-peak
+                annotation export. Inference only; nothing in training reads it.
 
         Returns:
             Dictionary with the sparse prediction contract plus diagnostics:
@@ -2453,6 +2456,11 @@ class MassterModel(nn.Module):
               "pred_intensities": one entry per valid (component, ion mode, H shift)
               pathway, shape ``(num_pathways,)``.
             - "bond_break_logits"/"atom_charge_logits": raw head outputs.
+            - with ``return_annotation``: "pred_pathway_fragment_idxs",
+              "pred_pathway_ion_mode_idxs" (0 CRF, 1 CMF) and "pred_pathway_h_shifts",
+              aligned with "pred_mzs"; and "fragment_atom_indices" /
+              "fragment_atom_fragment_idxs", one entry per (fragment, atom) membership, with
+              fragments indexed like "ion_h_fragment_batch_idxs".
             - remaining keys: per-spectrum counters and candidate-generation timings.
 
         Raises:
@@ -3310,6 +3318,22 @@ class MassterModel(nn.Module):
 
         # 4. Remove fragments that cannot form an ion under the configured adduct.
         chemically_valid_fragments = valid_channels.flatten(1).any(dim=1)
+        if return_annotation:
+            # The true atom memberships of the fragment rows, re-indexed onto the fragments
+            # that survive this step. Nothing downstream reads memberships, so they are
+            # carried only for the export.
+            if self.unique_fragment_mode:
+                membership_atoms = fragment_atom_indices
+                membership_fragments = atom_fragment_indices
+            else:
+                membership_atoms = candidates.atom_indices
+                membership_fragments = candidates.atom_component_indices
+            old_to_new_valid = chemically_valid_fragments.to(th.long).cumsum(0) - 1
+            membership_keep = chemically_valid_fragments[membership_fragments]
+            annotation_atom_indices = membership_atoms[membership_keep]
+            annotation_atom_fragment_indices = old_to_new_valid[
+                membership_fragments[membership_keep]
+            ]
         fragment_batch_indices = fragment_batch_indices[chemically_valid_fragments]
         fragment_cut_counts = fragment_cut_counts[chemically_valid_fragments]
         ion_mzs = ion_mzs[chemically_valid_fragments]
@@ -3700,4 +3724,30 @@ class MassterModel(nn.Module):
                 }
             )
         output.update(pool_proposal_outputs)
+        if return_annotation:
+            mode_channel_indices = (
+                th.arange(valid_channels.shape[1], device=valid_channels.device)
+                .reshape(1, -1, 1)
+                .expand_as(valid_channels)
+            )
+            h_channel_shifts = (
+                th.arange(
+                    -self.max_h_transfer, self.max_h_transfer + 1, device=valid_channels.device
+                )
+                .reshape(1, 1, -1)
+                .expand_as(valid_channels)
+            )
+            output.update(
+                {
+                    "pred_pathway_fragment_idxs": fragment_channel_indices.flatten()[
+                        selected_flat_valid
+                    ],
+                    "pred_pathway_ion_mode_idxs": mode_channel_indices.flatten()[
+                        selected_flat_valid
+                    ],
+                    "pred_pathway_h_shifts": h_channel_shifts.flatten()[selected_flat_valid],
+                    "fragment_atom_indices": annotation_atom_indices,
+                    "fragment_atom_fragment_idxs": annotation_atom_fragment_indices,
+                }
+            )
         return output

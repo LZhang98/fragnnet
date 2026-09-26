@@ -2456,6 +2456,8 @@ class MassterPL(SpectrumPL):
                 else None
             ),
             memorization_sink_indices=self._memorization_sink_indices(batch_kwargs),
+            # The exporter's switch for the per-peak annotation; absent in training.
+            return_annotation=bool(batch_kwargs.get("return_explainability_tensors", False)),
         )
         if (
             self.hparams.masster_share_proposal_across_ev

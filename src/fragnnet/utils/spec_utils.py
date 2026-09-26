@@ -890,8 +890,14 @@ def round_aggregate_peaks(
 
 
 def aggregate_peaks_exact_mz(
-    mzs: th.Tensor, ints: th.Tensor, batch_idxs: th.Tensor, decimals: int = 4, agg: str = "sum"
-) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    mzs: th.Tensor,
+    ints: th.Tensor,
+    batch_idxs: th.Tensor,
+    decimals: int = 4,
+    agg: str = "sum",
+    *,
+    return_inverse: bool = False,
+) -> tuple[th.Tensor, ...]:
     """Aggregate peaks as ``round_aggregate_peaks`` does, but keep each peak's exact m/z.
 
     Groups are the same: (batch index, m/z rounded to ``decimals``), with intensities reduced by
@@ -907,10 +913,13 @@ def aggregate_peaks_exact_mz(
         batch_idxs: Spectrum index of each peak, shape (N,).
         decimals: Rounding that defines one peak. Defaults to 4, as in ``round_aggregate_peaks``.
         agg: Intensity reduction within a peak, "sum" or "amax".
+        return_inverse: Also return the aggregated peak each input entry landed in, which is
+            what lets a caller carry per-entry data (e.g. fragment annotation) onto the peaks.
 
     Returns:
         (mzs, ints, batch_idxs) of the aggregated peaks, each shape (P,), ordered by batch index
-        and then by ascending rounded m/z.
+        and then by ascending rounded m/z. With ``return_inverse``, a fourth tensor of shape
+        (N,) holds each input entry's index into those P peaks.
     """
     if agg not in ("sum", "amax"):
         raise ValueError(f"agg must be 'sum' or 'amax', got {agg!r}")
@@ -950,7 +959,11 @@ def aggregate_peaks_exact_mz(
         src=sorted_mzs, index=subset_idxs, reduce="amax", dim_size=dim_size, include_self=False
     )
     group_mzs = th.where(shared | (weight_sums <= 0), first_mzs, mean_mzs)
-    return group_mzs, group_ints, sorted_batch_idxs[start_idxs]
+    if not return_inverse:
+        return group_mzs, group_ints, sorted_batch_idxs[start_idxs]
+    inverse = th.empty_like(subset_idxs)
+    inverse[order] = subset_idxs
+    return group_mzs, group_ints, sorted_batch_idxs[start_idxs], inverse
 
 
 def scipy_linear_sum_assignment(

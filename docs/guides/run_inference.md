@@ -1,6 +1,6 @@
 # FraGNNet Inference
 
-> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-01-23
+> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-09-25
 >
 > How to run inference end to end.
 
@@ -466,6 +466,57 @@ with `9t63zils`, per spectrum:
 Over the SYNCED set (4.05M spectra) that is the difference between ~152 GB and ~4.2 GB of
 cc bitmasks, and ~2.4 TB and ~8.3 GB of joint rows. The node count was threshold-independent
 before the fix, so the left column is also what `--min_intensity 10.0` used to produce.
+
+**MASSter (2026-09-25).** MASSter checkpoints emit the same columns under the same flags. It
+has no DAG, so `masster_annotation_tables` in `src/fragnnet/utils/script_utils.py` builds the
+formula, joint and node tables for each batch from the model's output pathways (fragment × ion
+mode × H shift). The exporter then filters, rebases and writes them the same way it does
+FraGNNet's. The reading code above works unchanged. The differences:
+
+- A peak is every pathway at one 4-decimal m/z. Its formula row is the neutral fragment
+  formula with the H shift included, as for FraGNNet.
+- A node is one distinct atom set in the spectrum, so duplicate latent fragments share a node.
+  P(f), P(n), P(n|f) and P(f|n) are sums and ratios of the pathways' L1-normalized
+  intensities, not model marginals. A ratio with a zero denominator is written as 0. There is
+  no NULL formula row.
+- **An empty adduct means the formula string is already the ion.** The neutral formula would
+  need a negative count for a hydrogen-poor fragment ionized by the adduct's own hydrogen,
+  for example `[M+H]+` after a hydrogen loss. That row carries the ion formula with `""`,
+  the way FraGNNet writes `[M+H]+` charge retention.
+- A peak holding two formula rows would need two ion formulas within 1e-4 Da. For C/H/N/O/S
+  that is impossible, and otherwise it takes a swap of 12+ atoms involving P, F and Cl. If
+  it does happen, `frag_formula_peak_idxs` links the more intense row and the export warns.
+  With `--min_intensity > 0`, the cascade then prunes the other row.
+- `pred_node_ccs` holds 128 atoms. `--return_cc_hash True` raises on a larger molecule.
+- `scripts/run_inference.py` defaults both flags to True, so a MASSter run through it builds
+  the annotation unless both are set False. `run_save_inference_eval.py` defaults them to
+  False.
+
+Measured with `ll04i00m` (epoch 60) on 128 MassSpecGym val spectra, CPU, `--min_intensity 0`:
+
+- 114,842 peaks and as many formula rows (one per peak), 244,617 joint cells and 29,868
+  nodes.
+- Neutral formula + adduct reproduces every peak's m/z to 5.7e-13 Da.
+- Every joint cell's bitmask decodes to a connected substructure whose heavy atoms match its
+  formula.
+- 1,603 rows (1.4%) have an empty adduct.
+- `pred_mzs` / `pred_ints` are identical to the annotation-off export.
+- The HDF5 is 8.2 MB against 1.8 MB, about 50 KB more per spectrum at this threshold.
+
+On GPU (RTX 2070 SUPER, 512 val spectra, batch 64) the annotation cost does not show:
+
+| `--min_intensity` | spectra/s, off / on | HDF5, off / on | per spectrum on | peaks | joint | nodes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | ~150 / ~150 | 6.3 / 29.8 MB | +46 KB | 849 | 1,877 | 232 |
+| 10.0 | ~150 / ~150 | 0.48 / 1.40 MB | +1.8 KB | 31.6 | 111 | 55 |
+
+The peak, joint and node columns are means per spectrum. The same checks held on GPU at both
+thresholds. No row had an empty adduct at 10.0, since the hydrogen-loss pathways are weak.
+
+Across those GPU runs, the annotated and plain exports differ in one spectrum's fragment set.
+Plain repeated forward passes in one process flip the same spectrum between 215 and 216
+fragments with the flag held fixed, so this is the known GPU nondeterminism in MASSter
+exports, not the annotation. On CPU the two exports are bit-identical.
 
 #### Resume Capability
 The script automatically checks the output directory (`--save_dp`) for existing prediction chunks. If found, it skips the spectra that have already been processed, allowing you to resume interrupted jobs without restarting from scratch.

@@ -3,9 +3,10 @@
 > **Status:** PROPOSED · **Updated:** 2026-09-25
 > Score MassSpecGym retrieval candidates with what the predicted spectrum carries beyond its
 > thresholded intensities: the full predicted support, the low-intensity tail, and per-peak
-> fragment annotations. Nothing is implemented or run. Step 1 needs no annotation columns and can
-> run on the MASSter MSGYM checkpoint. Steps 2-3 need fragment annotations, which only FraGNNet
-> exports today. Cross-model, so it sits at the top of `plans/`.
+> fragment annotations. No scorer exists and nothing has run. Step 1 needs no annotation
+> columns. Steps 2-3 need fragment annotations, which MASSter now exports too (2026-09-25,
+> uncommitted), so every step can run on the MASSter MSGYM checkpoint `ll04i00m`. Cross-model,
+> so it sits at the top of `plans/`.
 
 ## Objective and acceptance criteria
 
@@ -59,12 +60,16 @@ does:
   9,734 queries. The 2D InChIKey first block finds it in all of a 400-query sample, exactly once
   each.
 
-**Annotation export is FraGNNet only.** The FraGNNet export carries a per-peak neutral formula
-plus its adduct delta, `P(n|f)` over about four candidate DAG nodes per formula, and each node's
-atom bitmask ([run_inference guide](../guides/run_inference.md#fragment-annotation)). The MASSter
-export sums candidates into one row per peak and emits no annotation columns
-([script_utils.py:1771](../../src/fragnnet/utils/script_utils.py#L1771)). On MSGYM test
-(`ll04i00m`), its unfiltered export has a median of 924 peaks per spectrum.
+**Both models export per-peak annotation.** The FraGNNet export carries a per-peak neutral
+formula plus its adduct delta, `P(n|f)` over about four candidate DAG nodes per formula, and
+each node's atom bitmask ([run_inference guide](../guides/run_inference.md#fragment-annotation)).
+Since 2026-09-25 (working tree, uncommitted), MASSter fills the same columns. It builds them
+from its output pathways, and the guide's MASSter paragraph lists how they differ. On 128
+MassSpecGym val spectra with `ll04i00m`, every peak's formula plus adduct reproduced its m/z, and
+every fragment decoded to a connected substructure of the molecule. The annotation adds about
+46 KB per spectrum unfiltered and 1.8 KB at `--min_intensity 10`. For the 1.61M formula-val
+candidate spectra, that makes an annotated export of about 94 GB and 4.4 GB, respectively. On MSGYM test (`ll04i00m`), the
+unfiltered export has a median of 924 peaks per spectrum.
 
 **Anchors.**
 - MASSter: `ll04i00m` at epoch 60 (W&B), the checkpoint in the
@@ -141,9 +146,9 @@ Tanimoto, because the hypothesis predicts the gain concentrates on novel molecul
   during inference avoids storing the export at all.
 - Time it on 200 queries before the full run. Then run the mass set.
 
-**Step 2: fragment-level scores (only if gate 1 passes).** First decide the anchor: a trained
-FraGNNet MSGYM checkpoint plus DAGs for about 417k candidates, or a new MASSter annotation export
-that gives each aggregated peak its candidates' atom masks and formulas. Then add two scores:
+**Step 2: fragment-level scores (only if gate 1 passes).** Use the MASSter annotation export
+on `ll04i00m`. Each peak's fragments come with atom bitmasks, so the bonds and ring bonds a
+fragment cuts can be read off the molecule. Add two scores:
 - **Explanation cost.** For each query peak, the cheapest fragment of `c` that explains it: bonds
   cut, ring bonds cut, depth and the size of the H shift. Include the model's node score where
   the predicted intensity is below the export threshold.
@@ -182,16 +187,14 @@ alternative intensity allocations for one molecule. This plan ranks molecules. T
 
 ## Current state
 
-Documentation only. The candidate-set facts above were measured on 2026-09-25 from the val zips.
-No scorer, export or run exists.
+The candidate-set facts above were measured on 2026-09-25 from the val zips. The MASSter
+annotation export exists (2026-09-25, uncommitted). No scorer or retrieval run exists.
 
 ## Open questions
 
 1. What are the minimum useful hit@1 gain, the ε floor for score (c) and the shift offsets for
    score (b)? All three must be fixed before the first measurement.
-2. Is there a trained FraGNNet MSGYM checkpoint, or should Step 2 build a MASSter annotation
-   export?
-3. Does the goal need the no-CE and `[M+Na]+` queries, which are 50% of the val fold?
+2. Does the goal need the no-CE and `[M+Na]+` queries, which are 50% of the val fold?
 
 ## Next concrete check
 

@@ -1,8 +1,96 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-25
+> **Status:** REFERENCE · **Updated:** 2026-09-26
 
 ## Current handoff
+
+**Memorization-route batch 2, six of ten read (2026-09-26); weight-decay arm `w1` built, not
+submitted, uncommitted.** W&B tails over epochs 54-63; `gm3`-`gm6` are still running.
+
+- **The seed spread is 0.0042** (`c0_s2` − `c0`, seed only): above the +0.003 gate and twice the
+  0.0022 used so far. A single-seed delta under about +0.005 is not resolved.
+- `k1` and EMA replicate at seed 811237 (+0.0048, +0.0072). `k1_ema` has the best tail on this
+  lineage (0.7421, +0.0145 over `c0`) but is +0.0029 over `u2`, so stacking is not shown. `gm1`
+  +0.0051 on one seed; `gm2` −0.0029. Coverage moves by at most 0.0007.
+- `w1_wd10.yml` is `c0` with `weight_decay` 0.1. AdamW's decay timescale falls from ~325 epochs
+  to ~32, inside the 64-epoch run. Weight decay was never varied on this lineage; on merged,
+  `wd10` was the one arm that narrowed the gap without lowering train. It resolves to that key
+  alone, and a debug smoke confirms the optimizer group. Generate with
+  `submit_masster_mh_ft_memorization_route.sh w1`.
+
+[Batch 2 read](plans/masster/masster_memorization_route_plan.md#batch-2-tail-read-six-finished-runs-2026-09-26),
+[`w1`](plans/masster/masster_memorization_route_plan.md#weight-decay-arm-w1-2026-09-25).
+
+**MASSter Spectraverse CV configs built (2026-09-25); not submitted, uncommitted.**
+`config/spectraverse/masster/cv0.yml`..`cv9.yml` are unmerged and forked from the MassSpecGym
+`_ema999` recipe. The folds differ only in `wandb_name`, `split_dp` and `lr_total_steps`
+(40 × ceil(train / 512), 30,120-31,200). The cv0 header records the measurements behind each key.
+
+- **Spectraverse deltas.** `masster_include_cmf: true`, because `[M+NH4]+` and formate/acetate
+  spectra fragment by losing the adduct, which the ±4 H ladder cannot reach. All nine adducts;
+  `inst_types` FT/QTOF/Other/NA, with FraGNNet's 20 ppm / 500 Da tolerance for Other and NA;
+  40 epochs. The 44% of rows with no CE train on the `-1` learned embedding. Unmerged, because
+  no merged MASSter run has trained CMF with dual CE, so the comparator is
+  `config/spectraverse/fragnnet`, not `fragnnet_merged`.
+- **`loss_batch_size: 4`, measured.** The recipe's 64 runs out of memory at batch 32 on the 8 GB
+  card: each loss chunk pads to its widest target, and spectraverse peaks are p99 783, max 4096.
+  At batch 128, `lb4` peaks at 4.68 GiB and 0.346 s/step, against 4.25 GiB and 0.291 s/step for
+  the MassSpecGym recipe at `lb64`. Batch 512 was not run.
+- **Validation.** All ten resolve through `load_config`. cv0's resolved diff against the
+  MassSpecGym `_ema999` config is exactly the intended keys. The real cv0 train and val datasets
+  construct (387,399 / 46,057 rows, none dropped, 757 steps/epoch). A 2-epoch smoke on a
+  512-spectrum subsample exits 0 (val cosine 0.094 -> 0.167). Run local smokes with `TMPDIR` off
+  `/tmp`: the post-fit checkpoint copy fails on the 3.7 GB volume.
+- **Not measured.** The 40-epoch horizon (sized from the MassSpecGym and NIST20 peaks in steps),
+  batch-512 memory, and wall clock (estimated ~6 h per fold). Submit cv0 alone first
+  (`setup_job_cc.py --cv_config_dp config/spectraverse/masster --cv_start 0 --cv_end 0`, see the
+  [submit guide](guides/submit_cluster_runs.md#4-cross-validation-and-existing-batch-launchers)),
+  and read its peak GPU memory and best epoch before the other nine.
+
+**Learning-rate-schedule arms `s1` and `s1_k1_ema` built (2026-09-25); not submitted,
+uncommitted.** Plan decision C, config only. Every MASSter run so far trains at a constant
+`lr: 1e-3` with no warmup. Both arms add `d3`'s schedule: a 1000-step warmup, then cosine to 1% of
+peak at step 19,712 (64 epochs × 308 steps).
+
+- `s1_lr_cosine.yml` is `c0` plus the four schedule keys, read against `c0` (`vcpho5qm`) and `u2`.
+- `s1_k1_ema_lr_cosine.yml` is `k1_ema` plus the same keys, read against `k1_ema` (`j4u25qfd`);
+  optional, since `k1_ema` missed the stacking gate (read above).
+- Each resolves to only those keys against its control. Two debug smokes exit 0; the one with EMA
+  shows the scheduler stepping once per optimizer step, at the exact cosine rate.
+
+Generate on Fir with `submit_masster_mh_ft_memorization_route.sh lr`.
+[Plan](plans/masster/masster_memorization_route_plan.md#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25).
+
+**Enveda-180 preprocessed through step 2 (2026-09-25); reader uncommitted, no split.** New
+`--input_format enveda` in `preproc_scripts/01_prepare_df.py` reads the filtered JSONL export.
+`data/df/enveda_180_df.csv` and `data/proc/enveda_180/` hold 1,158,293 timsTOF QTOF spectra of
+183,476 molecules, with nothing dropped. The filtered export is exactly a 1% base-peak floor.
+Multi-energy records are stepped acquisitions, and the 1,946 two-energy ones read as `ramped`
+downstream, so split with `--ce_types stepped single`. Dimers are 28.7% of spectra, and the
+molecules are effectively disjoint from NIST20/23, MSGYM and Spectraverse (26-66 shared). Step 2
+peaked at 23.3 GB RSS plus swap on this workstation. Next: choose the split role and key.
+[Finding](findings/enveda_180_dataset_2026_09_25.md).
+
+**MASSter exports per-peak fragment annotation (2026-09-25); uncommitted.** It uses the same
+columns and flags as FraGNNet (`--return_formula_str`, `--return_cc_hash`): a neutral formula
+plus adduct per peak, P(n|f), and an atom bitmask per fragment.
+
+- **Model.** `MassterModel.forward(return_annotation=True)` adds per-pathway fragment, ion-mode
+  and H-shift indices and the fragment atom memberships. `MassterPL` turns it on from the
+  exporter's `return_explainability_tensors`, so training is unchanged.
+- **Export.** `masster_annotation_tables` in `script_utils.py` groups the pathways into
+  FraGNNet's formula / joint / node tables, and the existing filter, rebase and HDF5 path
+  writes them. `aggregate_peaks_exact_mz` gained `return_inverse`.
+- **Validation.**
+  - `ll04i00m` on 128 MSGYM val spectra (CPU; the GPU was taken by another job): m/z
+    reproduced to 5.7e-13 Da, and every fragment is a connected substructure with the
+    formula's heavy atoms. The spectrum is identical to the annotation-off export.
+  - On GPU (512 spectra), the annotation adds no measurable time. The HDF5 grows by 46 KB per
+    spectrum at `--min_intensity 0` and by 1.8 KB at 10.0.
+  - 15 new tests in `tests/test_inference_masster_annotation.py`.
+- **Behavior change.** `scripts/run_inference.py` defaults both flags to True, so MASSter runs
+  through it now build the annotation. `run_save_inference_eval.py` defaults to False.
+- Conventions and costs: [run_inference guide](guides/run_inference.md#fragment-annotation).
 
 **MASShatter renamed to MASSter (2026-09-25); uncommitted, not on any cluster yet.** 466 files
 edited and 408 moved. Code, configs and docs now say `model_type: masster`, `masster_*` keys,
@@ -48,7 +136,7 @@ uninterrupted run) and a CPU smoke pass. Generate on Fir with
 `submit_masster_mh_ft_ranking_transfer.sh u3`.
 [Plan](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
 
-**Global-message swap arms `gm3`-`gm6` built (2026-09-25); not submitted, uncommitted.** A
+**Global-message swap arms `gm3`-`gm6` built (2026-09-25); running in batch 2.** A
 feature-level CutMix that keeps the label: in training, the encoder's normalized global-attention
 message is replaced by another molecule's real, detached message, where `gm1` uses the batch
 mean. The head cannot tell when a swapped key is wrong, which it can with the mean. Labels are
@@ -65,12 +153,17 @@ not mixed: a MASSter target is an allocation over one molecule's candidates.
 - Generate with `submit_masster_mh_ft_memorization_route.sh swap` on Fir; `batch2` now includes
   them. [Plan](plans/masster/masster_memorization_route_plan.md#global-message-swap-arms-gm3-gm6-built-2026-09-25-not-submitted).
 
-**Batch 2: the original six are RUNNING on Fir (read 2026-09-25, 20:30 UTC, epochs 23-27 of
-64); `gm3`-`gm6` are uncommitted and not submitted.** Early read, not the gate: `gm1` +0.0064 over
+**Batch 2: six finished 2026-09-26 (read in the entry above); `gm3`-`gm6` still running.** At ~21:45 UTC on 2026-09-25 the original six were
+at epochs 49-53 of 64 and `gm3`-`gm6` at 9-13. Early read at epochs 23-27 (20:30 UTC), not the
+gate: `gm1` +0.0064 over
 `c0` but narrowing, `gm2` −0.0030 and widening, `k1_ema` +0.0039 over `u2`, and both replicates
 repeat their originals (`k1_s2` +0.0051, `u2_s2` +0.0122 against `c0_s2`, which sits +0.0011 from
 `c0`). Run ids and the table are in the
 [plan](plans/masster/masster_memorization_route_plan.md#batch-2-configs-2026-09-25-not-submitted).
+**Eval-mode train/val gap on the Step 1 checkpoints:** about 0.18 cosine everywhere (`c0`@63:
+0.922 train, 0.739 val). `k1` closes 0.017 of it, EMA (`u2`) lifts train and val together, and `r2`
+leaves it in place (−0.007). Coverage differs by ≤0.004, so the gap is allocation
+([table](plans/masster/masster_memorization_route_plan.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25)).
 Configured as ten jobs:
 
 - `gm1` and `gm2` (below), and `gm3`-`gm6` (above);
@@ -82,7 +175,7 @@ The three replicates do not upload checkpoints. Each config resolves to exactly 
 `submit_masster_mh_ft_memorization_route.sh batch2`.
 [Plan](plans/masster/masster_memorization_route_plan.md#batch-2-configs-2026-09-25-not-submitted).
 
-**Global-message noise arms `gm1`/`gm2` built (2026-09-25); not submitted, uncommitted.**
+**Global-message noise arms `gm1`/`gm2` built (2026-09-25); running in batch 2.**
 Training-only noise on the encoder's global-attention message, where the route map found the
 key is written. The code is in `GINE_GSA`, after the message's norm, and reaches the shared
 precursor encoder only.

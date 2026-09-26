@@ -1,17 +1,26 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-25
+> **Status:** ACTIVE · **Updated:** 2026-09-26
 > **Step 1 ran; W&B tail read done ([below](#step-1-tail-read-from-wb-2026-09-24)).** `k1` (key
 > dropout) passes gates 1 and 5 at +0.0074 over `c0`; gates 2-4 need the route map and novelty
 > bins on its checkpoint. `r2` (no global attention) is null at +0.0006. `r1` fails (−0.0029),
 > `r0` is −0.0129 and `m1` is −0.0203. The same-recipe `c0`/`f0` spread is 0.0022.
-> **Global-message noise arms `gm1`/`gm2` built 2026-09-25, not submitted**
-> ([section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted)).
-> **Global-message swap arms `gm3`-`gm6` built 2026-09-25, not submitted**: another molecule's
-> real message instead of the batch mean, a feature-level CutMix that keeps the label
+> **Global-message noise arms `gm1`/`gm2`**
+> ([section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted)) **and swap
+> arms `gm3`-`gm6`**: another molecule's real message instead of the batch mean, a feature-level
+> CutMix that keeps the label
 > ([section](#global-message-swap-arms-gm3-gm6-built-2026-09-25-not-submitted)).
-> **Batch 2 configured** ([section](#batch-2-configs-2026-09-25-not-submitted)): `gm1`-`gm6`,
-> `k1_ema` and seed-811237 replicates of `c0`, `k1` and EMA.
+> **Batch 2** ([section](#batch-2-configs-2026-09-25-not-submitted)): `gm1`-`gm6`, `k1_ema` and
+> seed-811237 replicates of `c0`, `k1` and EMA. **Six of ten finished; tail read 2026-09-26**
+> ([read](#batch-2-tail-read-six-finished-runs-2026-09-26)). The seed spread is 0.0042
+> (`c0_s2` − `c0`), above the +0.003 gate. `k1` and EMA replicate (+0.0048, +0.0072 at seed
+> 811237); `k1_ema` is +0.0029 over `u2`, just under the gate; `gm1` +0.0051, `gm2` −0.0029.
+> `gm3`-`gm6` are still running.
+> **Learning-rate-schedule arms `s1`/`s1_k1_ema` built 2026-09-25, not submitted**
+> ([section](#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25)): `d3`'s warmup and cosine
+> decay on `c0` and on `k1_ema`, where every run so far trains at a constant 1e-3 (decision C).
+> **Weight-decay arm `w1` built 2026-09-25, not submitted** ([section](#weight-decay-arm-w1-2026-09-25)):
+> `c0` with `weight_decay` 0.1, whose decay timescale (~32 epochs) falls inside the run.
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
 > lookup key, and the boundary block reads it
 > ([finding](../../findings/masster/masster_route_map_2026_09_24.md)). The collision census
@@ -101,7 +110,9 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
   from memorizing an easy-to-fit patch first (Li, Wei & Ma 2019; You et al. 2019), and a
   molecule key is such a patch. Recommendation: run it as its own arm and read the gap
   trajectory, rather than putting the schedule in every arm. The route map was measured on
-  constant-rate checkpoints, and the other arms should stay matched to them.
+  constant-rate checkpoints, and the other arms should stay matched to them. **Built
+  2026-09-25** as `s1`, with a stacked `s1_k1_ema` against `k1_ema`
+  ([section](#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25)).
 
 **Next, ranked by evidence (not built):**
 
@@ -134,7 +145,8 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
      ensemble);
    - out-of-fold distillation (never same-data: soft labels carry a teacher's memorized
      answers);
-   - targeted larger weight decay over a longer horizon (the grokking and Omnigrok line);
+   - targeted larger weight decay over a longer horizon (the grokking and Omnigrok line;
+     `w1` tests 10x decay at 64 epochs, [section](#weight-decay-arm-w1-2026-09-25));
    - a Fisher-trace penalty (a second backward pass);
    - periodic reinitialization of the key reader or of the global-attention projections.
      Demoted: across 15,000 models, resets added little once other regularization was tuned
@@ -544,6 +556,51 @@ Per arm, against the decision table:
 2. Novelty bins (gate 4) on the `k1` checkpoint.
 3. Replicate `k1` (second seed), and build a `k1` + `ema_decay: 0.999` arm on this same code.
 
+### Eval-mode train/val gap on the Step 1 checkpoints (2026-09-25)
+
+Item 1's eval-mode train cosine, without the route conditions. The instrument is
+`debug_pooled_embedding_memorization.py`, with the settings the route map used: eval mode, 60 batches of
+512 per split (about 30.7k spectra each), the same batches for every checkpoint. Each arm's best
+checkpoint is used. The plain condition is read; one `feat_charge` condition ran alongside and is
+not read. `c0`'s best checkpoint is from epoch 42 and the arms' are from epochs 56-61, and the
+gap grows with training. So `c0` was also read at its last checkpoint (epoch 63), and f0 (`3bej6fq7`,
+epoch 61, route map) is a second same-recipe reference. Runner and CSVs were in the session
+scratchpad; checkpoints are in `saved_ckpts/`.
+
+| arm | epoch | train cos | val cos | gap | gap vs `c0`@63 | train `wrecall` | val `wrecall` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `c0` | 63 | 0.9222 | 0.7388 | 0.1834 | — | 0.9469 | 0.9442 |
+| `c0` | 42 | 0.9162 | 0.7402 | 0.1760 | −0.0074 | 0.9462 | 0.9439 |
+| f0 | 61 | 0.924 | 0.744 | 0.181 | −0.003 | — | — |
+| `k1` | 61 | 0.9132 | 0.7467 | 0.1665 | **−0.0169** | 0.9469 | 0.9450 |
+| `r2` | 57 | 0.9185 | 0.7420 | 0.1765 | −0.0069 | 0.9460 | 0.9445 |
+| `r1` | 58 | 0.9182 | 0.7392 | 0.1790 | −0.0044 | 0.9466 | 0.9434 |
+| `r0` | 60 | 0.9135 | 0.7289 | 0.1846 | +0.0012 | 0.9468 | 0.9448 |
+| `u2` (EMA weights) | 56 | 0.9324 | 0.7516 | 0.1808 | −0.0026 | 0.9475 | 0.9448 |
+| `m1` (sink off at eval) | 56 | 0.8142 | 0.7223 | 0.0919 | −0.0915 | 0.9473 | 0.9447 |
+
+- **The gap is about 0.18 in every arm but `m1`.** The best arm, `k1`, closes 0.017 of it (9%):
+  train −0.009, val +0.008. It narrows the gap by fitting train less and val more, which is the
+  shape the plan wants, but the size is small.
+- **EMA does not narrow the gap.** It lifts train (+0.010) and val (+0.013) together, so its gain is
+  an optimization gain, not less memorization.
+- **Removing global attention leaves the gap in place.** `r2` is −0.007, within the `c0`
+  epoch-42/63 difference. The lookup the route map traced to global attention re-forms without it,
+  as its Limits section allowed.
+- **`m1`'s small gap is underfitting.** With the sink dropped at eval, train falls to 0.814 and
+  val to 0.722: the sink carried train fit, and some transferable fit with it.
+- **Coverage is not the gap.** `wrecall` differs by 0.002-0.004 between train and val in every
+  arm. The gap is in how intensity is allocated among covered candidates.
+- **Limits.** One seed; 60 batches, paired, so contrasts of about 0.003 are near the noise; the
+  arms' best epochs differ by up to 5.
+
+The running batch-2 arms log only train-mode loss, which carries each arm's own training noise
+(and, under EMA, the online weights), so their W&B loss gap is not a clean read. Val primary loss
+is clean. At epochs 14-23, `gm1`'s val loss is better than `c0`'s (−2.928 against −2.889) at an
+unchanged train-mode loss (−3.416 against −3.421); `gm2` raises train-mode loss (−3.356) for a small
+val-loss gain. `gm1`, `gm2` and `k1_ema` upload checkpoints, so the same eval-mode read runs on
+them when they finish.
+
 ## Global-message noise arms `gm1` and `gm2` (built 2026-09-25, not submitted)
 
 **Why.** Step 1 put its one gain on noise, not removal. On the boundary path, removing the block
@@ -686,6 +743,10 @@ same group): `gm1` `8ifz8p3t`, `gm2` `msmnydk7`, `k1_ema` `j4u25qfd`, `c0_s2` `1
 `k1_s2` `e39ko0zr`, `u2_s2` `qwhsp2fg`. All run at 3.0 min/epoch, as `c0`. `gm3`-`gm6` exist
 only in the uncommitted working tree and are not submitted.
 
+**Update 2026-09-25, ~21:45 UTC: all ten are running.** `gm3` `aijxahxb`, `gm4` `ou0ajppm`,
+`gm5` `fr3dcnm1` and `gm6` `7qw60mn0` were created 21:04-21:16 UTC and were at epochs 9-13; the
+original six were at epochs 49-53. Their configs and code are committed (`54fa5f2f`).
+
 Early read at epochs 23-27 of 64, not the gate. Each value is the mean `val_cos_sim_0.01` delta over
 the last 10 common epochs. The finished arms' early windows tracked their tails: `k1` +0.0057 at
 18-27 against +0.0074 at 54-63, and `u2` +0.0135 against +0.0116.
@@ -734,3 +795,119 @@ group. Generate on Fir with
   `pyteomics` wheel before generating anything.
   A two-epoch smoke of `k1` + EMA, the one combination not run before, exits 0 on the debug
   config.
+
+### Batch 2 tail read, six finished runs (2026-09-26)
+
+Read from W&B at 00:20 UTC. `gm3`-`gm6` were still running (epochs 57-61). Tail = mean
+`val_cos_sim_0.01` over epochs 54-63; coverage = the same mean of `val_candidate_wrecall`.
+
+| arm | run | tail | control | delta | above control | coverage delta |
+| --- | --- | ---: | --- | ---: | --- | ---: |
+| `k1_ema` | `j4u25qfd` | 0.7421 | `u2` (0.7392) | +0.0029 | 51 of 64 epochs | not logged by `u2`; +0.0007 vs `c0` |
+| `gm1` | `8ifz8p3t` | 0.7327 | `c0` (0.7276) | +0.0051 | 63 of 64 | +0.0003 |
+| `gm2` | `msmnydk7` | 0.7247 | `c0` | −0.0029 | 6 of 64 | −0.0006 |
+| `k1_s2` | `e39ko0zr` | 0.7366 | `c0_s2` (0.7318) | +0.0048 | 57 of 64 | +0.0001 |
+| `u2_s2` | `qwhsp2fg` | 0.7390 | `c0_s2` | +0.0072 | 64 of 64 | +0.0004 |
+| `c0_s2` | `1oxhvk0n` | 0.7318 | `c0` | +0.0042 | 56 of 64 | +0.0002 |
+
+- **The seed spread is 0.0042.** `c0_s2` differs from `c0` by `seed` alone, so this is the
+  cleanest floor measured on this lineage, about twice the 0.0022 `c0`/`f0` pair used so far and
+  above the +0.003 gate. A single-seed delta under about +0.005 is not resolved.
+- **Both passing levers replicate.** `k1` is +0.0074 at seed 397623 and +0.0048 at 811237; EMA
+  +0.0116 and +0.0072. EMA is the larger on both seeds.
+- **Stacking is not shown.** `k1_ema` has the best tail on this lineage (+0.0145 over `c0`), but
+  it is +0.0029 over `u2`, under the gate and inside the seed spread.
+- **`gm1` passes gate 1 on one seed** (+0.0051); **`gm2` fails** (−0.0029).
+- Coverage moves by at most 0.0007 anywhere, so none of this is candidate-set coverage.
+- Not yet run: gates 2-4 (ranking decomposition, route map, novelty bins) on the new
+  checkpoints, and the `gm3`-`gm6` read.
+
+## Learning-rate-schedule arms `s1` and `s1_k1_ema` (2026-09-25)
+
+**Built, not submitted.** Plan decision C, config only. No code changed: the schedule path is
+`build_lr_scheduler` in `SpectrumPL.configure_optimizers`, which `MassterPL` inherits, and it ran
+on the merged lineage as `d3`.
+
+| config | against its control | control | checkpoints |
+| --- | --- | --- | --- |
+| `s1_lr_cosine.yml` | the four schedule keys | `c0` (`vcpho5qm`, tail 0.7276) | uploaded |
+| `s1_k1_ema_lr_cosine.yml` | the four schedule keys | `k1_ema` (`j4u25qfd`, running) | uploaded |
+
+- **The schedule is `d3`'s.** `lr_schedule: true`, `lr_schedule_type: cosine`,
+  `lr_min_ratio: 0.01`, `lr_total_steps: 19712`, and the template's `lr_warmup_steps: 1000`.
+  - `c0` takes 308 optimizer steps per epoch (W&B `trainer/global_step` rises by 308 each epoch
+    and ends at 19,711), so 64 epochs are 19,712 steps.
+  - The rate rises to 1e-3 at step 1000 (3.2 epochs), is 5.5e-4 at epoch 32, 7.5% of peak where
+    the 54-63 tail starts, and 1e-5 at the last step. Averaged over the run it is half of `c0`'s.
+  - The warmup stays at 1000 steps, not `d3`'s share of the run (11 of 128 merged epochs): it
+    is there for the post-LN stack, whose early instability is counted in optimizer steps.
+- **Reading.**
+  - `s1` against `c0`: +0.003 on the 54-63 tail, with `val_candidate_wrecall` within 0.005.
+    That tail compares settled weights (7.5-1% of peak) with constant-rate ones, which is the
+    contrast decision C asks for.
+  - `s1` against `u2` (`c8hh9j1b`, 0.7392) as well. EMA and decay both remove late-training
+    weight noise, so a gain near `u2`'s may be the same gain.
+  - The eval-mode train/val gap on `s1`'s best checkpoint, as in the
+    [Step 1 table](#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25). The schedule
+    is a memorization lever only if the gap narrows; train and val rising together is an
+    optimization gain, as EMA's was.
+  - `s1_k1_ema` against `k1_ema`, same gate: whether the schedule adds to the two levers that
+    passed. Read it only if `k1_ema` passes against `u2`. It narrowly did not (+0.0029,
+    [read](#batch-2-tail-read-six-finished-runs-2026-09-26)), so `s1_k1_ema` is optional.
+  - **The schedule also halves the weight decay.** AdamW shrinks each weight by `1 − lr·wd` per
+    step at the current rate (torch 2.4.1), so both arms decay half as much over the run as their
+    controls (an undriven weight ends at 0.905 against 0.821) and almost not at all in the tail.
+    Each arm is LR decay plus half the weight decay, not LR decay alone. At `wd` 0.01 the decay
+    timescale, `1/(lr·wd)` = 100,000 steps (325 epochs), is five times this run, so the second
+    change is small.
+- **Checks.**
+  - Through `load_config`, each config differs from its control by exactly `lr_schedule`,
+    `lr_schedule_type`, `lr_total_steps` and `lr_min_ratio`, plus W&B naming.
+  - The rates above come from `build_lr_scheduler` on the resolved `s1` config.
+  - Two-epoch smokes on `debug_tiny_masster_cut_features.yml`, local GPU, both exit 0: the
+    schedule alone, and the schedule with the two `k1` keys and `ema_decay: 0.9`. In the second,
+    `last.ckpt` holds the scheduler at step 32, equal to `global_step`, and the optimizer's rate
+    (1.258e-4) is the cosine value at that step exactly. The scheduler steps once per optimizer
+    step through the MASSter path, with the EMA callback alongside.
+  - `bash -n` passes on the generator. Its checks pass for `lr`, `s1` and `s1_k1_ema`; the local
+    run stops at the missing `pyteomics` wheel before generating anything, as for batch 2.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh lr` (both), or `s1` or
+  `s1_k1_ema` alone. The schedule does not change the compute, so the 5 h box holds.
+- **Name.** `s1` is decision C's name. The Step 3 option also called `s1` (set dropout) is not
+  built; give it another name if it ever is.
+
+## Weight-decay arm `w1` (2026-09-25)
+
+**Built, not submitted.** Config only. `w1_wd10.yml` is `c0` with `weight_decay: 0.1` instead of
+0.01, read against `c0` (`vcpho5qm`, tail 0.7276). Checkpoints are uploaded.
+
+- **Why.** AdamW shrinks each weight by `1 − lr·wd` per step, so the decay timescale is
+  `1/(lr·wd)` steps. At `c0`'s 0.01 that is 100,000 steps (325 epochs), five times the 64-epoch
+  screen, and an undriven weight ends the run at 0.82 of its value. At 0.1 it is 10,000 steps
+  (32 epochs), and the weight ends at 0.14. Weight decay has never been varied on this lineage.
+- **Prior evidence, merged only.**
+  - `wd10` (`kalc4mzo`, 0.1) was the one arm of the 2026-09-19 screen to narrow the train/val
+    gap (0.122 against 0.128-0.130) without lowering train cosine, at +0.0015 val inside a
+    ±0.007 screen. It ran the pre-2026-09-20 architecture and crashed at epoch 65 of 630.
+  - The 128-epoch rerun `c4d_wd10` was prepared on 2026-09-22 and never submitted; W&B has no
+    such run.
+  - `b3_wd_groups` (norms and biases exempt, at 0.01) was an exact null, and `p3` (0.1 on the
+    proposal branch only) a null.
+- **Scope.** The decay reaches every tensor, as in `c0` and the merged arm
+  (`weight_decay_exclude_norm_bias: false`), so norm gains, biases and the inducing tokens decay
+  at 0.1 too. If `w1` underfits, the follow-up is the same decay with those exempt.
+- **Reading.**
+  - Against `c0`: +0.003 on the 54-63 tail, with `val_candidate_wrecall` within 0.005.
+  - The eval-mode train/val gap on the best checkpoint, as in the
+    [Step 1 table](#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25). The question is
+    whether the gap narrows with val up. Train down with val flat or down is underfitting.
+  - The seed spread is 0.0042 ([batch 2 read](#batch-2-tail-read-six-finished-runs-2026-09-26)),
+    so a result between +0.003 and about +0.005 needs a second seed before it counts.
+- **Checks.**
+  - Through `load_config`, `w1` differs from `c0` by `weight_decay` alone, plus W&B naming.
+  - A two-epoch smoke on `debug_tiny_masster_cut_features.yml` with `weight_decay=0.1`, local
+    GPU, exits 0. Its `last.ckpt` holds one AdamW group over all 156 parameter tensors, at
+    `weight_decay` 0.1 and `lr` 1e-3.
+  - `bash -n` passes. The generator's checks pass for `w1`; the local run stops at the missing
+    `pyteomics` wheel before generating anything.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh w1`.

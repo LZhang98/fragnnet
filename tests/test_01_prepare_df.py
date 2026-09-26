@@ -7,11 +7,16 @@ Tests validate:
 - Data dictionary validation
 """
 
+import gzip
 import importlib.util
+import json
 import tempfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
+
+import fragnnet.utils.data_utils as data_utils
 
 
 def load_prepare_module():
@@ -226,3 +231,90 @@ def test_pcdl_keys_dict_has_required_keys():
     ]
     for key in required_keys:
         assert key in module.PCDL_KEYS, f"Missing key: {key}"
+
+
+def _enveda_entry(title: str, adduct: str, ce: str, ionmode: str) -> dict:
+    return {
+        "title": title,
+        "pepmass": "326.198845",
+        "charge": "1-" if ionmode == "ESI Negative" else "1+",
+        "adduct": adduct,
+        "collision_energies": ce,
+        "instrument": "Bruker timsTOF Pro 2",
+        "instrument_type": "Q-TOF",
+        "ionmode": ionmode,
+        "inchikey": "AAAAMGLVZZXVDT-UHFFFAOYSA-N",
+        "formula": "C18H25N5O",
+        "smiles": "CC(C)N1C=NN=C1C1CCCN(CC(=O)NC2=CC=CC=C2)C1",
+        "iupac_name": "N-phenyl-2-acetamide",
+        "ccs": "190.94",
+        "num_peaks": 2,
+        "mzs": ["92.050941", "149.071959"],
+        "intensities": ["8751.00", "13456.00"],
+        "num_isotope_peaks": 2,
+        "isotope_mzs": ["326.198653", "327.202283"],
+        "isotope_intensities": ["0.93", "0.07"],
+    }
+
+
+@pytest.fixture
+def enveda_jsonl_fp(tmp_path: Path) -> Path:
+    """Enveda-180 export with a stepped negative, a single positive and a 2-energy entry."""
+    entries = [
+        _enveda_entry("enveda_000001_01", "[M-H]-", "-60,-40,-20", "ESI Negative"),
+        _enveda_entry("enveda_000001_02", "[M+H]+", "40", "ESI Positive"),
+        _enveda_entry("enveda_000001_03", "[M+H]+", "20,60", "ESI Positive"),
+    ]
+    fp = tmp_path / "enveda-180-filtered.jsonl.gz"
+    with gzip.open(fp, "wt") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+    return fp
+
+
+def test_parse_enveda_ce_str_strips_polarity_and_sorts():
+    """Negative-mode energies lose their sign; stepped lists come out lowest first."""
+    module = load_prepare_module()
+
+    assert module.parse_enveda_ce_str("-40") == ["40 eV"]
+    assert module.parse_enveda_ce_str("-60,-40,-20") == ["20 eV", "40 eV", "60 eV"]
+    assert module.parse_enveda_ce_str("20,40,60") == ["20 eV", "40 eV", "60 eV"]
+
+
+def test_process_enveda_maps_columns(enveda_jsonl_fp: Path):
+    """Enveda rows reach the unified schema, and their CE strings parse downstream."""
+    module = load_prepare_module()
+
+    spec_df = module.process_enveda(str(enveda_jsonl_fp))
+
+    assert spec_df["spec_id"].tolist() == [0, 1, 2]
+    assert spec_df["dset_spec_id"].tolist() == [
+        "enveda_000001_01",
+        "enveda_000001_02",
+        "enveda_000001_03",
+    ]
+    assert spec_df["ion_mode"].tolist() == ["N", "P", "P"]
+    assert spec_df["prec_type"].tolist() == ["[M-H]-", "[M+H]+", "[M+H]+"]
+    assert spec_df["stepped"].tolist() == [True, False, True]
+    neg = spec_df.iloc[0]
+    assert neg["peaks"] == "92.050941 8751.00\n149.071959 13456.00"
+    assert neg["prec_mz"] == "326.198845"
+    assert neg["inst_type"] == "Q-TOF"
+    assert neg["inst"] == "Bruker timsTOF Pro 2"
+    assert neg["spec_type"] == "MS2"
+    assert neg["frag_mode"] == "CID"
+    assert [neg[col] for col in module.CE_COLS] == ["20 eV", "40 eV", "60 eV"]
+    assert data_utils.parse_ace_str(neg["col_energy_extra_2"]) == pytest.approx(60.0)
+    assert "isotope_mzs" not in spec_df.columns
+    assert "mzs" not in spec_df.columns
+    for value in module.MSP_KEY_DICT.values():
+        assert value in spec_df.columns
+
+    single = spec_df.iloc[1]
+    assert single["col_energy"] == "40 eV"
+    assert pd.isna(single["col_energy_extra_1"])
+    assert pd.isna(single["col_energy_extra_2"])
+
+    two_step = spec_df.iloc[2]
+    assert [two_step["col_energy"], two_step["col_energy_extra_1"]] == ["20 eV", "60 eV"]
+    assert pd.isna(two_step["col_energy_extra_2"])

@@ -14,16 +14,28 @@ import h5py
 import numpy as np
 import pandas as pd
 import torch as th
+from pyteomics.mass import Composition
 from tqdm import tqdm
 
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.pl_model import FraGNNetPL, MassterPL
 from fragnnet.runner import load_config
 from fragnnet.utils.formula_utils import (
+    PERIODIC_TABLE,
+    PREC_TYPE_TO_CMF_FORMULA_DIFF,
+    PREC_TYPE_TO_FORMULA_DIFF,
     formula_delta_to_signed_str,
     formula_row_prec_deltas,
 )
-from fragnnet.utils.frag_utils import PACKED_DAG_INDEX_DATASET, get_node_feats
+from fragnnet.utils.frag_utils import (
+    ELEMENT_TO_IDX,
+    MASK_SIZE,
+    NUM_ELEMENTS,
+    PACKED_DAG_INDEX_DATASET,
+    formula_arr_to_str,
+    get_node_feats,
+    th_mask_to_long,
+)
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
     flatten_lol,
@@ -879,7 +891,21 @@ def get_idx_vars(
     # Determine which index variables to track
     fraggnn_model = isinstance(model, FraGNNetPL)
     iceberg_model = isinstance(model, IcebergIntenPL)
-    if not (fraggnn_model or iceberg_model):
+    if isinstance(model, MassterPL):
+        # The exporter builds MASSter's formula/joint/node annotation per batch
+        # (`masster_annotation_tables`) under FraGNNet's index names.
+        assert not nb_iso
+        BATCH_IDX_VARS = [
+            "pred_batch_idxs",
+            "true_batch_idxs",
+            "pred_formula_batch_idxs",
+            "pred_node_batch_idxs",
+            "pred_joint_batch_idxs",
+        ]
+        NODE_IDX_VARS = ["pred_node_node_idxs", "pred_joint_node_idxs"]
+        FORMULA_IDX_VARS = ["pred_formula_formula_idxs", "pred_joint_formula_idxs"]
+        NB_NODE_IDX_VARS = []
+    elif not (fraggnn_model or iceberg_model):
         assert not nb_iso
         BATCH_IDX_VARS = ["pred_batch_idxs", "true_batch_idxs"]
         NODE_IDX_VARS = []
@@ -1686,6 +1712,294 @@ def get_split_fn(
     return split_fn
 
 
+@dataclass
+class MassterAnnotationTables:
+    """MASSter's per-batch stand-ins for the tables FraGNNet's DAG dataset supplies.
+
+    The export resolves FraGNNet annotation through a formula axis, a node axis and the joint
+    (formula, node) grid between them. MASSter has no DAG, so these are built per batch from
+    its output pathways, and the exporter then filters, rebases and writes them exactly as it
+    does FraGNNet's. Formula and node indices are batch-global and contiguous per spectrum;
+    the ``*_cumsizes`` offsets turn them into per-spectrum ones.
+
+    Attributes:
+        frag_formula_peak_idxs: Per-spectrum formula row of every aggregated peak, shape (P,).
+        formula_batch_idxs: Spectrum of every formula row, shape (R,).
+        formula_logprobs: log P(f), the formula's share of its spectrum's intensity, (R,).
+        formula_cumsizes: Formula-row offsets, shape (B + 1,).
+        formula_strs: Neutral fragment formula (H shift included) per row, shape (R,).
+        formula_deltas: Precursor delta formula per row, e.g. ``"H1"``, shape (R,).
+        joint_batch_idxs: Spectrum of every (formula, node) cell, shape (J,).
+        joint_formula_idxs: Batch-global formula row of every cell, shape (J,).
+        joint_node_idxs: Batch-global node of every cell, shape (J,).
+        formula_node_logprobs: log P(n | f), shape (J,).
+        node_formula_logprobs: log P(f | n), shape (J,).
+        node_batch_idxs: Spectrum of every node, shape (N,).
+        node_logprobs: log P(n), the node's share of its spectrum's intensity, shape (N,).
+        node_cumsizes: Node offsets, shape (B + 1,).
+        node_ccs: Atom bitmask per node in the FraGNNet ``cc`` encoding, shape (N, 2), or
+            None when not requested.
+        num_multi_formula_peaks: Peaks whose pathways carry more than one formula row.
+    """
+
+    frag_formula_peak_idxs: th.Tensor
+    formula_batch_idxs: th.Tensor
+    formula_logprobs: th.Tensor
+    formula_cumsizes: th.Tensor
+    formula_strs: np.ndarray
+    formula_deltas: np.ndarray
+    joint_batch_idxs: th.Tensor
+    joint_formula_idxs: th.Tensor
+    joint_node_idxs: th.Tensor
+    formula_node_logprobs: th.Tensor
+    node_formula_logprobs: th.Tensor
+    node_batch_idxs: th.Tensor
+    node_logprobs: th.Tensor
+    node_cumsizes: th.Tensor
+    node_ccs: th.Tensor | None
+    num_multi_formula_peaks: int
+
+
+def _unique_rows(rows: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+    """``th.unique(rows, dim=0, return_inverse=True)``, built from stable 1-D sorts.
+
+    Same rows, same lexicographic order, same inverse. ``th.unique`` with ``dim`` took 86% of
+    the MASSter annotation's CPU time (``ll04i00m``, batch 32); one stable argsort per
+    non-constant column is much cheaper.
+
+    Args:
+        rows: Integer keys, shape (n, k).
+
+    Returns:
+        (unique rows, shape (u, k); inverse, shape (n,)).
+    """
+    order = th.arange(rows.shape[0], device=rows.device)
+    if rows.shape[0] > 1:
+        # Sorting by the last column first and the first column last leaves the rows in
+        # lexicographic order. A constant column changes neither the grouping nor the order.
+        varying = (rows.amax(dim=0) != rows.amin(dim=0)).tolist()
+        for column in reversed(range(rows.shape[1])):
+            if varying[column]:
+                order = order[th.argsort(rows[order, column], stable=True)]
+    sorted_rows = rows[order]
+    starts = th.ones(rows.shape[0], dtype=th.bool, device=rows.device)
+    starts[1:] = (sorted_rows[1:] != sorted_rows[:-1]).any(dim=1)
+    inverse = th.empty_like(order)
+    inverse[order] = th.cumsum(starts, 0) - 1
+    return sorted_rows[starts], inverse
+
+
+def _batch_offsets(batch_idxs: th.Tensor, batch_size: int) -> th.Tensor:
+    """Offsets of a batch-sorted axis, shape (batch_size + 1,)."""
+    counts = th.bincount(batch_idxs, minlength=batch_size)
+    return th.cat([counts.new_zeros(1), th.cumsum(counts, 0)])
+
+
+def masster_annotation_tables(
+    pathway_peak_idxs: th.Tensor,
+    peak_batch_idxs: th.Tensor,
+    pathway_ints: th.Tensor,
+    pathway_fragment_idxs: th.Tensor,
+    pathway_ion_mode_idxs: th.Tensor,
+    pathway_h_shifts: th.Tensor,
+    fragment_batch_idxs: th.Tensor,
+    fragment_atom_indices: th.Tensor,
+    fragment_atom_fragment_idxs: th.Tensor,
+    atom_atomic_numbers: th.Tensor,
+    atom_hydrogen_counts: th.Tensor,
+    atom_ptr: th.Tensor,
+    precursor_types: list[str],
+    return_node_ccs: bool,
+) -> MassterAnnotationTables:
+    """Group MASSter's output pathways into FraGNNet's formula / joint / node annotation.
+
+    A pathway is one (fragment, ion mode, H shift) channel; the exported peak is every pathway
+    at one 4-decimal m/z. Pathways are grouped three ways:
+
+    - **formula** rows: one per (peak, neutral formula, precursor delta). The neutral formula is
+      the fragment's own formula plus its H shift, as in FraGNNet, so neutral + delta is the
+      ion. Where that neutral formula would need a negative count (a hydrogen-poor fragment
+      ionized by the adduct's own hydrogen, e.g. ``[M+H]+`` at H shift -1), the row carries
+      the ion formula with an empty delta instead, the way FraGNNet writes ``[M+H]+``
+      charge retention.
+    - **node** rows: one per distinct atom set in a spectrum, so duplicate latent fragments
+      (the non-unique fragment mode) share a node.
+    - **joint** cells: one per (formula row, node).
+
+    With ``w`` the L1-normalized pathway intensity, ``P(f) = sum w`` over the row's pathways,
+    ``P(n) = sum w`` over the node's, ``P(n|f) = w(f, n) / P(f)`` and ``P(f|n) = w(f, n) / P(n)``.
+    A ratio whose denominator is 0 is reported as 0.
+
+    Args:
+        pathway_peak_idxs: Aggregated peak of every pathway, shape (Q,).
+        peak_batch_idxs: Spectrum of every aggregated peak, batch-sorted, shape (P,).
+        pathway_ints: Linear, per-spectrum L1-normalized intensity per pathway, shape (Q,).
+        pathway_fragment_idxs: Fragment of every pathway, shape (Q,).
+        pathway_ion_mode_idxs: 0 for CRF, 1 for CMF, shape (Q,).
+        pathway_h_shifts: Signed hydrogen shift per pathway, shape (Q,).
+        fragment_batch_idxs: Spectrum of every fragment, shape (Fr,).
+        fragment_atom_indices: Batch-global atom of every (fragment, atom) membership, (M,).
+        fragment_atom_fragment_idxs: Fragment of every membership, shape (M,).
+        atom_atomic_numbers: Atomic number per atom of the batched graphs, shape (A,).
+        atom_hydrogen_counts: Implicit hydrogen count per atom, shape (A,).
+        atom_ptr: Atom offsets of the batched graphs, shape (B + 1,).
+        precursor_types: Precursor type string per spectrum, length B.
+        return_node_ccs: Build the (N, 2) ``cc`` bitmasks.
+
+    Returns:
+        The annotation tables, on the device of the pathway tensors.
+
+    Raises:
+        ValueError: If a fragment holds an element the formula vocabulary lacks, or
+            ``return_node_ccs`` is set for a molecule larger than ``MASK_SIZE`` atoms.
+    """
+    device = pathway_peak_idxs.device
+    batch_size = len(precursor_types)
+    num_peaks = int(peak_batch_idxs.numel())
+    num_fragments = int(fragment_batch_idxs.numel())
+    h_column = ELEMENT_TO_IDX["H"]
+
+    # 1. Element counts per fragment, in the column order `formula_arr_to_str` renders.
+    column_of_atomic_number = th.full((119,), -1, dtype=th.long, device=device)
+    for element, column in ELEMENT_TO_IDX.items():
+        column_of_atomic_number[PERIODIC_TABLE.GetAtomicNumber(element)] = column
+    membership_numbers = atom_atomic_numbers[fragment_atom_indices].long()
+    membership_columns = column_of_atomic_number[membership_numbers]
+    if (membership_columns < 0).any():
+        unknown = sorted(set(membership_numbers[membership_columns < 0].tolist()))
+        raise ValueError(f"fragment atoms with atomic numbers {unknown} have no formula column")
+    fragment_counts = th.zeros((num_fragments, NUM_ELEMENTS), dtype=th.long, device=device)
+    fragment_counts.index_put_(
+        (fragment_atom_fragment_idxs, membership_columns),
+        th.ones_like(membership_columns),
+        accumulate=True,
+    )
+    fragment_counts[:, h_column].index_add_(
+        0, fragment_atom_fragment_idxs, atom_hydrogen_counts[fragment_atom_indices].long()
+    )
+
+    # 2. One node per distinct atom set in a spectrum, keyed by a molecule-local bitmask.
+    molecule_sizes = atom_ptr[1:] - atom_ptr[:-1]
+    max_atoms = int(molecule_sizes.max().item()) if batch_size > 0 else 0
+    if return_node_ccs and max_atoms > MASK_SIZE:
+        raise ValueError(
+            f"node cc bitmasks hold {MASK_SIZE} atoms; this batch has a molecule with "
+            f"{max_atoms}. Export with return_cc_hash=False."
+        )
+    mask_bits = max(MASK_SIZE, -(-max_atoms // 64) * 64)
+    local_atoms = fragment_atom_indices - atom_ptr[fragment_batch_idxs[fragment_atom_fragment_idxs]]
+    fragment_masks = th.zeros((num_fragments, mask_bits), dtype=th.bool, device=device)
+    fragment_masks[fragment_atom_fragment_idxs, local_atoms] = True
+    fragment_keys = th.cat(
+        [fragment_batch_idxs[:, None].long(), th_mask_to_long(fragment_masks.long())], dim=1
+    )
+    used_fragments = th.unique(pathway_fragment_idxs)
+    node_keys, used_to_node = _unique_rows(fragment_keys[used_fragments])
+    fragment_to_node = th.full((num_fragments,), -1, dtype=th.long, device=device)
+    fragment_to_node[used_fragments] = used_to_node
+    pathway_nodes = fragment_to_node[pathway_fragment_idxs]
+    node_batch_idxs = node_keys[:, 0]
+
+    # 3. Neutral formula and precursor delta per pathway; fold negative neutral formulas.
+    deltas = sorted(
+        {""}
+        | {PREC_TYPE_TO_FORMULA_DIFF[p] for p in precursor_types}
+        | {PREC_TYPE_TO_CMF_FORMULA_DIFF.get(p, "") for p in precursor_types}
+    )
+    delta_ids = {delta: i for i, delta in enumerate(deltas)}
+    # Column 0 is the CRF delta, column 1 the CMF one, indexed by the pathway's ion mode.
+    delta_by_spectrum_mode = th.tensor(
+        [
+            [
+                delta_ids[PREC_TYPE_TO_FORMULA_DIFF[p]],
+                delta_ids[PREC_TYPE_TO_CMF_FORMULA_DIFF.get(p, "")],
+            ]
+            for p in precursor_types
+        ],
+        dtype=th.long,
+        device=device,
+    ).reshape(batch_size, 2)
+    delta_counts = th.zeros((len(deltas), NUM_ELEMENTS), dtype=th.long, device=device)
+    for i, delta in enumerate(deltas):
+        for element, count in Composition(formula=delta).items():
+            if element in ELEMENT_TO_IDX:
+                delta_counts[i, ELEMENT_TO_IDX[element]] = count
+    pathway_batch_idxs = peak_batch_idxs[pathway_peak_idxs]
+    pathway_counts = fragment_counts[pathway_fragment_idxs].clone()
+    pathway_counts[:, h_column] += pathway_h_shifts.long()
+    pathway_delta_ids = delta_by_spectrum_mode[pathway_batch_idxs, pathway_ion_mode_idxs.long()]
+    folded = (pathway_counts < 0).any(dim=1)
+    if folded.any():
+        pathway_counts[folded] += delta_counts[pathway_delta_ids[folded]]
+        pathway_delta_ids[folded] = delta_ids[""]
+        if (pathway_counts[folded] < 0).any():
+            raise ValueError("a pathway's ion formula has a negative element count")
+
+    # 4. Formula rows. Keys lead with the peak, so rows come out peak- and batch-sorted.
+    formula_keys, pathway_rows = _unique_rows(
+        th.cat([pathway_peak_idxs[:, None], pathway_delta_ids[:, None], pathway_counts], dim=1)
+    )
+    num_rows = int(formula_keys.shape[0])
+    row_peaks = formula_keys[:, 0]
+    formula_batch_idxs = peak_batch_idxs[row_peaks]
+    formula_probs = pathway_ints.new_zeros(num_rows).index_add(0, pathway_rows, pathway_ints)
+    formula_cumsizes = _batch_offsets(formula_batch_idxs, batch_size)
+
+    # Each peak points at its most intense formula row; there is one for every peak.
+    best_probs = formula_probs.new_full((num_peaks,), -th.inf).scatter_reduce(
+        0, row_peaks, formula_probs, reduce="amax"
+    )
+    row_ids = th.arange(num_rows, device=device)
+    peak_rows = th.full((num_peaks,), num_rows, dtype=th.long, device=device).scatter_reduce(
+        0,
+        row_peaks,
+        th.where(formula_probs == best_probs[row_peaks], row_ids, num_rows),
+        reduce="amin",
+    )
+    frag_formula_peak_idxs = peak_rows - formula_cumsizes[peak_batch_idxs]
+    rows_per_peak = th.bincount(row_peaks, minlength=num_peaks)
+
+    # 5. Joint (formula, node) cells, sorted by formula row and so by spectrum.
+    joint_keys, pathway_cells = _unique_rows(th.stack([pathway_rows, pathway_nodes], dim=1))
+    joint_probs = pathway_ints.new_zeros(joint_keys.shape[0]).index_add(
+        0, pathway_cells, pathway_ints
+    )
+    node_probs = pathway_ints.new_zeros(node_keys.shape[0]).index_add(
+        0, pathway_nodes, pathway_ints
+    )
+    tiny = th.finfo(pathway_ints.dtype).tiny
+    joint_rows, joint_nodes = joint_keys[:, 0], joint_keys[:, 1]
+    formula_node_probs = joint_probs / formula_probs[joint_rows].clamp_min(tiny)
+    node_formula_probs = joint_probs / node_probs[joint_nodes].clamp_min(tiny)
+
+    # 6. Strings, rendered once per distinct formula.
+    unique_formulas, formula_string_ids = _unique_rows(formula_keys[:, 2:])
+    rendered = np.array(
+        [formula_arr_to_str(counts) for counts in unique_formulas.cpu().numpy()], dtype=object
+    )
+    formula_strs = rendered[formula_string_ids.cpu().numpy()]
+    formula_deltas = np.array(deltas, dtype=object)[formula_keys[:, 1].cpu().numpy()]
+
+    return MassterAnnotationTables(
+        frag_formula_peak_idxs=frag_formula_peak_idxs,
+        formula_batch_idxs=formula_batch_idxs,
+        formula_logprobs=th.log(formula_probs),
+        formula_cumsizes=formula_cumsizes,
+        formula_strs=formula_strs,
+        formula_deltas=formula_deltas,
+        joint_batch_idxs=formula_batch_idxs[joint_rows],
+        joint_formula_idxs=joint_rows,
+        joint_node_idxs=joint_nodes,
+        formula_node_logprobs=th.log(formula_node_probs),
+        node_formula_logprobs=th.log(node_formula_probs),
+        node_batch_idxs=node_batch_idxs,
+        node_logprobs=th.log(node_probs),
+        node_cumsizes=_batch_offsets(node_batch_idxs, batch_size),
+        node_ccs=node_keys[:, 1 : 1 + MASK_SIZE // 64] if return_node_ccs else None,
+        num_multi_formula_peaks=int((rows_per_peak > 1).sum().item()),
+    )
+
+
 def process_batch_to_tabular_row(
     batch_input: dict,
     model: th.nn.Module,
@@ -1740,8 +2054,9 @@ def process_batch_to_tabular_row(
         {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
         or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
     )
-    if isinstance(model, FraGNNetPL):
-        # Single switch, passed either way; see the note in run_inference_pkl.
+    if isinstance(model, (FraGNNetPL, MassterPL)):
+        # Single switch, passed either way; see the note in run_inference_pkl. For MASSter it
+        # asks for the per-pathway annotation tensors, which default off.
         batch_input["return_explainability_tensors"] = _need_expl
     with th.inference_mode():
         # `evaluate` only adds ground-truth scoring; the predicted intensities have the
@@ -1750,14 +2065,6 @@ def process_batch_to_tabular_row(
 
     # batch_input['batch_size'] is a tensor -> convert to Python int
     batch_size = int(batch_input["batch_size"].detach().cpu().item())
-    pred_formula_batch_idxs = (
-        batch_result["pred_formula_batch_idxs"]
-        if "pred_formula_batch_idxs" in BATCH_IDX_VARS
-        else None
-    )
-    pred_node_batch_idxs = (
-        batch_result["pred_node_batch_idxs"] if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
-    )
     # split peaks into batchs
     pred_batch_idxs_batched = batch_result["pred_batch_idxs"]
     pred_mzs_batched = batch_result["pred_mzs"]
@@ -1768,13 +2075,82 @@ def process_batch_to_tabular_row(
     # does the same: one row per peak, `min_peak_int` below filters peaks rather than
     # candidates, and the base peak rescale is taken over peaks. The exact m/z is kept (not the
     # 4-decimal key), so a 0.01 Da rebinning of the export matches the model's `cos_sim_0.01`.
+    masster_annotation = None
     if isinstance(model, MassterPL):
-        pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregate_peaks_exact_mz(
+        pathway_ints = pred_ints_raw
+        aggregated = aggregate_peaks_exact_mz(
             pred_mzs_batched,
             pred_ints_raw,
             pred_batch_idxs_batched,
             agg="sum" if model.hparams.sum_ints else "amax",
+            return_inverse=_need_expl,
         )
+        pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregated[:3]
+        if _need_expl:
+            mol_pyg = batch_input["mol_pyg"]
+            masster_annotation = masster_annotation_tables(
+                pathway_peak_idxs=aggregated[3],
+                peak_batch_idxs=pred_batch_idxs_batched,
+                pathway_ints=pathway_ints,
+                pathway_fragment_idxs=batch_result["pred_pathway_fragment_idxs"],
+                pathway_ion_mode_idxs=batch_result["pred_pathway_ion_mode_idxs"],
+                pathway_h_shifts=batch_result["pred_pathway_h_shifts"],
+                fragment_batch_idxs=batch_result["ion_h_fragment_batch_idxs"],
+                fragment_atom_indices=batch_result["fragment_atom_indices"],
+                fragment_atom_fragment_idxs=batch_result["fragment_atom_fragment_idxs"],
+                atom_atomic_numbers=mol_pyg.atom_atomic_numbers,
+                atom_hydrogen_counts=mol_pyg.atom_hydrogen_counts,
+                atom_ptr=mol_pyg.ptr,
+                precursor_types=[
+                    model.model.precursor_types[i]
+                    for i in batch_input["spec_prec_type"].reshape(-1).tolist()
+                ],
+                return_node_ccs=return_cc_hash,
+            )
+            if masster_annotation.num_multi_formula_peaks:
+                warnings.warn(
+                    f"{masster_annotation.num_multi_formula_peaks} MASSter peaks hold more than "
+                    "one formula row; frag_formula_peak_idxs links each to its most intense "
+                    "one, and min_peak_int > 0 prunes the others with their joint cells.",
+                    stacklevel=2,
+                )
+            # The code below reads these where FraGNNet's model output and DAG dataset put
+            # them, so from here on the MASSter annotation takes FraGNNet's path unchanged.
+            batch_result.update(
+                {
+                    "pred_formula_batch_idxs": masster_annotation.formula_batch_idxs,
+                    "pred_formula_formula_idxs": th.arange(
+                        len(masster_annotation.formula_batch_idxs), device=pathway_ints.device
+                    ),
+                    "pred_formula_logprobs": masster_annotation.formula_logprobs,
+                    "pred_joint_batch_idxs": masster_annotation.joint_batch_idxs,
+                    "pred_joint_formula_idxs": masster_annotation.joint_formula_idxs,
+                    "pred_joint_node_idxs": masster_annotation.joint_node_idxs,
+                    "pred_formula_node_logprobs": masster_annotation.formula_node_logprobs,
+                    "pred_node_formula_logprobs": masster_annotation.node_formula_logprobs,
+                    "pred_node_batch_idxs": masster_annotation.node_batch_idxs,
+                    "pred_node_node_idxs": th.arange(
+                        len(masster_annotation.node_batch_idxs), device=pathway_ints.device
+                    ),
+                    "pred_node_logprobs": masster_annotation.node_logprobs,
+                }
+            )
+            batch_input.update(
+                {
+                    "frag_formula_peak_idxs": masster_annotation.frag_formula_peak_idxs,
+                    "frag_formula_cumsizes": masster_annotation.formula_cumsizes,
+                    "frag_num_nodes": masster_annotation.node_cumsizes,
+                    "frag_formula_str": masster_annotation.formula_strs,
+                }
+            )
+    pred_formula_batch_idxs = (
+        batch_result["pred_formula_batch_idxs"]
+        if "pred_formula_batch_idxs" in BATCH_IDX_VARS
+        else None
+    )
+    pred_node_batch_idxs = (
+        batch_result["pred_node_batch_idxs"] if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
+    )
     # `inference_step` always returns L1-normalized intensities, so the base-peak rescale
     # is all that is owed.
     pred_ints_batched = batched_mf1000_normalize(pred_ints_raw, pred_batch_idxs_batched)
@@ -1940,10 +2316,12 @@ def process_batch_to_tabular_row(
     # rows out as NULL, CRF[1:F], CMF[1:F], so the delta a row carries depends on which half
     # it is in; `formula_row_prec_deltas` is the same split the model applies when it builds
     # ion formula strings. Indexed exactly like `frag_formula_str`, so a row's neutral
-    # formula and its adduct are always read from the same place. FraGNNet only: no other
-    # model here has a CRF/CMF formula axis.
+    # formula and its adduct are always read from the same place. MASSter builds its deltas
+    # with its formula rows (`masster_annotation_tables`).
     formula_row_deltas = None
-    if (return_formula_str or return_cc_hash) and isinstance(model, FraGNNetPL):
+    if (return_formula_str or return_cc_hash) and masster_annotation is not None:
+        formula_row_deltas = masster_annotation.formula_deltas
+    elif (return_formula_str or return_cc_hash) and isinstance(model, FraGNNetPL):
         # Degrade to NaN like every sibling field rather than raising: `spec_prec_type_str`
         # exists only when spec_params.prec_type_str is on (False in config/template.yml and
         # in nearly every experiment config), and it is `apply_inference_config` that forces
@@ -2121,6 +2499,15 @@ def process_batch_to_tabular_row(
                 elif not rebase_indices and b_pred_node_node_idxs is not None:
                     # Use current indices
                     b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu()
+            elif masster_annotation is not None and masster_annotation.node_ccs is not None:
+                # One batch-wide table, so the spectrum's node offset turns its per-molecule
+                # indices back into rows of it.
+                n_offset = masster_annotation.node_cumsizes[b_idx]
+                b_node_idxs = orig_node_idxs_for_lookup if rebase_indices else b_pred_node_node_idxs
+                if b_node_idxs is not None:
+                    b_pred_node_ccs = (
+                        masster_annotation.node_ccs[b_node_idxs.long() + n_offset].detach().cpu()
+                    )
             row_d["pred_node_ccs"] = b_pred_node_ccs
 
         # Move every exported tensor to the CPU here. Only some of the arrays above are

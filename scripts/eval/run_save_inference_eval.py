@@ -159,13 +159,13 @@ def get_args():
         "--return_formula_str",
         type=booltype,
         default=False,
-        help="Whether to return formula strings (FraGNNet only)",
+        help="Whether to return formula strings (FraGNNet and MASSter)",
     )
     parser.add_argument(
         "--return_cc_hash",
         type=booltype,
         default=False,
-        help="Whether to return node CC hashes (FraGNNet only)",
+        help="Whether to return node CC hashes (FraGNNet and MASSter)",
     )
     parser.add_argument(
         "--eval_mz_bin_res",
