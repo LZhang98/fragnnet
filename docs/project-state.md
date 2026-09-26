@@ -16,6 +16,9 @@
 - This timsTOF separates 13C from an H shift below m/z 300, where the detector's QTOF gate assumes
   it cannot.
 - The release's MS1 isotope fields are extracted at 13C spacing, so they miss the halogen M+2.
+- MASSter cannot predict any of it: `num_isotopes` is FraGNNet-only. The follow-up is the
+  [isotope envelope plan](plans/masster/masster_isotope_envelope_plan.md) (PROPOSED), whose next
+  step is a model-free ceiling on Enveda and NIST20 val.
 
 [Finding §9](findings/enveda_180_dataset_2026_09_25.md#9-isotopes-2026-09-25).
 
