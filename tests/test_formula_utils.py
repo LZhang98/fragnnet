@@ -122,6 +122,17 @@ class TestPrecTypeDiffs:
         assert fu.PREC_TYPE_TO_MASS_DIFF["[M+H-NH3]+"] == pytest.approx(h_plus - nh3, abs=1e-6)
         assert fu.PREC_TYPE_TO_MASS_DIFF["[M-H-CO2]-"] == pytest.approx(minus_h - co2, abs=1e-6)
 
+    def test_bromide_adduct_values(self):
+        """[M+Br]- adds 79Br and an electron; its CMF product has lost HBr, like [M+Cl]-."""
+        assert fu.PREC_TYPE_TO_FORMULA_DIFF["[M+Br]-"] == "Br1"
+        assert fu.PREC_TYPE_TO_MASS_DIFF["[M+Br]-"] == pytest.approx(
+            78.9183371 + fu.ELECTRON_MASS, abs=1e-6
+        )
+        assert fu.PREC_TYPE_TO_CMF_FORMULA_DIFF["[M+Br]-"] == "H-1"
+        assert fu.PREC_TYPE_TO_CMF_MASS_DIFF["[M+Br]-"] == pytest.approx(
+            fu.PREC_TYPE_TO_CMF_MASS_DIFF["[M+Cl]-"], abs=1e-12
+        )
+
     def test_radical_cation_diff_is_electron_only(self):
         """Edge case: [M]+ adds no atoms, so its diff is a bare electron loss."""
         assert fu.PREC_TYPE_TO_FORMULA_DIFF["[M]+"] == ""

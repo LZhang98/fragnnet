@@ -238,6 +238,19 @@ Scaffold split:
 python preproc_scripts/04_prepare_split.py --split_type random --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
 ```
 
+### Enveda-180
+8:1:1 InChIKey split over the six adducts in `PREC_TYPE_TO_MASS_DIFF`. It excludes the two-energy
+stepped spectra, which read as `ramped`
+([dataset finding §7](../docs/findings/enveda_180_dataset_2026_09_25.md)).
+
+```bash
+python preproc_scripts/04_prepare_split.py --split_type random --split_key inchikey_s \
+    --test_frac 0.1 --val_frac 0.1 --meta_rseed 42 --primary_dsets enveda_180 \
+    --proc_dp data/proc/enveda_180 --dag_filtering False \
+    --prec_types "[M+H]+" "[M-H]-" "[M+Na]+" "[M+NH4]+" "[M+Cl]-" "[M+K]+" \
+    --ce_types stepped single --split_dp data/split/enveda_180_inchikey_811
+```
+
 ## Step 5: Preparing Optimal MAGMa DAGs (ICEBERG)
 
 This step generates optimal MAGMa DAGs for training/evaluating the ICEBERG generator model optimal ICEBERG intensity model.

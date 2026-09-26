@@ -24,7 +24,7 @@ PHENYLALANINE = "NC(Cc1ccccc1)C(=O)O"
 # Precursors that subtract a neutral loss from every enumerated fragment.
 LOSS_PRECS = ("[M-H-CO2]-", "[M-H2O+H]+", "[M-2H2O+H]+", "[M+H-NH3]+", "[M-H-H2O]-", "[M-H]-")
 # Precursors that only add a carrier, so no fragment can be invalidated.
-ADDITIVE_PRECS = ("[M+H]+", "[M+Na]+", "[M+Cl]-", "[M+K]+", "[M+NH4]+")
+ADDITIVE_PRECS = ("[M+H]+", "[M+Na]+", "[M+Cl]-", "[M+Br]-", "[M+K]+", "[M+NH4]+")
 
 
 def _dag(smiles: str) -> dict:

@@ -18,6 +18,7 @@ NA_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Na")
 N_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("N")
 O_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("O")
 CL_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl")
+BR_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Br")
 K_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("K")
 C_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("C")
 
@@ -55,6 +56,7 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M-H]-": -H_MASS + ELECTRON_MASS,
     "[M-H-CO2]-": -H_MASS - C_MASS - 2 * O_MASS + ELECTRON_MASS,
     "[M+Cl]-": CL_MASS + ELECTRON_MASS,
+    "[M+Br]-": BR_MASS + ELECTRON_MASS,
     "[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
@@ -67,9 +69,9 @@ PREC_TYPE_TO_MASS_DIFF = {
 # ions to be a substantial share of sodiated library spectra.
 #
 # What the fragment is left holding depends on which carrier departed:
-#   - a discrete adduct (Na+, K+, NH4+, Cl-, carboxylate) leaves and the fragment appears with
-#     the conventional carrier instead: [F+H]+ in positive mode, [F-H]- in negative mode.
-#     Chloride and ammonium adducts do this by losing HCl / NH3, hence the H-1 / H1 delta.
+#   - a discrete adduct (Na+, K+, NH4+, Cl-, Br-, carboxylate) leaves and the fragment appears
+#     with the conventional carrier instead: [F+H]+ in positive mode, [F-H]- in negative mode.
+#     Halide and ammonium adducts do this by losing HCl / HBr / NH3, hence the H-1 / H1 delta.
 #   - a proton leaves nothing behind, so the fragment carries the charge itself: [F]+ or [F]-,
 #     an empty delta with only the electron in the mass. This covers [M+H]+ and [M-H]-.
 #
@@ -94,6 +96,7 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
     # negative stuff
     "[M-H]-": ELECTRON_MASS,  # direct anion: observed ≈ neutral mass
     "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # loses HCl, so fragments are [frag-H]-
+    "[M+Br]-": -H_MASS + ELECTRON_MASS,  # loses HBr, so fragments are [frag-H]-
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": -H_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
@@ -110,6 +113,7 @@ PREC_TYPE_TO_CMF_FORMULA_DIFF = {
     "[M+NH4]+": "H1",
     "[M-H]-": "",
     "[M+Cl]-": "H-1",
+    "[M+Br]-": "H-1",
     "[M+CH3COOH-H]-": "H-1",
     "[M+CH3COO]-": "H-1",
     "[M+HCOOH-H]-": "H-1",
@@ -128,6 +132,7 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M-H]-": "H-1",
     "[M-H-CO2]-": "H-1C-1O-2",
     "[M+Cl]-": "Cl1",
+    "[M+Br]-": "Br1",
     "[M-H-H2O]-": "H-3O-1",
     "[M+HCOOH-H]-": "C1H1O2",
     "[M+CH3COOH-H]-": "C2H3O2",

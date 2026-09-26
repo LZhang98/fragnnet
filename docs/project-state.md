@@ -4,6 +4,29 @@
 
 ## Current handoff
 
+**Enveda isotope probe (2026-09-25); read-only, uncommitted script.**
+`scripts/debug/debug_enveda_isotope_probe.py` ran on 60,000 records of each export.
+
+- 13C satellites hold 7.7% of positive-mode training-target intensity and 3.9% of negative-mode.
+  Halogen M+2 partners hold another 6.2% on Cl/Br molecules. Every config predicts monoisotopic
+  peaks only, so that intensity is unreachable.
+- Co-isolation: M+1 passes at 0.93 of natural in positive mode and 0.48 in negative. M+2 is a
+  per-molecule switch that structure cannot predict: it passes in 38% of positive-mode halogen
+  spectra.
+- This timsTOF separates 13C from an H shift below m/z 300, where the detector's QTOF gate assumes
+  it cannot.
+- The release's MS1 isotope fields are extracted at 13C spacing, so they miss the halogen M+2.
+
+[Finding §9](findings/enveda_180_dataset_2026_09_25.md#9-isotopes-2026-09-25).
+
+**`[M+Br]-` adduct supported (2026-09-25); uncommitted.** It is added to the four adduct tables
+in `formula_utils.py` like `[M+Cl]-`: retention keeps Br, and CMF loses HBr to give `[F-H]-`.
+Everything downstream reads those tables. Four tests were added or extended, and the full suite
+passes (4,448). On Enveda's 25 `[M+Br]-` spectra, the precursor matches within 3.2 ppm, and
+Br-retaining fragments carry most of the intensity. NIST23 has 224 such spectra; no existing split includes any, and the
+Enveda split would need regenerating to pick up its 25.
+[Finding §8](findings/enveda_180_dataset_2026_09_25.md#8-mbr--support-2026-09-25-uncommitted).
+
 **Memorization-route batch 2, six of ten read (2026-09-26); weight-decay arm `w1` built, not
 submitted, uncommitted.** W&B tails over epochs 54-63; `gm3`-`gm6` are still running.
 
@@ -61,14 +84,20 @@ peak at step 19,712 (64 epochs × 308 steps).
 Generate on Fir with `submit_masster_mh_ft_memorization_route.sh lr`.
 [Plan](plans/masster/masster_memorization_route_plan.md#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25).
 
-**Enveda-180 preprocessed through step 2 (2026-09-25); reader uncommitted, no split.** New
+**Enveda-180 preprocessed, 8:1:1 split `data/split/enveda_180_inchikey_811` (2026-09-25);
+reader committed in `4e29da7c`.** The split is by InChIKey first block, with 143,568 / 17,946 / 17,946
+molecules and 640,475 / 79,881 / 80,152 spectra. It keeps the six adducts the mass table
+supports and drops dimers and the misnamed formate/acetate spectra
+([§7](findings/enveda_180_dataset_2026_09_25.md#7-split-datasplitenveda_180_inchikey_811-2026-09-25)).
+Background from step 2 follows. New
 `--input_format enveda` in `preproc_scripts/01_prepare_df.py` reads the filtered JSONL export.
 `data/df/enveda_180_df.csv` and `data/proc/enveda_180/` hold 1,158,293 timsTOF QTOF spectra of
 183,476 molecules, with nothing dropped. The filtered export is exactly a 1% base-peak floor.
 Multi-energy records are stepped acquisitions, and the 1,946 two-energy ones read as `ramped`
 downstream, so split with `--ce_types stepped single`. Dimers are 28.7% of spectra, and the
 molecules are effectively disjoint from NIST20/23, MSGYM and Spectraverse (26-66 shared). Step 2
-peaked at 23.3 GB RSS plus swap on this workstation. Next: choose the split role and key.
+peaked at 23.3 GB RSS plus swap on this workstation. Next: decide whether Enveda trains with
+NIST/MSGYM or alone, then write the first config.
 [Finding](findings/enveda_180_dataset_2026_09_25.md).
 
 **MASSter exports per-peak fragment annotation (2026-09-25); uncommitted.** It uses the same
