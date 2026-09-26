@@ -15,11 +15,11 @@
 > ([read](#batch-2-tail-read-six-finished-runs-2026-09-26)). The seed spread is 0.0042
 > (`c0_s2` − `c0`), above the +0.003 gate. `k1` and EMA replicate (+0.0048, +0.0072 at seed
 > 811237); `k1_ema` is +0.0029 over `u2`, just under the gate; `gm1` +0.0051, `gm2` −0.0029.
-> `gm3`-`gm6` are still running.
+> Swap arms `gm3`-`gm6` all fail (+0.0023 to −0.0029), each below `gm1`.
 > **Learning-rate-schedule arms `s1`/`s1_k1_ema` built 2026-09-25, not submitted**
 > ([section](#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25)): `d3`'s warmup and cosine
 > decay on `c0` and on `k1_ema`, where every run so far trains at a constant 1e-3 (decision C).
-> **Weight-decay arm `w1` built 2026-09-25, not submitted** ([section](#weight-decay-arm-w1-2026-09-25)):
+> **Weight-decay arm `w1` built 2026-09-25, submitted on Fir 2026-09-26** ([section](#weight-decay-arm-w1-2026-09-25)):
 > `c0` with `weight_decay` 0.1, whose decay timescale (~32 epochs) falls inside the run.
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
 > lookup key, and the boundary block reads it
@@ -820,7 +820,23 @@ Read from W&B at 00:20 UTC. `gm3`-`gm6` were still running (epochs 57-61). Tail 
 - **`gm1` passes gate 1 on one seed** (+0.0051); **`gm2` fails** (−0.0029).
 - Coverage moves by at most 0.0007 anywhere, so none of this is candidate-set coverage.
 - Not yet run: gates 2-4 (ranking decomposition, route map, novelty bins) on the new
-  checkpoints, and the `gm3`-`gm6` read.
+  checkpoints.
+
+**Update 01:35 UTC: `gm3`-`gm6` finished.** Same tail and control (`c0`, 0.7276); `gm1` (0.7327)
+is the batch-mean form of the same message regularizer.
+
+| arm | run | tail | delta vs `c0` | above `c0` | vs `gm1` | coverage delta |
+| --- | --- | ---: | ---: | --- | ---: | ---: |
+| `gm3` swap per atom, 0.3 | `aijxahxb` | 0.7300 | +0.0023 | 53 of 64 | −0.0028 | +0.0002 |
+| `gm4` swap per molecule, 0.3 | `ou0ajppm` | 0.7282 | +0.0006 | 56 of 64 | −0.0045 | −0.0001 |
+| `gm5` swap per feature, 0.3 | `fr3dcnm1` | 0.7248 | −0.0029 | 2 of 64 | −0.0080 | −0.0007 |
+| `gm6` swap per molecule, 0.6 | `7qw60mn0` | 0.7251 | −0.0025 | 11 of 64 | −0.0076 | −0.0005 |
+
+- **No swap arm passes gate 1**, and every one is below `gm1`. Swapping in another molecule's
+  real message does worse than the batch mean, per atom as well as per molecule. Per-feature
+  swaps and the 0.6 rate hurt.
+- **The swap family is closed.** `gm1`, batch-mean substitution, is the only global-message
+  arm that passes, on one seed and within about 0.001 of the seed spread.
 
 ## Learning-rate-schedule arms `s1` and `s1_k1_ema` (2026-09-25)
 
@@ -878,7 +894,7 @@ on the merged lineage as `d3`.
 
 ## Weight-decay arm `w1` (2026-09-25)
 
-**Built, not submitted.** Config only. `w1_wd10.yml` is `c0` with `weight_decay: 0.1` instead of
+**Built; submitted on Fir 2026-09-26** (no W&B run yet at 01:35 UTC). Config only. `w1_wd10.yml` is `c0` with `weight_decay: 0.1` instead of
 0.01, read against `c0` (`vcpho5qm`, tail 0.7276). Checkpoints are uploaded.
 
 - **Why.** AdamW shrinks each weight by `1 − lr·wd` per step, so the decay timescale is
@@ -911,3 +927,12 @@ on the merged lineage as `d3`.
   - `bash -n` passes. The generator's checks pass for `w1`; the local run stops at the missing
     `pyteomics` wheel before generating anything.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh w1`.
+
+## Energy vs parts read (2026-09-26)
+
+Inference only, on f0 (`3bej6fq7`), with the probe's new `ctx` scope and a per-peak rarity
+analysis ([finding](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md)).
+The lookup is per molecule: not per energy (±1 NCE costs train and val alike) and not per part
+(train fit is flat across molecule novelty and nearly flat across break rarity). Val transfer
+runs through familiar breaks. This confirms the plan's target, molecule identity on every
+route, and adds break-local evidence as the signal that transfers.

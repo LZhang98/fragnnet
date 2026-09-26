@@ -149,15 +149,31 @@ FEATURE_COLUMN_SCOPES: dict[str, tuple[str, ...]] = {
 #   acharge  the continuous Gasteiger atom input, rounded to 0.1, through the same second pass.
 #   ionh     the per-fragment ion/H logits: molmean gives every fragment its molecule's mean
 #            H-shift pattern; popmean the batch mean.
+#   ctx      the context vector the intensity head reads (collision energy alone on a
+#            one-adduct, one-instrument task). popmean: the batch mean over spectra, so CE is
+#            removed; shift_*: the context re-encoded at NCE + delta (ContextShifter). The
+#            proposal keeps the exact context, so the candidate set is fixed and only the
+#            allocation's CE input moves.
 ENCODER_SCOPE = "gsa"
 INPUT_SCOPE = "acharge"
 OUTPUT_SCOPE = "ionh"
+CONTEXT_SCOPE = "ctx"
+CONTEXT_SHIFTS: dict[str, int] = {"shift_m5": -5, "shift_m1": -1, "shift_p1": 1, "shift_p5": 5}
+#   side     one side of each cut: the heavier side's pool (the fragment when it keeps at least
+#            half the precursor mass, else the complement) or the lighter side's, the neutral
+#            loss of a large fragment. popmean: the batch mean of that side's rows (identity
+#            removed); molmean: the molecule's mean (identity kept, which-candidate removed).
+#            The precursor has no lighter side and is left alone by the small_* modes.
+SIDE_SCOPE = "side"
+SIDE_MASS_FEATURE = "c_mass"
 UPSTREAM_SCOPES = (ENCODER_SCOPE, INPUT_SCOPE)
 FIXED_SCOPE_MODES: dict[str, tuple[str, ...]] = {
     SET_SCOPE: (SET_MODE,),
     ENCODER_SCOPE: ("popmean", "molmean", "xmol"),
     INPUT_SCOPE: ("round",),
     OUTPUT_SCOPE: ("molmean", "popmean"),
+    CONTEXT_SCOPE: ("popmean", *CONTEXT_SHIFTS),
+    SIDE_SCOPE: ("large_popmean", "large_molmean", "small_popmean", "small_molmean"),
 }
 ACHARGE_FEATURE = "a_charge"
 ACHARGE_ROUNDING = 0.1
@@ -195,8 +211,8 @@ class Condition:
 def build_conditions(scopes: list[str], modes: list[str]) -> list[Condition]:
     """Return the uncorrupted reference followed by every requested scope/mode pair.
 
-    The ``set``, ``gsa``, ``acharge`` and ``ionh`` scopes have fixed modes of their own
-    (``FIXED_SCOPE_MODES``) and ignore ``modes``.
+    The ``set``, ``gsa``, ``acharge``, ``ionh`` and ``ctx`` scopes have fixed modes of their
+    own (``FIXED_SCOPE_MODES``) and ignore ``modes``.
     """
     known_scopes = {*SCOPE_POSITIONS, *SCOPE_KWARGS, *FEATURE_COLUMN_SCOPES, *FIXED_SCOPE_MODES}
     unknown_scopes = [scope for scope in scopes if scope not in known_scopes]
@@ -331,14 +347,20 @@ class PooledEmbeddingCorruptor:
         seed: int,
         set_drop_fraction: float,
         feature_columns: dict[str, tuple[int, int]] | None = None,
+        context_shifter: ContextShifter | None = None,
     ) -> None:
-        """Wrap ``head``; ``feature_columns`` maps each descriptor name to its column span."""
+        """Wrap ``head``.
+
+        ``feature_columns`` maps each descriptor name to its column span; ``context_shifter``
+        supplies the shifted context the ``ctx`` shift modes substitute.
+        """
         if not 0.0 <= set_drop_fraction < 1.0:
             raise ValueError(f"set_drop_fraction must be in [0, 1), got {set_drop_fraction}")
         self.head = head
         self.seed = seed
         self.set_drop_fraction = set_drop_fraction
         self.feature_columns = feature_columns or {}
+        self.context_shifter = context_shifter
         self._original_forward = head.forward
         self._original_layer_forwards = [layer.forward for layer in head.layers]
         self.condition = Condition("none", None, None)
@@ -434,6 +456,12 @@ class PooledEmbeddingCorruptor:
             if kwargs.get("return_support_logits") and self.head.ion_h_support_head is None:
                 outputs[3] = ion_h_logits
             return tuple(outputs)
+        if self.condition.scope == CONTEXT_SCOPE:
+            context = self._context(kwargs["context"], batch_indices, batch_size)
+            return self._original_forward(*args, **{**kwargs, "context": context})
+        if self.condition.scope == SIDE_SCOPE:
+            patched = self._side(list(args), kwargs, batch_indices, batch_size, generator)
+            return self._original_forward(*patched, **kwargs)
         if self.condition.scope in FEATURE_COLUMN_SCOPES:
             features = kwargs.get("candidate_features")
             names = FEATURE_COLUMN_SCOPES[self.condition.scope]
@@ -482,6 +510,63 @@ class PooledEmbeddingCorruptor:
                 generator,
             )
         return self._original_forward(*patched, **patched_kwargs)
+
+    def _side(
+        self,
+        args: list[Any],
+        kwargs: dict[str, Any],
+        batch_indices: th.Tensor,
+        batch_size: int,
+        generator: th.Generator,
+    ) -> list[Any]:
+        """Return the head's positional arguments with one side of every cut rewritten."""
+        features = kwargs.get("candidate_features")
+        if features is None or SIDE_MASS_FEATURE not in self.feature_columns:
+            raise ValueError(f"side needs the {SIDE_MASS_FEATURE} descriptor to find each side")
+        # c_mass is (log1p mass, mass / precursor mass); the second column picks the sides.
+        fraction = features[:, self.feature_columns[SIDE_MASS_FEATURE][0] + 1]
+        side, mode = self.condition.mode.split("_")
+        fragment, complement = args[FRAGMENT_ARG], args[COMPLEMENT_ARG]
+        if side == "large":
+            use_fragment = fraction >= 0.5
+            target = th.ones_like(use_fragment)
+        else:
+            use_fragment = fraction < 0.5
+            target = fraction < 1.0 - 1e-4
+        rows = th.where(use_fragment.unsqueeze(1), fragment, complement)[target]
+        replaced = rows.new_zeros((fragment.shape[0], fragment.shape[1]))
+        replaced[target] = corrupt_rows_by_molecule(
+            rows, batch_indices[target], batch_size, mode, generator
+        )
+        on_fragment = (target & use_fragment).unsqueeze(1)
+        on_complement = (target & ~use_fragment).unsqueeze(1)
+        args[FRAGMENT_ARG] = th.where(on_fragment, replaced, fragment)
+        args[COMPLEMENT_ARG] = th.where(on_complement, replaced, complement)
+        return args
+
+    def _context(
+        self, context: th.Tensor | None, batch_indices: th.Tensor, batch_size: int
+    ) -> th.Tensor:
+        """Return the ``ctx`` substitute for the per-candidate context rows."""
+        if context is None:
+            raise ValueError("ctx needs an intensity head that reads the context vector")
+        if self.condition.mode == "popmean":
+            # Rows repeat their spectrum's context, so average per spectrum first: the batch
+            # mean then weights spectra equally rather than by candidate count.
+            sums = context.new_zeros((batch_size, context.shape[1])).index_add(
+                0, batch_indices, context
+            )
+            counts = th.bincount(batch_indices, minlength=batch_size)
+            present = counts > 0
+            per_spectrum = sums[present] / counts[present].unsqueeze(1).to(context)
+            return per_spectrum.mean(dim=0, keepdim=True).expand_as(context).clone()
+        shifted = None if self.context_shifter is None else self.context_shifter.shifted
+        if shifted is None:
+            raise RuntimeError(
+                f"{self.condition.label} found no shifted context; the ContextShifter is not "
+                "installed or the context encoder was not called this step"
+            )
+        return shifted[batch_indices]
 
     def _layer_forward(self, original: Any) -> Any:
         def forward(*args: Any, **kwargs: Any) -> Any:
@@ -635,6 +720,58 @@ class EncoderCorruptor:
         return self._original_boundary(mol_pyg, self._swap(atom_embeddings), *args)
 
 
+class ContextShifter:
+    """Re-encode each spectrum's context at a shifted NCE, for the intensity head alone.
+
+    MASSter encodes the acquisition context once per batch and passes the same tensor to the
+    proposal and to the intensity head. The wrapper returns the exact context, so the proposal
+    and the candidate set do not move, and keeps a second encoding at ``NCE + delta`` (clamped
+    to ``[1, nce_max]``) that ``PooledEmbeddingCorruptor`` substitutes into the head.
+    """
+
+    def __init__(self, context_encoder: th.nn.Module) -> None:
+        self.context_encoder = context_encoder
+        self.condition = Condition("none", None, None)
+        self.batch_index = 0
+        self.shifted: th.Tensor | None = None
+        self._original_forward = context_encoder.forward
+        self._installed = False
+
+    def install(self) -> None:
+        if not self.context_encoder.use_nce:
+            raise ValueError("ctx shifts need NCE in the context (use_nce: true)")
+        self.context_encoder.forward = self._forward  # type: ignore[method-assign]
+        self._installed = True
+
+    def restore(self) -> None:
+        if self._installed:
+            self.context_encoder.forward = self._original_forward  # type: ignore[method-assign]
+            self._installed = False
+
+    def __enter__(self) -> ContextShifter:
+        self.install()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.restore()
+
+    def _forward(self, *args: Any, **kwargs: Any) -> Any:
+        context = self._original_forward(*args, **kwargs)
+        self.shifted = None
+        if self.condition.scope != CONTEXT_SCOPE or self.condition.mode not in CONTEXT_SHIFTS:
+            return context
+        if args or not isinstance(context, th.Tensor) or kwargs["nce"] is None:
+            raise ValueError(
+                "ctx shifts need a keyword-only context call with NCE that returns one tensor "
+                "(no CE-conditioned attention features)"
+            )
+        nce = (kwargs["nce"] + CONTEXT_SHIFTS[self.condition.mode]).clamp(
+            min=1.0, max=float(self.context_encoder.nce_max)
+        )
+        self.shifted = self._original_forward(**{**kwargs, "nce": nce})
+        return context
+
+
 def candidate_feature_columns(specs: Any, edge_feature_dim: int) -> dict[str, tuple[int, int]]:
     """Return each descriptor's ``[start, stop)`` column span in the candidate-feature block."""
     columns: dict[str, tuple[int, int]] = {}
@@ -716,17 +853,37 @@ def metric_names(config_d: dict[str, Any]) -> tuple[str, ...]:
     return BASE_METRICS + match_names + cosine_names
 
 
+def spectrum_frame(
+    batch_results: dict[str, Any], metrics: tuple[str, ...], split: str, label: str
+) -> pd.DataFrame:
+    """Return one row per spectrum of a batch: its ``unique_id`` and every metric value."""
+    unique_ids = batch_results["unique_id"].reshape(-1).cpu().numpy()
+    frame = pd.DataFrame({"split": split, "condition": label, "spec_id": unique_ids})
+    for name in metrics:
+        values = batch_results[name].detach().to(dtype=th.float64).reshape(-1).cpu().numpy()
+        if values.shape != unique_ids.shape:
+            raise ValueError(
+                f"Metric {name} has {values.shape[0]} values for {unique_ids.shape[0]} spectra"
+            )
+        frame[name] = values
+    return frame
+
+
 def evaluate_split(
     model: th.nn.Module,
     dataloader: th.utils.data.DataLoader,
-    corruptors: list[PooledEmbeddingCorruptor | EncoderCorruptor],
+    corruptors: list[PooledEmbeddingCorruptor | EncoderCorruptor | ContextShifter],
     conditions: list[Condition],
     device: th.device,
     split: str,
     metrics: tuple[str, ...],
     batch_cutoff: int,
+    per_spectrum: list[pd.DataFrame] | None = None,
 ) -> dict[str, dict[str, float]]:
-    """Evaluate every corruption condition on one split, paired batch by batch."""
+    """Evaluate every corruption condition on one split, paired batch by batch.
+
+    When ``per_spectrum`` is a list, one ``spectrum_frame`` per (batch, condition) is appended.
+    """
     accumulators = {condition.label: WeightedMetricAccumulator(metrics) for condition in conditions}
     skipped = 0
 
@@ -754,6 +911,15 @@ def evaluate_split(
                     if isinstance(corruptor, EncoderCorruptor):
                         corruptor.verify(condition)
                 accumulators[condition.label].update(batch_results)
+                if per_spectrum is not None:
+                    per_spectrum.append(
+                        spectrum_frame(
+                            batch_results,
+                            accumulators[condition.label].metric_names,
+                            split,
+                            condition.label,
+                        )
+                    )
             for corruptor in corruptors:
                 corruptor.condition = Condition("none", None, None)
 
@@ -796,6 +962,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--device", default=None)
     parser.add_argument("--output_fp", default="pooled_embedding_memorization.csv")
+    parser.add_argument(
+        "--per_spectrum_fp",
+        default=None,
+        help="optional pickle of every spectrum's metrics under every condition",
+    )
     parser.add_argument("--override", nargs="*", default=[])
     return parser.parse_args()
 
@@ -852,17 +1023,26 @@ def main() -> None:
     charge_column = atom_feature_column(atom_feats, bond_feats, ACHARGE_FEATURE)
 
     rows: list[dict[str, Any]] = []
+    per_spectrum: list[pd.DataFrame] | None = [] if args.per_spectrum_fp else None
     with ExitStack() as stack:
-        corruptors: list[PooledEmbeddingCorruptor | EncoderCorruptor] = [
+        context_shifter = (
+            stack.enter_context(ContextShifter(model.model.context_encoder))
+            if CONTEXT_SCOPE in args.scopes
+            else None
+        )
+        corruptors: list[PooledEmbeddingCorruptor | EncoderCorruptor | ContextShifter] = [
             stack.enter_context(
                 PooledEmbeddingCorruptor(
                     model.model.intensity_head,
                     config_d["seed"],
                     args.set_drop_fraction,
                     feature_columns=feature_columns,
+                    context_shifter=context_shifter,
                 )
             )
         ]
+        if context_shifter is not None:
+            corruptors.append(context_shifter)
         # The encoder patch is installed only when asked for; it refuses unsupported models.
         if set(args.scopes) & set(UPSTREAM_SCOPES):
             corruptors.append(
@@ -882,7 +1062,10 @@ def main() -> None:
                 split=split,
                 metrics=metrics,
                 batch_cutoff=args.batch_cutoff,
+                per_spectrum=per_spectrum,
             )
+            if per_spectrum:
+                pd.concat(per_spectrum, ignore_index=True).to_pickle(args.per_spectrum_fp)
             for condition in conditions:
                 rows.append(
                     {

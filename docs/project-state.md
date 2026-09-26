@@ -4,6 +4,20 @@
 
 ## Current handoff
 
+**Memorization: energy vs parts (2026-09-26); inference only, on f0 `3bej6fq7`.**
+The route-map probe gains a `ctx` scope (CE removed, or NCE ±1/±5, intensity head only) and a
+per-spectrum dump. A per-peak analysis rates each break by how many other train molecules have it.
+
+- **The key is per molecule, not per energy.** ±1 NCE costs train and val alike. Removing CE is
+  mildly train-specific (excess 0.045, a third of global attention's), mostly above NCE 60.
+- **Train fit is a whole-molecule lookup; val transfer runs through parts.** Within a spectrum,
+  unseen-break peaks cost +0.026 in error on train and +0.097 on val, at fixed molecule
+  similarity. 28% of val fragment-peak intensity is on unseen breaks, captured at 0.49.
+- **NCE values of the two ladders are not interchangeable** (0.71-0.84 on the same molecule), so
+  a smooth energy input needs a ladder input next to it.
+
+[Finding](findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md).
+
 **QET breakdown-curve gates for MASSter (2026-09-26), and a fix for the CE input; uncommitted.**
 Offline analyses on `u2_ema999`, unmerged `[M+H]+`/FT, all val spectra plus 2,000 train
 molecules (scripts in `output/qet_projection_2026_09_26/`).
@@ -82,19 +96,22 @@ Br-retaining fragments carry most of the intensity. NIST23 has 224 such spectra;
 Enveda split would need regenerating to pick up its 25.
 [Finding §8](findings/enveda_180_dataset_2026_09_25.md#8-mbr--support-2026-09-25-uncommitted).
 
-**Memorization-route batch 2, six of ten read (2026-09-26); weight-decay arm `w1` built, not
-submitted, uncommitted.** W&B tails over epochs 54-63; `gm3`-`gm6` are still running.
+**Memorization-route batch 2 read, all ten runs (2026-09-26); weight-decay arm `w1` submitted on
+Fir.** W&B tails over epochs 54-63. `w1` had no W&B run yet at 01:35 UTC.
 
 - **The seed spread is 0.0042** (`c0_s2` − `c0`, seed only): above the +0.003 gate and twice the
   0.0022 used so far. A single-seed delta under about +0.005 is not resolved.
 - `k1` and EMA replicate at seed 811237 (+0.0048, +0.0072). `k1_ema` has the best tail on this
   lineage (0.7421, +0.0145 over `c0`) but is +0.0029 over `u2`, so stacking is not shown. `gm1`
   +0.0051 on one seed; `gm2` −0.0029. Coverage moves by at most 0.0007.
+- The swap arms `gm3`-`gm6` all fail (+0.0023, +0.0006, −0.0029, −0.0025), each below `gm1`:
+  another molecule's real message does worse than the batch mean. The swap family is closed.
+- Still open: gates 2-4 (ranking decomposition, route map, novelty bins) on the checkpoints
+  that passed gate 1 (`k1`, `k1_ema`, `gm1`, `u2`).
 - `w1_wd10.yml` is `c0` with `weight_decay` 0.1. AdamW's decay timescale falls from ~325 epochs
   to ~32, inside the 64-epoch run. Weight decay was never varied on this lineage; on merged,
   `wd10` was the one arm that narrowed the gap without lowering train. It resolves to that key
-  alone, and a debug smoke confirms the optimizer group. Generate with
-  `submit_masster_mh_ft_memorization_route.sh w1`.
+  alone, and a debug smoke confirms the optimizer group. Committed in `4e29da7c`.
 
 [Batch 2 read](plans/masster/masster_memorization_route_plan.md#batch-2-tail-read-six-finished-runs-2026-09-26),
 [`w1`](plans/masster/masster_memorization_route_plan.md#weight-decay-arm-w1-2026-09-25).
@@ -125,8 +142,8 @@ submitted, uncommitted.** W&B tails over epochs 54-63; `gm3`-`gm6` are still run
   [submit guide](guides/submit_cluster_runs.md#4-cross-validation-and-existing-batch-launchers)),
   and read its peak GPU memory and best epoch before the other nine.
 
-**Learning-rate-schedule arms `s1` and `s1_k1_ema` built (2026-09-25); not submitted,
-uncommitted.** Plan decision C, config only. Every MASSter run so far trains at a constant
+**Learning-rate-schedule arms `s1` and `s1_k1_ema` built (2026-09-25); not submitted
+(committed in `4e29da7c`).** Plan decision C, config only. Every MASSter run so far trains at a constant
 `lr: 1e-3` with no warmup. Both arms add `d3`'s schedule: a 1000-step warmup, then cosine to 1% of
 peak at step 19,712 (64 epochs × 308 steps).
 
@@ -220,7 +237,7 @@ uninterrupted run) and a CPU smoke pass. Generate on Fir with
 `submit_masster_mh_ft_ranking_transfer.sh u3`.
 [Plan](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
 
-**Global-message swap arms `gm3`-`gm6` built (2026-09-25); running in batch 2.** A
+**Global-message swap arms `gm3`-`gm6` built (2026-09-25); all fail, read in the top entry.** A
 feature-level CutMix that keeps the label: in training, the encoder's normalized global-attention
 message is replaced by another molecule's real, detached message, where `gm1` uses the batch
 mean. The head cannot tell when a swapped key is wrong, which it can with the mean. Labels are
@@ -237,7 +254,7 @@ not mixed: a MASSter target is an allocation over one molecule's candidates.
 - Generate with `submit_masster_mh_ft_memorization_route.sh swap` on Fir; `batch2` now includes
   them. [Plan](plans/masster/masster_memorization_route_plan.md#global-message-swap-arms-gm3-gm6-built-2026-09-25-not-submitted).
 
-**Batch 2: six finished 2026-09-26 (read in the entry above); `gm3`-`gm6` still running.** At ~21:45 UTC on 2026-09-25 the original six were
+**Batch 2: all ten finished 2026-09-26 (read in the top entry).** At ~21:45 UTC on 2026-09-25 the original six were
 at epochs 49-53 of 64 and `gm3`-`gm6` at 9-13. Early read at epochs 23-27 (20:30 UTC), not the
 gate: `gm1` +0.0064 over
 `c0` but narrowing, `gm2` −0.0030 and widening, `k1_ema` +0.0039 over `u2`, and both replicates

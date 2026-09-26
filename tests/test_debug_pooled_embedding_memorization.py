@@ -324,3 +324,143 @@ def test_encoder_corruptor_refuses_a_model_it_cannot_rewrite_exactly() -> None:
 
     with pytest.raises(ValueError, match="boundary block built by CutBondEncoder"):
         PROBE.EncoderCorruptor(model, 7, None).install()
+
+
+# The collision-energy context the intensity head reads (ctx scope).
+
+
+def test_build_conditions_gives_ctx_its_modes() -> None:
+    labels = [condition.label for condition in PROBE.build_conditions(["ctx"], ["zero"])]
+
+    assert labels == [
+        "none",
+        "ctx_popmean",
+        "ctx_shift_m5",
+        "ctx_shift_m1",
+        "ctx_shift_p1",
+        "ctx_shift_p5",
+    ]
+
+
+def test_ctx_popmean_weights_spectra_equally() -> None:
+    head = _head("induced")
+    args, kwargs = _inputs()
+    # Every candidate carries its spectrum's context, as MassterModel passes it.
+    kwargs["context"] = th.tensor([[1.0, 2.0, 3.0], [5.0, 6.0, 7.0]])[BATCH_INDICES]
+    seen: list[th.Tensor] = []
+    real_forward = head.forward
+
+    def _spy(*spy_args, **spy_kwargs):
+        seen.append(spy_kwargs["context"])
+        return real_forward(*spy_args, **spy_kwargs)
+
+    head.forward = _spy
+    conditions = {c.label: c for c in PROBE.build_conditions(["ctx"], [])}
+    with th.no_grad(), PROBE.PooledEmbeddingCorruptor(head, 7, 0.5) as corruptor:
+        corruptor.condition = conditions["ctx_popmean"]
+        corruptor.head.forward(*args, **kwargs)
+        # The five- and three-candidate spectra count once each, not 5:3.
+        assert th.allclose(seen[-1], th.tensor([3.0, 4.0, 5.0]).expand(8, 3))
+        corruptor.condition = conditions["ctx_shift_p1"]
+        with pytest.raises(RuntimeError, match="no shifted context"):
+            corruptor.head.forward(*args, **kwargs)
+
+
+def test_ctx_shift_moves_only_the_allocation_ce_input() -> None:
+    """The proposal and candidates keep the exact CE; the head reads NCE + delta, clamped."""
+    from tests.test_masster_model import _build_batch, _build_model
+
+    batch = _build_batch(("CCOC", "CCO"))
+    model = _build_model(
+        batch, max_masks=4, max_enumerated_masks=8, unique_fragment_mode=True
+    ).eval()
+    conditions = {c.label: c for c in PROBE.build_conditions(["ctx"], [])}
+    shifter = PROBE.ContextShifter(model.context_encoder)
+    encoded_nce: list[th.Tensor] = []
+    real_encoder_forward = shifter._original_forward
+
+    def _record(**kwargs):
+        encoded_nce.append(kwargs["nce"].clone())
+        return real_encoder_forward(**kwargs)
+
+    shifter._original_forward = _record
+
+    def _forward() -> dict[str, th.Tensor]:
+        return model(
+            mol_pyg=batch, spec_prec_type=th.tensor([0, 0]), spec_nce=th.tensor([10.0, 3.0])
+        )
+
+    with th.no_grad(), shifter, PROBE.PooledEmbeddingCorruptor(
+        model.intensity_head, 7, 0.5, context_shifter=shifter
+    ) as head:
+        shifter.condition = head.condition = conditions["none"]
+        clean = _forward()
+        assert shifter.shifted is None
+        shifter.condition = head.condition = conditions["ctx_shift_m5"]
+        shifted = _forward()
+        assert shifter.shifted is not None
+
+    assert len(encoded_nce) == 3
+    assert th.equal(encoded_nce[2].reshape(-1), th.tensor([5.0, 1.0]))
+    assert th.equal(shifted["bond_break_logits"], clean["bond_break_logits"])
+    assert th.equal(shifted["pred_mzs"], clean["pred_mzs"])
+    assert not th.allclose(shifted["pred_logprobs"], clean["pred_logprobs"])
+
+
+def test_spectrum_frame_keeps_one_row_per_spectrum() -> None:
+    batch_results = {
+        "unique_id": th.tensor([11, 12, 13]),
+        "cos_sim_0.01": th.tensor([0.5, 0.25, 1.0]),
+    }
+
+    frame = PROBE.spectrum_frame(batch_results, ("cos_sim_0.01",), "val", "none")
+
+    assert frame["spec_id"].tolist() == [11, 12, 13]
+    assert frame["cos_sim_0.01"].tolist() == pytest.approx([0.5, 0.25, 1.0])
+    assert set(frame["condition"]) == {"none"} and set(frame["split"]) == {"val"}
+    batch_results["cos_sim_0.01"] = th.tensor([0.5, 0.25])
+    with pytest.raises(ValueError, match="2 values for 3 spectra"):
+        PROBE.spectrum_frame(batch_results, ("cos_sim_0.01",), "val", "none")
+
+
+# One side of each cut (side scope).
+
+
+@pytest.mark.parametrize("mode", ["large_popmean", "large_molmean", "small_popmean", "small_molmean"])
+def test_side_scope_rewrites_only_the_chosen_side(mode: str) -> None:
+    head = _head("induced")
+    args, kwargs = _inputs()
+    # Column 1 of c_mass is the mass fraction; candidate 0 is the precursor.
+    fraction = th.tensor([1.0, 0.8, 0.3, 0.6, 0.2, 0.5, 0.9, 0.1])
+    kwargs["candidate_features"] = th.stack((th.zeros(8), fraction), dim=1)
+    seen: list[tuple[th.Tensor, th.Tensor]] = []
+    real_forward = head.forward
+
+    def _spy(*spy_args, **spy_kwargs):
+        seen.append((spy_args[0], spy_args[1]))
+        return real_forward(*spy_args, **spy_kwargs)
+
+    head.forward = _spy
+    condition = {c.label: c for c in PROBE.build_conditions(["side"], [])}[f"side_{mode}"]
+    with th.no_grad(), PROBE.PooledEmbeddingCorruptor(
+        head, 7, 0.5, feature_columns={"c_mass": (0, 2)}
+    ) as corruptor:
+        corruptor.condition = condition
+        corruptor.head.forward(*args, **kwargs)
+
+    fragment, complement = args[0], args[1]
+    new_fragment, new_complement = seen[-1]
+    if mode.startswith("large"):
+        use_fragment, target = fraction >= 0.5, th.ones(8, dtype=th.bool)
+    else:
+        use_fragment, target = fraction < 0.5, fraction < 1.0
+    rows = th.where(use_fragment.unsqueeze(1), fragment, complement)[target]
+    expected = PROBE.corrupt_rows_by_molecule(
+        rows, BATCH_INDICES[target], 2, mode.split("_")[1], th.Generator()
+    )
+    on_fragment, on_complement = target & use_fragment, target & ~use_fragment
+    assert th.allclose(new_fragment[on_fragment], expected[use_fragment[target]])
+    assert th.allclose(new_complement[on_complement], expected[~use_fragment[target]])
+    # The other side of every cut, and the precursor's empty side, are untouched.
+    assert th.equal(new_fragment[~on_fragment], fragment[~on_fragment])
+    assert th.equal(new_complement[~on_complement], complement[~on_complement])
