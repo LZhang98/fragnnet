@@ -110,7 +110,7 @@ is the only fix where it is not.
 
 - With `masster_proposal_selection_only: true` (every production config), the final
   fragment distribution is `log_softmax` over the intensity transformer's residuals alone
-  ([`masster_model.py:2983-2994`](../../../src/fragnnet/model/masster_model.py#L2983-L2994)).
+  ([`masster_model.py:2983-2994`](../../../src/fragnnet/model/masster_model.py#L3004-L3015)).
   Ion/H is a per-fragment softmax added on top (`:3280-3282`). The bond-local proposal only
   selects the pool.
 - The encoder is `GINE_GSA`, which adds exact per-graph global self-attention

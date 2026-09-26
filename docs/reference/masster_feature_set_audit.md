@@ -104,7 +104,7 @@ candidates. Unlike FraGNNet there is no separate insert-location machinery — o
 
 | Feature | Field | Configs enabling it | Notes |
 |---------|-------|---------------------|-------|
-| NCE | `spec_nce` | 175/175 | `ce_insert_type: embed` in 152; learned embedding, mean-pooled over merged CE readings |
+| NCE | `spec_nce` | 175/175 | `ce_insert_type: embed` in 152: a fixed `int_embedder` table (abs-sines by default) plus a learned linear layer, mean-pooled over merged CE readings. The abs-sines table aliases NCE x with 256 − x and gives neighbouring values unrelated codes; `ce_insert_type: qet` is the smooth alternative ([finding](../findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#the-nce-input-is-categorical)) |
 | ACE | `spec_ace` | 24/175 | dual-CE arms only |
 | Precursor adduct | `spec_prec_type` | 175/175 | required; `prec_type: True` is enforced at setup |
 | Instrument | `spec_inst_type` | 79 explicit True, 93 inherit template True | empty vocabulary skips the embedding entirely |
@@ -190,7 +190,7 @@ numerically against `pool_boundary_bond_embeddings`:
   distinguished within the boundary term.
 
 This is the same degeneracy FraGNNet diagnosed for its `boundary_pair` feature and fixed with
-`CutBondEncoder` ([base_model.py:803](../../src/fragnnet/model/base_model.py#L803)), whose
+`CutBondEncoder` ([base_model.py:803](../../src/fragnnet/model/base_model.py#L894)), whose
 docstring states the argument in full: a linear map on a concatenation cannot express a bond
 because bond identity is an interaction, and a linear map commutes through the pool. MASSter's
 version is strictly weaker than the `boundary_pair` that fix replaced — `boundary_pair` at least

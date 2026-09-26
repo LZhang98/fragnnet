@@ -123,12 +123,12 @@ So turning the term off in a `ma_mi_merged` arm is a **three-key diff** — weig
 switch: it decides the spectrum itself,
 `corrected_fragment_logits = fragment_residuals` versus
 `fragment_log_probabilities + fragment_residuals`
-([`masster_model.py:2681-2685`](../../../src/fragnnet/model/masster_model.py#L2681-L2685));
+([`masster_model.py:2681-2685`](../../../src/fragnnet/model/masster_model.py#L2702-L2706));
 and because the same chain forces `proposal_anchored: False`, the base-probability column also
 enters the candidate token (`use_base_probability_feature = not proposal_anchored`,
 [`masster_pl.py:1010`](../../../src/fragnnet/pl_model/masster_pl.py#L1010) — the
 constructor rejects that column *with* selection-only, so the two cannot be separated,
-[`masster_model.py:1082-1086`](../../../src/fragnnet/model/masster_model.py#L1082-L1086)).
+[`masster_model.py:1082-1086`](../../../src/fragnnet/model/masster_model.py#L1102-L1106)).
 
 **Consequence.** Every "proposal loss" comparison this repository can run is a comparison of two
 different output architectures. The 178 configs that enable the term all use weight exactly
@@ -145,7 +145,7 @@ tuned value, it is an untested one.
 
 **It trains two head MLPs.** `detach_proposal_inputs = proposal_selection_only and not
 proposal_input_gradients_enabled`
-([`masster_model.py:2181-2183`](../../../src/fragnnet/model/masster_model.py#L2181-L2183)),
+([`masster_model.py:2181-2183`](../../../src/fragnnet/model/masster_model.py#L2202-L2204)),
 and `proposal_input_gradients_enabled` starts `False` and is written only by
 `_apply_staged_training`, which returns early for a null warmup
 ([`masster_pl.py:1127-1138`](../../../src/fragnnet/pl_model/masster_pl.py#L1127-L1138)):

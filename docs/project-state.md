@@ -4,6 +4,58 @@
 
 ## Current handoff
 
+**QET breakdown-curve gates for MASSter (2026-09-26), and a fix for the CE input; uncommitted.**
+Offline analyses on `u2_ema999`, unmerged `[M+H]+`/FT, all val spectra plus 2,000 train
+molecules (scripts in `output/qet_projection_2026_09_26/`).
+
+- **Enforcing the law as an output constraint is worth about +0.002.** `u2`'s own predictions,
+  projected per molecule onto the one- or two-component form, gain +0.0019 val (SE 0.0002) and
+  lose 0.0009 on train. The model's CE series are already QET-consistent.
+- **One CE-blind candidate set per molecule is feasible.** The 256 best of the union (median
+  392 fragments) cover 0.9422 of target intensity against 0.9402 per energy, and 384 cover
+  0.9471. That makes a once-per-molecule pass possible; its speedup is not measured.
+- **The CE input was categorical in every model.** `ce_insert_type: embed`/`embed_clamped` with
+  the default `abs-sines` table (749 configs, all MASSter and FraGNNet lineages) gives each
+  integer a fixed binary-like code.
+  - NCE x and 256 − x collide, so 76 and 180 get identical inputs; at `ace_max: 100`, 30 and
+    98 eV do.
+  - On `u2` an unseen NCE drops val cosine to 0.22-0.42, and rare high NCEs gain +0.03 to +0.07
+    from projection.
+- **Fix: new `ce_insert_type: qet`.**
+  - It feeds the raw CE plus a missing-CE flag through a learned linear layer
+    (`QETEnergyEncoder` in `base_model.py`). NCE goes on a standardized `1/(NCE + 200)`, the
+    breakdown-curve axis. ACE (eV) is linear: on NIST20 QTOF eV series (1-50 eV) linear eV fit
+    best, and `1/(NCE + 200)` on converted eV predicted held-out energies 0.0009 worse
+    (SE 0.0001). It works in the shared `CEModel` and in `MassterContextEncoder`.
+  - Existing configs and checkpoints are unchanged.
+  - A probe on held-out NCE values chose it: 0.9845 against 0.9480 for abs-sines and 0.9627 for
+    32 RBF bumps.
+  - 18 new tests in `tests/test_ce_qet_embedding.py`; 287 pass with the related CE and model
+    test files.
+- **Next: submit arm `n1`**, which is `c0` plus `qet`. A local 2-epoch smoke exits 0.
+  - **Steps.** The generated job stages `src/` and the config from the Fir checkout, so first
+    commit the `qet` code, `config/template.yml`, `n1_nce_qet.yml` and the submit-script change.
+    Then pull on Fir, run `bash scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh
+    n1`, and `sbatch` the script it prints. This workstation has no Fir access.
+  - **Checked locally.** The generator with the script's arguments exits 0, and the job passes
+    `bash -n`: 1 × h100_3g.40gb, 140G memory, 6 CPUs, 5 h.
+  - Read it against `c0` on the tail. No NIST20 gain is expected; the check is that it costs
+    nothing beyond the 0.0042 seed spread.
+  - Rerun `nce180_check.py` on its checkpoint.
+  - Read it per NCE value by acquisition ladder. The categorical code let the model separate the
+    ladders at their own values, which one smooth axis cannot
+    ([energy vs parts](findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md)). A
+    loss concentrated at ladder-B-only values means the setup needs its own input.
+  - New configs for other NCE sets or QTOF eV should use `qet`.
+  - A once-per-molecule head is a compute restructuring, not an accuracy fix.
+- **Other integer embeddings checked.** No other table aliases in production.
+  - FraGNNet's `base_formula` holds heavy elements only, with C at most 129.
+  - `depth`, `rdbe`, cut bonds and the H-channel stay far below the aliased range (129 and up).
+  - DAG `out_degree`/`in_degree` do alias hub nodes (0.5% / 0.2% of nodes), but only a debug
+    config enables them.
+
+[Finding](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md).
+
 **Enveda isotope probe (2026-09-25); read-only, uncommitted script.**
 `scripts/debug/debug_enveda_isotope_probe.py` ran on 60,000 records of each export.
 

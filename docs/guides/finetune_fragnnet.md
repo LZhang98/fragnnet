@@ -219,7 +219,7 @@ mol_params:
 # Where to insert context features (CE, precursor, instrument)
 # Options: "none", "mol" (molecule level), "mlp" (after fragment encoding), "frag" (unsupported)
 
-ce_insert_type: embed                # How to embed CE: "id", "lin", "embed", "bin"
+ce_insert_type: embed                # How to embed CE: "id", "lin", "embed", "embed_clamped", "bin", "qet" ("qet" is smooth; see config/template.yml)
 ce_insert_location: mlp              # Insert at MLP level (after frag encoding)
 ce_insert_merge: False               # Don't merge with other embeddings
 ce_insert_size: 32                   # CE embedding dimension

@@ -196,7 +196,7 @@ The forward pass, for the `f0` control, has six stages:
    precursor and single-cut masks, then masks in descending joint bond probability, stopping
    at 256 unique fragments.
 3. **Token.** Each candidate's token has 1,285 columns
-   ([`masster_model.py:2869-2972`](../../../src/fragnnet/model/masster_model.py#L2869-L2972)):
+   ([`masster_model.py:2869-2972`](../../../src/fragnnet/model/masster_model.py#L2890-L2993)):
    - a fragment pool and a complement pool (mean atom embeddings, 384 each);
    - the boundary block (384): `CutBondEncoder([in, out, in⊙out])` on each cut bond's two
      endpoint embeddings, mean-pooled over the candidate's cut bonds;
@@ -208,7 +208,7 @@ The forward pass, for the `f0` control, has six stages:
 5. **Outputs.** A residual head gives one logit per fragment, softmaxed over the 256 fragments.
    An ion/H head gives 9 logits per fragment (one ion mode, H shifts −4 to +4), softmaxed within
    the fragment. A peak's log-probability is the sum of the two
-   ([`masster_model.py:3276-3282`](../../../src/fragnnet/model/masster_model.py#L3276-L3282)).
+   ([`masster_model.py:3276-3282`](../../../src/fragnnet/model/masster_model.py#L3297-L3303)).
 6. **Loss.** Cross-entropy on matched target intensity. Each molecule has 12.4 train spectra on
    average, at different NCE.
 
@@ -217,7 +217,7 @@ Where the lookup can get its key (K), where it can be stored (S), and what drive
 | # | route | MASSter evidence | measured? |
 | --- | --- | --- | --- |
 | K1 | **Global attention in the encoder.** Every atom embedding carries a whole-molecule read-out, so every token input derived from atoms identifies the molecule. The encoder is CE-blind, so a molecule's key is identical across its 12.4 spectra: about 800 presentations of the same key over 64 epochs. | No MASSter run compares GINE with GINE_GSA on the current lineage. The August GINE runs (val about 0.60) predate most of today's model. `g1` (5-layer encoder, no bond head, no `CutBondEncoder`) was −0.016. | no |
-| K2 | **The boundary block.** Given the precursor, the oriented cut set fixes the fragment, and `in⊙out` multiplies two global read-outs. So this block separates the 256 candidates sharply *and* names the molecule. The encoder is 0.79M parameters with no dropout ([`base_model.py:857`](../../../src/fragnnet/model/base_model.py#L857)), and `candidate_atom_dropout` skips it by design. | Probe: at matched validation damage, boundary corruption leaves a 0.022 gap against 0.059-0.086 for the pools. `c4a_no_bbe` (endpoint mean instead of the encoder) was −0.0024, with no train metrics and no checkpoint. | yes |
+| K2 | **The boundary block.** Given the precursor, the oriented cut set fixes the fragment, and `in⊙out` multiplies two global read-outs. So this block separates the 256 candidates sharply *and* names the molecule. The encoder is 0.79M parameters with no dropout ([`base_model.py:857`](../../../src/fragnnet/model/base_model.py#L948)), and `candidate_atom_dropout` skips it by design. | Probe: at matched validation damage, boundary corruption leaves a 0.022 gap against 0.059-0.086 for the pools. `c4a_no_bbe` (endpoint mean instead of the encoder) was −0.0024, with no train metrics and no checkpoint. | yes |
 | K3 | **Fragment and complement pools.** They name the molecule but separate candidates only weakly, since overlapping fragments share most of their atoms. | Probe: used symmetrically by both splits today. `e2`/`e3` (atom dropout on the pools only) were null. | yes |
 | K4 | **Exact descriptors and inputs.** `c_mass` (log1p neutral mass plus precursor mass fraction) nearly fixes the formula. `c_charge` and the `a_charge` atom input are continuous Gasteiger values. | Probe: descriptors used symmetrically. Removing `c_mass` +0.0012, `c_charge` −0.0012, `a_charge` −0.0025, all inside the merged ±0.005 gate ([campaign read-out §8](../../findings/masster/masster_campaign_readout_2026_09_21.md#8-the-bundles-leave-one-out-arms-read-at-the-128-epoch-screen-added-2026-09-24)). | partly |
 | K5 | **The candidate set.** In evaluation, the 256 selected fragments are a fixed function of the molecule, and the allocator attends over all of them. | Probe: `set_drop` closes 9-10% of the gap. Training already perturbs the set through BatchNorm, and the lookup forms anyway. (A random-weight probe measured train-versus-eval Jaccard 0.60-0.77 at dropout 0.1; the trained magnitude is unmeasured, [regularization audit §2.2](../../findings/masster/masster_regularization_audit_2026_09_19.md).) | yes |

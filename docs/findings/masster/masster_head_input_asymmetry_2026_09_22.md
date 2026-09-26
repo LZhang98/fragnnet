@@ -45,8 +45,8 @@ One `precursor_encoder` GNN, one `MassterContextEncoder`, then two branches:
 With `separate_proposal_encoder: False` (the whole `ma_mi_merged` lineage),
 `proposal_atom_embeddings` **is** `atom_embeddings` and `proposal_context` **is** `context`,
 optionally detached
-([`masster_model.py:2506-2512`](../../../src/fragnnet/model/masster_model.py#L2506-L2512),
-[`:2534`](../../../src/fragnnet/model/masster_model.py#L2534)). The same tensors, same values,
+([`masster_model.py:2506-2512`](../../../src/fragnnet/model/masster_model.py#L2527-L2533),
+[`:2534`](../../../src/fragnnet/model/masster_model.py#L2555)). The same tensors, same values,
 same dropout draw.
 
 ## 2. What each head actually receives
@@ -76,9 +76,9 @@ arm (plus `2 × edge_feature_dim` in the one `cut_bond_features` arm); the bond 
 ## 3. Gradient routing — the census
 
 `detach_proposal_inputs = proposal_selection_only and not proposal_input_gradients_enabled`
-([`:2417-2419`](../../../src/fragnnet/model/masster_model.py#L2417-L2419)).
+([`:2417-2419`](../../../src/fragnnet/model/masster_model.py#L2438-L2440)).
 `proposal_input_gradients_enabled` initializes to `False`
-([`:1364`](../../../src/fragnnet/model/masster_model.py#L1364)) and is only ever written by
+([`:1364`](../../../src/fragnnet/model/masster_model.py#L1385)) and is only ever written by
 `_apply_staged_training`, which **returns early when `proposal_only_until_epoch is None`**
 ([`masster_pl.py:1124-1137`](../../../src/fragnnet/pl_model/masster_pl.py#L1124-L1137)).
 
@@ -121,9 +121,9 @@ representation selected for allocating intensity among already-chosen fragments.
    6 configs that set `separate_ion_mode_proposal_head`.
 
 4. **`candidate_atom_dropout` does not reach the proposal pool.** The intensity path pools
-   `pooled_atom_indices` ([`:2804-2815`](../../../src/fragnnet/model/masster_model.py#L2804-L2815));
+   `pooled_atom_indices` ([`:2804-2815`](../../../src/fragnnet/model/masster_model.py#L2825-L2836));
    the ion-mode proposal head pools raw `fragment_atom_indices`
-   ([`:2851-2860`](../../../src/fragnnet/model/masster_model.py#L2851-L2860)). The
+   ([`:2851-2860`](../../../src/fragnnet/model/masster_model.py#L2872-L2881)). The
    `_candidate_atom_dropout` docstring claims the intervention is "confined to the pooled
    component embeddings" — proposal-side pooled component embeddings escape it. Latent while
    that head is off; a silent inconsistency the moment both are on.
@@ -132,14 +132,14 @@ representation selected for allocating intensity among already-chosen fragments.
    embeddings route through `boundary_bond_encoder`, which exists precisely because
    endpoint-averaged bond embeddings collapse under the subsequent mean pool
    ([feature set audit §7.4](../../reference/masster_feature_set_audit.md)). The proposal-side
-   pool ([`:2865-2875`](../../../src/fragnnet/model/masster_model.py#L2865-L2875)) uses the
+   pool ([`:2865-2875`](../../../src/fragnnet/model/masster_model.py#L2886-L2896)) uses the
    plain endpoint mean.
 
 ### 4.6 There is no separate proposal *context* encoder
 
 `separate_proposal_encoder` gives the proposal branch its own GNN, but nothing gives it its own
 `MassterContextEncoder`. Even under V3, `proposal_context = context.detach()`
-([`:2610`](../../../src/fragnnet/model/masster_model.py#L2610)) — the detach stops the
+([`:2610`](../../../src/fragnnet/model/masster_model.py#L2631)) — the detach stops the
 gradient, it does not give the branch its own conditioning. The vector every proposal head reads
 is therefore shaped 100% by the intensity objective, in every configuration this repository has.
 
@@ -149,22 +149,22 @@ is therefore shaped 100% by the intensity objective, in every configuration this
 `shared_context` with `include_collision_energy=False`. The bond, charge, mixture and mechanism
 heads read that CE-free vector. The ion-mode proposal head instead reads `proposal_context`,
 built from the **full CE-conditioned `context`**
-([`:2551-2556`](../../../src/fragnnet/model/masster_model.py#L2551-L2556), consumed at
-[`:2964`](../../../src/fragnnet/model/masster_model.py#L2964)). One proposal head is
+([`:2551-2556`](../../../src/fragnnet/model/masster_model.py#L2572-L2577), consumed at
+[`:2964`](../../../src/fragnnet/model/masster_model.py#L2985)). One proposal head is
 CE-conditioned while the rest are not, which contradicts the sharing invariant. Dormant: the head
 is off in 223/223 and sharing is on in 2.
 
 ## 5. Checked and clean
 
 - `share_proposal_across_ev` feeds `mol_pyg.x` rather than `atom_inputs` to `precursor_encoder`
-  ([`:2400`](../../../src/fragnnet/model/masster_model.py#L2400)), which would silently drop
+  ([`:2400`](../../../src/fragnnet/model/masster_model.py#L2421)), which would silently drop
   context. The constructor rejects `context_in_gnn + share_proposal_across_ev`
-  ([`:1367`](../../../src/fragnnet/model/masster_model.py#L1367)), so it cannot fire.
+  ([`:1367`](../../../src/fragnnet/model/masster_model.py#L1388)), so it cannot fire.
 - The shared-layout path validates that grouped spectra carry identical atom features, bond
   features, bond topology, adduct, instrument and fragmentation mode before reusing one
   proposal forward.
 - `separate_proposal_encoder` is rejected without `proposal_selection_only`
-  ([`:1218`](../../../src/fragnnet/model/masster_model.py#L1218)), so V3 cannot be half-enabled.
+  ([`:1218`](../../../src/fragnnet/model/masster_model.py#L1239)), so V3 cannot be half-enabled.
 
 ## 6. Limits
 
@@ -243,7 +243,7 @@ train/validation gap in the head this token feeds. **It is untested: W&B returns
 fragment and complement pools (768 columns) and deliberately leaves the **boundary embedding
 exact** — the docstring says so, and the call site passes raw `fragment_atom_indices` rather than
 the dropped `pooled_atom_indices`
-([`:2820-2831`](../../../src/fragnnet/model/masster_model.py#L2820-L2831)). That is another
+([`:2820-2831`](../../../src/fragnnet/model/masster_model.py#L2841-L2852)). That is another
 **384 identity-bearing columns**, and with `boundary_bond_encoder: True` (221/223) it encodes
 oriented (retained, lost) endpoint pairs for the severed bonds — a set that, given the precursor,
 largely determines the fragment. Mean pooling over cut bonds blunts this (the §7.4 degeneracy in
@@ -378,16 +378,16 @@ off the code for the `c4a` configuration: unique-fragment mode, `cut_masks`,
 selection-only.
 
 1. Candidates are built from `bond_logits` alone
-   ([`:2594`](../../../src/fragnnet/model/masster_model.py#L2594)). They are the forced
+   ([`:2594`](../../../src/fragnnet/model/masster_model.py#L2615)). They are the forced
    precursor and single-cut masks, then masks in exact descending joint bond probability, stopped
    at the first 256 unique atom sets.
 2. `atom_charge_logits` enter only the proposal's fragment score, through
    `latent_pathway_charge_log_probabilities`
-   ([`:2675`](../../../src/fragnnet/model/masster_model.py#L2675)).
+   ([`:2675`](../../../src/fragnnet/model/masster_model.py#L2696)).
 3. That score reaches three consumers:
    - The relative-probability keep mask
-     ([`:2792`](../../../src/fragnnet/model/masster_model.py#L2792)) returns all-True at a
-     0.0 cutoff ([`:162`](../../../src/fragnnet/model/masster_model.py#L162)). `c4a_base_s1`
+     ([`:2792`](../../../src/fragnnet/model/masster_model.py#L2813)) returns all-True at a
+     0.0 cutoff ([`:162`](../../../src/fragnnet/model/masster_model.py#L167)). `c4a_base_s1`
      logs `fragment_cutoff_pruned_fraction` 0 on both splits.
    - The intensity head receives it as `mask_log_probabilities`. It only shape-checks it unless
      `use_base_probability_feature` is on
@@ -395,10 +395,10 @@ selection-only.
      which `proposal_anchored` turns off.
    - The proposal loss and the diagnostics.
 4. Under selection-only the final fragment logits are the intensity residuals
-   ([`:2983`](../../../src/fragnnet/model/masster_model.py#L2983)). With
+   ([`:2983`](../../../src/fragnnet/model/masster_model.py#L3004)). With
    `separate_ion_mode_proposal_head` off, ion-mode channel selection reads the intensity head's
    ion/H support, not the charge head
-   ([`:3221`](../../../src/fragnnet/model/masster_model.py#L3221)).
+   ([`:3221`](../../../src/fragnnet/model/masster_model.py#L3242)).
 
 So the charge head's 263,169 parameters are trained by the proposal loss and change neither the
 kept set nor the spectrum. They would matter under a nonzero `min_fragment_relative_probability`.

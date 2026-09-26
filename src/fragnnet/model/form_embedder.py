@@ -195,6 +195,11 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
     Some notes:
     * we'll put the frequencies at powers of 1/2 rather than random Gaussian samples; this means it will match the
         Binarizer quite closely but be a bit smoother.
+    * Aliasing: the features are |sin(pi * x / 2**j)| for j = 1..J with J = ceil(log2(max_count_int)), all
+        unchanged under x -> 2**J - x. Integers x and 2**J - x inside the table get identical rows, e.g. 76 and
+        180 at max_count_int 201. Neighbouring integers get unrelated rows, so an integer never seen in training
+        gets arbitrary features. For collision energy, ``ce_insert_type: qet`` embeds the raw value smoothly
+        instead. Existing checkpoints store this table, so it is kept as is.
     """
 
     def __init__(

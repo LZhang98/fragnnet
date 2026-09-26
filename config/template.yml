@@ -373,7 +373,14 @@ deterministic: False
 drop_last: False
 num_sanity_val_steps: 0
 # -- Collision Energy (CE) Configuration --
-ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
+ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin","qet"]
+# "embed"/"embed_clamped" look the rounded CE up in the int_embedder table. The default abs-sines
+# table gives CE x and 2**k - x identical rows (NCE 76 and 180 at nce_max 200; ACE 30 and 98 eV at
+# ace_max 100) and neighbouring values unrelated rows, so a CE unseen in training gets arbitrary
+# features. "qet" embeds the raw CE plus a missing-CE flag through a learned linear layer
+# (QETEnergyEncoder): NCE as a standardized 1 / (NCE + 200), the breakdown-curve axis, and ACE (eV)
+# linearly, as the QTOF eV series fit best. nce_max/ace_max do not clamp it. "id"/"lin" read a missing CE (-1) as z = -1, one std below the mean.
+# See docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md.
 ce_insert_location: none # FraGNNet: none, mol, mlp, or mol,mlp (frag insertion unsupported)
 ce_insert_merge: False # FraGNNet: mean-pool CE-reading embeddings within each spectrum
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
@@ -545,6 +552,9 @@ frag_params:
     # - frag_q              # summed Gasteiger charge over the fragment's atoms; computed on-the-fly
     # - out_degree          # DAG out-degree of the fragment node
     # - in_degree           # DAG in-degree of the fragment node
+    #                       # Both go through the int_embedder table (abs-sines, 255 entries),
+    #                       # which aliases degree x with 256 - x: 0.5% / 0.2% of NIST20 DAG
+    #                       # nodes (hubs) have degrees 129-254. See the QET projection finding.
     # - num_heavy_atoms     # heavy-atom count of the fragment
     # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
     # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; superseded by cut_bond

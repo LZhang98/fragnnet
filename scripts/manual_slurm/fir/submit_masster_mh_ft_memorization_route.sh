@@ -33,7 +33,11 @@
 #   s1_k1_ema  k1_ema + schedule            (control: k1_ema, j4u25qfd)
 # and weight decay that acts within the run (timescale 1/(lr*wd): ~325 epochs at 0.01, ~32 at 0.1):
 #   w1         c0 + weight_decay 0.1        (control: c0, vcpho5qm)
+# Added 2026-09-26: the NCE input on the breakdown-curve axis instead of the abs-sines code, which
+# aliases NCE x with 256 - x and gives unseen energies arbitrary codes:
+#   n1         c0 + ce_insert_type qet      (control: c0, vcpho5qm)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
+# n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
 #
 # STAGE:
 #   all   (default) c0, r0, r1, r2, k1 and m1.
@@ -43,7 +47,7 @@
 #   batch2  gm1-gm6, k1_ema, c0_s2, k1_s2 and u2_s2.
 #   lr    s1 and s1_k1_ema (c0 and k1_ema have run or are running).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#         one job.
+#   | n1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -92,6 +96,7 @@ declare -A JOB_BY_ARM=(
     [s1]=msh_mhft_s1_lr_cosine
     [s1_k1_ema]=msh_mhft_s1_k1_ema
     [w1]=msh_mhft_w1_wd10
+    [n1]=msh_mhft_n1_nce_qet
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -113,6 +118,7 @@ declare -A CONFIG_BY_ARM=(
     [s1]=s1_lr_cosine.yml
     [s1_k1_ema]=s1_k1_ema_lr_cosine.yml
     [w1]=w1_wd10.yml
+    [n1]=n1_nce_qet.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -124,9 +130,9 @@ case "${STAGE}" in
     swap) ARMS=(gm3 gm4 gm5 gm6) ;;
     batch2) ARMS=(gm1 gm2 gm3 gm4 gm5 gm6 k1_ema c0_s2 k1_s2 u2_s2) ;;
     lr)   ARMS=(s1 s1_k1_ema) ;;
-    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1) ARMS=("${STAGE}") ;;
+    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1]" >&2
         exit 1
         ;;
 esac
@@ -210,3 +216,4 @@ echo "The control is c0 (same code); submit it with the arms unless it is alread
 echo "batch2: c0 (vcpho5qm) and u2 (c8hh9j1b) have run; c0_s2 is in the batch."
 echo "lr: s1's control c0 (vcpho5qm) has run; s1_k1_ema's control k1_ema (j4u25qfd) is in batch 2."
 echo "w1: its control c0 (vcpho5qm) has run."
+echo "n1: its control c0 (vcpho5qm) has run."

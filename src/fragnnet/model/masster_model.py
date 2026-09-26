@@ -51,7 +51,12 @@ from fragnnet.frag.masster_templates import (
     MassterTemplate,
     filter_masster_templates,
 )
-from fragnnet.model.base_model import CutBondEncoder, encode_cut_bond_pairs
+from fragnnet.model.base_model import (
+    QET_ACE_OFFSET,
+    CutBondEncoder,
+    QETEnergyEncoder,
+    encode_cut_bond_pairs,
+)
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
@@ -701,8 +706,11 @@ class MassterContextEncoder(nn.Module):
             use_nce: Feed normalized collision energy into the context.
             use_ace: Feed absolute collision energy into the context.
             int_embedder: Integer featurizer used for learned CE embeddings.
-            ce_insert_type: ``embed`` or ``embed_clamped`` enables learned CE
-                embeddings; other modes retain the standardized scalar input.
+            ce_insert_type: ``embed``, ``embed_clamped`` or ``qet`` enables learned CE
+                embeddings; other modes retain the standardized scalar input. ``embed``
+                and ``embed_clamped`` look the rounded CE up in the ``int_embedder``
+                table; ``qet`` embeds the raw CE with ``QETEnergyEncoder``, smooth in
+                energy and with a learned missing-CE flag.
             ce_insert_size: Width of each learned CE embedding.
             metadata_embedding_dim: Width of each categorical embedding.
             context_dim: Width of the emitted conditioning vector.
@@ -721,7 +729,7 @@ class MassterContextEncoder(nn.Module):
             raise ValueError("num_precursor_types must be positive")
         if metadata_embedding_dim <= 0 or context_dim <= 0:
             raise ValueError("context dimensions must be positive")
-        if ce_insert_type not in {"id", "lin", "embed", "embed_clamped", "bin"}:
+        if ce_insert_type not in {"id", "lin", "embed", "embed_clamped", "bin", "qet"}:
             raise ValueError(f"unknown CE insertion type: {ce_insert_type}")
         if ce_insert_size <= 0:
             raise ValueError("ce_insert_size must be positive")
@@ -740,10 +748,18 @@ class MassterContextEncoder(nn.Module):
         self.ace_max = ace_max
         self.ace_mean = ace_mean
         self.ace_std = ace_std
-        self.use_ce_embedding = ce_insert_type in {"embed", "embed_clamped"}
+        self.use_ce_embedding = ce_insert_type in {"embed", "embed_clamped", "qet"}
         self.nce_embedding = None
         self.ace_embedding = None
-        if self.use_ce_embedding:
+        if ce_insert_type == "qet":
+            if use_nce:
+                self.nce_embedding = QETEnergyEncoder(nce_mean, nce_std, ce_insert_size)
+            if use_ace:
+                # eV is linear; see QET_ACE_OFFSET.
+                self.ace_embedding = QETEnergyEncoder(
+                    ace_mean, ace_std, ce_insert_size, offset=QET_ACE_OFFSET
+                )
+        elif self.use_ce_embedding:
             nce_count = int(nce_max) + int(ce_insert_type == "embed")
             ace_count = int(ace_max) + int(ce_insert_type == "embed")
             if use_nce:
@@ -825,9 +841,13 @@ class MassterContextEncoder(nn.Module):
             if batch_indices.shape != values.shape or batch_indices.dtype != th.long:
                 raise ValueError("CE batch indices must be a matching torch.long vector")
 
-        upper_bound = int(max_value) - int(self.ce_insert_type == "embed_clamped")
-        embedding_indices = values.clamp(min=-1, max=upper_bound).round().long().unsqueeze(1)
-        embedded_values = embedding(embedding_indices)
+        if self.ce_insert_type == "qet":
+            # Raw energies: no rounding, no clamp at max_value; below 0 is flagged as missing.
+            embedded_values = embedding(values)
+        else:
+            upper_bound = int(max_value) - int(self.ce_insert_type == "embed_clamped")
+            embedding_indices = values.clamp(min=-1, max=upper_bound).round().long().unsqueeze(1)
+            embedded_values = embedding(embedding_indices)
         if weights is not None:
             return weighted_mean_by_batch(embedded_values, weights, batch_indices, batch_size)
         sums = embedded_values.new_zeros(batch_size, self.ce_insert_size).index_add(
@@ -1162,7 +1182,8 @@ class MassterModel(nn.Module):
             instrument_types: Instrument vocabulary; empty disables the embedding.
             fragmentation_modes: Fragmentation-mode vocabulary; empty disables it.
             int_embedder: Integer featurizer used by learned CE embeddings.
-            ce_insert_type: CE representation type; ``embed`` enables learned vectors.
+            ce_insert_type: CE representation type; ``embed``, ``embed_clamped`` and
+                ``qet`` enable learned vectors (see ``MassterContextEncoder``).
             ce_insert_size: Width of each learned CE embedding.
             use_nce: Condition on normalized collision energy.
             use_ace: Condition on absolute collision energy.

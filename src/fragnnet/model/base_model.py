@@ -6,6 +6,7 @@ and fragmentation mode (FragMode) for FragGNN models. Intended to be used as bas
 more complex model architectures.
 
 - CEModel: Handles collision energy embedding and transformation.
+- QETEnergyEncoder: Smooth CE embedding on the breakdown-curve axis 1 / (CE + offset).
 - PrecModel: Handles precursor type embedding.
 - InstModel: Handles instrument type embedding.
 - FragModeModel: Handles fragmentation mode embedding (HCD/CID/unknown).
@@ -19,6 +20,78 @@ import torch.nn.functional as F
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.spec_utils import transform_ce, weighted_mean_by_batch
+
+# Offset of the breakdown-curve energy axis 1 / (CE + offset). Fitting the QET/Arrhenius form
+# softmax(a_i - e_i * beta(NCE)) to NIST20 [M+H]+/FT CE series put the shared curve at
+# 1 / (NCE + n0) with n0 near 200 (docs/findings/breakdown_curve_form_fit_2026_09_26.md). It is a
+# shape parameter, not a calibrated internal energy, and it was measured on NCE only.
+QET_ENERGY_OFFSET = 200.0
+# The ACE (eV) path is linear. The same form fitted to NIST20 [M+H]+/QTOF eV series (1-50 eV) fits
+# best with no offset, and a held-out interior energy is predicted 0.0009 better (paired SE 0.0001)
+# than with eV converted to NCE and put on 1 / (NCE + 200)
+# (docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md).
+QET_ACE_OFFSET = None
+
+
+class QETEnergyEncoder(nn.Module):
+    """Embed collision energies on the breakdown-curve axis, with a missing-energy flag.
+
+    Each reading becomes two features: z, a standardized 1 / (CE + offset), and a flag that is 1
+    for a missing CE (any value below 0), whose z is set to 0. A linear layer maps them to
+    ``out_dim``. z is scaled so that z ~ (CE - mean) / std near ``mean``: it rises with CE, is
+    smooth everywhere, and extrapolates past the training range instead of saturating. With
+    ``offset=None`` the axis is linear, z = (CE - mean) / std, as the ACE (eV) path uses.
+
+    Integer-table CE embeddings (``ce_insert_type: embed``) give neighbouring energies unrelated
+    rows, so an energy unseen in training gets arbitrary features, and the default abs-sines table
+    aliases CE x with 2**k - x. Among the encodings compared on held-out NCE values in
+    docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md, this axis
+    generalized best.
+
+    Args:
+        mean: CE the standardization centres on (the configured nce_mean or ace_mean).
+        std: CE spread setting the scale of z near ``mean``.
+        out_dim: Width of the embedding.
+        offset: Offset of the 1 / (CE + offset) axis, or None for a linear axis.
+
+    Raises:
+        ValueError: If ``std`` is not positive, ``mean + offset`` is not positive, or ``out_dim``
+            is not positive.
+    """
+
+    def __init__(
+        self, mean: float, std: float, out_dim: int, offset: float | None = QET_ENERGY_OFFSET
+    ) -> None:
+        super().__init__()
+        if std <= 0.0 or out_dim <= 0 or (offset is not None and mean + offset <= 0.0):
+            raise ValueError("QETEnergyEncoder needs std > 0, mean + offset > 0 and out_dim > 0")
+        self.offset = None if offset is None else float(offset)
+        self.mean = float(mean)
+        self.std = float(std)
+        if offset is not None:
+            # z = (1 / (mean + offset) - 1 / (CE + offset)) * (mean + offset)**2 / std, whose
+            # slope at CE = mean is 1 / std.
+            self.center = 1.0 / (mean + offset)
+            self.scale = std / (mean + offset) ** 2
+        self.linear = nn.Linear(2, out_dim)
+
+    def forward(self, ce: th.Tensor) -> th.Tensor:
+        """Embed collision-energy readings.
+
+        Args:
+            ce: Collision energies of any shape; values below 0 mark a missing CE.
+
+        Returns:
+            Embeddings, shape ``(ce.numel(), out_dim)``.
+        """
+        ce = ce.reshape(-1).to(self.linear.weight.dtype)
+        missing = ce < 0
+        if self.offset is None:
+            z = (ce - self.mean) / self.std
+        else:
+            z = (self.center - 1.0 / (ce.clamp_min(0.0) + self.offset)) / self.scale
+        z = th.where(missing, th.zeros_like(z), z)
+        return self.linear(th.stack((z, missing.to(z.dtype)), dim=1))
 
 
 class CEModel:
@@ -46,7 +119,10 @@ class CEModel:
         Args:
             int_embedder: Embedder for integer features.
             ce_insert_location: Where to insert CE embedding ("none", "mol", "frag", "mlp").
-            ce_insert_type: Type of CE embedding ("id", "lin", "embed", "bin").
+            ce_insert_type: Type of CE embedding ("id", "lin", "embed", "embed_clamped", "bin",
+                "qet"). "embed" and "embed_clamped" look the rounded CE up in the
+                ``int_embedder`` table; "qet" embeds the raw CE with ``QETEnergyEncoder``,
+                smooth in energy and with a learned missing-CE flag.
             ce_insert_merge: Whether to merge CE embeddings across batch.
             ce_insert_size: Output embedding size.
             nce_mean: Mean for NCE normalization.
@@ -59,7 +135,7 @@ class CEModel:
             ace_mean: Mean ACE value (eV) for normalization (lin/id types). Default 20.0.
             ace_std: Std of ACE for normalization (lin/id types). Default 15.0.
         """
-        assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin"]
+        assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin", "qet"]
         # ce_insert_location may name multiple insertion points, comma-separated (e.g.
         # "mol,mlp"): inject CE into the molecule encoder input AND the per-fragment scoring
         # MLP. "mol" alone (mol-encoder only) or "mlp" alone (per-fragment only) are the
@@ -95,13 +171,21 @@ class CEModel:
     def _ce_location_check(self) -> None:
         raise NotImplementedError("Subclasses must implement _ce_location_check")
 
-    def _build_ce_components(self, max_val: float, mean_val: float, std_val: float) -> tuple:
+    def _build_ce_components(
+        self,
+        max_val: float,
+        mean_val: float,
+        std_val: float,
+        qet_offset: float | None = QET_ENERGY_OFFSET,
+    ) -> tuple:
         """Build transform function and embedder module for a given CE scale.
 
         Args:
             max_val: Maximum CE value for clamping/binning.
-            mean_val: Mean for normalization (lin/id types).
-            std_val: Std for normalization (lin/id types).
+            mean_val: Mean for normalization (lin/id/qet types).
+            std_val: Std for normalization (lin/id/qet types).
+            qet_offset: Offset of the "qet" axis 1 / (CE + offset); None makes it linear, as
+                the ACE path uses.
 
         Returns:
             Tuple of (transform_fn, embedder_module, output_dim).
@@ -131,6 +215,13 @@ class CEModel:
 
             raw_emb = get_embedder(self.int_embedder, max_count_int=int(max_val) + 1)
             embedder = nn.Sequential(raw_emb, nn.Linear(raw_emb.num_dim, insert_size))
+        elif self.ce_insert_type == "qet":
+
+            def transform(ce: th.Tensor) -> th.Tensor:
+                # Raw energies: no rounding, no clamp at max_val; below 0 stays missing.
+                return ce.reshape(-1)
+
+            embedder = QETEnergyEncoder(mean_val, std_val, insert_size, offset=qet_offset)
         elif self.ce_insert_type == "embed_clamped":
 
             def transform(ce: th.Tensor) -> th.Tensor:
@@ -164,7 +255,7 @@ class CEModel:
             effective_dim += ce_input_dim
         if self.use_ace:
             ace_transform, ace_embedder, ace_input_dim = self._build_ce_components(
-                self.ace_max, self.ace_mean, self.ace_std
+                self.ace_max, self.ace_mean, self.ace_std, qet_offset=QET_ACE_OFFSET
             )
             self.ace_transform = ace_transform
             self.ce_embedder_ace = ace_embedder
