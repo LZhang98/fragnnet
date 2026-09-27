@@ -871,6 +871,10 @@ masster_memorization_sink_dim: 0
 masster_memorization_sink_num_molecules: 0
 # First training epoch (0-based) at which the sink is applied.
 masster_memorization_sink_start_epoch: 0
+# Training-only probability, drawn per spectrum, that the sink row is zeroed (arm m2), so the
+# shared path fits that spectrum alone (MemSinks mixing). Kept rows are not rescaled. 0 applies the
+# sink to every training spectrum, as in m1. Requires masster_memorization_sink_dim > 0.
+masster_memorization_sink_dropout: 0.0
 # Training-only noise on the shared encoder's global-attention message, applied after its norm
 # (arms gm1 and gm2). The route map found this message writes the per-molecule lookup key.
 # Substitution replaces an atom's whole message, per layer, by the batch mean with this probability

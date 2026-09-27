@@ -341,6 +341,71 @@ def test_memorization_sink_rejects_incomplete_configurations(
         _build_model(batch, **options)
 
 
+# 5b. Sink dropout (arm m2): each training spectrum runs with or without its sink row.
+
+
+def _sink_dropout_outputs(batch, dropout: float) -> tuple[MassterModel, th.Tensor, th.Tensor]:
+    """Return a sink model with rows 3 and 7 set, its sink-on output and its shared output."""
+    model = _sink_model(batch, memorization_sink_dropout=dropout).train()
+    with th.no_grad():
+        model.memorization_sink.weight[3] = th.tensor([2.0, -1.0, 0.5])
+        model.memorization_sink.weight[7] = th.tensor([-1.5, 0.5, 1.0])
+    model.memorization_sink_dropout = 0.0
+    sink_on = _forward(model, batch, memorization_sink_indices=th.tensor([3, 7]))["pred_logprobs"]
+    model.memorization_sink_dropout = dropout
+    shared = _forward(model, batch)["pred_logprobs"]
+    return model, sink_on, shared
+
+
+def test_memorization_sink_dropout_adds_no_parameters(batch) -> None:
+    """m2 differs from m1 by a probability alone, so m1 checkpoints and initialization carry over."""
+    m1_state = _sink_model(batch).state_dict()
+    m2_state = _sink_model(batch, memorization_sink_dropout=0.5).state_dict()
+
+    assert list(m2_state) == list(m1_state)
+    assert all(th.equal(m2_state[key], m1_state[key]) for key in m1_state)
+
+
+def test_memorization_sink_dropout_runs_each_spectrum_with_or_without_its_row(batch) -> None:
+    """Every spectrum matches exactly the sink-on or the shared output, drawn per spectrum."""
+    model, sink_on, shared = _sink_dropout_outputs(batch, dropout=0.5)
+    first = _forward(model, batch)["pred_batch_idxs"] == 0
+    assert not th.allclose(sink_on[first], shared[first])
+    assert not th.allclose(sink_on[~first], shared[~first])
+
+    patterns = set()
+    for seed in range(24):
+        th.manual_seed(seed)
+        out = _forward(model, batch, memorization_sink_indices=th.tensor([3, 7]))["pred_logprobs"]
+        kept = []
+        for rows in (first, ~first):
+            is_on = th.equal(out[rows], sink_on[rows])
+            assert is_on != th.equal(out[rows], shared[rows])
+            kept.append(is_on)
+        patterns.add(tuple(kept))
+
+    # 24 draws at 0.5: all four keep patterns appear, so the two spectra are drawn independently.
+    assert patterns == {(True, True), (True, False), (False, True), (False, False)}
+
+
+def test_memorization_sink_dropout_is_training_only(batch) -> None:
+    """In eval mode the rows are never dropped; evaluation passes no indices in any case."""
+    model, sink_on, _ = _sink_dropout_outputs(batch, dropout=0.9)
+    model.eval()
+    for seed in range(5):
+        th.manual_seed(seed)
+        out = _forward(model, batch, memorization_sink_indices=th.tensor([3, 7]))["pred_logprobs"]
+        assert th.equal(out, sink_on)
+
+
+def test_memorization_sink_dropout_rejects_invalid_settings(batch) -> None:
+    with pytest.raises(ValueError, match="requires memorization_sink_dim"):
+        _build_model(batch, memorization_sink_dropout=0.5, **UNIQUE_KWARGS)
+    for dropout in (-0.1, 1.0):
+        with pytest.raises(ValueError, match=r"must lie in \[0, 1\)"):
+            _sink_model(batch, memorization_sink_dropout=dropout)
+
+
 def _sink_pl(*, sink_dim: int, training: bool, epoch: int) -> SimpleNamespace:
     hparams = SimpleNamespace(
         masster_memorization_sink_dim=sink_dim,

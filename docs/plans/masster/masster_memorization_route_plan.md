@@ -1052,6 +1052,51 @@ The fit at these windows has r = 0.96-0.98 and a residual SD of 0.0018-0.0021. F
   [QET finding](../../findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1).
 - **`sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`)** started at 03:43 UTC and had no epoch logged.
 
+**Update, about two hours later.** `nl3` crashed at epoch 30 (cause not checked). It was
+−0.018 against `nl2` over epochs 21-30, so it needs no resubmission. `nl1` at epoch 39 and `nl2`
+at 41 stay null: +0.0022 and −0.0013 against `c0` over their last ten epochs. `nl1`'s train loss
+equals `c0`'s (−0.0006).
+
 **Next.** Read `nl1` and `nl2` at epoch 63, then run the route map (`cc`, `boundary`; `gsa` on
 `nl1`) on their checkpoints to find the route that replaced the heavier-side pool. `nl3` needs
-no offline read; cancelling it frees a 3g slice about 2 h early.
+no offline read.
+
+## Sink-dropout arm `m2` (built 2026-09-26, not submitted)
+
+`m1`'s sink applied to a random half of the training spectra: plan item 1 of
+[Next, ranked by evidence](#change-list-2026-09-24), without the variational shrinkage.
+
+- **Why.** `m1` (`liwjgdq6`) failed at −0.0203 because the sink took transferable fit along with
+  the lookup ([read](#step-1-tail-read-from-wb-2026-09-24)). Once the sink fits a spectrum, the
+  shared weights get almost no gradient from it, and `m1` applied it to every exposure from
+  epoch 4. MemSinks mixes shared and specific units, so the shared path is also trained without
+  the specific ones. In `m2` the shared path must fit half of each molecule's exposures alone.
+- **Option.** New key `masster_memorization_sink_dropout` (default 0, which is `m1`): the
+  training-only probability, drawn per spectrum at each step, that the sink row is zeroed. A zero
+  row adds nothing, so a dropped spectrum runs the shared model exactly. Kept rows are not
+  rescaled: the sink is on or off. It requires `masster_memorization_sink_dim > 0` and adds no
+  parameters. Code: `MassterModel(memorization_sink_dropout=...)` in `masster_model.py`, wired
+  through `masster_pl.py` and declared in `config/template.yml`.
+- **Config.** `m2_sink_dropout.yml` is `m1_sink.yml` plus the key at 0.5: 16-dim rows, start
+  epoch 4, never used at evaluation. Controls: `c0` (`vcpho5qm`, tail 0.7276) and `m1` (tail
+  0.7074).
+- **Reading.** The tail against `c0` needs +0.003, and a replicate if under about +0.005. Against
+  `m1` it shows how much of `m1`'s loss the dropout recovers. Also read coverage within 0.005 of
+  `c0` and the eval-mode train/val gap on the best checkpoint. It is a long shot: it must recover
+  0.023 over `m1`, and the only positive evidence is at LLM scale.
+- **Checks.**
+  - 4 new tests in `tests/test_masster_memorization_route.py`:
+    - no new parameters, and a state dict equal to `m1`'s;
+    - each spectrum matches exactly the sink-on or the shared output, with all four keep
+      patterns across 24 seeds, so spectra are drawn independently;
+    - no dropping in eval mode;
+    - invalid settings rejected.
+  - Each test catches a matching broken variant: one mask per batch, or dropping in eval mode.
+  - 323 pass across the memorization-route, MASSter model and config test files. Ruff is clean.
+  - Through `load_config`, `m2` differs from `m1` by the key and W&B naming only.
+  - Two 2-epoch smokes on a 512-spectrum subsample exit 0, with the start moved to epoch 0 so
+    the sink runs. At 0.5, 390 sink rows moved, and at 0 all 498 train molecules' rows did.
+    Val cosine at 0.5: 0.075 → 0.230.
+  - The submitter's config checks pass. Locally it stops at the missing `pyteomics` wheel before
+    generating anything.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh m2`, after committing.

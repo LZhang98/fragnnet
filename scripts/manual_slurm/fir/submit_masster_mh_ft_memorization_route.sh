@@ -41,6 +41,8 @@
 #   n3         c0 + ce_insert_type id       (controls: c0 vcpho5qm, n1 jxczo2kf)
 # and, after n1-n3 all trailed c0 with train fit unchanged (keep the per-NCE code, fix its table):
 #   n4         c0 + int_embedder fourier    (control: c0 vcpho5qm)
+# and m1's sink on a random half of the training spectra (MemSinks mixing; m1 failed at -0.0203):
+#   m2         m1 + sink dropout 0.5        (controls: c0 vcpho5qm, m1 liwjgdq6)
 # Added 2026-09-26, after the side-of-cut probe: each cut represented by its lighter side (the
 # neutral loss of a large fragment), the heavier side by element counts only (c_heavy_side):
 #   nl1  c0 + masster_light_side_token      (control: c0, vcpho5qm)
@@ -66,7 +68,7 @@
 #   nce   n2 and n3 (c0 has run; n1 is running).
 #   share sp0 and sp1 (c0 has run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1  one job.
+#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -102,6 +104,7 @@ declare -A JOB_BY_ARM=(
     [r2]=msh_mhft_r2_no_gsa
     [k1]=msh_mhft_k1_key_dropout
     [m1]=msh_mhft_m1_sink
+    [m2]=msh_mhft_m2_sink_dropout
     [gm1]=msh_mhft_gm1_message_substitution
     [gm2]=msh_mhft_gm2_message_noise
     [gm3]=msh_mhft_gm3_swap_atom
@@ -132,6 +135,7 @@ declare -A CONFIG_BY_ARM=(
     [r2]=r2_no_gsa.yml
     [k1]=k1_key_dropout.yml
     [m1]=m1_sink.yml
+    [m2]=m2_sink_dropout.yml
     [gm1]=gm1_message_substitution.yml
     [gm2]=gm2_message_noise.yml
     [gm3]=gm3_swap_atom.yml
@@ -168,9 +172,9 @@ case "${STAGE}" in
     nl)   ARMS=(nl1 nl2 nl3) ;;
     nce)  ARMS=(n2 n3) ;;
     share) ARMS=(sp0 sp1) ;;
-    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]) ARMS=("${STAGE}") ;;
+    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1]" >&2
         exit 1
         ;;
 esac
@@ -257,5 +261,6 @@ echo "w1: its control c0 (vcpho5qm) has run."
 echo "n1: its control c0 (vcpho5qm) has run."
 echo "nce (n2, n3): c0 (vcpho5qm) has run; n1 (jxczo2kf) is the other control."
 echo "n4: its control c0 (vcpho5qm) has run."
+echo "m2: its controls c0 (vcpho5qm) and m1 (liwjgdq6) have run."
 echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."
 echo "share: sp0's control c0 (vcpho5qm) has run; sp1's control is sp0, in the same stage."

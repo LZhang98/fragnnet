@@ -1096,6 +1096,7 @@ class MassterPL(SpectrumPL):
             memorization_sink_num_molecules=(
                 self.hparams.masster_memorization_sink_num_molecules
             ),
+            memorization_sink_dropout=self.hparams.masster_memorization_sink_dropout,
             global_message_substitution=self.hparams.masster_global_message_substitution,
             global_message_noise_std=self.hparams.masster_global_message_noise_std,
             global_message_swap=self.hparams.masster_global_message_swap,

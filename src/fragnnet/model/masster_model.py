@@ -1102,6 +1102,7 @@ class MassterModel(nn.Module):
         intensity_input_dropout: float = 0.0,
         memorization_sink_dim: int = 0,
         memorization_sink_num_molecules: int = 0,
+        memorization_sink_dropout: float = 0.0,
         global_message_substitution: float = 0.0,
         global_message_noise_std: float = 0.0,
         global_message_swap: float = 0.0,
@@ -1280,6 +1281,10 @@ class MassterModel(nn.Module):
                 ``unique_fragment_mode``.
             memorization_sink_num_molecules: Rows in the sink table, indexed by ``mol_id``; must
                 exceed the largest ``mol_id`` passed. Set together with ``memorization_sink_dim``.
+            memorization_sink_dropout: Training-only probability, drawn per spectrum, that the
+                sink row is zeroed, so that spectrum runs the shared model and the shared path
+                must fit it alone (the MemSinks mixing). Kept rows are not rescaled: the sink is
+                on or off. Requires ``memorization_sink_dim > 0``.
             global_message_substitution: Training-only probability, per atom and layer, that the
                 shared encoder's global-attention message is replaced by the batch mean. Only the
                 shared precursor encoder gets it. Requires ``precursor_gnn_type: GINE_GSA``.
@@ -1389,6 +1394,10 @@ class MassterModel(nn.Module):
             )
         if memorization_sink_dim > 0 and not unique_fragment_mode:
             raise ValueError("the memorization sink requires unique_fragment_mode")
+        if not 0.0 <= memorization_sink_dropout < 1.0:
+            raise ValueError("memorization_sink_dropout must lie in [0, 1)")
+        if memorization_sink_dropout > 0.0 and memorization_sink_dim == 0:
+            raise ValueError("memorization_sink_dropout requires memorization_sink_dim > 0")
         if light_side_token and not unique_fragment_mode:
             raise ValueError("light_side_token requires unique_fragment_mode")
         if light_side_token and "c_heavy_side" not in candidate_features:
@@ -1742,6 +1751,7 @@ class MassterModel(nn.Module):
                 )
             # Zero rows: an unseen molecule, and every molecule at the start, add nothing.
             nn.init.zeros_(self.memorization_sink.weight)
+        self.memorization_sink_dropout = memorization_sink_dropout
         self.charge_head = AtomChargeAffinityHead(
             precursor_hidden_dim,
             context_dim,
@@ -2487,7 +2497,8 @@ class MassterModel(nn.Module):
             proposal_group_ids: Spectrum group ids; required by ``share_proposal_across_ev``.
             memorization_sink_indices: Sink row (``mol_id``) per spectrum, shape
                 ``(batch_size,)``. Only a model with a memorization sink accepts it; ``None``
-                runs the shared model, which is what evaluation always does.
+                runs the shared model, which is what evaluation always does. In training mode,
+                ``memorization_sink_dropout`` zeroes each spectrum's row with that probability.
             return_annotation: Also return what each output pathway is, for the per-peak
                 annotation export. Inference only; nothing in training reads it.
 
@@ -2602,6 +2613,12 @@ class MassterModel(nn.Module):
                 "memorization_sink_indices must lie in [0, memorization_sink_num_molecules)",
             )
             sink_rows = self.memorization_sink(memorization_sink_indices)
+            if self.training and self.memorization_sink_dropout > 0.0:
+                # A zero row adds nothing, so a dropped spectrum runs the shared model exactly.
+                keep = (
+                    th.rand(batch_size, device=sink_rows.device) >= self.memorization_sink_dropout
+                )
+                sink_rows = sink_rows * keep.unsqueeze(1).to(sink_rows.dtype)
         # ``chemical_bond_index`` is the undirected single-entry-per-bond view of the
         # graph (``edge_index`` is directed), so either endpoint identifies the molecule.
         bond_batch_indices = mol_pyg.batch[mol_pyg.chemical_bond_index[0]]

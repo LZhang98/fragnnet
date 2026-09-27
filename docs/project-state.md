@@ -4,6 +4,15 @@
 
 ## Current handoff
 
+**Sink-dropout arm `m2` built (2026-09-26); not submitted.** `m1`'s memorization sink applied to
+a random half of the training spectra: new key `masster_memorization_sink_dropout`, default 0
+(= `m1`), drawn per spectrum, no new parameters. `m1` failed at −0.0203 because the sink took
+transferable fit too. With MemSinks-style mixing, the shared path must fit half of each
+molecule's exposures alone. Read against `c0` and `m1`; it must recover 0.023 over `m1`, so it
+is a long shot. There are 4 new tests, 323 pass in the related files, and both smokes exit 0.
+Generate with `submit_masster_mh_ft_memorization_route.sh m2` after committing.
+[Plan section](plans/masster/masster_memorization_route_plan.md#sink-dropout-arm-m2-built-2026-09-26-not-submitted).
+
 **W&B read of the memorization-route and CE arms (2026-09-26, 03:45 UTC on 09-27); read-only.**
 Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arms of this recipe
 (r = 0.96-0.98 from epoch ~20 on). Seed spread 0.0042.
@@ -27,7 +36,8 @@ Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arm
 - **`nl1`/`nl2` (light-side token) project null** (+0.0015, +0.0002) with train fit unchanged:
   removing the heavier-side pool does not dent the lookup, which moves to another route.
   **`nl3` (+ `k1`'s dropout) underfits at −0.017:** train loss +0.14, val loss up. `k1` needs
-  redundant routes, so it does not stack with route removal. `nl3` can be cancelled.
+  redundant routes, so it does not stack with route removal. `nl3` later crashed at epoch 30;
+  do not resubmit.
 - `sp0`/`sp1` started 03:43 UTC; nothing logged yet.
 
 Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s checkpoint. Read
