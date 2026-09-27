@@ -190,7 +190,7 @@ mol_params:
 # Model Architecture
 # ============================================================================
 # Model type. Full list: TEMPLATE_STEM_BY_MODEL_TYPE in src/fragnnet/runner.py -- frag_gnn (aliases
-# fraggnet, fragnnet), masster, neims, massformer, iceberg_gen, iceberg_inten, graff,
+# fraggnet, fragnnet), masster, neims, chemlm, massformer, iceberg_gen, iceberg_inten, graff,
 # precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
@@ -1144,6 +1144,23 @@ mf_low_lr: 0.000000001
 # model_type: neims
 # ==========================================================================
 neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
+
+# ==========================================================================
+# ChemLM only
+# model_type: chemlm
+# ==========================================================================
+# A pretrained SMILES language model (ChemBERTa-3) trained end to end with the NEIMS binned
+# head, which also reads neims_bottleneck_factor. Needs `transformers`, and
+# weight_decay_exclude_norm_bias: True; compile and activation_checkpointing are rejected.
+# docs/plans/chemberta3_msgym_plan.md
+chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM  # local HF checkpoint dir; never downloaded
+chemlm_num_layers: 6  # encoder layers kept from the input side (the checkpoint has 12)
+chemlm_encoder_lr: 0.00003  # encoder LR, embeddings included; the head uses `lr`
+# Probability that a training SMILES is replaced by one unrestricted random SMILES of the same
+# molecule, seeded from `seed`. Evaluation always reads the canonical string. 0 = off.
+chemlm_p_trav: 0.0
+# Recompute each encoder layer in backward: same gradients, less activation memory.
+chemlm_gradient_checkpointing: False
 
 # ==========================================================================
 # GrAFF only

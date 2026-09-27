@@ -7,6 +7,7 @@ from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.pl_model import (
     GNNPL,
     MCESPL,
+    ChemLMPL,
     FraGNNetPL,
     MassterPL,
     NeimsPL,
@@ -33,6 +34,8 @@ def get_model_cls(model_type: str) -> type:
         model_cls = MassterPL
     elif model_type == "neims":
         model_cls = NeimsPL
+    elif model_type == "chemlm":
+        model_cls = ChemLMPL
     elif model_type == "iceberg_gen":
         model_cls = IcebergGenPL
     elif model_type == "iceberg_inten":
@@ -76,6 +79,7 @@ def get_dataset_cls(model_type: str) -> type:
         dataset_cls = SpecMolAnnDataset
     elif model_type in [
         "neims",
+        "chemlm",
         "massformer",
         "precursor",
         "gnn",

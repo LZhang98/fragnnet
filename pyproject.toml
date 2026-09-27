@@ -53,6 +53,13 @@ speed = [
     "torch-linear-assignment"
 ]
 
+# model_type chemlm (pretrained SMILES language model); imported lazily, so other models
+# do not need it
+chemlm = [
+    "transformers==4.46.3",
+    "tokenizers>=0.20,<0.21"
+]
+
 [tool.setuptools]
 packages = { find = { where = ["src"] } }
 include-package-data = true

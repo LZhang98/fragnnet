@@ -1,0 +1,140 @@
+# ARM T2 -- E1 with random SMILES in training (chemlm_p_trav 1.0). 2026-09-27.
+# Plan: docs/plans/chemberta3_msgym_plan.md (basic model: E1, T2, E4; 2 seeds each).
+#
+# Model: DeepChem/ChemBERTa-100M-MLM at revision f5c45f44d3061f0346888f5c09db17ec1146d29d
+# (data/pretrained/ChemBERTa-100M-MLM/REVISION), loaded encoder-only and truncated to layers
+# 0-5: 49,009,152 parameters. Mean pooling over non-padding tokens, then the NEIMS binned
+# 0.01 Da bidirectional SpecFFN (about 121M parameters) with qet dual-CE and instrument inputs.
+# The spectrum loss trains every encoder parameter, token embeddings included (D8).
+#
+# SMILES: on every train step each mol_df SMILES (D1) is replaced by one unrestricted random
+# SMILES of the same molecule, seeded from `seed`; validation reads the canonical string.
+# Everything else equals E1.
+#
+# Recipe (D7), matched with T2 and E4: AdamW; encoder LR 3e-5, head LR 4.006e-4 (tuned NEIMS);
+# weight decay 1e-7 (tuned NEIMS) on weight matrices only -- embeddings, norms and biases take
+# none; 1,000-step warmup, cosine to 1% over 100 epochs x 388 steps = 38,800 steps
+# (ceil(99,306 / 256), drop_last off); gradient clip 5; fp32; best-val checkpoint; no EMA.
+#
+# CE statistics (qet): spectrum-weighted over the 99,306 train spectra. ACE is on every row;
+# NCE is derived from it as ACE * 500 / prec_mz, so it runs high (p99 297, max 874).
+#   ACE mean 37.8 std 27.8 eV; NCE mean 68.3 std 59.1.
+#
+# Second seed: --override seed=132548 wandb_name=msgym_chemlm_t2_l6_s1
+# Local 8 GB GPU: add --override chemlm_gradient_checkpointing=True (same gradients).
+wandb_name: msgym_chemlm_t2_l6_s0
+wandb_group: msgym_chemlm_basic
+wandb_tags:
+- chemlm
+- chemberta3
+- layers_6
+- end_to_end
+- random_smiles
+- massspecgym
+- ms_gym_benchmark_1_5
+- unmerged
+- binned_0.01
+- qet
+- dual_ce
+- inst_type_embed
+- cosine_schedule
+- arm_t2
+seed: 397623
+
+spec_fp: data/proc/ms_gym_benchmark_1_5/spec_df.pkl
+mol_fp: data/proc/ms_gym_benchmark_1_5/mol_df.pkl
+split_dp: data/split/ms_gym_benchmark_1_5
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - FT
+  - QTOF
+  preprocess: true
+mol_params:
+  smiles: true
+  fingerprint: false
+  pyg: false
+  preprocess: true
+frag_params:
+  pyg: false
+
+model_type: chemlm
+chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM
+chemlm_num_layers: 6
+chemlm_encoder_lr: 0.00003
+chemlm_p_trav: 1.0
+chemlm_gradient_checkpointing: false
+
+# NEIMS head, as config/massspecgym_merged/neims.
+mlp_hidden_size: 1024
+mlp_dropout: 0.1
+mlp_num_layers: 4
+mlp_use_residuals: true
+neims_bottleneck_factor: 0.5
+ff_prec_mz_offset: 50
+ff_bidirectional: true
+ff_output_map_size: 256
+ff_output_activation: relu
+mz_max: 1500.0
+mz_bin_res: 0.01
+sum_ints: true
+
+ce_insert_type: qet
+ce_insert_location: mlp
+ce_insert_merge: true
+ce_insert_size: 32
+nce_mean: 68.3
+nce_std: 59.1
+nce_max: 300
+ace_mean: 37.8
+ace_std: 27.8
+ace_max: 300
+prec_insert_location: none
+inst_insert_location: mlp
+inst_insert_size: 16
+
+loss_type: cosine_distance
+sparse_cosine_similarity: true
+ints_transform: sqrt
+
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+optimizer: adamw
+lr: 0.0004006
+weight_decay: 0.0000001
+weight_decay_exclude_norm_bias: true
+lr_schedule: true
+lr_schedule_type: cosine
+lr_warmup_steps: 1000
+lr_total_steps: 38800
+lr_min_ratio: 0.01
+min_epochs: 100
+max_epochs: 100
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+compile: false
+log_every_n_steps: 50
+
+eval_test_split: false  # the one-time test read is deferred (plan)
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+# 2.05 GB per checkpoint (optimizer state included), best + last per run: kept on disk under
+# wandb/run-*/files/ckpt instead of uploaded (user, 2026-09-27).
+upload_checkpoints: false
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
+eval_bin_sqrt: true

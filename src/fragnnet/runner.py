@@ -1,7 +1,6 @@
 import glob
 import logging
 import os
-import shutil
 import tempfile
 from collections.abc import Sequence
 from multiprocessing import Manager
@@ -52,6 +51,7 @@ VALID_MODEL_TYPES = frozenset(
         "fragnnet",
         "masster",
         "neims",
+        "chemlm",
         "massformer",
         "iceberg_gen",
         "iceberg_inten",
@@ -839,6 +839,36 @@ def log_cuda_info() -> None:
         logger.info("CUDA not available, running on CPU")
 
 
+def hold_checkpoints_from_wandb(ckpt_dp: str) -> str:
+    """Move a W&B run's checkpoints out of its uploaded directory until ``wandb.finish()``.
+
+    ``wandb.finish()`` uploads every file under ``wandb.run.dir``, and ``ckpt_dp`` is
+    ``wandb.run.dir/ckpt``. The checkpoints wait in a new directory beside ``wandb.run.dir``, in
+    the run's own folder: outside the upload, and on the same filesystem, so each move is a
+    rename. Copying them through the system temp directory filled a 3.7 GB ``/tmp`` with a 2 GB
+    checkpoint (2026-09-27). ``mkdtemp`` leaves them on disk if the process dies before
+    ``restore_held_checkpoints``.
+
+    Args:
+        ckpt_dp: The run's checkpoint directory, ``<run folder>/files/ckpt``.
+
+    Returns:
+        The hold directory to pass to ``restore_held_checkpoints``.
+    """
+    run_folder = os.path.dirname(os.path.dirname(os.path.realpath(ckpt_dp)))
+    hold_dp = tempfile.mkdtemp(prefix="ckpt_hold_", dir=run_folder)
+    for ckpt_fp in glob.glob(os.path.join(ckpt_dp, "*.ckpt")):
+        os.replace(ckpt_fp, os.path.join(hold_dp, os.path.basename(ckpt_fp)))
+    return hold_dp
+
+
+def restore_held_checkpoints(hold_dp: str, ckpt_dp: str) -> None:
+    """Move checkpoints held by ``hold_checkpoints_from_wandb`` back and remove the hold dir."""
+    for ckpt_fp in glob.glob(os.path.join(hold_dp, "*.ckpt")):
+        os.replace(ckpt_fp, os.path.join(ckpt_dp, os.path.basename(ckpt_fp)))
+    os.rmdir(hold_dp)
+
+
 def run_training(
     template_path: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
 ) -> L.LightningModule:
@@ -1240,13 +1270,15 @@ def run_training(
             for ckpt_fp in ckpt_fps:
                 wandb.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
 
-        # Temporarily move checkpoints out of the way before wandb.finish()
-        # to prevent wandb from syncing them if we don't want to keep them
-        temp_ckpt_tmpdir = None
-        if not config_d["upload_checkpoints"] and not config_d["delete_checkpoints"]:
-            temp_ckpt_tmpdir = tempfile.TemporaryDirectory()
-            for ckpt_fp in ckpt_fps:
-                shutil.move(ckpt_fp, os.path.join(temp_ckpt_tmpdir.name, os.path.basename(ckpt_fp)))
+        # Checkpoints that must not be uploaded wait outside the W&B run dir until
+        # wandb.finish() is done. Without W&B nothing is uploaded, so they stay where they are.
+        held_ckpt_dp = None
+        if (
+            wandb_mode != "disabled"
+            and not config_d["upload_checkpoints"]
+            and not config_d["delete_checkpoints"]
+        ):
+            held_ckpt_dp = hold_checkpoints_from_wandb(ckpt_dp)
 
     if wandb_mode != "disabled":
         wandb.finish()
@@ -1258,11 +1290,8 @@ def run_training(
             ckpt_fps = glob.glob(os.path.join(ckpt_dp, "*.ckpt"))
             for ckpt_fp in ckpt_fps:
                 os.remove(ckpt_fp)
-        elif temp_ckpt_tmpdir is not None:
-            # Restore checkpoints that were temporarily moved
-            for ckpt_fp in glob.glob(os.path.join(temp_ckpt_tmpdir.name, "*.ckpt")):
-                shutil.move(ckpt_fp, os.path.join(ckpt_dp, os.path.basename(ckpt_fp)))
-            temp_ckpt_tmpdir.cleanup()
+        elif held_ckpt_dp is not None:
+            restore_held_checkpoints(held_ckpt_dp, ckpt_dp)
 
     # cleanup job tracking file
     if job_id_fp:

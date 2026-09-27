@@ -174,10 +174,15 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
         fh = mol_fingerprint.reshape(-1, self.mol_fp_dim)
         batch_size = fh.shape[0]
 
-        # Embed collision energy, precursor type, and instrument type if used
+        # Embed collision energy, precursor type, and instrument type if used. ACE rides in
+        # kwargs, as in FraGNNetModel; without it any `spec_params.ace` config failed here.
         ce = spec_ce
         ce_batch_idxs = spec_ce_batch_idxs
-        ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
+        ace = kwargs["spec_ace"] if self.use_ace else None
+        ace_batch_idxs = kwargs["spec_ace_batch_idxs"] if self.use_ace else None
+        ce_embed = self.embed_ce(
+            ce, ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs
+        )
         prec_embed = self.embed_prec(spec_prec_type)
         inst_embed = self.embed_inst(spec_inst_type)
 

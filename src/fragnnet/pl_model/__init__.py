@@ -15,3 +15,4 @@ from .gnn_pl import GNNPL
 from .mces_pl import MCESPL
 from .masster_pl import MassterPL
 from .spectrum_mol_clip_pl import SpectrumMolClipPL
+from .chemlm_pl import ChemLMPL

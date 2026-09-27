@@ -1,0 +1,125 @@
+# ARM E4 -- NEIMS fingerprint baseline for the ChemBERTa-3 basic model. 2026-09-27.
+# Plan: docs/plans/chemberta3_msgym_plan.md (basic model: E1, T2, E4; 2 seeds each).
+#
+# Morgan (r3, 2048) + RDKit (2048) + MACCS fingerprints of the same mol_df molecule E1 reads,
+# into the same NEIMS binned 0.01 Da bidirectional SpecFFN, with the same qet dual-CE and
+# instrument inputs, data and recipe as e1_chemberta3_l6.yml. The first unmerged
+# ms_gym_benchmark_1_5 NEIMS config; the older MSGYM NEIMS configs are merged, on the
+# massspecgym_f split.
+#
+# Recipe (D7), matched with E1/T2: AdamW; LR 4.006e-4 (tuned NEIMS); weight decay 1e-7 on weight
+# matrices only; 1,000-step warmup, cosine to 1% over 100 epochs x 388 steps = 38,800 steps;
+# gradient clip 5; fp32; best-val checkpoint; no EMA. The tuned NEIMS recipe decayed
+# exponentially; cosine is used here so the three arms share one schedule.
+# CE statistics as in E1: ACE mean 37.8 std 27.8 eV; NCE mean 68.3 std 59.1.
+#
+# Second seed: --override seed=132548 wandb_name=msgym_chemlm_e4_neims_s1
+wandb_name: msgym_chemlm_e4_neims_s0
+wandb_group: msgym_chemlm_basic
+wandb_tags:
+- neims
+- fingerprint
+- massspecgym
+- ms_gym_benchmark_1_5
+- unmerged
+- binned_0.01
+- qet
+- dual_ce
+- inst_type_embed
+- cosine_schedule
+- arm_e4
+seed: 397623
+
+spec_fp: data/proc/ms_gym_benchmark_1_5/spec_df.pkl
+mol_fp: data/proc/ms_gym_benchmark_1_5/mol_df.pkl
+split_dp: data/split/ms_gym_benchmark_1_5
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - FT
+  - QTOF
+  preprocess: true
+mol_params:
+  smiles: true
+  fingerprint: true
+  fingerprint_morgan: true
+  fingerprint_rdkit: true
+  fingerprint_maccs: true
+  pyg: false
+  preprocess: true
+frag_params:
+  pyg: false
+
+model_type: neims
+mlp_hidden_size: 1024
+mlp_dropout: 0.1
+mlp_num_layers: 4
+mlp_use_residuals: true
+neims_bottleneck_factor: 0.5
+ff_prec_mz_offset: 50
+ff_bidirectional: true
+ff_output_map_size: 256
+ff_output_activation: relu
+mz_max: 1500.0
+mz_bin_res: 0.01
+sum_ints: true
+
+ce_insert_type: qet
+ce_insert_location: mlp
+ce_insert_merge: true
+ce_insert_size: 32
+nce_mean: 68.3
+nce_std: 59.1
+nce_max: 300
+ace_mean: 37.8
+ace_std: 27.8
+ace_max: 300
+prec_insert_location: none
+inst_insert_location: mlp
+inst_insert_size: 16
+
+loss_type: cosine_distance
+sparse_cosine_similarity: true
+ints_transform: sqrt
+
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+optimizer: adamw
+lr: 0.0004006
+weight_decay: 0.0000001
+weight_decay_exclude_norm_bias: true
+lr_schedule: true
+lr_schedule_type: cosine
+lr_warmup_steps: 1000
+lr_total_steps: 38800
+lr_min_ratio: 0.01
+min_epochs: 100
+max_epochs: 100
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+compile: false
+log_every_n_steps: 50
+
+eval_test_split: false  # the one-time test read is deferred (plan)
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+# 1.5 GB per checkpoint (optimizer state included), best + last per run: kept on disk under
+# wandb/run-*/files/ckpt instead of uploaded (user, 2026-09-27).
+upload_checkpoints: false
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
+eval_bin_sqrt: true

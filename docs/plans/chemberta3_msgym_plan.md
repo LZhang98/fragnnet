@@ -1,14 +1,16 @@
 # SMILES + ChemBERTa-3 spectrum prediction on MassSpecGym
 
-> **Status:** PROPOSED · **Updated:** 2026-09-26 (cut to a basic model the same day, at the
-> user's request; the earlier design and its [Review](#review-2026-09-26) are kept)
+> **Status:** ACTIVE · **Updated:** 2026-09-27 (basic model built, uncommitted and not yet
+> trained; cut to a basic model on 2026-09-26 at the user's request; the earlier design and
+> its [Review](#review-2026-09-26) are kept)
 > **Current scope: a basic model, to see whether it works.** ChemBERTa-3's first 6 of 12 layers,
 > loaded encoder-only, fine-tuned **end to end** with the NEIMS binned 0.01 Da head on
 > MassSpecGym's simulation-challenge spectra. Three arms, 2 seeds each: the model (E1), the model
 > with random SMILES (T2) and the NEIMS fingerprint baseline (E4). The augmentation ladder, the
 > other controls, the frozen-encoder checks, full depth and the exact-mass stages are
-> [deferred](#deferred-not-scheduled). Nothing is built. The one precondition is installing
-> `transformers`, which is not in FRAGNNET-GPU. Cross-model, so it sits at the top of `plans/`.
+> [deferred](#deferred-not-scheduled). Built on 2026-09-27 as `model_type: chemlm`, with
+> `transformers` 4.46.3 installed in FRAGNNET-GPU; see [Built](#built-2026-09-27). No run has
+> trained. Cross-model, so it sits at the top of `plans/`.
 
 ## Objective and acceptance criteria
 
@@ -174,9 +176,15 @@ not to rule out augmentation.
     - Nothing in the repository sets a separate LR per group.
   - Their only MSGYM configs are merged, on the old `massspecgym_f` split. No NEIMS or MassFormer
     number is recorded for `ms_gym_benchmark_1_5`.
-- **Environment.** `transformers` and `tokenizers` are not installed in FRAGNNET-GPU, and
-  installing them needs the user's confirmation. Fir compute nodes have internet; Narval's do not,
-  so they need a local copy of the weights.
+- **Environment.** `transformers` 4.46.3 and `tokenizers` 0.20.3 were installed in FRAGNNET-GPU
+  on 2026-09-27, with the user's approval. The install added only `huggingface_hub` 0.36.2,
+  `safetensors` 0.8.0, `regex` and `hf-xet`; torch 2.4.1 and numpy 1.26.4 were unchanged.
+  - **Cluster.** The wheelhouse is not checked. Cluster jobs install packages with
+    `pip install --no-index` in `scripts/setup_job_cc.py`, and nothing there adds these
+    packages yet.
+  - **Checkpoint.** It is at `data/pretrained/ChemBERTa-100M-MLM`, whose `REVISION` file holds
+    the D2 revision. `data/` is gitignored, so the directory has to be copied to a cluster.
+    Fir compute nodes have internet; Narval's do not, and the model never downloads.
 
 ## Design decisions
 
@@ -284,7 +292,10 @@ not to rule out augmentation.
   what pretraining contributes, and the one-time test read. Both are
   [deferred](#deferred-not-scheduled).
 
-## Implementation: basic model (when authorized)
+## Implementation: basic model
+
+Built on 2026-09-27 and uncommitted: see [Built](#built-2026-09-27) after this list. The list
+is the design it followed.
 
 1. **Dependencies.** Confirm, then install `transformers` and `tokenizers`, pinned, in
    FRAGNNET-GPU and in the cluster wheelhouse. Download the checkpoint at the D2 revision to a
@@ -327,6 +338,126 @@ not to rule out augmentation.
      input's canonical SMILES.
 7. **Configs.** E1 and T2 under `config/massspecgym/chemlm/`, and E4 as an unmerged
    `ms_gym_benchmark_1_5` NEIMS config with `qet`. Run the smoke run before sizing the jobs.
+
+### Built (2026-09-27)
+
+- **Code.**
+  - [chemlm_model.py](../../src/fragnnet/model/chemlm_model.py): the tokenizer, the truncated
+    `RobertaModel` with SDPA attention, mean pooling, and the `qet` CE and instrument inputs
+    into the NEIMS `SpecFFN`.
+  - [chemlm_pl.py](../../src/fragnnet/pl_model/chemlm_pl.py): `ChemLMPL(BinnedPL)`.
+  - Registration in `runner.py`, `setup_utils.py` and `pl_model/__init__.py`.
+  - A `ChemLM only` section in `config/template.yml`, with the keys `chemlm_ckpt_dp`,
+    `chemlm_num_layers`, `chemlm_encoder_lr`, `chemlm_p_trav` and
+    `chemlm_gradient_checkpointing`.
+  - An optional `chemlm` dependency group in `pyproject.toml`.
+- **Loading is checked.** `from_pretrained` runs with `output_loading_info`.
+  - The model raises if any encoder weight is missing or resized, which would mean random
+    initialization, or if an unused weight is anything but `lm_head.*` or a cut layer.
+  - On the real checkpoint: 49,009,152 parameters. Layers 0-5 and the embeddings are
+    bit-identical to the full model's, and 101 keys are unused: the MLM head and layers 6-11.
+- **`transformers` is imported lazily**, inside `ChemLMModel`. Environments without it,
+  including today's cluster venvs, still import every other model.
+- **Random SMILES (T2).** Each training SMILES is replaced with probability `chemlm_p_trav`, as
+  the plan says.
+  - The generator is seeded from `seed` when the model is built. Its state is not checkpointed,
+    so a resumed T2 run draws a different stream.
+  - Parsed molecules are cached per SMILES.
+- **Optimizer.** `ChemLMPL` returns four groups, encoder or head crossed with decayed or exempt,
+  through `SpectrumPL`'s own group hook. So `SpectrumPL`'s cosine scheduler runs unchanged and
+  scales each group from its own LR.
+  - The exempt set is `_split_weight_decay_parameters` plus the encoder's token, position and
+    token-type embeddings.
+  - The model requires `weight_decay_exclude_norm_bias: True`, and rejects `compile` and
+    `activation_checkpointing`. Whole-model recompute would redraw the random SMILES.
+- **Monitoring (D8).** The gradient norm of the embeddings, each layer and the head is logged
+  every `log_every_n_steps` (50 in the configs).
+- **Configs** ([config/massspecgym/chemlm/](../../config/massspecgym/chemlm/)): E1
+  `e1_chemberta3_l6.yml`, T2 `t2_chemberta3_l6_random_smiles.yml`, E4 `e4_neims_qet.yml`. The
+  second seed comes from `--override seed=132548 wandb_name=..._s1`.
+  - **Checkpoints.** All three arms set `upload_checkpoints: false`, at the user's request
+    (2026-09-27). Each run keeps best and last under `wandb/run-*/files/ckpt` in the checkout.
+    - E1 and T2: 2.05 GB apiece, about 4.1 GB per run.
+    - E4: 1.5 GB apiece, about 3 GB per run.
+    - About 22 GB over the six runs.
+- **Fir jobs (`scripts/setup_job_cc.py`).** Only for `model_type: chemlm`, the generator:
+  - stages `chemlm_ckpt_dp` into the job's working directory, and fails if `config.json` did
+    not arrive (a checkpoint missing from the checkout already fails at generation);
+  - installs `transformers==4.46.3 tokenizers==0.20.0 huggingface_hub==0.36.2
+    safetensors==0.8.0 regex` with `--no-index`;
+  - exports `TOKENIZERS_PARALLELISM=false`.
+
+  Every other job's script is unchanged, which a test checks.
+  - **Fir wheelhouse** (`avail_wheels --all-versions`, run by the user on 2026-09-27): every
+    pinned version is there. The exception is `tokenizers` 0.20.3, the FRAGNNET-GPU version:
+    Fir's 0.20.x is 0.20.0.
+  - **0.20.0 was checked in an isolated venv**, with FRAGNNET-GPU unchanged. It gives
+    identical token ids to 0.20.3 on all 16,967 `mol_df` SMILES, on one random SMILES of each,
+    and on a padded batch of 256. The 18 `chemlm` tests pass under it.
+  - Local stays on 0.20.3; `pyproject.toml` allows `tokenizers>=0.20,<0.21`.
+- **Choices the plan left open, now fixed in the configs.**
+  - Weight decay is NEIMS's tuned 1e-7 on weight matrices, in every arm.
+  - The cosine schedule ends at 1% (`lr_min_ratio` 0.01, as the MASSter MSGYM recipe does)
+    over 38,800 steps: 100 epochs of 388 steps.
+  - `qet` statistics are spectrum-weighted over the train split: ACE mean 37.8 and std 27.8 eV;
+    NCE, derived as ACE × 500 / precursor m/z, mean 68.3 and std 59.1.
+  - Both CE channels are fed, as MASSter's MSGYM config does, with no precursor-type input (all
+    rows are `[M+H]+`).
+  - `eval_test_split: false` is explicit.
+  - Val logs `cos_sim_0.01` and its sqrt variant. `cos_hun_inst_tol` is not logged. A 0.01 Da
+    bin centre can sit up to 0.005 Da from the true peak, more than the FT tolerance (10 ppm,
+    with a 0.002 Da floor) below m/z 500, so it would penalize the binned head for binning.
+- **A NEIMS bug fixed on the way.** `NeimsModel.forward` never passed `spec_ace` to `embed_ce`,
+  so any NEIMS config with `spec_params.ace` failed its assert. That includes the merged MSGYM
+  NEIMS configs, which set `ace: True`, and E4. It now reads ACE from the batch, as
+  `FraGNNetModel` does.
+- **Tests.**
+  - [test_chemlm.py](../../tests/test_chemlm.py), 18 tests on a tiny random 4-layer checkpoint
+    with no download:
+    - truncation is bit-identical, with no MLM head or pooler;
+    - the loading guard;
+    - normalized output, and padding does not change a prediction;
+    - the D8 gradient test: nonzero rows are exactly the batch's token ids and positions, and
+      every layer's weight matrices get gradient;
+    - gradient checkpointing gives the same gradients;
+    - random SMILES are deterministic, parse back to the input, and are used only in training;
+    - the optimizer groups and the per-group cosine schedule;
+    - rejected settings.
+  - [test_neims_model.py](../../tests/test_neims_model.py): NEIMS with each CE-channel
+    combination.
+  - With the config-template, runner-config, CE/`qet`, data-utils and metric tests: 251 passed
+    and 2 xfailed, the existing `randomize_smiles` xfails.
+- **CPU pipeline check.** T2 and E4 each ran 4 training steps of batch 32 through
+  `scripts/run_pl_model_fit.py` with `debug_overfit` and exited 0. All eight gradient-norm
+  groups were nonzero, the embeddings included.
+- **GPU smoke run (2026-09-27, local RTX 2070 SUPER).** One E1 epoch, fp32, with
+  `chemlm_gradient_checkpointing`, W&B disabled.
+  - **Speed.** 1.30 s/step (50 steps in 65 s); one epoch with validation took 9.4 min.
+  - **Memory.** Peak 6.1 GB as nvidia-smi reports it, context and allocator cache included.
+  - **Score.** Val `cos_sim_0.01` 0.196 after epoch 1, still inside the warmup (388 of 1,000
+    steps).
+  - **Checkpoint.** 2.05 GB with optimizer state; it loads, with layers 0-5 in its state dict.
+  - **Then the process failed, and lost `last.ckpt`.** With both `upload_checkpoints` and
+    `delete_checkpoints` off, the runner copied checkpoints into a `/tmp` temporary directory
+    and back.
+    - `last.ckpt` copied; the second 2 GB file then filled the workstation's 3.7 GB `/tmp`.
+    - The temporary directory's cleanup deleted the copied `last.ckpt` at exit.
+    - The log, also on `/tmp`, lost the traceback.
+  - **Fixed the same day, in `runner.py`.** `hold_checkpoints_from_wandb` moves checkpoints
+    into a `ckpt_hold_*` directory beside `wandb.run.dir`. That is inside the run folder,
+    outside what `wandb.finish()` uploads, and on the same filesystem, so every move is a
+    rename.
+    - `restore_held_checkpoints` moves them back after `wandb.finish()`.
+    - `mkdtemp` keeps them if the process dies in between.
+    - With W&B disabled nothing is uploaded, so nothing moves.
+    - [Tests](../../tests/test_runner_checkpoint_hold.py) cover the Fir layout, where the job's
+      `wandb` is a symlink into the checkout.
+    - A tiny CPU run with W&B offline and upload off exited 0. It left `last.ckpt` and the
+      best checkpoint in `files/ckpt`, no hold directory, and no `.ckpt` in the offline
+      `.wandb` log that `wandb sync` reads.
+  - **Log noise.** `tokenizers` warns on every DataLoader fork ("parallelism has already been
+    used"). It is harmless; `TOKENIZERS_PARALLELISM=false` in the job environment silences it.
+  - **Not measured.** Fir epoch time. A Fir slice runs without checkpointing, with TF32.
 
 ## Risks and limits
 
@@ -666,10 +797,11 @@ Hugging Face files. The scripts are in the session scratchpad and are not kept.
 
 ## Open questions for the user
 
-1. May `transformers` and `tokenizers` be installed into FRAGNNET-GPU and the cluster wheelhouse?
-   The basic model needs them.
+1. Answered 2026-09-27: the six runs train on Fir. The generated jobs install the Hugging Face
+   packages (all in the Fir wheelhouse); the checkpoint directory still has to be copied. The install question was also
+   answered that day: installed in FRAGNNET-GPU.
 
 ## Next concrete check
 
-Once the install is approved: build `chemlm`, pass the D8 gradient test, and smoke-run E1 to
-measure epoch time and peak memory.
+Fir setup: install the packages in the job venv, copy `data/pretrained/ChemBERTa-100M-MLM`,
+then a one-epoch E1 smoke job for Fir epoch time before the six 100-epoch runs.

@@ -107,16 +107,30 @@ Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s
 [`n1`-`n3`](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1),
 [`u3`](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
 
-**ChemBERTa-3 on MassSpecGym plan (2026-09-26); PROPOSED, nothing built; cut to a basic model.**
-The user wants a basic model, to see whether it works. ChemBERTa-3's first 6 of 12 layers
-(`DeepChem/ChemBERTa-100M-MLM`), loaded encoder-only, are fine-tuned end to end with the NEIMS
-binned head on `ms_gym_benchmark_1_5`, fed the `mol_df` SMILES already in the batch. Three arms,
-2 seeds each: the model (E1), the model with random SMILES (T2) and NEIMS (E4). The augmentation
-ladder, the other controls, the frozen-encoder checks, full depth and the exact-mass stages are
-deferred; Stage 0b and P1 are dropped. No smaller ChemBERTa-3 is released, and the small DeepChem
-checkpoints are ChemBERTa-2, whose broken tokenizer reads Cl as C. `transformers` is not
-installed. Next: once the user approves installing it, build `chemlm`, pass the gradient test and
-smoke-run E1. [Plan](plans/chemberta3_msgym_plan.md).
+**ChemBERTa-3 basic model built (2026-09-27); uncommitted, not trained.** `model_type: chemlm`
+fine-tunes ChemBERTa-3's first 6 of 12 layers (`DeepChem/ChemBERTa-100M-MLM`) end to end, with
+the NEIMS binned head, on `ms_gym_benchmark_1_5`.
+- **Arms.** `config/massspecgym/chemlm/` holds E1, T2 (random SMILES) and E4 (NEIMS); each runs
+  2 seeds.
+- **Environment.** `transformers` 4.46.3 and `tokenizers` 0.20.3 are installed in FRAGNNET-GPU,
+  with the user's approval. The checkpoint is at `data/pretrained/ChemBERTa-100M-MLM`.
+- **Validated.** The D8 gradient test and 17 other `chemlm` tests pass, and a CPU pipeline
+  check ran T2 and E4.
+- **NEIMS fix.** `NeimsModel` now passes ACE; before, every NEIMS config with `ace: True`
+  failed.
+- **Local GPU smoke.** One E1 epoch trained and validated at 1.30 s/step (fp32 with gradient
+  checkpointing on the RTX 2070 SUPER) and saved a 2.05 GB checkpoint that loads.
+- **Fir support.** `setup_job_cc.py` stages the checkpoint directory and installs the pinned
+  Hugging Face packages, for chemlm jobs only. Every pin is in the Fir wheelhouse. `tokenizers`
+  is 0.20.0 on Fir and 0.20.3 locally; the two give identical token ids on all MSGYM SMILES.
+- **Checkpoints.** All three arms keep theirs on disk (`upload_checkpoints: false`, the
+  user's call): about 22 GB over the six runs.
+- **Runner fix.** The runner used to copy un-uploaded checkpoints through `/tmp` around
+  `wandb.finish()`, which filled the workstation's `/tmp` and lost a `last.ckpt`. It now renames
+  them within the run folder.
+- **Next: run on Fir, the user's choice.** Copy `data/pretrained/ChemBERTa-100M-MLM` into the
+  Fir checkout, run a one-epoch smoke job, then the six runs.
+  [Plan](plans/chemberta3_msgym_plan.md#built-2026-09-27).
 
 **Enveda standalone MASSter baseline `i0` built (2026-09-26); not submitted, uncommitted.** The
 user's call is to train Enveda alone for now.
