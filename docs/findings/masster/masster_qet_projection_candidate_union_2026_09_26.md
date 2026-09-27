@@ -43,8 +43,10 @@
 >   standardized `1/(NCE + 200)` scalar predicted the unseen energies at 0.9845 channel cosine,
 >   against 0.9480 for abs-sines and 0.9627 for 32 RBF bumps
 >   ([section](#fix-a-smooth-energy-input-2026-09-26)). Arm `n1` (`c0` plus `qet`, `jxczo2kf`)
->   trailed `c0` by 0.0124 at epochs 10-13 of 64 (mid-run). Arms `n2` (`qet_mlp`) and `n3` (`id`)
->   are built, not submitted ([section](#validation-arm-n1)).
+>   trails `c0` by 0.0137 at epochs 24-33 of 64 (mid-run; projected tail −0.012). Its train loss
+>   equals `c0`'s and only val loss is worse, so the smooth input costs generalization, not fit,
+>   as the ladder reading predicts. `n2` (`qet_mlp`) and `n3` (`id`) are running
+>   ([section](#validation-arm-n1)).
 >
 > The concrete uses of QET here are a smooth, monotone energy input and a once-per-molecule pass.
 > Enforcing the law on `u2`'s output would change little, because `u2` already obeys it on the
@@ -583,7 +585,42 @@ scalar on the `1/(NCE + 200)` axis entering an MLP. `embed` instead gives each i
 32-wide code, which the projector can use per energy. Every val NCE also occurs in training, so
 that per-energy code can only help on NIST20 val.
 
-**Follow-up arms `n2` and `n3` (built 2026-09-26, not submitted).** Both are in the same config
+**Mid-run read 2, W&B at 03:45 UTC on 2026-09-27: `n1` at epoch 33; `n2` (`zov75vk3`) and `n3`
+(`o9pz0j9j`) at epoch 9.** Train loss is train-mode primary loss, val loss eval-mode, both
+against `c0` at the same window. The loss settings are identical, so these compare.
+
+| arm | window | cosine vs `c0` | train loss vs `c0` | val loss vs `c0` |
+| --- | --- | ---: | ---: | ---: |
+| `n1` | 24-33 | −0.0137 | −0.002 | +0.055 |
+| `n1` | 6-9 | −0.0077 | −0.004 | +0.016 |
+| `n2` | 6-9 | −0.0050 | +0.002 | +0.003 |
+| `n3` | 6-9 | −0.0069 | −0.007 | +0.013 |
+
+- **`n1` fails gate 1.** It is below `c0` at 32 of 34 epochs and below `c0_s2` at all 34. The
+  gap is steady at −0.009 to −0.015 from epoch 20.
+  - The early-gap line over the 21 finished arms of this recipe has r = 0.98 at this window.
+    It projects the tail at −0.012 (residual SD 0.0014), three times the seed spread.
+  - Coverage matches `c0` within 0.0002, and epoch time is equal.
+- **The cost is on val only.** `n1` fits train as well as `c0` at every window (train loss −0.002
+  to −0.008), while val loss is worse by +0.019 to +0.055 and growing. The per-energy code is not
+  capacity that train needs. It is information that transfers to new molecules. The ladder reading
+  predicts exactly this.
+  - On a train molecule, the model can recover the acquisition ladder from the molecule itself:
+    only 535 of 22,411 molecules have values from both ladders. On a val molecule, only the NCE
+    value names the ladder, and a smooth axis blurs it.
+  - This is still inference from the loss pattern. The per-NCE-by-ladder read on `n1`'s
+    checkpoint is the test.
+- **`n2` and `n3` are too early to resolve.** At epochs 6-9 the early-gap line has r = 0.75 and
+  a residual SD of 0.005.
+  - The losses lean one way: `n3` follows `n1` (train lower, val +0.013), as an axis-curvature-only
+    difference should. `n2` is near `c0` on both.
+  - Read both at about epoch 30, where the line reaches r ≈ 0.98.
+- **Hold.** `qet` should not go into new configs (Spectraverse cv0-cv9, Enveda `i0`) until
+  `n2` and the ladder read are in. A ladder-blind smooth input costs about 0.012 on the
+  seen-energy NIST20 split. Spectraverse's continuous derived NCE is the case `qet` was built for,
+  so the trade there is unmeasured, not negative.
+
+**Follow-up arms `n2` and `n3` (built 2026-09-26; submitted 2026-09-26, read above).** Both are in the same config
 directory and submitter (stage `nce`).
 
 | arm | config | change | controls |
@@ -602,6 +639,37 @@ directory and submitter (stage `nce`).
   `n1`'s unseen-NCE check, since both extrapolate smoothly.
 - **Configs resolve** to their base plus `ce_insert_type` and W&B naming only. Local 2-epoch
   smokes on a 512-spectrum subsample exit 0 (val cosine `n2` 0.070 → 0.226, `n3` 0.068 → 0.222).
+
+**Arm `n4`: the per-NCE code without aliasing (built 2026-09-26, not submitted).**
+`n4_nce_fourier.yml` is `c0` with `int_embedder: fourier`; `ce_insert_type` stays `embed`.
+`n1`-`n3` suggest the per-NCE code carries something that transfers, so this arm keeps the code
+and replaces the table that aliases.
+
+- **The table.** `fourier` is sin and cos at the same powers of 1/2 as abs-sines, down to period
+  512. No two integers in 0-200 or 0-300 share a row: the nearest two are 1.41 apart, where 76 and
+  180 are 5.5e-6 apart under abs-sines. At max 300, abs-sines has 44 colliding pairs among the
+  integers.
+- **Scope in MASSter.** `int_embedder` reaches only the CE table. The table feeds the existing
+  `Linear(num_dim, 32)`, whose input goes from 8 to 20 columns. In FraGNNet the same key also
+  embeds formula counts, depth, RDBE and the other integer features, so there it is not CE-only.
+- **Expected effect here: none.** On this split, 76/180 is the only colliding pair that occurs
+  (2.2% of train spectra, 2.1% of val). No molecule in train or val has both, and the NCE-180
+  val spectra lost nothing measurable ([table above](#the-nce-input-is-categorical)).
+  `n4` prices the table swap before `fourier` becomes the default per-NCE table for
+  datasets with many distinct energies. It does not fix unseen energies: its high-frequency
+  columns stay arbitrary there.
+- **Read.** The tail against `c0` (`vcpho5qm`, 0.7276): inside the 0.0042 seed spread passes, and
+  a drop beyond it rules the table out. On the best checkpoint, compare val cosine at NCE 76 and
+  at 180 against `c0`.
+- **Checks.**
+  - Through `load_config`, `n4` differs from `c0` by `int_embedder` and W&B naming only.
+  - A local 2-epoch smoke on a 512-spectrum subsample (batch 64) exits 0, with val cosine
+    0.071 → 0.229. Its checkpoint holds the 201 × 20 table and `Linear(20, 32)`. The projected
+    embeddings of 76 and 180 differ by 99% of their norm.
+  - The submitter's config checks pass for `n4`; locally it stops at the missing `pyteomics`
+    wheel before generating anything.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh n4` (`fir:h100-3g.40gb`),
+  after committing the config and the submitter change.
 
 **NCE scale check.** Every config in this directory uses the template's `nce_max: 200`,
 `nce_mean: 60`, `nce_std: 40`. The NIST20 `[M+H]+`/FT split matches them:

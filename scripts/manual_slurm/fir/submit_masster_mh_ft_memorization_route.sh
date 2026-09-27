@@ -39,6 +39,8 @@
 # and, after n1 trailed c0 by 0.0124 at epochs 10-13 (mid-run read):
 #   n2         n1 + ce_insert_type qet_mlp  (controls: n1 jxczo2kf, c0 vcpho5qm)
 #   n3         c0 + ce_insert_type id       (controls: c0 vcpho5qm, n1 jxczo2kf)
+# and, after n1-n3 all trailed c0 with train fit unchanged (keep the per-NCE code, fix its table):
+#   n4         c0 + int_embedder fourier    (control: c0 vcpho5qm)
 # Added 2026-09-26, after the side-of-cut probe: each cut represented by its lighter side (the
 # neutral loss of a large fragment), the heavier side by element counts only (c_heavy_side):
 #   nl1  c0 + masster_light_side_token      (control: c0, vcpho5qm)
@@ -64,7 +66,7 @@
 #   nce   n2 and n3 (c0 has run; n1 is running).
 #   share sp0 and sp1 (c0 has run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | n1 | n2 | n3 | nl1 | nl2 | nl3 | sp0 | sp1  one job.
+#   | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -116,6 +118,7 @@ declare -A JOB_BY_ARM=(
     [n1]=msh_mhft_n1_nce_qet
     [n2]=msh_mhft_n2_nce_qet_mlp
     [n3]=msh_mhft_n3_nce_id
+    [n4]=msh_mhft_n4_nce_fourier
     [nl1]=msh_mhft_nl1_light_side
     [nl2]=msh_mhft_nl2_light_side_gine
     [nl3]=msh_mhft_nl3_light_side_gine_k1
@@ -145,6 +148,7 @@ declare -A CONFIG_BY_ARM=(
     [n1]=n1_nce_qet.yml
     [n2]=n2_nce_qet_mlp.yml
     [n3]=n3_nce_id.yml
+    [n4]=n4_nce_fourier.yml
     [nl1]=nl1_light_side.yml
     [nl2]=nl2_light_side_gine.yml
     [nl3]=nl3_light_side_gine_k1.yml
@@ -164,9 +168,9 @@ case "${STAGE}" in
     nl)   ARMS=(nl1 nl2 nl3) ;;
     nce)  ARMS=(n2 n3) ;;
     share) ARMS=(sp0 sp1) ;;
-    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-3]|nl[1-3]|sp[01]) ARMS=("${STAGE}") ;;
+    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n3|nl1-nl3|sp0|sp1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1]" >&2
         exit 1
         ;;
 esac
@@ -252,5 +256,6 @@ echo "lr: s1's control c0 (vcpho5qm) has run; s1_k1_ema's control k1_ema (j4u25q
 echo "w1: its control c0 (vcpho5qm) has run."
 echo "n1: its control c0 (vcpho5qm) has run."
 echo "nce (n2, n3): c0 (vcpho5qm) has run; n1 (jxczo2kf) is the other control."
+echo "n4: its control c0 (vcpho5qm) has run."
 echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."
 echo "share: sp0's control c0 (vcpho5qm) has run; sp1's control is sp0, in the same stage."

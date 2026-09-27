@@ -1,8 +1,9 @@
 # Reducing MASSter's per-molecule shortcut so its ranking transfers
 
-> **Status:** ACTIVE · **Updated:** 2026-09-25
-> **Switch-EMA arm `u3` built 2026-09-25, not submitted** ([section](#switch-ema-arm-u3-built-2026-09-25-not-submitted)):
-> `u2` plus `ema_switch_every_n_epochs: 1`, read against `u2`.
+> **Status:** ACTIVE · **Updated:** 2026-09-26
+> **Switch-EMA arm `u3` finished and fails** ([section](#switch-ema-arm-u3-built-2026-09-25-not-submitted)):
+> −0.0089 against `u2`, below it at all 64 epochs; it underfits. EMA helps only as an average
+> kept off the training weights.
 > **All four arms ran; W&B tail read done ([below](#tail-read-from-wb-2026-09-24)).** A weight EMA
 > passes gate 1 on both lineages: `u2` +0.0094 over `3bej6fq7`, `t2` +0.0097 over `c4a_base_s1`,
 > above the control at every epoch in both. `h1` (allocator dropout 0.2) is rejected at −0.0067,
@@ -263,6 +264,28 @@ code has moved since `u2` only by default-off keys that draw nothing, as for `k1
 +0.003 over `u2`, set against the 0.0022 `c0`/`f0` spread. Then run the offline gates on the
 checkpoint, as for `u2`. Do not read `u3` against `u2_s2`, which uses another seed. A pass needs a
 seed replicate.
+
+**Result (W&B, 2026-09-26): `u3` (`71xhfgzi`) fails.** It was submitted on 2026-09-25 and
+finished in 64 epochs.
+
+| window | `u3` − `u2` cosine | `u3` − `c0` cosine | `u3` − `u2` train loss | `u3` − `u2` val loss |
+| --- | ---: | ---: | ---: | ---: |
+| 0-3 | −0.0049 | +0.0206 | +0.036 | +0.022 |
+| 4-9 | −0.0100 | +0.0098 | +0.092 | +0.040 |
+| 20-29 | −0.0112 | +0.0023 | +0.167 | +0.029 |
+| 54-63 | −0.0089 | +0.0027 | +0.159 | −0.009 |
+
+- Tail 0.7303 against `u2`'s 0.7392. `u3` is below `u2` at all 64 epochs, and the gap opens by
+  epoch 4 and does not close: the underfitting outcome named above. Against `c0` it keeps
+  +0.0027, a quarter of `u2`'s +0.0116 and inside the 0.0042 seed spread.
+- The train loss (train-mode, training weights) sits 0.16 above `u2`'s for the whole second half:
+  each switch pulls training back, and the epoch does not recover the loss.
+- Val loss ends 0.009 below `u2`'s while cosine is 0.009 lower. `u3`'s predictions are spread
+  more evenly: that suits cross-entropy, which pays for every target peak, and hurts cosine, which
+  weighs the dominant ones.
+- **Conclusion.** EMA helps here as an average kept off the training weights, not by changing the
+  trajectory. The 4-epoch fallback keeps 46% of each tail epoch's movement, not 14%, but a gap
+  that opens by epoch 4 and stays constant gives no reason to expect a gain. Not run.
 
 ## Open questions and next checks
 

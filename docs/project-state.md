@@ -4,6 +4,38 @@
 
 ## Current handoff
 
+**W&B read of the memorization-route and CE arms (2026-09-26, 03:45 UTC on 09-27); read-only.**
+Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arms of this recipe
+(r = 0.96-0.98 from epoch ~20 on). Seed spread 0.0042.
+
+- **`w1` (weight decay 0.1) is null:** +0.0010 over `c0`. Train fit drops by half as much as
+  `k1`'s, and val loss moves inside the seed pair. Weight decay is closed on this lineage.
+- **`u3` (switch EMA) fails:** −0.0089 against `u2`, below it at all 64 epochs, with train loss
+  0.16 higher throughout. EMA works as an average kept off the training weights.
+- **`n1` (`qet`) fails:** −0.0137 at epochs 24-33, projected −0.012.
+  - Its train loss equals `c0`'s, and only val loss is worse (+0.055). So the smooth CE input
+    costs generalization, not fit, as the two-ladder reading predicts.
+  - `n2`/`n3` are at epoch 9, too early to read. By loss, `n3` looks like `n1` and `n2` like `c0`.
+  - **Conflict:** Spectraverse cv0-cv9 and Enveda `i0` already use `qet`. Do not submit them on
+    `qet` until `n2` and the ladder read on `n1`'s checkpoint are in.
+  - **Arm `n4` built, not submitted, uncommitted:** `c0` + `int_embedder: fourier`. It keeps the
+    per-NCE code (`embed`) and swaps abs-sines for a sin + cos table with no aliasing in 0-300. No
+    gain is expected on NIST20, where 76/180 is the one colliding pair and cost nothing; it prices
+    the table swap. Resolves to that key alone; a 2-epoch smoke exits 0. To submit, commit the
+    config and the submitter change, then on Fir run
+    `submit_masster_mh_ft_memorization_route.sh n4` and `sbatch` the printed script.
+- **`nl1`/`nl2` (light-side token) project null** (+0.0015, +0.0002) with train fit unchanged:
+  removing the heavier-side pool does not dent the lookup, which moves to another route.
+  **`nl3` (+ `k1`'s dropout) underfits at −0.017:** train loss +0.14, val loss up. `k1` needs
+  redundant routes, so it does not stack with route removal. `nl3` can be cancelled.
+- `sp0`/`sp1` started 03:43 UTC; nothing logged yet.
+
+Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s checkpoint. Read
+`nl1`/`nl2` at 63 and run the route map on them. Read `sp0`/`sp1`.
+[Batch 3 read](plans/masster/masster_memorization_route_plan.md#batch-3-read-from-wb-2026-09-26),
+[`n1`-`n3`](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1),
+[`u3`](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
+
 **ChemBERTa-3 on MassSpecGym plan (2026-09-26); PROPOSED, nothing built.** The plan fine-tunes
 `DeepChem/ChemBERTa-100M-MLM` end to end with the NEIMS binned head. Gradients reach the token
 embeddings; this is the user's requirement. It is compared against fingerprint (NEIMS), random-init
@@ -12,7 +44,11 @@ augmentation. The tokenizer implies
 stereo-free, aromatic pretraining text, so the input is raw MSGYM SMILES with stereo removed, not
 our standardized form. Revised the same day for broader SMILES augmentation: traversal types,
 tautomers, Kekulé assignments, several views per sample and augmented continued pretraining, as
-a one-element-at-a-time ladder. `transformers` is not installed. Next: Stage 0b, the MLM likelihood by SMILES form.
+a one-element-at-a-time ladder. **Base model, for now:** the checkpoint's first 6 of 12 layers
+(49M parameters instead of 92M), because the user asked for a smaller ChemBERTa-3. No smaller
+ChemBERTa-3 is released. The small DeepChem checkpoints are ChemBERTa-2, whose broken tokenizer
+reads Cl as C, and the weights show it was pretrained that way. Full depth is the last ladder arm.
+`transformers` is not installed. Next: Stage 0b, the MLM likelihood by SMILES form.
 [Plan](plans/chemberta3_msgym_plan.md).
 
 **Enveda standalone MASSter baseline `i0` built (2026-09-26); not submitted, uncommitted.** The
@@ -36,7 +72,7 @@ On this workstation, point `TMPDIR` off the full 3.7 GB `/tmp`, or the checkpoin
 
 [Plan](plans/masster/masster_isotope_envelope_plan.md#current-state-and-next-check).
 
-**Light-side token arms `nl1`-`nl3` (2026-09-26); built and smoke-tested, not submitted.**
+**Light-side token arms `nl1`-`nl3` (2026-09-26); running, read in the top entry.**
 Each candidate is represented by the lighter side of its cut (the neutral loss of a large
 fragment). The heavier side enters only as element counts (`c_heavy_side`), because the side-of-cut
 probe found it the more memorizing input.
@@ -44,7 +80,6 @@ probe found it the more memorizing input.
 - `nl2`: `nl1` + `mol_gnn_type: GINE`, which leaves no whole-molecule representation in the token.
 - `nl3`: `nl2` + `k1`'s dropout.
 
-Generate on Fir with `submit_masster_mh_ft_memorization_route.sh nl`.
 [Plan section](plans/masster/masster_memorization_route_plan.md#light-side-token-arms-nl1-nl3-built-2026-09-26-not-submitted).
 
 **Memorization: energy vs parts (2026-09-26); inference only, on f0 `3bej6fq7`.**
@@ -79,9 +114,12 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
     fragments that add no new channel m/z, 128 candidates cover 0.9428, more than each energy's
     own 256. That is target-free, but its cosine value is unmeasured; a mask-order U128 already
     tied U256 on cosine.
-  - Next for sharing: a pair on `c0`, with `s0` = `c0` + `masster_batch_sampler: True` and `s1`
-    = `s0` + sharing. The flag has never been read (the August unmerged runs crashed by epoch
-    5), so smoke `s1` locally first.
+  - **Arms `sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`) running since 03:43 UTC on 09-27.** `sp0` = `c0` + the CE-context batch
+    sampler (whole molecules per batch: 32 spectra per context, edge budget never binding, 512
+    spectra cap as in `c0`); `sp1` = `sp0` + `masster_share_proposal_across_ev`. Read `sp0`
+    against `c0` and `sp1` against `sp0` on the epoch 54-63 tail, plus seconds per epoch.
+    - Both 2-epoch local smoke runs on a 60-molecule whole-molecule split exit 0; `sp1`
+      really grouped (60 ladders in 85 chunks).
 - **The CE input was categorical in every model.** `ce_insert_type: embed`/`embed_clamped` with
   the default `abs-sines` table (749 configs, all MASSter and FraGNNet lineages) gives each
   integer a fixed binary-like code.
@@ -100,23 +138,18 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
     32 RBF bumps.
   - 18 new tests in `tests/test_ce_qet_embedding.py`; 287 pass with the related CE and model
     test files.
-- **Arm `n1` (`c0` + `qet`, `jxczo2kf`) trails `c0` mid-run.** Over epochs 10-13 of 64 it
-  averages 0.7009 against 0.7127 / 0.7137 for the `c0` seeds (−0.0124; seeds 0.001 apart).
-  In this group that early gap predicts the tail gap at r = 0.84, projecting about −0.011.
+- **Arm `n1` (`c0` + `qet`, `jxczo2kf`) fails; see the top entry for the epoch 24-33 read.** Over epochs 10-13 of 64 it
+  averaged 0.7009 against 0.7127 / 0.7137 for the `c0` seeds (−0.0124; seeds 0.001 apart).
   Candidate coverage equals `c0`'s, so the loss is intensity allocation.
   - Still to read on its checkpoint: `nce180_check.py` (unseen NCE 170/190, 76 vs 180) and
     per-NCE loss by acquisition ladder.
   - Hold "new configs should use `qet`" (Spectraverse, Enveda) until `n1`-`n3` are read.
-- **Next: submit `n2` and `n3`** (stage `nce` of the memorization-route submitter).
+- **`n2` (`zov75vk3`) and `n3` (`o9pz0j9j`) running** (epoch 9 at 03:45 UTC on 09-27).
   - `n2` = `n1` + new `ce_insert_type: qet_mlp`: the same input through
     Linear(2, 32) → SiLU → Linear(32, 32). `qet` checkpoints still load.
   - `n3` = `c0` + `ce_insert_type: id`: (NCE − 60)/40 straight into the context projector.
     `n1`'s affine embedding makes it this scalar on a curved axis, so `n3` ≈ `n1` would put the
     cost on losing the per-energy code.
-  - First commit `base_model.py`, `masster_model.py`, `config/template.yml`,
-    `tests/test_ce_qet_embedding.py`, the two configs and the submit-script change. Then on Fir
-    run `bash scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh nce` and
-    `sbatch` the two scripts it prints.
   - Checked locally: 4 new tests plus an extra invalid-setting case; 199 pass across the QET,
     merged-CE, CE-location and MASSter model test files. Both configs resolve to their base plus
     `ce_insert_type` and naming, and 2-epoch smokes of both exit 0.
@@ -157,8 +190,8 @@ Br-retaining fragments carry most of the intensity. NIST23 has 224 such spectra;
 Enveda split would need regenerating to pick up its 25.
 [Finding §8](findings/enveda_180_dataset_2026_09_25.md#8-mbr--support-2026-09-25-uncommitted).
 
-**Memorization-route batch 2 read, all ten runs (2026-09-26); weight-decay arm `w1` submitted on
-Fir.** W&B tails over epochs 54-63. `w1` had no W&B run yet at 01:35 UTC.
+**Memorization-route batch 2 read, all ten runs (2026-09-26); weight-decay arm `w1` finished
+null (top entry).** W&B tails over epochs 54-63.
 
 - **The seed spread is 0.0042** (`c0_s2` − `c0`, seed only): above the +0.003 gate and twice the
   0.0022 used so far. A single-seed delta under about +0.005 is not resolved.
@@ -297,7 +330,7 @@ Directories: `config/masster/`, `docs/{findings,plans}/masster/`, `sweep/masster
   `config/massshatter/` minutes before it; they are now in `config/masster/`. The ignored
   `.claude/settings.json` still allowlists the old test paths.
 
-**Switch-EMA arm `u3` built (2026-09-25); not submitted, uncommitted.** `u2`'s EMA only changes
+**Switch-EMA arm `u3` (2026-09-25); ran and fails (top entry).** `u2`'s EMA only changes
 which weights are validated, so it cannot touch the lookup. Switch EMA copies the average into
 the training weights at the start of every epoch. It is a new template key,
 `ema_switch_every_n_epochs` (default null, requires `ema_decay`), in `ExponentialMovingAverage`.

@@ -19,12 +19,12 @@
 > **Learning-rate-schedule arms `s1`/`s1_k1_ema` built 2026-09-25, not submitted**
 > ([section](#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25)): `d3`'s warmup and cosine
 > decay on `c0` and on `k1_ema`, where every run so far trains at a constant 1e-3 (decision C).
-> **Weight-decay arm `w1` built 2026-09-25, submitted on Fir 2026-09-26** ([section](#weight-decay-arm-w1-2026-09-25)):
-> `c0` with `weight_decay` 0.1, whose decay timescale (~32 epochs) falls inside the run.
-> **Light-side token arms `nl1`-`nl3` built 2026-09-26, not submitted**
-> ([section](#light-side-token-arms-nl1-nl3-built-2026-09-26-not-submitted)): each cut
-> represented by its lighter side, the heavier side by element counts only; `nl2` also drops
-> global attention and `nl3` adds `k1`'s dropout.
+> **Batch 3 read 2026-09-26 ([read](#batch-3-read-from-wb-2026-09-26)).** Weight-decay arm `w1`
+> (`weight_decay` 0.1) finished null at +0.0010. Light-side token arms `nl1`-`nl3`, mid-run:
+> `nl1` and `nl2` project null (+0.0015, +0.0002) with train fit unchanged, so the lookup moves to
+> another route; `nl3` (`nl2` + `k1`'s dropout) underfits at −0.017. `sp0`/`sp1` are running.
+> ([`w1` section](#weight-decay-arm-w1-2026-09-25),
+> [`nl` section](#light-side-token-arms-nl1-nl3-built-2026-09-26-not-submitted).)
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
 > lookup key, and the boundary block reads it
 > ([finding](../../findings/masster/masster_route_map_2026_09_24.md)). The collision census
@@ -898,7 +898,8 @@ on the merged lineage as `d3`.
 
 ## Weight-decay arm `w1` (2026-09-25)
 
-**Built; submitted on Fir 2026-09-26** (no W&B run yet at 01:35 UTC). Config only. `w1_wd10.yml` is `c0` with `weight_decay: 0.1` instead of
+**Finished null: +0.0010 over `c0` (`tggzldtj`,
+[read](#batch-3-read-from-wb-2026-09-26)).** Config only. `w1_wd10.yml` is `c0` with `weight_decay: 0.1` instead of
 0.01, read against `c0` (`vcpho5qm`, tail 0.7276). Checkpoints are uploaded.
 
 - **Why.** AdamW shrinks each weight by `1 − lr·wd` per step, so the decay timescale is
@@ -942,6 +943,9 @@ runs through familiar breaks. This confirms the plan's target, molecule identity
 route, and adds break-local evidence as the signal that transfers.
 
 ## Light-side token arms `nl1`-`nl3` (built 2026-09-26, not submitted)
+
+**Submitted 2026-09-26; mid-run read [below](#batch-3-read-from-wb-2026-09-26).** `nl1` and `nl2`
+project null, `nl3` underfits.
 
 The [side-of-cut probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#side-of-cut-probe-2026-09-26)
 found the heavier side of each cut the more memorizing input: removing its identity costs train
@@ -1002,3 +1006,52 @@ attention.
   train's rare-minus-common break contrast rises toward val's.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh nl` (all three), or `nl1`,
   `nl2` or `nl3` alone.
+
+## Batch 3 read from W&B (2026-09-26)
+
+Read at 03:45 UTC on 2026-09-27. Tail and gate as before: mean `val_cos_sim_0.01` over epochs
+54-63, seed spread 0.0042. Arms still running are compared at the latest ten matched epochs, then
+projected to the tail with a line fitted over the 21 finished arms of this recipe (this group plus
+`u2`, `u3`, `h1`, `h2` and `f0`). Each arm's gap at the same window is regressed on its tail gap.
+Loss deltas are train-mode (train) and eval-mode (val) primary loss. They are compared only
+between runs with identical loss settings, which holds within this group.
+
+| arm | run | state | window | cosine | vs `c0` | projected tail vs `c0` | train loss vs `c0` | val loss vs `c0` |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `w1` | `tggzldtj` | finished | 54-63 | 0.7286 | +0.0010 | — | +0.037 | −0.016 |
+| `nl1` | `107bmt51` | epoch 28 | 19-28 | 0.7240 | +0.0015 | +0.0015 | −0.009 | −0.001 |
+| `nl2` | `djhbz6z7` | epoch 29 | 20-29 | 0.7230 | +0.0002 | +0.0002 | +0.003 | +0.004 |
+| `nl3` | `kkp8ug11` | epoch 26 | 17-26 | 0.7045 | −0.0170 | −0.0146 | +0.142 | +0.033 |
+
+The fit at these windows has r = 0.96-0.98 and a residual SD of 0.0018-0.0021. For scale:
+- the seed pair (`c0_s2` − `c0`) moves the tail losses by +0.002 train and −0.024 val;
+- `k1` by +0.080 and −0.040;
+- `u2` by −0.002 and −0.042.
+
+- **`w1` is null.** +0.0010, above `c0` at 27 of 64 epochs, coverage equal. Ten times the decay
+  lowers train fit by half as much as `k1` does, and its −0.016 val loss is inside the seed pair's
+  −0.024. Val held, so this is not the underfitting that the norm/bias-exempt follow-up was for.
+  Weight decay is closed on this lineage.
+- **`nl1` and `nl2` are null, and train fit does not move.** With the heavier side's pool gone
+  from the token, train loss stays where it was (−0.009 and +0.003). Yet the
+  [side-of-cut probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#side-of-cut-probe-2026-09-26)
+  rated that pool the most train-specific input. The lookup is carried by another route once the
+  input is gone, as this plan's premise expects. `nl2` − `r2` is −0.0011 at epochs 20-29.
+  The route map on their final checkpoints is what can say where it went.
+- **`nl3` fails by underfitting.** `k1`'s two dropouts gain +0.0057 on `c0` at this window, with
+  val loss down (train +0.109, val −0.024). On `nl2` the same keys cost −0.017, with train loss
+  +0.142 and val loss up +0.033. `nl3` is below `nl2` at every epoch from 0, by 0.009-0.037.
+  Without the heavier-side pool or global attention, the token and the boundary block are the
+  head's remaining structure inputs, and 20% dropout on each starves it. So `k1` works through
+  redundancy between routes, and it does not stack with a change that removes routes.
+- `nl2` and `nl3` take 176 s per epoch against `c0`'s 182 s, from dropping global attention.
+- **`u3`** is read in the
+  [ranking-transfer plan](masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted):
+  switch EMA fails against `u2`.
+- **`n1`-`n3`** are read in the
+  [QET finding](../../findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1).
+- **`sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`)** started at 03:43 UTC and had no epoch logged.
+
+**Next.** Read `nl1` and `nl2` at epoch 63, then run the route map (`cc`, `boundary`; `gsa` on
+`nl1`) on their checkpoints to find the route that replaced the heavier-side pool. `nl3` needs
+no offline read; cancelling it frees a 3g slice about 2 h early.
