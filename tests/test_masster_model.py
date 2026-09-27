@@ -79,6 +79,7 @@ def _build_model(
     min_ion_h_absolute_probability: float = 0.0,
     apply_channel_selection_in_training: bool = False,
     intensity_transformer_attention: str = "induced",
+    intensity_mz_positional_encoding: bool = False,
     intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
@@ -107,6 +108,8 @@ def _build_model(
     global_message_noise_std: float = 0.0,
     global_message_swap: float = 0.0,
     global_message_swap_unit: str = "atom",
+    encoder_atom_mask: float = 0.0,
+    encoder_bond_dropout: float = 0.0,
     light_side_token: bool = False,
 ) -> MassterModel:
     th.manual_seed(903)
@@ -132,6 +135,7 @@ def _build_model(
         intensity_transformer_feedforward_dim=32,
         intensity_transformer_num_inducing_points=4,
         intensity_transformer_attention=intensity_transformer_attention,
+        intensity_mz_positional_encoding=intensity_mz_positional_encoding,
         intensity_transformer_dropout=0.0,
         intensity_output=intensity_output,
         use_mask_residuals=use_mask_residuals,
@@ -194,6 +198,8 @@ def _build_model(
         global_message_noise_std=global_message_noise_std,
         global_message_swap=global_message_swap,
         global_message_swap_unit=global_message_swap_unit,
+        encoder_atom_mask=encoder_atom_mask,
+        encoder_bond_dropout=encoder_bond_dropout,
         light_side_token=light_side_token,
     )
 
@@ -1659,6 +1665,36 @@ def test_unique_fragment_spectrum_loss_reaches_bond_charge_and_ion_heads(
         assert parameter.grad is not None
         assert th.isfinite(parameter.grad).all()
         assert parameter.grad.abs().sum() > 0
+
+
+@pytest.mark.parametrize("intensity_transformer_attention", ["induced", "full"])
+def test_mz_positional_encoding_feeds_candidate_masses_to_the_head(
+    intensity_transformer_attention: str,
+) -> None:
+    """The encoding reads each candidate's mass, adds no state, and moves the prediction."""
+    batch = _build_batch(("CCOC", "CCO"))
+    kwargs = {
+        "max_masks": 4,
+        "unique_fragment_mode": True,
+        "max_enumerated_masks": 8,
+        "intensity_transformer_attention": intensity_transformer_attention,
+    }
+    control = _build_model(batch, **kwargs).eval()
+    arm = _build_model(batch, **kwargs, intensity_mz_positional_encoding=True).eval()
+    control_state, arm_state = control.state_dict(), arm.state_dict()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+    }
+
+    assert arm.intensity_head.uses_token_masses
+    assert not control.intensity_head.uses_token_masses
+    assert list(arm_state) == list(control_state)
+    assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
+    arm_output, control_output = arm(**inputs), control(**inputs)
+    assert arm_output["pred_logprobs"].shape == control_output["pred_logprobs"].shape
+    assert not th.allclose(arm_output["pred_logprobs"], control_output["pred_logprobs"])
 
 
 def test_unique_fragment_mode_keeps_batched_marginals_separate() -> None:

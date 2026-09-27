@@ -547,6 +547,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         qk_norm: bool = False,
         mass_pair_bias: bool = False,
         mass_pair_bias_centres: int = len(_NEUTRAL_LOSS_CENTRES),
+        mz_positional_encoding: bool = False,
         ce_pair_bias: bool = False,
         ce_film: bool = False,
         ce_feature_dim: int = 0,
@@ -587,6 +588,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("context_dim must be nonnegative")
         if model_dim % num_heads != 0:
             raise ValueError("model_dim must be divisible by num_heads")
+        if mz_positional_encoding and model_dim % 2 != 0:
+            raise ValueError("mz_positional_encoding needs an even model_dim (sin/cos pairs)")
         if dropout < 0.0 or dropout > 1.0:
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
         if not math.isfinite(initial_oos_probability) or not (0.0 < initial_oos_probability < 1.0):
@@ -660,6 +663,18 @@ class CandidateIntensityTransformerHead(nn.Module):
             if mass_pair_bias
             else None
         )
+        # The standard transformer sinusoidal encoding, with each candidate's neutral mass in Da
+        # as its position. A non-persistent buffer: no parameters, no initialization draws, and
+        # an unchanged state dict.
+        self.mz_positional_encoding = mz_positional_encoding
+        if mz_positional_encoding:
+            self.register_buffer(
+                "mz_inverse_frequencies",
+                10000.0 ** (-th.arange(0, model_dim, 2, dtype=th.float64) / model_dim),
+                persistent=False,
+            )
+        # Each candidate's neutral mass must be passed whenever a mass-aware input is on.
+        self.uses_token_masses = mass_pair_bias or mz_positional_encoding
         self.component_residual_head = nn.Linear(model_dim, 1)
         nn.init.zeros_(self.component_residual_head.weight)
         nn.init.zeros_(self.component_residual_head.bias)
@@ -747,6 +762,24 @@ class CandidateIntensityTransformerHead(nn.Module):
             unexpected_keys,
             error_msgs,
         )
+
+    def _mz_encoding(self, masses: th.Tensor) -> th.Tensor:
+        """Sinusoidal encoding of each candidate's neutral mass.
+
+        ``PE(m)[2i] = sin(m w_i)`` and ``PE(m)[2i + 1] = cos(m w_i)``, with
+        ``w_i = 10000^(-2i / d)`` and ``m`` in Da. The shortest wavelength is 2 pi Da, so the
+        encoding resolves nominal mass, not the mass defect that would name a formula. As with
+        text positions, ``PE(m + dm)`` is a fixed rotation of ``PE(m)`` for each ``dm``, so
+        attention can express a mass offset such as a neutral loss.
+
+        Args:
+            masses: Neutral candidate masses in Da, shape (num_components,).
+
+        Returns:
+            The encoding, shape (num_components, model_dim), in float64.
+        """
+        angles = masses.to(self.mz_inverse_frequencies)[:, None] * self.mz_inverse_frequencies
+        return th.stack((angles.sin(), angles.cos()), dim=-1).flatten(1)
 
     def _contextualize_by_molecule(
         self,
@@ -960,14 +993,18 @@ class CandidateIntensityTransformerHead(nn.Module):
             )
         if ce_features is not None and ce_features.shape[0] != batch_size:
             raise ValueError("ce_features must contain one row per spectrum")
-        if (self.mass_pair_bias is not None) != (component_neutral_masses is not None):
+        if self.uses_token_masses != (component_neutral_masses is not None):
             raise ValueError(
-                "component_neutral_masses must be supplied exactly when mass_pair_bias is on"
+                "component_neutral_masses must be supplied exactly when mass_pair_bias or "
+                "mz_positional_encoding is on"
             )
         if component_neutral_masses is not None and component_neutral_masses.shape != (
             num_components,
         ):
             raise ValueError("component_neutral_masses must contain one mass per component")
+        if self.mz_positional_encoding:
+            # Added after the token dropout, so a dropped token keeps its position.
+            tokens = tokens + self._mz_encoding(component_neutral_masses).to(tokens)
         tokens = self._contextualize_by_molecule(
             tokens,
             component_batch_indices,

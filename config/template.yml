@@ -891,6 +891,16 @@ masster_global_message_noise_std: 0.0
 # mol_gnn_type: GINE_GSA; at 0.0 it draws no random numbers, whatever the unit.
 masster_global_message_swap: 0.0
 masster_global_message_swap_unit: atom
+# Training-only structural noise on the shared encoder's inputs (arms am1 and de1). Atom mask:
+# with this probability ([0, 1)), per atom and forward pass, the atom's projected input is replaced
+# by a learned mask vector; the atom keeps its bonds and its place in every candidate. Bond dropout:
+# with this probability ([0, 1)), per chemical bond and forward pass, local message passing drops
+# the bond (both directions, every layer), and kept messages are scaled by 1/(1 - p); candidates,
+# cut bonds and global attention still see every bond. Bond dropout requires
+# mol_gnn_type: GINE_GSA. Neither reaches a separate proposal encoder. At 0.0 neither draws random
+# numbers, and the atom mask adds its one vector only when positive.
+masster_encoder_atom_mask: 0.0
+masster_encoder_bond_dropout: 0.0
 # True represents each candidate by the lighter side of its cut (arms nl1-nl3): the token's
 # fragment slot takes the lighter side's pool (the fragment, or the neutral loss of a large
 # fragment) and the complement slot is zeroed, so no pool of a near-whole molecule reaches the
@@ -936,6 +946,11 @@ masster_intensity_qk_norm: False
 # weights start at zero, so enabling this is a no-op at step 0 and safe on a warm start.
 # Requires attention_type: full; the induced layer routes through latents that carry no mass.
 masster_intensity_mass_pair_bias: False
+# Standard transformer positional encoding with m/z as the position: each candidate token gets
+# sin/cos(m * 10000^(-2i/d)) of its neutral mass m in Da added after the input projection.
+# The shortest wavelength is 2 pi Da, so it resolves nominal mass, not the mass defect. Works with
+# both attention types; no parameters, and the state dict is unchanged.
+masster_intensity_mz_positional_encoding: False
 # Collision-energy conditioning of the candidate ATTENTION itself, as opposed to the
 # per-candidate token. Both are zero-initialized, so enabling either is a no-op at step 0.
 # `ce_pair_bias` makes the neutral-loss RBF weights a function of collision energy, so

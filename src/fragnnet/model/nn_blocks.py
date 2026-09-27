@@ -157,6 +157,10 @@ class GNN(nn.Module):
         gnn_type (str): Type of GNN to use (e.g., "GINE", "MPNN", "GAT").
         dropout (float): Dropout rate.
         normalization (str): Type of normalization to use ("batch", "layer", etc.).
+        atom_mask (float): Training-only probability, drawn per atom and forward pass, that an
+            atom's projected input is replaced by a learned mask vector (attribute masking,
+            Hu et al. 2020). The atom keeps its bonds, so the encoder must infer it from its
+            neighbours. 0 (default) creates no mask vector and draws no random numbers.
     """
 
     def __init__(
@@ -168,12 +172,15 @@ class GNN(nn.Module):
         gnn_type: str,
         dropout: float,
         normalization: str,
+        atom_mask: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
         self.residual_activation = _validate_residual_activation(
             kwargs.get("residual_activation", "relu")
         )
+        if not 0.0 <= atom_mask < 1.0:
+            raise ValueError(f"atom_mask must be in [0, 1), got {atom_mask}")
         self.hidden_size = hidden_size
         self.edge_feats_size = edge_feats_size
         self.node_feats_size = node_feats_size
@@ -277,6 +284,12 @@ class GNN(nn.Module):
         else:
             raise NotImplementedError(self.gnn_type)
 
+        # Created last and zero-initialized, so it draws no random numbers and every other
+        # parameter initializes exactly as without it.
+        self.atom_mask = atom_mask
+        if atom_mask > 0.0:
+            self.atom_mask_embedding = nn.Parameter(th.zeros(self.hidden_size))
+
     def forward(
         self,
         x: th.Tensor,
@@ -303,6 +316,9 @@ class GNN(nn.Module):
             ValueError: If gnn_type="GINE_GATED" and ctx is None.
         """
         z = self.input_project(x)
+        if self.training and self.atom_mask > 0.0:
+            masked = th.rand(z.shape[0], 1, device=z.device) < self.atom_mask
+            z = th.where(masked, self.atom_mask_embedding, z)
         if self.gnn_type == "GINE_GATED":
             if ctx is None:
                 raise ValueError("gnn_type='GINE_GATED' requires ctx, got None")
@@ -1227,6 +1243,11 @@ class GINE_GSA(nn.Module):
             message, from a random atom in the batch), ``molecule`` (every atom of a molecule,
             each from a random atom of one other molecule) or ``feature`` (one feature of one
             atom, from the same feature of a random atom in the batch).
+        bond_dropout (float): Training-only probability, drawn per chemical bond and forward
+            pass, that the bond is removed from local message passing in every layer, both
+            directions together (DropEdge). Kept messages are scaled by 1/(1 - p), so each atom's
+            summed message keeps its expectation. Global attention is untouched. 0 (default)
+            disables it.
     """
 
     def __init__(
@@ -1242,6 +1263,7 @@ class GINE_GSA(nn.Module):
         global_message_noise_std: float = 0.0,
         global_message_swap: float = 0.0,
         global_message_swap_unit: str = "atom",
+        bond_dropout: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -1269,6 +1291,8 @@ class GINE_GSA(nn.Module):
                 f"global_message_swap_unit must be one of {GLOBAL_MESSAGE_SWAP_UNITS}, "
                 f"got {global_message_swap_unit!r}"
             )
+        if not 0.0 <= bond_dropout < 1.0:
+            raise ValueError(f"bond_dropout must be in [0, 1), got {bond_dropout}")
 
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
@@ -1276,6 +1300,7 @@ class GINE_GSA(nn.Module):
         self.global_message_noise_std = global_message_noise_std
         self.global_message_swap = global_message_swap
         self.global_message_swap_unit = global_message_swap_unit
+        self.bond_dropout = bond_dropout
 
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 
@@ -1321,6 +1346,14 @@ class GINE_GSA(nn.Module):
             Updated node features of shape (N, hidden_size).
         """
         edge_attr = self.edge_transform(edge_attr)
+        # GINEConv's message is relu(x_j + e_ij), and relu(w x_j + w e_ij) = w relu(x_j + e_ij)
+        # for w > 0. Passing the pair (w x, x) with w e therefore scales the kept messages by w
+        # and leaves the root term (1 + eps) x_i unscaled.
+        drop_bonds = self.training and self.bond_dropout > 0.0
+        if drop_bonds:
+            edge_index, edge_attr = self._drop_bonds(edge_index, edge_attr, x.shape[0])
+            message_scale = 1.0 / (1.0 - self.bond_dropout)
+            edge_attr = edge_attr * message_scale
         # One host sync for the whole encoder instead of one per attention pass.
         num_graphs = int(batch_index.max().item()) + 1
         for dropout, layer, norm, gsa_norm, q_proj, k_proj, v_proj, out_proj in zip(
@@ -1334,7 +1367,7 @@ class GINE_GSA(nn.Module):
             self.gsa_out,
         ):
             # Local message passing (same residual pattern as GINE)
-            local_out = layer(x, edge_index, edge_attr)
+            local_out = layer((x * message_scale, x) if drop_bonds else x, edge_index, edge_attr)
             local_out = self.norm_fn(local_out, batch_index, norm)
             local_out = _residual_branch(self.residual_activation, dropout(local_out)) + x
 
@@ -1352,6 +1385,28 @@ class GINE_GSA(nn.Module):
 
             x = local_out + gsa_out
         return x
+
+    def _drop_bonds(
+        self, edge_index: th.Tensor, edge_attr: th.Tensor, num_nodes: int
+    ) -> tuple[th.Tensor, th.Tensor]:
+        """Remove each chemical bond, both of its directed edges together, with probability p.
+
+        A bond is the unordered atom pair of its edges, so no edge ordering is assumed.
+
+        Args:
+            edge_index: Directed edges, shape (2, E).
+            edge_attr: Transformed edge features, shape (E, hidden_size).
+            num_nodes: Number of atoms in the batch.
+
+        Returns:
+            The kept edges, shape (2, E'), and their features, shape (E', hidden_size).
+        """
+        low = th.minimum(edge_index[0], edge_index[1])
+        high = th.maximum(edge_index[0], edge_index[1])
+        bonds, bond_of_edge = th.unique(low * num_nodes + high, return_inverse=True)
+        kept_bonds = th.rand(bonds.shape[0], device=edge_index.device) >= self.bond_dropout
+        kept = kept_bonds[bond_of_edge]
+        return edge_index[:, kept], edge_attr[kept]
 
     def _perturb_global_message(
         self, message: th.Tensor, batch_index: th.Tensor, num_graphs: int

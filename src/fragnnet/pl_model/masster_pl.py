@@ -1011,6 +1011,9 @@ class MassterPL(SpectrumPL):
             intensity_norm_placement=(self.hparams.masster_intensity_norm_placement),
             intensity_qk_norm=self.hparams.masster_intensity_qk_norm,
             intensity_mass_pair_bias=self.hparams.masster_intensity_mass_pair_bias,
+            intensity_mz_positional_encoding=(
+                self.hparams.masster_intensity_mz_positional_encoding
+            ),
             intensity_ce_pair_bias=self.hparams.masster_intensity_ce_pair_bias,
             intensity_ce_film=self.hparams.masster_intensity_ce_film,
             bond_endpoint_aggregation=(self.hparams.masster_bond_endpoint_aggregation),
@@ -1101,6 +1104,8 @@ class MassterPL(SpectrumPL):
             global_message_noise_std=self.hparams.masster_global_message_noise_std,
             global_message_swap=self.hparams.masster_global_message_swap,
             global_message_swap_unit=self.hparams.masster_global_message_swap_unit,
+            encoder_atom_mask=self.hparams.masster_encoder_atom_mask,
+            encoder_bond_dropout=self.hparams.masster_encoder_bond_dropout,
             light_side_token=self.hparams.masster_light_side_token,
         )
         logger.info("Resolved MASSter proposal method: %s", self.model.proposal_method)

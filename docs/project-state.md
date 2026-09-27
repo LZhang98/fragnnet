@@ -1,8 +1,44 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-26
+> **Status:** REFERENCE · **Updated:** 2026-09-27
 
 ## Current handoff
+
+**Encoder atom-mask and bond-dropout arms `am1`/`de1` built (2026-09-27); uncommitted, not
+submitted.** These follow the user's proposal of atom drop and bond drop in the GNN. Each is `c0` +
+one training-only key at 0.1 on the shared `GINE_GSA` encoder:
+
+- **`am1`** (`masster_encoder_atom_mask`): an atom's projected input is replaced by a learned mask
+  vector. It adds 384 parameters.
+- **`de1`** (`masster_encoder_bond_dropout`): a bond leaves local message passing, both directions
+  and every layer, and kept messages are scaled by 1/(1 − p). It adds no parameters.
+
+This follows the audit's pattern: noise with every route left in place, as `k1`/`gm1`. It reopens
+DropEdge, which the plan had rejected on the route-map argument the audit weakened.
+
+- **Virtual node: not built.** `GINE_GSA` attention already covers it, and `r2` was null.
+- **Validated.** 18 new test cases pass, and so does the full suite (4,535). Both configs resolve
+  to `c0` + their key. Two-epoch local smokes exit 0.
+- **Local screen (2026-09-27).** Four runs: `c0`, `am1`, `de1` and `c0` at seed 811237. They use a
+  quarter of the molecules, batch 128 and 24 epochs, so they are not comparable to Fir.
+  - `am1` is +0.0067 over the control mean on the val tail. It has the narrowest epoch-matched
+    train/val gap: −0.0125, twice the one-pair control spread. That is a narrower gap with val up.
+  - `de1` is −0.0053 on the val tail, and its gap is unchanged.
+  - Caveat: one seed per arm.
+  - A stronger mask does not help. At 0.3, val is −0.0053 against the control: it underfits,
+    with the lowest train fit of any run. The rate ladder was stopped there (0.5 and 0.2 not
+    read).
+- **Allocator size and attention, local runs.** These follow the user's rule to start the set
+  transformer small.
+  - 16 inducing points and 4 heads: +0.0043, with train fit unchanged, so no underfitting.
+  - Standard `full` attention with 4 heads (`fa_h4`): +0.0086, the best local run, with 1.1M
+    fewer parameters.
+  - New uncommitted key `masster_intensity_mz_positional_encoding`, sinusoidal on neutral mass;
+    `fa_h4_mz` is running.
+- **Next:** commit, then on Fir run `submit_masster_mh_ft_memorization_route.sh am1`, plus `de1`
+  optionally. Read `wrecall` first, then the 54-63 tail against `c0` (+0.006 single-seed rule).
+
+[Plan section](plans/masster/masster_memorization_route_plan.md#encoder-atom-mask-and-bond-dropout-arms-am1-and-de1-built-2026-09-27-not-submitted).
 
 **Shared-proposal pathway audit (2026-09-26, 04:30 UTC on 09-27): the CE-context sampler was
 broken, and `sp0`/`sp1` collapsed and crashed. Both bugs found are fixed, uncommitted

@@ -52,6 +52,10 @@
 # the CE-context batch sampler, which batches whole molecules, so sp0 prices the sampler alone:
 #   sp0  c0 + CE-context batches            (control: c0, vcpho5qm)
 #   sp1  sp0 + share_proposal_across_ev     (control: sp0)
+# Added 2026-09-27, after the memorization-attempts audit: training-only structural noise on the
+# shared encoder's inputs (noise with every route left in place, as k1 and gm1):
+#   am1  c0 + encoder atom mask 0.1          (control: c0, vcpho5qm)
+#   de1  c0 + encoder bond dropout 0.1       (control: c0, vcpho5qm)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
@@ -67,8 +71,9 @@
 #   nl    nl1, nl2 and nl3 (c0, r2 and k1 have run).
 #   nce   n2 and n3 (c0 has run; n1 is running).
 #   share sp0 and sp1 (c0 has run).
+#   drop  am1 and de1 (c0 has run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1  one job.
+#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1 | am1 | de1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -127,6 +132,8 @@ declare -A JOB_BY_ARM=(
     [nl3]=msh_mhft_nl3_light_side_gine_k1
     [sp0]=msh_mhft_sp0_ce_context_batches
     [sp1]=msh_mhft_sp1_shared_proposal
+    [am1]=msh_mhft_am1_atom_mask
+    [de1]=msh_mhft_de1_bond_drop
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -158,6 +165,8 @@ declare -A CONFIG_BY_ARM=(
     [nl3]=nl3_light_side_gine_k1.yml
     [sp0]=sp0_ce_context_batches.yml
     [sp1]=sp1_shared_proposal.yml
+    [am1]=am1_atom_mask.yml
+    [de1]=de1_bond_drop.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -172,9 +181,10 @@ case "${STAGE}" in
     nl)   ARMS=(nl1 nl2 nl3) ;;
     nce)  ARMS=(n2 n3) ;;
     share) ARMS=(sp0 sp1) ;;
-    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]) ARMS=("${STAGE}") ;;
+    drop) ARMS=(am1 de1) ;;
+    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1]" >&2
         exit 1
         ;;
 esac
@@ -264,3 +274,4 @@ echo "n4: its control c0 (vcpho5qm) has run."
 echo "m2: its controls c0 (vcpho5qm) and m1 (liwjgdq6) have run."
 echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."
 echo "share: sp0's control c0 (vcpho5qm) has run; sp1's control is sp0, in the same stage."
+echo "drop (am1, de1): their control c0 (vcpho5qm) has run."

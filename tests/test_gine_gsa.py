@@ -6,6 +6,7 @@ import math
 
 import pytest
 import torch as th
+import torch_geometric as pyg
 
 from fragnnet.model.nn_blocks import GINE_GSA, _graph_softmax_attn
 
@@ -391,3 +392,71 @@ def test_global_message_feature_swap_takes_each_entry_from_the_same_feature() ->
 def test_global_message_noise_rejects_invalid_settings(option: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         _noisy_encoder(**option)
+
+
+# Bond dropout (arm de1): a dropped bond leaves local message passing in both directions, and
+# kept messages are scaled by 1/(1 - p). Global attention still sees every atom.
+
+
+def test_drop_bonds_removes_both_directions_of_a_bond_together() -> None:
+    encoder = _noisy_encoder(bond_dropout=0.5)
+    # A 201-atom chain: forward edges first, reverse edges after.
+    forward = th.stack([th.arange(200), th.arange(1, 201)])
+    edge_index = th.cat([forward, forward.flip(0)], dim=1)
+    edge_attr = th.arange(400, dtype=th.float32)[:, None]
+    th.manual_seed(3)
+
+    kept_index, kept_attr = encoder._drop_bonds(edge_index, edge_attr, 201)
+
+    kept_pairs = set(map(tuple, kept_index.T.tolist()))
+    assert all((dst, src) in kept_pairs for src, dst in kept_pairs)
+    # Each kept edge keeps its own features.
+    assert th.equal(edge_index[:, kept_attr[:, 0].long()], kept_index)
+    assert 70 < len(kept_pairs) // 2 < 130
+
+
+def test_scaled_source_scales_gine_messages_and_not_the_root_term() -> None:
+    """The identity the encoder relies on: GINEConv((w x, x), w e) = x + w sum relu(x_j + e)."""
+    th.manual_seed(4)
+    conv = pyg.nn.conv.GINEConv(nn=th.nn.Identity(), eps=0.0, edge_dim=None)
+    x = th.randn(4, 8, dtype=th.float64)
+    edge_index = th.tensor([[0, 1, 1, 2, 3], [1, 0, 2, 1, 2]])
+    edge_attr = th.randn(5, 8, dtype=th.float64)
+    scale = 1.0 / (1.0 - 0.3)
+
+    scaled = conv((x * scale, x), edge_index, edge_attr * scale)
+
+    messages = th.relu(x[edge_index[0]] + edge_attr)
+    expected = x + scale * th.zeros_like(x).index_add_(0, edge_index[1], messages)
+    assert th.allclose(scaled, expected, atol=1e-12)
+
+
+def test_bond_dropout_is_training_only_and_adds_no_parameters() -> None:
+    plain, dropped = _noisy_encoder(), _noisy_encoder(bond_dropout=0.5)
+    assert list(dropped.state_dict()) == list(plain.state_dict())
+    dropped.load_state_dict(plain.state_dict(), strict=True)
+    inputs = _encoder_inputs()
+
+    assert th.equal(dropped.eval()(*inputs), plain.eval()(*inputs))
+    th.manual_seed(5)
+    assert not th.allclose(dropped.train()(*inputs), plain.train()(*inputs))
+
+
+def test_bond_dropout_draws_once_per_forward_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One draw per pass, so every layer sees the same molecule with the same bonds missing."""
+    encoder = _noisy_encoder(bond_dropout=0.5).train()
+    calls = []
+    original = encoder._drop_bonds
+    monkeypatch.setattr(encoder, "_drop_bonds", lambda *args: calls.append(args) or original(*args))
+
+    encoder(*_encoder_inputs())
+
+    # Two layers, one draw.
+    assert len(encoder.layers) == 2
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("bond_dropout", [1.0, -0.1])
+def test_bond_dropout_rejects_invalid_settings(bond_dropout: float) -> None:
+    with pytest.raises(ValueError, match="bond_dropout must be in"):
+        _noisy_encoder(bond_dropout=bond_dropout)

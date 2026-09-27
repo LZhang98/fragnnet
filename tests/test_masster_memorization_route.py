@@ -4,9 +4,10 @@
 per arm: removing the boundary block (``r0``), building it from a local cut-site encoder (``r1``),
 dropout on the layers that form a candidate's key (``k1``), and a per-molecule memorization sink
 used only in training (``m1``). Later arms (``gm1``-``gm6``) add training-only noise to the
-shared encoder's global-attention message. Each must leave the model exactly unchanged at its
-default, act only where it says, and keep every other parameter's initialization, so an arm
-differs from its control by the option alone.
+shared encoder's global-attention message, and ``am1``/``de1`` mask atoms or drop bonds in its
+inputs. Each must leave the model exactly unchanged at its default, act only where it says, and
+keep every other parameter's initialization, so an arm differs from its control by the option
+alone.
 """
 
 from types import SimpleNamespace
@@ -501,3 +502,73 @@ def test_global_message_noise_model_is_its_control_at_evaluation(batch, option: 
 def test_global_message_noise_requires_global_attention(batch, option: dict) -> None:
     with pytest.raises(ValueError, match="require precursor_gnn_type GINE_GSA"):
         _build_model(batch, precursor_gnn_type="GINE", **UNIQUE_KWARGS, **option)
+
+
+# 7. Structural noise on the shared encoder's inputs (arms am1 and de1).
+
+ENCODER_NOISE_OPTIONS = [{"encoder_atom_mask": 0.3}, {"encoder_bond_dropout": 0.3}]
+
+
+@pytest.mark.parametrize("option", ENCODER_NOISE_OPTIONS)
+def test_encoder_noise_reaches_only_the_shared_encoder(batch, option: dict) -> None:
+    model = _build_model(
+        batch,
+        precursor_gnn_type="GINE_GSA",
+        separate_proposal_encoder=True,
+        proposal_selection_only=True,
+        use_base_probability_feature=False,
+        **UNIQUE_KWARGS,
+        **option,
+    )
+    shared, proposal = model.precursor_encoder, model.proposal_encoder
+
+    assert shared.atom_mask == option.get("encoder_atom_mask", 0.0)
+    assert shared.gnn.bond_dropout == option.get("encoder_bond_dropout", 0.0)
+    assert proposal.atom_mask == 0.0
+    assert proposal.gnn.bond_dropout == 0.0
+    assert "atom_mask_embedding" not in proposal.state_dict()
+
+
+@pytest.mark.parametrize("option", ENCODER_NOISE_OPTIONS)
+def test_encoder_noise_model_is_its_control_at_evaluation(batch, option: dict) -> None:
+    """Every control parameter initializes as in the control; the atom mask adds one vector."""
+    kwargs = {**UNIQUE_KWARGS, "precursor_gnn_type": "GINE_GSA"}
+    control, arm = _build_model(batch, **kwargs), _build_model(batch, **kwargs, **option)
+    control_state, arm_state = control.state_dict(), arm.state_dict()
+
+    added = [key for key in arm_state if key not in control_state]
+    expected_added = (
+        ["precursor_encoder.atom_mask_embedding"] if "encoder_atom_mask" in option else []
+    )
+    assert added == expected_added
+    assert [key for key in arm_state if key in control_state] == list(control_state)
+    assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
+    assert th.equal(
+        _forward(arm.eval(), batch)["pred_logprobs"],
+        _forward(control.eval(), batch)["pred_logprobs"],
+    )
+    th.manual_seed(5)
+    trained_arm = _forward(arm.train(), batch)["pred_logprobs"]
+    th.manual_seed(5)
+    trained_control = _forward(control.train(), batch)["pred_logprobs"]
+    assert trained_arm.shape != trained_control.shape or not th.allclose(
+        trained_arm, trained_control
+    )
+
+
+def test_encoder_bond_dropout_requires_global_attention(batch) -> None:
+    with pytest.raises(ValueError, match="encoder_bond_dropout requires precursor_gnn_type"):
+        _build_model(batch, precursor_gnn_type="GINE", **UNIQUE_KWARGS, encoder_bond_dropout=0.3)
+
+
+def test_encoder_atom_mask_works_without_global_attention(batch) -> None:
+    """The mask lives in the GNN wrapper, so a plain GINE encoder gets it too."""
+    kwargs = {**UNIQUE_KWARGS, "precursor_gnn_type": "GINE"}
+    control = _build_model(batch, **kwargs)
+    arm = _build_model(batch, **kwargs, encoder_atom_mask=0.3)
+
+    assert isinstance(arm.precursor_encoder.gnn, GINE)
+    assert th.equal(
+        _forward(arm.eval(), batch)["pred_logprobs"],
+        _forward(control.eval(), batch)["pred_logprobs"],
+    )

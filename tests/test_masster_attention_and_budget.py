@@ -8,6 +8,8 @@ test also pins the default.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 import torch as th
 
@@ -170,6 +172,74 @@ def test_mass_pair_bias_requires_masses() -> None:
     )
     with pytest.raises(ValueError, match="component_neutral_masses"):
         head(*_head_inputs(), batch_size=1, num_masks=4)
+
+
+# ----------------------------------------------------------------- m/z positional encoding
+
+
+def _mz_head(**overrides) -> CandidateIntensityTransformerHead:
+    th.manual_seed(3)
+    return CandidateIntensityTransformerHead(**{**HEAD_KWARGS, **overrides}).eval()
+
+
+def test_mz_encoding_matches_the_transformer_formula() -> None:
+    head = _mz_head(mz_positional_encoding=True)
+    masses = th.tensor([0.0, 18.0106, 134.25, 1499.9], dtype=th.float64)
+
+    encoding = head._mz_encoding(masses)
+
+    expected = th.zeros(4, 8, dtype=th.float64)
+    for row, mass in enumerate(masses.tolist()):
+        for i in range(4):
+            angle = mass * 10000.0 ** (-2 * i / 8)
+            expected[row, 2 * i], expected[row, 2 * i + 1] = math.sin(angle), math.cos(angle)
+    assert encoding.shape == (4, 8)
+    assert th.allclose(encoding, expected, atol=1e-12)
+
+
+def test_mz_encoding_of_a_mass_offset_is_a_fixed_rotation() -> None:
+    """PE(m + dm) = R(dm) PE(m) for every m, which lets attention express a neutral loss."""
+    head = _mz_head(mz_positional_encoding=True)
+    masses = th.tensor([90.0, 162.0, 400.5], dtype=th.float64)
+    offset = 18.0106
+    base, shifted = head._mz_encoding(masses), head._mz_encoding(masses + offset)
+
+    angles = offset * head.mz_inverse_frequencies
+    sin_base, cos_base = base[:, 0::2], base[:, 1::2]
+    assert th.allclose(shifted[:, 0::2], sin_base * angles.cos() + cos_base * angles.sin())
+    assert th.allclose(shifted[:, 1::2], cos_base * angles.cos() - sin_base * angles.sin())
+
+
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_mz_encoding_adds_no_parameters_and_keeps_initialization(attention_type: str) -> None:
+    plain = _mz_head(attention_type=attention_type).state_dict()
+    encoded = _mz_head(attention_type=attention_type, mz_positional_encoding=True).state_dict()
+
+    assert list(encoded) == list(plain)
+    assert all(th.equal(encoded[key], plain[key]) for key in plain)
+
+
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_mz_encoding_makes_the_output_depend_on_candidate_mass(attention_type: str) -> None:
+    plain = _mz_head(attention_type=attention_type)
+    encoded = _mz_head(attention_type=attention_type, mz_positional_encoding=True)
+    inputs = _head_inputs()
+    masses = th.tensor([180.0, 162.0, 152.0, 134.0])
+
+    reference = plain(*inputs, batch_size=1, num_masks=4)[2]
+    with_masses = encoded(*inputs, batch_size=1, num_masks=4, component_neutral_masses=masses)[2]
+    flipped = masses.flip(0)
+    swapped = encoded(*inputs, batch_size=1, num_masks=4, component_neutral_masses=flipped)[2]
+    assert not th.allclose(with_masses, reference)
+    assert not th.allclose(with_masses, swapped)
+
+
+def test_mz_encoding_requires_masses() -> None:
+    head = _mz_head(mz_positional_encoding=True)
+    with pytest.raises(ValueError, match="mz_positional_encoding is on"):
+        head(*_head_inputs(), batch_size=1, num_masks=4)
+    with pytest.raises(ValueError, match="even model_dim"):
+        _mz_head(mz_positional_encoding=True, model_dim=9, num_heads=3)
 
 
 # ------------------------------------------------------------------------- bond head

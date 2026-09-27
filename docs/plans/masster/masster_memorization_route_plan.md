@@ -1,6 +1,6 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-26
+> **Status:** ACTIVE · **Updated:** 2026-09-27
 > **Step 1 ran; W&B tail read done ([below](#step-1-tail-read-from-wb-2026-09-24)).** `k1` (key
 > dropout) passes gates 1 and 5 at +0.0074 over `c0`; gates 2-4 need the route map and novelty
 > bins on its checkpoint. `r2` (no global attention) is null at +0.0006. `r1` fails (−0.0029),
@@ -180,7 +180,9 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
 - If `r0` shows the lookup rerouting: the token bottleneck `v1` and training-time set dropout.
 
 **Not changing:** tying the ion/H head, coarsening mass, discretizing `a_charge` (all small or
-null in the route map); generic dropout; DropEdge; DP-SGD-style per-molecule clipping (costly,
+null in the route map); generic dropout; DropEdge (reopened 2026-09-27 as `de1`,
+[section](#encoder-atom-mask-and-bond-dropout-arms-am1-and-de1-built-2026-09-27-not-submitted));
+DP-SGD-style per-molecule clipping (costly,
 and it hurts rare examples); co-teaching (built for noisy labels); mixup across molecules;
 excluding low-loss molecules without a memorization score (low train loss does not separate
 memorized molecules from easy ones); same-data self-distillation; smaller batches (sync-bound);
@@ -1100,3 +1102,179 @@ no offline read.
   - The submitter's config checks pass. Locally it stops at the missing `pyteomics` wheel before
     generating anything.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh m2`, after committing.
+
+## Encoder atom-mask and bond-dropout arms `am1` and `de1` (built 2026-09-27, not submitted)
+
+**Why.** The user proposed atom drop and bond drop in the GNN, and a virtual node, on 2026-09-27.
+The [audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md) found that
+removing an identity route never helped, while noise on a route that other routes back up did:
+`k1` (replicated) and `gm1` (one seed). Every earlier atom dropout acted after the encoder, on the
+fragment pools (`e2`/`e3`, null), or everywhere at once (`drop03`, −0.0149). These two arms
+perturb the molecule the encoder sees on each exposure and leave every route in place.
+
+- DropEdge was under "Not changing" because the route map put the key in global attention, not
+  topology. The audit found the route map does not predict which arms pay (`r2` null; `k1`
+  predicted weak, then replicated), so that reason no longer holds.
+- **Virtual node: not built.** `GINE_GSA` already runs full per-molecule softmax attention in
+  every layer. A virtual node is that attention with uniform weights, so it adds no path, and
+  `r2` found removing global attention null. The one variant with a reason is a narrow noisy
+  virtual node in place of global attention, the audit's bottleneck lever (rank 8). It waits for
+  `gm1`'s replicate.
+
+**Code.** Both keys act only on the shared precursor encoder, never on `proposal_encoder` or the
+`r1` local encoder. At 0.0 neither draws random numbers, and the state dict is unchanged.
+
+- `masster_encoder_atom_mask` → `GNN(atom_mask=...)` in `nn_blocks.py`. In training, per atom and
+  forward pass, the projected input (after `input_project`) is replaced by one learned vector,
+  `atom_mask_embedding`. The vector exists only when p > 0 and is zero-initialized, so every other
+  parameter initializes as in the control. Any `gnn_type` takes it. With `context_in_gnn` it would
+  mask the atom's context too; `c0` has that off.
+- `masster_encoder_bond_dropout` → `GINE_GSA(bond_dropout=...)`. One draw per forward pass per
+  bond, keyed by the unordered atom pair, so both directions drop together without assuming an
+  edge order (one `th.unique` host sync per pass). A dropped bond leaves `GINEConv` in every layer.
+  - Kept messages are scaled by w = 1/(1 − p) exactly: passing `(w·x, x)` and `w·e` gives
+    relu(w·x_j + w·e) = w·relu(x_j + e) and leaves the root term unscaled.
+  - Global attention, the candidate set, the cut-bond features and the boundary encoder still see
+    every bond.
+  - It requires `mol_gnn_type: GINE_GSA`, and `MassterModel` raises otherwise.
+
+**Configs.** `am1_atom_mask.yml` and `de1_bond_drop.yml` are `c0` plus the key at 0.1. The low rate
+is on purpose: noise on an already-stripped model underfits (`nl3`), and so did `drop03`. A rate
+ladder follows only a pass. The control is `c0` (`vcpho5qm`, tail 0.7276). `am1` adds 384
+parameters (the vector) and `de1` none.
+
+**Checks.**
+
+- 18 new test cases pass (15 functions):
+  - `tests/test_gnn_atom_mask.py`:
+    - off, it draws nothing and adds no parameter;
+    - on, it adds only the zero vector, with every other initialization unchanged;
+    - it is training-only;
+    - it replaces whole rows (about p of them), and the vector gets gradient;
+    - invalid rates are rejected.
+  - `tests/test_gine_gsa.py`:
+    - both directions of a bond drop together, with features kept aligned;
+    - the (w·x, x) scaling identity holds against a hand-written `GINEConv` sum;
+    - it is training-only and adds no parameters;
+    - there is one draw per pass across both layers;
+    - invalid rates are rejected.
+  - `tests/test_masster_memorization_route.py`:
+    - each key reaches only the shared encoder;
+    - each arm equals its control at eval, with the same initialization;
+    - bond dropout requires `GINE_GSA`;
+    - the atom mask works on plain `GINE`.
+- 93 pass across those three files, and the full suite passes (4,535; 1 skipped, 2 xfailed).
+  Ruff is clean.
+- Through `load_config`, each arm differs from `c0` by its key and W&B naming only.
+- **Smokes.** Two epochs each on `debug_tiny_masster_cut_features.yml`, on the local RTX 2070
+  SUPER: the control and both keys by override. All exit 0 at 340K parameters.
+  - Epoch-1 train loss: `am1` −0.7624 and `de1` −0.7491, against −0.7544 for the control.
+  - The control's −0.7544 equals the `gm` control smoke's, so the defaults change nothing.
+- The configs pass the submitter's grep checks. Nothing was generated locally.
+
+**Reading.** First, `val_candidate_wrecall` within 0.005 of `c0`: the proposal reads the same
+encoder. Then the 54-63 tail against `c0`. By the audit's rule, a single seed needs about +0.006;
+otherwise it gets a second seed at 811237 against `c0_s2`. Then gates 2-4 on the checkpoint. A
+pass stacks with EMA (`u2`) next. The cost is expected to equal `c0`'s 3.0 min/epoch but is
+unmeasured.
+
+**Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh drop` after committing.
+
+### Local screen of `am1`/`de1` (2026-09-27)
+
+A local screen on the RTX 2070 SUPER before Fir, at the user's request. It is not comparable to
+Fir numbers: it uses a quarter of the molecules and batch 128. Artifacts (git-ignored):
+`output/local_encoder_noise_2026_09_27/` holds the queue script, split, logs, `parse_logs.py`,
+`eval_matched.py` and `eval_matched.json`, and the checkpoints are in
+`ckpts/local_{control,am1,de1,control_s2}/`.
+
+- **Setup.** A molecule-level subset of `nist20_inchikey`, seed 20260927:
+  - 3,000 train molecules (37,111 spectra) and 1,000 val molecules (12,381).
+  - `test_ids.csv` holds 1,000 of the *train* molecules (12,300 spectra), so a test pass is the
+    eval-mode train fit.
+  - Each run is its committed config plus `train_batch_size`/`eval_batch_size` 128 (7.4 GB peak;
+    512 does not fit 8 GB), 24 epochs and `eval_test_split: true`.
+  - Runs: `c0`, `am1`, `de1`, and `c0` at seed 811237 as the floor.
+  - A run takes 57 min, at 2.3 min/epoch and 290 steps. All four exit 0.
+- **The regime reproduces the problem.** The control's val loss bottoms at epoch 19 while train
+  loss keeps falling, and its eval-mode gap is about 0.24.
+
+| run | tail 19-23 | tail 12-17 | best (epoch) | epoch-23 train-eval | epoch-23 gap | wrecall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `c0` | 0.6287 | 0.6293 | 0.6331 (17) | 0.8710 | 0.2436 | 0.9296 |
+| `c0` seed 811237 | 0.6303 | 0.6268 | 0.6361 (23) | 0.8846 | 0.2485 | 0.9281 |
+| `am1` | **0.6362** | 0.6300 | 0.6399 (21) | **0.8650** | **0.2336** | 0.9283 |
+| `de1` | 0.6242 | 0.6213 | 0.6295 (23) | 0.8788 | 0.2494 | 0.9281 |
+
+Tail = mean val `cos_sim_0.01` over the epochs given. The epoch-23 columns score each run's
+`last.ckpt` with `eval_matched.py`. The post-fit test pass scored the *best* checkpoints, whose
+epochs differ (17-23), and the seed-811237 control shows that alone moves train fit by 0.02.
+Re-scoring the control's best checkpoint reproduces its logged 0.6331 / 0.8647.
+
+- **Floor (one pair).** The two controls differ by +0.0016 on the 19-23 tail, −0.0025 on 12-17,
+  and 0.0049 in epoch-23 gap. Single epochs swing ±0.01.
+- **`am1` is the one positive signal.**
+  - Its 19-23 tail is +0.0067 over the control mean, and +0.0059 over the higher control.
+    Tail 12-17 was even, so the gain arrives as the control starts to overfit.
+  - It has the lowest epoch-23 train fit and the narrowest gap: −0.0125 against the control mean,
+    and −0.010 against its same-seed control, twice the one-pair gap spread.
+  - Val loss is lower by 0.03 late. Coverage is unchanged.
+  - This is the pattern the plan's objective asks for: a narrower gap with val up, not
+    underfitting. Every earlier arm that narrowed the gap lost val.
+- **`de1` is null to negative.** Its 19-23 tail is −0.0053 against the control mean; it is below
+  the control in all of epochs 12-17 and in 8 of 12 from epoch 12 on. Its gap (0.2494) is inside
+  the control spread. On a 2-layer local encoder a dropped bond removes much of each nearby
+  atom's 2-hop view, which fits the DropEdge caution in the literature note.
+- **Caveats.** One seed per arm, one control pair and a 1,000-molecule val set; batch 128, not
+  512; 24 epochs on a quarter of the molecules.
+- **Next.** Submit `am1` on Fir; a local seed-811237 replicate against the second control would
+  firm it up first (1 h). `de1` on Fir is optional: the local read predicts no pass.
+- **Rate ladder: stopped after 0.3.** The run was `am1` with only `masster_encoder_atom_mask`
+  overridden, on the same setup (`run_queue_am_ladder.sh`).
+  - At 0.3 (`am_p03`), the 19-23 tail is 0.6242: −0.0053 against the control mean, and below the
+    control at all 24 epochs. Best is 0.6287 at epoch 21.
+  - Train-mode loss is 0.14 above the control, and the best checkpoint's train-eval is 0.8541, the
+    lowest of any run. The gap narrows only because train fit falls: underfitting.
+  - The deficit closes over the run (−0.02 early, −0.001 to −0.006 at epochs 20-23), so 64
+    epochs might recover it; this screen cannot tell.
+  - 0.5 was stopped 3 minutes in, because it would underfit further. 0.2 was stopped at epoch 4,
+    after the user judged the ladder not useful. Neither was read; logs are kept as `*_stopped.log`.
+  - A stronger mask does not pay at this horizon, and 0.1 stays the only rate tested with a
+    positive read.
+
+### Local screen: allocator size, standard attention and m/z encoding (2026-09-27)
+
+The user's guidance was to start the set transformer small (16-32 inducing points, few heads) and
+grow only on underfitting, and to try a standard transformer with m/z as the positional encoding.
+Before these runs, every config had used at least 64 inducing points and 8 heads.
+
+- **New key `masster_intensity_mz_positional_encoding`** (default off, uncommitted), in
+  `CandidateIntensityTransformerHead._mz_encoding`.
+  - It adds the transformer sinusoidal encoding to each candidate token, with the candidate's
+    neutral mass in Da as the position (base 10000).
+  - The shortest wavelength is 2π Da, so it resolves nominal mass but not the mass defect.
+  - It works with both attention types. It is a non-persistent buffer, so the state dict and the
+    initialization are unchanged.
+  - 7 head tests and 2 model tests in `test_masster_attention_and_budget.py` and
+    `test_masster_model.py` check the formula, the rotation property (a mass offset is a fixed
+    rotation), the unchanged state and mass dependence.
+  - Risk: the set of a molecule's candidate masses is itself a molecule fingerprint that
+    attention can read.
+- **Runs** (same setup as above):
+
+| run | change from `c0` | params | tail 19-23 | best (epoch) | train loss 19-23 | best-ckpt train-eval |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ip16_h4` | 16 inducing points, 4 heads | 9.2M | 0.6338 | 0.6375 (22) | −3.351 | 0.8846 |
+| `fa_h4` | `attention: full`, 4 heads | 8.1M | **0.6381** | 0.6419 (23) | −3.338 | 0.8877 |
+| `fa_h4_mz` | `fa_h4` + m/z encoding | 8.1M | running | | | |
+
+- **`ip16_h4` does not underfit.** Train loss equals both controls' (−3.351), and val is +0.0043
+  over the control mean. By the start-small rule it stays at 16. It does not narrow the gap: train
+  fit is unchanged.
+- **`fa_h4` is the best local run so far:** +0.0086 over the control mean, with 1.1M fewer
+  parameters, 53.6 min against 57. It is still rising at epoch 23, with val loss 0.03 below the
+  controls'. Its initialization differs from `c0`'s, so read it against the seed spread (0.0016
+  on this tail). On merged, `a2_full_attention` was +0.0030 with 8 heads; this run uses 4 heads,
+  on unmerged.
+- **Next.** Read `fa_h4_mz` against `fa_h4`, then score all three at epoch 23 with
+  `eval_matched.py` (`ip16_h4`, `fa_h4` and `fa_h4_mz` are registered).

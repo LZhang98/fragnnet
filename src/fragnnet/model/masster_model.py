@@ -1088,6 +1088,7 @@ class MassterModel(nn.Module):
         intensity_norm_placement: str = "post",
         intensity_qk_norm: bool = False,
         intensity_mass_pair_bias: bool = False,
+        intensity_mz_positional_encoding: bool = False,
         intensity_ce_pair_bias: bool = False,
         intensity_ce_film: bool = False,
         bond_endpoint_aggregation: str = "mean",
@@ -1107,6 +1108,8 @@ class MassterModel(nn.Module):
         global_message_noise_std: float = 0.0,
         global_message_swap: float = 0.0,
         global_message_swap_unit: str = "atom",
+        encoder_atom_mask: float = 0.0,
+        encoder_bond_dropout: float = 0.0,
         light_side_token: bool = False,
     ) -> None:
         """Initialize the MASSter model.
@@ -1296,6 +1299,15 @@ class MassterModel(nn.Module):
                 label is not mixed. Requires ``precursor_gnn_type: GINE_GSA``.
             global_message_swap_unit: What one swap draw replaces: ``atom``, ``molecule`` or
                 ``feature``; see ``GINE_GSA``.
+            encoder_atom_mask: Training-only probability, per atom and forward pass, that the
+                shared encoder sees a learned mask vector instead of the atom's projected input
+                (arm ``am1``). The atom keeps its bonds and its place in every candidate. Only the
+                shared precursor encoder gets it; it adds that one vector when positive.
+            encoder_bond_dropout: Training-only probability, per chemical bond and forward pass,
+                that the shared encoder's local message passing drops the bond, both directions
+                and every layer, scaling kept messages by 1/(1 - p) (arm ``de1``). Candidates,
+                cut bonds and global attention still see every bond. Requires
+                ``precursor_gnn_type: GINE_GSA``.
             light_side_token: Represent each candidate by the lighter side of its cut, in
                 training and evaluation alike. The fragment slot of the token takes the lighter
                 side's pool (the fragment itself, or the neutral loss of a large fragment), and
@@ -1413,6 +1425,11 @@ class MassterModel(nn.Module):
             raise ValueError(
                 "global_message_substitution, global_message_noise_std and global_message_swap "
                 f"require precursor_gnn_type GINE_GSA, got {precursor_gnn_type}"
+            )
+        if encoder_bond_dropout > 0.0 and precursor_gnn_type != "GINE_GSA":
+            raise ValueError(
+                "encoder_bond_dropout requires precursor_gnn_type GINE_GSA, "
+                f"got {precursor_gnn_type}"
             )
         if (separate_ion_mode_proposal_head or separate_ion_h_support_head) and not (
             unique_fragment_mode and proposal_selection_only
@@ -1633,6 +1650,8 @@ class MassterModel(nn.Module):
             global_message_noise_std=global_message_noise_std,
             global_message_swap=global_message_swap,
             global_message_swap_unit=global_message_swap_unit,
+            atom_mask=encoder_atom_mask,
+            bond_dropout=encoder_bond_dropout,
             **graphormer_structural_kwargs,
         )
         self.proposal_encoder = (
@@ -1706,6 +1725,7 @@ class MassterModel(nn.Module):
             else None
         )
         self.intensity_mass_pair_bias = intensity_mass_pair_bias
+        self.intensity_mz_positional_encoding = intensity_mz_positional_encoding
         self.intensity_ce_conditioned = intensity_ce_pair_bias or intensity_ce_film
         self.intensity_escape = intensity_escape
         self.candidate_feature_specs = resolve_candidate_features(candidate_features)
@@ -1802,6 +1822,7 @@ class MassterModel(nn.Module):
             norm_placement=intensity_norm_placement,
             qk_norm=intensity_qk_norm,
             mass_pair_bias=intensity_mass_pair_bias,
+            mz_positional_encoding=intensity_mz_positional_encoding,
             ce_pair_bias=intensity_ce_pair_bias,
             ce_film=intensity_ce_film,
             ce_feature_dim=self.context_encoder.ce_feature_dim,
@@ -3182,7 +3203,7 @@ class MassterModel(nn.Module):
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
                 component_neutral_masses=(
                     candidate_inputs.component_neutral_masses
-                    if self.intensity_mass_pair_bias
+                    if self.intensity_head.uses_token_masses
                     else None
                 ),
                 ce_features=spectrum_ce_features,
@@ -3320,7 +3341,7 @@ class MassterModel(nn.Module):
                 return_support_logits=(self.intensity_head.ion_h_support_head is not None),
                 component_neutral_masses=(
                     candidate_inputs.component_neutral_masses
-                    if self.intensity_mass_pair_bias
+                    if self.intensity_head.uses_token_masses
                     else None
                 ),
                 ce_features=spectrum_ce_features,
