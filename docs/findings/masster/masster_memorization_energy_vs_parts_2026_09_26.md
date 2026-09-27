@@ -21,6 +21,10 @@
 >   the neutral loss, scores 1.42x and carries 2.5 times more of what val uses. Its excess gap
 >   closed (0.041) is a third of global attention's
 >   ([side probe](#side-of-cut-probe-2026-09-26)).
+> - **The allocator's set message is the most train-specific route measured.** Replacing the
+>   message each candidate receives from its candidate set with its spectrum's mean costs train
+>   3.37x what it costs val. Val barely uses it (0.023), and only on close analogues
+>   ([set-message probe](#allocator-set-message-probe-2026-09-26)).
 > - **NCE values are not interchangeable across the two acquisition ladders.** On molecules
 >   measured on both, spectra at adjacent values of the two ladders agree at 0.71-0.84. Same-ladder
 >   spectra 10 NCE apart agree at 0.84.
@@ -261,6 +265,57 @@ By NCE bin (damage ratio, val drop):
   lookup can re-form through the boundary block and the candidate set.
 - **What the heavier side gives val.** Per-candidate detail costs 0.034 (`molmean`), and identity
   a further 0.038. A coarse, molecule-level summary in its place keeps the first part.
+
+## Allocator set-message probe (2026-09-26)
+
+Question: once the token holds no whole-molecule input (arm `nl2`), the allocator's attention
+over a spectrum's candidates is the remaining route for a molecule key. Is that route
+memorizing?
+
+A `setmsg` scope rewrites, in every allocator attention layer, the message each candidate
+receives from its set: the `candidate_attention` output before the residual add.
+- `popmean` substitutes the layer's batch-mean message, which removes all set information. It
+  is recorded on the same batch's clean pass, because the head runs size buckets one after
+  another.
+- `molmean` substitutes the mean message of the candidate's own spectrum. It keeps the set
+  summary and removes candidate-specific retrieval from the set.
+- The existing `set_drop` (50% of each spectrum's candidates hidden from the keys) runs alongside.
+
+Same checkpoint, sample and reads as above; 29 probe tests pass.
+
+| condition | train drop | val drop | damage ratio | excess gap closed |
+| --- | ---: | ---: | ---: | ---: |
+| set message, `molmean` | 0.078 | 0.023 | **3.37** | 0.050 |
+| set message, `popmean` | 0.113 | 0.040 | **2.82** | 0.065 |
+| `set_drop` (50% of keys) | 0.038 | 0.022 | 1.75 | 0.012 |
+
+Against the other routes on the same f0 batches:
+
+| route | damage ratio | excess gap closed | val drop |
+| --- | ---: | ---: | ---: |
+| allocator set message, `molmean` | 3.37 | 0.050 | 0.023 |
+| allocator set message, `popmean` | 2.82 | 0.065 | 0.040 |
+| encoder global-attention message, `popmean` | 2.58 | 0.123 | 0.090 |
+| heavier side of the cut, `popmean` | 1.78 | 0.041 | 0.072 |
+| boundary block, `molmean` (route map) | 1.47 | 0.085 | 0.353 |
+| CE removed (`ctx_popmean`) | 1.37 | 0.045 | 0.275 |
+| cc pools (reference) | 1.21-1.25 | — | 0.33-0.40 |
+
+By molecule novelty, val damage under `molmean` is −0.004 at nearest-train Tanimoto ≤ 0.4 and
+0.040 above 0.8. Train's is flat (0.066-0.083). By NCE the ratio is 6.4x at ≤ 20 and 2.2-3.8x
+above.
+
+- **The set message acts as a lookup.** Train uses it on every molecule, and val only on close
+  analogues. That is the same signature global attention showed (val damage 0.028 → 0.131 with
+  similarity).
+- **Candidate-specific retrieval is the most memorizing part.** Keeping each spectrum's set
+  summary and removing only the per-candidate message costs train 3.4 times what it costs val.
+  Removing the summary as well adds 0.035 train and 0.017 val (2.1x).
+- **Hiding keys is the weaker lever.** With half the keys hidden, retrieval survives (1.75x,
+  excess 0.012). Substituting the message goes to the route itself.
+- **Val barely needs it.** Removing all set information costs val 0.040, a tenth of what the
+  pools carry. A training-time substitution of the set message, `gm1`'s form moved into the
+  allocator, targets a route that val barely uses and that `nl2` leaves open.
 
 ## Limits
 

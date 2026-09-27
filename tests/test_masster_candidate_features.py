@@ -869,7 +869,7 @@ def test_candidate_feature_width_sums_spec_widths() -> None:
     assert candidate_feature_width(production, edge_feature_dim=9) == 5
 
     all_features = resolve_candidate_features(list(CANDIDATE_FEATURES_BY_NAME))
-    expected = 1 + 1 + 2 + 1 + COMPOSITION_FEATURE_DIM + 2 * 9 + 2
+    expected = 1 + 1 + 2 + 1 + COMPOSITION_FEATURE_DIM + 2 * 9 + 2 + (1 + COMPOSITION_FEATURE_DIM)
     assert candidate_feature_width(all_features, edge_feature_dim=9) == expected
 
 
@@ -1282,3 +1282,104 @@ def test_describe_candidate_features_reports_the_resolved_layout() -> None:
     assert "c_cut_bonds:32" in describe_candidate_features(
         resolve_candidate_features(("c_cut_bonds",)), 16
     )
+
+
+# --- c_heavy_side and the light-side token ------------------------------------------------------
+
+
+def test_heavy_side_flags_the_lighter_side_and_counts_the_heavier() -> None:
+    """Ethanol C2H6O (46 Da): the precursor, a light CH3 and a heavy C2H5 fragment."""
+    batch = _build_batch(("CCO",))
+    model = _build_model(batch, candidate_features=("c_cut_count", "c_size", "c_heavy_side"))
+    carbon_column = CANONICAL_ELEMENT_ORDER.index("C")
+    hydrogen_column = CANONICAL_ELEMENT_ORDER.index("H")
+    oxygen_column = CANONICAL_ELEMENT_ORDER.index("O")
+
+    # Component 0 is the intact molecule, 1 the terminal carbon, 2 the two carbons.
+    inputs = _candidate_inputs(
+        model,
+        batch,
+        atom_indices=th.tensor([0, 1, 2, 0, 0, 1]),
+        atom_component_indices=th.tensor([0, 0, 0, 1, 2, 2]),
+        component_batch_indices=th.tensor([0, 0, 0]),
+        num_components=3,
+        batch_size=1,
+    )
+    block = CANDIDATE_FEATURES_BY_NAME["c_heavy_side"].build(inputs)
+
+    assert block.shape == (3, 1 + COMPOSITION_FEATURE_DIM)
+    assert block[:, 0].tolist() == [0.0, 1.0, 0.0]
+    counts = th.expm1(block[:, 1:]).round().long()
+    # The precursor is its own heavier side.
+    assert (counts[0, carbon_column], counts[0, oxygen_column], counts[0, hydrogen_column]) == (
+        2,
+        1,
+        6,
+    )
+    # CH3 (15 Da) is the lighter side, so the heavier side is its complement CH3O.
+    assert (counts[1, carbon_column], counts[1, oxygen_column], counts[1, hydrogen_column]) == (
+        1,
+        1,
+        3,
+    )
+    # C2H5 (29 Da) is the heavier side itself.
+    assert (counts[2, carbon_column], counts[2, oxygen_column], counts[2, hydrogen_column]) == (
+        2,
+        0,
+        5,
+    )
+
+
+def test_light_side_token_pools_only_the_lighter_side() -> None:
+    """Same weights and candidates; only the pooled slots of the token change."""
+    batch = _build_batch(("CCOC(=O)c1ccccc1", "CCO"))
+    features = ("c_cut_count", "c_size", "c_mass", "c_heavy_side")
+    model = _build_model(
+        batch,
+        max_masks=6,
+        max_enumerated_masks=16,
+        unique_fragment_mode=True,
+        candidate_features=features,
+    ).eval()
+    seen: list[tuple[th.Tensor, th.Tensor, th.Tensor]] = []
+    real_forward = model.intensity_head.forward
+
+    def _spy(*args, **kwargs):
+        seen.append((args[0], args[1], kwargs["candidate_features"]))
+        return real_forward(*args, **kwargs)
+
+    model.intensity_head.forward = _spy
+
+    def _forward() -> dict[str, th.Tensor]:
+        return model(
+            mol_pyg=batch, spec_prec_type=th.tensor([0, 0]), spec_nce=th.tensor([20.0, 40.0])
+        )
+
+    with th.no_grad():
+        clean = _forward()
+        model.light_side_token = True
+        light = _forward()
+
+    fragment, complement, descriptors = seen[0]
+    light_fragment, light_complement, light_descriptors = seen[1]
+    # Columns: c_cut_count, c_size, c_mass (2), then c_heavy_side's lighter-side flag.
+    lighter = descriptors[:, 4].bool()
+    precursor = descriptors[:, 3] > 1.0 - 1e-4
+    assert lighter.any() and (~lighter & ~precursor).any()
+    assert th.equal(light_fragment, th.where(lighter.unsqueeze(1), fragment, complement))
+    assert th.count_nonzero(light_complement) == 0
+    assert th.count_nonzero(light_fragment[precursor]) == 0
+    assert th.equal(light_descriptors, descriptors)
+    assert th.equal(light["pred_mzs"], clean["pred_mzs"])
+    assert not th.allclose(light["pred_logprobs"], clean["pred_logprobs"])
+
+
+def test_light_side_token_requires_unique_fragments_and_the_heavy_side_descriptor() -> None:
+    batch = _build_batch(("CCO",))
+
+    with pytest.raises(ValueError, match="requires unique_fragment_mode"):
+        _build_model(
+            batch, candidate_features=("c_cut_count", "c_heavy_side"), light_side_token=True
+        )
+    with pytest.raises(ValueError, match="requires c_heavy_side"):
+        _build_model(batch, unique_fragment_mode=True, light_side_token=True)

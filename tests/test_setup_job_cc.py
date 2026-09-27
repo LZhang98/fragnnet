@@ -311,3 +311,52 @@ def test_job_script_stages_the_template(tmp_path):
     script = (project / "slurm_scripts" / "template_staging.sh").read_text()
     assert "rsync -av --relative ${FRAGNNET_DP}/./config/template.yml ${WORKING_DIR}" in script
     assert "*_template.yml" not in script
+
+
+def test_job_script_stops_when_the_venv_is_missing(tmp_path):
+    """A failed `virtualenv` must end the job before any bare `pip` can write to ~/.local."""
+    repo_root = Path(__file__).resolve().parents[1]
+    project = tmp_path / "project"
+    config_dp = project / "config"
+    data_dp = project / "data"
+    config_dp.mkdir(parents=True)
+    data_dp.mkdir()
+    (data_dp / "spec.pkl").touch()
+    (data_dp / "mol.pkl").touch()
+    (data_dp / "split").mkdir()
+    (data_dp / "dags").mkdir()
+    (config_dp / "template.yml").write_text(
+        "model_type: frag_gnn\n"
+        "finetune: False\n"
+        "spec_fp: data/spec.pkl\n"
+        "mol_fp: data/mol.pkl\n"
+        "split_dp: data/split\n"
+        "frag_dp: data/dags\n"
+    )
+    (config_dp / "custom.yml").write_text("model_type: frag_gnn\n")
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(repo_root / "scripts" / "setup_job_cc.py"),
+            "--job_name=venv_guard",
+            "--python_script_fp=./scripts/run_pl_model_fit.py",
+            "--frag_gnn_dp=./",
+            "--script_dp=slurm_scripts",
+            "--job_dp=jobs",
+            "--script_kwargs",
+            "custom_fp=config/custom.yml",
+            "wandb_mode=disabled",
+        ],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    script = (project / "slurm_scripts" / "venv_guard.sh").read_text()
+    assert "export PYTHONNOUSERSITE=1" in script
+    assert "source FRAG-GNN/bin/activate || exit 1" in script
+    first_pip = script.index("pip install")
+    assert script.index("export PYTHONNOUSERSITE=1") < first_pip
+    assert script.index("source FRAG-GNN/bin/activate || exit 1") < first_pip

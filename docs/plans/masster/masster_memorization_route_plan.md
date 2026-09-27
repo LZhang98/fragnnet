@@ -21,6 +21,10 @@
 > decay on `c0` and on `k1_ema`, where every run so far trains at a constant 1e-3 (decision C).
 > **Weight-decay arm `w1` built 2026-09-25, submitted on Fir 2026-09-26** ([section](#weight-decay-arm-w1-2026-09-25)):
 > `c0` with `weight_decay` 0.1, whose decay timescale (~32 epochs) falls inside the run.
+> **Light-side token arms `nl1`-`nl3` built 2026-09-26, not submitted**
+> ([section](#light-side-token-arms-nl1-nl3-built-2026-09-26-not-submitted)): each cut
+> represented by its lighter side, the heavier side by element counts only; `nl2` also drops
+> global attention and `nl3` adds `k1`'s dropout.
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
 > lookup key, and the boundary block reads it
 > ([finding](../../findings/masster/masster_route_map_2026_09_24.md)). The collision census
@@ -936,3 +940,65 @@ The lookup is per molecule: not per energy (±1 NCE costs train and val alike) a
 (train fit is flat across molecule novelty and nearly flat across break rarity). Val transfer
 runs through familiar breaks. This confirms the plan's target, molecule identity on every
 route, and adds break-local evidence as the signal that transfers.
+
+## Light-side token arms `nl1`-`nl3` (built 2026-09-26, not submitted)
+
+The [side-of-cut probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#side-of-cut-probe-2026-09-26)
+found the heavier side of each cut the more memorizing input: removing its identity costs train
+1.78x what it costs val (2.8x at NCE ≤ 20), and val barely uses it. The lighter side carries 2.5
+times more of what val uses. So each candidate is represented by its lighter side: the fragment
+itself, or the neutral loss of a large fragment.
+
+- **Option.** `masster_light_side_token: true` puts the lighter side's pool (by neutral mass,
+  the probe's rule) in the token's fragment slot and zeroes the complement slot. The heavier side
+  enters only through the new descriptor `c_heavy_side`: a lighter-side flag and the heavier side's
+  `log1p` element counts (19 columns). The candidates, proposal, boundary block and allocator are
+  unchanged. It requires unique-fragment mode and `c_heavy_side`; off by default.
+- **Code.** `CandidateFeatureInputs.fragment_is_lighter_side` and `component_element_counts`, and
+  the `c_heavy_side` spec, appended last in canonical order so no existing token changes
+  (`candidate_features.py`). The substitution is in `MassterModel`'s unique-fragment branch, and
+  the key is wired through `masster_pl.py` and declared in `config/template.yml`.
+
+| arm | config | change | controls |
+| --- | --- | --- | --- |
+| `nl1` | `nl1_light_side.yml` | `c0` + light-side token + `c_heavy_side` | `c0` (`vcpho5qm`) |
+| `nl2` | `nl2_light_side_gine.yml` | `nl1` + `mol_gnn_type: GINE` | `c0`, `r2` (`9lt5s2u8`) |
+| `nl3` | `nl3_light_side_gine_k1.yml` | `nl2` + `k1`'s dropout (0.2, 0.2) | `nl2`, `k1` (`wg0nxymi`) |
+
+`nl2` leaves the token with no whole-molecule representation. The lighter-side pool and the
+boundary block come from 2-layer local embeddings, and the heavier side is element counts. `r2`
+alone held val while the key re-formed through local message passing, and the heavier side's
+pool is its likely carrier. The remaining route is the candidate set, through allocator
+attention.
+
+- **Checks.**
+  - Three new tests:
+    - `c_heavy_side` values on ethanol (the precursor, a lighter CH3 and a heavier C2H5);
+    - the token receives exactly the lighter side's pool with the complement slot zeroed, the
+      precursor's slot zero, and the same candidates;
+    - both validation errors.
+  - The descriptor-width test is updated. 231 pass across the MASSter model, candidate-feature
+    and probe tests, and ruff is clean.
+  - Through `load_config`, `nl1` differs from `c0`, and `nl2` from `r2`, by
+    `masster_candidate_features` (+`c_heavy_side`) and `masster_light_side_token` alone. `nl3`
+    differs from `nl2` by the two `k1` keys.
+  - Production parameters: `c0` 9,212,861, `nl1` 9,217,725 (+19 × 256), `nl2`/`nl3` 8,033,469.
+  - Two-epoch smokes on `debug_tiny_masster_cut_features.yml`, local GPU, both exit 0:
+    - `nl1`'s options, 341K parameters against the debug control's 340K;
+    - `nl3`'s, 308K against `r2`'s 307K;
+    - the resolved token reads `c_heavy_side:19` (44 columns).
+  - The old f0 checkpoint still loads with `strict=True`.
+  - `bash -n` passes on the submit script, and the three configs pass its checks.
+- **Initialization.** The token projection is 19 columns wider, so initialization differs from
+  `c0` from that layer on. Read against the seed spread (0.0042), not the replicate floor.
+- **Reading.** As for the other arms: the tail mean against the control and `wrecall`. Offline,
+  on the best checkpoint:
+  - the route-map probe: `cc` and `boundary` on every arm, `gsa` on `nl1` only. The `side`
+    scope does not apply, because its mass-fraction rule assumes both pools are in the token;
+  - the parts test (`output/memorization_parts_ev_2026_09_26/`);
+  - Tanimoto bins.
+
+  A pass narrows the eval-mode gap well beyond `k1`'s 9% with val at least at the control, and
+  train's rare-minus-common break contrast rises toward val's.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh nl` (all three), or `nl1`,
+  `nl2` or `nl3` alone.

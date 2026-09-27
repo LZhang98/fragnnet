@@ -371,9 +371,16 @@ def main(args):
             "mkdir -p ${WORKING_DIR}",
             "# create local env",
             # go to slurm and create virtual env
-            "cd  ${WORKING_DIR}",
-            "virtualenv FRAG-GNN",
-            "source FRAG-GNN/bin/activate",
+            "cd ${WORKING_DIR} || exit 1",
+            # a broken package in ~/.local shadows the module's own (user site wins)
+            "export PYTHONNOUSERSITE=1",
+            # per-job app data: array tasks otherwise share ~/.local/share/virtualenv
+            "virtualenv --app-data ${WORKING_DIR}/virtualenv-app-data FRAG-GNN || {",
+            "    echo 'ERROR: virtualenv failed (its log is in the .out file)' >&2",
+            "    exit 1",
+            "}",
+            # without the venv, pip falls back to --user and rewrites ~/.local
+            "source FRAG-GNN/bin/activate || exit 1",
             "pip install --no-index --upgrade pip",
             "pip install --no-index torch==2.4.1 \\",
             "    torch_geometric==2.6.1 \\",

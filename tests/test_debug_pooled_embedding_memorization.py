@@ -464,3 +464,104 @@ def test_side_scope_rewrites_only_the_chosen_side(mode: str) -> None:
     # The other side of every cut, and the precursor's empty side, are untouched.
     assert th.equal(new_fragment[~on_fragment], fragment[~on_fragment])
     assert th.equal(new_complement[~on_complement], complement[~on_complement])
+
+
+# The message each candidate receives from its candidate set (setmsg scope).
+
+
+def test_build_conditions_gives_setmsg_its_modes() -> None:
+    labels = [condition.label for condition in PROBE.build_conditions(["setmsg"], ["zero"])]
+
+    assert labels == ["none", "setmsg_popmean", "setmsg_molmean"]
+
+
+def test_corrupt_set_messages_modes_keep_padded_slots() -> None:
+    messages = th.tensor(
+        [
+            [[1.0, 2.0], [3.0, 4.0], [100.0, 100.0]],
+            [[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]],
+        ]
+    )
+    padding_mask = th.tensor([[False, False, True], [False, False, False]])
+
+    molmean = PROBE.corrupt_set_messages(messages, padding_mask, "molmean")
+    popmean = PROBE.corrupt_set_messages(
+        messages, padding_mask, "popmean", th.tensor([7.0, 8.0])
+    )
+
+    assert th.allclose(molmean[0, :2], th.tensor([2.0, 3.0]).expand(2, 2))
+    assert th.allclose(molmean[1], th.tensor([30.0, 40.0]).expand(3, 2))
+    assert th.allclose(popmean[0, :2], th.tensor([7.0, 8.0]).expand(2, 2))
+    assert th.allclose(popmean[1], th.tensor([7.0, 8.0]).expand(3, 2))
+    # The padded slot is left alone in both modes.
+    assert th.equal(molmean[0, 2], messages[0, 2]) and th.equal(popmean[0, 2], messages[0, 2])
+    with pytest.raises(ValueError, match="batch-mean message"):
+        PROBE.corrupt_set_messages(messages, padding_mask, "popmean")
+
+
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_setmsg_rewrites_the_set_message_across_size_buckets(attention_type: str) -> None:
+    """The fixture's 5- and 3-candidate molecules land in different size buckets."""
+    head = _head(attention_type)
+    args, kwargs = _inputs()
+    conditions = {c.label: c for c in PROBE.build_conditions(["setmsg"], [])}
+    captured: list[tuple[int, th.Tensor, th.Tensor]] = []
+    with th.no_grad(), PROBE.PooledEmbeddingCorruptor(
+        head, 7, 0.5, set_messages=True
+    ) as corruptor:
+        # Registered after the corruptor's own hooks, so it sees the rewritten message.
+        capture_hooks = [
+            layer.candidate_attention.register_forward_hook(
+                lambda module, inputs, output, index=index: captured.append(
+                    (
+                        index,
+                        (output[0] if isinstance(output, tuple) else output).clone(),
+                        corruptor._message_padding.clone(),
+                    )
+                )
+            )
+            for index, layer in enumerate(head.layers)
+        ]
+        corruptor.condition = conditions["none"]
+        clean = corruptor.head.forward(*args, **kwargs)[0]
+        recorded = {
+            index: corruptor._message_sums[index] / corruptor._message_counts[index]
+            for index in range(len(head.layers))
+        }
+        outputs = {}
+        for label in ("setmsg_popmean", "setmsg_molmean"):
+            captured.clear()
+            corruptor.condition = conditions[label]
+            outputs[label] = corruptor.head.forward(*args, **kwargs)[0]
+            for index, messages, padding_mask in captured:
+                real = messages[~padding_mask]
+                if label == "setmsg_popmean":
+                    # One vector for every real candidate in the batch, whichever bucket.
+                    assert th.allclose(real, recorded[index].expand_as(real), atol=1e-6)
+                else:
+                    # Within each spectrum every real candidate receives the same message.
+                    for row, mask in zip(messages, padding_mask):
+                        row_real = row[~mask]
+                        assert th.allclose(row_real, row_real[:1].expand_as(row_real), atol=1e-6)
+        for hook in capture_hooks:
+            hook.remove()
+
+    assert not th.allclose(outputs["setmsg_popmean"], clean)
+    assert not th.allclose(outputs["setmsg_molmean"], clean)
+    assert not head.layers[0].candidate_attention._forward_hooks
+
+
+def test_setmsg_popmean_needs_the_clean_pass_first() -> None:
+    head = _head("induced")
+    args, kwargs = _inputs()
+    condition = {c.label: c for c in PROBE.build_conditions(["setmsg"], [])}["setmsg_popmean"]
+    with th.no_grad(), PROBE.PooledEmbeddingCorruptor(
+        head, 7, 0.5, set_messages=True
+    ) as corruptor:
+        corruptor.condition = condition
+        with pytest.raises(RuntimeError, match="clean 'none' pass"):
+            corruptor.head.forward(*args, **kwargs)
+    with th.no_grad(), PROBE.PooledEmbeddingCorruptor(head, 7, 0.5) as corruptor:
+        corruptor.condition = condition
+        with pytest.raises(RuntimeError, match="set_messages=True"):
+            corruptor.head.forward(*args, **kwargs)

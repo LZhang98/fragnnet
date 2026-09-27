@@ -1102,6 +1102,7 @@ class MassterModel(nn.Module):
         global_message_noise_std: float = 0.0,
         global_message_swap: float = 0.0,
         global_message_swap_unit: str = "atom",
+        light_side_token: bool = False,
     ) -> None:
         """Initialize the MASSter model.
 
@@ -1286,6 +1287,13 @@ class MassterModel(nn.Module):
                 label is not mixed. Requires ``precursor_gnn_type: GINE_GSA``.
             global_message_swap_unit: What one swap draw replaces: ``atom``, ``molecule`` or
                 ``feature``; see ``GINE_GSA``.
+            light_side_token: Represent each candidate by the lighter side of its cut, in
+                training and evaluation alike. The fragment slot of the token takes the lighter
+                side's pool (the fragment itself, or the neutral loss of a large fragment), and
+                the complement slot is zeroed, so no pool of a near-whole molecule reaches the
+                head. The heavier side enters through the ``c_heavy_side`` descriptor alone.
+                Requires ``unique_fragment_mode`` and ``c_heavy_side`` in
+                ``candidate_features``.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1377,6 +1385,13 @@ class MassterModel(nn.Module):
             )
         if memorization_sink_dim > 0 and not unique_fragment_mode:
             raise ValueError("the memorization sink requires unique_fragment_mode")
+        if light_side_token and not unique_fragment_mode:
+            raise ValueError("light_side_token requires unique_fragment_mode")
+        if light_side_token and "c_heavy_side" not in candidate_features:
+            raise ValueError(
+                "light_side_token requires c_heavy_side in candidate_features: the head must "
+                "know which side it sees and keep a summary of the side it no longer pools"
+            )
         if (
             global_message_substitution > 0.0
             or global_message_noise_std > 0.0
@@ -1688,6 +1703,7 @@ class MassterModel(nn.Module):
         self.candidate_atom_dropout = float(candidate_atom_dropout)
         self.candidate_boundary_dropout = float(candidate_boundary_dropout)
         self.candidate_boundary_block = candidate_boundary_block
+        self.light_side_token = light_side_token
         self.boundary_bond_encoder = (
             CutBondEncoder(
                 atom_dim=precursor_hidden_dim,
@@ -3081,6 +3097,16 @@ class MassterModel(nn.Module):
                 self.candidate_feature_specs,
                 candidate_inputs,
             )
+            if self.light_side_token:
+                # Each cut enters by its lighter side: the heavier side's pool averages most of
+                # the molecule, which names it. The precursor's lighter side is its empty
+                # complement, which pools to zeros.
+                fragment_embeddings = th.where(
+                    candidate_inputs.fragment_is_lighter_side.unsqueeze(1),
+                    fragment_embeddings,
+                    complement_embeddings,
+                )
+                complement_embeddings = th.zeros_like(complement_embeddings)
             fragment_sizes = candidate_inputs.component_sizes
             if self.ion_mode_proposal_head is not None:
                 (

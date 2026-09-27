@@ -166,6 +166,13 @@ CONTEXT_SHIFTS: dict[str, int] = {"shift_m5": -5, "shift_m1": -1, "shift_p1": 1,
 #            The precursor has no lighter side and is left alone by the small_* modes.
 SIDE_SCOPE = "side"
 SIDE_MASS_FEATURE = "c_mass"
+#   setmsg   the message each candidate receives from its candidate set in every allocator
+#            attention layer (the candidate_attention output, before the residual add).
+#            popmean: the batch-mean message of that layer, recorded on the same batch's clean
+#            pass (the head runs size buckets one after another, so no single call sees the
+#            batch); molmean: the mean message of the candidate's own spectrum, which keeps the
+#            set summary and removes candidate-specific retrieval from the set.
+MESSAGE_SCOPE = "setmsg"
 UPSTREAM_SCOPES = (ENCODER_SCOPE, INPUT_SCOPE)
 FIXED_SCOPE_MODES: dict[str, tuple[str, ...]] = {
     SET_SCOPE: (SET_MODE,),
@@ -174,6 +181,7 @@ FIXED_SCOPE_MODES: dict[str, tuple[str, ...]] = {
     OUTPUT_SCOPE: ("molmean", "popmean"),
     CONTEXT_SCOPE: ("popmean", *CONTEXT_SHIFTS),
     SIDE_SCOPE: ("large_popmean", "large_molmean", "small_popmean", "small_molmean"),
+    MESSAGE_SCOPE: ("popmean", "molmean"),
 }
 ACHARGE_FEATURE = "a_charge"
 ACHARGE_ROUNDING = 0.1
@@ -266,6 +274,40 @@ def corrupt_rows_by_molecule(
     raise ValueError(f"Unknown per-molecule corruption mode: {mode}")
 
 
+def corrupt_set_messages(
+    messages: th.Tensor,
+    padding_mask: th.Tensor,
+    mode: str,
+    population_mean: th.Tensor | None = None,
+) -> th.Tensor:
+    """Replace every real candidate's set message by a batch-level or per-spectrum mean.
+
+    Args:
+        messages: ``(num_spectra, num_slots, dim)`` attention output each candidate receives.
+        padding_mask: ``(num_spectra, num_slots)`` bool, True on padded slots.
+        mode: ``popmean`` (``population_mean`` for every real slot, so no identity is left)
+            or ``molmean`` (the mean over the spectrum's real slots).
+        population_mean: ``(dim,)`` batch-mean message; required for ``popmean``.
+
+    Returns:
+        Tensor shaped like ``messages``; padded slots are unchanged.
+    """
+    real = (~padding_mask).unsqueeze(-1)
+    if mode == "popmean":
+        if population_mean is None:
+            raise ValueError("popmean needs the batch-mean message")
+        replacement = population_mean.to(messages).expand_as(messages)
+    elif mode == "molmean":
+        weights = real.to(messages)
+        replacement = (
+            (messages * weights).sum(dim=1, keepdim=True)
+            / weights.sum(dim=1, keepdim=True).clamp_min(1.0)
+        ).expand_as(messages)
+    else:
+        raise ValueError(f"Unknown set-message corruption mode: {mode}")
+    return th.where(real, replacement, messages)
+
+
 def drop_from_keys(
     padding_mask: th.Tensor,
     fraction: float,
@@ -348,11 +390,13 @@ class PooledEmbeddingCorruptor:
         set_drop_fraction: float,
         feature_columns: dict[str, tuple[int, int]] | None = None,
         context_shifter: ContextShifter | None = None,
+        set_messages: bool = False,
     ) -> None:
         """Wrap ``head``.
 
         ``feature_columns`` maps each descriptor name to its column span; ``context_shifter``
-        supplies the shifted context the ``ctx`` shift modes substitute.
+        supplies the shifted context the ``ctx`` shift modes substitute. ``set_messages``
+        hooks every attention layer's set message, for the ``setmsg`` scope.
         """
         if not 0.0 <= set_drop_fraction < 1.0:
             raise ValueError(f"set_drop_fraction must be in [0, 1), got {set_drop_fraction}")
@@ -371,12 +415,25 @@ class PooledEmbeddingCorruptor:
         # for all of them so a hidden candidate stays hidden through the whole stack.
         self._mask_source: th.Tensor | None = None
         self._mask_value: th.Tensor | None = None
+        # setmsg: the padding mask of the layer call in progress, and each layer's summed
+        # real-slot messages from the current batch's clean pass.
+        self.set_messages = set_messages
+        self._message_hooks: list[Any] = []
+        self._message_padding: th.Tensor | None = None
+        self._message_batch: int | None = None
+        self._message_sums: dict[int, th.Tensor] = {}
+        self._message_counts: dict[int, th.Tensor] = {}
 
     def install(self) -> None:
         self._assert_argument_layout()
         self.head.forward = self._forward  # type: ignore[method-assign]
         for layer, original in zip(self.head.layers, self._original_layer_forwards):
             layer.forward = self._layer_forward(original)  # type: ignore[method-assign]
+        if self.set_messages:
+            self._message_hooks = [
+                layer.candidate_attention.register_forward_hook(self._message_hook(index))
+                for index, layer in enumerate(self.head.layers)
+            ]
         self._installed = True
 
     def _assert_argument_layout(self) -> None:
@@ -413,6 +470,9 @@ class PooledEmbeddingCorruptor:
             self.head.forward = self._original_forward  # type: ignore[method-assign]
             for layer, original in zip(self.head.layers, self._original_layer_forwards):
                 layer.forward = original  # type: ignore[method-assign]
+            for hook in self._message_hooks:
+                hook.remove()
+            self._message_hooks = []
             self._installed = False
 
     def __enter__(self) -> PooledEmbeddingCorruptor:
@@ -425,6 +485,11 @@ class PooledEmbeddingCorruptor:
     def _forward(self, *args: Any, **kwargs: Any) -> Any:
         # Upstream scopes rewrite the head's inputs before they arrive; see EncoderCorruptor.
         if self.condition.is_identity or self.condition.scope in UPSTREAM_SCOPES:
+            return self._original_forward(*args, **kwargs)
+        # setmsg rewrites inside the attention layers, through the hooks set up at install.
+        if self.condition.scope == MESSAGE_SCOPE:
+            if not self._message_hooks:
+                raise RuntimeError("setmsg needs the corruptor built with set_messages=True")
             return self._original_forward(*args, **kwargs)
         if len(args) < NUM_POSITIONAL_ARGS:
             raise ValueError(
@@ -568,8 +633,42 @@ class PooledEmbeddingCorruptor:
             )
         return shifted[batch_indices]
 
+    def _message_hook(self, index: int) -> Any:
+        """Return the forward hook on layer ``index``'s set-message module."""
+
+        def hook(module: th.nn.Module, inputs: tuple[Any, ...], output: Any) -> Any:
+            messages = output[0] if isinstance(output, tuple) else output
+            padding_mask = self._message_padding
+            if self.condition.is_identity:
+                # The clean pass records each layer's batch-mean message, bucket by bucket.
+                if self._message_batch != self.batch_index:
+                    self._message_batch = self.batch_index
+                    self._message_sums, self._message_counts = {}, {}
+                real = (~padding_mask).unsqueeze(-1).to(messages)
+                self._message_sums[index] = self._message_sums.get(index, 0.0) + (
+                    messages * real
+                ).sum(dim=(0, 1))
+                self._message_counts[index] = self._message_counts.get(index, 0.0) + real.sum()
+                return None
+            if self.condition.scope != MESSAGE_SCOPE:
+                return None
+            population_mean = None
+            if self.condition.mode == "popmean":
+                if self._message_batch != self.batch_index or index not in self._message_sums:
+                    raise RuntimeError(
+                        "setmsg_popmean needs the clean 'none' pass on the same batch first"
+                    )
+                population_mean = self._message_sums[index] / self._message_counts[index]
+            rewritten = corrupt_set_messages(
+                messages, padding_mask, self.condition.mode, population_mean
+            )
+            return (rewritten, *output[1:]) if isinstance(output, tuple) else rewritten
+
+        return hook
+
     def _layer_forward(self, original: Any) -> Any:
         def forward(*args: Any, **kwargs: Any) -> Any:
+            self._message_padding = args[LAYER_PADDING_MASK_ARG]
             if self._generator is None:
                 return original(*args, **kwargs)
             padding_mask = args[LAYER_PADDING_MASK_ARG]
@@ -1038,6 +1137,7 @@ def main() -> None:
                     args.set_drop_fraction,
                     feature_columns=feature_columns,
                     context_shifter=context_shifter,
+                    set_messages=MESSAGE_SCOPE in args.scopes,
                 )
             )
         ]

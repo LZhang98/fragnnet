@@ -4,6 +4,17 @@
 
 ## Current handoff
 
+**Light-side token arms `nl1`-`nl3` (2026-09-26); built and smoke-tested, not submitted.**
+Each candidate is represented by the lighter side of its cut (the neutral loss of a large
+fragment). The heavier side enters only as element counts (`c_heavy_side`), because the side-of-cut
+probe found it the more memorizing input.
+- `nl1`: `c0` + the token.
+- `nl2`: `nl1` + `mol_gnn_type: GINE`, which leaves no whole-molecule representation in the token.
+- `nl3`: `nl2` + `k1`'s dropout.
+
+Generate on Fir with `submit_masster_mh_ft_memorization_route.sh nl`.
+[Plan section](plans/masster/masster_memorization_route_plan.md#light-side-token-arms-nl1-nl3-built-2026-09-26-not-submitted).
+
 **Memorization: energy vs parts (2026-09-26); inference only, on f0 `3bej6fq7`.**
 The route-map probe gains a `ctx` scope (CE removed, or NCE ±1/±5, intensity head only) and a
 per-spectrum dump. A per-peak analysis rates each break by how many other train molecules have it.

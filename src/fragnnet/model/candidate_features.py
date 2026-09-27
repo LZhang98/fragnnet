@@ -231,13 +231,22 @@ class CandidateFeatureInputs:
         return masses
 
     @cached_property
-    def complement_element_counts(self) -> th.Tensor:
-        """Element counts of each candidate's complementary neutral loss.
+    def fragment_is_lighter_side(self) -> th.Tensor:
+        """Whether each candidate holds under half its precursor's neutral mass, ``th.bool``.
 
-        The complement is the precursor minus the candidate, so both sides are counted with
-        the same reduction and the difference is exact by construction.
+        Then the candidate is the lighter side of its cut and the complement the heavier;
+        otherwise the complement, the neutral loss of a large fragment, is the lighter side.
+        The intact precursor is its own heavier side, with an empty lighter side.
         """
-        component_counts = element_counts_by_group(
+        return (
+            2.0 * self.component_neutral_masses
+            < self.precursor_neutral_masses[self.component_batch_indices]
+        )
+
+    @cached_property
+    def component_element_counts(self) -> th.Tensor:
+        """Element counts of each candidate, hydrogens included, ``th.long``."""
+        return element_counts_by_group(
             self.mol_pyg,
             self.atom_indices,
             self.atom_component_indices,
@@ -246,6 +255,15 @@ class CandidateFeatureInputs:
             COMPOSITION_FEATURE_DIM,
             COMPOSITION_HYDROGEN_COLUMN,
         )
+
+    @cached_property
+    def complement_element_counts(self) -> th.Tensor:
+        """Element counts of each candidate's complementary neutral loss.
+
+        The complement is the precursor minus the candidate, so both sides are counted with
+        the same reduction and the difference is exact by construction.
+        """
+        component_counts = self.component_element_counts
         precursor_counts = element_counts_by_group(
             self.mol_pyg,
             th.arange(self.mol_pyg.batch.shape[0], device=self.mol_pyg.batch.device),
@@ -315,6 +333,30 @@ def _build_nl_composition(inputs: CandidateFeatureInputs) -> th.Tensor:
     """
     counts = inputs.complement_element_counts
     return th.log1p(counts.to(inputs.mol_pyg.atom_monoisotopic_masses)).to(inputs.dtype)
+
+
+def _build_heavy_side(inputs: CandidateFeatureInputs) -> th.Tensor:
+    """Which side of the cut the candidate is, then the heavier side's ``log1p`` element counts.
+
+    The coarse stand-in for the heavier side when ``light_side_token`` pools only the lighter
+    one (the memorization-route light-side arms). Column 0 is 1 when the candidate is the
+    lighter side, so the head knows whether the pooled side is the ion or its neutral loss.
+    The counts keep what the heavier side contributes as chemistry shared across molecules,
+    its heteroatoms included, without a learned embedding of a near-whole molecule.
+    """
+    lighter = inputs.fragment_is_lighter_side
+    heavy_counts = th.where(
+        lighter.unsqueeze(1),
+        inputs.complement_element_counts,
+        inputs.component_element_counts,
+    )
+    return th.cat(
+        (
+            lighter.to(inputs.dtype).unsqueeze(1),
+            th.log1p(heavy_counts.to(inputs.mol_pyg.atom_monoisotopic_masses)).to(inputs.dtype),
+        ),
+        dim=1,
+    )
 
 
 def _build_cut_bonds(inputs: CandidateFeatureInputs) -> th.Tensor:
@@ -438,6 +480,11 @@ CANDIDATE_FEATURE_SPECS: tuple[CandidateFeatureSpec, ...] = (
         name="c_cut_adjacency",
         width=lambda edge_feature_dim: 2,
         build=_build_cut_adjacency,
+    ),
+    CandidateFeatureSpec(
+        name="c_heavy_side",
+        width=lambda edge_feature_dim: 1 + COMPOSITION_FEATURE_DIM,
+        build=_build_heavy_side,
     ),
 )
 

@@ -36,8 +36,14 @@
 # Added 2026-09-26: the NCE input on the breakdown-curve axis instead of the abs-sines code, which
 # aliases NCE x with 256 - x and gives unseen energies arbitrary codes:
 #   n1         c0 + ce_insert_type qet      (control: c0, vcpho5qm)
+# Added 2026-09-26, after the side-of-cut probe: each cut represented by its lighter side (the
+# neutral loss of a large fragment), the heavier side by element counts only (c_heavy_side):
+#   nl1  c0 + masster_light_side_token      (control: c0, vcpho5qm)
+#   nl2  nl1 + mol_gnn_type GINE            (controls: c0, r2 9lt5s2u8)
+#   nl3  nl2 + k1's dropout                 (controls: nl2, k1 wg0nxymi)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
+# nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
 #
 # STAGE:
 #   all   (default) c0, r0, r1, r2, k1 and m1.
@@ -46,8 +52,9 @@
 #   swap  gm3, gm4, gm5 and gm6 (c0 vcpho5qm has already run).
 #   batch2  gm1-gm6, k1_ema, c0_s2, k1_s2 and u2_s2.
 #   lr    s1 and s1_k1_ema (c0 and k1_ema have run or are running).
+#   nl    nl1, nl2 and nl3 (c0, r2 and k1 have run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | n1  one job.
+#   | n1 | nl1 | nl2 | nl3  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -97,6 +104,9 @@ declare -A JOB_BY_ARM=(
     [s1_k1_ema]=msh_mhft_s1_k1_ema
     [w1]=msh_mhft_w1_wd10
     [n1]=msh_mhft_n1_nce_qet
+    [nl1]=msh_mhft_nl1_light_side
+    [nl2]=msh_mhft_nl2_light_side_gine
+    [nl3]=msh_mhft_nl3_light_side_gine_k1
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -119,6 +129,9 @@ declare -A CONFIG_BY_ARM=(
     [s1_k1_ema]=s1_k1_ema_lr_cosine.yml
     [w1]=w1_wd10.yml
     [n1]=n1_nce_qet.yml
+    [nl1]=nl1_light_side.yml
+    [nl2]=nl2_light_side_gine.yml
+    [nl3]=nl3_light_side_gine_k1.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -130,9 +143,10 @@ case "${STAGE}" in
     swap) ARMS=(gm3 gm4 gm5 gm6) ;;
     batch2) ARMS=(gm1 gm2 gm3 gm4 gm5 gm6 k1_ema c0_s2 k1_s2 u2_s2) ;;
     lr)   ARMS=(s1 s1_k1_ema) ;;
-    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1) ARMS=("${STAGE}") ;;
+    nl)   ARMS=(nl1 nl2 nl3) ;;
+    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1|nl[1-3]) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1|nl1-nl3]" >&2
         exit 1
         ;;
 esac
@@ -217,3 +231,4 @@ echo "batch2: c0 (vcpho5qm) and u2 (c8hh9j1b) have run; c0_s2 is in the batch."
 echo "lr: s1's control c0 (vcpho5qm) has run; s1_k1_ema's control k1_ema (j4u25qfd) is in batch 2."
 echo "w1: its control c0 (vcpho5qm) has run."
 echo "n1: its control c0 (vcpho5qm) has run."
+echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."

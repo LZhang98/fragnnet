@@ -106,6 +106,7 @@ def _build_model(
     global_message_noise_std: float = 0.0,
     global_message_swap: float = 0.0,
     global_message_swap_unit: str = "atom",
+    light_side_token: bool = False,
 ) -> MassterModel:
     th.manual_seed(903)
     return MassterModel(
@@ -191,6 +192,7 @@ def _build_model(
         global_message_noise_std=global_message_noise_std,
         global_message_swap=global_message_swap,
         global_message_swap_unit=global_message_swap_unit,
+        light_side_token=light_side_token,
     )
 
 

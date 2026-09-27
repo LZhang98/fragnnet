@@ -886,6 +886,14 @@ masster_global_message_noise_std: 0.0
 # mol_gnn_type: GINE_GSA; at 0.0 it draws no random numbers, whatever the unit.
 masster_global_message_swap: 0.0
 masster_global_message_swap_unit: atom
+# True represents each candidate by the lighter side of its cut (arms nl1-nl3): the token's
+# fragment slot takes the lighter side's pool (the fragment, or the neutral loss of a large
+# fragment) and the complement slot is zeroed, so no pool of a near-whole molecule reaches the
+# head. The heavier side enters only through the c_heavy_side descriptor, which must be in
+# masster_candidate_features. Requires masster_unique_fragment_mode. The 2026-09-26 side-of-cut
+# probe found the heavier side's identity train-specific (1.78x) and the lighter side carrying
+# most of what val uses.
+masster_light_side_token: False
 masster_context_dim: 64
 # Normalization on the metadata context projector, whose output conditions the GNN and
 # every head. The projector's input scale varies with how many CE readings an acquisition
