@@ -5,7 +5,8 @@ abs-sines table gives x and 2**k - x identical rows (NCE 76 and 180 at nce_max 2
 98 eV at ace_max 100) and neighbouring energies unrelated rows. ``ce_insert_type: qet`` embeds the
 raw CE as a standardized 1 / (CE + 200) plus a missing-CE flag through a learned linear layer, in
 the shared CE model (FraGNNet and the other models) and in MASSter's context encoder. Existing
-``embed`` checkpoints store the abs-sines table, so it must keep its shape.
+``embed`` checkpoints store the abs-sines table, so it must keep its shape. ``qet_mlp`` replaces the
+linear layer with Linear -> SiLU -> Linear; ``qet`` keeps its checkpoint keys.
 """
 
 from __future__ import annotations
@@ -193,7 +194,9 @@ def test_shared_qet_embeds_merged_readings_and_trains() -> None:
     assert model.ce_embedder.linear.weight.grad.abs().sum() > 0
 
 
-@pytest.mark.parametrize("kwargs", [{"std": 0.0}, {"mean": -250.0}, {"out_dim": 0}])
+@pytest.mark.parametrize(
+    "kwargs", [{"std": 0.0}, {"mean": -250.0}, {"out_dim": 0}, {"hidden_dim": 0}]
+)
 def test_qet_encoder_rejects_invalid_settings(kwargs: dict) -> None:
     settings = {"mean": NCE_MEAN, "std": NCE_STD, "out_dim": 4} | kwargs
     with pytest.raises(ValueError):
@@ -226,3 +229,58 @@ def test_shared_qet_keeps_the_nce_offset_and_makes_ace_linear() -> None:
     # Linear in eV: equal eV steps give equal embedding steps.
     e = model.ce_embedder_ace(model.ace_transform(th.tensor([10.0, 20.0, 30.0])))
     th.testing.assert_close(e[1] - e[0], e[2] - e[1])
+
+
+def test_qet_keeps_its_linear_checkpoint_keys() -> None:
+    # Checkpoints trained with "qet" (n1, jxczo2kf) store exactly these tensors.
+    encoder = QETEnergyEncoder(NCE_MEAN, NCE_STD, out_dim=8)
+
+    assert set(encoder.state_dict()) == {"linear.weight", "linear.bias"}
+    assert encoder.output is None
+
+
+@pytest.mark.parametrize("path", PATHS)
+def test_qet_mlp_embeds_through_a_hidden_layer(path: str) -> None:
+    module, embed = PATHS[path]("qet_mlp")
+
+    out = embed(th.tensor([-1.0, 76.0, 180.0]))
+
+    assert isinstance(module, QETEnergyEncoder)
+    assert module.output is not None
+    width = module.output.out_features
+    # Hidden width is ce_insert_size, the same as the output width.
+    assert tuple(module.linear.weight.shape) == (width, 2)
+    assert tuple(module.output.weight.shape) == (width, width)
+    assert out.shape == (3, width)
+    assert not th.allclose(out[1], out[2], atol=1e-3)
+
+
+def test_qet_mlp_is_nonlinear_on_the_energy_axis() -> None:
+    th.manual_seed(0)
+    encoder = QETEnergyEncoder(NCE_MEAN, NCE_STD, out_dim=8, hidden_dim=16)
+    energies = th.tensor([20.0, 60.0, 160.0])
+    e20, e60, e160 = encoder(energies)
+    z20, z60, z160 = _z_reader()(energies).squeeze(1)
+
+    # Unlike "qet", the midpoint energy leaves the segment between its neighbours.
+    t = (z60 - z20) / (z160 - z20)
+    assert (e60 - (e20 + t * (e160 - e20))).abs().max() > 1e-3
+
+
+def test_masster_qet_mlp_model_trains_both_layers() -> None:
+    batch = _build_batch()
+    model = _build_model(batch, ce_insert_type="qet_mlp")
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.tensor([0, 1]),
+        spec_nce=th.tensor([25.0, 170.0]),
+    )
+
+    (-output["pred_logprobs"].mean()).backward()
+
+    encoder = model.context_encoder.nce_embedding
+    assert isinstance(encoder, QETEnergyEncoder)
+    for layer in (encoder.linear, encoder.output):
+        assert layer.weight.grad is not None
+        assert th.isfinite(layer.weight.grad).all()
+        assert layer.weight.grad.abs().sum() > 0

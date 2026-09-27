@@ -61,7 +61,8 @@ per-spectrum dump. A per-peak analysis rates each break by how many other train 
 
 [Finding](findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md).
 
-**QET breakdown-curve gates for MASSter (2026-09-26), and a fix for the CE input; uncommitted.**
+**QET breakdown-curve gates for MASSter (2026-09-26), and a fix for the CE input; `qet` committed
+(`1494441e`), `qet_mlp` and arms `n2`/`n3` uncommitted.**
 Offline analyses on `u2_ema999`, unmerged `[M+H]+`/FT, all val spectra plus 2,000 train
 molecules (scripts in `output/qet_projection_2026_09_26/`).
 
@@ -71,6 +72,16 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
 - **One CE-blind candidate set per molecule is feasible.** The 256 best of the union (median
   392 fragments) cover 0.9422 of target intensity against 0.9402 per energy, and 384 cover
   0.9471. That makes a once-per-molecule pass possible; its speedup is not measured.
+  - For `share_proposal_across_ev`, ranking by the mean per-energy proposal probability (what
+    its merged-target loss should learn) covers the same and loses no energy bin, including
+    each molecule's lowest and highest NCE. CE balancing adds nothing.
+  - Most of the union is same-m/z isomers: full coverage needs a median 26 fragments. Skipping
+    fragments that add no new channel m/z, 128 candidates cover 0.9428, more than each energy's
+    own 256. That is target-free, but its cosine value is unmeasured; a mask-order U128 already
+    tied U256 on cosine.
+  - Next for sharing: a pair on `c0`, with `s0` = `c0` + `masster_batch_sampler: True` and `s1`
+    = `s0` + sharing. The flag has never been read (the August unmerged runs crashed by epoch
+    5), so smoke `s1` locally first.
 - **The CE input was categorical in every model.** `ce_insert_type: embed`/`embed_clamped` with
   the default `abs-sines` table (749 configs, all MASSter and FraGNNet lineages) gives each
   integer a fixed binary-like code.
@@ -89,21 +100,28 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
     32 RBF bumps.
   - 18 new tests in `tests/test_ce_qet_embedding.py`; 287 pass with the related CE and model
     test files.
-- **Next: submit arm `n1`**, which is `c0` plus `qet`. A local 2-epoch smoke exits 0.
-  - **Steps.** The generated job stages `src/` and the config from the Fir checkout, so first
-    commit the `qet` code, `config/template.yml`, `n1_nce_qet.yml` and the submit-script change.
-    Then pull on Fir, run `bash scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh
-    n1`, and `sbatch` the script it prints. This workstation has no Fir access.
-  - **Checked locally.** The generator with the script's arguments exits 0, and the job passes
-    `bash -n`: 1 × h100_3g.40gb, 140G memory, 6 CPUs, 5 h.
-  - Read it against `c0` on the tail. No NIST20 gain is expected; the check is that it costs
-    nothing beyond the 0.0042 seed spread.
-  - Rerun `nce180_check.py` on its checkpoint.
-  - Read it per NCE value by acquisition ladder. The categorical code let the model separate the
-    ladders at their own values, which one smooth axis cannot
-    ([energy vs parts](findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md)). A
-    loss concentrated at ladder-B-only values means the setup needs its own input.
-  - New configs for other NCE sets or QTOF eV should use `qet`.
+- **Arm `n1` (`c0` + `qet`, `jxczo2kf`) trails `c0` mid-run.** Over epochs 10-13 of 64 it
+  averages 0.7009 against 0.7127 / 0.7137 for the `c0` seeds (−0.0124; seeds 0.001 apart).
+  In this group that early gap predicts the tail gap at r = 0.84, projecting about −0.011.
+  Candidate coverage equals `c0`'s, so the loss is intensity allocation.
+  - Still to read on its checkpoint: `nce180_check.py` (unseen NCE 170/190, 76 vs 180) and
+    per-NCE loss by acquisition ladder.
+  - Hold "new configs should use `qet`" (Spectraverse, Enveda) until `n1`-`n3` are read.
+- **Next: submit `n2` and `n3`** (stage `nce` of the memorization-route submitter).
+  - `n2` = `n1` + new `ce_insert_type: qet_mlp`: the same input through
+    Linear(2, 32) → SiLU → Linear(32, 32). `qet` checkpoints still load.
+  - `n3` = `c0` + `ce_insert_type: id`: (NCE − 60)/40 straight into the context projector.
+    `n1`'s affine embedding makes it this scalar on a curved axis, so `n3` ≈ `n1` would put the
+    cost on losing the per-energy code.
+  - First commit `base_model.py`, `masster_model.py`, `config/template.yml`,
+    `tests/test_ce_qet_embedding.py`, the two configs and the submit-script change. Then on Fir
+    run `bash scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh nce` and
+    `sbatch` the two scripts it prints.
+  - Checked locally: 4 new tests plus an extra invalid-setting case; 199 pass across the QET,
+    merged-CE, CE-location and MASSter model test files. Both configs resolve to their base plus
+    `ce_insert_type` and naming, and 2-epoch smokes of both exit 0.
+  - The template NCE scale (60, 40, max 200) matches the NIST20 `[M+H]+`/FT split (train mean
+    62.2, std 42.6, 2-195).
   - A once-per-molecule head is a compute restructuring, not an accuracy fix.
 - **Other integer embeddings checked.** No other table aliases in production.
   - FraGNNet's `base_formula` holds heavy elements only, with C at most 129.

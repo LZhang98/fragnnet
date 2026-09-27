@@ -38,9 +38,11 @@ class QETEnergyEncoder(nn.Module):
 
     Each reading becomes two features: z, a standardized 1 / (CE + offset), and a flag that is 1
     for a missing CE (any value below 0), whose z is set to 0. A linear layer maps them to
-    ``out_dim``. z is scaled so that z ~ (CE - mean) / std near ``mean``: it rises with CE, is
-    smooth everywhere, and extrapolates past the training range instead of saturating. With
-    ``offset=None`` the axis is linear, z = (CE - mean) / std, as the ACE (eV) path uses.
+    ``out_dim`` (``ce_insert_type: qet``), or with ``hidden_dim`` a small MLP,
+    Linear(2, hidden_dim) -> SiLU -> Linear(hidden_dim, out_dim) (``qet_mlp``). z is scaled so
+    that z ~ (CE - mean) / std near ``mean``: it rises with CE, is smooth everywhere, and
+    extrapolates past the training range instead of saturating. With ``offset=None`` the axis is
+    linear, z = (CE - mean) / std, as the ACE (eV) path uses.
 
     Integer-table CE embeddings (``ce_insert_type: embed``) give neighbouring energies unrelated
     rows, so an energy unseen in training gets arbitrary features, and the default abs-sines table
@@ -53,18 +55,26 @@ class QETEnergyEncoder(nn.Module):
         std: CE spread setting the scale of z near ``mean``.
         out_dim: Width of the embedding.
         offset: Offset of the 1 / (CE + offset) axis, or None for a linear axis.
+        hidden_dim: Hidden width of the MLP, or None for the single linear layer.
 
     Raises:
         ValueError: If ``std`` is not positive, ``mean + offset`` is not positive, or ``out_dim``
-            is not positive.
+            or ``hidden_dim`` is not positive.
     """
 
     def __init__(
-        self, mean: float, std: float, out_dim: int, offset: float | None = QET_ENERGY_OFFSET
+        self,
+        mean: float,
+        std: float,
+        out_dim: int,
+        offset: float | None = QET_ENERGY_OFFSET,
+        hidden_dim: int | None = None,
     ) -> None:
         super().__init__()
         if std <= 0.0 or out_dim <= 0 or (offset is not None and mean + offset <= 0.0):
             raise ValueError("QETEnergyEncoder needs std > 0, mean + offset > 0 and out_dim > 0")
+        if hidden_dim is not None and hidden_dim <= 0:
+            raise ValueError("QETEnergyEncoder needs hidden_dim > 0")
         self.offset = None if offset is None else float(offset)
         self.mean = float(mean)
         self.std = float(std)
@@ -73,7 +83,9 @@ class QETEnergyEncoder(nn.Module):
             # slope at CE = mean is 1 / std.
             self.center = 1.0 / (mean + offset)
             self.scale = std / (mean + offset) ** 2
-        self.linear = nn.Linear(2, out_dim)
+        # The first layer keeps the name "linear" in both forms, so "qet" checkpoints still load.
+        self.linear = nn.Linear(2, out_dim if hidden_dim is None else hidden_dim)
+        self.output = None if hidden_dim is None else nn.Linear(hidden_dim, out_dim)
 
     def forward(self, ce: th.Tensor) -> th.Tensor:
         """Embed collision-energy readings.
@@ -91,7 +103,8 @@ class QETEnergyEncoder(nn.Module):
         else:
             z = (self.center - 1.0 / (ce.clamp_min(0.0) + self.offset)) / self.scale
         z = th.where(missing, th.zeros_like(z), z)
-        return self.linear(th.stack((z, missing.to(z.dtype)), dim=1))
+        hidden = self.linear(th.stack((z, missing.to(z.dtype)), dim=1))
+        return hidden if self.output is None else self.output(F.silu(hidden))
 
 
 class CEModel:
@@ -120,9 +133,10 @@ class CEModel:
             int_embedder: Embedder for integer features.
             ce_insert_location: Where to insert CE embedding ("none", "mol", "frag", "mlp").
             ce_insert_type: Type of CE embedding ("id", "lin", "embed", "embed_clamped", "bin",
-                "qet"). "embed" and "embed_clamped" look the rounded CE up in the
+                "qet", "qet_mlp"). "embed" and "embed_clamped" look the rounded CE up in the
                 ``int_embedder`` table; "qet" embeds the raw CE with ``QETEnergyEncoder``,
-                smooth in energy and with a learned missing-CE flag.
+                smooth in energy and with a learned missing-CE flag, and "qet_mlp" does the same
+                through a hidden layer of width ``ce_insert_size``.
             ce_insert_merge: Whether to merge CE embeddings across batch.
             ce_insert_size: Output embedding size.
             nce_mean: Mean for NCE normalization.
@@ -135,7 +149,7 @@ class CEModel:
             ace_mean: Mean ACE value (eV) for normalization (lin/id types). Default 20.0.
             ace_std: Std of ACE for normalization (lin/id types). Default 15.0.
         """
-        assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin", "qet"]
+        assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin", "qet", "qet_mlp"]
         # ce_insert_location may name multiple insertion points, comma-separated (e.g.
         # "mol,mlp"): inject CE into the molecule encoder input AND the per-fragment scoring
         # MLP. "mol" alone (mol-encoder only) or "mlp" alone (per-fragment only) are the
@@ -182,10 +196,10 @@ class CEModel:
 
         Args:
             max_val: Maximum CE value for clamping/binning.
-            mean_val: Mean for normalization (lin/id/qet types).
-            std_val: Std for normalization (lin/id/qet types).
-            qet_offset: Offset of the "qet" axis 1 / (CE + offset); None makes it linear, as
-                the ACE path uses.
+            mean_val: Mean for normalization (lin/id/qet/qet_mlp types).
+            std_val: Std for normalization (lin/id/qet/qet_mlp types).
+            qet_offset: Offset of the "qet"/"qet_mlp" axis 1 / (CE + offset); None makes it
+                linear, as the ACE path uses.
 
         Returns:
             Tuple of (transform_fn, embedder_module, output_dim).
@@ -215,13 +229,16 @@ class CEModel:
 
             raw_emb = get_embedder(self.int_embedder, max_count_int=int(max_val) + 1)
             embedder = nn.Sequential(raw_emb, nn.Linear(raw_emb.num_dim, insert_size))
-        elif self.ce_insert_type == "qet":
+        elif self.ce_insert_type in ("qet", "qet_mlp"):
 
             def transform(ce: th.Tensor) -> th.Tensor:
                 # Raw energies: no rounding, no clamp at max_val; below 0 stays missing.
                 return ce.reshape(-1)
 
-            embedder = QETEnergyEncoder(mean_val, std_val, insert_size, offset=qet_offset)
+            hidden_dim = insert_size if self.ce_insert_type == "qet_mlp" else None
+            embedder = QETEnergyEncoder(
+                mean_val, std_val, insert_size, offset=qet_offset, hidden_dim=hidden_dim
+            )
         elif self.ce_insert_type == "embed_clamped":
 
             def transform(ce: th.Tensor) -> th.Tensor:

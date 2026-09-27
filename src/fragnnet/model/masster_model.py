@@ -706,11 +706,12 @@ class MassterContextEncoder(nn.Module):
             use_nce: Feed normalized collision energy into the context.
             use_ace: Feed absolute collision energy into the context.
             int_embedder: Integer featurizer used for learned CE embeddings.
-            ce_insert_type: ``embed``, ``embed_clamped`` or ``qet`` enables learned CE
-                embeddings; other modes retain the standardized scalar input. ``embed``
-                and ``embed_clamped`` look the rounded CE up in the ``int_embedder``
-                table; ``qet`` embeds the raw CE with ``QETEnergyEncoder``, smooth in
-                energy and with a learned missing-CE flag.
+            ce_insert_type: ``embed``, ``embed_clamped``, ``qet`` or ``qet_mlp`` enables
+                learned CE embeddings; other modes retain the standardized scalar input.
+                ``embed`` and ``embed_clamped`` look the rounded CE up in the
+                ``int_embedder`` table; ``qet`` embeds the raw CE with ``QETEnergyEncoder``,
+                smooth in energy and with a learned missing-CE flag, and ``qet_mlp`` does the
+                same through a hidden layer of width ``ce_insert_size``.
             ce_insert_size: Width of each learned CE embedding.
             metadata_embedding_dim: Width of each categorical embedding.
             context_dim: Width of the emitted conditioning vector.
@@ -729,7 +730,7 @@ class MassterContextEncoder(nn.Module):
             raise ValueError("num_precursor_types must be positive")
         if metadata_embedding_dim <= 0 or context_dim <= 0:
             raise ValueError("context dimensions must be positive")
-        if ce_insert_type not in {"id", "lin", "embed", "embed_clamped", "bin", "qet"}:
+        if ce_insert_type not in {"id", "lin", "embed", "embed_clamped", "bin", "qet", "qet_mlp"}:
             raise ValueError(f"unknown CE insertion type: {ce_insert_type}")
         if ce_insert_size <= 0:
             raise ValueError("ce_insert_size must be positive")
@@ -748,16 +749,19 @@ class MassterContextEncoder(nn.Module):
         self.ace_max = ace_max
         self.ace_mean = ace_mean
         self.ace_std = ace_std
-        self.use_ce_embedding = ce_insert_type in {"embed", "embed_clamped", "qet"}
+        self.use_ce_embedding = ce_insert_type in {"embed", "embed_clamped", "qet", "qet_mlp"}
         self.nce_embedding = None
         self.ace_embedding = None
-        if ce_insert_type == "qet":
+        if ce_insert_type in {"qet", "qet_mlp"}:
+            hidden_dim = ce_insert_size if ce_insert_type == "qet_mlp" else None
             if use_nce:
-                self.nce_embedding = QETEnergyEncoder(nce_mean, nce_std, ce_insert_size)
+                self.nce_embedding = QETEnergyEncoder(
+                    nce_mean, nce_std, ce_insert_size, hidden_dim=hidden_dim
+                )
             if use_ace:
                 # eV is linear; see QET_ACE_OFFSET.
                 self.ace_embedding = QETEnergyEncoder(
-                    ace_mean, ace_std, ce_insert_size, offset=QET_ACE_OFFSET
+                    ace_mean, ace_std, ce_insert_size, offset=QET_ACE_OFFSET, hidden_dim=hidden_dim
                 )
         elif self.use_ce_embedding:
             nce_count = int(nce_max) + int(ce_insert_type == "embed")
@@ -841,7 +845,7 @@ class MassterContextEncoder(nn.Module):
             if batch_indices.shape != values.shape or batch_indices.dtype != th.long:
                 raise ValueError("CE batch indices must be a matching torch.long vector")
 
-        if self.ce_insert_type == "qet":
+        if self.ce_insert_type in {"qet", "qet_mlp"}:
             # Raw energies: no rounding, no clamp at max_value; below 0 is flagged as missing.
             embedded_values = embedding(values)
         else:
@@ -1183,8 +1187,8 @@ class MassterModel(nn.Module):
             instrument_types: Instrument vocabulary; empty disables the embedding.
             fragmentation_modes: Fragmentation-mode vocabulary; empty disables it.
             int_embedder: Integer featurizer used by learned CE embeddings.
-            ce_insert_type: CE representation type; ``embed``, ``embed_clamped`` and
-                ``qet`` enable learned vectors (see ``MassterContextEncoder``).
+            ce_insert_type: CE representation type; ``embed``, ``embed_clamped``, ``qet`` and
+                ``qet_mlp`` enable learned vectors (see ``MassterContextEncoder``).
             ce_insert_size: Width of each learned CE embedding.
             use_nce: Condition on normalized collision energy.
             use_ace: Condition on absolute collision energy.

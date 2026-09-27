@@ -22,6 +22,11 @@
 >   energy's set. The extra ones add little. The 256 best, ranked by their top proposal
 >   log-probability, cover 0.9422 of target intensity against 0.9402 for each energy's own set
 >   (+0.0020, SE 0.0003), and 384 cover 0.9471 (+0.0069).
+>   - Ranked by mean proposal probability, which a proposal trained on the merged target should
+>     approach, the set covers the same and loses no energy
+>     ([section](#what-a-shared-proposal-would-rank-2026-09-26)).
+>   - Most of the union is same-m/z isomers. Skipping them, 128 candidates cover 0.9428, more
+>     than each energy's own 256.
 > - **The NCE input is categorical, not an energy axis.** With `ce_insert_type: embed` and
 >   `int_embedder: abs-sines`, which 245 of the 262 MASSter configs use, each integer NCE gets a
 >   fixed binary-like code.
@@ -37,8 +42,9 @@
 >   and checkpoints unchanged. On the train CE series with seven NCE values held out, a
 >   standardized `1/(NCE + 200)` scalar predicted the unseen energies at 0.9845 channel cosine,
 >   against 0.9480 for abs-sines and 0.9627 for 32 RBF bumps
->   ([section](#fix-a-smooth-energy-input-2026-09-26)). Arm `n1` (`c0` plus `qet`) is built and
->   not yet submitted.
+>   ([section](#fix-a-smooth-energy-input-2026-09-26)). Arm `n1` (`c0` plus `qet`, `jxczo2kf`)
+>   trailed `c0` by 0.0124 at epochs 10-13 of 64 (mid-run). Arms `n2` (`qet_mlp`) and `n3` (`id`)
+>   are built, not submitted ([section](#validation-arm-n1)).
 >
 > The concrete uses of QET here are a smooth, monotone energy input and a once-per-molecule pass.
 > Enforcing the law on `u2`'s output would change little, because `u2` already obeys it on the
@@ -345,6 +351,75 @@ have 256 or fewer. Coverage is 0.9493 for each energy's own set, 0.9546 for the 
   spectrum. Construction is 5-10% of a batch today, and the intensity transformer would also run
   once per molecule. The saving is not measured.
 
+### What a shared proposal would rank (2026-09-26)
+
+`masster_share_proposal_across_ev` trains one CE-blind proposal per `group_id` against the
+group's merged target (`_shared_group_proposal_coverage_loss`: each spectrum adds unit intensity).
+In this split a group is one molecule (4,222 val groups, median 13 spectra). The loss is linear
+in the target, so its optimum lies near the average of the per-energy optima, which weights
+densely sampled energies more. The
+[MASSter plan](../../plans/masster/masster_plan.md#shared-proposals-across-collision-energies-2026-08-29)
+keeps the flag off for that reason. `share_rank.py` ranks each molecule's union by stand-ins
+for what that loss would learn, and scores coverage as above.
+
+| ranking | what it stands for | uses val targets |
+| --- | --- | --- |
+| `max` | best per-energy proposal probability (the `shared_N` above) | no |
+| `mean` | mean per-energy probability, 0 where not kept: near the merged-target optimum | no |
+| `bal` | `mean` with each occupied NCE bin weighted equally: the CE-balanced ablation the plan names | no |
+| `dedup` | `mean`, but a fragment whose channel m/z values are all already in the set moves to the tail | no |
+| `orc_mean` | greedy maximum coverage of the merged target | yes (oracle) |
+| `orc_bal` | the same on the NCE-bin-balanced target | yes (oracle) |
+
+Val coverage (each energy's own set 0.9402, union 0.9505):
+
+| ranking | 128 | 256 | 384 |
+| --- | ---: | ---: | ---: |
+| `max` | 0.9273 | 0.9422 | 0.9471 |
+| `mean` | 0.9281 | 0.9424 | 0.9472 |
+| `bal` | 0.9280 | 0.9423 | 0.9473 |
+| `dedup` | 0.9428 | 0.9498 | 0.9505 |
+| `orc_mean`, `orc_bal` | 0.9505 | 0.9505 | 0.9505 |
+
+Change from each energy's own set, val:
+
+| spectra | n | own | `max` 256 | `mean` 256 | `bal` 256 | `dedup` 128 | `dedup` 256 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| NCE ≤ 20 | 9,305 | 0.9680 | −0.0004 | −0.0002 | −0.0005 | −0.0000 | +0.0029 |
+| NCE 20-30 | 5,816 | 0.9643 | −0.0009 | −0.0003 | −0.0002 | −0.0004 | +0.0052 |
+| NCE 30-40 | 6,206 | 0.9555 | −0.0009 | −0.0002 | +0.0002 | −0.0003 | +0.0073 |
+| NCE 40-60 | 9,916 | 0.9417 | +0.0016 | +0.0022 | +0.0028 | +0.0028 | +0.0109 |
+| NCE 60-80 | 5,577 | 0.9205 | +0.0066 | +0.0065 | +0.0068 | +0.0076 | +0.0155 |
+| NCE > 80 | 15,200 | 0.9139 | +0.0043 | +0.0039 | +0.0030 | +0.0047 | +0.0135 |
+| molecule's lowest NCE | 4,467 | 0.9684 | −0.0007 | −0.0007 | −0.0008 | −0.0005 | +0.0008 |
+| molecule's highest NCE | 4,235 | 0.9148 | +0.0022 | +0.0015 | +0.0004 | +0.0019 | +0.0111 |
+
+- **The merged-target ranking loses no energy.** `mean` keeps 97% of `max`'s top 256 and covers
+  the same (+0.0002, SE 0.0001). In every NCE bin, and at each molecule's lowest and highest
+  energy, it stays within 0.0007 of each energy's own set. The rare-energy bias the plan warns
+  about does not appear at these caps.
+- **CE balancing buys nothing.** `bal` is within 0.0001 of `mean` overall and 0.0011 lower at
+  each molecule's highest energy.
+- **The merged objective solved exactly gives up nothing either.** The greedy oracle reaches the
+  union's full coverage at every cap, on the merged and on the balanced target alike.
+- **The union is mostly isomers.** Covering everything the union covers takes a median of 26
+  fragments (p90 62, p99 109; 128 or fewer for 99.7% of molecules). Of the median 392 union
+  fragments, 135 add a channel m/z that higher-ranked ones lack. This is the
+  [identity-supervision finding's](masster_identity_supervision_2026_09_22.md) 2.75 connected
+  fragments per formula, seen from the candidate budget.
+- **Skipping same-m/z isomers is the large lever, and it needs no targets.** `dedup` at 128
+  covers 0.9428, more than each energy's own 256 (+0.0027, SE 0.0003), and no NCE bin loses more
+  than 0.0005. At 256 it covers 0.9498, 0.0007 short of the union. The own set's 0.0104 gap to
+  the union is in the ranking, not the budget.
+- **The train sample agrees.** `mean` − `max` is +0.0000 at 256. `dedup` covers 0.9504 at 128
+  against 0.9493 for each energy's own set, and 0.9541 at 256 against the union's 0.9546. Full
+  coverage takes a median of 26 fragments.
+- **Coverage is not cosine.** A mask-order U128 cap lost about 0.02 coverage against U256 and
+  still tied it on cosine
+  ([fragment-marginal selection](../../plans/masster/masster_fragment_marginal_selection_plan.md#tail-read-2026-09-24-marginal-selection-fails-and-u128-is-a-free-speed-up)).
+  What `dedup` buys in cosine is not measured. Its case is the budget: the same coverage from
+  half the candidates.
+
 ## Fix: a smooth energy input (2026-09-26)
 
 ### Which encoding
@@ -487,6 +562,61 @@ The NCE path keeps `1/(NCE + 200)`.
     acquisition setup needs its own input. That needs the raw NIST `Instrument` field, which
     `spec_df` does not keep.
 
+**Mid-run read, 2026-09-26: `n1` (`jxczo2kf`) trails `c0`.** At epoch 13 of 64, val
+`cos_sim_0.01` over epochs 10-13 averages 0.7009, against 0.7127 for `c0` and 0.7137 for `c0_s2`
+(`1oxhvk0n`). The gap is −0.0124, and the two `c0` seeds sit 0.001 apart there.
+
+- `n1` is below both `c0` seeds at every epoch from 4 on, and the gap widens (−0.006 at epoch 5,
+  −0.014 at epoch 13).
+- Across the 17 finished arms of this group, the epoch 10-13 gap to the `c0` pair predicts the
+  epoch 54-63 gap at r = 0.84. The fit projects `n1` at −0.011 (residual SD 0.005). `gm5` had the
+  same early gap and finished at −0.005.
+- Val `candidate_wrecall` matches `c0` within 0.001 at every epoch, so the loss is in intensity
+  allocation, not the candidate set.
+- Epoch time equals `c0`'s (3.1 min), so the wall-clock comparison gives the same answer.
+
+**Mechanism, as far as the code goes.** In MASSter the CE embedding enters the context projector
+(Linear → SiLU → Linear, `MassterContextEncoder`), next to the adduct and instrument embeddings.
+`n1`'s `Linear(2, 32)` output is affine in z, and its missing flag is constant on this split,
+which has no missing NCE. So the projector's first layer can absorb it: `n1` is a standardized
+scalar on the `1/(NCE + 200)` axis entering an MLP. `embed` instead gives each integer NCE its own
+32-wide code, which the projector can use per energy. Every val NCE also occurs in training, so
+that per-energy code can only help on NIST20 val.
+
+**Follow-up arms `n2` and `n3` (built 2026-09-26, not submitted).** Both are in the same config
+directory and submitter (stage `nce`).
+
+| arm | config | change | controls |
+| --- | --- | --- | --- |
+| `n2` | `n2_nce_qet_mlp.yml` | `n1` with `ce_insert_type: qet_mlp` | `n1`, `c0` |
+| `n3` | `n3_nce_id.yml` | `c0` with `ce_insert_type: id` | `c0`, `n1` |
+
+- **`qet_mlp`** is a new option: the same (z, missing flag) input through
+  Linear(2, 32) → SiLU → Linear(32, 32); the hidden width is `ce_insert_size`. `qet` is
+  unchanged, and its checkpoints still load, because its layer keeps the name `linear`.
+- **`id`** feeds (NCE − `nce_mean`) / `nce_std` into the projector directly: a CE feature one wide.
+  It differs from `n1` by the axis curvature only, up to the linear layer the projector absorbs.
+- **Read.** `n3` near `n1` means the cost comes from giving up the per-energy code, whatever the
+  axis. `n3` clearly apart from `n1` means the axis shape matters. `n2` near `c0` means a smooth
+  axis needs depth on energy alone. `n2` near `n1` means depth on z does not help. Both keep
+  `n1`'s unseen-NCE check, since both extrapolate smoothly.
+- **Configs resolve** to their base plus `ce_insert_type` and W&B naming only. Local 2-epoch
+  smokes on a 512-spectrum subsample exit 0 (val cosine `n2` 0.070 → 0.226, `n3` 0.068 → 0.222).
+
+**NCE scale check.** Every config in this directory uses the template's `nce_max: 200`,
+`nce_mean: 60`, `nce_std: 40`. The NIST20 `[M+H]+`/FT split matches them:
+
+| set | spectra | NCE mean | NCE std | range | distinct values |
+| --- | ---: | ---: | ---: | --- | ---: |
+| train | 157,678 | 62.2 | 42.6 | 2-195 | 42 |
+| val | 52,020 | 62.1 | 42.5 | 2-195 | 42, all in train |
+
+- No NCE exceeds 200, so `embed` clamps nothing, and no spectrum is stepped.
+- On `qet`'s axis the train NCE has z mean −0.11 and std 0.99. For `id` the scalar has mean 0.06
+  and std 1.07. Both are already standardized.
+- Over all NIST20 FT spectra, NCE runs up to 195 (mean 58.4, std 39.4). QTOF eV runs up to 70
+  (mean 22.3, std 13.1), inside the template ACE scale (20, 15, max 100).
+
 ## What this means for using QET in MASSter
 
 - **Not as an accuracy fix for the CE law.** On the energies it was trained on, `u2` already
@@ -504,9 +634,13 @@ The NCE path keeps `1/(NCE + 200)`.
     New configs for those should use `qet`.
 - **As a compute restructuring, it is feasible.** A CE-blind candidate set of 256 loses nothing
   on average, and 384 gains. The encoder, candidate construction and intensity transformer could
-  run once per molecule, with one softmax per measured energy. A proposal trained CE-blind still
-  has to learn the ranking used here, and `share_proposal_across_ev` has never been read on this
-  lineage.
+  run once per molecule, with one softmax per measured energy.
+  - A proposal trained on the merged target should rank like the per-energy average, and that
+    ranking serves every energy as well as the best-score one
+    ([section](#what-a-shared-proposal-would-rank-2026-09-26)).
+  - Skipping same-m/z isomers gives from 128 candidates the coverage that 256 give today.
+  - `share_proposal_across_ev` has never been read. Three August unmerged runs crashed by epoch
+    5, and merged runs have about one spectrum per group, so sharing does nothing there.
 - **Training dynamics are the open question.** Sharing `(a_i, e_i)` across a molecule's energies
   could change what the network memorizes, and a projection of a trained model cannot show that.
   The CE-dimension generalization gap is small (projection +0.0019 on val, −0.0009 on train), so
@@ -523,8 +657,11 @@ The NCE path keeps `1/(NCE + 200)`.
   what training under the law would learn.
 - **The curves are held fixed from train targets** (M1g, M2g). M1n frees β per NCE value. No
   variant refits curve shapes on the predictions beyond that.
-- **Coverage ranking uses CE-conditioned proposals.** The `shared_N` sets are selected with
-  information a CE-blind proposal would not have.
+- **The rankings come from the trained CE-conditioned proposals.** `mean` stands in for what a
+  CE-blind proposal trained on the merged target would learn. A trained one may rank
+  differently, and here it ranks the union of about 12 per-energy selections. One CE-blind pass
+  draws from a single enumeration, so `dedup` there would need enumeration past today's cap.
+  Only a run shows either.
 - **The ladder reading is a hypothesis.** The acquisition setup is not in `spec_df`, and the
   ladder is only a proxy for it.
 - **The encoding probe is a proxy for the models' CE pathway.** Its per-channel coefficients are
@@ -555,7 +692,9 @@ The NCE path keeps `1/(NCE + 200)`.
 - `encoding_probe.py`, `encoding_probe_log.txt`, `encoding_probe.pkl` and
   `encoding_probe_baselines.pkl`: the CE-encoding comparison (run with `PROBE_DEVICE=cpu
   PROBE_MOLS=2000 PROBE_STEPS=2000`).
-- `smoke_n1/`: the `n1` smoke run's log.
+- `smoke_n1/`, `smoke_n2/`, `smoke_n3/`: the arm smoke runs' logs.
+- `share_rank.py`, `u2_{val,train}_share_rank.pkl` and `share_rank_{val,train}_log.txt`: the
+  shared-proposal rankings.
 - `ev_axis_fit.py`, `ev_channels.pkl`, `ev_axis_fit.pkl`, `ev_axis_heldout.pkl` and
   `ev_axis_fit_log.txt`: the eV-axis fit (`ev_axis_fit_partial_log.txt` is an interrupted first
   run).
