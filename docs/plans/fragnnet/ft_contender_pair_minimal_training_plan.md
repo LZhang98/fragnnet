@@ -1,12 +1,15 @@
 # Minimal FT contender-pair training plan
 
 > **Status:** ACTIVE — STAGE A PREPARED, NOT SUBMITTED
-> &nbsp;·&nbsp; **Updated:** 2026-09-23
+> &nbsp;·&nbsp; **Updated:** 2026-09-26
 >
 > Add one online auxiliary loss to the existing NodeMLP model. Do not change the model
 > architecture or write a persistent ranking-target cache. The four Stage A configs and their Fir
 > generator exist and were verified locally; no job has run. See
 > [Stage A preparation](#stage-a-preparation-2026-09-23).
+> **2026-09-26:** the `ce_context` sampler's packing was fixed (uncommitted). Its epochs had ended
+> in one-spectrum batches that poison BatchNorm. The sampler budget below is pre-fix:
+> re-measure steps per epoch before submitting.
 
 ## Goal
 
@@ -264,6 +267,18 @@ cannot serve as the original control. A fresh `c0` is part of the matrix.
 709 steps of ~406 spectra. The context arms run **48 epochs** (13.81M spectra vs c0's 13.89M), so
 c0 and c1 match on spectra seen and wall clock, not on optimizer steps (34.0k vs 54.2k).
 c1, p1 and p2 match each other on everything except the pair weight.
+
+**Sampler fix (2026-09-26, uncommitted).**
+
+- Before the fix, every epoch ended in a run of one-spectrum batches from one group: 52 batches
+  under 32 spectra on this split, the last 15 single-spectrum. That run left the BatchNorm
+  running statistics mostly from that group; on a MASSter checkpoint it costs −0.25 val cosine.
+- Chunks are now merged in random order, and a repeated context waits for the next batch.
+  Batches are fuller, with 1,131 instead of 1,188 per epoch (molecular edges standing in for the
+  fragment-edge budget).
+- Every spectrum is still emitted once, so the 48-epoch spectra match stands. The 709-step and
+  ~236-spectrum figures above are pre-fix: re-measure them with the real fragment-edge budget.
+- [Audit](../../findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md#fixes-2026-09-26).
 
 **Edge budget.** `ce_context` requires `frag_edge`. At 1,500,000 edges the per-batch node maximum
 is 281,988 against the original sampler's 322,399, so peak memory should not exceed c0's.

@@ -217,6 +217,43 @@ class TestCEContextDynamicBatchSampler:
         ]
         assert len(mixed_context_batches) >= 3
 
+    def test_spreads_a_many_chunk_context_over_the_epoch(self):
+        # Context 0 has 10 chunks: its CE ladder plus 9 same-CE replicates. A round-robin merge
+        # left the replicates for the end of the epoch, one spectrum per batch, where they set
+        # the BatchNorm running statistics that evaluation uses.
+        rows = [self._row(0, ce) for ce in (10, 20, 30)]
+        rows += [self._row(0, 10) for _ in range(9)]
+        for mol_id in range(1, 121):
+            rows += [self._row(mol_id, 10), self._row(mol_id, 20)]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10_000,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            spectra_per_context=5,
+            return_batch_at=8,
+            seed=0,
+        )
+        group_ids = ds.spec_df["group_id"].tolist()
+
+        for epoch in range(5):
+            sampler.set_epoch(epoch)
+            batches = list(sampler)
+            assert sorted(idx for batch in batches for idx in batch) == list(range(len(rows)))
+            # At most one chunk of a context per batch: the ladder, or one replicate.
+            context_zero_counts = sorted(
+                sum(group_ids[idx] == 0 for idx in batch)
+                for batch in batches
+                if any(group_ids[idx] == 0 for idx in batch)
+            )
+            assert context_zero_counts == [1] * 9 + [3]
+            assert all(
+                len({group_ids[idx] for idx in batch}) * 2 >= len(batch)
+                for batch in batches
+                if not any(group_ids[idx] == 0 for idx in batch)
+            )
+            assert sum(len(batch) < 4 for batch in batches) <= 1
+
     def test_orders_qtof_context_by_configured_ace(self):
         rows = [
             {**self._row(1, 30), "inst_type": "QTOF", "ace": [10.0]},

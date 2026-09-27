@@ -625,44 +625,50 @@ class _CEContextBatchSamplerBase(BatchSampler):
             else:
                 atoms.append((group_id, [idx]))
 
-        # Contexts can contribute several chunks. Interleave them so the
-        # no-repeated-context rule below does not create mostly singleton batches.
-        atoms_by_group: dict[object, list[list[int]]] = {}
+        # Contexts can contribute several chunks. Merge the contexts' chunk sequences in a
+        # uniformly random order, each keeping its own chunk order, so every context's chunks
+        # spread over the epoch. A round-robin merge left the context with the most chunks alone
+        # at the end of every epoch, one spectrum per batch, and those batches set the BatchNorm
+        # running statistics that evaluation uses.
+        atoms_by_group: dict[object, deque[list[int]]] = {}
         for group_id, atom in atoms:
-            atoms_by_group.setdefault(group_id, []).append(atom)
-        pending_groups = deque(
-            (group_id, deque(group_atoms)) for group_id, group_atoms in atoms_by_group.items()
-        )
-        atoms = []
-        while pending_groups:
-            group_id, group_atoms = pending_groups.popleft()
-            atoms.append((group_id, group_atoms.popleft()))
-            if group_atoms:
-                pending_groups.append((group_id, group_atoms))
+            atoms_by_group.setdefault(group_id, deque()).append(atom)
+        slots = [group_id for group_id, group_atoms in atoms_by_group.items() for _ in group_atoms]
+        atoms = [
+            (slots[slot], atoms_by_group[slots[slot]].popleft())
+            for slot in th.randperm(len(slots), generator=generator).tolist()
+        ]
 
+        # Pack greedily, at most one chunk per context in a batch. A chunk whose context is
+        # already in the open batch waits and is offered first to the next batch; closing the
+        # batch on the repeat instead would emit near-empty batches.
         batches: list[list[int]] = []
-        batch: list[int] = []
-        batch_size = 0
-        batch_groups: set[object] = set()
-        for group_id, atom in atoms:
-            atom_size = int(self._data_meta[atom, 1].sum())
-            repeats_context = batch and group_id in batch_groups
-            exceeds_edges = batch and batch_size + atom_size > self._max_num
-            exceeds_spectra = (
-                batch
-                and self._return_batch_at > 0
-                and len(batch) + len(atom) > self._return_batch_at
-            )
-            if repeats_context or exceeds_edges or exceeds_spectra:
-                batches.append(batch)
-                batch = []
-                batch_size = 0
-                batch_groups = set()
-            batch.extend(atom)
-            batch_size += atom_size
-            batch_groups.add(group_id)
-        if batch:
+        pending = deque(atoms)
+        while pending:
+            batch: list[int] = []
+            batch_size = 0
+            batch_groups: set[object] = set()
+            waiting: list[tuple[object, list[int]]] = []
+            while pending:
+                group_id, atom = pending[0]
+                if group_id in batch_groups:
+                    waiting.append(pending.popleft())
+                    continue
+                atom_size = int(self._data_meta[atom, 1].sum())
+                exceeds_edges = batch and batch_size + atom_size > self._max_num
+                exceeds_spectra = (
+                    batch
+                    and self._return_batch_at > 0
+                    and len(batch) + len(atom) > self._return_batch_at
+                )
+                if exceeds_edges or exceeds_spectra:
+                    break
+                pending.popleft()
+                batch.extend(atom)
+                batch_size += atom_size
+                batch_groups.add(group_id)
             batches.append(batch)
+            pending.extendleft(reversed(waiting))
 
         selected_spectra = sum(len(atom) for _, atom in atoms)
         self._batches = batches

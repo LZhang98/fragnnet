@@ -4,6 +4,31 @@
 
 ## Current handoff
 
+**Shared-proposal pathway audit (2026-09-26, 04:30 UTC on 09-27): the CE-context sampler was
+broken, and `sp0`/`sp1` collapsed and crashed. Both bugs found are fixed, uncommitted
+(05:40 UTC).**
+
+- Every epoch ended with 28 one-spectrum batches of one molecule (mol 32341). 95% of the
+  precursor-encoder BatchNorm running statistics then came from it. On `c0`'s checkpoint that
+  alone drops val cosine from 0.7236 to 0.4771; a random-batch control gives 0.7233.
+- `sp0`/`sp1` reached val cosine 0.03-0.24 (`c0` 0.58-0.66), with val loss 3-4 nats above train,
+  and are marked crashed at epoch 2 with no log. Both are void.
+- **Sampler fix** (`data_sampler.py`, shared by the MASSter and FraGNNet CE-context samplers):
+  - Molecules' chunks are merged in random order, and a repeated molecule's chunk waits for the
+    next batch instead of closing this one.
+  - On the `sp0` split: 312 batches per epoch instead of 376, and none under 64 spectra (58
+    before). Each spectrum is still emitted once, with one chunk per molecule per batch.
+- **Ion-mode fix** (`masster_model.py`): under sharing, `ion_mode_proposal_head` read the
+  CE-conditioned context. It now reads the shared CE-free context. Dormant; no config uses it.
+- One regression test each; the full suite passes (4,495).
+- **Next:**
+  - Commit, then resubmit `sp0`/`sp1` under new run ids; their configs are unchanged.
+  - Before Stage A (`c1`/`p1`/`p2`), re-measure its steps per epoch; its batches are fuller now.
+- The sharing code itself is correct. Its merged-target loss equals the plain per-spectrum loss
+  exactly.
+
+[Finding](findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md).
+
 **Sink-dropout arm `m2` built (2026-09-26); not submitted.** `m1`'s memorization sink applied to
 a random half of the training spectra: new key `masster_memorization_sink_dropout`, default 0
 (= `m1`), drawn per spectrum, no new parameters. `m1` failed at −0.0203 because the sink took
@@ -38,28 +63,24 @@ Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arm
   **`nl3` (+ `k1`'s dropout) underfits at −0.017:** train loss +0.14, val loss up. `k1` needs
   redundant routes, so it does not stack with route removal. `nl3` later crashed at epoch 30;
   do not resubmit.
-- `sp0`/`sp1` started 03:43 UTC; nothing logged yet.
+- `sp0`/`sp1` collapsed and crashed at epoch 2 (sampler bug; see the top entry).
 
 Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s checkpoint. Read
-`nl1`/`nl2` at 63 and run the route map on them. Read `sp0`/`sp1`.
+`nl1`/`nl2` at 63 and run the route map on them.
 [Batch 3 read](plans/masster/masster_memorization_route_plan.md#batch-3-read-from-wb-2026-09-26),
 [`n1`-`n3`](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1),
 [`u3`](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
 
-**ChemBERTa-3 on MassSpecGym plan (2026-09-26); PROPOSED, nothing built.** The plan fine-tunes
-`DeepChem/ChemBERTa-100M-MLM` end to end with the NEIMS binned head. Gradients reach the token
-embeddings; this is the user's requirement. It is compared against fingerprint (NEIMS), random-init
-and frozen-encoder controls; the frozen encoder is a control only. Then it tests SMILES
-augmentation. The tokenizer implies
-stereo-free, aromatic pretraining text, so the input is raw MSGYM SMILES with stereo removed, not
-our standardized form. Revised the same day for broader SMILES augmentation: traversal types,
-tautomers, Kekulé assignments, several views per sample and augmented continued pretraining, as
-a one-element-at-a-time ladder. **Base model, for now:** the checkpoint's first 6 of 12 layers
-(49M parameters instead of 92M), because the user asked for a smaller ChemBERTa-3. No smaller
-ChemBERTa-3 is released. The small DeepChem checkpoints are ChemBERTa-2, whose broken tokenizer
-reads Cl as C, and the weights show it was pretrained that way. Full depth is the last ladder arm.
-`transformers` is not installed. Next: Stage 0b, the MLM likelihood by SMILES form.
-[Plan](plans/chemberta3_msgym_plan.md).
+**ChemBERTa-3 on MassSpecGym plan (2026-09-26); PROPOSED, nothing built; cut to a basic model.**
+The user wants a basic model, to see whether it works. ChemBERTa-3's first 6 of 12 layers
+(`DeepChem/ChemBERTa-100M-MLM`), loaded encoder-only, are fine-tuned end to end with the NEIMS
+binned head on `ms_gym_benchmark_1_5`, fed the `mol_df` SMILES already in the batch. Three arms,
+2 seeds each: the model (E1), the model with random SMILES (T2) and NEIMS (E4). The augmentation
+ladder, the other controls, the frozen-encoder checks, full depth and the exact-mass stages are
+deferred; Stage 0b and P1 are dropped. No smaller ChemBERTa-3 is released, and the small DeepChem
+checkpoints are ChemBERTa-2, whose broken tokenizer reads Cl as C. `transformers` is not
+installed. Next: once the user approves installing it, build `chemlm`, pass the gradient test and
+smoke-run E1. [Plan](plans/chemberta3_msgym_plan.md).
 
 **Enveda standalone MASSter baseline `i0` built (2026-09-26); not submitted, uncommitted.** The
 user's call is to train Enveda alone for now.
@@ -124,7 +145,10 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
     fragments that add no new channel m/z, 128 candidates cover 0.9428, more than each energy's
     own 256. That is target-free, but its cosine value is unmeasured; a mask-order U128 already
     tied U256 on cosine.
-  - **Arms `sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`) running since 03:43 UTC on 09-27.** `sp0` = `c0` + the CE-context batch
+  - **Arms `sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`) are void: the sampler's epoch tail
+    poisoned BatchNorm, and both crashed at epoch 2. The sampler is fixed (uncommitted);
+    resubmit both under new ids
+    ([audit](findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md)).** `sp0` = `c0` + the CE-context batch
     sampler (whole molecules per batch: 32 spectra per context, edge budget never binding, 512
     spectra cap as in `c0`); `sp1` = `sp0` + `masster_share_proposal_across_ev`. Read `sp0`
     against `c0` and `sp1` against `sp0` on the epoch 54-63 tail, plus seconds per epoch.

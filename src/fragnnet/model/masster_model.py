@@ -2680,12 +2680,12 @@ class MassterModel(nn.Module):
                     mol_pyg.edge_attr[layout["representative_edge_mask"]],
                 )
             proposal_atom_embeddings = shared_proposal_atom_embeddings[layout["atom_to_shared"]]
-            if self.ion_mode_proposal_head is not None:
-                proposal_context = context.detach() if detach_proposal_inputs else context
             shared_proposal_context = (
                 shared_context.detach() if detach_proposal_inputs else shared_context
             )
-            mechanism_context = shared_proposal_context[spectrum_to_shared]
+            # Every proposal head, the ion-mode head included, reads the CE-free group context.
+            proposal_context = shared_proposal_context[spectrum_to_shared]
+            mechanism_context = proposal_context
             shared_bond_logits = self.bond_break_head(
                 shared_proposal_atom_embeddings,
                 layout["shared_chemical_bond_index"],

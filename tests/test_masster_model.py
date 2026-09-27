@@ -1022,6 +1022,38 @@ def test_masster_shares_one_ce_independent_proposal_pass(
     assert output["cross_ev_fragment_batch_idxs"].unique().tolist() == list(range(5))
 
 
+def test_shared_proposal_ion_mode_head_is_collision_energy_blind() -> None:
+    batch = _build_batch(("CCCO",) * 2)
+    model = _build_model(
+        batch,
+        max_masks=4,
+        unique_fragment_mode=True,
+        max_enumerated_masks=12,
+        use_base_probability_feature=False,
+        proposal_selection_only=True,
+        share_proposal_across_ev=True,
+        separate_ion_mode_proposal_head=True,
+        ion_mode_proposal_binary_logits=True,
+        precursor_types=("[M+Na]+",),
+    ).eval()
+
+    output = model(
+        mol_pyg=batch,
+        spec_prec_type=th.zeros(2, dtype=th.long),
+        spec_nce=th.tensor([10.0, 60.0]),
+        proposal_group_ids=th.full((2,), 3),
+    )
+
+    # One proposal per group: both energies get the same ion-mode proposal.
+    fragment_spectra = output["ion_h_fragment_batch_idxs"]
+    first = output["ion_mode_proposal_logits"][fragment_spectra == 0]
+    second = output["ion_mode_proposal_logits"][fragment_spectra == 1]
+    assert first.numel() > 0
+    # Rows at different batch positions differ by matmul rounding only (~1e-8); reading the
+    # CE-conditioned context instead moved these logits by 0.007-0.03.
+    assert th.allclose(first, second, rtol=0.0, atol=1e-6)
+
+
 def test_masster_rejects_mismatched_graphs_in_shared_group() -> None:
     batch = _build_batch(("CCCC", "CCCO"))
     model = _build_model(
