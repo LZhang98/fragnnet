@@ -1,4 +1,4 @@
-# MASSter on Spectraverse, fold cv3, 2026-09-25. Unmerged, CMF on, dual CE, weight EMA.
+# MASSter on Spectraverse, fold cv3, 2026-09-25. Unmerged, CMF on, dual CE on the qet axis, weight EMA.
 #
 # Forked from config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_ema999.yml,
 # the latest MASSter benchmark port (prenorm intensity head, cosine LR with 1000-step warmup,
@@ -34,11 +34,10 @@
 #    Compare against config/spectraverse/fragnnet (unmerged), not fragnnet_merged.
 #
 # 3. Missing CE is kept, not dropped. With nce and ace both on, NCE is derived from ACE
-#    (nce = ace * 500 / prec_mz); a row with neither becomes the -1 sentinel, which the
-#    abs-sines IntFeaturizer maps to a dedicated learned extra embedding. Spectraverse specifies
-#    its training data, so all 44% of CE-less rows train. nce_max 300 as in MassSpecGym:
-#    derived NCE is p99 206, max 1,097; 0.32% of CE-bearing rows clamp at 300 (1.06% at 200).
-#    ace_max 300: no ACE exceeds it (max 296).
+#    (nce = ace * 500 / prec_mz; every adduct here is singly charged); a row with neither becomes
+#    the -1 sentinel, which the qet encoder (7) turns into its missing-CE flag. Spectraverse
+#    specifies its training data, so all 44% of CE-less rows train. Derived NCE is p99 206, max
+#    1,097, and qet does not clamp it. nce_max/ace_max 300 stay from MassSpecGym; qet ignores them.
 #
 # 4. Vocabularies: all nine adducts; inst_types FT/QTOF/Other/NA (no IT rows exist). Other and
 #    NA get the 20 ppm / 500 Da loss tolerance that config/spectraverse/fragnnet uses.
@@ -64,6 +63,20 @@
 #    per-spectrum, so chunking changes cost, not the loss value. Batch 512 itself was not run
 #    (8 GB card); lb4 tracks the MassSpecGym run that trained at 512, ~4x the batch-128 peak.
 #
+# 7. ce_insert_type qet (MassSpecGym: embed), 2026-09-26. embed feeds the rounded CE to the
+#    abs-sines table, a fixed binary-like code: neighbouring energies get unrelated codes, an
+#    energy unseen in training gets arbitrary ones, and at max 300 the table gives x and 512 - x
+#    the same code (44 pairs, 212 = 300 through 255 = 257). Derived NCE is continuous here (525
+#    distinct rounded values), so rare and unseen values are common. qet embeds the raw CE as a
+#    standardized 1 / (CE + 200) plus a missing flag, through a learned Linear(2, 32)
+#    (docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md).
+#    - The offset 200 was fitted on NIST20 [M+H]+/FT NCE only; the ACE channel uses it unmeasured.
+#      The two channels are no longer copies: derived NCE is an eV axis with offset
+#      0.4 * prec_mz eV, ACE a raw eV axis with offset 200 eV.
+#    - nce_mean/std 50/40 and ace_mean/std 40/25 only set the scale into the learned layer.
+#      Measured per CE-bearing row over the whole dataset: derived NCE 50.0/39.6, ACE 38.8/26.0.
+#    - Not yet tested in training: arm n1 (NIST20 c0 with qet) had not run on 2026-09-26.
+#
 # EMA (0.999, mean weight age ~1,000 steps as in the NIST20 wins) is untested together with
 # cosine LR decay; the MassSpecGym _ema999 arm that measures that has not been read.
 # No frag_dp: MASSter enumerates cut masks from the molecular graph and reads no DAG files.
@@ -76,7 +89,7 @@ wandb_tags:
 - unmerged
 - cmf
 - dual_ce
-- missing_ce_token
+- missing_ce_flag
 - ema
 - ema_0.999
 - cuda_candidates
@@ -92,7 +105,7 @@ wandb_tags:
 - intensity_transformer
 - full_context
 - full_metadata
-- ce_embed
+- ce_qet
 - adduct_embed
 - inst_type_embed
 - frag_mode_embed
@@ -171,10 +184,14 @@ mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch
 mol_dropout: 0.1
-ce_insert_type: embed
+ce_insert_type: qet  # header 7
 ce_insert_size: 32
 nce_max: 300
 ace_max: 300
+nce_mean: 50  # header 7: qet scale only
+nce_std: 40
+ace_mean: 40
+ace_std: 25
 masster_unique_fragment_target: 256
 masster_unique_fragment_mode: true
 masster_ranked_mask_budget: 4096
