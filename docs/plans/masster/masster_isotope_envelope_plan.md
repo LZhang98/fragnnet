@@ -1,9 +1,12 @@
 # MASSter isotope envelope
 
-> **Status:** PROPOSED · **Updated:** 2026-09-26
-> Nothing is built. MASSter predicts monoisotopic pathways only, and `num_isotopes` does not
-> reach it. Stage 0 needs no training: a model-free ceiling, then a post-hoc envelope on existing
-> checkpoints. It decides whether the model change is worth building.
+> **Status:** CLOSED NULL · **Updated:** 2026-09-27
+> Closed at gate 0a by its stop rule. On Enveda val, even a perfect monoisotopic model plus the
+> best scalar envelope recovers only 0.0047 cosine in positive mode (95% CI 0.0045-0.0050)
+> against the 0.005 gate, and 0.0010 in negative mode. The natural prior alone recovers nothing
+> in positive mode and costs 0.013 in negative mode. Nothing was built. NIST20 and MSGYM were not
+> measured. The result and what would reopen the plan are under
+> [Stage 0a step 3](#step-3-on-enveda-val-2026-09-27-gate-0a-fails).
 
 ## Objective and acceptance criteria
 
@@ -97,6 +100,57 @@ prediction reaches cos = ‖target without satellites‖ / ‖target‖:
   scalar f reaches.
 - Recall-type metrics (`wrecall`) see the 6.5% intensity share, not the cosine number.
 
+#### Step 3 on Enveda val (2026-09-27): gate 0a fails
+
+Probe: [debug_enveda_isotope_envelope_ceiling.py](../../../scripts/debug/debug_enveda_isotope_envelope_ceiling.py),
+53 s on 10 workers. Per-spectrum dot products are in
+`output/enveda_180_isotope_probe_2026_09_25/envelope_ceiling_val.pkl`, and the log sits beside
+them.
+
+- **Population.** The 77,320 `[M+H]+`/`[M-H]-` val spectra of `enveda_180_inchikey_811` (the
+  population of the baseline config).
+- **Metric.** The val metric's cosine: raw intensity summed in floor(m/z / 0.01) bins.
+- **Prediction.** The target's monoisotopic part, which a perfect monoisotopic model predicts,
+  plus f1 × M+1 and f2 × M+2.
+  - The envelope is the exact natural isotopologue ratio of each peak's precursor-bounded
+    subformula compositions (`subformula_candidates`, 10 ppm), averaged over candidates.
+  - It carries per-element offsets for M+1 and for heavy M+2 isotopes, and two 13C spacings for
+    M+2 pairs.
+  - 97.8% of monoisotopic intensity has a subformula.
+- **Fit.** f is fitted per polarity on even `mol_id` (grid step 0.05) and reported on odd.
+
+| Odd-molecule val spectra | Perfect mono, 1 − cos | + natural (f1 = f2 = 1) | + fitted scalar f | + per-spectrum best f2 ∈ {0, 1} |
+| --- | ---: | ---: | ---: | ---: |
+| positive (29,403) | 0.0085 | 0.0085 | 0.0038 (f1 0.80, f2 0.30) | 0.0019 |
+| negative (9,191) | 0.0025 | 0.0155 | 0.0015 (f1 0.40, f2 0.05) | 0.0015 |
+| positive, Cl/Br (4,268) | 0.0274 | 0.0479 | 0.0182 | 0.0054 |
+| negative, Cl/Br (1,464) | 0.0045 | 0.0762 | 0.0037 | 0.0035 |
+
+- **Recovered cosine at the fitted f**, 95% molecule-bootstrap:
+  - positive **0.0047** (0.0045-0.0050), of which the 13C part alone (f2 = 0) is 0.0039;
+  - negative **0.0010** (0.0009-0.0010).
+
+  Positive mode is under the 0.005 gate, so the stop rule applies. This is the ceiling for a
+  perfect monoisotopic model. A trained model's mono peaks are imperfect, so it would realize
+  less, below the +0.003 read gate.
+- **The natural prior is harmful**, which is what `natural` mode and FraGNNet's `num_isotopes > 1`
+  would apply.
+  - It recovers +0.0000 in positive mode and costs −0.013 in negative mode.
+  - It adds halogen M+2 peaks at full strength, and negative mode never transmits them (§9.3 of
+    the finding).
+  - FraGNNet on Enveda must therefore keep `num_isotopes: 1`.
+- **Out of reach for any scalar.** The per-molecule halogen M+2 switch is the rest of the
+  positive-mode ceiling: a per-spectrum oracle f2 would add 0.0019. The structure cannot predict
+  it.
+- **What would reopen the plan:**
+  - a metric that weights small peaks more, such as sqrt or entropy-weighted similarity for
+    retrieval;
+  - a need for correct per-peak annotation, since +1 H channels still stand in for 13C above
+    m/z 447 at 10 ppm;
+  - a dataset whose isolation passes the full envelope.
+
+  NIST20 FT and MSGYM were not measured.
+
 ### Stage 0b: post-hoc envelope on existing checkpoints
 
 - Take `3bej6fq7` (NIST20) and `ll04i00m` (MSGYM) val exports with per-peak annotations
@@ -143,8 +197,9 @@ prediction reaches cos = ‖target without satellites‖ / ‖target‖:
 
 - On Enveda trained alone (user decision, 2026-09-26: standalone for now, no NIST or MSGYM mixed
   in). The baseline `i0` is
-  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999.yml`
-  (`[M+H]+`/`[M-H]-`, 20 epochs, not submitted). Run:
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml`
+  (`[M+H]+`/`[M-H]-`, 20 epochs, not submitted; renamed from `…_qet_…` 2026-09-27). Never run,
+  since the plan closed at gate 0a. Planned arms:
   - `i0`: the baseline;
   - `i1`: `natural`;
   - `i2`: `scaled`.
@@ -174,26 +229,26 @@ prediction reaches cos = ‖target without satellites‖ / ‖target‖:
 
 ## Current state and next check
 
-- **Built:** no model code. The measurements behind the plan are in
+- **Closed 2026-09-27 at gate 0a** ([step 3](#step-3-on-enveda-val-2026-09-27-gate-0a-fails)).
+  No model code was built, and none should be without one of the reopening conditions listed
+  there. The measurements behind the plan are in
   [finding §9](../../findings/enveda_180_dataset_2026_09_25.md#9-isotopes-2026-09-25).
-- **Stage 0a step 2 on Enveda val: done** (above). The positive-mode ceiling is 0.0086.
-- **Baseline `i0` config built (2026-09-26), not submitted:**
-  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999.yml`.
-  - It resolves against the MSGYM EMA arm with only the documented deltas: data paths, adducts
-    with `filter_prec_types`, `qet` with Enveda CE statistics, 10 ppm QTOF loss tolerance, and
-    20 epochs with `lr_total_steps` 24,240.
-  - A one-epoch local smoke on 2,000 spectra per split (batch 64) exits 0 in 54 s:
-    - `filter_prec_types` keeps 1,939 train and 1,938 val spectra;
-    - training, validation and checkpointing all run;
-    - the checkpoint holds the `qet` encoders (`nce_embedding.linear`, `ace_embedding.linear`).
-
-    The log is `output/enveda_masster_smoke_2026_09_26/smoke.log`.
-  - On this workstation, set `TMPDIR` to a directory on the root disk. The first smoke failed at
-    the checkpoint save because Lightning stages its atomic write in `/tmp`, which is 3.7 GB and
-    was full.
-  - Its read needs a second seed first: no Enveda seed spread exists.
-- **Next:**
-  - Stage 0a step 3 on Enveda val: the natural envelope at f = 1 and at the measured f1.
-  - Stage 0a steps 2-3 on NIST20 FT val.
-  - Submitting `i0` and its seed replicate is a separate decision, since this workstation has
-    no Fir access.
+- **The Enveda baseline stays** as the first standalone Enveda run, no longer as an isotope
+  control:
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml`,
+  not submitted.
+  - **CE input.** On 2026-09-27 it moved from `qet` to `ce_insert_type: embed` with
+    `int_embedder: fourier`, as the Spectraverse folds did, after `qet` arms `n1`-`n3` trailed
+    `c0` on NIST20. The file and run were renamed from `…_qet_…`.
+  - **Resolve check.** It resolves against the MSGYM EMA arm with only its documented deltas:
+    data paths, adducts with `filter_prec_types`, the fourier table, a 10 ppm QTOF loss
+    tolerance, and 20 epochs with `lr_total_steps` 24,240.
+  - **Smokes.** Two one-epoch local smokes on 2,000 spectra per split (batch 64) exit 0: the
+    `qet` version on 2026-09-26 and the fourier version on 2026-09-27.
+    - The fourier checkpoint holds a 301 × 22 fourier table and a Linear(22, 32) per CE channel.
+    - Logs are in `output/enveda_masster_smoke_2026_09_26/`.
+  - **Local `TMPDIR`.** On this workstation, set `TMPDIR` to a short directory on the root disk.
+    - `/tmp` is 3.7 GB and was full, so Lightning's atomic checkpoint write failed there.
+    - A long `TMPDIR` path breaks the dataloader workers' sockets (`AF_UNIX path too long`).
+  - **Before reading it.** It needs a second seed, since no Enveda seed spread exists. Submitting
+    it is a separate decision, because this workstation has no Fir access.

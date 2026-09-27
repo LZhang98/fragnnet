@@ -1,7 +1,8 @@
 # BASELINE -- MASSter on Enveda-180 alone, [M+H]+ and [M-H]-, 2026-09-26.
 #
-# First Enveda run and the control `i0` of docs/plans/masster/masster_isotope_envelope_plan.md
-# (Stage 2). Forked from
+# First Enveda run. It was built as control `i0` of
+# docs/plans/masster/masster_isotope_envelope_plan.md, which closed null at its model-free gate on
+# 2026-09-27, so it is now only the Enveda baseline. Forked from
 # config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_ema999.yml
 # (QTOF, unmerged, dual CE, cosine LR with warmup, EMA 0.999). Model and loss keys are unchanged
 # except the deltas below.
@@ -18,16 +19,24 @@
 #    split: the split also holds [M+Na]+, [M+NH4]+, [M+Cl]- and [M+K]+, and an adduct missing
 #    from prec_types raises KeyError in base_dataset. masster_include_cmf stays false: both kept
 #    adducts' CMF ions duplicate a CRF hydrogen shift, so the channel is masked anyway.
-# 2. ce_insert_type qet (project-state: new QTOF-eV configs use qet, not the categorical embed).
-#    Standardization from Enveda train CE readings (940,424): ACE mean 41.5 / std 15.9 eV;
-#    NCE filled from ACE (nce = ace * 500 / prec_mz) mean 63.7 / std 25.4, max 127.6.
+# 2. ce_insert_type embed with int_embedder fourier (MSGYM arm: embed on the template's
+#    abs-sines), 2026-09-27, as in config/spectraverse/masster/cv*.yml. fourier gives every
+#    integer 0-300 its own row; abs-sines gives x and 2**k - x the same code. Not qet (this
+#    config's 2026-09-26 setting): on NIST20 [M+H]+/FT, n1 (qet), n2 and n3 trail c0 by
+#    0.012 / 0.010 / 0.009, and n4 (c0 + fourier) runs ahead of c0
+#    (docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md).
+#    Enveda CE values: ACE 20/40/60 eV; NCE filled from ACE (nce = ace * 500 / prec_mz)
+#    spans 25-128 (940,424 train readings), so nce_max/ace_max 300 clamp nothing.
+#    int_embedder is global, so any other integer table MASSter reads uses fourier too, as in
+#    n4 and the Spectraverse folds.
 # 3. QTOF loss tolerance 10 ppm with a 200 m/z floor (was 20 ppm, 15 mDa floor below m/z 750).
 #    The 15 mDa floor exists for NIST23 floor-truncated m/z, which Enveda does not have. Enveda's
 #    per-spectrum mean fragment error is 3.8 ppm median, 6.7 p90, 10.1 p99 (mostly a
 #    per-spectrum offset), so 5 ppm would drop real matches. At 10 ppm a 13C satellite and a
 #    +1 H channel (4.47 mDa apart) stay separate below m/z 447 instead of sharing every window.
 # 4. filter_subformula_peaks and filter_above_precursor_peaks pinned False (template defaults),
-#    because the isotope arms need the isotope peaks kept in the target.
+#    so the target keeps its isotope peaks: 6.5% of val intensity, ~0.008 cosine of positive-mode
+#    target that a monoisotopic model cannot reach (isotope plan, Stage 0a).
 # 5. min_epochs/max_epochs 20/20. 1,212 steps/epoch at batch 512, so 24,240 steps, matching the
 #    MSGYM arm's 24,832. MSGYM ran 0.51 s/step on an H100 (1imawkx1, 98.9 s/epoch), so about
 #    10-11 min/epoch here plus validation: roughly 4 h, unmeasured. lr_total_steps 24,240; EMA
@@ -36,9 +45,9 @@
 #    so the checkpoint can later score mixed data; the FT/HCD rows stay untrained.
 #
 # READ: val_cos_sim_0.01 tail mean (epochs 16-19) and best, per polarity. No seed replicate
-# exists yet, so the Enveda seed spread is unknown; a second seed is needed before any
-# isotope arm (i1/i2) can be read against this run.
-wandb_name: enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999
+# exists yet, so the Enveda seed spread is unknown; a second seed is needed before any arm is
+# read against this run.
+wandb_name: enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999
 wandb_group: enveda_masster
 wandb_tags:
 - ema
@@ -61,7 +70,8 @@ wandb_tags:
 - intensity_transformer
 - full_context
 - full_metadata
-- ce_qet
+- ce_embed
+- ce_fourier
 - dual_ce
 - adduct_embed
 - inst_type_embed
@@ -135,14 +145,11 @@ mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch
 mol_dropout: 0.1
-ce_insert_type: qet
+ce_insert_type: embed
+int_embedder: fourier  # header 2
 ce_insert_size: 32
 nce_max: 300
 ace_max: 300
-nce_mean: 63.7
-nce_std: 25.4
-ace_mean: 41.5
-ace_std: 15.9
 masster_unique_fragment_target: 256
 masster_unique_fragment_mode: true
 masster_ranked_mask_budget: 4096

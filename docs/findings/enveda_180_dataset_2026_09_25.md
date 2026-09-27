@@ -267,3 +267,10 @@ more intense, and at the given spacing:
   natural-abundance prior (`num_isotopes > 1`, no new parameters) matches positive mode, where
   f1 ≈ 0.93. It would overstate negative mode, where f1 ≈ 0.48. It cannot know whether a
   molecule's halogen M+2 was transmitted. Nothing here has been trained.
+- **Measured 2026-09-27: not worth modelling for cosine.**
+  - A perfect monoisotopic model plus the best scalar envelope recovers 0.0047 of val cosine in
+    positive mode and 0.0010 in negative.
+  - The natural prior recovers nothing in positive mode and costs 0.013 in negative, from halogen
+    M+2 peaks the spectra do not have.
+  - The [isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md#step-3-on-enveda-val-2026-09-27-gate-0a-fails)
+    closed null on it.
