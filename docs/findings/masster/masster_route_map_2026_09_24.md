@@ -112,6 +112,13 @@ sampling. `acharge_round` moves either split by at most 0.0005, so its damage ra
   unmeasured.
 - **Sample.** 60 batches per split, not the full split. The paired design makes the contrasts
   much tighter than the absolute levels.
+  - **The val batches are not a random sample** (audit, 2026-09-27). They come through
+    `SequentialSampler` from a split ordered by `spec_id`, so they are its first 59%; the train
+    batches are random.
+  - The val baseline reads about 0.012 above the full split (f0: 0.744 against 0.7318 on W&B),
+    so the absolute gaps here are that much too small.
+  - Val damage varies with novelty, so the damage ratios may also shift on a random val sample.
+    [Audit](masster_memorization_attempts_audit_2026_09_27.md).
 - **Both encoder layers are rewritten together.** Which layer's global message carries the key is
   not separated.
 

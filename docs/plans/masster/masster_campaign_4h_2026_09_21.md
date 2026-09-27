@@ -111,6 +111,17 @@ the sweep plan states *in advance* that a one-hour screen is biased against regu
 | `c4d_drop_head03` | head dropout only 0.3 | decomposes drop03; 74% of the parameter budget is here |
 | `c4d_drop_mol03` | mol dropout only 0.3 | the encoder half of the same decomposition |
 
+**Tier D outcome (checked 2026-09-27,
+[audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)).** W&B holds
+two of the five arms.
+
+- `c4d_drop02` (`zx7zxqrv`) and `c4d_drop_head03` (`kjkdr22o`) stopped at the wall clock after
+  about 207 epochs.
+- Read at the 128-epoch screen (tail of epochs 118-127, control 0.7270, gate ±0.005), they are
+  −0.0033 and +0.0019. Both are null, and neither was read before.
+- `c4d_drop03`, `c4d_wd10` and `c4d_drop_mol03` have no W&B run. So the drop03 decomposition
+  stops at its head-only leg, and the full-length `wd10` question stays open on this lineage.
+
 ## Read-out protocol — fixed before the numbers exist
 
 1. **Matched epoch, never matched wall clock.** Throughput moved 2.5x between two same-config runs

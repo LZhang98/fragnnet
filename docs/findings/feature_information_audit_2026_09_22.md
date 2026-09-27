@@ -1,7 +1,7 @@
 # Feature and information audit, 2026-09-22 — what survived
 
 > **Status:** FINDING — synthesis, read this before any of its five parts &nbsp;·&nbsp;
-> **Updated:** 2026-09-22
+> **Updated:** 2026-09-27
 >
 > One investigation, started from "do ICEBERG and GLACIER have a larger model or more features?",
 > ending at three proposed MASSter candidate-token changes. It produced five documents and
@@ -47,8 +47,13 @@ registry with 10 tests; `masster_candidate_composition_features` (GLACIER eq. 14
 neutral-loss composition, off by default) with 4 tests and head plumbing. Full suite green, Ruff
 clean on every changed file.
 
-**Configs, none run.** `c4a_ring_topology` and `c4a_complement_composition`, one-key diffs from
-`c4a_base_s1` at the same seed; FraGNNet `graph_feature_parity`.
+**Configs.** `c4a_ring_topology` and `c4a_complement_composition`, one-key diffs from
+`c4a_base_s1` at the same seed; FraGNNet `graph_feature_parity`. *Corrected 2026-09-27* (this
+line earlier said none had run): all three ran on 2026-09-23.
+
+- `c4a_ring_topology` (`3gqgkl4x`): −0.0027, null.
+- `c4a_complement_composition` (`lxf97tck`): +0.0012, null.
+- `graph_feature_parity` (`m8qgi0ft`): crashed at epoch 77 and has not been read.
 
 **Diagnostics.** `debug_feature_headroom_probe.py`, `debug_charge_retention_shortcut.py`,
 `debug_annotation_vs_dag_identity.py`, `debug_masster_identity_degeneracy.py`,

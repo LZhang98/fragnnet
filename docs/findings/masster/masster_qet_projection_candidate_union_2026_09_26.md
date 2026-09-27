@@ -1,6 +1,6 @@
 # Would a QET breakdown-curve head change MASSter's predictions, and can one candidate set serve every energy?
 
-> **Status:** FINDING · **Updated:** 2026-09-26
+> **Status:** FINDING · **Updated:** 2026-09-27
 > Two offline gates for a MASSter intensity head built on the
 > [breakdown-curve form](../breakdown_curve_form_fit_2026_09_26.md), `softmax(a_i − e_i·β(NCE))`,
 > run once per molecule, plus what they exposed about the NCE input. Checkpoint
@@ -42,11 +42,13 @@
 >   and checkpoints unchanged. On the train CE series with seven NCE values held out, a
 >   standardized `1/(NCE + 200)` scalar predicted the unseen energies at 0.9845 channel cosine,
 >   against 0.9480 for abs-sines and 0.9627 for 32 RBF bumps
->   ([section](#fix-a-smooth-energy-input-2026-09-26)). Arm `n1` (`c0` plus `qet`, `jxczo2kf`)
->   trails `c0` by 0.0137 at epochs 24-33 of 64 (mid-run; projected tail −0.012). Its train loss
->   equals `c0`'s and only val loss is worse, so the smooth input costs generalization, not fit,
->   as the ladder reading predicts. `n2` (`qet_mlp`) and `n3` (`id`) are running
->   ([section](#validation-arm-n1)).
+>   ([section](#fix-a-smooth-energy-input-2026-09-26)).
+> - **But every input that drops the per-NCE code fails on NIST20** ([final read](#final-read-2026-09-27)):
+>   `n1` (`qet`) −0.0121, `n2` (`qet_mlp`) −0.0102 and `n3` (`id`) −0.0085 on the epoch 54-63
+>   tail. Train loss equals `c0`'s and only val loss is worse, so the smooth input costs
+>   generalization, not fit, as the ladder reading predicts.
+> - **`n4` keeps the per-NCE code and only swaps the aliasing table.** It is running at +0.0060
+>   over `c0` (epochs 51-60), above `c0` at every epoch, against the null it was built to show.
 >
 > The concrete uses of QET here are a smooth, monotone energy input and a once-per-molecule pass.
 > Enforcing the law on `u2`'s output would change little, because `u2` already obeys it on the
@@ -611,14 +613,41 @@ against `c0` at the same window. The loss settings are identical, so these compa
   - This is still inference from the loss pattern. The per-NCE-by-ladder read on `n1`'s
     checkpoint is the test.
 - **`n2` and `n3` are too early to resolve.** At epochs 6-9 the early-gap line has r = 0.75 and
-  a residual SD of 0.005.
+  a residual SD of 0.005. (Both have since finished and fail;
+  [final read](#final-read-2026-09-27).)
   - The losses lean one way: `n3` follows `n1` (train lower, val +0.013), as an axis-curvature-only
     difference should. `n2` is near `c0` on both.
   - Read both at about epoch 30, where the line reaches r ≈ 0.98.
 - **Hold.** `qet` should not go into new configs (Spectraverse cv0-cv9, Enveda `i0`) until
   `n2` and the ladder read are in. A ladder-blind smooth input costs about 0.012 on the
   seen-energy NIST20 split. Spectraverse's continuous derived NCE is the case `qet` was built for,
-  so the trade there is unmeasured, not negative.
+  so the trade there is unmeasured, not negative. (2026-09-27: `n2` is in and fails like `n1`,
+  so the hold stands; the ladder read is still open.)
+
+#### Final read (2026-09-27)
+
+W&B, against `c0` (`vcpho5qm`). Loss deltas are train-mode and eval-mode primary loss over the
+same window.
+
+| arm | run | window | cosine vs `c0` | train loss | val loss | above `c0` |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `n1` `qet` | `jxczo2kf` | 54-63 | **−0.0121** | +0.0009 | +0.0495 | 2 of 64 |
+| `n2` `qet_mlp` | `zov75vk3` | 54-63 | **−0.0102** | +0.0005 | +0.0382 | 2 of 64 |
+| `n3` `id` | `o9pz0j9j` | 54-63 | **−0.0085** | +0.0006 | +0.0365 | 3 of 64 |
+| `n4` `fourier` | `shjgv9im` | 51-60 (running) | +0.0060 | −0.0027 | −0.0215 | 61 of 61 |
+
+- **All three smooth or scalar inputs fail**, each at two to three times the 0.0042 seed spread.
+  Train fit is equal and val loss is worse in each. `n3` sits close to `n1`, so the cost comes
+  from giving up the per-energy code, whatever the axis. `n2`'s MLP on the smooth axis recovers
+  little.
+- **`n4` gains, against the null expected below.**
+  - It is the only arm here that keeps the per-NCE code, and it is better on train and val loss
+    alike.
+  - Its table is 20 columns wide instead of 8. That changes the initialization of every module
+    built after it, so read it against the seed spread and replicate a pass.
+  - Read the 54-63 tail when it finishes. Then the NCE 76-versus-180 check on its best
+    checkpoint says whether the gain is the removed collision or a general effect of the table.
+  - Coverage is equal (+0.0005).
 
 **Follow-up arms `n2` and `n3` (built 2026-09-26; submitted 2026-09-26, read above).** Both are in the same config
 directory and submitter (stage `nce`).
@@ -641,6 +670,8 @@ directory and submitter (stage `nce`).
   smokes on a 512-spectrum subsample exit 0 (val cosine `n2` 0.070 → 0.226, `n3` 0.068 → 0.222).
 
 **Arm `n4`: the per-NCE code without aliasing (built 2026-09-26, not submitted).**
+*Submitted 2026-09-27 (`shjgv9im`) and running at +0.0060 over `c0`
+([final read](#final-read-2026-09-27)), against the "none" expected below.*
 `n4_nce_fourier.yml` is `c0` with `int_embedder: fourier`; `ce_insert_type` stays `embed`.
 `n1`-`n3` suggest the per-NCE code carries something that transfers, so this arm keeps the code
 and replaces the table that aliases.

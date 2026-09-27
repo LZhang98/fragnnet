@@ -46,9 +46,12 @@ python scripts/debug/debug_pooled_embedding_memorization.py \
 - **Model state:** both splits run in eval mode, with train auxiliary metrics forced on. This is
   the eval-mode train measurement the read-out's §7.1 gate asked for. It is group-weighted, not
   molecule-balanced.
-- **Samples:** 100 batches of up to 512 spectra per split, about 51k spectra each. That is all
-  102 validation batches and 100 of 308 train batches. Both splits use the MASSter CE-context
-  batch sampler, whose context order is a seeded random permutation.
+- **Samples:** 100 batches of up to 512 spectra per split, about 51k spectra each.
+  - Validation is 100 of its 102 batches, read in order (`SequentialSampler`).
+  - Train is 100 of 308 batches from a seeded `RandomSampler` over spectra.
+  - *Corrected 2026-09-27:* the CE-context batch sampler is off for these checkpoints (standard
+    batching, batch 512). This finding originally said both splits used it.
+    [Audit](masster_memorization_attempts_audit_2026_09_27.md).
 - **Pairing:** every condition runs on the same batches, so its deltas are paired.
 - **Hardware:** local RTX 2070 SUPER, about 45 min per checkpoint, peak 7.75 GB.
 
@@ -144,9 +147,11 @@ merged batch). That computes the same function, so it does not change this resul
   evidence for the merged MA/MI lineage, not a measurement of it.
 - **Not a clean seed replicate.** The two checkpoints share the seed and architecture and differ
   only in target filtering. The agreement is across target definitions.
-- **Unequal train and validation populations.** Train excludes contexts too large for its batch
-  budget (`skip_too_big`); validation does not. That shifts the absolute gap, not the paired
-  per-route contrasts.
+- **Unequal train and validation samples.** Train is a random third of its split, and
+  validation is 98% of its split, read in `spec_id` order.
+  - *Corrected 2026-09-27:* no size-based skipping applies. `skip_too_big` belongs to the
+    dynamic and CE-context samplers, which these checkpoints do not use.
+  - The sample difference shifts the absolute gap, not the paired per-route contrasts.
 - **Head input versus network part.** Corrupting at the head's input cannot say whether the
   identity is written by the GNN encoder or read by the head's own weights. For choosing a
   regularizer, the block is the actionable level.

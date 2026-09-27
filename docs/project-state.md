@@ -5,7 +5,8 @@
 ## Current handoff
 
 **Allocator-route probe on `c0`, `r2`, `nl1`, `nl2` read, and two masks on the allocator's set
-built, `sm1` (message) and `sd1` (keys) (2026-09-27); uncommitted, not submitted.**
+built, `sm1` (message) and `sd1` (keys) (2026-09-27); committed, submitted 19:19 UTC on 09-27
+(`7kz04hra`, `uxie2eko`), running.**
 
 - **Probe** (inference only, 60 batches per split, eval mode):
   - The allocator's set message is the most train-specific route on `c0` (4.2x, excess gap
@@ -32,16 +33,15 @@ built, `sm1` (message) and `sd1` (keys) (2026-09-27); uncommitted, not submitted
     xfailed.
   - Both configs resolve to `c0` + their key, with 9,212,861 parameters.
   - Two-epoch CPU smokes exit 0.
-- **Next:** commit, then on Fir run `submit_masster_mh_ft_memorization_route.sh alloc` (both) and
-  `sbatch` the printed scripts. Read `wrecall`, then the 54-63 tail against `c0` (+0.006
+- **Next:** at epoch 63, read `wrecall`, then the 54-63 tail against `c0` (+0.006
   single-seed rule), then `sm1` against `sd1`, then the probe on their checkpoints.
 
 [Probe read](findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27),
 [plan: `sm1`](plans/masster/masster_memorization_route_plan.md#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted),
 [plan: `sd1`](plans/masster/masster_memorization_route_plan.md#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted).
 
-**Encoder atom-mask and bond-dropout arms `am1`/`de1` built (2026-09-27); uncommitted, not
-submitted.** These follow the user's proposal of atom drop and bond drop in the GNN. Each is `c0` +
+**Encoder atom-mask and bond-dropout arms `am1`/`de1` built (2026-09-27); committed in
+`9f596fc9`, not submitted.** These follow the user's proposal of atom drop and bond drop in the GNN. Each is `c0` +
 one training-only key at 0.1 on the shared `GINE_GSA` encoder:
 
 - **`am1`** (`masster_encoder_atom_mask`): an atom's projected input is replaced by a learned mask
@@ -69,22 +69,58 @@ DropEdge, which the plan had rejected on the route-map argument the audit weaken
   - 16 inducing points and 4 heads: +0.0043, with train fit unchanged, so no underfitting.
   - Standard `full` attention with 4 heads (`fa_h4`): +0.0086, the best local run, with 1.1M
     fewer parameters.
-  - New uncommitted key `masster_intensity_mz_positional_encoding`, sinusoidal on neutral mass;
-    `fa_h4_mz` is running.
-- **Next:** commit, then on Fir run `submit_masster_mh_ft_memorization_route.sh am1`, plus `de1`
+  - New key `masster_intensity_mz_positional_encoding`, sinusoidal on neutral mass. `fa_h4_mz`
+    was stopped at epoch 18 when the work moved to Fir. It was +0.0058 over `fa_h4` on epochs
+    12-17, with train loss lower too.
+- **Next:** on Fir run `submit_masster_mh_ft_memorization_route.sh am1`, plus `de1`
   optionally. Read `wrecall` first, then the 54-63 tail against `c0` (+0.006 single-seed rule).
 
 [Plan section](plans/masster/masster_memorization_route_plan.md#encoder-atom-mask-and-bond-dropout-arms-am1-and-de1-built-2026-09-27-not-submitted).
 
+**Memorization attempts audit (2026-09-27); read-only, no training.** Every attempt to close
+MASSter's train/val gap, on both lineages, re-derived from code, the configs as run and W&B.
+Nothing tested closes the ~0.18 eval-mode gap.
+
+- **Real levers:** EMA (both seeds, both lineages), `k1` key dropout (both seeds) and merged LR
+  decay. Removing a route has never helped.
+- **Stale records, corrected in the finding and in place in the docs it names:**
+  - `nl1` finished at +0.0037 (unresolved single-seed pass), not null.
+  - `nl2` is −0.0021 against its same-code control `r2`, with train and val loss worse.
+  - `sp0`/`sp1` reused their job names, so they resumed from the pre-fix epoch-2 checkpoint
+    under the same W&B ids. They sit about 0.02 below `c0` at epochs 20-37.
+  - `m2` is +0.0035 over `c0` at epochs 31-40, and +0.024 over `m1`.
+  - `n2`/`n3` finished at −0.010/−0.009; `n4` runs at +0.0060 (epochs 51-60).
+  - Merged arms recorded as unrun ran: `e6`, `c4a_ring_topology` and
+    `c4a_complement_composition` are null. Two FraGNNet feature arms ran and are unread.
+- **Method:** the +0.003 gate is about one standard error. The debug probe's val sample is a
+  `spec_id`-ordered prefix that reads ~0.011 high. `r0` and the other structural arms change
+  initialization.
+- **Next:** submit `s1`; second seeds of `gm1` and `nl1`; resubmit `sp0`/`sp1` under new job
+  names; gates 2-4 on `k1`/`gm1`/`u2`; read `m2` and `n4` at epoch 63.
+
+[Finding](findings/masster/masster_memorization_attempts_audit_2026_09_27.md).
+
 **Shared-proposal pathway audit (2026-09-26, 04:30 UTC on 09-27): the CE-context sampler was
-broken, and `sp0`/`sp1` collapsed and crashed. Both bugs found are fixed, uncommitted
-(05:40 UTC).**
+broken, and `sp0`/`sp1` collapsed and crashed. Both bugs found are fixed, committed in
+`1de12eb6`.**
 
 - Every epoch ended with 28 one-spectrum batches of one molecule (mol 32341). 95% of the
   precursor-encoder BatchNorm running statistics then came from it. On `c0`'s checkpoint that
   alone drops val cosine from 0.7236 to 0.4771; a random-batch control gives 0.7233.
 - `sp0`/`sp1` reached val cosine 0.03-0.24 (`c0` 0.58-0.66), with val loss 3-4 nats above train,
-  and are marked crashed at epoch 2 with no log. Both are void.
+  and are marked crashed at epoch 2 with no log.
+  - *Update 2026-09-27:* they were then resumed, not resubmitted. The resubmission reused the job
+    names, so both resumed from their pre-fix epoch-2 checkpoints under the same W&B ids.
+  - From epoch 3 they run the fixed sampler (312 steps per epoch). See the audit entry above.
+  - **Final read, epochs 54-63 (2026-09-27):**
+    - The sampler is null: `sp0` 0.7264 against `c0` 0.7276.
+    - Sharing fails: `sp1` 0.7181, −0.0083 against `sp0`. Val candidate wrecall is 0.9205 against
+      0.9383, and the proposal loss plateaus at 2.63 (train) against 1.87.
+    - Deep-cut masks fall from 41% to 25%. Likely cause: one CE-blind product of Bernoullis cannot
+      represent the energy mixture.
+    - `sp1` is 22% faster per epoch but behind `sp0` at equal wall-clock after 1.5 h.
+    - Next: per-NCE coverage from the Fir checkpoints before any remedy arm.
+    - [§4](findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md#4-final-read-of-the-resumed-arms-sampler-null-sharing-fails-on-coverage-2026-09-27).
 - **Sampler fix** (`data_sampler.py`, shared by the MASSter and FraGNNet CE-context samplers):
   - Molecules' chunks are merged in random order, and a repeated molecule's chunk waits for the
     next batch instead of closing this one.
@@ -94,14 +130,18 @@ broken, and `sp0`/`sp1` collapsed and crashed. Both bugs found are fixed, uncomm
   CE-conditioned context. It now reads the shared CE-free context. Dormant; no config uses it.
 - One regression test each; the full suite passes (4,495).
 - **Next:**
-  - Commit, then resubmit `sp0`/`sp1` under new run ids; their configs are unchanged.
+  - `sp0`/`sp1` finished as resumed runs (final read above). A fresh `sp0` is low priority, since
+    the sampler null already survived the poisoned warm start. Any new CE-context arm needs a new
+    job name, or it resumes an old `last.ckpt`.
   - Before Stage A (`c1`/`p1`/`p2`), re-measure its steps per epoch; its batches are fuller now.
 - The sharing code itself is correct. Its merged-target loss equals the plain per-spectrum loss
   exactly.
 
 [Finding](findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md).
 
-**Sink-dropout arm `m2` built (2026-09-26); not submitted.** `m1`'s memorization sink applied to
+**Sink-dropout arm `m2` built (2026-09-26); submitted 2026-09-27 (`41mnwm9f`), running.** At
+epochs 31-40 it is +0.0035 over `c0` and +0.0238 over `m1`, so it tracks `c0`. `m1`'s memorization
+sink applied to
 a random half of the training spectra: new key `masster_memorization_sink_dropout`, default 0
 (= `m1`), drawn per spectrum, no new parameters. `m1` failed at −0.0203 because the sink took
 transferable fit too. With MemSinks-style mixing, the shared path must fit half of each
@@ -118,14 +158,15 @@ Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arm
   `k1`'s, and val loss moves inside the seed pair. Weight decay is closed on this lineage.
 - **`u3` (switch EMA) fails:** −0.0089 against `u2`, below it at all 64 epochs, with train loss
   0.16 higher throughout. EMA works as an average kept off the training weights.
-- **`n1` (`qet`) fails:** −0.0137 at epochs 24-33, projected −0.012.
+- **`n1` (`qet`) fails:** −0.0137 at epochs 24-33, projected −0.012; final tail −0.0121.
   - Its train loss equals `c0`'s, and only val loss is worse (+0.055). So the smooth CE input
     costs generalization, not fit, as the two-ladder reading predicts.
   - `n2`/`n3` are at epoch 9, too early to read. By loss, `n3` looks like `n1` and `n2` like `c0`.
     *Final 2026-09-27:* `n2` −0.0102 and `n3` −0.0085; both fail like `n1`.
   - **Conflict:** Enveda `i0` still uses `qet`; do not submit it on `qet`. Spectraverse cv0-cv9
     moved to `embed` + `int_embedder: fourier` on 2026-09-27 (see the Spectraverse entry below).
-  - **Arm `n4` built, not submitted, uncommitted:** `c0` + `int_embedder: fourier`. It keeps the
+  - **Arm `n4`** (*since submitted as `shjgv9im`. At epochs 51-60 it runs +0.0060 over `c0`,
+    against the null expected; read the tail at 63*): `c0` + `int_embedder: fourier`. It keeps the
     per-NCE code (`embed`) and swaps abs-sines for a sin + cos table with no aliasing in 0-300. No
     gain is expected on NIST20, where 76/180 is the one colliding pair and cost nothing; it prices
     the table swap. Resolves to that key alone; a 2-epoch smoke exits 0. To submit, commit the
@@ -133,10 +174,16 @@ Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arm
     `submit_masster_mh_ft_memorization_route.sh n4` and `sbatch` the printed script.
 - **`nl1`/`nl2` (light-side token) project null** (+0.0015, +0.0002) with train fit unchanged:
   removing the heavier-side pool does not dent the lookup, which moves to another route.
+  - *Superseded by the final read (2026-09-27):* `nl1` +0.0037 is an unresolved single-seed
+    pass. `nl2` is −0.0021 against `r2`, with train and val loss worse.
+  - Neither arm can show rerouting, since both keep the boundary block, `c_mass` and the
+    candidate set
+    ([plan](plans/masster/masster_memorization_route_plan.md#final-read-of-nl1-and-nl2-2026-09-27)).
   **`nl3` (+ `k1`'s dropout) underfits at −0.017:** train loss +0.14, val loss up. `k1` needs
   redundant routes, so it does not stack with route removal. `nl3` later crashed at epoch 30;
   do not resubmit.
-- `sp0`/`sp1` collapsed and crashed at epoch 2 (sampler bug; see the top entry).
+- `sp0`/`sp1` collapsed and crashed at epoch 2 (sampler bug; see the top entry), then resumed
+  from their epoch-2 checkpoints after the fix.
 
 Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s checkpoint. Read
 `nl1`/`nl2` at 63 and run the route map on them.
@@ -190,7 +237,8 @@ On this workstation, point `TMPDIR` off the full 3.7 GB `/tmp`, or the checkpoin
 
 [Plan](plans/masster/masster_isotope_envelope_plan.md#current-state-and-next-check).
 
-**Light-side token arms `nl1`-`nl3` (2026-09-26); running, read in the top entry.**
+**Light-side token arms `nl1`-`nl3` (2026-09-26); finished. Final read in the
+[plan](plans/masster/masster_memorization_route_plan.md#final-read-of-nl1-and-nl2-2026-09-27).**
 Each candidate is represented by the lighter side of its cut (the neutral loss of a large
 fragment). The heavier side enters only as element counts (`c_heavy_side`), because the side-of-cut
 probe found it the more memorizing input.
@@ -233,8 +281,9 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
     own 256. That is target-free, but its cosine value is unmeasured; a mask-order U128 already
     tied U256 on cosine.
   - **Arms `sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`) are void: the sampler's epoch tail
-    poisoned BatchNorm, and both crashed at epoch 2. The sampler is fixed (uncommitted);
-    resubmit both under new ids
+    poisoned BatchNorm, and both crashed at epoch 2. The sampler is fixed (`1de12eb6`).
+    Resubmit both under new job names; reusing the names resumed these ids from their pre-fix
+    checkpoints
     ([audit](findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md)).** `sp0` = `c0` + the CE-context batch
     sampler (whole molecules per batch: 32 spectra per context, edge budget never binding, 512
     spectra cap as in `c0`); `sp1` = `sp0` + `masster_share_proposal_across_ev`. Read `sp0`
@@ -320,7 +369,8 @@ null (top entry).** W&B tails over epochs 54-63.
   lineage (0.7421, +0.0145 over `c0`) but is +0.0029 over `u2`, so stacking is not shown. `gm1`
   +0.0051 on one seed; `gm2` −0.0029. Coverage moves by at most 0.0007.
 - The swap arms `gm3`-`gm6` all fail (+0.0023, +0.0006, −0.0029, −0.0025), each below `gm1`:
-  another molecule's real message does worse than the batch mean. The swap family is closed.
+  another molecule's real message does worse than the batch mean. The swap family is closed: a
+  resource decision on one seed, with each swap delta inside the seed spread.
 - Still open: gates 2-4 (ranking decomposition, route map, novelty bins) on the checkpoints
   that passed gate 1 (`k1`, `k1_ema`, `gm1`, `u2`).
 - `w1_wd10.yml` is `c0` with `weight_decay` 0.1. AdamW's decay timescale falls from ~325 epochs
@@ -1088,7 +1138,8 @@ the effect does not. Two patterns repeat from the architecture read: **stacking 
 the loss gap is still not the objective**: `e2` has the narrowest train/val primary-loss gap of the
 seven runs (0.5719 vs a 0.6191 control mean) and the lowest cosine of the five, the third instance
 after `b3_wd_groups` and `drop03`. Coverage is flat again (`val_wrecall` spread 0.0006).
-`e6_ring_topology_cut_bond` was never submitted.
+`e6_ring_topology_cut_bond` was never submitted. *(Corrected 2026-09-27: it ran, `kc04u2cd`,
++0.0015, null.)*
 
 **The intensity escape is an exact null at n=2 vs n=2.** `e1_escape` against `e0_independent`, two
 seeds each on the `batch256x2_lb32` base, read at their common epoch 118 while still running:
@@ -1431,6 +1482,8 @@ complement composition, `masster_candidate_composition_features` (GLACIER eq. 14
 strips stereochemistry, so 0 of 127,249 sampled NIST20 bonds carry any, on NIST23 and
 MassSpecGym alike. Three matched arms are prepared and **none has been run**:
 `c4a_ring_topology`, `c4a_complement_composition`, and FraGNNet `graph_feature_parity`.
+*(Corrected 2026-09-27: all three ran on 2026-09-23. `3gqgkl4x` −0.0027 and `lxf97tck` +0.0012
+are null; `m8qgi0ft` crashed at epoch 77 and has not been read.)*
 Details in [the GLACIER note](notes/glacier_object_detection.md); validation: full suite green,
 Ruff clean on every changed file; no evaluation, no cluster job. Two debug configs stack **all
 four** new features at toy width and both smoke-trained green on 2026-09-22 (2 and 5 epochs on

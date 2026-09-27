@@ -1,6 +1,6 @@
 # MASSter architecture review — remaining todo
 
-> **Status:** ACTIVE · **Updated:** 2026-09-22
+> **Status:** ACTIVE · **Updated:** 2026-09-27
 >
 > Tracks only what is still open from the 2026-09-19 code-vs-literature review of the MASSter
 > stack. Five of its seven items were implemented on 2026-09-20/21, all default-off. **§1 is now
@@ -202,8 +202,10 @@ reaches the head. Still missing: any **composition** vector and the **neutral-lo
 formula.
 
 - The `c_nl_composition` entry (GLACIER eq. 14's `psi(r_form - f_k)`) is implemented and absent
-  from the default list; `c4a_complement_composition` is prepared and has never run.
-- Submit it as a 128-epoch arm alongside §2.
+  from the default list.
+- *Corrected 2026-09-27:* `c4a_complement_composition` ran on 2026-09-23 (`lxf97tck`, 128 epochs)
+  and is null, +0.0012 against the 0.7270 control. This item earlier said it had never run and
+  asked for it as a 128-epoch arm; nothing is left to submit.
 
 **Two smaller items in the same token, neither prepared:**
 

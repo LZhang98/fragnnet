@@ -1,6 +1,6 @@
 # MASSter shared fragment proposal pathway audit
 
-> **Status:** FINDING · **Updated:** 2026-09-26 (05:40 UTC on 09-27)
+> **Status:** FINDING · **Updated:** 2026-09-27
 > Audit of `masster_share_proposal_across_ev` and the CE-context batch sampler it requires, made
 > while arms `sp0`/`sp1` ran. **The sampler, not the sharing, was broken.** Every epoch ended with
 > 28 one-spectrum batches of one molecule. These left the BatchNorm running statistics used at
@@ -8,8 +8,22 @@
 > val cosine. `sp0` and `sp1` collapsed (val cosine 0.03-0.24 against `c0`'s 0.58-0.66) and
 > are marked crashed at epoch 2. The shared proposal path is correct. Its merged-target loss is
 > exactly the plain per-spectrum loss, so sharing does not need this sampler.
-> **Both bugs are fixed in the working tree (uncommitted; [Fixes](#fixes-2026-09-26)):** the
-> sampler no longer emits the tail, and the shared ion-mode proposal head no longer reads CE.
+> **Both bugs are fixed, committed in `1de12eb6` ([Fixes](#fixes-2026-09-26)):** the sampler
+> no longer emits the tail, and the shared ion-mode proposal head no longer reads CE.
+> **`sp0`/`sp1` were resumed, not resubmitted fresh** (2026-09-27,
+> [audit](masster_memorization_attempts_audit_2026_09_27.md)).
+> **Final read ([§4](#4-final-read-of-the-resumed-arms-sampler-null-sharing-fails-on-coverage-2026-09-27)):**
+> the sampler is null (`sp0` − `c0` = −0.0012). Sharing fails at −0.0083 against `sp0`: candidate
+> coverage falls 0.018 and deep-cut masks fall from 41% to 25%. Likely cause: a single CE-blind
+> product of Bernoullis cannot represent the energy mixture.
+>
+> - The resubmission reused the job names, so the runner found `job_id/<job>.id` and resumed
+>   the same W&B ids from `last.ckpt` at epoch 2.
+> - Epochs 0-2 are the pre-fix collapse. From epoch 3 the fixed sampler runs, at 312 steps per
+>   epoch (`c0`: 308).
+> - Both recovered but sit about 0.02 below `c0` (−0.022 at epochs 20-29, −0.020 at 28-37).
+>   Warm-starting from three poisoned epochs and whole-molecule batch composition are not
+>   separated.
 
 ## Question
 
@@ -121,6 +135,57 @@ intensity path reads that encoder too. Two things change in the intensity path, 
 - Encoder dropout (`mol_dropout: 0.1`) draws one mask per molecule, shared by all its energies in
   the step, instead of one per spectrum.
 
+## 4. Final read of the resumed arms: sampler null, sharing fails on coverage (2026-09-27)
+
+W&B, all 64 epochs. Both arms resumed from their pre-fix epoch-2 checkpoints, so epochs 0-2 are
+the collapse and both carry the same warm start. Histories and script:
+`output/sp_wandb_read_2026_09_27/` (`read.py`). Tail = mean over epochs 54-63; seed spread 0.0042.
+
+| arm | val cos | val cand. wrecall | proposal loss, train / val | primary loss, val | s/epoch |
+| --- | ---: | ---: | --- | ---: | ---: |
+| `c0` (`vcpho5qm`) | 0.7276 | 0.9396 | 1.71 / 2.20 | −2.881 | 182 |
+| `c0_s2` (`1oxhvk0n`) | 0.7318 | 0.9398 | 1.71 / 2.19 | −2.905 | 181 |
+| `sp0` (`85mfkk8i`) | 0.7264 | 0.9383 | 1.88 / 2.14 | −2.933 | 172 |
+| `sp1` (`bu6dzjph`) | 0.7181 | 0.9205 | 2.64 / 2.74 | −2.914 | 134 |
+
+- **The CE-context sampler costs nothing:** `sp0` − `c0` = −0.0012, inside the seed spread, even
+  after three poisoned epochs. Its train loss is higher (−3.18 vs −3.39) and its val loss lower.
+- **The shared proposal fails:** `sp1` − `sp0` = −0.0083, twice the seed spread. The loss is in
+  coverage, not intensity:
+  - Val candidate wrecall falls 0.018. The gap is 0.019-0.053 at every epoch from 3 to 63.
+  - The proposal loss plateaus: 2.63 train and 2.74 val, against 1.87 and 2.15. Train and val stay
+    close, so the shared proposal underfits.
+  - The val primary loss is unchanged (−2.914 vs −2.933): that loss barely sees uncovered peaks,
+    and cosine does.
+- **Its candidates are shallower.** The mean cut count per enumerated mask is 4.57 against 5.71.
+  Masks with 6+ cuts fall from 41% to 25%, while masks with 0-2 cuts are unchanged (0.081 vs 0.072).
+  Deep masks make the small fragments that high-CE spectra need.
+- **Speed does not pay for it.** `sp1` runs 22% faster per epoch, but its best val cosine falls
+  behind `sp0` after about 1.5 h at equal wall-clock: 0.7160 vs 0.7201 at 2.0 h, and 0.7221 vs
+  0.7249 at 2.44 h, where `sp1` ends.
+
+**Likely mechanism (not yet confirmed per energy).** The candidate enumeration ranks masks by a
+product of independent per-bond Bernoullis; the CUDA backend allows one mixture component only.
+
+- A CE-conditioned proposal gives each energy its own break probabilities.
+- One CE-blind product cannot represent a mixture of a few-cut (low-CE) and a many-cut (high-CE)
+  distribution. It settles at intermediate break probabilities, so its top masks cluster at
+  intermediate cut counts.
+- The offline gate's `mean` stand-in ([§ "What a shared proposal would rank"](masster_qet_projection_candidate_union_2026_09_26.md#what-a-shared-proposal-would-rank-2026-09-26))
+  averaged per-energy probabilities, which is exactly such a mixture. That is why it lost no
+  coverage and the trained model did.
+
+**Checks and options.**
+
+- The decisive check is per-NCE candidate wrecall of `sp1` against `sp0`. The prediction is a loss
+  concentrated at high NCE and at each molecule's highest energy. It needs the checkpoints, which
+  are on Fir: none were uploaded to W&B, and this workstation has no route there.
+- Options, all unmeasured:
+  - a Bernoulli-mixture shared proposal (`masster_proposal_num_mixtures: 2`, CPU candidate backend
+    only);
+  - a larger shared budget (384 covered more in the gate);
+  - a CE-blind union of candidate sets enumerated at a few global logit offsets.
+
 ## Fixes (2026-09-26)
 
 Uncommitted, in the working tree. Checks run: a new regression test for each fix, which fails on
@@ -176,8 +241,10 @@ After the fix (`sampler_after_fix.py`, epochs 0, 1, 5, 30):
 
 ## What is left
 
-1. Commit the fixes, then resubmit `sp0`/`sp1` under new run ids; their configs need no change.
-   The first submissions (`85mfkk8i`, `bu6dzjph`) are void.
+1. `sp0`/`sp1` finished as resumed runs; read in [§4](#4-final-read-of-the-resumed-arms-sampler-null-sharing-fails-on-coverage-2026-09-27).
+   - A fresh `sp0` would only confirm a null that already survived a poisoned warm start. It is
+     low priority.
+   - Next for sharing: the per-NCE coverage read on Fir, before any remedy arm.
 2. Stage A: re-measure steps per epoch on the fixed sampler before submitting `c1`/`p1`/`p2`.
 3. Optional: `c0` + `masster_share_proposal_across_ev` on `c0`'s random batches measures a CE-blind
    proposal against `c0` directly, since the loss does not depend on grouping. The runner guard
@@ -194,6 +261,7 @@ After the fix (`sampler_after_fix.py`, epochs 0, 1, 5, 30):
   (100,000) never binds at 512 spectra, so batch membership is unaffected.
 - The crash cause of `sp0`/`sp1` is unknown.
 - The fix is checked on the sampler's batches and by the BatchNorm probes, not by a training run.
-  The resubmitted `sp0` is that check: it should track `c0` from epoch 0.
+  A fresh `sp0` is that check: it should track `c0` from epoch 0. The resumed `85mfkk8i` cannot
+  be, since it inherits three pre-fix epochs.
 
 Scripts and log: `output/shared_proposal_audit_2026_09_26/` (local, git-ignored).

@@ -1,6 +1,6 @@
 # GLACIER (Wang, Wang & Coley, MIT — arXiv 2606.29161)
 
-> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-23
+> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-27
 >
 > Literature notes on "GLACIER: Rethinking Mass Spectrum Prediction as an Object Detection
 > Problem". Read the **bin-width caveat** before quoting any of its NIST'20 numbers.
@@ -458,7 +458,7 @@ Versus the MASSter token (`c4a_base`):
 | atoms | learned attention over its own atoms | mean pools of the fragment's atoms and of the complement's atoms |
 | cut site | `n_broken` only | **boundary block**: `CutBondEncoder` MLP on `[in, out, in·out]` of the cut bonds' endpoint embeddings; plus `c_cut_count` |
 | fragment formula | `psi(f_k)`, exact counts | none; `c_mass` (log1p mass, precursor fraction) |
-| neutral loss | `psi(r - f_k)`, exact counts | none by default; `c_nl_composition` (log1p counts) built, `c4a_complement_composition` never run |
+| neutral loss | `psi(r - f_k)`, exact counts | none by default; `c_nl_composition` (log1p counts) built; `c4a_complement_composition` ran, null (+0.0012) |
 | molecule | learned graph token `G` (carries the metadata) | metadata-only context vector |
 
 GLACIER's token is **formula-first**. The parts that transfer across molecules (formula, neutral
@@ -515,8 +515,17 @@ pentan-2-one, where the two candidates are themselves near-isobaric (C4H10 58.07
 
 FraGNNet has had the same input available all along as the `neutral_loss_formula` fragment
 feature, with a written arm
-(`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_neutral_loss.yml`) that has never
-been run. **No production arm has been trained**; the only training is the toy smoke run below.
+(`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_neutral_loss.yml`).
+
+*Corrected 2026-09-27* (this paragraph earlier said that arm had never run and that no
+production arm had been trained):
+
+- The FraGNNet arm ran on 2026-07-15 (`b7witrjj`, crashed at epoch 63) and has not been read.
+- The MASSter arms `c4a_complement_composition` (`lxf97tck`) and `c4a_ring_topology`
+  (`3gqgkl4x`) ran 128 epochs on 2026-09-23 and are null: +0.0012 and −0.0027 against the 0.7270
+  control.
+- The FraGNNet `graph_feature_parity` arm ran on 2026-09-23 (`m8qgi0ft`, crashed at epoch 77) and
+  has not been read.
 
 ### Closing the graph-feature gap (2026-09-22)
 
@@ -604,7 +613,7 @@ plus Appendices C-D. Architecture only — none of this is a measured result.
 | backbone | GINE x4 @384 on the mol graph | GINE_GSA x2 @384 (1.81M, a measured plateau) | Graphormer, shared, one pass |
 | fragment embedding | pool its own atoms' embeddings via the `cc` mask; `cc_interstage: direct`, `cc_interstage_use_rest: False` (no molecule or complement context) | 3x384 pooled + 128 context | "dynamic embedding" pool + masked TransformerDecoder over its own atoms (eq. 7) |
 | **fragment <-> fragment** | `frag_gnn_type: NodeMLP`, `pyg_edges: False` -> no DAG message passing. Only interaction is **subtracting the per-spectrum max-pooled fragment vector** (`src/fragnnet/model/fragnnet_model.py:1956-1962`) | **ISAB**, 64 inducing points, 3 layers (49.5% of the intensity head) | **full TransformerEncoder over the fragment set** (eq. 8) |
-| intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index; `neutral_loss_formula` implemented, off, arm never run | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)**, **plus the complement composition since 2026-09-22 (opt-in)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
+| intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index; `neutral_loss_formula` implemented, off; its arm ran 2026-07-15 (`b7witrjj`), not read | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)**, **plus the complement composition since 2026-09-22 (opt-in)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
 | output law | **softmax over the joint (fragment x formula) grid** + OOS sink; 9 H-shifts (+/-4) x {CRF, CMF} | charge head -> ion-mode / H-channel head | **independent sigmoids**, 13 H-shifts (+/-6) x {CRF, CMF} = 26, summed at exact m/z then binned (eqs. 15-16) |
 | loss | Gaussian-density CE at **instrument tolerance** (FT 10 ppm / QTOF 20 ppm) | spectral CE (JSS ~= CE) + support BCE | cosine on **0.1 Da bins** + MAGMa teacher-forced auxiliary, weight `w_magma` annealed 1 -> 0 |
 | conditioning | CE (NCE+ACE), adduct, instrument, frag-mode at encoder input + CE FiLM + mode affine on logits | same context encoder | adduct (one-hot + element-group multi-hot), CE (64-dim sinusoid) and instrument one-hot, concatenated onto every atom's input features; nothing in the attention biases (code, corrected 2026-09-23) |

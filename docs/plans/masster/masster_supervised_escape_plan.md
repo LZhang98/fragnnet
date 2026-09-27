@@ -1,6 +1,6 @@
 # MASSter supervised escape channel
 
-> **Status:** IMPLEMENTED, SCREENED NULL · **Updated:** 2026-09-22
+> **Status:** IMPLEMENTED, SCREENED NULL · **Updated:** 2026-09-27
 > Design of record for giving MASSter somewhere to put intensity it cannot place on a
 > candidate. **Two escapes, two targets, two purposes.** The *intensity* escape (§3) is the one
 > that changes training: `wrecall` is 0.891, so 10.9% of observed intensity sits at m/z values
@@ -10,8 +10,9 @@
 > and is an exact null so far**: `e1_escape` vs `e0_independent`, two seeds each, read at their
 > common epoch 118 while still running — 0.7225 against 0.7225, **Δ +0.0000**, seed spreads
 > 0.0001 and 0.0003. The tightest null in this family. See the
-> [epoch-128 read-out §2](../../findings/masster/masster_architecture_arms_epoch128_2026_09_22.md);
-> re-read at completion.
+> [epoch-128 read-out §2](../../findings/masster/masster_architecture_arms_epoch128_2026_09_22.md).
+> **Re-read at completion (2026-09-27):** all four runs finished 128 epochs. On the 118-127 tail
+> `e1` averages 0.7230 over its two seeds against 0.7231 for `e0`, Δ −0.0001. The null holds.
 > The *contaminant* escape (§4) is `predict_oos` supervised by the subformula test, and remains
 > unimplemented.
 > Sizing comes from [the unexplained-peak split](../../findings/masster/unexplained_peak_split_2026_09_22.md).

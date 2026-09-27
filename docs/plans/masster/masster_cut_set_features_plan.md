@@ -2,7 +2,7 @@
 
 > **Status:** SCREENED, ALL NULL — B0, an adjacency form of A, and G are in the tree behind
 > default-off keys; all five matched arms ran the 128-epoch screen on 2026-09-22 and **none moved
-> validation cosine** &nbsp;·&nbsp; **Updated:** 2026-09-22
+> validation cosine** &nbsp;·&nbsp; **Updated:** 2026-09-27
 >
 > **Result first.** Against a 0.7270 control (replicate spread 0.0007, gate ±0.005):
 > `e4_cut_adjacency` **+0.0032**, `e5_cut_bond_plus_adjacency` +0.0021, `e3_cc_atom_drop02`
@@ -12,7 +12,16 @@
 > The mechanism argument below is untouched by this: adjacency was predicted to be the only
 > non-redundant relation and it is the only arm with a sign. What is refuted is that resolving
 > more candidates per descriptor bucket buys validation cosine — which is what the plan's own
-> 2026-07-23 counter-weight warned. `e6_ring_topology_cut_bond` was never submitted.
+> 2026-07-23 counter-weight warned.
+>
+> **`e6_ring_topology_cut_bond` did run** (corrected 2026-09-27; earlier text said it was never
+> submitted).
+>
+> - `e6` (`kc04u2cd`) and its encoder-only twin `c4a_ring_topology` (`3gqgkl4x`) finished 128
+>   epochs on 2026-09-23. Tails: +0.0015 and −0.0027, both null.
+> - By item 4's rule below, A closes: `e5` did not land above both `e1` and `e4`.
+> - By item 6's rule, B is gated closed: B0 (`e1`) read −0.0010.
+> - [Audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md).
 >
 > **The premise numbers below are superseded.** They came from the depth-3 BFS DAG; the
 > [candidate-descriptor measurement](../../findings/masster/masster_candidate_cut_descriptors_2026_09_22.md)

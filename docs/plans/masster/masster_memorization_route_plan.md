@@ -1,21 +1,29 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
 > **Status:** ACTIVE · **Updated:** 2026-09-27
+> **Audited 2026-09-27 ([finding](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)).**
+> Every number below was re-derived from W&B and code. The corrections are applied in place. The
+> +0.003 gate is about one standard error of a single-seed delta, and gates 2-4 have not run on
+> any arm.
 > **The allocator-route probe reran on `c0`, `r2`, `nl1` and `nl2` (2026-09-27).**
 >
 > - On `c0` the allocator's set message is the most train-specific route (4.2x), as on f0.
 > - Without global attention (`r2`) it carries almost twice the train-specific fit: this is where
 >   the lookup goes.
-> - Two masks on that route are built, not submitted, to run together against `c0`:
+> - Two masks on that route are running against `c0` since 2026-09-27 (`7kz04hra`, `uxie2eko`):
 >   - the message mask `sm1`
 >     ([section](#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted));
 >   - the key mask `sd1`
 >     ([section](#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
+> - Proposed, not built: the candidate-graph arms `fa0`/`cg1`/`cg2`, the user's GNN over the
+>   candidates, as full attention masked to chemical neighbours
+>   ([section](#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)).
 >
 > **Step 1 ran; W&B tail read done ([below](#step-1-tail-read-from-wb-2026-09-24)).** `k1` (key
 > dropout) passes gates 1 and 5 at +0.0074 over `c0`; gates 2-4 need the route map and novelty
-> bins on its checkpoint. `r2` (no global attention) is null at +0.0006. `r1` fails (−0.0029),
-> `r0` is −0.0129 and `m1` is −0.0203. The same-recipe `c0`/`f0` spread is 0.0022.
+> bins on its checkpoint. `r2` (no global attention) is null at +0.0006. `r1` misses the gate
+> (−0.0029, inside the seed spread), `r0` is −0.0129 (with a changed initialization) and `m1` is
+> −0.0203. The same-recipe `c0`/`f0` spread is 0.0022.
 > **Global-message noise arms `gm1`/`gm2`**
 > ([section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted)) **and swap
 > arms `gm3`-`gm6`**: another molecule's real message instead of the batch mean, a feature-level
@@ -25,15 +33,27 @@
 > seed-811237 replicates of `c0`, `k1` and EMA. **Six of ten finished; tail read 2026-09-26**
 > ([read](#batch-2-tail-read-six-finished-runs-2026-09-26)). The seed spread is 0.0042
 > (`c0_s2` − `c0`), above the +0.003 gate. `k1` and EMA replicate (+0.0048, +0.0072 at seed
-> 811237); `k1_ema` is +0.0029 over `u2`, just under the gate; `gm1` +0.0051, `gm2` −0.0029.
-> Swap arms `gm3`-`gm6` all fail (+0.0023 to −0.0029), each below `gm1`.
+> 811237); `k1_ema` is +0.0029 over `u2`, just under the gate; `gm1` +0.0051 (one seed), `gm2`
+> −0.0029. No swap arm `gm3`-`gm6` passes (+0.0023 to −0.0029, each inside the seed spread), and
+> each is below `gm1`.
 > **Learning-rate-schedule arms `s1`/`s1_k1_ema` built 2026-09-25, not submitted**
 > ([section](#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25)): `d3`'s warmup and cosine
 > decay on `c0` and on `k1_ema`, where every run so far trains at a constant 1e-3 (decision C).
 > **Batch 3 read 2026-09-26 ([read](#batch-3-read-from-wb-2026-09-26)).** Weight-decay arm `w1`
-> (`weight_decay` 0.1) finished null at +0.0010. Light-side token arms `nl1`-`nl3`, mid-run:
-> `nl1` and `nl2` project null (+0.0015, +0.0002) with train fit unchanged, so the lookup moves to
-> another route; `nl3` (`nl2` + `k1`'s dropout) underfits at −0.017. `sp0`/`sp1` are running.
+> (`weight_decay` 0.1) finished null at +0.0010. **Light-side token arms, final read 2026-09-27**
+> ([read](#final-read-of-nl1-and-nl2-2026-09-27)):
+>
+> - `nl1` finished at +0.0037, an unresolved single-seed pass, not the projected null.
+> - `nl2` finished at −0.0015, and −0.0021 against its same-code control `r2` with train and val
+>   loss worse: a mild underfit.
+> - `nl3` underfits (−0.018 against `nl2`) and crashed at epoch 30.
+> - Neither `nl1` nor `nl2` touches the boundary block, `c_mass` or the candidate set, so neither
+>   can show rerouting.
+>
+> `sp0`/`sp1` collapsed on the broken sampler and were resumed from their epoch-2 checkpoints
+> after the fix
+> ([shared-proposal audit](../../findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md)).
+> Sink-dropout arm `m2` is running at +0.0035 over `c0` (epochs 31-40).
 > ([`w1` section](#weight-decay-arm-w1-2026-09-25),
 > [`nl` section](#light-side-token-arms-nl1-nl3-built-2026-09-26-not-submitted).)
 > **Step 0's route map ran (items 1-3):** the global-attention message in the encoder writes the
@@ -78,8 +98,9 @@ An arm passes only if all five hold against a same-code control at matched epoch
    ([variance-novelty](../../findings/masster/masster_variance_novelty_2026_09_24.md)).
 5. **Coverage.** `wrecall` stays within 0.005 of the control.
 
-Narrowing the gap by lowering train fit is underfitting, not a pass. `drop03` (−0.0149),
-`b3_wd_groups` and `e2` all did that.
+Narrowing the gap by lowering train fit is underfitting, not a pass. `drop03` (−0.0149) did
+that, with train cosine logged. `b3_wd_groups` and `e2` logged no train cosine, and narrowed only
+the train-mode loss gap; `b3`'s change is inside that statistic's own floor.
 
 ## Change list (2026-09-24)
 
@@ -238,7 +259,7 @@ Where the lookup can get its key (K), where it can be stored (S), and what drive
 | K3 | **Fragment and complement pools.** They name the molecule but separate candidates only weakly, since overlapping fragments share most of their atoms. | Probe: used symmetrically by both splits today. `e2`/`e3` (atom dropout on the pools only) were null. | yes |
 | K4 | **Exact descriptors and inputs.** `c_mass` (log1p neutral mass plus precursor mass fraction) nearly fixes the formula. `c_charge` and the `a_charge` atom input are continuous Gasteiger values. | Probe: descriptors used symmetrically. Removing `c_mass` +0.0012, `c_charge` −0.0012, `a_charge` −0.0025, all inside the merged ±0.005 gate ([campaign read-out §8](../../findings/masster/masster_campaign_readout_2026_09_21.md#8-the-bundles-leave-one-out-arms-read-at-the-128-epoch-screen-added-2026-09-24)). | partly |
 | K5 | **The candidate set.** In evaluation, the 256 selected fragments are a fixed function of the molecule, and the allocator attends over all of them. | Probe: `set_drop` closes 9-10% of the gap. Training already perturbs the set through BatchNorm, and the lookup forms anyway. (A random-weight probe measured train-versus-eval Jaccard 0.60-0.77 at dropout 0.1; the trained magnitude is unmeasured, [regularization audit §2.2](../../findings/masster/masster_regularization_audit_2026_09_19.md).) | yes |
-| S1 | **Allocator capacity.** No dropout on the token projection or the cut-bond encoder. | `a2_full_attention` cut the head 40.8% and scored +0.0030, so val does not need this capacity. `h1`/`h2` are prepared. | partly |
+| S1 | **Allocator capacity.** No dropout on the token projection or the cut-bond encoder. | `a2_full_attention` cut the head 43.6% and scored +0.0030, so val does not need this capacity. `h1`/`h2` are prepared. | partly |
 | S2 | **The ion/H head: a second per-candidate store.** A 9-way H-shift distribution per fragment, read from the same contextualized token. | The probe corrupts the token before both heads, so it cannot say which head holds the memorized allocation. | no |
 | I1 | **Exposure and objective.** Each key is seen about 800 times, and cross-entropy is minimized by fitting each molecule. | Train `cos_hun` 0.961 against val 0.762. Exposure is flat (Spearman 0.058): every molecule is memorized about equally. The precursor fallback appears only on unseen molecules. | yes |
 
@@ -562,11 +583,23 @@ Per arm, against the decision table:
 - **`r0` is not a removable channel.** Val is −0.0129, below `c0` at every epoch, and the
   loss gap does not narrow (0.690). Whether this is rerouting (row 1) depends on another route
   turning asymmetric, which only the route map on `qyjlg9tb` can show.
-- **`r1` fails gate 1** (−0.0029, above `c0` at 10 of 64 epochs, gap 0.694).
+  - **Initialization differs from `c0` (audit, 2026-09-27).** `r0` also drops the
+    `CutBondEncoder`, whose construction is not on a forked RNG
+    ([`masster_model.py:1720`](../../../src/fragnnet/model/masster_model.py#L1720)). So
+    `charge_head` and part of `intensity_head` start from different weights than in `c0`.
+  - The −0.0129 is three times the seed spread, so its direction stands. Its size is not a
+    clean single-variable effect.
+- **`r1` misses gate 1** (−0.0029, above `c0` at 10 of 64 epochs, gap 0.694). That is inside the
+  0.0042 seed spread measured later, so it shows no benefit rather than harm.
 - **`m1` is rejected as configured.** −0.0203, above `c0` at 3 of 64 epochs. The sink-on train
-  loss is the best of the six (−3.591) while val falls, so the sink absorbed transferable signal.
-  The plan's fallback is a later start or a larger sink weight decay. A −0.020 gap at the
-  current settings is weak grounds for a retry.
+  loss is the best of the six (−3.591) while val falls. The plan read this as the sink absorbing
+  transferable signal.
+  - **Not tested (audit):** a second reading predicts the same curves. Once the sink fits a
+    spectrum, the shared weights get little gradient from it and train less.
+  - The eval-mode train cosine with the sink on would separate the two readings. It is not
+    built.
+  - The plan's fallback is a later start or a larger sink weight decay. A −0.020 gap at the
+    current settings is weak grounds for a retry.
 
 ### Next after the tail read
 
@@ -612,6 +645,16 @@ scratchpad; checkpoints are in `saved_ckpts/`.
   arm. The gap is in how intensity is allocated among covered candidates.
 - **Limits.** One seed; 60 batches, paired, so contrasts of about 0.003 are near the noise; the
   arms' best epochs differ by up to 5.
+- **Audit caveats (2026-09-27).**
+  - **The val sample is not random.** The probe reads the first 60 of 102 val batches through
+    `SequentialSampler`, and the val split is ordered by `spec_id`. Its val cosine is
+    0.010-0.014 above the full-split W&B value for every checkpoint above (for example `c0`@63:
+    0.7388 against 0.7279). The train sample is 60 random batches. Absolute gaps are therefore
+    about 0.011 too small.
+  - **The control was read at other epochs.** `c0`'s gap grows 0.1760 → 0.1834 between epochs
+    42 and 63. Interpolated to each arm's epoch, `k1` closes about 0.015 (not 0.017) and `r2`
+    about 0.005 (not 0.007).
+  - **Not reproducible.** The CSVs were in a session scratchpad and are gone.
 
 The running batch-2 arms log only train-mode loss, which carries each arm's own training noise
 (and, under EMA, the online weights), so their W&B loss gap is not a clean read. Val primary loss
@@ -856,6 +899,10 @@ is the batch-mean form of the same message regularizer.
   swaps and the 0.6 rate hurt.
 - **The swap family is closed.** `gm1`, batch-mean substitution, is the only global-message
   arm that passes, on one seed and within about 0.001 of the seed spread.
+  - This is a resource decision, not a measured harm. Each swap delta is a single seed inside
+    the 0.0042 spread.
+  - The ordering is solid, though: on the same seed every swap arm sits below `gm1`, and the 0.6
+    rate is below 0.3.
 
 ## Learning-rate-schedule arms `s1` and `s1_k1_ema` (2026-09-25)
 
@@ -959,8 +1006,13 @@ route, and adds break-local evidence as the signal that transfers.
 
 ## Light-side token arms `nl1`-`nl3` (built 2026-09-26, not submitted)
 
-**Submitted 2026-09-26; mid-run read [below](#batch-3-read-from-wb-2026-09-26).** `nl1` and `nl2`
-project null, `nl3` underfits.
+**Submitted 2026-09-26; final read [below](#final-read-of-nl1-and-nl2-2026-09-27).**
+
+- `nl1` finished at +0.0037, an unresolved single-seed pass.
+- `nl2` is −0.0021 against `r2`, a mild underfit.
+- `nl3` underfits and crashed at epoch 30.
+
+The mid-run projection of two nulls is superseded.
 
 The [side-of-cut probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#side-of-cut-probe-2026-09-26)
 found the heavier side of each cut the more memorizing input: removing its identity costs train
@@ -1047,18 +1099,19 @@ The fit at these windows has r = 0.96-0.98 and a residual SD of 0.0018-0.0021. F
   lowers train fit by half as much as `k1` does, and its −0.016 val loss is inside the seed pair's
   −0.024. Val held, so this is not the underfitting that the norm/bias-exempt follow-up was for.
   Weight decay is closed on this lineage.
-- **`nl1` and `nl2` are null, and train fit does not move.** With the heavier side's pool gone
-  from the token, train loss stays where it was (−0.009 and +0.003). Yet the
+- **`nl1` and `nl2` look null mid-run, and train fit does not move.** With the heavier side's
+  pool gone from the token, train loss stays where it was (−0.009 and +0.003). Yet the
   [side-of-cut probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#side-of-cut-probe-2026-09-26)
-  rated that pool the most train-specific input. The lookup is carried by another route once the
-  input is gone, as this plan's premise expects. `nl2` − `r2` is −0.0011 at epochs 20-29.
-  The route map on their final checkpoints is what can say where it went.
+  rated that pool the most train-specific input. `nl2` − `r2` is −0.0011 at epochs 20-29.
+  **Superseded by the [final read](#final-read-of-nl1-and-nl2-2026-09-27):** `nl1` ends at
+  +0.0037, `nl2` underfits against `r2`, and neither arm can show rerouting.
 - **`nl3` fails by underfitting.** `k1`'s two dropouts gain +0.0057 on `c0` at this window, with
   val loss down (train +0.109, val −0.024). On `nl2` the same keys cost −0.017, with train loss
   +0.142 and val loss up +0.033. `nl3` is below `nl2` at every epoch from 0, by 0.009-0.037.
   Without the heavier-side pool or global attention, the token and the boundary block are the
-  head's remaining structure inputs, and 20% dropout on each starves it. So `k1` works through
-  redundancy between routes, and it does not stack with a change that removes routes.
+  head's remaining structure inputs, and 20% dropout on each starves it. That suggests `k1`
+  works through redundancy between routes, and does not stack with a change that removes
+  routes.
 - `nl2` and `nl3` take 176 s per epoch against `c0`'s 182 s, from dropping global attention.
 - **`u3`** is read in the
   [ranking-transfer plan](masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted):
@@ -1066,6 +1119,9 @@ The fit at these windows has r = 0.96-0.98 and a residual SD of 0.0018-0.0021. F
 - **`n1`-`n3`** are read in the
   [QET finding](../../findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1).
 - **`sp0` (`85mfkk8i`) and `sp1` (`bu6dzjph`)** started at 03:43 UTC and had no epoch logged.
+  They then collapsed on the broken CE-context sampler, crashed at epoch 2, and were resumed
+  from their epoch-2 checkpoints after the fix. They are read in the
+  [shared-proposal audit](../../findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md).
 
 **Update, about two hours later.** `nl3` crashed at epoch 30 (cause not checked). It was
 −0.018 against `nl2` over epochs 21-30, so it needs no resubmission. `nl1` at epoch 39 and `nl2`
@@ -1076,7 +1132,44 @@ equals `c0`'s (−0.0006).
 `nl1`) on their checkpoints to find the route that replaced the heavier-side pool. `nl3` needs
 no offline read.
 
+### Final read of `nl1` and `nl2` (2026-09-27)
+
+Both finished 64 epochs. Tail = mean of `val_cos_sim_0.01` over epochs 54-63. The losses are the
+same-window deltas of train-mode and eval-mode primary loss.
+
+| arm | run | tail | vs `c0` | vs `r2` | above `c0` | train loss | val loss |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: |
+| `nl1` | `107bmt51` | 0.7313 | **+0.0037** | — | 52 of 64 | +0.0039 vs `c0` | −0.0041 vs `c0` |
+| `nl2` | `djhbz6z7` | 0.7261 | −0.0015 | **−0.0021** | 25 of 64 | +0.0095 vs `r2` | +0.0221 vs `r2` |
+
+- **`nl1` is an unresolved pass, not a null.** It clears the +0.003 gate, but the token is 19
+  columns wider, so initialization differs from `c0`, and the delta is inside the 0.0042 seed
+  spread. It needs a second seed. Coverage is equal (0.9396). Its gain rose through the run:
+  +0.0015 at epochs 19-28, +0.0022 at 30-39, +0.0037 at 54-63.
+- **`nl2` underfits against its same-code control `r2`.** Train and val loss are both worse and
+  val cosine is lower. Train fit moved after all.
+- **Neither arm can show rerouting.** Both keep the boundary block (bit-identical under the
+  toggle), `c_mass`, the new `c_heavy_side` (close to the heavier side's formula) and the full
+  candidate set the allocator attends over. So "the lookup moved to another route" cannot be told
+  apart from "the heavier side's identity never left the token".
+- **`nl1`'s gain needs global attention.** The same token change without it (`nl2`) is below
+  `r2`.
+- **The route map on both checkpoints has run (2026-09-27,
+  [read](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27)).**
+  - `nl1` still writes the key in global attention (2.89x, excess 0.127, as on `c0`).
+  - In both arms the allocator's set message carries more of train and val fit than on `c0`
+    (val drop 0.09 against 0.02).
+  - So the heavier side's removal left the encoder key in place, and moved molecule context
+    into the set message.
+- **Next:** a second seed of `nl1` against `c0_s2`. The
+  [audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md) has the
+  noise floor.
+
 ## Sink-dropout arm `m2` (built 2026-09-26, not submitted)
+
+**Submitted 2026-09-27 (`41mnwm9f`, created 04:53 UTC); running.** At epochs 31-40 it is +0.0035
+over `c0` and +0.0238 over `m1`, so it tracks `c0`, not `m1`. Read the 54-63 tail when it
+finishes.
 
 `m1`'s sink applied to a random half of the training spectra: plan item 1 of
 [Next, ranked by evidence](#change-list-2026-09-24), without the variational shrinkage.
@@ -1279,7 +1372,7 @@ Before these runs, every config had used at least 64 inducing points and 8 heads
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `ip16_h4` | 16 inducing points, 4 heads | 9.2M | 0.6338 | 0.6375 (22) | −3.351 | 0.8846 |
 | `fa_h4` | `attention: full`, 4 heads | 8.1M | **0.6381** | 0.6419 (23) | −3.338 | 0.8877 |
-| `fa_h4_mz` | `fa_h4` + m/z encoding | 8.1M | running | | | |
+| `fa_h4_mz` | `fa_h4` + m/z encoding | 8.1M | stopped at epoch 18 | | −3.338 (12-17) | |
 
 - **`ip16_h4` does not underfit.** Train loss equals both controls' (−3.351), and val is +0.0043
   over the control mean. By the start-small rule it stays at 16. It does not narrow the gap: train
@@ -1289,8 +1382,19 @@ Before these runs, every config had used at least 64 inducing points and 8 heads
   controls'. Its initialization differs from `c0`'s, so read it against the seed spread (0.0016
   on this tail). On merged, `a2_full_attention` was +0.0030 with 8 heads; this run uses 4 heads,
   on unmerged.
-- **Next.** Read `fa_h4_mz` against `fa_h4`, then score all three at epoch 23 with
-  `eval_matched.py` (`ip16_h4`, `fa_h4` and `fa_h4_mz` are registered).
+- **`fa_h4_mz` was stopped at epoch 18 of 24** when the user moved the work to Fir, so it has no
+  tail and no train-eval pass. Another session relaunched it, and that run was stopped too; the
+  18-epoch log is `logs/fa_h4_mz_sigterm_ep18.log`.
+  - Over epochs 12-17 it is +0.0058 over `fa_h4` (5 of 6 above), and +0.0104 over epochs 0-5.
+  - Its train loss is also lower, −3.338 against −3.261 over epochs 12-17, so the encoding raises
+    train fit too. Whether it widens the gap is unmeasured.
+- **Epoch-23 gap** (`eval_matched.py`, run by another session):
+  - `ip16_h4`: val 0.6359, train-eval 0.8883, gap 0.2523.
+  - `fa_h4`: val 0.6419, train-eval 0.8877, gap 0.2458.
+  - The controls' range is 0.2436-0.2485, so neither narrows the gap. Their gains are val gains
+    with train fit unchanged or up.
+  - That run rewrote `eval_matched.json` with these two runs only. The earlier arms' numbers are
+    in the tables above.
 
 ## Set-message substitution arm `sm1` (built 2026-09-27, not submitted)
 
@@ -1434,3 +1538,106 @@ can retrieve from it, changes from one exposure to the next. Not submitted.
       probe says.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh alloc` (both), or `sd1`
   alone, after committing.
+
+## Candidate-graph allocator arms `fa0`, `cg1` and `cg2` (proposed 2026-09-27, not built)
+
+The user proposed building a graph over the 256 candidates and running a GNN on it in the
+allocator (2026-09-27). Proposed only: no code, config or run exists, and nothing below is
+measured on this lineage.
+
+- **What exists.** The allocator already passes messages over a fixed candidate graph.
+  - `c0`'s induced layers route every exchange through 64 inducing tokens. Full attention is the
+    complete graph.
+  - `_BiasedSelfAttention`, the full layer's attention, adds a pair bias to the attention logits
+    ([`bond_fragment_heads.py:505-511`](../../../src/fragnnet/model/bond_fragment_heads.py#L505-L511)).
+    A bias of −inf off the graph turns it into graph attention with `full`'s parameters.
+  - The only pair bias that has run is the neutral-loss mass bias (`a3`, and inside `a7`). The
+    induced layer rejects pair biases.
+- **Why, on the record.**
+  - The set message is the most train-specific route (`c0`: 4.2x, excess gap closed 0.050). On
+    `r2` it carries almost twice the train-specific fit
+    ([probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27)).
+  - A graph limits which candidates exchange messages. The hypothesis: comparative scoring needs
+    related competitors, and a per-molecule lookup needs the global summary. The mask removes the
+    second and keeps the first.
+  - As a fix for comparison the record is weak:
+    - On the merged lineage, full attention was +0.0030 (hold) and the mass bias on top −0.0002
+      (null)
+      ([arms §3](../../findings/masster/masster_architecture_arms_epoch128_2026_09_22.md#3-a2_full_attention-and-b1_bond_sum-read-at-the-same-screen)).
+      Cut adjacency was +0.0032 (hold, §2).
+    - Misplaced mass is 0.90-1.08x chance in every relation class against the support-preserving
+      null
+      ([displacement](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md#the-misplacement-looks-local-only-against-the-wrong-null)).
+      The one structured part is a containment relation: below NCE 60 the heavier member of a
+      nested pair holds the mass.
+    - The train ranking gap is 0.011.
+  - Against the plan's premise: a mask holds at evaluation, so it is closer to a removal than to
+    noise. No removal has helped, and `r2` rerouted
+    ([audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)). The prior
+    is weak; the probe read is what the arm buys.
+- **Edges.** Built per spectrum from the unique-fragment atom memberships
+  ([`_unique_component_memberships`](../../../src/fragnnet/model/masster_model.py#L2334)). With
+  `M` the candidates-by-atoms membership, `M Mᵀ` gives every pair's shared atoms in one product per
+  bucket.
+  - Self-loops.
+  - Direct containment, both directions: `A ⊂ B` with no candidate strictly between. The
+    containment matrix times itself finds the pairs with one between.
+  - Complements: disjoint and together the whole precursor, the two sides of one acyclic cut.
+  - Left out:
+    - same-formula pairs: the mass bias's 0 Da centre already weights near-equal masses, and it
+      was null;
+    - sibling edges: every single-cut fragment is a child of the precursor, so they would join all
+      of them.
+- **Traps.**
+  - **The precursor is a hub.** It is always a candidate (the forced empty mask,
+    [`masster_cuda_selection.py:234`](../../../src/fragnnet/frag/masster_cuda_selection.py#L234))
+    and contains every other one. As a sender it would hand every candidate the global summary in
+    one hop, rebuilding the set channel. So it receives and does not send.
+  - **Reach.** Two layers reach two hops. If most of a set lies within two hops of most
+    candidates, the mask restricts nothing.
+  - **Multi-parent.** A fragment between two acyclic cuts lies inside both single-cut sides, and
+    single cuts are forced, so it has two direct parents. Attention aggregates over in-neighbours
+    as it is.
+  - **No empty rows.** Every query row, padded ones included, keeps its self-loop, so no row is
+    all −inf.
+  - **Identity is not the edge's contribution.** The token already carries the complement pool and
+    the context. An edge adds the neighbour's contextualized token.
+
+**Arms.** Each is `c0` plus its keys: seed 397623, 64 epochs, checkpoints uploaded.
+
+| arm | keys against `c0` | question |
+| --- | --- | --- |
+| `fa0_full_attention` | `masster_intensity_transformer_attention: full` | The control: the graph arms need full attention, and no `[M+H]+`/FT config sets it. It is also the first probe read of an uncapped set channel. |
+| `cg1_candidate_graph` | `fa0` + the graph mask (new key) | Does restricting the set channel to chemical neighbours shrink the lookup without rerouting? |
+| `cg2_relation_bias` (optional) | `fa0` + one zero-initialized scalar per relation type, no mask (new key) | Do the relations help the comparison, with every route kept? |
+
+- **Code (to write).**
+  - Pass the unique memberships to the head beside `component_neutral_masses`, and densify them
+    into each bucket's padded layout in `_contextualize_by_molecule`. The
+    [attention-budget plan](masster_attention_budget_2026_09_21.md#not-implemented-here) left
+    that step unbuilt for its containment bias.
+  - The new keys default off and require `attention: full`.
+  - `cg1` adds no parameters. `cg2` adds one scalar per relation type (direct parent, direct
+    child, complement, other overlap, disjoint), shared across heads like the mass bias.
+    Zero-initialized, it equals `fa0` at step 0.
+  - Cost: on the merged lineage `a2` ran no slower than induced attention (0.817 against
+    0.828-0.838 min/epoch), and the mass-bias arms cost 18% more. The graph build is unmeasured.
+- **Reading.**
+  - **Before building, no training:** the two-hop reach on `c0`'s candidate sets for the probe's
+    60 train batches. If most candidates reach most of their set, rethink the edges first.
+  - **Optional, offline:** the displacement transport with fragment-level containment. The
+    finding's limits call its formula-level nesting coarse. A null there removes `cg2`'s premise,
+    not `cg1`'s.
+  - **`fa0` against `c0`:** full attention's own effect here (merged: +0.0030), and the probe on
+    its checkpoint.
+  - **`cg1` and `cg2` against `fa0`:**
+    - the 54-63 tail (about +0.006 for one seed), with `wrecall` within 0.005;
+    - the eval-mode gap on the best checkpoint;
+    - then the probe. For `cg1` the set message's asymmetry must shrink with neither `gsa` nor the
+      boundary block growing.
+  - The probe's `setmsg` hook reads `candidate_attention`'s output, which the full layer has too
+    ([hook](../../../scripts/debug/debug_pooled_embedding_memorization.py#L636-L667)). It is
+    untested there.
+  - Compare by wall-clock as well as by epoch.
+  - **If `cg1` reroutes,** try the training-only form, the audit's working pattern: graph-only
+    attention with probability p per layer in training, full attention at evaluation.

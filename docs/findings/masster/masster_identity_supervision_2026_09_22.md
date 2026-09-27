@@ -137,9 +137,11 @@ costless under the metric. It can only bite three ways, none established:
 1. **Allocation, not proposal.** The read-out's own result — `d3` (cosine decay + 1000-step
    warmup) at **0.7357** against a control mean of 0.7286 whose replicates span 0.0007 — is the
    first non-null in this family since `tolerance_consensus`. That is where the movement is.
-2. **The two feature arms already built and never run** — `c4a_ring_topology` and
+2. **The two feature arms already built** — `c4a_ring_topology` and
    `c4a_complement_composition`, one-key diffs from `c4a_base_s1` at the same seed, ~5k
-   parameters. Cheap screen fodder, not a bet.
+   parameters. Cheap screen fodder, not a bet. *Corrected 2026-09-27:* both ran on 2026-09-23 and
+   are null: `3gqgkl4x` −0.0027 and `lxf97tck` +0.0012 against the 0.7270 control. This item
+   earlier called them never run.
 3. **Not** a DAG-as-teacher warm start, on this evidence.
 4. **Not** more descriptor features — closed in [feature headroom](../feature_headroom_2026_09_22.md).
 5. **Not** NIST formula supervision for the proposal head — worth 3.2% of matched intensity here,

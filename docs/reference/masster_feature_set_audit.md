@@ -1,6 +1,6 @@
 # MASSter Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-22 &nbsp;·&nbsp; findings §7.1-§7.8
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-27 &nbsp;·&nbsp; findings §7.1-§7.8
 > are **FIXED for MASSter** and are now the default; see §11. §12 and §13 add the 2026-09-22
 > GLACIER parity work: graph features, which both models can now enable, and the candidate
 > token's complement composition.
@@ -347,7 +347,11 @@ of each, the arms that enable them (MASSter `c4a_ring_topology`, FraGNNet
 recorded once, in
 [GLACIER feature parity](../notes/glacier_object_detection.md#closing-the-graph-feature-gap-2026-09-22).
 The §7.6 finding above extends to bonds: NIST20, NIST23 and MassSpecGym all carry zero bond stereo
-and zero chiral tags. Nothing has been trained.
+and zero chiral tags. *Corrected 2026-09-27:* this section earlier said nothing had been
+trained, but both arms ran on 2026-09-23.
+
+- MASSter `c4a_ring_topology` (`3gqgkl4x`) is null at −0.0027 against the 0.7270 control.
+- FraGNNet `graph_feature_parity` (`m8qgi0ft`) crashed at epoch 77 and has not been read.
 
 ## 13. Complement composition in the candidate token (2026-09-22)
 

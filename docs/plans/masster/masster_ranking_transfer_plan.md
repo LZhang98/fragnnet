@@ -1,6 +1,6 @@
 # Reducing MASSter's per-molecule shortcut so its ranking transfers
 
-> **Status:** ACTIVE · **Updated:** 2026-09-26
+> **Status:** ACTIVE · **Updated:** 2026-09-27
 > **Switch-EMA arm `u3` finished and fails** ([section](#switch-ema-arm-u3-built-2026-09-25-not-submitted)):
 > −0.0089 against `u2`, below it at all 64 epochs; it underfits. EMA helps only as an average
 > kept off the training weights.
@@ -49,7 +49,10 @@ An arm passes when, against its control at matched epoch:
    improves most in the least-similar bins.
 
 An arm that only lowers train fit is underfitting, not a pass. `drop03`, `b3_wd_groups` and
-`e2_cc_atom_drop01` all narrowed the gap and lost.
+`e2_cc_atom_drop01` all narrowed the gap and lost. Only `drop03` logged train cosine; `b3` and
+`e2` narrowed only the train-mode loss gap, and `b3`'s change is inside that statistic's floor
+(corrected 2026-09-27,
+[audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)).
 
 ## Arms
 
@@ -71,8 +74,8 @@ Control `3bej6fq7`: val `cos_sim_0.01` tail mean over epochs 54-63 is **0.7298**
 the mean change between consecutive epochs is 0.0013. `6h67zps9` matches it on the raw target to
 0.0001 (val) and 0.0007 (test), which bounds the run-to-run noise on the mean from above. No seed
 replicate exists for this lineage. The arms run on code after `0f99e7e4` (CutBondEncoder
-deduplication, equal up to float rounding). An exact same-code control is
-`submit_masster_mh_ft_clean.sh f0`. Profile `fir:h100-3g.40gb`, 12 h box, about 4-5 h of
+deduplication, equal up to float rounding). An exact same-code control would be a rerun of
+`submit_masster_mh_ft_clean.sh f0`: `3bej6fq7` itself predates `0f99e7e4`. Profile `fir:h100-3g.40gb`, 12 h box, about 4-5 h of
 training. `upload_checkpoints` is true.
 
 ### Merged MA/MI

@@ -1,6 +1,6 @@
 # Intensity displacement: what the literature says about our Phase 0 results
 
-> **Status:** NOTE · **Updated:** 2026-09-24
+> **Status:** NOTE · **Updated:** 2026-09-27
 > A literature search for the
 > [intensity-displacement plan](../plans/masster/masster_intensity_displacement_plan.md),
 > read against its [Phase 0 finding](../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md).
@@ -79,8 +79,9 @@ precursor-versus-contender.
   training set, but they share a small recurring vocabulary of losses
   ([arXiv 2301.11419](https://arxiv.org/pdf/2301.11419)). This matches our stacking result from
   a different group and architecture.
-- **Where the lesson applies here.** The MassSpecGym GLACIER-parity arm (`..._glacier_feats.yml`,
-  prepared, not submitted) adds `c_nl_composition`, the complement's element counts. That is the
+- **Where the lesson applies here.** The MassSpecGym GLACIER-parity arm (`..._glacier_feats.yml`;
+  *corrected 2026-09-27:* it ran as `ll04i00m`, −0.0026 against `1imawkx1` on the 118-127 tail,
+  no gain) adds `c_nl_composition`, the complement's element counts. That is the
   input form of GRAFF-MS's lesson. The
   [formula-only baseline](../findings/masster/masster_formula_only_baseline_2026_09_23.md)
   found formula information adds +0.005 overall. Phase 0 says its value is concentrated in the
@@ -185,8 +186,9 @@ precursor-versus-contender.
    precursor-versus-contender: does bond-local structure add AUC beyond the formula stack? If it
    does, build 2A with a CE-dependent threshold/slope bond curve and the precursor inside the
    prior.
-3. **Read the prepared GLACIER-parity arm (`c_nl_composition`) on the low-NCE precursor
-   decision** (§2) when it runs. Mean cosine alone would hide it.
+3. **Read the GLACIER-parity arm (`c_nl_composition`) on the low-NCE precursor decision** (§2).
+   It has run (`ll04i00m`, checkpoints uploaded) and is null on mean cosine. The §2 read on its
+   checkpoint is not recorded, and mean cosine alone would hide it.
 4. **Not pursued:** ranking losses, retrieval, proton-affinity or homolytic-BDE features, QM
    distillation at scale, and removing global attention as a displacement fix.
 

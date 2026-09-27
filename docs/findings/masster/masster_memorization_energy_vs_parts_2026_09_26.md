@@ -404,3 +404,9 @@ reference, score 1.20-1.33 on every checkpoint.
 - **The per-peak error is not the cosine.** It is a log ratio on sum-normalized intensities,
   weighted by target share.
 - **Samples.** 2,500 molecules per split for parts; 60 batches per split for the probe.
+- **The probe's val sample is not random** (audit, 2026-09-27). Val batches come through
+  `SequentialSampler` from a split ordered by `spec_id`, so the 60 batches are the first 59% of
+  val. The train batches are random. The val baseline (0.7437) is about 0.012 above the
+  full-split value. The paired contrasts share batches, but val damage varies with novelty, so
+  the damage ratios may shift on a random val sample.
+  [Audit](masster_memorization_attempts_audit_2026_09_27.md).

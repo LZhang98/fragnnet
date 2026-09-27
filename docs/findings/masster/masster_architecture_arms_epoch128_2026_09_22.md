@@ -1,6 +1,6 @@
 # MASSter architecture arms, read at the matched 128-epoch screen, 2026-09-22
 
-> **Status:** FINDING · **Updated:** 2026-09-25
+> **Status:** FINDING · **Updated:** 2026-09-27
 > **§5 (added 2026-09-23) reads `g1`, one 5-layer GINE_GSA encoder with no bond-refinement
 > head and no `CutBondEncoder`. It is a REJECTION: −0.0160 against the control, −0.0136 against
 > the two-key `c4a_no_bbe` contrast, and below both controls at every epoch. The loss is
@@ -197,7 +197,17 @@ same way: tail mean of epochs 118–127, control **0.7270**, gate ±0.005.
 | `e2_cc_atom_drop01` | `955di4yn` | `candidate_atom_dropout: 0.1` | 0.7260 | −0.0009 | 0.7299 | hold |
 | `e1_cut_bond_feats` | `fj5cfyly` | `candidate_cut_bond_features` | 0.7260 | −0.0010 | 0.7282 | hold |
 
-**No arm clears the floor in either direction.** `e6_ring_topology_cut_bond` was never submitted.
+**No arm clears the floor in either direction.**
+
+*Corrected 2026-09-27:* `e6_ring_topology_cut_bond` did run, though this line said it was never
+submitted. It finished 128 epochs on 2026-09-23 with `c4a_ring_topology` and
+`c4a_complement_composition`, and all three are null:
+
+- `e6` (`kc04u2cd`): +0.0015;
+- `c4a_ring_topology` (`3gqgkl4x`): −0.0027;
+- `c4a_complement_composition` (`lxf97tck`): +0.0012.
+
+[Audit](masster_memorization_attempts_audit_2026_09_27.md).
 
 Three readings:
 
@@ -276,12 +286,14 @@ eleven runs.
 
 ### §1's confound resolves: the topology change carries half of `a6`
 
-`a2` is the topology-only control §1 asked for — `attention_type: full` alone, the same 40.8%
-smaller intensity head, nothing else. Against it, the three bias arms that share its topology:
+`a2` is the topology-only control §1 asked for — `attention_type: full` alone, nothing else. Its
+intensity head is 43.6% smaller (1,386,763 parameters: `a3`'s 1,386,808 less the mass bias). The
+40.8% cut belongs to `a6`/`a7`, whose CE-FiLM adds parameters back (*corrected 2026-09-27*;
+this line said 40.8%). Against it, the three bias arms that share its topology:
 
 | contrast | Δ tail | reading |
 |---|---|---|
-| `a2` − control | **+0.0030** | **`attention_type: full` is worth this much on its own, at 41% fewer intensity-head parameters** |
+| `a2` − control | **+0.0030** | **`attention_type: full` is worth this much on its own, at 44% fewer intensity-head parameters** |
 | `a6` − `a2` | **+0.0033** | CE-FiLM's own contribution, at matched topology and capacity |
 | `a3` − `a2` | **−0.0002** | **the pairwise mass bias is an exact null** — all of `a3`'s +0.0028 was the topology |
 | `a7` − `a2` | +0.0005 | stacking mass-pair + CE-pair + pre-LN on full attention adds nothing |

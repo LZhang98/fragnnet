@@ -129,8 +129,11 @@ first 100 batches of 256 from the train loader (25,600 spectra), same snapshot a
 
 It holds within every stratum. The train ranking gap is 0.003-0.019 across the five NCE bins
 (val 0.065-0.151) and 0.004-0.024 across five precursor-mass bins (val 0.108-0.156). Candidate
-and peak counts match: median 563 vs 568 distinct candidate m/z and 18 vs 18 target peaks. The train
-loader skips contexts too large for its batch budget, but that selection cannot produce a
+and peak counts match: median 563 vs 568 distinct candidate m/z and 18 vs 18 target peaks. The
+train sample comes from a seeded `RandomSampler` with no size-based selection. (*Corrected
+2026-09-27:* this line earlier said the train loader skips contexts too large for its batch
+budget. That applies only to the dynamic samplers, which this export does not use;
+[audit](masster_memorization_attempts_audit_2026_09_27.md).) No sample selection could produce a
 tenfold gap that holds bin by bin.
 
 So the model ranks training molecules nearly correctly and new molecules poorly. The
