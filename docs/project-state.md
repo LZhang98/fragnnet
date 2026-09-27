@@ -122,8 +122,9 @@ Running arms are projected to the epoch 54-63 tail by a fit over 21 finished arm
   - Its train loss equals `c0`'s, and only val loss is worse (+0.055). So the smooth CE input
     costs generalization, not fit, as the two-ladder reading predicts.
   - `n2`/`n3` are at epoch 9, too early to read. By loss, `n3` looks like `n1` and `n2` like `c0`.
-  - **Conflict:** Spectraverse cv0-cv9 and Enveda `i0` already use `qet`. Do not submit them on
-    `qet` until `n2` and the ladder read on `n1`'s checkpoint are in.
+    *Final 2026-09-27:* `n2` −0.0102 and `n3` −0.0085; both fail like `n1`.
+  - **Conflict:** Enveda `i0` still uses `qet`; do not submit it on `qet`. Spectraverse cv0-cv9
+    moved to `embed` + `int_embedder: fourier` on 2026-09-27 (see the Spectraverse entry below).
   - **Arm `n4` built, not submitted, uncommitted:** `c0` + `int_embedder: fourier`. It keeps the
     per-NCE code (`embed`) and swaps abs-sines for a sin + cos table with no aliasing in 0-300. No
     gain is expected on NIST20, where 76/180 is the one colliding pair and cost nothing; it prices
@@ -330,8 +331,9 @@ null (top entry).** W&B tails over epochs 54-63.
 [Batch 2 read](plans/masster/masster_memorization_route_plan.md#batch-2-tail-read-six-finished-runs-2026-09-26),
 [`w1`](plans/masster/masster_memorization_route_plan.md#weight-decay-arm-w1-2026-09-25).
 
-**MASSter Spectraverse CV configs built (2026-09-25, committed in `4e29da7c`); CE input switched
-to `qet` 2026-09-26 (uncommitted); not submitted.**
+**MASSter Spectraverse CV configs built (2026-09-25, committed in `4e29da7c`). CE input went to
+`qet` on 2026-09-26 (`66b18dd8`), then to `embed` + `fourier` on 2026-09-27 (uncommitted). Fir
+submission prepared for cv0-cv3; not submitted.**
 `config/spectraverse/masster/cv0.yml`..`cv9.yml` are unmerged and forked from the MassSpecGym
 `_ema999` recipe. The folds differ only in `wandb_name`, `split_dp` and `lr_total_steps`
 (40 × ceil(train / 512), 30,120-31,200). The cv0 header records the measurements behind each key.
@@ -339,17 +341,18 @@ to `qet` 2026-09-26 (uncommitted); not submitted.**
 - **Spectraverse deltas.** `masster_include_cmf: true`, because `[M+NH4]+` and formate/acetate
   spectra fragment by losing the adduct, which the ±4 H ladder cannot reach. All nine adducts;
   `inst_types` FT/QTOF/Other/NA, with FraGNNet's 20 ppm / 500 Da tolerance for Other and NA;
-  40 epochs. The 44% of rows with no CE train on `qet`'s missing-CE flag. Unmerged, because
+  40 epochs. The 44% of rows with no CE train on the CE table's learned missing-CE token.
+  CMF is live for `[M+Na]+`, `[M+NH4]+`, `[M+K]+`, `[M+HCOOH-H]-`, `[M+CH3COOH-H]-` and
+  `[M+Cl]-`. For `[M+H]+`/`[M-H]-`, CMF duplicates a CRF H shift, and `[M]+` has no CMF shift, so
+  those three emit no CMF channel. Unmerged, because
   no merged MASSter run has trained CMF with dual CE, so the comparator is
   `config/spectraverse/fragnnet`, not `fragnnet_merged`.
-- **CE input `ce_insert_type: qet`, 2026-09-26** (MassSpecGym: `embed`). NCE is derived from ACE
-  here, so it is continuous (525 distinct rounded values) and many values are rare or unseen in a
-  fold. That is where the abs-sines table fails, and at max 300 it also gives x and 512 − x the
-  same code (44 pairs, 212-300). `nce_mean`/`nce_std` 50/40 and `ace_mean`/`ace_std` 40/25 are
-  rounded per-row data values (derived NCE 50.0/39.6, ACE 38.8/26.0). The 200 offset was fitted
-  on NIST20 NCE only; the ACE channel uses it unmeasured, and `n1` (the NIST20 check that `qet`
-  costs nothing) has not run
-  ([finding](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md)).
+- **CE input `embed` + `int_embedder: fourier`, 2026-09-27** (MassSpecGym: `embed` with
+  abs-sines; 2026-09-26 on this config: `qet`). `qet` is dropped because `n1`-`n3` all fail on
+  NIST20 (above) with train fit unchanged. `fourier` keeps the per-energy code, and `n4` is its
+  NIST20 test. At max 300 it gives each integer 0-300 its own row, into `Linear(22, 32)` per CE
+  channel, where abs-sines aliases 44 pairs in 212-300. It does not fix rare or unseen derived NCE
+  values (525 distinct). Against the pre-`qet` configs, `int_embedder` is the only changed key.
 - **`loss_batch_size: 4`, measured.** The recipe's 64 runs out of memory at batch 32 on the 8 GB
   card: each loss chunk pads to its widest target, and spectraverse peaks are p99 783, max 4096.
   At batch 128, `lb4` peaks at 4.68 GiB and 0.346 s/step, against 4.25 GiB and 0.291 s/step for
@@ -358,13 +361,16 @@ to `qet` 2026-09-26 (uncommitted); not submitted.**
   MassSpecGym `_ema999` config is exactly the intended keys. The real cv0 train and val datasets
   construct (387,399 / 46,057 rows, none dropped, 757 steps/epoch). A 2-epoch smoke on a
   512-spectrum subsample exits 0 (val cosine 0.094 -> 0.167). With `qet` the same smoke exits 0
-  (0.082 -> 0.169), and its checkpoint holds a `Linear(2, 32)` encoder on each CE channel. Run
+  (0.082 -> 0.169), and its checkpoint holds a `Linear(2, 32)` encoder on each CE channel. With
+  `fourier` it exits 0 too (0.106 -> 0.162, 2026-09-27). Run
   local smokes with `TMPDIR` off `/tmp`: the post-fit checkpoint copy fails on the 3.7 GB volume.
 - **Not measured.** The 40-epoch horizon (sized from the MassSpecGym and NIST20 peaks in steps),
-  batch-512 memory, and wall clock (estimated ~6 h per fold). Submit cv0 alone first
-  (`setup_job_cc.py --cv_config_dp config/spectraverse/masster --cv_start 0 --cv_end 0`, see the
-  [submit guide](guides/submit_cluster_runs.md#4-cross-validation-and-existing-batch-launchers)),
-  and read its peak GPU memory and best epoch before the other nine.
+  batch-512 memory, and wall clock (estimated ~6 h per fold).
+- **Next:** commit the configs, then on Fir generate the cv0-cv3 array (`setup_job_cc.py
+  --cv_config_dp config/spectraverse/masster --cv_start 0 --cv_end 3 --cv_use_job_id`, job name
+  `msh_spv`, `fir:h100-3g.40gb`, 12 h; see the
+  [submit guide](guides/submit_cluster_runs.md#4-cross-validation-and-existing-batch-launchers)).
+  Read peak GPU memory and best epoch on cv0 before cv4-cv9.
 
 **Learning-rate-schedule arms `s1` and `s1_k1_ema` built (2026-09-25); not submitted
 (committed in `4e29da7c`).** Plan decision C, config only. Every MASSter run so far trains at a constant
