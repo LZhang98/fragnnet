@@ -4,8 +4,10 @@
 per arm: removing the boundary block (``r0``), building it from a local cut-site encoder (``r1``),
 dropout on the layers that form a candidate's key (``k1``), and a per-molecule memorization sink
 used only in training (``m1``). Later arms (``gm1``-``gm6``) add training-only noise to the
-shared encoder's global-attention message, and ``am1``/``de1`` mask atoms or drop bonds in its
-inputs. Each must leave the model exactly unchanged at its default, act only where it says, and
+shared encoder's global-attention message, ``am1``/``de1`` mask atoms or drop bonds in its
+inputs, ``sm1`` swaps the allocator's per-candidate set message for its set's mean, and ``sd1``
+hides random candidates from the keys the allocator summarizes its set from. Each must
+leave the model exactly unchanged at its default, act only where it says, and
 keep every other parameter's initialization, so an arm differs from its control by the option
 alone.
 """
@@ -15,8 +17,14 @@ from types import SimpleNamespace
 import pytest
 import torch as th
 
+from fragnnet import runner
 from fragnnet.model.base_model import CutBondEncoder
-from fragnnet.model.bond_fragment_heads import CandidateIntensityTransformerHead
+from fragnnet.model.bond_fragment_heads import (
+    CandidateIntensityTransformerHead,
+    _drop_set_keys,
+    _InducedCandidateAttentionLayer,
+    _substitute_set_message,
+)
 from fragnnet.model.masster_model import MassterModel
 from fragnnet.model.nn_blocks import GINE, GINE_GSA
 from fragnnet.pl_model.masster_pl import MassterPL
@@ -572,3 +580,223 @@ def test_encoder_atom_mask_works_without_global_attention(batch) -> None:
         _forward(arm.eval(), batch)["pred_logprobs"],
         _forward(control.eval(), batch)["pred_logprobs"],
     )
+
+
+# 8. The allocator's set: substituting its message (arm sm1) and dropping its keys (arm sd1).
+
+# (head and layer keyword, MassterModel keyword, config key)
+SET_OPTIONS = [
+    pytest.param(
+        "set_message_substitution",
+        "intensity_set_message_substitution",
+        "masster_set_message_substitution",
+        id="sm1",
+    ),
+    pytest.param(
+        "set_key_dropout", "intensity_set_key_dropout", "masster_set_key_dropout", id="sd1"
+    ),
+]
+
+
+def _set_messages() -> tuple[th.Tensor, th.Tensor]:
+    """Two candidate sets: four real candidates, and two real candidates padded to four."""
+    th.manual_seed(11)
+    updates = th.randn(2, 4, 3)
+    padding = th.tensor([[False, False, False, False], [False, False, True, True]])
+    return updates, padding
+
+
+def test_set_message_substitution_swaps_in_each_sets_own_detached_mean() -> None:
+    """Each real candidate independently keeps its message or takes its own set's mean."""
+    updates, padding = _set_messages()
+    updates.requires_grad_(True)
+    set_means = (updates[0].mean(dim=0), updates[1, :2].mean(dim=0))
+    patterns = set()
+
+    for seed in range(24):
+        th.manual_seed(seed)
+        substituted = _substitute_set_message(updates, padding, 0.5)
+        (gradient,) = th.autograd.grad(substituted.sum(), updates)
+        replaced = []
+        for molecule in range(2):
+            for candidate in range(4):
+                row = substituted[molecule, candidate]
+                if padding[molecule, candidate]:
+                    assert th.equal(row, updates[molecule, candidate])
+                    continue
+                kept = th.equal(row, updates[molecule, candidate])
+                assert kept or th.allclose(row, set_means[molecule], atol=1e-6)
+                # The mean is detached, so a replaced candidate passes no gradient back.
+                assert th.equal(gradient[molecule, candidate], th.full((3,), float(kept)))
+                replaced.append(not kept)
+        patterns.add(tuple(replaced))
+
+    assert len(patterns) > 2
+    assert all(any(pattern[slot] for pattern in patterns) for slot in range(6))
+    assert all(any(not pattern[slot] for pattern in patterns) for slot in range(6))
+
+
+def test_set_key_dropout_hides_real_candidates_and_keeps_every_set_nonempty() -> None:
+    """Padding stays hidden, each real candidate is drawn alone, and no set loses every key."""
+    padding = th.tensor(
+        [
+            [False, False, False, False],
+            [False, False, True, True],
+            [False, True, True, True],
+        ]
+    )
+    real = ~padding
+    emptied_rows = 0
+    patterns = set()
+
+    for seed in range(48):
+        th.manual_seed(seed)
+        drawn = real & (th.rand(padding.shape) < 0.6)
+        th.manual_seed(seed)
+        key_mask = _drop_set_keys(padding, 0.6)
+
+        assert key_mask[padding].all()
+        for row in range(3):
+            if drawn[row][real[row]].all():
+                # Every real key was drawn: the first stays visible, the rest stay hidden.
+                emptied_rows += 1
+                assert not key_mask[row, 0]
+                assert key_mask[row][real[row]][1:].all()
+            else:
+                assert th.equal(key_mask[row], padding[row] | drawn[row])
+        patterns.add(tuple(key_mask[real].tolist()))
+
+    assert emptied_rows > 0
+    # The one-candidate set is never hidden; every other real slot is hidden in some draws.
+    assert all(not pattern[6] for pattern in patterns)
+    assert all(any(pattern[slot] for pattern in patterns) for slot in range(6))
+    assert all(any(not pattern[slot] for pattern in patterns) for slot in range(6))
+
+
+def test_set_key_dropout_hides_candidates_from_the_set_summary() -> None:
+    """A hidden candidate cannot move the inducing tokens that summarize its set."""
+    th.manual_seed(2)
+    layer = _InducedCandidateAttentionLayer(8, 2, 16, 0.0, set_key_dropout=0.5).train()
+    tokens, inducing = th.randn(1, 6, 8), th.randn(1, 3, 8)
+    padding = th.zeros(1, 6, dtype=th.bool)
+
+    def key_mask(seed: int) -> th.Tensor:
+        th.manual_seed(seed)
+        return _drop_set_keys(padding, 0.5)[0]
+
+    seed = next(seed for seed in range(100) if 0 < int(key_mask(seed).sum()) < 6)
+    hidden = key_mask(seed)
+
+    def summary(candidate_tokens: th.Tensor) -> th.Tensor:
+        th.manual_seed(seed)
+        return layer(candidate_tokens, inducing, padding)[1]
+
+    reference = summary(tokens)
+    for index in range(6):
+        perturbed = tokens.clone()
+        perturbed[0, index] += 1.0
+        assert th.allclose(summary(perturbed), reference) == bool(hidden[index])
+
+
+@pytest.mark.parametrize(("head_key", "model_key", "config_key"), SET_OPTIONS)
+def test_set_option_is_training_only_and_adds_no_parameters(
+    head_key: str, model_key: str, config_key: str
+) -> None:
+    """Read on the ion/H logits: the residual heads start at zero, whatever the token holds."""
+    args, kwargs = _head_inputs()
+    plain, arm = _head(), _head(**{head_key: 0.5})
+    assert list(arm.state_dict()) == list(plain.state_dict())
+    arm.load_state_dict(plain.state_dict())
+
+    assert th.equal(arm.eval()(*args, **kwargs)[2], plain.eval()(*args, **kwargs)[2])
+    th.manual_seed(4)
+    assert not th.allclose(arm.train()(*args, **kwargs)[2], plain.train()(*args, **kwargs)[2])
+
+
+@pytest.mark.parametrize(("head_key", "model_key", "config_key"), SET_OPTIONS)
+def test_set_option_draws_nothing_when_off_or_evaluating(
+    head_key: str, model_key: str, config_key: str
+) -> None:
+    args, kwargs = _head_inputs()
+    off_in_training = _head(**{head_key: 0.0}).train()
+    on_in_evaluation = _head(**{head_key: 0.5}).eval()
+    for head in (off_in_training, on_in_evaluation):
+        rng_before = th.get_rng_state()
+        head(*args, **kwargs)
+        assert th.equal(th.get_rng_state(), rng_before)
+
+
+@pytest.mark.parametrize("probability", [-0.1, 1.0])
+@pytest.mark.parametrize(("head_key", "model_key", "config_key"), SET_OPTIONS)
+def test_set_option_rejects_invalid_probabilities(
+    head_key: str, model_key: str, config_key: str, probability: float
+) -> None:
+    with pytest.raises(ValueError, match=f"{head_key} must be in"):
+        _head(**{head_key: probability})
+
+
+@pytest.mark.parametrize(("head_key", "model_key", "config_key"), SET_OPTIONS)
+def test_set_option_requires_induced_attention(
+    head_key: str, model_key: str, config_key: str
+) -> None:
+    with pytest.raises(ValueError, match=f"{head_key} requires attention_type='induced'"):
+        _head(attention_type="full", **{head_key: 0.3})
+
+
+@pytest.mark.parametrize(("head_key", "model_key", "config_key"), SET_OPTIONS)
+def test_set_option_model_is_its_control_at_evaluation(
+    batch, head_key: str, model_key: str, config_key: str
+) -> None:
+    """No parameters and no initialization draws: at eval the arm is its control."""
+    control = _build_model(batch, **UNIQUE_KWARGS)
+    arm = _build_model(batch, **UNIQUE_KWARGS, **{model_key: 0.5})
+    control_state, arm_state = control.state_dict(), arm.state_dict()
+
+    assert [getattr(layer, head_key) for layer in arm.intensity_head.layers] == [0.5, 0.5]
+    assert list(arm_state) == list(control_state)
+    assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
+    assert th.equal(
+        _forward(arm.eval(), batch)["pred_logprobs"],
+        _forward(control.eval(), batch)["pred_logprobs"],
+    )
+    th.manual_seed(5)
+    trained_arm = _forward(arm.train(), batch)["pred_logprobs"]
+    th.manual_seed(5)
+    trained_control = _forward(control.train(), batch)["pred_logprobs"]
+    assert trained_arm.shape != trained_control.shape or not th.allclose(
+        trained_arm, trained_control
+    )
+
+
+@pytest.mark.parametrize(("head_key", "model_key", "config_key"), SET_OPTIONS)
+def test_pl_passes_the_set_option_to_every_allocator_layer(
+    head_key: str, model_key: str, config_key: str
+) -> None:
+    config = runner.load_config("config", None, None, model_type="masster")
+    # The small MASSter build of tests/test_masster_backend_compatibility.py, two allocator layers.
+    config.update(
+        model_type="masster",
+        compile=False,
+        sparse_cosine_similarity=True,
+        oos_tolerance_multiple=1,
+        gaussian_renormalize=True,
+        mol_hidden_size=16,
+        mol_num_layers=1,
+        masster_context_dim=8,
+        masster_metadata_embedding_dim=4,
+        masster_head_hidden_dim=16,
+        masster_intensity_transformer_dim=16,
+        masster_intensity_transformer_num_layers=2,
+        masster_intensity_transformer_feedforward_dim=32,
+        masster_intensity_transformer_num_inducing_points=4,
+        masster_unique_fragment_mode=True,
+        masster_selected_mask_limit=2,
+        masster_unique_fragment_target=2,
+        masster_ranked_mask_budget=2,
+        masster_max_h_transfer=1,
+    )
+    config[config_key] = 0.4
+
+    layers = MassterPL(**config).model.intensity_head.layers
+
+    assert [getattr(layer, head_key) for layer in layers] == [0.4, 0.4]

@@ -50,6 +50,51 @@ def _build_feedforward(
     )
 
 
+def _substitute_set_message(
+    candidate_updates: th.Tensor,
+    candidate_padding_mask: th.Tensor,
+    probability: float,
+) -> th.Tensor:
+    """Replace a random share of candidates' set messages with their set's mean message.
+
+    ``candidate_updates`` is ``[molecules, candidates, dim]``: what each candidate receives from
+    its candidate set in one attention layer, before the residual add. Each real candidate
+    independently, with ``probability``, receives instead the detached mean of the messages over
+    its own set's real candidates. It keeps the set summary and loses whatever it retrieved from
+    the set for itself. Padded slots are left out of the mean and never replaced.
+    """
+    real = ~candidate_padding_mask
+    weights = real.unsqueeze(-1).to(candidate_updates.dtype)
+    set_mean = (candidate_updates * weights).sum(dim=1, keepdim=True) / weights.sum(
+        dim=1, keepdim=True
+    ).clamp_min(1.0)
+    replace = (
+        th.rand(candidate_padding_mask.shape, device=candidate_updates.device) < probability
+    ) & real
+    return th.where(
+        replace.unsqueeze(-1),
+        set_mean.detach().expand_as(candidate_updates),
+        candidate_updates,
+    )
+
+
+def _drop_set_keys(candidate_padding_mask: th.Tensor, probability: float) -> th.Tensor:
+    """Hide a random share of each set's real candidates from the keys of its set summary.
+
+    Returns a key padding mask, True on padded slots and on hidden candidates. Each real
+    candidate is hidden independently with ``probability``. A set whose real candidates would
+    all be hidden keeps its first one visible, so no latent query attends over an empty key set.
+    Hidden candidates still query the summary and are still predicted; only what the summary
+    carries about them is removed.
+    """
+    real = ~candidate_padding_mask
+    draws = th.rand(candidate_padding_mask.shape, device=candidate_padding_mask.device)
+    hidden = real & (draws < probability)
+    emptied = ~(real & ~hidden).any(dim=1, keepdim=True)
+    first_real = real & (real.cumsum(dim=1) == 1)
+    return candidate_padding_mask | (hidden & ~(emptied & first_real))
+
+
 class _InducedCandidateAttentionLayer(nn.Module):
     """Exchange information between candidate tokens through a small latent set."""
 
@@ -62,6 +107,8 @@ class _InducedCandidateAttentionLayer(nn.Module):
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
         ce_feature_dim: int = 0,
+        set_message_substitution: float = 0.0,
+        set_key_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         if norm_placement not in {"post", "pre"}:
@@ -70,7 +117,19 @@ class _InducedCandidateAttentionLayer(nn.Module):
             raise ValueError("qk_norm requires attention_type='full'")
         if ce_feature_dim:
             raise ValueError("ce_film requires attention_type='full'")
+        if not 0.0 <= set_message_substitution < 1.0:
+            raise ValueError(
+                f"set_message_substitution must be in [0, 1), got {set_message_substitution}"
+            )
+        if not 0.0 <= set_key_dropout < 1.0:
+            raise ValueError(f"set_key_dropout must be in [0, 1), got {set_key_dropout}")
         self.norm_placement = norm_placement
+        # Training-only probability that a candidate's set message is replaced by its set's
+        # detached mean message (arm sm1); 0 draws no random numbers.
+        self.set_message_substitution = float(set_message_substitution)
+        # Training-only probability that a candidate is hidden from the keys the inducing
+        # tokens summarize, while it is still predicted (arm sd1); 0 draws no random numbers.
+        self.set_key_dropout = float(set_key_dropout)
         self.latent_attention = nn.MultiheadAttention(
             model_dim,
             num_heads,
@@ -118,11 +177,14 @@ class _InducedCandidateAttentionLayer(nn.Module):
         # the parameter count is identical across the two placements.
         pre = self.norm_placement == "pre"
         latent_query = self.latent_attention_norm(inducing_tokens) if pre else inducing_tokens
+        key_padding_mask = candidate_padding_mask
+        if self.training and self.set_key_dropout > 0.0:
+            key_padding_mask = _drop_set_keys(candidate_padding_mask, self.set_key_dropout)
         latent_updates, _ = self.latent_attention(
             latent_query,
             candidate_tokens,
             candidate_tokens,
-            key_padding_mask=candidate_padding_mask,
+            key_padding_mask=key_padding_mask,
             need_weights=False,
         )
         if pre:
@@ -147,6 +209,12 @@ class _InducedCandidateAttentionLayer(nn.Module):
             inducing_tokens,
             need_weights=False,
         )
+        if self.training and self.set_message_substitution > 0.0:
+            candidate_updates = _substitute_set_message(
+                candidate_updates,
+                candidate_padding_mask,
+                self.set_message_substitution,
+            )
         if pre:
             candidate_tokens = candidate_tokens + self.dropout(candidate_updates)
             candidate_tokens = candidate_tokens + self.dropout(
@@ -182,10 +250,16 @@ class _FullCandidateAttentionLayer(nn.Module):
         norm_placement: Literal["post", "pre"] = "post",
         qk_norm: bool = False,
         ce_feature_dim: int = 0,
+        set_message_substitution: float = 0.0,
+        set_key_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         if norm_placement not in {"post", "pre"}:
             raise ValueError(f"unknown norm_placement: {norm_placement}")
+        if set_message_substitution:
+            raise ValueError("set_message_substitution requires attention_type='induced'")
+        if set_key_dropout:
+            raise ValueError("set_key_dropout requires attention_type='induced'")
         self.norm_placement = norm_placement
         self.candidate_attention = _BiasedSelfAttention(
             model_dim,
@@ -553,6 +627,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         ce_feature_dim: int = 0,
         input_dropout: float = 0.0,
         sink_dim: int = 0,
+        set_message_substitution: float = 0.0,
+        set_key_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -650,6 +726,8 @@ class CandidateIntensityTransformerHead(nn.Module):
                     norm_placement=norm_placement,
                     qk_norm=qk_norm,
                     ce_feature_dim=ce_feature_dim if ce_film else 0,
+                    set_message_substitution=set_message_substitution,
+                    set_key_dropout=set_key_dropout,
                 )
                 for _ in range(num_layers)
             ]

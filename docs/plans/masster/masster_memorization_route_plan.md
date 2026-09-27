@@ -1,6 +1,17 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
 > **Status:** ACTIVE · **Updated:** 2026-09-27
+> **The allocator-route probe reran on `c0`, `r2`, `nl1` and `nl2` (2026-09-27).**
+>
+> - On `c0` the allocator's set message is the most train-specific route (4.2x), as on f0.
+> - Without global attention (`r2`) it carries almost twice the train-specific fit: this is where
+>   the lookup goes.
+> - Two masks on that route are built, not submitted, to run together against `c0`:
+>   - the message mask `sm1`
+>     ([section](#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted));
+>   - the key mask `sd1`
+>     ([section](#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
+>
 > **Step 1 ran; W&B tail read done ([below](#step-1-tail-read-from-wb-2026-09-24)).** `k1` (key
 > dropout) passes gates 1 and 5 at +0.0074 over `c0`; gates 2-4 need the route map and novelty
 > bins on its checkpoint. `r2` (no global attention) is null at +0.0006. `r1` fails (−0.0029),
@@ -383,7 +394,9 @@ each one: once the token cannot name the molecule, the candidate set is the rema
   any combination of blocks can pass per candidate. The set attention can average the noise back
   into a molecule identity, but not into a candidate identity, and the lookup needs both.
 - **`s1` set dropout.** Hide 20-30% of each molecule's candidates from the attention keys in
-  training, with the probe's `set_drop` code. Run it only if K5 grows after Step 2.
+  training, with the probe's `set_drop` code. Run it only if K5 grows after Step 2. (Built
+  2026-09-27 as `sd1`, next to the message mask `sm1`;
+  [section](#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted).)
 - **`c1` coherent gradients.** Combine the gradients of 4 molecule-disjoint micro-batches by
   elementwise median or a sign-agreement mask, which suppresses molecule-specific directions
   wherever they live (Chatterjee, ICLR 2020). It needs manual optimization and costs 1.3-2x the
@@ -1278,3 +1291,146 @@ Before these runs, every config had used at least 64 inducing points and 8 heads
   on unmerged.
 - **Next.** Read `fa_h4_mz` against `fa_h4`, then score all three at epoch 23 with
   `eval_matched.py` (`ip16_h4`, `fa_h4` and `fa_h4_mz` are registered).
+
+## Set-message substitution arm `sm1` (built 2026-09-27, not submitted)
+
+`gm1`'s recipe, training-time substitution with the route kept, moved from the encoder's global
+message to the allocator's set message. Not submitted.
+
+- **Why.** The allocator-route probe replaces each candidate's set message with its spectrum's
+  mean at evaluation
+  ([read](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27)).
+  - It is the most train-specific route measured on both f0 and `c0`: train drop 0.078 and
+    0.070 against val 0.023 and 0.017 (3.4x and 4.2x), with excess gap closed 0.050 on each.
+  - On `r2`, trained without global attention, the same route carries almost twice the
+    train-specific fit (train drop 0.132, excess 0.096), and val's use barely rises (0.027).
+    The lookup moved there when its encoder route was cut. That is why `r2` left the gap at 0.18.
+- **Option.** `masster_set_message_substitution: p` (default 0).
+  - In each induced allocator layer, `candidate_attention` returns the message each candidate
+    receives from its set, before the residual add.
+  - In training, each real candidate independently, with probability `p`, receives instead the
+    detached mean of the messages over its own spectrum's real candidates. Padded slots are left
+    out of the mean and never drawn.
+  - It keeps the set summary and loses what the candidate retrieved from the set for itself, the
+    part the probe found most train-specific.
+  - No parameters. At 0 or in evaluation it draws no random numbers, so `c0` (`vcpho5qm`) is the
+    control.
+  - Full candidate attention rejects it: every memorization arm uses induced attention.
+- **Why not the alternatives.**
+  - The batch mean (`setmsg_popmean`) would also remove the set summary that val uses (val drop
+    0.033 on `c0`).
+  - Hiding keys (`set_drop`, the Step 3 set-dropout idea) is weak (excess 0.013): retrieval
+    survives on the keys that remain.
+  - `h1`'s element-wise dropout inside the allocator's attention and feed-forward layers failed
+    at −0.0067. It is not targeted.
+- **Code.**
+  - `_substitute_set_message` and the `set_message_substitution` argument of
+    `_InducedCandidateAttentionLayer` in `bond_fragment_heads.py`, passed through
+    `CandidateIntensityTransformerHead`.
+  - `MassterModel(intensity_set_message_substitution=...)` in `masster_model.py`, wired in
+    `masster_pl.py` and declared in `config/template.yml`.
+- **Config.** `sm1_set_message_substitution.yml` is `c0_control.yml` plus the key at 0.3 (`gm1`'s
+  rate): seed 397623, 64 epochs, no EMA, checkpoints uploaded.
+- **Checks.**
+  - Tests are in section 8 of `tests/test_masster_memorization_route.py`, shared with `sd1`.
+    Each rules out a broken variant:
+    - each real candidate keeps its message or takes its own set's mean, never a padded slot's,
+      drawn independently per candidate across 24 seeds;
+    - a replaced candidate passes no gradient back through the mean;
+    - the state dict is unchanged, the arm is bit-identical at evaluation and differs in
+      training;
+    - nothing is drawn when off or in evaluation;
+    - invalid probabilities and full attention are rejected;
+    - the model reaches every allocator layer, is its control at evaluation, and `MassterPL`
+      passes the key to both layers.
+  - The allocator, probe, MASSter model, PL and config test files pass: 708 passed, 13 skipped
+    (CUDA-only, run on CPU), with `sd1` in. Ruff is clean on the changed files.
+  - Through `load_config`, `sm1` differs from `c0` by the key and W&B naming only. Built through
+    `MassterPL` on CPU, both have 9,212,861 parameters, with two induced layers at 0.3 in `sm1`.
+  - Two-epoch smokes of the option and its control on `debug_tiny_masster_cut_features.yml`
+    exit 0. They ran on CPU (`accelerator=cpu`, `masster_candidate_backend=cpu`) because the GPU
+    was in use.
+    - The arm's train primary loss moves off the control's: −0.8657 against −0.8932 at epoch 1.
+    - The two-epoch val numbers are noise and are not read.
+  - The submitter's config checks pass for `sm1`. Locally it stops at the missing `pyteomics`
+    wheel before generating anything.
+- **Reading.**
+  - The 54-63 tail against `c0`. A single seed needs about +0.006 (two standard errors), or a
+    second seed. `val_candidate_wrecall` must stay within 0.005.
+  - On the best checkpoint, the eval-mode train/val gap: train fit should fall while val rises,
+    as for `k1`.
+  - The allocator-route probe (`setmsg`, `set`, `cc`, `boundary`, `gsa`) re-run on the
+    checkpoint. The set message's asymmetry should shrink without another route's growing; the
+    boundary block and the pools are where the lookup would go next.
+  - It is a long shot on the record: the route map's predictions have paid off once in three
+    (`gm1`, unreplicated), and noise inside the allocator (`h1`) has hurt.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh sm1`, or with `sd1` as
+  stage `alloc`, after committing.
+
+## Set dropout on the allocator's keys, arm `sd1` (built 2026-09-27, not submitted)
+
+`sm1`'s companion on the same route. `sm1` masks the message a candidate receives from its set.
+`sd1` masks which members the set summary is built from, so the summary, and what any candidate
+can retrieve from it, changes from one exposure to the next. Not submitted.
+
+- **Why a key mask, not dropping candidates.** Dropping candidates from the output would move a
+  shared-m/z peak onto whichever isomer stays.
+  - On average 2.75 candidate fragments share a formula.
+  - At evaluation all isomers are present, so their summed probability would overshoot at every
+    shared m/z value.
+  - Hidden keys leave the output set and the loss exactly as in `c0`: each hidden candidate still
+    queries the summary and is still predicted and scored.
+- **Option.** `masster_set_key_dropout: p` (default 0).
+  - In each induced allocator layer, `latent_attention` is where the 64 inducing tokens summarize
+    the set from the candidates as keys.
+  - In training, each real candidate independently, with probability `p`, is added to that
+    step's key padding mask. It is drawn per candidate and layer.
+  - A set whose real candidates would all be hidden keeps its first one visible, as in the
+    probe's `drop_from_keys`. That is vectorized here, with no host sync.
+  - No parameters. At 0 or in evaluation it draws no random numbers, so `c0` (`vcpho5qm`) is the
+    control.
+  - Full candidate attention rejects it.
+- **Prior.**
+  - Weaker than `sm1`'s. At evaluation, hiding half the keys (`set_drop`) closed only 0.012-0.013
+    of excess gap on f0 and `c0`, against 0.050 for message substitution, because the inducing
+    summary is robust to missing members. On `r2` it rose to 0.023.
+  - Training with the mask is a different intervention from evaluating with it: the model can no
+    longer count on a particular member being in the summary.
+  - Its read is mainly relative: `sm1` against `sd1` tells whether the lookup sits in the message
+    or in the membership.
+- **Code.**
+  - `_drop_set_keys` and the `set_key_dropout` argument of `_InducedCandidateAttentionLayer` in
+    `bond_fragment_heads.py`, passed through `CandidateIntensityTransformerHead`.
+  - `MassterModel(intensity_set_key_dropout=...)`, wired in `masster_pl.py` and declared in
+    `config/template.yml`.
+- **Config.** `sd1_set_key_dropout.yml` is `c0_control.yml` plus the key at 0.3: seed 397623, 64
+  epochs, no EMA, checkpoints uploaded.
+- **Checks.**
+  - Section 8 of `tests/test_masster_memorization_route.py`:
+    - the key mask keeps padding hidden;
+    - it draws each real candidate on its own across 48 seeds;
+    - it never empties a set: a one-candidate set is never hidden, and when a draw hides a whole
+      set, the first candidate is the one kept visible;
+    - a hidden candidate cannot move the inducing tokens, and a visible one does;
+    - the checks shared with `sm1` (training-only, no parameters, nothing drawn when off,
+      rejected settings, model and PL wiring) are parametrized over both options.
+  - 17 cases in the section pass, and so do the related test files (708). The full suite passes
+    on CPU with both options in: 4,450 passed, 107 skipped (CUDA-only), 2 xfailed.
+  - Through `load_config`, `sd1` differs from `c0` by the key and W&B naming only. Built through
+    `MassterPL` on CPU, both have 9,212,861 parameters, with two induced layers at 0.3 in `sd1`.
+  - A two-epoch CPU smoke on `debug_tiny_masster_cut_features.yml` exits 0.
+    - The train primary loss moves off the control's by less than `sm1`'s: −0.8854 and −0.8657
+      against −0.8932 at epoch 1.
+    - The two-epoch val numbers are not read.
+  - The submitter's config checks pass for `sd1` and for the new stage `alloc` (`sm1` and `sd1`).
+    Locally it stops at the missing `pyteomics` wheel before generating anything.
+- **Reading.**
+  - The 54-63 tail against `c0` (about +0.006 for a single seed, or a second seed), `wrecall`
+    within 0.005, and the eval-mode gap on the best checkpoint.
+  - Then against `sm1`:
+    - `sm1` alone passing puts the lookup in the message;
+    - both passing, and stacking, puts it in both;
+    - neither passing says this route's training-time noise is not the lever, whatever the
+      probe says.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh alloc` (both), or `sd1`
+  alone, after committing.

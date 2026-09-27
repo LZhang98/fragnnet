@@ -56,6 +56,10 @@
 # shared encoder's inputs (noise with every route left in place, as k1 and gm1):
 #   am1  c0 + encoder atom mask 0.1          (control: c0, vcpho5qm)
 #   de1  c0 + encoder bond dropout 0.1       (control: c0, vcpho5qm)
+# Added 2026-09-27, after the allocator-route probe (the set message is the most train-specific
+# route, and where the lookup goes when global attention is removed):
+#   sm1  c0 + set-message substitution 0.3   (control: c0, vcpho5qm)
+#   sd1  c0 + set dropout on the keys 0.3    (control: c0, vcpho5qm; read against sm1 too)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
@@ -72,8 +76,9 @@
 #   nce   n2 and n3 (c0 has run; n1 is running).
 #   share sp0 and sp1 (c0 has run).
 #   drop  am1 and de1 (c0 has run).
+#   alloc sm1 and sd1 (c0 has run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1 | am1 | de1  one job.
+#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1 | am1 | de1 | sm1 | sd1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -134,6 +139,8 @@ declare -A JOB_BY_ARM=(
     [sp1]=msh_mhft_sp1_shared_proposal
     [am1]=msh_mhft_am1_atom_mask
     [de1]=msh_mhft_de1_bond_drop
+    [sm1]=msh_mhft_sm1_set_message_substitution
+    [sd1]=msh_mhft_sd1_set_key_dropout
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -167,6 +174,8 @@ declare -A CONFIG_BY_ARM=(
     [sp1]=sp1_shared_proposal.yml
     [am1]=am1_atom_mask.yml
     [de1]=de1_bond_drop.yml
+    [sm1]=sm1_set_message_substitution.yml
+    [sd1]=sd1_set_key_dropout.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -182,9 +191,10 @@ case "${STAGE}" in
     nce)  ARMS=(n2 n3) ;;
     share) ARMS=(sp0 sp1) ;;
     drop) ARMS=(am1 de1) ;;
-    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1) ARMS=("${STAGE}") ;;
+    alloc) ARMS=(sm1 sd1) ;;
+    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1|sm1|sd1) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|alloc|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1|sm1|sd1]" >&2
         exit 1
         ;;
 esac
@@ -275,3 +285,4 @@ echo "m2: its controls c0 (vcpho5qm) and m1 (liwjgdq6) have run."
 echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."
 echo "share: sp0's control c0 (vcpho5qm) has run; sp1's control is sp0, in the same stage."
 echo "drop (am1, de1): their control c0 (vcpho5qm) has run."
+echo "alloc (sm1, sd1): their control c0 (vcpho5qm) has run; read each against c0 and each other."

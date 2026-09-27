@@ -1,6 +1,6 @@
 # Is MASSter's memorized allocation keyed on energy, on molecules or on parts?
 
-> **Status:** FINDING · **Updated:** 2026-09-26
+> **Status:** FINDING · **Updated:** 2026-09-27
 > Inference only, on `3bej6fq7` (f0, unmerged `[M+H]+`/FT, the route map's checkpoint).
 >
 > - **Memorization is per molecule, not per energy.** An NCE shift of ±1 in the intensity head
@@ -25,6 +25,12 @@
 >   message each candidate receives from its candidate set with its spectrum's mean costs train
 >   3.37x what it costs val. Val barely uses it (0.023), and only on close analogues
 >   ([set-message probe](#allocator-set-message-probe-2026-09-26)).
+> - **It holds on a second checkpoint, and it is where the lookup goes when global attention is
+>   removed** ([four more checkpoints](#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27)).
+>   - On `c0` it is 4.20x, with the same excess gap closed as on f0 (0.050).
+>   - On `r2`, trained without global attention, the route carries almost twice the
+>     train-specific fit (train drop 0.132, excess 0.096) while val's use barely rises (0.027).
+>   - With the heavier-side pool gone (`nl1`, `nl2`), val leans on it too (val drop 0.09).
 > - **NCE values are not interchangeable across the two acquisition ladders.** On molecules
 >   measured on both, spectra at adjacent values of the two ladders agree at 0.71-0.84. Same-ladder
 >   spectra 10 NCE apart agree at 0.84.
@@ -316,6 +322,75 @@ above.
 - **Val barely needs it.** Removing all set information costs val 0.040, a tenth of what the
   pools carry. A training-time substitution of the set message, `gm1`'s form moved into the
   allocator, targets a route that val barely uses and that `nl2` leaves open.
+
+### Set-message probe on `c0`, `r2`, `nl1` and `nl2` (2026-09-27)
+
+Question: does the set-message route hold on another checkpoint, and does it grow once other
+routes are removed (`r2` without global attention; `nl1`/`nl2` without the heavier-side pool)?
+
+**Method.** The same probe, sample and reads as above: 60 batches of 512 per split, eval mode,
+every condition on the same batches. Scopes `setmsg`, `set`, `cc` and `boundary`, plus `gsa` where
+the encoder has global attention. Each arm's best checkpoint:
+
+- `c0` (`vcpho5qm`) at epoch 42;
+- `r2` (`9lt5s2u8`) at 57;
+- `nl1` (`107bmt51`) at 62;
+- `nl2` (`djhbz6z7`) at 45.
+
+f0 (epoch 61) is the later-epoch reference. Runner, CSVs and `analyze.py` are in
+`output/allocator_route_nl_2026_09_26/` (local, Git-ignored). The four runs took 18-31 min each on
+the local RTX 2070 SUPER.
+
+Set message replaced by the spectrum's mean (`setmsg_molmean`):
+
+| checkpoint | eval-mode gap | train drop | val drop | damage ratio | excess gap closed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| f0 | 0.1805 | 0.078 | 0.023 | 3.37 | 0.050 |
+| `c0` | 0.1760 | 0.070 | 0.017 | 4.20 | 0.050 |
+| `r2` (no global attention) | 0.1765 | 0.132 | 0.027 | 4.83 | 0.096 |
+| `nl1` (lighter side only) | 0.1774 | 0.175 | 0.091 | 1.93 | 0.066 |
+| `nl2` (`nl1` + no global attention) | 0.1715 | 0.222 | 0.093 | 2.40 | 0.101 |
+
+The other routes on the same batches (damage ratio, excess gap closed):
+
+| checkpoint | `setmsg_popmean` | `set_drop` | `gsa_popmean` | `boundary_molmean` |
+| --- | --- | --- | --- | --- |
+| f0 | 2.82, 0.065 | 1.75, 0.012 | 2.58, 0.123 | 1.47, 0.085 |
+| `c0` | 3.11, 0.064 | 2.11, 0.013 | 2.53, 0.121 | 1.45, 0.080 |
+| `r2` | 3.60, 0.111 | 3.65, 0.023 | — | 1.53, 0.063 |
+| `nl1` | 1.80, 0.072 | 1.48, 0.015 | 2.89, 0.127 | 1.43, 0.103 |
+| `nl2` | 2.08, 0.110 | 1.79, 0.023 | — | 1.43, 0.074 |
+
+The f0 `gsa` and `boundary` values are from the route map. The cc pools, the symmetric
+reference, score 1.20-1.33 on every checkpoint.
+
+- **The route replicates.** On `c0`, as on f0, the set message is the most train-specific input
+  measured, and val barely uses it (0.017). Its excess gap closed is 0.050 on both.
+- **Removing global attention moves the lookup into the set message.** `r2`'s eval-mode gap is
+  `c0`'s (0.1765 against 0.1760).
+  - The set message now costs train almost twice as much (0.132 against 0.070) at the ratio of
+    4.83x, and closes 0.096 of excess gap.
+  - The epochs differ (57 against 42), but f0 at epoch 61 reads 0.078, so this is not training
+    length.
+  - This is the rerouting the plan's premise expects, measured for the first time.
+- **Without the heavier-side pool, val uses the set message too.**
+  - On `nl1` and `nl2` the set message carries more of both splits' fit (val drop 0.09 against
+    0.02). So the route is less asymmetric (1.9-2.4x), though its excess still exceeds `c0`'s.
+  - With less molecule context in the token, candidates draw more of it from their set.
+- **`nl1` still writes the key in its encoder.** Global attention's damage ratio and excess are
+  `c0`'s or higher (2.89x, 0.127). Representing each cut by its lighter side left the
+  encoder-side key in place, which fits `nl1`'s unchanged gap (0.1774).
+- **The boundary block reads the same everywhere** (1.43-1.53x).
+- **What this points to.** The set message is where the lookup sits, and the route it moves to
+  when another is cut. Val barely uses it on `c0`. A training-time substitution there, `gm1`'s
+  recipe moved to the allocator, is built as arm `sm1`
+  ([plan](../../plans/masster/masster_memorization_route_plan.md#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted)).
+  Its companion `sd1` hides random candidates from the summary's keys instead
+  ([plan](../../plans/masster/masster_memorization_route_plan.md#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
+- **Limits.**
+  - One seed per checkpoint, and best checkpoints at different epochs.
+  - The val sample is the `spec_id`-ordered prefix described below.
+  - Inference-time substitution shows what a trained model reads, not what training would do.
 
 ## Limits
 

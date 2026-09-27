@@ -1101,6 +1101,8 @@ class MassterModel(nn.Module):
         boundary_local_layers: int = 0,
         boundary_encoder_dropout: float = 0.0,
         intensity_input_dropout: float = 0.0,
+        intensity_set_message_substitution: float = 0.0,
+        intensity_set_key_dropout: float = 0.0,
         memorization_sink_dim: int = 0,
         memorization_sink_num_molecules: int = 0,
         memorization_sink_dropout: float = 0.0,
@@ -1277,6 +1279,13 @@ class MassterModel(nn.Module):
             boundary_encoder_dropout: Training-only dropout on the ``CutBondEncoder`` hidden
                 layer. Requires ``boundary_bond_encoder``.
             intensity_input_dropout: Training-only dropout on the projected candidate token.
+            intensity_set_message_substitution: Training-only probability, per candidate and
+                allocator layer, that the message a candidate receives from its candidate set
+                is replaced by the detached mean message of its set. Requires
+                ``intensity_transformer_attention='induced'``.
+            intensity_set_key_dropout: Training-only probability, per candidate and allocator
+                layer, that a candidate is hidden from the keys its set summary reads; it is
+                still predicted and scored. Requires ``intensity_transformer_attention='induced'``.
             memorization_sink_dim: Width of the per-molecule memorization sink; 0 disables it.
                 A zero-initialized row per molecule adds ``row · phi(token)`` to each candidate's
                 residual when ``forward`` receives ``memorization_sink_indices`` (training only).
@@ -1828,6 +1837,8 @@ class MassterModel(nn.Module):
             ce_feature_dim=self.context_encoder.ce_feature_dim,
             input_dropout=intensity_input_dropout,
             sink_dim=memorization_sink_dim,
+            set_message_substitution=intensity_set_message_substitution,
+            set_key_dropout=intensity_set_key_dropout,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)

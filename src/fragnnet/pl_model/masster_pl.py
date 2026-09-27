@@ -1095,6 +1095,8 @@ class MassterPL(SpectrumPL):
             boundary_local_layers=self.hparams.masster_boundary_local_layers,
             boundary_encoder_dropout=self.hparams.masster_boundary_encoder_dropout,
             intensity_input_dropout=self.hparams.masster_intensity_input_dropout,
+            intensity_set_message_substitution=self.hparams.masster_set_message_substitution,
+            intensity_set_key_dropout=self.hparams.masster_set_key_dropout,
             memorization_sink_dim=self.hparams.masster_memorization_sink_dim,
             memorization_sink_num_molecules=(
                 self.hparams.masster_memorization_sink_num_molecules

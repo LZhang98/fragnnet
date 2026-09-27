@@ -4,6 +4,42 @@
 
 ## Current handoff
 
+**Allocator-route probe on `c0`, `r2`, `nl1`, `nl2` read, and two masks on the allocator's set
+built, `sm1` (message) and `sd1` (keys) (2026-09-27); uncommitted, not submitted.**
+
+- **Probe** (inference only, 60 batches per split, eval mode):
+  - The allocator's set message is the most train-specific route on `c0` (4.2x, excess gap
+    closed 0.050), as on f0.
+  - With global attention removed (`r2`) it carries almost twice the train-specific fit (train
+    drop 0.132 against 0.070) while val barely uses it (0.027). This is where the lookup goes
+    when its encoder route is cut.
+  - `nl1` still writes the key in global attention (2.89x). In `nl1`/`nl2`, val leans on the
+    set message too.
+- **`sm1`** = `c0` + `masster_set_message_substitution: 0.3`. In training, each candidate, per
+  allocator layer, with probability 0.3, receives its spectrum's detached mean set message
+  instead of its own.
+  - No parameters, bit-identical at eval.
+- **`sd1`** = `c0` + `masster_set_key_dropout: 0.3`. In training, each candidate, per allocator
+  layer, with probability 0.3, is hidden from the keys the inducing tokens summarize its set
+  from.
+  - The hidden candidate is still predicted and scored, so outputs and loss are `c0`'s. Dropping
+    candidates from the output instead would overshoot shared-m/z isomers at eval.
+  - Its prior is weaker than `sm1`'s (eval-time key hiding closed 0.013 of excess gap, against
+    0.050), so the pair is read against each other: message or membership.
+- **Checks.**
+  - 17 test cases for the two options pass, and so do the related files (708).
+  - The full suite passes on CPU with both options in: 4,450 passed, 107 skipped (CUDA-only), 2
+    xfailed.
+  - Both configs resolve to `c0` + their key, with 9,212,861 parameters.
+  - Two-epoch CPU smokes exit 0.
+- **Next:** commit, then on Fir run `submit_masster_mh_ft_memorization_route.sh alloc` (both) and
+  `sbatch` the printed scripts. Read `wrecall`, then the 54-63 tail against `c0` (+0.006
+  single-seed rule), then `sm1` against `sd1`, then the probe on their checkpoints.
+
+[Probe read](findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27),
+[plan: `sm1`](plans/masster/masster_memorization_route_plan.md#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted),
+[plan: `sd1`](plans/masster/masster_memorization_route_plan.md#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted).
+
 **Encoder atom-mask and bond-dropout arms `am1`/`de1` built (2026-09-27); uncommitted, not
 submitted.** These follow the user's proposal of atom drop and bond drop in the GNN. Each is `c0` +
 one training-only key at 0.1 on the shared `GINE_GSA` encoder:
