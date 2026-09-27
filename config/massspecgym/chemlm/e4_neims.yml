@@ -1,9 +1,10 @@
 # ARM E4 -- NEIMS fingerprint baseline for the ChemBERTa-3 basic model. 2026-09-27.
-# Plan: docs/plans/chemberta3_msgym_plan.md (basic model: E1, T2, E4; 2 seeds each).
+# Plan: docs/plans/chemberta3_msgym_plan.md. Built but NOT RUN (user, 2026-09-27): the basic
+# model runs E1 and T2 only.
 #
 # Morgan (r3, 2048) + RDKit (2048) + MACCS fingerprints of the same mol_df molecule E1 reads,
-# into the same NEIMS binned 0.01 Da bidirectional SpecFFN, with the same qet dual-CE and
-# instrument inputs, data and recipe as e1_chemberta3_l6.yml. The first unmerged
+# into the same NEIMS binned 0.01 Da bidirectional SpecFFN, with the same fourier-embedded dual-CE
+# and instrument inputs, data and recipe as e1_chemberta3_l6.yml. The first unmerged
 # ms_gym_benchmark_1_5 NEIMS config; the older MSGYM NEIMS configs are merged, on the
 # massspecgym_f split.
 #
@@ -11,9 +12,9 @@
 # matrices only; 1,000-step warmup, cosine to 1% over 100 epochs x 388 steps = 38,800 steps;
 # gradient clip 5; fp32; best-val checkpoint; no EMA. The tuned NEIMS recipe decayed
 # exponentially; cosine is used here so the three arms share one schedule.
-# CE statistics as in E1: ACE mean 37.8 std 27.8 eV; NCE mean 68.3 std 59.1.
+# CE input as in E1: ce_insert_type embed with int_embedder fourier, NCE and ACE clamped at 300.
 #
-# Second seed: --override seed=132548 wandb_name=msgym_chemlm_e4_neims_s1
+# A second seed, if needed: --override seed=132548 wandb_name=msgym_chemlm_e4_neims_s1
 wandb_name: msgym_chemlm_e4_neims_s0
 wandb_group: msgym_chemlm_basic
 wandb_tags:
@@ -23,7 +24,7 @@ wandb_tags:
 - ms_gym_benchmark_1_5
 - unmerged
 - binned_0.01
-- qet
+- ce_embed_fourier
 - dual_ce
 - inst_type_embed
 - cosine_schedule
@@ -71,15 +72,12 @@ mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: true
 
-ce_insert_type: qet
+ce_insert_type: embed
+int_embedder: fourier
 ce_insert_location: mlp
 ce_insert_merge: true
 ce_insert_size: 32
-nce_mean: 68.3
-nce_std: 59.1
 nce_max: 300
-ace_mean: 37.8
-ace_std: 27.8
 ace_max: 300
 prec_insert_location: none
 inst_insert_location: mlp

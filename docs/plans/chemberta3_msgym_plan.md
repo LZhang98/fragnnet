@@ -1,12 +1,13 @@
 # SMILES + ChemBERTa-3 spectrum prediction on MassSpecGym
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27 (basic model built, uncommitted and not yet
+> **Status:** ACTIVE · **Updated:** 2026-09-27 (basic model built in `d51fe50c`, not yet
 > trained; cut to a basic model on 2026-09-26 at the user's request; the earlier design and
 > its [Review](#review-2026-09-26) are kept)
 > **Current scope: a basic model, to see whether it works.** ChemBERTa-3's first 6 of 12 layers,
 > loaded encoder-only, fine-tuned **end to end** with the NEIMS binned 0.01 Da head on
-> MassSpecGym's simulation-challenge spectra. Three arms, 2 seeds each: the model (E1), the model
-> with random SMILES (T2) and the NEIMS fingerprint baseline (E4). The augmentation ladder, the
+> MassSpecGym's simulation-challenge spectra. Two runs, one seed each (the user's call,
+> 2026-09-27): the model (E1) and the model with random SMILES (T2). The NEIMS fingerprint
+> baseline (E4) is built but not run. The augmentation ladder, the
 > other controls, the frozen-encoder checks, full depth and the exact-mass stages are
 > [deferred](#deferred-not-scheduled). Built on 2026-09-27 as `model_type: chemlm`, with
 > `transformers` 4.46.3 installed in FRAGNNET-GPU; see [Built](#built-2026-09-27). No run has
@@ -14,14 +15,15 @@
 
 ## Objective and acceptance criteria
 
-Does a basic ChemBERTa-3 spectrum model work? Two reads, each against a run with the same head,
-data, CE input and schedule:
+Does a basic ChemBERTa-3 spectrum model work? Two reads:
 
-1. **E1 against E4.** Does the pretrained SMILES encoder, trained end to end, match a fingerprint
-   MLP? Within the seed spread, it matches fingerprints; above it, it adds something; below it,
-   the basic model does not work yet.
-2. **T2 against E1.** Do random SMILES strings in training help? T2 helps if it beats E1 by more
-   than the seed spread.
+1. **E1 on its own.** Does the pretrained SMILES encoder, trained end to end, reach a useful val
+   `cos_sim_0.01`? E4, the same-head fingerprint baseline, is not run (the user's call,
+   2026-09-27), so this read is absolute. The only numbers to read it against are MASSter's,
+   whose exact-mass head the binned head cannot match (see Expectation).
+2. **T2 against E1.** Do random SMILES strings in training help? The two runs share the head,
+   data, CE input and schedule. T2 helps if it beats E1 by more than the noise floor under
+   Seeds.
 
 - **Data.** `ms_gym_benchmark_1_5`, unmerged; this is exactly the simulation-challenge rows.
 - **Primary metric.** Linear `cos_sim_0.01`, which is MassSpecGym's required `cos_sim` (see the
@@ -30,11 +32,14 @@ data, CE input and schedule:
   `cos_hun_inst_tol` and the sqrt variants. There is no 0.1 Da headline.
 - **Reference points.** On test, MASSter `ll04i00m` scores 0.5713 and GLACIER's released
   checkpoint 0.5455. The best MASSter val is 0.5754 (`1imawkx1`).
-- **Seeds.** This model family's seed spread is unknown, so every arm runs 2 seeds, and the
-  spread within each pair sets the noise floor.
+- **Seeds.** One seed per run (the user's call, 2026-09-27). This model family's seed spread is
+  unknown, and the runs cannot measure it.
+  - The only reference is MASSter's NIST20 seed spread, 0.0042, from another model.
+  - A T2 − E1 gap below about 0.005 is not read as an effect.
+  - A second seed (`--override seed=132548 ...`) is the follow-up for a close call.
 - **Expectation.** The head is binned at 0.01 Da. It has to learn each fragment's mass defect bin
-  by bin, whereas MASSter and GLACIER place peaks at exact formula masses. So E1 is judged against
-  E4, which has the same head, not against MASSter.
+  by bin, whereas MASSter and GLACIER place peaks at exact formula masses. E4 would separate the
+  encoder from the head; without it, E1's gap to MASSter mixes the two.
 
 ## How ChemBERTa-3 handled SMILES
 
@@ -194,7 +199,7 @@ not to rule out augmentation.
 | D2 | Checkpoint and depth | `DeepChem/ChemBERTa-100M-MLM` at revision `f5c45f44d3061f0346888f5c09db17ec1146d29d`, **truncated to its first 6 of 12 layers** for now: the pretrained embeddings and layers 0-5, about 49M parameters (42.5M outside the embeddings). The full 12-layer model (D12) is deferred. | The user asked for a smaller base model that is still ChemBERTa-3 (2026-09-26). No smaller ChemBERTa-3 checkpoint is released. The small DeepChem checkpoints are ChemBERTa-2, pretrained through a broken tokenizer. Cutting layers keeps ChemBERTa-3's tokenizer, pretraining corpus and `RobertaModel` code. c3-MoLFormer is a different architecture, and the README does not show scale winning. |
 | D3 | Pooling | Mean over non-padding tokens | An MLM-only RoBERTa never trains `<s>` as a summary token. |
 | D4 | Output head | The existing binned 0.01 Da bidirectional `SpecFFN`, as in NEIMS | It matches the controls, reuses the tested code, and is scored linearly. The exact-mass head (Stage 3) is deferred. |
-| D5 | CE and instrument | `ce_insert_type: qet` plus the instrument embedding, identical in every arm | The categorical `embed` aliases CE values. `qet` works in the shared `CEModel` that NEIMS uses, and it won the held-out-NCE probe ([project state](../project-state.md)). No full training run has used it yet: NIST20 arm `n1` is not submitted. |
+| D5 | CE and instrument | `ce_insert_type: embed` with `int_embedder: fourier`, both CE channels, plus the instrument embedding, identical in every arm (the user's call, 2026-09-27; `qet` before that) | It is MASSter arm `n4`'s per-NCE code: +0.0060 over `c0` on NIST20 at epochs 51-60 ([project state](../project-state.md)). `qet` (`n1`), `qet_mlp` (`n2`) and `id` (`n3`) finished 0.009-0.012 below `c0`. `fourier` keeps one code per integer energy without the abs-sines table's aliasing (NCE 76 and 180 nearly share a code there). It does not help energies unseen in training. |
 | D6 | Intensity space | `ints_transform: sqrt`, as in the tuned NEIMS and MassFormer recipes | The metric stays linear through the untransform. A linear-space arm is an optional follow-up on the winner. |
 | D7 | Fine-tuning recipe | AdamW; encoder LR 3e-5 (all encoder parameters, embeddings included), head LR 4e-4 (NEIMS's); no weight decay on embeddings, LayerNorm or biases; 1,000-step warmup, cosine decay; 100 epochs; best-val checkpoint; no EMA in any arm | The recipe is kept matched. Excluding embeddings from decay stops rows of tokens absent from MSGYM from shrinking while they receive no gradient. EMA can be added to all arms later. |
 | D8 | Gradient path | **End to end.** The spectrum loss back-propagates through the head, the pooling, every kept layer (6 under D2), and the token and position embedding matrices. No frozen layers, no cached encoder outputs, no stop-gradient. | The user's requirement (2026-09-26). The SMILES encoder has to be reshaped by the spectrum loss, not read as fixed features. Augmentation rules out caching anyway: each step sees new strings. |
@@ -272,29 +277,29 @@ not to rule out augmentation.
 
 ## Plan: basic model
 
-### Runs (2 seeds each)
+### Runs (one seed each; E4 not run)
 
 | Arm | Model | Notes |
 | --- | --- | --- |
 | E1 | ChemBERTa-3, first 6 layers (D2), end to end (D8), canonical `mol_df` SMILES (D1) | D1-D8. |
 | T2 | E1 with random SMILES in training | On each train step, every SMILES is replaced by one unrestricted random SMILES of the same molecule (`Chem.MolToRandomSmilesVect(mol, 1, randomSeed=s)`, with `s` from a generator seeded by the run seed). Evaluation uses the canonical string. Everything else equals E1. |
-| E4 | NEIMS (Morgan + RDKit + MACCS fingerprint MLP) | A new unmerged `ms_gym_benchmark_1_5` config with `qet`. Its fingerprints come from the same `mol_df` molecule as E1's SMILES. |
+| E4 | NEIMS (Morgan + RDKit + MACCS fingerprint MLP) | **Built, not run** (the user's call, 2026-09-27). A new unmerged `ms_gym_benchmark_1_5` config with the same CE input as E1. Its fingerprints come from the same `mol_df` molecule as E1's SMILES. |
 
 - **T2's strings.** On 1,500 MSGYM molecules, 20 of 20 draws per molecule were distinct. They
   tokenize at 1.351 characters per token against 1.436 for canonical SMILES, so they sit further
   from the pretraining text (see the deferred [augmentation design](#augmentation-design)). Over
   100 epochs, each molecule sees about 800 strings.
-- **Read.** Val `cos_sim_0.01`: the best epoch and the last-10-epoch tail, with the seed spread
-  from each pair. The train loss, already logged, is the train-fit signal.
-- **Budget.** 6 training runs, after a smoke run of E1 that measures epoch time and peak memory.
-  Epoch time is unmeasured.
+- **Read.** Val `cos_sim_0.01`: the best epoch and the last-10-epoch tail, one seed each (see
+  Seeds). The train loss, already logged, is the train-fit signal.
+- **Budget.** 2 training runs, E1 and T2, after a smoke run of E1 that measures epoch time and
+  peak memory. Epoch time on Fir is unmeasured.
 - **If E1 works,** the first additions are E3, the same 6-layer model from random init, to show
   what pretraining contributes, and the one-time test read. Both are
   [deferred](#deferred-not-scheduled).
 
 ## Implementation: basic model
 
-Built on 2026-09-27 and uncommitted: see [Built](#built-2026-09-27) after this list. The list
+Built on 2026-09-27 (`d51fe50c`): see [Built](#built-2026-09-27) after this list. The list
 is the design it followed.
 
 1. **Dependencies.** Confirm, then install `transformers` and `tokenizers`, pinned, in
@@ -313,7 +318,7 @@ is the design it followed.
    - on train steps with `p_trav` above 0, each SMILES is replaced by one random SMILES of the
      same molecule, from a generator the model seeds with the run seed;
    - the fast tokenizer pads to the batch's longest string;
-   - then the encoder (`RobertaModel`, loaded as in D8), mean pooling, the `qet` CE and instrument
+   - then the encoder (`RobertaModel`, loaded as in D8), mean pooling, the CE and instrument
      embeddings, an MLP, and `SpecFFN`.
 
    Drawing the random SMILES inside the model keeps shared dataset code unchanged.
@@ -337,13 +342,13 @@ is the design it followed.
    - Random SMILES: the same seed gives the same strings, and every string parses back to the
      input's canonical SMILES.
 7. **Configs.** E1 and T2 under `config/massspecgym/chemlm/`, and E4 as an unmerged
-   `ms_gym_benchmark_1_5` NEIMS config with `qet`. Run the smoke run before sizing the jobs.
+   `ms_gym_benchmark_1_5` NEIMS config with the same CE input. Run the smoke run before sizing the jobs.
 
 ### Built (2026-09-27)
 
 - **Code.**
   - [chemlm_model.py](../../src/fragnnet/model/chemlm_model.py): the tokenizer, the truncated
-    `RobertaModel` with SDPA attention, mean pooling, and the `qet` CE and instrument inputs
+    `RobertaModel` with SDPA attention, mean pooling, and the CE and instrument inputs
     into the NEIMS `SpecFFN`.
   - [chemlm_pl.py](../../src/fragnnet/pl_model/chemlm_pl.py): `ChemLMPL(BinnedPL)`.
   - Registration in `runner.py`, `setup_utils.py` and `pl_model/__init__.py`.
@@ -373,13 +378,14 @@ is the design it followed.
 - **Monitoring (D8).** The gradient norm of the embeddings, each layer and the head is logged
   every `log_every_n_steps` (50 in the configs).
 - **Configs** ([config/massspecgym/chemlm/](../../config/massspecgym/chemlm/)): E1
-  `e1_chemberta3_l6.yml`, T2 `t2_chemberta3_l6_random_smiles.yml`, E4 `e4_neims_qet.yml`. The
-  second seed comes from `--override seed=132548 wandb_name=..._s1`.
+  `e1_chemberta3_l6.yml`, T2 `t2_chemberta3_l6_random_smiles.yml`, E4 `e4_neims.yml`. E4 is
+  not run. A second seed, if one is needed, comes from
+  `--override seed=132548 wandb_name=..._s1`.
   - **Checkpoints.** All three arms set `upload_checkpoints: false`, at the user's request
     (2026-09-27). Each run keeps best and last under `wandb/run-*/files/ckpt` in the checkout.
     - E1 and T2: 2.05 GB apiece, about 4.1 GB per run.
     - E4: 1.5 GB apiece, about 3 GB per run.
-    - About 22 GB over the six runs.
+    - About 8 GB over the two runs, E1 and T2.
 - **Fir jobs (`scripts/setup_job_cc.py`).** Only for `model_type: chemlm`, the generator:
   - stages `chemlm_ckpt_dp` into the job's working directory, and fails if `config.json` did
     not arrive (a checkpoint missing from the checkout already fails at generation);
@@ -399,8 +405,11 @@ is the design it followed.
   - Weight decay is NEIMS's tuned 1e-7 on weight matrices, in every arm.
   - The cosine schedule ends at 1% (`lr_min_ratio` 0.01, as the MASSter MSGYM recipe does)
     over 38,800 steps: 100 epochs of 388 steps.
-  - `qet` statistics are spectrum-weighted over the train split: ACE mean 37.8 and std 27.8 eV;
-    NCE, derived as ACE × 500 / precursor m/z, mean 68.3 and std 59.1.
+  - CE input: `ce_insert_type: embed` with `int_embedder: fourier` (the user's call,
+    2026-09-27; see D5), NCE and ACE clamped at 300 as in MASSter's MSGYM config.
+    - The configs first used `qet`, with spectrum-weighted train-split statistics: ACE mean
+      37.8 and std 27.8 eV; NCE, derived as ACE × 500 / precursor m/z, mean 68.3 and std 59.1.
+    - `embed` does not read those statistics.
   - Both CE channels are fed, as MASSter's MSGYM config does, with no precursor-type input (all
     rows are `[M+H]+`).
   - `eval_test_split: false` is explicit.
@@ -797,11 +806,11 @@ Hugging Face files. The scripts are in the session scratchpad and are not kept.
 
 ## Open questions for the user
 
-1. Answered 2026-09-27: the six runs train on Fir. The generated jobs install the Hugging Face
+1. Answered 2026-09-27: the runs train on Fir, E1 and T2 only, one seed each. The generated jobs install the Hugging Face
    packages (all in the Fir wheelhouse); the checkpoint directory still has to be copied. The install question was also
    answered that day: installed in FRAGNNET-GPU.
 
 ## Next concrete check
 
 Fir setup: install the packages in the job venv, copy `data/pretrained/ChemBERTa-100M-MLM`,
-then a one-epoch E1 smoke job for Fir epoch time before the six 100-epoch runs.
+then a one-epoch E1 smoke job for Fir epoch time before the two 100-epoch runs (E1, T2).

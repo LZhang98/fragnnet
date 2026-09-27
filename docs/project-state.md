@@ -191,11 +191,12 @@ Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s
 [`n1`-`n3`](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1),
 [`u3`](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
 
-**ChemBERTa-3 basic model built (2026-09-27); uncommitted, not trained.** `model_type: chemlm`
+**ChemBERTa-3 basic model built (2026-09-27; committed in `d51fe50c`); not trained.** `model_type: chemlm`
 fine-tunes ChemBERTa-3's first 6 of 12 layers (`DeepChem/ChemBERTa-100M-MLM`) end to end, with
 the NEIMS binned head, on `ms_gym_benchmark_1_5`.
-- **Arms.** `config/massspecgym/chemlm/` holds E1, T2 (random SMILES) and E4 (NEIMS); each runs
-  2 seeds.
+- **Runs.** E1 and T2 (random SMILES), one seed each, the user's call (2026-09-27).
+  - E4 (NEIMS) is configured but not run, so E1 has no same-head baseline.
+  - The configs are in `config/massspecgym/chemlm/`.
 - **Environment.** `transformers` 4.46.3 and `tokenizers` 0.20.3 are installed in FRAGNNET-GPU,
   with the user's approval. The checkpoint is at `data/pretrained/ChemBERTa-100M-MLM`.
 - **Validated.** The D8 gradient test and 17 other `chemlm` tests pass, and a CPU pipeline
@@ -207,13 +208,13 @@ the NEIMS binned head, on `ms_gym_benchmark_1_5`.
 - **Fir support.** `setup_job_cc.py` stages the checkpoint directory and installs the pinned
   Hugging Face packages, for chemlm jobs only. Every pin is in the Fir wheelhouse. `tokenizers`
   is 0.20.0 on Fir and 0.20.3 locally; the two give identical token ids on all MSGYM SMILES.
-- **Checkpoints.** All three arms keep theirs on disk (`upload_checkpoints: false`, the
-  user's call): about 22 GB over the six runs.
+- **Checkpoints.** The runs keep theirs on disk (`upload_checkpoints: false`, the user's
+  call): about 8 GB over E1 and T2.
 - **Runner fix.** The runner used to copy un-uploaded checkpoints through `/tmp` around
   `wandb.finish()`, which filled the workstation's `/tmp` and lost a `last.ckpt`. It now renames
   them within the run folder.
 - **Next: run on Fir, the user's choice.** Copy `data/pretrained/ChemBERTa-100M-MLM` into the
-  Fir checkout, run a one-epoch smoke job, then the six runs.
+  Fir checkout, run a one-epoch smoke job, then E1 and T2.
   [Plan](plans/chemberta3_msgym_plan.md#built-2026-09-27).
 
 **Enveda standalone MASSter baseline `i0` built (2026-09-26); not submitted, uncommitted.** The
