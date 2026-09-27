@@ -640,7 +640,9 @@ directory and submitter (stage `nce`).
     ([section](#what-a-shared-proposal-would-rank-2026-09-26)).
   - Skipping same-m/z isomers gives from 128 candidates the coverage that 256 give today.
   - `share_proposal_across_ev` has never been read. Three August unmerged runs crashed by epoch
-    5, and merged runs have about one spectrum per group, so sharing does nothing there.
+    5, and merged runs have about one spectrum per group, so sharing does nothing there. Arms
+    `sp0` (`c0` + whole-molecule CE-context batches, which sharing requires) and `sp1` (`sp0` +
+    sharing) are built on the memorization-route lineage; both pass a 2-epoch local smoke run.
 - **Training dynamics are the open question.** Sharing `(a_i, e_i)` across a molecule's energies
   could change what the network memorizes, and a projection of a trained model cannot show that.
   The CE-dimension generalization gap is small (projection +0.0019 on val, −0.0009 on train), so

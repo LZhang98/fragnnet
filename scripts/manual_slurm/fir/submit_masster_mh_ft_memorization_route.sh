@@ -44,9 +44,14 @@
 #   nl1  c0 + masster_light_side_token      (control: c0, vcpho5qm)
 #   nl2  nl1 + mol_gnn_type GINE            (controls: c0, r2 9lt5s2u8)
 #   nl3  nl2 + k1's dropout                 (controls: nl2, k1 wg0nxymi)
+# Added 2026-09-26, after the shared-proposal gate: one CE-blind proposal per molecule. Sharing needs
+# the CE-context batch sampler, which batches whole molecules, so sp0 prices the sampler alone:
+#   sp0  c0 + CE-context batches            (control: c0, vcpho5qm)
+#   sp1  sp0 + share_proposal_across_ev     (control: sp0)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
+# sp gate: the n1 finding, section "What a shared proposal would rank".
 #
 # STAGE:
 #   all   (default) c0, r0, r1, r2, k1 and m1.
@@ -57,8 +62,9 @@
 #   lr    s1 and s1_k1_ema (c0 and k1_ema have run or are running).
 #   nl    nl1, nl2 and nl3 (c0, r2 and k1 have run).
 #   nce   n2 and n3 (c0 has run; n1 is running).
+#   share sp0 and sp1 (c0 has run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | n1 | n2 | n3 | nl1 | nl2 | nl3  one job.
+#   | n1 | n2 | n3 | nl1 | nl2 | nl3 | sp0 | sp1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -113,6 +119,8 @@ declare -A JOB_BY_ARM=(
     [nl1]=msh_mhft_nl1_light_side
     [nl2]=msh_mhft_nl2_light_side_gine
     [nl3]=msh_mhft_nl3_light_side_gine_k1
+    [sp0]=msh_mhft_sp0_ce_context_batches
+    [sp1]=msh_mhft_sp1_shared_proposal
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -140,6 +148,8 @@ declare -A CONFIG_BY_ARM=(
     [nl1]=nl1_light_side.yml
     [nl2]=nl2_light_side_gine.yml
     [nl3]=nl3_light_side_gine_k1.yml
+    [sp0]=sp0_ce_context_batches.yml
+    [sp1]=sp1_shared_proposal.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -153,9 +163,10 @@ case "${STAGE}" in
     lr)   ARMS=(s1 s1_k1_ema) ;;
     nl)   ARMS=(nl1 nl2 nl3) ;;
     nce)  ARMS=(n2 n3) ;;
-    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-3]|nl[1-3]) ARMS=("${STAGE}") ;;
+    share) ARMS=(sp0 sp1) ;;
+    c0|r0|r1|r2|k1|m1|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-3]|nl[1-3]|sp[01]) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n3|nl1-nl3]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|c0|r0|r1|r2|k1|m1|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n3|nl1-nl3|sp0|sp1]" >&2
         exit 1
         ;;
 esac
@@ -242,3 +253,4 @@ echo "w1: its control c0 (vcpho5qm) has run."
 echo "n1: its control c0 (vcpho5qm) has run."
 echo "nce (n2, n3): c0 (vcpho5qm) has run; n1 (jxczo2kf) is the other control."
 echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."
+echo "share: sp0's control c0 (vcpho5qm) has run; sp1's control is sp0, in the same stage."
