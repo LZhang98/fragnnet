@@ -4,6 +4,38 @@
 
 ## Current handoff
 
+**ChemBERTa-3 on MassSpecGym plan (2026-09-26); PROPOSED, nothing built.** The plan fine-tunes
+`DeepChem/ChemBERTa-100M-MLM` end to end with the NEIMS binned head. Gradients reach the token
+embeddings; this is the user's requirement. It is compared against fingerprint (NEIMS), random-init
+and frozen-encoder controls; the frozen encoder is a control only. Then it tests SMILES
+augmentation. The tokenizer implies
+stereo-free, aromatic pretraining text, so the input is raw MSGYM SMILES with stereo removed, not
+our standardized form. Revised the same day for broader SMILES augmentation: traversal types,
+tautomers, Kekulé assignments, several views per sample and augmented continued pretraining, as
+a one-element-at-a-time ladder. `transformers` is not installed. Next: Stage 0b, the MLM likelihood by SMILES form.
+[Plan](plans/chemberta3_msgym_plan.md).
+
+**Enveda standalone MASSter baseline `i0` built (2026-09-26); not submitted, uncommitted.** The
+user's call is to train Enveda alone for now.
+`config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999.yml` forks the
+MSGYM EMA arm with these deltas:
+
+- `[M+H]+`/`[M-H]-` through `filter_prec_types` (620,120 train spectra);
+- `ce_insert_type: qet` with Enveda CE statistics;
+- a 10 ppm QTOF loss tolerance with a 200 m/z floor;
+- 20 epochs, 24,240 steps, about 4 h, unmeasured.
+
+It resolves with only those deltas, and a local 1-epoch smoke on 2,000 spectra per split exits 0.
+On this workstation, point `TMPDIR` off the full 3.7 GB `/tmp`, or the checkpoint save fails.
+
+- **Isotope ceiling (Stage 0a step 2).** A perfect monoisotopic model reaches 1 − cos = 0.0072 on
+  Enveda val: 0.0086 positive, 0.0025 negative, 0.022 on Cl/Br molecules.
+- **Plan corrections.** The isotope plan's 5 ppm tolerance was too tight: the median spectrum's
+  fragment error is 3.8 ppm, p90 6.7.
+- **Next:** a second seed for the Enveda floor, and Stage 0a step 3.
+
+[Plan](plans/masster/masster_isotope_envelope_plan.md#current-state-and-next-check).
+
 **Light-side token arms `nl1`-`nl3` (2026-09-26); built and smoke-tested, not submitted.**
 Each candidate is represented by the lighter side of its cut (the neutral loss of a large
 fragment). The heavier side enters only as element counts (`c_heavy_side`), because the side-of-cut
@@ -127,7 +159,8 @@ Fir.** W&B tails over epochs 54-63. `w1` had no W&B run yet at 01:35 UTC.
 [Batch 2 read](plans/masster/masster_memorization_route_plan.md#batch-2-tail-read-six-finished-runs-2026-09-26),
 [`w1`](plans/masster/masster_memorization_route_plan.md#weight-decay-arm-w1-2026-09-25).
 
-**MASSter Spectraverse CV configs built (2026-09-25); not submitted, uncommitted.**
+**MASSter Spectraverse CV configs built (2026-09-25, committed in `4e29da7c`); CE input switched
+to `qet` 2026-09-26 (uncommitted); not submitted.**
 `config/spectraverse/masster/cv0.yml`..`cv9.yml` are unmerged and forked from the MassSpecGym
 `_ema999` recipe. The folds differ only in `wandb_name`, `split_dp` and `lr_total_steps`
 (40 × ceil(train / 512), 30,120-31,200). The cv0 header records the measurements behind each key.
@@ -135,9 +168,17 @@ Fir.** W&B tails over epochs 54-63. `w1` had no W&B run yet at 01:35 UTC.
 - **Spectraverse deltas.** `masster_include_cmf: true`, because `[M+NH4]+` and formate/acetate
   spectra fragment by losing the adduct, which the ±4 H ladder cannot reach. All nine adducts;
   `inst_types` FT/QTOF/Other/NA, with FraGNNet's 20 ppm / 500 Da tolerance for Other and NA;
-  40 epochs. The 44% of rows with no CE train on the `-1` learned embedding. Unmerged, because
+  40 epochs. The 44% of rows with no CE train on `qet`'s missing-CE flag. Unmerged, because
   no merged MASSter run has trained CMF with dual CE, so the comparator is
   `config/spectraverse/fragnnet`, not `fragnnet_merged`.
+- **CE input `ce_insert_type: qet`, 2026-09-26** (MassSpecGym: `embed`). NCE is derived from ACE
+  here, so it is continuous (525 distinct rounded values) and many values are rare or unseen in a
+  fold. That is where the abs-sines table fails, and at max 300 it also gives x and 512 − x the
+  same code (44 pairs, 212-300). `nce_mean`/`nce_std` 50/40 and `ace_mean`/`ace_std` 40/25 are
+  rounded per-row data values (derived NCE 50.0/39.6, ACE 38.8/26.0). The 200 offset was fitted
+  on NIST20 NCE only; the ACE channel uses it unmeasured, and `n1` (the NIST20 check that `qet`
+  costs nothing) has not run
+  ([finding](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md)).
 - **`loss_batch_size: 4`, measured.** The recipe's 64 runs out of memory at batch 32 on the 8 GB
   card: each loss chunk pads to its widest target, and spectraverse peaks are p99 783, max 4096.
   At batch 128, `lb4` peaks at 4.68 GiB and 0.346 s/step, against 4.25 GiB and 0.291 s/step for
@@ -145,8 +186,9 @@ Fir.** W&B tails over epochs 54-63. `w1` had no W&B run yet at 01:35 UTC.
 - **Validation.** All ten resolve through `load_config`. cv0's resolved diff against the
   MassSpecGym `_ema999` config is exactly the intended keys. The real cv0 train and val datasets
   construct (387,399 / 46,057 rows, none dropped, 757 steps/epoch). A 2-epoch smoke on a
-  512-spectrum subsample exits 0 (val cosine 0.094 -> 0.167). Run local smokes with `TMPDIR` off
-  `/tmp`: the post-fit checkpoint copy fails on the 3.7 GB volume.
+  512-spectrum subsample exits 0 (val cosine 0.094 -> 0.167). With `qet` the same smoke exits 0
+  (0.082 -> 0.169), and its checkpoint holds a `Linear(2, 32)` encoder on each CE channel. Run
+  local smokes with `TMPDIR` off `/tmp`: the post-fit checkpoint copy fails on the 3.7 GB volume.
 - **Not measured.** The 40-epoch horizon (sized from the MassSpecGym and NIST20 peaks in steps),
   batch-512 memory, and wall clock (estimated ~6 h per fold). Submit cv0 alone first
   (`setup_job_cc.py --cv_config_dp config/spectraverse/masster --cv_start 0 --cv_end 0`, see the

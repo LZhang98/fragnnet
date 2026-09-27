@@ -78,6 +78,25 @@ On Enveda val (`enveda_180_inchikey_811`), NIST20 FT val and MSGYM val, per pola
 
 This fixes the size of the prize before any code changes.
 
+**Step 2 on Enveda val (2026-09-26).** All 79,881 val spectra of `enveda_180_inchikey_811`, raw
+intensities as the eval cosine uses them (`ints_transform: none`). A perfect monoisotopic
+prediction reaches cos = ‖target without satellites‖ / ‖target‖:
+
+| Val spectra | n | 1 − cos, 13C satellites | 1 − cos, 13C + halogen M+2 | Satellite intensity share |
+| --- | ---: | ---: | ---: | ---: |
+| positive | 61,431 | 0.0052 | 0.0086 | 7.4% |
+| negative | 18,450 | 0.0020 | 0.0025 | 3.2% |
+| Cl/Br molecules | 11,886 | 0.0036 | 0.0220 | 10.0% |
+| all | 79,881 | 0.0044 | 0.0072 | 6.5% |
+
+- The satellites are 6.5% of intensity but 0.0072 of cosine, because cosine squares intensities
+  and satellites are small peaks. A perfect envelope therefore gains at most 0.0086 in positive
+  mode, above gate 0a's 0.005. Step 3 decides how much of that a natural envelope reaches.
+- Negative mode cannot pass a 0.005 gate at any f: its whole ceiling is 0.0025.
+- Most of the halogen share (0.022 on Cl/Br molecules) is the per-molecule M+2 switch, which no
+  scalar f reaches.
+- Recall-type metrics (`wrecall`) see the 6.5% intensity share, not the cosine number.
+
 ### Stage 0b: post-hoc envelope on existing checkpoints
 
 - Take `3bej6fq7` (NIST20) and `ll04i00m` (MSGYM) val exports with per-peak annotations
@@ -122,14 +141,22 @@ This fixes the size of the prize before any code changes.
 
 ### Stage 2: training arms
 
-- On Enveda, once an Enveda MASSter baseline exists, run:
+- On Enveda trained alone (user decision, 2026-09-26: standalone for now, no NIST or MSGYM mixed
+  in). The baseline `i0` is
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999.yml`
+  (`[M+H]+`/`[M-H]-`, 20 epochs, not submitted). Run:
   - `i0`: the baseline;
   - `i1`: `natural`;
   - `i2`: `scaled`.
   All three set `filter_subformula_peaks: False` and `filter_above_precursor_peaks: False`.
-- **Tolerance.** Use a 5 ppm loss tolerance for Enveda: timsTOF errors are about 3 ppm. At the
-  15 mDa QTOF floor, an isotope row and a +1 H row share every window, so the test would not
-  separate them.
+- **Tolerance (corrected 2026-09-26).** Use 10 ppm with a 200 m/z floor, not 5 ppm.
+  - Enveda's per-spectrum mean fragment error (`peaks_abs_ppm`) is 3.8 ppm median, 6.7 p90 and
+    10.1 p99. The signed mean is nearly as large, so most of it is a per-spectrum offset, and
+    5 ppm would drop real matches in many spectra.
+  - At 10 ppm an isotope row and a +1 H row separate below m/z 447, which covers most fragment
+    peaks (§9.1 found the 13C/H split resolvable below m/z 300). The QTOF floor of 15 mDa that
+    most MASSter configs use would put them in the same window at every m/z, so the test could
+    not separate them.
 - **NIST20.** Run the same arms against `c0` (`vcpho5qm`) only if gate 0b passed on NIST20.
 - **Read.** Compare the tail mean against the seed spread. Also report the per-peak annotation
   share that moves from +1 H channels to isotope rows.
@@ -147,7 +174,26 @@ This fixes the size of the prize before any code changes.
 
 ## Current state and next check
 
-- **Built:** nothing. The measurements behind the plan are in
+- **Built:** no model code. The measurements behind the plan are in
   [finding §9](../../findings/enveda_180_dataset_2026_09_25.md#9-isotopes-2026-09-25).
-- **Next:** Stage 0a on Enveda val and NIST20 FT val. It is read-only, needs no checkpoint and
-  extends the existing probe script.
+- **Stage 0a step 2 on Enveda val: done** (above). The positive-mode ceiling is 0.0086.
+- **Baseline `i0` config built (2026-09-26), not submitted:**
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999.yml`.
+  - It resolves against the MSGYM EMA arm with only the documented deltas: data paths, adducts
+    with `filter_prec_types`, `qet` with Enveda CE statistics, 10 ppm QTOF loss tolerance, and
+    20 epochs with `lr_total_steps` 24,240.
+  - A one-epoch local smoke on 2,000 spectra per split (batch 64) exits 0 in 54 s:
+    - `filter_prec_types` keeps 1,939 train and 1,938 val spectra;
+    - training, validation and checkpointing all run;
+    - the checkpoint holds the `qet` encoders (`nce_embedding.linear`, `ace_embedding.linear`).
+
+    The log is `output/enveda_masster_smoke_2026_09_26/smoke.log`.
+  - On this workstation, set `TMPDIR` to a directory on the root disk. The first smoke failed at
+    the checkpoint save because Lightning stages its atomic write in `/tmp`, which is 3.7 GB and
+    was full.
+  - Its read needs a second seed first: no Enveda seed spread exists.
+- **Next:**
+  - Stage 0a step 3 on Enveda val: the natural envelope at f = 1 and at the measured f1.
+  - Stage 0a steps 2-3 on NIST20 FT val.
+  - Submitting `i0` and its seed replicate is a separate decision, since this workstation has
+    no Fir access.
