@@ -1,8 +1,10 @@
 # SMILES + ChemBERTa-3 spectrum prediction on MassSpecGym
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27 (basic model built in `d51fe50c`, not yet
-> trained; cut to a basic model on 2026-09-26 at the user's request; the earlier design and
-> its [Review](#review-2026-09-26) are kept)
+> **Status:** ACTIVE · **Updated:** 2026-09-27 (basic model built in `d51fe50c`; E1 and T2
+> training on Fir overfit from epoch 1, and the best val `cos_sim_0.01` of 0.199 barely beats a
+> structure-blind 0.194, see [Results so far](#results-so-far-2026-09-27-runs-in-progress);
+> cut to a basic model on 2026-09-26 at the user's request; the earlier design and its
+> [Review](#review-2026-09-26) are kept)
 > **Current scope: a basic model, to see whether it works.** ChemBERTa-3's first 6 of 12 layers,
 > loaded encoder-only, fine-tuned **end to end** with the NEIMS binned 0.01 Da head on
 > MassSpecGym's simulation-challenge spectra. Two runs, one seed each (the user's call,
@@ -467,6 +469,79 @@ is the design it followed.
   - **Log noise.** `tokenizers` warns on every DataLoader fork ("parallelism has already been
     used"). It is harmless; `TOKENIZERS_PARALLELISM=false` in the job environment silences it.
   - **Not measured.** Fir epoch time. A Fir slice runs without checkpointing, with TF32.
+
+## Results so far (2026-09-27, runs in progress)
+
+Fir, one seed each: E1 `tm9qwq78` and T2 `ku742mhq` (W&B group `msgym_chemlm_basic`),
+read at epoch 24 and 22 of 100. About 66 s per epoch on the Fir slice.
+
+**Validation peaks after the first epoch, then only memorization.** Here `cd` is the loss, a
+cosine distance on sqrt intensities.
+
+| Epoch | E1 train cd | E1 val cd | E1 val `cos_sim_0.01` | T2 train cd | T2 val cd | T2 val `cos_sim_0.01` |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.704 | **0.777** | **0.199** | 0.721 | **0.779** | **0.194** |
+| 5 | 0.340 | 0.794 | 0.186 | 0.374 | 0.796 | 0.182 |
+| 10 | 0.298 | 0.801 | 0.181 | 0.325 | 0.815 | 0.165 |
+| 20 | 0.260 | 0.806 | 0.176 | 0.282 | 0.824 | 0.156 |
+
+- **Train loss falls; val never recovers.** Train loss falls from 0.70 to 0.25, while val loss
+  rises from its epoch-0 minimum and val cosine falls.
+- **The peak comes early.** Epoch 0 ends at step 388, inside the 1,000-step warmup.
+- **Random SMILES do not help.** T2 fits train more slowly, but its val is worse than E1's at
+  every epoch.
+
+**Model-free baselines on the same 9,731 val spectra**, scored with the metric's own functions
+(`batched_bin_func`, `cos_sim_helper`; the self-score is 1.0):
+
+| Predictor | `cos_sim_0.01` | sqrt |
+| --- | ---: | ---: |
+| Nearest train molecule (Morgan r2 Tanimoto), same instrument, closest ACE | 0.095 | 0.114 |
+| Structure-blind: precursor peak plus mean train fragment spectrum per instrument and ACE | 0.194 | 0.159 |
+| E1, best epoch (0) | 0.199 | 0.223 |
+
+- **The primary metric barely beats knowing no structure.** On linear `cos_sim_0.01`, E1's
+  best epoch is +0.005 over the structure-blind prior.
+- **The sqrt metric shows some structure.** Its +0.064 margin means the model places some
+  smaller fragment peaks the prior misses.
+- **Lookup does not transfer.** 79% of val spectra have no train molecule within Tanimoto 0.5;
+  there the neighbour's spectrum scores 0.035-0.071. Only the 20.5% with a neighbour at 0.5 or
+  above reach 0.21-0.24.
+- **Reading.** What transfers to MCES-distant molecules is learned in the first epoch, and it
+  is mostly the structure-blind prior. Everything after that is memorization of train
+  molecules.
+  - Regularization can slow memorization, but it cannot give a head binned at 0.01 Da the
+    exact masses of an unseen molecule's fragments.
+  - E4 would say whether a fingerprint MLP with the same head lands at the same place, which
+    would put the ceiling on the head rather than on ChemBERTa-3.
+- **Earlier NEIMS runs in W&B.** No NEIMS run exists on `ms_gym_benchmark_1_5`. The closest
+  are unmerged NEIMS on `ms_gym_d3_h4_benchmark`, the MassSpecGym v1.0 benchmark split: val
+  9,260 spectra against v1.5's 9,731. Its data table (`data/proc/ms_gym`) is not on the
+  workstation, so the structure-blind prior was not scored on it. All use 0.01 Da bins, linear
+  `cos_sim_0.01`, sqrt training and NCE `embed`.
+
+  | Run | Recipe | Best val (epoch) | Last val (epoch) |
+  | --- | --- | ---: | ---: |
+  | `ajgc9p5x` `msg_fp_0,01` | 5 layers, no dropout, LR 1.6e-4 decayed, wd 1e-7 | 0.233 (38) | 0.220 (99) |
+  | `9mgn2eab` | 2 layers, dropout 0.1, constant LR 1.6e-4, wd 0.84, batch 128 | 0.240 (6) | 0.234 (47) |
+  | `l4l28mc2` (crashed) | 4 layers, dropout 0.1, constant LR 3e-4, wd 0.01, batch 512 | 0.243 (6) | 0.219 (73) |
+
+  - **NEIMS overfits too, but later and from higher.** Val rises for 6-38 epochs to
+    0.233-0.243, then drifts down as train loss keeps falling. `fs1seupr` logged train cosine:
+    at 0.1 Da, 0.856 train against 0.252 val.
+  - **Merged NEIMS on `massspecgym_f`, 5 seeds (`massspecgym_neims_s0`-`s4`):** best val
+    0.240-0.244. It is merged, so it is not comparable.
+  - **Reading.** With the same binned head, fingerprints reach 0.233-0.243 on the v1.0 val
+    set, against E1's 0.199 on v1.5. That points at the encoder or its recipe, not only the
+    head. The val sets differ, so E4 on `ms_gym_benchmark_1_5` is the matched check.
+- **Baseline method.**
+  - Nearest neighbour: for each val molecule, the train molecule with the highest Morgan
+    (radius 2, 2,048 bits) Tanimoto; then its train spectrum on the same instrument (any
+    instrument if none) at the closest ACE.
+  - Structure-blind: per (instrument, ACE rounded to 1 eV), 210 keys, with an instrument-level
+    fallback. The mean of sum-normalized train fragment spectra over bins more than 0.5 Da below
+    the precursor, scaled to one minus the mean precursor share, plus that share at the
+    precursor bin. The share is the intensity within one 0.01 Da bin of the precursor.
 
 ## Risks and limits
 
