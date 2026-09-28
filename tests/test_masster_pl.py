@@ -113,6 +113,22 @@ def test_attention_topology_rejects_unknown_values() -> None:
         _build_pl(masster_intensity_transformer_attention="inducing")
 
 
+def test_restricted_candidate_attention_keys_reach_the_head() -> None:
+    windowed, config = _build_pl(
+        masster_unique_fragment_mode=True,
+        masster_intensity_transformer_attention="full",
+        masster_intensity_mass_window=30.0,
+    )
+    assert config["masster_intensity_mass_window"] == 30.0
+    assert windowed.model.intensity_head.mass_window == 30.0
+    assert windowed.model.intensity_head.uses_token_masses
+    positionwise, _ = _build_pl(masster_intensity_transformer_attention="none")
+    assert positionwise.model.intensity_head.attention_type == "none"
+    assert positionwise.model.intensity_head.mass_window == 0.0
+    with pytest.raises(ValueError, match="mass_window requires attention_type='full'"):
+        _build_pl(masster_intensity_mass_window=30.0)
+
+
 def test_nonzero_atom_decoder_layers_fail_at_setup() -> None:
     """The removed atom decoder must not be silently ignored by an old config."""
     with pytest.raises(ValueError, match="atom_decoder_num_layers must be 0"):

@@ -1014,6 +1014,7 @@ class MassterPL(SpectrumPL):
             intensity_mz_positional_encoding=(
                 self.hparams.masster_intensity_mz_positional_encoding
             ),
+            intensity_mass_window=self.hparams.masster_intensity_mass_window,
             intensity_ce_pair_bias=self.hparams.masster_intensity_ce_pair_bias,
             intensity_ce_film=self.hparams.masster_intensity_ce_film,
             bond_endpoint_aggregation=(self.hparams.masster_bond_endpoint_aggregation),
@@ -1325,8 +1326,11 @@ class MassterPL(SpectrumPL):
         if self.hparams.masster_intensity_transformer_attention not in {
             "induced",
             "full",
+            "none",
         }:
-            raise ValueError("masster_intensity_transformer_attention must be induced or full")
+            raise ValueError(
+                "masster_intensity_transformer_attention must be induced, full or none"
+            )
         independent_output = self.hparams.masster_intensity_output == "independent"
         cross_entropy_loss = self.hparams.loss_type in {
             "conditional_cross_entropy",

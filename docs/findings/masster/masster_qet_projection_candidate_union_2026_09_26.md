@@ -1,6 +1,6 @@
 # Would a QET breakdown-curve head change MASSter's predictions, and can one candidate set serve every energy?
 
-> **Status:** FINDING · **Updated:** 2026-09-27
+> **Status:** FINDING · **Updated:** 2026-09-28
 > Two offline gates for a MASSter intensity head built on the
 > [breakdown-curve form](../breakdown_curve_form_fit_2026_09_26.md), `softmax(a_i − e_i·β(NCE))`,
 > run once per molecule, plus what they exposed about the NCE input. Checkpoint
@@ -47,6 +47,10 @@
 >   `n1` (`qet`) −0.0121, `n2` (`qet_mlp`) −0.0102 and `n3` (`id`) −0.0085 on the epoch 54-63
 >   tail. Train loss equals `c0`'s and only val loss is worse, so the smooth input costs
 >   generalization, not fit, as the ladder reading predicts.
+>   - *2026-09-28, running:* with the instrument as an input (`OB` / `OB_F` labels), `i2` (`n1`)
+>     − `i1` (`n4`) is −0.004 over epochs 10-14, against −0.021 for `n1` − `n4`. So the failure
+>     looks like the smooth axis blurring the instrument
+>     ([instrument finding §8](../nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
 > - **`n4` keeps the per-NCE code and only swaps the aliasing table.** It is running at +0.0060
 >   over `c0` (epochs 51-60), above `c0` at every epoch, against the null it was built to show.
 >

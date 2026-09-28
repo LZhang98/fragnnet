@@ -1032,7 +1032,7 @@ class MassterModel(nn.Module):
         intensity_transformer_num_heads: int,
         intensity_transformer_feedforward_dim: int,
         intensity_transformer_num_inducing_points: int,
-        intensity_transformer_attention: Literal["induced", "full"],
+        intensity_transformer_attention: Literal["induced", "full", "none"],
         intensity_transformer_dropout: float,
         intensity_output: str,
         use_mask_residuals: bool,
@@ -1089,6 +1089,7 @@ class MassterModel(nn.Module):
         intensity_qk_norm: bool = False,
         intensity_mass_pair_bias: bool = False,
         intensity_mz_positional_encoding: bool = False,
+        intensity_mass_window: float = 0.0,
         intensity_ce_pair_bias: bool = False,
         intensity_ce_film: bool = False,
         bond_endpoint_aggregation: str = "mean",
@@ -1155,7 +1156,8 @@ class MassterModel(nn.Module):
                 through a latent set and stays linear in the candidate count; ``full``
                 uses direct candidate-to-candidate attention, which is quadratic but
                 is not capped at the inducing-point rank. ``full`` ignores
-                ``intensity_transformer_num_inducing_points``.
+                ``intensity_transformer_num_inducing_points``. ``none`` keeps only the
+                feed-forward sublayers, so no information crosses candidates.
             intensity_transformer_num_inducing_points: Latent tokens used to keep
                 attention linear in the number of candidates.
             intensity_transformer_dropout: Dropout inside the candidate transformer.
@@ -1831,6 +1833,7 @@ class MassterModel(nn.Module):
             qk_norm=intensity_qk_norm,
             mass_pair_bias=intensity_mass_pair_bias,
             mz_positional_encoding=intensity_mz_positional_encoding,
+            mass_window=intensity_mass_window,
             ce_pair_bias=intensity_ce_pair_bias,
             ce_film=intensity_ce_film,
             ce_feature_dim=self.context_encoder.ce_feature_dim,

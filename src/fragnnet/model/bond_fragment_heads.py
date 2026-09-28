@@ -313,6 +313,61 @@ class _FullCandidateAttentionLayer(nn.Module):
         return candidate_tokens, inducing_tokens
 
 
+class _PositionwiseCandidateLayer(nn.Module):
+    """The feed-forward half of a candidate layer, with no exchange between candidates.
+
+    Each token is updated from itself alone, so candidates compete only through the output
+    normalization. This is the allocator's no-attention floor. Its feed-forward shape, dropout and
+    normalization placement match the attention layers, so an A/B isolates what candidate
+    exchange adds.
+    """
+
+    def __init__(
+        self,
+        model_dim: int,
+        _num_heads: int,
+        feedforward_dim: int,
+        dropout: float,
+        norm_placement: Literal["post", "pre"] = "post",
+        qk_norm: bool = False,
+        ce_feature_dim: int = 0,
+        set_message_substitution: float = 0.0,
+        set_key_dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if norm_placement not in {"post", "pre"}:
+            raise ValueError(f"unknown norm_placement: {norm_placement}")
+        if qk_norm or ce_feature_dim or set_message_substitution or set_key_dropout:
+            raise ValueError(
+                "attention_type='none' has no attention for qk_norm, ce_film, "
+                "set_message_substitution or set_key_dropout to act on"
+            )
+        self.norm_placement = norm_placement
+        self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
+        self.candidate_feedforward = _build_feedforward(
+            model_dim,
+            feedforward_dim,
+            dropout,
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        candidate_tokens: th.Tensor,
+        inducing_tokens: th.Tensor | None,
+        candidate_padding_mask: th.Tensor | None,
+        pair_bias: th.Tensor | None = None,
+        ce_features: th.Tensor | None = None,
+    ) -> tuple[th.Tensor, th.Tensor | None]:
+        if self.norm_placement == "pre":
+            update = self.candidate_feedforward(self.candidate_feedforward_norm(candidate_tokens))
+            return candidate_tokens + self.dropout(update), inducing_tokens
+        candidate_tokens = self.candidate_feedforward_norm(
+            candidate_tokens + self.dropout(self.candidate_feedforward(candidate_tokens))
+        )
+        return candidate_tokens, inducing_tokens
+
+
 # Common neutral-loss masses (Da). Used only to initialize the learnable RBF centres of
 # :class:`PairwiseMassBias`; the model is free to move them.
 _NEUTRAL_LOSS_CENTRES = (
@@ -587,7 +642,9 @@ class CandidateIntensityTransformerHead(nn.Module):
     of component pathways, which matters when a molecule contributes thousands of
     candidates. ``full`` lets candidates attend to each other directly: the cost is
     quadratic in the candidate count, but the pairwise interaction is exact rather than
-    capped at the inducing-point rank.
+    capped at the inducing-point rank. ``none`` keeps only the feed-forward sublayers, so
+    each candidate is scored from its own token. With ``full``, a positive ``mass_window``
+    (Da) restricts each candidate to the candidates within that neutral-mass distance.
 
     Note:
         Two inputs degenerate in unique-fragment mode, where the caller passes identity
@@ -611,7 +668,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         num_h_shifts: int,
         dropout: float,
         use_base_probability_feature: bool,
-        attention_type: Literal["induced", "full"] = "induced",
+        attention_type: Literal["induced", "full", "none"] = "induced",
         separate_ion_h_support_head: bool = False,
         predict_oos: bool = False,
         initial_oos_probability: float = 0.1,
@@ -622,6 +679,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         mass_pair_bias: bool = False,
         mass_pair_bias_centres: int = len(_NEUTRAL_LOSS_CENTRES),
         mz_positional_encoding: bool = False,
+        mass_window: float = 0.0,
         ce_pair_bias: bool = False,
         ce_film: bool = False,
         ce_feature_dim: int = 0,
@@ -642,8 +700,15 @@ class CandidateIntensityTransformerHead(nn.Module):
         )
         if min(dimensions) <= 0:
             raise ValueError("transformer dimensions and layer counts must be positive")
-        if attention_type not in {"induced", "full"}:
+        if attention_type not in {"induced", "full", "none"}:
             raise ValueError(f"unknown attention_type: {attention_type}")
+        if not math.isfinite(mass_window) or mass_window < 0.0:
+            raise ValueError(f"mass_window must be finite and nonnegative, got {mass_window}")
+        if mass_window > 0.0 and attention_type != "full":
+            raise ValueError(
+                "mass_window requires attention_type='full'; the induced layer exchanges "
+                "information through latents that carry no mass of their own"
+            )
         if mass_pair_bias and attention_type != "full":
             raise ValueError(
                 "mass_pair_bias requires attention_type='full'; the induced layer exchanges "
@@ -711,11 +776,11 @@ class CandidateIntensityTransformerHead(nn.Module):
         if attention_type == "induced":
             self.inducing_tokens = nn.Parameter(th.empty(1, num_inducing_points, model_dim))
             nn.init.normal_(self.inducing_tokens, std=model_dim**-0.5)
-        layer_type = (
-            _InducedCandidateAttentionLayer
-            if attention_type == "induced"
-            else _FullCandidateAttentionLayer
-        )
+        layer_type = {
+            "induced": _InducedCandidateAttentionLayer,
+            "full": _FullCandidateAttentionLayer,
+            "none": _PositionwiseCandidateLayer,
+        }[attention_type]
         self.layers = nn.ModuleList(
             [
                 layer_type(
@@ -751,8 +816,10 @@ class CandidateIntensityTransformerHead(nn.Module):
                 10000.0 ** (-th.arange(0, model_dim, 2, dtype=th.float64) / model_dim),
                 persistent=False,
             )
+        # Neutral-mass radius (Da) of each candidate's attention; 0 attends over the whole set.
+        self.mass_window = float(mass_window)
         # Each candidate's neutral mass must be passed whenever a mass-aware input is on.
-        self.uses_token_masses = mass_pair_bias or mz_positional_encoding
+        self.uses_token_masses = mass_pair_bias or mz_positional_encoding or self.mass_window > 0.0
         self.component_residual_head = nn.Linear(model_dim, 1)
         nn.init.zeros_(self.component_residual_head.weight)
         nn.init.zeros_(self.component_residual_head.bias)
@@ -859,6 +926,26 @@ class CandidateIntensityTransformerHead(nn.Module):
         angles = masses.to(self.mz_inverse_frequencies)[:, None] * self.mz_inverse_frequencies
         return th.stack((angles.sin(), angles.cos()), dim=-1).flatten(1)
 
+    def _mass_window_bias(self, masses: th.Tensor, padding_mask: th.Tensor) -> th.Tensor:
+        """Additive attention mask that keeps each candidate within its neutral-mass window.
+
+        A real candidate ``i`` may attend to ``j`` only when ``|m_i - m_j| <= mass_window``, which
+        always includes ``i`` itself. Padded query rows keep every key, so no row is fully masked;
+        their outputs are discarded, and padded keys stay hidden by the key padding mask.
+
+        Args:
+            masses: Neutral masses in Da, shape (molecules, candidates); padded slots may hold
+                anything.
+            padding_mask: Shape (molecules, candidates), True where padded.
+
+        Returns:
+            The bias, 0 inside the window and -inf outside, shape
+            (molecules, 1, candidates, candidates).
+        """
+        within = (masses.unsqueeze(2) - masses.unsqueeze(1)).abs() <= self.mass_window
+        within = within | padding_mask.unsqueeze(2)
+        return masses.new_zeros(within.shape).masked_fill(~within, float("-inf")).unsqueeze(1)
+
     def _contextualize_by_molecule(
         self,
         tokens: th.Tensor,
@@ -930,11 +1017,15 @@ class CandidateIntensityTransformerHead(nn.Module):
             # Spectrum-level CE rows, gathered onto this bucket's molecules.
             bucket_ce_features = None if ce_features is None else ce_features[molecule_index_tensor]
             pair_bias = None
-            if self.mass_pair_bias is not None:
+            if self.mass_pair_bias is not None or self.mass_window > 0.0:
                 if token_masses is None:
-                    raise ValueError("mass_pair_bias is enabled but token masses were not provided")
+                    raise ValueError(
+                        "mass_pair_bias or mass_window is enabled but token masses were not "
+                        "provided"
+                    )
                 padded_masses = token_masses.new_zeros((len(molecule_indices), bucket_limit))
                 padded_masses[local_batch_indices, positions] = token_masses[bucket_token_indices]
+            if self.mass_pair_bias is not None:
                 pair_bias = self.mass_pair_bias(
                     padded_masses,
                     ~padding_mask,
@@ -942,6 +1033,9 @@ class CandidateIntensityTransformerHead(nn.Module):
                         bucket_ce_features if self.mass_pair_bias.ce_weights is not None else None
                     ),
                 )
+            if self.mass_window > 0.0:
+                window_bias = self._mass_window_bias(padded_masses, padding_mask)
+                pair_bias = window_bias if pair_bias is None else pair_bias + window_bias
 
             # 2. Contextualize candidates, either through a fixed-size inducing set or
             # by direct candidate-to-candidate attention.
@@ -1073,8 +1167,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("ce_features must contain one row per spectrum")
         if self.uses_token_masses != (component_neutral_masses is not None):
             raise ValueError(
-                "component_neutral_masses must be supplied exactly when mass_pair_bias or "
-                "mz_positional_encoding is on"
+                "component_neutral_masses must be supplied exactly when mass_pair_bias, "
+                "mass_window or mz_positional_encoding is on"
             )
         if component_neutral_masses is not None and component_neutral_masses.shape != (
             num_components,
@@ -1083,15 +1177,22 @@ class CandidateIntensityTransformerHead(nn.Module):
         if self.mz_positional_encoding:
             # Added after the token dropout, so a dropped token keeps its position.
             tokens = tokens + self._mz_encoding(component_neutral_masses).to(tokens)
-        tokens = self._contextualize_by_molecule(
-            tokens,
-            component_batch_indices,
-            batch_size,
-            token_masses=(
-                None if component_neutral_masses is None else component_neutral_masses.to(tokens)
-            ),
-            ce_features=ce_features,
-        )
+        if self.attention_type == "none":
+            # Nothing crosses candidates, so the tokens need no per-molecule padding.
+            for layer in self.layers:
+                tokens, _ = layer(tokens, None, None)
+        else:
+            tokens = self._contextualize_by_molecule(
+                tokens,
+                component_batch_indices,
+                batch_size,
+                token_masses=(
+                    None
+                    if component_neutral_masses is None
+                    else component_neutral_masses.to(tokens)
+                ),
+                ce_features=ce_features,
+            )
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(
             0,

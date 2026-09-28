@@ -1,6 +1,6 @@
 # MASSter SMARTS templates: CUDA enablement, audit and proposal reach
 
-> **Status:** FINDING · **Updated:** 2026-09-27
+> **Status:** FINDING · **Updated:** 2026-09-28
 > SMARTS templates now run on the CUDA candidate backend that every current MASSter config
 > uses. This records the port, an audit of the SMARTS path, how often the trained `c0`
 > proposal reaches the template cuts on its own, and what coverage they add. The shared-registry
@@ -42,8 +42,8 @@
    are clear and three weak. The registry is now 22 rules, and 8.0% of `[M+H]+`/FT spectra
    carry a template.
 9. **AIMe's worked examples need no rule, except one** (§6). MASSter's plain cuts reach 14 of
-   the 15 annotated fragments. The miss, a hydroxamic-acid NH excision, is at the chance floor
-   in NIST20.
+   the 15 annotated fragment masses. The hydroxamic-acid NH rule was initially rejected in
+   §6 and later admitted with weak evidence in §7.
 
 ## 1. What changed
 
@@ -223,6 +223,12 @@ Differences against the null, resampling molecules (2,000 draws):
    first, then the 54-63 tail against `c0`, then the template spectra alone.
 
 ## 6. AIMe's worked examples and the other rule lists
+
+**Status clarification (2026-09-28):** this section records the initial rejection of the
+hydroxamic NH rule. The subsequent §7 gate admitted it with weak evidence and it is present
+in the current registry. The 14/15 result is exhaustive mass reachability, not an assertion
+of product connectivity or retention under a finite proposal budget. See the
+[literature follow-up](../../notes/masster_excision_literature_2026_09_28.md).
 
 The question: do our rules cover the examples in AIMe
 ([note](../../notes/aime_deepms2reasoner.md))? AIMe builds fragments with three operators:

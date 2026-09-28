@@ -2,7 +2,7 @@
 
 > **Status:** Reference and research backlog
 >
-> **Updated:** 2026-09-27
+> **Updated:** 2026-09-28
 
 This document defines which gas-phase rearrangement rules belong in MASSter,
 records the rules currently enabled, and keeps literature candidates separate from
@@ -15,6 +15,10 @@ Paper URLs are also attached to the seven newer executable rule definitions in
 [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py).
 
 ## Scope and admission rule
+
+The [2026-09-28 primary-literature follow-up](../notes/masster_excision_literature_2026_09_28.md)
+identifies an additional N-phenylbenzamide O-transfer branch for mapping and distinguishes
+mass coverage from product connectivity. Its candidates have not undergone new local gates.
 
 MASSter does not need every chemically valid SMARTS rule. Its ordinary mechanism
 already enumerates bond-cut masks and the connected precursor components produced by
@@ -222,7 +226,7 @@ beyond a narrow small-molecule SMARTS.
 | B | `chromene_sulfonamide_sulfonyl_transfer` | `[M+H]+`, CID | Sulfonyl cation transfers from N to a phenyl carbon, then benzenesulfinic acid is lost with cyclization | Extremely narrow chromene-imine scaffold; electron-donating substituents favor the pathway | [Rapid Communications in Mass Spectrometry, 2016](https://pubmed.ncbi.nlm.nih.gov/26661975/) |
 | B | `n_aryl_methacrylamide_co_claisen` | `[M+H]+`, CID | Amide Claisen rearrangement enables CO loss and a cyclized retained assembly | Electron-donating para substituents favor the reaction; product topology and atom map are multistep | [JASMS, 2012](https://pubmed.ncbi.nlm.nih.gov/23055072/) |
 | B | `dichlorvos_phosphate_halogen_transfer` | `[M+H]+`, CID | P-O cleavage is followed by halogen-assisted transfer that forms protonated dimethyl halophosphate | Narrow organophosphate scaffold; Cl, Br, and F analogues were examined, but halogen and H maps must both be verified | [JASMS, 2017](https://doi.org/10.1007/s13361-017-1736-6) |
-| B | `pfas_sulfonyl_f_transfer` | Negative ESI, CID/AIF | Perfluoroalkyl sulfonate or sulfinate loses CF2 and transfers F to give `FSO3-` or `FSO2-` | Keep sulfonates and sulfinates separate and restrict chain patterns to the studied PFAS series | [Rapid Communications in Mass Spectrometry, 2025](https://pubmed.ncbi.nlm.nih.gov/41539986/) |
+| B | `pfas_sulfonyl_f_transfer` | Negative ESI, CID/AIF | Perfluoroalkyl sulfonate or sulfinate loses CF2 and transfers F to give `FSO3-` or `FSO2-` | Keep sulfonates and sulfinates separate and restrict chain patterns to the studied PFAS series | [Rapid Communications in Mass Spectrometry, 2026](https://doi.org/10.1002/rcm.70035) |
 | C | `protonated_glycan_fucose_transfer` | `[M+H]+` or `[M+NH4]+`, CID/in-source activation | A terminal fucose is retained on a remote glycan fragment, including inter-antenna transfer | Do not apply to `[M+Na]+` or `[M-H]-`; arbitrary glycan rings, multiple acceptor sites, and mobile-proton dependence make one SMARTS insufficient | [JASMS, 2002](https://pubmed.ncbi.nlm.nih.gov/11951970/), [Angewandte Chemie, 2018](https://pubmed.ncbi.nlm.nih.gov/29688603/) |
 | C | `trimethyllysine_peptide_methyl_transfer` | Singly charged protonated peptide, CID | A methyl from trimethyllysine is retained on a remote C-terminal Arg fragment after backbone cleavage | Explicit precursor charge state and peptide-residue context are required; the transfer is absent for doubly charged ESI ions | [JASMS, 2009](https://pmc.ncbi.nlm.nih.gov/articles/PMC2709603/) |
 | C | `phosphopeptide_phosphate_relocation` | Positive or negative ESI, low-energy CID | A phosphate can relocate before backbone cleavage, yielding non-native phosphorylated sequence ions | Charge, basic residues, residue spacing, and activation method matter; HCD does not show the same slow-CID relocation | [International Journal of Mass Spectrometry, 2015](https://pmc.ncbi.nlm.nih.gov/articles/PMC4375673/), [JASMS, 2017](https://pmc.ncbi.nlm.nih.gov/articles/PMC5479408/) |

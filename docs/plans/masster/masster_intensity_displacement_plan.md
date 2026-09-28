@@ -31,6 +31,12 @@
 > by the [ranking-transfer plan](masster_ranking_transfer_plan.md); the boundary is set out in
 > §1.
 
+**Follow-up (2026-09-27):** the [intensity reliability plan](masster_intensity_reliability_plan.md)
+expands replicate analysis, uncertainty prediction and cross-molecule supervision. It qualifies
+the earlier “replicate floor” interpretation: condition matching and independent measurements
+are required, and pairwise cosine is not a universal prediction ceiling. Historical results
+below remain unchanged; the new diagnostic has not been run.
+
 ## 1. Question and boundary
 
 **Intensity displacement** is validation target intensity that sits on a candidate the model

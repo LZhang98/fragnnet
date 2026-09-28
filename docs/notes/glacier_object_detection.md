@@ -600,6 +600,24 @@ spectral distance plus an auxiliary loss on heuristically-labeled fragment patte
 inference speedup over the two-stage model. Intensities are predicted unbinned and re-binned at
 inference, which they argue lets one model serve multiple bin widths.
 
+### No pretraining (checked 2026-09-27)
+
+Every GLACIER model trains from random initialization on its own benchmark split. It uses no
+outside-data pretraining and no pretrained molecular encoder.
+
+- **Backbone:** Graphormer with `apply_graphormer_init=True`, which only applies a
+  normal(0, 0.02) init (`src/ms_pred/graphormer/graphormer_graph_encoder.py:121`, `318bb7b`).
+  No PCQM4M weights are loaded. `configs/glacier/joint_train_{nist20,msg}.yaml` pass no
+  checkpoint, so the MassSpecGym model trains from scratch on MassSpecGym, not from NIST'20.
+- **The MAGMa warm-start happens inside that same run.** `w_magma = 1` for 2,500 steps, then
+  x0.9 every 2,500 steps (eq. 10, line 404; `magma-warmup-steps`/`magma-decay-steps: 2500`).
+  In Table 5 (line 588), training on the intensity objective alone does not converge, and
+  keeping MAGMa on throughout is worse (test loss 0.243 vs 0.177).
+- **Contrastive finetuning is the only second stage.** `train_contr_joint.py` loads the stage-1
+  `best.ckpt` from the same split (`train-checkpoint:` in `joint_contr_finetune_*.yaml`).
+  Appendix E calls stage 1 "the pretraining stage" (line 908). CF lowers cosine
+  (0.838 -> 0.815, Table 15), so **the 0.838 is the single-stage model without CF**.
+
 ## Design comparison — FraGNNet / MASSter vs GLACIER (2026-09-21)
 
 Read against `research/masshatter-ion-h-selection` @ `92a0943a`, the production FraGNNet config

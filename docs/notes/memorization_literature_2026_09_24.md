@@ -19,6 +19,12 @@
 > learning-rate schedule, gradient-agreement filtering, shard averaging, per-molecule memorization
 > scores, and evidence that demotes periodic resets.
 
+**Follow-up, 2026-09-27:** the [further literature review](masster_generalization_methods_2026_09_27.md)
+revises this historical ranking after the route-removal experiments. It develops peak-level
+R-Drop and late SAM into bounded tests, adds spectral decoupling and representation-learning
+options, and reopens same-data distillation as uncertain rather than categorically ineffective.
+The run-status statements above describe 2026-09-24, not the current experiment state.
+
 ## 1. Give memorization a dedicated, removable home
 
 This is our `m1` sink.

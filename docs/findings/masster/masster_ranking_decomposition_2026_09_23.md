@@ -139,6 +139,11 @@ tenfold gap that holds bin by bin.
 So the model ranks training molecules nearly correctly and new molecules poorly. The
 over-sharpness is the same on both splits, so the temperature fix is a separate, split-independent
 calibration effect.
+(*Checked 2026-09-28 on `c0`, `k1` and `k1_ema`
+([dropout-view finding](masster_dropout_view_disagreement_2026_09_27.md#side-findings)):*
+`P^0.75` costs 0.004-0.006 cosine on training spectra while adding 0.005-0.007 on val, and the val
+gain rises with novelty. The entropy excess is split-independent, but the cosine gain is a hedge on
+wrong allocations. The free val/test gain above stands.)
 
 ## Reading
 

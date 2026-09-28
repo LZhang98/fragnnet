@@ -1,6 +1,10 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27
+> **Status:** ACTIVE · **Updated:** 2026-09-28
+> **2026-09-28: [Batch 4 read](#batch-4-read-from-wb-2026-09-28)** (`s1`, `s1_k1_ema`, `m2`, `sm1`,
+> `sd1`, `am1` finished): the cosine schedule passes against `c0` (+0.0090) but adds nothing on
+> top of EMA; the rest are single-seed or null. **Stacking arms `i3`/`i4` built on `i1`**, the
+> instrument-input arm ([section](#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
 > **Audited 2026-09-27 ([finding](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)).**
 > Every number below was re-derived from W&B and code. The corrections are applied in place. The
 > +0.003 gate is about one standard error of a single-seed delta, and gates 2-4 have not run on
@@ -18,6 +22,9 @@
 > - Proposed, not built: the candidate-graph arms `fa0`/`cg1`/`cg2`, the user's GNN over the
 >   candidates, as full attention masked to chemical neighbours
 >   ([section](#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)).
+> - Built, not run: the restricted allocators. They are a mass window on full attention, the MLP
+>   (`attention: none`) and smaller induced sets, with a seven-run local queue
+>   ([section](#restricted-allocators-mass-window-no-attention-smaller-set-transformer-built-2026-09-27-not-run)).
 >
 > **Step 1 ran; W&B tail read done ([below](#step-1-tail-read-from-wb-2026-09-24)).** `k1` (key
 > dropout) passes gates 1 and 5 at +0.0074 over `c0`; gates 2-4 need the route map and novelty
@@ -75,6 +82,15 @@
 > data is out of scope.
 
 ## Objective and acceptance
+
+**Review, 2026-09-27:** the [plan review](../../findings/masster/masster_memorization_plan_review_2026_09_27.md)
+recommends separating held-out performance promotion from the mechanistic criteria below.
+Route corruption measures dependence, not a guarantee that removing identity improves transfer;
+the numerical seed-noise thresholds are screening heuristics. Historical gates and results are
+preserved here. The review gives the proposed next measurement sequence; no new runs were launched.
+The [further literature review](../../notes/masster_generalization_methods_2026_09_27.md)
+adds concrete consistency, logit-regularization and optimizer experiments, with controls and
+stop gates. These remain proposals and do not replace the running-arm queue.
 
 Make the intensity allocation transfer to new molecules. On unmerged `[M+H]+`/FT:
 
@@ -906,7 +922,8 @@ is the batch-mean form of the same message regularizer.
 
 ## Learning-rate-schedule arms `s1` and `s1_k1_ema` (2026-09-25)
 
-**Built, not submitted.** Plan decision C, config only. No code changed: the schedule path is
+**Built, not submitted.** *Finished 2026-09-28 (`nq2al58c`, `f2oacs52`):
+[Batch 4 read](#batch-4-read-from-wb-2026-09-28).* Plan decision C, config only. No code changed: the schedule path is
 `build_lr_scheduler` in `SpectrumPL.configure_optimizers`, which `MassterPL` inherits, and it ran
 on the merged lineage as `d3`.
 
@@ -1641,3 +1658,161 @@ measured on this lineage.
   - Compare by wall-clock as well as by epoch.
   - **If `cg1` reroutes,** try the training-only form, the audit's working pattern: graph-only
     attention with probability p per layer in training, full attention at evaluation.
+
+## Restricted allocators: mass window, no attention, smaller set transformer (built 2026-09-27, not run)
+
+After the m/z-encoding arm, the user asked to try a less powerful allocator: a smaller set
+transformer and mass-local attention. They also asked whether an MLP or a GNN would do. Code,
+tests and a local queue are built. Nothing is submitted or run.
+
+- **New options** (default off, uncommitted), in `CandidateIntensityTransformerHead`
+  ([`bond_fragment_heads.py`](../../../src/fragnnet/model/bond_fragment_heads.py)):
+  - `masster_intensity_mass_window: w` (Da; 0, the default, attends over the whole set). It
+    needs `attention: full`.
+    - Candidate i attends to j only when |m_i − m_j| ≤ w, on neutral masses, i itself included.
+      It is a −inf pair bias on the attention logits (`_mass_window_bias`), so it adds no
+      parameters and leaves the state dict unchanged. It stacks with the mass pair bias.
+    - Padded query rows keep every key, so no row is all −inf. A test shows that without this,
+      padded buckets go non-finite.
+  - `masster_intensity_transformer_attention: none` is the MLP.
+    - Each layer keeps only its feed-forward sublayer, with the same width, dropout and norm
+      placement. Each candidate is scored from its own token, and candidates compete only
+      through the output softmax.
+    - Its tokens skip the per-molecule padding. Its state dict is `full`'s without the attention
+      keys.
+- **The GNN is `cg1`** ([above](#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)).
+  - Attention over a candidate graph is full attention with −inf off the graph. The mass window
+    is that mask with edges |Δm| ≤ w, so `cg1` can reuse the path.
+  - `cg1` still needs the atom memberships passed into each bucket.
+- **Window reach, measured.** `output/local_encoder_noise_2026_09_27/mass_window_reach.py`, on
+  `fa_h4`'s last checkpoint and 2,560 local val spectra. The median set is 256 candidates (p10
+  140) over a median 274 Da. Share of a candidate's own set within reach, mean over candidates:
+
+| window (Da) | 1 hop | 2 hops |
+| ---: | ---: | ---: |
+| 5 | 0.067 | 0.078 |
+| 10 | 0.088 | 0.159 |
+| 20 | 0.205 | 0.338 |
+| 30 | 0.294 | 0.500 |
+| 50 | 0.435 | 0.687 |
+| 100 | 0.701 | 0.910 |
+
+- **Window choice.** With two layers, 50 Da still reaches 69% of the set and 100 Da 91%, so those
+  windows restrict little. 30 Da covers H2O, NH3, CO and C2H4 in one hop and halves two-hop
+  reach. 10 Da excludes every common neutral loss.
+- **Arms.** Same setup as the local screens above: `c0_control.yml` plus overrides, run by
+  `run_queue_allocator_restriction.sh`. `eval_matched.py` knows all of them.
+
+| run | change | read against |
+| --- | --- | --- |
+| `fa_h4_mz` | full, 4 heads, m/z encoding (rerun; the first stopped at epoch 18) | `fa_h4` |
+| `mw30_h4_mz` | `fa_h4_mz` + 30 Da window | `fa_h4_mz` |
+| `mw10_h4_mz` | `fa_h4_mz` + 10 Da window | `fa_h4_mz`, `mlp_mz` |
+| `mlp_mz` | `attention: none` + m/z encoding, the window-0 end | `fa_h4_mz` |
+| `ip1_h4` | 1 inducing point, 4 heads | `ip16_h4`, `c0` |
+| `ip4_h4` | 4 inducing points, 4 heads | `ip16_h4` |
+| `ip16_h4_l1` | `ip16_h4` with 1 layer | `ip16_h4` |
+
+- **`ip1_h4`.** With one latent, each candidate's query sees a single key, so every candidate in a
+  spectrum receives the same set message. It is the learned, undetached form of `sm1`'s
+  substitution at rate 1.
+- **Priors.**
+  - `ip16_h4` left train fit and the gap unchanged, so a smaller set transformer is not expected to
+    narrow the gap. Of the size arms, only `ip1_h4` removes per-candidate retrieval.
+  - The [plan review](../../findings/masster/masster_memorization_plan_review_2026_09_27.md#a-smaller-next-step-sequence)
+    warns that global information is already in the input tokens, so restricting edges cannot
+    guarantee removing identity. No removal has helped so far (audit). Read the window arms as
+    performance arms first, mechanism second.
+  - `mlp_mz` prices candidate exchange on this recipe, the review's step 4 comparison. It is
+    end to end, not on fixed candidates, so each arm's proposal can differ: read `wrecall`.
+- **Reading.** As for the local screens: the 19-23 tail against its control (one-pair floor
+  0.0016 on this tail), the epoch-23 gap from `eval_matched.py`, `wrecall`, and wall-clock.
+- **Checks (2026-09-27).**
+  - Tests in `test_masster_attention_and_budget.py`, `test_masster_model.py` and
+    `test_masster_pl.py`:
+    - a candidate outside the window cannot move another's output, and one inside can;
+    - the exact mask values, padded rows included;
+    - a window wider than the set equals full attention, with the same state dict;
+    - padded buckets stay finite through backward;
+    - under `none`, each candidate's output depends only on its own input, for both norm
+      placements;
+    - model and PL wiring.
+  - Those files and `test_bond_fragment_heads.py` and `test_masster_memorization_route.py` pass:
+    475 passed, 7 skipped (CPU).
+  - **Real-data smoke:** 12 training steps each of `fa_h4_mz`, `mw30_h4_mz`, `mlp_mz` and
+    `ip1_h4` on the local split, all exit 0.
+    - It used `masster_candidate_backend: cpu`. The CUDA selection kernel failed to compile in the
+      middle of another session's edit (SMARTS extra forced masks), so the queue must wait for
+      that edit to land.
+    - Parameters: 8,142,269 for `fa_h4_mz` and `mw30_h4_mz`, 7,614,909 for `mlp_mz`, 9,196,733
+      for `ip1_h4`.
+  - **Head-only cost**, forward plus backward on the GPU at 128 spectra × 256 candidates:
+
+| head | params | ms/step |
+| --- | ---: | ---: |
+| `c0` (induced 64, 8 heads) | 2,423,564 | 86.1 |
+| `ip16_h4` | 2,411,276 | 68.4 |
+| `ip1_h4` | 2,407,436 | 65.5 |
+| `ip16_h4_l1` | 1,357,068 | 40.8 |
+| `fa_h4_mz` | 1,352,972 | 76.7 |
+| `mw30_h4_mz` | 1,352,972 | 78.3 |
+| `mlp_mz` | 825,612 | 30.5 |
+
+- **Cost.** The window saves no compute: the mask still materializes every pair. The MLP head is
+  2.8x faster than `c0`'s. A local `c0` step takes about 0.48 s, so the head is under a fifth of
+  it.
+
+## Batch 4 read from W&B (2026-09-28)
+
+Six runs that finished with no read recorded. Tail = mean `val_cos_sim_0.01` over epochs 54-63.
+The loss columns are same-window deltas of train-mode and eval-mode primary loss; coverage is the
+same delta of `val_candidate_wrecall`. The seed spread is 0.0042.
+
+| arm | run | control | tail | delta | above control | coverage | train loss | val loss |
+| --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: |
+| `s1` cosine LR | `nq2al58c` | `c0` (0.7276) | 0.7366 | **+0.0090** | 56 of 64 | +0.0013 | −0.043 | −0.035 |
+| `s1` cosine LR | `nq2al58c` | `u2` (0.7392) | 0.7366 | −0.0026 | 0 of 64 | — | −0.041 | +0.009 |
+| `s1_k1_ema` | `f2oacs52` | `k1_ema` (0.7421) | 0.7410 | −0.0011 | 2 of 64 | +0.0008 | −0.053 | +0.003 |
+| `m2` sink dropout | `41mnwm9f` | `c0` | 0.7321 | +0.0045 | 60 of 64 | +0.0001 | −0.001 | −0.021 |
+| `sm1` set-message substitution | `7kz04hra` | `c0` | 0.7292 | +0.0016 | 25 of 64 | +0.0001 | +0.038 | −0.004 |
+| `sd1` set key dropout | `uxie2eko` | `c0` | 0.7319 | +0.0043 | 55 of 64 | +0.0000 | +0.011 | −0.026 |
+| `am1` encoder atom mask | `dhn91qeg` | `c0` | 0.7286 | +0.0010 | 37 of 64 | −0.0001 | +0.032 | −0.014 |
+
+- **The LR schedule passes against `c0` but is the same gain as EMA.** `s1` is +0.0090 over
+  `c0`, 2.1x the seed spread, and fits train better (−0.043). It stays below `u2` at every epoch,
+  and on top of `k1_ema` it adds nothing (−0.0011). Decay and EMA both remove late-training
+  weight noise, so use one. EMA is the larger and needs no horizon, so the schedule is dropped
+  from the stack.
+- **`m2` and `sd1` are single-seed, inside the spread** (+0.0045, +0.0043). `m2` recovers m1's
+  loss entirely (+0.0248 over `m1`). Neither is worth a stack slot before a second seed.
+- **`sm1` and `am1` are null** (+0.0016, +0.0010). `am1`'s Fir tail does not reproduce the
+  +0.0067 of its local screen.
+- Coverage moves by at most 0.0013, so none of this is candidate-set coverage.
+
+## Stacking on the instrument input: `i3` and `i4` (built 2026-09-28, not submitted)
+
+`i1_inst_ob_obf` (`i50ig7rf`, `n4` on the `OB` / `OB_F` labels) led `n4` by +0.021 mid-run
+([instrument finding §8](../../findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
+These arms stack on it the levers that replicated on the `FT` labels, then the one architecture
+key that passed the merged screen.
+
+| arm | config | change | control | evidence on `FT` labels |
+| --- | --- | --- | --- | --- |
+| `i3` | `i3_k1_ema_ob_obf.yml` | `i1` + `k1`'s two 0.2 dropouts + `ema_decay: 0.999` | `i1` | `k1_ema` +0.0145 over `c0`; EMA and `k1` each replicate at seed 811237 |
+| `i4` | `i4_k1_ema_prenorm_ob_obf.yml` | `i3` + `masster_intensity_norm_placement: pre` | `i3` | `a1_prenorm` +0.0056 on the merged 128-epoch screen; never run unmerged |
+
+- **Left out.** The cosine schedule adds nothing on top of EMA (Batch 4 read). `gm1`, `nl1`,
+  `m2` and `sd1` are single-seed passes inside the spread.
+- **Expected size.** Part of `i1`'s gain may be the same generalization gap `k1` and EMA act on,
+  so `i3` may add less than +0.0145. Read it at +0.005 (the seed spread) on one seed.
+- **Checks.**
+  - Through `load_config`, `i3` differs from `i1` by the three keys, and `i4` from `i3` by
+    `masster_intensity_norm_placement`, plus W&B naming. `i3` equals `k1_ema` apart from
+    `int_embedder: fourier` (and the relabelled data).
+  - A local 2-epoch smoke of `i4` on a 512-spectrum subsample of the relabelled NIST20 (batch 64)
+    exits 0, val cosine 0.094 → 0.233. Its checkpoint holds the EMA state, a 2 × 32 instrument
+    embedding, `pre` placement and both dropouts at 0.2.
+  - `bash -n` passes on the submitter.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh stack` (`i3` and `i4`).
+  The cluster needs the relabelled `data/proc/nist20/spec_df.pkl` (md5
+  `bdc009bbeaf6a38d126326d127630cad`), as for `i1`.

@@ -80,6 +80,7 @@ def _build_model(
     apply_channel_selection_in_training: bool = False,
     intensity_transformer_attention: str = "induced",
     intensity_mz_positional_encoding: bool = False,
+    intensity_mass_window: float = 0.0,
     intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
     ce_insert_type: str = "id",
@@ -138,6 +139,7 @@ def _build_model(
         intensity_transformer_num_inducing_points=4,
         intensity_transformer_attention=intensity_transformer_attention,
         intensity_mz_positional_encoding=intensity_mz_positional_encoding,
+        intensity_mass_window=intensity_mass_window,
         intensity_transformer_dropout=0.0,
         intensity_output=intensity_output,
         use_mask_residuals=use_mask_residuals,
@@ -1699,6 +1701,46 @@ def test_mz_positional_encoding_feeds_candidate_masses_to_the_head(
     arm_output, control_output = arm(**inputs), control(**inputs)
     assert arm_output["pred_logprobs"].shape == control_output["pred_logprobs"].shape
     assert not th.allclose(arm_output["pred_logprobs"], control_output["pred_logprobs"])
+
+
+@pytest.mark.parametrize(
+    ("intensity_transformer_attention", "intensity_mass_window"),
+    [("full", 0.5), ("full", 1000.0), ("none", 0.0)],
+    ids=["narrow_window", "window_covers_set", "no_attention"],
+)
+def test_restricted_candidate_attention_runs_through_the_model(
+    intensity_transformer_attention: str,
+    intensity_mass_window: float,
+) -> None:
+    """Mass-local and no-attention allocators build, run, and train on real candidate sets."""
+    batch = _build_batch(("CCOC", "CCO"))
+    kwargs = {"max_masks": 4, "unique_fragment_mode": True, "max_enumerated_masks": 8}
+    full = _build_model(batch, **kwargs, intensity_transformer_attention="full").eval()
+    arm = _build_model(
+        batch,
+        **kwargs,
+        intensity_transformer_attention=intensity_transformer_attention,
+        intensity_mass_window=intensity_mass_window,
+    )
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+    }
+
+    assert arm.intensity_head.uses_token_masses == (intensity_mass_window > 0.0)
+    arm_output = arm.eval()(**inputs)
+    full_output = full(**inputs)
+    assert arm_output["pred_logprobs"].shape == full_output["pred_logprobs"].shape
+    assert th.isfinite(arm_output["pred_logprobs"]).all()
+    if intensity_mass_window > 100.0:
+        # Every candidate of these small molecules lies within 1000 Da of every other.
+        assert th.allclose(arm_output["pred_logprobs"], full_output["pred_logprobs"], atol=1e-6)
+    else:
+        assert not th.allclose(arm_output["pred_logprobs"], full_output["pred_logprobs"])
+    arm.train()(**inputs)["pred_logprobs"].logsumexp(0).sum().backward()
+    gradients = [p.grad for p in arm.intensity_head.parameters() if p.grad is not None]
+    assert gradients and all(th.isfinite(gradient).all() for gradient in gradients)
 
 
 def test_unique_fragment_mode_keeps_batched_marginals_separate() -> None:

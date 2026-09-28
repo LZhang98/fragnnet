@@ -4,8 +4,39 @@
 
 ## Current handoff
 
+**Excision continuation probe (2026-09-28); diagnostic completed, no model channel built.**
+Train/val each sampled 512 positive-mode molecules using c0. The generic train union is not
+clearly above a random disconnected control; a restricted aromatic nitro NO-loss family
+confirms on validation after multiplicity correction (+0.648% class intensity, +0.0380
+percentage points across the sample). NH/carbon checks remain partly capped. Next, a channel
+implementation should target the nitro family, merge equivalent oxygen routes, and measure
+runtime and ranking; negative mode remains untested. Seventeen tests pass.
+[Finding](findings/masster/masster_excision_continuation_gate_2026_09_28.md) ·
+[Completed protocol](plans/masster/masster_excision_channel_probe.md).
+
+**Excision literature follow-up (2026-09-28); documentation only.** Primary studies support
+restricted internal losses and remote O/F transfer. The clearest uncovered branch is
+O transfer in deprotonated N-phenylbenzamides; full product mapping and the existing per-class
+gate come next. The hydroxamic NH rule already exists (weak §7 gate), correcting the older
+§6 rejection. [Literature note](notes/masster_excision_literature_2026_09_28.md).
+
 **NIST Orbitrap instruments: two CE scales, a MASSter Lumos bias, and new `OB` / `OB_F`
-labels (2026-09-28); uncommitted. The data relabel is local only; no arm trained.**
+labels (2026-09-28); uncommitted. `i1` and `i2` are training on the relabelled NIST20.**
+
+- **Mid-run read (2026-09-28), one seed each, both running.**
+  - `i1_inst_ob_obf` (`i50ig7rf`) is `n4` unchanged on `OB` / `OB_F`. It leads `n4` at every
+    epoch: +0.021 val cosine over epochs 10-21, 5x the seed spread, at equal time per epoch.
+    That is more than closing the Lumos gap alone would give (about +0.015).
+  - `i2_qet_ob_obf` (`jshvk4gv`) is `n1` on the same data. The smooth-energy penalty
+    falls from `n1` − `n4` −0.021 to `i2` − `i1` −0.004 (epochs 10-14).
+  - Pending: the per-instrument Lumos cosine and precursor bias on the best checkpoints
+    (uploaded at run end), and the epoch 54-63 tails. If it holds, `i1` replaces `c0`/`n4` as
+    the NIST20 `[M+H]+` control ([finding §8](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
+  - **Stacking arms built, not submitted:** `i3` = `i1` + `k1` dropout + EMA 0.999 (control `i1`)
+    and `i4` = `i3` + intensity pre-norm (control `i3`). Submitter stage `stack`; the cluster
+    needs the relabelled `spec_df.pkl`. The cosine schedule is left out: `s1` passes against `c0`
+    (+0.0090) but adds nothing on top of `k1_ema` (−0.0011)
+    ([plan](plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
 
 - **The two NCE ladders are two instruments.** Ladder A is the Elite Orbitrap and ladder B the
   Orbitrap Fusion Lumos, from NIST23's raw `Instrument` field.
@@ -33,11 +64,47 @@ labels (2026-09-28); uncommitted. The data relabel is local only; no arm trained
 - **Next:**
   - Run the migration on the cluster copies (NIST20 needs `data/raw/nist_20/nist_20_hr_msms.zip`
     and `data/df/nist23_hr_df.csv` there).
-  - Train `n4` unchanged on the relabelled NIST20; it now embeds the instrument. Read the Lumos
-    gap and the precursor bias against the old `n4`.
+  - When `i1` finishes: read the Lumos gap and the precursor bias against the old `n4`
+    (`output/ev_ladder_census_2026_09_28/nist20_raw_labels.py`).
   - Other local datasets still say `FT` until migrated.
 - `n4` (`shjgv9im`) finished +0.0053 over `c0` (single seed).
-- [Finding](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md) (§7 = the labels).
+- [Finding](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md) (§7 = the labels, §8 = `i1`/`i2`).
+
+**Dropout-view disagreement probe: R-Drop and the centered-logit penalty priced (2026-09-28);
+inference only, uncommitted, no arm built.** This is the first gate of the
+[generalization-methods note](notes/masster_generalization_methods_2026_09_27.md). It ran on
+`c0`, `k1` and both `k1_ema` weight sets, 4,096 random spectra per split, on the local GPU.
+
+- **R-Drop.** Two allocator dropout passes on one candidate set move 7-8% (`c0`) to 13-16% (`k1`
+  family) of intensity, so the magnitude gate passes. But the disagreement is nearly as large on
+  train as on val.
+  - It follows NCE, not novelty: dropout-view agreement stays 0.92-0.99 where two seeds fall to
+    0.75.
+  - What dropout views gain on val (+0.003 to +0.005) equals `P^γ` flattening of the
+    deterministic prediction.
+  - `k1` beats `c0` (+0.0084 val) while doubling the disagreement. EMA beats its training weights
+    (+0.0119) with 7-9% less.
+  - If run: on `k1`, against the two-pass control, read after `P^γ`.
+- **Centered-logit penalty: do not build as specified.** The logit spread is equal on train and
+  val, and 51-55% of the unweighted penalty sits on candidates holding under 1% of intensity.
+- **Side findings.**
+  - The CUDA builder reorders fragments, and swaps tied isomers in about 1% of spectra, between
+    calls even in eval mode. Two-pass methods that rerun the whole forward must cache
+    candidates. *Corrected 2026-09-28:* allocator-only SAM needs neither a cache nor manual
+    optimization if the forward is split at the boundary encoder; the runner lacks a
+    branch-from-checkpoint path ([note §3](notes/masster_generalization_methods_2026_09_27.md#3-short-sam--asam-continuation-with-a-plain-continuation-control)).
+  - The logged 0.01-Da cosine is edge-sensitive for two-decimal targets.
+  - `P^0.75` costs train cosine: it is a hedge, not split-independent (ranking decomposition
+    corrected in place).
+- **New:** `scripts/debug/debug_masster_dropout_view_disagreement.py` and its 7 tests. Records
+  updated: the literature note (§1, §2, §3, §6), the index and the ranking decomposition.
+- [Finding](findings/masster/masster_dropout_view_disagreement_2026_09_27.md).
+
+**Intensity reliability P1 preliminary census (2026-09-27).** The saved NIST20 splits
+contain 3,402 strictly metadata-matched repeated-condition groups, but no acquisition
+identifier establishes independent replicates. G1 stops the observation-noise head pending
+upstream provenance. The [plan](plans/masster/masster_intensity_reliability_plan.md#p1-preliminary-census-2026-09-27)
+records counts and limits; P2-P5 have not run.
 
 **MASSter SMARTS templates enabled on the CUDA backend, audited and trimmed (2026-09-27);
 uncommitted, arm `t1` not submitted.**
@@ -77,12 +144,73 @@ uncommitted, arm `t1` not submitted.**
     exists.
   - Probe: `scripts/debug/debug_masster_smarts_rule_gate.py`. Suite: 4,634 pass.
 - **AIMe's worked examples.** MASSter's plain cuts reach 14 of the 15 annotated fragments.
-  The miss, a hydroxamic-acid NH excision, is at the chance floor in NIST20 (50 molecules), so
-  no rule was added. No rule list in the repo covers it.
+  The miss, a hydroxamic-acid NH excision, was initially rejected; the later §7 gate
+  admitted it with weak evidence. The 14/15 count concerns masses, not product connectivity.
 - **Open:** whether to submit
   [`t1`](../config/masster/mh_ft_smarts_2026_09_27/t1_smarts_templates.yml).
 
 [Finding](findings/masster/masster_smarts_cuda_audit_2026_09_27.md).
+
+**Restricted allocators built (2026-09-27); uncommitted, not run.** At the user's request: a
+smaller set transformer and mass-local attention, plus an MLP floor.
+
+- **New options:**
+  - `masster_intensity_mass_window` (Da, full attention only) masks each candidate's attention
+    to candidates within that neutral-mass distance.
+  - `masster_intensity_transformer_attention: none` keeps only the feed-forward sublayers.
+  - The user's GNN over candidates is the proposed `cg1`, the same mask with containment edges.
+- **Measured reach:** 30 Da reaches 29% of a candidate's set in one hop and 50% in two; 100 Da
+  reaches 91% in two, so wide windows restrict little.
+- **Runs:** a seven-run local queue (`run_queue_allocator_restriction.sh`), about 7 h:
+  - the window ladder `fa_h4_mz`, 30 Da, 10 Da and `mlp_mz`;
+  - the size arms `ip1_h4`, `ip4_h4` and `ip16_h4_l1`.
+- **Blocker:** do not launch while another session's `masster_cuda_selection.cu` edit (SMARTS extra
+  forced masks) is unfinished. A mid-edit compile failed on 2026-09-27.
+- [Plan](plans/masster/masster_memorization_route_plan.md#restricted-allocators-mass-window-no-attention-smaller-set-transformer-built-2026-09-27-not-run).
+
+**Memorization plan review (2026-09-27); no new runs.** The
+[review](findings/masster/masster_memorization_plan_review_2026_09_27.md) distinguishes useful
+held-out gains from the unproven claim that removing molecule identity recovers the gap.
+Next: complete matched eval-mode ranking/novelty measurements on existing winners, confirm
+promising screens, and run the cross-molecule collision census before more identity-removal
+arms. It also flags sink/shared-gradient coupling and overprecise seed-noise claims.
+The requested [further literature search](notes/masster_generalization_methods_2026_09_27.md)
+now specifies peak-level R-Drop, a centered-logit penalty and late SAM/ASAM as bounded tests,
+with additional methods, primary sources and controls. No new runs or model changes.
+The [intensity reliability plan](plans/masster/masster_intensity_reliability_plan.md) expands
+uncertainty prediction, replicate reproducibility and cross-molecule intensity learning. Revised
+after the user’s acquisition-ladder census: match eV/res without requiring equal NCE on the
+eV-set ladder; keep the other ladder provisional and model NCE inputs unchanged. Correct the
+existing floors, measure dominant-pair stability,
+prioritize transfer, and extend independent-seed ensemble confidence; dispersion head deferred.
+Next check: recover historical exports and seed-pair checkpoints. User-selected `k1_ema` (`j4u25qfd`),
+epoch 50, is downloaded and checksum-verified; the plan now pins its provenance and stages
+P0-P5. No replicate analysis or head training has run.
+
+**Isotope envelope plan CLOSED NULL; Enveda baseline moved to the fourier CE table (2026-09-27);
+uncommitted.**
+
+- **Isotopes do not need handling for cosine.** On the 77,320 `[M+H]+`/`[M-H]-` val spectra of
+  `enveda_180_inchikey_811`, a perfect monoisotopic model plus the best scalar envelope recovers
+  0.0047 cosine in positive mode (95% CI 0.0045-0.0050) and 0.0010 in negative. The gate was
+  0.005, fitted on even molecules and scored on odd.
+  - The natural-abundance prior, which is FraGNNet's `num_isotopes > 1`, recovers nothing in
+    positive mode and costs 0.013 in negative. So FraGNNet on Enveda keeps `num_isotopes: 1`.
+  - The rest of the ceiling is the per-molecule halogen M+2 switch, which no scalar reaches.
+  - Probe: `scripts/debug/debug_enveda_isotope_envelope_ceiling.py`.
+  - [Plan](plans/masster/masster_isotope_envelope_plan.md#step-3-on-enveda-val-2026-09-27-gate-0a-fails).
+- **Baseline config.** It is now
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml`:
+  `ce_insert_type: embed` with `int_embedder: fourier`, as in the Spectraverse folds, replacing
+  `qet` after `n1`-`n3` trailed `c0` on NIST20.
+  - The file and W&B name were renamed from `…_qet_…`, so the committed `qet` file shows as
+    deleted.
+  - Its other deltas from the MSGYM EMA arm are unchanged: `[M+H]+`/`[M-H]-` through
+    `filter_prec_types`, a 10 ppm QTOF loss tolerance, and 20 epochs (24,240 steps).
+  - A local one-epoch smoke on 2,000 spectra per split exits 0.
+  - Not submitted. It needs a second seed before any arm is read against it.
+- **Local runs on this workstation** need a short `TMPDIR` on the root disk. `/tmp` (3.7 GB) was
+  full, and a long `TMPDIR` path breaks the dataloader sockets.
 
 **Allocator-route probe on `c0`, `r2`, `nl1`, `nl2` read, and two masks on the allocator's set
 built, `sm1` (message) and `sd1` (keys) (2026-09-27); committed, submitted 19:19 UTC on 09-27
@@ -271,7 +399,7 @@ Next: read `n2`/`n3` near epoch 30, and run the per-NCE-by-ladder read on `n1`'s
 [`n1`-`n3`](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md#validation-arm-n1),
 [`u3`](plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted).
 
-**ChemBERTa-3 basic model built (2026-09-27; committed in `d51fe50c`); not trained.** `model_type: chemlm`
+**ChemBERTa-3 basic model (2026-09-27; `d51fe50c`): overfits from epoch 1, at the structure-blind prior.** `model_type: chemlm`
 fine-tunes ChemBERTa-3's first 6 of 12 layers (`DeepChem/ChemBERTa-100M-MLM`) end to end, with
 the NEIMS binned head, on `ms_gym_benchmark_1_5`.
 - **Runs.** E1 and T2 (random SMILES), one seed each, the user's call (2026-09-27).
@@ -293,30 +421,19 @@ the NEIMS binned head, on `ms_gym_benchmark_1_5`.
 - **Runner fix.** The runner used to copy un-uploaded checkpoints through `/tmp` around
   `wandb.finish()`, which filled the workstation's `/tmp` and lost a `last.ckpt`. It now renames
   them within the run folder.
-- **Next: run on Fir, the user's choice.** Copy `data/pretrained/ChemBERTa-100M-MLM` into the
-  Fir checkout, run a one-epoch smoke job, then E1 and T2.
-  [Plan](plans/chemberta3_msgym_plan.md#built-2026-09-27).
-
-**Enveda standalone MASSter baseline `i0` built (2026-09-26); not submitted, uncommitted.** The
-user's call is to train Enveda alone for now.
-`config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_qet_ema999.yml` forks the
-MSGYM EMA arm with these deltas:
-
-- `[M+H]+`/`[M-H]-` through `filter_prec_types` (620,120 train spectra);
-- `ce_insert_type: qet` with Enveda CE statistics;
-- a 10 ppm QTOF loss tolerance with a 200 m/z floor;
-- 20 epochs, 24,240 steps, about 4 h, unmeasured.
-
-It resolves with only those deltas, and a local 1-epoch smoke on 2,000 spectra per split exits 0.
-On this workstation, point `TMPDIR` off the full 3.7 GB `/tmp`, or the checkpoint save fails.
-
-- **Isotope ceiling (Stage 0a step 2).** A perfect monoisotopic model reaches 1 − cos = 0.0072 on
-  Enveda val: 0.0086 positive, 0.0025 negative, 0.022 on Cl/Br molecules.
-- **Plan corrections.** The isotope plan's 5 ppm tolerance was too tight: the median spectrum's
-  fragment error is 3.8 ppm, p90 6.7.
-- **Next:** a second seed for the Enveda floor, and Stage 0a step 3.
-
-[Plan](plans/masster/masster_isotope_envelope_plan.md#current-state-and-next-check).
+- **Result so far (Fir, epoch 24 of 100).**
+  - E1 `tm9qwq78` and T2 `ku742mhq` reach their best val `cos_sim_0.01` after epoch 0: 0.199
+    and 0.194.
+  - Val loss then rises while train loss falls from 0.70 to 0.25. T2 is worse at every epoch.
+  - Model-free baselines on the same val spectra: a structure-blind prior (precursor plus mean
+    fragments per instrument and ACE) scores 0.194, and a nearest-train-molecule lookup 0.095.
+  - So the linear metric barely credits structure. Sqrt is 0.223 against 0.159, a little.
+- **NEIMS reference (W&B, 2024).** Unmerged NEIMS on the v1.0 benchmark split peaks at val
+  0.233-0.243 after 6-38 epochs, then overfits. So fingerprints beat E1's 0.199 with the same
+  head, on a slightly different val set (9,260 against 9,731 spectra).
+- **Next.** The user decides. E4 on `ms_gym_benchmark_1_5` is the matched check. The
+  exact-mass stages are the structural route.
+  [Results](plans/chemberta3_msgym_plan.md#results-so-far-2026-09-27-runs-in-progress).
 
 **Light-side token arms `nl1`-`nl3` (2026-09-26); finished. Final read in the
 [plan](plans/masster/masster_memorization_route_plan.md#final-read-of-nl1-and-nl2-2026-09-27).**
@@ -903,6 +1020,20 @@ data.** How the ms-pred baselines handle missing CE on MassSpecGym (code at `318
   (`run_scripts/iceberg/msg_all/04_impute_missing_collision_energies.py`). A known-CE model
   predicts each missing-CE spectrum at NCE 5-150 in steps of 5, the NCE with the best
   entropy-similarity match wins, and the model retrains on real plus pseudo labels.
+  **Details (re-read 2026-09-28, `run_all.sh` stages 01-09):** the teacher trains on
+  `msg_known_ce` (the `msg_all` rows with a CE, same `split.tsv`). The grid becomes eV by
+  `NCE × precursor_mz / 500`, deduplicated at integer eV, and the argmax is taken over those eV.
+  A missing or unknown instrument becomes `Orbitrap`. **The imputation leaks the answer into
+  retrieval.** Every missing-CE row in every fold is imputed from the teacher's prediction for its
+  *true* SMILES. Stage 05 then rewrites `cands_df_test_{formula,mass}_256.tsv` so that each test
+  query's 256 candidates are all scored at the CE that best fits the true molecule. Val rows used
+  for early stopping get the same treatment. Its size is unmeasured: it is an argmax over at
+  most 30 energies. There is no confidence gate: every scored row is labelled, and the similarity
+  is written out but never used. Stage 05 drops `collision_imputed`/`confidence`, so the student
+  cannot tell pseudo labels from real ones. The student trains from scratch, with no warm start.
+  `MAX_REAL_PEAKS=20` and `REAL_INTENSITY_THRESHOLD=0.05` are inert because they only act inside
+  `denoise()`, which the scorer calls with `denoise=False`. The observed spectrum is scored
+  unfiltered, except that peaks above `precursor_mz − 1` are dropped.
 - **GLACIER:** no imputation. `configs/glacier/joint_train_msg.yaml` trains on the base `msg`
   dataset, and a NaN CE takes a fixed all-zero CE embedding (`joint_model.py`,
   `collision_embed_merged`). The paper gives 231,104 spectra and 31,602 molecules, and says
@@ -1826,9 +1957,9 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   and `debug_tiny_masster` train end-to-end. Still open: which conditioning mechanism
   survives is the [conditioning refactor](plans/conditioning_refactor_plan.md)'s question, not
   this layout's.
-- [Model improvement roadmap](plans/model_improvement_plan.md) remains the canonical source
-  for research priorities and acceptance criteria. Its banner is dated 2026-07-24; reconcile
-  its proposed next action with current code and artifacts before resuming it.
+- The formerly canonical `plans/model_improvement_plan.md` is missing from this checkout.
+  Use current project state and model-specific plans; historical references do not establish
+  an available roadmap.
 - [Documentation index](README.md) lists live, proposed, landed, and closed work, including
   MASSter plans. Those are recorded statuses, not verification of current execution.
 - Read linked [findings](findings/) before reviving a rejected or closed experiment.

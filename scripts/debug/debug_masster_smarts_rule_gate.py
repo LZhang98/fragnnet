@@ -12,6 +12,8 @@ The candidate list records the 2026-09-27 admissions; admitted rules now live in
 
 Run from the repository root:
     python scripts/debug/debug_masster_smarts_rule_gate.py
+
+Use the ``continuations`` subcommand for the train/val excise-then-cleave probe.
 """
 
 import sys
@@ -129,7 +131,7 @@ EXISTING = [
     (rule, _MASSTER_PRECURSOR_TYPES.get(rule.name, BOTH))
     for rule in (*MASSTER_FRAG_RULES, *MASSTER_NL_RULES)
 ]
-TOLERANCE = {"FT": (1e-5, 200.0), "QTOF": (2e-5, 750.0)}
+TOLERANCE = {"FT": (1e-5, 200.0), "OB": (1e-5, 200.0), "OB_F": (1e-5, 200.0), "QTOF": (2e-5, 750.0)}
 
 
 def edge_tuple(mol) -> tuple[tuple[int, ...], ...]:
@@ -153,13 +155,29 @@ def products(rule, mol, edges) -> list[tuple[int, ...]]:
     return sorted({s for s in sides if s and len(s) < n and not _is_connected(s, edges)})
 
 
-def reachable_h(mol, edges, composition: Counter, size: int, cap: int = 200_000):
-    """Own-H counts of connected atom sets with ``composition``, or None past ``cap``."""
+def reachable_h(
+    mol, edges, composition: Counter, size: int, cap: int = 200_000,
+    required_h: frozenset[int] | None = None,
+):
+    """Connected own-H counts, or None past cap; optionally stop after requested H twins.
+
+    When required_h is supplied, finding a twin within +-4 H for every requested
+    count suffices. The returned set is then partial and only answers those requests.
+    """
     n = mol.GetNumAtoms()
     symbols = [a.GetSymbol() for a in mol.GetAtoms()]
     hydrogens = [a.GetTotalNumHs() for a in mol.GetAtoms()]
     found: set[int] = set()
     checks = 0
+    complete = False
+
+    def record(h: int) -> None:
+        nonlocal complete
+        found.add(h)
+        complete = required_h is not None and all(
+            any(abs(target - value) <= 4 for value in found) for target in required_h
+        )
+
     if size <= n - size:
         # 1. Grow connected sets from their smallest atom under the composition bound.
         adjacency = defaultdict(list)
@@ -171,12 +189,14 @@ def reachable_h(mol, edges, composition: Counter, size: int, cap: int = 200_000)
         def grow(current: set[int], frontier: set[int], counts: Counter) -> None:
             nonlocal checks
             checks += 1
-            if checks > cap:
+            if checks > cap or complete:
                 return
             if len(current) == size:
-                found.add(sum(hydrogens[i] for i in current))
+                record(sum(hydrogens[i] for i in current))
                 return
             for atom in sorted(frontier):
+                if complete or checks > cap:
+                    break
                 symbol = symbols[atom]
                 if atom < min(current) or counts[symbol] >= composition.get(symbol, 0):
                     continue
@@ -190,6 +210,8 @@ def reachable_h(mol, edges, composition: Counter, size: int, cap: int = 200_000)
                 counts[symbol] -= 1
 
         for start in range(n):
+            if complete or checks > cap:
+                break
             if composition.get(symbols[start], 0):
                 grow({start}, set(adjacency[start]), Counter({symbols[start]: 1}))
     else:
@@ -199,15 +221,17 @@ def reachable_h(mol, edges, composition: Counter, size: int, cap: int = 200_000)
 
         def choose(elements: list[str], chosen: set[int]) -> None:
             nonlocal checks
-            if checks > cap:
+            if checks > cap or complete:
                 return
             if not elements:
                 checks += 1
                 keep = [i for i in range(n) if i not in chosen]
                 if _is_connected(keep, edges):
-                    found.add(sum(hydrogens[i] for i in keep))
+                    record(sum(hydrogens[i] for i in keep))
                 return
             for picked in combinations(pools[elements[0]], removed[elements[0]]):
+                if complete or checks > cap:
+                    break
                 choose(elements[1:], chosen | set(picked))
 
         choose([el for el in removed if removed[el]], set())
@@ -220,7 +244,7 @@ class ChannelScorer:
     def __init__(self) -> None:
         self.model = None
 
-    def __call__(self, mol, sets, precursor_index: int) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self, mol, sets, precursor_index: int, *, reconnect: bool = False) -> tuple[np.ndarray, np.ndarray]:
         graph = Batch.from_data_list(
             [get_mol_graph(mol, ["a_onehot", "a_degree"], ["b_degree"], 0, True)]
         )
@@ -232,6 +256,10 @@ class ChannelScorer:
         atoms = th.tensor([a for s in sets for a in s])
         fragments = th.tensor([i for i, s in enumerate(sets) for _ in s])
         cuts = th.tensor([sum((a in s) != (b in s) for a, b in zip(*edges)) for s in map(set, sets)])
+        if reconnect:
+            if (cuts < 2).any():
+                raise ValueError("a new bond requires two freed boundary valence slots")
+            cuts = cuts - 2
         with th.no_grad():
             mzs, valid = self.model._fragment_masses_and_valid_channels(
                 graph,
@@ -361,4 +389,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "continuations":
+        from debug_masster_excision_continuations import main as continuation_main
+
+        continuation_main(sys.argv[2:])
+    else:
+        main()

@@ -7,8 +7,10 @@
 > part remains at the best-matching energy. MASSter `c0` under-fragments Lumos val spectra, and
 > no energy relabel at inference fixes it. **Implemented:** `inst_type` now labels Orbitraps
 > `OB` / `OB_F` and `FT` is retired (§7); NIST20/NIST23 are relabelled locally from their raw
-> MSP instrument fields, and the template's `ace_max` is 460. No arm has been trained.
-> **Revisions:** same-molecule tests use NIST23's recorded instrument labels with
+> MSP instrument fields, and the template's `ace_max` is 460. **Training (running, §8):** `n4`
+> on the new labels (`i1`) leads `n4` by +0.021 val cosine epoch-matched, and the smooth-energy
+> penalty falls from −0.021 to −0.004 (`i2` − `i1`); the per-instrument read waits for the
+> checkpoints. **Revisions:** same-molecule tests use NIST23's recorded instrument labels with
 > same-instrument null controls. NIST23 turned out to have doubled the negative-mode Elite NCE,
 > which reverses the negative-mode reading. Five earlier claims are withdrawn (§Withdrawn).
 
@@ -75,6 +77,10 @@
 8. **Implemented: `OB` / `OB_F` instrument labels** (§7). A config or `spec_df` that still says
    `FT` is refused. The c0/n4 configs now feed a two-class instrument embedding, so rerunning
    n4 on the relabelled data is the instrument-input arm.
+9. **The instrument input is worth about +0.02 val cosine mid-run** (§8, one seed, running).
+   `i1` (`i50ig7rf`, `n4` on `OB` / `OB_F`) leads `n4` at every epoch, +0.021 over epochs
+   10-21. It passes `n4`'s 64-epoch best at epoch 9. The gain exceeds what closing the Lumos
+   gap alone would give (about +0.015).
 
 ![Same molecule, two instruments](../figures/nist_orbitrap_elite_vs_lumos_same_molecule.png)
 
@@ -446,12 +452,66 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
   end-to-end migration with its backup, and both guards. `tests/test_01_prepare_df.py` covers
   `.gz`/`.zip` MSP input.
 
+## 8. Training with the instrument input: `i1` and `i2` (running; read 2026-09-28)
+
+Both arms are 64-epoch unmerged `[M+H]+` screens (seed 397623, constant lr 1e-3), configs in
+`config/masster/mh_ft_memorization_route_2026_09_24/`:
+
+- `i1_inst_ob_obf` (`i50ig7rf`) is `n4` unchanged on the relabelled NIST20;
+- `i2_qet_ob_obf` (`jshvk4gv`) is `n1` (`ce_insert_type: qet`) unchanged on it.
+
+At the read `i1` had finished epoch 21 and `i2` epoch 14. The splits hold the same
+157,678 / 52,020 / 52,621 spectra as the `FT` runs (val: `OB` 38,310, `OB_F` 13,710; checked
+against the local `spec_df.pkl`, md5 `bdc009bb…`). So the two-class instrument embedding is
+the only change from `n4` and `n1`. The metric is `val_cos_sim_0.01_epoch/mean` from W&B.
+
+| arm | run | labels | val cosine, epochs 10-21 | vs `n4` |
+| --- | --- | --- | ---: | ---: |
+| `c0` | `vcpho5qm` | `FT` | 0.7169 | −0.0082 |
+| `n4` | `shjgv9im` | `FT` | 0.7251 | — |
+| `i1` | `i50ig7rf` | `OB` / `OB_F` | **0.7462** | **+0.0211** |
+
+- **`i1` leads `n4` at every epoch**, by +0.015 to +0.026 over epochs 1-21: five times the
+  0.0042 seed spread. The lead is not shrinking: +0.018 over epochs 5-14, +0.022 over 12-21.
+- **By wall-clock too.** At epoch 9 (0.56 h) `i1` passes `n4`'s best over all 64 epochs
+  (0.7356, epoch 46, about 2.4 h). At epoch 21 it reads 0.7522. Time per epoch is equal (1.15 h
+  vs 1.13 h to epoch 21).
+- **Train fits better as well.** Train loss is −0.026 against `n4` over epochs 10-21 and val loss
+  −0.04 to −0.10. Candidate coverage (`val_candidate_wrecall`) is equal within 0.001.
+- **The gain is larger than the Lumos gap alone.** Lumos is 26% of val. Raising it all the way to
+  `c0`'s Elite cosine (+0.057, §5) would add about +0.015 overall; the epoch-matched gain is
+  +0.021 over `n4` and +0.029 over `c0`. Either Lumos val passes the Elite level, or Elite spectra
+  gain too. Only the per-instrument read can tell these apart.
+
+| smooth input minus per-NCE code | labels | epochs 10-14 | epochs 54-63 |
+| --- | --- | ---: | ---: |
+| `n1` − `n4` | `FT` | −0.0213 | −0.0174 |
+| `i2` − `i1` | `OB` / `OB_F` | **−0.0036** | pending |
+
+- **The smooth-energy penalty mostly goes away with the instrument input.** On five epochs of one
+  seed it falls to inside the seed spread. This supports the
+  [QET finding](masster/masster_qet_projection_candidate_union_2026_09_26.md#final-read-2026-09-27)'s
+  reading that the per-NCE code carried the instrument: a val molecule's NCE value named its
+  ladder.
+- **Pending.**
+  - Per instrument, on the best checkpoints (`upload_checkpoints` is on; nothing is on W&B until
+    the runs end): Lumos val cosine and precursor-fraction bias against `n4` and `c0` (§5 used
+    `output/ev_ladder_census_2026_09_28/nist20_raw_labels.py`). `i1` passes if the Lumos bias
+    falls well below +0.09 with no Elite loss.
+  - The epoch 54-63 tails. `n4` rose +0.0072 from epochs 12-21 to its tail.
+- **Limits.** One seed per arm, and both runs are unfinished.
+- **If it holds, `i1` becomes the NIST20 `[M+H]+` control.** Every earlier arm in this campaign
+  was read against `c0` or `n4` on the one-class embedding. Their deltas are not guaranteed to
+  carry over.
+- **Stacking arms on `i1`** (`i3`: `k1` + EMA; `i4`: plus pre-norm) are built, not submitted
+  ([plan](../plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
+
 ## Implications
 
 - **Model input.** Give the model the instrument, now done through `inst_type` (§7).
   - Energy relabels fail at inference (§6), and the spectra differ beyond energy (§3.3).
-  - Next: train `n4` on the relabelled NIST20. Read the Lumos val gap and the
-    precursor-fraction bias against the old `n4`, not only overall cosine.
+  - `n4` on the relabelled NIST20 is running as `i1` (§8), +0.021 epoch-matched. Next: read the
+    Lumos val gap and the precursor-fraction bias against the old `n4`, not only overall cosine.
 - **eV as an input.** For NIST23 it is a better energy axis than NCE where recorded: it
   captures the `Met_Lumos1a` offset, and it is unaffected by NIST23's NCE doubling.
   - It cannot replace an instrument input, because `Met_Lumos` has none and the shape

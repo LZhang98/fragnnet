@@ -242,6 +242,145 @@ def test_mz_encoding_requires_masses() -> None:
         _mz_head(mz_positional_encoding=True, model_dim=9, num_heads=3)
 
 
+# --------------------------------------------------------- mass window and no attention
+
+# Candidates 0 and 1 lie 10 Da apart; 2 and 3 are more than 15 Da from every other candidate.
+WINDOW_MASSES = th.tensor([100.0, 110.0, 200.0, 400.0])
+
+
+def _moved_outputs(head: CandidateIntensityTransformerHead, moved: int, **kwargs) -> th.Tensor:
+    """Which candidates' ion/H logits change when one candidate's input embedding moves."""
+    inputs = list(_head_inputs())
+    reference = head(*inputs, batch_size=1, num_masks=4, **kwargs)[2]
+    inputs[0] = inputs[0].clone()
+    inputs[0][moved] += 5.0
+    moved_output = head(*inputs, batch_size=1, num_masks=4, **kwargs)[2]
+    return ~th.isclose(moved_output, reference, atol=1e-6).all(dim=(1, 2))
+
+
+def test_mass_window_is_off_by_default_and_validated() -> None:
+    head = _mz_head(attention_type="full")
+    assert head.mass_window == 0.0
+    assert not head.uses_token_masses
+    assert _mz_head(attention_type="full", mass_window=15.0).uses_token_masses
+    for bad in (-1.0, math.inf, math.nan):
+        with pytest.raises(ValueError, match="mass_window must be finite and nonnegative"):
+            _mz_head(attention_type="full", mass_window=bad)
+    for attention_type in ("induced", "none"):
+        with pytest.raises(ValueError, match="mass_window requires attention_type='full'"):
+            _mz_head(attention_type=attention_type, mass_window=15.0)
+
+
+def test_mass_window_hides_candidates_outside_the_window() -> None:
+    """With one layer, a candidate reads only the candidates within the window of its mass."""
+    head = _mz_head(attention_type="full", mass_window=15.0)
+    masses = {"component_neutral_masses": WINDOW_MASSES}
+
+    assert _moved_outputs(head, 1, **masses).tolist() == [True, True, False, False]
+    assert _moved_outputs(head, 2, **masses).tolist() == [False, False, True, False]
+    # Full attention over the same set lets every candidate read every other.
+    assert _moved_outputs(_mz_head(attention_type="full"), 2).all()
+
+
+def test_mass_window_mask_values() -> None:
+    head = _mz_head(attention_type="full", mass_window=15.0)
+    padding = th.tensor([[False, False, False, True]])
+    masses = th.tensor([[100.0, 110.0, 300.0, 0.0]])
+
+    bias = head._mass_window_bias(masses, padding)
+
+    inf = float("-inf")
+    expected = th.tensor(
+        [
+            [0.0, 0.0, inf, inf],
+            [0.0, 0.0, inf, inf],
+            [inf, inf, 0.0, inf],
+            # The padded row keeps every key; the key padding mask hides padded keys later.
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    )
+    assert bias.shape == (1, 1, 4, 4)
+    assert th.equal(bias[0, 0], expected)
+
+
+def test_mass_window_wider_than_the_set_equals_full_attention() -> None:
+    full = _mz_head(attention_type="full")
+    windowed = _mz_head(attention_type="full", mass_window=1000.0)
+    inputs = _head_inputs()
+
+    assert list(windowed.state_dict()) == list(full.state_dict())
+    assert all(th.equal(windowed.state_dict()[k], v) for k, v in full.state_dict().items())
+    assert th.allclose(
+        windowed(*inputs, batch_size=1, num_masks=4, component_neutral_masses=WINDOW_MASSES)[2],
+        full(*inputs, batch_size=1, num_masks=4)[2],
+        atol=1e-6,
+    )
+
+
+def test_mass_window_keeps_padded_buckets_finite_through_backward() -> None:
+    """A padded slot far from every real mass must not produce an all -inf attention row."""
+    head = _mz_head(attention_type="full", mass_window=15.0, num_layers=2).train()
+    inputs = list(_head_inputs())
+    # Molecule 0 holds three candidates (padded to four); molecule 1 holds one.
+    inputs[5] = th.tensor([0, 0, 0, 1])
+    masses = th.tensor([300.0, 310.0, 500.0, 250.0])
+
+    outputs = head(*inputs, batch_size=2, num_masks=4, component_neutral_masses=masses)
+    sum(output.sum() for output in outputs).backward()
+
+    assert all(th.isfinite(output).all() for output in outputs)
+    assert all(
+        th.isfinite(parameter.grad).all()
+        for parameter in head.parameters()
+        if parameter.grad is not None
+    )
+
+
+def test_mass_window_combines_with_the_mass_pair_bias() -> None:
+    head = _mz_head(attention_type="full", mass_window=15.0, mass_pair_bias=True)
+    with th.no_grad():
+        head.mass_pair_bias.weights.fill_(1.0)
+    masses = {"component_neutral_masses": WINDOW_MASSES}
+
+    assert _moved_outputs(head, 2, **masses).tolist() == [False, False, True, False]
+
+
+@pytest.mark.parametrize("norm_placement", ["post", "pre"])
+def test_no_attention_scores_each_candidate_from_its_own_token(norm_placement: str) -> None:
+    head = _mz_head(attention_type="none", norm_placement=norm_placement, num_layers=2)
+
+    for moved in range(4):
+        expected = [index == moved for index in range(4)]
+        assert _moved_outputs(head, moved).tolist() == expected
+
+
+def test_no_attention_keeps_only_feed_forward_sublayers() -> None:
+    head = _mz_head(attention_type="none", num_layers=2)
+    full = _mz_head(attention_type="full", num_layers=2)
+    keys, full_keys = set(head.state_dict()), set(full.state_dict())
+
+    assert head.inducing_tokens is None
+    assert not any("attention" in key for key in keys)
+    assert keys == {key for key in full_keys if "attention" not in key}
+    # The m/z encoding is per token, so it still applies.
+    plain = _mz_head(attention_type="none")
+    encoded = _mz_head(attention_type="none", mz_positional_encoding=True)
+    inputs = _head_inputs()
+    with_masses = encoded(
+        *inputs, batch_size=1, num_masks=4, component_neutral_masses=WINDOW_MASSES
+    )
+    assert not th.allclose(with_masses[2], plain(*inputs, batch_size=1, num_masks=4)[2])
+
+
+def test_no_attention_rejects_attention_options() -> None:
+    with pytest.raises(ValueError, match="attention_type='none' has no attention"):
+        _mz_head(attention_type="none", set_message_substitution=0.3)
+    with pytest.raises(ValueError, match="attention_type='none' has no attention"):
+        _mz_head(attention_type="none", set_key_dropout=0.3)
+    with pytest.raises(ValueError, match="mass_pair_bias requires"):
+        _mz_head(attention_type="none", mass_pair_bias=True)
+
+
 # ------------------------------------------------------------------------- bond head
 
 

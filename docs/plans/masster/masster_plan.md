@@ -1,6 +1,6 @@
 # MASSter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IMPLEMENTED CORE WITH ACTIVE EXPERIMENTAL VARIANTS &nbsp;·&nbsp; **Updated:** 2026-09-21
+> **Status:** IMPLEMENTED CORE WITH ACTIVE EXPERIMENTAL VARIANTS &nbsp;·&nbsp; **Updated:** 2026-09-27
 >
 > The fixed-depth D3/D4 inference path has been replaced in MASSter by one-pass
 > precursor encoding, probability-ranked candidate generation, chemically valid ion
@@ -455,6 +455,22 @@ candidate budgets fixed:
    `graphormer512x5` endpoint-head model, then construct a matched-width/depth
    atom-Graphormer control. Do not attribute its atom-side structural biases to a
    newly implemented dual model.
+   **Read from W&B 2026-09-27, before any new run:** both parts already exist, from
+   2026-08-24/26. They used the old merged target, constant lr 1e-3 with no warmup, and
+   `unique256_enum4096_*384_bondcentric_a2_b2`. Within each date the configs differ only in
+   `mol_gnn_type`, plus `mol_normalization: layer`, which Graphormer forces.
+   `val_cos_sim_0.01` at epoch 39:
+
+   | encoder | epoch 39 |
+   | --- | --- |
+   | `GINE_EFA` | 0.7198 (`xe77lzg2`) |
+   | `GINE_GRAPHORMER` | 0.7226 (`q2ccm4zi`), 0.7183 (`a1xenope`) |
+   | `Graphormer` alone | 0.6860 (`1aimad8h`), 0.6877 (`d3udqiop`) |
+
+   Graphormer without GINE loses about 0.034, and the gap is the same at epoch 30.
+   Graphormer biases added on top of GINE make no difference. The `graphormer512x5`
+   endpoint-head runs are worse still (0.63-0.68 at epoch 39; `7unldohr` stalled at
+   0.33). These runs never used a warmup schedule, which transformers usually need.
 5. **Bond-EFA arm:** add graph-scoped EFA over `B` after each selected coupled
    block while leaving the atom side fixed.
 6. **Unbiased bond-softmax arm:** replace bond EFA with ordinary graph-scoped

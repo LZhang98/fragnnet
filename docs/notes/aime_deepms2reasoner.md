@@ -1,6 +1,6 @@
 # AIMe / DeepMS2Reasoner (Cornell + BTI, bioRxiv 2026-08-06)
 
-> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-20
+> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-28
 >
 > Literature notes on "Charting the small-molecule universe from mass spectra with neuro-symbolic
 > AI". Read the **published-metric caveat** below before quoting any of its cosines against ours.
@@ -148,6 +148,18 @@ beaten by >10% at top-1 and top-10.
 - Applied at repository scale to GNPS Living Data (8,543,020 clusters, 7,144,480 searched after
   filtering).
 
+### No pretraining (checked 2026-09-27)
+
+ALEA is "the only learned neural-network component" (line 803). It trains on the NIST20
+80/10/10 split with the KL loss. The main text reports no pretrained initialization and no
+training data beyond NIST20; CASMI and MassSpecGym are "used only as external test benchmarks"
+(line 876). The closest thing to pretraining is the **molecular-mass curriculum**. Training
+starts on lower-mass compounds, where the action space is smaller and pathways are shallower,
+and adds heavier molecules as the action probabilities sharpen (line 858). They also apply
+stochastic augmentation to the experimental metadata (line 863). **Not verified:** the
+architecture specification is in "Supplementary AI Methods", which is not on disk, and the code
+was not public as of 2026-09-20.
+
 ## Feature setup
 
 Only the categories are published; "complete feature definitions, architectural specifications,
@@ -181,4 +193,8 @@ tables are fully specified and are what our 2026-09-20 audit should be read agai
 4. Our coverage of their worked examples (Fig. 2c hydroxamic acid, Fig. 3k biotin) is checked in
    [`masster_smarts_cuda_audit_2026_09_27.md` §6](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#6-aimes-worked-examples-and-the-other-rule-lists).
    MASSter's plain cuts reach 14 of the 15 annotated fragments, and excision inside rings needs
-   no rule. The miss is a hydroxamic-acid NH excision, which is at the chance floor in NIST20.
+   no rule for their masses. The miss is a hydroxamic-acid NH excision. The later §7 gate
+   admitted its rule with weak evidence; §6 records the earlier rejection. These are mass
+   reachability results, not verification of AIMe's product connectivity.
+5. The [2026-09-28 excision literature follow-up](masster_excision_literature_2026_09_28.md)
+   reviews experimental evidence and maps restricted candidates onto the current registry.
