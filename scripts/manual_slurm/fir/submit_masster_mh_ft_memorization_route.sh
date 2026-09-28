@@ -60,6 +60,11 @@
 # route, and where the lookup goes when global attention is removed):
 #   sm1  c0 + set-message substitution 0.3   (control: c0, vcpho5qm)
 #   sd1  c0 + set dropout on the keys 0.3    (control: c0, vcpho5qm; read against sm1 too)
+# Added 2026-09-28, after i1_inst_ob_obf (i50ig7rf, n4 on the OB / OB_F instrument labels) led n4
+# by +0.021 mid-run: the replicated levers stacked on it, then the merged screen's pre-norm. These
+# need the relabelled data/proc/nist20/spec_df.pkl on the cluster (md5 bdc009bb..., see i1's header):
+#   i3   i1 + k1 dropout + ema_decay 0.999  (control: i1, i50ig7rf)
+#   i4   i3 + intensity pre-norm             (control: i3, same stage)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
@@ -77,8 +82,9 @@
 #   share sp0 and sp1 (c0 has run).
 #   drop  am1 and de1 (c0 has run).
 #   alloc sm1 and sd1 (c0 has run).
+#   stack i3 and i4 (i1 has run or is running).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
-#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1 | am1 | de1 | sm1 | sd1  one job.
+#   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1 | am1 | de1 | sm1 | sd1 | i3 | i4  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -141,6 +147,8 @@ declare -A JOB_BY_ARM=(
     [de1]=msh_mhft_de1_bond_drop
     [sm1]=msh_mhft_sm1_set_message_substitution
     [sd1]=msh_mhft_sd1_set_key_dropout
+    [i3]=msh_mhft_i3_k1_ema_ob_obf
+    [i4]=msh_mhft_i4_k1_ema_prenorm_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -176,6 +184,8 @@ declare -A CONFIG_BY_ARM=(
     [de1]=de1_bond_drop.yml
     [sm1]=sm1_set_message_substitution.yml
     [sd1]=sd1_set_key_dropout.yml
+    [i3]=i3_k1_ema_ob_obf.yml
+    [i4]=i4_k1_ema_prenorm_ob_obf.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -192,9 +202,10 @@ case "${STAGE}" in
     share) ARMS=(sp0 sp1) ;;
     drop) ARMS=(am1 de1) ;;
     alloc) ARMS=(sm1 sd1) ;;
-    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1|sm1|sd1) ARMS=("${STAGE}") ;;
+    stack) ARMS=(i3 i4) ;;
+    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1|sm1|sd1|i[34]) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|alloc|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1|sm1|sd1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|alloc|stack|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1|sm1|sd1|i3|i4]" >&2
         exit 1
         ;;
 esac
@@ -286,3 +297,5 @@ echo "nl: its controls c0 (vcpho5qm), r2 (9lt5s2u8) and k1 (wg0nxymi) have run."
 echo "share: sp0's control c0 (vcpho5qm) has run; sp1's control is sp0, in the same stage."
 echo "drop (am1, de1): their control c0 (vcpho5qm) has run."
 echo "alloc (sm1, sd1): their control c0 (vcpho5qm) has run; read each against c0 and each other."
+echo "stack (i3, i4): i3's control is i1 (i50ig7rf); i4's is i3, in the same stage. Both need the"
+echo "  relabelled OB / OB_F spec_df.pkl on the cluster (md5 bdc009bbeaf6a38d126326d127630cad)."
