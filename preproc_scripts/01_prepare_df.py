@@ -1,6 +1,7 @@
 import argparse
 import glob
 import gzip
+import io
 import json
 import logging
 import os
@@ -118,26 +119,43 @@ No type conversions or filtering: all of that is done downstream
 """
 
 
-def preproc_msp(msp_fp: str, keys: set, num_entries: int) -> pd.DataFrame:
-    """ """
+def iter_msp_lines(msp_fp: str):
+    """Yield the lines of an MSP file: plain, gzipped (.gz), or the single file in a .zip.
 
-    with open(msp_fp) as f:
-        raw_data_lines = f.readlines()
-    # split CAS# and NIST# on different lines
-    _raw_data_lines = []
-    for line in raw_data_lines:
+    A NIST ``CAS#: ...;  NIST#: ...`` line is yielded as two lines.
+    """
+    if msp_fp.endswith(".zip"):
+        with zipfile.ZipFile(msp_fp) as zf:
+            (name,) = [n for n in zf.namelist() if not n.endswith("/")]
+            with zf.open(name) as fh:
+                lines = io.TextIOWrapper(fh, encoding="utf-8")
+                yield from _split_cas_nist(lines)
+    elif msp_fp.endswith(".gz"):
+        with gzip.open(msp_fp, "rt", encoding="utf-8") as fh:
+            yield from _split_cas_nist(fh)
+    else:
+        with open(msp_fp) as fh:
+            yield from _split_cas_nist(fh)
+
+
+def _split_cas_nist(lines):
+    for line in lines:
         if "CAS#" in line and "NIST#" in line:
             assert ";" in line, line
             split_lines = line.split(";")
-            _raw_data_lines.append(split_lines[0].rstrip(";") + "\n")
-            _raw_data_lines.append(split_lines[1].lstrip())
+            yield split_lines[0].rstrip(";") + "\n"
+            yield split_lines[1].lstrip()
         else:
-            _raw_data_lines.append(line)
-    raw_data_lines = _raw_data_lines
+            yield line
+
+
+def preproc_msp(msp_fp: str, keys: set, num_entries: int) -> pd.DataFrame:
+    """Parse an MSP file (plain, .gz or .zip, see :func:`iter_msp_lines`), streaming its lines."""
+
     raw_data_list = []
     raw_data_item = dict.fromkeys(keys)
     read_ms = False
-    for raw_l in tqdm(raw_data_lines, desc=f"> processing {msp_fp}", total=len(raw_data_lines)):
+    for raw_l in tqdm(iter_msp_lines(msp_fp), desc=f"> processing {msp_fp}", unit=" lines"):
         if num_entries > -1 and len(raw_data_list) == num_entries:
             break
         raw_l = raw_l.replace("\n", "")

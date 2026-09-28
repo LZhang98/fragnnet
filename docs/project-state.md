@@ -17,16 +17,22 @@ labels (2026-09-28); uncommitted. The data relabel is local only; no arm trained
 - **NIST23 doubled the Elite/Velos negative-mode NCE and kept the eV** (same spectra: ×2.00).
   This withdraws the "halved eV" and "negative-mode ×2.2" readings; on NIST20's NCE, negative
   mode behaves like positive.
-- **`c0` under-fragments Lumos val spectra.** Cosine 0.687 vs 0.742 (+0.054 adjusted),
-  precursor bias +0.092, none on train. Relabelling the input at inference fails.
+- **`c0` under-fragments Lumos val spectra.** Cosine 0.688 vs 0.745 (+0.053 adjusted; NIST20
+  raw instrument labels), precursor bias +0.092, none on train. Relabelling the input at
+  inference fails.
 - **Implemented.**
   - `inst_type` is `OB` (Elite, Velos, unnamed Orbitraps) or `OB_F` (Orbitrap Fusion), via
     `parse_inst_info` and `preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py`.
-  - Local NIST23 and NIST20 are relabelled (backups kept). `FT` is refused in configs and data.
+  - Local NIST23 and NIST20 are relabelled from their raw MSP instrument fields (backups kept).
+    NIST20's first, inferred relabel was 0.69% wrong and was replaced. Local Spectraverse and
+    MSGYM name no Orbitrap model and are all `OB`; their configs no longer list `OB_F`. `FT` is
+    refused in configs and data.
+  - `01_prepare_df.py` and the migration read `.msp`, `.msp.gz` or `.zip` directly.
   - 572 configs, the code tables and 18 eval scripts are migrated.
-  - 20 new tests; the full suite passes. A 2-epoch smoke of `n4` exits 0.
+  - 22 migration tests; the full suite passes. A 2-epoch smoke of `n4` exits 0.
 - **Next:**
-  - Run the migration on the cluster copies, NIST23 first.
+  - Run the migration on the cluster copies (NIST20 needs `data/raw/nist_20/nist_20_hr_msms.zip`
+    and `data/df/nist23_hr_df.csv` there).
   - Train `n4` unchanged on the relabelled NIST20; it now embeds the instrument. Read the Lumos
     gap and the precursor bias against the old `n4`.
   - Other local datasets still say `FT` until migrated.

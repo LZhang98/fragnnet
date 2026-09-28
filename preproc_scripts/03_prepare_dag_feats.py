@@ -186,7 +186,7 @@ def main(args):
 
         In addition to each fixed tolerance in ``tolerances``, an ``inst_tol`` variant is
         emitted that uses the per-instrument m/z tolerance in ``args.inst_type_loss_tol``
-        (default: FT 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
+        (default: OB/OB_F 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
         to 10 ppm).
         This mirrors the ``cos_hun_inst_tol_opt`` convention in
         ``scripts/eval/dag_oracle_scores.py`` so recall/wrecall use the same matching logic.
@@ -240,7 +240,7 @@ def main(args):
 
         # Per-instrument tolerance variant (inst_tol). The base tolerance=10/is_ppm=True is
         # the 10 ppm fallback for instrument types absent from args.inst_type_loss_tol; for
-        # FT/QTOF it is overridden per-peak by inst_type_tol.
+        # OB/OB_F/QTOF it is overridden per-peak by inst_type_tol.
         for h_transfer in range(1, max_h_transfer + 1):
             cols += [
                 f"recall_inst_tol_h{h_transfer}",

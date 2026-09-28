@@ -1,7 +1,7 @@
 """Unit tests for preproc_scripts/01_prepare_df.py module.
 
 Tests validate:
-- MSP parsing and column renaming
+- MSP parsing (plain, .gz and .zip) and column renaming
 - NIST EI CSV processing
 - Comment field parsing
 - Data dictionary validation
@@ -11,6 +11,7 @@ import gzip
 import importlib.util
 import json
 import tempfile
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -109,6 +110,43 @@ Num peaks: 1
         assert len(df) == 2, "Should limit to 2 entries"
     finally:
         Path(msp_fp).unlink()
+
+
+NIST_MSP = """Name: Compound 1
+Instrument: Orbitrap Fusion Lumos
+CAS#: 50-00-0;  NIST#: 1035166
+Num Peaks: 2
+50.0 100
+75.0 200
+
+Name: Compound 2
+Instrument: Thermo Finnigan Elite Orbitrap
+CAS#: 50-00-1;  NIST#: 1035167
+Num Peaks: 1
+60.0 300
+
+"""
+
+
+@pytest.mark.parametrize("suffix", [".msp", ".msp.gz", ".zip"])
+def test_preproc_msp_reads_compressed_nist_export(tmp_path, suffix):
+    """A NIST export parses the same plain, gzipped or zipped, with CAS# and NIST# split."""
+    module = load_prepare_module()
+    msp_fp = tmp_path / f"lib{suffix}"
+    if suffix == ".msp":
+        msp_fp.write_text(NIST_MSP)
+    elif suffix == ".msp.gz":
+        with gzip.open(msp_fp, "wt") as f:
+            f.write(NIST_MSP)
+    else:
+        with zipfile.ZipFile(msp_fp, "w") as zf:
+            zf.writestr("lib.msp", NIST_MSP)
+    keys = {"Name", "Instrument", "CAS#", "NIST#", "Num peaks", "MS"}
+    df = module.preproc_msp(str(msp_fp), keys, num_entries=-1)
+    assert df["NIST#"].tolist() == ["1035166", "1035167"]
+    assert df["CAS#"].tolist() == ["50-00-0", "50-00-1"]
+    assert df["Instrument"].tolist() == ["Orbitrap Fusion Lumos", "Thermo Finnigan Elite Orbitrap"]
+    assert df["MS"].tolist() == ["50.0 100\n75.0 200\n", "60.0 300\n"]
 
 
 def test_merge_and_check_with_smiles():

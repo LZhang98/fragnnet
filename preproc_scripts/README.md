@@ -39,6 +39,12 @@ This will create a new directory `data/df`
 python preproc_scripts/01_prepare_df.py --msp_file nist_20/hr_nist_msms.MSP --mol_dir nist_20/hr_nist_msms.MOL --input_format msp+mol --output_format csv --output_dp data/df --output_name nist20_hr
 ```
 
+`--msp_file` may also be gzipped (`.msp.gz`) or a `.zip` holding one `.msp`; the file is streamed,
+not unpacked. `data/raw/nist_20/nist_20_hr_msms.zip` (re-exported 2026-09-28) is such an MSP. It
+names each spectrum's instrument model (`Instrument:`, e.g. `Orbitrap Fusion Lumos`), which
+`02_prepare_proc.py` turns into `OB` / `OB_F`, but it carries no structures, so a full build still
+needs the MOL files.
+
 ### MassSpecGym
 This assumes that the Spectraverse data is in `data/raw/msgym/MassSpecGym_with_test.tsv`, this will use `ms_gym`,`ms_gym_extra` as dataset name for each part of MassSpecGym
 
@@ -154,18 +160,22 @@ python preproc_scripts/02_prepare_proc.py \
 ### Relabelling existing Orbitrap spectra (FT → OB / OB_F, 2026-09-28)
 `spec_df.pkl` files built before 2026-09-28 label every Orbitrap `FT`, which training now
 refuses. Relabel them in place; each run copies the original to `spec_df_orig_<timestamp>.pkl`.
-Run NIST23 first, because NIST20 is matched against it (the raw NIST20 export is not kept).
+The label comes from the raw instrument name, joined on `dset_spec_id` (the NIST#): "Fusion"
+means `OB_F`, any other name `OB`, and FT spectra without a name (contributed libraries) are
+unnamed Orbitraps, `OB`. `--inst_fp` takes the name sources in priority order, as `data/df` tables
+(`dset_spec_id`, `inst`) or raw MSPs (`.msp`, `.msp.gz`, `.zip`).
 ```bash
-# NIST23: from the raw MSP Instrument field
+# NIST23
 python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py \
-    --spec_df_fp data/proc/nist23/spec_df.pkl --inst_df_fp data/df/nist23_hr_df.csv
-# NIST20: match each spectrum to the relabelled NIST23, then the eV-record rule
+    --spec_df_fp data/proc/nist23/spec_df.pkl --inst_fp data/df/nist23_hr_df.csv
+# NIST20: its raw export, then NIST23 for the 5,537 NIST# the export lacks (NIST# is stable
+# across releases; the two never disagree on an instrument)
 python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py \
-    --spec_df_fp data/proc/nist20/spec_df.pkl --mol_df_fp data/proc/nist20/mol_df.pkl \
-    --ref_spec_df_fp data/proc/nist23/spec_df.pkl --ref_mol_df_fp data/proc/nist23/mol_df.pkl \
-    --nist_ev_rule
-# Any other dataset without instrument models: every FT becomes OB
-python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py --spec_df_fp <proc_dp>/spec_df.pkl
+    --spec_df_fp data/proc/nist20/spec_df.pkl \
+    --inst_fp data/raw/nist_20/nist_20_hr_msms.zip data/df/nist23_hr_df.csv
+# Any other dataset: its data/df table if it names instruments, else every FT becomes OB
+python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py \
+    --spec_df_fp <proc_dp>/spec_df.pkl [--inst_fp data/df/<name>_df.csv]
 ```
 Group ids are split by instrument, never regrouped. Details and the NIST counts are in
 [the Orbitrap instrument finding](../docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md).
@@ -195,13 +205,13 @@ This step generates fragmentation DAGs that are used for the FraGNNet models. Si
 Frag configuration: depth 3 (used for FraGNNet-D3), isomorphism check with no bond information (nb, 3 WL iterations)
 
 ```bash
-python preproc_scripts/03_prepare_dag_feats.py --max_depth 3 --frag_dp data/frag/nist20_d3 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --wandb_mode disabled
+python preproc_scripts/03_prepare_dag_feats.py --max_depth 3 --frag_dp data/frag/nist20_d3 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types OB OB_F --frag_modes HCD --ion_modes P --wandb_mode disabled
 ```
 
 Frag configuration: depth 4 (used for FraGNNet-D4), isomorphism check with no bond information (nb, 3 WL iterations)
 
 ```bash
-python preproc_scripts/03_prepare_dag_feats.py --max_depth 4 --frag_dp data/frag/nist20_d4 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dsets nist20_hr--wandb_mode disabled
+python preproc_scripts/03_prepare_dag_feats.py --max_depth 4 --frag_dp data/frag/nist20_d4 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types OB OB_F --frag_modes HCD --ion_modes P --dsets nist20_hr--wandb_mode disabled
 ```
 
 ### MassSpecGym
@@ -215,7 +225,7 @@ python preproc_scripts/04_prepare_split.py \
   --frag_dp=./data/frag/ms_gym_d3_h4v2 \
   --primary_dsets ms_gym \
   --max_prec_mz=1000.0 \
-  --inst_types FT QTOF \
+  --inst_types OB OB_F QTOF \
   --split_type=predefined_dsetid_csv \
   --predefined_dsetid_csv=data/df/ms_gym_fold.csv
 ```
@@ -241,13 +251,13 @@ This step splits the data into training, validation, and test sets. To exactly r
 Inchikey split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_type predefined --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dag_filtering False --proc_dp data/proc/nist20 --predefined_id_type dset_spec_id --predefined_train_id_fp data/split/nist20_inchikey/train_dset_ids.csv --predefined_val_id_fp data/split/nist20_inchikey/val_dset_ids.csv --predefined_test_id_fp data/split/nist20_inchikey/test_dset_ids.csv --split_dp data/split/nist20_inchikey
+python preproc_scripts/04_prepare_split.py --split_type predefined --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types OB OB_F --frag_modes HCD --ion_modes P --dag_filtering False --proc_dp data/proc/nist20 --predefined_id_type dset_spec_id --predefined_train_id_fp data/split/nist20_inchikey/train_dset_ids.csv --predefined_val_id_fp data/split/nist20_inchikey/val_dset_ids.csv --predefined_test_id_fp data/split/nist20_inchikey/test_dset_ids.csv --split_dp data/split/nist20_inchikey
 ```
 
 Scaffold split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_type predefined --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dag_filtering False --proc_dp data/proc/nist20 --predefined_id_type dset_spec_id --predefined_train_id_fp data/split/nist20_scaffold/train_dset_ids.csv --predefined_val_id_fp data/split/nist20_scaffold/val_dset_ids.csv --predefined_test_id_fp data/split/nist20_scaffold/test_dset_ids.csv --split_dp data/split/nist20_scaffold
+python preproc_scripts/04_prepare_split.py --split_type predefined --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types OB OB_F --frag_modes HCD --ion_modes P --dag_filtering False --proc_dp data/proc/nist20 --predefined_id_type dset_spec_id --predefined_train_id_fp data/split/nist20_scaffold/train_dset_ids.csv --predefined_val_id_fp data/split/nist20_scaffold/val_dset_ids.csv --predefined_test_id_fp data/split/nist20_scaffold/test_dset_ids.csv --split_dp data/split/nist20_scaffold
 ```
 
 If you don't want to use the exact splits that we used (just ones with similar statistics), you can use the same script to generate random splits:
@@ -255,13 +265,13 @@ If you don't want to use the exact splits that we used (just ones with similar s
 Inchikey split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_type random --split_key inchikey_s --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
+python preproc_scripts/04_prepare_split.py --split_type random --split_key inchikey_s --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types OB OB_F --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
 ```
 
 Scaffold split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_type random --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
+python preproc_scripts/04_prepare_split.py --split_type random --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types OB OB_F --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
 ```
 
 ### Enveda-180

@@ -40,7 +40,7 @@
 #    MassSpecGym: derived NCE is p99 206, max 1,097; 0.32% of CE-bearing rows clamp at 300 (1.06%
 #    at 200). ace_max 300: no ACE exceeds it (max 296).
 #
-# 4. Vocabularies: all nine adducts; inst_types FT/QTOF/Other/NA (no IT rows exist). Other and
+# 4. Vocabularies: all nine adducts; inst_types OB/QTOF/Other/NA (no IT rows exist). Other and
 #    NA get the 20 ppm / 500 Da loss tolerance that config/spectraverse/fragnnet uses.
 #    frag_modes keeps HCD next to CID, as the MassSpecGym config does.
 #
@@ -152,7 +152,6 @@ spec_params:
   inst_type: true
   inst_types:
   - OB
-  - OB_F
   - QTOF
   - Other
   - NA
@@ -228,9 +227,6 @@ primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   OB:
-    rel: 1.0e-05
-    min_mz: 200.0
-  OB_F:
     rel: 1.0e-05
     min_mz: 200.0
   QTOF:

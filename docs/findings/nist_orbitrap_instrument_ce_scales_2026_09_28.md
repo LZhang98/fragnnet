@@ -5,9 +5,9 @@
 > and the Orbitrap Fusion Lumos. For the same molecule their spectra differ well beyond
 > same-instrument repeat variation. Part of the difference is a mass-dependent energy offset;
 > part remains at the best-matching energy. MASSter `c0` under-fragments Lumos val spectra, and
-> no energy relabel at inference fixes it. **Implemented (uncommitted):** `inst_type` now
-> labels Orbitraps `OB` / `OB_F` and `FT` is retired (§7); NIST20/NIST23 are relabelled locally,
-> and the template's `ace_max` is 460. No arm has been trained.
+> no energy relabel at inference fixes it. **Implemented:** `inst_type` now labels Orbitraps
+> `OB` / `OB_F` and `FT` is retired (§7); NIST20/NIST23 are relabelled locally from their raw
+> MSP instrument fields, and the template's `ace_max` is 460. No arm has been trained.
 > **Revisions:** same-molecule tests use NIST23's recorded instrument labels with
 > same-instrument null controls. NIST23 turned out to have doubled the negative-mode Elite NCE,
 > which reverses the negative-mode reading. Five earlier claims are withdrawn (§Withdrawn).
@@ -51,18 +51,23 @@
    the recorded eV equals the Elite recorded eV at the matched energy (ratio 0.99, 440 spectra).
    `Met_Lumos`, the bulk of NIST20's Lumos, records no eV, and `Met_Lumos2` cannot be tested
    (1 molecule).
-6. **MASSter `c0` under-fragments Lumos spectra of new molecules** (§4). With labels matched to
-   NIST23:
-   - Val cosine is 0.742 on Elite against 0.687 on Lumos; the gap is +0.054 after matching NCE
+6. **MASSter `c0` under-fragments Lumos spectra of new molecules** (§5). With NIST20's raw
+   instrument labels:
+   - Val cosine is 0.745 on Elite against 0.688 on Lumos; the gap is +0.053 after matching NCE
      bin, novelty and m/z.
    - Lumos precursor-fraction bias is +0.092; train shows none.
-   - Relabelling the input at inference does not fix it (§5). An Elite-equivalent NCE costs
+   - Relabelling the input at inference does not fix it (§6). An Elite-equivalent NCE costs
      −0.006 net, and an eV-derived NCE costs −0.039 and flips the bias to −0.066.
    - A fix needs an instrument input at training time.
 7. **NIST23 doubled the NCE of Elite and Velos negative-mode spectra, and kept their eV** (§2).
    - Matched spectrum for spectrum (molecule, adduct, m/z and eV), NCE_NIST23 / NCE_NIST20 is
-     2.00 for 163,246 Elite negative-mode spectra; only 0.8% are unchanged. Positive mode and
-     the Lumos are unchanged (1.00).
+     2.00 for 163,246 Elite negative-mode spectra; only 0.8% are unchanged. By NIST# in the two
+     raw exports, the collision-energy string is identical for 8.8% of Elite negative-mode
+     spectra and for 100% of Lumos spectra.
+   - Elite positive mode is 95.2% identical. NIST23 raised the other 24,191 by one ladder step
+     (45 → 50, 65 → 75, 95 → 110; median ×1.13) and kept the eV. For those the eV fits
+     `floor(conversion)` at neither NCE (`[M+H]+`: 21% on NIST20's, 37% on NIST23's, against 95%
+     for unchanged spectra), so which NCE is right is open.
    - So NIST23's "eV = ½ × conversion" is a doubled NCE, not a halved eV. The eV is the same
      in both releases, and it matches the Lumos eV at the matched energy (0.97).
    - The NIST23 NCE values above 200 (28,298 spectra, 1.8% of FT/HCD) are these doubled
@@ -82,16 +87,22 @@ column's gap in the right panel.*
   splits unless stated. NIST23 instrument, raw CE string and `Notes` (campaign
   `Data_source`, `Vial_ID`, `Nreps`) come from `data/df/nist23_hr_df.csv` (`inst`, `col_energy`,
   `notes`), joined on `dset_spec_id` = NIST# (96.4% of FT/HCD rows; the rest are contributed
-  libraries). `data/raw/nist_20` is empty in this checkout.
-- **NIST20 instrument labels** are taken from NIST23.
-  - A NIST20 spectrum takes the NIST23 instrument of spectra with the same InChIKey block 1,
-    adduct, NCE and precursor m/z (2 dp), when those agree. This covers 84.8% of NIST20
-    `[M+H]+` FT/HCD, with 0.1% ambiguous.
-  - An eV-record rule is used only for the census in §2: floor/round eV → Elite; eV above the
+  libraries).
+- **NIST20 instrument labels.** NIST20 comes from the raw export
+  `data/raw/nist_20/nist_20_hr_msms.zip` (re-exported 2026-09-28, 1,019,986 records, joined on
+  NIST#). The export lacks 5,537 of the processed spectra; NIST23 names them by the same NIST#,
+  all Lumos. NIST# is stable across releases: 1,011,493 records are in both, and none changes
+  instrument. The 142,175 `mona23` rows of `data/proc/nist20` (MoNA 2023) name no model.
+  - Until the export arrived, NIST20 labels were inferred, and two sets are still used below.
+    One takes the NIST23 instrument of spectra with the same InChIKey block 1, adduct, NCE and
+    precursor m/z (2 dp). The other is an eV-record rule: floor/round eV → Elite; eV above the
     conversion, or a NIST spectrum with no eV → Lumos.
-  - Against the matched labels, 97% of rule-Lumos spectra are Lumos. But the rule calls an
-    Elite high-NCE add-on series (NCE 95/115, eV about 4% above the conversion) Lumos, and
-    Velos spectra Elite.
+  - On NIST20 `[M+H]+` FT/HCD (291,981), the eV rule labels 87.1% and is 97.0% right where it
+    labels. The NIST23 match labels 84.8% and is 97.9% right. The rule calls an Elite high-NCE
+    add-on series (NCE 95/115, eV about 4% above the conversion) Lumos, and 91% of Velos spectra
+    Elite.
+  - The eV-rule labels feed the §2 census, the §4 table and the §5 figure. The NIST23-matched
+    labels feed §6. The §5 table uses the raw field.
 - **Fragmentation extent**, on a unit-normalized peak list:
   - *precursor fraction* is the intensity within max(0.01 Da, 10 ppm) of the precursor m/z;
   - *deep* is the intensity below half the precursor m/z;
@@ -127,7 +138,7 @@ NIST23 HR-MS/MS by raw `Instrument` field:
 - All three Orbitraps record `res` 4 and N2, so `res` and `col_gas` cannot separate them.
 - NIST20 holds 79% of NIST23's `Met_Lumos` and 68% of `Met_Lumos2` FT/HCD spectra, but 0.7% of
   `Met_Lumos1a`.
-- Lumos rises from 25% of `[M+H]+` FT/HCD in NIST20 (72,608, rule label) to 35% in NIST23
+- Lumos rises from 25% of `[M+H]+` FT/HCD in NIST20 (72,357, raw field) to 35% in NIST23
   (173,992).
 - NIST's Elite and Lumos campaigns mostly measured different molecules. NIST23 has 105
   `[M+H]+`, 67 `[M-H]-` and 32 `[M+Na]+` molecules on both instruments.
@@ -166,7 +177,8 @@ sees:
   NIST20's NCE, with the same eV (spectra matched on molecule, adduct, m/z and eV:
   NCE ratio 2.00, 10th-90th percentile 2.00-2.25, 163,246 spectra). That is why their eV reads
   as ½ × conversion in NIST23. NIST20's NCE and both releases' eV agree with the Lumos
-  (§3.2). Which NCE the instrument was actually set to cannot be told from the data.
+  (§3.2). Which NCE the instrument was actually set to cannot be told from the data. NIST23
+  also moved 4.8% of Elite positive-mode spectra up one NCE ladder step (Answer item 7).
 - **Energy maxima.**
   - Recorded FT eV reaches 457 (NIST20) and 375 (NIST23; 376.4 after filling). Under
     `embed`/`embed_clamped` everything above `ace_max` shares one row: 3.5% (NIST20) and 3.9%
@@ -314,21 +326,22 @@ Cosine is on 0.01 Da bins, per-molecule means (molecules in brackets).
 
 ![c0 per NCE](../figures/masster_c0_elite_vs_lumos_per_nce.png)
 
-*(The figure uses the eV-rule labels. With matched labels the numbers below change by less than
-0.003.)*
+*(The figure uses the eV-rule labels; the table uses the raw instrument field. Every `c0` val
+spectrum has a NIST#. With the NIST23-matched labels used before, which left 4,890 val spectra
+unlabelled, the Lumos column read 0.6872 / +0.0921 / +0.0512.)*
 
-| NIST20 `[M+H]+`, matched labels | Elite | Lumos | Velos | unlabelled |
-| --- | ---: | ---: | ---: | ---: |
-| val spectra / molecules | 32,383 / 2,679 | 13,512 / 1,177 | 1,235 / 91 | 4,890 / 601 |
-| val cosine | 0.7424 [0.7352, 0.7506] | **0.6872** [0.6760, 0.6975] | 0.7086 | 0.7634 |
-| val precursor-fraction bias | −0.0002 [−0.0039, +0.0035] | **+0.0921** [+0.0868, +0.0971] | −0.0003 | +0.0002 |
-| val centroid bias | −0.0093 [−0.0119, −0.0069] | **+0.0512** [+0.0472, +0.0552] | −0.0269 | −0.0082 |
-| train-sample cosine | 0.9140 | 0.9168 | 0.8824 | 0.9167 |
-| train precursor-fraction bias | +0.0066 | +0.0054 | +0.0003 | +0.0061 |
+| NIST20 `[M+H]+`, raw instrument | Elite | Lumos | Velos |
+| --- | ---: | ---: | ---: |
+| val spectra / molecules | 36,864 / 2,952 | 13,710 / 1,173 | 1,446 / 104 |
+| val cosine | 0.7450 [0.7383, 0.7518] | **0.6880** [0.6777, 0.7002] | 0.7166 |
+| val precursor-fraction bias | −0.0008 [−0.0044, +0.0022] | **+0.0923** [+0.0871, +0.0979] | +0.0008 |
+| val centroid bias | −0.0095 [−0.0117, −0.0074] | **+0.0515** [+0.0482, +0.0548] | −0.0272 |
+| train-sample cosine | 0.9143 | 0.9166 | 0.8845 |
+| train precursor-fraction bias | +0.0066 | +0.0055 | +0.0003 |
 
 - **The gap is not the molecules.** Reweighting Elite cells to Lumos's NCE-bin × novelty-bin ×
-  m/z-quartile mix (all Lumos weight covered) leaves the Elite − Lumos val cosine gap at +0.054
-  (raw +0.055). The precursor-fraction bias difference stays −0.090.
+  m/z-quartile mix (all Lumos weight covered) leaves the Elite − Lumos val cosine gap at +0.053
+  (raw +0.057). The precursor-fraction bias difference stays −0.090 (raw −0.093).
 - **Generalization, not fit.** On train molecules the Lumos bias is gone and cosine is equal.
   For a new molecule the energy response follows the Elite majority, even at the Lumos-only
   codes 9 and 14 (+0.19 bias).
@@ -338,7 +351,9 @@ Cosine is on 0.01 Da bins, per-molecule means (molecules in brackets).
 ## 6. Inference probes: relabel the Lumos input
 
 All Lumos val spectra were run through `c0` with only `spec_nce` changed. Base runs reproduce
-the collected cosines (mean |diff| < 10⁻⁵).
+the collected cosines (mean |diff| < 10⁻⁵). The probes predate the raw NIST20 labels: by the raw
+field, 13,439 of the 13,512 matched-label spectra and 13,706 of the 13,783 rule-label spectra
+are Lumos, and the rest are Elite or Velos.
 
 | Lumos val | cosine | precursor-fraction bias |
 | --- | ---: | ---: |
@@ -359,7 +374,7 @@ the collected cosines (mean |diff| < 10⁻⁵).
   all val. The snap used the withdrawn NIST20 equivalence estimates, which put the same snapped
   input as NIST23's at every Lumos value except 130.
 
-## 7. Instrument labels `OB` / `OB_F` (implemented 2026-09-28, uncommitted)
+## 7. Instrument labels `OB` / `OB_F` (implemented 2026-09-28)
 
 `inst_type` now says which Orbitrap: `OB_F` is the Orbitrap Fusion family (NIST's Lumos), and
 `OB` is every other Orbitrap (Elite, Velos, and Orbitraps with no model recorded). `FT` is
@@ -367,24 +382,38 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
 
 - **Preprocessing.** `parse_inst_info` (`src/fragnnet/utils/data_utils.py`) maps every Orbitrap
   string to `OB`, and to `OB_F` when the instrument field contains "Fusion".
+  `01_prepare_df.py` streams an MSP from a plain, `.gz` or `.zip` file (a 5,000-record NIST20
+  sample parses identically to the old reader in all three forms).
 - **Existing data.** `preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py`
   relabels a `spec_df.pkl` in place after a byte copy
   ([usage](../../preproc_scripts/README.md#relabelling-existing-orbitrap-spectra-ft--ob--ob_f-2026-09-28)).
-  - NIST23 uses the raw MSP instrument field.
-  - NIST20 is matched to the relabelled NIST23 on molecule, adduct, m/z and recorded eV (NCE
-    when there is no eV, since NIST23 changed the negative-mode Elite NCE). The positive-mode
-    eV rule of the Method section covers what does not match.
+  - The label comes from the raw instrument name joined on `dset_spec_id`. `--inst_fp` takes
+    `data/df` tables or raw MSPs in priority order, and FT rows without a name become `OB`.
+  - NIST23 uses `data/df/nist23_hr_df.csv`, which matches the NIST23 raw zip on all 1,934,643
+    records. NIST20 uses its raw export, then NIST23 for the 5,537 NIST# the export lacks.
   - Existing groups are split by instrument, never regrouped, because the stored group ids come
     from a finer key than today's `02_prepare_proc.py`. The first attempt regrouped NIST23 from
     370,613 to 229,271 groups; it was restored from its backup.
+  - Run on the pre-migration backups, the script reproduces both saved `spec_df.pkl` files
+    exactly, labels and groups.
 
   | dataset | OB (evidence) | OB_F (evidence) | groups |
   | --- | --- | --- | --- |
   | NIST23 | 1,016,119 instrument field + 66,528 unnamed | 703,626 instrument field | 370,613 → 370,894 |
-  | NIST20 | 706,760 NIST23 match + 46,335 eV rule + 28,154 unnamed | 242,090 NIST23 match + 6,659 eV rule | 212,096 → 213,059 |
+  | NIST20 | 712,969 instrument field + 65,703 unnamed (MoNA 2023) | 251,326 instrument field (5,537 via NIST23) | 212,096 → 212,366 |
 
-  In NIST20 `[M+H]+` HCD, OB spectra have eV/conversion 0.99 and 3% on Lumos-only NCE values.
-  OB_F spectra have 67% no eV, eV/conversion 1.62 where recorded, and 65% on Lumos-only values.
+  - **NIST20's first relabel was inferred, and it was replaced.** It used a NIST23 match on
+    molecule, adduct, m/z and eV, then the eV rule, before the export arrived. Checked against
+    the export, 6,607 of 958,758 labels (0.69%) were wrong:
+    - 4,379 defaulted to `OB` but are Lumos: negative-mode HCD and ion-trap CID, which the rule
+      skipped.
+    - 732 came from the eV rule: 8.3% of its `OB_F` calls and 0.4% of its `OB` calls.
+    - 1,496 came from the NIST23 match.
+
+    Its 65,207 MoNA "matches" found the same MoNA 2023 rows in `data/proc/nist23`, which name no
+    instrument either, so they carried no evidence. They are `OB` either way. The file was
+    restored from its backup and relabelled from the export; the inferred run had split to
+    213,059 groups.
 - **Code tables.** The `FT` entries of the instrument tolerance tables (`clean_spectra_utils`,
   `isotope_utils`, `03_prepare_dag_feats.py`, `no_dag_exp`, 18 eval/stats/plotting scripts) are
   now `OB` and `OB_F`, with the same values. The one-off probes in `scripts/debug` are left as
@@ -395,18 +424,27 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
 - **Guards.** `load_config` raises on any `FT` key or list item. `BaseDataset` raises on a
   `spec_df` with `FT` rows and names the migration script. So an old config or an unmigrated
   dataset fails loudly; it cannot silently fall back to default tolerances or skip CE filters.
+- **Spectraverse and MSGYM** record only a generic type (`orbitrap` / `Orbitrap`) and no model,
+  so every Orbitrap there is `OB`. The local `spectraverse`, `ms_gym_all_1_5`,
+  `ms_gym_benchmark_1` and `ms_gym_benchmark_1_5` are relabelled: 290,183, 172,041, 81,313 and
+  81,313 FT rows become `OB`, and every other column and group id is unchanged.
+  - The 71 Spectraverse/MSGYM configs that list instruments no longer list `OB_F`. Each file was
+    checked to parse to the original minus `OB_F`, and every `OB_F` value was a copy of `OB`.
+  - 91 Spectraverse configs inherit the template's `[OB, OB_F]` with the instrument embedding
+    off, so `OB_F` only filters and matches nothing.
 - **What breaks.** Checkpoints trained with `inst_types: [FT]` cannot run on relabelled data.
-  Other local datasets (MSGYM, Spectraverse, PCDL and NIST23 derivatives) still say `FT` until
-  migrated, and so does the cluster's copy of NIST20/NIST23.
+  Other local datasets (PCDL and the NIST23 derivatives) still say `FT` until migrated, and so
+  do the cluster copies.
 - **Model effect.** MASSter embeds `inst_type` whenever `spec_params.inst_type` is true, as in
   `c0`/`n4`. Before, that embedding had one class and carried nothing. Now it has two: a
   2,000-spectrum NIST20 val sample reads `OB` 1,462 / `OB_F` 538.
   - A 2-epoch local smoke of `n4` on relabelled NIST20 exits 0 (val cosine 0.074 → 0.229).
   - Rerunning `n4` now is the instrument-input arm, and new `c0`/`n4` runs are not comparable to
     the old ones.
-- **Tests.** `tests/test_orbitrap_inst_type.py` (20 tests) covers the mapping, the three
-  evidence sources, group splitting, the match key and both guards. The full suite passes
-  (4663 passed, 1 skipped, 2 xfailed).
+- **Tests.** `tests/test_orbitrap_inst_type.py` (22 tests) covers the mapping, reading names
+  from tables and raw MSPs (first source wins, conflicting ids refused), group splitting, the
+  end-to-end migration with its backup, and both guards. `tests/test_01_prepare_df.py` covers
+  `.gz`/`.zip` MSP input.
 
 ## Implications
 
@@ -464,6 +502,8 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
   NCE, so it paired different spectra.
 - **"In negative mode the Elite needs about 2.2× the Lumos NCE."** That is NIST23's doubled
   label. On NIST20's NCE, negative mode behaves like positive mode.
+- **The inferred NIST20 instrument labels** (NIST23 match + eV rule, first relabel). They were
+  replaced by the raw export's instrument field; 0.69% were wrong (§7).
 
 ## Limits
 
@@ -481,7 +521,11 @@ Local and git-ignored: [output/ev_ladder_census_2026_09_28/](../../output/ev_lad
 
 - Census: `ladder_census.py`, `ev_rule.py`, `ladder_x_rule.py`, `instrument_join.py`,
   `load_hr_df_meta.py`, `ce_max.py`, `plot_ev_census.py`.
-- Labels: `nist20_labels_from_nist23.py` (+ `_log.txt`).
+- Labels: `nist20_labels_from_nist23.py` (+ `_log.txt`, superseded).
+- Raw NIST20: `extract_nist20_raw_inst.py`, `nist20_raw_vs_inferred.py` (+ `_breakdown.py`),
+  `nist20_vs_nist23_by_nist_no.py`, `nist23_elite_pos_nce_change.py` (+ `_log.txt`),
+  `nist20_raw_labels.py` (+ `_log.txt`, §5 table), `verify_migration_v2.py` (+ `.log`),
+  `relabel_nist20_from_msp.log`.
 - Same molecule (NIST23): `paired_series_shift.py`, `grid_point_check.py`,
   `tolerance_check.py`, `best_match_control.py`, `matched_energy_shape.py`,
   `lumos_equivalent_nce_nist23.py`, `acquisition_stats.py`, `plot_how_different.py`, each with

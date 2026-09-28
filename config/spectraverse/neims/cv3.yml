@@ -42,7 +42,6 @@ spec_params:
   inst_type: True
   inst_types:
     - "OB"
-    - "OB_F"
     - "QTOF"
     - 'IT'
     - "Other"

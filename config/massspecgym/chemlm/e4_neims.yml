@@ -45,7 +45,6 @@ spec_params:
   inst_type: true
   inst_types:
   - OB
-  - OB_F
   - QTOF
   preprocess: true
 mol_params:
