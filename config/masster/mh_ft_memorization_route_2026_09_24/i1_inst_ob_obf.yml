@@ -12,9 +12,12 @@
 # at inference failed (-0.006 and -0.039), so the instrument must be an input at training time.
 # Finding: docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md
 #
-# DATA IDENTITY: the relabel is local and on each cluster copy separately. Before training, the
-# migration must report OB 712,969 (instrument field) + 65,703 (unnamed MoNA), OB_F 251,326, and
-# groups 212,096 -> 212,366 (preproc_scripts/README.md, "Relabelling existing Orbitrap spectra").
+# DATA IDENTITY: spec_df.pkl is the only NIST20 spec_df; no FT copy is kept. It is the local
+# file after the 2026-09-28 relabel (preproc_scripts/README.md, "Relabelling existing Orbitrap
+# spectra"), uploaded over each cluster copy, md5 bdc009bbeaf6a38d126326d127630cad: OB 778,672
+# (712,969 by instrument field + 65,703 unnamed MoNA), OB_F 251,326, 212,366 groups. It pairs
+# with mol_df.pkl md5 be4b5794040e68f661e6ff165dacb3b0 and data/split/nist20_inchikey
+# (train_ids.csv d8a07ccfcb7e4d80128b441bef7daca9, val_ids.csv 7c870661872e1a2c0ef80a25d2ff44da).
 # group_id is not read here (merge, group_sampler off); splits select by spec_id.
 #
 # CONTROL: n4_nce_fourier (shjgv9im), same config on FT labels; c0_control (vcpho5qm).
