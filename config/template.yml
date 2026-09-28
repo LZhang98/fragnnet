@@ -955,8 +955,10 @@ masster_intensity_transformer_num_inducing_points: 64
 # Candidate contextualization topology. induced routes every candidate exchange through
 # num_inducing_points latents (linear in the candidate count, rank-capped at that count);
 # full uses direct candidate-to-candidate attention (quadratic, exact pairwise interaction)
-# and ignores num_inducing_points.
-masster_intensity_transformer_attention: induced  # ["induced", "full"]
+# and ignores num_inducing_points. none keeps only the feed-forward sublayers: each candidate is
+# scored from its own token, and candidates compete only through the output normalization (the
+# allocator's no-attention floor).
+masster_intensity_transformer_attention: induced  # ["induced", "full", "none"]
 # Normalization placement inside the candidate transformer. "post" is the historical
 # residual form (LN after the skip add); "pre" normalizes the branch input instead, which
 # is the configuration that tolerates a constant LR with no warmup. Parameter counts and
@@ -973,8 +975,15 @@ masster_intensity_mass_pair_bias: False
 # Standard transformer positional encoding with m/z as the position: each candidate token gets
 # sin/cos(m * 10000^(-2i/d)) of its neutral mass m in Da added after the input projection.
 # The shortest wavelength is 2 pi Da, so it resolves nominal mass, not the mass defect. Works with
-# both attention types; no parameters, and the state dict is unchanged.
+# every attention type; no parameters, and the state dict is unchanged.
 masster_intensity_mz_positional_encoding: False
+# Mass-local candidate attention: with a positive window (Da), each candidate attends only to the
+# candidates whose neutral mass is within that distance of its own, itself included. 0 attends
+# over the whole set. A hard -inf mask on the attention logits: no parameters, state dict
+# unchanged. With two layers a candidate reaches up to twice the window. On fa_h4's local val
+# candidate sets (median 256 candidates over 274 Da), 30 Da reaches 29% of the set in one hop and
+# 50% in two; 100 Da reaches 91% in two. Requires attention_type: full.
+masster_intensity_mass_window: 0.0
 # Collision-energy conditioning of the candidate ATTENTION itself, as opposed to the
 # per-candidate token. Both are zero-initialized, so enabling either is a no-op at step 0.
 # `ce_pair_bias` makes the neutral-loss RBF weights a function of collision energy, so
