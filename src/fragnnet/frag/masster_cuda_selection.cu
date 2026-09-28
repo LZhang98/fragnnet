@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 namespace {
-constexpr int META_WIDTH = 13;
+constexpr int META_WIDTH = 15;
 constexpr int STATE_WIDTH = 6;
 
 __device__ bool node_less(
@@ -69,15 +69,29 @@ __device__ int heap_pop(
     return result;
 }
 
+__device__ bool is_extra_forced(
+    const uint64_t* mask, const uint64_t* extra_forced, int extra_count, int words
+) {
+    for (int extra = 0; extra < extra_count; ++extra) {
+        bool equal = true;
+        for (int word = 0; word < words && equal; ++word) {
+            equal = mask[word] == extra_forced[static_cast<int64_t>(extra) * words + word];
+        }
+        if (equal) return true;
+    }
+    return false;
+}
+
 __device__ void emit_learned(
-    const uint64_t* mask, int words, bool force_singles, uint64_t* output,
-    int64_t* prefix, int64_t* state
+    const uint64_t* mask, int words, bool force_singles, const uint64_t* extra_forced,
+    int extra_count, uint64_t* output, int64_t* prefix, int64_t* state
 ) {
     int cuts = 0;
     for (int word = 0; word < words; ++word) cuts += __popcll(mask[word]);
     ++state[1];
     if (cuts == 1) ++state[2];
     if (cuts == 0 || (force_singles && cuts == 1)) return;
+    if (is_extra_forced(mask, extra_forced, extra_count, words)) return;
     const int64_t row = state[3]++;
     for (int word = 0; word < words; ++word) output[row * words + word] = mask[word];
     state[5] += cuts;
@@ -87,7 +101,8 @@ __device__ void emit_learned(
 __global__ void rank_masks(
     const float* logits, const int64_t* metadata, double* all_costs, int* all_bonds,
     double* all_penalties, uint64_t* all_flips, int* all_heaps, uint64_t* all_masks,
-    uint64_t* all_work_words, int64_t* all_state, int64_t* all_prefix, bool force_singles
+    uint64_t* all_work_words, int64_t* all_state, int64_t* all_prefix, bool force_singles,
+    const uint64_t* all_extra_forced
 ) {
     // A literal serial heap per representative is the correctness baseline.
     if (threadIdx.x != 0) return;
@@ -97,6 +112,8 @@ __global__ void rank_masks(
     const int limit = static_cast<int>(meta[2]);
     const int capacity = static_cast<int>(meta[3]);
     const int words = static_cast<int>(meta[4]);
+    const uint64_t* extra_forced = all_extra_forced + meta[13];
+    const int extra_count = static_cast<int>(meta[14]);
     double* costs = all_costs + meta[5];
     int* sorted_bonds = all_bonds + meta[5];
     uint64_t* flips = all_flips + meta[6];
@@ -137,9 +154,11 @@ __global__ void rank_masks(
         sorted_bonds[insertion] = bond;
     }
 
-    // 2. Forced prefix precedes ranked masks in unique-fragment mode.
-    const int forced = 1 + (force_singles ? bonds : 0);
-    for (int row = 0; row < forced; ++row) {
+    // 2. Forced prefix precedes ranked masks in unique-fragment mode. Extra forced masks
+    // (SMARTS template cuts) follow the empty and single-cut masks; the host passes them
+    // deduplicated and never empty or, with forced singles, single-bond.
+    const int base_forced = 1 + (force_singles ? bonds : 0);
+    for (int row = 0; row < base_forced; ++row) {
         for (int word = 0; word < words; ++word) {
             output[static_cast<int64_t>(row) * words + word] = 0;
         }
@@ -150,10 +169,20 @@ __global__ void rank_masks(
         prefix[row + 1] = row;
     }
     prefix[0] = 0;
-    state[3] = forced;
-    state[4] = forced;
-    state[5] = forced - 1;
-    emit_learned(map, words, force_singles, output, prefix, state);
+    int64_t forced_bonds = base_forced - 1;
+    for (int extra = 0; extra < extra_count; ++extra) {
+        const int64_t row = base_forced + extra;
+        for (int word = 0; word < words; ++word) {
+            const uint64_t value = extra_forced[static_cast<int64_t>(extra) * words + word];
+            output[row * words + word] = value;
+            forced_bonds += __popcll(value);
+        }
+        prefix[row + 1] = forced_bonds;
+    }
+    state[3] = base_forced + extra_count;
+    state[4] = base_forced + extra_count;
+    state[5] = forced_bonds;
+    emit_learned(map, words, force_singles, extra_forced, extra_count, output, prefix, state);
     if (bonds == 0 || state[1] == limit) return;
 
     // 3. Heap keys preserve the CPU (penalty, flip-position tuple) order exactly.
@@ -178,7 +207,9 @@ __global__ void rank_masks(
                 remaining &= remaining - 1;
             }
         }
-        emit_learned(current, words, force_singles, output, prefix, state);
+        emit_learned(
+            current, words, force_singles, extra_forced, extra_count, output, prefix, state
+        );
         if (state[1] == limit) break;
         const int next = last + 1;
         if (next >= bonds) continue;
@@ -244,7 +275,8 @@ extern "C" int masster_selection_launch(
             reinterpret_cast<double*>(pointers[4]), reinterpret_cast<uint64_t*>(pointers[5]),
             reinterpret_cast<int*>(pointers[6]), reinterpret_cast<uint64_t*>(pointers[7]),
             reinterpret_cast<uint64_t*>(pointers[8]), reinterpret_cast<int64_t*>(pointers[9]),
-            reinterpret_cast<int64_t*>(pointers[10]), force_singles != 0
+            reinterpret_cast<int64_t*>(pointers[10]), force_singles != 0,
+            reinterpret_cast<const uint64_t*>(pointers[14])
         );
     } else {
         write_csr<<<representatives, 128, 0, stream>>>(

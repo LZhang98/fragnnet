@@ -1251,8 +1251,9 @@ def compute_dags(
             )
         )
         if smarts_prepass:
-            # Post-process: inject SMARTS rearrangement fragments as depth-1
-            # children of the root.  compute_frags.compute_ccs runs unchanged
+            # Post-process: inject SMARTS rearrangement fragments as root children
+            # at node depth 2 (see _inject_smarts_pairs_into_dag).
+            # compute_frags.compute_ccs runs unchanged
             # (preserving ring-opening via its n_ccs=1 path), and the SMARTS
             # pairs are merged in afterwards.  No further BFS expansion of the
             # SMARTS fragments is needed because their sub-fragments are already

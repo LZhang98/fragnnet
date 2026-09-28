@@ -1,8 +1,53 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-27
+> **Status:** REFERENCE · **Updated:** 2026-09-28
 
 ## Current handoff
+
+**MASSter SMARTS templates enabled on the CUDA backend, audited and trimmed (2026-09-27);
+uncommitted, arm `t1` not submitted.**
+
+- **Port.** The CUDA candidate builder now yields the CPU backend's fields exactly, SMARTS rows
+  included. With SMARTS off, the path is bit-identical, so `c0` and existing configs are
+  unaffected. The mechanism head now scores only masks with a template instead of every
+  retained mask; the values are unchanged.
+- **Under `c0`**, which is selection-only, the mechanism head never reaches predictions. SMARTS
+  = forced template cuts + disconnected template sides as new fragments.
+- **Reach probe** on `c0` val, 6,804 (spectrum, template) pairs:
+  - the pool already holds 71% of the 2-3-cut neutral-loss cuts, and 98-100% of those whose
+    product explains intensity;
+  - it holds 13% of the 4-cut ring-rule cuts, and 78% of them rank past the 4,096 budget.
+  - Coverage beyond the pool: neutral-loss products add +0.196% over random fragments (95%
+    CI 0.089-0.333). Forced ring cuts and duplicate cuts equal random; ring byproducts fall
+    below it.
+- **Registry fixed (shared, so FraGNNet's prepass too).** The sulfoxide rule matches the
+  standardizer's `[S+][O-]` (120 of 120 NIST20 sulfoxides, from 0). Both anthraquinone rules
+  keep every mirror embedding. The NL H-shift, quinoline, nitramine and depth comments are
+  corrected. No other rule's output changes. Noted in `preproc_scripts/README.md`.
+- **Checks.** The full suite passes (4,607, CUDA included), with new CPU/CUDA parity tests.
+  Local real-data smokes exit 0. The new registry tests pass (430 prepass/SMARTS tests).
+- **MASSter rule set trimmed (user decision).** The ring rules, `aryl_sulfonate_so3` and
+  all-connected duplicate templates are gone, leaving 14 rules, renumbered. 6.1% of
+  `[M+H]+`/FT spectra now carry a template, down from 9.9%. FraGNNet's prepass is unchanged.
+  The full suite passes (4,615).
+- **Eight gated rules added from the documented lists** (MASSter-only, each in its passing
+  polarity; 22 rules now, 8.0% of `[M+H]+`/FT spectra carry a template).
+  - Each rule's product must explain, on its own NIST20 molecules, intensity no connected
+    atom set of the same composition can, beyond a random baseline.
+  - Clear: primary sulfonamide SO2 (`[M-H]-`, +6.4%), primary sulfonamide O transfer
+    (`[M+H]+`, +2.6%), N-acyl sulfonamide O transfer, diacylhydrazine, PFAS sulfonate.
+  - Weak: phenylalanine, tertiary sulfonamide, hydroxamic.
+  - Most other list entries have no NIST20 support.
+  - Existing CO/CO2/HCN/C2H2 rules score exactly zero: a same-formula cut fragment always
+    exists.
+  - Probe: `scripts/debug/debug_masster_smarts_rule_gate.py`. Suite: 4,634 pass.
+- **AIMe's worked examples.** MASSter's plain cuts reach 14 of the 15 annotated fragments.
+  The miss, a hydroxamic-acid NH excision, is at the chance floor in NIST20 (50 molecules), so
+  no rule was added. No rule list in the repo covers it.
+- **Open:** whether to submit
+  [`t1`](../config/masster/mh_ft_smarts_2026_09_27/t1_smarts_templates.yml).
+
+[Finding](findings/masster/masster_smarts_cuda_audit_2026_09_27.md).
 
 **Allocator-route probe on `c0`, `r2`, `nl1`, `nl2` read, and two masks on the allocator's set
 built, `sm1` (message) and `sd1` (keys) (2026-09-27); committed, submitted 19:19 UTC on 09-27

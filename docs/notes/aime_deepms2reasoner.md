@@ -178,3 +178,7 @@ tables are fully specified and are what our 2026-09-20 audit should be read agai
    coverage is already high at 0.1 Da, so the gain would have to come from ranking, not support.
 3. Formula-coordinate inverted indexing is directly reusable for our retrieval work regardless of
    the predictor.
+4. Our coverage of their worked examples (Fig. 2c hydroxamic acid, Fig. 3k biotin) is checked in
+   [`masster_smarts_cuda_audit_2026_09_27.md` §6](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#6-aimes-worked-examples-and-the-other-rule-lists).
+   MASSter's plain cuts reach 14 of the 15 annotated fragments, and excision inside rings needs
+   no rule. The miss is a hydroxamic-acid NH excision, which is at the chance floor in NIST20.

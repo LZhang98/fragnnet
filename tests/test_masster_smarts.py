@@ -16,9 +16,12 @@ from fragnnet.frag.masster_templates import (
     MASSTER_NL_RULES,
     MASSTER_NUM_RULES,
     MassterTemplate,
+    _is_connected,
     build_masster_templates,
     filter_masster_templates,
 )
+from fragnnet.frag.smarts_prepass import FRAG_RULES, NL_RULES
+from fragnnet.utils import data_utils
 
 _CUT_COUNT_WEIGHTS = (0.0, 0.0, 1.0)
 _NEW_RULE_EXAMPLES = (
@@ -46,11 +49,11 @@ def _component_element_counts(mol: Chem.Mol, component: tuple[int, ...]) -> Coun
 
 
 def test_masster_registry_appends_seven_literature_templates() -> None:
-    assert len(MASSTER_FRAG_RULE_NAMES) == 12
-    assert len(MASSTER_NL_RULE_NAMES) == 14
-    assert MASSTER_NUM_RULES == 26
-    assert MASSTER_FRAG_RULE_NAMES[-1] == "pyridyl_carbamate_alkyl_transfer"
-    assert MASSTER_NL_RULE_NAMES[-6:] == tuple(
+    assert len(MASSTER_FRAG_RULE_NAMES) == 3
+    assert len(MASSTER_NL_RULE_NAMES) == 19
+    assert MASSTER_NUM_RULES == 22
+    assert MASSTER_FRAG_RULE_NAMES[0] == "pyridyl_carbamate_alkyl_transfer"
+    assert MASSTER_NL_RULE_NAMES[7:13] == tuple(
         rule_name for rule_name, _ in _NEW_RULE_EXAMPLES[1:]
     )
 
@@ -292,15 +295,17 @@ def test_new_rules_attach_to_candidate_masks_as_distinct_mechanisms(
     assert (candidates.component_mechanism_indices == mechanism_index).sum().item() == 2
 
 
-def test_new_rule_indices_append_without_reassigning_existing_rules() -> None:
+def test_literature_rule_indices_follow_the_shared_rules() -> None:
+    # The 2026-09-27 drop of the ring rules and aryl_sulfonate_so3, and the gated rules added
+    # the same day, renumbered these; no SMARTS checkpoint existed to reassign.
     expected_indices = {
-        "pyridyl_carbamate_alkyl_transfer": 20,
-        "n_phenylbenzamide_co_smiles": 21,
-        "methyl_benzoate_co2_transfer": 22,
-        "anisoyl_fluoride_co_f_transfer": 23,
-        "short_haloalkyl_ammonium_c2_transfer": 24,
-        "short_haloalkyl_ammonium_c3_transfer": 25,
-        "n_fluoro_sulfonamide_f_transfer": 26,
+        "pyridyl_carbamate_alkyl_transfer": 8,
+        "n_phenylbenzamide_co_smiles": 11,
+        "methyl_benzoate_co2_transfer": 12,
+        "anisoyl_fluoride_co_f_transfer": 13,
+        "short_haloalkyl_ammonium_c2_transfer": 14,
+        "short_haloalkyl_ammonium_c3_transfer": 15,
+        "n_fluoro_sulfonamide_f_transfer": 16,
     }
 
     for rule_name, smiles in _NEW_RULE_EXAMPLES:
@@ -354,6 +359,57 @@ def test_masster_owns_a_curated_rule_registry() -> None:
     assert "morphinan_ring_cleavage" not in MASSTER_FRAG_RULE_NAMES
     assert "sulfoxide_so_loss" in MASSTER_NL_RULE_NAMES
     assert all(rule.merge_outer_map_nums for rule in MASSTER_FRAG_RULES)
+
+
+def test_masster_drops_the_ring_rules_and_the_single_cut_sulfonate() -> None:
+    # Shared ring-cut rules stay in FRAG_RULES for FraGNNet's prepass, not in MASSter.
+    shared_ring_rules = {
+        "anthraquinone_bis_co_loss",
+        "xanthone_ring_cleavage",
+        "phenoxazine_ring_cleavage",
+        "furanocoumarin_ring_cleavage",
+        "benzopyranone_ring_cleavage",
+        "halogenated_quinoline_ring_cleavage",
+        "benzopyranone_bis_ch_loss",
+        "anthraquinone_ring_c4_plus_ch_loss",
+        "morphinan_amine_arm_loss",
+        "desoxymorphinan_ring_cleavage",
+        "desoxymorphinan_aromatic_core_release",
+    }
+    assert shared_ring_rules <= {rule.name for rule in FRAG_RULES}
+    assert shared_ring_rules.isdisjoint(MASSTER_FRAG_RULE_NAMES)
+    assert MASSTER_FRAG_RULE_NAMES == (
+        "pyridyl_carbamate_alkyl_transfer",
+        "n_acyl_aryl_sulfonamide_carbonyl_o_transfer",
+        "diacylhydrazine_carboxylate_o_transfer",
+    )
+    assert "aryl_sulfonate_so3" in {rule.name for rule in NL_RULES}
+    assert "aryl_sulfonate_so3" not in MASSTER_NL_RULE_NAMES
+    assert not build_masster_templates(Chem.MolFromSmiles("O=c1c2ccccc2oc2ccccc12"))
+
+
+@pytest.mark.parametrize(
+    ("smiles", "expected_rules"),
+    [
+        # Acyclic sulfonamide: the product Ar...NH-Het is disconnected, so it is kept.
+        ("Cc1ccc(S(=O)(=O)Nc2ccccn2)cc1", ["aryl_sulfonamide_so2"]),
+        # Saccharin: Ar and N stay joined through the C(=O) ring, so SO2 extrusion only
+        # repeats the ordinary partition of the same two cuts.
+        ("O=C1NS(=O)(=O)c2ccccc21", []),
+    ],
+)
+def test_templates_repeating_the_ordinary_partition_are_dropped(
+    smiles: str, expected_rules: list[str]
+) -> None:
+    mol = Chem.MolFromSmiles(smiles)
+    templates = build_masster_templates(mol)
+    assert [template.rule_name for template in templates] == expected_rules
+    for template in templates:
+        fragmented = Chem.FragmentOnBonds(
+            mol, list(template.broken_bond_indices), addDummies=False
+        )
+        ordinary = {tuple(sorted(piece)) for piece in Chem.GetMolFrags(fragmented)}
+        assert any(component not in ordinary for component in template.components)
 
 
 def test_masster_candidates_attach_template_as_mechanism_of_same_mask() -> None:
@@ -532,3 +588,129 @@ def test_grouped_smarts_lookup_matches_distinct_view_assembly_and_gradients() ->
     (repeated.mask_log_probabilities * weights).sum().backward()
     (grouped.mask_log_probabilities * weights).sum().backward()
     assert th.equal(grouped_logits.grad, repeated_logits.grad)
+
+
+def test_mechanism_head_scores_only_masks_with_a_template_alternative() -> None:
+    from test_masster_model import _build_batch, _build_model
+
+    from fragnnet.model.bond_fragment_heads import pool_boundary_bond_embeddings
+    from fragnnet.model.masster_model import _segment_logsumexp
+
+    smiles = ("Cc1ccc(S(=O)(=O)Nc2ccccn2)cc1", "CCO", "Oc1ccc(S(=O)(=O)O)cc1")
+    batch = _build_batch(smiles)
+    model = _build_model(batch, max_masks=8, unique_fragment_mode=True, use_smarts_templates=True)
+    model.eval()
+    candidates = build_masster_candidates(
+        th.linspace(-2.0, 2.0, batch.chemical_bond_index.shape[1]),
+        chemical_bond_index=batch.chemical_bond_index,
+        atom_batch_indices=batch.batch,
+        atom_ptr=batch.ptr,
+        max_masks=8,
+        include_single_bond_cuts=True,
+        max_unique_components=8,
+        max_enumerated_masks=32,
+        smarts_templates=tuple(build_masster_templates(Chem.MolFromSmiles(s)) for s in smiles),
+    )
+    generator = th.Generator().manual_seed(3)
+    context_dim = model.mechanism_head.rule_embedding.embedding_dim
+    bond_dim = model.mechanism_head.scorer[0].in_features - 2 * context_dim
+    atom_embeddings = th.randn(batch.num_nodes, bond_dim, generator=generator)
+    context = th.randn(len(smiles), context_dim, generator=generator)
+
+    actual = model._mechanism_log_probabilities(
+        candidates, atom_embeddings, batch.chemical_bond_index, context
+    )
+
+    # Brute force: score every mechanism, then normalize within each mask.
+    bond_embeddings = (
+        atom_embeddings[batch.chemical_bond_index[0]] + atom_embeddings[batch.chemical_bond_index[1]]
+    ) / 2.0
+    num_masks = candidates.mask_log_probabilities.numel()
+    logits = model.mechanism_head(
+        pool_boundary_bond_embeddings(
+            bond_embeddings,
+            candidates.mechanism_boundary_bond_indices,
+            candidates.boundary_mechanism_indices,
+            num_components=candidates.num_mechanisms,
+        ),
+        candidates.mechanism_rule_indices,
+        context[candidates.mask_batch_indices[candidates.mechanism_mask_indices]],
+    )
+    expected = logits - _segment_logsumexp(logits, candidates.mechanism_mask_indices, num_masks)[
+        candidates.mechanism_mask_indices
+    ]
+    assert candidates.num_mechanisms > num_masks
+    th.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+    single = th.bincount(candidates.mechanism_mask_indices, minlength=num_masks) == 1
+    assert th.equal(actual[single[candidates.mechanism_mask_indices]], th.zeros(int(single.sum())))
+
+
+# Rules admitted by the 2026-09-27 per-class gate: (rule, standardized positive, admitted
+# precursor type, product heavy-atom composition).
+_GATED_RULE_EXAMPLES = (
+    ("primary_aryl_sulfonamide_so2", "Nc1ccc(S(N)(=O)=O)cc1", "[M-H]-", {"C": 6, "N": 2}),
+    ("tertiary_aryl_sulfonamide_so2", "CN(C)S(=O)(=O)c1ccccc1", "[M+H]+", {"C": 8, "N": 1}),
+    ("primary_aryl_sulfonamide_o_transfer", "Nc1ccc(S(N)(=O)=O)cc1", "[M+H]+", {"C": 6, "N": 1, "O": 1}),
+    ("phenylalanine_carboxyl_o_transfer", "NC(Cc1ccccc1)C(=O)O", "[M+H]+", {"C": 7, "O": 1}),
+    ("hydroxamic_acid_nh_excision", "ONC(=O)c1ccccc1", "[M+H]+", {"C": 7, "O": 2}),
+    (
+        "pfas_sulfonate_f_transfer",
+        "O=S(=O)(O)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F",
+        "[M-H]-",
+        {"S": 1, "O": 3, "F": 1},
+    ),
+    ("n_acyl_aryl_sulfonamide_carbonyl_o_transfer", "CC(=O)NS(=O)(=O)c1ccccc1", "[M-H]-", {"C": 6, "O": 1}),
+    (
+        "diacylhydrazine_carboxylate_o_transfer",
+        "CCc1ccc(cc1)C(=O)NN(C(C)(C)C)C(=O)c1cc(C)cc(C)c1",
+        "[M-H]-",
+        {"C": 9, "O": 2},
+    ),
+)
+
+
+@pytest.mark.parametrize(("rule_name", "smiles", "precursor_type", "product"), _GATED_RULE_EXAMPLES)
+def test_gated_rules_build_their_rearranged_product_on_standardized_molecules(
+    rule_name: str, smiles: str, precursor_type: str, product: dict[str, int]
+) -> None:
+    # Standardized input is what training sees: e.g. hydroxamic acids become ON=C(O)R.
+    mol = data_utils.mol_from_smiles(smiles)
+    templates = [t for t in build_masster_templates(mol) if t.rule_name == rule_name]
+    assert len(templates) == 1
+    endpoints = tuple(zip(*[(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()]))
+    disconnected = [c for c in templates[0].components if not _is_connected(c, endpoints)]
+    assert [dict(_component_element_counts(mol, c)) for c in disconnected] == [product]
+    assert filter_masster_templates(tuple(templates), precursor_type=precursor_type, fragmentation_mode=None)
+    other = "[M+H]+" if precursor_type == "[M-H]-" else "[M-H]-"
+    if rule_name != "tertiary_aryl_sulfonamide_so2":
+        assert not filter_masster_templates(
+            tuple(templates), precursor_type=other, fragmentation_mode=None
+        )
+
+
+@pytest.mark.parametrize(
+    ("rule_name", "smiles"),
+    [
+        # Secondary sulfonamide: the shared aryl_sulfonamide_so2 covers it, not these.
+        ("primary_aryl_sulfonamide_so2", "CNS(=O)(=O)c1ccccc1"),
+        ("primary_aryl_sulfonamide_o_transfer", "CNS(=O)(=O)c1ccccc1"),
+        ("tertiary_aryl_sulfonamide_so2", "CNS(=O)(=O)c1ccccc1"),
+        # Alkyl sulfonamide: no aryl to receive N or O.
+        ("primary_aryl_sulfonamide_so2", "CS(N)(=O)=O"),
+        # Phenylalanine amide and N-acetyl phenylalanine: no free carboxyl or no primary amine.
+        ("phenylalanine_carboxyl_o_transfer", "NC(Cc1ccccc1)C(N)=O"),
+        ("phenylalanine_carboxyl_o_transfer", "CC(=O)NC(Cc1ccccc1)C(=O)O"),
+        # Plain amide and N-methoxy amide: no N-hydroxyl.
+        ("hydroxamic_acid_nh_excision", "NC(=O)c1ccccc1"),
+        ("hydroxamic_acid_nh_excision", "CONC(=O)c1ccccc1"),
+        # Methanesulfonic acid: no perfluorinated alpha carbon.
+        ("pfas_sulfonate_f_transfer", "CS(=O)(=O)O"),
+        # Benzamide: an amide without the sulfonyl.
+        ("n_acyl_aryl_sulfonamide_carbonyl_o_transfer", "CC(=O)Nc1ccccc1"),
+        # Diacylhydrazine without the tert-butyl nitrogen.
+        ("diacylhydrazine_carboxylate_o_transfer", "O=C(NNC(=O)c1ccccc1)c1ccccc1"),
+    ],
+)
+def test_gated_rules_reject_close_negative_structures(rule_name: str, smiles: str) -> None:
+    mol = data_utils.mol_from_smiles(smiles)
+    assert rule_name not in {t.rule_name for t in build_masster_templates(mol)}

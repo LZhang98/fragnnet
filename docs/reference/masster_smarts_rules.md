@@ -2,7 +2,7 @@
 
 > **Status:** Reference and research backlog
 >
-> **Updated:** 2026-09-13
+> **Updated:** 2026-09-27
 
 This document defines which gas-phase rearrangement rules belong in MASSter,
 records the rules currently enabled, and keeps literature candidates separate from
@@ -61,8 +61,21 @@ allowlist.
 
 ## Implemented allowlist
 
-The current registry contains **26 rules: 12 compound-fragment rules and 14
-neutral-loss rules**. These names are the executable source of truth.
+The current registry contains **22 rules: 3 compound-fragment rules and 19
+neutral-loss rules**. These names are the executable source of truth. Eight were added on
+2026-09-27 by the per-class gate described in
+[Rules added by the per-class gate](#rules-added-by-the-per-class-gate-2026-09-27).
+
+On 2026-09-27 MASSter dropped the eleven compound ring-cut rules and `aryl_sulfonate_so3`,
+and it now skips any template whose sides are all connected in the precursor. Evidence,
+from `c0`'s val pool:
+- **Ring rules:** forcing their cuts covers no more target intensity than random fragments
+  of the same size, and their merged byproducts cover less.
+- **Duplicate templates:** a template with every side connected only repeats the ordinary
+  partition of its own cut.
+
+The shared `FRAG_RULES`/`NL_RULES` keep all of them for FraGNNet's prepass
+([finding](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md)).
 
 ### Compound-fragment rules
 
@@ -71,18 +84,9 @@ a new assembly.
 
 | Rule | Restricted scaffold | Candidate added |
 |---|---|---|
-| `anthraquinone_bis_co_loss` | Anthraquinone | Compound loss of both carbonyl oxygens and a flanking-ring C4 unit |
-| `xanthone_ring_cleavage` | Xanthone | Reassembly of the two outer aromatic pieces after central-ring cleavage |
-| `phenoxazine_ring_cleavage` | Phenoxazine | Reassembly of outer aromatic pieces across the N/O central ring |
-| `furanocoumarin_ring_cleavage` | Linear furanocoumarin | Compound cleavage across the fused furan-benzene-pyranone system |
-| `benzopyranone_ring_cleavage` | Coumarin/chromen-2-one | Reassembly following coordinated benzene and lactone-ring cuts |
-| `halogenated_quinoline_ring_cleavage` | Halogenated quinoline | Ring fragment remaining after simultaneous N and benzo-carbon excision |
-| `benzopyranone_bis_ch_loss` | Coumarin/chromen-2-one | Compound loss of one CH from each fused ring |
-| `anthraquinone_ring_c4_plus_ch_loss` | Anthraquinone | Compound loss of one flanking ring plus one CH from the other ring |
-| `morphinan_amine_arm_loss` | Oxide-bridged morphinan | Amine-arm loss compounded with a benzo CH loss |
-| `desoxymorphinan_ring_cleavage` | Non-oxide morphinan | Reassembly across the tetracyclic ring system |
-| `desoxymorphinan_aromatic_core_release` | Non-oxide morphinan | N-free aromatic-core candidate after amine-arm and CH2 loss |
 | `pyridyl_carbamate_alkyl_transfer` | 2-, 3-, or 4-pyridyl O-carbamate | Transfer of Me, Et, or nBu to the pyridyl-O residue |
+| `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | N-acyl arylsulfonamide, `[M-H]-` | Phenoxide of the arylsulfonyl ring and the amide carbonyl O |
+| `diacylhydrazine_carboxylate_o_transfer` | N'-tert-butyl diacylhydrazine, `[M-H]-` | `[R1CO2]-` with the opposite amide O |
 
 ### Neutral-loss rules
 
@@ -93,9 +97,8 @@ mass. This distinction is essential when the retained atoms require a new assemb
 |---|---|---|---:|
 | `aryl_sulfonamide_so2` | Aryl sulfonamide | SO2 removal with new Ar-N assembly | 63.9619 |
 | `aryl_sulfonate_so2` | Aryl sulfonate | SO2 removal with new Ar-O assembly | 63.9619 |
-| `aryl_sulfonate_so3` | Aryl sulfonate | Direct SO3 loss | 79.9568 |
 | `n_nitramine_n2o` | N-nitramine | N2O loss with retained-atom reassembly | 44.0010 |
-| `sulfoxide_so_loss` | Dialkyl/diaryl sulfoxide | SO loss with new C-C assembly | 47.9669 |
+| `sulfoxide_so_loss` | Dialkyl/diaryl sulfoxide, `S=O` or `[S+][O-]` | SO loss with new C-C assembly | 47.9669 |
 | `diarylvinyl_c2h2_loss` | Acyclic diarylethylene | C2H2 loss with new aryl-aryl assembly | 26.0157 |
 | `diaryl_ketone_co_loss` | Diaryl ketone | CO loss with new aryl-aryl assembly | 27.9949 |
 | `aminobenzothiazole_hcn_loss` | 2-Aminobenzothiazole | HCN loss with ring reassembly | 27.0109 |
@@ -105,11 +108,66 @@ mass. This distinction is essential when the retained atoms require a new assemb
 | `short_haloalkyl_ammonium_c2_transfer` | 2-Haloethyl amine/ammonium | C2H4 loss with Cl/Br/I transfer to N | 28.0313 |
 | `short_haloalkyl_ammonium_c3_transfer` | 3-Halopropyl amine/ammonium | C3H6 loss with Cl/Br/I transfer to N | 42.0470 |
 | `n_fluoro_sulfonamide_f_transfer` | N-Fluoroarenesulfonamide | Diagnostic SO2F- product with neutral ArN loss | Variable |
+| `primary_aryl_sulfonamide_so2` | Primary arylsulfonamide, `[M-H]-` | SO2 removal with new Ar-N assembly | 63.9619 |
+| `tertiary_aryl_sulfonamide_so2` | Tertiary arylsulfonamide | SO2 removal with new Ar-N assembly | 63.9619 |
+| `primary_aryl_sulfonamide_o_transfer` | Primary arylsulfonamide, `[M+H]+` | Sulfonyl O transfers to the aryl ring; HNSO leaves | Variable |
+| `phenylalanine_carboxyl_o_transfer` | Phenylalanine, `[M+H]+` | NH3 and CH2CO loss; carboxyl O stays with the benzyl residue | Variable |
+| `hydroxamic_acid_nh_excision` | Hydroxamic acid (either tautomer), `[M+H]+` | NH excision joining the N-hydroxyl O to the carbonyl C | 15.0109 |
+| `pfas_sulfonate_f_transfer` | Perfluoroalkyl sulfonate, `[M-H]-` | FSO3- with an alpha F transferred | Variable |
 
-`aryl_sulfonate_so3` is the one implemented rule whose product atom set is an
-ordinary connected remainder. Keep it under review: it is useful only if forcing its
-cut mask or assigning its rule identity improves coverage or scoring beyond ordinary
-enumeration.
+New rules must match the standardized molecules the model sees, i.e.
+`data_utils.mol_from_smiles` output. The standardizer writes sulfoxides as `[S+][O-]` and
+hydroxamic acids as the hydroximic tautomer `ON=C(O)R`. The old `S=O`-only sulfoxide
+pattern matched no NIST20 molecule for that reason.
+
+## Rules added by the per-class gate (2026-09-27)
+
+Candidates came from the lists in this catalog, the 09-23 audit's variants and AIMe's
+worked example. Each was first counted on standardized NIST20 molecules. Each supported one
+was then scored on every NIST20 spectrum of its molecules, both polarities and both
+instruments:
+- the target intensity its disconnected product explains through MASSter's own channels;
+- counting only peaks that no connected atom set of the same composition can reach;
+- against random disconnected atom sets of the same size.
+
+Each rule is admitted only in the polarity that passes. Existing rules were scored the same
+way, for comparison. Full table:
+[finding §7](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#7-new-rules-from-the-documented-lists).
+
+| Rule | Mode | NIST20 molecules | Beyond random, % of intensity (95% CI) | Strength |
+|---|---|---:|---|---|
+| `primary_aryl_sulfonamide_so2` | `[M-H]-` | 67 | +6.39 (3.71 to 9.59) | clear |
+| `primary_aryl_sulfonamide_o_transfer` | `[M+H]+` | 175 | +2.61 (1.85 to 3.45) | clear |
+| `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | `[M-H]-` | 10 | +5.69 (0.79 to 12.85) | clear |
+| `diacylhydrazine_carboxylate_o_transfer` | `[M-H]-` | 3 | +49.6; at least 1% in 59% of spectra | clear, few molecules |
+| `pfas_sulfonate_f_transfer` | `[M-H]-` | 10 | +1.43 (0.00 to 3.38); at least 1% in 22% | clear, few molecules |
+| `phenylalanine_carboxyl_o_transfer` | `[M+H]+` | 66 | +0.15 (0.00 to 0.36) | weak |
+| `tertiary_aryl_sulfonamide_so2` | both | 174 / 57 | +0.11 / +0.07 | weak |
+| `hydroxamic_acid_nh_excision` | `[M+H]+` | 47 | +0.04 (0.01 to 0.08) | weak |
+
+Candidates not admitted:
+- **No NIST20 support:** `nitrobenzyl_hydroxybenzoate_co2_coupling`,
+  `prazole_sulfone_so2_extraction`, `pyrimidylsulfanyl_benzamide_dual_smiles`,
+  `benzaldimine_hcn_benzyl_transfer`, `dibenzylaniline_benzene_loss_transfer`, and the
+  perfluoroalkyl sulfinate variant.
+- **Three or fewer NIST20 molecules:** `n_aryl_methacrylamide_co_claisen`,
+  `proline_benzyl_ester_n_benzyl_transfer`, `dichlorvos_phosphate_halogen_transfer`,
+  `pirimicarb_pyrimidinyl_carbamate_methyl_transfer`.
+- **Inconclusive:** `n_methylanilinoethanol_o_smiles`, 2 molecules, where the reachability
+  search hit its cap.
+- **Not encoded, product map unresolved:** `sulfonylurea_herbicide_n_o_smiles`
+  (16 molecules) and `benzyl_phenyl_sulfone_benzyl_transfer` (10).
+- **Null:** SO2 loss from primary sulfonamides in `[M+H]+`.
+- **ChemFrag's 32 rearrangement transforms, all closed (2026-09-28):** 26 change no
+  heavy-atom bond. Thioether cyclization (#16) scores below random, and every Wagner–Meerwein
+  fragment has a formula twin
+  ([triage](../findings/masster/chemfrag_rearrangement_triage_2026_09_14.md#unique-coverage-check-2026-09-28)).
+
+Among existing rules, the CO, CO2, HCN and C2H2 losses score exactly zero. Their product
+formula always equals that of some connected atom set, e.g. dropping a different C and O. So
+they add no m/z coverage, only a more plausible explanation. The sulfonyl and nitramine
+rules are unique because their loss removes a bridging heteroatom that no other cut can
+remove while leaving the rest connected.
 
 ## Literature additions implemented in 2026-08
 

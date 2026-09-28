@@ -10,12 +10,21 @@ import torch as th
 
 from fragnnet.frag.masster_candidates import _merge_forced_masks
 from fragnnet.frag.masster_core import build_component_arrays_raw, top_mixture_bond_sets_raw
-from fragnnet.frag.masster_cuda_selection import _prepare_layout, rank_batch_cuda
+from fragnnet.frag.masster_cuda_selection import (
+    _extra_forced_words,
+    _prepare_layout,
+    rank_batch_cuda,
+)
 
 _CUDA = pytest.mark.skipif(not th.cuda.is_available(), reason="CUDA device unavailable")
 
 
-def _compare(logits: list[np.ndarray], limit: int, force_single: bool) -> None:
+def _compare(
+    logits: list[np.ndarray],
+    limit: int,
+    force_single: bool,
+    extra_forced: list[list[tuple[int, ...]]] | None = None,
+) -> None:
     values = [np.asarray(row, dtype=np.float32) for row in logits]
     device_logits = th.from_numpy(np.concatenate(values)).cuda().requires_grad_()
     original_logits = device_logits.clone()
@@ -24,6 +33,7 @@ def _compare(logits: list[np.ndarray], limit: int, force_single: bool) -> None:
         [len(row) for row in values],
         ranked_mask_budget=limit,
         include_single_bond_cuts=force_single,
+        extra_forced_bond_sets=extra_forced,
     )
     assert result.mask_ptr.dtype == th.int64 and result.mask_ptr.device.type == "cuda"
     assert result.broken_bonds.dtype == th.int32 and result.broken_bonds.device.type == "cuda"
@@ -38,13 +48,16 @@ def _compare(logits: list[np.ndarray], limit: int, force_single: bool) -> None:
         forced = [()]
         if force_single:
             forced.extend((bond,) for bond in range(len(row)))
+        base_forced_count = len(forced)
+        if extra_forced is not None:
+            forced.extend(extra_forced[index])
         expected_ptr, expected_bonds, forced_count = _merge_forced_masks(
             learned_ptr,
             learned_bonds,
             forced,
             np.diff(learned_ptr),
             len(learned_ptr) - 1,
-            len(forced),
+            base_forced_count,
             True,
         )
         actual_ptr = result.mask_ptr[ptr_offset : ptr_offset + counts.num_masks + 1]
@@ -105,6 +118,64 @@ def test_cuda_selection_reachable_state_and_memory_bounds() -> None:
     assert numpy_scratch == scratch
     with pytest.raises(ValueError, match="requires CUDA logits"):
         rank_batch_cuda(th.zeros(1), [1], ranked_mask_budget=2, include_single_bond_cuts=True)
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ([[()]], "extra forced masks"),
+        ([[(1,)]], "extra forced masks"),
+        ([[(2, 1)]], "extra forced masks"),
+        ([[(0, 5)]], "extra forced masks"),
+        ([[(0, 1), (0, 1)]], "extra forced masks"),
+        ([[], []], "one sequence per representative"),
+    ],
+)
+def test_cuda_selection_rejects_invalid_extra_forced_masks(
+    extra: list[list[tuple[int, ...]]], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _extra_forced_words([5], extra, True)
+
+
+def test_cuda_selection_packs_extra_forced_masks_into_bit_words() -> None:
+    counts, words = _extra_forced_words([3, 70, 0], [[(0, 2)], [(1, 64), (0,)], []], False)
+    assert counts == [1, 2, 0]
+    assert words.view(np.uint64).tolist() == [0b101, 0b10, 1, 1, 0]
+    meta, _, _ = _prepare_layout([3, 70, 0], 16, False, 512 * 1024**2, counts)
+    assert meta[:, 13].tolist() == [0, 1, 5]
+    assert meta[:, 14].tolist() == counts
+    assert meta[:, 10].tolist() == [10, 19, 2]
+
+
+@_CUDA
+@pytest.mark.parametrize("force_single", [False, True])
+@pytest.mark.parametrize("limit", [1, 17, 257])
+def test_cuda_selection_extra_forced_masks_match_cpu_forced_merge(
+    force_single: bool, limit: int
+) -> None:
+    rng = np.random.default_rng(907)
+    rows, extra = [], []
+    for size in [0, 1, 2, 3, 7, 30, 64, 65, 129]:
+        row = rng.normal(size=size).astype(np.float32)
+        rows.append(row)
+        # Include learned-pool duplicates: the top masks by probability are the likeliest.
+        learned_ptr, learned_bonds = top_mixture_bond_sets_raw(
+            row.astype(np.float64)[:, None], np.zeros(1), 4, 0.0, 0.0
+        )
+        bond_sets = {
+            tuple(learned_bonds[start:end].tolist())
+            for start, end in itertools.pairwise(learned_ptr)
+            if end - start >= 2
+        }
+        for _ in range(3):
+            if size >= 2:
+                cuts = int(rng.integers(2, min(size, 5) + 1))
+                bond_sets.add(tuple(sorted(rng.choice(size, size=cuts, replace=False).tolist())))
+        if not force_single and size >= 1:
+            bond_sets.add((int(rng.integers(size)),))
+        extra.append(sorted(bond_sets))
+    _compare(rows, limit, force_single, extra)
 
 
 @_CUDA

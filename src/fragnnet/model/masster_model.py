@@ -1562,12 +1562,11 @@ class MassterModel(nn.Module):
                 proposal_num_mixtures != 1
                 or not unique_fragment_mode
                 or min_mask_relative_probability != 0.0
-                or use_smarts_templates
             )
         ):
             raise ValueError(
-                "CUDA candidates require one mixture, unique mode, zero mask probability "
-                "floors and SMARTS disabled; select candidate_backend='cpu' for other modes"
+                "CUDA candidates require one mixture, unique mode and zero mask probability "
+                "floors; select candidate_backend='cpu' for other modes"
             )
         if charge_pooling not in {"logsumexp", "logmeanexp"}:
             raise ValueError(f"unknown charge pooling mode: {charge_pooling}")
@@ -2292,6 +2291,61 @@ class MassterModel(nn.Module):
         )
         return boundary_embeddings * keep_scale
 
+    def _mechanism_log_probabilities(
+        self,
+        candidates: MassterCandidateBatch,
+        proposal_atom_embeddings: th.Tensor,
+        chemical_bond_index: th.Tensor,
+        mechanism_context: th.Tensor,
+    ) -> th.Tensor:
+        """Return each mechanism's log-probability within its cut mask.
+
+        A mask whose only mechanism is the ordinary one has log-probability exactly 0, so
+        the SMARTS head scores only the mechanisms of masks that also carry a template.
+        Scoring every retained mask (about 1,400 per spectrum at the production budget)
+        would give the same values at the cost of a head pass per mask.
+
+        Args:
+            candidates: Candidate batch with ``num_mechanisms`` mechanisms over
+                ``mask_log_probabilities.numel()`` masks.
+            proposal_atom_embeddings: Proposal-side atom embeddings, shape ``(N, D)``.
+            chemical_bond_index: Chemical bond endpoints, shape ``(2, E)``.
+            mechanism_context: Proposal context per spectrum, shape ``(B, C)``.
+
+        Returns:
+            Mechanism log-probabilities, shape ``(num_mechanisms,)``; they
+            log-sum-exp to zero within every mask.
+        """
+        num_masks = candidates.mask_log_probabilities.numel()
+        if candidates.num_mechanisms == num_masks:
+            return candidates.mask_log_probabilities.new_zeros(num_masks)
+        mechanism_counts = th.bincount(candidates.mechanism_mask_indices, minlength=num_masks)
+        contested = th.nonzero(mechanism_counts[candidates.mechanism_mask_indices] > 1).squeeze(1)
+        contested_positions = th.full_like(candidates.mechanism_mask_indices, -1)
+        contested_positions[contested] = th.arange(contested.numel(), device=contested.device)
+        boundary_positions = contested_positions[candidates.boundary_mechanism_indices]
+        boundary_keep = th.nonzero(boundary_positions >= 0).squeeze(1)
+        proposal_bond_embeddings = (
+            proposal_atom_embeddings[chemical_bond_index[0]]
+            + proposal_atom_embeddings[chemical_bond_index[1]]
+        ) / 2.0
+        boundary_embeddings = pool_boundary_bond_embeddings(
+            proposal_bond_embeddings,
+            candidates.mechanism_boundary_bond_indices[boundary_keep],
+            boundary_positions[boundary_keep],
+            num_components=contested.numel(),
+        )
+        contested_masks = candidates.mechanism_mask_indices[contested]
+        logits = self.mechanism_head(
+            boundary_embeddings,
+            candidates.mechanism_rule_indices[contested],
+            mechanism_context[candidates.mask_batch_indices[contested_masks]],
+        )
+        log_normalizers = _segment_logsumexp(logits, contested_masks, num_masks)
+        return logits.new_zeros(candidates.num_mechanisms).index_put(
+            (contested,), logits - log_normalizers[contested_masks]
+        )
+
     def _eligible_smarts_templates(
         self,
         templates_by_molecule: tuple[tuple[MassterTemplate, ...], ...],
@@ -2856,31 +2910,11 @@ class MassterModel(nn.Module):
         if self.mechanism_head is None:
             mechanism_log_probabilities = bond_logits.new_zeros(candidates.num_mechanisms)
         else:
-            proposal_bond_embeddings = (
-                proposal_atom_embeddings[mol_pyg.chemical_bond_index[0]]
-                + proposal_atom_embeddings[mol_pyg.chemical_bond_index[1]]
-            ) / 2.0
-            mechanism_boundary_embeddings = pool_boundary_bond_embeddings(
-                proposal_bond_embeddings,
-                candidates.mechanism_boundary_bond_indices,
-                candidates.boundary_mechanism_indices,
-                num_components=candidates.num_mechanisms,
-            )
-            mechanism_batch_indices = candidates.mask_batch_indices[
-                candidates.mechanism_mask_indices
-            ]
-            mechanism_logits = self.mechanism_head(
-                mechanism_boundary_embeddings,
-                candidates.mechanism_rule_indices,
-                mechanism_context[mechanism_batch_indices],
-            )
-            mechanism_log_normalizers = _segment_logsumexp(
-                mechanism_logits,
-                candidates.mechanism_mask_indices,
-                num_masks,
-            )
-            mechanism_log_probabilities = (
-                mechanism_logits - mechanism_log_normalizers[candidates.mechanism_mask_indices]
+            mechanism_log_probabilities = self._mechanism_log_probabilities(
+                candidates,
+                proposal_atom_embeddings,
+                mol_pyg.chemical_bond_index,
+                mechanism_context,
             )
         unique_fragment_effective_count = bond_logits.new_zeros(batch_size)
         unique_fragment_top1_mass_fraction = bond_logits.new_zeros(batch_size)

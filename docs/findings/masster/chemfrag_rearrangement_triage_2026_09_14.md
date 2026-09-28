@@ -1,8 +1,10 @@
 # ChemFrag rearrangement rule triage
 
-> **Status:** FINDING · **Updated:** 2026-09-14 · Symbolic and substructure probes complete; no
-> rule implemented and no coverage measured. Conclusions are about convertibility and scaffold
-> occurrence, not about spectral benefit.
+> **Status:** FINDING · **Updated:** 2026-09-28 · Symbolic and substructure probes complete; no
+> rule implemented. The 2026-09-28 coverage check closes the set: **none of the 32 transforms
+> adds a fragment that plain cuts cannot, and one that explains peaks beyond chance**, including
+> the Wagner–Meerwein Candidate A. See
+> [Unique-coverage check](#unique-coverage-check-2026-09-28).
 
 ## Scope and conclusion
 
@@ -260,3 +262,49 @@ is specifically attributable to isomer-dependent fragmentation.
 - No rule, config, model, or test was changed. No coverage evaluation, training run, or test
   suite execution was performed. ChemFrag's own supporting tables were not consulted; the
   triage is of the 32 transforms as supplied.
+
+## Unique-coverage check (2026-09-28)
+
+The same 32 transforms were resubmitted, and the question became whether any covers a case
+plain cuts cannot reach. The gate is the one used for the MASSter rules admitted on
+2026-09-27
+([finding §7](masster_smarts_cuda_audit_2026_09_27.md#7-new-rules-from-the-documented-lists)).
+
+A transform can only add a candidate by forming or breaking a heavy-atom bond, because MASSter
+and FraGNNet represent a fragment as a precursor atom set plus an H shift.
+
+**Re-verified on NIST20.** 26 transforms change no heavy-atom bond, and 3 match a
+standardized precursor (#10, #22, #23), none of them skeleton-changing. That is the triage's
+split, reproduced.
+
+**Skeleton-changing six.**
+- **Method.**
+  - Each was rewritten for a neutral precursor, and the bond change applied to every match.
+  - Fragments one or two cuts away (within four bonds of the site) in the rearranged graph,
+    and disconnected in the precursor, were collected.
+  - A fragment is **unique** if no connected atom set of the precursor has the same heavy-atom
+    composition within 4 H.
+  - Unique fragments were then scored on the `[M+H]+` spectra with MASSter's channels, against
+    random disconnected sets of the same size.
+
+| Transform | NIST20 molecules | Unique fragments | Spectral gate |
+| --- | ---: | --- | --- |
+| #13 benzylic X onto ortho vinyl | 29 | 2 of 18, in 1 match | 5 molecules, 0.00% |
+| #14 same, ortho alkynyl | 8 | 1 of 24 | no scorable spectra |
+| #15 alkoxymethyl O onto acylium | 0 | — | — |
+| #16 thioether S onto carbonyl | 173 | 126 of 553, in 57 of 100 matches | 148 molecules, 1,911 spectra: −0.036% vs random (95% CI −0.081 to −0.003) |
+| #20 Wagner–Meerwein, 6-5 | 1,069 | 0 of 263: all have a single-atom swap twin | — |
+| #21 Wagner–Meerwein, 6-6 | 1,382 | 0 of 426 | — |
+
+- **#16 is the only transform with real unique fragments, and they explain peaks below
+  chance.**
+- **Wagner–Meerwein can add no m/z.** Swapping the migrated methyl for the carbon it left
+  gives a same-formula connected fragment for 68% (#20) and 95% (#21) of the new fragments.
+  Some single-atom swap does it for all of them.
+- **Decision.** Add none of the 32. Candidate A is closed.
+- **Limits.**
+  - Two-cut neighbourhood only.
+  - #20/#21 were checked on the first 100 matching molecules.
+  - The general twin search was capped (a capped fragment counts as having a twin), which
+    errs against the transform.
+  - Scripts ran from the session scratchpad.

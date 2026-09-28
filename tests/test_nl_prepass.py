@@ -18,6 +18,7 @@ from fragnnet.frag.smarts_prepass import (
     NeutralLossRule,
     _apply_nl_prepass,
 )
+from fragnnet.utils import data_utils
 from fragnnet.utils.frag_utils import (
     _inject_nl_masks_into_dag,
     compute_dags,
@@ -404,6 +405,17 @@ class TestSulfoxideSoLoss:
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.DIPHENYL_SULFOXIDE)
         assert mol.HasSubstructMatch(patt)
+
+    @pytest.mark.parametrize("smiles", ["CS(C)=O", "C[S+](C)[O-]", "c1ccccc1S(=O)c1ccccc1"])
+    def test_matches_standardized_sulfoxides(self, smiles):
+        # Training molecules come from mol_from_smiles, which writes the [S+]-[O-] form; the
+        # former S=O-only pattern matched none of them.
+        mol = data_utils.mol_from_smiles(smiles)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        masks = [m for m, ri in results if NL_RULES[ri].name == "sulfoxide_so_loss"]
+        assert len(masks) == 1
+        lost = sorted(mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(masks[0]) if not v)
+        assert lost == ["O", "S"]
 
     def test_no_match_sulfone(self):
         rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")

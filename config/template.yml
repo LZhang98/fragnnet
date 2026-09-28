@@ -770,7 +770,7 @@ masster_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precurs
   # apply only to cut_masks; connected_fragment_beam searches up to ceil(molecule atoms / 2) then mirrors.
   # Probability normalizes boundary-cut/internal-intact scores over retained fragments.
 masster_candidate_backend: cpu  # cpu | cuda; independent of the model device.
-  # Experimental CUDA: FP32, one mixture, unique mode, zero mask floors, SMARTS off.
+  # Experimental CUDA: FP32, one mixture, unique mode, zero mask floors; SMARTS supported.
 masster_unique_fragment_mode: False
 masster_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
 masster_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
@@ -808,7 +808,7 @@ masster_max_h_transfer: 4
 masster_h_transfer_bound: valence
 masster_include_cmf: True
 masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
-masster_smarts_templates: False  # Add FRAG_RULES/NL_RULES as cut-mask mechanisms.
+masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; add their assemblies.
 # Encode each severed bond from its (retained, lost) atom embeddings instead of averaging the
 # two endpoints. The average is degenerate: pooled over a fragment's cut bonds it equals
 # half the mean inside atom plus half the mean outside atom, so cutting a1-b1 + a2-b2 gives a

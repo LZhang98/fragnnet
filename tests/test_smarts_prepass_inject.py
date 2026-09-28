@@ -8,6 +8,7 @@ with consistent metadata arrays.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fragnnet.frag.compute_frags import MASK_DTYPE
 from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
@@ -1848,6 +1849,26 @@ class TestAnthraquinoneRingC4PlusChLoss:
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
         mol = Chem.MolFromSmiles(self.BENZENE)
         assert len(mol.GetSubstructMatches(patt)) == 0
+
+    @pytest.mark.parametrize(
+        ("rule_name", "expected"),
+        [("anthraquinone_bis_co_loss", 2), ("anthraquinone_ring_c4_plus_ch_loss", 4)],
+    )
+    def test_prepass_keeps_every_mirror_embedding(self, rule_name: str, expected: int):
+        from rdkit import Chem
+
+        # RDKit's default uniquification kept one mapping per atom set, i.e. one partition.
+        # bis-CO releases either flanking ring (2); c4+CH also picks either side's lone CH (4).
+        rule = next(rule for rule in FRAG_RULES if rule.name == rule_name)
+        mol = Chem.MolFromSmiles(self.METHYLANTHRAQUINONE)
+        edges = np.asarray(
+            [(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()) for bond in mol.GetBonds()],
+            dtype=np.int32,
+        )
+        pairs = _apply_smarts_prepass(
+            [rule], mol, np.ones(len(edges), dtype=MASK_DTYPE), edges, mol.GetNumAtoms(), len(edges)
+        )
+        assert len({frozenset((a.tobytes(), b.tobytes())) for a, b, _ in pairs}) == expected
 
     def test_cut_bonds_are_ring_bonds_methylanthraquinone(self):
         from rdkit import Chem

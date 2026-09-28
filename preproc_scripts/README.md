@@ -163,6 +163,13 @@ such as SO₂ extrusion. Previously these products were injected only in standar
 BFS. Regenerate multi-cut DAGs to obtain the added candidates; keep existing DAGs
 when reproducing experiments run before this correction.
 
+On 2026-09-27 two prepass rules were corrected, which changes `--smarts_prepass True`
+DAGs built afterwards. `sulfoxide_so_loss` now matches the `[S+][O-]` form the
+standardizer writes, and it matches all 120 NIST20 sulfoxides, where it matched none
+before. The two anthraquinone rules now keep every mirror embedding: 2 and 4 partitions
+per anthraquinone instead of 1. Every other rule's output is unchanged and in the same
+order. Existing DAGs are unaffected; keep them when reproducing earlier `smpTrue` runs.
+
 ### NIST 20
 This step generates fragmentation DAGs that are used for the FraGNNet models. Since fragmentation can be slow, we recommend using a compute with many cores (by default, the script will use all available cores). 
 

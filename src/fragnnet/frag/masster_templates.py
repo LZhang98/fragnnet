@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -20,23 +21,15 @@ from fragnnet.frag.smarts_prepass import (
 # MASSter owns these allowlists. They intentionally exclude the generic
 # crf12/crf13 patterns, whose broad matches create many unsupported candidates,
 # and pure bond-deletion rules already represented by the ordinary mechanism.
-_SHARED_MASSTER_FRAG_RULE_NAMES = (
-    "anthraquinone_bis_co_loss",
-    "xanthone_ring_cleavage",
-    "phenoxazine_ring_cleavage",
-    "furanocoumarin_ring_cleavage",
-    "benzopyranone_ring_cleavage",
-    "halogenated_quinoline_ring_cleavage",
-    "benzopyranone_bis_ch_loss",
-    "anthraquinone_ring_c4_plus_ch_loss",
-    "morphinan_amine_arm_loss",
-    "desoxymorphinan_ring_cleavage",
-    "desoxymorphinan_aromatic_core_release",
-)
+# The eleven compound ring-cut rules were dropped on 2026-09-27: on c0's val pool their
+# forced cuts cover no more target intensity than random fragments of the same size, and
+# their merged byproducts cover less. So was aryl_sulfonate_so3, whose single-bond cut only
+# ever repeats the ordinary partition. FraGNNet's prepass keeps all of them.
+# Evidence: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+_SHARED_MASSTER_FRAG_RULE_NAMES: tuple[str, ...] = ()
 _SHARED_MASSTER_NL_RULE_NAMES = (
     "aryl_sulfonamide_so2",
     "aryl_sulfonate_so2",
-    "aryl_sulfonate_so3",
     "n_nitramine_n2o",
     "sulfoxide_so_loss",
     "diarylvinyl_c2h2_loss",
@@ -71,6 +64,37 @@ _MASSTER_ONLY_FRAG_RULES = (
         cut_bond_map_pairs=[(2, 3), (4, 5)],
         merge_outer_map_nums=[2, 5],
         min_num_atoms=11,
+    ),
+    # The rules marked "Gate" below passed the 2026-09-27 per-class gate: on the NIST20
+    # spectra of the molecules they match, in the admitted polarity, their product explains
+    # target intensity that no connected atom set of the same composition can, beyond a
+    # random baseline. Evidence: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+    #
+    # Deprotonated N-acyl arylsulfonamides form a phenoxide from the arylsulfonyl ring and
+    # the oxygen of the remote amide carbonyl. Cutting Ar-S and the carbonyl C-O leaves
+    # three components; the aryl side and that oxygen form the product.
+    # Paper: https://pubmed.ncbi.nlm.nih.gov/33586949/
+    # Gate: [M-H]-, 10 molecules, +5.7% of intensity (95% CI 0.8-12.8).
+    SmartsFragRule(
+        name="n_acyl_aryl_sulfonamide_carbonyl_o_transfer",
+        reactant_smarts="[c:1]-[SX4:2](=O)(=O)-[#7:3]~[CX3:4](~[OX1,OX2H1:5])-[#6:6]",
+        cut_bond_map_pairs=[(1, 2), (4, 5)],
+        merge_outer_map_nums=[1, 5],
+        min_num_atoms=10,
+    ),
+    # Deprotonated N'-tert-butyl diacylhydrazines give [R1CO2]-: the opposite amide
+    # oxygen transfers to the R1 carbonyl carbon on the tert-butyl nitrogen.
+    # Paper: https://doi.org/10.1371/journal.pone.0063097
+    # Gate: [M-H]-, 3 molecules, +49.6% of intensity; at least 1% in 59% of spectra.
+    SmartsFragRule(
+        name="diacylhydrazine_carboxylate_o_transfer",
+        reactant_smarts=(
+            "[#6]-[CX3:1](=[OX1])-[NX3:2](-[CX4]([CH3])([CH3])[CH3])-[#7]"
+            "~[CX3:3](~[OX1,OX2H1:4])-[#6]"
+        ),
+        cut_bond_map_pairs=[(1, 2), (3, 4)],
+        merge_outer_map_nums=[1, 4],
+        min_num_atoms=10,
     ),
 )
 _MASSTER_ONLY_NL_RULES = (
@@ -142,6 +166,71 @@ _MASSTER_ONLY_NL_RULES = (
         min_num_atoms=10,
         product_map_nums=[2, 3, 4, 6],
     ),
+    # Deprotonated primary arylsulfonamides extrude SO2 and join the aryl to N; the shared
+    # aryl_sulfonamide_so2 requires NH, so it misses primary sulfonamides.
+    # Paper (SO2 extrusion): https://pubmed.ncbi.nlm.nih.gov/18059004/
+    # Gate: [M-H]-, 67 molecules, +6.4% (95% CI 3.7-9.6); null in [M+H]+.
+    NeutralLossRule(
+        name="primary_aryl_sulfonamide_so2",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3H2:5]",
+        nl_map_nums=[2, 3, 4],
+        nl_mass=63.9619,
+        min_num_atoms=8,
+    ),
+    # Tertiary arylsulfonamides: the same SO2 extrusion onto the dialkylated N.
+    # Gate (weak): [M+H]+ +0.11% (CI 0.01-0.27), [M-H]- +0.07% (CI 0.01-0.18).
+    NeutralLossRule(
+        name="tertiary_aryl_sulfonamide_so2",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3H0:5]",
+        nl_map_nums=[2, 3, 4],
+        nl_mass=63.9619,
+        min_num_atoms=8,
+    ),
+    # Protonated primary arylsulfonamides transfer one sulfonyl oxygen to the aryl ring,
+    # giving a phenoxonium ion; S, the other oxygen and N leave.
+    # Paper: https://doi.org/10.1016/j.ijms.2018.09.033
+    # Gate: [M+H]+, 175 molecules, +2.6% (95% CI 1.9-3.5).
+    NeutralLossRule(
+        name="primary_aryl_sulfonamide_o_transfer",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3H2:5]",
+        nl_map_nums=[2, 4, 5],
+        nl_mass=None,
+        min_num_atoms=8,
+    ),
+    # Protonated phenylalanines lose NH3 and CH2CO while a carboxyl oxygen stays with the
+    # benzyl residue, giving a hydroxybenzyl-type ion.
+    # Paper: https://doi.org/10.3389/fchem.2022.1094329
+    # Gate (weak): [M+H]+, 66 molecules, +0.15% (CI 0.00-0.36).
+    NeutralLossRule(
+        name="phenylalanine_carboxyl_o_transfer",
+        reactant_smarts="[c:1]-[CH2:2]-[CH:3](-[NX3;H2:4])-[C:5](=[O:6])[OX2H1:7]",
+        nl_map_nums=[3, 4, 5, 6],
+        nl_mass=None,
+        min_num_atoms=10,
+    ),
+    # Protonated hydroxamic acids excise NH, joining the N-hydroxyl oxygen to the carbonyl
+    # carbon (AIMe Fig. 2c, m/z 173.000). The standardizer writes the hydroximic tautomer
+    # ON=C(O)R, so both tautomers are matched.
+    # Paper: https://doi.org/10.64898/2026.08.05.743095
+    # Gate (weak): [M+H]+, 47 molecules, +0.04% (CI 0.01-0.08).
+    NeutralLossRule(
+        name="hydroxamic_acid_nh_excision",
+        reactant_smarts="[#6]-[CX3:1](~[OX1,OX2H1:2])~[NX2,NX3H1:3]-[OX2H1:4]",
+        nl_map_nums=[3],
+        nl_mass=15.0109,
+        min_num_atoms=5,
+    ),
+    # Deprotonated perfluoroalkyl sulfonates lose CF2 and transfer an alpha F to give FSO3-.
+    # Paper: https://pubmed.ncbi.nlm.nih.gov/41539986/
+    # Gate: [M-H]-, 10 molecules, +1.4% (CI 0.0-3.4); at least 1% in 22% of spectra.
+    NeutralLossRule(
+        name="pfas_sulfonate_f_transfer",
+        reactant_smarts="[F:6]-[CX4:1](-F)-[SX4:2](=[O:3])(=[O:4])-[OX2H1,OX1-:5]",
+        nl_map_nums=[],
+        nl_mass=None,
+        min_num_atoms=7,
+        product_map_nums=[2, 3, 4, 5, 6],
+    ),
 )
 RuleType = TypeVar("RuleType", SmartsFragRule, NeutralLossRule)
 
@@ -202,6 +291,13 @@ _MASSTER_PRECURSOR_TYPES = {
     "short_haloalkyl_ammonium_c2_transfer": ("[M+H]+", "[M]+"),
     "short_haloalkyl_ammonium_c3_transfer": ("[M+H]+", "[M]+"),
     "n_fluoro_sulfonamide_f_transfer": ("[M-H]-",),
+    "n_acyl_aryl_sulfonamide_carbonyl_o_transfer": ("[M-H]-",),
+    "diacylhydrazine_carboxylate_o_transfer": ("[M-H]-",),
+    "primary_aryl_sulfonamide_so2": ("[M-H]-",),
+    "primary_aryl_sulfonamide_o_transfer": ("[M+H]+",),
+    "phenylalanine_carboxyl_o_transfer": ("[M+H]+",),
+    "hydroxamic_acid_nh_excision": ("[M+H]+",),
+    "pfas_sulfonate_f_transfer": ("[M-H]-",),
 }
 _MASSTER_FRAGMENTATION_MODES = {
     "anisoyl_fluoride_co_f_transfer": ("EI",),
@@ -245,6 +341,22 @@ def _component_atoms(mask: np.ndarray) -> tuple[int, ...]:
     return tuple(int(index) for index in np.flatnonzero(mask))
 
 
+def _is_connected(atoms: Sequence[int], endpoints: tuple[tuple[int, ...], ...]) -> bool:
+    """Return whether the induced precursor subgraph on ``atoms`` is connected."""
+    parent = {atom: atom for atom in atoms}
+
+    def find(atom: int) -> int:
+        while parent[atom] != atom:
+            parent[atom] = parent[parent[atom]]
+            atom = parent[atom]
+        return atom
+
+    for left, right in zip(*endpoints, strict=True):
+        if left in parent and right in parent:
+            parent[find(left)] = find(right)
+    return len({find(atom) for atom in atoms}) == 1
+
+
 def _crossing_bonds(
     component: tuple[int, ...],
     edges: np.ndarray,
@@ -263,7 +375,9 @@ def build_masster_templates(mol: Chem.Mol) -> tuple[MassterTemplate, ...]:
     The returned indices are local to ``mol`` and follow RDKit's atom and bond
     ordering, which is also the ordering used by ``MolGraph.chemical_bond_index``.
     Rule index zero is reserved for MASSter's ordinary connected-component
-    mechanism; SMARTS rules therefore use one-based indices here.
+    mechanism; SMARTS rules therefore use one-based indices here. A template whose
+    sides are all connected repeats the ordinary partition of its own cut, so it is
+    dropped: every returned template has at least one disconnected side.
     """
     num_atoms = mol.GetNumAtoms()
     num_bonds = mol.GetNumBonds()
@@ -316,11 +430,14 @@ def build_masster_templates(mol: Chem.Mol) -> tuple[MassterTemplate, ...]:
             )
         )
 
+    endpoints = tuple(tuple(int(atom) for atom in column) for column in edges.T)
     unique: dict[
         tuple[tuple[int, ...], tuple[tuple[int, ...], ...], int],
         MassterTemplate,
     ] = {}
     for template in templates:
+        if all(_is_connected(component, endpoints) for component in template.components):
+            continue
         key = (
             template.broken_bond_indices,
             template.components,

@@ -2,6 +2,8 @@
 
 Static graph metadata may be prepared on CPU. Proposal logits and ranked-mask CSR
 remain on CUDA; only grouped-equality flags and native ragged counts synchronize.
+SMARTS template cuts are forced masks in the ranking prefix, and their alternative
+assemblies are appended per precursor in the CPU backend's layout.
 Selected explicitly through ``masster_candidate_backend: cuda``.
 """
 
@@ -11,7 +13,6 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from time import perf_counter
-from typing import TYPE_CHECKING
 
 import numpy as np
 import torch as th
@@ -20,13 +21,12 @@ from fragnnet.frag.masster_candidates import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     MassterStaticGraph,
+    _packed_long_chunk_tensors,
     _score_mask_log_probabilities,
 )
 from fragnnet.frag.masster_cuda_candidates import _expand_topology_views
-from fragnnet.frag.masster_cuda_topology import CudaTopologyGraph
-
-if TYPE_CHECKING:
-    from fragnnet.frag.masster_templates import MassterTemplate
+from fragnnet.frag.masster_cuda_topology import CudaTopologyCounts, CudaTopologyGraph
+from fragnnet.frag.masster_templates import MassterTemplate, _is_connected
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,302 @@ def _prepare_graph_batch(
     )
 
 
+def _template_forced_masks(
+    templates: Sequence[MassterTemplate],
+    num_bonds: int,
+    include_single_bond_cuts: bool,
+) -> tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]:
+    """Return extra forced cut sets and each template's molecule-local mask index.
+
+    Mirrors the CPU forced list ``dict.fromkeys([(), *singles, *template_cuts])``: the
+    empty mask is index 0, forced single cuts follow in bond order, then every other
+    distinct template cut in first-occurrence order.
+    """
+    base_forced_count = 1 + (num_bonds if include_single_bond_cuts else 0)
+    extra: dict[tuple[int, ...], int] = {}
+    positions = []
+    for template in templates:
+        bond_set = tuple(template.broken_bond_indices)
+        if not bond_set:
+            positions.append(0)
+        elif include_single_bond_cuts and len(bond_set) == 1:
+            positions.append(1 + bond_set[0])
+        else:
+            positions.append(base_forced_count + extra.setdefault(bond_set, len(extra)))
+    return tuple(extra), tuple(positions)
+
+
+def _append_smarts_mechanisms(
+    arrays: dict[str, th.Tensor],
+    view_templates: Sequence[Sequence[MassterTemplate]],
+    view_mask_positions: Sequence[Sequence[int]],
+    view_counts: Sequence[CudaTopologyCounts],
+    view_endpoints: Sequence[tuple[tuple[int, ...], ...]],
+    atom_ptr_values: Sequence[int],
+    bond_indices_by_molecule: Sequence[Sequence[int]],
+) -> tuple[dict[str, th.Tensor], list[int], list[int]]:
+    """Insert SMARTS mechanisms after each view's ordinary rows, as the CPU backend does.
+
+    Each template becomes one extra mechanism under its forced cut mask, with one
+    component per template side. A side whose atoms are connected in the precursor is
+    exactly an ordinary component of that mask, since the template cuts every crossing
+    bond and no internal one; its unique index is read on the device from that
+    component. A disconnected side can come from no ordinary mechanism, so it is a new
+    unique fragment, deduplicated per view in template order. Every other value is
+    host-known, and rows are placed so each view reads [ordinary rows, SMARTS rows].
+
+    Args:
+        arrays: Expanded ordinary candidate fields, without ``mask_indices`` and
+            ``broken_bond_indices``; mechanisms equal masks.
+        view_templates: Eligible templates for each view.
+        view_mask_positions: Molecule-local forced mask index of each template.
+        view_counts: Ordinary per-view field lengths.
+        view_endpoints: Molecule-local bond endpoints for each view.
+        atom_ptr_values: Global atom CSR pointer over views.
+        bond_indices_by_molecule: Global chemical bond ids of each view, in local order.
+
+    Returns:
+        The updated fields, then the added component and unique-fragment counts per view.
+    """
+    device = arrays["mask_batch_indices"].device
+    num_views = len(view_counts)
+    # Columns: masks/mechanisms, mechanism bonds, components, atoms, boundaries, uniques.
+    base_lengths = np.asarray(
+        [
+            (
+                count.num_masks,
+                count.num_broken_bonds,
+                count.num_components,
+                count.num_atom_memberships,
+                count.num_boundary_memberships,
+                count.num_unique_components,
+            )
+            for count in view_counts
+        ],
+        dtype=np.int64,
+    ).reshape(num_views, 6)
+    base_starts = np.cumsum(base_lengths, axis=0) - base_lengths
+    extra_lengths = np.zeros_like(base_lengths)
+
+    # 1. Build SMARTS rows in final coordinates, one view at a time.
+    mechanism_rows: list[int] = []  # (mask, rule, position) triples
+    mechanism_bond_rows: list[int] = []  # (bond, mechanism, position)
+    component_rows: list[int] = []  # (mask, mechanism, view, cut count, unique, position)
+    atom_rows: list[int] = []  # (atom, component, position)
+    boundary_rows: list[int] = []  # (bond, component, position)
+    unique_rows: list[int] = []  # (representative component, position)
+    query_rows: list[int] = []  # (component row, mask, atom, atom count, unique shift)
+    for view, (templates, positions) in enumerate(
+        zip(view_templates, view_mask_positions, strict=True)
+    ):
+        if not templates:
+            continue
+        final_starts = base_starts[view] + extra_lengths[:view].sum(axis=0)
+        extra_starts = final_starts + base_lengths[view]
+        added = np.zeros(6, dtype=np.int64)
+        global_bonds = bond_indices_by_molecule[view]
+        atom_start = atom_ptr_values[view]
+        num_atoms = atom_ptr_values[view + 1] - atom_start
+        new_uniques: dict[tuple[int, ...], int] = {}
+        for template, local_mask in zip(templates, positions, strict=True):
+            mask_index = int(base_starts[view, 0] + local_mask)
+            mechanism_index = int(extra_starts[0] + added[0])
+            mechanism_rows += (mask_index, template.rule_index, mechanism_index)
+            added[0] += 1
+            cut_bonds = [global_bonds[bond] for bond in template.broken_bond_indices]
+            for bond in cut_bonds:
+                mechanism_bond_rows += (bond, mechanism_index, int(extra_starts[1] + added[1]))
+                added[1] += 1
+            for component in template.components:
+                component_index = int(extra_starts[2] + added[2])
+                added[2] += 1
+                if _is_connected(component, view_endpoints[view]):
+                    unique_index = -1
+                    query_rows += (
+                        len(component_rows) // 6,
+                        mask_index,
+                        atom_start + component[0],
+                        num_atoms,
+                        int(final_starts[5] - base_starts[view, 5]),
+                    )
+                else:
+                    unique_index = new_uniques.get(tuple(component), -1)
+                    if unique_index < 0:
+                        unique_index = int(extra_starts[5] + added[5])
+                        new_uniques[tuple(component)] = unique_index
+                        unique_rows += (component_index, unique_index)
+                        added[5] += 1
+                component_rows += (
+                    mask_index,
+                    mechanism_index,
+                    view,
+                    len(cut_bonds),
+                    unique_index,
+                    component_index,
+                )
+                for atom in component:
+                    atom_rows += (atom_start + atom, component_index, int(extra_starts[3] + added[3]))
+                    added[3] += 1
+                for bond in cut_bonds:
+                    boundary_rows += (bond, component_index, int(extra_starts[4] + added[4]))
+                    added[4] += 1
+        extra_lengths[view] = added
+    (
+        mechanism_extra,
+        mechanism_bond_extra,
+        component_extra,
+        atom_extra,
+        boundary_extra,
+        unique_extra,
+        query_extra,
+        before_extra,
+    ), *_ = _packed_long_chunk_tensors(
+        (
+            (mechanism_rows,),
+            (mechanism_bond_rows,),
+            (component_rows,),
+            (atom_rows,),
+            (boundary_rows,),
+            (unique_rows,),
+            (query_rows,),
+            ((np.cumsum(extra_lengths, axis=0) - extra_lengths).T,),
+        ),
+        device,
+    )
+    mechanism_extra = mechanism_extra.view(-1, 3)
+    mechanism_bond_extra = mechanism_bond_extra.view(-1, 3)
+    component_extra = component_extra.view(-1, 6)
+    atom_extra = atom_extra.view(-1, 3)
+    boundary_extra = boundary_extra.view(-1, 3)
+    unique_extra = unique_extra.view(-1, 2)
+    query_extra = query_extra.view(-1, 5)
+
+    # 2. Read connected sides' unique indices from their ordinary component. Components
+    # are sorted by mask and atoms by component, and each mask's components partition its
+    # molecule's atoms, so a mask's memberships are one contiguous block of that length.
+    component_unique_extra = component_extra[:, 4].clone()
+    if query_rows:
+        query_lengths = query_rows[3::5]
+        query_owner = th.repeat_interleave(
+            th.arange(len(query_lengths), device=device),
+            query_extra[:, 3],
+            output_size=sum(query_lengths),
+        )
+        block_starts = th.searchsorted(
+            arrays["atom_component_indices"],
+            th.searchsorted(arrays["component_mask_indices"], query_extra[:, 1].contiguous()),
+        )
+        entry_offsets = th.from_numpy(
+            np.concatenate([np.arange(length, dtype=np.int64) for length in query_lengths])
+        ).to(device)
+        entries = block_starts[query_owner] + entry_offsets
+        matches = th.where(
+            arrays["atom_indices"][entries] == query_extra[query_owner, 2],
+            arrays["atom_component_indices"][entries],
+            -1,
+        )
+        found = th.full_like(query_extra[:, 0], -1).scatter_reduce(
+            0, query_owner, matches, reduce="amax", include_self=True
+        )
+        th._assert_async(
+            (found >= 0).all(), "a connected SMARTS side must be an ordinary component"
+        )
+        component_unique_extra[query_extra[:, 0]] = (
+            arrays["component_unique_indices"][found] + query_extra[:, 4]
+        )
+
+    # 3. Shift ordinary index values past earlier views' SMARTS rows, then interleave.
+    component_owner = arrays["component_batch_indices"]
+    owners = {
+        "mechanism": arrays["mask_batch_indices"],
+        "mechanism_bond": arrays["mask_batch_indices"][arrays["boundary_mechanism_indices"]],
+        "component": component_owner,
+        "atom": component_owner[arrays["atom_component_indices"]],
+        "boundary": component_owner[arrays["boundary_component_indices"]],
+        "unique": component_owner[arrays["unique_representative_component_indices"]],
+    }
+    before = dict(zip(owners, before_extra.view(6, -1), strict=True))
+    mechanisms_before = before["mechanism"]
+    components_before = before["component"]
+    uniques_before = before["unique"]
+
+    def interleave(
+        domain: str,
+        name: str,
+        extra_values: th.Tensor,
+        extra_positions: th.Tensor,
+        shift: th.Tensor | None = None,
+    ) -> th.Tensor:
+        values = arrays[name]
+        owner = owners[domain]
+        if shift is not None:
+            values = values + shift[owner]
+        output = values.new_empty(values.numel() + extra_values.numel())
+        output[th.arange(values.numel(), device=device) + before[domain][owner]] = values
+        output[extra_positions] = extra_values
+        return output
+
+    updated = dict(arrays)
+    updated["mechanism_mask_indices"] = interleave(
+        "mechanism", "mechanism_mask_indices", mechanism_extra[:, 0], mechanism_extra[:, 2]
+    )
+    updated["mechanism_rule_indices"] = interleave(
+        "mechanism", "mechanism_rule_indices", mechanism_extra[:, 1], mechanism_extra[:, 2]
+    )
+    updated["mechanism_boundary_bond_indices"] = interleave(
+        "mechanism_bond",
+        "mechanism_boundary_bond_indices",
+        mechanism_bond_extra[:, 0],
+        mechanism_bond_extra[:, 2],
+    )
+    updated["boundary_mechanism_indices"] = interleave(
+        "mechanism_bond",
+        "boundary_mechanism_indices",
+        mechanism_bond_extra[:, 1],
+        mechanism_bond_extra[:, 2],
+        mechanisms_before,
+    )
+    component_positions = component_extra[:, 5]
+    for column, name, shift in (
+        (0, "component_mask_indices", None),
+        (1, "component_mechanism_indices", mechanisms_before),
+        (2, "component_batch_indices", None),
+        (3, "component_cut_counts", None),
+    ):
+        updated[name] = interleave(
+            "component", name, component_extra[:, column], component_positions, shift
+        )
+    updated["component_unique_indices"] = interleave(
+        "component",
+        "component_unique_indices",
+        component_unique_extra,
+        component_positions,
+        uniques_before,
+    )
+    updated["atom_indices"] = interleave("atom", "atom_indices", atom_extra[:, 0], atom_extra[:, 2])
+    updated["atom_component_indices"] = interleave(
+        "atom", "atom_component_indices", atom_extra[:, 1], atom_extra[:, 2], components_before
+    )
+    updated["boundary_bond_indices"] = interleave(
+        "boundary", "boundary_bond_indices", boundary_extra[:, 0], boundary_extra[:, 2]
+    )
+    updated["boundary_component_indices"] = interleave(
+        "boundary",
+        "boundary_component_indices",
+        boundary_extra[:, 1],
+        boundary_extra[:, 2],
+        components_before,
+    )
+    updated["unique_representative_component_indices"] = interleave(
+        "unique",
+        "unique_representative_component_indices",
+        unique_extra[:, 0],
+        unique_extra[:, 1],
+        components_before,
+    )
+    return updated, extra_lengths[:, 2].tolist(), extra_lengths[:, 5].tolist()
+
+
 def build_masster_candidates_cuda(
     bond_logits: th.Tensor,
     chemical_bond_index: th.Tensor,
@@ -139,10 +435,12 @@ def build_masster_candidates_cuda(
 ) -> MassterCandidateBatch:
     """Build exact single-mixture candidates without copying proposal logits to CPU.
 
-    Supported inputs are finite FP32 CUDA logits, unique mode, zero mask floors and
-    no SMARTS mechanisms. Explicit native size/workspace limits apply. Every grouped
-    view must have identical local graph structure and proposal logits. Selection
-    detaches only its discrete decisions; shared probability scoring uses live logits.
+    Supported inputs are finite FP32 CUDA logits, unique mode and zero mask floors.
+    Explicit native size/workspace limits apply. Every grouped view must have identical
+    local graph structure, proposal logits and SMARTS template cuts. Selection detaches
+    only its discrete decisions; shared probability scoring uses live logits. SMARTS
+    templates produce the CPU backend's fields exactly: their cuts are forced masks, and
+    their mechanisms and components follow each view's ordinary rows.
     """
     if (
         bond_logits.device.type != "cuda"
@@ -176,11 +474,8 @@ def build_masster_candidates_cuda(
     num_molecules = atom_ptr.numel() - 1
     if smarts_templates is None and static_graph is not None:
         smarts_templates = static_graph.smarts_templates
-    if smarts_templates is not None:
-        if len(smarts_templates) != num_molecules:
-            raise ValueError("smarts_templates must contain one sequence per precursor")
-        if any(smarts_templates):
-            raise ValueError("CUDA candidate prototype does not support SMARTS mechanisms")
+    if smarts_templates is not None and len(smarts_templates) != num_molecules:
+        raise ValueError("smarts_templates must contain one sequence per precursor")
     if candidate_group_ids is not None and (
         candidate_group_ids.shape != (num_molecules,) or candidate_group_ids.dtype != th.long
     ):
@@ -228,6 +523,30 @@ def build_masster_candidates_cuda(
     ):
         raise ValueError("candidate_group_ids can only group identical proposal logits")
     representative_logits = detached_logits[representative_bonds]
+    # Template cuts join each representative's forced prefix; grouped views share one.
+    view_templates = (
+        ((),) * num_molecules
+        if smarts_templates is None
+        else tuple(tuple(templates) for templates in smarts_templates)
+    )
+    view_forced = [
+        _template_forced_masks(
+            templates,
+            len(graph_batch.bond_indices_by_molecule[view]),
+            include_single_bond_cuts,
+        )
+        for view, templates in enumerate(view_templates)
+    ]
+    if any(
+        view_forced[view][0] != view_forced[leader][0]
+        for view, leader in enumerate(graph_batch.representative_of)
+    ):
+        raise ValueError("candidate_group_ids can only group identical molecular topology")
+    extra_forced_bond_sets = (
+        [view_forced[representative][0] for representative in graph_batch.representatives]
+        if any(view_templates)
+        else None
+    )
     input_ms = (perf_counter() - total_start) * 1000.0
 
     # 2. Select exact forced-prefix CSR on GPU, then feed it directly to GPU topology.
@@ -240,6 +559,7 @@ def build_masster_candidates_cuda(
         [len(graph.endpoints[0]) for graph in graph_batch.graphs],
         ranked_mask_budget=max_enumerated_masks,
         include_single_bond_cuts=include_single_bond_cuts,
+        extra_forced_bond_sets=extra_forced_bond_sets,
     )
     selection_ms = (perf_counter() - selection_start) * 1000.0
     topology_start = perf_counter()
@@ -262,10 +582,8 @@ def build_masster_candidates_cuda(
     )
     view_counts = [topology.counts[index] for index in view_to_rep]
     selected_counts = [ranked.counts[index].num_masks for index in view_to_rep]
-    unique_counts = tuple(count.num_unique_components for count in view_counts)
     transfer_start = perf_counter()
     view_to_rep_t = th.from_numpy(view_to_rep).to(device)
-    unique_counts_t = th.tensor(unique_counts, dtype=bond_logits.dtype, device=device)
     transfer_ms += (perf_counter() - transfer_start) * 1000.0
     probability_start = perf_counter()
     proposal_fraction = ranked.device_counts[view_to_rep_t, 2].to(
@@ -281,6 +599,30 @@ def build_masster_candidates_cuda(
         None,
     )
     probability_ms = (perf_counter() - probability_start) * 1000.0
+
+    # 4. Append SMARTS mechanisms after each view's ordinary rows.
+    smarts_start = perf_counter()
+    extra_components = extra_uniques = [0] * num_molecules
+    if extra_forced_bond_sets is not None:
+        arrays, extra_components, extra_uniques = _append_smarts_mechanisms(
+            arrays,
+            view_templates,
+            [positions for _, positions in view_forced],
+            view_counts,
+            [graph_batch.graphs[index].endpoints for index in view_to_rep],
+            graph_batch.atom_ptr_values,
+            graph_batch.bond_indices_by_molecule,
+        )
+    component_counts = tuple(
+        count.num_components + extra
+        for count, extra in zip(view_counts, extra_components, strict=True)
+    )
+    unique_counts = tuple(
+        count.num_unique_components + extra
+        for count, extra in zip(view_counts, extra_uniques, strict=True)
+    )
+    unique_counts_t = th.tensor(unique_counts, dtype=bond_logits.dtype, device=device)
+    smarts_ms = (perf_counter() - smarts_start) * 1000.0
     if _statistics is not None:
         _statistics.append(
             {
@@ -308,7 +650,7 @@ def build_masster_candidates_cuda(
         **arrays,
         proposal_single_cut_fraction=proposal_fraction,
         unique_component_count=unique_counts_t,
-        component_counts=tuple(count.num_components for count in view_counts),
+        component_counts=component_counts,
         unique_component_counts=unique_counts,
         selected_mask_counts=tuple(selected_counts),
         retained_mask_counts=tuple(count.num_masks for count in view_counts),
@@ -318,7 +660,7 @@ def build_masster_candidates_cuda(
             mask_selection_ms=selection_ms,
             topology_assembly_ms=topology_ms,
             forced_merge_ms=0.0,
-            smarts_assembly_ms=0.0,
+            smarts_assembly_ms=smarts_ms,
             batch_packing_ms=packing_ms,
             device_transfer_ms=transfer_ms,
             probability_scoring_ms=probability_ms,

@@ -48,6 +48,10 @@ class SmartsFragRule:
         min_num_atoms: Minimum number of atoms required for this rule to apply.
             Rules are skipped early if the molecule has fewer atoms, avoiding
             unnecessary SMARTS matching on small molecules.
+        uniquify: Passed to ``GetSubstructMatches``. RDKit's default keeps one mapping
+            per matched atom set, which drops mirror embeddings of a symmetric pattern
+            even when they cut different bonds. Set False for such rules; callers
+            deduplicate the resulting fragment pairs.
 
     Example:
         >>> rule = SmartsFragRule(
@@ -66,6 +70,7 @@ class SmartsFragRule:
     merge_outer_map_nums: list[int] = field(default_factory=list)
     filter_bond_map_nums: tuple[int, int] | None = None
     min_num_atoms: int = 0
+    uniquify: bool = True
 
 
 FRAG_RULES: list[SmartsFragRule] = [
@@ -141,8 +146,9 @@ FRAG_RULES: list[SmartsFragRule] = [
     # Cuts: O=C double bonds (1,2)/(9,10) plus ring A's outer bonds (3,4)/(7,8); the 3
     # discarded CCs ({O1},{O10},{ring A C4}) merge into one "outer" byproduct mask, the
     # remaining connected piece (both carbonyl C's + intact ring B) is the "inner" kept
-    # fragment. GetSubstructMatches naturally also returns the mirrored embedding
-    # (releasing ring B, keeping ring A), so both directions are covered by one rule.
+    # fragment. uniquify=False keeps the mirrored embedding (releasing ring B, keeping
+    # ring A), which maps the same atoms and so is dropped by RDKit's default
+    # uniquification; with it, both directions are covered by one rule.
     # NOTE: map numbers must be 1-based -- RDKit treats map 0 as "unmapped" and silently
     # drops it from q_idx_to_map, which makes cut_bond_map_pairs lookups fail (the bug
     # in the first version of this rule, caught by empirical validation returning 0 hits).
@@ -155,6 +161,7 @@ FRAG_RULES: list[SmartsFragRule] = [
         cut_bond_map_pairs=[(1, 2), (9, 10), (3, 4), (7, 8)],
         merge_outer_map_nums=[1, 10, 4],
         min_num_atoms=16,
+        uniquify=False,
     ),
     # xanthone_ring_cleavage: dibenzo-γ-pyranone (xanthone / xanthen-9-one) scaffold.
     # Two benzene rings fused on either side of a central ring containing both a
@@ -296,7 +303,8 @@ FRAG_RULES: list[SmartsFragRule] = [
     # (4 total ring-bond cuts spanning both rings exceeds the sequential budget).
     # The kept fragment retains any halogens not on the excised atoms, matching the
     # halide-retaining "direct cation" fragments observed for halogenated quinolines.
-    # GetSubstructMatches returns both mirror embeddings (benzo C6 vs C7 excised).
+    # Quinoline has no symmetry, so the pattern has one embedding: only C6 (map 7) is
+    # excised, never C7. On a 6-haloquinoline that halogen leaves with the excised C6.
     # Atom map: 1=N1, 2=C2, 3=C3, 4=C4, 5=C4a (fusion), 6=C5, 7=C6 (excised),
     # 8=C7, 9=C8, 10=C8a (fusion). ".[F,Cl,Br,I]" is a disconnected component
     # requiring a halogen present somewhere in the molecule (guards against firing
@@ -342,10 +350,9 @@ FRAG_RULES: list[SmartsFragRule] = [
     # 11-16) plus one additional lone CH from the OTHER flanking ring (map 4, adjacent
     # to fusion map 3).
     # Cuts: (9,11)+(16,2) release ring B (maps 11-16) entirely; (3,4)+(4,5) isolate
-    # map4 alone from ring A. For substituted (asymmetric) anthraquinones, RDKit's
-    # default match uniquification keeps only one of the two ring-A/ring-B
-    # embeddings (same pre-existing behavior as anthraquinone_bis_co_loss); for
-    # bare/symmetric anthraquinone both directions are structurally equivalent.
+    # map4 alone from ring A. The pattern has four mappings onto one anthraquinone
+    # (ring A/B swap, and each ring's two directions), each cutting different bonds;
+    # uniquify=False keeps all four, which RDKit's default uniquification collapses to one.
     # Empirically confirmed: this exact 4-ring-cut mask is mbfs-only across all 35
     # NIST20 "anthraquinones" molecules with the largest residual wrecall_h4 gap
     # after the original rule (mean gap ~0.26); unreachable by baseline within
@@ -362,6 +369,7 @@ FRAG_RULES: list[SmartsFragRule] = [
         cut_bond_map_pairs=[(9, 11), (16, 2), (3, 4), (4, 5)],
         merge_outer_map_nums=[11, 4],
         min_num_atoms=16,
+        uniquify=False,
     ),
     # morphinan_amine_arm_loss: SECOND compound-cut on the same 5-ring oxide-bridged
     # morphinan scaffold as morphinan_ring_cleavage. Reuses the identical ring
@@ -459,9 +467,11 @@ class NeutralLossRule:
     extrusion creates a new Ar–N bond).  The product is represented as an atom
     mask covering all precursor atoms *except* the neutral-loss atoms.  Because
     the new bond is not in the original graph, the product atoms may be
-    disconnected in the original connectivity — H-count estimation will add
-    excess H's at the free valences; the correct formula lands at a negative
-    H-shift in the formula graph (covered by max_h_transfer).
+    disconnected in the original connectivity. Hydrogen shifts count from the
+    product atoms' own hydrogens (``num_hs_prior`` in ``frag_utils``), so the product
+    formula sits at the shift that moves H between the product and the neutral:
+    0 when the neutral takes exactly the hydrogens of its own atoms, and a few H
+    either way otherwise, inside ``max_h_transfer``. Each rule's comment gives it.
 
     Attributes:
         name: Rule identifier for logging.
@@ -495,7 +505,7 @@ NL_RULES: list[NeutralLossRule] = [
     # Aromatic sulfonamide SO₂ extrusion (HIGHEST PRIORITY).
     # Ar–SO₂–NH–Het → [Ar–NH–Het]⁻ + SO₂  (NL = 63.962 Da).
     # A new Ar–N bond forms, so the product atoms are disconnected in the original
-    # graph.  H-cap adds +2H (one at Ar–C, one at N); correct formula at H_delta=-2.
+    # graph.  SO₂ carries no H, so the product formula sits at H shift 0.
     # Confirmed in spec_id=610784 and 856552; affects thousands of NIST23 spectra.
     # Positive-ESI SO2 extrusion evidence (substituent-dependent):
     # https://pubmed.ncbi.nlm.nih.gov/18059004/
@@ -509,7 +519,7 @@ NL_RULES: list[NeutralLossRule] = [
     ),
     # Aromatic sulfonate SO₂ loss.
     # Ar–SO₃⁻ → [Ar–O]⁻ + SO₂  (NL = 63.962 Da).
-    # A new Ar–O bond forms; +2H excess at Ar–C and O-; correct formula at H_delta=-2.
+    # A new Ar–O bond forms; SO₂ carries no H, so the product sits at H shift 0.
     # Root cause of miss in pyrenes (82.8%) and phenanthrenes (50.9%) in [M-H]-.
     NeutralLossRule(
         name="aryl_sulfonate_so2",
@@ -521,7 +531,8 @@ NL_RULES: list[NeutralLossRule] = [
     # Aromatic sulfonate SO₃ loss.
     # Ar–SO₃⁻ → [Ar]⁻ + SO₃  (NL = 79.957 Da).
     # Direct S–C bond cleavage; product is a connected Ar anion.
-    # +1H excess at Ar–C; correct formula at H_delta=-1.
+    # SO₃ carries no H: the product sits at H shift 0 for the sulfonate (O⁻) and +1 for
+    # the acid (OH), whose H stays with the aryl.
     NeutralLossRule(
         name="aryl_sulfonate_so3",
         reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])[O-,OH:5]",
@@ -530,9 +541,9 @@ NL_RULES: list[NeutralLossRule] = [
         min_num_atoms=7,
     ),
     # N-nitramine N₂O extrusion.
-    # R–N(NO₂)–NH–R' → [R–N=R'] + N₂O  (NL = 44.001 Da).
+    # O₂N–NH–R → [R–OH] + N₂O  (NL = 44.001 Da), the structure the SMARTS encodes.
     # Confirmed in spec_id=550113 (0.1 mDa).  The O⁻ from NO₂ (:3) stays in the
-    # product; +2H excess at O⁻ and at R' atom; correct formula at H_delta=-2.
+    # product, and so does the NH hydrogen, since N₂O carries none: H shift +1.
     NeutralLossRule(
         name="n_nitramine_n2o",
         reactant_smarts="[N+:1](=[O:2])([O-:3])-[NH:4]-[#6,#7]",
@@ -543,11 +554,13 @@ NL_RULES: list[NeutralLossRule] = [
     # Sulfoxide SO loss.
     # R–S(=O)–R' → [R–R'] + SO  (NL = 47.967 Da).
     # The C–S bonds break and a new C–C bond forms in the product; retained atoms
-    # may be disconnected in the original graph (+2H excess; correct formula at H_delta=-2).
+    # may be disconnected in the original graph. SO carries no H: H shift 0.
     # SX3 matches only sulfoxides (3-connected S), excluding sulfones (SX4) and thioethers.
+    # `~[OX1]` accepts both S=O and the [S+]–[O-] form the standardizer writes; the earlier
+    # `=[O]` pattern never matched a standardized molecule.
     NeutralLossRule(
         name="sulfoxide_so_loss",
-        reactant_smarts="[#6:1]-[SX3:2](=[O:3])-[#6:4]",
+        reactant_smarts="[#6:1]-[SX3:2](~[OX1:3])-[#6:4]",
         nl_map_nums=[2, 3],
         nl_mass=47.9669,
         min_num_atoms=3,
@@ -557,8 +570,8 @@ NL_RULES: list[NeutralLossRule] = [
     # The two vinyl CH atoms (:2, :3), each bearing one H, leave as acetylene (C₂H₂).
     # A new Ar–Ar' bond forms in the product (not present in the precursor), making
     # this a rearrangement outside BFS DAG coverage. Product atoms are disconnected
-    # in the original graph; H-cap adds +1H at each free Ar valence, so the correct
-    # biaryl formula lands at H_delta=-2 (two excess H from the two cut free valences).
+    # in the original graph. C₂H₂ leaves with its own two H, so the biaryl sits at
+    # H shift 0.
     # `!R` on :2/:3 excludes bridged vinyl units in fused rings (indene, acenaphthylene)
     # where the vinyl CH=CH is part of a ring and BFS already covers the 2-bond cut.
     # min_num_atoms=8: minimum diarylethylene is two 5-membered aromatics + 2 vinyl C.
@@ -573,8 +586,8 @@ NL_RULES: list[NeutralLossRule] = [
     # Ar–C(=O)–Ar' → [Ar–Ar']⁻ + CO  (NL = 27.995 Da).
     # The keto carbon (:2) and its oxygen (:3) leave as CO; a new Ar–Ar' bond forms
     # in the product.  Cutting both Ar–CO bonds would give 3 CCs (BFS-invalid), so the
-    # merged {Ar+Ar'} atom mask is outside BFS coverage.  H-cap adds +1H at each free
-    # Ar valence; correct biaryl formula at H_delta=-2.
+    # merged {Ar+Ar'} atom mask is outside BFS coverage.  CO carries no H, so the
+    # biaryl sits at H shift 0.
     # `!R` on :2 excludes ring ketones (chromone, fluorenone) where a 2-CC BFS cut
     # already covers the product; `[c:1]` and `[c:4]` restrict to diaryl ketones
     # (excludes acetophenone, chalcone, aldehyde, carboxylic acid).
@@ -590,9 +603,8 @@ NL_RULES: list[NeutralLossRule] = [
     # The thiazole ring's C2=N3 unit expels HCN (using one H from the exocyclic
     # amine), and the remaining fragment retains ring S1 and the exocyclic amine
     # attached to the benzo ring (aminothiophenol-type cation).  A new Ar–NH2 bond
-    # forms, so the product atoms are disconnected in the original graph; H-cap
-    # adds excess H at C3a (broken N3 bond), S1 (thiol H), and the amine (lost its
-    # only bond) — correct formula lands at a negative H-shift (max_h_transfer).
+    # forms, so the product atoms are disconnected in the original graph. The HCN
+    # hydrogen comes from the amine, which stays in the product: H shift -1.
     # NL confirmed empirically: mol_id 27770 (spec) shows NL=27.0113 Da at
     # intensity 217/999 (2nd-most-intense peak); consistent NL≈27.011 across
     # 13/14 halogenated NIST20 2-aminobenzothiazoles checked.
@@ -712,8 +724,9 @@ def _apply_smarts_prepass(
     components (containing ``merge_outer_map_nums`` atoms) are merged into one
     fragment.
 
-    Only the root (un-fragmented) molecule is processed; the resulting fragment
-    pairs are injected as depth-1 children in the DAG.
+    Only the root (un-fragmented) molecule is processed. The DAG builder injects the
+    resulting pairs as root children: at node depth 1 and expanded on the multi-cut
+    path, at node depth 2 and not expanded on the single-cut path.
 
     Args:
         rules: List of :class:`SmartsFragRule` to apply.
@@ -753,7 +766,7 @@ def _apply_smarts_prepass(
             if map_num != 0:
                 q_idx_to_map[q_idx] = map_num
 
-        matches = mol.GetSubstructMatches(patt)
+        matches = mol.GetSubstructMatches(patt, uniquify=rule.uniquify)
         for match in matches:
             # match[q_idx] = mol atom index for query atom q_idx
             map_num_to_mol: dict[int, int] = {
@@ -839,9 +852,8 @@ def _apply_nl_prepass(
     product atom mask. Most rules construct it by excluding mapped neutral-loss
     atoms; diagnostic-small-ion rules instead provide the mapped product atoms
     directly. Because the product requires new bond formation, the retained
-    atoms may be disconnected in the original graph; H-count estimation adds
-    excess H's at the free valences. The correct formula therefore lands at a
-    negative H-shift (see :class:`NeutralLossRule` docstring).
+    atoms may be disconnected in the original graph. The product formula's
+    hydrogen shift is given in :class:`NeutralLossRule` and each rule's comment.
 
     Args:
         rules: List of :class:`NeutralLossRule` to apply.
