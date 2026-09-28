@@ -43,7 +43,7 @@ def _neims(use_nce: bool, use_ace: bool) -> NeimsModel:
         prec_types=["[M+H]+"],
         inst_insert_location="mlp",
         inst_insert_size=8,
-        inst_types=["FT", "QTOF"],
+        inst_types=["OB", "QTOF"],
         log_min=1e-9,
     )
 

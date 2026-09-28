@@ -78,7 +78,8 @@ LOG_MIN = 1.0e-9  # matches config/template.yml log_min
 # config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml. Instrument types not
 # listed here (IT, QQQ, Other, ...) fall back to the global TOLERANCE/TOLERANCE_MIN_MZ.
 INST_TYPE_LOSS_TOL = {
-    "FT": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "OB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "OB_F": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da
 }
 ABS_TOLERANCE_DA = 0.01  # fixed absolute Da tolerance, reproduces the cos_sim_0.01 convention

@@ -43,7 +43,8 @@ log = logging.getLogger(__name__)
 
 # Keep aligned with INST_TYPE_LOSS_TOL in dag_oracle_scores.py and the NIST20 experiment config.
 INSTRUMENT_TOLERANCE = {
-    "FT": (1.0e-5, 200.0),
+    "OB": (1.0e-5, 200.0),
+    "OB_F": (1.0e-5, 200.0),
     "QTOF": (2.0e-5, 750.0),
 }
 DEFAULT_TOLERANCE = (1.0e-5, 200.0)
@@ -284,7 +285,7 @@ def _valid_peak_arrays(peaks: object) -> tuple[np.ndarray, np.ndarray] | None:
 
 def _mz_tolerance(inst_type: str) -> float:
     """Return a conservative absolute tolerance for spectrum-to-spectrum matching."""
-    return {"FT": 0.02, "QTOF": 0.05}.get(inst_type, 0.5)
+    return {"OB": 0.02, "OB_F": 0.02, "QTOF": 0.05}.get(inst_type, 0.5)
 
 
 def _spectral_cosine(
@@ -329,7 +330,7 @@ def _add_ce_columns(spec_df: pd.DataFrame) -> pd.DataFrame:
     out = spec_df.copy()
     ace = pd.to_numeric(out["ace"], errors="coerce")
     nce = pd.to_numeric(out["nce"], errors="coerce")
-    use_nce = out["inst_type"].eq("FT") & nce.notna()
+    use_nce = out["inst_type"].isin(["OB", "OB_F"]) & nce.notna()
     out["ce_value"] = ace.where(ace.notna(), nce).mask(use_nce, nce)
     out["ce_source"] = np.where(
         use_nce,
@@ -1682,7 +1683,7 @@ def _pdf_candidate_ce_sort_key(row: object) -> tuple[bool, float, int]:
     """Sort grouped candidates from lower to higher preferred collision energy."""
     nce = getattr(row, "nce", math.nan)
     ace = getattr(row, "ace", math.nan)
-    if str(row.inst_type) == "FT" and not _is_missing(nce):
+    if str(row.inst_type) in ("OB", "OB_F") and not _is_missing(nce):
         ce_value = float(nce)
     elif not _is_missing(ace):
         ce_value = float(ace)

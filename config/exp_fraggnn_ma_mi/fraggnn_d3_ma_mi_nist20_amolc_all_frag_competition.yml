@@ -59,7 +59,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -148,7 +149,8 @@ report_metric_std: True
 log_adduct_inst_ce_metrics: True
 
 inst_type_loss_tol:
-  FT: {rel: 1.0e-5, min_mz: 200.0}
+  OB: {rel: 1.0e-5, min_mz: 200.0}
+  OB_F: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 precision: 32

@@ -43,7 +43,7 @@ def peakless_dfs():
             "spec_id": [0, 1],
             "mol_id": [0, 0],
             "prec_type": ["[M+H]+", "[M-H]-"],
-            "inst_type": ["FT", "FT"],
+            "inst_type": ["OB", "OB"],
             "prec_mz": [181.0495, 179.0350],
             "peaks": [[], []],
         }

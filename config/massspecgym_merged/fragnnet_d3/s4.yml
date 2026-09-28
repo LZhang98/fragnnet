@@ -24,7 +24,8 @@ spec_params:
   preprocess: True
   inst_type: True
   inst_types:
-  - "FT"
+  - "OB"
+  - "OB_F"
   - "QTOF"
 mol_params:
   preprocess: True

@@ -49,8 +49,8 @@ def test_select_context_ce_values_uses_per_instrument_axis():
     result = select_context_ce_values(
         batch,
         batch_size=2,
-        inst_types=["QTOF", "FT"],
-        ce_key_by_inst={"FT": "nce", "QTOF": "ace"},
+        inst_types=["QTOF", "OB"],
+        ce_key_by_inst={"OB": "nce", "QTOF": "ace"},
     )
 
     assert torch.equal(result, torch.tensor([20.0, 45.0]))
@@ -66,8 +66,8 @@ def test_select_context_ce_values_matches_sampler_valid_value_filtering():
     result = select_context_ce_values(
         batch,
         batch_size=2,
-        inst_types=["FT"],
-        ce_key_by_inst={"FT": "nce"},
+        inst_types=["OB"],
+        ce_key_by_inst={"OB": "nce"},
     )
 
     assert torch.equal(result, torch.tensor([35.0, 45.0]))

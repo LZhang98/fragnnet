@@ -31,12 +31,13 @@ H_TRANSFER_DAG = 4         # DAGs were built with H=4 (9 positions in idx_by_h_d
 H_TRANSFER_EVAL = 7        # extended H we want to evaluate
 
 INST_TOL: dict[str, dict] = {
-    "FT":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
+    "OB":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
+    "OB_F":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
     "QTOF": {"rel": 2e-5, "min_mz": 750.0},   # 20 ppm, floor 0.015 Da
     "IT":   {"rel": 1e-5, "min_mz": 200.0},
 }
 PREC_TYPES = {"[M+H]+", "[M-H]-", "[M+Na]+", "[M+K]+", "[M+NH4]+", "[M+Cl]-"}
-INST_TYPES  = {"FT", "QTOF", "IT"}
+INST_TYPES  = {"OB", "OB_F", "QTOF", "IT"}
 FRAG_MODES  = {"CID", "HCD"}
 SAMPLE_N    = 2000
 RANDOM_SEED = 42

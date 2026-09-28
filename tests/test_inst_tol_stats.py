@@ -11,7 +11,7 @@ from fragnnet.utils.frag_utils import compute_frag_peak_stats
 
 # Matches INST_TYPE_LOSS_TOL in 03_prepare_dag_feats.py / the training configs.
 INST_TYPE_LOSS_TOL = {
-    "FT": {"rel": 1.0e-5, "min_mz": 200.0},  # eff tol at m/z<200 == 1e-5 * 200 = 0.002 Da
+    "OB": {"rel": 1.0e-5, "min_mz": 200.0},  # eff tol at m/z<200 == 1e-5 * 200 = 0.002 Da
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # eff tol at m/z<750 == 2e-5 * 750 = 0.015 Da
 }
 
@@ -45,7 +45,7 @@ def _recall(inst_type: str, delta: float) -> float:
 def test_ft_tolerance_rejects_peak_qtof_accepts():
     """A peak 0.008 Da off is outside FT's 0.002 Da window but inside QTOF's 0.015 Da window."""
     # Only the on-ion peak matches under FT -> recall 0.5.
-    assert _recall("FT", 0.008) == 0.5
+    assert _recall("OB", 0.008) == 0.5
     # Both peaks match under QTOF -> recall 1.0.
     assert _recall("QTOF", 0.008) == 1.0
 
@@ -58,5 +58,5 @@ def test_unlisted_inst_type_falls_back_to_10ppm():
 
 def test_both_peaks_within_all_windows():
     """A tiny 0.0005 Da offset is inside every window; both peaks match for all inst types."""
-    for inst_type in ("FT", "QTOF", "IT"):
+    for inst_type in ("OB", "QTOF", "IT"):
         assert _recall(inst_type, 0.0005) == 1.0

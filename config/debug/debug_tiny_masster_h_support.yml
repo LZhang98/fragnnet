@@ -22,7 +22,7 @@ spec_params:
   preprocess: false
   prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+"]
   inst_type: true
-  inst_types: [FT, QTOF]
+  inst_types: [OB, OB_F, QTOF]
   frag_mode: true
   frag_modes: [HCD, CID]
 mol_params:

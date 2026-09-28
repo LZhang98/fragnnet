@@ -230,7 +230,8 @@ _M2_ADDITIVE: dict[str, float] = {
 # (2.0067 Da) by up to ~9.7 mDa.
 # All other instruments: None → never filter (H-gain and isotope indistinguishable).
 _INST_MZ_TOL: dict[str, float | None] = {
-    "FT": 0.004,
+    "OB": 0.004,
+    "OB_F": 0.004,
 }
 
 
@@ -875,8 +876,8 @@ def detect_isotope_peaks_for_training(
         mzs: Peak m/z values of shape (N,).  Need not be sorted.
         ints: Peak intensities of shape (N,).  Same order as ``mzs``.
         prec_mz: Precursor m/z.
-        inst_type: Instrument type string (``"FT"``, ``"QTOF"``, ``"IT"``).
-            Only ``"FT"`` is currently filtered.
+        inst_type: Instrument type string (``"OB"``, ``"OB_F"``, ``"QTOF"``, ``"IT"``).
+            Only the Orbitraps (``"OB"``, ``"OB_F"``) are currently filtered.
         max_isotope: Maximum isotope order to consider.  Defaults to 2.
         require_monotone: If True, require I(M+0_frag) > I(M+k_frag).
         require_envelope: If True, require all intermediate M+j confirmed first.
@@ -932,7 +933,7 @@ def detect_isotope_peaks_for_training(
     Example:
         >>> mzs = np.array([100.0, 101.003, 300.0, 301.003])
         >>> ints = np.array([1000.0, 50.0, 2000.0, 100.0])  # R_1 = 100/2000 = 0.05
-        >>> mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=300.0, inst_type="FT")
+        >>> mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=300.0, inst_type="OB")
         >>> mask[1]  # fragment M+1: ratio 50/1000=0.05 == R_1 → True
         True
     """
@@ -1346,7 +1347,8 @@ def detect_isotope_peaks_for_training_cleanup(
 # QTOF is typically 5–20 ppm / 20–50 mDa.
 # IT and unknown instruments have low mass accuracy; use 0.5 Da.
 _CROSS_CE_MZ_TOL: dict[str, float] = {
-    "FT": 0.02,
+    "OB": 0.02,
+    "OB_F": 0.02,
     "QTOF": 0.05,
 }
 _CROSS_CE_MZ_TOL_DEFAULT = 0.5
@@ -1380,7 +1382,7 @@ def detect_cross_ce_orphan_peaks(
             length.  Arrays need not be sorted.  The list must contain at
             least one entry; groups with a single spectrum are returned
             all-False (no information to compare against).
-        inst_type: Instrument type string (e.g. ``"FT"``, ``"QTOF"``,
+        inst_type: Instrument type string (e.g. ``"OB"``, ``"QTOF"``,
             ``"IT"``).  Used to select a default m/z tolerance when
             ``mz_tol`` is ``None``.  Defaults to ``""`` (maps to 0.5 Da).
         mz_tol: Absolute m/z tolerance in Da for matching peaks across
@@ -1403,7 +1405,7 @@ def detect_cross_ce_orphan_peaks(
         >>> spec_a = (np.array([100.0, 150.0, 200.0]), np.array([1000., 500., 200.]))
         >>> spec_b = (np.array([100.0, 150.0, 999.0]), np.array([900., 450., 10.]))
         >>> spec_c = (np.array([100.0, 150.0, 200.0]), np.array([800., 300., 150.]))
-        >>> masks = detect_cross_ce_orphan_peaks([spec_a, spec_b, spec_c], inst_type="FT")
+        >>> masks = detect_cross_ce_orphan_peaks([spec_a, spec_b, spec_c], inst_type="OB")
         >>> masks[1]  # peak at 999.0 Da only in spec_b → orphan
         array([False, False,  True])
     """

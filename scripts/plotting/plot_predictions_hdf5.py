@@ -505,7 +505,8 @@ def plot_peak_stats(
 # tol_min_mz is the minimum m/z used as divisor floor (effective abs tolerance = tol_rel * tol_min_mz).
 # Matches the defaults from config/template.yml (inst_type_loss_tol section).
 _INST_TOL_MAP: dict[str, tuple[float, float]] = {
-    "FT": (1e-5, 200.0),  # 10 ppm, 0.002 Da floor
+    "OB": (1e-5, 200.0),  # 10 ppm, 0.002 Da floor
+    "OB_F": (1e-5, 200.0),  # 10 ppm, 0.002 Da floor
     "QTOF": (2e-5, 750.0),  # 20 ppm, 0.015 Da floor
     "IT": (1e-5, 200.0),  # fallback: same as FT
 }
@@ -731,7 +732,7 @@ def plot_threshold_sweep(
                     gt = gt_lookup.get(sid)
                     if gt is None:
                         continue
-                    inst = inst_type_lookup.get(sid, "FT")
+                    inst = inst_type_lookup.get(sid, "OB")
                     tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
                     scores.append(
                         _cos_hun_inst_tol(pmzs, pints, gt[:, 0], gt[:, 1], tol_rel, tol_min_mz)
@@ -1291,7 +1292,7 @@ def plot_spectra(
 
             gt_matched = pred_matched = None
             if len(true_mzs) > 0 and len(pred_mzs) > 0:
-                inst = inst_type_lookup.get(sid, "FT")
+                inst = inst_type_lookup.get(sid, "OB")
                 tol_rel, tol_min_mz = _INST_TOL_MAP.get(inst, _INST_TOL_DEFAULT)
                 gt_matched, pred_matched = _compute_peak_matches(
                     true_mzs, pred_mzs, tol_rel, tol_min_mz
@@ -1387,7 +1388,8 @@ def _make_ce_bins(
 # through the fallback palette below.
 _INST_CE_COLORS: dict[str, str] = {
     "QTOF": "#5B9BD5",  # Blue
-    "FT": "#70AD47",  # Green
+    "OB": "#70AD47",  # Green
+    "OB_F": "#2E7D32",  # Dark green
 }
 _INST_CE_FALLBACK_COLORS = ["#ED7D31", "#FFC000", "#A5A5A5", "#7030A0", "#264478"]
 
@@ -1406,8 +1408,8 @@ def _inst_ce_rows(inst_types: Iterable[str]) -> list[tuple[str, str, int, str]]:
         List of (inst_type, ce_col, ce_cap, color) tuples, one per instrument type.
     """
     present = set(inst_types)
-    ordered = [t for t in ("QTOF", "FT") if t in present]
-    ordered += sorted(present - {"QTOF", "FT"})
+    ordered = [t for t in ("QTOF", "OB", "OB_F") if t in present]
+    ordered += sorted(present - {"QTOF", "OB", "OB_F"})
 
     fallback_iter = iter(_INST_CE_FALLBACK_COLORS)
     rows = []

@@ -37,7 +37,7 @@ def test_merge_instrument_tolerance_uses_overlapping_per_peak_windows():
     peaks = [(100.0, 1.0), (100.01, 1.0)]
     spec_df = pd.DataFrame(
         {
-            "inst_type": ["FT", "QTOF"],
+            "inst_type": ["OB", "QTOF"],
             "peaks": [peaks, peaks],
         }
     )
@@ -500,12 +500,12 @@ def test_select_instrument_types_focuses_on_ft_and_qtof():
     spec_df = pd.DataFrame(
         {
             "spec_id": [0, 1, 2],
-            "inst_type": ["FT", "QTOF", "IT"],
+            "inst_type": ["OB", "QTOF", "IT"],
             "peaks": [[], [], []],
         }
     )
 
-    selected = clean_spectra_utils.select_instrument_types(spec_df, ["FT", "QTOF"])
+    selected = clean_spectra_utils.select_instrument_types(spec_df, ["OB", "QTOF"])
 
     assert selected["spec_id"].tolist() == [0, 1]
 
@@ -816,7 +816,7 @@ def test_above_precursor_cleanup_runs_per_instrument_and_reports_retention():
         {
             "mol_id": [0, 0],
             "prec_type": ["[M]+", "[M]+"],
-            "inst_type": ["FT", "QTOF"],
+            "inst_type": ["OB", "QTOF"],
             "prec_mz": [400.0, 400.0],
             # Same peaks for both: one below, the precursor, and one a neutron above it.
             "peaks": [
@@ -874,7 +874,7 @@ def test_above_precursor_filter_runs_before_subformula_filtering():
         {
             "mol_id": [0],
             "prec_type": ["[M]+"],
-            "inst_type": ["FT"],
+            "inst_type": ["OB"],
             "prec_mz": [15.0],
             "peaks": [[(12.0, 3.0), (16.0313, 1.0)]],
         }

@@ -54,7 +54,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - 'IT'
 mol_params:

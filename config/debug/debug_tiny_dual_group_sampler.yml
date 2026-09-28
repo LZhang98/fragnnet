@@ -36,7 +36,8 @@ spec_params:
     - "[M+Na]+"
   inst_type: False
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - "IT"
 mol_params:

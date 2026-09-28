@@ -28,7 +28,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -104,14 +105,16 @@ primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 cross_ev_fragment_loss_weight: 0.0
 inst_type_loss_tol:
-  FT: {rel: 1.0e-5, min_mz: 200.0}
+  OB: {rel: 1.0e-5, min_mz: 200.0}
+  OB_F: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 # Keep adjacent CE spectra together. The graph budget counts directed molecular
 # edges; tune it downward if the first run approaches the device memory limit.
 ce_context_spectra_per_context: 5
 ce_context_ce_key_by_inst:
-  FT: nce
+  OB: nce
+  OB_F: nce
   QTOF: ace
   IT: nce
 group_sampler: False

@@ -253,7 +253,7 @@ def main() -> None:
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", default="test")
     parser.add_argument("--frag_dp", default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags")
-    parser.add_argument("--inst_type", default="FT")
+    parser.add_argument("--inst_type", default="OB")
     parser.add_argument("--frag_mode", default="HCD")
     parser.add_argument("--prec_type", default="[M+H]+")
     parser.add_argument("--max_mols", type=int, default=1500)

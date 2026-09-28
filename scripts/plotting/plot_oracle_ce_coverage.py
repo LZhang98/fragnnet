@@ -38,7 +38,7 @@ ADDUCTS = ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
 ADDUCT_COLORS = {"[M+H]+": "#2a78d6", "[M-H]-": "#008300", "[M+Na]+": "#e87ba4", "[M+Cl]-": "#eda100"}
 # dataviz reference sequential blue ramp, light -> dark
 CE_RAMP = ["#b7d3f6", "#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#184f95", "#0d366b"]
-INSTRUMENTS = [("FT", "NCE (%)"), ("QTOF", "ACE (eV)")]
+INSTRUMENTS = [("OB", "NCE (%)"), ("OB_F", "NCE (%)"), ("QTOF", "ACE (eV)")]
 MIN_N = 30
 SCATTER_MAX_POINTS = 8000  # per panel, subsampled for legibility/rendering
 SINA_HALFWIDTH = 3.5  # max +/- CE offset; each point's offset scales with local density

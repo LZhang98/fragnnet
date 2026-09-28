@@ -19,7 +19,8 @@ from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 # not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
 # --inst_type_loss_tol (JSON).
 DEFAULT_INST_TYPE_LOSS_TOL = {
-    "FT": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "OB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "OB_F": {"rel": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da (covers truncation artifact)
 }
 
@@ -675,9 +676,9 @@ if __name__ == "__main__":
         default=DEFAULT_INST_TYPE_LOSS_TOL,
         help=(
             "JSON mapping of instrument type to per-instrument m/z tolerance for the "
-            'inst_tol stats variant, e.g. \'{"FT": {"rel": 1e-5, "min_mz": 200.0}}\'. '
+            'inst_tol stats variant, e.g. \'{"OB": {"rel": 1e-5, "min_mz": 200.0}}\'. '
             "Instrument types absent from the mapping fall back to a 10 ppm relative "
-            "tolerance. Default matches the training configs (FT 10 ppm/200 Da, "
+            "tolerance. Default matches the training configs (OB/OB_F 10 ppm/200 Da, "
             "QTOF 20 ppm/750 Da)."
         ),
     )

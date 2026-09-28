@@ -93,7 +93,7 @@ def _model(ckpt_dp: str, **overrides) -> ChemLMModel:
         "prec_types": ["[M+H]+"],
         "inst_insert_location": "mlp",
         "inst_insert_size": 8,
-        "inst_types": ["FT", "QTOF"],
+        "inst_types": ["OB", "QTOF"],
         "log_min": 1e-9,
     }
     kwargs.update(overrides)
@@ -272,7 +272,7 @@ def pl_config(ckpt_dp) -> dict:
         lr_total_steps=10,
     )
     config["spec_params"].update(
-        nce=True, ace=True, merge=False, merge_keep_ces=False, inst_types=["FT", "QTOF"]
+        nce=True, ace=True, merge=False, merge_keep_ces=False, inst_types=["OB", "QTOF"]
     )
     return config
 

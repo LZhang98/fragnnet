@@ -72,7 +72,7 @@ def _base_spec_params(**overrides) -> dict:
         "prec_type_str": False,
         "prec_types": ["[M+H]+", "[M-H]-"],
         "inst_type": False,
-        "inst_types": ["FT", "QTOF"],
+        "inst_types": ["OB", "QTOF"],
         "frag_mode": False,
         "frag_modes": [],
         "prec_mz": False,
@@ -148,7 +148,7 @@ def mixed_spec_df():
             "mol_id": 1,
             "group_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": 30.0,
             "ace": 15.0,
             "prec_mz": 300.0,
@@ -158,7 +158,7 @@ def mixed_spec_df():
             "mol_id": 1,
             "group_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": 50.0,
             "ace": 25.0,
             "prec_mz": 300.0,
@@ -168,7 +168,7 @@ def mixed_spec_df():
             "mol_id": 2,
             "group_id": 2,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": 70.0,
             "ace": 35.0,
             "prec_mz": 300.0,
@@ -178,7 +178,7 @@ def mixed_spec_df():
             "mol_id": 2,
             "group_id": 2,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": float("nan"),
             "ace": float("nan"),
             "prec_mz": 300.0,
@@ -189,7 +189,7 @@ def mixed_spec_df():
             "mol_id": 3,
             "group_id": 3,
             "prec_type": "[M-H]-",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": 40.0,
             "ace": 20.0,
             "prec_mz": 298.0,
@@ -199,7 +199,7 @@ def mixed_spec_df():
             "mol_id": 3,
             "group_id": 3,
             "prec_type": "[M-H]-",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": 60.0,
             "ace": 30.0,
             "prec_mz": 298.0,
@@ -209,7 +209,7 @@ def mixed_spec_df():
             "mol_id": 4,
             "group_id": 4,
             "prec_type": "[M-H]-",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "nce": 80.0,
             "ace": 40.0,
             "prec_mz": 298.0,
@@ -331,13 +331,13 @@ class TestFilterCEByInstNCE:
             ft_cfg["nce_min"] = nce_min
         if nce_max is not None:
             ft_cfg["nce_max"] = nce_max
-        return _base_spec_params(split_filters={"train": {"filter_ce_by_inst": {"FT": ft_cfg}}})
+        return _base_spec_params(split_filters={"train": {"filter_ce_by_inst": {"OB": ft_cfg}}})
 
     def test_ft_spectra_above_nce_max_dropped(self, mixed_spec_df, mixed_mol_df):
         """FT spectra with NCE > 60 (spec_ids 3, 7) are dropped."""
         params = self._params_ft_nce(nce_max=60.0)
         out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
-        ft_ids = out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist()
+        ft_ids = out_spec[out_spec["inst_type"] == "OB"]["spec_id"].tolist()
         assert 3 not in ft_ids
         assert 7 not in ft_ids
 
@@ -345,7 +345,7 @@ class TestFilterCEByInstNCE:
         """FT spectra with 0 ≤ NCE ≤ 60 (spec_ids 1, 2, 5, 6) are kept."""
         params = self._params_ft_nce(nce_min=0.0, nce_max=60.0)
         out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
-        ft_ids = set(out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist())
+        ft_ids = set(out_spec[out_spec["inst_type"] == "OB"]["spec_id"].tolist())
         assert {1, 2, 5, 6}.issubset(ft_ids)
 
     def test_ft_missing_nce_dropped_when_filter_active(self, mixed_spec_df, mixed_mol_df):
@@ -393,7 +393,7 @@ class TestFilterCEByInstACE:
         """FT spectra are not touched by a QTOF-only ACE filter."""
         params = self._params_qtof_ace(ace_max=40.0)
         out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
-        ft_ids = set(out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist())
+        ft_ids = set(out_spec[out_spec["inst_type"] == "OB"]["spec_id"].tolist())
         assert {1, 2, 3, 4, 5, 6, 7}.issubset(ft_ids)
 
     def test_qtof_ace_filter_with_nce_only_mode(self, mixed_spec_df, mixed_mol_df):
@@ -433,7 +433,7 @@ class TestRampedSteppedCE:
                 "mol_id": 1,
                 "group_id": 1,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": 10.0,
                 "nce_extra_1": 50.0,
                 "nce_extra_2": float("nan"),
@@ -448,7 +448,7 @@ class TestRampedSteppedCE:
                 "mol_id": 2,
                 "group_id": 2,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": 10.0,
                 "nce_extra_1": 70.0,
                 "nce_extra_2": float("nan"),
@@ -463,7 +463,7 @@ class TestRampedSteppedCE:
                 "mol_id": 3,
                 "group_id": 3,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": 20.0,
                 "nce_extra_1": 40.0,
                 "nce_extra_2": 60.0,
@@ -478,7 +478,7 @@ class TestRampedSteppedCE:
                 "mol_id": 4,
                 "group_id": 4,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": 20.0,
                 "nce_extra_1": 40.0,
                 "nce_extra_2": 80.0,
@@ -495,7 +495,7 @@ class TestRampedSteppedCE:
         spec_df = self._make_ramped_spec_df()
         mol_df = _make_mol_df([1, 2, 3, 4])
         params = _base_spec_params(
-            split_filters={"train": {"filter_ce_by_inst": {"FT": {"nce_max": 60.0}}}}
+            split_filters={"train": {"filter_ce_by_inst": {"OB": {"nce_max": 60.0}}}}
         )
         out_spec, _ = _run_setup_dfs(spec_df, mol_df, "train", params)
         assert 1 in out_spec["spec_id"].values  # ramp [10–50]: within range
@@ -506,7 +506,7 @@ class TestRampedSteppedCE:
         spec_df = self._make_ramped_spec_df()
         mol_df = _make_mol_df([1, 2, 3, 4])
         params = _base_spec_params(
-            split_filters={"train": {"filter_ce_by_inst": {"FT": {"nce_max": 60.0}}}}
+            split_filters={"train": {"filter_ce_by_inst": {"OB": {"nce_max": 60.0}}}}
         )
         out_spec, _ = _run_setup_dfs(spec_df, mol_df, "train", params)
         assert 3 in out_spec["spec_id"].values  # stepped [20/40/60]: all ≤ 60
@@ -517,7 +517,7 @@ class TestRampedSteppedCE:
         spec_df = self._make_ramped_spec_df()
         mol_df = _make_mol_df([1, 2, 3, 4])
         params = _base_spec_params(
-            split_filters={"train": {"filter_ce_by_inst": {"FT": {"nce_min": 15.0}}}}
+            split_filters={"train": {"filter_ce_by_inst": {"OB": {"nce_min": 15.0}}}}
         )
         out_spec, _ = _run_setup_dfs(spec_df, mol_df, "train", params)
         assert 1 not in out_spec["spec_id"].values  # primary 10 < 15 → dropped
@@ -536,7 +536,7 @@ class TestCombinedFilter:
                 "train": {
                     "filter_prec_types": True,
                     "filter_ce_by_inst": {
-                        "FT": {"nce_min": 0.0, "nce_max": 60.0},
+                        "OB": {"nce_min": 0.0, "nce_max": 60.0},
                         "QTOF": {"ace_min": 0.0, "ace_max": 40.0},
                     },
                 },
@@ -591,7 +591,7 @@ class TestSpectrumCleanup:
                     "mol_id": 1,
                     "group_id": 1,
                     "prec_type": "[M+H]+",
-                    "inst_type": "FT",
+                    "inst_type": "OB",
                     "nce": 20.0,
                     "ace": 10.0,
                     "prec_mz": 101.0,
@@ -628,7 +628,7 @@ class TestSpectrumCleanup:
                     "mol_id": 1,
                     "group_id": 1,
                     "prec_type": "[M+H]+",
-                    "inst_type": "FT",
+                    "inst_type": "OB",
                     "nce": 20.0,
                     "ace": 10.0,
                     "prec_mz": 101.0,
@@ -639,7 +639,7 @@ class TestSpectrumCleanup:
                     "mol_id": 2,
                     "group_id": 2,
                     "prec_type": "[M+H]+",
-                    "inst_type": "FT",
+                    "inst_type": "OB",
                     "nce": 20.0,
                     "ace": 10.0,
                     "prec_mz": 101.0,
@@ -705,7 +705,7 @@ class TestSpectrumCleanup:
                     "mol_id": 1,
                     "group_id": 1,
                     "prec_type": "[M]+",
-                    "inst_type": "FT",
+                    "inst_type": "OB",
                     "nce": 20.0,
                     "ace": 10.0,
                     "prec_mz": 16.0,
@@ -720,7 +720,7 @@ class TestSpectrumCleanup:
                     "mol_id": 2,
                     "group_id": 2,
                     "prec_type": "[M]+",
-                    "inst_type": "FT",
+                    "inst_type": "OB",
                     "nce": 20.0,
                     "ace": 10.0,
                     "prec_mz": 16.0,

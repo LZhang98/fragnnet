@@ -30,7 +30,8 @@ spec_params:
     - "[M+Na]+"
   inst_type: true
   inst_types:
-    - FT
+    - OB
+    - OB_F
     - QTOF
   frag_mode: true
   frag_modes:

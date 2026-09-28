@@ -22,7 +22,7 @@ def _base_config(**overrides) -> dict:
         "dynamic_batch_sampler_max": 1000,
         "batch_sampler_type": "spec_mol_frag",
         "ce_context_spectra_per_context": 5,
-        "ce_context_ce_key_by_inst": {"FT": "nce", "QTOF": "ace", "IT": "nce"},
+        "ce_context_ce_key_by_inst": {"OB": "nce", "QTOF": "ace", "IT": "nce"},
         "devices": 1,
         "dag_size_curriculum": False,
         "dag_size_curriculum_start_fraction": 0.25,
@@ -39,7 +39,7 @@ def _base_config(**overrides) -> dict:
         "ce_pair_min_endpoint_confidence": None,
         "ce_pair_min_endpoint_reliability": None,
         "ce_pair_subset": "switches",
-        "ce_pair_eligible_inst_types": ["FT"],
+        "ce_pair_eligible_inst_types": ["OB"],
         "ce_pair_eligible_prec_types": ["[M+H]+"],
         "cross_ev_fragment_loss_weight": 0.0,
         "masster_share_proposal_across_ev": False,
@@ -50,16 +50,16 @@ def _base_config(**overrides) -> dict:
         "precursor_pair_nce_min": 0.0,
         "precursor_pair_nce_max": 20.0,
         "precursor_pair_absent_intensity_floor": 0.01,
-        "precursor_pair_eligible_inst_types": ["FT"],
+        "precursor_pair_eligible_inst_types": ["OB"],
         "precursor_pair_eligible_prec_types": ["[M+H]+"],
         "target_rel_ints_thresh": 0.01,
         "train_sample_weight": "none",
-        "inst_type_loss_tol": {"FT": {"rel": 1.0e-5, "min_mz": 200.0}},
+        "inst_type_loss_tol": {"OB": {"rel": 1.0e-5, "min_mz": 200.0}},
         "spec_params": {
             "merge": False,
             "nce": True,
             "ace": False,
-            "inst_types": ["FT", "QTOF", "IT"],
+            "inst_types": ["OB", "QTOF", "IT"],
             "prec_types": ["[M+H]+", "[M-H]-"],
         },
     }
@@ -153,13 +153,13 @@ class TestValidateSamplerConfig:
                     {
                         "group_id": 1,
                         "mol_id": 1,
-                        "inst_type": "FT",
+                        "inst_type": "OB",
                         "nce": [10.0],
                     },
                     {
                         "group_id": 1,
                         "mol_id": 1,
-                        "inst_type": "FT",
+                        "inst_type": "OB",
                         "nce": [20.0],
                     },
                 ]
@@ -307,7 +307,7 @@ class TestValidateSamplerConfig:
 
     @pytest.mark.parametrize(
         "ce_key_by_inst",
-        [None, {}, {"FT": "invalid"}, {1: "nce"}],
+        [None, {}, {"OB": "invalid"}, {1: "nce"}],
     )
     def test_ce_context_batch_sampler_rejects_invalid_ce_mapping(self, ce_key_by_inst):
         with pytest.raises(ValueError, match="ce_context_ce_key_by_inst"):
@@ -335,7 +335,7 @@ class TestValidateSamplerConfig:
                 _base_config(
                     batch_sampler_type="ce_context",
                     dynamic_batch_sampler_mode="frag_edge",
-                    ce_context_ce_key_by_inst={"FT": "nce", "QTOF": "ace"},
+                    ce_context_ce_key_by_inst={"OB": "nce", "QTOF": "ace"},
                 )
             )
 
@@ -434,7 +434,7 @@ class TestValidateSamplerConfig:
                     dynamic_batch_sampler_mode="frag_edge",
                     ce_pair_loss_weight=0.1,
                     ce_pair_min_endpoint_confidence=0.2,
-                    inst_type_loss_tol={"FT": tolerance},
+                    inst_type_loss_tol={"OB": tolerance},
                 )
             )
 
@@ -487,7 +487,7 @@ class TestValidateSamplerConfig:
             validate_sampler_config(
                 _base_config(
                     precursor_pair_loss_weight=0.1,
-                    inst_type_loss_tol={"FT": tolerance},
+                    inst_type_loss_tol={"OB": tolerance},
                 )
             )
 

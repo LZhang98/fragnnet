@@ -42,7 +42,8 @@ spec_params:
     - "[M+Na]+"
   inst_type: True
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - "QQQ"
     - "Other"

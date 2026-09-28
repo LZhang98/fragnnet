@@ -33,7 +33,8 @@ PRECURSOR_TYPE_ALIASES = {
 RDBE_COEFFICIENTS = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
 
 INSTRUMENT_TOLERANCES = {
-    "FT": {"relative": 1.0e-5, "min_mz": 200.0},
+    "OB": {"relative": 1.0e-5, "min_mz": 200.0},
+    "OB_F": {"relative": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"relative": 2.0e-5, "min_mz": 750.0},
 }
 MERGE_METHODS = ("common_overlap", "naive_centroid")

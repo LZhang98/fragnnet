@@ -40,7 +40,7 @@ spec_params:
     - "[M+Na]+"
     - "[M+Cl]-"
   inst_type: True
-  inst_types: [FT, QTOF, IT]
+  inst_types: [OB, OB_F, QTOF, IT]
   frag_mode: True
   frag_modes: [HCD, CID]
   preprocess: True

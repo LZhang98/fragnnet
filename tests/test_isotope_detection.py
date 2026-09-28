@@ -182,7 +182,7 @@ class TestDetectIsotopePeaksForTraining:
             prec_mz=prec_mz,
             prec_ints=(1000.0, 57.0),  # R_1 = 0.057
         )
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert mask[1], "Fragment M+1 with ratio matching prec R_1 should be detected"
 
     def test_m1_not_detected_when_no_above_prec_peaks(self):
@@ -191,7 +191,7 @@ class TestDetectIsotopePeaksForTraining:
         # Fragment only — no precursor peaks in spectrum
         mzs = np.array([109.05, 109.05 + _NM])
         ints = np.array([1000.0, 57.0])
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert not mask.any(), "Without above-prec peaks, R_k is unknown → all-False"
 
     def test_m1_not_detected_when_ratio_far_from_prec(self):
@@ -204,7 +204,7 @@ class TestDetectIsotopePeaksForTraining:
             prec_mz=prec_mz,
             prec_ints=(1000.0, 30.0),  # R_1 = 0.03
         )
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert not mask[1], "Fragment M+1 with obs/R_k=20 >> ratio_hi=10.0 should not be flagged"
 
     # ----- M+2 detection with Cl precursor -----
@@ -221,7 +221,7 @@ class TestDetectIsotopePeaksForTraining:
             prec_mz=prec_mz,
             prec_ints=(1000.0, 35.0, 322.0),  # R_1=0.035, R_2=0.322
         )
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert mask[2], "Cl-retaining fragment M+2 matching prec R_2 should be detected"
 
     def test_cmf_fragment_not_falsely_flagged(self):
@@ -238,7 +238,7 @@ class TestDetectIsotopePeaksForTraining:
             prec_mz=prec_mz,
             prec_ints=(1000.0, 35.0, 322.0),  # R_2 = 0.322
         )
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert not mask[2], "CMF fragment with tiny M+2 should NOT be flagged (ratio << R_2)"
 
     # ----- [M+H]+ baseline -----
@@ -254,7 +254,7 @@ class TestDetectIsotopePeaksForTraining:
             prec_mz=prec_mz,
             prec_ints=(1000.0, 95.0),  # R_1 = 0.095
         )
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert mask[1], "[M+H]+ M+1 should be detected"
 
     # ----- instrument gating -----
@@ -320,7 +320,7 @@ class TestDetectIsotopePeaksAggressiveMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             aggressive=True,
             aggressive_min_pairs=3,
             aggressive_cv=0.3,
@@ -345,14 +345,14 @@ class TestDetectIsotopePeaksAggressiveMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             aggressive=False,
         )
         mask_aggressive = detect_isotope_peaks_for_training(
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             aggressive=True,
         )
         # Both modes should give the same result when above-prec peaks are present
@@ -377,7 +377,7 @@ class TestDetectIsotopePeaksAggressiveMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             aggressive=True,
             aggressive_min_pairs=3,
             aggressive_cv=0.3,
@@ -399,7 +399,7 @@ class TestDetectIsotopePeaksAggressiveMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             aggressive=True,
             aggressive_min_pairs=3,
         )
@@ -477,7 +477,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
         )
@@ -500,7 +500,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
         )
@@ -525,7 +525,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             formula=formula,
             prec_type=prec_type,
             max_isotope=2,
@@ -555,7 +555,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             formula=formula,
             prec_type=prec_type,
             max_isotope=2,
@@ -580,7 +580,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
             aggressive=False,
@@ -589,7 +589,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
             aggressive=False,
@@ -613,7 +613,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
         )
@@ -634,7 +634,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=400.0,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
             aggressive=True,
@@ -661,7 +661,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=101.060,
-            inst_type="FT",
+            inst_type="OB",
             formula="C5H8O2",
             prec_type="[M+H]+",
             max_isotope=2,
@@ -679,7 +679,7 @@ class TestDetectIsotopePeaksFormulaMode:
             prec_mz=prec_mz,
             prec_ints=(1000.0, 100.0),
         )
-        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="OB")
         assert mask[1], "Fragment M+1 at 25% of R_k should be flagged with ratio_lo=0.2"
 
     def test_two_pair_aggressive_detected(self):
@@ -700,7 +700,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             aggressive=True,
         )
         assert mask[1] and mask[3], "Two consistent pairs should be enough for aggressive detection"
@@ -729,7 +729,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             formula=formula,
             prec_type=prec_type,
             aggressive=True,
@@ -758,7 +758,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             formula=formula,
             prec_type=prec_type,
             aggressive=True,
@@ -785,7 +785,7 @@ class TestDetectIsotopePeaksFormulaMode:
             mzs,
             ints,
             prec_mz=prec_mz,
-            inst_type="FT",
+            inst_type="OB",
             formula=formula,
             prec_type="[M+H]+",
             aggressive=True,
@@ -817,7 +817,7 @@ class TestDetectIsotopePeaksFormulaMode:
             "mzs": mzs,
             "ints": ints,
             "prec_mz": prec_mz,
-            "inst_type": "FT",
+            "inst_type": "OB",
             "formula": formula,
             "prec_type": "[M+H]+",
             "aggressive": True,
@@ -951,7 +951,7 @@ class TestTrainingIsotopeCleanup:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
             remove_regular_isotopes=True,
@@ -973,7 +973,7 @@ class TestTrainingIsotopeCleanup:
             mzs,
             ints,
             prec_mz=243.098,
-            inst_type="FT",
+            inst_type="OB",
             formula="C10H14N2O5",
             prec_type="[M+H]+",
             remove_regular_isotopes=False,
@@ -1013,7 +1013,7 @@ class TestFormulaSources:
             mzs,
             ints,
             prec_mz=self.PREC_MZ,
-            inst_type="FT",
+            inst_type="OB",
             formula=self.FORMULA,
             prec_type="[M+H]+",
             aggressive=True,
@@ -1212,7 +1212,7 @@ class TestRegularIsotopeBranchKnownDefects:
 
     @pytest.mark.parametrize(
         ("inst_type", "expected_removed"),
-        [("FT", 0), ("QTOF", 3), ("IT", 3)],
+        [("OB", 0), ("QTOF", 3), ("IT", 3)],
     )
     def test_the_regular_branch_is_not_instrument_gated(self, inst_type, expected_removed):
         """DEFECT 4: `_INST_MZ_TOL`'s None means "never filter", but becomes 0.02 Da here.

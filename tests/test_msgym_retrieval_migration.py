@@ -58,7 +58,7 @@ def test_build_proc_aligns_candidates_and_query_groups(tmp_path: Path) -> None:
             "candidate_smiles": ["C", "CC", "CC", "CC"],
             "prec_type": ["[M+H]+", "[M+H]+", "[M+H]+", "[M-H]-"],
             "prec_mz": [17.0, 17.0, 17.0, 29.0],
-            "inst_type": ["FT", "FT", "FT", "QTOF"],
+            "inst_type": ["OB", "OB", "OB", "QTOF"],
             "frag_mode": ["HCD", "HCD", "HCD", "CID"],
             "ace": [20.0, 20.0, 20.0, 30.0],
             "nce": [float("nan")] * 4,

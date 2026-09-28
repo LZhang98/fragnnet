@@ -58,7 +58,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -173,7 +174,8 @@ eval_mz_bin_res:
 eval_bin_sqrt: True
 
 inst_type_loss_tol:
-  FT:   {rel: 1.0e-5, min_mz: 200.0}
+  OB:   {rel: 1.0e-5, min_mz: 200.0}
+  OB_F:   {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 # ============================================================================

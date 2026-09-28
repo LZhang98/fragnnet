@@ -283,7 +283,7 @@ def minimal_model():
         prec_types=["[M+H]+"],
         inst_insert_location="mol",
         inst_insert_size=8,
-        inst_types=["FT"],
+        inst_types=["OB"],
         frag_mode_insert_location="mol",
         frag_mode_insert_size=8,
         frag_modes=["HCD"],

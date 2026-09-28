@@ -152,6 +152,11 @@ class BaseDataset(Dataset):
         mol_df = (
             mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
         )
+        if "inst_type" in spec_df.columns and (spec_df["inst_type"] == "FT").any():
+            raise ValueError(
+                "spec_df uses the retired instrument type 'FT'; relabel it to 'OB'/'OB_F' with "
+                "preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py"
+            )
 
         split_dfs = []
         for split in splits:

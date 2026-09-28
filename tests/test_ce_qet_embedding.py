@@ -160,7 +160,8 @@ def test_qet_separates_the_ace_alias_pair() -> None:
 
     assert isinstance(encoder.ace_embedding, QETEnergyEncoder)
     assert not th.allclose(qet[0], qet[1], atol=1e-3)
-    # 128 - 30 = 98: the default ace_max 100 table aliases common QTOF energies.
+    # 128 - 30 = 98: the ace_max 100 table (the template default before 2026-09-28) aliases
+    # common QTOF energies.
     th.testing.assert_close(old[0], old[1], atol=1e-4, rtol=0.0)
 
 

@@ -38,7 +38,7 @@ class TestTwoSpectra:
         """Peaks present in both spectra are not orphans."""
         a = _make([100.0, 150.0, 200.0], [1000.0, 500.0, 200.0])
         b = _make([100.0, 150.0, 200.0], [900.0, 450.0, 180.0])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         assert not np.any(masks[0])
         assert not np.any(masks[1])
 
@@ -46,7 +46,7 @@ class TestTwoSpectra:
         """Peak present in only one spectrum is labelled orphan."""
         a = _make([100.0, 150.0, 999.0], [1000.0, 500.0, 10.0])
         b = _make([100.0, 150.0], [900.0, 450.0])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         # 999.0 is only in spectrum a
         assert masks[0][2]
         assert not masks[0][0]
@@ -57,7 +57,7 @@ class TestTwoSpectra:
     def test_both_have_unique_peaks(self):
         a = _make([100.0, 777.0], [1000.0, 50.0])
         b = _make([100.0, 888.0], [900.0, 30.0])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         # 100.0 shared
         assert not masks[0][0]
         assert not masks[1][0]
@@ -74,7 +74,7 @@ class TestThreeSpectra:
         c = _make([100.0], [800.0])
         # 200.0: in a and b, not c → matches 1 other CE from a's perspective → not orphan
         # 300.0: only in b → orphan for b
-        masks = detect_cross_ce_orphan_peaks([a, b, c], inst_type="FT", min_other_ces=1)
+        masks = detect_cross_ce_orphan_peaks([a, b, c], inst_type="OB", min_other_ces=1)
         assert not masks[0][1]  # 200.0 in a matched by b
         assert masks[1][2]  # 300.0 only in b
 
@@ -84,7 +84,7 @@ class TestThreeSpectra:
         b = _make([100.0, 200.0], [900.0, 450.0])
         c = _make([100.0], [800.0])
         # 200.0: in a and b, not c → matches 1 other CE → orphan when min_other_ces=2
-        masks = detect_cross_ce_orphan_peaks([a, b, c], inst_type="FT", min_other_ces=2)
+        masks = detect_cross_ce_orphan_peaks([a, b, c], inst_type="OB", min_other_ces=2)
         assert masks[0][1]  # 200.0 in a: only 1 match (b), need 2
         assert masks[1][1]  # 200.0 in b: only 1 match (a), need 2
         # 100.0 is in all 3 → both a and b have 2 other matches
@@ -97,7 +97,7 @@ class TestTolerance:
         """FT default 0.02 Da: peaks 0.015 Da apart match."""
         a = _make([100.000], [1000.0])
         b = _make([100.015], [900.0])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         assert not masks[0][0]
         assert not masks[1][0]
 
@@ -105,7 +105,7 @@ class TestTolerance:
         """FT default 0.02 Da: peaks 0.025 Da apart do not match → both orphan."""
         a = _make([100.000], [1000.0])
         b = _make([100.025], [900.0])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         assert masks[0][0]
         assert masks[1][0]
 
@@ -130,10 +130,10 @@ class TestTolerance:
         a = _make([100.000], [1000.0])
         b = _make([100.100], [900.0])
         # With FT default (0.02 Da): orphans
-        masks_ft = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks_ft = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         assert masks_ft[0][0]
         # With explicit 0.2 Da: not orphans
-        masks_wide = detect_cross_ce_orphan_peaks([a, b], inst_type="FT", mz_tol=0.2)
+        masks_wide = detect_cross_ce_orphan_peaks([a, b], inst_type="OB", mz_tol=0.2)
         assert not masks_wide[0][0]
 
 
@@ -142,7 +142,7 @@ class TestIntensityIgnored:
         """Orphan detection is m/z-based only; a high-intensity unique peak is still orphan."""
         a = _make([100.0, 500.0], [1000.0, 9999.0])
         b = _make([100.0], [900.0])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         # 500.0 is high intensity but unique → orphan
         assert masks[0][1]
 
@@ -152,7 +152,7 @@ class TestEmptySpectra:
         """Empty spectrum contributes nothing; peaks in the other are orphans."""
         a = _make([100.0, 200.0], [1000.0, 500.0])
         b = _make([], [])
-        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks([a, b], inst_type="OB")
         # b is empty, so all peaks in a are orphans
         assert np.all(masks[0])
         assert masks[1].shape == (0,)
@@ -184,7 +184,7 @@ class TestValidation:
 class TestOutputShape:
     def test_output_length_matches_input(self):
         specs = [_make([100.0 + i, 200.0], [1000.0, 500.0]) for i in range(5)]
-        masks = detect_cross_ce_orphan_peaks(specs, inst_type="FT")
+        masks = detect_cross_ce_orphan_peaks(specs, inst_type="OB")
         assert len(masks) == 5
         for i, (mzs, _) in enumerate(specs):
             assert masks[i].shape == (len(mzs),)

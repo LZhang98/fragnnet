@@ -125,7 +125,7 @@ class CEContextDataset:
 class TestCEContextDynamicBatchSampler:
     """Tests for the minimal single-GPU CE context sampler."""
 
-    CE_KEY_BY_INST = {"FT": "nce", "QTOF": "ace"}
+    CE_KEY_BY_INST = {"OB": "nce", "QTOF": "ace"}
 
     @staticmethod
     def _row(mol_id, nce, frag_mode="HCD"):
@@ -133,7 +133,7 @@ class TestCEContextDynamicBatchSampler:
             "group_id": mol_id,
             "mol_id": mol_id,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "OB",
             "frag_mode": frag_mode,
             "nce": [float(nce)],
         }

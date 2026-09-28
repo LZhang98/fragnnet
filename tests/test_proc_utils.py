@@ -361,7 +361,7 @@ def test_merge_spec_df_tolerance_consensus_normalizes_and_equalizes_ces():
             {
                 "group_id": 1,
                 "spec_id": 1,
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": [10.0],
                 "ace": [5.0],
                 "peaks": [(100.0, 9.0), (200.0, 1.0)],
@@ -369,7 +369,7 @@ def test_merge_spec_df_tolerance_consensus_normalizes_and_equalizes_ces():
             {
                 "group_id": 1,
                 "spec_id": 2,
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": [10.0],
                 "ace": [5.0],
                 "peaks": [(100.0005, 8.0), (300.0, 2.0)],
@@ -377,7 +377,7 @@ def test_merge_spec_df_tolerance_consensus_normalizes_and_equalizes_ces():
             {
                 "group_id": 1,
                 "spec_id": 3,
-                "inst_type": "FT",
+                "inst_type": "OB",
                 "nce": [20.0],
                 "ace": [10.0],
                 "peaks": [(100.0008, 1.0), (400.0, 9.0)],
@@ -390,7 +390,7 @@ def test_merge_spec_df_tolerance_consensus_normalizes_and_equalizes_ces():
         keep_ces=True,
         method="tolerance_consensus",
         ce_key="nce",
-        tolerance_by_inst={"FT": {"rel": 1.0e-5, "min_mz": 200.0}},
+        tolerance_by_inst={"OB": {"rel": 1.0e-5, "min_mz": 200.0}},
         require_common_tolerance_overlap=True,
         normalize_each_spectrum=True,
         equal_ce_weight=True,
@@ -423,7 +423,7 @@ def test_merge_spec_df_tolerance_consensus_requires_known_instrument():
             spec_df,
             method="tolerance_consensus",
             ce_key="nce",
-            tolerance_by_inst={"FT": {"rel": 1.0e-5, "min_mz": 200.0}},
+            tolerance_by_inst={"OB": {"rel": 1.0e-5, "min_mz": 200.0}},
             normalize_each_spectrum=True,
             equal_ce_weight=True,
         )

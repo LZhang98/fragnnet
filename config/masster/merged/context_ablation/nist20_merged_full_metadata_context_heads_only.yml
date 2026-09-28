@@ -49,7 +49,7 @@ spec_params:
   prec_type: True
   prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
   inst_type: True
-  inst_types: [FT, QTOF, IT]
+  inst_types: [OB, OB_F, QTOF, IT]
   frag_mode: True
   frag_modes: [HCD, CID]
   merge_keep_ces: True
@@ -191,5 +191,6 @@ eval_mz_bin_res:
 # Per-instrument loss tolerance. QTOF floors at 0.015 Da to cover NIST23 floor-truncated
 # m/z; FT stays at 10 ppm. FT-only configs are numerically unaffected.
 inst_type_loss_tol:
-  FT: {rel: 1.0e-5, min_mz: 200.0}
+  OB: {rel: 1.0e-5, min_mz: 200.0}
+  OB_F: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}

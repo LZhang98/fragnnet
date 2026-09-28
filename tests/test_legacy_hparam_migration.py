@@ -72,13 +72,13 @@ def test_explicit_values_are_never_overwritten():
         "report_metric_std": True,
         "ion_channel_rank": 8,
         "mol_max_degree": 64,
-        "inst_type_loss_tol": {"FT": {"rel": 1e-5, "min_mz": 200.0}},
+        "inst_type_loss_tol": {"OB": {"rel": 1e-5, "min_mz": 200.0}},
     }
     migrate_legacy_hparams(config)
     assert config["report_metric_std"] is True
     assert config["ion_channel_rank"] == 8
     assert config["mol_max_degree"] == 64
-    assert config["inst_type_loss_tol"] == {"FT": {"rel": 1e-5, "min_mz": 200.0}}
+    assert config["inst_type_loss_tol"] == {"OB": {"rel": 1e-5, "min_mz": 200.0}}
 
 
 def test_legacy_eval_filter_key_is_renamed():

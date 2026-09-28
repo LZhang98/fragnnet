@@ -86,7 +86,8 @@ spec_params:
     - '[M+Cl]-'
   inst_type: True
   inst_types:
-    - "FT"
+    - "OB"
+    - "OB_F"
     - "QTOF"
     - 'IT'
     - "Other"
@@ -186,7 +187,8 @@ ints_transform: sqrt  # intensity transform for evaluation metrics
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
-  FT:    {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm
+  OB:    {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm
+  OB_F:    {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm
   QTOF:  {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm
   Other: {rel: 2.0e-5, min_mz: 500.0}   # 20 ppm, unknown/other instruments
   NA:    {rel: 2.0e-5, min_mz: 500.0}   # 20 ppm, unknown instruments

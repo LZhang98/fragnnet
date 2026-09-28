@@ -891,7 +891,10 @@ def parse_nce_str(ce_str: str) -> float:
 
 
 def parse_inst_info(df: pd.Series) -> tuple[str, str]:
-    # TODO: separate FT from Orbitrap
+    # Orbitraps are labelled by instrument model: the Orbitrap Fusion family (NIST's "Orbitrap
+    # Fusion Lumos") is "OB_F"; every other Orbitrap, named (Elite, Velos) or not, is "OB". The
+    # two fragment differently at the same NCE, see
+    # docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md. "FT" is retired.
 
     inst_type_str = df["inst_type"]
     inst_str = df.get("inst", np.nan)
@@ -905,7 +908,7 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
         return "EI", "EI"
     if none_or_nan(inst_type_str):
         # resort to instrument
-        inst_map = {"Maxis II HD Q-TOF Bruker": "QTOF", "qToF": "QTOF", "Orbitrap": "FT"}
+        inst_map = {"Maxis II HD Q-TOF Bruker": "QTOF", "qToF": "QTOF", "Orbitrap": "OB"}
         if none_or_nan(inst_str):
             inst_type = np.nan
         elif inst_str in inst_map:
@@ -915,24 +918,26 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
     else:
         inst_type_map = {
             "QTOF": "QTOF",
-            "FT": "FT",
+            "FT": "OB",
+            "OB": "OB",
+            "OB_F": "OB_F",
             "Q-TOF": "QTOF",
-            "HCD": "FT",
+            "HCD": "OB",
             "QqQ": "QQQ",
             "QqQ/triple quadrupole": "QQQ",
             "IT/ion trap": "IT",
-            "IT-FT/ion trap with FTMS": "FT",
+            "IT-FT/ion trap with FTMS": "OB",
             "Q-ToF (LCMS)": "QTOF",
             "Bruker Q-ToF (LCMS)": "QTOF",
             "ESI-QTOF": "QTOF",
-            "ESI-QFT": "FT",
-            "ESI-ITFT": "FT",
+            "ESI-QFT": "OB",
+            "ESI-ITFT": "OB",
             "Linear Ion Trap": "IT",
             "LC-ESI-QTOF": "QTOF",
-            "LC-ESI-QFT": "FT",
+            "LC-ESI-QFT": "OB",
             "LC-ESI-QQQ": "QQQ",
             "LC-Q-TOF/MS": "QTOF",
-            "LC-ESI-ITFT": "FT",
+            "LC-ESI-ITFT": "OB",
             "LC-ESI-IT": "IT",
             "LC-QTOF": "QTOF",
             "qToF": "QTOF",
@@ -941,15 +946,17 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
             # "Bruker Q-ToF (LCMS)": "QTOF",
             "Unknown (LCMS)": "Other",
             "Ion Trap (LCMS)": "IT",
-            "Orbitrap (LCMS)": "FT",
-            "FTICR (LCMS)": "FT",
-            "ITFT": "FT",
-            "Orbitrap": "FT",
-            "QFT": "FT",
-            "orbitrap": "FT",
+            "Orbitrap (LCMS)": "OB",
+            "FTICR (LCMS)": "Other",
+            "ITFT": "OB",
+            "Orbitrap": "OB",
+            "QFT": "OB",
+            "orbitrap": "OB",
             "qtof": "QTOF",
         }
         inst_type = inst_type_map.get(inst_type_str, "Other")
+    if inst_type == "OB" and isinstance(inst_str, str) and "Fusion" in inst_str:
+        inst_type = "OB_F"
     # fragmentation mode
     if inst_type_str == "HCD" or (isinstance(col_energy_str, str) and "HCD" in col_energy_str):
         frag_mode = "HCD"
