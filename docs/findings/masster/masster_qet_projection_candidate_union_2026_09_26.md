@@ -169,7 +169,11 @@ By where the spectrum sits (val, change from the prediction):
 
 ### Where the gain sits: shared and rare NCE values
 
-Val molecules were measured on two main NCE ladders:
+Val molecules were measured on two main NCE ladders. *(2026-09-28: they are two instruments.
+Ladder A is the Elite Orbitrap and ladder B the Orbitrap Fusion Lumos. For the same molecule a
+Lumos spectrum matches the Elite at higher NCE, by an amount that shrinks with precursor mass, and
+differs beyond energy too; see the
+[Orbitrap instrument finding](../nist_orbitrap_instrument_ce_scales_2026_09_28.md).)*
 
 - **Ladder A** (2,589 molecules, prediction 0.7549): 10, 15, 20, 25, … 60, 75, 90, 110, 130, 160.
 - **Ladder B** (1,103 molecules, 0.7028): 2, 5, 9, 14, 20, 27, 35, 44, 54, 65, 76, 88, 100, 115,
@@ -771,8 +775,11 @@ and replaces the table that aliases.
   molecule's acquisition ladder adds, so it cannot see what a single axis loses there. Only a
   training run (`n1`) shows what `qet` does inside MASSter.
 - **The eV axis was measured on 1-50 eV QTOF series only.**
-  - Nothing above 50 eV was tested. Dual-CE configs give Orbitrap spectra ACE values derived
-    from NCE and m/z, reaching several hundred eV. On the linear axis z grows without bound:
+  - Nothing above 50 eV was tested. Dual-CE configs give Orbitrap spectra ACE values reaching
+    several hundred eV. *(Corrected 2026-09-28: the loader keeps the recorded eV, which 77.8% of
+    NIST20 `[M+H]+` FT/HCD spectra have, and converts only the missing ones. The two ladders
+    are two instruments with different eV conventions; see the
+    [Orbitrap instrument finding](../nist_orbitrap_instrument_ce_scales_2026_09_28.md).)* On the linear axis z grows without bound:
     300 eV at the template `ace_mean: 20` and `ace_std: 15` gives z ≈ 19. A dual-CE config that
     adopts `qet` should set `ace_mean` and `ace_std` for its data.
   - Whether eV should be normalized by m/z cannot be tested with per-molecule fits: within a

@@ -84,7 +84,7 @@ This step  reads the stage-1 CSVs, converts the data into binary format (pickle)
 	- `spec_id`: integer id unique within the processed set.
 	- `mol_id`: integer id linking to `mol_df`.
 	- `prec_type`: standardized precursor/adduct string.
-	- `inst_type`: standardized instrument type.
+	- `inst_type`: standardized instrument type: `OB_F` (Orbitrap Fusion family, e.g. NIST's Lumos), `OB` (every other Orbitrap: Elite, Velos, unnamed), `QTOF`, `IT`, `QQQ`, `EI`, `Other`. `FT` is retired and refused on load.
 	- `frag_mode`: standardized fragmentation mode.
 	- `spec_type`: spectrum type (e.g., `MS2`).
 	- `ion_mode`: `P`/`N`.
@@ -150,6 +150,25 @@ python preproc_scripts/02_prepare_proc.py \
     --proc_dp=data/proc/enveda_180 \
     --dsets enveda_180
 ```
+
+### Relabelling existing Orbitrap spectra (FT → OB / OB_F, 2026-09-28)
+`spec_df.pkl` files built before 2026-09-28 label every Orbitrap `FT`, which training now
+refuses. Relabel them in place; each run copies the original to `spec_df_orig_<timestamp>.pkl`.
+Run NIST23 first, because NIST20 is matched against it (the raw NIST20 export is not kept).
+```bash
+# NIST23: from the raw MSP Instrument field
+python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py \
+    --spec_df_fp data/proc/nist23/spec_df.pkl --inst_df_fp data/df/nist23_hr_df.csv
+# NIST20: match each spectrum to the relabelled NIST23, then the eV-record rule
+python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py \
+    --spec_df_fp data/proc/nist20/spec_df.pkl --mol_df_fp data/proc/nist20/mol_df.pkl \
+    --ref_spec_df_fp data/proc/nist23/spec_df.pkl --ref_mol_df_fp data/proc/nist23/mol_df.pkl \
+    --nist_ev_rule
+# Any other dataset without instrument models: every FT becomes OB
+python preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py --spec_df_fp <proc_dp>/spec_df.pkl
+```
+Group ids are split by instrument, never regrouped. Details and the NIST counts are in
+[the Orbitrap instrument finding](../docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md).
 
 ## Step 3: Generating Fragmentation DAGs
 

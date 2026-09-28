@@ -180,7 +180,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
 - `--prec_types`: Precursor types. Choices: `[M+H]+`, `[M-H]-` (required)
 - `--qtof_ces`: Collision energies in eV for QToF instruments (e.g., `10.0eV 20.0eV`)
 - `--ft_ces`: Normalized collision energies for Orbitrap (e.g., `15.0NCE 25.0% 30.0eV`)
-- `--inst_types`: Instrument types (required). The current preparation logic supports `FT` and `QTOF`; other parser choices are not implemented.
+- `--inst_types`: Instrument types (required). The current preparation logic supports `OB` (Orbitrap Elite, Velos or unnamed), `OB_F` (Orbitrap Fusion) and `QTOF`; other parser choices are not implemented. `FT` was retired on 2026-09-28.
 
 **Output Options**:
 - `--output_dir`: Output directory for `spec_df.pkl.gz` and `spec_df_config.json`
@@ -188,13 +188,13 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
 
 #### Sample Commands
 
-##### Single Condition (FT Orbitrap with NCE)
+##### Single Condition (Orbitrap with NCE)
 ```bash
 python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 25.0NCE \
-  --inst_types "FT" \
+  --inst_types OB \
   --output_dir output/
 ```
 
@@ -204,7 +204,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" "[M-H]-" \
   --ft_ces 15.0NCE 25.0NCE 35.0NCE \
-  --inst_types "FT" "QTOF" \
+  --inst_types OB QTOF \
   --output_dir output/
 ```
 
@@ -235,7 +235,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 15.0% 25.0% 35.0% \
-  --inst_types "FT" \
+  --inst_types OB \
   --output_dir output/
 ```
 
@@ -245,7 +245,7 @@ Different instrument types use different collision energy units:
 
 | Instrument Type | Unit | Field Used | Description |
 |-----------------|------|------------|-------------|
-| FT (Orbitrap)   | NCE (%) | `nce` | Normalized Collision Energy |
+| OB, OB_F (Orbitrap) | NCE (%) | `nce` | Normalized Collision Energy |
 | QTOF            | eV      | `ace` | Absolute Collision Energy |
 
 Although the CLI parser also lists `IT`, `Q`, `TOF`, and `QQQ`, collision-energy combination
@@ -289,7 +289,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --prec_types "[M+H]+" "[M-H]-" \
   --ft_ces 15.0NCE 25.0NCE 35.0NCE \
   --qtof_ces 20.0eV 30.0eV \
-  --inst_types "FT" "QTOF" \
+  --inst_types OB QTOF \
   --output_dir data/inference
 ```
 
@@ -308,7 +308,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path data/inference/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 10eV 20eV 30eV \
-  --inst_types FT \
+  --inst_types OB \
   --output_dir data/inference
 ```
 
@@ -625,7 +625,7 @@ checkpoint basename) so two models never share a directory and resume across the
 
 ### Collision Energies
 
-- FT/Orbitrap: Use NCE (%) values
+- Orbitrap (`OB`, `OB_F`): Use NCE (%) values
 - QTOF/Q/TOF/QQQ: Use eV values
 - Each instrument type uses appropriate energy values automatically
 

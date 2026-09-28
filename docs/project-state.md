@@ -4,6 +4,35 @@
 
 ## Current handoff
 
+**NIST Orbitrap instruments: two CE scales, a MASSter Lumos bias, and new `OB` / `OB_F`
+labels (2026-09-28); uncommitted. The data relabel is local only; no arm trained.**
+
+- **The two NCE ladders are two instruments.** Ladder A is the Elite Orbitrap and ladder B the
+  Orbitrap Fusion Lumos, from NIST23's raw `Instrument` field.
+- **Same molecule, NIST23 labels, cross-campaign nulls.** `[M+H]+` same-NCE cosine is 0.640
+  against 0.946 for the null (tolerance-matched: 0.715 vs 0.985).
+  - Part of the gap is a mass-dependent energy offset (+17-21 NCE below m/z 300, ≈0 above
+    450).
+  - Part is not energy: at the best-matching energy, 0.848 against 0.966.
+- **NIST23 doubled the Elite/Velos negative-mode NCE and kept the eV** (same spectra: ×2.00).
+  This withdraws the "halved eV" and "negative-mode ×2.2" readings; on NIST20's NCE, negative
+  mode behaves like positive.
+- **`c0` under-fragments Lumos val spectra.** Cosine 0.687 vs 0.742 (+0.054 adjusted),
+  precursor bias +0.092, none on train. Relabelling the input at inference fails.
+- **Implemented.**
+  - `inst_type` is `OB` (Elite, Velos, unnamed Orbitraps) or `OB_F` (Orbitrap Fusion), via
+    `parse_inst_info` and `preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py`.
+  - Local NIST23 and NIST20 are relabelled (backups kept). `FT` is refused in configs and data.
+  - 572 configs, the code tables and 18 eval scripts are migrated.
+  - 20 new tests; the full suite passes. A 2-epoch smoke of `n4` exits 0.
+- **Next:**
+  - Run the migration on the cluster copies, NIST23 first.
+  - Train `n4` unchanged on the relabelled NIST20; it now embeds the instrument. Read the Lumos
+    gap and the precursor bias against the old `n4`.
+  - Other local datasets still say `FT` until migrated.
+- `n4` (`shjgv9im`) finished +0.0053 over `c0` (single seed).
+- [Finding](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md) (§7 = the labels).
+
 **MASSter SMARTS templates enabled on the CUDA backend, audited and trimmed (2026-09-27);
 uncommitted, arm `t1` not submitted.**
 
