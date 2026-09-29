@@ -3,9 +3,11 @@
 # First Enveda run. It was built as control `i0` of
 # docs/plans/masster/masster_isotope_envelope_plan.md, which closed null at its model-free gate on
 # 2026-09-27, so it is now only the Enveda baseline. Forked from
-# config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_ema999.yml
-# (QTOF, unmerged, dual CE, cosine LR with warmup, EMA 0.999). Model and loss keys are unchanged
-# except the deltas below.
+# config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml
+# (QTOF, unmerged, dual CE, cosine LR with warmup, no EMA). Model and loss keys are unchanged
+# except the deltas below. Until 2026-09-28 this file was
+# enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml (NCE + ACE, EMA 0.999);
+# it was never submitted.
 # Dataset: docs/findings/enveda_180_dataset_2026_09_25.md.
 #
 # Data (split enveda_180_inchikey_811, 8:1:1 by InChIKey first block):
@@ -14,7 +16,7 @@
 #   train 620,120 / val 77,320 spectra ([M+H]+ 472,208 + [M-H]- 147,912 in train).
 #   The split and filtered export are described in the finding, sections 3, 4 and 7.
 #
-# Deltas from the MSGYM ema999 arm:
+# Deltas from the MSGYM arm:
 # 1. Data paths and prec_types [M+H]+, [M-H]-, with split_filters.filter_prec_types on every
 #    split: the split also holds [M+Na]+, [M+NH4]+, [M+Cl]- and [M+K]+, and an adduct missing
 #    from prec_types raises KeyError in base_dataset. masster_include_cmf stays false: both kept
@@ -25,10 +27,12 @@
 #    config's 2026-09-26 setting): on NIST20 [M+H]+/FT, n1 (qet), n2 and n3 trail c0 by
 #    0.012 / 0.010 / 0.009, and n4 (c0 + fourier) runs ahead of c0
 #    (docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md).
-#    Enveda CE values: ACE 20/40/60 eV; NCE filled from ACE (nce = ace * 500 / prec_mz)
-#    spans 25-128 (940,424 train readings), so nce_max/ace_max 300 clamp nothing.
 #    int_embedder is global, so any other integer table MASSter reads uses fourier too, as in
 #    n4 and the Spectraverse folds.
+# 2a. ACE only (spec_params.nce false; MSGYM arm: NCE + ACE), 2026-09-28, user decision. The
+#    instrument records only ACE 20/40/60 eV. The dataset's NCE is derived from it
+#    (nce = ace * 500 / prec_mz), so it adds no measurement. ace_max 300 clamps nothing.
+#    Stepped 20,40,60 spectra mean-pool the three ACE embeddings.
 # 3. QTOF loss tolerance 10 ppm with a 200 m/z floor (was 20 ppm, 15 mDa floor below m/z 750).
 #    The 15 mDa floor exists for NIST23 floor-truncated m/z, which Enveda does not have. Enveda's
 #    per-spectrum mean fragment error is 3.8 ppm median, 6.7 p90, 10.1 p99 (mostly a
@@ -39,19 +43,17 @@
 #    target that a monoisotopic model cannot reach (isotope plan, Stage 0a).
 # 5. min_epochs/max_epochs 20/20. 1,212 steps/epoch at batch 512, so 24,240 steps, matching the
 #    MSGYM arm's 24,832. MSGYM ran 0.51 s/step on an H100 (1imawkx1, 98.9 s/epoch), so about
-#    10-11 min/epoch here plus validation: roughly 4 h, unmeasured. lr_total_steps 24,240; EMA
-#    0.999 keeps its ~1,000-step weight age (~0.8 epoch here).
-# 6. inst_types keep FT next to QTOF and frag_modes keep HCD next to CID, as in the MSGYM arm,
-#    so the checkpoint can later score mixed data; the FT/HCD rows stay untrained.
+#    10-11 min/epoch here plus validation: roughly 4 h, unmeasured. lr_total_steps 24,240.
+# 6. inst_types keep OB/OB_F next to QTOF and frag_modes keep HCD next to CID, as in the MSGYM
+#    arm, so the checkpoint can later score mixed data; the OB/OB_F/HCD rows stay untrained.
+# 7. upload_checkpoints true (MSGYM arm: false), so the baseline checkpoint is kept on W&B.
 #
 # READ: val_cos_sim_0.01 tail mean (epochs 16-19) and best, per polarity. No seed replicate
 # exists yet, so the Enveda seed spread is unknown; a second seed is needed before any arm is
 # read against this run.
-wandb_name: enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999
+wandb_name: enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier
 wandb_group: enveda_masster
 wandb_tags:
-- ema
-- ema_0.999
 - cuda_candidates
 - loss_batch_64
 - masster
@@ -72,7 +74,7 @@ wandb_tags:
 - full_metadata
 - ce_embed
 - ce_fourier
-- dual_ce
+- ace_only
 - adduct_embed
 - inst_type_embed
 - frag_mode_embed
@@ -97,7 +99,7 @@ split_dp: data/split/enveda_180_inchikey_811
 spec_params:
   merge: false
   merge_keep_ces: false
-  nce: true
+  nce: false  # header 2a: ACE only
   ace: true
   prec_type: true
   prec_types:
@@ -149,7 +151,6 @@ mol_dropout: 0.1
 ce_insert_type: embed
 int_embedder: fourier  # header 2
 ce_insert_size: 32
-nce_max: 300
 ace_max: 300
 masster_unique_fragment_target: 256
 masster_unique_fragment_mode: true
@@ -247,6 +248,3 @@ masster_candidate_features:
 - c_mass
 - c_charge
 masster_intensity_norm_placement: pre
-
-# Weight EMA (see header). Template default null.
-ema_decay: 0.999
