@@ -852,6 +852,9 @@ class MassterPL(SpectrumPL):
                 kwargs["masster_fragment_selection"] = "mask_order"
             if "masster_selected_fragment_target" not in kwargs:
                 kwargs["masster_selected_fragment_target"] = None
+            # Checkpoints from before the neutral-loss position (2026-09-29) had none.
+            if "masster_intensity_nl_positional_encoding" not in kwargs:
+                kwargs["masster_intensity_nl_positional_encoding"] = False
         super().__init__(**kwargs)
 
     @classmethod
@@ -1013,6 +1016,9 @@ class MassterPL(SpectrumPL):
             intensity_mass_pair_bias=self.hparams.masster_intensity_mass_pair_bias,
             intensity_mz_positional_encoding=(
                 self.hparams.masster_intensity_mz_positional_encoding
+            ),
+            intensity_nl_positional_encoding=(
+                self.hparams.masster_intensity_nl_positional_encoding
             ),
             intensity_mass_window=self.hparams.masster_intensity_mass_window,
             intensity_ce_pair_bias=self.hparams.masster_intensity_ce_pair_bias,

@@ -242,6 +242,147 @@ def test_mz_encoding_requires_masses() -> None:
         _mz_head(mz_positional_encoding=True, model_dim=9, num_heads=3)
 
 
+# ------------------------------------------------------------- neutral-loss encoding
+
+# Two spectra: candidates 0-1 belong to a 180 Da precursor (candidate 0 is the precursor), and
+# candidates 2-3 to a 152 Da precursor.
+NL_MASSES = th.tensor([180.0, 162.0, 152.0, 134.0])
+NL_PRECURSORS = th.tensor([180.0, 152.0])
+NL_BATCH = th.tensor([0, 0, 1, 1])
+
+
+def _two_spectrum_inputs() -> tuple:
+    inputs = list(_head_inputs())
+    inputs[5] = NL_BATCH
+    return tuple(inputs)
+
+
+def _pre_attention_tokens(head: CandidateIntensityTransformerHead, **kwargs) -> th.Tensor:
+    """Run ``head`` and return the tokens that enter candidate contextualization."""
+    captured = []
+
+    def capture(tokens: th.Tensor, *args, **kwargs) -> th.Tensor:
+        captured.append(tokens)
+        return tokens
+
+    head._contextualize_by_molecule = capture
+    head(*_two_spectrum_inputs(), batch_size=2, num_masks=4, **kwargs)
+    return captured[0]
+
+
+def _encoding(positions: th.Tensor, width: int) -> th.Tensor:
+    expected = th.zeros(len(positions), width, dtype=th.float64)
+    for row, position in enumerate(positions.tolist()):
+        for i in range(width // 2):
+            angle = position * 10000.0 ** (-2 * i / width)
+            expected[row, 2 * i], expected[row, 2 * i + 1] = math.sin(angle), math.cos(angle)
+    return expected
+
+
+def test_nl_encoding_matches_the_transformer_formula_on_the_loss() -> None:
+    head = _mz_head(nl_positional_encoding=True)
+    losses = th.tensor([0.0, 18.0106, 43.9898, 1250.5], dtype=th.float64)
+
+    assert head.nl_inverse_frequencies.shape == (4,)
+    assert th.allclose(head._nl_encoding(losses), _encoding(losses, 8), atol=1e-12)
+    # The precursor itself has no loss: sin 0 = 0 and cos 0 = 1 at every frequency.
+    assert th.equal(head._nl_encoding(th.zeros(1))[0, 0::2], th.zeros(4, dtype=th.float64))
+    assert th.equal(head._nl_encoding(th.zeros(1))[0, 1::2], th.ones(4, dtype=th.float64))
+
+
+@pytest.mark.parametrize("attention_type", ["induced", "full"])
+def test_nl_encoding_adds_each_spectrums_loss_to_its_tokens(attention_type: str) -> None:
+    """Every candidate's token gains PE(M - m) of its own spectrum's precursor mass M."""
+    masses = {"component_neutral_masses": NL_MASSES}
+    plain = _pre_attention_tokens(_mz_head(attention_type=attention_type))
+    encoded = _pre_attention_tokens(
+        _mz_head(attention_type=attention_type, nl_positional_encoding=True),
+        **masses,
+        precursor_neutral_masses=NL_PRECURSORS,
+    )
+
+    losses = NL_PRECURSORS[NL_BATCH] - NL_MASSES
+    assert th.equal(losses, th.tensor([0.0, 18.0, 0.0, 18.0]))
+    assert th.allclose(encoded - plain, _encoding(losses, 8).float(), atol=1e-6)
+
+
+def test_mz_and_nl_encodings_split_the_token_width() -> None:
+    """With both on, the mass takes the first half of the width and the loss the second."""
+    head = _mz_head(mz_positional_encoding=True, nl_positional_encoding=True)
+    plain = _pre_attention_tokens(_mz_head())
+    encoded = _pre_attention_tokens(
+        head,
+        component_neutral_masses=NL_MASSES,
+        precursor_neutral_masses=NL_PRECURSORS,
+    )
+
+    assert head.mz_inverse_frequencies.shape == head.nl_inverse_frequencies.shape == (2,)
+    expected = th.cat(
+        (_encoding(NL_MASSES, 4), _encoding(NL_PRECURSORS[NL_BATCH] - NL_MASSES, 4)), dim=1
+    )
+    assert th.allclose(encoded - plain, expected.float(), atol=1e-6)
+    # Alone, the mass keeps the full width: the configuration mz1 ran with.
+    mz_only = _pre_attention_tokens(
+        _mz_head(mz_positional_encoding=True), component_neutral_masses=NL_MASSES
+    )
+    assert th.allclose(mz_only - plain, _encoding(NL_MASSES, 8).float(), atol=1e-6)
+
+
+@pytest.mark.parametrize("attention_type", ["induced", "full", "none"])
+def test_nl_encoding_adds_no_parameters_and_keeps_initialization(attention_type: str) -> None:
+    plain = _mz_head(attention_type=attention_type).state_dict()
+    for flags in (
+        {"nl_positional_encoding": True},
+        {"nl_positional_encoding": True, "mz_positional_encoding": True},
+    ):
+        encoded = _mz_head(attention_type=attention_type, **flags).state_dict()
+        assert list(encoded) == list(plain)
+        assert all(th.equal(encoded[key], plain[key]) for key in plain)
+
+
+def test_nl_encoding_moves_outputs_only_with_its_own_precursor() -> None:
+    head = _mz_head(attention_type="full", nl_positional_encoding=True)
+    inputs = _two_spectrum_inputs()
+    masses = {"component_neutral_masses": NL_MASSES}
+
+    reference = head(
+        *inputs, batch_size=2, num_masks=4, **masses, precursor_neutral_masses=NL_PRECURSORS
+    )[2]
+    second_moved = head(
+        *inputs,
+        batch_size=2,
+        num_masks=4,
+        **masses,
+        precursor_neutral_masses=th.tensor([180.0, 170.0]),
+    )[2]
+    assert th.allclose(second_moved[:2], reference[:2])
+    assert not th.allclose(second_moved[2:], reference[2:])
+
+
+def test_nl_encoding_requires_precursor_masses() -> None:
+    head = _mz_head(nl_positional_encoding=True)
+    inputs = _two_spectrum_inputs()
+    masses = {"component_neutral_masses": NL_MASSES}
+    with pytest.raises(ValueError, match="nl_positional_encoding or mz_positional_encoding is on"):
+        head(*inputs, batch_size=2, num_masks=4, precursor_neutral_masses=NL_PRECURSORS)
+    with pytest.raises(ValueError, match="precursor_neutral_masses must be supplied exactly"):
+        head(*inputs, batch_size=2, num_masks=4, **masses)
+    with pytest.raises(ValueError, match="one mass per spectrum"):
+        head(
+            *inputs,
+            batch_size=2,
+            num_masks=4,
+            **masses,
+            precursor_neutral_masses=th.tensor([180.0]),
+        )
+    with pytest.raises(ValueError, match="precursor_neutral_masses must be supplied exactly"):
+        _mz_head()(*inputs, batch_size=2, num_masks=4, precursor_neutral_masses=NL_PRECURSORS)
+    with pytest.raises(ValueError, match="even model_dim"):
+        _mz_head(nl_positional_encoding=True, model_dim=9, num_heads=3)
+    with pytest.raises(ValueError, match="divisible by 4"):
+        _mz_head(mz_positional_encoding=True, nl_positional_encoding=True, model_dim=6)
+
+
 # --------------------------------------------------------- mass window and no attention
 
 # Candidates 0 and 1 lie 10 Da apart; 2 and 3 are more than 15 Da from every other candidate.

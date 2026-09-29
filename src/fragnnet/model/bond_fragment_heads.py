@@ -645,6 +645,9 @@ class CandidateIntensityTransformerHead(nn.Module):
     capped at the inducing-point rank. ``none`` keeps only the feed-forward sublayers, so
     each candidate is scored from its own token. With ``full``, a positive ``mass_window``
     (Da) restricts each candidate to the candidates within that neutral-mass distance.
+    ``mz_positional_encoding`` and ``nl_positional_encoding`` add a sinusoidal position to
+    each token: its neutral mass ``m`` and its neutral loss ``M - m`` from the precursor's
+    neutral mass ``M``. With both on, each takes half the token width.
 
     Note:
         Two inputs degenerate in unique-fragment mode, where the caller passes identity
@@ -687,6 +690,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         sink_dim: int = 0,
         set_message_substitution: float = 0.0,
         set_key_dropout: float = 0.0,
+        nl_positional_encoding: bool = False,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -731,6 +735,13 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError("model_dim must be divisible by num_heads")
         if mz_positional_encoding and model_dim % 2 != 0:
             raise ValueError("mz_positional_encoding needs an even model_dim (sin/cos pairs)")
+        if nl_positional_encoding and model_dim % 2 != 0:
+            raise ValueError("nl_positional_encoding needs an even model_dim (sin/cos pairs)")
+        if mz_positional_encoding and nl_positional_encoding and model_dim % 4 != 0:
+            raise ValueError(
+                "mz_positional_encoding with nl_positional_encoding needs model_dim divisible "
+                "by 4 (each encoding takes half the width, in sin/cos pairs)"
+            )
         if dropout < 0.0 or dropout > 1.0:
             raise ValueError(f"dropout must be in [0, 1], got {dropout}")
         if not math.isfinite(initial_oos_probability) or not (0.0 < initial_oos_probability < 1.0):
@@ -807,19 +818,37 @@ class CandidateIntensityTransformerHead(nn.Module):
             else None
         )
         # The standard transformer sinusoidal encoding, with each candidate's neutral mass in Da
-        # as its position. A non-persistent buffer: no parameters, no initialization draws, and
-        # an unchanged state dict.
+        # (mz) or its neutral loss from the precursor in Da (nl) as its position. With both on
+        # they split the token width, mass first, as a 2-D positional encoding splits it by axis.
+        # Summed over the same dimensions they would not separate: per frequency w,
+        # PE(m) + PE(M - m) = 2 cos(w (m - M / 2)) (sin(w M / 2), cos(w M / 2)).
+        # Non-persistent buffers: no parameters, no initialization draws, and an unchanged state
+        # dict.
         self.mz_positional_encoding = mz_positional_encoding
-        if mz_positional_encoding:
-            self.register_buffer(
-                "mz_inverse_frequencies",
-                10000.0 ** (-th.arange(0, model_dim, 2, dtype=th.float64) / model_dim),
-                persistent=False,
-            )
+        self.nl_positional_encoding = nl_positional_encoding
+        encoding_width = (
+            model_dim // 2 if mz_positional_encoding and nl_positional_encoding else model_dim
+        )
+        for buffer_name, enabled in (
+            ("mz_inverse_frequencies", mz_positional_encoding),
+            ("nl_inverse_frequencies", nl_positional_encoding),
+        ):
+            if enabled:
+                self.register_buffer(
+                    buffer_name,
+                    10000.0
+                    ** (-th.arange(0, encoding_width, 2, dtype=th.float64) / encoding_width),
+                    persistent=False,
+                )
         # Neutral-mass radius (Da) of each candidate's attention; 0 attends over the whole set.
         self.mass_window = float(mass_window)
         # Each candidate's neutral mass must be passed whenever a mass-aware input is on.
-        self.uses_token_masses = mass_pair_bias or mz_positional_encoding or self.mass_window > 0.0
+        self.uses_token_masses = (
+            mass_pair_bias
+            or mz_positional_encoding
+            or nl_positional_encoding
+            or self.mass_window > 0.0
+        )
         self.component_residual_head = nn.Linear(model_dim, 1)
         nn.init.zeros_(self.component_residual_head.weight)
         nn.init.zeros_(self.component_residual_head.bias)
@@ -908,11 +937,26 @@ class CandidateIntensityTransformerHead(nn.Module):
             error_msgs,
         )
 
+    @staticmethod
+    def _sinusoidal_encoding(positions: th.Tensor, inverse_frequencies: th.Tensor) -> th.Tensor:
+        """Interleave ``sin`` and ``cos`` of each position times each inverse frequency.
+
+        Args:
+            positions: Positions in Da, shape (num_components,).
+            inverse_frequencies: ``w_i``, shape (d / 2,), float64.
+
+        Returns:
+            ``[sin(p w_0), cos(p w_0), sin(p w_1), ...]``, shape (num_components, d), in float64.
+        """
+        angles = positions.to(inverse_frequencies)[:, None] * inverse_frequencies
+        return th.stack((angles.sin(), angles.cos()), dim=-1).flatten(1)
+
     def _mz_encoding(self, masses: th.Tensor) -> th.Tensor:
         """Sinusoidal encoding of each candidate's neutral mass.
 
         ``PE(m)[2i] = sin(m w_i)`` and ``PE(m)[2i + 1] = cos(m w_i)``, with
-        ``w_i = 10000^(-2i / d)`` and ``m`` in Da. The shortest wavelength is 2 pi Da, so the
+        ``w_i = 10000^(-2i / d)`` and ``m`` in Da. ``d`` is the token width, or half of it when
+        ``nl_positional_encoding`` is also on. The shortest wavelength is 2 pi Da, so the
         encoding resolves nominal mass, not the mass defect that would name a formula. As with
         text positions, ``PE(m + dm)`` is a fixed rotation of ``PE(m)`` for each ``dm``, so
         attention can express a mass offset such as a neutral loss.
@@ -921,10 +965,25 @@ class CandidateIntensityTransformerHead(nn.Module):
             masses: Neutral candidate masses in Da, shape (num_components,).
 
         Returns:
-            The encoding, shape (num_components, model_dim), in float64.
+            The encoding, shape (num_components, d), in float64.
         """
-        angles = masses.to(self.mz_inverse_frequencies)[:, None] * self.mz_inverse_frequencies
-        return th.stack((angles.sin(), angles.cos()), dim=-1).flatten(1)
+        return self._sinusoidal_encoding(masses, self.mz_inverse_frequencies)
+
+    def _nl_encoding(self, losses: th.Tensor) -> th.Tensor:
+        """Sinusoidal encoding of each candidate's neutral loss from its precursor.
+
+        The :meth:`_mz_encoding` formula with the loss ``M - m`` in Da as the position, where
+        ``M`` is the precursor's neutral mass: 0 for the precursor itself, 18.011 for a water
+        loss. A loss recurs across molecules where a fragment mass does not, and a mass offset
+        between two candidates is still a fixed rotation (of opposite sign).
+
+        Args:
+            losses: Neutral losses in Da, shape (num_components,).
+
+        Returns:
+            The encoding, shape (num_components, d), in float64.
+        """
+        return self._sinusoidal_encoding(losses, self.nl_inverse_frequencies)
 
     def _mass_window_bias(self, masses: th.Tensor, padding_mask: th.Tensor) -> th.Tensor:
         """Additive attention mask that keeps each candidate within its neutral-mass window.
@@ -1076,6 +1135,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         ce_features: th.Tensor | None = None,
         candidate_features: th.Tensor | None = None,
         sink_vectors: th.Tensor | None = None,
+        precursor_neutral_masses: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule.
 
@@ -1083,6 +1143,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         ``(num_components, sink_dim)``. When given, each mask residual gains
         ``sink_vector · phi(token)``, averaged over the mask's components like the mask token;
         with ``None`` (evaluation, or before the sink starts) the head is the shared model.
+        ``precursor_neutral_masses`` holds each spectrum's intact neutral mass in Da, shape
+        ``(batch_size,)``, and is required exactly when ``nl_positional_encoding`` is on.
         """
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
@@ -1168,15 +1230,30 @@ class CandidateIntensityTransformerHead(nn.Module):
         if self.uses_token_masses != (component_neutral_masses is not None):
             raise ValueError(
                 "component_neutral_masses must be supplied exactly when mass_pair_bias, "
-                "mass_window or mz_positional_encoding is on"
+                "mass_window, nl_positional_encoding or mz_positional_encoding is on"
             )
         if component_neutral_masses is not None and component_neutral_masses.shape != (
             num_components,
         ):
             raise ValueError("component_neutral_masses must contain one mass per component")
+        if self.nl_positional_encoding != (precursor_neutral_masses is not None):
+            raise ValueError(
+                "precursor_neutral_masses must be supplied exactly when nl_positional_encoding "
+                "is on"
+            )
+        if precursor_neutral_masses is not None and precursor_neutral_masses.shape != (batch_size,):
+            raise ValueError("precursor_neutral_masses must contain one mass per spectrum")
+        positions = []
         if self.mz_positional_encoding:
+            positions.append(self._mz_encoding(component_neutral_masses))
+        if self.nl_positional_encoding:
+            # The loss is taken in float64, so its rounding does not depend on the mass dtype.
+            precursor_masses = precursor_neutral_masses.to(th.float64)[component_batch_indices]
+            losses = precursor_masses - component_neutral_masses.to(th.float64)
+            positions.append(self._nl_encoding(losses))
+        if positions:
             # Added after the token dropout, so a dropped token keeps its position.
-            tokens = tokens + self._mz_encoding(component_neutral_masses).to(tokens)
+            tokens = tokens + th.cat(positions, dim=1).to(tokens)
         if self.attention_type == "none":
             # Nothing crosses candidates, so the tokens need no per-molecule padding.
             for layer in self.layers:

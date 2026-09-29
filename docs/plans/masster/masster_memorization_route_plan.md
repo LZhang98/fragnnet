@@ -1,6 +1,12 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-28
+> **Status:** ACTIVE · **Updated:** 2026-09-29
+> **2026-09-29: [Batch 5 read](#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)** (`i3`, `i4`,
+> `fa1`, `mz1` finished). `i3` (`k1` + EMA on `i1`) passes at +0.0102, and `i4`'s pre-norm adds
+> +0.0019. Full attention (`fa1`) is +0.0044 over `i1`, just under the one-seed rule, with val loss
+> better and train fit lower. The m/z encoding (`mz1`) is rejected: −0.0017 against `fa1`, ahead
+> only early. Arms: [`fa1`/`mz1`](#full-attention-and-the-mz-encoding-on-i1-fa1-and-mz1-built-2026-09-29-not-submitted),
+> [`i3`/`i4`](#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted).
 > **2026-09-28: [Batch 4 read](#batch-4-read-from-wb-2026-09-28)** (`s1`, `s1_k1_ema`, `m2`, `sm1`,
 > `sd1`, `am1` finished): the cosine schedule passes against `c0` (+0.0090) but adds nothing on
 > top of EMA; the rest are single-seed or null. **Stacking arms `i3`/`i4` built on `i1`**, the
@@ -1856,3 +1862,182 @@ spectra ([finding](../../findings/masster/masster_i1_memorization_read_2026_09_2
     on that remainder.
 - **Gates.** 1, 3, 4 and 5 pass (3 against `c0`; `n4` was not run, though a patched checkpoint
   can run it). Gate 2 was not run.
+
+## Full attention and the m/z encoding on `i1`: `fa1` and `mz1` (built 2026-09-29, not submitted)
+
+The user asked whether a sequence transformer had been tried on the intensity head (2026-09-29).
+The allocator is already a candidate transformer, but a set transformer: `i1` routes every
+exchange through 64 inducing tokens, and its tokens carry no position. The sequence form,
+standard attention with each candidate's neutral mass as its position, is the local `fa_h4_mz`,
+which stopped at epoch 18
+([local screen](#local-screen-allocator-size-standard-attention-and-mz-encoding-2026-09-27)).
+Full attention has run only on the merged lineage. This pair runs both on Fir, on `i1`.
+
+| arm | config | change | control | evidence so far |
+| --- | --- | --- | --- | --- |
+| `fa1` | `fa1_full_attention_ob_obf.yml` | `i1` + `masster_intensity_transformer_attention: full` | `i1` (`i50ig7rf`) | merged `a2` +0.0030 (hold); local `fa_h4` (4 heads) +0.0086 |
+| `mz1` | `mz1_full_attention_mz_ob_obf.yml` | `fa1` + `masster_intensity_mz_positional_encoding: true` | `fa1`, same stage | local `fa_h4_mz` +0.0058 over `fa_h4` at epochs 12-17 (5 of 6), no tail |
+
+- **Heads.** Both keep `i1`'s 8 heads, so each arm is one key from its control. The local screen
+  used 4. Fewer heads leave the parameter count unchanged.
+- **`fa1` is the proposed `fa0` moved to `i1`.** It is also arm F of the
+  [hierarchical fragment graph plan](masster_hierarchical_fragment_graph_plan.md#experiments-that-identify-each-contribution),
+  whose masked arms must keep its head count, so 8.
+- **Parameters and initialization** (models built at seed 397623, no data):
+  - `i1` has 9,215,701 parameters, 2,457,355 in the intensity head. `fa1` and `mz1` have
+    8,145,109 and 1,386,763.
+  - Outside the intensity head, `fa1` initializes bit-identically to `i1`. Inside it, 14 shared
+    tensors differ and 25 of `i1`'s keys (the latent block and inducing tokens) are gone. So
+    read `fa1` against the 0.0042 seed spread.
+  - `mz1`'s state is bit-identical to `fa1`'s, so that pair is init-matched.
+- **Memory on the 3g.40gb slice**, from W&B system metrics (NVML, allocator cache included):
+  - Merged `a2` (full attention, 8 heads, batch 512) had a median of 28.0 GiB, against 30.4 GiB
+    for its induced control `c4a_base_s1` (`5qws8g9x`), and finished 128 epochs.
+  - `i1` runs closer to the ceiling: median 19.7, p90 36.9, max 39.5 GiB.
+  - So the profile stays. If `fa1` runs out of memory, move it to a larger profile at the same
+    batch rather than change the batch.
+- **Cost.** `a2` ran at its control's speed (0.817 against 0.828-0.838 min/epoch). Head-only,
+  `fa_h4_mz` took 76.7 ms per step against `c0`'s 86.1 (128 spectra × 256 candidates). `i1` took
+  3.32 h for 64 epochs, and the stage keeps the 5 h limit.
+- **Risk for `mz1`.** A molecule's set of candidate masses is itself a fingerprint attention can
+  read, so the encoding may widen the train/val gap as it raises train fit. `fa_h4_mz`'s lower
+  train loss (−3.338 against −3.261) cannot tell the two apart.
+- **Reading.** For each arm, the 54-63 tail of `val_cos_sim_0.01_epoch/mean` against its control,
+  at least +0.005 to count on one seed; `wrecall` within 0.005; minutes per epoch. Read `mz1`
+  against `i1` too. If `mz1` passes, compare the eval-mode gap on its best checkpoint with
+  `fa1`'s, for the fingerprint risk.
+- **Checks (2026-09-29).**
+  - Through `load_config`, `fa1` differs from `i1` by the attention key, and `mz1` from `fa1` by
+    the encoding key, plus W&B naming.
+  - On CPU: `test_every_tracked_config_still_resolves`, `test_masster_attention_and_budget.py` and
+    `test_bond_fragment_heads.py` pass (97 passed, 2 CUDA-only skipped), and so do the model and
+    PL tests that train through full attention and the encoding (10 cases).
+  - The submitter's `attn` stage passes `bash -n` and its per-arm config checks. Locally it stops
+    at the wheel check, because `wheels/` is only in the cluster checkout.
+  - **Not run: a real-data smoke.** The first attempt got SIGKILL in setup, while another
+    session's local `i1` controls held the GPU and RAM and swap were nearly full; it was not
+    retried. The CPU fallback on `debug_tinyv4` cannot run, because that dataset still carries
+    `FT` labels, which the loader refuses. Moot since both arms ran 64 epochs on Fir
+    ([Batch 5 read](#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
+- **Unchanged:** the local restricted-allocator queue is still unrun. Its `fa_h4_mz` rerun
+  remains the control for its window arms.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh attn` (`fa1` and `mz1`).
+  The cluster needs the relabelled `data/proc/nist20/spec_df.pkl` (md5
+  `bdc009bbeaf6a38d126326d127630cad`), as for `i1`.
+
+## Batch 5 read from W&B: `i3`, `i4`, `fa1` and `mz1` (2026-09-29)
+
+All four finished 64 epochs on Fir; the `i3`/`i4` section above predates their submission. Same
+method as Batch 4: the full row stream, forward-filled per epoch; tail = mean
+`val_cos_sim_0.01_epoch/mean` over epochs 54-63. The method reproduces the recorded tails of `c0`
+(0.7276), `n4` (0.7329) and `i1` (0.7607). The loss columns are tail deltas of
+`train_primary_loss_epoch/mean` and `val_primary_loss_epoch/mean`, where lower is better. The
+seed spread is 0.0042.
+
+| arm | run | control | tail | delta | above control | coverage | train loss | val loss | min/epoch |
+| --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| `i3` `k1` + EMA | `xypkkfti` | `i1` (0.7607, 3.07 min/epoch) | 0.7710 | **+0.0102** | 64 of 64 | +0.0003 | +0.071 | −0.053 | 3.10 |
+| `i4` + pre-norm | `rd9rsdqx` | `i3` | 0.7729 | +0.0019 | 62 of 64 | +0.0004 | +0.001 | −0.019 | 3.05 |
+| `fa1` full attention | `0vn8m2gr` | `i1` | 0.7651 | +0.0044 | 58 of 64 | −0.0001 | +0.012 | −0.026 | 2.99 |
+| `mz1` + m/z encoding | `tck857p7` | `fa1` | 0.7634 | −0.0017 | 14 of 64 | −0.0003 | −0.014 | +0.005 | 2.99 |
+
+- **`i3` passes: +0.0102, 2.4x the seed spread, above `i1` at every epoch.** `k1` and EMA carry
+  to the instrument labels (`k1_ema` was +0.0145 over `c0` on `FT`). Train fit drops as val loss
+  improves. It reaches `i1`'s best (0.7622) at epoch 20, 1.1 h, against `i1`'s epoch 59, 3.1 h.
+- **`i4` is +0.0019 over `i3`, a single-seed hold.** Pre-norm's merged +0.0056 does not reproduce
+  here. It is the best tail on the lineage: 0.7729, +0.0122 over `i1`.
+- **`fa1` is +0.0044 over `i1`: consistent, but just under the one-seed +0.005 rule.**
+  - It leads in every ten-epoch window (+0.0026 to +0.0066) and in 58 of 64 epochs. Its best,
+    0.7674, is its last epoch.
+  - It fits train less and val better, so it narrows the gap rather than adding fit. On the merged
+    lineage the same key was +0.0030.
+  - It is cheaper: 2.99 against 3.07 min/epoch, 12% fewer parameters, and a GPU peak of 22.3 GiB
+    against `i1`'s 39.5 (NVML). It reaches `i1`'s best in 1.96 h against 3.11 h.
+  - It is 0.0059 below `i3`. Whether it adds on top of the dropout and EMA is the open question.
+  - Hypothesis, not tested: on `c0`, the induced layer's set message, read back from the inducing
+    tokens, was the most train-specific route (4.2x). Full attention has no shared latent summary.
+- **`mz1` rejects the m/z encoding: −0.0017 against `fa1`, below it in 50 of 64 epochs.**
+  - It leads early, as the local screen did (+0.0067 over epochs 0-5). It is level over epochs
+    10-19 and behind in every later window (−0.0041, −0.0026, −0.0015, −0.0017).
+  - Train loss is better and val loss worse: the fingerprint risk above. The encoding buys train
+    fit that does not transfer.
+  - So the local `fa_h4_mz` lead at epochs 12-17 was the early phase, and that run stopped before
+    the crossover.
+  - Against `i1` it is +0.0026, all of it from full attention.
+- Coverage moves by at most 0.0004, so none of this is candidate-set coverage.
+- **Also finished, unread until now: `i2_qet_ob_obf` (`jshvk4gv`)**, `n1`'s `qet` energy input on
+  the `OB` / `OB_F` labels. Its tail is 0.7592, −0.0015 against `i1`, inside the seed spread; it
+  is above `i1` in 10 of 64 epochs, with train and val loss unchanged (±0.0002). The mid-run −0.004
+  (epochs 10-14) narrowed to that: the smooth energy input costs little once the instrument is an
+  input, and gains nothing.
+- **Consequences.**
+  - Drop the m/z encoding on its own. The user's follow-up pairs it with the neutral loss
+    ([`mznl1`/`nlpe1`](#neutral-loss-as-a-second-position-mznl1-and-nlpe1-built-2026-09-29-not-submitted)).
+    The local queue's `mw30_h4_mz`, `mw10_h4_mz` and `mlp_mz` all carry it. The mass window does
+    not need it, so if they run, they run without it.
+  - `fa1` is arm F of the hierarchical fragment graph plan, now with F − B = +0.0044 on one seed.
+  - Next architecture arm, not built: `i4` + full attention, against `i4`. It would be the first
+    run of pre-norm with full attention alone; the merged `a7` also carried CE-FiLM and both pair
+    biases.
+
+## Neutral loss as a second position: `mznl1` and `nlpe1` (built 2026-09-29, not submitted)
+
+The user's proposal after the Batch 5 read: give full attention the neutral loss as a position,
+beside the m/z. `mz1` lost to `fa1` (−0.0017), with train loss better and val loss worse. A
+candidate's mass is specific to its molecule, but its loss from the precursor recurs across
+molecules.
+
+- **New key `masster_intensity_nl_positional_encoding`** (default off, uncommitted), in
+  `CandidateIntensityTransformerHead`:
+  - Each candidate token gets `mz1`'s sinusoidal encoding with its neutral loss M − m in Da as the
+    position. M is the precursor's intact neutral mass (`precursor_neutral_masses` of the
+    candidate inputs), so the precursor's loss is 0 and a water loss's 18.011.
+  - With the m/z encoding also on, the two split the token width: m in the first half, M − m in the
+    second, each a full sinusoidal ladder over its half. Summed over the same dimensions they would
+    not separate: per frequency w, PE(m) + PE(M − m) = 2 cos(w (m − M/2)) (sin(w M/2), cos(w M/2)),
+    whose direction depends on M alone.
+  - Alone, the loss takes the full width. The m/z encoding alone is unchanged, so `mz1`'s
+    checkpoint behaves as trained.
+  - No parameters; the state dict and initialization are unchanged. Both head call sites
+    (unique-fragment and pathway-token mode) pass the precursor masses.
+
+| arm | config | change | control |
+| --- | --- | --- | --- |
+| `mznl1` | `mznl1_full_attention_mz_nl_ob_obf.yml` | `fa1` + both encodings, 128 dimensions each | `fa1` (`0vn8m2gr`); also `mz1` (`tck857p7`) |
+| `nlpe1` | `nlpe1_full_attention_nl_ob_obf.yml` | `fa1` + the loss encoding, all 256 dimensions | `fa1` |
+
+- **Why `nlpe1` as well.** It separates the two halves of the user's `mznl1`: `mz1` already prices
+  the m/z alone. The m/z code in `mznl1` is half as wide as `mz1`'s, so `mznl1` − `mz1` is not a
+  pure "add the loss" contrast.
+- **Init-matched.** `fa1`, `mz1`, `mznl1` and `nlpe1` all have 8,145,109 parameters and
+  bit-identical initial states at seed 397623.
+- **Risk.** A molecule's set of losses is as much a fingerprint as its set of masses. What differs
+  is that one token's position is shared across molecules. Read the train/val loss split, as for
+  `mz1`.
+- **Reading.** The 54-63 tail against `fa1`, +0.005 on one seed; `wrecall` within 0.005 of `fa1`;
+  the train and val loss deltas. Read `mznl1` against `mz1` too.
+- **Checks (2026-09-29).**
+  - Through `load_config`, `mznl1` differs from `fa1` by the two encoding keys and `nlpe1` by one,
+    plus W&B naming.
+  - 13 new test cases: the formula on the loss; an exact token offset of PE(M − m) from each
+    spectrum's own precursor, under induced and full attention; the half-and-half layout; an
+    unchanged state dict for every attention type; outputs of one spectrum untouched by another's
+    precursor mass; input validation; and, in the model, the precursor masses reaching the head
+    in all three modes, with the precursor present as a loss-0 candidate.
+  - **Checkpoints from before the key** load with it off. `get_pl_hparams` and the Lightning
+    loader's legacy marker backfill `False`, as for the attention-topology key, with one more test
+    case.
+  - On CPU, the head, model, PL, config and hparam-migration test files pass: 637 passed, 13
+    CUDA-only skipped. Ruff passes.
+  - **Real-data GPU smoke** (`output/smoke_attn_2026_09_29/run_smoke.sh`, 2 epochs on 512
+    relabelled NIST20 spectra, batch 64): both exit 0. Val cosine rises 0.152 → 0.333 (`mznl1`)
+    and 0.144 → 0.332 (`nlpe1`). The checkpoints record both keys and hold no frequency buffers
+    (155 tensors, as `fa1`).
+  - The submitter's `pos` stage passes `bash -n` and its per-arm config checks.
+  - **Side finding, not fixed:** the hparams-driven loaders (`MassterPL.load_from_checkpoint`,
+    `get_pl_hparams` plus the constructor) already fail on `i1`'s Fir checkpoint, whose hparams
+    lack `masster_intensity_mass_window`. They also fail on this week's local checkpoints, which
+    lack the uncommitted `masster_fragment_connectivity_*` keys. The probes are unaffected: they
+    build the model from the template and config, then load the weights strictly.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh pos` (`mznl1` and `nlpe1`).
+  The cluster needs the relabelled `spec_df.pkl` and a checkout with the new key.

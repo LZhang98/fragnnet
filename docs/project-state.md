@@ -1,8 +1,36 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-28
+> **Status:** REFERENCE · **Updated:** 2026-09-29
 
 ## Current handoff
+
+**Batch 5 on `i1`, read from W&B (2026-09-29): `i3` passes; full attention helps a little; the
+m/z encoding is rejected.** Tail = mean val cosine over epochs 54-63; seed spread 0.0042. All
+finished 64 epochs on Fir, and coverage moves by at most 0.0004.
+
+- **`i3`** (`xypkkfti`, `i1` + `k1` dropout + EMA): 0.7710, **+0.0102** over `i1`, above it at
+  every epoch. **`i4`** (`rd9rsdqx`, + intensity pre-norm): 0.7729, +0.0019 over `i3`, a hold. `i4`
+  is the best tail on the lineage.
+- **`fa1`** (`0vn8m2gr`, `i1` + full candidate attention, 8 heads): 0.7651, **+0.0044** over `i1`,
+  just under the one-seed +0.005 rule. It leads in every ten-epoch window and in 58 of 64 epochs,
+  with train loss higher and val loss lower (a narrower gap). It is also cheaper: 2.99 against
+  3.07 min/epoch, 12% fewer parameters, GPU peak 22.3 against 39.5 GiB.
+- **`mz1`** (`tck857p7`, `fa1` + m/z as a sinusoidal position): −0.0017 against `fa1`, below it
+  in 50 of 64 epochs. It leads only over epochs 0-9 (the local screen's lead), then trails. Train
+  loss improves and val loss worsens: the candidate-mass fingerprint the plan flagged. Drop it
+  on its own.
+- **`i2`** (`jshvk4gv`, `qet` on the new labels): −0.0015 against `i1`, inside the spread.
+- **Built after the read (uncommitted, not submitted): the neutral loss as a second position,**
+  the user's proposal. New key `masster_intensity_nl_positional_encoding` encodes each candidate's
+  loss from the precursor, M − m. `mznl1` = `fa1` + m/z and loss codes (half the width each);
+  `nlpe1` = `fa1` + the loss code alone. Both are init-matched to `fa1`. Submitter stage `pos`;
+  the cluster needs a checkout with the new key.
+- **Next:** submit `pos`. `i4` + full attention against `i4` (not built) is the first pre-norm +
+  full-attention run without extra terms. `fa1` is arm F of the hierarchical plan below
+  (F − B = +0.0044).
+- [Read](plans/masster/masster_memorization_route_plan.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29) ·
+  [`fa1`/`mz1` arms](plans/masster/masster_memorization_route_plan.md#full-attention-and-the-mz-encoding-on-i1-fa1-and-mz1-built-2026-09-29-not-submitted) ·
+  [`mznl1`/`nlpe1` arms](plans/masster/masster_memorization_route_plan.md#neutral-loss-as-a-second-position-mznl1-and-nlpe1-built-2026-09-29-not-submitted).
 
 **Experiment reopening audit (2026-09-28); documentation/source review only.** Screened 125
 current research records and recovered historical representation, pairwise-loss, and correction
@@ -128,9 +156,9 @@ labels (2026-09-28); uncommitted. `i1` and `i2` are training on the relabelled N
     +0.023, on val only, at NCE ≤ 35. `i1` is the control for new arms (user decision,
     dropout-view entry below;
     [finding §8](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
-  - **Stacking arms built, not submitted:** `i3` = `i1` + `k1` dropout + EMA 0.999 (control `i1`)
-    and `i4` = `i3` + intensity pre-norm (control `i3`). Submitter stage `stack`; the cluster
-    needs the relabelled `spec_df.pkl`. The cosine schedule is left out: `s1` passes against `c0`
+  - **Stacking arms ran (read 2026-09-29, Batch 5 entry above):** `i3` = `i1` + `k1` dropout +
+    EMA 0.999, +0.0102 over `i1`; `i4` = `i3` + intensity pre-norm, +0.0019 over `i3`. `i2`
+    finished −0.0015 against `i1`. The cosine schedule is left out: `s1` passes against `c0`
     (+0.0090) but adds nothing on top of `k1_ema` (−0.0011)
     ([plan](plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
 

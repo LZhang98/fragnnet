@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import torch as th
 from rdkit import Chem
+from rdkit.Chem.rdMolDescriptors import CalcExactMolWt
 from torch_geometric.data import Batch
 
 import fragnnet.model.masster_model as masster_model_module
@@ -80,6 +81,7 @@ def _build_model(
     apply_channel_selection_in_training: bool = False,
     intensity_transformer_attention: str = "induced",
     intensity_mz_positional_encoding: bool = False,
+    intensity_nl_positional_encoding: bool = False,
     intensity_mass_window: float = 0.0,
     intensity_output: str = "probability",
     precursor_gnn_type: str = "GINE",
@@ -139,6 +141,7 @@ def _build_model(
         intensity_transformer_num_inducing_points=4,
         intensity_transformer_attention=intensity_transformer_attention,
         intensity_mz_positional_encoding=intensity_mz_positional_encoding,
+        intensity_nl_positional_encoding=intensity_nl_positional_encoding,
         intensity_mass_window=intensity_mass_window,
         intensity_transformer_dropout=0.0,
         intensity_output=intensity_output,
@@ -1699,6 +1702,65 @@ def test_mz_positional_encoding_feeds_candidate_masses_to_the_head(
     assert list(arm_state) == list(control_state)
     assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
     arm_output, control_output = arm(**inputs), control(**inputs)
+    assert arm_output["pred_logprobs"].shape == control_output["pred_logprobs"].shape
+    assert not th.allclose(arm_output["pred_logprobs"], control_output["pred_logprobs"])
+
+
+@pytest.mark.parametrize(
+    ("intensity_transformer_attention", "unique_fragment_mode"),
+    [("full", True), ("induced", True), ("induced", False)],
+    ids=["full_unique", "induced_unique", "induced_pathway_tokens"],
+)
+def test_nl_positional_encoding_feeds_precursor_masses_to_the_head(
+    intensity_transformer_attention: str,
+    unique_fragment_mode: bool,
+) -> None:
+    """Both head call sites pass each spectrum's intact neutral mass; no state is added."""
+    smiles = ("CCOC", "CCO")
+    batch = _build_batch(smiles)
+    kwargs = {
+        "max_masks": 4,
+        "unique_fragment_mode": unique_fragment_mode,
+        "max_enumerated_masks": 8,
+        "intensity_transformer_attention": intensity_transformer_attention,
+    }
+    control = _build_model(batch, **kwargs).eval()
+    arm = _build_model(batch, **kwargs, intensity_nl_positional_encoding=True).eval()
+    control_state, arm_state = control.state_dict(), arm.state_dict()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+        "spec_nce": th.tensor([10.0, 40.0]),
+    }
+    received = []
+    head_forward = arm.intensity_head.forward
+
+    def spy(*args, **head_kwargs):
+        received.append(
+            (
+                head_kwargs["precursor_neutral_masses"],
+                head_kwargs["component_neutral_masses"],
+                args[5],
+            )
+        )
+        return head_forward(*args, **head_kwargs)
+
+    arm.intensity_head.forward = spy
+    arm_output, control_output = arm(**inputs), control(**inputs)
+
+    assert arm.intensity_head.uses_token_masses
+    assert list(arm_state) == list(control_state)
+    assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
+    ((precursors, components, component_batch),) = received
+    expected = th.tensor(
+        [CalcExactMolWt(Chem.MolFromSmiles(smile)) for smile in smiles], dtype=th.float64
+    )
+    assert th.allclose(precursors.double(), expected, atol=1e-3)
+    # No candidate outweighs its own precursor, and the precursor itself is a candidate.
+    losses = precursors[component_batch] - components
+    assert (losses > -1e-4).all()
+    for spectrum in range(len(smiles)):
+        assert losses[component_batch == spectrum].abs().min() < 1e-4
     assert arm_output["pred_logprobs"].shape == control_output["pred_logprobs"].shape
     assert not th.allclose(arm_output["pred_logprobs"], control_output["pred_logprobs"])
 

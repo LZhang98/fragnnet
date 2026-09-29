@@ -1089,6 +1089,7 @@ class MassterModel(nn.Module):
         intensity_qk_norm: bool = False,
         intensity_mass_pair_bias: bool = False,
         intensity_mz_positional_encoding: bool = False,
+        intensity_nl_positional_encoding: bool = False,
         intensity_mass_window: float = 0.0,
         intensity_ce_pair_bias: bool = False,
         intensity_ce_film: bool = False,
@@ -1736,6 +1737,7 @@ class MassterModel(nn.Module):
         )
         self.intensity_mass_pair_bias = intensity_mass_pair_bias
         self.intensity_mz_positional_encoding = intensity_mz_positional_encoding
+        self.intensity_nl_positional_encoding = intensity_nl_positional_encoding
         self.intensity_ce_conditioned = intensity_ce_pair_bias or intensity_ce_film
         self.intensity_escape = intensity_escape
         self.candidate_feature_specs = resolve_candidate_features(candidate_features)
@@ -1841,6 +1843,7 @@ class MassterModel(nn.Module):
             sink_dim=memorization_sink_dim,
             set_message_substitution=intensity_set_message_substitution,
             set_key_dropout=intensity_set_key_dropout,
+            nl_positional_encoding=intensity_nl_positional_encoding,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
@@ -3257,6 +3260,11 @@ class MassterModel(nn.Module):
                 ce_features=spectrum_ce_features,
                 candidate_features=fragment_candidate_features,
                 sink_vectors=None if sink_rows is None else sink_rows[fragment_batch_indices],
+                precursor_neutral_masses=(
+                    candidate_inputs.precursor_neutral_masses
+                    if self.intensity_head.nl_positional_encoding
+                    else None
+                ),
             )
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None
@@ -3394,6 +3402,11 @@ class MassterModel(nn.Module):
                 ),
                 ce_features=spectrum_ce_features,
                 candidate_features=fragment_candidate_features,
+                precursor_neutral_masses=(
+                    candidate_inputs.precursor_neutral_masses
+                    if self.intensity_head.nl_positional_encoding
+                    else None
+                ),
             )
             component_residuals, mask_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None

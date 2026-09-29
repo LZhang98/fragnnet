@@ -977,6 +977,13 @@ masster_intensity_mass_pair_bias: False
 # The shortest wavelength is 2 pi Da, so it resolves nominal mass, not the mass defect. Works with
 # every attention type; no parameters, and the state dict is unchanged.
 masster_intensity_mz_positional_encoding: False
+# The same encoding with each candidate's neutral loss from the precursor, M - m in Da, as the
+# position (M = the precursor's intact neutral mass): 0 for the precursor, 18.011 for water. A
+# loss recurs across molecules where a fragment mass does not; on i1, the m/z encoding alone
+# (mz1) raised train fit and lost val cosine. With masster_intensity_mz_positional_encoding also on,
+# the two split the token width (mass first, then loss), since summed at the same frequencies they
+# would not separate. Works with every attention type; no parameters, state dict unchanged.
+masster_intensity_nl_positional_encoding: False
 # Mass-local candidate attention: with a positive window (Da), each candidate attends only to the
 # candidates whose neutral mass is within that distance of its own, itself included. 0 attends
 # over the whole set. A hard -inf mask on the attention logits: no parameters, state dict
