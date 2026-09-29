@@ -70,11 +70,19 @@
 # fa_h4_mz run stopped at epoch 18). Same relabelled data as i1:
 #   fa1  i1 + full candidate attention       (control: i1, i50ig7rf)
 #   mz1  fa1 + m/z positional encoding        (control: fa1, same stage)
+# Added 2026-09-29: the recorded eV as a second CE input on i1, a missing eV left unfilled
+# (spec_params.fill_missing_ace: false, new that day). Same relabelled data as i1:
+#   i5   i1 + dual CE, no eV fill             (control: i1, i50ig7rf)
 # Added 2026-09-29, after mz1 lost to fa1 (-0.0017, train fit up, val down): the neutral loss from
 # the precursor, M - m, as a second position (masster_intensity_nl_positional_encoding, new that
 # day). Same relabelled data as i1:
 #   mznl1  fa1 + m/z and neutral-loss encodings, half the width each  (control: fa1, 0vn8m2gr)
 #   nlpe1  fa1 + neutral-loss encoding alone                           (control: fa1, 0vn8m2gr)
+# Added 2026-09-29: a mass-window ladder on fa1, restricting who each candidate attends to (the
+# final softmax stays global), with no m/z encoding. The control for chemistry-defined groupings:
+#   mw30  fa1 + 30 Da mass window                                      (control: fa1, 0vn8m2gr)
+#   mw10  fa1 + 10 Da mass window                                      (control: fa1, 0vn8m2gr)
+#   mlp1  fa1 with no candidate attention (window-0 end)               (control: fa1, 0vn8m2gr)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # n1 finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
@@ -95,9 +103,10 @@
 #   stack i3 and i4 (i1 has run or is running).
 #   attn  fa1 and mz1 (i1 has run).
 #   pos   mznl1 and nlpe1 (fa1 and mz1 have run).
+#   window  mw30, mw10 and mlp1 (fa1 has run).
 #   c0 | r0 | r1 | r2 | k1 | m1 | gm1 ... gm6 | k1_ema | c0_s2 | k1_s2 | u2_s2 | s1 | s1_k1_ema | w1
 #   | m2 | n1 | n2 | n3 | n4 | nl1 | nl2 | nl3 | sp0 | sp1 | am1 | de1 | sm1 | sd1 | i3 | i4
-#   | fa1 | mz1 | mznl1 | nlpe1  one job.
+#   | fa1 | mz1 | i5 | mznl1 | nlpe1 | mw30 | mw10 | mlp1  one job.
 #
 # THE CONTROL IS c0, NOT 3bej6fq7. The code has moved since the f0 run, and c0 also logs candidate
 # coverage, so submit c0 with the arms.
@@ -164,8 +173,12 @@ declare -A JOB_BY_ARM=(
     [i4]=msh_mhft_i4_k1_ema_prenorm_ob_obf
     [fa1]=msh_mhft_fa1_full_attention_ob_obf
     [mz1]=msh_mhft_mz1_full_attention_mz_ob_obf
+    [i5]=msh_mhft_i5_dual_ce_ob_obf
     [mznl1]=msh_mhft_mznl1_full_attention_mz_nl_ob_obf
     [nlpe1]=msh_mhft_nlpe1_full_attention_nl_ob_obf
+    [mw30]=msh_mhft_mw30_mass_window30_ob_obf
+    [mw10]=msh_mhft_mw10_mass_window10_ob_obf
+    [mlp1]=msh_mhft_mlp1_no_attention_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [c0]=c0_control.yml
@@ -205,8 +218,12 @@ declare -A CONFIG_BY_ARM=(
     [i4]=i4_k1_ema_prenorm_ob_obf.yml
     [fa1]=fa1_full_attention_ob_obf.yml
     [mz1]=mz1_full_attention_mz_ob_obf.yml
+    [i5]=i5_dual_ce_ob_obf.yml
     [mznl1]=mznl1_full_attention_mz_nl_ob_obf.yml
     [nlpe1]=nlpe1_full_attention_nl_ob_obf.yml
+    [mw30]=mw30_mass_window30_ob_obf.yml
+    [mw10]=mw10_mass_window10_ob_obf.yml
+    [mlp1]=mlp1_no_attention_ob_obf.yml
 )
 # Seed replicates are read on W&B only, so they must not upload checkpoints.
 declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1)
@@ -226,9 +243,10 @@ case "${STAGE}" in
     stack) ARMS=(i3 i4) ;;
     attn) ARMS=(fa1 mz1) ;;
     pos)  ARMS=(mznl1 nlpe1) ;;
-    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1|sm1|sd1|i[34]|fa1|mz1|mznl1|nlpe1) ARMS=("${STAGE}") ;;
+    window) ARMS=(mw30 mw10 mlp1) ;;
+    c0|r0|r1|r2|k1|m[12]|gm[1-6]|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n[1-4]|nl[1-3]|sp[01]|am1|de1|sm1|sd1|i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|alloc|stack|attn|pos|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1|sm1|sd1|i3|i4|fa1|mz1|mznl1|nlpe1]" >&2
+        echo "Usage: $0 [all|arms|gm|swap|batch2|lr|nl|nce|share|drop|alloc|stack|attn|pos|window|c0|r0|r1|r2|k1|m1|m2|gm1-gm6|k1_ema|c0_s2|k1_s2|u2_s2|s1|s1_k1_ema|w1|n1-n4|nl1-nl3|sp0|sp1|am1|de1|sm1|sd1|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1]" >&2
         exit 1
         ;;
 esac
@@ -324,6 +342,10 @@ echo "stack (i3, i4): i3's control is i1 (i50ig7rf); i4's is i3, in the same sta
 echo "  relabelled OB / OB_F spec_df.pkl on the cluster (md5 bdc009bbeaf6a38d126326d127630cad)."
 echo "attn (fa1, mz1): fa1's control is i1 (i50ig7rf); mz1's is fa1, in the same stage. Both need"
 echo "  the same relabelled spec_df.pkl as i1."
+echo "i5: its control i1 (i50ig7rf) has run. It needs the relabelled spec_df.pkl and a checkout with"
+echo "  spec_params.fill_missing_ace (base_dataset.py, 2026-09-29)."
 echo "pos (mznl1, nlpe1): their control fa1 (0vn8m2gr) has run; read mznl1 against mz1 (tck857p7)"
 echo "  too. They need the relabelled spec_df.pkl and a checkout with"
 echo "  masster_intensity_nl_positional_encoding (bond_fragment_heads.py, 2026-09-29)."
+echo "window (mw30, mw10, mlp1): their control fa1 (0vn8m2gr) has run; read against i1 (i50ig7rf)"
+echo "  too. They need the relabelled spec_df.pkl; masster_intensity_mass_window is in HEAD."

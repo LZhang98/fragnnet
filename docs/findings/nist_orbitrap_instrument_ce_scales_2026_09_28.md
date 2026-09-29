@@ -1,6 +1,6 @@
 # NIST Orbitrap instruments: two collision-energy scales, and MASSter's Lumos bias
 
-> **Status:** FINDING · **Updated:** 2026-09-28 (revised the same day)
+> **Status:** FINDING · **Updated:** 2026-09-29 (§2: Lumos eV rule; Lumos HCD is not ion-trap CID)
 > The two NCE "ladders" in NIST20/NIST23 Orbitrap HCD are two instruments, the Elite Orbitrap
 > and the Orbitrap Fusion Lumos. For the same molecule their spectra differ well beyond
 > same-instrument repeat variation. Part of the difference is a mass-dependent energy offset;
@@ -177,6 +177,23 @@ sees:
     `≈ 1.21·conversion − 26.5·(m/z/500) + 21.7`, e.g. `NCE=2% 7eV`. Both sit above the
     conversion by an amount that shrinks with m/z.
   - `Met_Lumos` has `NCE=44%` with no eV.
+  - **Better form (added 2026-09-29).** Below m/z 500 the Lumos eV is a mass-independent offset
+    plus an NCE slope that is linear in m/z with an intercept:
+    - `Met_Lumos1a`: `eV = 5.66 + NCE × (0.397 + 0.00098·m/z)`, within 1 eV for 90.9% of
+      71,035 `[M+H]+` spectra;
+    - `Met_Lumos2`: `eV = 5.86 + NCE × (0.396 + 0.00102·m/z)`, within 1 eV for 100% of 33,823.
+
+    The Elite slope is `m/z/500 = 0.002·m/z` with no intercept. Above m/z 500 the Lumos eV rises
+    faster than this form (median residual +0.7 eV at 500-700, +8 to +16 above 700). The rule
+    reproduces §3.2's mass-dependent Elite-equivalent NCE shift from the eV record alone (at
+    NCE 20-35: about +17 to +21 at m/z 250, +8 at 375, +2 to 0 at 500). The two instruments
+    share one eV axis; the Lumos NCE is on its own scale. No Thermo document for the Tribrid conversion was found.
+  - **Lumos HCD is not ion-trap CID (checked 2026-09-29).** NIST labels ion-trap rows
+    `IT-FT/ion trap with FTMS`, always `NCE=35%` and never with an eV; the `HCD` filter drops
+    them. On NIST23 `[M+H]+` MS2 at m/z 300-900 (15,000 sampled spectra per group), the share
+    with a ≥ 1% peak below 0.25 × precursor m/z is 0.720 for Lumos HCD (0.289 at NCE ≤ 14),
+    0.655 for Elite HCD, and 0.000 / 0.007 for Lumos / Elite ion-trap CID, whose resonance
+    activation leaves a cutoff near 0.28 × precursor m/z.
 - **The loader keeps recorded values.** It converts only missing ones, by the Elite
   convention (`base_dataset.py`, `_fill_ce_scalar_vectorized`). It fills every `Met_Lumos`
   spectrum, which is 68% of NIST20 Lumos `[M+H]+`.
@@ -567,6 +584,9 @@ the only change from `n4` and `n1`. The metric is `val_cos_sim_0.01_epoch/mean` 
   - It cannot replace an instrument input, because `Met_Lumos` has none and the shape
     difference remains.
   - Before any dual-CE arm, stop converting missing Lumos eV by the Elite convention.
+    *Done 2026-09-29, opt-in:* `spec_params.fill_missing_ace: false` leaves a missing eV missing.
+    The first arm using it is `i5`
+    ([plan](../plans/masster/masster_memorization_route_plan.md#dual-ce-on-i1-i5-built-2026-09-29-not-submitted)).
   - For NIST23 negative-mode Elite spectra the NCE is doubled against NIST20 and against the
     Lumos. Use eV there, or halve that NCE, and keep NIST20 and NIST23 on the same convention.
 - **Smooth-CE failures.** `n1`-`n3`

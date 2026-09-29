@@ -1,6 +1,6 @@
 # MASSter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IMPLEMENTED CORE WITH ACTIVE EXPERIMENTAL VARIANTS &nbsp;·&nbsp; **Updated:** 2026-09-27
+> **Status:** IMPLEMENTED CORE WITH ACTIVE EXPERIMENTAL VARIANTS &nbsp;·&nbsp; **Updated:** 2026-09-29
 >
 > The fixed-depth D3/D4 inference path has been replaced in MASSter by one-pass
 > precursor encoding, probability-ranked candidate generation, chemically valid ion
@@ -471,6 +471,17 @@ candidate budgets fixed:
    Graphormer biases added on top of GINE make no difference. The `graphormer512x5`
    endpoint-head runs are worse still (0.63-0.68 at epoch 39; `7unldohr` stalled at
    0.33). These runs never used a warmup schedule, which transformers usually need.
+
+   **Caveat (added 2026-09-29).** The `GINE_EFA` row used ELU+1 linear attention. Commit
+   `4b759e83` (2026-09-13) replaced it with exact softmax and renamed the encoder
+   `GINE_GSA`, which is the `i1` encoder. The tie is therefore Graphormer's softmax, biases and
+   forced LayerNorm, together, against approximate linear attention. Structural bias on top of
+   exact softmax has never been isolated. A W&B query on 2026-09-29 finds no `Graphormer` or
+   `GINE_GRAPHORMER` run after 2026-08-26 and none past epoch 50 except the `graphormer512x5`
+   runs. The missing warmup also matters less than it seems: `GraphormerEncoderLayer` is
+   pre-LN. A clean test is `i1` with only `mol_gnn_type: GINE_GRAPHORMER` changed, two seeds.
+   It still carries the forced `mol_normalization: layer`, and the `gsa_*` route probes and
+   global-message regularizers exist only in `GINE_GSA`.
 5. **Bond-EFA arm:** add graph-scoped EFA over `B` after each selected coupled
    block while leaving the atom side fixed.
 6. **Unbiased bond-softmax arm:** replace bond EFA with ordinary graph-scoped

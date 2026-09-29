@@ -1925,6 +1925,42 @@ Full attention has run only on the merged lineage. This pair runs both on Fir, o
   The cluster needs the relabelled `data/proc/nist20/spec_df.pkl` (md5
   `bdc009bbeaf6a38d126326d127630cad`), as for `i1`.
 
+## Dual CE on `i1`: `i5` (built 2026-09-29, not submitted)
+
+`i5_dual_ce_ob_obf.yml` is `i1` with the recorded eV as a second CE input. It sets
+`spec_params.ace: true` and the new `spec_params.fill_missing_ace: false`. Its control is `i1`
+(`i50ig7rf`, tail 0.7607).
+
+- **Why a loader switch.** By default the loader fills a missing eV from NCE as
+  NCE × m/z / 500, the Elite convention.
+  - On this split every `OB` train spectrum records eV, a median 0.45 eV below the conversion.
+  - 67% of `OB_F` train spectra (28,766 of 42,712) record none.
+  - The `OB_F` spectra that do record eV sit a median 12.6 eV above the conversion.
+  - Filled, two-thirds of Lumos spectra would get an eV about 12 eV below recorded Lumos eV at the
+    same energy, and the model could not tell them apart. The
+    [instrument finding](../../findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#implications)
+    asks for this to be fixed before any dual-CE arm.
+- **The switch.** `spec_params.fill_missing_ace` is declared in `config/template.yml`, default
+  `True`, so every other config loads as before.
+  - `False` leaves a missing eV at −1, which the `embed` / `fourier` table reads as a learned
+    extra token.
+  - NCE is still filled from eV either way.
+  - `ace_max` stays at `i1`'s 300: no recorded `[M+H]+` train eV exceeds 275.
+- **Checks.**
+  - Through `load_config`, `i5` differs from `i1` by the two `spec_params` keys and W&B naming.
+  - On the real train split with the switch off, exactly the 28,766 `OB_F` spectra without eV
+    read −1, no `OB` spectrum does, and every recorded eV is unchanged.
+  - Four new tests in `tests/test_split_filters.py`; the suite passes on CPU.
+  - Not run: a GPU smoke. Another session's local `i1` training held the GPU. The same dual-CE
+    context trained in a 2-epoch smoke of `n4` + eV (0.076 → 0.232).
+- **Read.**
+  - The tail against `i1`, at +0.005 on one seed; coverage within 0.005.
+  - Then `OB_F` val cosine and precursor-fraction bias, split by recorded against missing eV
+    (`collect_masster_preds.py`, then `ladder_bias.py` and `nist20_raw_labels.py` with tag `i5`).
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh i5`.
+  - The cluster needs the relabelled `spec_df.pkl`, as for `i1`.
+  - It also needs a checkout with the loader change.
+
 ## Batch 5 read from W&B: `i3`, `i4`, `fa1` and `mz1` (2026-09-29)
 
 All four finished 64 epochs on Fir; the `i3`/`i4` section above predates their submission. Same
@@ -2041,3 +2077,38 @@ molecules.
     build the model from the template and config, then load the weights strictly.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh pos` (`mznl1` and `nlpe1`).
   The cluster needs the relabelled `spec_df.pkl` and a checkout with the new key.
+
+## Mass-window ladder on `fa1`: `mw30`, `mw10` and `mlp1` (built 2026-09-29, not submitted)
+
+The user asked for the three restricted allocators of the
+[2026-09-27 local queue](#restricted-allocators-mass-window-no-attention-smaller-set-transformer-built-2026-09-27-not-run)
+as Fir runs. That queue defined them on `c0` with 4 heads and the m/z encoding. They are rebuilt
+on the current lineage without the m/z encoding, which lost on Fir (`mz1` −0.0017 against `fa1`).
+
+| arm | config | change from `fa1` | parameters |
+| --- | --- | --- | ---: |
+| `mw30` | `mw30_mass_window30_ob_obf.yml` | `masster_intensity_mass_window: 30.0` | 8,145,109 |
+| `mw10` | `mw10_mass_window10_ob_obf.yml` | `masster_intensity_mass_window: 10.0` | 8,145,109 |
+| `mlp1` | `mlp1_no_attention_ob_obf.yml` | `masster_intensity_transformer_attention: none` | 7,617,749 |
+
+- **What they change.**
+  - The window restricts who each candidate attends to (a −inf pair bias; no parameters). The
+    final softmax over the spectrum is unchanged, so competition for intensity stays global.
+  - `mlp1` removes candidate exchange entirely.
+  - The ladder is the "restricted communication without chemistry" control for a
+    chemistry-defined grouping (containment graph, CFM-like parent/child competition). Mass
+    windows do not match the failing decisions:
+    - sibling pairs differ by far more than 30 Da;
+    - many nested losses are 50-250 Da
+      ([base-peak table](../../findings/masster/masster_i1_base_peak_errors_2026_09_28.md)).
+- **Control.** `fa1` (`0vn8m2gr`, tail 0.7651), read against `i1` (`i50ig7rf`) too.
+- **Read.**
+  - The tail over epochs 54-63 against `fa1`, with a +0.005 one-seed rule.
+  - `wrecall` within 0.005.
+  - Offline, the base-peak probes' train/val deficit on nested and overlapping pairs at novelty
+    < 0.6.
+- **Submit.** Stage `window`: `submit_masster_mh_ft_memorization_route.sh window`. The key is in
+  HEAD; the cluster needs the relabelled `spec_df.pkl`.
+- **Checks.** All three configs build, and each differs from `fa1` only in W&B naming and its key.
+  Locally, the submitter's config validation passes. It stops at the wheel check because
+  `wheels/` is absent on this workstation.

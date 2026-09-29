@@ -276,6 +276,7 @@ class BaseDataset(Dataset):
                 lambda pt: CHARGE_FACTOR_MAP.get(np.abs(get_charge(pt)), CHARGE_FACTOR_MAP["large"])
             )
             prec_mz = spec_df["prec_mz"]
+            fill_ace_from_nce = spec_params["fill_missing_ace"]
 
             def _fill_ce_scalar_vectorized(ace_col: str, nce_col: str, target_key: str) -> None:
                 ace = spec_df[ace_col].where(spec_df[ace_col].notna() & (spec_df[ace_col] != -1))
@@ -287,11 +288,11 @@ class BaseDataset(Dataset):
                         pd.to_numeric(computed, errors="coerce")
                     )
                 else:
-                    # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
-                    computed = (nce * prec_mz * charge_factors) / 500.0
-                    result = pd.to_numeric(ace, errors="coerce").fillna(
-                        pd.to_numeric(computed, errors="coerce")
-                    )
+                    result = pd.to_numeric(ace, errors="coerce")
+                    if fill_ace_from_nce:
+                        # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
+                        computed = (nce * prec_mz * charge_factors) / 500.0
+                        result = result.fillna(pd.to_numeric(computed, errors="coerce"))
                 spec_df.loc[:, target_key] = result
 
             for key, _ in ce_keys_to_compute:

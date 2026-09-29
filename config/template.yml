@@ -77,6 +77,13 @@ spec_params:
   prec_mass_diff: True
   nce: False
   ace: False
+  # Fill a missing ACE (eV) from NCE as NCE x m/z x charge factor / 500. That is the Elite
+  # convention (Elite records floor/round of it); Lumos records eV a median 12.6 eV above it, and
+  # 67% of NIST20 [M+H]+ Lumos spectra record none, so the fill puts them on the Elite scale.
+  # False leaves a missing eV at -1, which the embed / fourier CE tables read as a learned extra
+  # token. Read whenever nce or ace is on; NCE is still filled from eV either way.
+  # docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md
+  fill_missing_ace: True
   preprocess: False
   # Per-spectrum peak cleanup, applied before replicate-spectrum merging.
   centroid_peaks: False
@@ -870,6 +877,29 @@ masster_boundary_local_layers: 0
 # Training-only dropout on the CutBondEncoder hidden layer (arm k1). Requires
 # masster_boundary_bond_encoder: True.
 masster_boundary_encoder_dropout: 0.0
+# Retained-fragment branch (arm fc1; docs/plans/masster/masster_hierarchical_fragment_graph_plan.md).
+# 0 disables the whole branch: no module built, nothing computed in forward, zero new token
+# columns, zero new state_dict keys, bit-identical to every existing checkpoint. k > 0 runs a
+# k-layer plain GINE over each candidate's OWN retained bonds (chemical bonds with both
+# endpoints kept after its own cut), seeded from raw atom/bond features plus a per-(fragment,
+# atom) retained-bond degree and boundary-cut-bond count, pooled twice (all retained atoms;
+# cut-site atoms only) and added to the intensity token as a zero-initialized residual right
+# after input_projection. Requires masster_unique_fragment_mode. Independent of
+# masster_boundary_bond_encoder/masster_boundary_local_layers: that option re-sources the same
+# two cut-bond endpoints from a k-hop view of the WHOLE INTACT molecule (identical across every
+# fragment sharing an atom), while this branch message-passes only over the bonds a SPECIFIC
+# fragment retains after its own cut.
+masster_fragment_connectivity_layers: 0
+# Hidden width of the branch's GINE and of each of its two pooled vectors (the token grows by
+# 2x this width when the branch is on). Read regardless of whether the branch is enabled; only
+# used when masster_fragment_connectivity_layers > 0.
+masster_fragment_connectivity_hidden_dim: 32
+# True (default) message-passes over each fragment's retained bonds, as above. False (arm fc1p,
+# the matched pooled control) runs the identical module -- same parameters, same features, same
+# pooling -- over an EMPTY edge set, so no message crosses a retained bond; only the extra
+# per-atom retained-degree/cut-bond-count features and the two pooled reductions reach the
+# token. Inert when masster_fragment_connectivity_layers == 0.
+masster_fragment_connectivity_messages: True
 # Training-only dropout on the projected candidate token, before candidate attention (arm k1).
 masster_intensity_input_dropout: 0.0
 # Training-only noise on the allocator's set message (arm sm1). In each induced attention layer,

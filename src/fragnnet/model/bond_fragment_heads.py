@@ -690,6 +690,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         sink_dim: int = 0,
         set_message_substitution: float = 0.0,
         set_key_dropout: float = 0.0,
+        connectivity_embedding_dim: int = 0,
         nl_positional_encoding: bool = False,
     ) -> None:
         super().__init__()
@@ -754,6 +755,10 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError(f"sink_dim must be nonnegative, got {sink_dim}")
         if sink_dim > 0 and not unique_fragment_tokens:
             raise ValueError("the memorization sink requires unique-fragment tokens")
+        if connectivity_embedding_dim < 0:
+            raise ValueError(
+                f"connectivity_embedding_dim must be nonnegative, got {connectivity_embedding_dim}"
+            )
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -884,6 +889,16 @@ class CandidateIntensityTransformerHead(nn.Module):
         if sink_dim > 0:
             with th.random.fork_rng(devices=[]):
                 self.sink_projection = nn.Linear(model_dim, sink_dim, bias=False)
+        # Retained-fragment connectivity branch: a zero-initialized residual added right after
+        # input_projection (see `forward`), so at construction it changes no other parameter's
+        # initialization and, whatever the branch computes, contributes exactly nothing.
+        self.connectivity_embedding_dim = connectivity_embedding_dim
+        self.connectivity_residual: nn.Linear | None = None
+        if connectivity_embedding_dim > 0:
+            with th.random.fork_rng(devices=[]):
+                self.connectivity_residual = nn.Linear(connectivity_embedding_dim, model_dim)
+            nn.init.zeros_(self.connectivity_residual.weight)
+            nn.init.zeros_(self.connectivity_residual.bias)
 
     def _load_from_state_dict(
         self,
@@ -1134,6 +1149,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         component_neutral_masses: th.Tensor | None = None,
         ce_features: th.Tensor | None = None,
         candidate_features: th.Tensor | None = None,
+        connectivity_embeddings: th.Tensor | None = None,
         sink_vectors: th.Tensor | None = None,
         precursor_neutral_masses: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
@@ -1195,6 +1211,19 @@ class CandidateIntensityTransformerHead(nn.Module):
                 f"candidate_features must have shape ({num_components}, "
                 f"{self.candidate_feature_dim})"
             )
+        if (self.connectivity_embedding_dim > 0) != (connectivity_embeddings is not None):
+            raise ValueError(
+                "connectivity_embeddings must be supplied exactly when "
+                "connectivity_embedding_dim is positive"
+            )
+        if connectivity_embeddings is not None and connectivity_embeddings.shape != (
+            num_components,
+            self.connectivity_embedding_dim,
+        ):
+            raise ValueError(
+                f"connectivity_embeddings must have shape ({num_components}, "
+                f"{self.connectivity_embedding_dim})"
+            )
 
         features = [*embeddings]
         if context is not None:
@@ -1219,6 +1248,8 @@ class CandidateIntensityTransformerHead(nn.Module):
                 "head built with sink_dim > 0"
             )
         tokens = self.input_projection(th.cat(features, dim=1))
+        if self.connectivity_residual is not None:
+            tokens = tokens + self.connectivity_residual(connectivity_embeddings.to(tokens))
         if self.input_dropout > 0.0:
             tokens = F.dropout(tokens, p=self.input_dropout, training=self.training)
         if self.ce_conditioned != (ce_features is not None):
@@ -1930,6 +1961,160 @@ def boundary_bond_endpoint_orientation(
     inside = th.where(left_inside, left, right)
     outside = th.where(left_inside, right, left)
     return inside, outside
+
+
+def component_membership_rows(
+    atom_indices: th.Tensor,
+    atom_component_indices: th.Tensor,
+    query_atoms: th.Tensor,
+    query_components: th.Tensor,
+    *,
+    num_atoms: int,
+) -> th.Tensor:
+    """Look up the membership row of each queried (component, atom) pair.
+
+    Reuses ``boundary_bond_endpoint_orientation``'s sorted-key/``searchsorted`` idiom, packing
+    ``(component, atom)`` into one integer key so a query becomes one sorted lookup.
+
+    Args:
+        atom_indices: Atom index of each membership entry, shape ``(M,)``.
+        atom_component_indices: Component index of each membership entry, shape ``(M,)``.
+        query_atoms: Atom index of each query, shape ``(Q,)``.
+        query_components: Component index of each query, shape ``(Q,)``.
+        num_atoms: Total atoms in the batch, used to pack ``(component, atom)`` into one key.
+
+    Returns:
+        Row index of each query into ``atom_indices``/``atom_component_indices``, shape ``(Q,)``.
+
+    Raises:
+        ValueError: If the inputs disagree in shape or dtype, or a queried pair is not a member.
+    """
+    if atom_indices.shape != atom_component_indices.shape:
+        raise ValueError("atom_indices and atom_component_indices must be matching vectors")
+    if query_atoms.shape != query_components.shape:
+        raise ValueError("query_atoms and query_components must be matching vectors")
+    if any(
+        tensor.dtype != th.long
+        for tensor in (atom_indices, atom_component_indices, query_atoms, query_components)
+    ):
+        raise ValueError("component_membership_rows indices must have dtype torch.long")
+    if num_atoms <= 0:
+        raise ValueError("num_atoms must be positive")
+    if query_atoms.numel() == 0:
+        return th.empty(0, dtype=th.long, device=atom_indices.device)
+
+    membership_keys, order = th.sort(atom_component_indices * num_atoms + atom_indices)
+    query_keys = query_components * num_atoms + query_atoms
+    positions = th.searchsorted(membership_keys, query_keys).clamp(max=membership_keys.numel() - 1)
+    rows = order[positions]
+    _validate_tensor_condition(
+        (membership_keys[positions] == query_keys).all(),
+        "component_membership_rows received a pair that is not a member",
+    )
+    return rows
+
+
+def fragment_internal_edges(
+    chemical_bond_index: th.Tensor,
+    atom_indices: th.Tensor,
+    atom_component_indices: th.Tensor,
+    *,
+    num_atoms: int,
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Find each fragment's own internal (both-endpoints-retained) chemical bonds.
+
+    A fragment's internal bonds are the molecule's chemical bonds whose two endpoints are both
+    members of that same fragment. A boundary bond -- exactly one endpoint inside -- is excluded
+    automatically by the same sorted-key membership test ``boundary_bond_endpoint_orientation``
+    uses to recover a boundary bond's retained side, so the two relations are provably disjoint.
+    Built fresh from ``chemical_bond_index`` rather than any pre-doubled ``edge_index``, so the
+    result depends only on its own arguments.
+
+    Args:
+        chemical_bond_index: Undirected chemical bonds, shape ``(2, num_bonds)``.
+        atom_indices: Atom index of each (fragment, atom) membership entry, shape ``(M,)``.
+        atom_component_indices: Fragment index of each membership entry, shape ``(M,)``.
+        num_atoms: Total atoms in the batch, used to pack ``(fragment, atom)`` into one key.
+
+    Returns:
+        ``(row_u, row_v, bond_indices)``, each shape ``(E,)``: for every chemical bond retained
+        by a fragment (both endpoints members), ``row_u``/``row_v`` are the membership-ROW
+        indices (into ``atom_indices``/``atom_component_indices``, not atom ids) of its two
+        endpoints, with ``row_u``'s atom id lower than ``row_v``'s, and ``bond_indices`` is the
+        chemical-bond index it came from. Each undirected bond contributes exactly one row per
+        fragment that retains both its endpoints.
+
+    Raises:
+        ValueError: If the inputs disagree in shape or dtype.
+    """
+    if chemical_bond_index.ndim != 2 or chemical_bond_index.shape[0] != 2:
+        raise ValueError("chemical_bond_index must have shape (2, num_bonds)")
+    if atom_indices.ndim != 1 or atom_component_indices.shape != atom_indices.shape:
+        raise ValueError("atom_indices and atom_component_indices must be matching vectors")
+    if any(
+        tensor.dtype != th.long
+        for tensor in (chemical_bond_index, atom_indices, atom_component_indices)
+    ):
+        raise ValueError("fragment_internal_edges indices must have dtype torch.long")
+    if num_atoms <= 0:
+        raise ValueError("num_atoms must be positive")
+
+    device = chemical_bond_index.device
+    empty = th.empty(0, dtype=th.long, device=device)
+    num_bonds = chemical_bond_index.shape[1]
+    if num_bonds == 0 or atom_indices.numel() == 0:
+        return empty, empty, empty
+
+    # A directed bucket of every atom's neighbours, sorted by source atom so each atom's
+    # neighbours sit in one contiguous run (a CSR layout built fresh from chemical_bond_index).
+    directed_src = th.cat([chemical_bond_index[0], chemical_bond_index[1]])
+    directed_dst = th.cat([chemical_bond_index[1], chemical_bond_index[0]])
+    directed_bond_id = th.cat([th.arange(num_bonds, device=device)] * 2)
+    src_order = th.argsort(directed_src, stable=True)
+    sorted_dst = directed_dst[src_order]
+    sorted_bond_id = directed_bond_id[src_order]
+    out_degree = th.bincount(directed_src, minlength=num_atoms)
+    csr_offsets = th.zeros(num_atoms + 1, dtype=th.long, device=device)
+    csr_offsets[1:] = out_degree.cumsum(0)
+
+    # Expand every membership row by its own atom's out-degree: row m (atom a, fragment f)
+    # produces one candidate neighbour per bond incident on a, the ragged-expansion arithmetic
+    # `_contextualize_by_molecule` already uses for its own per-molecule buckets.
+    num_memberships = atom_indices.shape[0]
+    degree_per_row = out_degree[atom_indices]
+    expanded_rows = th.repeat_interleave(
+        th.arange(num_memberships, device=device),
+        degree_per_row,
+    )
+    if expanded_rows.numel() == 0:
+        return empty, empty, empty
+    row_starts = degree_per_row.cumsum(0) - degree_per_row
+    positions_in_row = th.arange(expanded_rows.shape[0], device=device) - row_starts[expanded_rows]
+    csr_index = csr_offsets[atom_indices[expanded_rows]] + positions_in_row
+    candidate_dst_atoms = sorted_dst[csr_index]
+    candidate_bond_ids = sorted_bond_id[csr_index]
+    candidate_src_atoms = atom_indices[expanded_rows]
+    candidate_fragments = atom_component_indices[expanded_rows]
+
+    # A candidate survives only if its neighbour is also a member of the SAME fragment (the
+    # sorted-key membership test), and only in the canonical (lower atom id first) direction,
+    # so each undirected internal bond contributes exactly one row per retaining fragment.
+    membership_keys, order = th.sort(atom_component_indices * num_atoms + atom_indices)
+    query_keys = candidate_fragments * num_atoms + candidate_dst_atoms
+    query_positions = th.searchsorted(membership_keys, query_keys).clamp(
+        max=membership_keys.numel() - 1
+    )
+    neighbour_is_member = membership_keys[query_positions] == query_keys
+    canonical_direction = candidate_src_atoms < candidate_dst_atoms
+    keep = neighbour_is_member & canonical_direction
+    # One nonzero() sync instead of three separate boolean-mask syncs below; an all-False `keep`
+    # already falls through to empty tensors here, so no separate early-return is needed.
+    keep_idx = keep.nonzero(as_tuple=True)[0]
+
+    row_u = expanded_rows[keep_idx]
+    row_v = order[query_positions[keep_idx]]
+    bond_indices = candidate_bond_ids[keep_idx]
+    return row_u, row_v, bond_indices
 
 
 def pool_complement_embeddings(

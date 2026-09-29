@@ -67,10 +67,13 @@ from fragnnet.model.bond_fragment_heads import (
     _validate_tensor_condition,
     boundary_bond_endpoint_orientation,
     component_charge_log_probabilities,
+    component_membership_rows,
+    fragment_internal_edges,
     latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
     pool_boundary_bond_embeddings,
     pool_component_and_complement_embeddings,
+    pool_component_embeddings,
 )
 from fragnnet.model.candidate_features import (
     CandidateFeatureInputs,
@@ -1102,6 +1105,9 @@ class MassterModel(nn.Module):
         candidate_boundary_block: bool = True,
         boundary_local_layers: int = 0,
         boundary_encoder_dropout: float = 0.0,
+        fragment_connectivity_layers: int = 0,
+        fragment_connectivity_hidden_dim: int = 32,
+        fragment_connectivity_messages: bool = True,
         intensity_input_dropout: float = 0.0,
         intensity_set_message_substitution: float = 0.0,
         intensity_set_key_dropout: float = 0.0,
@@ -1281,6 +1287,22 @@ class MassterModel(nn.Module):
                 ``boundary_bond_encoder``.
             boundary_encoder_dropout: Training-only dropout on the ``CutBondEncoder`` hidden
                 layer. Requires ``boundary_bond_encoder``.
+            fragment_connectivity_layers: 0 disables the retained-fragment connectivity branch.
+                ``k > 0`` runs a ``k``-layer plain GINE over each candidate's OWN retained bonds
+                (chemical bonds with both endpoints kept after its own cut), seeded from raw
+                atom/bond features plus a per-(fragment, atom) retained-bond degree and
+                boundary-cut-bond count, pooled twice (all retained atoms; cut-site atoms only)
+                and added to the intensity token as a zero-initialized residual. Requires
+                ``unique_fragment_mode``. Independent of ``boundary_bond_encoder``/
+                ``boundary_local_layers``, which re-source the cut-bond endpoints from the whole
+                intact molecule rather than a specific fragment's own retained bonds.
+            fragment_connectivity_hidden_dim: Hidden width of the connectivity branch's GINE and
+                of each of its two pooled vectors. Only used when
+                ``fragment_connectivity_layers > 0``.
+            fragment_connectivity_messages: True message-passes over each fragment's retained
+                bonds. False runs the identical module over an EMPTY edge set, so no message
+                crosses a retained bond, the matched pooled control for the branch. Inert when
+                ``fragment_connectivity_layers == 0``.
             intensity_input_dropout: Training-only dropout on the projected candidate token.
             intensity_set_message_substitution: Training-only probability, per candidate and
                 allocator layer, that the message a candidate receives from its candidate set
@@ -1410,6 +1432,20 @@ class MassterModel(nn.Module):
             raise ValueError(
                 "boundary_local_layers and boundary_encoder_dropout require boundary_bond_encoder"
             )
+        if fragment_connectivity_layers < 0:
+            raise ValueError(
+                f"fragment_connectivity_layers must be nonnegative, got "
+                f"{fragment_connectivity_layers}"
+            )
+        if fragment_connectivity_layers > 0 and fragment_connectivity_hidden_dim <= 0:
+            raise ValueError(
+                "fragment_connectivity_hidden_dim must be positive when "
+                "fragment_connectivity_layers > 0"
+            )
+        if fragment_connectivity_layers > 0 and not unique_fragment_mode:
+            raise ValueError("fragment_connectivity_layers requires unique_fragment_mode")
+        if not isinstance(fragment_connectivity_messages, bool):
+            raise ValueError("fragment_connectivity_messages must be boolean")
         if memorization_sink_dim < 0 or memorization_sink_num_molecules < 0:
             raise ValueError("memorization sink dimensions must be nonnegative")
         if (memorization_sink_dim > 0) != (memorization_sink_num_molecules > 0):
@@ -1774,6 +1810,23 @@ class MassterModel(nn.Module):
                     dropout=precursor_dropout,
                     residual_activation=gnn_residual_activation,
                 )
+        self.fragment_connectivity_encoder: GNN | None = None
+        self.fragment_connectivity_dim = (
+            fragment_connectivity_hidden_dim if fragment_connectivity_layers > 0 else 0
+        )
+        self.fragment_connectivity_messages = fragment_connectivity_messages
+        if fragment_connectivity_layers > 0:
+            with th.random.fork_rng(devices=[]):
+                self.fragment_connectivity_encoder = GNN(
+                    node_feats_size=node_feature_dim + 2,
+                    edge_feats_size=edge_feature_dim,
+                    hidden_size=fragment_connectivity_hidden_dim,
+                    num_layers=fragment_connectivity_layers,
+                    gnn_type="GINE",
+                    normalization=precursor_normalization,
+                    dropout=precursor_dropout,
+                    residual_activation=gnn_residual_activation,
+                )
         self.memorization_sink: nn.Embedding | None = None
         if memorization_sink_dim > 0:
             with th.random.fork_rng(devices=[]):
@@ -1843,6 +1896,7 @@ class MassterModel(nn.Module):
             sink_dim=memorization_sink_dim,
             set_message_substitution=intensity_set_message_substitution,
             set_key_dropout=intensity_set_key_dropout,
+            connectivity_embedding_dim=2 * self.fragment_connectivity_dim,
             nl_positional_encoding=intensity_nl_positional_encoding,
         )
         self._setup_chemistry_buffers()
@@ -2227,6 +2281,112 @@ class MassterModel(nn.Module):
             boundary_component_indices,
             num_components=num_components,
         )
+
+    def _fragment_connectivity_embeddings(
+        self,
+        mol_pyg: Batch,
+        fragment_atom_indices: th.Tensor,
+        atom_fragment_indices: th.Tensor,
+        fragment_boundary_bond_indices: th.Tensor,
+        boundary_fragment_indices: th.Tensor,
+        num_fragments: int,
+    ) -> th.Tensor:
+        """Message-pass over each fragment's own retained (post-cut) bond graph.
+
+        Seeded from raw atom/bond features -- never the shared encoder's globally attended
+        atom embeddings -- so the branch answers only from a candidate's own retained
+        connectivity after its cut. Each (fragment, atom) row also carries its retained-bond
+        degree within that fragment and how many of the fragment's own cut bonds this atom is
+        the retained endpoint of. Pooled twice into one vector per fragment: the mean over every
+        retained atom, and the mean over only the atoms a cut bond newly exposed (a fragment
+        with no cut bonds, such as the intact precursor, gets an all-zero second half).
+
+        With ``fragment_connectivity_messages`` False, the same module runs on an EMPTY edge
+        set, so the per-atom features and both pools are unchanged but no message crosses a
+        retained bond -- the matched pooled control for the branch.
+
+        Args:
+            mol_pyg: Batched precursor graphs.
+            fragment_atom_indices: Atom index of every (fragment, atom) membership, shape (M,).
+            atom_fragment_indices: Fragment index of every membership, shape (M,).
+            fragment_boundary_bond_indices: Bond index of every boundary membership, shape (D,).
+            boundary_fragment_indices: Fragment index of every boundary membership, shape (D,).
+            num_fragments: Number of fragments (candidates) in the batch.
+
+        Returns:
+            Connectivity embedding per fragment, shape
+            ``(num_fragments, 2 * fragment_connectivity_dim)``.
+        """
+        num_atoms = mol_pyg.x.shape[0]
+        num_memberships = fragment_atom_indices.shape[0]
+        row_u, row_v, bond_indices = fragment_internal_edges(
+            mol_pyg.chemical_bond_index,
+            fragment_atom_indices,
+            atom_fragment_indices,
+            num_atoms=num_atoms,
+        )
+        ones = mol_pyg.x.new_ones(row_u.shape[0])
+        retained_degree = (
+            mol_pyg.x.new_zeros(num_memberships).index_add(0, row_u, ones).index_add(0, row_v, ones)
+        )
+        inside_atoms, _ = boundary_bond_endpoint_orientation(
+            mol_pyg.chemical_bond_index,
+            fragment_boundary_bond_indices,
+            boundary_fragment_indices,
+            fragment_atom_indices,
+            atom_fragment_indices,
+            num_atoms=num_atoms,
+        )
+        marker_rows = component_membership_rows(
+            fragment_atom_indices,
+            atom_fragment_indices,
+            inside_atoms,
+            boundary_fragment_indices,
+            num_atoms=num_atoms,
+        )
+        boundary_count = mol_pyg.x.new_zeros(num_memberships).index_add(
+            0,
+            marker_rows,
+            mol_pyg.x.new_ones(marker_rows.shape[0]),
+        )
+        x_local = th.cat(
+            [
+                mol_pyg.x[fragment_atom_indices],
+                retained_degree.unsqueeze(1),
+                boundary_count.unsqueeze(1),
+            ],
+            dim=1,
+        )
+        if self.fragment_connectivity_messages:
+            edge_index_local = th.cat([th.stack([row_u, row_v]), th.stack([row_v, row_u])], dim=1)
+            edge_attr_local = mol_pyg.chemical_bond_attr[bond_indices].repeat(2, 1)
+        else:
+            edge_index_local = row_u.new_empty((2, 0))
+            edge_attr_local = mol_pyg.chemical_bond_attr.new_empty(
+                (0, mol_pyg.chemical_bond_attr.shape[1])
+            )
+        node_hidden = self.fragment_connectivity_encoder(
+            x_local,
+            atom_fragment_indices,
+            edge_index_local,
+            edge_attr_local,
+        )
+        membership_rows = th.arange(num_memberships, device=node_hidden.device)
+        connectivity_all = pool_component_embeddings(
+            node_hidden,
+            membership_rows,
+            atom_fragment_indices,
+            num_components=num_fragments,
+        )
+        # One nonzero() sync instead of two separate boolean-mask syncs below.
+        cut_site_idx = (boundary_count > 0).nonzero(as_tuple=True)[0]
+        connectivity_cut_site = pool_boundary_bond_embeddings(
+            node_hidden,
+            membership_rows[cut_site_idx],
+            atom_fragment_indices[cut_site_idx],
+            num_components=num_fragments,
+        )
+        return th.cat([connectivity_all, connectivity_cut_site], dim=1)
 
     def _candidate_atom_dropout(
         self,
@@ -3170,6 +3330,18 @@ class MassterModel(nn.Module):
                 if self.candidate_boundary_block
                 else fragment_embeddings.new_zeros(fragment_embeddings.shape)
             )
+            connectivity_embeddings = (
+                self._fragment_connectivity_embeddings(
+                    mol_pyg,
+                    fragment_atom_indices,
+                    atom_fragment_indices,
+                    fragment_boundary_bond_indices,
+                    boundary_fragment_indices,
+                    num_fragments,
+                )
+                if self.fragment_connectivity_encoder is not None
+                else None
+            )
             # The TRUE atom membership, never the subset `_candidate_atom_dropout` returned
             # above: that dropout perturbs the pooled embeddings alone, and every descriptor
             # here keeps the real atom set.
@@ -3259,6 +3431,7 @@ class MassterModel(nn.Module):
                 ),
                 ce_features=spectrum_ce_features,
                 candidate_features=fragment_candidate_features,
+                connectivity_embeddings=connectivity_embeddings,
                 sink_vectors=None if sink_rows is None else sink_rows[fragment_batch_indices],
                 precursor_neutral_masses=(
                     candidate_inputs.precursor_neutral_masses

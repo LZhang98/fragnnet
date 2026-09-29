@@ -1101,6 +1101,11 @@ class MassterPL(SpectrumPL):
             candidate_boundary_block=self.hparams.masster_candidate_boundary_block,
             boundary_local_layers=self.hparams.masster_boundary_local_layers,
             boundary_encoder_dropout=self.hparams.masster_boundary_encoder_dropout,
+            fragment_connectivity_layers=self.hparams.masster_fragment_connectivity_layers,
+            fragment_connectivity_hidden_dim=(
+                self.hparams.masster_fragment_connectivity_hidden_dim
+            ),
+            fragment_connectivity_messages=self.hparams.masster_fragment_connectivity_messages,
             intensity_input_dropout=self.hparams.masster_intensity_input_dropout,
             intensity_set_message_substitution=self.hparams.masster_set_message_substitution,
             intensity_set_key_dropout=self.hparams.masster_set_key_dropout,
@@ -1560,9 +1565,7 @@ class MassterPL(SpectrumPL):
         candidate_coverage_enabled = self.hparams.masster_candidate_coverage_metrics
         candidate_timing_enabled = self.hparams.masster_candidate_timing_metrics
         proposal_loss_enabled = self.hparams.masster_proposal_loss_weight > 0.0
-        ion_mode_proposal_loss_enabled = (
-            self.hparams.masster_ion_mode_proposal_loss_weight > 0.0
-        )
+        ion_mode_proposal_loss_enabled = self.hparams.masster_ion_mode_proposal_loss_weight > 0.0
         ion_h_support_loss_enabled = self.hparams.masster_ion_h_support_loss_weight > 0.0
         # masster_channel_diagnostics exists to produce exactly these summaries, so it
         # implies them; without that the dense targets it builds would go unused.
@@ -1780,9 +1783,7 @@ class MassterPL(SpectrumPL):
                 )
             loss = self.hparams.primary_loss_weight * primary_loss
             if entropy_match is not None:
-                loss = (
-                    loss + self.hparams.masster_intensity_entropy_match_weight * entropy_match
-                )
+                loss = loss + self.hparams.masster_intensity_entropy_match_weight * entropy_match
             if self.hparams.spectral_leak_loss_weight > 0.0:
                 spectral_leak_loss = sparse_outside_window_intensity_fraction(
                     true_mzs,
@@ -2107,9 +2108,13 @@ class MassterPL(SpectrumPL):
                         batch_size
                     ).index_add(0, pred_batch_idxs, pred_intensities)
                     loss_values["escape_share"] = (
-                        escape_intensities
-                        / escape_total.clamp_min(th.finfo(escape_total.dtype).tiny)
-                    ).detach().to(prediction_reference)
+                        (
+                            escape_intensities
+                            / escape_total.clamp_min(th.finfo(escape_total.dtype).tiny)
+                        )
+                        .detach()
+                        .to(prediction_reference)
+                    )
                 if spectral_leak_loss is not None:
                     loss_values["spectral_leak_loss"] = spectral_leak_loss
                 if spectral_ce_auxiliary is not None:

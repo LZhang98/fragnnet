@@ -79,6 +79,7 @@ def _base_spec_params(**overrides) -> dict:
         "prec_mass_diff": False,
         "nce": True,
         "ace": True,
+        "fill_missing_ace": True,
         "preprocess": False,
         "unique_id": False,
         "counts": False,
@@ -751,3 +752,44 @@ class TestSpectrumCleanup:
 
         with pytest.raises(ValueError, match="missing required spectrum cleanup settings"):
             _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
+
+
+# ============================================================================
+# Tests: fill_missing_ace
+# ============================================================================
+
+
+class TestFillMissingAce:
+    """spec_params.fill_missing_ace decides whether a missing eV is filled from NCE."""
+
+    @pytest.fixture
+    def ce_spec_df(self) -> pd.DataFrame:
+        base = {"group_id": 1, "prec_type": "[M+H]+", "inst_type": "OB", "prec_mz": 300.0}
+        return _make_spec_df(
+            [
+                {**base, "spec_id": 1, "mol_id": 1, "nce": 30.0, "ace": 15.0},  # recorded eV
+                {**base, "spec_id": 2, "mol_id": 1, "nce": 30.0, "ace": float("nan")},  # no eV
+                {**base, "spec_id": 3, "mol_id": 2, "nce": float("nan"), "ace": 20.0},  # no NCE
+            ]
+        )
+
+    def _ces(self, ce_spec_df: pd.DataFrame, fill: bool) -> pd.DataFrame:
+        params = _base_spec_params(fill_missing_ace=fill)
+        out_spec, _ = _run_setup_dfs(ce_spec_df, _make_mol_df([1, 2]), "train", params)
+        return out_spec.set_index("spec_id")[["nce", "ace"]]
+
+    def test_default_fills_missing_ace_from_nce(self, ce_spec_df):
+        ces = self._ces(ce_spec_df, fill=True)
+        # 30 NCE x 300 m/z x charge factor 1.0 / 500
+        assert ces.loc[2, "ace"] == pytest.approx([18.0])
+
+    def test_disabled_leaves_missing_ace_as_sentinel(self, ce_spec_df):
+        ces = self._ces(ce_spec_df, fill=False)
+        assert ces.loc[2, "ace"] == [-1]
+        assert ces.loc[1, "ace"] == pytest.approx([15.0])
+
+    @pytest.mark.parametrize("fill", [True, False])
+    def test_nce_still_filled_from_ace(self, ce_spec_df, fill):
+        ces = self._ces(ce_spec_df, fill=fill)
+        assert ces.loc[3, "nce"] == pytest.approx([20.0 * 500.0 / 300.0])
+        assert ces.loc[3, "ace"] == pytest.approx([20.0])

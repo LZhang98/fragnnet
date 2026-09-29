@@ -260,6 +260,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--custom_fp", required=True, help="the checkpoint's run config")
     parser.add_argument("--template_fp", default="config")
+    parser.add_argument("--override", nargs="*", default=[], help="config overrides, key=value")
     parser.add_argument("--split", choices=("train", "val", "test"), default="val")
     parser.add_argument(
         "--molecules",
@@ -290,7 +291,7 @@ def main(argv: list[str] | None = None) -> None:
     started = time.time()
 
     # 1. Model and dataset with the checkpoint's own config.
-    config = load_config(args.template_fp, args.custom_fp, [])
+    config = load_config(args.template_fp, args.custom_fp, list(args.override))
     if config["model_type"] != "masster":
         raise ValueError(f"expected model_type masster, got {config['model_type']}")
     config = apply_inference_config(

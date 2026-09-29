@@ -4,6 +4,44 @@
 
 ## Current handoff
 
+**Exact structural alignment audit (2026-09-29); complete, insufficient measured coverage.**
+358 training-only acquisition pairs, 110 query identities, 532 spectra at NCE [40,100). On 54
+unfamiliar query identities, formula matches retain 38.00% of measured intensity; adding exact
+retained connectivity leaves 0.85%, and cut/channel context leaves zero. No strict unfamiliar
+pair has two strong matched outcomes. Connectivity passes the initial residual screen, but
+post-hoc label-only controls show no independent measured-reference advantage. Stop this exact
+recipe; no fresh correction fit or larger matching model justified. Twenty-three focused tests,
+Ruff and artifact checks passed; existing staging preserved.
+[Finding](findings/masster/masster_structural_alignment_audit_2026_09_29.md) ·
+[Plan](plans/masster/masster_candidate_transfer_plan.md).
+
+**Candidate reference-information gate (2026-09-29); complete, negative.**
+Fresh validation queries, training-only references, two molecular folds: 239 identities including
+119 unfamiliar, NCE [40,100). Ion-formula reference corrections select zero in both folds; no
+increment over context/structure/shuffle. Loss-aligned correction gives cosine 0.62868 versus
+0.63853 frozen i1 and 0.63210 structure-only. Coverage advantage persists but does not predict
+accuracy gain. Sixteen focused tests, Ruff, split/metric audits passed. Stop this candidate-transfer
+recipe; no new competition objective or full training run. cm0–2 remains an untested hypothesis; its code has been reverted.
+[Finding](findings/masster/masster_reference_information_gate_2026_09_29.md) ·
+[Coverage](findings/masster/masster_candidate_correspondence_2026_09_29.md) ·
+[Plan](plans/masster/masster_candidate_transfer_plan.md).
+
+**Cross-molecule supervision feasibility (2026-09-29); complete, soft relationship gate
+positive.** Training-only CPU census: 2,000 query identities against 10,668 donor identities;
+17,398 neighbor pairs, acquisition/mass-matched random controls, same formulas excluded and
+precursor peaks removed. For 338 queries with maximum Tanimoto <=0.4 to any donor, fragment and
+neutral-loss cosine advantages are +0.0499 and +0.0370. Signal survives both query halves,
+losses >=50 Da, and substantial fragmentation. Strongest-loss labels are weak and fail the
+strictest subset; use continuous relationship targets, not forced shared winners. No `i1`
+predictions used and no model gain established. Five tests, Ruff, and train/identity/formula
+artifact audits passed. The cm0–2 training pilot was implemented and smoke-tested, but its code
+was **reverted at the user’s request** on 2026-09-29. The sampler/head/loss integration, configs,
+manifest preparation, launcher and pilot tests are removed. Census diagnostics and research
+artifacts remain. No full training run was submitted and no cm1 validation gain was measured.
+
+[Finding](findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md) ·
+[Plan](plans/masster/masster_cross_molecule_supervision_gate.md).
+
 **Batch 5 on `i1`, read from W&B (2026-09-29): `i3` passes; full attention helps a little; the
 m/z encoding is rejected.** Tail = mean val cosine over epochs 54-63; seed spread 0.0042. All
 finished 64 epochs on Fir, and coverage moves by at most 0.0004.
@@ -32,16 +70,63 @@ finished 64 epochs on Fir, and coverage moves by at most 0.0004.
   [`fa1`/`mz1` arms](plans/masster/masster_memorization_route_plan.md#full-attention-and-the-mz-encoding-on-i1-fa1-and-mz1-built-2026-09-29-not-submitted) ·
   [`mznl1`/`nlpe1` arms](plans/masster/masster_memorization_route_plan.md#neutral-loss-as-a-second-position-mznl1-and-nlpe1-built-2026-09-29-not-submitted).
 
+**Hierarchical fragment graph design (2026-09-29); separate local screen pending.** The
+post-cut information gate found almost no held-out correction signal from 80 explicit
+connectivity descriptors, leading this thread to defer combined R/RC work. A concurrent session
+subsequently implemented the retained-fragment branch at the user's request; its
+[local screen](findings/masster/masster_fragment_connectivity_local_screen_2026_09_29.md) records
+results pending. The candidate-transfer proposal above does not depend on that branch.
+[Plan](plans/masster/masster_hierarchical_fragment_graph_plan.md).
+
 **Experiment reopening audit (2026-09-28); documentation/source review only.** Screened 125
 current research records and recovered historical representation, pairwise-loss, and correction
 plans from local Git branches. The strongest architecture test to reconsider is retained-fragment
 message passing, distinct from the tested cut descriptors and conserved DAG flow. Cross-molecule
 supervision and out-of-fold ensemble distillation remain untested alternatives. Smooth CE input
 after instrument correction and the revised R-Drop gate warrant narrower follow-ups. FluxMPNN,
-another charge-feature bundle, and broad scalar corrections remain deprioritized. Next: price the
-retained-fragment branch with a matched pooled control and check train-only cross-molecule
-neighbor signal before selecting a training experiment. No training, inference, live W&B refresh,
+another charge-feature bundle, and broad scalar corrections remain deprioritized. The newer
+post-cut gate defers the retained-fragment branch; the cross-molecule census above completes
+this audit's next information check. No training, inference, live W&B refresh,
 or change to historical closures. [Audit](findings/experiment_reopening_audit_2026_09_28.md).
+
+**Fragment-connectivity branch `fc1`, local screen against `i1` (2026-09-29); step 3 of the user's
+three-step plan, uncommitted. Not positive.** The branch runs one GINE layer, width 32, over each
+candidate's retained bonds. Its inputs are raw features plus the retained degree and cut-bond
+count, and it adds a zero-initialized residual to the token.
+
+- **Cost.** New keys `masster_fragment_connectivity_*`, default off; `i1` reproduces bit for
+  bit. 22 tests. +21,504 parameters, +12% memory at batch 128, about 3% of step time.
+- **Screen.** Two seeds per arm, against two fresh `i1` local controls, on the 3,000/1,000-
+  molecule recipe.
+- **Result.**
+  - The val tail is +0.0088 and +0.0013, a mean of +0.0050, below the pre-registered 0.0076
+    control spread.
+  - Calibrated (`P^γ`) cosine is +0.0008.
+  - Nested and sibling decisions do not move consistently. Train fit falls slightly, and the
+    gap narrows by 0.012 and 0.004.
+  - The matched pooled control `fc1p` was not run.
+- **Reading.** Steps 1-3 agree: the base-peak errors are a transfer failure that describing the
+  candidate after cutting does not recover at about 0.01 resolution. A Fir run is not
+  recommended; configs `fc1` and `fc1p` exist but are not in the submitter.
+- **Full suite.** One failure, `test_runner_config`, comes from another session's in-progress
+  relationship-loss code (`masster_relationship_pairs_fp` `KeyError`), not this branch.
+- [Finding](findings/masster/masster_fragment_connectivity_local_screen_2026_09_29.md).
+
+**Post-cut information gate on `i1` (2026-09-29); step 2 of the user's three-step plan, inference
+and offline fitting only, uncommitted.** Does an explicit description of each candidate after cutting
+carry information `i1` does not use?
+
+- **Test.** A per-candidate correction `logit' = log p + g(x)`, cross-fitted on val molecules by
+  `mol_id` parity. The context-only correction (`log p`, NCE, instrument, precursor m/z)
+  reproduces the `P^γ` gain, +0.0053.
+- **Result, over that baseline, across MLP, linear and regularized fits:**
+  - post-cut connectivity (80 columns): −0.0008 to +0.0010;
+  - charge (20 columns): +0.0001 to +0.0009;
+  - the eight step-1 attributes: +0.0002 to +0.0008.
+- **Reading.** Nothing is specific to connectivity or charge. This lowers the prior for step 3's
+  branch, and the local screen is the direct test.
+- **New probe:** `scripts/debug/debug_masster_postcut_information_gate.py`, 8 tests.
+- [Finding](findings/masster/masster_i1_postcut_information_gate_2026_09_29.md).
 
 **Wrong base-peak table on `i1` (2026-09-28); step 1 of the user's three-step plan, inference
 only, uncommitted.** `i1` (`i50ig7rf`) at epoch 59, on the full val split and 4,000 train
