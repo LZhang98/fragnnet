@@ -76,8 +76,9 @@
 > lookup key, and the boundary block reads it
 > ([finding](../../findings/masster/masster_route_map_2026_09_24.md)). The collision census
 > (item 4) is not built. The consolidated [change list](#change-list-2026-09-24) records every
-> planned change and the three open decisions (EMA in every arm; replacing `k1` with a
-> global-message regularizer; a learning-rate-schedule arm). MASSter only; every fact below is
+> change planned on 2026-09-24 and the three decisions (EMA in every arm; replacing `k1` with a
+> global-message regularizer; a learning-rate-schedule arm). Each item's outcome was added
+> 2026-09-29. MASSter only; every fact below is
 > from MASSter code or runs.
 > The [memorization probe](../../findings/masster/masster_memorization_route_probe_2026_09_23.md)
 > found the lookup in the boundary block. But every candidate input MASSter builds comes from
@@ -134,21 +135,35 @@ Everything this plan will change in MASSter, by status. Evidence is from the
 [ranking-transfer tail read](masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24),
 and the [memorization literature note](../../notes/memorization_literature_2026_09_24.md).
 
-**Built and tested, not submitted.** Each arm is one change against the control `c0`.
+**Statuses updated 2026-09-29.** Each item keeps its 2026-09-24 text, with its outcome added.
+Tails are the 54-63 mean of `val_cos_sim_0.01_epoch/mean`. The seed spread is 0.0042, so a
+single-seed delta under about +0.005 is unresolved. The
+[attempts audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md#untried-levers-by-evidence-over-cost)
+ranks what is still untried.
 
-| arm | change | why |
-| --- | --- | --- |
-| `r2` | encoder without global attention (`mol_gnn_type: GINE`) | Global attention writes the key: train-to-val damage 2.6x against 1.2x for the generalizing routes. Graph-transformer "over-globalizing" (ICML 2024) is the same effect. Strongest evidence. |
-| `r1` | boundary block built from a one-hop local encoder with no global attention | The cut term keeps its chemistry but cannot name the molecule. |
-| `r0` | boundary block removed | Diagnostic only: does the lookup move to another input? |
-| `m1` | memorization sink: a 16-dim per-molecule vector, training only, dropped at evaluation | Removes the incentive to build keys. Precedents: MemSinks (ICML 2025), example-tied dropout, random effects for repeated measures (LMMNN). |
-| `k1` | dropout 0.2 on the cut-bond encoder and the projected token | **Weakened**: the key is written upstream in the encoder, and `h1` (allocator dropout) was rejected at −0.0067. |
-| `c0` | control: `f0` plus candidate-coverage logging | Same-code reference. |
+**Step 1 arms: built and tested 2026-09-24, then run**
+([tail read](#step-1-tail-read-from-wb-2026-09-24),
+[eval-mode gap](#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25)). Each arm is one
+change against the control `c0`.
 
-**Decisions before submission (open):**
+| arm | change | why | outcome (2026-09-29) |
+| --- | --- | --- | --- |
+| `r2` | encoder without global attention (`mol_gnn_type: GINE`) | Global attention writes the key: train-to-val damage 2.6x against 1.2x for the generalizing routes. Graph-transformer "over-globalizing" (ICML 2024) is the same effect. Strongest evidence. | **Null**, +0.0006, with 1.18M fewer parameters. The eval-mode gap stays at about 0.18. The lookup moved into the allocator's set message, which carries almost twice the train-specific fit ([probe](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27)). |
+| `r1` | boundary block built from a one-hop local encoder with no global attention | The cut term keeps its chemistry but cannot name the molecule. | **Misses the gate**, −0.0029, inside the seed spread. |
+| `r0` | boundary block removed | Diagnostic only: does the lookup move to another input? | **Fails**, −0.0129, but its initialization differs from `c0`'s. The route map has not run on its checkpoint (`qyjlg9tb`), so the diagnostic question is unanswered. |
+| `m1` | memorization sink: a 16-dim per-molecule vector, training only, dropped at evaluation | Removes the incentive to build keys. Precedents: MemSinks (ICML 2025), example-tied dropout, random effects for repeated measures (LMMNN). | **Rejected**, −0.0203. With the sink dropped at eval, train cosine falls to 0.814: the sink carried train fit, and some transferable fit with it. Follow-up: `m2` (Next, item 1). |
+| `k1` | dropout 0.2 on the cut-bond encoder and the projected token | **Weakened**: the key is written upstream in the encoder, and `h1` (allocator dropout) was rejected at −0.0067. | **Passes and replicates**: +0.0074, and +0.0048 at seed 811237 (`k1_s2`). It closes about 0.015 of the 0.18 eval-mode gap. Gates 2-4 have not run on its checkpoint. With EMA on `i1` it is `i3`, +0.0102. |
+| `c0` | control: `f0` plus candidate-coverage logging | Same-code reference. | `vcpho5qm`, tail 0.7276. Its seed-811237 replicate `c0_s2` is +0.0042, which sets the seed spread. |
+
+**Decisions before submission (all three resolved by 2026-09-28):**
 
 - **A. Add `ema_decay: 0.999` to `c0` and every arm.** EMA passed on both lineages (+0.0094
   unmerged, +0.0097 merged). The weight-averaging literature (SWA, SWAD) supports it.
+  - **Outcome: not applied to every arm; EMA became a stacking lever.** Single-lever arms stayed
+    EMA-free, so each is read against `c0`. EMA replicates (`u2_s2` +0.0072 over `c0_s2`), but it
+    lifts train and val together, so it does not narrow the gap. `k1_ema` is +0.0029 over `u2`,
+    under the gate. On the instrument labels, `i3` (`k1` + EMA) is +0.0102 over `i1`
+    ([Batch 5 read](#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
 - **B. Replace `k1` with a global-message regularizer.** Four options, all new code. The first
   two are built as `gm1`/`gm2` (2026-09-25), with dropout drawn per atom rather than per molecule;
   see [the section](#global-message-noise-arms-gm1-and-gm2-built-2026-09-25-not-submitted).
@@ -164,6 +179,11 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
   - **DropKey on the GSA layers**: drop keys before the softmax (DropKey, CVPR 2023), so each
     atom's global message comes from a random subset of the molecule's atoms. It only weakens
     identity, where global-message dropout removes it.
+  - **Outcome: `k1` was kept, since it replicated.** Only `gm1` (batch-mean substitution) passes
+    gate 1, at +0.0051 on one seed; no second seed has run. `gm2` (noise) fails at −0.0029. The
+    swap family `gm3`-`gm6` is closed, at +0.0023 to −0.0029
+    ([read](#batch-2-tail-read-six-finished-runs-2026-09-26)). The gated message, DropKey and a
+    per-molecule batch-mean draw are not built.
 - **C. Add a learning-rate-schedule arm `s1`: `c0` plus the `d3` schedule** (cosine decay,
   `lr_min_ratio: 0.01`, 1000-step warmup, `lr_total_steps` = 64 epochs × steps per epoch). Every
   MASSter run so far, the Step 1 arms included, uses a constant `lr: 1e-3`. `d3` gained
@@ -174,14 +194,23 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
   constant-rate checkpoints, and the other arms should stay matched to them. **Built
   2026-09-25** as `s1`, with a stacked `s1_k1_ema` against `k1_ema`
   ([section](#learning-rate-schedule-arms-s1-and-s1_k1_ema-2026-09-25)).
+  - **Outcome: `s1` passes against `c0` (+0.0090) but is the same gain as EMA.** It is below `u2`
+    at every epoch (−0.0026), and `s1_k1_ema` adds nothing to `k1_ema` (−0.0011). The schedule is
+    dropped from the stack ([Batch 4 read](#batch-4-read-from-wb-2026-09-28)).
 
-**Next, ranked by evidence (not built):**
+**Next, ranked by evidence (none built on 2026-09-24).** By 2026-09-29 two have run: item 1's
+off-switch as `m2`, and item 6's weight-decay arm as `w1`. Items 2-5 and the rest of item 6 have
+no code.
 
 1. Sink refinements for `m1`: turn the sink off on part of each batch, as MemSinks mixes shared
    and specific units, and learn its shrinkage like a random-effect variance instead of fixing
    weight decay. The concrete form is a variational sink: a Gaussian posterior per molecule with
    a KL term to N(0, σ²I) and σ learned (GLMMNet, MC-GMENN and MMbeddings all beat plain entity
    embeddings for high-cardinality IDs).
+   - **Outcome:** the off-switch ran as `m2`, with the sink dropped on half of the spectra
+     ([section](#sink-dropout-arm-m2-built-2026-09-26-not-submitted)). It is +0.0045 over `c0` on
+     one seed, inside the spread, and +0.0248 over `m1`. No second seed has run. The variational
+     sink is not built.
 2. **Goldfish-style masked peaks** (Hans et al., 2024). Hash (molecule, peak) to exclude about 25%
    of each molecule's target peaks from every exposure. Drop them from both the target and the
    predicted distribution, so the loss does not teach that they are absent. No lookup can then
@@ -207,13 +236,17 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
    - out-of-fold distillation (never same-data: soft labels carry a teacher's memorized
      answers);
    - targeted larger weight decay over a longer horizon (the grokking and Omnigrok line;
-     `w1` tests 10x decay at 64 epochs, [section](#weight-decay-arm-w1-2026-09-25));
+     `w1` tests 10x decay at 64 epochs, [section](#weight-decay-arm-w1-2026-09-25)). **Outcome:**
+     `w1` finished null at +0.0010, which closes weight decay on this lineage
+     ([read](#batch-3-read-from-wb-2026-09-26));
    - a Fisher-trace penalty (a second backward pass);
    - periodic reinitialization of the key reader or of the global-attention projections.
      Demoted: across 15,000 models, resets added little once other regularization was tuned
      (Zaidi et al., 2022). The cheap form resets the online weights to the EMA weights.
 
-**Diagnostics to add (no training):**
+**Diagnostics to add (no training).** By 2026-09-29 only the Tanimoto-bin read has run, on `i1`
+alone, where gate 4 passes ([read](#memorization-read-on-i1-2026-09-28)). The rest are not built.
+The `m1` sink norm needs only the local checkpoint `saved_ckpts/m1_sink_liwjgdq6.ckpt`.
 
 - Layer rewinding: revert one module to an early-epoch checkpoint and read the gap. Literature
   disagrees on whether memorization sits in late layers or in a few neurons spread across
@@ -234,11 +267,17 @@ and the [memorization literature note](../../notes/memorization_literature_2026_
 
 - If `r1` or `r2` wins: pools from a local encoder, a narrow noisy global channel (8-16 dims),
   and cut-environment buckets shared across molecules (after the collision census).
+  **Outcome:** neither won, so this branch did not open. The collision census is not built.
 - If `r0` shows the lookup rerouting: the token bottleneck `v1` and training-time set dropout.
+  **Outcome:** the route map has not run on `r0`. Rerouting was shown on `r2` instead, into the
+  set message. `v1` is not built. Set dropout ran as `sd1`, at +0.0043 on one seed, beside the
+  message mask `sm1`, null at +0.0016
+  ([Batch 4 read](#batch-4-read-from-wb-2026-09-28)).
 
 **Not changing:** tying the ion/H head, coarsening mass, discretizing `a_charge` (all small or
 null in the route map); generic dropout; DropEdge (reopened 2026-09-27 as `de1`,
-[section](#encoder-atom-mask-and-bond-dropout-arms-am1-and-de1-built-2026-09-27-not-submitted));
+[section](#encoder-atom-mask-and-bond-dropout-arms-am1-and-de1-built-2026-09-27-not-submitted);
+its [local screen](#local-screen-of-am1de1-2026-09-27) was −0.0053, and it has not run on Fir);
 DP-SGD-style per-molecule clipping (costly,
 and it hurts rare examples); co-teaching (built for noisy labels); mixup across molecules;
 excluding low-loss molecules without a memorization score (low train loss does not separate
