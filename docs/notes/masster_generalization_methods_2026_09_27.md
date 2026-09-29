@@ -11,6 +11,8 @@
 > built as specified (§2). Engineering constraints were added to §3 and a prior to §6.
 > A later §3 build review drops the cache and manual-optimization constraints for allocator-only
 > SAM, adds radius scales and notes the missing branch path. No code changed.
+> An eight-view follow-up corrects §1's "gain equals flattening": the flattened MC-dropout mean
+> beats flattened eval on val by +0.0031 on `i1`, the new control.
 
 ## What changes after this search
 
@@ -75,9 +77,14 @@ better held-out ranking/cosine, not merely smaller KL. A stable lookup can still
 - Two head passes move 7% (`c0`) to 14% (`k1` family) of training-spectrum intensity: 0.03-0.12
   nats symmetric KL.
 - That is nearly as much as on validation. The disagreement follows NCE, not novelty.
-- Its validation-side gain at inference equals flattening the deterministic prediction.
-- `c0`'s head noise is allocator dropout alone, which `h1` found harmful to raise. So build any arm
-  on `k1`, and read it after the same `P^γ` for arm and control.
+- ~~Its validation-side gain at inference equals flattening the deterministic prediction.~~
+  That held only for two-view averages. With eight head views the flattened MC-dropout mean beats
+  flattened eval on val by +0.0031 on `i1` and +0.0049 on `k1_ema`, at no train cost
+  ([follow-up](../findings/masster/masster_dropout_view_disagreement_2026_09_27.md#many-view-follow-up-the-mc-dropout-mean-2026-09-28)).
+  So the weight-scaling gap R-Drop targets exists. On `i1` it is below the 0.0042 seed spread.
+- `i1` is the control for any arm (user decision, 2026-09-28). Its head noise is allocator
+  dropout alone, which `h1` found harmful to raise. Read the arm after the same `P^γ` for arm and
+  control, and against `i1` with eight-view head averaging at inference.
 
 **Cost.** One encoder/proposal pass plus two differentiable head passes if implemented this way;
 measure runtime and memory rather than assuming a whole-model 2x cost.

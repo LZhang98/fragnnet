@@ -349,3 +349,7 @@ Not memorization levers but ready and unrun: the architecture arms `a4`, `a5` an
 4. Submit `s1`.
 5. Run one probe condition on the full val split (`--batch_cutoff -1`) to size the bias of the
    `spec_id`-ordered sample.
+   - **Done 2026-09-28, on `i1`**
+     ([read](masster_i1_memorization_read_2026_09_28.md#the-probes-val-sample)).
+   - The prefix is 90% Elite (the split is 74%) and less novel. That instrument mix is most of the
+     bias: Elite prefix spectra read as on the full split, while Lumos prefix spectra are easier.

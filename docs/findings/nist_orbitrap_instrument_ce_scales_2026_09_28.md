@@ -9,8 +9,9 @@
 > `OB` / `OB_F` and `FT` is retired (§7); NIST20/NIST23 are relabelled locally from their raw
 > MSP instrument fields, and the template's `ace_max` is 460. **Training (running, §8):** `n4`
 > on the new labels (`i1`) leads `n4` by +0.021 val cosine epoch-matched, and the smooth-energy
-> penalty falls from −0.021 to −0.004 (`i2` − `i1`); the per-instrument read waits for the
-> checkpoints. **Revisions:** same-molecule tests use NIST23's recorded instrument labels with
+> penalty falls from −0.021 to −0.004 (`i2` − `i1`). On the finished `i1`, full-split Lumos val
+> gains +0.054 and Elite +0.025 over `c0`, and the Lumos precursor-fraction bias falls from +0.092
+> to +0.020 (§8). **Revisions:** same-molecule tests use NIST23's recorded instrument labels with
 > same-instrument null controls. NIST23 turned out to have doubled the negative-mode Elite NCE,
 > which reverses the negative-mode reading. Five earlier claims are withdrawn (§Withdrawn).
 
@@ -441,6 +442,15 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
 - **What breaks.** Checkpoints trained with `inst_types: [FT]` cannot run on relabelled data.
   Other local datasets (PCDL and the NIST23 derivatives) still say `FT` until migrated, and so
   do the cluster copies.
+- **Pre-fix W&B checkpoints deleted (2026-09-28, user request).** The `.ckpt` files of 33
+  NIST20 `[M+H]+` MASSter runs with `inst_types: [FT]` are gone from W&B `frag-gnn/frag-gnn`
+  (66 files, 7.5 GB), including `c0` (`vcpho5qm`), `k1` (`wg0nxymi`), `k1_ema` (`j4u25qfd`),
+  `n1`-`n3`, `s1` and `s1_k1_ema`.
+  - Kept on W&B: `n4` (`shjgv9im`, for the per-instrument read in §8), Spectraverse cv0/cv1
+    (`ggifzj9m`, `u46v0k0g`) and MSGYM (`ll04i00m`). Those three datasets record no Lumos,
+    so for them the fix only renamed `FT` to `OB`.
+  - Local copies of the deleted checkpoints exist only under `saved_ckpts/`: `c0`, `f0`, `f1`,
+    `k1`, `k1_ema` (epoch 50), `m1`, `nl1`, `nl2`, `r0`-`r2`, `u2`.
 - **Model effect.** MASSter embeds `inst_type` whenever `spec_params.inst_type` is true, as in
   `c0`/`n4`. Before, that embedding had one class and carried nothing. Now it has two: a
   2,000-spectrum NIST20 val sample reads `OB` 1,462 / `OB_F` 538.
@@ -505,6 +515,46 @@ the only change from `n4` and `n1`. The metric is `val_cos_sim_0.01_epoch/mean` 
   carry over.
 - **Stacking arms on `i1`** (`i3`: `k1` + EMA; `i4`: plus pre-norm) are built, not submitted
   ([plan](../plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
+
+**`i1` final read (2026-09-28).** `i1` finished its 64 epochs.
+
+- **Tail.** Epochs 54-63 average 0.7607, +0.0278 over `n4` (0.7329) and above it at 64 of 64
+  epochs. Coverage is +0.0002.
+- **Per instrument.** On the full val split at the best checkpoint (epoch 59):
+
+  | | Elite (`OB`) | Lumos (`OB_F`) |
+  | --- | ---: | ---: |
+  | `i1` | 0.7693 | 0.7423 |
+  | `c0` (§5) | 0.7439 | 0.6880 |
+
+- **Both halves of the question hold.** Lumos closes half its gap to Elite (0.056 → 0.027), and
+  Elite spectra gain too (+0.025). Lumos does not pass the Elite level.
+- **Precursor-fraction bias, the pass criterion: Lumos passes.**
+  - Lumos val falls from +0.092 to +0.020.
+  - Elite cosine rises (+0.025), but Elite's precursor bias goes from −0.001 to +0.023. At NCE
+    ≤ 35, `i1` predicts Elite val spectra under-fragmented; train shows no such bias.
+  - [Per-NCE read and figure](masster/masster_i1_memorization_read_2026_09_28.md#result-by-nce-from-predicted-spectra).
+- **No Lumos-specific energy or shape error is left**
+  ([follow-up](masster/masster_i1_memorization_read_2026_09_28.md#is-an-energy-or-shape-error-left-follow-up-2026-09-28)).
+  - The leftover precursor bias is shared by both instruments and grows with novelty. It costs
+    no cosine: a cross-fitted precursor rescale gains +0.0002 on `i1` Lumos, against +0.0117 on
+    `c0`.
+  - The mass dependence of the Lumos offset (§3.2) is absorbed.
+  - Matched on the measured extent instead of NCE, the Elite − Lumos val cosine gap is +0.005
+    [−0.007, +0.018] (`c0`: +0.033). The remaining 0.024 at matched NCE is that Lumos spectra at
+    a given NCE are more fragmented.
+- The memorization probe on the same checkpoint is in a separate finding:
+  [memorization read](masster/masster_i1_memorization_read_2026_09_28.md).
+- **Test split (2026-09-28).** This is the first test read.
+  - Export: `run_save_inference_eval.py --eval_split test --auxiliary_scores cos_sim cos_hun
+    cos_hun_inst_tol --eval_batch_size 256` on epoch 59, to
+    `output/inference_eval/i50ig7rf/predictions_test.hdf5` (local).
+  - Over 52,621 spectra, `cos_sim_0.01` is 0.7656 and `cos_hun_inst_tol` 0.7909.
+  - `OB`: 0.7751 / 0.8020. `OB_F`: 0.7411 / 0.7622.
+  - `plot_predictions_hdf5.py` stats and 20 random mirror plots are under `plots/` beside the
+    export.
+  - Its CE-breakdown panels drop every spectrum at NCE ≥ 70, a hard-coded cap for non-QTOF
+    instruments. That is 36.9% of test, the harder part (0.746 against 0.817).
 
 ## Implications
 

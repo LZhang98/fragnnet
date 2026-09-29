@@ -5,6 +5,9 @@
 > `sd1`, `am1` finished): the cosine schedule passes against `c0` (+0.0090) but adds nothing on
 > top of EMA; the rest are single-seed or null. **Stacking arms `i3`/`i4` built on `i1`**, the
 > instrument-input arm ([section](#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
+> **2026-09-28: [memorization read on `i1`](#memorization-read-on-i1-2026-09-28).** The
+> instrument input narrows the eval-mode gap from 0.183 to 0.158 at epoch 63 while train fit
+> rises. About 86% of the gap remains.
 > **Audited 2026-09-27 ([finding](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)).**
 > Every number below was re-derived from W&B and code. The corrections are applied in place. The
 > +0.003 gate is about one standard error of a single-seed delta, and gates 2-4 have not run on
@@ -1787,6 +1790,22 @@ same delta of `val_candidate_wrecall`. The seed spread is 0.0042.
   loss entirely (+0.0248 over `m1`). Neither is worth a stack slot before a second seed.
 - **`sm1` and `am1` are null** (+0.0016, +0.0010). `am1`'s Fir tail does not reproduce the
   +0.0067 of its local screen.
+- **`sm1` has no variant worth running (re-read 2026-09-28).** Its code matches the plan, so the
+  null is not a bug. Its curve differs from every other arm on this page:
+  - It is the only arm that starts behind `c0`: −0.0076 over epochs 0-9, −0.0053 over 10-19,
+    and below `c0` at 37 of epochs 0-41. Val loss is also worse early (+0.084 at epoch 3), so
+    what each candidate retrieves from its set carries fit that transfers to val, and
+    substitution removes it. `sd1`, `gm1` and `m2` lead from the first epochs, and `k1` from
+    epoch 10.
+  - It pulls ahead only after `c0`'s val peak (epoch 42), and ends at `c0`'s best (0.7292).
+    Against `c0`'s best-so-far over epochs 54-63 it is +0.0000, and best checkpoint against best
+    checkpoint +0.0009. All of the tail gain is `c0`'s post-peak decline (0.0016), which EMA and
+    best-checkpoint selection already remove.
+  - So neither a lower rate nor a delayed start has room: each is capped by that same 0.0016.
+    Stacking on `k1_ema` has less, since its post-peak decline is 0.0006.
+  - On this route, `sd1` is the arm that could still pay off, with a second seed or a slot in
+    the `i3` stack. The allocator-route probe on `sm1`'s checkpoint is still unrun. It can only
+    show where the lookup went, and cannot change this verdict.
 - Coverage moves by at most 0.0013, so none of this is candidate-set coverage.
 
 ## Stacking on the instrument input: `i3` and `i4` (built 2026-09-28, not submitted)
@@ -1816,3 +1835,24 @@ key that passed the merged screen.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh stack` (`i3` and `i4`).
   The cluster needs the relabelled `data/proc/nist20/spec_df.pkl` (md5
   `bdc009bbeaf6a38d126326d127630cad`), as for `i1`.
+
+### Memorization read on `i1` (2026-09-28)
+
+This is the Step 0 probe on `i1`'s checkpoints (epochs 59 and 63), paired with `c0`'s on the same
+spectra ([finding](../../findings/masster/masster_i1_memorization_read_2026_09_28.md)).
+
+- **The gap narrows by 0.025 on the probe and 0.028 on the full val split, at matched epoch 63.**
+  Train fit rises by +0.003. No arm here had done both.
+- **Why.** Only 7 of 12,668 train molecules have both instruments, so on the `FT` labels the
+  identity routes stood in for the instrument.
+  - `c0`'s Lumos train spectra leaned harder on the set message and global attention.
+  - Its Lumos val spectra were right only at Lumos-typical NCE values.
+  - Set-message damage ratio: 4.20 → 2.44. Global attention: 2.53 → 2.23. The boundary block is
+    unchanged.
+- **What it changes here.**
+  - Every earlier arm was read on the `FT` labels, where part of the "lookup" is this instrument
+    proxy, and on a probe val sample that is 90% Elite.
+  - About 86% of the gap remains on `i1`, with the lookup signature intact. `i3` puts `k1` and EMA
+    on that remainder.
+- **Gates.** 1, 3, 4 and 5 pass (3 against `c0`; `n4` was not run, though a patched checkpoint
+  can run it). Gate 2 was not run.

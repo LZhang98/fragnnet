@@ -4,6 +4,98 @@
 
 ## Current handoff
 
+**Experiment reopening audit (2026-09-28); documentation/source review only.** Screened 125
+current research records and recovered historical representation, pairwise-loss, and correction
+plans from local Git branches. The strongest architecture test to reconsider is retained-fragment
+message passing, distinct from the tested cut descriptors and conserved DAG flow. Cross-molecule
+supervision and out-of-fold ensemble distillation remain untested alternatives. Smooth CE input
+after instrument correction and the revised R-Drop gate warrant narrower follow-ups. FluxMPNN,
+another charge-feature bundle, and broad scalar corrections remain deprioritized. Next: price the
+retained-fragment branch with a matched pooled control and check train-only cross-molecule
+neighbor signal before selecting a training experiment. No training, inference, live W&B refresh,
+or change to historical closures. [Audit](findings/experiment_reopening_audit_2026_09_28.md).
+
+**Wrong base-peak table on `i1` (2026-09-28); step 1 of the user's three-step plan, inference
+only, uncommitted.** `i1` (`i50ig7rf`) at epoch 59, on the full val split and 4,000 train
+molecules.
+
+- **The base peak is missed in 40% of val spectra (train 15%),** and it is a candidate in 94% of
+  those.
+- **Matched #1-vs-#2 pairs show chemistry biases on val.** Favored: shallower, precursor and
+  aromatic-retaining candidates. Disfavored: extra cuts, ring cleavage, H transfer, and C–C,
+  aryl–N and heteroatom cleavages. Calibrated: amide, acyl and amine cleavages.
+- **But the model is calibrated in aggregate, so the biases are hedging.** It predicts 1.84 cuts
+  per spectrum against 1.93 measured. A cross-fitted attribute reweighting adds +0.0004 over
+  `P^γ` (+0.0052).
+- **Discrimination falls on val by similar amounts for every decision type.** Balanced pair
+  accuracy is 0.71–0.79 across step types (train 0.86–0.92), flat over NCE, and rises with
+  novelty (nested pairs 0.657 → 0.810).
+- **Decision types:**
+  - Nested decisions (one step further along a path) are 69% of val pairs and 60% of misses.
+  - Siblings (which bond breaks) are 26% and 34%.
+  - Which side keeps the charge is 1.5% and 1.3%.
+- **For step 3:**
+  - Charge-related features have the least support.
+  - A post-cut connectivity branch targets the failing decision types, but it tests inductive
+    bias for transfer, not an input the model lacks. Gate it on nested and sibling pairs at
+    novelty < 0.6, against `i1`.
+- **New probes:** `scripts/debug/debug_masster_base_peak_errors.py` and
+  `debug_masster_base_peak_tables.py`, with 26 tests. They give base-peak hit rate, ranking gap,
+  cross-fitted `P^γ` cosine and the pair tables for any MASSter checkpoint, in about 8 min.
+- **Next: user decision on step 3.**
+- [Finding](findings/masster/masster_i1_base_peak_errors_2026_09_28.md).
+
+**Residual structure on `i1`: no missing input left in recorded metadata (2026-09-28); inference
+only, uncommitted.** The question: does anything besides the instrument still stand in for a
+missing input? Tested on all val spectra, with held-out molecules, a confirmation half and
+cosine-valued corrections.
+
+- **Where the val deficit is.** Of the 0.238 deficit:
+  - band reweighting (the most an energy-like input can do) is at most 18%;
+  - allocation among proposed fragments within a band is 64%;
+  - no candidate within 10 ppm is 8%;
+  - 0.01 Da bin splits are 9%.
+- **Energy error is molecule-specific.** A per-molecule energy scale is worth +0.010 (train
+  +0.0006), with shifts split evenly in sign. No recorded variable predicts it on held-out
+  molecules, and chemistry explains 6% of the NCE50 error.
+- **Acquisition fields add nothing.** Campaign, `Nreps`, m/z error, solvent, vial and eV do not
+  improve held-out residual prediction. Chemistry cuts MSE by 4-6% but adds no cosine.
+- **One real effect, worth no cosine.** Lumos campaigns differ in precursor survival
+  (p < 0.001, 3% of residual variance; late 2019 fragments more). Cross-fitted corrections lose
+  cosine, and train identity routes show no campaign signature. Worth repeating on NIST23, where
+  Lumos is 35%.
+- **Side finding.** A CPU rescoring of `cos_sim_0.01` reads 0.0011 low against W&B because CPU
+  and CUDA build different float32 bin grids. Building the grid on CUDA reproduces it exactly.
+- **Next:** the levers on the per-molecule lookup (`i3`/`i4`, fragment-ranking inductive bias,
+  NIST23), not new conditioning inputs.
+- [Finding](findings/masster/masster_i1_residual_structure_2026_09_28.md).
+
+**MASSter memorization read on `i1` (2026-09-28); inference only, uncommitted.** The route-map
+probe ran on `i1` (`i50ig7rf`, epochs 59 and 63), on the same spectra as `c0`'s 2026-09-27 run.
+
+- **The eval-mode gap narrows while train fit rises, a first on the unmerged lineage.** At epoch
+  63 it is 0.158 against `c0`'s 0.183 (full val split: 0.166 against 0.194), with train +0.003.
+  The W&B tail (epochs 54-63) is 0.7607, +0.0278 over `n4`.
+- **Half the narrowing is Lumos.** Full-split val gains +0.054 on Lumos and +0.025 on Elite.
+  `c0`'s extra Lumos gap halves, 0.053 → 0.025.
+- **In `c0`, identity routes stood in for the instrument.** Only 7 of 12,668 train molecules
+  have both instruments.
+  - The set-message damage ratio falls 4.20 → 2.44 and global attention's 2.53 → 2.23; the
+    boundary block is unchanged.
+  - About 86% of the gap remains.
+- **The probe's val prefix is 90% Elite.** That is most of its +0.011 bias (the audit's next
+  check 5).
+- **By NCE, from predicted spectra:** every CE bin gains, and every bin's gap narrows.
+  - The Lumos precursor-fraction bias falls from +0.092 to +0.020, so §8's criterion passes.
+  - New: Elite val is under-fragmented at NCE ≤ 35 (+0.035 to +0.087), with no bias on train.
+  - Figure: `docs/figures/masster_i1_vs_c0_elite_vs_lumos_per_nce.png`.
+  - Follow-up: no Lumos-specific energy or shape error is left. The shared precursor bias costs
+    no cosine (cross-fitted rescale +0.0002). Matched on measured extent, the Lumos gap is +0.005
+    [−0.007, +0.018].
+- **Not run: `n4`** (the scope was `i1`). It can run on the relabelled data through the
+  dropout-view probe's `patch_inst_embedding.py`.
+- [Finding](findings/masster/masster_i1_memorization_read_2026_09_28.md).
+
 **Excision continuation probe (2026-09-28); diagnostic completed, no model channel built.**
 Train/val each sampled 512 positive-mode molecules using c0. The generic train union is not
 clearly above a random disconnected control; a restricted aromatic nitro NO-loss family
@@ -29,9 +121,13 @@ labels (2026-09-28); uncommitted. `i1` and `i2` are training on the relabelled N
     That is more than closing the Lumos gap alone would give (about +0.015).
   - `i2_qet_ob_obf` (`jshvk4gv`) is `n1` on the same data. The smooth-energy penalty
     falls from `n1` − `n4` −0.021 to `i2` − `i1` −0.004 (epochs 10-14).
-  - Pending: the per-instrument Lumos cosine and precursor bias on the best checkpoints
-    (uploaded at run end), and the epoch 54-63 tails. If it holds, `i1` replaces `c0`/`n4` as
-    the NIST20 `[M+H]+` control ([finding §8](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
+  - **`i1` finished (read 2026-09-28).** Its tail is +0.0278 over `n4`. Full-split Lumos val is
+    0.742 against `c0`'s 0.688, and Elite 0.769 against 0.744
+    ([memorization read](findings/masster/masster_i1_memorization_read_2026_09_28.md)).
+    The Lumos precursor-fraction bias falls from +0.092 to +0.020. Elite's rises from −0.001 to
+    +0.023, on val only, at NCE ≤ 35. `i1` is the control for new arms (user decision,
+    dropout-view entry below;
+    [finding §8](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
   - **Stacking arms built, not submitted:** `i3` = `i1` + `k1` dropout + EMA 0.999 (control `i1`)
     and `i4` = `i3` + intensity pre-norm (control `i3`). Submitter stage `stack`; the cluster
     needs the relabelled `spec_df.pkl`. The cosine schedule is left out: `s1` passes against `c0`
@@ -64,8 +160,9 @@ labels (2026-09-28); uncommitted. `i1` and `i2` are training on the relabelled N
 - **Next:**
   - Run the migration on the cluster copies (NIST20 needs `data/raw/nist_20/nist_20_hr_msms.zip`
     and `data/df/nist23_hr_df.csv` there).
-  - When `i1` finishes: read the Lumos gap and the precursor bias against the old `n4`
-    (`output/ev_ladder_census_2026_09_28/nist20_raw_labels.py`).
+  - `i1`'s precursor-fraction bias and Lumos gap are read against `c0`. `n4` was not run; it can
+    be, with the dropout-view probe's `patch_inst_embedding.py`
+    ([memorization read](findings/masster/masster_i1_memorization_read_2026_09_28.md)).
   - Other local datasets still say `FT` until migrated.
 - `n4` (`shjgv9im`) finished +0.0053 over `c0` (single seed).
 - [Finding](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md) (§7 = the labels, §8 = `i1`/`i2`).
@@ -80,11 +177,16 @@ inference only, uncommitted, no arm built.** This is the first gate of the
   train as on val.
   - It follows NCE, not novelty: dropout-view agreement stays 0.92-0.99 where two seeds fall to
     0.75.
-  - What dropout views gain on val (+0.003 to +0.005) equals `P^γ` flattening of the
-    deterministic prediction.
+  - ~~What dropout views gain on val equals `P^γ` flattening.~~ *Corrected by the eight-view
+    follow-up (2026-09-28):* two-view averages keep half a view's noise. The flattened eight-view
+    mean beats the best flattened eval on val by +0.0031 [+0.0024, +0.0039] on `i1` (`i50ig7rf`,
+    epoch 59) and +0.0049 on `k1_ema`, at no train cost. The curve is linear in `1/n`.
   - `k1` beats `c0` (+0.0084 val) while doubling the disagreement. EMA beats its training weights
     (+0.0119) with 7-9% less.
-  - If run: on `k1`, against the two-pass control, read after `P^γ`.
+  - If run: `i1` is the control (user decision). Also read against the two-pass λ = 0 control
+    after `P^γ`, and against `i1` with eight-view head averaging at inference (+0.0031, no
+    training). A +0.003 effect needs two seeds per arm.
+  - **Next:** user choice between an R-Drop arm pair on `i1` and head-MC inference on `i1`.
 - **Centered-logit penalty: do not build as specified.** The logit spread is equal on train and
   val, and 51-55% of the unweighted penalty sits on candidates holding under 1% of intensity.
 - **Side findings.**
@@ -96,8 +198,9 @@ inference only, uncommitted, no arm built.** This is the first gate of the
   - The logged 0.01-Da cosine is edge-sensitive for two-decimal targets.
   - `P^0.75` costs train cosine: it is a hedge, not split-independent (ranking decomposition
     corrected in place).
-- **New:** `scripts/debug/debug_masster_dropout_view_disagreement.py` and its 7 tests. Records
-  updated: the literature note (§1, §2, §3, §6), the index and the ranking decomposition.
+- **New:** `scripts/debug/debug_masster_dropout_view_disagreement.py` and its 9 tests
+  (`--head_views N` added for the follow-up). Records updated: the literature note (§1, §2, §3,
+  §6), the index and the ranking decomposition.
 - [Finding](findings/masster/masster_dropout_view_disagreement_2026_09_27.md).
 
 **Intensity reliability P1 preliminary census (2026-09-27).** The saved NIST20 splits
@@ -200,12 +303,16 @@ uncommitted.**
   - Probe: `scripts/debug/debug_enveda_isotope_envelope_ceiling.py`.
   - [Plan](plans/masster/masster_isotope_envelope_plan.md#step-3-on-enveda-val-2026-09-27-gate-0a-fails).
 - **Baseline config.** It is now
-  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml`:
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`:
   `ce_insert_type: embed` with `int_embedder: fourier`, as in the Spectraverse folds, replacing
   `qet` after `n1`-`n3` trailed `c0` on NIST20.
+  - **ACE only, no EMA (user decision, 2026-09-28).** `spec_params.nce: false` and no
+    `ema_decay`, because Enveda records only ACE and the dataset's NCE is derived from it.
+    Renamed from `…_dual_ce_fourier_ema999`. The fork origin is now the MSGYM non-EMA arm. A
+    one-epoch smoke exits 0, and its checkpoint holds only an ACE table and no EMA state.
   - The file and W&B name were renamed from `…_qet_…`, so the committed `qet` file shows as
     deleted.
-  - Its other deltas from the MSGYM EMA arm are unchanged: `[M+H]+`/`[M-H]-` through
+  - Its other deltas from the MSGYM arm are unchanged: `[M+H]+`/`[M-H]-` through
     `filter_prec_types`, a 10 ppm QTOF loss tolerance, and 20 epochs (24,240 steps).
   - A local one-epoch smoke on 2,000 spectra per split exits 0.
   - Not submitted. It needs a second seed before any arm is read against it.
@@ -421,10 +528,10 @@ the NEIMS binned head, on `ms_gym_benchmark_1_5`.
 - **Runner fix.** The runner used to copy un-uploaded checkpoints through `/tmp` around
   `wandb.finish()`, which filled the workstation's `/tmp` and lost a `last.ckpt`. It now renames
   them within the run folder.
-- **Result so far (Fir, epoch 24 of 100).**
+- **Result (Fir, both runs finished 100 epochs, read 2026-09-28).**
   - E1 `tm9qwq78` and T2 `ku742mhq` reach their best val `cos_sim_0.01` after epoch 0: 0.199
-    and 0.194.
-  - Val loss then rises while train loss falls from 0.70 to 0.25. T2 is worse at every epoch.
+    and 0.194. They end at 0.169 and 0.152.
+  - Val loss then rises while train loss falls from 0.70 to 0.21. T2 is worse at every epoch.
   - Model-free baselines on the same val spectra: a structure-blind prior (precursor plus mean
     fragments per instrument and ACE) scores 0.194, and a nearest-train-molecule lookup 0.095.
   - So the linear metric barely credits structure. Sqrt is 0.223 against 0.159, a little.
@@ -433,7 +540,7 @@ the NEIMS binned head, on `ms_gym_benchmark_1_5`.
   head, on a slightly different val set (9,260 against 9,731 spectra).
 - **Next.** The user decides. E4 on `ms_gym_benchmark_1_5` is the matched check. The
   exact-mass stages are the structural route.
-  [Results](plans/chemberta3_msgym_plan.md#results-so-far-2026-09-27-runs-in-progress).
+  [Results](plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished).
 
 **Light-side token arms `nl1`-`nl3` (2026-09-26); finished. Final read in the
 [plan](plans/masster/masster_memorization_route_plan.md#final-read-of-nl1-and-nl2-2026-09-27).**

@@ -197,8 +197,9 @@ them.
 
 - On Enveda trained alone (user decision, 2026-09-26: standalone for now, no NIST or MSGYM mixed
   in). The baseline `i0` is
-  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml`
-  (`[M+H]+`/`[M-H]-`, 20 epochs, not submitted; renamed from `…_qet_…` 2026-09-27). Never run,
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`
+  (`[M+H]+`/`[M-H]-`, 20 epochs, not submitted; renamed from `…_qet_…` 2026-09-27 and from
+  `…_dual_ce_fourier_ema999` 2026-09-28). Never run,
   since the plan closed at gate 0a. Planned arms:
   - `i0`: the baseline;
   - `i1`: `natural`;
@@ -235,12 +236,18 @@ them.
   [finding §9](../../findings/enveda_180_dataset_2026_09_25.md#9-isotopes-2026-09-25).
 - **The Enveda baseline stays** as the first standalone Enveda run, no longer as an isotope
   control:
-  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_dual_ce_fourier_ema999.yml`,
+  `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`,
   not submitted.
+  - **ACE only, no EMA (user decision, 2026-09-28).** `spec_params.nce: false` and no
+    `ema_decay`. Enveda records only ACE, and the dataset's NCE is derived from it. Renamed
+    from `…_dual_ce_fourier_ema999`; the fork origin is now the MSGYM non-EMA arm
+    (`msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml`). A third smoke with the
+    same recipe exits 0 (`smoke_ace_2026_09_28.log`). Its checkpoint holds one ACE table
+    (301 × 22 fourier, Linear(22, 32)), no NCE table and no EMA state.
   - **CE input.** On 2026-09-27 it moved from `qet` to `ce_insert_type: embed` with
     `int_embedder: fourier`, as the Spectraverse folds did, after `qet` arms `n1`-`n3` trailed
     `c0` on NIST20. The file and run were renamed from `…_qet_…`.
-  - **Resolve check.** It resolves against the MSGYM EMA arm with only its documented deltas:
+  - **Resolve check.** Before 2026-09-28 it resolved against the MSGYM EMA arm with only its documented deltas:
     data paths, adducts with `filter_prec_types`, the fourier table, a 10 ppm QTOF loss
     tolerance, and 20 epochs with `lr_total_steps` 24,240.
   - **Smokes.** Two one-epoch local smokes on 2,000 spectra per split (batch 64) exit 0: the

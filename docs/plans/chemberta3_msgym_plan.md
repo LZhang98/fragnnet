@@ -1,9 +1,10 @@
 # SMILES + ChemBERTa-3 spectrum prediction on MassSpecGym
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27 (basic model built in `d51fe50c`; E1 and T2
-> training on Fir overfit from epoch 1, and the best val `cos_sim_0.01` of 0.199 barely beats a
-> structure-blind 0.194, see [Results so far](#results-so-far-2026-09-27-runs-in-progress);
-> cut to a basic model on 2026-09-26 at the user's request; the earlier design and its
+> **Status:** ACTIVE · **Updated:** 2026-09-28 (E1 and T2 finished on Fir, 100 epochs each. Both
+> peak after epoch 0, at val `cos_sim_0.01` 0.199 and 0.194, and end at 0.169 and 0.152. The
+> best barely beats a structure-blind 0.194, and random SMILES hurt; see
+> [Results](#results-2026-09-28-runs-finished). The next step is the user's call. Cut to a basic
+> model on 2026-09-26 at the user's request; the earlier design and its
 > [Review](#review-2026-09-26) are kept)
 > **Current scope: a basic model, to see whether it works.** ChemBERTa-3's first 6 of 12 layers,
 > loaded encoder-only, fine-tuned **end to end** with the NEIMS binned 0.01 Da head on
@@ -11,9 +12,9 @@
 > 2026-09-27): the model (E1) and the model with random SMILES (T2). The NEIMS fingerprint
 > baseline (E4) is built but not run. The augmentation ladder, the
 > other controls, the frozen-encoder checks, full depth and the exact-mass stages are
-> [deferred](#deferred-not-scheduled). Built on 2026-09-27 as `model_type: chemlm`, with
-> `transformers` 4.46.3 installed in FRAGNNET-GPU; see [Built](#built-2026-09-27). No run has
-> trained. Cross-model, so it sits at the top of `plans/`.
+> [deferred](#deferred-not-scheduled). Built on 2026-09-27 as `model_type: chemlm` (`d51fe50c`),
+> with `transformers` 4.46.3 installed in FRAGNNET-GPU; see [Built](#built-2026-09-27).
+> Cross-model, so it sits at the top of `plans/`.
 
 ## Objective and acceptance criteria
 
@@ -470,10 +471,12 @@ is the design it followed.
     used"). It is harmless; `TOKENIZERS_PARALLELISM=false` in the job environment silences it.
   - **Not measured.** Fir epoch time. A Fir slice runs without checkpointing, with TF32.
 
-## Results so far (2026-09-27, runs in progress)
+## Results (2026-09-28, runs finished)
 
-Fir, one seed each: E1 `tm9qwq78` and T2 `ku742mhq` (W&B group `msgym_chemlm_basic`),
-read at epoch 24 and 22 of 100. About 66 s per epoch on the Fir slice.
+Fir, one seed each: E1 `tm9qwq78` and T2 `ku742mhq` (W&B `frag-gnn/frag-gnn`, group
+`msgym_chemlm_basic`). Both finished all 100 epochs, in 1.81 h and 1.93 h, about 66 s per epoch
+on the Fir slice. The first read, on 2026-09-27, was at epochs 24 and 22; the table now runs to
+the end.
 
 **Validation peaks after the first epoch, then only memorization.** Here `cd` is the loss, a
 cosine distance on sqrt intensities.
@@ -484,12 +487,20 @@ cosine distance on sqrt intensities.
 | 5 | 0.340 | 0.794 | 0.186 | 0.374 | 0.796 | 0.182 |
 | 10 | 0.298 | 0.801 | 0.181 | 0.325 | 0.815 | 0.165 |
 | 20 | 0.260 | 0.806 | 0.176 | 0.282 | 0.824 | 0.156 |
+| 50 | 0.219 | 0.816 | 0.166 | 0.237 | 0.832 | 0.149 |
+| 99 | 0.205 | 0.812 | 0.169 | 0.221 | 0.829 | 0.152 |
 
 - **Train loss falls; val never recovers.** Train loss falls from 0.70 to 0.25, while val loss
   rises from its epoch-0 minimum and val cosine falls.
 - **The peak comes early.** Epoch 0 ends at step 388, inside the 1,000-step warmup.
 - **Random SMILES do not help.** T2 fits train more slowly, but its val is worse than E1's at
   every epoch.
+- **Final read.** Best val `cos_sim_0.01`: E1 0.1988 and T2 0.1944, both at epoch 0. The last 10
+  epochs average 0.1691 and 0.1517; the curves are flat there, as the cosine LR reaches its 1%
+  floor. Sqrt `cos_sim_0.01` peaks at epoch 0 too, 0.2226 and 0.2213, and ends at 0.1883 and
+  0.1711.
+  - T2 − E1 is −0.004 at the best epoch, inside the 0.005 floor under Seeds, and −0.017 over the
+    tail. So random SMILES do not help at the peak and make the overfit worse.
 
 **Model-free baselines on the same 9,731 val spectra**, scored with the metric's own functions
 (`batched_bin_func`, `cos_sim_helper`; the self-score is 1.0):
@@ -887,5 +898,7 @@ Hugging Face files. The scripts are in the session scratchpad and are not kept.
 
 ## Next concrete check
 
-Fir setup: install the packages in the job venv, copy `data/pretrained/ChemBERTa-100M-MLM`,
-then a one-epoch E1 smoke job for Fir epoch time before the two 100-epoch runs (E1, T2).
+The user decides. E1 and T2 have finished (see [Results](#results-2026-09-28-runs-finished)).
+The matched check is E4, NEIMS with the same head and CE input on `ms_gym_benchmark_1_5`
+(`config/massspecgym/chemlm/e4_neims.yml`, built, not run). It says whether the 0.199 ceiling
+belongs to the binned head or to ChemBERTa-3 and its recipe.

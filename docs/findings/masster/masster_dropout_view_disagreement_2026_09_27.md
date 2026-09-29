@@ -6,10 +6,16 @@
 > its second cheap check), on four weight sets with 4,096 seeded-random spectra per split. Two
 > passes of the allocator under its own training dropout move 7-8% (`c0`) to 13-16% (`k1` family)
 > of predicted intensity, so R-Drop would have something to penalize. But the disagreement is
-> almost as large on training molecules as on validation ones, it follows collision energy rather
-> than novelty, and what dropout views gain on validation is what flattening the deterministic
-> prediction gains. Logit spread is the same on both splits. Neither proposal has the
+> almost as large on training molecules as on validation ones, and it follows collision energy
+> rather than novelty. Logit spread is the same on both splits. Neither proposal has the
 > train-specific target its rationale assumes.
+> *Many-view follow-up (2026-09-28, [below](#many-view-follow-up-the-mc-dropout-mean-2026-09-28)):*
+> the first read, that dropout views gain on validation only what flattening gains, came from
+> two-view averages, which keep half a single view's noise. Eight head views measure the mean
+> directly. Flattened, it beats the best flattened deterministic prediction on val by +0.0031
+> on the new control `i1` and +0.0049 on `k1_ema`, and it costs nothing on train. R-Drop's own
+> target, the gap between the deterministic net and its dropout mean, is therefore real but
+> small on `i1`.
 
 ## Answer
 
@@ -24,12 +30,15 @@
   seeded runs fall from 0.94 to 0.75 across the same range
   ([variance finding](masster_variance_novelty_2026_09_24.md)). Dropout noise is not the
   epistemic variance that ensembles exploit.
-- **What dropout views gain on val is flattening.**
+- **Two-view averages: the gain looked like flattening (corrected by the many-view follow-up).**
   - The average of two views beats the deterministic prediction on val by +0.003 to +0.005 and
     does not help on train.
   - `P^0.75` of the deterministic prediction gains +0.005 to +0.007 on val.
   - Once flattened, the two-view average adds nothing over flattened eval for the `k1` family, and
     +0.002 for `c0`.
+  - *Corrected:* a two-view average still carries half a single view's noise. The eight-view mean,
+    flattened, beats flattened eval on val by +0.0049 on `k1_ema` and +0.0031 on `i1`
+    ([follow-up](#many-view-follow-up-the-mc-dropout-mean-2026-09-28)).
 - **The best-known levers do not act through this quantity.** `k1` beats `c0` by +0.0084 on val
   while doubling the disagreement. EMA beats its own training weights by +0.0119 and lowers the
   disagreement by only 7-9%.
@@ -211,20 +220,87 @@ per-spectrum constant.
   the predicted intensity. The rest contribute 51-55% of `mean_f (z_f - mean z)^2`. Much of the
   penalty's gradient would raise logits of candidates the target gives no intensity.
 
+## Many-view follow-up: the MC-dropout mean (2026-09-28)
+
+**Why.** A two-view average is itself noisy. Averaging `n` independent views leaves `1/n` of one
+view's noise variance, so to second order the expected cosine of the `n`-view average is
+`S_inf - k/n`, with `S_inf` the cosine of the MC-dropout mean. A two-point extrapolation from the
+first run's pickles, `S_inf ≈ 2 · (two views) − (one view)`, put the `k1`-family mean +0.003 to
++0.004 above the best flattened eval on val. The gap between a deterministic network and the mean
+of its dropout sub-networks is the R-Drop paper's own rationale, so it was measured directly.
+
+**Setup.**
+
+- The probe's new `--head_views 8`: eight head views per spectrum, same head scope as above, with
+  the cosine of the average of the first `n` = 1, 2, 4, 8 views. The one-view point is the mean
+  over all eight.
+- Same 4,096 spectra per split (sample seed 20260927). The dropout seed stride changed, so views 0
+  and 1 are new draws. Spectra where any of the eight views drew another tied isomer are dropped:
+  1.4-1.8%.
+- `i1_inst_ob_obf` (`i50ig7rf`), epoch 59: best val (0.7622 logged; tail over epochs 54-63
+  0.7607). It is the new NIST20 `[M+H]+` control on the `OB` / `OB_F` labels
+  ([instrument finding §8](../nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
+  Its head dropout is allocator 0.1 alone, as `c0`'s. File
+  `saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt`, SHA-256 prefix `959efa48`.
+- `k1_ema` average, epoch 50, as above. The spectra are now labelled `OB` / `OB_F`, and the
+  checkpoint has a one-row (`FT`) instrument table. A copy with that row in both rows gives every
+  spectrum the embedding `FT` gave it. Eval cosine matches the first run to 1e-4 on 8,141 of 8,192
+  spectra. The other 51 are the builder's tie swaps (side finding 1).
+
+**The curve.** Cosine minus the deterministic eval prediction, paired per spectrum:
+
+| weights | split | 1 view | 2 views | 4 views | 8 views | `S_inf`, fit over `n` | `S_inf`, 2·y(8) − y(4) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `i1` | train | −0.0016 | +0.0003 | +0.0014 | +0.0020 | +0.0024 [+0.0020, +0.0029] | +0.0027 |
+| `i1` | val | +0.0021 | +0.0040 | +0.0048 | +0.0051 | +0.0057 [+0.0049, +0.0064] | +0.0055 |
+| `k1_ema` average | train | −0.0095 | −0.0023 | +0.0010 | +0.0027 | +0.0045 [+0.0039, +0.0052] | +0.0043 |
+| `k1_ema` average | val | −0.0036 | +0.0042 | +0.0069 | +0.0086 | +0.0105 [+0.0091, +0.0119] | +0.0103 |
+
+**Against flattening.** Powers chosen on val (eval `P^0.75`, eight-view `P^0.875`), applied to
+both splits:
+
+| weights | split | eval cosine | eval `P^0.875` | eval `P^0.75` | eight-view `P^0.875` | eight-view `P^0.875` − eval `P^0.75` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `i1` | train | 0.9259 | +0.0003 | −0.0046 | +0.0007 [+0.0002, +0.0012] | n/a: flattening costs train |
+| `i1` | val | 0.7622 | +0.0041 | +0.0050 | +0.0081 [+0.0071, +0.0090] | **+0.0031 [+0.0024, +0.0039]** |
+| `k1_ema` average | train | 0.9193 | +0.0000 | −0.0051 | +0.0001 [−0.0006, +0.0007] | n/a |
+| `k1_ema` average | val | 0.7431 | +0.0047 | +0.0064 | +0.0112 [+0.0098, +0.0127] | **+0.0049 [+0.0037, +0.0060]** |
+
+- **The curve is linear in `1/n`.** The fit over all `n` and the last-two estimate agree within
+  0.0003. The two-point extrapolation from the first run (`k1_ema`: +0.0046 train, +0.0097 val)
+  matches the direct measurement.
+- **The dropout mean beats the deterministic network on train too** (+0.0024 `i1`, +0.0045
+  `k1_ema`), where flattening gains nothing. That is the weight-scaling mismatch R-Drop is argued
+  to close.
+- **On val, averaging adds to flattening.** Eight views at `P^0.875` beat the best flattened eval by
+  +0.0031 (`i1`) and +0.0049 (`k1_ema`), paired on one checkpoint. The unflattened limit alone is
+  only +0.0007 [−0.0004, +0.0018] above eval `P^0.75` on `i1`: the two act together.
+- **The mismatch scales with head dropout.** `i1`'s allocator-only noise (two-view TV 0.069 train,
+  0.075 val; symmetric KL 0.029 / 0.035; top-peak agreement 91%, all as `c0`) gives about half of
+  `k1_ema`'s gap.
+- **Limits.** One checkpoint each and 4,096 spectra per split. Both sides' flattening powers were
+  chosen on the same val sample. The probe reruns the encoder and candidate builder for every view,
+  so it does not price an inference path that reuses them.
+
 ## What this means for the proposals
 
 - **R-Drop (note §1).**
   - The magnitude gate passes: two head passes disagree by 0.03-0.12 nats on training spectra.
-  - Nothing here predicts a held-out gain. The disagreement it penalizes is not what separates
-    training from validation, and its validation-side benefit at inference is a flattening effect
-    that `P^γ` gives for free.
+  - The disagreement it penalizes is not what separates training from validation.
+  - *Corrected by the many-view follow-up:* its inference-side counterpart is not just
+    flattening. The eight-view mean, flattened, beats flattened eval on val by +0.0031 on `i1`
+    and +0.0049 on `k1_ema`. On `i1` that bounds what closing the weight-scaling gap alone can
+    give, before any regularizing effect of training. The bound is below the 0.0042 seed spread.
   - The dropout that helps (`k1`) raised the disagreement. EMA lowered it only slightly.
-  - If R-Drop is run anyway:
-    - Build it on `k1`: `c0`'s head noise is allocator dropout alone, the kind `h1` found harmful
-      to raise.
+  - If R-Drop is run:
+    - `i1` is the control (user decision, 2026-09-28). Its head noise is allocator dropout
+      alone, the kind `h1` found harmful to raise.
     - Keep the note's two-pass λ = 0 control.
     - Read validation cosine and ranking after applying the same `P^γ` to arm and control.
       Otherwise a calibration shift passes as a gain.
+    - Also read against `i1` with eight-view head averaging at inference, which gains +0.0031
+      without training.
+    - A +0.003 effect needs two seeds per arm to resolve.
 - **Centered-logit penalty (note §2).** Do not build it as specified.
   - Its premise, dominant training scores pushed to extremes, has no support: the spread is equal
     across splits.
@@ -297,3 +373,11 @@ python scripts/debug/debug_masster_dropout_view_disagreement.py --summarize \
 
 It prints the split means with intervals, the correlations, the NCE and novelty strata, the
 variant table and the paired contrasts.
+
+The first run's pickles used the earlier dropout seed stride. A rerun draws new views, so its
+head numbers reproduce only within their intervals.
+
+**Many-view follow-up.** `output/masster_dropout_views_mc_2026_09_28/run_probe_v8.sh` builds the
+two-row `k1_ema` copy with `patch_inst_embedding.py` (same folder). It then runs `--head_views 8`
+on `i1` and on that copy, about 8 minutes each on the RTX 2070 SUPER, and writes
+`summary_v8.log`. Its "MC-dropout head curve" table is the curve above.
