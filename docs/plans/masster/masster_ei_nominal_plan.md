@@ -18,7 +18,8 @@ Train MASSter on the NIST23 electron-ionization library (`[M]+`, 70 eV, unit res
     reference convolution, and old checkpoints loading strict.
   - A GPU smoke on `nist23_ei` must show `val_candidate_wrecall` near the Stage 0 ceiling, not 0.02.
 - **Stage 2:** an EI run selected on `val_cos_sim_1.0_epoch/mean`, compared with a matched
-  control. The control has not been decided; NEIMS on the same split is the natural baseline.
+  control: `e0`, the same config with `masster_isotope_envelope: none`. NEIMS on the same split
+  is the natural external baseline and is not built.
 
 ## Established facts (2026-09-30)
 
@@ -66,9 +67,9 @@ and channel helpers, so it runs without that script; the copy reproduces the row
 | Channels reaching the peak | L1 share | L2 share | mean sqrt(L2), cosine bound |
 | --- | ---: | ---: | ---: |
 | H shift 0 only | 0.497 | 0.643 | 0.771 |
-| \|H\| ≤ 1 | 0.774 | 0.883 | 0.933 |
+| \|H\| ≤ 1 | 0.773 | 0.883 | 0.932 |
 | \|H\| ≤ 2 | 0.852 | 0.926 | 0.958 |
-| \|H\| ≤ 4 | 0.911 | 0.953 | 0.973 |
+| \|H\| ≤ 4 | 0.911 | 0.952 | 0.973 |
 | \|H\| ≤ 4, plus +1/+2 isotopes | 0.948 | 0.973 | 0.985 |
 | Null: \|H\| ≤ 4 channels of the nearest-mass other molecule | 0.819 | 0.836 | 0.893 |
 
@@ -184,10 +185,21 @@ sample is 12,158 spectra whose molecular ion is at least 30% of the base peak.
   - `val_candidate_wrecall` counts monoisotopic channels, and `val_wrecall` includes isotope rows.
   - The one-epoch cosines (0.215 and 0.208) say nothing about the arms.
 
+## First Fir attempt (2026-09-30): crashed at the first checkpoint
+
+- The job logged `val_cos_sim_1_epoch/mean`, so `ModelCheckpoint(monitor='val_cos_sim_1.0_epoch/mean')`
+  raised `MisconfigurationException` at the end of epoch 0.
+- **Cause.** `run_training` overwrote every config value with the one read back from
+  `wandb.config`. W&B returns an integral float as an int (`[1.0]` comes back as `[1]`,
+  reproduced offline), so the metric name lost its `.0`. The local smokes ran with W&B disabled.
+  Every `0.01` config is unaffected.
+- **Fix** (working tree): `merge_wandb_config` in `runner.py` replaces a value only when it
+  differs. Test: `test_merge_wandb_config_keeps_integral_floats`. An offline W&B round trip now
+  keeps `val_cos_sim_1.0_epoch/mean` equal to the monitor.
+
 ## Open
 
-- The matched control for Stage 2 (for example the same config with `none`) and a NEIMS
-  baseline on `nist23_ei_inchikey` at 1 Da.
+- A NEIMS baseline on `nist23_ei_inchikey` at 1 Da.
 - EI library metrics (the NIST m/z-weighted composite cosine, retrieval recall) are not built.
 - Whether ±4 H is still wanted once isotopes stop needing the +1/+2 H channels.
 - The inference annotation export does not label isotope rows (it raises).

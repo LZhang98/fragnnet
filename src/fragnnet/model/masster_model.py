@@ -1397,7 +1397,7 @@ class MassterModel(nn.Module):
                 proposal and dense channel outputs stay monoisotopic.
             isotope_max_order: Largest absolute nominal offset of an isotope row.
             isotope_min_ratio: Isotope rows below this share of their pathway are dropped and
-                the kept shares renormalised; below ``1 / (2 * isotope_max_order + 1)``.
+                the kept shares renormalised. Must be below ``1 / (2 * isotope_max_order + 1)``.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in

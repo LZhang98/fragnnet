@@ -904,6 +904,38 @@ def restore_held_checkpoints(hold_dp: str, ckpt_dp: str) -> None:
     os.rmdir(hold_dp)
 
 
+def merge_wandb_config(config_d: dict, saved_run_config: dict) -> None:
+    """Take the values W&B holds for this run (sweep or resumed run) into ``config_d``, in place.
+
+    Configs nest at most two levels. A value is replaced only when it differs: W&B stores
+    config through JSON and returns an integral float as an int (``1.0`` comes back as ``1``),
+    which is equal but would rename the metrics built from it, e.g. ``cos_sim_1.0`` to
+    ``cos_sim_1``, away from ``checkpoint_metric``.
+
+    Args:
+        config_d: Resolved run configuration, updated in place.
+        saved_run_config: ``dict(wandb.config)`` after ``wandb.init``.
+    """
+    for key in list(config_d.keys()):
+        if key not in saved_run_config:
+            continue
+        if isinstance(config_d[key], dict):
+            assert isinstance(saved_run_config[key], dict)
+            for sub_key in list(config_d[key].keys()):
+                if (
+                    sub_key in saved_run_config[key]
+                    and config_d[key][sub_key] != saved_run_config[key][sub_key]
+                ):
+                    print(
+                        f"> config diff -- {key}->{sub_key}: "
+                        f"{config_d[key][sub_key]} vs {saved_run_config[key][sub_key]}"
+                    )
+                    config_d[key][sub_key] = saved_run_config[key][sub_key]
+        elif config_d[key] != saved_run_config[key]:
+            print(f"> config diff -- {key}: {config_d[key]} vs {saved_run_config[key]}")
+            config_d[key] = saved_run_config[key]
+
+
 def run_training(
     template_path: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
 ) -> L.LightningModule:
@@ -993,23 +1025,7 @@ def run_training(
         saved_run_config = dict(wandb.config)
         migrate_legacy_masster_name(saved_run_config)
         migrate_masster_proposal_method(saved_run_config)
-        for key in list(config_d.keys()):
-            if key in saved_run_config:
-                if isinstance(config_d[key], dict):
-                    # nested
-                    assert isinstance(saved_run_config[key], dict)
-                    for sub_key in list(config_d[key].keys()):
-                        if sub_key in saved_run_config[key]:
-                            if config_d[key][sub_key] != saved_run_config[key][sub_key]:
-                                print(
-                                    f"> config diff -- {key}->{sub_key}: "
-                                    f"{config_d[key][sub_key]} vs {saved_run_config[key][sub_key]}"
-                                )
-                            config_d[key][sub_key] = saved_run_config[key][sub_key]
-                else:
-                    if config_d[key] != saved_run_config[key]:
-                        print(f"> config diff -- {key}: {config_d[key]} vs {saved_run_config[key]}")
-                    config_d[key] = saved_run_config[key]
+        merge_wandb_config(config_d, saved_run_config)
         loggers.append(wandb_logger)
     else:
         is_resume = False

@@ -681,3 +681,24 @@ class TestMassterWorkerPersistence:
             self._Dataset(), self._config(model_type="masster", num_workers=0)
         )
         assert loader.persistent_workers is False
+
+
+def test_merge_wandb_config_keeps_integral_floats() -> None:
+    """W&B hands 1.0 back as 1; an equal value must not rename cos_sim_1.0 to cos_sim_1."""
+    from fragnnet.runner import merge_wandb_config
+
+    config = {
+        "eval_mz_bin_res": [1.0],
+        "lr": 0.001,
+        "spec_params": {"nce": False, "ace_max": 300.0},
+    }
+    merge_wandb_config(
+        config,
+        {"eval_mz_bin_res": [1], "lr": 0.002, "spec_params": {"nce": True, "ace_max": 300}},
+    )
+    assert config["eval_mz_bin_res"] == [1.0]
+    assert isinstance(config["eval_mz_bin_res"][0], float)
+    assert isinstance(config["spec_params"]["ace_max"], float)
+    # Real differences (a sweep or resumed run) are still taken from W&B.
+    assert config["lr"] == 0.002
+    assert config["spec_params"]["nce"] is True
