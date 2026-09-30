@@ -4,6 +4,13 @@
 
 ## Current handoff
 
+**Memorization-route arms rerun on OB/OB_F (2026-09-29); built, stage `rerun` not submitted.**
+`r2`, `r1`, `r0`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf` (the FT arm's keys only;
+upload off), plus `fa1_s2` as the second `fa1` seed; each builds, and passes a 2-epoch GPU smoke run.
+`cg1`, `mw30`, `mw10` and `mlp1` are submitted on Fir. The 33 FT-label configs of the directory are
+removed (Git `8c52c6d3`); the submitter keeps only OB/OB_F stages.
+[Plan](plans/masster/masster_memorization_route_plan.md).
+
 **Candidate-graph attention `cg1` (2026-09-29); built, not submitted.** `fa1` plus
 `masster_intensity_candidate_graph`: full candidate attention masked to direct containment and
 complements, with the precursor receiving only (`candidate_graph_edges`, no parameters). On `i1`'s

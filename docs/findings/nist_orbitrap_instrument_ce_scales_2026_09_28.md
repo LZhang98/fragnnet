@@ -125,7 +125,7 @@ column's gap in the right panel.*
     same computation.
   - Intervals are 95% molecule bootstraps.
 - **Model.** `c0` (`vcpho5qm`, `saved_ckpts/c0_control_vcpho5qm.ckpt`,
-  [config](../../config/masster/mh_ft_memorization_route_2026_09_24/c0_control.yml)), NIST20
+  [config](https://github.com/FraGNNet/frag-gnn/blob/8c52c6d3/config/masster/mh_ft_memorization_route_2026_09_24/c0_control.yml)), NIST20
   `[M+H]+`/FT unmerged. It was run on all 52,020 val spectra and on every spectrum of 4,000
   seeded train molecules. Novelty is the max Tanimoto (Morgan r2, 2,048 bits) to the train
   split.

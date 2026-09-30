@@ -350,8 +350,11 @@ def main(argv: list[str] | None = None) -> None:
         "[M+H]+"
     ]:
         raise ValueError("this diagnostic is scoped to c0's historical [M+H]+/FT checkpoint")
+    # The YAML only completes keys the checkpoint predates; the checkpoint's own hparams override
+    # every key it holds. c0_control.yml was removed with the FT configs (Git 8c52c6d3); i1 is c0
+    # plus int_embedder, which the checkpoint holds.
     config = load_config(
-        "config", "config/masster/mh_ft_memorization_route_2026_09_24/c0_control.yml", []
+        "config", "config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml", []
     )
     config.update(_alias_ft(saved))
     config = apply_inference_config(

@@ -553,8 +553,8 @@ The NCE path keeps `1/(NCE + 200)`.
 
 ### Validation arm `n1`
 
-`config/masster/mh_ft_memorization_route_2026_09_24/n1_nce_qet.yml` is `c0` with
-`ce_insert_type: qet`.
+`config/masster/mh_ft_memorization_route_2026_09_24/n1_nce_qet.yml` (removed 2026-09-29; in Git at
+`8c52c6d3`) is `c0` with `ce_insert_type: qet`.
 
 - **Config.** The resolved config differs from `c0` in that key and W&B naming only.
 - **Submission.** Generate it on Fir with `submit_masster_mh_ft_memorization_route.sh n1`.

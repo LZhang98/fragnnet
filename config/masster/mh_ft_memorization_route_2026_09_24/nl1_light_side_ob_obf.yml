@@ -1,33 +1,85 @@
-# ARM nl1_light_side -- unmerged [M+H]+/FT, each cut represented by its lighter side, 2026-09-26.
-# masster_light_side_token: true, plus the c_heavy_side descriptor. The token's fragment slot takes
-# the pool of the lighter side of each cut (the fragment itself, or the neutral loss of a large
-# fragment, by neutral mass); the complement slot is zeroed. The heavier side enters only through
-# c_heavy_side: a lighter-side flag and the heavier side's log1p element counts (18 columns).
-# Candidates, proposal, boundary block and allocator are unchanged.
-#
-# WHY. The side-of-cut probe (2026-09-26) found the heavier side's identity train-specific
-# (train drop 1.78x val drop; 2.8x at NCE <= 20) and little used by val (0.072), while the lighter
-# side carries 2.5x more of what val uses, and val transfer runs through familiar break
-# environments. The heavier side's pool averages most of the molecule, so it names it.
-# LIMIT. The lighter side is still pooled from GINE_GSA embeddings, which carry a whole-molecule
-# read-out (the probe put the lighter side at 1.42x); nl2 removes global attention as well.
-#
-# CONTROL: c0_control.yml in this directory (vcpho5qm; val cos_sim_0.01 tail mean 0.7276 over
-# epochs 54-63). The token projection gains the 19 c_heavy_side columns, so parameter
-# initialization differs from c0 from that layer on: read against the seed spread (0.0042).
-# Seed 397623, 64 epochs, raw target, no EMA, matched to the Step 1 arms.
-# TRAIN METRICS stay OFF (control match, 3g fit); the train side is read offline.
-# READ (plan § Objective and acceptance): (1) tail mean of val_cos_sim_0.01_epoch/mean over epochs
-# 54-63 against the control, at least +0.003; (2) val_candidate_wrecall within 0.005 of c0 (the
-# candidate set is unchanged by construction; read it anyway); (3) offline on the best checkpoint:
-# the route-map probe (debug_pooled_embedding_memorization.py, scopes cc and boundary, plus gsa
-# where global attention remains; not side, whose mass-fraction rule assumes both pools) and the
-# parts test (output/memorization_parts_ev_2026_09_26/): the eval-mode gap must fall and train's
-# rare-minus-common break contrast must rise toward val's; (4) val cosine by nearest-train
-# Tanimoto bin, gain largest at <= 0.6. An arm that only lowers train fit is underfitting.
-# upload_checkpoints is true, so the checkpoints land on W&B for the offline reads.
+# ARM nl1_light_side_ob_obf -- unmerged [M+H]+, i1 with each cut represented by its lighter side, 2026-09-29.
+# i1_inst_ob_obf.yml plus masster_light_side_token: true and the c_heavy_side descriptor (nl1's
+# keys): the token's fragment slot takes the lighter side's pool, the complement slot is zeroed,
+# and the heavier side enters only through c_heavy_side (a lighter-side flag and its log1p
+# element counts), so no pool of a near-whole molecule reaches the head.
+# FT result: nl1 (107bmt51) +0.0037 against c0, unresolved (one seed).
+# WHY RERUN. On FT labels the identity routes stood in for the missing instrument (only 7 of
+# 12,668 train molecules have both instruments; c0 leaned on global attention +0.042 and the set
+# message +0.028 to fit Lumos spectra, i1 only 0.004-0.010). Every FT removal arm also removed an
+# instrument channel. Finding: docs/findings/masster/masster_i1_memorization_read_2026_09_28.md
+# INITIALIZATION. A structural change shifts the RNG stream for every module built after it
+# (memorization audit, correction 7), so this arm is partly a seed change: read the delta against
+# the 0.0042 seed spread, not as a paired comparison.
+# CONTROL: i1_inst_ob_obf (i50ig7rf, tail 0.7607 over epochs 54-63). This config differs from it by
+# masster_light_side_token, masster_candidate_features (+ c_heavy_side) and W&B naming only.
+# READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against i1 (+0.005 to count on
+# one seed); val_candidate_wrecall within 0.005 of i1; minutes per epoch against i1.
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
-# Finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
+#
+# Base config follows: i1_inst_ob_obf.yml.
+# ARM i1_inst_ob_obf -- unmerged [M+H]+, n4 on the OB / OB_F instrument labels, 2026-09-28.
+# n4_nce_fourier.yml unchanged except W&B naming. The difference is the data: data/proc/nist20/
+# spec_df.pkl relabelled FT -> OB / OB_F from the raw NIST20 MSP Instrument field (Elite and
+# Velos -> OB, Orbitrap Fusion Lumos -> OB_F). inst_types [OB, OB_F] and inst_type: true were
+# already in n4, but every row was FT, so n4's instrument embedding had one class and carried
+# nothing. Here it has two (OB = 0, OB_F = 1).
+#
+# QUESTION. Does an instrument input remove c0's Lumos under-fragmentation? c0 val, [M+H]+, raw
+# labels: Elite cosine 0.7450 / precursor-fraction bias -0.0008 (36,864 spectra); Lumos 0.6880 /
+# +0.0923 (13,710). The gap is +0.053 after matching NCE bin, novelty and m/z, and train shows no
+# bias, so for a new molecule the energy response follows the Elite majority. Relabelling the NCE
+# at inference failed (-0.006 and -0.039), so the instrument must be an input at training time.
+# Finding: docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md
+#
+# DATA IDENTITY: spec_df.pkl is the only NIST20 spec_df; no FT copy is kept. It is the local
+# file after the 2026-09-28 relabel (preproc_scripts/README.md, "Relabelling existing Orbitrap
+# spectra"), uploaded over each cluster copy, md5 bdc009bbeaf6a38d126326d127630cad: OB 778,672
+# (712,969 by instrument field + 65,703 unnamed MoNA), OB_F 251,326, 212,366 groups. It pairs
+# with mol_df.pkl md5 be4b5794040e68f661e6ff165dacb3b0 and data/split/nist20_inchikey
+# (train_ids.csv d8a07ccfcb7e4d80128b441bef7daca9, val_ids.csv 7c870661872e1a2c0ef80a25d2ff44da).
+# group_id is not read here (merge, group_sampler off); splits select by spec_id.
+#
+# CONTROL: n4_nce_fourier (shjgv9im), same config on FT labels; c0_control (vcpho5qm).
+# READ: (1) Lumos val cosine and precursor-fraction bias on the best checkpoint against n4 and
+# c0, by raw instrument (output/ev_ladder_census_2026_09_28/nist20_raw_labels.py re-reads c0).
+# Pass if the Lumos bias falls well below +0.09 without an Elite loss. (2) Tail mean of
+# val_cos_sim_0.01_epoch/mean over epochs 54-63 against n4; Lumos is 26% of val, so closing half
+# the gap is about +0.007, 1.7x the 0.0042 seed spread.
+#
+# Base config follows: n4_nce_fourier.yml.
+# ARM n4_nce_fourier -- unmerged [M+H]+/FT, the per-NCE code without aliasing, 2026-09-26.
+# c0_control.yml with int_embedder fourier instead of the template's abs-sines. Seed 397623, 64
+# epochs, constant lr 1e-3. ce_insert_type stays embed, so each integer NCE keeps its own code.
+# In MASSter, int_embedder reaches only the CE table (MassterContextEncoder). The table feeds the
+# existing Linear(num_dim, ce_insert_size), whose input width goes from 8 to 20.
+#
+# QUESTION. Can the abs-sines table be replaced by one that does not alias, at no cost?
+# abs-sines is |sin(pi x / 2^j)|, unchanged under x -> 256 - x at nce_max 200. fourier is sin and
+# cos at the same powers of 1/2, down to period 512. No two integers in 0-300 share a row, and the
+# nearest two occurring NCE rows are 1.41 apart; under abs-sines, 76 and 180 are 5.5e-6 apart.
+# On this split the one occurring collision is 76/180 (2.1% of val spectra). No molecule has both,
+# and feeding 76 to the NCE-180 val spectra cost nothing measurable on u2. So no gain is expected
+# here: n4 prices the table swap before it becomes the default per-NCE code for other datasets.
+# Why keep a per-NCE code at all: mid-run, n1 (qet), n2 (qet_mlp) and n3 (id) all trail c0 while
+# fitting train as well, so the code carries something that transfers.
+# fourier does not fix unseen energies: its high-frequency columns are still arbitrary there.
+# Finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
+#
+# CONTROL: c0_control (vcpho5qm, tail 0.7276 over epochs 54-63). This config differs from c0 by
+# int_embedder and W&B naming only.
+# READ: (1) tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against c0. Inside the
+# 0.0042 seed spread is a pass, since no gain is expected; a drop beyond it rules the table out.
+# (2) On the best checkpoint, val cosine at NCE 76 and at 180 against c0's: the only spectra the
+# change can reach on this split. Inputs 76 and 180 must now give different predictions.
+# upload_checkpoints is true, so the checkpoints land on W&B for the offline reads.
+#
+# Base config follows: c0_control.yml.
+# CONTROL c0 -- same-code control for the memorization-route Step 1 arms, 2026-09-24.
+# f0_mh_ft_control.yml plus wandb naming only: no model or data key changes. Submitted with the
+# arms, because the code has moved since the f0 run 3bej6fq7 (CutBondEncoder deduplication, equal
+# up to float rounding, and the Step 1 options, all off here and bit-identical at their defaults).
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
 #
 # Control header follows.
 # CONTROL f0 -- [M+H]+/FT, no target cleaning
@@ -62,13 +114,17 @@
 # UNFILTERED target. That cross-eval is the acceptance criterion, not this pair's delta.
 #
 # CONTROL: filters off. Prices the scope change separately from the cleaning.
-wandb_name: nl1_light_side
+wandb_name: nl1_light_side_ob_obf
 wandb_group: nist20_mh_ft_memorization_route_2026_09_24
 wandb_tags:
 - no_filters
-- nl1_light_side
-- mh_ft_memorization_route_2026_09_24
+- nl1_light_side_ob_obf
 - light_side_token
+- rerun_ob_obf
+- inst_ob_obf
+- nist20_raw_inst_labels
+- mh_ft_memorization_route_2026_09_24
+- nce_fourier
 - masster
 - cuda_candidates
 - fir_h100_mig
@@ -86,6 +142,7 @@ wandb_tags:
 - full_context
 - full_metadata
 - ce_embed
+- int_embedder_fourier
 - adduct_embed
 - inst_type_embed
 - m+h
@@ -169,6 +226,8 @@ mol_normalization: batch
 mol_dropout: 0.1
 ce_insert_type: embed
 ce_insert_size: 32
+# n4: sin + cos table instead of the template abs-sines; no NCE pair aliases (see header).
+int_embedder: fourier
 ace_max: 300
 masster_unique_fragment_target: 256
 masster_unique_fragment_mode: true
@@ -244,7 +303,9 @@ pl_enable_progress_bar: true
 # both checkpoints have to outlive their job's scratch directory and be fetchable from
 # somewhere other than the cluster checkout. Requires the run to be online (w=online, which the
 # submitter passes). Retrieve with scripts/wandb_scripts/wandb_download_ckpts.py.
-upload_checkpoints: true
+# Rerun on OB/OB_F (user, 2026-09-29): no upload for now. The checkpoints stay in the job's Fir
+# checkpoint directory; the offline reads need them copied from there.
+upload_checkpoints: false
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
@@ -270,6 +331,7 @@ masster_candidate_features:
 - c_size
 - c_mass
 - c_charge
+# ARM KEY (control i1: no c_heavy_side), nl1's value.
 - c_heavy_side
 
 # MONITORING (every Step 1 config, c0 included; not in f0): log val/train
@@ -277,4 +339,5 @@ masster_candidate_features:
 # (coverage within 0.005 of c0) reads off W&B. Monitoring only; the loss is unchanged.
 masster_candidate_coverage_metrics: true
 
+# ARM KEY (control i1: false), nl1's value.
 masster_light_side_token: true

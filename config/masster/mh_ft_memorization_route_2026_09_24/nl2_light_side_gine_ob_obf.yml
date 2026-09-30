@@ -1,3 +1,52 @@
+# ARM nl2_light_side_gine_ob_obf -- unmerged [M+H]+, nl1 on an encoder without global attention, 2026-09-29.
+# i1_inst_ob_obf.yml plus nl1's keys and mol_gnn_type: GINE (r2's): the token carries no
+# whole-molecule representation except through candidate attention.
+# FT result: nl2 (djhbz6z7) -0.0015 against c0 (-0.0021 against r2), a mild underfit.
+# WHY RERUN. On FT labels the identity routes stood in for the missing instrument (only 7 of
+# 12,668 train molecules have both instruments; c0 leaned on global attention +0.042 and the set
+# message +0.028 to fit Lumos spectra, i1 only 0.004-0.010). Every FT removal arm also removed an
+# instrument channel. Finding: docs/findings/masster/masster_i1_memorization_read_2026_09_28.md
+# INITIALIZATION. A structural change shifts the RNG stream for every module built after it
+# (memorization audit, correction 7), so this arm is partly a seed change: read the delta against
+# the 0.0042 seed spread, not as a paired comparison.
+# CONTROLS: i1_inst_ob_obf (i50ig7rf, tail 0.7607), and r2_no_gsa_ob_obf and nl1_light_side_ob_obf
+# in the same stage. This config differs from i1 by mol_gnn_type, masster_light_side_token,
+# masster_candidate_features (+ c_heavy_side) and W&B naming only.
+# READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against i1 (+0.005 to count on
+# one seed); val_candidate_wrecall within 0.005 of i1; minutes per epoch against i1.
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
+#
+# Base config follows: i1_inst_ob_obf.yml.
+# ARM i1_inst_ob_obf -- unmerged [M+H]+, n4 on the OB / OB_F instrument labels, 2026-09-28.
+# n4_nce_fourier.yml unchanged except W&B naming. The difference is the data: data/proc/nist20/
+# spec_df.pkl relabelled FT -> OB / OB_F from the raw NIST20 MSP Instrument field (Elite and
+# Velos -> OB, Orbitrap Fusion Lumos -> OB_F). inst_types [OB, OB_F] and inst_type: true were
+# already in n4, but every row was FT, so n4's instrument embedding had one class and carried
+# nothing. Here it has two (OB = 0, OB_F = 1).
+#
+# QUESTION. Does an instrument input remove c0's Lumos under-fragmentation? c0 val, [M+H]+, raw
+# labels: Elite cosine 0.7450 / precursor-fraction bias -0.0008 (36,864 spectra); Lumos 0.6880 /
+# +0.0923 (13,710). The gap is +0.053 after matching NCE bin, novelty and m/z, and train shows no
+# bias, so for a new molecule the energy response follows the Elite majority. Relabelling the NCE
+# at inference failed (-0.006 and -0.039), so the instrument must be an input at training time.
+# Finding: docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md
+#
+# DATA IDENTITY: spec_df.pkl is the only NIST20 spec_df; no FT copy is kept. It is the local
+# file after the 2026-09-28 relabel (preproc_scripts/README.md, "Relabelling existing Orbitrap
+# spectra"), uploaded over each cluster copy, md5 bdc009bbeaf6a38d126326d127630cad: OB 778,672
+# (712,969 by instrument field + 65,703 unnamed MoNA), OB_F 251,326, 212,366 groups. It pairs
+# with mol_df.pkl md5 be4b5794040e68f661e6ff165dacb3b0 and data/split/nist20_inchikey
+# (train_ids.csv d8a07ccfcb7e4d80128b441bef7daca9, val_ids.csv 7c870661872e1a2c0ef80a25d2ff44da).
+# group_id is not read here (merge, group_sampler off); splits select by spec_id.
+#
+# CONTROL: n4_nce_fourier (shjgv9im), same config on FT labels; c0_control (vcpho5qm).
+# READ: (1) Lumos val cosine and precursor-fraction bias on the best checkpoint against n4 and
+# c0, by raw instrument (output/ev_ladder_census_2026_09_28/nist20_raw_labels.py re-reads c0).
+# Pass if the Lumos bias falls well below +0.09 without an Elite loss. (2) Tail mean of
+# val_cos_sim_0.01_epoch/mean over epochs 54-63 against n4; Lumos is 26% of val, so closing half
+# the gap is about +0.007, 1.7x the 0.0042 seed spread.
+#
+# Base config follows: n4_nce_fourier.yml.
 # ARM n4_nce_fourier -- unmerged [M+H]+/FT, the per-NCE code without aliasing, 2026-09-26.
 # c0_control.yml with int_embedder fourier instead of the template's abs-sines. Seed 397623, 64
 # epochs, constant lr 1e-3. ce_insert_type stays embed, so each integer NCE keeps its own code.
@@ -64,11 +113,16 @@
 # UNFILTERED target. That cross-eval is the acceptance criterion, not this pair's delta.
 #
 # CONTROL: filters off. Prices the scope change separately from the cleaning.
-wandb_name: n4_nce_fourier
+wandb_name: nl2_light_side_gine_ob_obf
 wandb_group: nist20_mh_ft_memorization_route_2026_09_24
 wandb_tags:
 - no_filters
-- n4_nce_fourier
+- nl2_light_side_gine_ob_obf
+- light_side_token
+- no_global_attention
+- rerun_ob_obf
+- inst_ob_obf
+- nist20_raw_inst_labels
 - mh_ft_memorization_route_2026_09_24
 - nce_fourier
 - masster
@@ -165,7 +219,8 @@ mol_params:
   - b_ring
   - b_conj
 model_type: masster
-mol_gnn_type: GINE_GSA
+# ARM KEY (control i1: GINE_GSA), r2's value.
+mol_gnn_type: GINE
 mol_hidden_size: 384
 mol_num_layers: 2
 mol_normalization: batch
@@ -249,7 +304,9 @@ pl_enable_progress_bar: true
 # both checkpoints have to outlive their job's scratch directory and be fetchable from
 # somewhere other than the cluster checkout. Requires the run to be online (w=online, which the
 # submitter passes). Retrieve with scripts/wandb_scripts/wandb_download_ckpts.py.
-upload_checkpoints: true
+# Rerun on OB/OB_F (user, 2026-09-29): no upload for now. The checkpoints stay in the job's Fir
+# checkpoint directory; the offline reads need them copied from there.
+upload_checkpoints: false
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
@@ -275,8 +332,13 @@ masster_candidate_features:
 - c_size
 - c_mass
 - c_charge
+# ARM KEY (control i1: no c_heavy_side), nl1's value.
+- c_heavy_side
 
 # MONITORING (every Step 1 config, c0 included; not in f0): log val/train
 # candidate_wrecall, the candidate set's intensity ceiling, so acceptance criterion 5
 # (coverage within 0.005 of c0) reads off W&B. Monitoring only; the loss is unchanged.
 masster_candidate_coverage_metrics: true
+
+# ARM KEY (control i1: false), nl1's value.
+masster_light_side_token: true

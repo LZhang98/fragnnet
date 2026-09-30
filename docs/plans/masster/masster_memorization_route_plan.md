@@ -1,6 +1,12 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
 > **Status:** ACTIVE · **Updated:** 2026-09-29
+> **2026-09-29: FT-label configs removed; route arms rerun on OB/OB_F.** The 33 FT-label configs of
+> this directory (`c0`, `r0`-`r2`, `k1`, `m1`/`m2`, `gm1`-`gm6`, `k1_ema`, `c0_s2`/`k1_s2`/`u2_s2`,
+> `s1`, `s1_k1_ema`, `w1`, `n1`-`n4`, `nl1`-`nl3`, `sp0`/`sp1`, `am1`/`de1`, `sm1`/`sd1`) are in Git at
+> `8c52c6d3`; on FT labels the identity routes stood in for the missing instrument. `r2`, `r1`, `r0`,
+> `nl1`, `nl2` and `sd1` are rebuilt on `i1` as `*_ob_obf`, with `fa1_s2` as a control replicate
+> (stage `rerun`); `cg1`, `mw30`, `mw10` and `mlp1` are submitted.
 > **2026-09-29: [Batch 5 read](#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)** (`i3`, `i4`,
 > `fa1`, `mz1` finished). `i3` (`k1` + EMA on `i1`) passes at +0.0102, and `i4`'s pre-norm adds
 > +0.0019. Full attention (`fa1`) is +0.0044 over `i1`, just under the one-seed rule, with val loss

@@ -46,9 +46,9 @@ maximum Morgan-2 Tanimoto to any training molecule, and training molecules to an
 
 Usage:
     python scripts/debug/debug_masster_dropout_view_disagreement.py \
-        --model_ckpt saved_ckpts/c0_control_vcpho5qm.ckpt \
-        --custom_fp config/masster/mh_ft_memorization_route_2026_09_24/c0_control.yml \
-        --num_spectra 1024 --output_fp output/dropout_views/c0.pkl
+        --model_ckpt saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt \
+        --custom_fp config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml \
+        --num_spectra 1024 --output_fp output/dropout_views/i1.pkl
 """
 
 from __future__ import annotations
