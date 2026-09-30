@@ -986,6 +986,7 @@ class MassterPL(SpectrumPL):
             precursor_multi_hop_max_distance=self.hparams["mol_multi_hop_max_distance"],
             context_dim=self.hparams.masster_context_dim,
             context_in_gnn=self.hparams.masster_context_in_gnn,
+            encoder_context_token=self.hparams.masster_encoder_context_token,
             metadata_embedding_dim=self.hparams.masster_metadata_embedding_dim,
             head_hidden_dim=self.hparams.masster_head_hidden_dim,
             head_dropout=self.hparams.masster_head_dropout,

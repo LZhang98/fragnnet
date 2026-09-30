@@ -2215,3 +2215,76 @@ on the current lineage without the m/z encoding, which lost on Fir (`mz1` −0.0
 - **Checks.** All three configs build, and each differs from `fa1` only in W&B naming and its key.
   Locally, the submitter's config validation passes. It stops at the wheel check because
   `wheels/` is absent on this workstation.
+
+## NCE into the molecule encoder: `ce1` (condition) and `ce2` (attended) (built 2026-09-30, not submitted)
+
+**The gap, traced on `i1`'s built model.** Every prediction head sees NCE, but only through one
+128-d context vector: [adduct 32 | instrument 32 | NCE fourier table → 32] → MLP → 128.
+- The bond-break and charge heads concatenate it. They read it detached: with
+  `proposal_selection_only` and no staging, the NCE code is trained by the intensity loss alone.
+- The intensity token concatenates it once: [fragment 384 | complement 384 | boundary 384 |
+  context 128 | 5 descriptors] = 1285 → Linear → 256.
+- **The molecule encoder is CE-blind** (`masster_context_in_gnn: False`; input is the 71 atom
+  features). So the fragment, complement and boundary embeddings, and the cut-bond encoder over
+  atom endpoints, are identical at NCE 10 and 150. Energy meets them only in the token's first
+  Linear + SiLU and the attention after it; CE-FiLM and the CE pair bias are off.
+- CE in the encoder has never had a matched test on MASSter. The one run with it (`clmrbaz3`,
+  merged, 2026-09-10) differs from its nearest control (`7abal2ru`) in adducts, instruments, ACE,
+  fragmentation mode and target filtering. The planned "heads only" twin never ran.
+
+**FraGNNet's evidence.** FraGNNet's `mol` site concatenates the CE embedding to every atom's input
+before its molecule GNN, as `masster_context_in_gnn` does. One-key pairs, `mol` against `mlp` (CE
+at the per-fragment MLP only), 100 epochs, mean of the last 10 epochs:
+
+| data | CE encoding | runs (`mol` / `mlp`) | `mol` − `mlp` | epochs `mol` ahead |
+| --- | --- | --- | ---: | ---: |
+| unmerged, 2024 grid | id | `a7wor3p1` / `exi5qlxn` | +0.0034 | 79/100 |
+| unmerged | **embed** (`i1`'s) | `6gfai20t` / `1t8x1qe9` | **+0.0136** | 96/100 |
+| unmerged | bin | `lza8zb39` / `4fit8psw` | +0.0028 | 85/100 |
+| unmerged | lin | `945pougf` / `u7yugfab` | +0.0022 | 80/100 |
+| unmerged, 2026-06 | ce_bias configs | `5rgmxb1n` / `1dfmbt5v` | +0.0131 | 100/100 |
+| merged, 2024 grid | 4 encodings | | −0.0037 to +0.0036 | 42-66/100 |
+
+A gated-encoder variant (`GINE_GATED`, `6whv79c7`/`n9egh1ej`, 2026-07) is +0.004 over its nearest
+run, but that differs in 8 keys, so it is not a clean read.
+
+**Arms.** The user asked for the CE to be attended or a condition in the encoder. Each is `i1`
+plus one key, seed 397623, 64 epochs; checkpoints stay on Fir.
+
+| arm | config | key | what the encoder gets | parameters |
+| --- | --- | --- | --- | ---: |
+| `ce1` | `ce1_context_gnn_ob_obf.yml` | `masster_context_in_gnn: true` | the context concatenated to each atom's input (FraGNNet's `mol`) | +49,152 |
+| `ce2` | `ce2_context_token_ob_obf.yml` | `masster_encoder_context_token: true` (new) | one context key/value per molecule in every global-attention layer | +198,144 |
+
+- **`ce2`, the new key.** In each `GINE_GSA` layer the context is projected to one extra key and
+  value per molecule (`gsa_context_k/v`). Every atom attends to it inside the same softmax as the
+  molecule's atoms, so each atom weighs the energy per layer and head. The slot issues no query
+  and is not updated. The projections are built on a forked RNG: all 180 shared tensors
+  initialize bit-identically to `i1`'s, so `ce2` is init-matched to `i1`.
+- **`ce1`** widens the encoder input from 71 to 199 features, which shifts every later
+  initialization draw (105 of 179 same-shape tensors differ): read it against the seed spread.
+- **Both** make the atom embeddings depend on NCE, and route intensity-loss gradients into the
+  context encoder through the encoder. The global-attention route was where the per-molecule key
+  was written on `f0`/`f1` (retired); it is not re-measured on `i1`.
+- **Reading.** For each arm, the 54-63 tail against `i1` (+0.005 on one seed), then `ce1`
+  against `ce2`; `wrecall` within 0.005. Offline, on the checkpoints copied from Fir, the NCE
+  tables of the base-peak probe: the nested-pair lean by NCE (0.404 at NCE ≤ 20 on `i1`) and the
+  NCE50 error (median 2.97 NCE on val).
+- **Checks (2026-09-30).**
+  - Through `load_config`, each differs from `i1` by its key and W&B naming (and
+    `upload_checkpoints: false`, the user's 2026-09-29 rule for new arms).
+  - New tests (`test_gine_gsa.py`, `test_masster_model.py`, `test_masster_pl.py`): the attention
+    with the slot against a brute-force definition; only the projections added; each molecule
+    reads its own context; gradients reach the projections and the context; input validation; in
+    the model, atom embeddings change with a spectrum's NCE and only its own, while `i1`'s do not
+    change at all; the `GINE_GSA` requirement; the PL key.
+  - The default call to the encoder is unchanged: `ctx` is passed only when the token is on. An
+    earlier version passed `ctx=None` and broke the route-probe's encoder wrapper
+    (`test_encoder_corruptor_rewrites_only_the_intensity_path`); fixed before the suite reran.
+  - The full suite passes on CPU: 4,744 passed, 129 skipped, 2 xfailed. `i1`'s epoch-63
+    checkpoint still loads strictly through the template plus its config, with the new key off.
+  - Real-data GPU smoke, 2 epochs on 512 relabelled NIST20 spectra at batch 64: both exit 0,
+    val cosine 0.125 → 0.332 (`ce2`) and 0.120 → 0.327 (`ce1`).
+  - The submitter's `ce` stage passes `bash -n` and its per-arm checks.
+- **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh ce` (`ce1` and `ce2`). The
+  cluster needs the relabelled `spec_df.pkl` and a checkout with the new key.

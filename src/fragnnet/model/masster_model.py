@@ -1088,6 +1088,7 @@ class MassterModel(nn.Module):
         charge_pooling: str,
         use_smarts_templates: bool,
         context_in_gnn: bool = False,
+        encoder_context_token: bool = False,
         boundary_bond_encoder: bool = False,
         intensity_norm_placement: str = "post",
         intensity_qk_norm: bool = False,
@@ -1149,6 +1150,10 @@ class MassterModel(nn.Module):
             context_dim: Width of the per-spectrum conditioning vector.
             context_in_gnn: Append context to each atom's input in the precursor and
                 optional proposal GNN. Disabled preserves legacy parameter shapes.
+            encoder_context_token: Let every global-attention layer of the precursor encoder
+                attend to the spectrum's context as one extra key/value per molecule
+                (``GINE_GSA`` only). Its projections use a forked RNG, so every other
+                parameter initializes as without it.
             metadata_embedding_dim: Width of each metadata embedding.
             head_hidden_dim: Hidden width of the bond and charge heads.
             head_dropout: Dropout inside the bond and charge heads.
@@ -1667,6 +1672,12 @@ class MassterModel(nn.Module):
         if context_in_gnn and share_proposal_across_ev:
             raise ValueError("context_in_gnn is incompatible with share_proposal_across_ev")
         self.context_in_gnn = context_in_gnn
+        if encoder_context_token and precursor_gnn_type != "GINE_GSA":
+            raise ValueError("encoder_context_token requires precursor_gnn_type='GINE_GSA'")
+        if encoder_context_token and share_proposal_across_ev:
+            # The shared proposal encodes one representative graph per CE group, CE-free.
+            raise ValueError("encoder_context_token is incompatible with share_proposal_across_ev")
+        self.encoder_context_token = encoder_context_token
         self.ion_mode_proposal_binary_logits = ion_mode_proposal_binary_logits
         self.min_ion_mode_relative_probability = min_ion_mode_relative_probability
         self.ion_h_support_binary_logits = ion_h_support_binary_logits
@@ -1709,6 +1720,8 @@ class MassterModel(nn.Module):
             atom_mask=encoder_atom_mask,
             bond_dropout=encoder_bond_dropout,
             **graphormer_structural_kwargs,
+            # Only GINE_GSA takes the context token (validated above).
+            **({"context_token_dim": context_dim} if encoder_context_token else {}),
         )
         self.proposal_encoder = (
             GNN(
@@ -2847,6 +2860,9 @@ class MassterModel(nn.Module):
                 mol_pyg.batch,
                 mol_pyg.edge_index,
                 mol_pyg.edge_attr,
+                # One graph per spectrum, so the context rows are the per-graph tokens. Passed
+                # only when on, so the default call is unchanged for wrappers of the encoder.
+                **({"ctx": context} if self.encoder_context_token else {}),
             )
         # The boundary block reads the shared embeddings, or a local cut-site encoder that sees
         # only raw atom features and k hops, so the cut term cannot name the molecule.

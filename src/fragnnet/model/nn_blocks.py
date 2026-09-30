@@ -307,7 +307,8 @@ class GNN(nn.Module):
             edge_index (torch.Tensor): Edge indices.
             edge_attr (torch.Tensor): Edge features.
             ctx (torch.Tensor | None): Per-graph context of shape (num_graphs, ctx_dim).
-                Required by gnn_type="GINE_GATED", ignored by every other type.
+                Required by gnn_type="GINE_GATED" and by a "GINE_GSA" built with a context
+                token (``context_token_dim > 0``), ignored by every other type.
 
         Returns:
             torch.Tensor: Encoded node features.
@@ -323,6 +324,8 @@ class GNN(nn.Module):
             if ctx is None:
                 raise ValueError("gnn_type='GINE_GATED' requires ctx, got None")
             z = self.gnn(z, batch_index, edge_index, edge_attr, ctx)
+        elif self.gnn_type == "GINE_GSA" and self.gnn.context_token_dim > 0:
+            z = self.gnn(z, batch_index, edge_index, edge_attr, context=ctx)
         else:
             z = self.gnn(z, batch_index, edge_index, edge_attr)
         return z
@@ -1146,6 +1149,8 @@ def _graph_softmax_attn(
     V: th.Tensor,
     batch_index: th.Tensor,
     num_graphs: int,
+    extra_keys: th.Tensor | None = None,
+    extra_values: th.Tensor | None = None,
 ) -> th.Tensor:
     """Exact per-graph softmax attention on flat PyG node tensors.
 
@@ -1160,6 +1165,10 @@ def _graph_softmax_attn(
     intermediates (about 144 KiB per node), measuring 2-5x slower and 15-20x heavier than
     the exact attention below while also being an approximation.
 
+    With ``extra_keys``/``extra_values``, each graph gains one more key/value slot that every
+    node of that graph attends to inside the same softmax (a per-graph memory token, e.g. the
+    spectrum's context). The slot issues no query and is never updated.
+
     Args:
         Q: Queries of shape (N, num_heads, head_dim).
         K: Keys of shape (N, num_heads, head_dim).
@@ -1168,9 +1177,15 @@ def _graph_softmax_attn(
         num_graphs: Number of graphs the dense batch is sized by. Passed in rather than
             derived here so the enclosing forward pays one host sync instead of one per
             layer.
+        extra_keys: Optional per-graph key of shape (num_graphs, num_heads, head_dim).
+        extra_values: Per-graph value of the same shape, given exactly with ``extra_keys``.
 
     Returns:
         Attended values of shape (N, num_heads, head_dim), in the input node order.
+
+    Raises:
+        ValueError: If only one of ``extra_keys``/``extra_values`` is given, or their shape
+            is not ``(num_graphs, num_heads, head_dim)``.
     """
     _assert_graph_contiguous(batch_index)
     num_nodes, num_heads, head_dim = Q.shape
@@ -1189,10 +1204,9 @@ def _graph_softmax_attn(
         batch_index,
         batch_size=num_graphs,
     )
-    max_nodes = dense_queries.shape[1]
 
     def split_heads(dense: th.Tensor) -> th.Tensor:
-        return dense.view(num_graphs, max_nodes, num_heads, head_dim).transpose(1, 2)
+        return dense.view(num_graphs, dense.shape[1], num_heads, head_dim).transpose(1, 2)
 
     # Padded slots are masked as keys. A graph with no nodes would leave a row with every
     # key masked, which softmax turns into NaN, so slot 0 is always left attendable: for a
@@ -1200,6 +1214,16 @@ def _graph_softmax_attn(
     # row that the final mask discards anyway.
     key_mask = node_mask.clone()
     key_mask[:, 0] = True
+    if (extra_keys is None) != (extra_values is None):
+        raise ValueError("extra_keys and extra_values must be given together")
+    if extra_keys is not None:
+        expected = (num_graphs, num_heads, head_dim)
+        if extra_keys.shape != expected or extra_values.shape != expected:
+            raise ValueError(f"extra_keys and extra_values must have shape {expected}")
+        # The per-graph slot goes after the node slots and is always attendable.
+        dense_keys = th.cat((dense_keys, extra_keys.reshape(num_graphs, 1, -1)), dim=1)
+        dense_values = th.cat((dense_values, extra_values.reshape(num_graphs, 1, -1)), dim=1)
+        key_mask = th.cat((key_mask, key_mask.new_ones((num_graphs, 1))), dim=1)
     attended = F.scaled_dot_product_attention(
         split_heads(dense_queries),
         split_heads(dense_keys),
@@ -1248,6 +1272,11 @@ class GINE_GSA(nn.Module):
             directions together (DropEdge). Kept messages are scaled by 1/(1 - p), so each atom's
             summed message keeps its expectation. Global attention is untouched. 0 (default)
             disables it.
+        context_token_dim (int): Width of a per-graph context vector attended by every layer's
+            global attention. Each layer projects the context to one extra key and value per
+            graph, inside the same softmax as the graph's atoms, so each atom weighs the context
+            per layer and head. The projections are built on a forked RNG, so every other
+            parameter initializes as without them. 0 (default) creates nothing.
     """
 
     def __init__(
@@ -1264,6 +1293,7 @@ class GINE_GSA(nn.Module):
         global_message_swap: float = 0.0,
         global_message_swap_unit: str = "atom",
         bond_dropout: float = 0.0,
+        context_token_dim: int = 0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -1327,12 +1357,28 @@ class GINE_GSA(nn.Module):
         self.gsa_norms = get_clones(norm_mod, num_layers)
         self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
+        if context_token_dim < 0:
+            raise ValueError(f"context_token_dim must be nonnegative, got {context_token_dim}")
+        self.context_token_dim = context_token_dim
+        self.gsa_context_k: nn.ModuleList | None = None
+        self.gsa_context_v: nn.ModuleList | None = None
+        if context_token_dim > 0:
+            # Forked RNG: enabling the token leaves every other parameter's initialization as is.
+            with th.random.fork_rng(devices=[]):
+                self.gsa_context_k = nn.ModuleList(
+                    [nn.Linear(context_token_dim, hidden_size) for _ in range(num_layers)]
+                )
+                self.gsa_context_v = nn.ModuleList(
+                    [nn.Linear(context_token_dim, hidden_size) for _ in range(num_layers)]
+                )
+
     def forward(
         self,
         x: th.Tensor,
         batch_index: th.Tensor,
         edge_index: th.Tensor,
         edge_attr: th.Tensor,
+        context: th.Tensor | None = None,
     ) -> th.Tensor:
         """Forward pass: local GINEConv → global self-attention → residual sum, per layer.
 
@@ -1341,9 +1387,15 @@ class GINE_GSA(nn.Module):
             batch_index: Graph assignments of shape (N,).
             edge_index: Edge connectivity of shape (2, E).
             edge_attr: Edge features of shape (E, edge_feats_size).
+            context: Per-graph context of shape (num_graphs, context_token_dim), attended by
+                every layer's global attention; given exactly when ``context_token_dim > 0``.
 
         Returns:
             Updated node features of shape (N, hidden_size).
+
+        Raises:
+            ValueError: If ``context`` is given without a context token, missing with one, or
+                not shaped ``(num_graphs, context_token_dim)``.
         """
         edge_attr = self.edge_transform(edge_attr)
         # GINEConv's message is relu(x_j + e_ij), and relu(w x_j + w e_ij) = w relu(x_j + e_ij)
@@ -1356,27 +1408,52 @@ class GINE_GSA(nn.Module):
             edge_attr = edge_attr * message_scale
         # One host sync for the whole encoder instead of one per attention pass.
         num_graphs = int(batch_index.max().item()) + 1
-        for dropout, layer, norm, gsa_norm, q_proj, k_proj, v_proj, out_proj in zip(
-            self.dropouts,
-            self.layers,
-            self.norms,
-            self.gsa_norms,
-            self.gsa_q,
-            self.gsa_k,
-            self.gsa_v,
-            self.gsa_out,
+        if (self.context_token_dim > 0) != (context is not None):
+            raise ValueError("context must be given exactly when context_token_dim is positive")
+        if context is not None and context.shape != (num_graphs, self.context_token_dim):
+            raise ValueError(
+                f"context must have shape ({num_graphs}, {self.context_token_dim}), "
+                f"got {tuple(context.shape)}"
+            )
+        for layer_index, (
+            dropout,
+            layer,
+            norm,
+            gsa_norm,
+            q_proj,
+            k_proj,
+            v_proj,
+            out_proj,
+        ) in enumerate(
+            zip(
+                self.dropouts,
+                self.layers,
+                self.norms,
+                self.gsa_norms,
+                self.gsa_q,
+                self.gsa_k,
+                self.gsa_v,
+                self.gsa_out,
+            )
         ):
             # Local message passing (same residual pattern as GINE)
             local_out = layer((x * message_scale, x) if drop_bonds else x, edge_index, edge_attr)
             local_out = self.norm_fn(local_out, batch_index, norm)
             local_out = _residual_branch(self.residual_activation, dropout(local_out)) + x
 
-            # Exact global self-attention within each graph
+            # Exact global self-attention within each graph, plus the context slot when on.
             N, C = local_out.shape
             Q = q_proj(local_out).view(N, self.num_heads, self.head_dim)
             K = k_proj(local_out).view(N, self.num_heads, self.head_dim)
             V = v_proj(local_out).view(N, self.num_heads, self.head_dim)
-            gsa_out = _graph_softmax_attn(Q, K, V, batch_index, num_graphs).reshape(N, C)
+            context_keys = context_values = None
+            if context is not None:
+                heads = (num_graphs, self.num_heads, self.head_dim)
+                context_keys = self.gsa_context_k[layer_index](context).view(heads)
+                context_values = self.gsa_context_v[layer_index](context).view(heads)
+            gsa_out = _graph_softmax_attn(
+                Q, K, V, batch_index, num_graphs, context_keys, context_values
+            ).reshape(N, C)
             gsa_out = dropout(out_proj(F.relu(gsa_out)))
             gsa_out = self.norm_fn(gsa_out, batch_index, gsa_norm)
             # After the norm, so its statistics neither absorb the noise nor carry it into eval.

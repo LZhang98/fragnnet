@@ -972,6 +972,13 @@ masster_context_normalization: none
 # Dropout inside the context projector; 0.0 keeps the original two-layer MLP unchanged.
 masster_context_dropout: 0.0
 masster_context_in_gnn: False  # Append spectrum context to atom inputs in both molecular GNNs; incompatible with share_proposal_across_ev.
+# The spectrum's context (NCE, adduct, instrument) as one extra key/value per molecule in every
+# global-attention layer of the precursor encoder: each atom attends to it inside the same softmax
+# as the molecule's atoms, per layer and head. Requires mol_gnn_type GINE_GSA; incompatible with
+# share_proposal_across_ev. Adds 2 x layers x (context_dim + 1) x mol_hidden_size parameters, built
+# on a forked RNG so every other parameter initializes as without it. False keeps the encoder
+# context-free (unless masster_context_in_gnn).
+masster_encoder_context_token: False
 masster_metadata_embedding_dim: 16
 masster_head_hidden_dim: 256
 masster_head_dropout: 0.0

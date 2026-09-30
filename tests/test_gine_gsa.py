@@ -460,3 +460,136 @@ def test_bond_dropout_draws_once_per_forward_pass(monkeypatch: pytest.MonkeyPatc
 def test_bond_dropout_rejects_invalid_settings(bond_dropout: float) -> None:
     with pytest.raises(ValueError, match="bond_dropout must be in"):
         _noisy_encoder(bond_dropout=bond_dropout)
+
+
+# ------------------------------------------------------------------ context token
+
+
+def _reference_attention_with_slot(
+    queries: th.Tensor,
+    keys: th.Tensor,
+    values: th.Tensor,
+    batch_index: th.Tensor,
+    extra_keys: th.Tensor,
+    extra_values: th.Tensor,
+) -> th.Tensor:
+    """Per-graph attention over the graph's nodes plus that graph's one extra slot."""
+    head_dim = queries.shape[-1]
+    out = th.zeros_like(values)
+    for graph in range(extra_keys.shape[0]):
+        members = (batch_index == graph).nonzero().flatten()
+        for head in range(queries.shape[1]):
+            graph_keys = th.cat((keys[members, head], extra_keys[graph, head][None]))
+            graph_values = th.cat((values[members, head], extra_values[graph, head][None]))
+            scores = (queries[members, head] @ graph_keys.T) / math.sqrt(head_dim)
+            out[members, head] = th.softmax(scores, dim=-1) @ graph_values
+    return out
+
+
+def test_graph_softmax_attn_context_slot_matches_definition() -> None:
+    th.manual_seed(31)
+    batch_index = th.tensor([0, 0, 0, 1, 1, 2])
+    queries, keys, values = _random_qkv(6, 3, 8)
+    extra_keys, extra_values = (th.randn(3, 3, 8, dtype=th.float64) for _ in range(2))
+
+    attended = _graph_softmax_attn(queries, keys, values, batch_index, 3, extra_keys, extra_values)
+    expected = _reference_attention_with_slot(
+        queries, keys, values, batch_index, extra_keys, extra_values
+    )
+
+    assert attended.shape == values.shape
+    assert th.allclose(attended, expected, atol=1e-12)
+    # A singleton graph now splits its attention between itself and its slot.
+    plain = _graph_softmax_attn(queries, keys, values, batch_index, 3)
+    assert not th.allclose(attended[5], plain[5])
+
+
+def test_graph_softmax_attn_context_slot_rejects_bad_inputs() -> None:
+    queries, keys, values = _random_qkv(4, 2, 4)
+    batch_index = th.tensor([0, 0, 1, 1])
+    slot = th.randn(2, 2, 4, dtype=th.float64)
+    with pytest.raises(ValueError, match="given together"):
+        _graph_softmax_attn(queries, keys, values, batch_index, 2, slot, None)
+    with pytest.raises(ValueError, match="must have shape"):
+        _graph_softmax_attn(queries, keys, values, batch_index, 2, slot[:1], slot[:1])
+
+
+def _context_encoder(context_token_dim: int) -> GINE_GSA:
+    th.manual_seed(32)
+    return GINE_GSA(
+        hidden_size=16,
+        node_feats_size=16,
+        edge_feats_size=3,
+        num_layers=2,
+        dropout=0.0,
+        normalization="layer",
+        num_heads=4,
+        context_token_dim=context_token_dim,
+    ).eval()
+
+
+def _two_molecule_graph() -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+    th.manual_seed(33)
+    x = th.randn(5, 16)
+    batch_index = th.tensor([0, 0, 0, 1, 1])
+    edge_index = th.tensor([[0, 1, 1, 2, 3], [1, 0, 2, 1, 4]])
+    return x, batch_index, edge_index, th.randn(edge_index.shape[1], 3)
+
+
+def test_gine_gsa_context_token_adds_only_its_projections() -> None:
+    """Every existing tensor initializes as without the token; only its projections are new."""
+    plain = _context_encoder(0).state_dict()
+    token = _context_encoder(6).state_dict()
+
+    new_keys = sorted(set(token) - set(plain))
+    assert new_keys == sorted(
+        f"gsa_context_{kind}.{layer}.{param}"
+        for kind in ("k", "v")
+        for layer in (0, 1)
+        for param in ("weight", "bias")
+    )
+    assert all(th.equal(token[key], plain[key]) for key in plain)
+    assert token["gsa_context_k.0.weight"].shape == (16, 6)
+
+
+def test_gine_gsa_context_token_reads_each_molecules_own_context() -> None:
+    encoder = _context_encoder(6)
+    inputs = _two_molecule_graph()
+    th.manual_seed(34)
+    context = th.randn(2, 6)
+
+    baseline = encoder(*inputs, context=context)
+    second_moved = context.clone()
+    second_moved[1] += 3.0
+    moved = encoder(*inputs, context=second_moved)
+    first_moved = context.clone()
+    first_moved[0] += 3.0
+
+    assert baseline.shape == (5, 16)
+    assert th.allclose(moved[:3], baseline[:3], atol=1e-6)
+    assert not th.allclose(moved[3:], baseline[3:], atol=1e-4)
+    assert not th.allclose(encoder(*inputs, context=first_moved)[:3], baseline[:3], atol=1e-4)
+
+
+def test_gine_gsa_context_token_trains_its_projections() -> None:
+    encoder = _context_encoder(6).train()
+    context = th.randn(2, 6, requires_grad=True)
+    encoder(*_two_molecule_graph(), context=context).square().sum().backward()
+
+    assert context.grad is not None and context.grad.abs().sum() > 0
+    for kind in ("k", "v"):
+        for layer in (0, 1):
+            grad = encoder.get_parameter(f"gsa_context_{kind}.{layer}.weight").grad
+            assert grad is not None and th.isfinite(grad).all() and grad.abs().sum() > 0
+
+
+def test_gine_gsa_context_token_requires_matching_context() -> None:
+    inputs = _two_molecule_graph()
+    with pytest.raises(ValueError, match="exactly when context_token_dim"):
+        _context_encoder(6)(*inputs)
+    with pytest.raises(ValueError, match="exactly when context_token_dim"):
+        _context_encoder(0)(*inputs, context=th.randn(2, 6))
+    with pytest.raises(ValueError, match="must have shape"):
+        _context_encoder(6)(*inputs, context=th.randn(3, 6))
+    with pytest.raises(ValueError, match="nonnegative"):
+        _context_encoder(-1)

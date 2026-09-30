@@ -129,6 +129,15 @@ def test_restricted_candidate_attention_keys_reach_the_head() -> None:
         _build_pl(masster_intensity_mass_window=30.0)
 
 
+def test_encoder_context_token_key_reaches_the_encoder() -> None:
+    token, config = _build_pl(mol_gnn_type="GINE_GSA", masster_encoder_context_token=True)
+    assert token.model.encoder_context_token
+    assert token.model.precursor_encoder.gnn.context_token_dim == config["masster_context_dim"]
+    default, config = _build_pl(mol_gnn_type="GINE_GSA")
+    assert config["masster_encoder_context_token"] is False
+    assert default.model.precursor_encoder.gnn.context_token_dim == 0
+
+
 def test_positional_encoding_keys_reach_the_head() -> None:
     both, config = _build_pl(
         masster_unique_fragment_mode=True,

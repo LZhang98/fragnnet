@@ -45,6 +45,11 @@
 #   nl2_ob nl1_ob without global attention                             (control: i1, i50ig7rf)
 #   sd1_ob i1 + allocator set key dropout 0.3                          (control: i1, i50ig7rf)
 #   fa1_s2 fa1 at seed 811237 (control replicate)                      (control: fa1, 0vn8m2gr)
+# Added 2026-09-30: NCE into the molecule encoder, which is CE-blind in i1 (FraGNNet's `mol`
+# insertion beats `mlp` on unmerged data: +0.0022 to +0.0136). The user asked for it attended or
+# as a condition:
+#   ce1  i1 + context concatenated to the encoder input (condition)   (control: i1, i50ig7rf)
+#   ce2  i1 + context key/value in each global-attention layer         (control: i1, i50ig7rf)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
 #
@@ -55,8 +60,9 @@
 #   window  mw30, mw10 and mlp1 (fa1 has run).
 #   graph   cg1 (fa1 has run).
 #   rerun   r2_ob, r1_ob, r0_ob, nl1_ob, nl2_ob, sd1_ob and fa1_s2 (i1 and fa1 have run).
+#   ce      ce1 and ce2 (i1 has run).
 #   i3 | i4 | fa1 | mz1 | i5 | mznl1 | nlpe1 | mw30 | mw10 | mlp1 | cg1 | r2_ob | r1_ob | r0_ob
-#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2  one job.
+#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2  one job.
 #
 # CONTROLS: i1_inst_ob_obf (i50ig7rf, tail 0.7607 over epochs 54-63) and fa1_full_attention_ob_obf
 # (0vn8m2gr, tail 0.7651) have run; each arm's header names its control. READ: the tail mean of
@@ -101,6 +107,8 @@ declare -A JOB_BY_ARM=(
     [nl2_ob]=msh_mhft_nl2_light_side_gine_ob_obf
     [sd1_ob]=msh_mhft_sd1_set_key_dropout_ob_obf
     [fa1_s2]=msh_mhft_fa1_s2_full_attention_ob_obf
+    [ce1]=msh_mhft_ce1_context_gnn_ob_obf
+    [ce2]=msh_mhft_ce2_context_token_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [i3]=i3_k1_ema_ob_obf.yml
@@ -121,11 +129,14 @@ declare -A CONFIG_BY_ARM=(
     [nl2_ob]=nl2_light_side_gine_ob_obf.yml
     [sd1_ob]=sd1_set_key_dropout_ob_obf.yml
     [fa1_s2]=fa1_s2_full_attention_ob_obf.yml
+    [ce1]=ce1_context_gnn_ob_obf.yml
+    [ce2]=ce2_context_token_ob_obf.yml
 )
-# cg1, the window ladder, the pos arms and the OB/OB_F reruns keep their checkpoints on Fir for
-# now (user, 2026-09-29); the seed replicate fa1_s2 is read on W&B only.
+# cg1, the window ladder, the pos arms, the OB/OB_F reruns and the ce arms keep their checkpoints
+# on Fir for now (user, 2026-09-29); the seed replicate fa1_s2 is read on W&B only.
 declare -A NO_CKPT_UPLOAD=([cg1]=1 [mw30]=1 [mw10]=1 [mlp1]=1
-    [mznl1]=1 [nlpe1]=1 [r2_ob]=1 [r1_ob]=1 [r0_ob]=1 [nl1_ob]=1 [nl2_ob]=1 [sd1_ob]=1 [fa1_s2]=1)
+    [mznl1]=1 [nlpe1]=1 [r2_ob]=1 [r1_ob]=1 [r0_ob]=1 [nl1_ob]=1 [nl2_ob]=1 [sd1_ob]=1 [fa1_s2]=1
+    [ce1]=1 [ce2]=1)
 
 case "${STAGE}" in
     stack) ARMS=(i3 i4) ;;
@@ -134,9 +145,10 @@ case "${STAGE}" in
     window) ARMS=(mw30 mw10 mlp1) ;;
     graph) ARMS=(cg1) ;;
     rerun) ARMS=(r2_ob r1_ob r0_ob nl1_ob nl2_ob sd1_ob fa1_s2) ;;
-    i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2) ARMS=("${STAGE}") ;;
+    ce)   ARMS=(ce1 ce2) ;;
+    i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2]" >&2
+        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2]" >&2
         exit 1
         ;;
 esac
@@ -234,3 +246,6 @@ echo "rerun (r2_ob, r1_ob, r0_ob, nl1_ob, nl2_ob, sd1_ob, fa1_s2): controls i1 (
 echo "  fa1_s2, fa1 (0vn8m2gr) have run; read nl2_ob against r2_ob and nl1_ob too. They need the"
 echo "  relabelled spec_df.pkl. Structural arms (r2_ob, r0_ob, nl1_ob, nl2_ob) shift the init RNG:"
 echo "  read them against the 0.0042 seed spread."
+echo "ce (ce1, ce2): their control i1 (i50ig7rf) has run; read each against the other too. They need"
+echo "  the relabelled spec_df.pkl and a checkout with masster_encoder_context_token (nn_blocks.py"
+echo "  GINE_GSA context_token_dim, 2026-09-30). ce1 shifts the init RNG; ce2 is init-matched to i1."

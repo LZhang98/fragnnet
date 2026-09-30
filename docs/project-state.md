@@ -4,6 +4,24 @@
 
 ## Current handoff
 
+**NCE into the MASSter molecule encoder: `ce1`/`ce2` built (2026-09-30); uncommitted, not
+submitted.** Traced on `i1`: every head sees NCE, but only through one 128-d context vector. The
+molecule encoder is CE-blind, so fragment embeddings are the same at every NCE. FraGNNet's
+matched pairs say CE in the encoder helps on unmerged data. CE at the molecule-encoder input
+(`mol`) beats CE at the fragment MLP (`mlp`) in all five unmerged pairs, +0.0022 to +0.0136
+(+0.0136 for the `embed` encoding `i1` uses). Merged data gains nothing.
+
+- `ce1` = `i1` + `masster_context_in_gnn: true`: the context concatenated to each atom's input,
+  as a condition (FraGNNet's `mol` site; no new code).
+- `ce2` = `i1` + `masster_encoder_context_token: true` (new): one context key/value per molecule
+  in every `GINE_GSA` global-attention layer, attended by each atom. It is init-matched to `i1`.
+- Checked: one-key config diffs, parameter and init claims on built models, new encoder/model/PL
+  tests, the full suite (4,744 passed), a real-data GPU smoke of both arms (exit 0), and the
+  submitter's `ce` stage.
+- **Next:** on Fir, `submit_masster_mh_ft_memorization_route.sh ce`. Read each arm against `i1`
+  and each other; then offline, the nested-pair lean and NCE50 error by NCE bin.
+- [Plan section](plans/masster/masster_memorization_route_plan.md#nce-into-the-molecule-encoder-ce1-condition-and-ce2-attended-built-2026-09-30-not-submitted).
+
 **Memorization-route arms rerun on OB/OB_F (2026-09-29); built, stage `rerun` not submitted.**
 `r2`, `r1`, `r0`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf` (the FT arm's keys only;
 upload off), plus `fa1_s2` as the second `fa1` seed; each builds, and passes a 2-epoch GPU smoke run.

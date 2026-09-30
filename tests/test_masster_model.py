@@ -94,6 +94,7 @@ def _build_model(
     precursor_types: tuple[str, ...] = ("[M+H]+", "[M-H]-"),
     fragmentation_modes: tuple[str, ...] = (),
     context_in_gnn: bool = False,
+    encoder_context_token: bool = False,
     candidate_backend: str = "cpu",
     proposal_method: str = "cut_masks",
     boundary_bond_encoder: bool = False,
@@ -133,6 +134,7 @@ def _build_model(
         precursor_dropout=0.0,
         context_dim=8,
         context_in_gnn=context_in_gnn,
+        encoder_context_token=encoder_context_token,
         metadata_embedding_dim=4,
         head_hidden_dim=12,
         head_dropout=0.0,
@@ -1712,6 +1714,52 @@ def test_mz_positional_encoding_feeds_candidate_masses_to_the_head(
     arm_output, control_output = arm(**inputs), control(**inputs)
     assert arm_output["pred_logprobs"].shape == control_output["pred_logprobs"].shape
     assert not th.allclose(arm_output["pred_logprobs"], control_output["pred_logprobs"])
+
+
+@pytest.mark.parametrize("unique_fragment_mode", [True, False])
+def test_encoder_context_token_makes_atom_embeddings_depend_on_nce(
+    unique_fragment_mode: bool,
+) -> None:
+    """The encoder attends to each spectrum's context; the rest of the model is unchanged."""
+    batch = _build_batch(("CCOC", "CCO"))
+    kwargs = {
+        "max_masks": 4,
+        "unique_fragment_mode": unique_fragment_mode,
+        "max_enumerated_masks": 8,
+        "precursor_gnn_type": "GINE_GSA",
+    }
+    control = _build_model(batch, **kwargs).eval()
+    arm = _build_model(batch, **kwargs, encoder_context_token=True).eval()
+    control_state, arm_state = control.state_dict(), arm.state_dict()
+
+    new_keys = set(arm_state) - set(control_state)
+    assert new_keys and all(
+        key.startswith("precursor_encoder.gnn.gsa_context_") for key in new_keys
+    )
+    assert all(th.equal(arm_state[key], control_state[key]) for key in control_state)
+
+    def atom_embeddings(model: MassterModel, nce: list[float]) -> th.Tensor:
+        captured = []
+        hook = model.precursor_encoder.register_forward_hook(
+            lambda _module, _inputs, output: captured.append(output)
+        )
+        model(mol_pyg=batch, spec_prec_type=th.tensor([0, 0]), spec_nce=th.tensor(nce))
+        hook.remove()
+        return captured[0]
+
+    low, high = [10.0, 40.0], [10.0, 90.0]
+    first_atoms = batch.batch == 0
+    arm_low, arm_high = atom_embeddings(arm, low), atom_embeddings(arm, high)
+    assert th.allclose(arm_low[first_atoms], arm_high[first_atoms], atol=1e-6)
+    assert not th.allclose(arm_low[~first_atoms], arm_high[~first_atoms], atol=1e-5)
+    control_low, control_high = atom_embeddings(control, low), atom_embeddings(control, high)
+    assert th.equal(control_low, control_high)
+
+
+def test_encoder_context_token_requires_global_attention() -> None:
+    batch = _build_batch(("CCO",))
+    with pytest.raises(ValueError, match="requires precursor_gnn_type='GINE_GSA'"):
+        _build_model(batch, encoder_context_token=True)
 
 
 @pytest.mark.parametrize(
