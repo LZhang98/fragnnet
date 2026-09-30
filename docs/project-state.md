@@ -65,6 +65,8 @@ User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`
   - **Read done:** `i3` on the floor (see the finding's `i3` section).
 - **Nitro and sulfonyl failures** run through the group's own heteroatom bonds. The model gets the radical/even-electron choice wrong, and sulfonamides also lack SO2-extrusion candidates.
 - **Next steps (not built):** a cut-level training signal that reaches the intensity head, pairwise candidate preferences, and `cm1` (mixed evidence; the code survives only in `/tmp/frag_gnn_cm_revert_20260929/`). A cheap offline check comes first: add probe cut scores to the intensity logits.
+- **Odd-electron bias: null.** An offline, cross-fitted per-group bias adds +0.0000 on whole val; the model's odd-electron mass is already calibrated per group.
+- **Generalized sulfonyl O-transfer (aryl, any N): passes model-free.** +1.86% rule-only over null on val, +2.21% on train; on the sulfonyl tail it has 26 spectra at ≥ 10% against 4 for the registered rule. Registering it needs a whole-side product in `NeutralLossRule`. The alkyl and sulfone variants are too weak.
 - **Open:** a joint per-molecule table of causes.
 - [Finding](findings/masster/masster_i1_worst_predictions_2026_09_30.md).
 

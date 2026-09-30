@@ -361,6 +361,55 @@ model's dominant candidate at that m/z
     secondary, tertiary or non-aryl cases, and `i1` runs with templates off.
   - 28% of the intensity has no composition within 10 ppm.
 
+**Two follow-up tests (2026-09-30).**
+
+*Odd-electron bias, offline* ([`parity/`](../../../output/i1_worst_predictions_2026_09_30/parity/)).
+- **Setup.** One `i1`@59 forward over all 52,020 val spectra, with each channel's exact electron
+  parity from its member atoms. Each channel's m/z, rebuilt from atoms, own H and H shift, matches
+  the model's to 2e-8 Da.
+- **Bias.** β × odd-electron is added to the channel logits: on all odd channels, only on
+  fragments cutting a het–het bond, or only on the others. β is fitted per group on half the
+  molecules and scored on the other half.
+- **Null.** The parity labels are permuted within each spectrum.
+- **Result: null.**
+  - Whole val +0.0000 [−0.0000, +0.0001].
+  - Nitro +0.0008 [−0.0007, +0.0024].
+  - Sulfonamide and sulfone 0. The fitted β is 0 or −0.25 almost everywhere.
+  - The one positive cell, nitro het–het on its 183 tail spectra (+0.0057 [0.0014, 0.0121]), is
+    on a set selected by `i1`@59.
+- **Why.** The model's odd-electron mass is already calibrated per group: predicted 0.30 against
+  a measured base-peak rate of 0.25 (nitro), 0.17 against 0.16 (sulfonamide), 0.17 against 0.18
+  (sulfone). So no group-level bias can help. The error is which candidate carries the parity in
+  each spectrum, the same "calibrated in aggregate, wrong per spectrum" pattern as the base-peak
+  table.
+- **Not tested.** Whether a parity input would help the model rank candidates within a spectrum.
+  That needs training.
+
+*Generalized sulfonyl O-transfer, model-free gate*
+([`smarts_o_transfer/`](../../../output/i1_worst_predictions_2026_09_30/smarts_o_transfer/)).
+- **Setup.** The product is the carbon side of the C–S bond plus one sulfonyl O. Scoring uses
+  `debug_masster_smarts_rule_gate.py`'s channel scorer, its rule-only criterion and its random
+  disconnected null, on val and train-sample `[M+H]+` spectra.
+
+| rule | val molecules | rule-only intensity over null, val [95% CI] | train sample |
+| --- | ---: | --- | --- |
+| registered `primary_aryl_sulfonamide_o_transfer` | 30 | +1.61% [0.75, 2.64] | +1.96% |
+| aryl sulfonamide O-transfer, any N | 145 | +1.86% [0.94, 2.68] | +2.21% [1.62, 2.89] |
+| alkyl sulfonamide O-transfer | 18 | +1.67% [0.00, 5.02] | 0.00% |
+| aryl sulfone O-transfer | 25 | +0.31% [0.03, 0.69] | +0.63% |
+
+- **The any-N aryl rule replicates on train** and reaches far more of the bad spectra than the
+  registered primary-only rule.
+  - On the 151 sulfonyl tail spectra: rule-only share 6.4% against 0.9%, and 26 against 4 spectra
+    at ≥ 10%.
+  - On the 37 sulfonyl spectra missing candidates: 19.7% against 2.1%, and 17 against 3 spectra.
+- **The alkyl and sulfone variants are too weak to admit.** Four val molecules carry the alkyl
+  signal, and it is zero on train.
+- **Size.** The candidate for registration is one rule. It generalizes the primary rule to any N
+  substitution, with a product defined as a whole side. `NeutralLossRule` cannot yet express that
+  product, since it removes only mapped atoms. Its effect is confined to about 150 sulfonyl tail
+  spectra, so read it on that subset, not on whole val.
+
 ## Result: uncovered candidates
 
 `U_uncovered` is 162 spectra of 71 molecules, and 40 spectra of the floor. Every uncovered peak of
