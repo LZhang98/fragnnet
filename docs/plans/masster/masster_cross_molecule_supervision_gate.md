@@ -1,8 +1,17 @@
 # Cross-molecule supervision feasibility gate
 
-> **Status:** STOPPED · **Updated:** 2026-09-29
+> **Status:** STOPPED · **Updated:** 2026-09-30
 > The user requested removal of the cm0–2 code. Training integration, configs, launcher,
 > manifest preparation and pilot tests are reverted. Census findings and artifacts are retained.
+>
+> **Bearing of the `i1` floor read (2026-09-30).** The case is mixed, per the
+> [worst-predictions finding](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#next-steps-not-built).
+> - **For:** about 20% of the floor are transfer failures, where a close train analogue shows the
+>   dominant fragment and `i1` ignores it.
+> - **Against:** about 45% of the floor has no similar molecule showing the pattern, and `i1`
+>   already predicts what analogues do.
+> - **Status:** the pilot remains untested, not a measured null. The removed code survives only in
+>   `/tmp/frag_gnn_cm_revert_20260929/`, outside Git.
 
 ## Question and scope
 

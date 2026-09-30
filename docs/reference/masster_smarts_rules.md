@@ -1,36 +1,50 @@
 # MASSter SMARTS Rule Catalog
 
-> **Status:** Reference and research backlog
->
-> **Updated:** 2026-09-28
+> **Status:** REFERENCE · **Updated:** 2026-09-29
+> 14 rules are registered but off by default (`masster_smarts_templates: False`), and no
+> recorded trained run uses them. Eight more were disabled on 2026-09-29, to re-check on
+> Enveda-180. Three registered rules fail the 2026-09-27 gate and stay pending an ablation.
+> Also holds the literature backlog.
 
 This document defines which gas-phase rearrangement rules belong in MASSter,
-records the rules currently enabled, and keeps literature candidates separate from
+records the rules currently registered, and keeps literature candidates separate from
 validated code. It is intentionally narrower than the general
 [rearrangement review](rearrangement_smarts.md).
 
-The [2026-09-13 set and literature audit](../findings/masster/masster_smarts_review_2026_09_13.md)
-records current eligibility checks, passing tests, and positive-ion expansion priorities.
-Paper URLs are also attached to the seven newer executable rule definitions in
-[`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py).
+Related records:
+
+- [2026-09-27 CUDA audit](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md): pool
+  reach (§3), the ring-rule and duplicate-template drop (§5) and the per-class gate (§7). The
+  registry tests are in [`test_masster_smarts.py`](../../tests/test_masster_smarts.py).
+- [2026-09-28 primary-literature follow-up](../notes/masster_excision_literature_2026_09_28.md):
+  an uncovered N-phenylbenzamide O-transfer branch, and mass coverage versus product
+  connectivity. Its candidates have not been gated.
+- [SMARTS pathway plan](../plans/masster/masster_smarts_pathway_plan.md): planned use of these
+  rules inside the MASSter pathway (rule provenance to the intensity head, gated rule steps on
+  candidates, `[M-H]-`), including `t1i`, the first templates-on arm.
+- [2026-09-13 set and literature audit](../findings/masster/masster_smarts_review_2026_09_13.md):
+  earlier eligibility checks and positive-ion expansion priorities.
+- Paper URLs are attached to every MASSter-only rule definition in
+  [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), disabled ones
+  included, except `tertiary_aryl_sulfonamide_so2`.
 
 ## Scope and admission rule
 
-The [2026-09-28 primary-literature follow-up](../notes/masster_excision_literature_2026_09_28.md)
-identifies an additional N-phenylbenzamide O-transfer branch for mapping and distinguishes
-mass coverage from product connectivity. Its candidates have not undergone new local gates.
-
 MASSter does not need every chemically valid SMARTS rule. Its ordinary mechanism
 already enumerates bond-cut masks and the connected precursor components produced by
-those cuts. A SMARTS rule is useful only when it adds a plausible atom partition that
-the ordinary mechanism cannot represent for the corresponding cut mask.
+those cuts. A SMARTS rule is useful only when its product reaches peaks that no connected
+atom set can. A new atom partition whose formula a connected atom set already has adds no
+m/z coverage, only another explanation of the same peaks.
 
 Admit a rule when all of the following hold:
 
 1. It creates a new heavy-atom assembly, normally by reconnecting retained atoms that
    are disconnected in the precursor after the neutral atoms are removed.
-2. Its retained precursor atom set or partition is not already produced by ordinary
-   MASSter within the configured cut budget.
+2. In the polarity it is admitted for, its product explains target intensity that no
+   connected atom set of the same heavy-atom composition reaches within the model's
+   hydrogen-shift range, beyond random disconnected atom sets of the same size. This is the
+   [2026-09-27 per-class gate](#rules-added-by-the-per-class-gate-2026-09-27); a new atom
+   set alone does not pass it.
 3. The precursor substructure can be expressed narrowly enough to avoid a large
    number of unsupported candidates.
 4. The ion mode, adduct, scaffold, and substituent restrictions supported by the
@@ -43,7 +57,16 @@ hydride shifts, resonance changes, and topology changes with the same ordinary a
 partition belong in ion-channel scoring or learned priors unless they demonstrably
 recover missing candidate formulas.
 
+Eleven rules admitted before this gate fail it or never fire on NIST20. Eight of them are
+disabled and three stay pending an ablation; see
+[Existing rules under the gate](#existing-rules-under-the-gate).
+
 ## How MASSter represents a rule
+
+Templates are off by default. `masster_smarts_templates` in
+[`config/template.yml`](../../config/template.yml) (default `False`) forces each matched
+template's cut mask into the candidate pool and adds its assembly under that mask. No
+recorded trained run has turned it on.
 
 The curated registry is
 [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py).
@@ -52,23 +75,43 @@ It selects shared definitions from
 allowlist.
 
 - Rule index `0` is the ordinary connected-component mechanism.
-- SMARTS rules receive stable one-based indices in allowlist order.
+- SMARTS rules take one-based indices from `MASSTER_RULE_VOCABULARY`, an append-only name
+  list (since 2026-09-29): 1-7 the shared neutral-loss rules, 8-10 the compound rules, 11-22
+  the MASSter-only neutral-loss rules.
+  - **A new rule goes at the end of that list**, and a removed rule's name stays in it, so no
+    index ever shifts. Import fails if a registered rule is missing from it.
+  - Every rule-indexed parameter follows that order. A SMARTS-on model records the names'
+    CRC-32 hashes in its state dict (`smarts_rule_name_hashes`). A checkpoint trained on a
+    shorter prefix loads with zero rows for the appended rules and ignores their templates. A
+    checkpoint whose list is not a prefix, or that has no list, is refused.
+  - The 2026-09-27 change renumbered every rule (26, then 14, then 22); no SMARTS checkpoint
+    existed then.
 - A matched template stores the precursor bond cuts and an alternative partition of
   all precursor atoms.
+- A side assembled from `k` disconnected precursor pieces forms `k - 1` bonds
+  (`component_formed_bond_counts`), and the `valence` H bound takes two slots back for each.
 - The cut mask keeps one probability; a SMARTS match adds another assembly mechanism
   under that mask rather than duplicating the mask probability.
 - Multiple mechanisms that produce the same atom set remain latent alternatives.
+- Each fragment's rules (either template side) are its provenance, read in three places.
+  - The model's annotation output: `fragment_rule_fragment_idxs` / `fragment_rule_idxs`.
+  - The export column `pred_node_rules`, opt-in by `--return_rule_provenance`.
+  - Optionally the intensity token: `masster_rule_pathway_token`, arm `p1`, off by default.
 - Literature-derived rules can restrict eligible precursor types and fragmentation
-  modes; unsupported matches are removed before candidate construction.
+  modes; unsupported matches are removed before candidate construction. The four
+  registered shared rules and `tertiary_aryl_sulfonamide_so2` have no guard and match every
+  precursor type. The tables below give each rule's guard.
 - Generic `crf12`/`crf13` patterns and pure bond-deletion rules are intentionally
   excluded.
 
 ## Implemented allowlist
 
-The current registry contains **22 rules: 3 compound-fragment rules and 19
+The current registry contains **14 rules: 2 compound-fragment rules and 12
 neutral-loss rules**. These names are the executable source of truth. Eight were added on
 2026-09-27 by the per-class gate described in
-[Rules added by the per-class gate](#rules-added-by-the-per-class-gate-2026-09-27).
+[Rules added by the per-class gate](#rules-added-by-the-per-class-gate-2026-09-27). Eight
+others were disabled on 2026-09-29; see
+[Disabled rules](#disabled-rules-2026-09-29).
 
 On 2026-09-27 MASSter dropped the eleven compound ring-cut rules and `aryl_sulfonate_so3`,
 and it now skips any template whose sides are all connected in the precursor. Evidence,
@@ -86,43 +129,62 @@ The shared `FRAG_RULES`/`NL_RULES` keep all of them for FraGNNet's prepass
 These rules perform several coordinated cuts and merge selected outer components into
 a new assembly.
 
-| Rule | Restricted scaffold | Candidate added |
-|---|---|---|
-| `pyridyl_carbamate_alkyl_transfer` | 2-, 3-, or 4-pyridyl O-carbamate | Transfer of Me, Et, or nBu to the pyridyl-O residue |
-| `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | N-acyl arylsulfonamide, `[M-H]-` | Phenoxide of the arylsulfonyl ring and the amide carbonyl O |
-| `diacylhydrazine_carboxylate_o_transfer` | N'-tert-butyl diacylhydrazine, `[M-H]-` | `[R1CO2]-` with the opposite amide O |
+| Rule | Restricted scaffold | Candidate added | Guard |
+|---|---|---|---|
+| `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | N-acyl arylsulfonamide | Phenoxide of the arylsulfonyl ring and the amide carbonyl O | `[M-H]-` |
+| `diacylhydrazine_carboxylate_o_transfer` | N'-tert-butyl diacylhydrazine | `[R1CO2]-` with the opposite amide O | `[M-H]-` |
 
 ### Neutral-loss rules
 
 Here, "neutral loss" means a mapped set of precursor atoms, not just a floating-point
 mass. This distinction is essential when the retained atoms require a new assembly.
 
-| Rule | Precursor class | Nominal transformation | Exact neutral mass (Da) |
-|---|---|---|---:|
-| `aryl_sulfonamide_so2` | Aryl sulfonamide | SO2 removal with new Ar-N assembly | 63.9619 |
-| `aryl_sulfonate_so2` | Aryl sulfonate | SO2 removal with new Ar-O assembly | 63.9619 |
-| `n_nitramine_n2o` | N-nitramine | N2O loss with retained-atom reassembly | 44.0010 |
-| `sulfoxide_so_loss` | Dialkyl/diaryl sulfoxide, `S=O` or `[S+][O-]` | SO loss with new C-C assembly | 47.9669 |
-| `diarylvinyl_c2h2_loss` | Acyclic diarylethylene | C2H2 loss with new aryl-aryl assembly | 26.0157 |
-| `diaryl_ketone_co_loss` | Diaryl ketone | CO loss with new aryl-aryl assembly | 27.9949 |
-| `aminobenzothiazole_hcn_loss` | 2-Aminobenzothiazole | HCN loss with ring reassembly | 27.0109 |
-| `n_phenylbenzamide_co_smiles` | N-Phenylbenzamide | CO loss with new N-aryl assembly | 27.9949 |
-| `methyl_benzoate_co2_transfer` | Aryl methyl ester | CO2 loss with methyl transfer to the aryl residue | 43.9898 |
-| `anisoyl_fluoride_co_f_transfer` | o-, m-, or p-Anisoyl fluoride | CO loss with F transfer to the anisole ring | 27.9949 |
-| `short_haloalkyl_ammonium_c2_transfer` | 2-Haloethyl amine/ammonium | C2H4 loss with Cl/Br/I transfer to N | 28.0313 |
-| `short_haloalkyl_ammonium_c3_transfer` | 3-Halopropyl amine/ammonium | C3H6 loss with Cl/Br/I transfer to N | 42.0470 |
-| `n_fluoro_sulfonamide_f_transfer` | N-Fluoroarenesulfonamide | Diagnostic SO2F- product with neutral ArN loss | Variable |
-| `primary_aryl_sulfonamide_so2` | Primary arylsulfonamide, `[M-H]-` | SO2 removal with new Ar-N assembly | 63.9619 |
-| `tertiary_aryl_sulfonamide_so2` | Tertiary arylsulfonamide | SO2 removal with new Ar-N assembly | 63.9619 |
-| `primary_aryl_sulfonamide_o_transfer` | Primary arylsulfonamide, `[M+H]+` | Sulfonyl O transfers to the aryl ring; HNSO leaves | Variable |
-| `phenylalanine_carboxyl_o_transfer` | Phenylalanine, `[M+H]+` | NH3 and CH2CO loss; carboxyl O stays with the benzyl residue | Variable |
-| `hydroxamic_acid_nh_excision` | Hydroxamic acid (either tautomer), `[M+H]+` | NH excision joining the N-hydroxyl O to the carbonyl C | 15.0109 |
-| `pfas_sulfonate_f_transfer` | Perfluoroalkyl sulfonate, `[M-H]-` | FSO3- with an alpha F transferred | Variable |
+| Rule | Precursor class | Nominal transformation | Exact neutral mass (Da) | Guard |
+|---|---|---|---:|---|
+| `aryl_sulfonamide_so2` | Secondary (N-H) aryl sulfonamide | SO2 removal with new Ar-N assembly | 63.9619 | none |
+| `aryl_sulfonate_so2` | Aryl sulfonate | SO2 removal with new Ar-O assembly | 63.9619 | none |
+| `n_nitramine_n2o` | N-nitramine | N2O loss with retained-atom reassembly | 44.0010 | none |
+| `sulfoxide_so_loss` | Dialkyl/diaryl sulfoxide, `S=O` or `[S+][O-]` | SO loss with new C-C assembly | 47.9669 | none |
+| `n_phenylbenzamide_co_smiles` | N-Phenylbenzamide | CO loss with new N-aryl assembly | 27.9949 | `[M-H]-` |
+| `short_haloalkyl_ammonium_c2_transfer` | 2-Haloethyl amine/ammonium | C2H4 loss with Cl/Br/I transfer to N | 28.0313 | `[M+H]+`, `[M]+` |
+| `primary_aryl_sulfonamide_so2` | Primary arylsulfonamide | SO2 removal with new Ar-N assembly | 63.9619 | `[M-H]-` |
+| `tertiary_aryl_sulfonamide_so2` | Tertiary arylsulfonamide | SO2 removal with new Ar-N assembly | 63.9619 | none |
+| `primary_aryl_sulfonamide_o_transfer` | Primary arylsulfonamide | A sulfonyl O transfers to the aryl ring; S, the other O and N leave | Not set; H count from the channels | `[M+H]+` |
+| `phenylalanine_carboxyl_o_transfer` | Phenylalanine | NH3 and CH2CO loss; carboxyl O stays with the benzyl residue | 59.0371 (NH3 + CH2CO) | `[M+H]+` |
+| `hydroxamic_acid_nh_excision` | Hydroxamic acid (either tautomer) | NH excision joining the N-hydroxyl O to the carbonyl C | 15.0109 | `[M+H]+` |
+| `pfas_sulfonate_f_transfer` | Perfluoroalkyl sulfonate | FSO3- with an alpha F transferred | Variable (product mapped) | `[M-H]-` |
 
 New rules must match the standardized molecules the model sees, i.e.
 `data_utils.mol_from_smiles` output. The standardizer writes sulfoxides as `[S+][O-]` and
 hydroxamic acids as the hydroximic tautomer `ON=C(O)R`. The old `S=O`-only sulfoxide
 pattern matched no NIST20 molecule for that reason.
+
+### Disabled rules (2026-09-29)
+
+User decision: these eight are commented out in
+[`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), to re-check on
+Enveda-180. Evidence is in
+[Existing rules under the gate](#existing-rules-under-the-gate).
+- Their names keep their `MASSTER_RULE_VOCABULARY` slots, so `MASSTER_NUM_RULES` stays 22 and
+  uncommenting a rule restores its old index.
+- The code, guard entries and tests are tagged `DISABLED 2026-09-29`. The three shared rules
+  stay in `NL_RULES` for FraGNNet's prepass.
+- **Enveda-180 check (2026-09-29): none finds support.** Five match no Enveda-180 molecule
+  (the library has no ketones). Methyl benzoate and diarylvinyl match but score 0.00
+  ([finding](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md)). The probe,
+  `scripts/debug/debug_masster_smarts_rule_gate_enveda.py`, scores these rules from copies of
+  their definitions, so re-checking them on another dataset needs no uncommenting.
+
+| Rule | Index | Transformation | Guard when enabled | Why disabled |
+|---|---:|---|---|---|
+| `diarylvinyl_c2h2_loss` | 5 | C2H2 loss with new aryl-aryl assembly | none | Formula twin; no gain on `c0`'s pool |
+| `diaryl_ketone_co_loss` | 6 | CO loss with new aryl-aryl assembly | none | Formula twin; no gain on `c0`'s pool |
+| `aminobenzothiazole_hcn_loss` | 7 | HCN loss with ring reassembly | none | Formula twin; no gain on `c0`'s pool |
+| `pyridyl_carbamate_alkyl_transfer` | 8 | Me, Et, or nBu transfer to the pyridyl-O residue | `[M+H]+` | One NIST20 molecule, no spectra |
+| `methyl_benzoate_co2_transfer` | 12 | CO2 loss with methyl transfer to the aryl residue | `[M+H]+` | Formula twin; no gain on `c0`'s pool |
+| `anisoyl_fluoride_co_f_transfer` | 13 | CO loss with F transfer to the anisole ring | `[M]+`, EI only | No NIST20 molecule; no EI spectra |
+| `short_haloalkyl_ammonium_c3_transfer` | 15 | C3H6 loss with Cl/Br/I transfer to N | `[M+H]+`, `[M]+` | Formula twin; no gain on `c0`'s pool |
+| `n_fluoro_sulfonamide_f_transfer` | 16 | Diagnostic SO2F- product with neutral ArN loss | `[M-H]-` | No NIST20 molecule |
 
 ## Rules added by the per-class gate (2026-09-27)
 
@@ -132,10 +194,11 @@ was then scored on every NIST20 spectrum of its molecules, both polarities and b
 instruments:
 - the target intensity its disconnected product explains through MASSter's own channels;
 - counting only peaks that no connected atom set of the same composition can reach;
-- against random disconnected atom sets of the same size.
+- against random disconnected atom sets of the same size;
+- averaged per molecule, with molecule-bootstrap CIs.
 
-Each rule is admitted only in the polarity that passes. Existing rules were scored the same
-way, for comparison. Full table:
+Each new rule is restricted to the polarity that passes. `tertiary_aryl_sulfonamide_so2`
+passes both and is left unguarded. Full table:
 [finding §7](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#7-new-rules-from-the-documented-lists).
 
 | Rule | Mode | NIST20 molecules | Beyond random, % of intensity (95% CI) | Strength |
@@ -143,10 +206,10 @@ way, for comparison. Full table:
 | `primary_aryl_sulfonamide_so2` | `[M-H]-` | 67 | +6.39 (3.71 to 9.59) | clear |
 | `primary_aryl_sulfonamide_o_transfer` | `[M+H]+` | 175 | +2.61 (1.85 to 3.45) | clear |
 | `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | `[M-H]-` | 10 | +5.69 (0.79 to 12.85) | clear |
-| `diacylhydrazine_carboxylate_o_transfer` | `[M-H]-` | 3 | +49.6; at least 1% in 59% of spectra | clear, few molecules |
-| `pfas_sulfonate_f_transfer` | `[M-H]-` | 10 | +1.43 (0.00 to 3.38); at least 1% in 22% | clear, few molecules |
+| `diacylhydrazine_carboxylate_o_transfer` | `[M-H]-` | 3 | +49.6 (0.0 to 78.7); at least 1% in 59% of spectra | positive; CI reaches 0 |
+| `pfas_sulfonate_f_transfer` | `[M-H]-` | 10 | +1.43 (0.00 to 3.38); at least 1% in 22% | positive; CI reaches 0 |
 | `phenylalanine_carboxyl_o_transfer` | `[M+H]+` | 66 | +0.15 (0.00 to 0.36) | weak |
-| `tertiary_aryl_sulfonamide_so2` | both | 174 / 57 | +0.11 / +0.07 | weak |
+| `tertiary_aryl_sulfonamide_so2` | both (unguarded) | 174 / 57 | +0.11 (0.01 to 0.27) / +0.07 (0.01 to 0.18) | weak |
 | `hydroxamic_acid_nh_excision` | `[M+H]+` | 47 | +0.04 (0.01 to 0.08) | weak |
 
 Candidates not admitted:
@@ -167,18 +230,68 @@ Candidates not admitted:
   fragment has a formula twin
   ([triage](../findings/masster/chemfrag_rearrangement_triage_2026_09_14.md#unique-coverage-check-2026-09-28)).
 
-Among existing rules, the CO, CO2, HCN and C2H2 losses score exactly zero. Their product
-formula always equals that of some connected atom set, e.g. dropping a different C and O. So
-they add no m/z coverage, only a more plausible explanation. The sulfonyl and nitramine
-rules are unique because their loss removes a bridging heteroatom that no other cut can
-remove while leaving the rest connected.
+### Existing rules under the gate
+
+The 14 rules registered before 2026-09-27 were scored the same way. Three pass, eight fail,
+and three never fire on NIST20. Numbers are from
+`output/smarts_reach_2026_09_27/rule_gate_log.txt`, except the last three rows' molecule
+counts, which are a direct SMARTS count on 2026-09-29. The pool column is
+[finding §3.1](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#31-coverage-the-templates-add-beyond-the-pool),
+measured on `c0`'s `[M+H]+` pool only.
+
+| Rule | Mode | NIST20 molecules | Beyond random, % (95% CI) | Gain on `c0`'s pool | Status |
+|---|---|---:|---|---|---|
+| `aryl_sulfonate_so2` | `[M+H]+` / `[M-H]-` | 86 / 121 | +2.06 (1.06 to 3.59) / +6.40 (4.59 to 8.50) | +1.8% | passes |
+| `aryl_sulfonamide_so2` | `[M+H]+` / `[M-H]-` | 446 / 237 | +0.29 (0.19 to 0.42) / +3.75 (2.76 to 4.77) | +0.22% | passes |
+| `n_nitramine_n2o` | `[M+H]+` / `[M-H]-` | 10 / 5 | +0.20 (0.00 to 0.48) / +6.98 (0.00 to 20.77) | +0.43% | passes; CIs reach 0 |
+| `short_haloalkyl_ammonium_c2_transfer` | `[M+H]+` | 29 | −0.01 (−0.07 to 0.04) | +0.49% | fails; kept pending ablation |
+| `sulfoxide_so_loss` | `[M+H]+` / `[M-H]-` | 90 / 35 | −0.05 (−0.22 to 0.05) / 0.00 | not measured | fails; kept pending ablation |
+| `diaryl_ketone_co_loss` | `[M+H]+` / `[M-H]-` | 373 / 137 | 0.00 / 0.00 | none | fails; disabled 2026-09-29 |
+| `diarylvinyl_c2h2_loss` | `[M+H]+` / `[M-H]-` | 61 / 47 | 0.00 / 0.00 | none | fails; disabled 2026-09-29 |
+| `aminobenzothiazole_hcn_loss` | `[M+H]+` / `[M-H]-` | 35 / 4 | 0.00 / 0.00 | none | fails; disabled 2026-09-29 |
+| `methyl_benzoate_co2_transfer` | `[M+H]+` | 313 | 0.00 | none | fails; disabled 2026-09-29 |
+| `short_haloalkyl_ammonium_c3_transfer` | `[M+H]+` | 7 | 0.00 | none | fails; disabled 2026-09-29 |
+| `n_phenylbenzamide_co_smiles` | `[M-H]-` | 199 | 0.00 | not measured | fails; kept pending ablation |
+| `pyridyl_carbamate_alkyl_transfer` | `[M+H]+` | 1, no spectra | — | — | never fires on NIST20; disabled 2026-09-29 |
+| `n_fluoro_sulfonamide_f_transfer` | `[M-H]-` | 0 | — | — | never fires on NIST20; disabled 2026-09-29 |
+| `anisoyl_fluoride_co_f_transfer` | `[M]+`, EI | 0 | — | — | never fires on NIST20; disabled 2026-09-29 |
+
+The CO, CO2, HCN, C2H2 and C3H6 losses score exactly zero because their product formula
+always equals that of some connected atom set, e.g. dropping a different C and O. So they add
+no m/z coverage, only a more plausible explanation. The sulfonyl and nitramine rules are
+unique because their loss removes a bridging heteroatom that no other cut can remove while
+leaving the rest connected.
+
+User decisions (2026-09-29):
+- **Disabled, to re-check on Enveda-180:** the five failing rules that add nothing on `c0`'s
+  pool either, and the three that never fire
+  ([Disabled rules](#disabled-rules-2026-09-29)).
+- **Kept until an ablation decides them:** the other three failing rules. Pool reach is the
+  only measured argument for them, and it holds for one. A formula twin can exist but be
+  missing from the proposal's 256-fragment pool, which is how the C2 haloalkyl rule adds
+  +0.49% on `c0`'s pool. Sulfoxide and N-phenylbenzamide were not measured on a pool.
+- **Outliers (2026-09-29):** averaged over NIST20 the rules are negligible, but they reach
+  spectra where much of the intensity sits at rule-only m/z. On `i1`'s val set those are 37
+  `[M+H]+` spectra with cosine 0.25-0.56. They are not the floor: none of the bottom 500
+  spectra carries rule-only intensity. `[M-H]-` is untested
+  ([finding](../findings/masster/masster_smarts_outlier_reach_2026_09_29.md)).
+- **Enveda-180 (2026-09-29):** sulfoxide passes there, +0.56% in `[M-H]-` (CI 0.23 to 1.01).
+  N-phenylbenzamide still scores 0.00, and no Enveda-180 molecule matches the C2 haloalkyl rule
+  ([finding](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md)).
 
 ## Literature additions implemented in 2026-08
 
 These additions have a clear transferred heavy atom or group, a constrained substrate
-class, and a product atom partition that adds coverage. They use the ionization guards
-shown below. The short-chain halogen family requires separate C2 and C3 templates
-because the leaving atom maps differ.
+class, and a product atom partition that ordinary cuts do not produce. They use the
+ionization guards shown below. The short-chain halogen family requires separate C2 and C3
+templates because the leaving atom maps differ.
+
+The "Why it fits MASSter" column is the atom-partition rationale at admission, not measured
+coverage. Under the 2026-09-27 gate none of these seven rules adds m/z coverage: four score
+at or below random and three never fire on NIST20
+([Existing rules under the gate](#existing-rules-under-the-gate)). Only
+`n_phenylbenzamide_co_smiles` and `short_haloalkyl_ammonium_c2_transfer` are still registered;
+the other five were disabled on 2026-09-29.
 
 | Priority | Rule or family | Evidence-specific transformation | Eligibility | Why it fits MASSter | Source |
 |---:|---|---|---|---|---|
@@ -189,16 +302,20 @@ because the leaving atom maps differ.
 | 5 | `pyridyl_carbamate_alkyl_transfer` | Protonated pyridyl dialkylcarbamates transfer Me, Et, or nBu to the pyridyl residue | `[M+H]+` | The carbamate linker is discarded while an alkyl group is retained remotely | [Tetrahedron, 2015](https://www.sciencedirect.com/science/article/pii/S004040201401518X) |
 | 6 | `n_fluoro_sulfonamide_f_transfer` | Deprotonated ArSO2NF gives SO2F- plus the aryl-nitrogen remainder | `[M-H]-` | F and the sulfonyl group become a new charged assembly | [Rapid Communications in Mass Spectrometry, 2024](https://doi.org/10.1002/rcm.9722) |
 
-The anisoyl rule is excluded when EI fragmentation-mode metadata is missing. The other
-new rules are restricted by precursor type even when fragmentation mode is unavailable.
-The general shared BFS registries remain unchanged.
+The anisoyl rule also requires `EI` fragmentation mode and is dropped when that metadata is
+missing. NIST20 tandem spectra are HCD or CID and no MASSter config lists `EI`, so it never
+fired, and it was disabled on 2026-09-29. The other new rules are restricted by precursor type even when fragmentation mode is
+unavailable. The general shared BFS registries remain unchanged.
 
 ## Verified ESI-CID expansion candidates
 
 The following candidates were checked against primary reports that explicitly used
 electrospray ionization followed by collisional activation. None of these candidates
-requires EI metadata. They are not executable yet: each still needs an exact mapped
-product, a coverage-delta check, and positive/negative SMARTS tests.
+requires EI metadata. The 2026-09-27 gate screened most of them one at a time; the Status
+column records the outcome, detailed in
+[Rules added by the per-class gate](#rules-added-by-the-per-class-gate-2026-09-27). An
+untested row still needs an exact mapped product, a coverage-delta check, and
+positive/negative SMARTS tests.
 
 Priority `A` means the paper identifies the transferred heavy atom or group and the
 proposed product appears to combine precursor atoms that ordinary bond deletion would
@@ -206,34 +323,30 @@ separate. Priority `B` means the chemistry is supported but the scope, multistag
 or product mapping needs more work. Priority `C` requires metadata or graph handling
 beyond a narrow small-molecule SMARTS.
 
-| Priority | Proposed family | ESI eligibility | Rearranged candidate to encode | Remaining guard or mapping issue | Primary source |
-|---|---|---|---|---|---|
-| A | `n_methylanilinoethanol_o_smiles` | `[M-H]-`, CID or HCD | Phenoxide retains the aryl group and terminal alcohol O while the intervening N-alkyl chain leaves | Require N-alkyl substitution; the N-H analogue follows a different pathway and N-ethyl gives much less product | [JASMS, 2022](https://doi.org/10.1021/jasms.2c00210) |
-| A | `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | `[M-H]-`, CID | Phenoxide contains the arylsulfonyl ring plus the oxygen transferred from the remote amide carbonyl | Keep N-acyl sulfonamides separate from primary sulfonamides and the existing SO2 rules | [JASMS, 2021](https://pubmed.ncbi.nlm.nih.gov/33586949/) |
-| A | `diacylhydrazine_carboxylate_o_transfer` | `[M-H]-`, CID | `[R1CO2]-` is assembled by transferring the opposite amide oxygen to the R1 carbonyl carbon | Evidence is for `R1C(O)-N(t-Bu)NH-C(O)R2`; encode the tert-butyl and side-specific O map | [PLOS ONE, 2013](https://doi.org/10.1371/journal.pone.0063097) |
-| A | `nitrobenzyl_hydroxybenzoate_co2_coupling` | `[M-H]-`, CID | CO2 loss is followed by coupling of the retained 4-nitrobenzyl and hydroxyaryl groups | Require a phenolic anion and the para-nitrobenzyl ester; validate vanillate substitutions separately | [JASMS, 2016](https://doi.org/10.1007/s13361-016-1339-7) |
-| A | `proline_benzyl_ester_n_benzyl_transfer` | `[M+H]+`, CID | Benzyl transfers from the ester oxygen to the proline N while H2O and CO are lost | Separate the N-benzyl product from the competing benzyl-cation and hydride-transfer channels | [Journal of Mass Spectrometry, 2013](https://doi.org/10.1002/jms.3162) |
-| B | `pirimicarb_pyrimidinyl_carbamate_methyl_transfer` | Positive ESI, collisional activation | Proposed methyl transfer in pirimicarb accompanies the reported nominal 57 Da loss | Current pyridyl rule does not match this pyrimidine scaffold; extract Figure 6 atom mapping and prove additional coverage before implementation | [Molecules, 2018, section 2.3/Figure 6](https://pmc.ncbi.nlm.nih.gov/articles/PMC6222809/) |
-| A | `phenylalanine_carboxyl_o_transfer` | `[M+H]+`, CID/MS3 | After NH3 and CH2CO loss, carboxyl O is retained with the benzyl/aryl residue as a hydroxybenzyl cation | This is sequential and has competing benzyl-O versus ortho-aryl-O products with the same formula | [Frontiers in Chemistry, 2023](https://doi.org/10.3389/fchem.2022.1094329) |
-| A | `primary_aryl_sulfonamide_o_transfer` | `[M+H]+`, CID/MS3 | A sulfonyl O transfers to the aryl ring to form a substituted phenoxonium ion | Product abundance depends strongly on ring substituents; require a supported conjugating substituent guard | [International Journal of Mass Spectrometry, 2019](https://doi.org/10.1016/j.ijms.2018.09.033) |
-| B | `prazole_sulfone_so2_extraction` | Positive ESI, CID | Prazole sulfones lose the SO2 linker and form an N-(2-benzimidazolyl)pyridine framework | Restrict to sulfones; sulfoxides rarely form the product, thioethers require an additional SH-radical loss, and pyridine N-oxides are negative controls | [Molecules, 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/) |
-| B | `pyrimidylsulfanyl_benzamide_dual_smiles` | `[M-H]-`, CID | Two competing Smiles products retain either the dimethoxypyrimidyl side or the N-phenylamide side across the thiosalicyl linker | Requires two product templates and substituent-sensitive scoring | [JASMS, 2007](https://doi.org/10.1016/j.jasms.2007.07.012) |
-| B | `sulfonylurea_herbicide_n_o_smiles` | `[M-H]-`, CID | Nitrogen- and oxygen-initiated Smiles channels produce alternative remotely assembled fragments | Evidence is strongest for rimsulfuron and nicosulfuron, not a generic sulfonylurea pattern | [Chinese Journal of Chemistry, 2012](https://doi.org/10.1002/cjoc.201200610) |
-| B | `n_terminal_protected_amino_acid_o_migration` | Negative ESI, CID | A carboxyl oxygen participates through a five-membered transition state in protected Ser/Thr/Tyr derivatives | Exact retained atom maps must be extracted; activation depends on whether the C terminus is blocked | [Indian Journal of Biochemistry & Biophysics, 2006](https://pubmed.ncbi.nlm.nih.gov/17285801/) |
-| B | `benzaldimine_hcn_benzyl_transfer` | `[M+H]+`, CID | Protonated N-benzylbenzaldimines lose HCN while benzyl transfer couples atoms from opposite sides of the imine | Start with the reported p-methoxybenzylidene series; ring electronics control transfer | [JASMS, 2014](https://doi.org/10.1007/s13361-014-0935-7) |
-| B | `benzyl_phenyl_sulfone_benzyl_transfer` | `[M+H]+`, CID | Benzyl transfers across the sulfone before formation of characteristic product ions | The abstract establishes transfer across substituted analogues but the exact charged product map still requires full-scheme extraction | [Journal of Mass Spectrometry, 2021](https://pubmed.ncbi.nlm.nih.gov/33295108/) |
-| B | `dibenzylaniline_benzene_loss_transfer` | `[M+H]+`, CID | A benzyl group transfers to a benzylic or aniline ring, followed by benzene loss | Two transfer destinations and several subsequent H shifts require separate atom-map validation | [Journal of Mass Spectrometry, 2017](https://pubmed.ncbi.nlm.nih.gov/28109035/) |
-| B | `chromene_sulfonamide_sulfonyl_transfer` | `[M+H]+`, CID | Sulfonyl cation transfers from N to a phenyl carbon, then benzenesulfinic acid is lost with cyclization | Extremely narrow chromene-imine scaffold; electron-donating substituents favor the pathway | [Rapid Communications in Mass Spectrometry, 2016](https://pubmed.ncbi.nlm.nih.gov/26661975/) |
-| B | `n_aryl_methacrylamide_co_claisen` | `[M+H]+`, CID | Amide Claisen rearrangement enables CO loss and a cyclized retained assembly | Electron-donating para substituents favor the reaction; product topology and atom map are multistep | [JASMS, 2012](https://pubmed.ncbi.nlm.nih.gov/23055072/) |
-| B | `dichlorvos_phosphate_halogen_transfer` | `[M+H]+`, CID | P-O cleavage is followed by halogen-assisted transfer that forms protonated dimethyl halophosphate | Narrow organophosphate scaffold; Cl, Br, and F analogues were examined, but halogen and H maps must both be verified | [JASMS, 2017](https://doi.org/10.1007/s13361-017-1736-6) |
-| B | `pfas_sulfonyl_f_transfer` | Negative ESI, CID/AIF | Perfluoroalkyl sulfonate or sulfinate loses CF2 and transfers F to give `FSO3-` or `FSO2-` | Keep sulfonates and sulfinates separate and restrict chain patterns to the studied PFAS series | [Rapid Communications in Mass Spectrometry, 2026](https://doi.org/10.1002/rcm.70035) |
-| C | `protonated_glycan_fucose_transfer` | `[M+H]+` or `[M+NH4]+`, CID/in-source activation | A terminal fucose is retained on a remote glycan fragment, including inter-antenna transfer | Do not apply to `[M+Na]+` or `[M-H]-`; arbitrary glycan rings, multiple acceptor sites, and mobile-proton dependence make one SMARTS insufficient | [JASMS, 2002](https://pubmed.ncbi.nlm.nih.gov/11951970/), [Angewandte Chemie, 2018](https://pubmed.ncbi.nlm.nih.gov/29688603/) |
-| C | `trimethyllysine_peptide_methyl_transfer` | Singly charged protonated peptide, CID | A methyl from trimethyllysine is retained on a remote C-terminal Arg fragment after backbone cleavage | Explicit precursor charge state and peptide-residue context are required; the transfer is absent for doubly charged ESI ions | [JASMS, 2009](https://pmc.ncbi.nlm.nih.gov/articles/PMC2709603/) |
-| C | `phosphopeptide_phosphate_relocation` | Positive or negative ESI, low-energy CID | A phosphate can relocate before backbone cleavage, yielding non-native phosphorylated sequence ions | Charge, basic residues, residue spacing, and activation method matter; HCD does not show the same slow-CID relocation | [International Journal of Mass Spectrometry, 2015](https://pmc.ncbi.nlm.nih.gov/articles/PMC4375673/), [JASMS, 2017](https://pmc.ncbi.nlm.nih.gov/articles/PMC5479408/) |
-
-The first implementation batch should come from priority `A`, but not all seven rules
-should be enabled at once. Measure corpus match counts and ordinary-mechanism coverage
-for each rule independently before deciding which candidates justify model capacity.
+| Priority | Proposed family | Status | ESI eligibility | Rearranged candidate to encode | Remaining guard or mapping issue | Primary source |
+|---|---|---|---|---|---|---|
+| A | `n_methylanilinoethanol_o_smiles` | Inconclusive: 2 molecules, reachability search capped | `[M-H]-`, CID or HCD | Phenoxide retains the aryl group and terminal alcohol O while the intervening N-alkyl chain leaves | Require N-alkyl substitution; the N-H analogue follows a different pathway and N-ethyl gives much less product | [JASMS, 2022](https://doi.org/10.1021/jasms.2c00210) |
+| A | `n_acyl_aryl_sulfonamide_carbonyl_o_transfer` | Implemented 2026-09-27 | `[M-H]-`, CID | Phenoxide contains the arylsulfonyl ring plus the oxygen transferred from the remote amide carbonyl | Keep N-acyl sulfonamides separate from primary sulfonamides and the existing SO2 rules | [JASMS, 2021](https://pubmed.ncbi.nlm.nih.gov/33586949/) |
+| A | `diacylhydrazine_carboxylate_o_transfer` | Implemented 2026-09-27 | `[M-H]-`, CID | `[R1CO2]-` is assembled by transferring the opposite amide oxygen to the R1 carbonyl carbon | Evidence is for `R1C(O)-N(t-Bu)NH-C(O)R2`; encode the tert-butyl and side-specific O map | [PLOS ONE, 2013](https://doi.org/10.1371/journal.pone.0063097) |
+| A | `nitrobenzyl_hydroxybenzoate_co2_coupling` | Not admitted: no NIST20 molecules | `[M-H]-`, CID | CO2 loss is followed by coupling of the retained 4-nitrobenzyl and hydroxyaryl groups | Require a phenolic anion and the para-nitrobenzyl ester; validate vanillate substitutions separately | [JASMS, 2016](https://doi.org/10.1007/s13361-016-1339-7) |
+| A | `proline_benzyl_ester_n_benzyl_transfer` | Not admitted: three or fewer NIST20 molecules | `[M+H]+`, CID | Benzyl transfers from the ester oxygen to the proline N while H2O and CO are lost | Separate the N-benzyl product from the competing benzyl-cation and hydride-transfer channels | [Journal of Mass Spectrometry, 2013](https://doi.org/10.1002/jms.3162) |
+| B | `pirimicarb_pyrimidinyl_carbamate_methyl_transfer` | Not admitted: three or fewer NIST20 molecules | Positive ESI, collisional activation | Proposed methyl transfer in pirimicarb accompanies the reported nominal 57 Da loss | Current pyridyl rule does not match this pyrimidine scaffold; extract Figure 6 atom mapping and prove additional coverage before implementation | [Molecules, 2018, section 2.3/Figure 6](https://pmc.ncbi.nlm.nih.gov/articles/PMC6222809/) |
+| A | `phenylalanine_carboxyl_o_transfer` | Implemented 2026-09-27 (weak) | `[M+H]+`, CID/MS3 | After NH3 and CH2CO loss, carboxyl O is retained with the benzyl/aryl residue as a hydroxybenzyl cation | This is sequential and has competing benzyl-O versus ortho-aryl-O products with the same formula | [Frontiers in Chemistry, 2023](https://doi.org/10.3389/fchem.2022.1094329) |
+| A | `primary_aryl_sulfonamide_o_transfer` | Implemented 2026-09-27 | `[M+H]+`, CID/MS3 | A sulfonyl O transfers to the aryl ring to form a substituted phenoxonium ion | Product abundance depends strongly on ring substituents; require a supported conjugating substituent guard | [International Journal of Mass Spectrometry, 2019](https://doi.org/10.1016/j.ijms.2018.09.033) |
+| B | `prazole_sulfone_so2_extraction` | Not admitted: no NIST20 molecules | Positive ESI, CID | Prazole sulfones lose the SO2 linker and form an N-(2-benzimidazolyl)pyridine framework | Restrict to sulfones; sulfoxides rarely form the product, thioethers require an additional SH-radical loss, and pyridine N-oxides are negative controls | [Molecules, 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/) |
+| B | `pyrimidylsulfanyl_benzamide_dual_smiles` | Not admitted: no NIST20 molecules | `[M-H]-`, CID | Two competing Smiles products retain either the dimethoxypyrimidyl side or the N-phenylamide side across the thiosalicyl linker | Requires two product templates and substituent-sensitive scoring | [JASMS, 2007](https://doi.org/10.1016/j.jasms.2007.07.012) |
+| B | `sulfonylurea_herbicide_n_o_smiles` | Not encoded: product map unresolved (16 molecules) | `[M-H]-`, CID | Nitrogen- and oxygen-initiated Smiles channels produce alternative remotely assembled fragments | Evidence is strongest for rimsulfuron and nicosulfuron, not a generic sulfonylurea pattern | [Chinese Journal of Chemistry, 2012](https://doi.org/10.1002/cjoc.201200610) |
+| B | `n_terminal_protected_amino_acid_o_migration` | Untested | Negative ESI, CID | A carboxyl oxygen participates through a five-membered transition state in protected Ser/Thr/Tyr derivatives | Exact retained atom maps must be extracted; activation depends on whether the C terminus is blocked | [Indian Journal of Biochemistry & Biophysics, 2006](https://pubmed.ncbi.nlm.nih.gov/17285801/) |
+| B | `benzaldimine_hcn_benzyl_transfer` | Not admitted: no NIST20 molecules | `[M+H]+`, CID | Protonated N-benzylbenzaldimines lose HCN while benzyl transfer couples atoms from opposite sides of the imine | Start with the reported p-methoxybenzylidene series; ring electronics control transfer | [JASMS, 2014](https://doi.org/10.1007/s13361-014-0935-7) |
+| B | `benzyl_phenyl_sulfone_benzyl_transfer` | Not encoded: product map unresolved (10 molecules) | `[M+H]+`, CID | Benzyl transfers across the sulfone before formation of characteristic product ions | The abstract establishes transfer across substituted analogues but the exact charged product map still requires full-scheme extraction | [Journal of Mass Spectrometry, 2021](https://pubmed.ncbi.nlm.nih.gov/33295108/) |
+| B | `dibenzylaniline_benzene_loss_transfer` | Not admitted: no NIST20 molecules | `[M+H]+`, CID | A benzyl group transfers to a benzylic or aniline ring, followed by benzene loss | Two transfer destinations and several subsequent H shifts require separate atom-map validation | [Journal of Mass Spectrometry, 2017](https://pubmed.ncbi.nlm.nih.gov/28109035/) |
+| B | `chromene_sulfonamide_sulfonyl_transfer` | Untested | `[M+H]+`, CID | Sulfonyl cation transfers from N to a phenyl carbon, then benzenesulfinic acid is lost with cyclization | Extremely narrow chromene-imine scaffold; electron-donating substituents favor the pathway | [Rapid Communications in Mass Spectrometry, 2016](https://pubmed.ncbi.nlm.nih.gov/26661975/) |
+| B | `n_aryl_methacrylamide_co_claisen` | Not admitted: three or fewer NIST20 molecules | `[M+H]+`, CID | Amide Claisen rearrangement enables CO loss and a cyclized retained assembly | Electron-donating para substituents favor the reaction; product topology and atom map are multistep | [JASMS, 2012](https://pubmed.ncbi.nlm.nih.gov/23055072/) |
+| B | `dichlorvos_phosphate_halogen_transfer` | Not admitted: three or fewer NIST20 molecules | `[M+H]+`, CID | P-O cleavage is followed by halogen-assisted transfer that forms protonated dimethyl halophosphate | Narrow organophosphate scaffold; Cl, Br, and F analogues were examined, but halogen and H maps must both be verified | [JASMS, 2017](https://doi.org/10.1007/s13361-017-1736-6) |
+| B | `pfas_sulfonyl_f_transfer` | Sulfonate implemented 2026-09-27 as `pfas_sulfonate_f_transfer`; sulfinate: no NIST20 molecules | Negative ESI, CID/AIF | Perfluoroalkyl sulfonate or sulfinate loses CF2 and transfers F to give `FSO3-` or `FSO2-` | Keep sulfonates and sulfinates separate and restrict chain patterns to the studied PFAS series | [Rapid Communications in Mass Spectrometry, 2026](https://doi.org/10.1002/rcm.70035) |
+| C | `protonated_glycan_fucose_transfer` | Untested | `[M+H]+` or `[M+NH4]+`, CID/in-source activation | A terminal fucose is retained on a remote glycan fragment, including inter-antenna transfer | Do not apply to `[M+Na]+` or `[M-H]-`; arbitrary glycan rings, multiple acceptor sites, and mobile-proton dependence make one SMARTS insufficient | [JASMS, 2002](https://pubmed.ncbi.nlm.nih.gov/11951970/), [Angewandte Chemie, 2018](https://pubmed.ncbi.nlm.nih.gov/29688603/) |
+| C | `trimethyllysine_peptide_methyl_transfer` | Untested | Singly charged protonated peptide, CID | A methyl from trimethyllysine is retained on a remote C-terminal Arg fragment after backbone cleavage | Explicit precursor charge state and peptide-residue context are required; the transfer is absent for doubly charged ESI ions | [JASMS, 2009](https://pmc.ncbi.nlm.nih.gov/articles/PMC2709603/) |
+| C | `phosphopeptide_phosphate_relocation` | Untested | Positive or negative ESI, low-energy CID | A phosphate can relocate before backbone cleavage, yielding non-native phosphorylated sequence ions | Charge, basic residues, residue spacing, and activation method matter; HCD does not show the same slow-CID relocation | [International Journal of Mass Spectrometry, 2015](https://pmc.ncbi.nlm.nih.gov/articles/PMC4375673/), [JASMS, 2017](https://pmc.ncbi.nlm.nih.gov/articles/PMC5479408/) |
 
 ## Additional literature backlog
 
@@ -283,8 +396,9 @@ SMARTS.
 
 ## Validation gate for every new rule
 
-A literature mechanism is not ready for the allowlist until it passes all of these
-checks:
+A literature mechanism enters the registry only after checks 1-6 and 8. Check 7 decides
+whether templates are enabled by default; no rule has passed it, because no ablation has
+run.
 
 1. **SMARTS specificity:** positive examples match; close negative controls do not.
 2. **Map correctness:** retained and neutral map numbers partition the intended
@@ -292,8 +406,7 @@ checks:
 3. **Formula conservation:** calculated neutral composition and exact mass agree with
    the proposed mechanism; hydrogen differences stay within the configured channel
    range.
-4. **Coverage delta:** the rule produces at least one target atom set or partition not
-   available from the ordinary mechanism under the same candidate budget.
+4. **Coverage delta:** admission criterion 2, measured with the 2026-09-27 per-class gate.
 5. **Candidate load:** corpus-wide match counts and candidates per molecule remain
    acceptably small.
 6. **Spectral evidence:** the added candidate explains reproducible peaks in held-out
@@ -310,7 +423,10 @@ configuration.
 
 ## Maintenance
 
-When the allowlist changes, update this document and verify the count against
-`MASSTER_NUM_RULES`. Keep broad chemistry surveys in
-[`rearrangement_smarts.md`](rearrangement_smarts.md); this file should remain the
-decision record for MASSter candidate generation.
+When the allowlist changes, update this document and record the date. Append a new rule's
+name to `MASSTER_RULE_VOCABULARY`, and never remove or reorder a name there; to drop a rule,
+comment it out of the allowlist, as on 2026-09-29
+([How MASSter represents a rule](#how-masster-represents-a-rule)). `MASSTER_NUM_RULES`
+counts the vocabulary, not the registered rules. Keep broad chemistry surveys in
+[`rearrangement_smarts.md`](rearrangement_smarts.md); this file should remain the decision
+record for MASSter candidate generation.

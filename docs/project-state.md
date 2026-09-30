@@ -1,8 +1,29 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-29
+> **Status:** REFERENCE · **Updated:** 2026-09-30
 
 ## Current handoff
+
+**`i1` conditional candidate-choice comparison (2026-09-30); step 2 complete.** Added the
+strongest alternative for successful predictions and compared 50,607 eligible spectra with
+molecule-level matching and replication. Broad fragment-only difficulty repeats for extra cuts,
+ring cleavage and H shifts. Familiarity is the only primary chemical-choice contrast passing
+replication (-7.3 points error on its supported subset), but 95.6% of that match weight involves
+a precursor. Strict fragment-only cut-count support is just 12 molecules; no specific cut rule
+or new training signal is established. Forty-two focused tests and an independent effect audit
+passed. [Finding, support limits and artifacts](findings/masster/masster_i1_pair_contrasts_2026_09_30.md).
+
+
+**`i1` ambiguity-preserving fragment-pair table (2026-09-30); step 1 complete.** Fresh annotated
+inference on all 52,020 val spectra: 19,325 covered base-peak misses, 31,380 hits and 1,315
+base-peak coverage failures. All compatible channels are retained; 73.0% of ranking pairs have
+multiple target-compatible atom sets. Thirty-four focused tests and the full internal/target
+artifact audit passed. Historical cache comparison: all outcome labels agree, but one winner
+and a small number of channel groups differ; the finding records the unresolved discrepancy.
+No correction fit or chemical rule established. The conditional comparison is now complete
+(see step 2 above); untouched evaluation remains reserved for a concrete future correction.
+[Finding and artifact schema](findings/masster/masster_i1_fragment_pairs_2026_09_30.md).
+
 
 **MASSter on NIST23 EI (2026-09-30); built and smoke-tested, uncommitted, not submitted.**
 User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`, not
@@ -26,6 +47,26 @@ User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`
 - **Next:** put the EI data on Fir, add a submitter stage and submit `e1`/`e0` when the user
   decides. The EI library metrics and the isotope labels in the export are open.
 - [Plan](plans/masster/masster_ei_nominal_plan.md).
+
+**What `i1`'s worst val predictions miss (2026-09-30); inference only, complete.** Ranked by `cos_hun_inst_tol` (user decision: instrument tolerance, not 0.01 Da bins).
+- **The logged-metric floor is mostly binning.** 497 of the 903 spectra below 0.05 on `cos_sim_0.01` score ≥ 0.5 at instrument tolerance, as do 76 of the worst 100. A 1–4 ppm measured offset crosses a 0.01 Da edge; train has the same count. Worst-spectrum reads should use the inst-tol cosine.
+- **The real floor is 330 spectra / 119 molecules, against 4 on the train sample.**
+  - In 76% of floor spectra the measured base-peak fragment is outside the bond head's top 3 (median proposal rank 20), and the intensity head also ranks it low (median 13). In `i1` the two heads score independently and share only the encoder: selection-only mode leaves the final logits to the intensity head, and the bond head, on detached inputs, learns only from a 0.1-weighted m/z-coverage loss.
+  - Floor targets depart from their train analogues 3–7× more than train molecules at matched Tanimoto; about 20% are transfer failures.
+  - Uncovered candidates are 12% of the floor: half rearrangement (no phosphonate or siloxane rule exists), 18% recovered by a 4× mask budget.
+  - Not a conditioning input, not the energy scale, not bad data (~3.6%).
+- **Follow-up.**
+  - **Not the encoder.** Frozen-embedding classifiers predict cut sites on new molecules as well as the bond head, and beat it on the floor (AUC 0.79 against 0.73).
+  - **No tested arm fixes the floor.** On a floor chosen by an independent checkpoint, `fa1` and `i3` are level with `i1`. The earlier `fa1` tail gain came from using the same-run `i1`@63 as the control.
+  - **Whole val does rise:** `i3` +0.0098 and `fa1` +0.0060 beyond `i1`@63, and averaging `i1`'s epoch-59 and -63 predicted spectra gives +0.0138.
+  - **About half the floor set changes between epochs 59 and 63.**
+  - **Keep selection-only.** Adding the bond head's scores offline (the joint readout at frozen weights) lowers the cosine at every strength: floor −0.007 and whole val −0.031 at α = 0.5.
+  - **Where a fix can act.** In selection-only mode the bond head only picks candidates. Bond-head supervision (e.g. `masster_proposal_loss_weight` above 0.1, never ablated) can reach only the 12% of the floor with missing candidates. The 88% ranking failure sits in the intensity head.
+  - **Read done:** `i3` on the floor (see the finding's `i3` section).
+- **Nitro and sulfonyl failures** run through the group's own heteroatom bonds. The model gets the radical/even-electron choice wrong, and sulfonamides also lack SO2-extrusion candidates.
+- **Next steps (not built):** a cut-level training signal that reaches the intensity head, pairwise candidate preferences, and `cm1` (mixed evidence; the code survives only in `/tmp/frag_gnn_cm_revert_20260929/`). A cheap offline check comes first: add probe cut scores to the intensity logits.
+- **Open:** a joint per-molecule table of causes.
+- [Finding](findings/masster/masster_i1_worst_predictions_2026_09_30.md).
 
 **NCE into the MASSter molecule encoder: `ce1`/`ce2` built (2026-09-30); uncommitted, not
 submitted.** Traced on `i1`: every head sees NCE, but only through one 128-d context vector. The
@@ -64,6 +105,20 @@ missing instrument input.
 - **Not retired:** the `c0`-lineage reads on the same `FT` labels (Batches 1-4, the `c0`
   set-message probe). They are flagged in the energy-vs-parts banner only.
 
+**MASSter SMARTS: 8 rules disabled, and the per-class gate run on Enveda-180 (2026-09-29);
+uncommitted, no model trained.**
+- **Disabled (user decision):** 8 of the 22 rules are commented out in `masster_templates.py`,
+  tagged `DISABLED 2026-09-29`.
+  - Five add no m/z coverage on NIST20 (formula twins) and nothing on `c0`'s pool; three match
+    no NIST20 spectrum.
+  - Their names keep their `MASSTER_RULE_VOCABULARY` slots, so no index moves.
+  - 14 rules are registered; the template tests pass (972).
+- **Enveda-180:** the gate was run on all 41 SMARTS rules in the code.
+  - 5 pass, all S=O rules; only primary sulfonamide SO2 in `[M-H]-` reaches 1%.
+  - They are 2-10x weaker than on NIST20, and none of the 8 disabled rules finds support.
+- [Catalog](reference/masster_smarts_rules.md#disabled-rules-2026-09-29) ·
+  [Enveda finding](findings/masster/masster_smarts_enveda_gate_2026_09_29.md).
+
 **Mass-window ladder and `cg1`, mid-run read at epoch 34 (2026-09-30 UTC): restricting attention
 never helps; the containment graph costs least.** Epoch-matched against `fa1`, epochs 25-34:
 `mw30` −0.0062, `mw10` −0.0117, `mlp1` (no exchange) −0.0112 and `cg1` −0.0043. For reference,
@@ -78,12 +133,25 @@ so restriction underfits.
   `cg1`'s tail against `fa1`, `fa1_s2` and `mw30`.
 - [Read](plans/masster/masster_memorization_route_plan.md#mid-run-read-at-epoch-34-2026-09-30-utc-restriction-costs-cosine-the-graph-costs-least).
 
-**Memorization-route arms rerun on OB/OB_F (2026-09-29); built, stage `rerun` not submitted.**
-`r2`, `r1`, `r0`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf` (the FT arm's keys only;
-upload off), plus `fa1_s2` as the second `fa1` seed; each builds, and passes a 2-epoch GPU smoke run.
-`cg1`, `mw30`, `mw10` and `mlp1` are submitted on Fir. The 33 FT-label configs of the directory are
-removed (Git `8c52c6d3`); the submitter keeps only OB/OB_F stages.
-[Plan](plans/masster/masster_memorization_route_plan.md).
+**SMARTS in the MASSter pathway (2026-09-30); CLOSED NULL: every gate failed, no arm runs.**
+Pre-registered gates, NIST20 only (MONA excluded, user decision), 14-rule registry.
+G0 `[M-H]-` coverage ceiling +0.00125 [0.00091, 0.00163] < 0.003, so `t1i` on `[M-H]-` does not
+run. G1 on `i1` is STOP: headroom −0.000012 and `rules` over context +0.000026, both CIs ≪ 0.003,
+so `p1` does not run. G2 promoted 0 families: the real nitro and sulfonamide effects are
+blocked by the no-caps and load rules. G2b bridge and graft equal the null, so Track B fails
+(`p1c`). Phase 0 code and the `p1` token stay built (off by default), and the `t1i`/`p1`
+configs were never submitted. Open to the user: D2 (template-subset target, G0 subset value
+0.022). [Finding](findings/masster/masster_smarts_pathway_gates_2026_09_30.md),
+[plan](plans/masster/masster_smarts_pathway_plan.md).
+
+**Memorization-route arms rerun on OB/OB_F (2026-09-29); stage `rerun` running on Fir since
+2026-09-30 03:06 UTC.** `r2`, `r1`, `r0`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf` (the
+FT arm's keys only; upload off), plus `fa1_s2` as the second `fa1` seed. `cg1`, `mw30`, `mw10` and
+`mlp1` are also running. The 33 FT-label configs of the directory are removed (Git `8c52c6d3`); the
+submitter keeps only OB/OB_F stages. Mid-run, at epoch 25, the set-key mask `sd1` (`f3fu90zn`) is
+−0.0011 against `i1`, inside the seed gap, with train and val loss both worse: not a pass.
+[Plan](plans/masster/masster_memorization_route_plan.md) ·
+[`sd1` read](plans/masster/masster_memorization_route_plan.md#mid-run-read-of-sd1-at-epoch-25-2026-09-30-utc-no-gain-from-masking-the-set-keys).
 
 **Candidate-graph attention `cg1` (2026-09-29); running on Fir (`c8k6e244`), mid-run read in the
 ladder entry above.** `fa1` plus

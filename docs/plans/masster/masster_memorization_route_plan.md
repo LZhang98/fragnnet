@@ -4,6 +4,10 @@
 > **2026-09-30: `f0`/`f1` results retired (user decision).** Step 0's route map and the earlier
 > route probe ran on them; on `i1` the route map is the
 > [memorization read](#memorization-read-on-i1-2026-09-28).
+> **2026-09-30: [mid-run read of `sd1` on OB/OB_F](#mid-run-read-of-sd1-at-epoch-25-2026-09-30-utc-no-gain-from-masking-the-set-keys)
+> at epoch 25.** Masking the set transformer's keys gives no gain over `i1`: −0.0011 over epochs
+> 16-25, inside the `fa1_s2` seed gap (−0.0027), with train and val loss both worse. No finished
+> pair on this lineage drifted enough late to reach +0.005.
 > **2026-09-30: [mid-run read of the window ladder](#mid-run-read-at-epoch-34-2026-09-30-utc-restriction-costs-cosine-the-graph-costs-least)
 > at epoch 34.** Restricting attention never helps: `mw30` −0.0062, `mw10` −0.0117 and `mlp1`
 > −0.0112 against `fa1`, with train and val loss both worse. `cg1`'s containment graph reads less
@@ -2299,6 +2303,45 @@ sets.
   `mw30`. Stopping `mw10` and `mlp1` now saves about 1.5 and 1.1 GPU-hours.
 - One seed each, mid-run. `fa1` may be a lucky seed (`fa1_s2` trails it by about 0.004), which
   would shrink every "− `fa1`" column but not the ordering.
+
+## Route arms rerun on OB/OB_F (stage `rerun`, submitted 2026-09-30 03:06 UTC)
+
+`r0`, `r1`, `r2`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf`, plus `fa1_s2`, the second
+`fa1` seed. All seven are running on Fir. Control for the route arms: `i1` (`i50ig7rf`, tail
+0.7607). Pulled histories and the read script: `output/rerun_ob_obf_read_2026_09_30/`.
+
+### Mid-run read of `sd1` at epoch 25 (2026-09-30 UTC): no gain from masking the set keys
+
+`sd1_set_key_dropout_ob_obf` (`f3fu90zn`) is `i1` plus `masster_set_key_dropout: 0.3`: in
+training, each candidate is hidden, per induced layer, from the keys the 64 inducing tokens
+summarize its set from ([section](#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
+Epoch-matched against `i1`, Batch 5 method, epochs 0-25. `fa1_s2` − `fa1` is the same-config
+seed gap.
+
+| contrast | epochs 0-9 | 10-19 | 16-25 | ahead, 0-25 | train loss, 21-25 | val loss, 21-25 | min/epoch |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| `sd1` − `i1` | −0.0019 | −0.0016 | −0.0011 | 8 of 26 | +0.0054 | +0.0066 | 3.09 against 3.07 |
+| `fa1_s2` − `fa1` | −0.0048 | −0.0027 | −0.0027 | 4 of 26 | +0.0011 | +0.0111 | 2.98 against 2.99 |
+
+- **`sd1` sits slightly below `i1`, by less than the seed gap.** It trails in 7 of the last 10
+  epochs. Its best so far, 0.7523, equals `i1`'s best through epoch 25 (0.7520). `wrecall` moves
+  by −0.0001.
+- **The mask removes fit that transferred.** Train loss and val loss are both worse in 24 of 26
+  epochs from epoch 0 (lower is better). So the mask is live, and it does not trade train fit for
+  val. This matches the window ladder above: restricting what the allocator reads underfits.
+- **A +0.005 tail would need a late gain this lineage has never shown.** It needs +0.0061 of
+  drift from epochs 16-25 to 54-63. Over 11 finished pairs (`fa1`, `mz1`, `i2`-`i4` on OB/OB_F;
+  `sd1`, `sm1`, `k1`, `k1_ema`, `m2`, `gm1` against `c0` on FT) that drift ranges from −0.0028 to
+  +0.0053, mean +0.0008. The largest belongs to `sm1`, a null arm. On FT, `sd1` went from +0.0017
+  to +0.0043, itself under the rule.
+- **Checks.**
+  - An independent recomputation reproduces every number.
+  - Through `load_config`, `sd1` differs from `i1` by the key, `upload_checkpoints` and W&B naming.
+  - The W&B hparams add only keys `i1` predates, all at their template defaults.
+  - Commits between the two runs do not touch `_drop_set_keys` or its wiring.
+- **Verdict at mid-run.** Not a pass, and not expected to become one. The FT +0.0043 over `c0`
+  does not reappear over `i1`. The FT figure was never above the one-seed rule. Stopping `sd1` now
+  saves about 2 GPU-hours; letting it finish gives the tail the rule is written for.
 
 ## NCE into the molecule encoder: `ce1` (condition) and `ce2` (attended) (built 2026-09-30, not submitted)
 
