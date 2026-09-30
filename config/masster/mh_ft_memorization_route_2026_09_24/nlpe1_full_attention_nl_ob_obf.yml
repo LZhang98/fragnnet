@@ -330,7 +330,9 @@ pl_enable_progress_bar: true
 # both checkpoints have to outlive their job's scratch directory and be fetchable from
 # somewhere other than the cluster checkout. Requires the run to be online (w=online, which the
 # submitter passes). Retrieve with scripts/wandb_scripts/wandb_download_ckpts.py.
-upload_checkpoints: true
+# User, 2026-09-29: no upload for now. The checkpoints stay in the job's Fir checkpoint
+# directory; offline reads need them copied from there.
+upload_checkpoints: false
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
