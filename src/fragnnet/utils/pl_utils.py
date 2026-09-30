@@ -502,7 +502,4 @@ def get_pl_hparams(ckpt: dict) -> dict:
             hyper_parameters["masster_fragment_selection"] = "mask_order"
         if "masster_selected_fragment_target" not in hyper_parameters:
             hyper_parameters["masster_selected_fragment_target"] = None
-        # Checkpoints from before the neutral-loss position (2026-09-29) had none.
-        if "masster_intensity_nl_positional_encoding" not in hyper_parameters:
-            hyper_parameters["masster_intensity_nl_positional_encoding"] = False
     return hyper_parameters

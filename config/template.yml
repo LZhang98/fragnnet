@@ -1021,6 +1021,14 @@ masster_intensity_nl_positional_encoding: False
 # candidate sets (median 256 candidates over 274 Da), 30 Da reaches 29% of the set in one hop and
 # 50% in two; 100 Da reaches 91% in two. Requires attention_type: full.
 masster_intensity_mass_window: 0.0
+# Candidate-graph attention (arm cg1): each candidate attends only to itself, its direct parents
+# and direct children by atom containment (no candidate strictly between them), and its
+# complement (disjoint, together the whole precursor). The intact precursor contains every other
+# candidate, so it receives from its direct children but sends to none, or it would hand every
+# candidate the set's summary in one hop. A hard -inf mask on the attention logits built from the
+# unique-fragment memberships: no parameters, state dict unchanged. Stacks with the mass window
+# and the mass pair bias. Requires masster_unique_fragment_mode and attention_type: full.
+masster_intensity_candidate_graph: False
 # Collision-energy conditioning of the candidate ATTENTION itself, as opposed to the
 # per-candidate token. Both are zero-initialized, so enabling either is a no-op at step 0.
 # `ce_pair_bias` makes the neutral-loss RBF weights a function of collision energy, so

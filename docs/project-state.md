@@ -4,6 +4,26 @@
 
 ## Current handoff
 
+**Candidate-graph attention `cg1` (2026-09-29); built, not submitted.** `fa1` plus
+`masster_intensity_candidate_graph`: full candidate attention masked to direct containment and
+complements, with the precursor receiving only (`candidate_graph_edges`, no parameters). On `i1`'s
+candidate sets a candidate reads 2.6% of its set in one hop and 9.6% in two (10 Da window: 8.8% /
+15.9%); no candidate is isolated. 12 tests; all MASSter tests pass; 2-epoch GPU smoke runs. Next: submit stage `graph`
+on Fir when the user decides.
+[Section](plans/masster/masster_memorization_route_plan.md#candidate-graph-attention-cg1-on-fa1-built-2026-09-29-not-submitted).
+
+**Local scoring with a constrained context correction (2026-09-29); Stage 1 stopped by the user.**
+Frozen-token probe built (`scripts/debug/debug_masster_local_context_allocation.py`, 14 tests) on
+three producers: two local `i1` anchors and the full-data `i1` (user decision: `i1`, not `i4`, for
+the token check and 3A; ordinary `i3`/`i4` for 3B). Caches reproduce each checkpoint's logged
+selection cosine (A1 0.66750, A2 0.67015, F 0.76219). Fits run locally in lockstep and select on
+unseen tuning molecules only; the locked confirm read is reused selection data, so an untouched
+canonical-test read (user-approved) is added. Deviation: penalty strengths are offset-free
+(1%/10% of `L_uniform - L0`), since the Gaussian CE is negative. Stopped at A1 epoch 17 before
+any lock: raw tuning reads show the penalty acting like a temperature and the local term adding
+<= +0.001; no gate read exists. Cache arrays deleted (regenerable). Next: OB/OB_F reruns of the route-removal arms.
+[Plan](plans/masster/masster_local_context_allocation_plan.md#implementation-and-execution-state-2026-09-29).
+
 **Exact structural alignment audit (2026-09-29); complete, insufficient measured coverage.**
 358 training-only acquisition pairs, 110 query identities, 532 spectra at NCE [40,100). On 54
 unfamiliar query identities, formula matches retain 38.00% of measured intensity; adding exact

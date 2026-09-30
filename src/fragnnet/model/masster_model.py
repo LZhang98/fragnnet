@@ -66,6 +66,7 @@ from fragnnet.model.bond_fragment_heads import (
     _segment_logsumexp,
     _validate_tensor_condition,
     boundary_bond_endpoint_orientation,
+    candidate_graph_edges,
     component_charge_log_probabilities,
     component_membership_rows,
     fragment_internal_edges,
@@ -1121,6 +1122,7 @@ class MassterModel(nn.Module):
         encoder_atom_mask: float = 0.0,
         encoder_bond_dropout: float = 0.0,
         light_side_token: bool = False,
+        intensity_candidate_graph: bool = False,
     ) -> None:
         """Initialize the MASSter model.
 
@@ -1349,6 +1351,11 @@ class MassterModel(nn.Module):
                 head. The heavier side enters through the ``c_heavy_side`` descriptor alone.
                 Requires ``unique_fragment_mode`` and ``c_heavy_side`` in
                 ``candidate_features``.
+            intensity_candidate_graph: Candidate attention only along the candidate graph (arm
+                ``cg1``): each candidate attends to itself, its direct parents and children by
+                atom containment, and its complement; the intact precursor receives but never
+                sends. A -inf mask on full attention, so it adds no parameters. Requires
+                ``unique_fragment_mode`` and ``intensity_transformer_attention: full``.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1460,6 +1467,8 @@ class MassterModel(nn.Module):
             raise ValueError("memorization_sink_dropout requires memorization_sink_dim > 0")
         if light_side_token and not unique_fragment_mode:
             raise ValueError("light_side_token requires unique_fragment_mode")
+        if intensity_candidate_graph and not unique_fragment_mode:
+            raise ValueError("intensity_candidate_graph requires unique_fragment_mode")
         if light_side_token and "c_heavy_side" not in candidate_features:
             raise ValueError(
                 "light_side_token requires c_heavy_side in candidate_features: the head must "
@@ -1898,6 +1907,7 @@ class MassterModel(nn.Module):
             set_key_dropout=intensity_set_key_dropout,
             connectivity_embedding_dim=2 * self.fragment_connectivity_dim,
             nl_positional_encoding=intensity_nl_positional_encoding,
+            candidate_graph=intensity_candidate_graph,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
@@ -3436,6 +3446,18 @@ class MassterModel(nn.Module):
                 precursor_neutral_masses=(
                     candidate_inputs.precursor_neutral_masses
                     if self.intensity_head.nl_positional_encoding
+                    else None
+                ),
+                candidate_graph_edges=(
+                    candidate_graph_edges(
+                        fragment_atom_indices,
+                        atom_fragment_indices,
+                        fragment_batch_indices,
+                        mol_pyg.ptr[:-1],
+                        mol_pyg.ptr[1:] - mol_pyg.ptr[:-1],
+                        num_components=num_fragments,
+                    )
+                    if self.intensity_head.candidate_graph
                     else None
                 ),
             )

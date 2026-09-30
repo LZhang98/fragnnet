@@ -28,9 +28,12 @@
 >     ([section](#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted));
 >   - the key mask `sd1`
 >     ([section](#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
-> - Proposed, not built: the candidate-graph arms `fa0`/`cg1`/`cg2`, the user's GNN over the
->   candidates, as full attention masked to chemical neighbours
->   ([section](#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)).
+> - The candidate-graph arms `fa0`/`cg1`/`cg2`, the user's GNN over the candidates, as full
+>   attention masked to chemical neighbours
+>   ([section](#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)):
+>   `cg1` is built on `fa1` (2026-09-29, not submitted;
+>   [section](#candidate-graph-attention-cg1-on-fa1-built-2026-09-29-not-submitted)); `fa1` replaces
+>   `fa0` as its control, and `cg2` is not built.
 > - Built, not run: the restricted allocators. They are a mass window on full attention, the MLP
 >   (`attention: none`) and smaller induced sets, with a seven-run local queue
 >   ([section](#restricted-allocators-mass-window-no-attention-smaller-set-transformer-built-2026-09-27-not-run)).
@@ -1707,6 +1710,62 @@ measured on this lineage.
   - **If `cg1` reroutes,** try the training-only form, the audit's working pattern: graph-only
     attention with probability p per layer in training, full attention at evaluation.
 
+## Candidate-graph attention `cg1` on `fa1` (built 2026-09-29, not submitted)
+
+The user asked to build `cg1` (2026-09-29). It is the design above on the current lineage: `fa1`
+(`i1` plus full attention, `0vn8m2gr`, tail 0.7651) takes the role of `fa0`, and the arm adds one
+key. `cg2` is not built.
+
+- **Key.** `masster_intensity_candidate_graph` (default `False`), declared in
+  [`config/template.yml`](../../../config/template.yml). It requires unique-fragment mode and
+  `attention: full`; it adds no parameters and leaves the state dict unchanged. Checkpoints
+  from before the key load with it off through the template plus the training config, as for the
+  other 2026-09-29 keys; no backfill.
+- **Edges** ([`candidate_graph_edges`](../../../src/fragnnet/model/bond_fragment_heads.py)). Per
+  spectrum, from the unique-fragment memberships (the true atom sets, not the atom-dropout
+  pools): `M Mᵀ` counts shared atoms; `i` lies strictly inside `j` when they share all of `i`'s
+  atoms and `j` is larger; the containment matrix times itself marks pairs with a candidate
+  between, which leaves the direct parents. A query reads its direct parents, its direct
+  children and its complement; the precursor reads its direct children and sends to none;
+  self-loops come from the head. Spectra are densified 64 at a time.
+- **Mask.** The head turns each bucket's edges into a -inf pair bias on full attention, beside the
+  mass window (`_candidate_graph_bias`); padded query rows keep every key, so no row is all -inf.
+  The final softmax over the spectrum is unchanged.
+- **Reach, measured before any training**
+  ([`reach.py`](../../../output/candidate_graph_2026_09_29/reach.py), Git-ignored), on `i1`'s
+  candidate sets for 2,560 local val spectra (median 256 candidates, p10 137): a candidate reads
+  5.2 keys on average (median 5, p10 3, p90 7), 2.6% of its set in one hop and 9.6% in two (p90
+  13.5%). No candidate is left with its self-loop alone. The window ladder reaches 6.7% / 7.8%
+  at 5 Da, 8.8% / 15.9% at 10 Da and 29% / 50% at 30 Da: `cg1`'s one-hop reach is below the
+  sparsest window, its two-hop reach between 5 and 10 Da. The mask is not a no-op, and
+  underfitting is a live risk. A null or negative read therefore says restriction this tight
+  does not help; it is not evidence against chemistry-defined edges in particular. Separating
+  the two needs a size-matched random-edge control (about 5 random keys per candidate), not
+  built. Building the edges costs 4 ms per 128 spectra on the RTX 2070.
+- **Checks.**
+  - [Tests](../../../tests/test_masster_candidate_graph.py) (12): the edges of a 4-atom chain
+    against a hand enumeration (two direct parents for a middle fragment, no grandparent edge,
+    complements, a receiving-only precursor), interleaved rows over two spectra and chunk sizes,
+    one-layer reach limited to the edges, the complete graph equal to full attention with the
+    same state dict, the mask values with a padded row, a padded bucket finite through backward,
+    the unique-mode requirement, input validation, no added parameters, and a finite model
+    forward and backward.
+  - An adversarial review (four lenses) found no defect; the edge builder matched a set-based
+    brute force on 360 random cases and on real model batches of 5-128 spectra.
+  - All 1,823 MASSter-related tests pass. Ruff passes.
+  - The config differs from `fa1` by the key and W&B naming only (8,145,109 parameters in both);
+    the submitter's per-arm checks pass.
+  - GPU smoke, 2 epochs on 512 relabelled NIST20 spectra at batch 64: `cg1` and `fa1` both exit
+    0, 53 s and 51 s including setup; val cosine 0.069 → 0.229 and 0.067 → 0.209.
+- **Submit.** Stage `graph` of `submit_masster_mh_ft_memorization_route.sh` (`cg1`). The cluster
+  needs the relabelled `spec_df.pkl` and a checkout with the new key. Not submitted.
+- **Read.** The 54-63 tail against `fa1` (+0.005 for one seed), `wrecall` within 0.005, minutes per
+  epoch against `fa1`; beside the mass-window ladder (`mw30`, `mw10`, `mlp1`), its "restricted
+  communication without chemistry" controls. Then, offline, the eval-mode gap and the set-message
+  probe: the set message's train/val asymmetry must shrink with neither global attention nor the
+  boundary block growing. If `cg1` reroutes or underfits, the plan's next step is the
+  training-only form (graph mask with probability p in training, full attention at evaluation).
+
 ## Restricted allocators: mass window, no attention, smaller set transformer (built 2026-09-27, not run)
 
 After the m/z-encoding arm, the user asked to try a less powerful allocator: a smaller set
@@ -2099,21 +2158,20 @@ molecules.
     unchanged state dict for every attention type; outputs of one spectrum untouched by another's
     precursor mass; input validation; and, in the model, the precursor masses reaching the head
     in all three modes, with the precursor present as a loss-0 candidate.
-  - **Checkpoints from before the key** load with it off. `get_pl_hparams` and the Lightning
-    loader's legacy marker backfill `False`, as for the attention-topology key, with one more test
-    case.
+  - **Checkpoints from before the key** load with it off through the supported path, the template
+    plus the training config (`get_config_from_ckpt` with `custom_fp`, then
+    `init_model_from_ckpt`). The template supplies the default. `i1`'s Fir checkpoint, whose
+    hparams lack this key, `masster_intensity_mass_window` and the connectivity keys, loads
+    strictly with all three filled. No checkpoint backfill is needed. One was added and removed
+    the same day (user correction).
   - On CPU, the head, model, PL, config and hparam-migration test files pass: 637 passed, 13
-    CUDA-only skipped. Ruff passes.
+    CUDA-only skipped. After the backfill's removal the PL and migration files pass again (322).
+    Ruff passes.
   - **Real-data GPU smoke** (`output/smoke_attn_2026_09_29/run_smoke.sh`, 2 epochs on 512
     relabelled NIST20 spectra, batch 64): both exit 0. Val cosine rises 0.152 → 0.333 (`mznl1`)
     and 0.144 → 0.332 (`nlpe1`). The checkpoints record both keys and hold no frequency buffers
     (155 tensors, as `fa1`).
   - The submitter's `pos` stage passes `bash -n` and its per-arm config checks.
-  - **Side finding, not fixed:** the hparams-driven loaders (`MassterPL.load_from_checkpoint`,
-    `get_pl_hparams` plus the constructor) already fail on `i1`'s Fir checkpoint, whose hparams
-    lack `masster_intensity_mass_window`. They also fail on this week's local checkpoints, which
-    lack the uncommitted `masster_fragment_connectivity_*` keys. The probes are unaffected: they
-    build the model from the template and config, then load the weights strictly.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh pos` (`mznl1` and `nlpe1`).
   The cluster needs the relabelled `spec_df.pkl` and a checkout with the new key.
 

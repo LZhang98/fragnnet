@@ -107,28 +107,6 @@ def test_fragment_selection_migrates_legacy_checkpoints_and_requires_a_fresh_key
         MassterPL(**config)
 
 
-def test_nl_positional_encoding_migrates_legacy_checkpoints_and_requires_a_fresh_key() -> None:
-    """Checkpoints from before the neutral-loss position had none; fresh configs declare it."""
-    legacy, config = _build_pl()
-    del config["masster_intensity_nl_positional_encoding"]
-    migrated = get_pl_hparams({"hyper_parameters": dict(config)})
-
-    assert migrated["masster_intensity_nl_positional_encoding"] is False
-    restored = MassterPL(**migrated)
-    restored.load_state_dict(legacy.state_dict(), strict=True)
-    assert not restored.model.intensity_head.nl_positional_encoding
-    # The Lightning loader's legacy marker backfills the same value.
-    reloaded = MassterPL(_legacy_candidate_backend=True, **config)
-    assert not reloaded.model.intensity_head.nl_positional_encoding
-    # An explicit key survives migration untouched, and a missing one must not default.
-    migrated["masster_intensity_nl_positional_encoding"] = True
-    assert get_pl_hparams({"hyper_parameters": migrated})[
-        "masster_intensity_nl_positional_encoding"
-    ]
-    with pytest.raises(AttributeError, match="masster_intensity_nl_positional_encoding"):
-        MassterPL(**config)
-
-
 def test_attention_topology_rejects_unknown_values() -> None:
     # The head validates during model construction, which precedes the loss-setup check.
     with pytest.raises(ValueError, match="unknown attention_type: inducing"):

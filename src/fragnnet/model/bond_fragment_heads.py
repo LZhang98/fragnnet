@@ -634,6 +634,115 @@ class IonModeProposalHead(nn.Module):
         return self.head(th.cat(features, dim=1))
 
 
+def candidate_graph_edges(
+    atom_indices: th.Tensor,
+    atom_component_indices: th.Tensor,
+    component_batch_indices: th.Tensor,
+    spectrum_atom_offsets: th.Tensor,
+    spectrum_num_atoms: th.Tensor,
+    *,
+    num_components: int,
+    chunk_size: int = 64,
+) -> th.Tensor:
+    """Directed attention edges of the candidate graph (arm ``cg1``).
+
+    Within one spectrum, a query candidate is linked to a key candidate when the key is a direct
+    parent of the query (it strictly contains the query's atoms with no candidate strictly
+    between them), a direct child, or its complement (disjoint, and together the whole
+    precursor: the two sides of one acyclic cut). A candidate between two cuts lies inside both
+    single-cut sides and so keeps both parents. The intact precursor contains every other
+    candidate, so as a key it would hand each candidate the whole set's summary in one hop: it
+    receives from its direct children and sends to none. Self-loops are left to the caller.
+
+    With ``M`` the candidates-by-atoms membership of a spectrum, ``M M^T`` counts every pair's
+    shared atoms; ``i`` lies strictly inside ``j`` when they share all of ``i``'s atoms and ``j``
+    is larger, and the containment matrix times itself marks the pairs with a candidate
+    between. Spectra are densified ``chunk_size`` at a time to bound memory.
+
+    Args:
+        atom_indices: Global atom index of each (component, atom) membership row, shape ``(M,)``.
+        atom_component_indices: Component of each membership row, shape ``(M,)``.
+        component_batch_indices: Spectrum of each component, shape ``(C,)``.
+        spectrum_atom_offsets: First global atom index of each spectrum's graph, shape ``(B,)``.
+        spectrum_num_atoms: Atom count of each spectrum's precursor, shape ``(B,)``.
+        num_components: ``C``.
+        chunk_size: Spectra densified together.
+
+    Returns:
+        Long tensor ``(2, E)`` of ``(query component, key component)`` pairs, without
+        self-loops.
+    """
+    index_inputs = (
+        atom_indices,
+        atom_component_indices,
+        component_batch_indices,
+        spectrum_atom_offsets,
+        spectrum_num_atoms,
+    )
+    if any(t.dtype != th.long or t.ndim != 1 for t in index_inputs):
+        raise ValueError("candidate_graph_edges expects 1-D torch.long index tensors")
+    if atom_indices.shape != atom_component_indices.shape:
+        raise ValueError("atom_indices and atom_component_indices must have matching shapes")
+    if component_batch_indices.shape != (num_components,):
+        raise ValueError("component_batch_indices must contain one spectrum per component")
+    if spectrum_atom_offsets.shape != spectrum_num_atoms.shape:
+        raise ValueError("spectrum_atom_offsets and spectrum_num_atoms must have matching shapes")
+    device = atom_indices.device
+    batch_size = int(spectrum_num_atoms.shape[0])
+    empty = th.zeros((2, 0), dtype=th.long, device=device)
+    if num_components == 0:
+        return empty
+    _validate_tensor_condition(
+        ((atom_component_indices >= 0) & (atom_component_indices < num_components)).all(),
+        "atom_component_indices references a missing component",
+    )
+    _validate_tensor_condition(
+        ((component_batch_indices >= 0) & (component_batch_indices < batch_size)).all(),
+        "component_batch_indices references a missing spectrum",
+    )
+    counts = th.bincount(component_batch_indices, minlength=batch_size)
+    order = th.argsort(component_batch_indices, stable=True)
+    starts = counts.cumsum(0) - counts
+    position = th.empty_like(component_batch_indices)
+    position[order] = (
+        th.arange(num_components, device=device) - starts[component_batch_indices[order]]
+    )
+    table = th.full((batch_size, int(counts.max())), -1, dtype=th.long, device=device)
+    table[component_batch_indices, position] = th.arange(num_components, device=device)
+    member_spectrum = component_batch_indices[atom_component_indices]
+    member_position = position[atom_component_indices]
+    member_atom = atom_indices - spectrum_atom_offsets[member_spectrum]
+    edges = [empty]
+    for start in range(0, batch_size, chunk_size):
+        stop = min(start + chunk_size, batch_size)
+        chunk_counts = counts[start:stop]
+        width = int(chunk_counts.max())
+        if width == 0:
+            continue
+        whole = spectrum_num_atoms[start:stop]
+        keep = (member_spectrum >= start) & (member_spectrum < stop)
+        membership = th.zeros((stop - start, width, int(whole.max())), device=device)
+        membership[member_spectrum[keep] - start, member_position[keep], member_atom[keep]] = 1.0
+        shared = membership @ membership.transpose(1, 2)
+        size = membership.sum(2)
+        valid = th.arange(width, device=device).unsqueeze(0) < chunk_counts.unsqueeze(1)
+        pairs = valid.unsqueeze(2) & valid.unsqueeze(1)
+        # 1. inside[i, j]: candidate i lies strictly inside candidate j.
+        inside = (shared == size.unsqueeze(2)) & (size.unsqueeze(2) < size.unsqueeze(1)) & pairs
+        between = (inside.float() @ inside.float()) > 0
+        parent = inside & ~between
+        # 2. Complements: disjoint, and together the whole precursor.
+        whole = whole.to(size.dtype)[:, None, None]
+        complement = (shared == 0) & (size.unsqueeze(2) + size.unsqueeze(1) == whole) & pairs
+        # 3. Queries read parents, children and complements; the precursor never sends.
+        links = parent | parent.transpose(1, 2) | complement
+        links = links & ~((size == whole[:, :, 0]) & valid).unsqueeze(1)
+        spectrum, query, key = th.nonzero(links, as_tuple=True)
+        spectrum = spectrum + start
+        edges.append(th.stack([table[spectrum, query], table[spectrum, key]]))
+    return th.cat(edges, dim=1)
+
+
 class CandidateIntensityTransformerHead(nn.Module):
     """Contextualize a molecule's component candidates before intensity scoring.
 
@@ -644,7 +753,9 @@ class CandidateIntensityTransformerHead(nn.Module):
     quadratic in the candidate count, but the pairwise interaction is exact rather than
     capped at the inducing-point rank. ``none`` keeps only the feed-forward sublayers, so
     each candidate is scored from its own token. With ``full``, a positive ``mass_window``
-    (Da) restricts each candidate to the candidates within that neutral-mass distance.
+    (Da) restricts each candidate to the candidates within that neutral-mass distance, and
+    ``candidate_graph`` restricts it to its chemical neighbours (see
+    :func:`candidate_graph_edges`).
     ``mz_positional_encoding`` and ``nl_positional_encoding`` add a sinusoidal position to
     each token: its neutral mass ``m`` and its neutral loss ``M - m`` from the precursor's
     neutral mass ``M``. With both on, each takes half the token width.
@@ -692,6 +803,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         set_key_dropout: float = 0.0,
         connectivity_embedding_dim: int = 0,
         nl_positional_encoding: bool = False,
+        candidate_graph: bool = False,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -718,6 +830,11 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError(
                 "mass_pair_bias requires attention_type='full'; the induced layer exchanges "
                 "information through latents that carry no mass of their own"
+            )
+        if candidate_graph and attention_type != "full":
+            raise ValueError(
+                "candidate_graph requires attention_type='full'; it masks direct "
+                "candidate-to-candidate attention"
             )
         if qk_norm and attention_type != "full":
             raise ValueError("qk_norm requires attention_type='full'")
@@ -847,6 +964,8 @@ class CandidateIntensityTransformerHead(nn.Module):
                 )
         # Neutral-mass radius (Da) of each candidate's attention; 0 attends over the whole set.
         self.mass_window = float(mass_window)
+        # Attend only along candidate-graph edges (arm cg1); the caller supplies the edges.
+        self.candidate_graph = candidate_graph
         # Each candidate's neutral mass must be passed whenever a mass-aware input is on.
         self.uses_token_masses = (
             mass_pair_bias
@@ -1020,6 +1139,58 @@ class CandidateIntensityTransformerHead(nn.Module):
         within = within | padding_mask.unsqueeze(2)
         return masses.new_zeros(within.shape).masked_fill(~within, float("-inf")).unsqueeze(1)
 
+    @staticmethod
+    def _candidate_graph_bias(
+        edges: th.Tensor,
+        num_tokens: int,
+        bucket_token_indices: th.Tensor,
+        local_batch_indices: th.Tensor,
+        positions: th.Tensor,
+        padding_mask: th.Tensor,
+        dtype: th.dtype,
+    ) -> th.Tensor:
+        """Additive attention mask that keeps each candidate on its candidate-graph edges.
+
+        A real candidate attends to itself and to the keys of its ``(query, key)`` edges. Padded
+        query rows keep every key, so no row is fully masked; their outputs are discarded, and
+        padded keys stay hidden by the key padding mask.
+
+        Args:
+            edges: ``(2, E)`` long ``(query, key)`` token rows, both in one molecule.
+            num_tokens: Number of token rows over the whole batch.
+            bucket_token_indices: Token rows of this bucket, shape ``(T,)``.
+            local_batch_indices: Bucket-local molecule of each of those rows, shape ``(T,)``.
+            positions: Padded slot of each of those rows, shape ``(T,)``.
+            padding_mask: Shape ``(molecules, candidates)``, True where padded.
+            dtype: Dtype of the returned bias.
+
+        Returns:
+            The bias, 0 on an edge or the diagonal and -inf elsewhere, shape
+            ``(molecules, 1, candidates, candidates)``.
+        """
+        molecule = edges.new_full((num_tokens,), -1)
+        molecule[bucket_token_indices] = local_batch_indices
+        slot = edges.new_full((num_tokens,), -1)
+        slot[bucket_token_indices] = positions
+        query, key = edges[:, molecule[edges[0]] >= 0]
+        _validate_tensor_condition(
+            (molecule[key] == molecule[query]).all(),
+            "candidate_graph_edges links candidates of different molecules",
+        )
+        num_molecules, num_candidates = padding_mask.shape
+        allowed = (
+            th.eye(num_candidates, dtype=th.bool, device=padding_mask.device)
+            .unsqueeze(0)
+            .repeat(num_molecules, 1, 1)
+        )
+        allowed[molecule[query], slot[query], slot[key]] = True
+        allowed = allowed | padding_mask.unsqueeze(2)
+        return (
+            th.zeros(allowed.shape, dtype=dtype, device=allowed.device)
+            .masked_fill(~allowed, float("-inf"))
+            .unsqueeze(1)
+        )
+
     def _contextualize_by_molecule(
         self,
         tokens: th.Tensor,
@@ -1027,6 +1198,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         batch_size: int,
         token_masses: th.Tensor | None = None,
         ce_features: th.Tensor | None = None,
+        candidate_graph_edges: th.Tensor | None = None,
     ) -> th.Tensor:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
@@ -1110,6 +1282,17 @@ class CandidateIntensityTransformerHead(nn.Module):
             if self.mass_window > 0.0:
                 window_bias = self._mass_window_bias(padded_masses, padding_mask)
                 pair_bias = window_bias if pair_bias is None else pair_bias + window_bias
+            if candidate_graph_edges is not None:
+                graph_bias = self._candidate_graph_bias(
+                    candidate_graph_edges,
+                    tokens.shape[0],
+                    bucket_token_indices,
+                    local_batch_indices,
+                    positions,
+                    padding_mask,
+                    tokens.dtype,
+                )
+                pair_bias = graph_bias if pair_bias is None else pair_bias + graph_bias
 
             # 2. Contextualize candidates, either through a fixed-size inducing set or
             # by direct candidate-to-candidate attention.
@@ -1152,6 +1335,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         connectivity_embeddings: th.Tensor | None = None,
         sink_vectors: th.Tensor | None = None,
         precursor_neutral_masses: th.Tensor | None = None,
+        candidate_graph_edges: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule.
 
@@ -1161,6 +1345,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         with ``None`` (evaluation, or before the sink starts) the head is the shared model.
         ``precursor_neutral_masses`` holds each spectrum's intact neutral mass in Da, shape
         ``(batch_size,)``, and is required exactly when ``nl_positional_encoding`` is on.
+        ``candidate_graph_edges`` holds the ``(2, E)`` long ``(query, key)`` component rows of
+        :func:`candidate_graph_edges`, required exactly when ``candidate_graph`` is on.
         """
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
@@ -1267,6 +1453,16 @@ class CandidateIntensityTransformerHead(nn.Module):
             num_components,
         ):
             raise ValueError("component_neutral_masses must contain one mass per component")
+        if self.candidate_graph != (candidate_graph_edges is not None):
+            raise ValueError(
+                "candidate_graph_edges must be supplied exactly when candidate_graph is on"
+            )
+        if candidate_graph_edges is not None and (
+            candidate_graph_edges.ndim != 2
+            or candidate_graph_edges.shape[0] != 2
+            or candidate_graph_edges.dtype != th.long
+        ):
+            raise ValueError("candidate_graph_edges must be a (2, E) torch.long tensor")
         if self.nl_positional_encoding != (precursor_neutral_masses is not None):
             raise ValueError(
                 "precursor_neutral_masses must be supplied exactly when nl_positional_encoding "
@@ -1300,6 +1496,7 @@ class CandidateIntensityTransformerHead(nn.Module):
                     else component_neutral_masses.to(tokens)
                 ),
                 ce_features=ce_features,
+                candidate_graph_edges=candidate_graph_edges,
             )
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(

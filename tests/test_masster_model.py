@@ -119,6 +119,7 @@ def _build_model(
     encoder_atom_mask: float = 0.0,
     encoder_bond_dropout: float = 0.0,
     light_side_token: bool = False,
+    intensity_candidate_graph: bool = False,
 ) -> MassterModel:
     th.manual_seed(903)
     return MassterModel(
@@ -216,6 +217,7 @@ def _build_model(
         encoder_atom_mask=encoder_atom_mask,
         encoder_bond_dropout=encoder_bond_dropout,
         light_side_token=light_side_token,
+        intensity_candidate_graph=intensity_candidate_graph,
     )
 
 
