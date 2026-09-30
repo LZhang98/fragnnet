@@ -1,6 +1,11 @@
 # Where does MASSter's misplaced intensity go?
 
-> **Status:** FINDING · **Updated:** 2026-09-24
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> Current read: [`i1` wrong base-peak table](masster_i1_base_peak_errors_2026_09_28.md).
+>
 > Phase 0 of the [intensity-displacement plan](../../plans/masster/masster_intensity_displacement_plan.md),
 > offline on the f0/f1 (`3bej6fq7`/`6h67zps9`) exports of the
 > [target-cleaning cross-eval](masster_target_cleaning_cross_eval_2026_09_23.md); no training

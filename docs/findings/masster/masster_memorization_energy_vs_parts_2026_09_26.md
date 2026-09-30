@@ -1,6 +1,14 @@
 # Is MASSter's memorized allocation keyed on energy, on molecules or on parts?
 
-> **Status:** FINDING · **Updated:** 2026-09-27
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-27)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> Its `f0` sections are retired. The 2026-09-27 set-message probe (`c0`, `r2`, `nl1`, `nl2`) is
+> on the same `FT` labels. Current reads: [`i1` memorization
+> read](masster_i1_memorization_read_2026_09_28.md) and [`i1` residual
+> structure](masster_i1_residual_structure_2026_09_28.md).
+>
 > Inference only, on `3bej6fq7` (f0, unmerged `[M+H]+`/FT, the route map's checkpoint).
 >
 > - **Memorization is per molecule, not per energy.** An NCE shift of ±1 in the intensity head

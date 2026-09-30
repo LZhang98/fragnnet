@@ -1,6 +1,11 @@
 # Which intensity-head input carries MASSter's memorization?
 
-> **Status:** FINDING · **Updated:** 2026-09-24
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> Current read: [`i1` memorization read](masster_i1_memorization_read_2026_09_28.md).
+>
 > Inference-only corruption probe on two production checkpoints, no training. The train-only
 > part of the intensity allocation sits in the **boundary block**, the pooled embedding of the
 > severed bonds' endpoints. Corrupting it removes about 89% of the 0.19 eval-mode train/validation

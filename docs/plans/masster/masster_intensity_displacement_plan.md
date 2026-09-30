@@ -1,6 +1,9 @@
 # Intensity displacement: where MASSter puts the intensity it misplaces
 
-> **Status:** ACTIVE · **Updated:** 2026-09-24
+> **Status:** ACTIVE · **Updated:** 2026-09-30
+> **2026-09-30: Phase 0 and Phase 1.4b ran on `f0`/`f1`, now retired (user decision; old `FT`
+> labels).** Re-derive any premise on `i1` ([base-peak
+> table](../../findings/masster/masster_i1_base_peak_errors_2026_09_28.md)) before running an arm.
 > **Phase 0 is done** ([finding](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md)).
 >
 > - **G0 condition 1 passes.** 67% (val) and 63% (test) of the displacement is reducible error

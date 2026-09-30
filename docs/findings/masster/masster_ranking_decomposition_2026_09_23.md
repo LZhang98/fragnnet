@@ -1,6 +1,11 @@
 # Does MASSter still have the ranking problem?
 
-> **Status:** FINDING · **Updated:** 2026-09-23
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-23)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> Current read: [`i1` wrong base-peak table](masster_i1_base_peak_errors_2026_09_28.md).
+>
 > Yes. Offline decomposition of the `6h67zps9` (f1) and `3bej6fq7` (f0) predictions exported by
 > the [target-cleaning cross-eval](masster_target_cleaning_cross_eval_2026_09_23.md); no new
 > inference. Coverage is 6% of the cosine gap. Candidate ordering that no order-preserving

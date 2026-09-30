@@ -1,6 +1,12 @@
 # Is MASSter's run-to-run variance epistemic?
 
-> **Status:** FINDING · **Updated:** 2026-09-24
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> Current reads: [dropout views on `i1`](masster_dropout_view_disagreement_2026_09_27.md) and
+> the novelty bins of the [`i1` base-peak table](masster_i1_base_peak_errors_2026_09_28.md).
+>
 > Yes. Offline, on the f0/f1 (`3bej6fq7`/`6h67zps9`) val exports of the
 > [target-cleaning cross-eval](masster_target_cleaning_cross_eval_2026_09_23.md). The two runs
 > disagree most, and averaging them gains most, on val molecules unlike anything in training.

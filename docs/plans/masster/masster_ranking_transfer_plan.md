@@ -1,6 +1,9 @@
 # Reducing MASSter's per-molecule shortcut so its ranking transfers
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27
+> **Status:** ACTIVE · **Updated:** 2026-09-30
+> **2026-09-30: results read against `f0` (`3bej6fq7`) are retired with the `f0`/`f1` runs (user
+> decision; old `FT` labels).** Its surviving lever, weight EMA (`u2`), was re-read on `i1` inside
+> `i3` (`k1` + EMA), +0.0102 ([Batch 5 read](masster_memorization_route_plan.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
 > **Switch-EMA arm `u3` finished and fails** ([section](#switch-ema-arm-u3-built-2026-09-25-not-submitted)):
 > −0.0089 against `u2`, below it at all 64 epochs; it underfits. EMA helps only as an average
 > kept off the training weights.

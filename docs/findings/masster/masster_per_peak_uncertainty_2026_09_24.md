@@ -1,6 +1,12 @@
 # Can an ensemble give MASSter a per-peak uncertainty?
 
-> **Status:** FINDING · **Updated:** 2026-09-24
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> No `i1` rerun; the [intensity reliability plan](../../plans/masster/masster_intensity_reliability_plan.md)
+> carries the question.
+>
 > Partly. Offline, on the four raw-val exports of the
 > [target-cleaning cross-eval](masster_target_cleaning_cross_eval_2026_09_23.md): f0 epochs 61
 > and 63, f1 epochs 62 and 63. The members' spread at a peak does track that peak's error, and

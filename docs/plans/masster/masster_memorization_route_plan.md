@@ -1,6 +1,19 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-29
+> **Status:** ACTIVE · **Updated:** 2026-09-30
+> **2026-09-30: `f0`/`f1` results retired (user decision).** Step 0's route map and the earlier
+> route probe ran on them; on `i1` the route map is the
+> [memorization read](#memorization-read-on-i1-2026-09-28).
+> **2026-09-30: [mid-run read of the window ladder](#mid-run-read-at-epoch-34-2026-09-30-utc-restriction-costs-cosine-the-graph-costs-least)
+> at epoch 34.** Restricting attention never helps: `mw30` −0.0062, `mw10` −0.0117 and `mlp1`
+> −0.0112 against `fa1`, with train and val loss both worse. `cg1`'s containment graph reads less
+> of the set than the 10 Da window but keeps 62% of full attention's gain over `mlp1`: which
+> candidates talk matters more than how many. It is still within noise of `fa1`.
+> **2026-09-30: [mid-run read of `mznl1`/`nlpe1`](#mid-run-read-at-epoch-31-2026-09-30-utc-neither-helps)
+> at epoch 31.** Neither neutral-loss position helps full attention: `mznl1` (m/z + loss) −0.0068
+> and `nlpe1` (loss alone) −0.0152 against `fa1` over epochs 22-31. Both are rejected, and mass as a
+> token position is closed. `fa1_s2` runs 0.003-0.005 below `fa1`, so `fa1`'s own +0.0044 needs its
+> tail.
 > **2026-09-29: FT-label configs removed; route arms rerun on OB/OB_F.** The 33 FT-label configs of
 > this directory (`c0`, `r0`-`r2`, `k1`, `m1`/`m2`, `gm1`-`gm6`, `k1_ema`, `c0_s2`/`k1_s2`/`u2_s2`,
 > `s1`, `s1_k1_ema`, `w1`, `n1`-`n4`, `nl1`-`nl3`, `sp0`/`sp1`, `am1`/`de1`, `sm1`/`sd1`) are in Git at
@@ -2181,6 +2194,37 @@ molecules.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh pos` (`mznl1` and `nlpe1`).
   The cluster needs the relabelled `spec_df.pkl` and a checkout with the new key.
 
+### Mid-run read at epoch 31 (2026-09-30 UTC): neither helps
+
+Both arms were at epoch 31 of 64: `mznl1` `yp3wj9fa` and `nlpe1` `pqqfyvwo`, started 02:46 UTC.
+They are read epoch-matched against the finished `fa1`, by the Batch 5 method. `fa1_s2`
+(`2v2e1yod`, `fa1` at seed 811237, at epoch 24) gives the same-config spread at matched epochs.
+
+| contrast | epochs 0-9 | 10-19 | 22-31 | ahead, epochs 0-31 | train loss, 22-31 | val loss, 22-31 |
+| --- | ---: | ---: | ---: | --- | ---: | ---: |
+| `mznl1` − `fa1` | −0.0014 | −0.0041 | −0.0068 | 5 of 32 | −0.021 | +0.033 |
+| `nlpe1` − `fa1` | −0.0084 | −0.0128 | −0.0152 | 0 of 32 | +0.001 | +0.051 |
+| `mz1` − `fa1`, same epochs | +0.0044 | +0.0002 | −0.0035 | 14 of 32 | −0.024 | +0.019 |
+| `fa1_s2` − `fa1`, to epoch 24 | −0.0048 | −0.0027 | −0.0032 (22-24) | 4 of 25 | −0.001 (22-24) | +0.011 (22-24) |
+
+- **The loss position does the most harm.** `nlpe1` trails `fa1` at every epoch, by 4-5x the
+  seed-replicate gap. It is below `i1` too (−0.0090 over epochs 22-31). Train loss is unchanged
+  while val loss rises by 0.051. So it buys no train fit and still loses val: a misleading feature
+  for new molecules, not added memorization.
+- **`mznl1` trails `fa1` at 27 of 32 epochs, by about twice the replicate gap, and `mz1` at every
+  epoch** (−0.0033 over 22-31). Against `i1` it gives back all of full attention's gain
+  (−0.0005). Its signature is `mz1`'s, train loss down and val loss up, and stronger.
+- **Neither can reach the gate.** `mz1`'s gap narrowed from −0.0035 at these epochs to −0.0017 in
+  its tail. A pass at +0.005 would need `mznl1` to recover 0.012 and `nlpe1` 0.020. Reject both.
+  Stopping them now saves about 1.6 GPU-hours each.
+- **Mass as a token position is closed on this lineage.** The m/z (−0.0017 tail), m/z + loss, and
+  the loss alone all lose to plain full attention. The mass windows `mw30`/`mw10` and the MLP floor
+  `mlp1` test mass-local and no exchange without positions ([section below](#mass-window-ladder-on-fa1-mw30-mw10-and-mlp1-built-2026-09-29-not-submitted)).
+- **`fa1`'s own gain may be partly seed luck.** `fa1_s2` is level with `i1` over epochs 0-19
+  (−0.0004 and −0.0001) and +0.0026 over 20-24, against `fa1`'s +0.0044, +0.0026 and +0.0066.
+  It is ahead of `i1` in 15 of 25 epochs. Its seed differs from `i1`'s, so read its tail against
+  `i1` and `fa1` when it finishes before building more arms on full attention.
+
 ## Mass-window ladder on `fa1`: `mw30`, `mw10` and `mlp1` (built 2026-09-29, not submitted)
 
 The user asked for the three restricted allocators of the
@@ -2215,6 +2259,46 @@ on the current lineage without the m/z encoding, which lost on Fir (`mz1` −0.0
 - **Checks.** All three configs build, and each differs from `fa1` only in W&B naming and its key.
   Locally, the submitter's config validation passes. It stops at the wheel check because
   `wheels/` is absent on this workstation.
+
+### Mid-run read at epoch 34 (2026-09-30 UTC): restriction costs cosine; the graph costs least
+
+All three were submitted and are running: `mw30` `eb8vt5om` and `mw10` `c3jv5loq` at epoch 34,
+`mlp1` `vv80clcc` at epoch 39. `cg1` (`c8k6e244`, the chemistry-defined mask this ladder controls
+for) is also at 34. They are read epoch-matched against the finished `fa1`, by the Batch 5 method.
+`fa1_s2` (`2v2e1yod`, `fa1` at seed 811237) gives the same-config spread.
+
+| arm | reach, 1 / 2 hops | − `fa1`, epochs 25-34 | ahead of `fa1` | − `i1`, 25-34 | train loss | val loss | min/epoch |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| `mw30` | 29% / 50% | −0.0062 | 6 of 35 | −0.0002 | +0.006 | +0.024 | 2.98 |
+| `mw10` | 8.8% / 15.9% | −0.0117 | 0 of 35 | −0.0057 | +0.021 | +0.037 | 2.98 |
+| `mlp1` (no exchange) | 0 | −0.0112 | 1 of 40 | −0.0052 | +0.026 | +0.039 | 2.67 |
+| `cg1` (containment graph) | 2.6% / 9.6% | −0.0043 | 7 of 35 | +0.0017 | +0.019 | +0.015 | 3.04 |
+| `fa1_s2` (seed replicate) | 100% | −0.0042 (25-26) | 4 of 27 | +0.0035 (25-26) | +0.004 | +0.010 | 2.98 |
+
+Loss columns are deltas against `fa1` over the same epochs. Reach: the 30 Da value is from the
+2026-09-27 local table; the 10 Da and graph values are from the `cg1` census on `i1`'s candidate
+sets.
+
+- **The ladder is monotone in communication, and no rung helps.** Against `fa1`, a 30 Da window
+  costs 0.006, a 10 Da window 0.012, and no exchange 0.011. `mw10` equals `mlp1` (−0.0005 between
+  them): at 10 Da a candidate reads too few neighbours to matter.
+- **Restriction underfits; it does not regularize.** Train loss and val loss both rise in every
+  restricted arm. The exchange carries signal that transfers, so cutting it does not trade train
+  fit for val.
+- **Candidate exchange is worth +0.0112 over no exchange** (`fa1` − `mlp1`, epochs 25-34), and
+  +0.005 of it over the induced allocator (`i1` − `mlp1`).
+- **Which candidates talk matters more than how many.** `cg1` reads less of its set than the 10 Da
+  window, yet keeps 62% of full attention's gain over `mlp1`. It is ahead of `mw10` at every epoch
+  (+0.0074). `mw30` keeps 45% while reading 5-11x more of the set. `cg1` is ahead of `mw30` in 26
+  of 35 epochs (+0.0019).
+- **But `cg1` does not beat full attention.** Its −0.0043 against `fa1` equals the `fa1_s2`
+  seed-replicate gap, and it is +0.0017 over `i1`. So it is within noise of full attention at a
+  tenth of its reach. It is not a gain yet.
+- **Verdicts at mid-run.** Reject `mw10` and `mw30`; a pass would need 0.017 and 0.011 of late
+  recovery. `mlp1` has served as the floor. `cg1` is worth its tail, against `fa1`, `fa1_s2` and
+  `mw30`. Stopping `mw10` and `mlp1` now saves about 1.5 and 1.1 GPU-hours.
+- One seed each, mid-run. `fa1` may be a lucky seed (`fa1_s2` trails it by about 0.004), which
+  would shrink every "− `fa1`" column but not the ordering.
 
 ## NCE into the molecule encoder: `ce1` (condition) and `ce2` (attended) (built 2026-09-30, not submitted)
 

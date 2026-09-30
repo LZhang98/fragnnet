@@ -22,6 +22,39 @@ matched pairs say CE in the encoder helps on unmerged data. CE at the molecule-e
   and each other; then offline, the nested-pair lean and NCE50 error by NCE bin.
 - [Plan section](plans/masster/masster_memorization_route_plan.md#nce-into-the-molecule-encoder-ce1-condition-and-ce2-attended-built-2026-09-30-not-submitted).
 
+**`f0`/`f1` results retired (2026-09-30, user decision); documentation only.** The two runs
+(`3bej6fq7`/`6h67zps9`) trained on the old `FT` labels, where identity routes stood in for the
+missing instrument input.
+
+- **The eleven findings measured on them are marked SUPERSEDED in place,** with a pointer to the
+  current `i1` read where one exists. Their index rows are tagged.
+  - Target-cleaning cross-eval, matched intensity filter, displacement Phase 0, ranking
+    decomposition, route probe, route map, formula-only baseline, variance vs novelty, bond-local
+    learner, per-peak uncertainty, energy vs parts.
+  - The `i1` replacements are the [base-peak table](findings/masster/masster_i1_base_peak_errors_2026_09_28.md),
+    the [memorization read](findings/masster/masster_i1_memorization_read_2026_09_28.md) and the
+    [residual structure](findings/masster/masster_i1_residual_structure_2026_09_28.md).
+  - Five have no `i1` rerun: target cleaning, the matched filter, the formula-only baseline, the
+    bond-local learner and per-peak uncertainty.
+- **The displacement, ranking-transfer and memorization-route plans carry a banner note.** Their
+  statuses are unchanged.
+- **Not retired:** the `c0`-lineage reads on the same `FT` labels (Batches 1-4, the `c0`
+  set-message probe). They are flagged in the energy-vs-parts banner only.
+
+**Mass-window ladder and `cg1`, mid-run read at epoch 34 (2026-09-30 UTC): restricting attention
+never helps; the containment graph costs least.** Epoch-matched against `fa1`, epochs 25-34:
+`mw30` −0.0062, `mw10` −0.0117, `mlp1` (no exchange) −0.0112 and `cg1` −0.0043. For reference,
+`fa1_s2` (the seed replicate) is −0.0042. Train and val loss both rise in every restricted arm,
+so restriction underfits.
+
+- Candidate exchange is worth +0.0112 (`fa1` − `mlp1`). `cg1` reads 2.6% / 9.6% of its set,
+  less than the 10 Da window's 8.8% / 15.9%, yet keeps 62% of that. `mw10` keeps none and `mw30`
+  45%. Which candidates talk matters more than how many.
+- `cg1` is within noise of `fa1` and +0.0017 over `i1`: not a gain yet.
+- **Next:** reject `mw10`/`mw30` (stopping `mw10` and `mlp1` saves ~1.5 and ~1.1 GPU-h). Read
+  `cg1`'s tail against `fa1`, `fa1_s2` and `mw30`.
+- [Read](plans/masster/masster_memorization_route_plan.md#mid-run-read-at-epoch-34-2026-09-30-utc-restriction-costs-cosine-the-graph-costs-least).
+
 **Memorization-route arms rerun on OB/OB_F (2026-09-29); built, stage `rerun` not submitted.**
 `r2`, `r1`, `r0`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf` (the FT arm's keys only;
 upload off), plus `fa1_s2` as the second `fa1` seed; each builds, and passes a 2-epoch GPU smoke run.
@@ -29,7 +62,8 @@ upload off), plus `fa1_s2` as the second `fa1` seed; each builds, and passes a 2
 removed (Git `8c52c6d3`); the submitter keeps only OB/OB_F stages.
 [Plan](plans/masster/masster_memorization_route_plan.md).
 
-**Candidate-graph attention `cg1` (2026-09-29); built, not submitted.** `fa1` plus
+**Candidate-graph attention `cg1` (2026-09-29); running on Fir (`c8k6e244`), mid-run read in the
+ladder entry above.** `fa1` plus
 `masster_intensity_candidate_graph`: full candidate attention masked to direct containment and
 complements, with the precursor receiving only (`candidate_graph_edges`, no parameters). On `i1`'s
 candidate sets a candidate reads 2.6% of its set in one hop and 9.6% in two (10 Da window: 8.8% /
@@ -103,17 +137,23 @@ finished 64 epochs on Fir, and coverage moves by at most 0.0004.
   loss improves and val loss worsens: the candidate-mass fingerprint the plan flagged. Drop it
   on its own.
 - **`i2`** (`jshvk4gv`, `qet` on the new labels): −0.0015 against `i1`, inside the spread.
-- **Built after the read (uncommitted, not submitted): the neutral loss as a second position,**
-  the user's proposal. New key `masster_intensity_nl_positional_encoding` encodes each candidate's
-  loss from the precursor, M − m. `mznl1` = `fa1` + m/z and loss codes (half the width each);
-  `nlpe1` = `fa1` + the loss code alone. Both are init-matched to `fa1`. Submitter stage `pos`;
-  the cluster needs a checkout with the new key.
-- **Next:** submit `pos`. `i4` + full attention against `i4` (not built) is the first pre-norm +
-  full-attention run without extra terms. `fa1` is arm F of the hierarchical plan below
-  (F − B = +0.0044).
+- **The neutral loss as a second position fails too (mid-run read, epoch 31, 2026-09-30 UTC).**
+  This was the user's proposal, new key `masster_intensity_nl_positional_encoding` (loss M − m).
+  Over epochs 22-31 against `fa1`:
+  - `mznl1` (`yp3wj9fa`, m/z + loss codes, half the width each): −0.0068, ahead in 5 of 32
+    epochs; train loss −0.021, val loss +0.033.
+  - `nlpe1` (`pqqfyvwo`, the loss code alone): −0.0152, ahead in 0 of 32 epochs, below `i1` too.
+    Train loss is unchanged and val loss is +0.051.
+  - Reference: `fa1`'s seed replicate `fa1_s2` is −0.0032, with val loss +0.011.
+  - Neither can recover to the gate, so both are rejected; stopping them saves ~1.6 GPU-h each.
+    Mass as a token position is closed.
+- **`fa1_s2`** (`2v2e1yod`, seed 811237, epoch 24) is level with `i1` through epoch 19 and +0.0026
+  at epochs 20-24, against `fa1`'s +0.0066. Part of `fa1`'s +0.0044 may be seed luck.
+- **Next:** read `fa1_s2`'s tail before building more on full attention (including `i4` + full
+  attention, not built). `fa1` is arm F of the hierarchical plan below.
 - [Read](plans/masster/masster_memorization_route_plan.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29) ·
   [`fa1`/`mz1` arms](plans/masster/masster_memorization_route_plan.md#full-attention-and-the-mz-encoding-on-i1-fa1-and-mz1-built-2026-09-29-not-submitted) ·
-  [`mznl1`/`nlpe1` arms](plans/masster/masster_memorization_route_plan.md#neutral-loss-as-a-second-position-mznl1-and-nlpe1-built-2026-09-29-not-submitted).
+  [`mznl1`/`nlpe1` read](plans/masster/masster_memorization_route_plan.md#mid-run-read-at-epoch-31-2026-09-30-utc-neither-helps).
 
 **Hierarchical fragment graph design (2026-09-29); separate local screen pending.** The
 post-cut information gate found almost no held-out correction signal from 80 explicit

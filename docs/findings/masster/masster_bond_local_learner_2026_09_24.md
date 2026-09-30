@@ -1,6 +1,11 @@
 # Does local bond chemistry know what MASSter misses on new molecules?
 
-> **Status:** FINDING · **Updated:** 2026-09-24
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
+> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> instrument labels, where identity routes stood in for the missing instrument input, so these
+> numbers are not current evidence.
+> No `i1` rerun.
+>
 > Phase 1.4b of the [intensity-displacement plan](../../plans/masster/masster_intensity_displacement_plan.md),
 > the offline gate for arm 2A (an identity-blind local lability prior). Checkpoint f1
 > (`6h67zps9`), unmerged `[M+H]+`/FT, eval mode; no training of MASSter.
