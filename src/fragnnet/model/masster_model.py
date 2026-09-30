@@ -77,11 +77,14 @@ from fragnnet.model.bond_fragment_heads import (
     pool_component_embeddings,
 )
 from fragnnet.model.candidate_features import (
+    COMPOSITION_FEATURE_DIM,
+    COMPOSITION_HYDROGEN_COLUMN,
     CandidateFeatureInputs,
     build_candidate_features,
     candidate_feature_required_graph_fields,
     candidate_feature_width,
     component_neutral_masses,
+    element_counts_by_group,
     resolve_candidate_features,
 )
 from fragnnet.model.form_embedder import get_embedder
@@ -94,9 +97,10 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
+    nominal_isotope_power_table,
 )
 from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
-from fragnnet.utils.spec_utils import weighted_mean_by_batch
+from fragnnet.utils.spec_utils import round_aggregate_peaks, weighted_mean_by_batch
 
 
 def _mean_values_by_batch(
@@ -544,6 +548,13 @@ def _relative_joint_channel_keep_mask(
 #   "valence"    - additionally caps the gain at the fragment's free valence slots plus one
 #                  per severed bond, i.e. FraGNNet's `compute_cc_h_cap`. Full parity.
 H_TRANSFER_BOUNDS = ("none", "complement", "valence")
+
+# Ion m/z convention (``mass_mode``) and isotope rows (``isotope_envelope``); see MassterModel.
+MASS_MODES = ("exact", "nominal")
+ISOTOPE_ENVELOPES = ("none", "natural")
+# Atom counts past this share the last isotope-table row. A fragment below m/z 1500 holds at
+# most 1500 hydrogens, so the clamp only keeps the lookup in bounds.
+ISOTOPE_MAX_ATOM_COUNT = 2048
 
 
 def _cmf_duplicate_crf_shift(
@@ -1124,6 +1135,10 @@ class MassterModel(nn.Module):
         encoder_bond_dropout: float = 0.0,
         light_side_token: bool = False,
         intensity_candidate_graph: bool = False,
+        mass_mode: str = "exact",
+        isotope_envelope: str = "none",
+        isotope_max_order: int = 4,
+        isotope_min_ratio: float = 1e-3,
     ) -> None:
         """Initialize the MASSter model.
 
@@ -1361,6 +1376,20 @@ class MassterModel(nn.Module):
                 atom containment, and its complement; the intact precursor receives but never
                 sends. A -inf mask on full attention, so it adds no parameters. Requires
                 ``unique_fragment_mode`` and ``intensity_transformer_attention: full``.
+            mass_mode: ``exact`` emits monoisotopic ion m/z. ``nominal`` emits the integer
+                nominal m/z of unit-resolution libraries such as NIST EI: the sum of each
+                atom's most-abundant-isotope mass number (implicit hydrogens at 1), plus the H
+                shift and the adduct's rounded mass delta, with no electron mass. Candidate
+                features keep exact masses. Without ``return_annotation`` the prediction rows
+                of one spectrum that share an m/z are merged (probabilities summed).
+            isotope_envelope: ``none`` emits one row per pathway. ``natural`` (requires
+                ``nominal``) splits each emitted pathway over nominal offsets by the natural
+                isotope pattern of its ion composition (fragment atoms, the channel's
+                hydrogens, the adduct's atoms), conserving its probability. Candidate,
+                proposal and dense channel outputs stay monoisotopic.
+            isotope_max_order: Largest absolute nominal offset of an isotope row.
+            isotope_min_ratio: Isotope rows below this share of their pathway are dropped and
+                the kept shares renormalised; below ``1 / (2 * isotope_max_order + 1)``.
 
         Raises:
             ValueError: If any hyperparameter is out of range or an adduct in
@@ -1658,6 +1687,25 @@ class MassterModel(nn.Module):
         self.include_single_bond_cuts = include_single_bond_cuts
         self.max_h_transfer = max_h_transfer
         self.h_transfer_bound = h_transfer_bound
+        if mass_mode not in MASS_MODES:
+            raise ValueError(f"mass_mode must be one of {MASS_MODES}, got {mass_mode!r}")
+        if isotope_envelope not in ISOTOPE_ENVELOPES:
+            raise ValueError(
+                f"isotope_envelope must be one of {ISOTOPE_ENVELOPES}, got {isotope_envelope!r}"
+            )
+        if isotope_envelope != "none":
+            if mass_mode != "nominal":
+                raise ValueError("isotope_envelope requires mass_mode='nominal'")
+            if isotope_max_order < 1:
+                raise ValueError("isotope_max_order must be at least 1")
+            if not 0.0 <= isotope_min_ratio < 1.0 / (2 * isotope_max_order + 1):
+                raise ValueError(
+                    "isotope_min_ratio must be in [0, 1 / (2 * isotope_max_order + 1))"
+                )
+        self.mass_mode = mass_mode
+        self.isotope_envelope = isotope_envelope
+        self.isotope_max_order = isotope_max_order
+        self.isotope_min_ratio = isotope_min_ratio
         self.include_cmf = include_cmf
         self.charge_pooling = charge_pooling
         self.use_smarts_templates = use_smarts_templates
@@ -2058,6 +2106,120 @@ class MassterModel(nn.Module):
                 dtype=th.bool,
             ),
         )
+        if self.isotope_envelope == "none":
+            return
+
+        # Isotope rows need each ion's full composition and the natural pattern of every
+        # isotopic element. All derived constants, so they are not persistent: checkpoints
+        # neither carry nor require them.
+        num_ion_modes = 1 + int(self.include_cmf)
+        adduct_composition_deltas = th.zeros(
+            (len(self.precursor_types), num_ion_modes, COMPOSITION_FEATURE_DIM),
+            dtype=th.long,
+        )
+        for precursor_index, mode_counts in enumerate(zip(parsed_crf, parsed_cmf)):
+            for mode, counts in enumerate(mode_counts[:num_ion_modes]):
+                for element, count in counts.items():
+                    column = int(composition_columns[PERIODIC_TABLE.GetAtomicNumber(element)])
+                    adduct_composition_deltas[precursor_index, mode, column] += count
+        order = self.isotope_max_order
+        heavy_columns, heavy_tables = [], []
+        for column, element in enumerate(CANONICAL_ELEMENT_ORDER):
+            if element == "H":
+                continue
+            table = nominal_isotope_power_table(element, ISOTOPE_MAX_ATOM_COUNT, order)
+            if table[1, order] < 1.0:
+                heavy_columns.append(column)
+                heavy_tables.append(table)
+        width = 2 * order + 1
+        # convolution_map[i, k, j] = 1 where offsets (i - order) + (k - order) = j - order.
+        offsets = th.arange(width)
+        convolution_map = (
+            (offsets[:, None, None] + offsets[None, :, None] - order) == offsets[None, None, :]
+        ).float()
+        self.register_buffer(
+            "isotope_adduct_composition_deltas", adduct_composition_deltas, persistent=False
+        )
+        self.register_buffer(
+            "isotope_heavy_columns", th.tensor(heavy_columns, dtype=th.long), persistent=False
+        )
+        self.register_buffer(
+            "isotope_heavy_power_tables",
+            th.stack([th.from_numpy(table) for table in heavy_tables]).float(),
+            persistent=False,
+        )
+        self.register_buffer(
+            "isotope_hydrogen_power_table",
+            th.tensor(
+                nominal_isotope_power_table("H", ISOTOPE_MAX_ATOM_COUNT, order),
+                dtype=th.float32,
+            ),
+            persistent=False,
+        )
+        self.register_buffer("isotope_convolution_map", convolution_map, persistent=False)
+
+    def _isotope_rows(
+        self,
+        fragment_compositions: th.Tensor,
+        fragment_precursor_types: th.Tensor,
+        row_fragments: th.Tensor,
+        row_modes: th.Tensor,
+        row_shifts: th.Tensor,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """Split each emitted pathway row over its natural nominal isotope offsets.
+
+        An ion's pattern is the product of its elements' patterns: the heavy-atom part once per
+        fragment and ion mode, then the hydrogen part per row, since the H shift changes only
+        hydrogen. Offsets outside ``-isotope_max_order..isotope_max_order`` are dropped, then
+        rows under ``isotope_min_ratio`` of their pathway, and the kept shares renormalised.
+
+        Args:
+            fragment_compositions: Element counts per fragment in the composition-feature
+                layout, shape ``(num_fragments, COMPOSITION_FEATURE_DIM)``.
+            fragment_precursor_types: Adduct index per fragment, shape ``(num_fragments,)``.
+            row_fragments: Fragment of each emitted row, shape ``(R,)``.
+            row_modes: Ion mode of each emitted row, shape ``(R,)``.
+            row_shifts: Hydrogen shift of each emitted row, shape ``(R,)``.
+
+        Returns:
+            ``(source_rows, offsets, log_shares)``, each of shape ``(R',)``: the emitted row an
+            isotope row copies, its nominal m/z offset, and the log of its share of that row.
+            The shares of one row sum to 1.
+        """
+        order = self.isotope_max_order
+        # (num_fragments, num_ion_modes, COMPOSITION_FEATURE_DIM)
+        counts = (
+            fragment_compositions[:, None, :]
+            + self.isotope_adduct_composition_deltas[fragment_precursor_types]
+        )
+        heavy_counts = counts[..., self.isotope_heavy_columns].clamp(0, ISOTOPE_MAX_ATOM_COUNT)
+        element_indices = th.arange(heavy_counts.shape[-1], device=heavy_counts.device)
+        # (num_fragments, num_ion_modes, num_isotopic_elements, 2 * order + 1)
+        element_patterns = self.isotope_heavy_power_tables[element_indices, heavy_counts]
+        heavy_patterns = element_patterns[..., 0, :]
+        for element in range(1, element_patterns.shape[-2]):
+            heavy_patterns = th.einsum(
+                "...i,...k,ikj->...j",
+                heavy_patterns,
+                element_patterns[..., element, :],
+                self.isotope_convolution_map,
+            )
+        row_hydrogens = (
+            counts[row_fragments, row_modes, COMPOSITION_HYDROGEN_COLUMN] + row_shifts
+        ).clamp(0, ISOTOPE_MAX_ATOM_COUNT)
+        row_patterns = th.einsum(
+            "ri,rk,ikj->rj",
+            heavy_patterns[row_fragments, row_modes],
+            self.isotope_hydrogen_power_table[row_hydrogens],
+            self.isotope_convolution_map,
+        )
+        row_patterns = row_patterns / row_patterns.sum(dim=1, keepdim=True)
+        keep = (row_patterns > 0.0) & (row_patterns >= self.isotope_min_ratio)
+        source_rows, columns = keep.nonzero(as_tuple=True)
+        kept = row_patterns[source_rows, columns]
+        totals = row_patterns.new_zeros(row_patterns.shape[0]).index_add(0, source_rows, kept)
+        log_shares = th.log(kept) - th.log(totals[source_rows])
+        return source_rows, columns - order, log_shares
 
     def _transferable_hydrogen_shifts(
         self,
@@ -2172,6 +2334,22 @@ class MassterModel(nn.Module):
             atom_fragment_indices,
             num_fragments,
         )
+        crf_mass_deltas = self.crf_mass_deltas
+        cmf_mass_deltas = self.cmf_mass_deltas
+        h_step = H_MASS
+        if self.mass_mode == "nominal":
+            # Mass numbers: every stable isotope's defect is under 0.5 Da, so rounding a
+            # most-abundant-isotope mass gives its mass number, and every tabulated adduct
+            # delta rounds to its nominal one. The electron drops out in the rounding.
+            per_atom = th.round(mol_pyg.atom_monoisotopic_masses) + atom_hydrogens.to(
+                mol_pyg.atom_monoisotopic_masses
+            )
+            component_masses = per_atom.new_zeros(num_fragments).index_add(
+                0, atom_fragment_indices, per_atom[atom_indices]
+            )
+            crf_mass_deltas = th.round(crf_mass_deltas)
+            cmf_mass_deltas = th.round(cmf_mass_deltas)
+            h_step = 1.0
 
         component_counts = th.zeros(
             (num_fragments, self.required_atomic_numbers.numel()),
@@ -2218,8 +2396,8 @@ class MassterModel(nn.Module):
         crf_valid = (crf_counts >= 0).all(dim=2) & transferable
         crf_mzs = (
             component_masses[:, None]
-            + self.crf_mass_deltas[component_precursor_types, None]
-            + h_shifts.to(component_masses) * H_MASS
+            + crf_mass_deltas[component_precursor_types, None]
+            + h_shifts.to(component_masses) * h_step
         )
 
         mz_channels = [crf_mzs]
@@ -2239,8 +2417,8 @@ class MassterModel(nn.Module):
             cmf_valid &= self.cmf_precursor_valid[component_precursor_types, None]
             cmf_mzs = (
                 component_masses[:, None]
-                + self.cmf_mass_deltas[component_precursor_types, None]
-                + h_shifts.to(component_masses) * H_MASS
+                + cmf_mass_deltas[component_precursor_types, None]
+                + h_shifts.to(component_masses) * h_step
             )
             mz_channels.append(cmf_mzs)
             valid_channels.append(cmf_valid)
@@ -3695,6 +3873,23 @@ class MassterModel(nn.Module):
             annotation_atom_fragment_indices = old_to_new_valid[
                 membership_fragments[membership_keep]
             ]
+        if self.isotope_envelope != "none":
+            # Same memberships as the annotation export above.
+            if self.unique_fragment_mode:
+                composition_atoms = fragment_atom_indices
+                composition_fragments = atom_fragment_indices
+            else:
+                composition_atoms = candidates.atom_indices
+                composition_fragments = candidates.atom_component_indices
+            fragment_compositions = element_counts_by_group(
+                mol_pyg,
+                composition_atoms,
+                composition_fragments,
+                chemically_valid_fragments.numel(),
+                self.composition_element_columns,
+                COMPOSITION_FEATURE_DIM,
+                COMPOSITION_HYDROGEN_COLUMN,
+            )[chemically_valid_fragments]
         fragment_batch_indices = fragment_batch_indices[chemically_valid_fragments]
         fragment_cut_counts = fragment_cut_counts[chemically_valid_fragments]
         ion_mzs = ion_mzs[chemically_valid_fragments]
@@ -3974,6 +4169,62 @@ class MassterModel(nn.Module):
         )
         mixture_weights = logged_mixture_log_weights.exp()
         proposal_mixture_entropy = -(mixture_weights * logged_mixture_log_weights).sum(dim=1)
+        mode_channel_indices = (
+            th.arange(valid_channels.shape[1], device=valid_channels.device)
+            .reshape(1, -1, 1)
+            .expand_as(valid_channels)
+        )
+        h_channel_shifts = (
+            th.arange(-self.max_h_transfer, self.max_h_transfer + 1, device=valid_channels.device)
+            .reshape(1, 1, -1)
+            .expand_as(valid_channels)
+        )
+        base_pred_logprobs = (
+            base_pathway_log_probabilities.flatten()[selected_flat_valid]
+            if self.return_base_spectrum
+            else None
+        )
+        # Every row-aligned prediction output is indexed through ``emitted_rows``.
+        emitted_rows = None
+        if self.isotope_envelope != "none":
+            # 6. Isotope rows: every emitted pathway becomes one row per isotope offset, with its
+            # probability split by natural abundance. The channel diagnostics above stay
+            # monoisotopic.
+            emitted_rows, isotope_offsets, isotope_log_shares = self._isotope_rows(
+                fragment_compositions,
+                precursor_type_indices[fragment_batch_indices],
+                fragment_channel_indices.flatten()[selected_flat_valid],
+                mode_channel_indices.flatten()[selected_flat_valid],
+                h_channel_shifts.flatten()[selected_flat_valid],
+            )
+            pred_mzs = pred_mzs[emitted_rows] + isotope_offsets.to(pred_mzs)
+            pred_batch_idxs = pred_batch_idxs[emitted_rows]
+            pred_logprobs = pred_logprobs[emitted_rows] + isotope_log_shares.to(pred_logprobs)
+            if pred_intensities is not None:
+                pred_intensities = pred_intensities[emitted_rows] * isotope_log_shares.exp().to(
+                    pred_intensities
+                )
+            if base_pred_logprobs is not None:
+                base_pred_logprobs = base_pred_logprobs[emitted_rows] + isotope_log_shares.to(
+                    base_pred_logprobs
+                )
+        if self.mass_mode == "nominal" and not return_annotation:
+            # 7. At nominal mass many pathways land on the same integer of a spectrum. The loss
+            # and metrics see only (m/z, probability), so merging those rows is exact, and it
+            # divides the loss's target-by-prediction work several-fold. The annotation export
+            # keeps one row per pathway.
+            row_mzs, row_batch_idxs = pred_mzs, pred_batch_idxs
+            pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
+                row_mzs, pred_logprobs, row_batch_idxs, agg="lse"
+            )
+            if pred_intensities is not None:
+                pred_intensities = round_aggregate_peaks(
+                    row_mzs, pred_intensities, row_batch_idxs, agg="sum"
+                )[1]
+            if base_pred_logprobs is not None:
+                base_pred_logprobs = round_aggregate_peaks(
+                    row_mzs, base_pred_logprobs, row_batch_idxs, agg="lse"
+                )[1]
         output = {
             "pred_mzs": pred_mzs,
             "pred_batch_idxs": pred_batch_idxs,
@@ -4063,9 +4314,7 @@ class MassterModel(nn.Module):
                 )
                 output["pred_escape_intensities"] = candidate_mass * escape_odds
         if self.return_base_spectrum:
-            output["base_pred_logprobs"] = base_pathway_log_probabilities.flatten()[
-                selected_flat_valid
-            ]
+            output["base_pred_logprobs"] = base_pred_logprobs
         if self.unique_fragment_mode:
             output.update(
                 {
@@ -4086,27 +4335,19 @@ class MassterModel(nn.Module):
             )
         output.update(pool_proposal_outputs)
         if return_annotation:
-            mode_channel_indices = (
-                th.arange(valid_channels.shape[1], device=valid_channels.device)
-                .reshape(1, -1, 1)
-                .expand_as(valid_channels)
-            )
-            h_channel_shifts = (
-                th.arange(
-                    -self.max_h_transfer, self.max_h_transfer + 1, device=valid_channels.device
-                )
-                .reshape(1, 1, -1)
-                .expand_as(valid_channels)
-            )
+            pathway_rows = {
+                "pred_pathway_fragment_idxs": fragment_channel_indices.flatten()[
+                    selected_flat_valid
+                ],
+                "pred_pathway_ion_mode_idxs": mode_channel_indices.flatten()[selected_flat_valid],
+                "pred_pathway_h_shifts": h_channel_shifts.flatten()[selected_flat_valid],
+            }
+            if emitted_rows is not None:
+                pathway_rows = {name: rows[emitted_rows] for name, rows in pathway_rows.items()}
+                pathway_rows["pred_pathway_isotope_offsets"] = isotope_offsets
             output.update(
                 {
-                    "pred_pathway_fragment_idxs": fragment_channel_indices.flatten()[
-                        selected_flat_valid
-                    ],
-                    "pred_pathway_ion_mode_idxs": mode_channel_indices.flatten()[
-                        selected_flat_valid
-                    ],
-                    "pred_pathway_h_shifts": h_channel_shifts.flatten()[selected_flat_valid],
+                    **pathway_rows,
                     "fragment_atom_indices": annotation_atom_indices,
                     "fragment_atom_fragment_idxs": annotation_atom_fragment_indices,
                 }

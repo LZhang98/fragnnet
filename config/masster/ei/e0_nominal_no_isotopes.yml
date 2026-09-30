@@ -1,0 +1,186 @@
+# CONTROL e0 -- MASSter on NIST23 EI, nominal mass, no isotope rows, 2026-09-30.
+#
+# Matched control for e1: identical except masster_isotope_envelope none, so the +H ladder is
+# left to absorb 13C and 37Cl/81Br satellites (at unit resolution +1 H and 13C share a bin).
+#
+# DATA: data/proc/nist23_ei/{spec_df,mol_df}.pkl and data/split/nist23_ei_inchikey, NIST23 EI
+# main library at unit resolution, built 2025-09-27 (process_nist_ei_csv). 261,424 spectra of
+# 253,649 molecules; random 2D-InChIKey split 154,981 / 51,700 / 51,685; every m/z an integer,
+# intensities out of 999. Metadata: [M]+, MS1, inst_type Other, no CE (70 eV throughout).
+# Plan and measurements: docs/plans/masster/masster_ei_nominal_plan.md.
+#
+# Deltas from i1_inst_ob_obf (config/masster/mh_ft_memorization_route_2026_09_24/), all else
+# (architecture, candidate budget, optimizer, seed, 64 epochs) unchanged:
+# 1. Data paths; prec_types [M]+; nce, ace, inst_type and frag_mode off (EI has one energy and
+#    no instrument label). include_cmf stays false: [M]+ has no CMF channel.
+# 2. masster_mass_mode: nominal. Exact-mass channels against integer targets matched 2.1% of
+#    target intensity in the 2026-09-30 smoke, with exit 0.
+# 3. loss_tolerance_rel null, loss_tolerance_abs 0.5 (user), inst_type_loss_tol null. Integer
+#    channels meet integer peaks exactly, so any tolerance under 1 matches the same pairs; the
+#    Gaussian width only shifts the loss by a constant. cos_hun_inst_tol is not requested.
+# 4. eval_mz_bin_res [1.0] and checkpoint on val_cos_sim_1.0 (user: not val_cos_sim_0.01).
+
+wandb_name: e0_nominal_no_isotopes
+wandb_group: nist23_ei_nominal_2026_09_30
+wandb_tags:
+- masster
+- nist23_ei
+- ei
+- m+
+- nominal_mass
+- unit_resolution
+- isotopes_none
+- cuda_candidates
+- unique_fragments_256
+- max_enumerated_masks_4096
+- no_ce
+- no_cmf
+- proposal_selection_only
+- unmerged
+- e0_nominal_no_isotopes
+seed: 397623
+spec_fp: data/proc/nist23_ei/spec_df.pkl
+mol_fp: data/proc/nist23_ei/mol_df.pkl
+split_dp: data/split/nist23_ei_inchikey
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: false
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M]+'
+  inst_type: false
+  inst_types:
+  - Other
+  frag_mode: false
+  frag_modes: []
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+  centroid_peaks: false
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: false
+  centroid_method: common_overlap
+  filter_subformula_peaks: false
+  subformula_ppm: 5.0
+  subformula_use_instrument_tolerance: true
+  filter_above_precursor_peaks: false
+  above_precursor_ppm: 10.0
+  above_precursor_use_instrument_tolerance: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+int_embedder: fourier
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol: null
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 64
+max_epochs: 64
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: true
+checkpoint_metric: val_cos_sim_1.0_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 1.0
+compute_train_auxiliary_metrics: false
+masster_candidate_backend: cuda
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+masster_candidate_coverage_metrics: true
+loss_tolerance_rel: null
+loss_tolerance_abs: 0.5
+masster_mass_mode: nominal
+masster_isotope_envelope: none
+masster_isotope_max_order: 4
+masster_isotope_min_ratio: 0.001

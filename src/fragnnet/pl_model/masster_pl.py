@@ -1120,6 +1120,10 @@ class MassterPL(SpectrumPL):
             encoder_atom_mask=self.hparams.masster_encoder_atom_mask,
             encoder_bond_dropout=self.hparams.masster_encoder_bond_dropout,
             light_side_token=self.hparams.masster_light_side_token,
+            mass_mode=self.hparams.masster_mass_mode,
+            isotope_envelope=self.hparams.masster_isotope_envelope,
+            isotope_max_order=self.hparams.masster_isotope_max_order,
+            isotope_min_ratio=self.hparams.masster_isotope_min_ratio,
         )
         logger.info("Resolved MASSter proposal method: %s", self.model.proposal_method)
         logger.info(

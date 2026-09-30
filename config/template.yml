@@ -813,6 +813,21 @@ masster_max_h_transfer: 4
 #                and epoch time 2.2%. `complement` measured -0.0009 and no speedup. Runs from
 #                before this date used `none` and have a larger candidate set.
 masster_h_transfer_bound: valence
+# Ion m/z convention. exact: monoisotopic m/z. nominal: integer nominal m/z for unit-resolution
+# libraries (NIST EI): mass numbers of the most abundant isotopes, the H shift at 1 Da and the
+# adduct's rounded delta, no electron. Pair nominal with loss_tolerance_rel: null,
+# loss_tolerance_abs below 1 (integer channels then match integer peaks only) and
+# eval_mz_bin_res: [1.0]. Candidate features keep exact masses.
+# See docs/plans/masster/masster_ei_nominal_plan.md.
+masster_mass_mode: exact  # ["exact", "nominal"]
+# Isotope rows. none: one row per emitted pathway. natural (needs masster_mass_mode: nominal):
+# each emitted pathway is split over nominal offsets by the natural isotope pattern of its ion
+# composition, conserving its probability; right for EI, which has no isolation step. Candidate,
+# proposal and dense channel outputs stay monoisotopic, so candidate_wrecall does not count
+# isotope peaks.
+masster_isotope_envelope: none  # ["none", "natural"]
+masster_isotope_max_order: 4  # largest absolute nominal offset of an isotope row
+masster_isotope_min_ratio: 0.001  # isotope rows under this share of their pathway are dropped
 masster_include_cmf: True
 masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; add their assemblies.

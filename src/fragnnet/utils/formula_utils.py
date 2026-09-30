@@ -242,6 +242,49 @@ NEUTRON_MASS = 1.008665
 C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); true M+1 peak spacing
 
 
+def nominal_isotope_power_table(element: str, max_count: int, max_order: int) -> np.ndarray:
+    """Natural isotope patterns of ``n`` atoms of one element, over nominal mass offsets.
+
+    Offsets count mass-number units from the element's most abundant isotope, which is the
+    nominal-mass convention: 81Br sits at +2 of 79Br, and 78Se at -2 of 80Se. Row ``n`` is the
+    ``n``-fold convolution of the single-atom pattern, truncated to offsets
+    ``-max_order..max_order`` after every step, so probability that leaves the window is
+    dropped rather than folded back. Abundances are RDKit's natural ones; an element with none
+    tabulated counts as monoisotopic.
+
+    Args:
+        element: Element symbol.
+        max_count: Largest atom count tabulated.
+        max_order: Largest absolute offset kept.
+
+    Returns:
+        Probabilities of shape ``(max_count + 1, 2 * max_order + 1)``; column ``j`` is offset
+        ``j - max_order`` and row 0 is the unit pattern at offset 0.
+    """
+    atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
+    base = round(PERIODIC_TABLE.GetMostCommonIsotopeMass(atomic_number))
+    width = 2 * max_order + 1
+    single = np.zeros(width)
+    for mass_number in range(max(1, base - max_order), base + max_order + 1):
+        single[mass_number - base + max_order] = PERIODIC_TABLE.GetAbundanceForIsotope(
+            atomic_number, mass_number
+        )
+    if single.sum() <= 0.0:
+        single[max_order] = 1.0
+    # Normalise over the full natural distribution, so isotopes outside the window count as
+    # lost mass instead of inflating the ones kept.
+    total = sum(
+        PERIODIC_TABLE.GetAbundanceForIsotope(atomic_number, mass_number)
+        for mass_number in range(1, 300)
+    )
+    single /= total if total > 0.0 else single.sum()
+    table = np.zeros((max_count + 1, width))
+    table[0, max_order] = 1.0
+    for count in range(1, max_count + 1):
+        table[count] = np.convolve(table[count - 1], single)[max_order : max_order + width]
+    return table
+
+
 def MASS(element: str | int) -> float:
     return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
 

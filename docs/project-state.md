@@ -4,6 +4,29 @@
 
 ## Current handoff
 
+**MASSter on NIST23 EI (2026-09-30); built and smoke-tested, uncommitted, not submitted.**
+User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`, not
+`val_cos_sim_0.01`; model isotopes; `loss_tolerance_abs` 0.5.
+- **Data.** 261,424 spectra of 253,649 molecules; integer m/z; `[M]+`, no CE; split
+  154,981 / 51,700 / 51,685.
+- **Measured, why nominal masses are needed:**
+  - `i1`'s keys on EI data train silently on 2.1% of the target, because exact-mass channels
+    miss integer peaks.
+  - At nominal mass the 0-2-cut pool with ±4 H reaches 91% of L1 intensity, but a
+    mismatched molecule reaches 82%, so ranking binds, not coverage.
+  - Floor binning misplaces 13% of exact-mass channels at 1 Da.
+- **Measured, why the isotope prior is natural:** EI molecular-ion isotope ratios match
+  natural abundance (M+1/M 1.006×, Cl/Br M+2/M 0.994× theory).
+- **Built behind default-off keys:**
+  - `masster_mass_mode: nominal`;
+  - `masster_isotope_envelope: natural` (natural isotope rows, probability-conserving);
+  - a merge of same-integer rows, which is exact and keeps `e1` in memory.
+- **Configs** `e1` (isotopes) and `e0` (control) in `config/masster/ei/`; 16 new tests; GPU
+  smokes of both exit 0 with `val_candidate_wrecall` 0.954.
+- **Next:** put the EI data on Fir, add a submitter stage and submit `e1`/`e0` when the user
+  decides. The EI library metrics and the isotope labels in the export are open.
+- [Plan](plans/masster/masster_ei_nominal_plan.md).
+
 **NCE into the MASSter molecule encoder: `ce1`/`ce2` built (2026-09-30); uncommitted, not
 submitted.** Traced on `i1`: every head sees NCE, but only through one 128-d context vector. The
 molecule encoder is CE-blind, so fragment embeddings are the same at every NCE. FraGNNet's

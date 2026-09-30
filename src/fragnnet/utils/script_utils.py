@@ -2086,6 +2086,12 @@ def process_batch_to_tabular_row(
             return_inverse=_need_expl,
         )
         pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregated[:3]
+        if _need_expl and "pred_pathway_isotope_offsets" in batch_result:
+            # The tables would give an isotope row its monoisotopic formula at m/z + offset.
+            raise NotImplementedError(
+                "MASSter annotation export does not label isotope rows "
+                "(masster_isotope_envelope: natural); export without explanations"
+            )
         if _need_expl:
             mol_pyg = batch_input["mol_pyg"]
             masster_annotation = masster_annotation_tables(
