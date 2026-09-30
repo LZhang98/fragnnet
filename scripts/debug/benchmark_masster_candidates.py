@@ -218,6 +218,7 @@ def main() -> None:
         "component_mechanism_indices",
         "component_batch_indices",
         "component_cut_counts",
+        "component_formed_bond_counts",
         "component_unique_indices",
         "unique_representative_component_indices",
         "atom_indices",

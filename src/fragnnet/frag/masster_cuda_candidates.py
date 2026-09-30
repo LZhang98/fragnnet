@@ -128,6 +128,8 @@ def _expand_topology_views(
         "component_mechanism_indices": component_mask_indices,
         "component_batch_indices": components,
         "component_cut_counts": gathered[2],
+        # Ordinary components are connected, so they form no bond.
+        "component_formed_bond_counts": th.zeros_like(gathered[2]),
         "component_unique_indices": gathered[9] + metadata[4][components],
         "unique_representative_component_indices": gathered[10] + metadata[3][unique],
         "atom_indices": gathered[3] + metadata[1][atoms],

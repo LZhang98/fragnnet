@@ -48,6 +48,7 @@ from fragnnet.frag.masster_candidates import (
 from fragnnet.frag.masster_fast_gnn import build_fast_gnn_candidates
 from fragnnet.frag.masster_templates import (
     MASSTER_NUM_RULES,
+    MASSTER_RULE_NAME_HASHES,
     MassterTemplate,
     filter_masster_templates,
 )
@@ -1135,6 +1136,7 @@ class MassterModel(nn.Module):
         encoder_bond_dropout: float = 0.0,
         light_side_token: bool = False,
         intensity_candidate_graph: bool = False,
+        rule_pathway_token: bool = False,
         mass_mode: str = "exact",
         isotope_envelope: str = "none",
         isotope_max_order: int = 4,
@@ -1248,8 +1250,8 @@ class MassterModel(nn.Module):
             fast_gnn_max_boundary_cuts: Maximum boundary size for proper fragments.
             candidate_backend: Exact cut-mask construction on CPU or opt-in CUDA.
                 Ignored by fast_gnn, which runs PyTorch search on the model device.
-                CUDA requires FP32, one mixture, unique mode, zero mask floors and
-                SMARTS disabled. The model can be constructed before device transfer.
+                CUDA requires FP32, one mixture, unique mode and zero mask floors; it
+                supports SMARTS templates. The model can be constructed before device transfer.
             max_enumerated_masks: Safety cap on latent masks considered while filling
                 the unique-fragment target.
             min_mask_relative_probability: MAP-relative probability floor below which
@@ -1376,6 +1378,12 @@ class MassterModel(nn.Module):
                 atom containment, and its complement; the intact precursor receives but never
                 sends. A -inf mask on full attention, so it adds no parameters. Requires
                 ``unique_fragment_mode`` and ``intensity_transformer_attention: full``.
+            rule_pathway_token: Add each candidate's SMARTS rule provenance to its intensity
+                token (arm ``p1``): a 0/1 indicator per vocabulary rule, 1 where a mechanism of
+                that rule produces the fragment (either side of the template), times a
+                zero-initialized, bias-free projection, i.e. the sum of the fragment's rule
+                embeddings. An indicator, not a pathway count, so mask multiplicity does not
+                leak in. Requires ``use_smarts_templates`` and ``unique_fragment_mode``.
             mass_mode: ``exact`` emits monoisotopic ion m/z. ``nominal`` emits the integer
                 nominal m/z of unit-resolution libraries such as NIST EI: the sum of each
                 atom's most-abundant-isotope mass number (implicit hydrogens at 1), plus the H
@@ -1485,6 +1493,10 @@ class MassterModel(nn.Module):
             )
         if fragment_connectivity_layers > 0 and not unique_fragment_mode:
             raise ValueError("fragment_connectivity_layers requires unique_fragment_mode")
+        if rule_pathway_token and not (use_smarts_templates and unique_fragment_mode):
+            raise ValueError(
+                "rule_pathway_token requires use_smarts_templates and unique_fragment_mode"
+            )
         if not isinstance(fragment_connectivity_messages, bool):
             raise ValueError("fragment_connectivity_messages must be boolean")
         if memorization_sink_dim < 0 or memorization_sink_num_molecules < 0:
@@ -1709,6 +1721,7 @@ class MassterModel(nn.Module):
         self.include_cmf = include_cmf
         self.charge_pooling = charge_pooling
         self.use_smarts_templates = use_smarts_templates
+        self.rule_pathway_token = rule_pathway_token
         self.use_mask_residuals = use_mask_residuals
         self.intensity_output = intensity_output
         self.return_base_spectrum = return_base_spectrum
@@ -1926,16 +1939,15 @@ class MassterModel(nn.Module):
                     self.num_ion_modes,
                     head_dropout,
                 )
-        self.mechanism_head = (
-            SmartsMechanismHead(
-                precursor_hidden_dim,
-                context_dim,
-                head_hidden_dim,
-                head_dropout,
-            )
-            if use_smarts_templates
-            else None
-        )
+        self.mechanism_head: SmartsMechanismHead | None = None
+        if use_smarts_templates:
+            with th.random.fork_rng(devices=[]):
+                self.mechanism_head = SmartsMechanismHead(
+                    precursor_hidden_dim,
+                    context_dim,
+                    head_hidden_dim,
+                    head_dropout,
+                )
         self.intensity_head = CandidateIntensityTransformerHead(
             fragment_embedding_dim=precursor_hidden_dim,
             context_dim=context_dim,
@@ -1969,9 +1981,18 @@ class MassterModel(nn.Module):
             connectivity_embedding_dim=2 * self.fragment_connectivity_dim,
             nl_positional_encoding=intensity_nl_positional_encoding,
             candidate_graph=intensity_candidate_graph,
+            rule_pathway_dim=MASSTER_NUM_RULES if rule_pathway_token else 0,
         )
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
+        if use_smarts_templates:
+            # The rules this model knows, in rule-index order. A checkpoint restores its own
+            # (possibly shorter) list; rules appended after it are then ignored.
+            self.register_buffer(
+                "smarts_rule_name_hashes",
+                th.tensor(MASSTER_RULE_NAME_HASHES, dtype=th.long),
+            )
+            self._register_load_state_dict_pre_hook(self._restore_smarts_rule_vocabulary)
 
     def _restore_chemistry_buffers(
         self,
@@ -1987,6 +2008,52 @@ class MassterModel(nn.Module):
             "composition_element_columns",
         ):
             state_dict[prefix + name] = self.get_buffer(name)
+
+    def _restore_smarts_rule_vocabulary(
+        self,
+        state_dict: dict[str, th.Tensor],
+        prefix: str,
+        *args: object,
+    ) -> None:
+        """Load a checkpoint trained on a prefix of the current rule vocabulary.
+
+        Rule-indexed parameters are laid out in ``MASSTER_RULE_VOCABULARY`` order, which is
+        append-only. A checkpoint with fewer rules gets zero rows for the appended ones, and
+        keeps its own name list, so ``_eligible_smarts_templates`` never offers it a rule it
+        was not trained with.
+
+        Raises:
+            ValueError: If the checkpoint has no rule list, or its list is not a prefix of
+                the current vocabulary (a rule was reordered, renamed or removed from it).
+        """
+        key = prefix + "smarts_rule_name_hashes"
+        if key not in state_dict:
+            raise ValueError(
+                "this SMARTS checkpoint predates the stable rule vocabulary "
+                "(2026-09-29); its rule indices cannot be mapped to rule names"
+            )
+        saved = state_dict[key].detach().cpu()
+        current = th.tensor(MASSTER_RULE_NAME_HASHES, dtype=th.long)
+        num_saved = saved.numel()
+        if num_saved > current.numel() or not th.equal(saved, current[:num_saved]):
+            raise ValueError(
+                "the checkpoint's SMARTS rules are not a prefix of MASSTER_RULE_VOCABULARY; "
+                "the vocabulary is append-only"
+            )
+        self.smarts_rule_name_hashes = saved.to(self.smarts_rule_name_hashes.device)
+        if num_saved == current.numel():
+            return
+        # (parameter, axis holding rule index r at position r - 1 + offset, offset)
+        rule_parameters = [("mechanism_head.rule_embedding.weight", 0, 1)]
+        if self.intensity_head.rule_pathway_residual is not None:
+            rule_parameters.append(("intensity_head.rule_pathway_residual.weight", 1, 0))
+        for name, axis, offset in rule_parameters:
+            weight = state_dict.get(prefix + name)
+            if weight is None or weight.shape[axis] != num_saved + offset:
+                continue
+            pad_shape = list(weight.shape)
+            pad_shape[axis] = current.numel() - num_saved
+            state_dict[prefix + name] = th.cat((weight, weight.new_zeros(pad_shape)), dim=axis)
 
     def set_evaluation_ion_h_top_k(self, top_k: int) -> None:
         """Set evaluation-only fixed-k ion/H selection; zero disables it."""
@@ -2233,6 +2300,7 @@ class MassterModel(nn.Module):
         atom_numbers: th.Tensor,
         atom_hydrogens: th.Tensor,
         batch_size: int,
+        fragment_formed_bond_counts: th.Tensor | None = None,
     ) -> th.Tensor:
         """Return which hydrogen shifts a source of hydrogen can actually supply.
 
@@ -2252,6 +2320,8 @@ class MassterModel(nn.Module):
             atom_numbers: Atomic number per atom.
             atom_hydrogens: Hydrogen count per atom.
             batch_size: Number of spectra in the batch.
+            fragment_formed_bond_counts: Bonds a SMARTS assembly forms inside each fragment,
+                or None when none can. Used by ``valence`` only.
 
         Returns:
             Bool tensor of shape ``(num_fragments, num_h_shifts)``.
@@ -2289,6 +2359,10 @@ class MassterModel(nn.Module):
                 0, atom_fragment_indices, slots
             )
             valence_gain = fragment_slots + fragment_cut_counts.to(fragment_slots)
+            if fragment_formed_bond_counts is not None:
+                # A bond a SMARTS assembly forms between two of its pieces takes back the
+                # slot each endpoint gained from its severed bond.
+                valence_gain = valence_gain - 2 * fragment_formed_bond_counts.to(fragment_slots)
             max_gain = th.minimum(max_gain, valence_gain)
 
         return h_shifts[None, :] <= max_gain.clamp_min(0)[:, None]
@@ -2302,6 +2376,7 @@ class MassterModel(nn.Module):
         num_fragments: int,
         precursor_type_indices: th.Tensor,
         fragment_cut_counts: th.Tensor | None = None,
+        fragment_formed_bond_counts: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor]:
         """Translate fragment atom sets into monoisotopic ion channels.
 
@@ -2314,6 +2389,8 @@ class MassterModel(nn.Module):
             precursor_type_indices: Adduct index per spectrum, shape ``(batch_size,)``.
             fragment_cut_counts: Severed bonds per fragment, required by the ``valence``
                 hydrogen-transfer bound and ignored by the others.
+            fragment_formed_bond_counts: Bonds a SMARTS assembly forms inside each fragment,
+                read by the ``valence`` bound; None when no fragment is an assembly.
 
         Returns:
             Tuple of ``(ion_mzs, valid_channels)``, both shaped
@@ -2383,6 +2460,7 @@ class MassterModel(nn.Module):
             atom_numbers,
             atom_hydrogens,
             precursor_type_indices.shape[0],
+            fragment_formed_bond_counts,
         )
         # CRF channel: the fragment keeps the adduct, so apply the adduct's element and
         # mass deltas, then sweep the hydrogen-transfer offsets. A channel is invalid
@@ -2658,6 +2736,48 @@ class MassterModel(nn.Module):
         )
         return boundary_embeddings * keep_scale
 
+    @staticmethod
+    def _fragment_rule_indicators(
+        candidates: MassterCandidateBatch,
+        component_fragment_indices: th.Tensor,
+        num_fragments: int,
+        dtype: th.dtype,
+    ) -> th.Tensor:
+        """Mark which SMARTS rules produce each fragment.
+
+        Every component row of a SMARTS mechanism, on either side of the template, sets its
+        fragment's column for that rule. The ordinary mechanism (rule 0) sets none.
+        Duplicate pathways set the same entry, so the result is an indicator, not a count.
+
+        Args:
+            candidates: Candidate batch.
+            component_fragment_indices: Fragment of every component row, shape
+                ``(num_components,)``.
+            num_fragments: Number of fragments.
+            dtype: Output dtype.
+
+        Returns:
+            0/1 tensor of shape ``(num_fragments, MASSTER_NUM_RULES)``; column ``r - 1``
+            holds rule index ``r``.
+        """
+        component_rules = candidates.mechanism_rule_indices[candidates.component_mechanism_indices]
+        flat_indices = component_fragment_indices * MASSTER_NUM_RULES + (
+            component_rules - 1
+        ).clamp_min(0)
+        # amax, not index_put: an ordinary row writes 0 where a rule-1 row writes 1, and
+        # a maximum does not depend on which lands last.
+        return (
+            th.zeros(num_fragments * MASSTER_NUM_RULES, dtype=dtype, device=flat_indices.device)
+            .scatter_reduce(
+                0,
+                flat_indices,
+                (component_rules > 0).to(dtype),
+                reduce="amax",
+                include_self=True,
+            )
+            .view(num_fragments, MASSTER_NUM_RULES)
+        )
+
     def _mechanism_log_probabilities(
         self,
         candidates: MassterCandidateBatch,
@@ -2738,11 +2858,17 @@ class MassterModel(nn.Module):
                 for index in mode_indices
             ]
 
+        # Rules appended to the vocabulary after this model's checkpoint stay off.
+        num_known_rules = self.smarts_rule_name_hashes.numel()
         return tuple(
-            filter_masster_templates(
-                templates,
-                precursor_type=self.precursor_types[precursor_index],
-                fragmentation_mode=fragmentation_mode,
+            tuple(
+                template
+                for template in filter_masster_templates(
+                    templates,
+                    precursor_type=self.precursor_types[precursor_index],
+                    fragmentation_mode=fragmentation_mode,
+                )
+                if template.rule_index <= num_known_rules
             )
             for templates, precursor_index, fragmentation_mode in zip(
                 templates_by_molecule,
@@ -2963,9 +3089,13 @@ class MassterModel(nn.Module):
             - "bond_break_logits"/"atom_charge_logits": raw head outputs.
             - with ``return_annotation``: "pred_pathway_fragment_idxs",
               "pred_pathway_ion_mode_idxs" (0 CRF, 1 CMF) and "pred_pathway_h_shifts",
-              aligned with "pred_mzs"; and "fragment_atom_indices" /
+              aligned with "pred_mzs"; "fragment_atom_indices" /
               "fragment_atom_fragment_idxs", one entry per (fragment, atom) membership, with
-              fragments indexed like "ion_h_fragment_batch_idxs".
+              fragments indexed like "ion_h_fragment_batch_idxs"; and
+              "fragment_rule_fragment_idxs" / "fragment_rule_idxs", one entry per
+              (fragment, SMARTS rule) pair where a mechanism of that rule produces the
+              fragment, rule indices into ``MASSTER_RULE_VOCABULARY`` from 1 (empty with
+              SMARTS off).
             - remaining keys: per-spectrum counters and candidate-generation timings.
 
         Raises:
@@ -3306,6 +3436,25 @@ class MassterModel(nn.Module):
                 fragment_cut_counts,
             ) = self._unique_component_memberships(candidates)
             num_fragments = candidates.num_unique_components
+            # An atom set's formed-bond count does not depend on which pathway produced it,
+            # so the representative's is the fragment's.
+            fragment_formed_bond_counts = (
+                candidates.component_formed_bond_counts[
+                    candidates.unique_representative_component_indices
+                ]
+                if self.use_smarts_templates
+                else None
+            )
+            fragment_rule_indicators = (
+                self._fragment_rule_indicators(
+                    candidates,
+                    candidates.component_unique_indices,
+                    num_fragments,
+                    atom_embeddings.dtype,
+                )
+                if self.use_smarts_templates and (self.rule_pathway_token or return_annotation)
+                else None
+            )
             if self.proposal_method == "connected_fragment_beam":
                 # One unique fragment per adapter row: no latent charge competition.
                 component_log_probabilities = candidates.mask_log_probabilities
@@ -3378,6 +3527,7 @@ class MassterModel(nn.Module):
                 # valence slot. Intra-fragment breaks are excluded, matching the retained-bond
                 # count FraGNNet's `update_bonds` computes.
                 fragment_cut_counts,
+                fragment_formed_bond_counts,
             )
             valid_fragments = valid_channels.flatten(1).any(dim=1)
             if self.fragment_selection == "marginal":
@@ -3495,6 +3645,8 @@ class MassterModel(nn.Module):
             ]
             fragment_batch_indices = fragment_batch_indices[fragment_keep]
             fragment_cut_counts = fragment_cut_counts[fragment_keep]
+            if fragment_rule_indicators is not None:
+                fragment_rule_indicators = fragment_rule_indicators[fragment_keep]
             fragment_log_probabilities = fragment_log_probabilities[fragment_keep]
             num_fragments = int(fragment_log_probabilities.shape[0])
             retained_proposal_log_normalizers = _segment_logsumexp(
@@ -3636,6 +3788,9 @@ class MassterModel(nn.Module):
                 ce_features=spectrum_ce_features,
                 candidate_features=fragment_candidate_features,
                 connectivity_embeddings=connectivity_embeddings,
+                rule_pathway_features=(
+                    fragment_rule_indicators if self.rule_pathway_token else None
+                ),
                 sink_vectors=None if sink_rows is None else sink_rows[fragment_batch_indices],
                 precursor_neutral_masses=(
                     candidate_inputs.precursor_neutral_masses
@@ -3714,6 +3869,20 @@ class MassterModel(nn.Module):
             num_fragments = candidates.num_components
             fragment_batch_indices = candidates.component_batch_indices
             fragment_cut_counts = candidates.component_cut_counts
+            fragment_formed_bond_counts = (
+                candidates.component_formed_bond_counts if self.use_smarts_templates else None
+            )
+            # Only the annotation reads provenance here: rule_pathway_token needs unique mode.
+            fragment_rule_indicators = (
+                self._fragment_rule_indicators(
+                    candidates,
+                    th.arange(num_fragments, device=fragment_batch_indices.device),
+                    num_fragments,
+                    atom_embeddings.dtype,
+                )
+                if self.use_smarts_templates and return_annotation
+                else None
+            )
             pooled_atom_indices, pooled_atom_component_indices = self._candidate_atom_dropout(
                 candidates.atom_indices,
                 candidates.atom_component_indices,
@@ -3853,6 +4022,7 @@ class MassterModel(nn.Module):
                 # unreachable channel in place, never remove a reachable one. The
                 # unique-fragment path above uses exact per-fragment boundary counts.
                 fragment_cut_counts,
+                fragment_formed_bond_counts,
             )
 
         # 4. Remove fragments that cannot form an ion under the configured adduct.
@@ -3873,6 +4043,12 @@ class MassterModel(nn.Module):
             annotation_atom_fragment_indices = old_to_new_valid[
                 membership_fragments[membership_keep]
             ]
+            if fragment_rule_indicators is None:
+                annotation_rule_pairs = fragment_batch_indices.new_zeros((0, 2))
+            else:
+                annotation_rule_pairs = th.nonzero(
+                    fragment_rule_indicators[chemically_valid_fragments]
+                )
         if self.isotope_envelope != "none":
             # Same memberships as the annotation export above.
             if self.unique_fragment_mode:
@@ -4350,6 +4526,9 @@ class MassterModel(nn.Module):
                     **pathway_rows,
                     "fragment_atom_indices": annotation_atom_indices,
                     "fragment_atom_fragment_idxs": annotation_atom_fragment_indices,
+                    "fragment_rule_fragment_idxs": annotation_rule_pairs[:, 0],
+                    # Column r - 1 of the indicators holds rule index r.
+                    "fragment_rule_idxs": annotation_rule_pairs[:, 1] + 1,
                 }
             )
         return output

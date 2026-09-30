@@ -17,6 +17,7 @@ import torch as th
 from pyteomics.mass import Composition
 from tqdm import tqdm
 
+from fragnnet.frag.masster_templates import MASSTER_RULE_VOCABULARY
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.pl_model import FraGNNetPL, MassterPL
 from fragnnet.runner import load_config
@@ -651,23 +652,37 @@ COLUMN_SPECS = (
     ColumnSpec("pred_formula_strs", "formula", flag="return_formula_str"),
     ColumnSpec("pred_formula_adducts", "formula", flag="return_annotation"),
     ColumnSpec("pred_node_ccs", "node", flag="return_cc_hash"),
+    ColumnSpec("pred_node_rules", "node", flag="return_rule_provenance"),
 )
 
 # Valid tokens a user can request in `output_subset` for inference outputs.
 OUTPUT_SUBSET_OPTIONS = [c.token for c in COLUMN_SPECS if c.token is not None]
 
 
-def selected_column_specs(return_formula_str: bool, return_cc_hash: bool) -> list[ColumnSpec]:
+def selected_column_specs(
+    return_formula_str: bool,
+    return_cc_hash: bool,
+    return_rule_provenance: bool = False,
+) -> list[ColumnSpec]:
     """The columns this run emits, in order.
 
     `output_subset` deliberately does NOT narrow this list: a column outside the subset is
     still emitted, holding NaN, and `--drop_none_cols` is what removes it. Both the column
     names and the row values are built from this one function, so a row can never be
     misaligned against its header.
+
+    `return_rule_provenance` adds `pred_node_rules`, MASSter's SMARTS rules behind each
+    node. It describes the nodes `pred_node_ccs` identifies, so it requires `return_cc_hash`.
+
+    Raises:
+        ValueError: If `return_rule_provenance` is set without `return_cc_hash`.
     """
+    if return_rule_provenance and not return_cc_hash:
+        raise ValueError("return_rule_provenance annotates cc-hash nodes; set return_cc_hash")
     flags = {
         "return_formula_str": return_formula_str,
         "return_cc_hash": return_cc_hash,
+        "return_rule_provenance": return_rule_provenance,
         # `pred_formula_adducts` is what makes either annotation resolvable: it turns a
         # neutral `pred_formula_strs` entry into the observed ion, and tells a `pred_node_ccs`
         # bitmask which adduct that fragment carries on the CRF/CMF row it was reached by.
@@ -989,6 +1004,7 @@ def get_tabular_columns(
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
     output_subset: set[str] | None = None,
+    return_rule_provenance: bool = False,
 ) -> list[str]:
     """
     Get column names for tabular inference output.
@@ -997,13 +1013,17 @@ def get_tabular_columns(
             config_d: Configuration dictionary
             return_formula_str: Whether output includes the formula-string annotation column
             return_cc_hash: Whether output includes the node cc-hash annotation column
+            return_rule_provenance: Whether output includes MASSter's per-node SMARTS rules
             output_subset: Optional subset of output tokens. Checked for unknown tokens but
                     NOT used to narrow the column list - see `selected_column_specs`.
 
     Returns:
             List of column names for DataFrame
     """
-    columns_name = [c.name for c in selected_column_specs(return_formula_str, return_cc_hash)]
+    columns_name = [
+        c.name
+        for c in selected_column_specs(return_formula_str, return_cc_hash, return_rule_provenance)
+    ]
     columns_name.extend(get_score_types(config_d))
 
     if output_subset is not None:
@@ -1233,6 +1253,7 @@ def run_inference_tabular(
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
+    return_rule_provenance: bool = False,
 ) -> pd.DataFrame:
     """
     Run inference and return all results as a single DataFrame.
@@ -1257,7 +1278,11 @@ def run_inference_tabular(
     """
     # Get column names from config
     columns_name = get_tabular_columns(
-        model.hparams, return_formula_str, return_cc_hash, output_subset=output_set
+        model.hparams,
+        return_formula_str,
+        return_cc_hash,
+        output_subset=output_set,
+        return_rule_provenance=return_rule_provenance,
     )
 
     # Accumulate all batch results into a column-keyed dict
@@ -1274,6 +1299,7 @@ def run_inference_tabular(
         return_formula_str=return_formula_str,
         return_cc_hash=return_cc_hash,
         rebase_indices=rebase_indices,
+        return_rule_provenance=return_rule_provenance,
     ):
         assert len(batch_rows) == len(
             columns_name
@@ -1298,6 +1324,7 @@ def run_inference_hdf5(
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
     chunk_size: int = 10000,
+    return_rule_provenance: bool = False,
     save_path: str = "",
     drop_none_cols: bool = True,
     compression: str | None = "gzip",
@@ -1354,7 +1381,11 @@ def run_inference_hdf5(
     """
     # Get column names from config
     columns_name = get_tabular_columns(
-        model.hparams, return_formula_str, return_cc_hash, output_subset=output_set
+        model.hparams,
+        return_formula_str,
+        return_cc_hash,
+        output_subset=output_set,
+        return_rule_provenance=return_rule_provenance,
     )
     # Ragged per-spectrum column families, read off COLUMN_SPECS so they cannot drift from
     # the DataFrame schema. Each spectrum contributes a variable-length block to every
@@ -1494,6 +1525,7 @@ def run_inference_hdf5(
             return_cc_hash=return_cc_hash,
             rebase_indices=rebase_indices,
             filter_stats=filter_stats if min_peak_int > 0 else None,
+            return_rule_provenance=return_rule_provenance,
         )
         # The final sentinel flushes a partial chunk on actual iterator exhaustion,
         # including cutoffs and samplers whose reported length is only an estimate.
@@ -1592,6 +1624,7 @@ def run_inference_tabular_iter(
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
     filter_stats: dict | None = None,
+    return_rule_provenance: bool = False,
 ) -> Iterator[pd.DataFrame]:
     """
     Generator that yields batch results for streaming inference processing.
@@ -1678,6 +1711,7 @@ def run_inference_tabular_iter(
                 return_cc_hash=return_cc_hash,
                 output_set=output_set,
                 filter_stats=filter_stats,
+                return_rule_provenance=return_rule_provenance,
             )
             yield batch_rows
 
@@ -1740,6 +1774,8 @@ class MassterAnnotationTables:
         node_ccs: Atom bitmask per node in the FraGNNet ``cc`` encoding, shape (N, 2), or
             None when not requested.
         num_multi_formula_peaks: Peaks whose pathways carry more than one formula row.
+        node_rules: SMARTS rule names behind each node, ``";"``-joined in vocabulary order
+            and empty for a node no rule produces, shape (N,); None when not requested.
     """
 
     frag_formula_peak_idxs: th.Tensor
@@ -1758,6 +1794,7 @@ class MassterAnnotationTables:
     node_cumsizes: th.Tensor
     node_ccs: th.Tensor | None
     num_multi_formula_peaks: int
+    node_rules: np.ndarray | None = None
 
 
 def _unique_rows(rows: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
@@ -1810,6 +1847,8 @@ def masster_annotation_tables(
     atom_ptr: th.Tensor,
     precursor_types: list[str],
     return_node_ccs: bool,
+    fragment_rule_fragment_idxs: th.Tensor | None = None,
+    fragment_rule_idxs: th.Tensor | None = None,
 ) -> MassterAnnotationTables:
     """Group MASSter's output pathways into FraGNNet's formula / joint / node annotation.
 
@@ -1845,6 +1884,10 @@ def masster_annotation_tables(
         atom_ptr: Atom offsets of the batched graphs, shape (B + 1,).
         precursor_types: Precursor type string per spectrum, length B.
         return_node_ccs: Build the (N, 2) ``cc`` bitmasks.
+        fragment_rule_fragment_idxs: Fragment of every (fragment, SMARTS rule) pair, shape
+            (R,), or None to skip the node rules.
+        fragment_rule_idxs: Rule index of every pair, from 1 into
+            ``MASSTER_RULE_VOCABULARY``, shape (R,). Given exactly with the fragments.
 
     Returns:
         The annotation tables, on the device of the pathway tensors.
@@ -1899,6 +1942,19 @@ def masster_annotation_tables(
     fragment_to_node[used_fragments] = used_to_node
     pathway_nodes = fragment_to_node[pathway_fragment_idxs]
     node_batch_idxs = node_keys[:, 0]
+    if (fragment_rule_fragment_idxs is None) != (fragment_rule_idxs is None):
+        raise ValueError("fragment_rule_fragment_idxs and fragment_rule_idxs go together")
+    node_rules = None
+    if fragment_rule_fragment_idxs is not None:
+        # A node is an atom set, so it carries every rule behind any fragment it merges.
+        rule_nodes = fragment_to_node[fragment_rule_fragment_idxs].tolist()
+        rules_by_node: dict[int, set[int]] = {}
+        for node, rule in zip(rule_nodes, fragment_rule_idxs.tolist(), strict=True):
+            if node >= 0:
+                rules_by_node.setdefault(node, set()).add(rule)
+        node_rules = np.full(node_keys.shape[0], "", dtype=object)
+        for node, rules in rules_by_node.items():
+            node_rules[node] = ";".join(MASSTER_RULE_VOCABULARY[rule - 1] for rule in sorted(rules))
 
     # 3. Neutral formula and precursor delta per pathway; fold negative neutral formulas.
     deltas = sorted(
@@ -1997,6 +2053,7 @@ def masster_annotation_tables(
         node_cumsizes=_batch_offsets(node_batch_idxs, batch_size),
         node_ccs=node_keys[:, 1 : 1 + MASK_SIZE // 64] if return_node_ccs else None,
         num_multi_formula_peaks=int((rows_per_peak > 1).sum().item()),
+        node_rules=node_rules,
     )
 
 
@@ -2015,6 +2072,7 @@ def process_batch_to_tabular_row(
     return_cc_hash: bool,
     output_set: set[str] | None = None,
     filter_stats: dict | None = None,
+    return_rule_provenance: bool = False,
 ) -> list:
     """Process a single batch and return list of data rows.
 
@@ -2035,12 +2093,20 @@ def process_batch_to_tabular_row(
         rebase_indices: Whether to rebase indices to 0-based per-molecule
         return_formula_str: Whether to include formula strings
         return_cc_hash: Whether to include node canonical SMILES
+        return_rule_provenance: Whether to include MASSter's per-node SMARTS rule names
 
     Returns:
         List of data rows for this batch, with one row per spectrum-molecule pair
+
+    Raises:
+        ValueError: If `return_rule_provenance` is set for a model other than MASSter.
     """
     # Emitted column order; the same call `get_tabular_columns` makes for the header.
-    selected_columns = selected_column_specs(return_formula_str, return_cc_hash)
+    selected_columns = selected_column_specs(
+        return_formula_str, return_cc_hash, return_rule_provenance
+    )
+    if return_rule_provenance and not isinstance(model, MassterPL):
+        raise ValueError("return_rule_provenance is a MASSter SMARTS annotation")
     spec_ids = batch_input["spec_unique_id"]
     mol_ids = batch_input["mol_id"]
     # Extract string/graph data before moving to device (if they are not tensors)
@@ -2112,6 +2178,12 @@ def process_batch_to_tabular_row(
                     for i in batch_input["spec_prec_type"].reshape(-1).tolist()
                 ],
                 return_node_ccs=return_cc_hash,
+                fragment_rule_fragment_idxs=(
+                    batch_result["fragment_rule_fragment_idxs"] if return_rule_provenance else None
+                ),
+                fragment_rule_idxs=(
+                    batch_result["fragment_rule_idxs"] if return_rule_provenance else None
+                ),
             )
             if masster_annotation.num_multi_formula_peaks:
                 warnings.warn(
@@ -2515,6 +2587,21 @@ def process_batch_to_tabular_row(
                         masster_annotation.node_ccs[b_node_idxs.long() + n_offset].detach().cpu()
                     )
             row_d["pred_node_ccs"] = b_pred_node_ccs
+
+        if return_rule_provenance:
+            # Same batch-wide node table and lookup as the MASSter cc bitmasks above.
+            b_pred_node_rules = np.nan
+            b_node_idxs = orig_node_idxs_for_lookup if rebase_indices else b_pred_node_node_idxs
+            if (
+                masster_annotation is not None
+                and masster_annotation.node_rules is not None
+                and b_node_idxs is not None
+            ):
+                n_offset = masster_annotation.node_cumsizes[b_idx]
+                b_pred_node_rules = masster_annotation.node_rules[
+                    (b_node_idxs.long() + n_offset).cpu().numpy()
+                ].tolist()
+            row_d["pred_node_rules"] = b_pred_node_rules
 
         # Move every exported tensor to the CPU here. Only some of the arrays above are
         # explicitly moved, so without this the saved predictions mix CPU and CUDA tensors

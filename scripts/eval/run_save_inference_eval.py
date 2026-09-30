@@ -168,6 +168,13 @@ def get_args():
         help="Whether to return node CC hashes (FraGNNet and MASSter)",
     )
     parser.add_argument(
+        "--return_rule_provenance",
+        type=booltype,
+        default=False,
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
+        "(requires --return_cc_hash)",
+    )
+    parser.add_argument(
         "--eval_mz_bin_res",
         type=float,
         nargs="+",
@@ -342,6 +349,7 @@ if __name__ == "__main__":
             return_formula_str=args.return_formula_str or args.output_everything,
             return_cc_hash=args.return_cc_hash or args.output_everything,
             rebase_indices=True,
+            return_rule_provenance=args.return_rule_provenance,
             save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
             drop_none_cols=args.drop_none_cols,
         )

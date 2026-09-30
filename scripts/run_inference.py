@@ -137,6 +137,13 @@ if __name__ == "__main__":
         "--return_cc_hash", type=booltype, default=True, help="Whether to return node CC hashes"
     )
     parser.add_argument(
+        "--return_rule_provenance",
+        type=booltype,
+        default=False,
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
+        "(requires --return_cc_hash)",
+    )
+    parser.add_argument(
         "--drop_none_cols",
         type=booltype,
         default=True,
@@ -526,6 +533,7 @@ if __name__ == "__main__":
         return_formula_str=args.return_formula_str or args.output_everything,
         return_cc_hash=args.return_cc_hash or args.output_everything,
         output_subset=output_set,
+        return_rule_provenance=args.return_rule_provenance,
     )
 
     # =========================================
@@ -551,6 +559,7 @@ if __name__ == "__main__":
         return_cc_hash=args.return_cc_hash or args.output_everything,
         rebase_indices=True,
         output_set=output_set,
+        return_rule_provenance=args.return_rule_provenance,
     ):
         # batch_rows is COLUMN-major: one list per column, each holding a value per
         # spectrum in the batch. Transpose to per-spectrum rows for the DataFrame.

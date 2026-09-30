@@ -7,8 +7,8 @@ the previous flush, so the defect only appears once a run exceeds chunk_size.
 
 The sibling module test_run_inference_hdf5_node_grouping.py covers the peak and node
 families; this one covers formula, joint, the 2-D `pred_node_ccs`, and the ragged-string
-`pred_formula_strs` / `pred_formula_adducts`, and it checks every family round-trips per
-spectrum.
+`pred_formula_strs` / `pred_formula_adducts` / `pred_node_rules`, and it checks every family
+round-trips per spectrum.
 """
 
 import types
@@ -27,6 +27,7 @@ COLUMNS = [
     "pred_node_probs",
     "pred_node_node_idxs",
     "pred_node_ccs",
+    "pred_node_rules",
     "pred_formula_probs",
     "pred_formula_formula_idxs",
     "pred_formula_strs",
@@ -67,6 +68,8 @@ def _blocks(s):
             ],
             dim=1,
         ),
+        # MASSter's SMARTS rules per node: mostly empty, and empty first in every block.
+        "pred_node_rules": [f"rule_{s['spec']}" if i % 2 else "" for i in range(s["n_nodes"])],
         "pred_formula_probs": th.full((s["n_formulas"],), 1.0 / s["n_formulas"], dtype=th.float64),
         "pred_formula_formula_idxs": th.arange(s["n_formulas"], dtype=th.int64) + tag,
         "pred_formula_strs": [f"C{s['spec']}H{i}" for i in range(s["n_formulas"])],
@@ -112,7 +115,11 @@ def _read(path):
 
 FAMILIES = [
     ("", "n_peaks", ["pred_mzs", "pred_ints"]),
-    ("node_", "n_nodes", ["pred_node_probs", "pred_node_node_idxs", "pred_node_ccs"]),
+    (
+        "node_",
+        "n_nodes",
+        ["pred_node_probs", "pred_node_node_idxs", "pred_node_ccs", "pred_node_rules"],
+    ),
     (
         "formula_",
         "n_formulas",
@@ -152,7 +159,7 @@ def test_every_family_round_trips_per_spectrum(monkeypatch, tmp_path, batch_size
             for col in columns:
                 got = out[col][starts[i] : ends[i]]
                 want = expected[col]
-                if col in ("pred_formula_strs", "pred_formula_adducts"):
+                if col in ("pred_formula_strs", "pred_formula_adducts", "pred_node_rules"):
                     assert [b.decode() for b in got] == want, f"{col} spectrum {i}"
                 else:
                     np.testing.assert_array_equal(got, want.numpy(), err_msg=f"{col} spec {i}")

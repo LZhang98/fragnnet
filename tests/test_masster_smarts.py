@@ -15,6 +15,7 @@ from fragnnet.frag.masster_templates import (
     MASSTER_NL_RULE_NAMES,
     MASSTER_NL_RULES,
     MASSTER_NUM_RULES,
+    MASSTER_RULE_VOCABULARY,
     MassterTemplate,
     _is_connected,
     build_masster_templates,
@@ -25,11 +26,23 @@ from fragnnet.utils import data_utils
 
 _CUT_COUNT_WEIGHTS = (0.0, 0.0, 1.0)
 _NEW_RULE_EXAMPLES = (
-    ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1"),
+    # DISABLED 2026-09-29 with their rules in masster_templates.py.
+    # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1"),
     ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccccc1)c1ccccc1"),
+    # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1"),
+    # ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1"),
+    ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr"),
+    # ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCl"),
+    # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)NF"),
+)
+# Rules DISABLED 2026-09-29, each with a structure its SMARTS would match.
+_DISABLED_RULE_EXAMPLES = (
+    ("diarylvinyl_c2h2_loss", "C(=Cc1ccccc1)c1ccccc1"),
+    ("diaryl_ketone_co_loss", "O=C(c1ccccc1)c1ccccc1"),
+    ("aminobenzothiazole_hcn_loss", "Nc1nc2ccccc2s1"),
+    ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1"),
     ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1"),
     ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1"),
-    ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr"),
     ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCl"),
     ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)NF"),
 )
@@ -48,14 +61,22 @@ def _component_element_counts(mol: Chem.Mol, component: tuple[int, ...]) -> Coun
     return Counter(mol.GetAtomWithIdx(index).GetSymbol() for index in component)
 
 
-def test_masster_registry_appends_seven_literature_templates() -> None:
-    assert len(MASSTER_FRAG_RULE_NAMES) == 3
-    assert len(MASSTER_NL_RULE_NAMES) == 19
+def test_masster_registry_counts_and_literature_rule_order() -> None:
+    # 14 registered rules; the vocabulary keeps all 22 indices, disabled rules included.
+    assert len(MASSTER_FRAG_RULE_NAMES) == 2
+    assert len(MASSTER_NL_RULE_NAMES) == 12
     assert MASSTER_NUM_RULES == 22
-    assert MASSTER_FRAG_RULE_NAMES[0] == "pyridyl_carbamate_alkyl_transfer"
-    assert MASSTER_NL_RULE_NAMES[7:13] == tuple(
-        rule_name for rule_name, _ in _NEW_RULE_EXAMPLES[1:]
-    )
+    assert MASSTER_FRAG_RULE_NAMES[0] == "n_acyl_aryl_sulfonamide_carbonyl_o_transfer"
+    assert MASSTER_NL_RULE_NAMES[4:6] == tuple(rule_name for rule_name, _ in _NEW_RULE_EXAMPLES)
+
+
+@pytest.mark.parametrize(("rule_name", "smiles"), _DISABLED_RULE_EXAMPLES)
+def test_disabled_rules_keep_their_vocabulary_slot_and_build_no_templates(
+    rule_name: str, smiles: str
+) -> None:
+    assert rule_name in MASSTER_RULE_VOCABULARY
+    assert rule_name not in (*MASSTER_FRAG_RULE_NAMES, *MASSTER_NL_RULE_NAMES)
+    assert not _templates_for_rule(smiles, rule_name)
 
 
 def test_all_masster_smarts_compile() -> None:
@@ -68,26 +89,27 @@ def test_all_masster_smarts_compile() -> None:
     [
         ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccccc1)c1ccccc1"),
         ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccc(F)cc1)c1ccccc1"),
-        ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1"),
-        ("methyl_benzoate_co2_transfer", "COC(=O)c1ccc(Cl)cc1"),
-        ("anisoyl_fluoride_co_f_transfer", "COc1ccccc1C(=O)F"),
-        ("anisoyl_fluoride_co_f_transfer", "COc1cccc(C(=O)F)c1"),
-        ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1"),
+        # DISABLED 2026-09-29 with their rules in masster_templates.py.
+        # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1"),
+        # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccc(Cl)cc1"),
+        # ("anisoyl_fluoride_co_f_transfer", "COc1ccccc1C(=O)F"),
+        # ("anisoyl_fluoride_co_f_transfer", "COc1cccc(C(=O)F)c1"),
+        # ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1"),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCCl"),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr"),
         ("short_haloalkyl_ammonium_c2_transfer", "C[N+](C)(C)CCI"),
-        ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCl"),
-        ("short_haloalkyl_ammonium_c3_transfer", "C[N+](C)(C)CCCBr"),
-        ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccccn1"),
-        ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1cccnc1"),
-        ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1"),
-        ("pyridyl_carbamate_alkyl_transfer", "CCN(CC)C(=O)Oc1ccncc1"),
-        (
-            "pyridyl_carbamate_alkyl_transfer",
-            "CCCCN(CCCC)C(=O)Oc1ccncc1",
-        ),
-        ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)NF"),
-        ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccc(F)cc1)NF"),
+        # ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCl"),
+        # ("short_haloalkyl_ammonium_c3_transfer", "C[N+](C)(C)CCCBr"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccccn1"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1cccnc1"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CCN(CC)C(=O)Oc1ccncc1"),
+        # (
+        #     "pyridyl_carbamate_alkyl_transfer",
+        #     "CCCCN(CCCC)C(=O)Oc1ccncc1",
+        # ),
+        # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)NF"),
+        # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccc(F)cc1)NF"),
     ],
 )
 def test_new_rules_match_supported_precursor_structures(
@@ -102,23 +124,24 @@ def test_new_rules_match_supported_precursor_structures(
     [
         ("n_phenylbenzamide_co_smiles", "O=C(N(C)c1ccccc1)c1ccccc1"),
         ("n_phenylbenzamide_co_smiles", "O=C(c1ccccc1)c1ccccc1"),
-        ("methyl_benzoate_co2_transfer", "CCOC(=O)c1ccccc1"),
-        ("methyl_benzoate_co2_transfer", "COC(C)=O"),
-        ("anisoyl_fluoride_co_f_transfer", "O=C(F)c1ccccc1"),
-        ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)Cl)cc1"),
-        ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)OC)cc1"),
+        # DISABLED 2026-09-29 with their rules in masster_templates.py.
+        # ("methyl_benzoate_co2_transfer", "CCOC(=O)c1ccccc1"),
+        # ("methyl_benzoate_co2_transfer", "COC(C)=O"),
+        # ("anisoyl_fluoride_co_f_transfer", "O=C(F)c1ccccc1"),
+        # ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)Cl)cc1"),
+        # ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)OC)cc1"),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCF"),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCCCBr"),
         ("short_haloalkyl_ammonium_c2_transfer", "CC(=O)NCCBr"),
-        ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCBr"),
-        ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCBr"),
-        ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCF"),
-        ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccccc1"),
-        ("pyridyl_carbamate_alkyl_transfer", "CCCN(CCC)C(=O)Oc1ccncc1"),
-        ("pyridyl_carbamate_alkyl_transfer", "CC(=O)Oc1ccncc1"),
-        ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)N"),
-        ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(C)NF"),
-        ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(F)c1ccccc1"),
+        # ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCBr"),
+        # ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCBr"),
+        # ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCF"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccccc1"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CCCN(CCC)C(=O)Oc1ccncc1"),
+        # ("pyridyl_carbamate_alkyl_transfer", "CC(=O)Oc1ccncc1"),
+        # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)N"),
+        # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(C)NF"),
+        # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(F)c1ccccc1"),
     ],
 )
 def test_new_rules_reject_close_negative_structures(
@@ -136,31 +159,32 @@ def test_new_rules_reject_close_negative_structures(
             "O=C(Nc1ccccc1)c1ccccc1",
             Counter({"C": 1, "O": 1}),
         ),
-        (
-            "methyl_benzoate_co2_transfer",
-            "COC(=O)c1ccccc1",
-            Counter({"O": 2, "C": 1}),
-        ),
-        (
-            "anisoyl_fluoride_co_f_transfer",
-            "COc1ccc(C(=O)F)cc1",
-            Counter({"C": 1, "O": 1}),
-        ),
+        # DISABLED 2026-09-29 with their rules in masster_templates.py.
+        # (
+        #     "methyl_benzoate_co2_transfer",
+        #     "COC(=O)c1ccccc1",
+        #     Counter({"O": 2, "C": 1}),
+        # ),
+        # (
+        #     "anisoyl_fluoride_co_f_transfer",
+        #     "COc1ccc(C(=O)F)cc1",
+        #     Counter({"C": 1, "O": 1}),
+        # ),
         (
             "short_haloalkyl_ammonium_c2_transfer",
             "CN(C)CCBr",
             Counter({"C": 2}),
         ),
-        (
-            "short_haloalkyl_ammonium_c3_transfer",
-            "CN(C)CCCCl",
-            Counter({"C": 3}),
-        ),
-        (
-            "n_fluoro_sulfonamide_f_transfer",
-            "O=S(=O)(c1ccccc1)NF",
-            Counter({"O": 2, "S": 1, "F": 1}),
-        ),
+        # (
+        #     "short_haloalkyl_ammonium_c3_transfer",
+        #     "CN(C)CCCCl",
+        #     Counter({"C": 3}),
+        # ),
+        # (
+        #     "n_fluoro_sulfonamide_f_transfer",
+        #     "O=S(=O)(c1ccccc1)NF",
+        #     Counter({"O": 2, "S": 1, "F": 1}),
+        # ),
     ],
 )
 def test_new_neutral_loss_rules_build_the_intended_atom_component(
@@ -177,41 +201,44 @@ def test_new_neutral_loss_rules_build_the_intended_atom_component(
     assert expected_component in component_counts
 
 
-@pytest.mark.parametrize(
-    ("smiles", "expected_transferred_component"),
-    [
-        ("CN(C)C(=O)Oc1ccncc1", Counter({"C": 6, "N": 1, "O": 1})),
-        ("CCN(CC)C(=O)Oc1ccncc1", Counter({"C": 7, "N": 1, "O": 1})),
-        (
-            "CCCCN(CCCC)C(=O)Oc1ccncc1",
-            Counter({"C": 9, "N": 1, "O": 1}),
-        ),
-    ],
-)
-def test_pyridyl_carbamate_rule_retains_the_complete_selected_alkyl_group(
-    smiles: str,
-    expected_transferred_component: Counter,
-) -> None:
-    mol = Chem.MolFromSmiles(smiles)
-    templates = _templates_for_rule(smiles, "pyridyl_carbamate_alkyl_transfer")
-
-    assert any(
-        expected_transferred_component
-        in [_component_element_counts(mol, component) for component in template.components]
-        for template in templates
-    )
+# DISABLED 2026-09-29 with pyridyl_carbamate_alkyl_transfer in masster_templates.py.
+# @pytest.mark.parametrize(
+#     ("smiles", "expected_transferred_component"),
+#     [
+#         ("CN(C)C(=O)Oc1ccncc1", Counter({"C": 6, "N": 1, "O": 1})),
+#         ("CCN(CC)C(=O)Oc1ccncc1", Counter({"C": 7, "N": 1, "O": 1})),
+#         (
+#             "CCCCN(CCCC)C(=O)Oc1ccncc1",
+#             Counter({"C": 9, "N": 1, "O": 1}),
+#         ),
+#     ],
+# )
+# def test_pyridyl_carbamate_rule_retains_the_complete_selected_alkyl_group(
+#     smiles: str,
+#     expected_transferred_component: Counter,
+# ) -> None:
+#     mol = Chem.MolFromSmiles(smiles)
+#     templates = _templates_for_rule(smiles, "pyridyl_carbamate_alkyl_transfer")
+#
+#     assert any(
+#         expected_transferred_component
+#         in [_component_element_counts(mol, component) for component in template.components]
+#         for template in templates
+#     )
 
 
 @pytest.mark.parametrize(
     ("rule_name", "smiles", "precursor_type", "fragmentation_mode"),
     [
-        ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1", "[M+H]+", None),
         ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccccc1)c1ccccc1", "[M-H]-", None),
-        ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1", "[M+H]+", None),
-        ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1", "[M]+", "EI"),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr", "[M+H]+", None),
-        ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCl", "[M]+", None),
-        ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)NF", "[M-H]-", None),
+        ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr", "[M]+", None),
+        # DISABLED 2026-09-29 with their rules in masster_templates.py.
+        # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1", "[M+H]+", None),
+        # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1", "[M+H]+", None),
+        # ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1", "[M]+", "EI"),
+        # ("short_haloalkyl_ammonium_c3_transfer", "CN(C)CCCCl", "[M]+", None),
+        # ("n_fluoro_sulfonamide_f_transfer", "O=S(=O)(c1ccccc1)NF", "[M-H]-", None),
     ],
 )
 def test_new_rules_keep_only_literature_supported_ionization_conditions(
@@ -236,12 +263,21 @@ def test_new_rules_keep_only_literature_supported_ionization_conditions(
     assert not wrong_precursor
 
 
-def test_ei_anisoyl_rule_is_rejected_when_fragmentation_mode_is_unknown_or_cid() -> None:
-    templates = _templates_for_rule(
-        "COc1ccc(C(=O)F)cc1",
-        "anisoyl_fluoride_co_f_transfer",
+def test_ei_only_template_is_rejected_when_fragmentation_mode_is_unknown_or_cid() -> None:
+    # The EI-only anisoyl rule was DISABLED 2026-09-29, leaving no registered rule with a
+    # fragmentation-mode guard, so a synthetic template exercises the filter.
+    templates = (
+        MassterTemplate(
+            broken_bond_indices=(0,),
+            components=((0,), (1,)),
+            rule_index=1,
+            rule_name="ei_only",
+            allowed_precursor_types=("[M]+",),
+            allowed_fragmentation_modes=("EI",),
+        ),
     )
 
+    assert filter_masster_templates(templates, precursor_type="[M]+", fragmentation_mode="EI")
     for fragmentation_mode in (None, "CID", "HCD"):
         assert not filter_masster_templates(
             templates,
@@ -298,14 +334,10 @@ def test_new_rules_attach_to_candidate_masks_as_distinct_mechanisms(
 def test_literature_rule_indices_follow_the_shared_rules() -> None:
     # The 2026-09-27 drop of the ring rules and aryl_sulfonate_so3, and the gated rules added
     # the same day, renumbered these; no SMARTS checkpoint existed to reassign.
+    # The rules DISABLED on 2026-09-29 keep their slots (8, 12, 13, 15, 16), so these stay.
     expected_indices = {
-        "pyridyl_carbamate_alkyl_transfer": 8,
         "n_phenylbenzamide_co_smiles": 11,
-        "methyl_benzoate_co2_transfer": 12,
-        "anisoyl_fluoride_co_f_transfer": 13,
         "short_haloalkyl_ammonium_c2_transfer": 14,
-        "short_haloalkyl_ammonium_c3_transfer": 15,
-        "n_fluoro_sulfonamide_f_transfer": 16,
     }
 
     for rule_name, smiles in _NEW_RULE_EXAMPLES:
@@ -379,7 +411,6 @@ def test_masster_drops_the_ring_rules_and_the_single_cut_sulfonate() -> None:
     assert shared_ring_rules <= {rule.name for rule in FRAG_RULES}
     assert shared_ring_rules.isdisjoint(MASSTER_FRAG_RULE_NAMES)
     assert MASSTER_FRAG_RULE_NAMES == (
-        "pyridyl_carbamate_alkyl_transfer",
         "n_acyl_aryl_sulfonamide_carbonyl_o_transfer",
         "diacylhydrazine_carboxylate_o_transfer",
     )
@@ -492,7 +523,7 @@ def _batched_candidates(smiles_list: list[str], **kwargs):
 
 def test_template_representatives_stay_in_range_for_later_batch_members() -> None:
     candidates, _ = _batched_candidates(
-        ["O=C(Nc1ccccc1)c1ccccc1", "COC(=O)c1ccc(Cl)cc1", "CN(C)CCBr"],
+        ["O=C(Nc1ccccc1)c1ccccc1", "c1ccccc1S(=O)c1ccccc1", "CN(C)CCBr"],
         max_masks=16,
         max_unique_components=16,
         max_enumerated_masks=64,
@@ -509,7 +540,7 @@ def test_template_representatives_stay_in_range_for_later_batch_members() -> Non
 
 def test_templates_fire_on_every_batch_member_without_shifting_masks() -> None:
     candidates, templates = _batched_candidates(
-        ["O=C(Nc1ccccc1)c1ccccc1", "COC(=O)c1ccc(Cl)cc1", "CN(C)CCBr"],
+        ["O=C(Nc1ccccc1)c1ccccc1", "c1ccccc1S(=O)c1ccccc1", "CN(C)CCBr"],
         max_masks=16,
     )
     expected_rules = {template.rule_index for molecule in templates for template in molecule}

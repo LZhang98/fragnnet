@@ -26,7 +26,7 @@ from fragnnet.frag.masster_candidates import (
 )
 from fragnnet.frag.masster_cuda_candidates import _expand_topology_views
 from fragnnet.frag.masster_cuda_topology import CudaTopologyCounts, CudaTopologyGraph
-from fragnnet.frag.masster_templates import MassterTemplate, _is_connected
+from fragnnet.frag.masster_templates import MassterTemplate, _connected_piece_count
 
 
 @dataclass(frozen=True)
@@ -199,7 +199,8 @@ def _append_smarts_mechanisms(
     # 1. Build SMARTS rows in final coordinates, one view at a time.
     mechanism_rows: list[int] = []  # (mask, rule, position) triples
     mechanism_bond_rows: list[int] = []  # (bond, mechanism, position)
-    component_rows: list[int] = []  # (mask, mechanism, view, cut count, unique, position)
+    # (mask, mechanism, view, cut count, unique, position, formed bonds)
+    component_rows: list[int] = []
     atom_rows: list[int] = []  # (atom, component, position)
     boundary_rows: list[int] = []  # (bond, component, position)
     unique_rows: list[int] = []  # (representative component, position)
@@ -228,10 +229,11 @@ def _append_smarts_mechanisms(
             for component in template.components:
                 component_index = int(extra_starts[2] + added[2])
                 added[2] += 1
-                if _is_connected(component, view_endpoints[view]):
+                num_pieces = _connected_piece_count(component, view_endpoints[view])
+                if num_pieces == 1:
                     unique_index = -1
                     query_rows += (
-                        len(component_rows) // 6,
+                        len(component_rows) // 7,
                         mask_index,
                         atom_start + component[0],
                         num_atoms,
@@ -251,6 +253,7 @@ def _append_smarts_mechanisms(
                     len(cut_bonds),
                     unique_index,
                     component_index,
+                    num_pieces - 1,
                 )
                 for atom in component:
                     atom_rows += (atom_start + atom, component_index, int(extra_starts[3] + added[3]))
@@ -283,7 +286,7 @@ def _append_smarts_mechanisms(
     )
     mechanism_extra = mechanism_extra.view(-1, 3)
     mechanism_bond_extra = mechanism_bond_extra.view(-1, 3)
-    component_extra = component_extra.view(-1, 6)
+    component_extra = component_extra.view(-1, 7)
     atom_extra = atom_extra.view(-1, 3)
     boundary_extra = boundary_extra.view(-1, 3)
     unique_extra = unique_extra.view(-1, 2)
@@ -380,6 +383,7 @@ def _append_smarts_mechanisms(
         (1, "component_mechanism_indices", mechanisms_before),
         (2, "component_batch_indices", None),
         (3, "component_cut_counts", None),
+        (6, "component_formed_bond_counts", None),
     ):
         updated[name] = interleave(
             "component", name, component_extra[:, column], component_positions, shift

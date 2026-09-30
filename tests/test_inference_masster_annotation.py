@@ -10,8 +10,11 @@ import numpy as np
 import pytest
 import torch as th
 from pyteomics.mass import Composition
+from rdkit import Chem
 from test_masster_model import _build_batch, _build_model
 
+from fragnnet.frag.masster_candidates import MassterStaticGraph
+from fragnnet.frag.masster_templates import build_masster_templates
 from fragnnet.pl_model import MassterPL
 from fragnnet.utils import script_utils
 from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE
@@ -305,3 +308,116 @@ def test_exporter_writes_resolvable_masster_annotation(min_peak_int: float):
         assert set(np.asarray(record["pred_joint_node_idxs"]).tolist()) == set(range(ccs.shape[0]))
         assert set(np.asarray(record["pred_joint_formula_idxs"]).tolist()) == set(range(len(strs)))
         assert all(atoms and max(atoms) < atom_counts[spectrum] for atoms in _atom_sets(ccs))
+
+
+def test_tables_name_the_smarts_rules_behind_each_node():
+    # Fragments 1 and 2 are one {C, C} node, so it carries both of their rules, in rule
+    # order. Fragment 3 has no rule; no pathway reaches a rule pair's missing fragment.
+    tables = _tables(
+        pathway_peaks=[0, 0, 1, 3, 2],
+        peak_batch=[0, 0, 1, 1],
+        ints=[0.2, 0.1, 0.7, 0.6, 0.4],
+        fragments=[1, 2, 0, 3, 4],
+        h_shifts=[0, 0, 0, 0, -2],
+        fragment_rule_fragment_idxs=th.tensor([2, 1, 1, 4]),
+        fragment_rule_idxs=th.tensor([3, 1, 3, 2]),
+    )
+
+    node_keys = zip(tables.node_batch_idxs.tolist(), _atom_sets(tables.node_ccs))
+    assert dict(zip(node_keys, tables.node_rules.tolist())) == {
+        (0, frozenset({0, 1})): "aryl_sulfonamide_so2;n_nitramine_n2o",
+        (0, frozenset({0, 1, 2})): "",
+        (1, frozenset({1})): "aryl_sulfonate_so2",
+        (1, frozenset({0, 1})): "",
+    }
+
+
+def test_tables_need_both_halves_of_the_rule_pairs():
+    with pytest.raises(ValueError, match="go together"):
+        _tables(
+            pathway_peaks=[0],
+            peak_batch=[0],
+            ints=[1.0],
+            fragments=[0],
+            h_shifts=[0],
+            fragment_rule_fragment_idxs=th.tensor([0]),
+        )
+
+
+def test_exporter_writes_the_smarts_rules_behind_each_node():
+    # N-phenyl benzenesulfonamide matches aryl_sulfonamide_so2: its lost SO2 (atoms 0-2) and
+    # its two-piece aryl product (atoms 3-15) both come from the rule. Ethanol matches none.
+    smiles = ("O=S(=O)(Nc1ccccc1)c1ccccc1", "CCO")
+    batch = _build_batch(smiles)
+    model = _build_model(
+        batch,
+        max_masks=6,
+        unique_fragment_mode=True,
+        max_enumerated_masks=16,
+        use_smarts_templates=True,
+        precursor_types=("[M+H]+",),
+    ).eval()
+    static_graph = MassterStaticGraph(
+        chemical_bond_index=batch.chemical_bond_index,
+        atom_batch_indices=batch.batch,
+        atom_ptr=batch.ptr,
+        smarts_templates=tuple(build_masster_templates(Chem.MolFromSmiles(s)) for s in smiles),
+    )
+    with th.no_grad():
+        output = model(
+            mol_pyg=batch,
+            spec_prec_type=th.tensor([0, 0]),
+            spec_nce=th.tensor([20.0, 40.0]),
+            static_graph=static_graph,
+            return_annotation=True,
+        )
+    probs = output["pred_logprobs"].exp()
+    totals = probs.new_zeros(2).index_add(0, output["pred_batch_idxs"], probs)
+    output["pred_ints"] = probs / totals[output["pred_batch_idxs"]]
+    stub = _ReplayMassterStub(output, ("[M+H]+",))
+    batch_input = {
+        "spec_unique_id": th.tensor([10, 11]),
+        "mol_id": ["a", "b"],
+        "batch_size": th.tensor(2),
+        "mol_pyg": batch,
+        "spec_prec_type": th.tensor([0, 0]),
+    }
+    output_set = {"pred_mzs", "pred_ints", "pred_node_probs"}
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+        output_set, stub, nb_iso=False, return_formula_str=False, return_cc_hash=True
+    )
+    columns = script_utils.get_tabular_columns(
+        stub.hparams,
+        return_cc_hash=True,
+        output_subset=output_set,
+        return_rule_provenance=True,
+    )
+    rows = script_utils.process_batch_to_tabular_row(
+        batch_input=batch_input,
+        model=stub,
+        device=th.device("cpu"),
+        evaluate=False,
+        eval_score_types=[],
+        BATCH_IDX_VARS=batch_idx_vars,
+        NODE_IDX_VARS=node_idx_vars,
+        FORMULA_IDX_VARS=formula_idx_vars,
+        min_peak_int=0.0,
+        rebase_indices=True,
+        return_formula_str=False,
+        return_cc_hash=True,
+        output_set=output_set,
+        return_rule_provenance=True,
+    )
+
+    table = dict(zip(columns, rows))
+    records = [
+        {column: values[spectrum] for column, values in table.items()} for spectrum in (0, 1)
+    ]
+    node_rules = [
+        dict(zip(_atom_sets(th.as_tensor(np.asarray(r["pred_node_ccs"]))), r["pred_node_rules"]))
+        for r in records
+    ]
+    so2, product = frozenset(range(3)), frozenset(range(3, 16))
+    assert node_rules[0][so2] == node_rules[0][product] == "aryl_sulfonamide_so2"
+    assert {rules for atoms, rules in node_rules[0].items() if atoms not in (so2, product)} == {""}
+    assert set(node_rules[1].values()) == {""}

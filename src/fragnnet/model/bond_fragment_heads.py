@@ -804,6 +804,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         connectivity_embedding_dim: int = 0,
         nl_positional_encoding: bool = False,
         candidate_graph: bool = False,
+        rule_pathway_dim: int = 0,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -876,6 +877,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             raise ValueError(
                 f"connectivity_embedding_dim must be nonnegative, got {connectivity_embedding_dim}"
             )
+        if rule_pathway_dim < 0:
+            raise ValueError(f"rule_pathway_dim must be nonnegative, got {rule_pathway_dim}")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -1018,6 +1021,16 @@ class CandidateIntensityTransformerHead(nn.Module):
                 self.connectivity_residual = nn.Linear(connectivity_embedding_dim, model_dim)
             nn.init.zeros_(self.connectivity_residual.weight)
             nn.init.zeros_(self.connectivity_residual.bias)
+        # SMARTS rule provenance: one column per rule of the vocabulary, 1 where some mechanism
+        # of that rule produces the fragment. Each column's weight is that rule's embedding,
+        # so the product sums the fragment's rule embeddings. Zero-initialized and without a
+        # bias, it adds nothing to any token at construction, as the connectivity branch.
+        self.rule_pathway_dim = rule_pathway_dim
+        self.rule_pathway_residual: nn.Linear | None = None
+        if rule_pathway_dim > 0:
+            with th.random.fork_rng(devices=[]):
+                self.rule_pathway_residual = nn.Linear(rule_pathway_dim, model_dim, bias=False)
+            nn.init.zeros_(self.rule_pathway_residual.weight)
 
     def _load_from_state_dict(
         self,
@@ -1336,6 +1349,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         sink_vectors: th.Tensor | None = None,
         precursor_neutral_masses: th.Tensor | None = None,
         candidate_graph_edges: th.Tensor | None = None,
+        rule_pathway_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule.
 
@@ -1347,6 +1361,9 @@ class CandidateIntensityTransformerHead(nn.Module):
         ``(batch_size,)``, and is required exactly when ``nl_positional_encoding`` is on.
         ``candidate_graph_edges`` holds the ``(2, E)`` long ``(query, key)`` component rows of
         :func:`candidate_graph_edges`, required exactly when ``candidate_graph`` is on.
+        ``rule_pathway_features`` holds each component's 0/1 SMARTS rule indicators, shape
+        ``(num_components, rule_pathway_dim)``, required exactly when ``rule_pathway_dim`` is
+        positive.
         """
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
@@ -1410,6 +1427,18 @@ class CandidateIntensityTransformerHead(nn.Module):
                 f"connectivity_embeddings must have shape ({num_components}, "
                 f"{self.connectivity_embedding_dim})"
             )
+        if (self.rule_pathway_dim > 0) != (rule_pathway_features is not None):
+            raise ValueError(
+                "rule_pathway_features must be supplied exactly when rule_pathway_dim is positive"
+            )
+        if rule_pathway_features is not None and rule_pathway_features.shape != (
+            num_components,
+            self.rule_pathway_dim,
+        ):
+            raise ValueError(
+                f"rule_pathway_features must have shape ({num_components}, "
+                f"{self.rule_pathway_dim})"
+            )
 
         features = [*embeddings]
         if context is not None:
@@ -1436,6 +1465,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         tokens = self.input_projection(th.cat(features, dim=1))
         if self.connectivity_residual is not None:
             tokens = tokens + self.connectivity_residual(connectivity_embeddings.to(tokens))
+        if self.rule_pathway_residual is not None:
+            tokens = tokens + self.rule_pathway_residual(rule_pathway_features.to(tokens))
         if self.input_dropout > 0.0:
             tokens = F.dropout(tokens, p=self.input_dropout, training=self.training)
         if self.ce_conditioned != (ce_features is not None):

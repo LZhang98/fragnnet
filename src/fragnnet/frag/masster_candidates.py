@@ -114,6 +114,7 @@ class MassterCandidateBatch:
     component_mechanism_indices: th.Tensor
     component_batch_indices: th.Tensor
     component_cut_counts: th.Tensor
+    component_formed_bond_counts: th.Tensor
     component_unique_indices: th.Tensor
     unique_representative_component_indices: th.Tensor
     atom_indices: th.Tensor
@@ -572,8 +573,9 @@ def build_masster_candidates(
     runs selection and local topology/assembly on the same persistent CPU pool.
     Numeric kernels release the GIL; ordering and selected masks stay unchanged.
     ``candidate_backend='cuda'`` selects exact device construction for finite FP32,
-    one-mixture, unique-mode inputs with no mask floor or SMARTS mechanisms. CUDA
-    compilation is lazy and optional; unsupported requests raise instead of falling back.
+    one-mixture, unique-mode inputs with no mask floor; SMARTS templates are supported and
+    give the CPU backend's fields exactly. CUDA compilation is lazy and optional;
+    unsupported requests raise instead of falling back.
     When ``max_unique_components`` is set, deterministic enumeration continues up to
     ``max_enumerated_masks`` and keeps the shortest prefix that reaches the requested
     number of distinct atom sets. The probability floor applies only to learned ranked
@@ -766,6 +768,7 @@ def build_masster_candidates(
     component_mechanism_index_chunks: list[np.ndarray] = []
     component_batch_index_chunks: list[np.ndarray] = []
     component_cut_count_chunks: list[np.ndarray] = []
+    component_formed_bond_count_chunks: list[np.ndarray] = []
     component_unique_index_chunks: list[np.ndarray] = []
     unique_representative_component_index_chunks: list[np.ndarray] = []
     atom_index_chunks: list[np.ndarray] = []
@@ -972,6 +975,9 @@ def build_masster_candidates(
             cached_topology.component_mask_indices, mask_start, last_view
         )
         local_component_cut_counts = cached_topology.component_cut_counts
+        local_component_formed_bond_counts = np.zeros(
+            cached_topology.num_components, dtype=np.int64
+        )
         local_atom_indices = _offset_local_indices(cached_topology.atom_indices, atom_start, last_view)
         local_atom_component_indices = _offset_local_indices(
             cached_topology.atom_component_indices, component_start, last_view
@@ -1027,6 +1033,8 @@ def build_masster_candidates(
 
         smarts_start = perf_counter()
         if molecule_templates:
+            from fragnnet.frag.masster_templates import formed_bond_count
+
             smarts_lookup = (
                 None
                 if candidate_group is None
@@ -1080,6 +1088,7 @@ def build_masster_candidates(
             extra_component_masks: list[int] = []
             extra_component_mechanisms: list[int] = []
             extra_component_cut_counts: list[int] = []
+            extra_component_formed_bond_counts: list[int] = []
             extra_component_unique_indices: list[int] = []
             extra_atom_indices: list[int] = []
             extra_atom_component_indices: list[int] = []
@@ -1118,6 +1127,9 @@ def build_masster_candidates(
                     extra_component_masks.append(mask_index)
                     extra_component_mechanisms.append(mechanism_index)
                     extra_component_cut_counts.append(len(template.broken_bond_indices))
+                    extra_component_formed_bond_counts.append(
+                        formed_bond_count(local_atoms, local_endpoints)
+                    )
                     extra_component_unique_indices.append(unique_index)
                     extra_atom_indices.extend(global_atoms)
                     extra_atom_component_indices.extend([component_index] * len(global_atoms))
@@ -1157,6 +1169,12 @@ def build_masster_candidates(
                     (
                         local_component_cut_counts,
                         np.asarray(extra_component_cut_counts),
+                    )
+                )
+                local_component_formed_bond_counts = np.concatenate(
+                    (
+                        local_component_formed_bond_counts,
+                        np.asarray(extra_component_formed_bond_counts, dtype=np.int64),
                     )
                 )
                 local_component_unique_indices = np.concatenate(
@@ -1205,6 +1223,7 @@ def build_masster_candidates(
             np.full(num_local_components, molecule_index, dtype=np.int64)
         )
         component_cut_count_chunks.append(local_component_cut_counts)
+        component_formed_bond_count_chunks.append(local_component_formed_bond_counts)
         component_unique_index_chunks.append(
             local_component_unique_indices + num_unique_components_so_far
         )
@@ -1243,6 +1262,7 @@ def build_masster_candidates(
             component_mechanism_index_chunks,
             component_batch_index_chunks,
             component_cut_count_chunks,
+            component_formed_bond_count_chunks,
             component_unique_index_chunks,
             unique_representative_component_index_chunks,
             atom_index_chunks,
@@ -1266,6 +1286,7 @@ def build_masster_candidates(
         component_mechanism_indices_t,
         component_batch_indices_t,
         component_cut_counts_t,
+        component_formed_bond_counts_t,
         component_unique_indices_t,
         unique_representative_component_indices_t,
         atom_indices_t,
@@ -1300,6 +1321,7 @@ def build_masster_candidates(
         component_mechanism_indices=component_mechanism_indices_t,
         component_batch_indices=component_batch_indices_t,
         component_cut_counts=component_cut_counts_t,
+        component_formed_bond_counts=component_formed_bond_counts_t,
         component_unique_indices=component_unique_indices_t,
         unique_representative_component_indices=(unique_representative_component_indices_t),
         atom_indices=atom_indices_t,

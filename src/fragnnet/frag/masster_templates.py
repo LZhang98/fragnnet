@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypeVar
@@ -26,15 +27,22 @@ from fragnnet.frag.smarts_prepass import (
 # their merged byproducts cover less. So was aryl_sulfonate_so3, whose single-bond cut only
 # ever repeats the ordinary partition. FraGNNet's prepass keeps all of them.
 # Evidence: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+#
+# DISABLED 2026-09-29: eight rules are commented out below, to re-check on Enveda-180. On
+# NIST20, five add no m/z coverage (their product always has a connected formula twin) and
+# nothing even on c0's pool; three match no NIST20 spectrum. Their names stay in
+# MASSTER_RULE_VOCABULARY, so no rule index shifts; uncomment a rule to restore it.
+# Evidence: docs/reference/masster_smarts_rules.md#existing-rules-under-the-gate
 _SHARED_MASSTER_FRAG_RULE_NAMES: tuple[str, ...] = ()
 _SHARED_MASSTER_NL_RULE_NAMES = (
     "aryl_sulfonamide_so2",
     "aryl_sulfonate_so2",
     "n_nitramine_n2o",
     "sulfoxide_so_loss",
-    "diarylvinyl_c2h2_loss",
-    "diaryl_ketone_co_loss",
-    "aminobenzothiazole_hcn_loss",
+    # DISABLED 2026-09-29: formula twins, no gain on c0's pool.
+    # "diarylvinyl_c2h2_loss",
+    # "diaryl_ketone_co_loss",
+    # "aminobenzothiazole_hcn_loss",
 )
 
 # These literature-derived rules are MASSter-only. Keeping them out of the
@@ -47,6 +55,7 @@ _SHARED_MASSTER_NL_RULE_NAMES = (
 # - Aryl-sulfonamide oxygen transfer: https://doi.org/10.1016/j.ijms.2018.09.033
 # - Prazole-sulfone rearrangement: https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/
 _MASSTER_ONLY_FRAG_RULES = (
+    # DISABLED 2026-09-29: matches one NIST20 molecule, which has no spectra.
     # Protonated 2-, 3-, or 4-pyridyl O-carbamates transfer Me, Et, or nBu from
     # the carbamate N to the pyridyl-O residue. Cutting O-C(=O) and N-alkyl
     # produces three components; the pyridyl-O and selected alkyl components
@@ -54,17 +63,17 @@ _MASSTER_ONLY_FRAG_RULES = (
     # Paper: https://www.sciencedirect.com/science/article/pii/S004040201401518X
     # Pyrimidine extension is not implemented; pirimicarb evidence (section 2.3):
     # https://pmc.ncbi.nlm.nih.gov/articles/PMC6222809/
-    SmartsFragRule(
-        name="pyridyl_carbamate_alkyl_transfer",
-        reactant_smarts=(
-            "[$(c1ncccc1),$(c1cnccc1),$(c1ccncc1):1]-[OX2:2]-"
-            "[CX3:3](=[O:6])-[NX3:4]-"
-            "[$([CH3]),$([CH2][CH3]),$([CH2][CH2][CH2][CH3]):5]"
-        ),
-        cut_bond_map_pairs=[(2, 3), (4, 5)],
-        merge_outer_map_nums=[2, 5],
-        min_num_atoms=11,
-    ),
+    # SmartsFragRule(
+    #     name="pyridyl_carbamate_alkyl_transfer",
+    #     reactant_smarts=(
+    #         "[$(c1ncccc1),$(c1cnccc1),$(c1ccncc1):1]-[OX2:2]-"
+    #         "[CX3:3](=[O:6])-[NX3:4]-"
+    #         "[$([CH3]),$([CH2][CH3]),$([CH2][CH2][CH2][CH3]):5]"
+    #     ),
+    #     cut_bond_map_pairs=[(2, 3), (4, 5)],
+    #     merge_outer_map_nums=[2, 5],
+    #     min_num_atoms=11,
+    # ),
     # The rules marked "Gate" below passed the 2026-09-27 per-class gate: on the NIST20
     # spectra of the molecules they match, in the admitted polarity, their product explains
     # target intensity that no connected atom set of the same composition can, beyond a
@@ -108,31 +117,33 @@ _MASSTER_ONLY_NL_RULES = (
         nl_mass=27.9949,
         min_num_atoms=14,
     ),
+    # DISABLED 2026-09-29: formula twins, no gain on c0's pool.
     # Protonated aryl methyl esters expel CO2 while the methyl group transfers
     # from oxygen to the aromatic residue. The methyl guard avoids the broad
     # acyclic-ester rule that MASSter intentionally excludes.
     # Paper: https://pubmed.ncbi.nlm.nih.gov/29441643/
-    NeutralLossRule(
-        name="methyl_benzoate_co2_transfer",
-        reactant_smarts="[c:1]-[CX3;!R:2](=[O:3])-[OX2:4]-[CH3:5]",
-        nl_map_nums=[2, 3, 4],
-        nl_mass=43.9898,
-        min_num_atoms=10,
-    ),
+    # NeutralLossRule(
+    #     name="methyl_benzoate_co2_transfer",
+    #     reactant_smarts="[c:1]-[CX3;!R:2](=[O:3])-[OX2:4]-[CH3:5]",
+    #     nl_map_nums=[2, 3, 4],
+    #     nl_mass=43.9898,
+    #     min_num_atoms=10,
+    # ),
+    # DISABLED 2026-09-29: EI only, and no NIST20 molecule matches.
     # Ionized o-, m-, and p-anisoyl fluorides lose CO and retain fluorine on
     # the methoxy-substituted aromatic residue. Recursive queries keep the
     # methoxy group on the same ring as the acyl fluoride.
     # Paper (EI): https://doi.org/10.1002/oms.1210261122
-    NeutralLossRule(
-        name="anisoyl_fluoride_co_f_transfer",
-        reactant_smarts=(
-            "[$(c1c([OX2][CH3])cccc1),$(c1cc([OX2][CH3])ccc1),"
-            "$(c1ccc([OX2][CH3])cc1):1]-[CX3;!R:2](=[O:3])-[F:4]"
-        ),
-        nl_map_nums=[2, 3],
-        nl_mass=27.9949,
-        min_num_atoms=10,
-    ),
+    # NeutralLossRule(
+    #     name="anisoyl_fluoride_co_f_transfer",
+    #     reactant_smarts=(
+    #         "[$(c1c([OX2][CH3])cccc1),$(c1cc([OX2][CH3])ccc1),"
+    #         "$(c1ccc([OX2][CH3])cc1):1]-[CX3;!R:2](=[O:3])-[F:4]"
+    #     ),
+    #     nl_map_nums=[2, 3],
+    #     nl_mass=27.9949,
+    #     min_num_atoms=10,
+    # ),
     # Protonated amines and quaternary ammonium ions bearing a two-carbon
     # haloalkyl arm transfer Cl/Br/I to N while the arm leaves as C2H4.
     # Paper: https://doi.org/10.1007/s13361-015-1261-4
@@ -143,29 +154,31 @@ _MASSTER_ONLY_NL_RULES = (
         nl_mass=28.0313,
         min_num_atoms=4,
     ),
+    # DISABLED 2026-09-29: formula twins, no gain on c0's pool.
     # The three-carbon homologue follows the same pathway but loses C3H6.
     # Paper: https://doi.org/10.1007/s13361-015-1261-4
-    NeutralLossRule(
-        name="short_haloalkyl_ammonium_c3_transfer",
-        reactant_smarts=(
-            "[$([NX3;+0;!$(N-C=O)]),$([NX4;+1]):1]-[CH2:2]-[CH2:3]-[CH2:4]-[Cl,Br,I:5]"
-        ),
-        nl_map_nums=[2, 3, 4],
-        nl_mass=42.0470,
-        min_num_atoms=5,
-    ),
+    # NeutralLossRule(
+    #     name="short_haloalkyl_ammonium_c3_transfer",
+    #     reactant_smarts=(
+    #         "[$([NX3;+0;!$(N-C=O)]),$([NX4;+1]):1]-[CH2:2]-[CH2:3]-[CH2:4]-[Cl,Br,I:5]"
+    #     ),
+    #     nl_map_nums=[2, 3, 4],
+    #     nl_mass=42.0470,
+    #     min_num_atoms=5,
+    # ),
+    # DISABLED 2026-09-29: no NIST20 molecule matches.
     # Deprotonated N-fluoroarenesulfonamides form diagnostic SO2F-. The neutral
     # ArN complement is variably substituted, so this rule maps the small
     # product directly instead of trying to enumerate every neutral atom.
     # Paper (negative ion): https://doi.org/10.1002/rcm.9722
-    NeutralLossRule(
-        name="n_fluoro_sulfonamide_f_transfer",
-        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3H1:5]-[F:6]",
-        nl_map_nums=[],
-        nl_mass=None,
-        min_num_atoms=10,
-        product_map_nums=[2, 3, 4, 6],
-    ),
+    # NeutralLossRule(
+    #     name="n_fluoro_sulfonamide_f_transfer",
+    #     reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3H1:5]-[F:6]",
+    #     nl_map_nums=[],
+    #     nl_mass=None,
+    #     min_num_atoms=10,
+    #     product_map_nums=[2, 3, 4, 6],
+    # ),
     # Deprotonated primary arylsulfonamides extrude SO2 and join the aryl to N; the shared
     # aryl_sulfonamide_so2 requires NH, so it misses primary sulfonamides.
     # Paper (SO2 extrusion): https://pubmed.ncbi.nlm.nih.gov/18059004/
@@ -275,22 +288,60 @@ MASSTER_RULE_NAMES = (
 )
 if len(MASSTER_RULE_NAMES) != len(set(MASSTER_RULE_NAMES)):
     raise ValueError("MASSter SMARTS rule names must be globally unique")
-MASSTER_NUM_RULES = len(MASSTER_RULE_NAMES)
-_MASSTER_RULE_INDEX = {
-    name: index for index, name in enumerate(MASSTER_RULE_NAMES, start=1)
-}
+
+# Checkpoint rule vocabulary. Position p holds rule index p + 1 (index 0 is the ordinary
+# mechanism), and every rule-indexed parameter is laid out in this order. APPEND ONLY: add a
+# new rule at the end, and keep a removed rule's name here so later indices never shift. A
+# model records these names' hashes, so a checkpoint trained on a shorter prefix still loads
+# and ignores the rules appended after it (MassterModel._restore_smarts_rule_vocabulary).
+MASSTER_RULE_VOCABULARY: tuple[str, ...] = (
+    "aryl_sulfonamide_so2",
+    "aryl_sulfonate_so2",
+    "n_nitramine_n2o",
+    "sulfoxide_so_loss",
+    "diarylvinyl_c2h2_loss",
+    "diaryl_ketone_co_loss",
+    "aminobenzothiazole_hcn_loss",
+    "pyridyl_carbamate_alkyl_transfer",
+    "n_acyl_aryl_sulfonamide_carbonyl_o_transfer",
+    "diacylhydrazine_carboxylate_o_transfer",
+    "n_phenylbenzamide_co_smiles",
+    "methyl_benzoate_co2_transfer",
+    "anisoyl_fluoride_co_f_transfer",
+    "short_haloalkyl_ammonium_c2_transfer",
+    "short_haloalkyl_ammonium_c3_transfer",
+    "n_fluoro_sulfonamide_f_transfer",
+    "primary_aryl_sulfonamide_so2",
+    "tertiary_aryl_sulfonamide_so2",
+    "primary_aryl_sulfonamide_o_transfer",
+    "phenylalanine_carboxyl_o_transfer",
+    "hydroxamic_acid_nh_excision",
+    "pfas_sulfonate_f_transfer",
+)
+if len(MASSTER_RULE_VOCABULARY) != len(set(MASSTER_RULE_VOCABULARY)):
+    raise ValueError("the MASSter rule vocabulary must not repeat a name")
+_unlisted_rules = sorted(set(MASSTER_RULE_NAMES) - set(MASSTER_RULE_VOCABULARY))
+if _unlisted_rules:
+    raise ValueError(f"append these MASSter rules to MASSTER_RULE_VOCABULARY: {_unlisted_rules}")
+MASSTER_NUM_RULES = len(MASSTER_RULE_VOCABULARY)
+_MASSTER_RULE_INDEX = {name: index for index, name in enumerate(MASSTER_RULE_VOCABULARY, start=1)}
+# CRC-32 of each vocabulary name, in vocabulary order: the checkpoint's record of its rules.
+MASSTER_RULE_NAME_HASHES: tuple[int, ...] = tuple(
+    zlib.crc32(name.encode("utf-8")) for name in MASSTER_RULE_VOCABULARY
+)
 
 # New literature rules are admitted only for the ionization conditions in the
 # supporting experiments. Existing empirical rules retain their current
 # unrestricted behavior until they are audited separately.
 _MASSTER_PRECURSOR_TYPES = {
-    "pyridyl_carbamate_alkyl_transfer": ("[M+H]+",),
+    # DISABLED 2026-09-29 with their rules.
+    # "pyridyl_carbamate_alkyl_transfer": ("[M+H]+",),
+    # "methyl_benzoate_co2_transfer": ("[M+H]+",),
+    # "anisoyl_fluoride_co_f_transfer": ("[M]+",),
+    # "short_haloalkyl_ammonium_c3_transfer": ("[M+H]+", "[M]+"),
+    # "n_fluoro_sulfonamide_f_transfer": ("[M-H]-",),
     "n_phenylbenzamide_co_smiles": ("[M-H]-",),
-    "methyl_benzoate_co2_transfer": ("[M+H]+",),
-    "anisoyl_fluoride_co_f_transfer": ("[M]+",),
     "short_haloalkyl_ammonium_c2_transfer": ("[M+H]+", "[M]+"),
-    "short_haloalkyl_ammonium_c3_transfer": ("[M+H]+", "[M]+"),
-    "n_fluoro_sulfonamide_f_transfer": ("[M-H]-",),
     "n_acyl_aryl_sulfonamide_carbonyl_o_transfer": ("[M-H]-",),
     "diacylhydrazine_carboxylate_o_transfer": ("[M-H]-",),
     "primary_aryl_sulfonamide_so2": ("[M-H]-",),
@@ -299,8 +350,9 @@ _MASSTER_PRECURSOR_TYPES = {
     "hydroxamic_acid_nh_excision": ("[M+H]+",),
     "pfas_sulfonate_f_transfer": ("[M-H]-",),
 }
-_MASSTER_FRAGMENTATION_MODES = {
-    "anisoyl_fluoride_co_f_transfer": ("EI",),
+_MASSTER_FRAGMENTATION_MODES: dict[str, tuple[str, ...]] = {
+    # DISABLED 2026-09-29 with its rule; no registered rule has a mode guard now.
+    # "anisoyl_fluoride_co_f_transfer": ("EI",),
 }
 
 
@@ -341,8 +393,11 @@ def _component_atoms(mask: np.ndarray) -> tuple[int, ...]:
     return tuple(int(index) for index in np.flatnonzero(mask))
 
 
-def _is_connected(atoms: Sequence[int], endpoints: tuple[tuple[int, ...], ...]) -> bool:
-    """Return whether the induced precursor subgraph on ``atoms`` is connected."""
+def _connected_piece_count(
+    atoms: Sequence[int],
+    endpoints: tuple[tuple[int, ...], ...],
+) -> int:
+    """Return the number of connected pieces of the induced precursor subgraph on ``atoms``."""
     parent = {atom: atom for atom in atoms}
 
     def find(atom: int) -> int:
@@ -354,7 +409,29 @@ def _is_connected(atoms: Sequence[int], endpoints: tuple[tuple[int, ...], ...]) 
     for left, right in zip(*endpoints, strict=True):
         if left in parent and right in parent:
             parent[find(left)] = find(right)
-    return len({find(atom) for atom in atoms}) == 1
+    return len({find(atom) for atom in atoms})
+
+
+def _is_connected(atoms: Sequence[int], endpoints: tuple[tuple[int, ...], ...]) -> bool:
+    """Return whether the induced precursor subgraph on ``atoms`` is connected."""
+    return _connected_piece_count(atoms, endpoints) == 1
+
+
+def formed_bond_count(atoms: Sequence[int], endpoints: tuple[tuple[int, ...], ...]) -> int:
+    """Return the new bonds a template side needs to be one connected ion.
+
+    A side with ``k`` disconnected pieces in the precursor needs at least ``k - 1`` new
+    bonds, which the SMARTS assembly forms between its pieces. Each one consumes a valence
+    slot on both of its atoms. An ordinary (connected) side forms none.
+
+    Args:
+        atoms: Molecule-local atom indices of the side.
+        endpoints: Molecule-local bond endpoints, as two parallel sequences.
+
+    Returns:
+        The number of pieces minus one.
+    """
+    return _connected_piece_count(atoms, endpoints) - 1
 
 
 def _crossing_bonds(

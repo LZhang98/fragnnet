@@ -15,7 +15,7 @@ from torch_geometric.data import Batch
 import fragnnet.model.masster_model as masster_model_module
 from fragnnet.frag import compute_frags
 from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_templates import build_masster_templates
+from fragnnet.frag.masster_templates import MassterTemplate, build_masster_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.masster_model import (
     MassterModel,
@@ -121,6 +121,7 @@ def _build_model(
     encoder_bond_dropout: float = 0.0,
     light_side_token: bool = False,
     intensity_candidate_graph: bool = False,
+    rule_pathway_token: bool = False,
     **model_kwargs: object,
 ) -> MassterModel:
     th.manual_seed(903)
@@ -221,6 +222,7 @@ def _build_model(
         encoder_bond_dropout=encoder_bond_dropout,
         light_side_token=light_side_token,
         intensity_candidate_graph=intensity_candidate_graph,
+        rule_pathway_token=rule_pathway_token,
         **model_kwargs,
     )
 
@@ -1259,8 +1261,20 @@ def test_masster_smarts_mechanisms_preserve_probability_and_train_head(
     assert model.mechanism_head.rule_embedding.weight.grad is not None
 
 
+# The EI-only anisoyl rule was DISABLED 2026-09-29, leaving no registered rule with a
+# fragmentation-mode guard, so the tests below use a synthetic EI-only template.
+_EI_ONLY_TEMPLATE = MassterTemplate(
+    broken_bond_indices=(0,),
+    components=((0,), (1, 2)),
+    rule_index=1,
+    rule_name="ei_only",
+    allowed_precursor_types=("[M]+",),
+    allowed_fragmentation_modes=("EI",),
+)
+
+
 def test_masster_filters_templates_by_adduct_and_fragmentation_mode() -> None:
-    smiles = ("COC(=O)c1ccccc1", "COc1ccc(C(=O)F)cc1")
+    smiles = ("CN(C)CCBr", "CCO")
     batch = _build_batch(smiles)
     model = _build_model(
         batch,
@@ -1268,10 +1282,7 @@ def test_masster_filters_templates_by_adduct_and_fragmentation_mode() -> None:
         precursor_types=("[M+H]+", "[M]+"),
         fragmentation_modes=("CID", "EI"),
     )
-    templates = tuple(
-        build_masster_templates(Chem.MolFromSmiles(molecule_smiles))
-        for molecule_smiles in smiles
-    )
+    templates = (build_masster_templates(Chem.MolFromSmiles(smiles[0])), (_EI_ONLY_TEMPLATE,))
 
     eligible = model._eligible_smarts_templates(
         templates,
@@ -1284,30 +1295,28 @@ def test_masster_filters_templates_by_adduct_and_fragmentation_mode() -> None:
         fragmentation_mode_indices=th.tensor([0, 0]),
     )
 
-    assert "methyl_benzoate_co2_transfer" in {template.rule_name for template in eligible[0]}
-    assert "anisoyl_fluoride_co_f_transfer" in {template.rule_name for template in eligible[1]}
-    assert "anisoyl_fluoride_co_f_transfer" not in {
-        template.rule_name for template in wrong_mode[1]
+    assert "short_haloalkyl_ammonium_c2_transfer" in {
+        template.rule_name for template in eligible[0]
     }
+    assert "ei_only" in {template.rule_name for template in eligible[1]}
+    assert "ei_only" not in {template.rule_name for template in wrong_mode[1]}
 
 
 def test_masster_excludes_ei_only_rule_without_mode_metadata() -> None:
-    smiles = "COc1ccc(C(=O)F)cc1"
-    batch = _build_batch((smiles,))
+    batch = _build_batch(("CCO",))
     model = _build_model(
         batch,
         use_smarts_templates=True,
         precursor_types=("[M]+",),
     )
-    templates = (build_masster_templates(Chem.MolFromSmiles(smiles)),)
 
     eligible = model._eligible_smarts_templates(
-        templates,
+        ((_EI_ONLY_TEMPLATE,),),
         precursor_type_indices=th.tensor([0]),
         fragmentation_mode_indices=None,
     )
 
-    assert "anisoyl_fluoride_co_f_transfer" not in {template.rule_name for template in eligible[0]}
+    assert "ei_only" not in {template.rule_name for template in eligible[0]}
 
 
 @pytest.mark.parametrize("precursor_gnn_type", ["Graphormer", "GINE_GRAPHORMER"])

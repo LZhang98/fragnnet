@@ -519,6 +519,7 @@ def build_fast_gnn_candidates(
         component_mechanism_indices=ids,
         component_batch_indices=frag_batch,
         component_cut_counts=cuts,
+        component_formed_bond_counts=th.zeros_like(cuts),
         component_unique_indices=ids,
         unique_representative_component_indices=ids,
         atom_indices=atoms,

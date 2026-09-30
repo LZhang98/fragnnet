@@ -76,6 +76,17 @@ class TestTable:
         names = [c.name for c in selected_column_specs(formula_str, cc_hash)]
         assert names == BASE_COLUMNS + extra
 
+    def test_rule_provenance_appends_after_the_cc_hashes(self):
+        assert [c.name for c in selected_column_specs(False, True, True)] == BASE_COLUMNS + [
+            "pred_formula_adducts",
+            "pred_node_ccs",
+            "pred_node_rules",
+        ]
+
+    def test_rule_provenance_requires_cc_hashes(self):
+        with pytest.raises(ValueError, match="set return_cc_hash"):
+            selected_column_specs(True, False, True)
+
     def test_names_are_unique(self):
         names = [c.name for c in COLUMN_SPECS]
         assert len(names) == len(set(names))

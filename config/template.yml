@@ -831,6 +831,13 @@ masster_isotope_min_ratio: 0.001  # isotope rows under this share of their pathw
 masster_include_cmf: True
 masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; add their assemblies.
+# SMARTS rule provenance in the intensity token (arm p1;
+# docs/plans/masster/masster_smarts_pathway_plan.md, Track A). Per candidate, a 0/1 indicator
+# for each rule of MASSTER_RULE_VOCABULARY that produces it (either side of the template),
+# through a zero-initialized, bias-free projection added right after input_projection. False
+# builds nothing and adds no state_dict key. Requires masster_smarts_templates and
+# masster_unique_fragment_mode.
+masster_rule_pathway_token: False
 # Encode each severed bond from its (retained, lost) atom embeddings instead of averaging the
 # two endpoints. The average is degenerate: pooled over a fragment's cut bonds it equals
 # half the mean inside atom plus half the mean outside atom, so cutting a1-b1 + a2-b2 gives a
