@@ -231,9 +231,9 @@ declare -A CONFIG_BY_ARM=(
     [mlp1]=mlp1_no_attention_ob_obf.yml
     [cg1]=cg1_candidate_graph_ob_obf.yml
 )
-# Seed replicates are read on W&B only, so they must not upload checkpoints. cg1 keeps its
-# checkpoints on Fir for now (user, 2026-09-29).
-declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1 [cg1]=1)
+# Seed replicates are read on W&B only, so they must not upload checkpoints. cg1 and the window
+# ladder keep their checkpoints on Fir for now (user, 2026-09-29).
+declare -A NO_CKPT_UPLOAD=([c0_s2]=1 [k1_s2]=1 [u2_s2]=1 [cg1]=1 [mw30]=1 [mw10]=1 [mlp1]=1)
 
 case "${STAGE}" in
     all)  ARMS=(c0 r0 r1 r2 k1 m1) ;;
