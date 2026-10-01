@@ -244,6 +244,21 @@ _MASSTER_ONLY_NL_RULES = (
         min_num_atoms=7,
         product_map_nums=[2, 3, 4, 5, 6],
     ),
+    # Protonated secondary and tertiary arylsulfonamides transfer one sulfonyl oxygen to the
+    # aryl ring, as the primary rule above; the N-substituted sulfinylamine R2N-S=O leaves,
+    # so the whole N side is removed. Measured losses HNOS, C3H7NOS, CH3BrNOS dominate the
+    # uncovered intensity of i1's sulfonamide tail (2026-09-30).
+    # Paper: https://doi.org/10.1016/j.ijms.2018.09.033
+    # Gate: [M+H]+, 115 val molecules +1.8% (CI 0.7-2.8); 104 train-sample molecules +2.3%
+    # (CI 1.6-3.2). docs/findings/masster/masster_i1_worst_predictions_2026_09_30.md.
+    NeutralLossRule(
+        name="substituted_aryl_sulfonamide_o_transfer",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3;!H2:5]",
+        nl_map_nums=[2, 4, 5],
+        nl_mass=None,
+        min_num_atoms=9,
+        nl_side_map_nums=[5],
+    ),
 )
 RuleType = TypeVar("RuleType", SmartsFragRule, NeutralLossRule)
 
@@ -317,6 +332,7 @@ MASSTER_RULE_VOCABULARY: tuple[str, ...] = (
     "phenylalanine_carboxyl_o_transfer",
     "hydroxamic_acid_nh_excision",
     "pfas_sulfonate_f_transfer",
+    "substituted_aryl_sulfonamide_o_transfer",
 )
 if len(MASSTER_RULE_VOCABULARY) != len(set(MASSTER_RULE_VOCABULARY)):
     raise ValueError("the MASSter rule vocabulary must not repeat a name")
@@ -349,6 +365,7 @@ _MASSTER_PRECURSOR_TYPES = {
     "phenylalanine_carboxyl_o_transfer": ("[M+H]+",),
     "hydroxamic_acid_nh_excision": ("[M+H]+",),
     "pfas_sulfonate_f_transfer": ("[M-H]-",),
+    "substituted_aryl_sulfonamide_o_transfer": ("[M+H]+",),
 }
 _MASSTER_FRAGMENTATION_MODES: dict[str, tuple[str, ...]] = {
     # DISABLED 2026-09-29 with its rule; no registered rule has a mode guard now.

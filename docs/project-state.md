@@ -46,6 +46,10 @@ User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`
   smokes of both exit 0 with `val_candidate_wrecall` 0.954.
 - **Next:** put the EI data on Fir, add a submitter stage and submit `e1`/`e0` when the user
   decides. The EI library metrics and the isotope labels in the export are open.
+- **Audit fixes (2026-09-30; uncommitted):** corrected isotope convolution for cancelling
+  negative/positive offsets and two-column SHR peak parsing. 423 tests passed, including
+  CPU/CUDA checks. Natural-envelope predictions for negative-offset elements change; full-batch
+  throughput remains unmeasured. [Fix evidence and compatibility](plans/masster/masster_ei_nominal_plan.md#audit-fixes-2026-09-30-implemented-uncommitted).
 - [Plan](plans/masster/masster_ei_nominal_plan.md).
 
 **What `i1`'s worst val predictions miss (2026-09-30); inference only, complete.** Ranked by `cos_hun_inst_tol` (user decision: instrument tolerance, not 0.01 Da bins).
@@ -66,7 +70,16 @@ User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`
 - **Nitro and sulfonyl failures** run through the group's own heteroatom bonds. The model gets the radical/even-electron choice wrong, and sulfonamides also lack SO2-extrusion candidates.
 - **Next steps (not built):** a cut-level training signal that reaches the intensity head, pairwise candidate preferences, and `cm1` (mixed evidence; the code survives only in `/tmp/frag_gnn_cm_revert_20260929/`). A cheap offline check comes first: add probe cut scores to the intensity logits.
 - **Odd-electron bias: null.** An offline, cross-fitted per-group bias adds +0.0000 on whole val; the model's odd-electron mass is already calibrated per group.
-- **Generalized sulfonyl O-transfer (aryl, any N): passes model-free.** +1.86% rule-only over null on val, +2.21% on train; on the sulfonyl tail it has 26 spectra at ≥ 10% against 4 for the registered rule. Registering it needs a whole-side product in `NeutralLossRule`. The alkyl and sulfone variants are too weak.
+- **`substituted_aryl_sulfonamide_o_transfer` registered (2026-09-30; uncommitted, templates off by default).**
+  - It covers secondary and tertiary aryl sulfonamides in `[M+H]+`, and is appended as vocabulary index 23.
+  - New `NeutralLossRule.nl_side_map_nums` lets a whole N side leave as R2N-S=O.
+  - Gate: val 115 molecules +1.81% [0.70, 2.80]; train sample +2.33%.
+  - Tests: the SMARTS, pathway, continuation and annotation tests were updated for the fixture that now matches it; 847 tests across the touched suites pass.
+  - **Arm `so1` prepared (2026-09-30), not submitted.** It is `i1` + `masster_smarts_templates: true` (the `t1i` recipe; config `config/masster/mh_ft_memorization_route_2026_09_24/so1_smarts_o_transfer_ob_obf.yml`), with control `i1`.
+    - Submit on Fir with stage `smarts` of `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh`.
+    - Local 2-epoch CUDA smoke passed on a sulfonamide mini-split: the candidate builder emitted 880 new-rule template sides.
+    - Read: `output/i1_worst_predictions_2026_09_30/smarts_o_transfer/read_so1.py`, on template-bearing, sulfonamide and sulfonamide-tail spectra, with `fa1`@63 as the independent tail selector.
+    - No-template arms (`fa1`, `i3`) show about +0.012 on sulfonamide molecules against `i1`@59, so a template effect must clear that.
 - **Open:** a joint per-molecule table of causes.
 - [Finding](findings/masster/masster_i1_worst_predictions_2026_09_30.md).
 

@@ -405,10 +405,16 @@ model's dominant candidate at that m/z
   - On the 37 sulfonyl spectra missing candidates: 19.7% against 2.1%, and 17 against 3 spectra.
 - **The alkyl and sulfone variants are too weak to admit.** Four val molecules carry the alkyl
   signal, and it is zero on train.
-- **Size.** The candidate for registration is one rule. It generalizes the primary rule to any N
-  substitution, with a product defined as a whole side. `NeutralLossRule` cannot yet express that
-  product, since it removes only mapped atoms. Its effect is confined to about 150 sulfonyl tail
-  spectra, so read it on that subset, not on whole val.
+- **Registered (2026-09-30)** as `substituted_aryl_sulfonamide_o_transfer`: secondary and
+  tertiary aryl sulfonamides, `[M+H]+`, appended as vocabulary index 23. The primary rule keeps the
+  NH2 case.
+  - Its product needs the new `NeutralLossRule.nl_side_map_nums`, where the whole N side leaves;
+    matches whose N side is fused to the aryl ring are skipped.
+  - On the molecules the primary rule does not match: val 115 molecules +1.81% [0.70, 2.80], train
+    sample 104 +2.33% [1.64, 3.20]
+    ([catalog](../../reference/masster_smarts_rules.md#rule-added-from-the-i1-worst-prediction-read-2026-09-30)).
+  - Templates stay off by default. Its effect is confined to about 150 sulfonyl tail spectra, so
+    read a templates-on arm on that subset, not on whole val.
 
 ## Result: uncovered candidates
 

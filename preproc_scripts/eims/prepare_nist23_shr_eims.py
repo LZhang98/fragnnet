@@ -24,7 +24,7 @@ def normalize_chem_text(text: str) -> str:
 
 
 def parse_peak_line(line: str) -> tuple[float, float]:
-    """Parse a single peak line of the format: nominal_mz intensity annotation exact_mz."""
+    """Parse a peak with optional annotation and trailing exact m/z fields."""
 
     parts = line.strip().split()
     if len(parts) < 2:
@@ -34,7 +34,7 @@ def parse_peak_line(line: str) -> tuple[float, float]:
 
     mz_value: float
     try:
-        mz_value = float(parts[-1])
+        mz_value = float(parts[-1]) if len(parts) >= 4 else float(parts[0])
     except ValueError:
         mz_value = float(parts[0])
 

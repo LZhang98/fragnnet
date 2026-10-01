@@ -86,6 +86,10 @@ class _AllEmbeddings:
     def GetSubstructMatches(self, pattern: Chem.Mol):  # noqa: N802 - mirrors the RDKit name
         return self._mol.GetSubstructMatches(pattern, uniquify=False, maxMatches=1_000_000)
 
+    def __getattr__(self, name: str):
+        # Everything else (e.g. GetAtomWithIdx for substituent sides) is the molecule's own.
+        return getattr(self._mol, name)
+
 
 def _partition_key(pair) -> tuple:
     return tuple(sorted((tuple(np.flatnonzero(pair[0])), tuple(np.flatnonzero(pair[1])))))

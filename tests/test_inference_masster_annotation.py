@@ -346,7 +346,8 @@ def test_tables_need_both_halves_of_the_rule_pairs():
 
 def test_exporter_writes_the_smarts_rules_behind_each_node():
     # N-phenyl benzenesulfonamide matches aryl_sulfonamide_so2: its lost SO2 (atoms 0-2) and
-    # its two-piece aryl product (atoms 3-15) both come from the rule. Ethanol matches none.
+    # its two-piece aryl product (atoms 3-15) both come from the rule. It also matches the
+    # substituted O-transfer. Ethanol matches none.
     smiles = ("O=S(=O)(Nc1ccccc1)c1ccccc1", "CCO")
     batch = _build_batch(smiles)
     model = _build_model(
@@ -419,5 +420,9 @@ def test_exporter_writes_the_smarts_rules_behind_each_node():
     ]
     so2, product = frozenset(range(3)), frozenset(range(3, 16))
     assert node_rules[0][so2] == node_rules[0][product] == "aryl_sulfonamide_so2"
-    assert {rules for atoms, rules in node_rules[0].items() if atoms not in (so2, product)} == {""}
+    # The secondary sulfonamide also matches substituted_aryl_sulfonamide_o_transfer ([M+H]+).
+    assert {rules for atoms, rules in node_rules[0].items() if atoms not in (so2, product)} <= {
+        "",
+        "substituted_aryl_sulfonamide_o_transfer",
+    }
     assert set(node_rules[1].values()) == {""}

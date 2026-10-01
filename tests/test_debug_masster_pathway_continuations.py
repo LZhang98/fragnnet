@@ -103,7 +103,8 @@ def test_template_sides_use_the_builders_cut_and_formed_counts():
     # Both bonds of the template are broken for either side; only the kept one is two pieces.
     assert sides[lost] == (2, 0)
     assert sides[kept] == (2, formed_bond_count(kept, edges)) == (2, 1)
-    assert ec.template_side_counts(mol, "[M+H]+").keys() == sides.keys()
+    # [M+H]+ adds the substituted O-transfer sides ([M+H]+ only) to the SO2 extrusion ones.
+    assert sides.keys() <= ec.template_side_counts(mol, "[M+H]+").keys()
 
 
 def test_formed_bond_consumes_two_valence_slots_in_production_counts(scorer):

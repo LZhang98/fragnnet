@@ -98,6 +98,8 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
+    nominal_isotope_distribution,
+    nominal_isotope_pattern,
     nominal_isotope_power_table,
 )
 from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
@@ -2198,6 +2200,17 @@ class MassterModel(nn.Module):
             if table[1, order] < 1.0:
                 heavy_columns.append(column)
                 heavy_tables.append(table)
+        self.register_buffer(
+            "isotope_negative_columns",
+            th.tensor(
+                [
+                    column for column, element in enumerate(CANONICAL_ELEMENT_ORDER)
+                    if nominal_isotope_distribution(element)[0] < 0
+                ],
+                dtype=th.long,
+            ),
+            persistent=False,
+        )
         width = 2 * order + 1
         # convolution_map[i, k, j] = 1 where offsets (i - order) + (k - order) = j - order.
         offsets = th.arange(width)
@@ -2280,6 +2293,28 @@ class MassterModel(nn.Module):
             self.isotope_hydrogen_power_table[row_hydrogens],
             self.isotope_convolution_map,
         )
+        # The narrow tensor convolution is exact only for nonnegative isotope offsets.
+        # Recompute ions containing Se/B/metals with their full intermediate support. Cache
+        # unique compositions on CPU; the common CHNOPS/halogen path stays on the device.
+        negative_ions = (counts[..., self.isotope_negative_columns] > 0).any(dim=-1)
+        negative_rows = negative_ions[row_fragments, row_modes].nonzero(as_tuple=True)[0]
+        if negative_rows.numel():
+            ion_counts = counts[row_fragments[negative_rows], row_modes[negative_rows]].clone()
+            ion_counts[:, COMPOSITION_HYDROGEN_COLUMN] += row_shifts[negative_rows]
+            ion_counts = ion_counts.clamp(0, ISOTOPE_MAX_ATOM_COUNT)
+            unique_counts, inverse = th.unique(ion_counts, dim=0, return_inverse=True)
+            patterns = [
+                nominal_isotope_pattern(
+                    tuple(
+                        (element, count)
+                        for element, count in zip(CANONICAL_ELEMENT_ORDER, composition)
+                        if count
+                    ),
+                    order,
+                )
+                for composition in unique_counts.cpu().tolist()
+            ]
+            row_patterns[negative_rows] = row_patterns.new_tensor(patterns)[inverse]
         row_patterns = row_patterns / row_patterns.sum(dim=1, keepdim=True)
         keep = (row_patterns > 0.0) & (row_patterns >= self.isotope_min_ratio)
         source_rows, columns = keep.nonzero(as_tuple=True)

@@ -50,6 +50,9 @@
 # as a condition:
 #   ce1  i1 + context concatenated to the encoder input (condition)   (control: i1, i50ig7rf)
 #   ce2  i1 + context key/value in each global-attention layer         (control: i1, i50ig7rf)
+# Added 2026-09-30: SMARTS templates on i1, after i1's worst-prediction read found sulfonamide tail
+# spectra missing rearranged candidates and substituted_aryl_sulfonamide_o_transfer was registered:
+#   so1  i1 + masster_smarts_templates                               (control: i1, i50ig7rf)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
 #
@@ -61,8 +64,9 @@
 #   graph   cg1 (fa1 has run).
 #   rerun   r2_ob, r1_ob, r0_ob, nl1_ob, nl2_ob, sd1_ob and fa1_s2 (i1 and fa1 have run).
 #   ce      ce1 and ce2 (i1 has run).
+#   smarts  so1 (i1 has run).
 #   i3 | i4 | fa1 | mz1 | i5 | mznl1 | nlpe1 | mw30 | mw10 | mlp1 | cg1 | r2_ob | r1_ob | r0_ob
-#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2  one job.
+#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2 | so1  one job.
 #
 # CONTROLS: i1_inst_ob_obf (i50ig7rf, tail 0.7607 over epochs 54-63) and fa1_full_attention_ob_obf
 # (0vn8m2gr, tail 0.7651) have run; each arm's header names its control. READ: the tail mean of
@@ -109,6 +113,7 @@ declare -A JOB_BY_ARM=(
     [fa1_s2]=msh_mhft_fa1_s2_full_attention_ob_obf
     [ce1]=msh_mhft_ce1_context_gnn_ob_obf
     [ce2]=msh_mhft_ce2_context_token_ob_obf
+    [so1]=msh_mhft_so1_smarts_o_transfer_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [i3]=i3_k1_ema_ob_obf.yml
@@ -131,6 +136,7 @@ declare -A CONFIG_BY_ARM=(
     [fa1_s2]=fa1_s2_full_attention_ob_obf.yml
     [ce1]=ce1_context_gnn_ob_obf.yml
     [ce2]=ce2_context_token_ob_obf.yml
+    [so1]=so1_smarts_o_transfer_ob_obf.yml
 )
 # cg1, the window ladder, the pos arms, the OB/OB_F reruns and the ce arms keep their checkpoints
 # on Fir for now (user, 2026-09-29); the seed replicate fa1_s2 is read on W&B only.
@@ -146,9 +152,10 @@ case "${STAGE}" in
     graph) ARMS=(cg1) ;;
     rerun) ARMS=(r2_ob r1_ob r0_ob nl1_ob nl2_ob sd1_ob fa1_s2) ;;
     ce)   ARMS=(ce1 ce2) ;;
-    i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2) ARMS=("${STAGE}") ;;
+    smarts) ARMS=(so1) ;;
+    i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|so1) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2]" >&2
+        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|smarts|so1]" >&2
         exit 1
         ;;
 esac

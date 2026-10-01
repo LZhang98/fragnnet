@@ -486,6 +486,12 @@ class NeutralLossRule:
             supports diagnostic small ions whose complementary neutral includes
             an arbitrarily substituted group and therefore cannot be enumerated
             with a fixed list of map numbers.
+        nl_side_map_nums: Map numbers, a subset of ``nl_map_nums``, whose whole
+            substituent side also leaves: every atom reachable from the mapped atom
+            without entering another mapped atom. This lets a variably substituted
+            leaving group (e.g. R2N-S=O) be one rule. A match is skipped when that
+            side reaches a neighbour of a retained mapped atom, i.e. when the leaving
+            group is joined to the product through a ring.
     """
 
     name: str
@@ -494,11 +500,14 @@ class NeutralLossRule:
     nl_mass: float | None
     min_num_atoms: int = 0
     product_map_nums: list[int] = field(default_factory=list)
+    nl_side_map_nums: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Require exactly one direction for constructing the product mask."""
         if bool(self.nl_map_nums) == bool(self.product_map_nums):
             raise ValueError("exactly one of nl_map_nums and product_map_nums must be populated")
+        if not set(self.nl_side_map_nums) <= set(self.nl_map_nums):
+            raise ValueError("nl_side_map_nums must be a subset of nl_map_nums")
 
 
 NL_RULES: list[NeutralLossRule] = [
@@ -841,6 +850,41 @@ def _get_compiled_nl_pattern(rule: NeutralLossRule) -> Chem.Mol | None:
     return _COMPILED_NL_PATTERNS[rule.name]
 
 
+def _substituent_sides(
+    mol: Chem.Mol,
+    rule: NeutralLossRule,
+    map_to_mol: dict[int, int],
+) -> set[int] | None:
+    """Atoms on the substituent side of each ``nl_side_map_nums`` atom of one match.
+
+    Walks from each such atom without entering any mapped atom. Returns ``None`` when
+    a side reaches a neighbour of a mapped atom that stays in the product, because the
+    leaving group is then fused to the product and has no separate side.
+    """
+    mapped = set(map_to_mol.values())
+    leaving = {map_to_mol[m] for m in rule.nl_map_nums}
+    kept_neighbours = {
+        neighbour.GetIdx()
+        for atom in mapped - leaving
+        for neighbour in mol.GetAtomWithIdx(atom).GetNeighbors()
+        if neighbour.GetIdx() not in mapped
+    }
+    sides: set[int] = set()
+    for map_num in rule.nl_side_map_nums:
+        stack = [map_to_mol[map_num]]
+        while stack:
+            atom = stack.pop()
+            for neighbour in mol.GetAtomWithIdx(atom).GetNeighbors():
+                index = neighbour.GetIdx()
+                if index in mapped or index in sides:
+                    continue
+                if index in kept_neighbours:
+                    return None
+                sides.add(index)
+                stack.append(index)
+    return sides
+
+
 def _apply_nl_prepass(
     rules: list[NeutralLossRule],
     mol: Chem.Mol,
@@ -892,6 +936,11 @@ def _apply_nl_prepass(
                 selected_atoms.add(mol_idx)
             if not valid:
                 continue
+            if rule.nl_side_map_nums:
+                side_atoms = _substituent_sides(mol, rule, map_to_mol)
+                if side_atoms is None:
+                    continue
+                selected_atoms |= side_atoms
             if rule.product_map_nums:
                 product_atoms = selected_atoms
             else:

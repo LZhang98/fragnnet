@@ -31,7 +31,8 @@ from fragnnet.pl_model.masster_pl import MassterPL
 from tests.test_masster_model import _build_batch, _build_model
 
 # N-phenyl benzenesulfonamide: aryl_sulfonamide_so2 (rule 1, both polarities) loses SO2 and
-# joins the two aryl-side pieces, so its product side is two precursor pieces.
+# joins the two aryl-side pieces, so its product side is two precursor pieces. As a secondary
+# arylsulfonamide it also matches substituted_aryl_sulfonamide_o_transfer ([M+H]+).
 _SULFONAMIDE = "O=S(=O)(Nc1ccccc1)c1ccccc1"
 _SO2_ATOMS = (0, 1, 2)
 _PRODUCT_ATOMS = tuple(range(3, 16))
@@ -77,9 +78,9 @@ def _forward(model: MassterModel, batch, smiles: tuple[str, ...], **kwargs):
 
 def test_rule_indices_follow_the_append_only_vocabulary() -> None:
     assert set(MASSTER_RULE_NAMES) <= set(MASSTER_RULE_VOCABULARY)
-    assert MASSTER_NUM_RULES == len(MASSTER_RULE_VOCABULARY) == 22
+    assert MASSTER_NUM_RULES == len(MASSTER_RULE_VOCABULARY) == 23
     assert MASSTER_RULE_VOCABULARY[0] == "aryl_sulfonamide_so2"
-    assert MASSTER_RULE_VOCABULARY[-1] == "pfas_sulfonate_f_transfer"
+    assert MASSTER_RULE_VOCABULARY[-1] == "substituted_aryl_sulfonamide_o_transfer"
     assert {name: index - 1 for name, index in _MASSTER_RULE_INDEX.items()} == {
         name: position for position, name in enumerate(MASSTER_RULE_VOCABULARY)
     }
@@ -196,8 +197,9 @@ def test_formed_bond_count_is_pieces_minus_one() -> None:
     assert formed_bond_count((0, 2, 4), chain) == 2
 
     mol = Chem.MolFromSmiles(_SULFONAMIDE)
-    (template,) = build_masster_templates(mol)
-    assert template.rule_name == "aryl_sulfonamide_so2"
+    (template,) = [
+        t for t in build_masster_templates(mol) if t.rule_name == "aryl_sulfonamide_so2"
+    ]
     assert template.components == (_SO2_ATOMS, _PRODUCT_ATOMS)
     assert [formed_bond_count(side, _endpoints(mol)) for side in template.components] == [0, 1]
 
@@ -208,7 +210,9 @@ def test_candidates_carry_formed_bonds_on_assembled_sides_only(backend: str) -> 
         pytest.skip("CUDA required")
     device = th.device(backend)
     mol = Chem.MolFromSmiles(_SULFONAMIDE)
-    templates = build_masster_templates(mol)
+    templates = tuple(
+        t for t in build_masster_templates(mol) if t.rule_name == "aryl_sulfonamide_so2"
+    )
 
     candidates = build_masster_candidates(
         th.full((mol.GetNumBonds(),), -8.0, device=device),
@@ -296,11 +300,14 @@ def test_annotation_reports_the_rule_behind_each_fragment(unique_fragment_mode: 
     output = _forward(model, batch, smiles, return_annotation=True)
 
     rule_fragments = output["fragment_rule_fragment_idxs"].tolist()
-    assert output["fragment_rule_idxs"].tolist() == [1] * len(rule_fragments)
+    rule_indices = output["fragment_rule_idxs"].tolist()
+    o_transfer = MASSTER_RULE_VOCABULARY.index("substituted_aryl_sulfonamide_o_transfer") + 1
+    assert set(rule_indices) <= {1, o_transfer} and 1 in rule_indices
     memberships = output["fragment_atom_fragment_idxs"]
     rule_atom_sets = {
         tuple(sorted(output["fragment_atom_indices"][memberships == fragment].tolist()))
-        for fragment in rule_fragments
+        for fragment, rule in zip(rule_fragments, rule_indices)
+        if rule == 1
     }
     # Both template sides carry the rule, the lost SO2 as well as the assembled product.
     assert rule_atom_sets == {_SO2_ATOMS, _PRODUCT_ATOMS}
@@ -356,9 +363,12 @@ def test_rule_pathway_token_starts_as_the_templates_model_and_trains() -> None:
     arm.train()
     (-_forward(arm, batch, smiles)["pred_logprobs"].mean()).backward()
     gradient = residual.weight.grad
-    # Only the column of the matched rule (index 1) sees a candidate.
+    # Only the columns of the matched rules see a candidate: rule 1 (SO2 extrusion) and the
+    # substituted O-transfer, which this secondary sulfonamide also matches.
+    matched = [0, MASSTER_RULE_VOCABULARY.index("substituted_aryl_sulfonamide_o_transfer")]
     assert th.count_nonzero(gradient[:, 0]) > 0
-    assert th.count_nonzero(gradient[:, 1:]) == 0
+    unmatched = [c for c in range(gradient.shape[1]) if c not in matched]
+    assert th.count_nonzero(gradient[:, unmatched]) == 0
 
 
 def test_rule_pathway_token_pl_threads_hparam() -> None:

@@ -1,7 +1,7 @@
 import re
 from collections import Counter
 from collections.abc import Sequence
-from functools import lru_cache
+from functools import cache, lru_cache
 from typing import Literal
 
 import numpy as np
@@ -242,46 +242,69 @@ NEUTRON_MASS = 1.008665
 C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); true M+1 peak spacing
 
 
-def nominal_isotope_power_table(element: str, max_count: int, max_order: int) -> np.ndarray:
-    """Natural isotope patterns of ``n`` atoms of one element, over nominal mass offsets.
+@cache
+def nominal_isotope_distribution(element: str) -> tuple[int, tuple[float, ...]]:
+    """Return the lightest natural isotope's offset and its dense probability polynomial.
 
-    Offsets count mass-number units from the element's most abundant isotope, which is the
-    nominal-mass convention: 81Br sits at +2 of 79Br, and 78Se at -2 of 80Se. Row ``n`` is the
-    ``n``-fold convolution of the single-atom pattern, truncated to offsets
-    ``-max_order..max_order`` after every step, so probability that leaves the window is
-    dropped rather than folded back. Abundances are RDKit's natural ones; an element with none
-    tabulated counts as monoisotopic.
-
-    Args:
-        element: Element symbol.
-        max_count: Largest atom count tabulated.
-        max_order: Largest absolute offset kept.
-
-    Returns:
-        Probabilities of shape ``(max_count + 1, 2 * max_order + 1)``; column ``j`` is offset
-        ``j - max_order`` and row 0 is the unit pattern at offset 0.
+    Offsets are relative to the most abundant isotope. Polynomial indices are relative to
+    the lightest isotope, so convolution indices are nonnegative even for Se, B and metals.
     """
     atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
-    base = round(PERIODIC_TABLE.GetMostCommonIsotopeMass(atomic_number))
-    width = 2 * max_order + 1
-    single = np.zeros(width)
-    for mass_number in range(max(1, base - max_order), base + max_order + 1):
-        single[mass_number - base + max_order] = PERIODIC_TABLE.GetAbundanceForIsotope(
-            atomic_number, mass_number
-        )
-    if single.sum() <= 0.0:
-        single[max_order] = 1.0
-    # Normalise over the full natural distribution, so isotopes outside the window count as
-    # lost mass instead of inflating the ones kept.
-    total = sum(
-        PERIODIC_TABLE.GetAbundanceForIsotope(atomic_number, mass_number)
-        for mass_number in range(1, 300)
+    base = PERIODIC_TABLE.GetMostCommonIsotope(atomic_number)
+    abundances = np.array(
+        [PERIODIC_TABLE.GetAbundanceForIsotope(atomic_number, mass) for mass in range(300)]
     )
-    single /= total if total > 0.0 else single.sum()
-    table = np.zeros((max_count + 1, width))
-    table[0, max_order] = 1.0
-    for count in range(1, max_count + 1):
-        table[count] = np.convolve(table[count - 1], single)[max_order : max_order + width]
+    present = np.flatnonzero(abundances)
+    if not present.size:
+        return 0, (1.0,)
+    low, high = int(present[0]), int(present[-1])
+    return low - base, tuple(abundances[low : high + 1] / abundances.sum())
+
+
+@lru_cache(maxsize=65536)
+def nominal_isotope_pattern(
+    composition: tuple[tuple[str, int], ...], max_order: int
+) -> tuple[float, ...]:
+    """Convolve a composition's natural distribution, then crop to ±``max_order``.
+
+    A lightest-isotope origin makes every polynomial index nonnegative. Only coefficients
+    above the final upper index can be discarded during convolution: they cannot return.
+    The returned probabilities are not renormalized after cropping.
+    """
+    distributions = [
+        (count, nominal_isotope_distribution(element)) for element, count in composition
+    ]
+    origin = sum(count * low for count, (low, _) in distributions)
+    upper = max_order - origin
+    pattern = np.ones(1)
+    for count, (_, single) in distributions:
+        for _ in range(count):
+            pattern = np.convolve(pattern, single)[: upper + 1]
+    offsets = np.arange(-max_order, max_order + 1) - origin
+    result = np.zeros(2 * max_order + 1)
+    valid = (offsets >= 0) & (offsets < len(pattern))
+    result[valid] = pattern[offsets[valid]]
+    return tuple(result)
+
+
+def nominal_isotope_power_table(element: str, max_count: int, max_order: int) -> np.ndarray:
+    """Return natural patterns for 0..``max_count`` atoms, cropped after convolution.
+
+    Column ``j`` represents offset ``j - max_order`` from the most abundant isotope.
+    Intermediate support includes offsets that can cancel later; cropping does not
+    renormalize the retained probabilities. Shape: (max_count + 1, 2 * max_order + 1).
+    """
+    low, single = nominal_isotope_distribution(element)
+    # Every row up to max_count must remain recoverable, including negative-offset elements.
+    upper = max_order - max_count * low
+    table = np.zeros((max_count + 1, 2 * max_order + 1))
+    pattern = np.ones(1)
+    for count in range(max_count + 1):
+        offsets = np.arange(-max_order, max_order + 1) - count * low
+        valid = (offsets >= 0) & (offsets < len(pattern))
+        table[count, valid] = pattern[offsets[valid]]
+        if count < max_count:
+            pattern = np.convolve(pattern, single)[: upper + 1]
     return table
 
 

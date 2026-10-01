@@ -3,6 +3,8 @@
 Plan: docs/plans/masster/masster_ei_nominal_plan.md.
 """
 
+from collections import defaultdict
+
 import numpy as np
 import pytest
 import torch as th
@@ -18,15 +20,26 @@ NATURAL = {"mass_mode": "nominal", "isotope_envelope": "natural"}
 
 
 def _reference_pattern(counts: dict[str, int], order: int, min_ratio: float) -> np.ndarray:
-    """Truncated natural pattern of a composition by direct convolution, cut and renormalised."""
-    pattern = np.zeros(2 * order + 1)
-    pattern[order] = 1.0
+    """Independent full convolution of RDKit abundances, cropped only at the end."""
+    periodic_table = Chem.GetPeriodicTable()
+    pattern = {0: 1.0}
     for element, count in counts.items():
-        element_pattern = nominal_isotope_power_table(element, count, order)[count]
-        pattern = np.convolve(pattern, element_pattern)[order : 3 * order + 1]
-    pattern /= pattern.sum()
-    pattern[pattern < min_ratio] = 0.0
-    return pattern / pattern.sum()
+        base = periodic_table.GetMostCommonIsotope(element)
+        single = {
+            mass - base: periodic_table.GetAbundanceForIsotope(element, mass) / 100.0
+            for mass in range(1, 300)
+            if periodic_table.GetAbundanceForIsotope(element, mass) > 0
+        }
+        for _ in range(count):
+            combined = defaultdict(float)
+            for offset, probability in pattern.items():
+                for delta, abundance in single.items():
+                    combined[offset + delta] += probability * abundance
+            pattern = combined
+    result = np.array([pattern.get(offset, 0.0) for offset in range(-order, order + 1)])
+    result /= result.sum()
+    result[result < min_ratio] = 0.0
+    return result / result.sum()
 
 
 def test_nominal_isotope_power_table_matches_natural_abundance() -> None:
@@ -222,3 +235,72 @@ def test_nominal_isotope_model_loads_exact_checkpoints_strict() -> None:
 def test_invalid_mass_and_isotope_settings_raise(kwargs: dict, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         _build_model(_build_batch(), **kwargs)
+
+
+@pytest.mark.parametrize("element,count", [("Se", 2), ("B", 4), ("Hg", 2), ("Sn", 2)])
+def test_power_table_keeps_offsets_that_return_to_window(element: str, count: int) -> None:
+    pattern = nominal_isotope_power_table(element, count, 4)[count]
+    assert pattern / pattern.sum() == pytest.approx(
+        _reference_pattern({element: count}, 4, 0.0), abs=1e-12
+    )
+
+
+@pytest.mark.parametrize("order", [1, 4, 6])
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_isotope_rows_cancel_offsets_across_elements(order: int, device: str) -> None:
+    if device == "cuda" and not th.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    compositions = [
+        {"Se": 1, "Br": 3, "H": 2},
+        {"Se": 2, "C": 2, "H": 6},
+        {"B": 3, "Cl": 2, "H": 2},
+        {"Hg": 1, "Br": 2, "H": 2},
+        {"C": 2, "Cl": 1, "H": 6},
+    ]
+    batch = _build_batch(("C[Se]C",))
+    model = _build_model(
+        batch, precursor_types=("[M]+",), include_cmf=False,
+        isotope_max_order=order, **NATURAL,
+    ).to(device)
+    counts = th.zeros((len(compositions), COMPOSITION_FEATURE_DIM), dtype=th.long, device=device)
+    for i, composition in enumerate(compositions):
+        for element, count in composition.items():
+            counts[i, CANONICAL_ELEMENT_ORDER.index(element)] = count
+    fragments = th.arange(len(compositions), device=device).repeat_interleave(3)
+    shifts = th.tensor([-1, 0, 2], device=device).repeat(len(compositions))
+    rows, offsets, shares = model._isotope_rows(
+        counts, th.zeros(len(compositions), dtype=th.long, device=device),
+        fragments, th.zeros_like(fragments), shifts,
+    )
+    for row, (fragment, shift) in enumerate(zip(fragments.tolist(), shifts.tolist())):
+        composition = dict(compositions[fragment])
+        composition["H"] += shift
+        expected = _reference_pattern(composition, order, model.isotope_min_ratio)
+        observed = np.zeros(2 * order + 1)
+        selected = rows == row
+        observed[(offsets[selected] + order).cpu().numpy()] = shares[selected].exp().cpu().numpy()
+        assert observed == pytest.approx(expected, abs=1e-6)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_negative_offset_isotopes_forward_backward(device: str) -> None:
+    if device == "cuda" and not th.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    batch = _build_batch(("C[Se]C", "CCBr")).to(device)
+    model = _build_model(
+        batch, precursor_types=("[M]+",), include_cmf=False, **NATURAL
+    ).to(device).eval()
+    inputs = {
+        "mol_pyg": batch,
+        "spec_prec_type": th.zeros(2, dtype=th.long, device=device),
+        "spec_nce": th.tensor([20.0, 40.0], device=device),
+    }
+    out = model(**inputs)
+    probabilities = out["pred_logprobs"].exp()
+    totals = probabilities.new_zeros(2).index_add(0, out["pred_batch_idxs"], probabilities)
+    assert th.allclose(totals, th.ones_like(totals), atol=1e-6)
+    loss = -(probabilities * out["pred_logprobs"]).sum()
+    loss.backward()
+    gradients = [p.grad for p in model.parameters() if p.grad is not None]
+    assert gradients and all(th.isfinite(g).all() for g in gradients)
+    assert any((g != 0).any() for g in gradients)

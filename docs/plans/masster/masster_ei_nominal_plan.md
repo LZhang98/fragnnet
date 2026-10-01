@@ -208,3 +208,78 @@ sample is 12,158 spectra whose molecular ion is at least 30% of the base peak.
   an H100 slice are unmeasured.
 - Isotope-labelled atoms (for example deuterium) get their element's most abundant mass in
   both mass modes, as before.
+
+
+## Code audit (2026-09-30)
+
+Audit only; no runtime code or experiment configuration changed. Scope: nominal channels,
+natural isotope expansion, row aggregation, EI loss configuration, checkpoint metric naming,
+and EI ingestion/export. No training, cluster access, or whole-dataset evaluation performed.
+
+- **P2 — intermediate isotope truncation changes the natural envelope.**
+  `nominal_isotope_power_table` in `src/fragnnet/utils/formula_utils.py` drops single-atom
+  offsets outside the final window and truncates every convolution; `_isotope_rows` in
+  `src/fragnnet/model/masster_model.py` also truncates between elements. With negative Se
+  offsets, discarded probability can later return inside the window through positive
+  offsets. An independent dictionary convolution using all RDKit isotope abundances,
+  truncated only after the complete composition, reproduces the error at default order 4
+  and minimum ratio 0.001. For composition SeBr3, the expected +3 share is 0.010203 but
+  production emits none; the +4 share is 0.273381 versus 0.257881. For C2H6SeBr, the
+  maximum absolute share error is 0.004109. Existing reference tests reuse the production
+  power-table helper and repeat intermediate truncation, so passing them does not establish
+  the full natural envelope. Next: retain sufficient intermediate support for cancelling
+  offsets, crop the final pattern, and add an independent full-convolution regression.
+- **P3 — two-column SHR peaks silently use intensity as m/z.**
+  `parse_peak_line` in `preproc_scripts/eims/prepare_nist23_shr_eims.py` accepts two tokens
+  but parses the final token as exact mass: `43 999` returns `(999.0, 999.0)` rather than
+  `(43.0, 999.0)`. Require an actual exact-mass field before using the final token, or
+  reject unsupported short lines. This does not affect the nominal EI arm. Sampling the
+  first 1,000 entries in each of the four local SHR archives found 396,053 peak lines,
+  all with four tokens; no current archive impact was demonstrated.
+
+Validation: `tests/test_masster_nominal_isotopes.py` **16 passed**;
+`tests/test_runner_config.py` **94 passed**, including integral-float preservation. Independent
+isotope and parser probes ran with the configured FRAGNNET-GPU interpreter. Source inspection
+confirmed MASSter supplies an OOS tolerance multiple of 1.0 to the loss, so the configured
+0.5 Da window excludes neighboring integer peaks. Isotope annotation export remains explicitly
+unsupported and raises, as documented above.
+
+Provenance correction: the earlier “uncommitted/not submitted” banners are stale. The plan
+already records a Fir attempt; local Git history includes `fe5dbc4c` (W&B EI fix) followed by
+`a0131ddb`. The current dirty-file list contains unrelated MASSter SMARTS and analysis work;
+this audit does not establish the latest remote run status. Next: address the P2 finding
+before treating the Se-containing predictions as a natural-envelope calculation.
+
+
+## Audit fixes (2026-09-30; implemented, uncommitted)
+
+Both code-audit findings above are fixed in the working tree.
+
+- Natural distributions now use the lightest isotope as their polynomial origin. Indices
+  are nonnegative, so only coefficients above the final upper index are discarded before
+  the complete composition has been convolved. Power tables likewise retain intermediate
+  support that can return to the requested window.
+- `_isotope_rows` keeps its tensor path for ions with nonnegative isotope offsets. Ions
+  containing negative-offset elements (Se, B, Hg, Sn, Pb) use cached full-composition patterns,
+  including the ion's adduct and hydrogen shift, before final cropping and normalization.
+  Unique affected compositions are transferred to CPU for this calculation. CUDA correctness
+  is tested; full-batch throughput and the cost on element-rich datasets remain unmeasured.
+- The SHR parser uses a trailing exact-mass field only when at least four fields exist.
+  Two-column and annotation-only rows keep their nominal m/z. Existing four-column inputs
+  retain their behavior; no processed dataset was regenerated.
+- The reference tests now independently convolve all RDKit abundances. Added regression
+  cases cover within-element and cross-element cancellation, orders 1/4/6, H shifts, mixed
+  affected/unaffected ions, CPU/CUDA forward/backward and probability conservation, and
+  two-column SHR entry parsing.
+
+Validation: **423 passed** across `test_masster_nominal_isotopes.py` (28),
+`test_prepare_nist23_shr_eims.py` (5), `test_formula_utils.py` (49),
+`test_masster_model.py`, `test_masster_pl.py`, and `test_inference_masster_annotation.py`
+(the latter three total 341). CPU and CUDA tests both ran. Ruff on the five changed Python
+files and `git diff --check` passed. Existing strict checkpoint-loading tests pass; derived
+buffers remain non-persistent and default-off models retain their existing path.
+
+Reproducibility: predictions from natural-envelope models containing negative-offset elements
+change intentionally; compare old and corrected runs with their source revisions recorded.
+No model training, cluster submission, full test suite, or validation-set evaluation ran.
+Next: use the corrected code for the next authorized EI run and measure full-batch throughput.

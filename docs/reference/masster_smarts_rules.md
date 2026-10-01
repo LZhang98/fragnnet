@@ -1,7 +1,7 @@
 # MASSter SMARTS Rule Catalog
 
-> **Status:** REFERENCE · **Updated:** 2026-09-29
-> 14 rules are registered but off by default (`masster_smarts_templates: False`), and no
+> **Status:** REFERENCE · **Updated:** 2026-09-30
+> 15 rules are registered but off by default (`masster_smarts_templates: False`), and no
 > recorded trained run uses them. Eight more were disabled on 2026-09-29, to re-check on
 > Enveda-180. Three registered rules fail the 2026-09-27 gate and stay pending an ablation.
 > Also holds the literature backlog.
@@ -106,7 +106,7 @@ allowlist.
 
 ## Implemented allowlist
 
-The current registry contains **14 rules: 2 compound-fragment rules and 12
+The current registry contains **15 rules: 2 compound-fragment rules and 13
 neutral-loss rules**. These names are the executable source of truth. Eight were added on
 2026-09-27 by the per-class gate described in
 [Rules added by the per-class gate](#rules-added-by-the-per-class-gate-2026-09-27). Eight
@@ -150,6 +150,7 @@ mass. This distinction is essential when the retained atoms require a new assemb
 | `primary_aryl_sulfonamide_so2` | Primary arylsulfonamide | SO2 removal with new Ar-N assembly | 63.9619 | `[M-H]-` |
 | `tertiary_aryl_sulfonamide_so2` | Tertiary arylsulfonamide | SO2 removal with new Ar-N assembly | 63.9619 | none |
 | `primary_aryl_sulfonamide_o_transfer` | Primary arylsulfonamide | A sulfonyl O transfers to the aryl ring; S, the other O and N leave | Not set; H count from the channels | `[M+H]+` |
+| `substituted_aryl_sulfonamide_o_transfer` | Secondary or tertiary arylsulfonamide | As above; the whole N side leaves as R2N-S=O (`nl_side_map_nums`) | Variable; H count from the channels | `[M+H]+` |
 | `phenylalanine_carboxyl_o_transfer` | Phenylalanine | NH3 and CH2CO loss; carboxyl O stays with the benzyl residue | 59.0371 (NH3 + CH2CO) | `[M+H]+` |
 | `hydroxamic_acid_nh_excision` | Hydroxamic acid (either tautomer) | NH excision joining the N-hydroxyl O to the carbonyl C | 15.0109 | `[M+H]+` |
 | `pfas_sulfonate_f_transfer` | Perfluoroalkyl sulfonate | FSO3- with an alpha F transferred | Variable (product mapped) | `[M-H]-` |
@@ -165,8 +166,8 @@ User decision: these eight are commented out in
 [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), to re-check on
 Enveda-180. Evidence is in
 [Existing rules under the gate](#existing-rules-under-the-gate).
-- Their names keep their `MASSTER_RULE_VOCABULARY` slots, so `MASSTER_NUM_RULES` stays 22 and
-  uncommenting a rule restores its old index.
+- Their names keep their `MASSTER_RULE_VOCABULARY` slots, so uncommenting a rule restores its
+  old index. `MASSTER_NUM_RULES` is 23 since the 2026-09-30 addition below.
 - The code, guard entries and tests are tagged `DISABLED 2026-09-29`. The three shared rules
   stay in `NL_RULES` for FraGNNet's prepass.
 - **Enveda-180 check (2026-09-29): none finds support.** Five match no Enveda-180 molecule
@@ -278,6 +279,33 @@ User decisions (2026-09-29):
 - **Enveda-180 (2026-09-29):** sulfoxide passes there, +0.56% in `[M-H]-` (CI 0.23 to 1.01).
   N-phenylbenzamide still scores 0.00, and no Enveda-180 molecule matches the C2 haloalkyl rule
   ([finding](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md)).
+
+## Rule added from the `i1` worst-prediction read (2026-09-30)
+
+`substituted_aryl_sulfonamide_o_transfer` extends the primary O-transfer to secondary and
+tertiary arylsulfonamides (`[c:1]-[SX4:2](=[O:3])(=[O:4])-[NX3;!H2:5]`, `[M+H]+` only).
+- **Why.** In `i1`'s val tail, 59% of the uncovered intensity of sulfonamide molecules is ions that
+  lost S and part of the O. The implied losses are X–N–S–O units (HNOS, C3H7NOS, CH3BrNOS).
+- **Product.** The leaving neutral is S, one O and the whole N side, which needs the new
+  `NeutralLossRule.nl_side_map_nums`. A match is skipped when the N side is fused to the aryl ring
+  (sultams).
+- **Standardization.** N-sulfonyl amidines are written as the imine `S(=O)(=O)N=C`, so they do
+  not match.
+- **Gate.** Same scoring as the per-class gate, on val and on the 4,000-molecule train sample,
+  molecules the primary rule does not match:
+
+| Mode | Molecules | Beyond random, % of intensity (95% CI) | Strength |
+|---|---:|---|---|
+| `[M+H]+`, val | 115 | +1.81 (0.70 to 2.80) | clear |
+| `[M+H]+`, train sample | 104 | +2.33 (1.64 to 3.20) | clear |
+
+- **Where it matters.** On the val tail (inst-tol cosine < 0.2) it reaches 74 spectra of 26
+  molecules, 15 of them at ≥ 10% rule-only intensity.
+- **Not admitted.**
+  - Alkyl sulfonamide O-transfer: 18 val molecules, +1.67 (0.00 to 5.02); 0.00 on train.
+  - Aryl sulfone O-transfer: 25 molecules, +0.31 (0.03 to 0.69).
+- **Evidence.** [Worst-predictions finding](../findings/masster/masster_i1_worst_predictions_2026_09_30.md);
+  scripts in `output/i1_worst_predictions_2026_09_30/smarts_o_transfer/`.
 
 ## Literature additions implemented in 2026-08
 

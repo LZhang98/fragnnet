@@ -21,7 +21,7 @@ from fragnnet.frag.masster_templates import (
     build_masster_templates,
     filter_masster_templates,
 )
-from fragnnet.frag.smarts_prepass import FRAG_RULES, NL_RULES
+from fragnnet.frag.smarts_prepass import FRAG_RULES, NL_RULES, NeutralLossRule
 from fragnnet.utils import data_utils
 
 _CUT_COUNT_WEIGHTS = (0.0, 0.0, 1.0)
@@ -62,10 +62,10 @@ def _component_element_counts(mol: Chem.Mol, component: tuple[int, ...]) -> Coun
 
 
 def test_masster_registry_counts_and_literature_rule_order() -> None:
-    # 14 registered rules; the vocabulary keeps all 22 indices, disabled rules included.
+    # 15 registered rules; the vocabulary keeps all 23 indices, disabled rules included.
     assert len(MASSTER_FRAG_RULE_NAMES) == 2
-    assert len(MASSTER_NL_RULE_NAMES) == 12
-    assert MASSTER_NUM_RULES == 22
+    assert len(MASSTER_NL_RULE_NAMES) == 13
+    assert MASSTER_NUM_RULES == 23
     assert MASSTER_FRAG_RULE_NAMES[0] == "n_acyl_aryl_sulfonamide_carbonyl_o_transfer"
     assert MASSTER_NL_RULE_NAMES[4:6] == tuple(rule_name for rule_name, _ in _NEW_RULE_EXAMPLES)
 
@@ -422,8 +422,9 @@ def test_masster_drops_the_ring_rules_and_the_single_cut_sulfonate() -> None:
 @pytest.mark.parametrize(
     ("smiles", "expected_rules"),
     [
-        # Acyclic sulfonamide: the product Ar...NH-Het is disconnected, so it is kept.
-        ("Cc1ccc(S(=O)(=O)Nc2ccccn2)cc1", ["aryl_sulfonamide_so2"]),
+        # Acyclic sulfonamide: the product Ar...NH-Het is disconnected, so it is kept, and so
+        # is the O-transfer product Ar...O of the secondary sulfonamide.
+        ("Cc1ccc(S(=O)(=O)Nc2ccccn2)cc1", ["aryl_sulfonamide_so2", "substituted_aryl_sulfonamide_o_transfer"]),
         # Saccharin: Ar and N stay joined through the C(=O) ring, so SO2 extrusion only
         # repeats the ordinary partition of the same two cuts.
         ("O=C1NS(=O)(=O)c2ccccc21", []),
@@ -682,6 +683,9 @@ _GATED_RULE_EXAMPLES = (
     ("primary_aryl_sulfonamide_so2", "Nc1ccc(S(N)(=O)=O)cc1", "[M-H]-", {"C": 6, "N": 2}),
     ("tertiary_aryl_sulfonamide_so2", "CN(C)S(=O)(=O)c1ccccc1", "[M+H]+", {"C": 8, "N": 1}),
     ("primary_aryl_sulfonamide_o_transfer", "Nc1ccc(S(N)(=O)=O)cc1", "[M+H]+", {"C": 6, "N": 1, "O": 1}),
+    # The whole N side leaves with the sulfinyl: CH3N-S=O, and (CH3)2N-S=O with the bromoaryl kept.
+    ("substituted_aryl_sulfonamide_o_transfer", "CNS(=O)(=O)c1ccccc1", "[M+H]+", {"C": 6, "O": 1}),
+    ("substituted_aryl_sulfonamide_o_transfer", "CN(C)S(=O)(=O)c1ccc(Br)cc1", "[M+H]+", {"C": 6, "O": 1, "Br": 1}),
     ("phenylalanine_carboxyl_o_transfer", "NC(Cc1ccccc1)C(=O)O", "[M+H]+", {"C": 7, "O": 1}),
     ("hydroxamic_acid_nh_excision", "ONC(=O)c1ccccc1", "[M+H]+", {"C": 7, "O": 2}),
     (
@@ -726,6 +730,12 @@ def test_gated_rules_build_their_rearranged_product_on_standardized_molecules(
         ("primary_aryl_sulfonamide_so2", "CNS(=O)(=O)c1ccccc1"),
         ("primary_aryl_sulfonamide_o_transfer", "CNS(=O)(=O)c1ccccc1"),
         ("tertiary_aryl_sulfonamide_so2", "CNS(=O)(=O)c1ccccc1"),
+        # Primary sulfonamide: the primary O-transfer rule covers it, not the substituted one.
+        ("substituted_aryl_sulfonamide_o_transfer", "NS(=O)(=O)c1ccccc1"),
+        # Sultam: the N side is fused to the aryl ring, so there is no separate leaving group.
+        ("substituted_aryl_sulfonamide_o_transfer", "O=S1(=O)NCc2ccccc21"),
+        # N-sulfonyl amidine: standardization writes the sulfonyl N as an imine (NX2).
+        ("substituted_aryl_sulfonamide_o_transfer", "CC(=O)Nc1ccc(S(=O)(=O)NC2=NCCS2)cc1"),
         # Alkyl sulfonamide: no aryl to receive N or O.
         ("primary_aryl_sulfonamide_so2", "CS(N)(=O)=O"),
         # Phenylalanine amide and N-acetyl phenylalanine: no free carboxyl or no primary amine.
@@ -745,3 +755,8 @@ def test_gated_rules_build_their_rearranged_product_on_standardized_molecules(
 def test_gated_rules_reject_close_negative_structures(rule_name: str, smiles: str) -> None:
     mol = data_utils.mol_from_smiles(smiles)
     assert rule_name not in {t.rule_name for t in build_masster_templates(mol)}
+
+
+def test_neutral_loss_side_map_nums_must_be_neutral_loss_atoms() -> None:
+    with pytest.raises(ValueError, match="subset of nl_map_nums"):
+        NeutralLossRule("bad", "[c:1]-[S:2]", nl_map_nums=[2], nl_mass=None, nl_side_map_nums=[1])
