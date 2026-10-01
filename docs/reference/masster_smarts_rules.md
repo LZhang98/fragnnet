@@ -1,6 +1,6 @@
 # MASSter SMARTS Rule Catalog
 
-> **Status:** REFERENCE · **Updated:** 2026-09-30
+> **Status:** REFERENCE · **Updated:** 2026-10-01
 > 15 rules are registered but off by default (`masster_smarts_templates: False`), and no
 > recorded trained run uses them. Eight more were disabled on 2026-09-29, to re-check on
 > Enveda-180. Three registered rules fail the 2026-09-27 gate and stay pending an ablation.
@@ -375,6 +375,16 @@ beyond a narrow small-molecule SMARTS.
 | C | `protonated_glycan_fucose_transfer` | Untested | `[M+H]+` or `[M+NH4]+`, CID/in-source activation | A terminal fucose is retained on a remote glycan fragment, including inter-antenna transfer | Do not apply to `[M+Na]+` or `[M-H]-`; arbitrary glycan rings, multiple acceptor sites, and mobile-proton dependence make one SMARTS insufficient | [JASMS, 2002](https://pubmed.ncbi.nlm.nih.gov/11951970/), [Angewandte Chemie, 2018](https://pubmed.ncbi.nlm.nih.gov/29688603/) |
 | C | `trimethyllysine_peptide_methyl_transfer` | Untested | Singly charged protonated peptide, CID | A methyl from trimethyllysine is retained on a remote C-terminal Arg fragment after backbone cleavage | Explicit precursor charge state and peptide-residue context are required; the transfer is absent for doubly charged ESI ions | [JASMS, 2009](https://pmc.ncbi.nlm.nih.gov/articles/PMC2709603/) |
 | C | `phosphopeptide_phosphate_relocation` | Untested | Positive or negative ESI, low-energy CID | A phosphate can relocate before backbone cleavage, yielding non-native phosphorylated sequence ions | Charge, basic residues, residue spacing, and activation method matter; HCD does not show the same slow-CID relocation | [International Journal of Mass Spectrometry, 2015](https://pmc.ncbi.nlm.nih.gov/articles/PMC4375673/), [JASMS, 2017](https://pmc.ncbi.nlm.nih.gov/articles/PMC5479408/) |
+
+## EI follow-up screen (2026-10-01)
+
+Three EI candidate families were screened; **none is admitted**. Anisoyl fluoride and
+narrow para-hydroxyazobenzene products add no nominal coverage beyond ordinary cuts and
+natural isotope support. The N-H aromatic-acyl arylsulfonamide O-transfer candidate has
+seven training molecules and no validation support. The production allowlist and guards
+remain unchanged. See the [screen finding](../findings/masster/masster_ei_smarts_screen_2026_10_01.md)
+for exact SMARTS scope, null controls, isotope collisions and limits. This closes the
+coverage screen only; it does not establish an intensity-model null.
 
 ## Additional literature backlog
 

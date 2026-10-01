@@ -266,10 +266,11 @@ debug_overfit: false
 compile: false
 pl_enable_progress_bar: true
 upload_checkpoints: true
-checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric: val_cos_hun_inst_tol_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
 - cos_sim
+- cos_hun_inst_tol
 - recall
 - precision
 - wrecall

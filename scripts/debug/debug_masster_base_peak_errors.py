@@ -6,8 +6,8 @@ Per spectrum it records:
 
 - the candidate-space split of ``1 - cos`` into coverage, ranking and calibration, as in the
   [ranking decomposition](docs/findings/masster/masster_ranking_decomposition_2026_09_23.md).
-  Channels sharing an m/z are merged into one candidate peak; each target peak maps to its
-  nearest candidate within the instrument tolerance;
+  Channels sharing an m/z are merged into one candidate peak; each target peak contributes to
+  every candidate within the instrument tolerance;
 - the base-peak outcome: ``hit`` (the model's top candidate is the measured base peak),
   ``under_ranked`` (the base peak is a candidate but not the model's top) or ``uncovered``;
 - for the model's top-k and the target's top-k candidate peaks: m/z, predicted and target
@@ -101,7 +101,7 @@ def map_targets(
     rel: float,
     min_mz: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Map each target peak to its nearest candidate within ``rel * max(m/z, min_mz)``.
+    """Map target intensity to all candidates within ``rel * max(m/z, min_mz)``.
 
     Args:
         peak_mzs: Target m/z, shape ``(T,)``.
@@ -111,8 +111,8 @@ def map_targets(
         min_mz: m/z below which the tolerance is held at ``rel * min_mz``.
 
     Returns:
-        Target intensity summed on each candidate ``(K,)``, and each peak's candidate index,
-        -1 when no candidate is within tolerance ``(T,)``.
+        Target intensity summed on each compatible candidate ``(K,)``, and each peak's nearest
+        compatible candidate index, -1 when none is within tolerance ``(T,)``.
     """
     if cand_mzs.size == 0:
         return np.zeros(0), np.full(peak_mzs.size, -1)
@@ -122,9 +122,12 @@ def map_targets(
     nearest = np.where(use_lower, lower, upper)
     within = np.abs(peak_mzs - cand_mzs[nearest]) <= rel * np.maximum(peak_mzs, min_mz)
     peak_to_cand = np.where(within, nearest, -1)
-    on_cand = np.bincount(
-        nearest[within], weights=peak_ints[within], minlength=cand_mzs.size
-    ).astype(float)
+    tolerance = rel * np.maximum(peak_mzs, min_mz)
+    start = np.searchsorted(cand_mzs, peak_mzs - tolerance, side="left")
+    stop = np.searchsorted(cand_mzs, peak_mzs + tolerance, side="right")
+    on_cand = np.zeros(cand_mzs.size, dtype=float)
+    for intensity, first, last in zip(peak_ints, start, stop, strict=True):
+        on_cand[first:last] += intensity
     return on_cand, peak_to_cand
 
 
@@ -269,6 +272,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="random molecules to keep, all spectra each; 0 = all",
     )
     parser.add_argument("--top_k", type=int, default=3)
+    parser.add_argument(
+        "--all_target_peaks", action="store_true",
+        help="retain all target-matched peaks and their structures for split analysis",
+    )
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
@@ -481,6 +488,8 @@ def main(argv: list[str] | None = None) -> None:
                 # 6. Structures behind the model's and the target's top-k candidate peaks.
                 selected = set(np.flatnonzero(pred_rank <= args.top_k).tolist())
                 selected |= set(np.flatnonzero((tgt_rank <= args.top_k) & (on_cand > 0)).tolist())
+                if args.all_target_peaks:
+                    selected |= set(np.flatnonzero(on_cand > 0).tolist())
                 for cand in sorted(selected):
                     structures = []
                     for channel in np.flatnonzero(inverse == cand):

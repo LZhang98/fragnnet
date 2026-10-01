@@ -1,8 +1,30 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-09-30
+> **Status:** REFERENCE · **Updated:** 2026-10-01
 
 ## Current handoff
+
+**Spectraverse subformula filter screen (2026-10-01), stopped.** On all 488,797 spectra, instrument-tolerance filtering removes 26.2% of intensity, 15.2% of original base peaks, and empties 15,074 spectra. Widening to 2× recovers only 2.2 base-peak points on an 8,192-spectrum held-out sample; 10× still misses 7.5%. Na/K adducts are hardest hit. Temporary filtered configs were withdrawn; no run launched. [Finding and artifacts](findings/masster/spectraverse_subformula_filter_2026_10_01.md). Next: inspect Na/K peak chemistry and adduct labels before another filter arm.
+
+**EI performance audit (2026-10-01), complete.** Full-test Stein is 0.886845; the RASSP-filtered subset scores 0.899167. A 512-spectrum validation support oracle scores 0.99615 versus the model's 0.88703, locating the observed gap mainly in intensity allocation. Simple output power and mass tilts did not help. Next: establish a matched RASSP evaluation and read the prepared e2/e3/e4 intensity arms on both cosine and Stein; no new training has run. [Finding and priorities](findings/masster/masster_ei_performance_audit_2026_10_01.md).
+
+**Spectraverse MASSter recall tolerance (2026-10-01), sampled read and metric correction complete.** On 4,096 validation spectra per fold, rescoring from flat 10 ppm to the configured instrument tolerance raises cv0/cv1 peak recall from 0.462/0.410 to 0.542/0.540. The selected candidate masses and emitted masses cover exactly the same target peaks on every sampled spectrum. QTOF drives most of the scoring change; substantial mass-support misses remain. See the [finding and per-spectrum artifacts](findings/masster/spectraverse_recall_tolerance_2026_10_01.md). Future recall and weighted-recall logging now uses configured instrument tolerance; historical W&B metrics remain unchanged. A 512-spectrum-per-fold wider-window sweep showed chance matches rising alongside recall, so no tolerance config changed. Next: calibrate on trusted fragment assignments and multiple shifted-mass controls before altering loss windows.
+
+**EI test metrics by molecule size (2026-10-01), complete.** Full `nist23_ei_inchikey`
+test split, 51,685 spectra, e1 `jeljdikj`@37: mean 1 Da cosine 0.869984 and
+Stein weighted similarity 0.886845. Unweighted cosine is nearly flat by size;
+Stein declines across both weight and total-atom groups (including H). See the
+[plots and artifacts](plans/masster/masster_ei_nominal_plan.md#stein-weighted-similarity-on-the-full-test-split-2026-10-01).
+
+**EI SMARTS screen (2026-10-01), complete; no rule admitted.** Screened three literature
+families on all matching train/val spectra after a 250,644-molecule split census. Anisoyl
+fluoride (one val molecule) and narrow para-hydroxyazobenzene (three train/three val) add
+zero nominal coverage beyond ordinary cuts and natural isotopes. Sulfonamide carbonyl-O
+transfer adds 2.414% on seven train molecules, but has no validation examples and its
+rule-minus-random CI includes zero. Research probe and 63 focused tests pass; production
+and data unchanged. [Finding and artifacts](findings/masster/masster_ei_smarts_screen_2026_10_01.md).
+
+**Within-peak isomer split Step 0 (2026-10-01), complete.** On 1,000 train molecules, `i1`@59 and `fa1`@63 agree on the top atom set for 85.9% of confident shared peaks with totals within 10%; median split half-L1 is 0.024. A molecule-held-out cut-class prior adds no target-intensity fit and reduces agreement with `i1`'s favored isomer relative to structural controls. The proposed bond-split loss has no supporting gate yet; no training arm built. [Finding and artifacts](findings/masster/masster_isomer_split_step0_2026_10_01.md).
 
 **`i1` conditional candidate-choice comparison (2026-09-30); step 2 complete.** Added the
 strongest alternative for successful predictions and compared 50,607 eligible spectra with
@@ -25,32 +47,29 @@ No correction fit or chemical rule established. The conditional comparison is no
 [Finding and artifact schema](findings/masster/masster_i1_fragment_pairs_2026_09_30.md).
 
 
-**MASSter on NIST23 EI (2026-09-30); built and smoke-tested, uncommitted, not submitted.**
-User decisions: the nominal `nist23_ei` set (not the SHR set); `val_cos_sim_1.0`, not
-`val_cos_sim_0.01`; model isotopes; `loss_tolerance_abs` 0.5.
-- **Data.** 261,424 spectra of 253,649 molecules; integer m/z; `[M]+`, no CE; split
-  154,981 / 51,700 / 51,685.
-- **Measured, why nominal masses are needed:**
-  - `i1`'s keys on EI data train silently on 2.1% of the target, because exact-mass channels
-    miss integer peaks.
-  - At nominal mass the 0-2-cut pool with ±4 H reaches 91% of L1 intensity, but a
-    mismatched molecule reaches 82%, so ranking binds, not coverage.
-  - Floor binning misplaces 13% of exact-mass channels at 1 Da.
-- **Measured, why the isotope prior is natural:** EI molecular-ion isotope ratios match
-  natural abundance (M+1/M 1.006×, Cl/Br M+2/M 0.994× theory).
-- **Built behind default-off keys:**
-  - `masster_mass_mode: nominal`;
-  - `masster_isotope_envelope: natural` (natural isotope rows, probability-conserving);
-  - a merge of same-integer rows, which is exact and keeps `e1` in memory.
-- **Configs** `e1` (isotopes) and `e0` (control) in `config/masster/ei/`; 16 new tests; GPU
-  smokes of both exit 0 with `val_candidate_wrecall` 0.954.
-- **Next:** put the EI data on Fir, add a submitter stage and submit `e1`/`e0` when the user
-  decides. The EI library metrics and the isotope labels in the export are open.
-- **Audit fixes (2026-09-30; uncommitted):** corrected isotope convolution for cancelling
-  negative/positive offsets and two-column SHR peak parsing. 423 tests passed, including
-  CPU/CUDA checks. Natural-envelope predictions for negative-offset elements change; full-batch
-  throughput remains unmeasured. [Fix evidence and compatibility](plans/masster/masster_ei_nominal_plan.md#audit-fixes-2026-09-30-implemented-uncommitted).
-- [Plan](plans/masster/masster_ei_nominal_plan.md).
+**MASSter on NIST23 EI (2026-09-30); both arms finished 64 epochs.**
+Read-only W&B check: e1 `jeljdikj` and e0 `he3j5y3o`, both with normal max-epoch termination.
+- Mean `val_cos_sim_1.0` over epochs 54–63: **0.867738 e1 versus 0.859883 e0**, +0.007856
+  for natural isotopes. Best: 0.870173 at epoch 37 versus 0.861611 at epoch 57.
+- Configs match except isotope mode and W&B labels; one seed, no replicated effect established.
+- **Local audit fixes, uncommitted:** corrected cancelling isotope offsets and two-column SHR
+  parsing; 423 tests passed, including CPU/CUDA checks. Remote metadata lacks a Git revision,
+  so these runs are not verified to include the correction.
+- **H-shift screen:** on 5,000 EI val molecules, even a generous +1/+2 isotope reach ceiling
+  gives 0.9040 L1 target coverage at ±2 H, 0.9339 at ±3 and 0.9482 at ±4. Retain ±4 for now;
+  a ±6 screen added only 1.31 L1 points under generous isotope reach and a 0.00314 cosine
+  ceiling. e1 at ±4 already logs 0.99687 weighted recall; keep ±4. No trained-width ablation
+  has run.
+- **Best-checkpoint read (2026-10-01):** downloaded e1 `jeljdikj`@37; on 512 val
+  molecules, predicted peaks ≥0.1% of base have mean 10.62 distinct fragments (median 10;
+  effective mean 3.93). H±4 carries 3.10% of predicted intensity and dropping those rows
+  lowers fixed-model cosine by 0.0010. Keep ±4; ±6 remains untrained. [Read and artifacts](plans/masster/masster_ei_nominal_plan.md#e1-checkpoint-annotation-read-2026-10-01-4-used-6-unresolved).
+- **Matched intensity configs prepared (2026-10-01), not launched:** e2 fresh control,
+  e3 full attention, e4 EMA 0.999; same seed and 64-epoch recipe. Config resolution and
+  CPU model construction passed. [Configs and next checks](plans/masster/masster_ei_nominal_plan.md#matched-intensity-configs-2026-10-01-prepared-not-launched).
+- **Next:** record source provenance and check full-attention batch memory when launching
+  the matched runs; additional seeds remain needed to assess the isotope effect.
+- [Plan, run links, evidence and limits](plans/masster/masster_ei_nominal_plan.md#wb-completion-check-2026-09-30-session).
 
 **What `i1`'s worst val predictions miss (2026-09-30); inference only, complete.** Ranked by `cos_hun_inst_tol` (user decision: instrument tolerance, not 0.01 Da bins).
 - **The logged-metric floor is mostly binning.** 497 of the 903 spectra below 0.05 on `cos_sim_0.01` score ≥ 0.5 at instrument tolerance, as do 76 of the worst 100. A 1–4 ppm measured offset crosses a 0.01 Da edge; train has the same count. Worst-spectrum reads should use the inst-tol cosine.

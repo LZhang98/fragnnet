@@ -856,3 +856,33 @@ class TestInstTolScoresRequireConfig:
         """Not requesting them must still allow inst_type_loss_tol to be unset."""
         model = self._model(["cos_sim"], None)
         assert model.inst_tol_lookup is None
+
+
+def test_recall_and_weighted_recall_use_instrument_tolerance():
+    config = load_config("config", None, None)
+    config.update(
+        model_type="frag_gnn",
+        compile=False,
+        sparse_cosine_similarity=True,
+        auxiliary_scores=["recall", "wrecall", "precision"],
+        inst_type_loss_tol={
+            "OB": {"rel": 1e-5, "min_mz": 200.0},
+            "QTOF": {"rel": 2e-5, "min_mz": 750.0},
+        },
+    )
+    config["spec_params"] = {**config["spec_params"], "inst_types": ["OB", "QTOF"]}
+    model = FraGNNetPL(**config)
+    assert "spec_inst_type" in model.batch_metric_args
+    metrics = model.metric_fn(
+        true_mzs=th.tensor([500.0, 500.0]),
+        true_ints=th.tensor([1.0, 1.0]),
+        true_batch_idxs=th.tensor([0, 1]),
+        pred_mzs=th.tensor([500.008, 500.008]),
+        pred_ints=th.tensor([1.0, 1.0]),
+        pred_batch_idxs=th.tensor([0, 1]),
+        true_prec_mzs=th.tensor([700.0, 700.0]),
+        spec_inst_type=th.tensor([0, 1]),
+    )
+    assert metrics["recall"].tolist() == pytest.approx([0.0, 1.0])
+    assert metrics["wrecall"].tolist() == pytest.approx([0.0, 1.0])
+    assert metrics["precision"].tolist() == pytest.approx([0.0, 0.0])

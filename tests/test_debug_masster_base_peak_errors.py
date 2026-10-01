@@ -27,7 +27,16 @@ def test_map_targets_uses_floor_and_nearest() -> None:
     ints = np.array([1.0, 2.0, 3.0, 4.0])
     on_cand, peak_to_cand = PROBE.map_targets(peaks, ints, cands, 1e-5, 200.0)
     np.testing.assert_array_equal(peak_to_cand, [0, 1, 2, -1])
-    np.testing.assert_allclose(on_cand, [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(on_cand, [1.0, 3.0, 3.0])
+
+
+def test_map_targets_sums_all_candidates_in_window() -> None:
+    peaks = np.array([100.001])
+    ints = np.array([0.7])
+    cands = np.array([100.000, 100.0015, 100.0025])
+    on_cand, nearest = PROBE.map_targets(peaks, ints, cands, 1e-5, 200.0)
+    np.testing.assert_array_equal(nearest, [1])
+    np.testing.assert_allclose(on_cand, [0.7, 0.7, 0.7])
 
 
 def test_cosine_decomposition_parts() -> None:

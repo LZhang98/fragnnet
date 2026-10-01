@@ -439,10 +439,14 @@ class SpectrumPL(L.LightningModule):
                 self.metric_min_max["recall"] = "max"
                 self.auxiliary_metric_names.add("recall")
                 compute_match_mzs = True
+                if self.inst_tol_lookup is not None:
+                    self.batch_metric_args.add("spec_inst_type")
             elif metric_name == "wrecall":
                 self.metric_min_max["wrecall"] = "max"
                 self.auxiliary_metric_names.add("wrecall")
                 compute_match_mzs = True
+                if self.inst_tol_lookup is not None:
+                    self.batch_metric_args.add("spec_inst_type")
             elif metric_name == "opt_cos_sim":
                 for remove_prec_peak in bin_remove_prec_peak_flags:
                     for sqrt in bin_sqrt_flags:
@@ -887,10 +891,24 @@ class SpectrumPL(L.LightningModule):
                             log_min=self.hparams.log_min,
                         )
 
-            if "recall" in self.hparams.auxiliary_scores:
-                metric_d["recall"] = batch_true_match_mask.float().sum(-1) / true_ion_num.float()
-            if "wrecall" in self.hparams.auxiliary_scores:
-                metric_d["wrecall"] = (batch_true_ints * batch_true_match_mask.float()).sum(-1)
+            if {"recall", "wrecall"}.intersection(self.hparams.auxiliary_scores):
+                recall_match_mask = batch_true_match_mask
+                if self.inst_tol_lookup is not None:
+                    inst_idxs = kwargs["spec_inst_type"].reshape(-1)
+                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=true_mzs.dtype)
+                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(
+                        dtype=true_mzs.dtype
+                    )
+                    recall_match_mask, _ = calculate_match_mz_reductions(
+                        batch_true_mzs,
+                        batch_pred_mzs,
+                        tol_per_true=tol_per_sample[:, None],
+                        min_mz_per_true=min_mz_per_sample[:, None],
+                    )
+                if "recall" in self.hparams.auxiliary_scores:
+                    metric_d["recall"] = recall_match_mask.float().sum(-1) / true_ion_num.float()
+                if "wrecall" in self.hparams.auxiliary_scores:
+                    metric_d["wrecall"] = (batch_true_ints * recall_match_mask.float()).sum(-1)
             if "precision" in self.hparams.auxiliary_scores:
                 metric_d["precision"] = batch_pred_match_mask.float().sum(-1) / pred_ion_num.float()
             if "wprecision" in self.hparams.auxiliary_scores:

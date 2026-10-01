@@ -1,6 +1,7 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-09-30
+> **Status:** ACTIVE · **Updated:** 2026-10-01
+> **2026-10-01: within-peak isomer split gate complete.** [Checkpoint and cut-class reads](../../findings/masster/masster_isomer_split_step0_2026_10_01.md) do not support building the proposed bond-split regularizer. Confident close-total splits mostly agree across `i1`/`fa1`; a cut-class prior adds no held-out target-intensity signal. No training arm was built.
 > **2026-09-30: `f0`/`f1` results retired (user decision).** Step 0's route map and the earlier
 > route probe ran on them; on `i1` the route map is the
 > [memorization read](#memorization-read-on-i1-2026-09-28).
