@@ -1,0 +1,175 @@
+# e3_nominal_full_attention: matched EI intensity experiment, 2026-10-01.
+# Control plus full candidate attention only.
+# Same seed 397623, split, natural isotopes, +/-4 H, batch 512 and 64 epochs.
+# Compare validation 1 Da cosine over epochs 54-63, best checkpoint, and runtime/memory.
+# Run all three arms on the same source revision with the isotope-offset fix.
+# Plan: docs/plans/masster/masster_ei_nominal_plan.md.
+
+wandb_name: e3_nominal_full_attention
+wandb_group: nist23_ei_intensity_2026_10_01
+wandb_tags:
+- masster
+- nist23_ei
+- ei
+- m+
+- nominal_mass
+- unit_resolution
+- isotopes_natural
+- cuda_candidates
+- unique_fragments_256
+- max_enumerated_masks_4096
+- no_ce
+- no_cmf
+- proposal_selection_only
+- unmerged
+- e3_nominal_full_attention
+seed: 397623
+spec_fp: data/proc/nist23_ei/spec_df.pkl
+mol_fp: data/proc/nist23_ei/mol_df.pkl
+split_dp: data/split/nist23_ei_inchikey
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: false
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M]+'
+  inst_type: false
+  inst_types:
+  - Other
+  frag_mode: false
+  frag_modes: []
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+  centroid_peaks: false
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: false
+  centroid_method: common_overlap
+  filter_subformula_peaks: false
+  subformula_ppm: 5.0
+  subformula_use_instrument_tolerance: true
+  filter_above_precursor_peaks: false
+  above_precursor_ppm: 10.0
+  above_precursor_use_instrument_tolerance: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+int_embedder: fourier
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol: null
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 64
+max_epochs: 64
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: true
+checkpoint_metric: val_cos_sim_1.0_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 1.0
+compute_train_auxiliary_metrics: false
+masster_candidate_backend: cuda
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+masster_candidate_coverage_metrics: true
+loss_tolerance_rel: null
+loss_tolerance_abs: 0.5
+masster_mass_mode: nominal
+masster_isotope_envelope: natural
+masster_isotope_max_order: 4
+masster_isotope_min_ratio: 0.001
+
+# Explicit matched-arm settings (template defaults pinned for the control).
+masster_intensity_transformer_attention: full
+ema_decay: null
