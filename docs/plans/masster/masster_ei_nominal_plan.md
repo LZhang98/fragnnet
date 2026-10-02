@@ -597,3 +597,26 @@ differ by over 0.01, with a maximum 0.0475. The cause of those small-scope infer
 differences is unresolved; aggregate means agree to 4.2e-7. Two focused metric tests,
 Ruff, and whitespace checks passed. RASSP's published 0.929 FormulaNet Stein score
 uses NIST17 and its own filtering/split, so it is not a matched model comparison.
+
+## EI test similarity distributions by molecular weight (2026-10-01)
+
+The [CE-style violin plot](../../../output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein/ei_weight_bin_violin.png)
+([PDF](../../../output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein/ei_weight_bin_violin.pdf),
+[bin summary](../../../output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein/ei_weight_bin_violin_summary.csv))
+The matching [sina plot](../../../output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein/ei_weight_bin_sina.png) ([PDF](../../../output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein/ei_weight_bin_sina.pdf)) shows density-jittered spectrum points in the same bins; the plotting helper samples at most 4,000 points per bin for legibility while the summary markers use all spectra.
+shows the per-spectrum distribution of 1 Da cosine and Stein weighted similarity for the
+full 51,685-spectrum EI test split. It uses 50 Da bins from 100 to 500 Da, with wider
+bins in the sparse tails. Each violin follows `plot_predictions_hdf5.py`'s CE-bin style:
+IQR bar, median circle, mean diamond and the number of spectra. Molecular weight is
+the processed molecule table's `mw`; each spectrum contributes once. The reproducible
+command is:
+
+```bash
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/plotting/plot_masster_ei_weight_bins.py \
+  --input-dir output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein \
+  --output-dir output/masster_ei_jeljdikj_analysis_2026_10_01/test_all_stein
+```
+
+For both metrics, all bin counts sum to 51,685 and their spectrum-weighted means match
+the existing full-test means. The far-right bin contains only 72 spectra and should be
+read as a sparse tail, not a precise population estimate.

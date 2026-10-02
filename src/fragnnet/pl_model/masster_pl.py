@@ -10,6 +10,11 @@ otherwise reused unchanged. This module only supplies the three model-specific p
   diagnostics into the logged metrics.
 - :meth:`MassterPL.transfer_batch_to_device` keeps static graph metadata on CPU
   for both candidate backends.
+
+With ``masster_jepa_loss_weight > 0`` it also owns the JEPA auxiliary
+(``docs/plans/masster/masster_jepa_embedding_plan.md``): :meth:`MassterPL.on_before_batch_transfer`
+attaches each spectrum's frozen target, ``forward`` hands the batch's target and the model's pooled
+representation to ``loss_fn``, and ``loss_fn`` applies the predictor.
 """
 
 from __future__ import annotations
@@ -48,6 +53,12 @@ from fragnnet.model.loss import (
 )
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.utils.jepa_utils import (
+    JEPA_SOURCES,
+    build_jepa_predictor,
+    load_jepa_target_table,
+    masked_cosine_distance,
+)
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.pl_utils import migrate_legacy_masster_name, migrate_masster_proposal_method
 from fragnnet.utils.spec_utils import (
@@ -834,6 +845,8 @@ class MassterPL(SpectrumPL):
     """
 
     hparams: Any
+    # Set by _setup_jepa. A class-level default keeps partially built instances on the off path.
+    _jepa_enabled: bool = False
 
     def __init__(self, **kwargs: Any) -> None:
         migrate_legacy_masster_name(kwargs)
@@ -1136,6 +1149,67 @@ class MassterPL(SpectrumPL):
         )
         self._proposal_only_training = False
         self._check_ce_params()
+        self._setup_jepa()
+
+    def _setup_jepa(self) -> None:
+        """Validate the JEPA auxiliary and, when it is on, build its predictor last.
+
+        With ``masster_jepa_loss_weight == 0`` nothing is built, so the state_dict and the
+        random streams are exactly those of a run without the feature.
+
+        Raises:
+            ValueError: If a JEPA key is malformed, or a positive weight is combined with a
+                setting the term cannot work with.
+        """
+        weight = self.hparams.masster_jepa_loss_weight
+        source = self.hparams.masster_jepa_source
+        hidden_dim = self.hparams.masster_jepa_predictor_hidden_dim
+        target_fp = self.hparams.masster_jepa_target_fp
+        self.jepa_predictor: th.nn.Module | None = None
+        # 1. The keys are checked even while the term is off, so a typo in a control config fails.
+        if isinstance(weight, bool) or not isinstance(weight, int | float):
+            raise ValueError("masster_jepa_loss_weight must be a number")
+        if not math.isfinite(weight) or weight < 0.0:
+            raise ValueError("masster_jepa_loss_weight must be finite and nonnegative")
+        if source not in JEPA_SOURCES:
+            raise ValueError(f"masster_jepa_source must be one of {JEPA_SOURCES}, got {source!r}")
+        if isinstance(hidden_dim, bool) or not isinstance(hidden_dim, int) or hidden_dim <= 0:
+            raise ValueError("masster_jepa_predictor_hidden_dim must be a positive integer")
+        if target_fp is not None and not isinstance(target_fp, str):
+            raise ValueError("masster_jepa_target_fp must be a path or null")
+        self._jepa_enabled = False
+        if weight == 0.0:
+            if target_fp is not None:
+                logger.warning(
+                    "masster_jepa_target_fp is set but masster_jepa_loss_weight is 0: "
+                    "the JEPA term is off and the table is never opened"
+                )
+            return
+        # 2. What the term cannot work with.
+        if target_fp is None:
+            raise ValueError("masster_jepa_loss_weight > 0 requires masster_jepa_target_fp")
+        if self.hparams.spec_params["merge"] or not self.hparams.spec_params["unique_id"]:
+            # The target is looked up by spec_unique_id, which is group_id once spectra merge.
+            raise ValueError("masster_jepa_loss_weight needs merge: false and unique_id: true")
+        if self.hparams.masster_proposal_only_until_epoch is not None:
+            # The proposal-only phase replaces the loss, which would silently drop the term.
+            raise ValueError(
+                "masster_jepa_loss_weight is not supported with masster_proposal_only_until_epoch"
+            )
+        if self.hparams.eval_test_split:
+            raise ValueError("the JEPA table has no test spectra; set eval_test_split: False")
+        if source == "allocator" and not self.hparams.masster_unique_fragment_mode:
+            raise ValueError("masster_jepa_source: allocator requires masster_unique_fragment_mode")
+        # 3. Built after every other module and on a forked RNG, like the model's optional modules.
+        in_dim = (
+            self.hparams.mol_hidden_size + self.hparams.masster_context_dim
+            if source == "encoder"
+            else self.hparams.masster_intensity_transformer_dim
+        )
+        with th.random.fork_rng(devices=[]):
+            self.jepa_predictor = build_jepa_predictor(in_dim, hidden_dim)
+        # The structure is fixed here; only the weight's value is read when the loss is formed.
+        self._jepa_enabled = True
 
     def _check_proposal_early_stop_params(self, proposal_only_until_epoch: int | None) -> None:
         """Validate the proposal early-stop epoch and the proposal-only weight decay.
@@ -1583,6 +1657,7 @@ class MassterPL(SpectrumPL):
             or ion_h_support_loss_enabled
         )
         cross_ev_fragment_loss_enabled = self.hparams.cross_ev_fragment_loss_weight > 0.0
+        jepa_enabled = self._jepa_enabled
         if (
             not math.isfinite(self.hparams.cross_ev_fragment_loss_weight)
             or self.hparams.cross_ev_fragment_loss_weight < 0.0
@@ -2185,6 +2260,32 @@ class MassterPL(SpectrumPL):
                 loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
                 loss_values["ce_pair_loss"] = pair_loss
                 loss_values["ce_pair_eligible_endpoints"] = eligible_endpoints
+            if jepa_enabled:
+                # 1. Zero vectors keep every registered name on every split and batch.
+                jepa_loss = prediction_reference.new_zeros(batch_size)
+                jepa_cos = prediction_reference.new_zeros(batch_size)
+                jepa_target_fraction = prediction_reference.new_zeros(batch_size)
+                if "jepa_pooled" in kwargs:
+                    # 2. The predictor is applied here, so inference never builds its output.
+                    jepa_valid = kwargs["jepa_valid"]
+                    jepa_loss, jepa_cos = masked_cosine_distance(
+                        self.jepa_predictor(kwargs["jepa_pooled"]),
+                        kwargs["jepa_target"],
+                        jepa_valid,
+                    )
+                    jepa_target_fraction = jepa_valid.to(jepa_loss.dtype)
+                elif self.training:
+                    raise ValueError(
+                        "masster_jepa_loss_weight > 0 but this training batch has no jepa_target; "
+                        "Lightning attaches it in on_before_batch_transfer, so a custom loop must "
+                        "call that hook"
+                    )
+                # 3. Train only: validation reports the term without changing its loss.
+                if self.training:
+                    loss = loss + self.hparams.masster_jepa_loss_weight * jepa_loss
+                loss_values["jepa_loss"] = jepa_loss.detach()
+                loss_values["jepa_cos"] = jepa_cos.detach()
+                loss_values["jepa_target_fraction"] = jepa_target_fraction
             if self.training and self._proposal_only_training:
                 # Phase 1 trains proposal coverage and any dedicated proposal heads.
                 # Intensity-head support and cross-EV losses begin with joint training.
@@ -2295,6 +2396,8 @@ class MassterPL(SpectrumPL):
             loss_names.append("ion_mode_proposal_loss")
         if cross_ev_fragment_loss_enabled:
             loss_names.extend(["cross_ev_fragment_loss", "cross_ev_fragment_endpoints"])
+        if jepa_enabled:
+            loss_names.extend(["jepa_loss", "jepa_cos", "jepa_target_fraction"])
         if base_ce_enabled:
             loss_names.extend(
                 [
@@ -2457,7 +2560,9 @@ class MassterPL(SpectrumPL):
             **batch_kwargs: The collated batch produced by SpectrumPL's dataloader.
 
         Returns:
-            The model's sparse prediction dictionary, forwarded unchanged.
+            The model's sparse prediction dictionary, forwarded unchanged. When the JEPA term is
+            on and the batch carries ``jepa_target``, also ``jepa_pooled`` (the model's pooled
+            representation), ``jepa_target`` and ``jepa_valid`` for ``loss_fn``.
         """
         # Standalone inference bypasses Lightning's transfer hook. Match the same
         # templates here when that path has not supplied the CPU graph sidecar.
@@ -2466,6 +2571,13 @@ class MassterPL(SpectrumPL):
             static_graph is None or static_graph.smarts_templates is None
         ):
             static_graph = self._build_static_graph(batch_kwargs)
+        # The pooled representation is requested only for batches that carry a target, so
+        # inference outputs never hold one and a model built without the term runs unchanged.
+        jepa_kwargs = (
+            {"jepa_source": self.hparams.masster_jepa_source}
+            if self._jepa_enabled and "jepa_target" in batch_kwargs
+            else {}
+        )
         output = self.model(
             mol_pyg=batch_kwargs["mol_pyg"],
             spec_prec_type=batch_kwargs["spec_prec_type"],
@@ -2486,7 +2598,11 @@ class MassterPL(SpectrumPL):
             memorization_sink_indices=self._memorization_sink_indices(batch_kwargs),
             # The exporter's switch for the per-peak annotation; absent in training.
             return_annotation=bool(batch_kwargs.get("return_explainability_tensors", False)),
+            **jepa_kwargs,
         )
+        if jepa_kwargs:
+            output["jepa_target"] = batch_kwargs["jepa_target"]
+            output["jepa_valid"] = batch_kwargs["jepa_valid"]
         if (
             self.hparams.masster_share_proposal_across_ev
             and self.hparams.masster_proposal_loss_weight > 0.0
@@ -2528,6 +2644,36 @@ class MassterPL(SpectrumPL):
                 else None
             ),
         )
+
+    def on_before_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        """Attach each spectrum's frozen JEPA target while its ids are still on the CPU.
+
+        Only Lightning's loops call this hook. Standalone inference, the scripts that call
+        ``transfer_batch_to_device`` themselves and every run with
+        ``masster_jepa_loss_weight == 0`` therefore never open the side table. The ids and peaks
+        are CPU tensors here, so the lookup needs no device synchronization, and Lightning moves
+        the two new tensors with the rest of the batch. The lookup also checks that each
+        spectrum's raw peaks are the ones the table was built from.
+
+        Args:
+            batch: The collated batch, still on CPU.
+            dataloader_idx: Index of the dataloader that produced the batch.
+
+        Returns:
+            The batch, plus ``jepa_target`` (``float16 (B, 1024)``) and ``jepa_valid``
+            (``bool (B,)``) when the term is on.
+
+        Raises:
+            ValueError: If a spectrum is not in the side table or its peaks differ from the
+                table's record of it.
+        """
+        batch = super().on_before_batch_transfer(batch, dataloader_idx)
+        if not self._jepa_enabled:
+            return batch
+        target, valid = load_jepa_target_table(self.hparams.masster_jepa_target_fp).lookup(
+            batch["spec_unique_id"], batch["spec_mzs"], batch["spec_batch_idxs"]
+        )
+        return {**batch, "jepa_target": target, "jepa_valid": valid}
 
     def transfer_batch_to_device(
         self,

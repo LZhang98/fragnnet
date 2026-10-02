@@ -130,6 +130,7 @@ stay at the top of `findings/`.
 | Doc | Result |
 |-----|--------|
 | [Spectraverse recall tolerance](findings/masster/spectraverse_recall_tolerance_2026_10_01.md) | Two MASSter folds on 4,096 validation spectra each: instrument-tolerance recall rises from 0.462 to 0.542 and 0.410 to 0.540; emitted and candidate mass coverage agree per spectrum. |
+| [Spectraverse ±0.05 Da training arm](plans/masster/spectraverse_abs005_training_plan.md) | Prepared ten-fold MASSter absolute-window configs; training not launched. |
 | [Spectraverse subformula tolerance screen](findings/masster/spectraverse_subformula_filter_2026_10_01.md) | **STOPPED:** the filter removes 26.2% of target intensity and 15.2% of base peaks; even 10× tolerance leaves 7.5% of sampled base peaks unmatched. |
 | [Exact structural alignment audit](findings/masster/masster_structural_alignment_audit_2026_09_29.md) | **CLOSED NULL**: unfamiliar measured coverage drops from 38.00% (formula) to 0.85% (connectivity) and zero (cut context); residual signal fails label-specific sanity controls. |
 | [Aligned reference-information gate](findings/masster/masster_reference_information_gate_2026_09_29.md) | **CLOSED NULL**: 239 validation queries; ion corrections select zero, loss alignment lowers cosine by 0.00985 versus i1. Coverage does not establish incremental information. |

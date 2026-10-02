@@ -265,6 +265,7 @@ def filter_subformula_peaks(
     precursor_type: str,
     tolerance_ppm: float,
     tolerance_min_mz: float = 0.0,
+    tolerance_da: float | None = None,
 ) -> list[tuple[float, float]]:
     """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula.
 
@@ -274,6 +275,9 @@ def filter_subformula_peaks(
     """
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
+
+    if tolerance_da is not None and tolerance_da <= 0:
+        raise ValueError("tolerance_da must be positive")
 
     candidate_masses = _subformula_masses(formula, precursor_type)
     if candidate_masses.size == 0:
@@ -287,7 +291,11 @@ def filter_subformula_peaks(
         if any(
             0 <= idx < len(candidate_masses)
             and abs(mz - float(candidate_masses[idx]))
-            <= tolerance_ppm * 1e-6 * max(mz, tolerance_min_mz)
+            <= (
+                tolerance_da
+                if tolerance_da is not None
+                else tolerance_ppm * 1e-6 * max(mz, tolerance_min_mz)
+            )
             for idx in candidate_idxs
         ):
             filtered.append((float(peak[0]), float(peak[1])))
@@ -669,6 +677,7 @@ def clean_spectra(
     filter_above_precursor: bool = False,
     above_precursor_ppm: float = 10.0,
     above_precursor_use_instrument_tolerance: bool = True,
+    subformula_tolerance_da: float | None = None,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -685,6 +694,7 @@ def clean_spectra(
         filter_above_precursor,
         above_precursor_ppm,
         above_precursor_use_instrument_tolerance,
+        subformula_tolerance_da,
     )
     return cleaned_df
 
@@ -703,8 +713,13 @@ def clean_spectra_with_stats(
     filter_above_precursor: bool = False,
     above_precursor_ppm: float = 10.0,
     above_precursor_use_instrument_tolerance: bool = True,
+    subformula_tolerance_da: float | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
+    if subformula_tolerance_da is not None and subformula_tolerance_da <= 0:
+        raise ValueError("subformula_tolerance_da must be positive")
+    if subformula_tolerance_da is not None and use_instrument_tolerance:
+        raise ValueError("Absolute and instrument subformula tolerances are mutually exclusive")
     if merge_method is None:
         merge_method = (
             "common_overlap" if use_merge_instrument_tolerance else "naive_centroid"
@@ -738,6 +753,7 @@ def clean_spectra_with_stats(
             "merge_method": merge_method if merge_peak_signals else None,
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
+            "subformula_tolerance_da": subformula_tolerance_da,
             "subformula_instrument_tolerance": use_instrument_tolerance,
             "filter_above_precursor_peaks": filter_above_precursor,
             "above_precursor_ppm": above_precursor_ppm,
@@ -875,7 +891,10 @@ def clean_spectra_with_stats(
             )
         else:
             filtered_peaks = (
-                filter_subformula_peaks(peaks, formula, precursor_type, subformula_ppm)
+                filter_subformula_peaks(
+                    peaks, formula, precursor_type, subformula_ppm,
+                    tolerance_da=subformula_tolerance_da,
+                )
                 for peaks, formula, precursor_type in zip(
                     result["peaks"], formulas, result["prec_type"], strict=True
                 )
@@ -972,6 +991,7 @@ def parse_args() -> argparse.Namespace:
         help="Keep only peaks matching precursor-compatible molecular subformulas",
     )
     parser.add_argument("--subformula-ppm", type=float, default=5.0)
+    parser.add_argument("--subformula-da", type=float, default=None)
     parser.add_argument(
         "--subformula-inst-tol",
         action="store_true",
@@ -1034,6 +1054,7 @@ def main() -> None:
         merge_ppm=args.merge_ppm,
         filter_by_subformula=args.filter_subformula_peaks,
         subformula_ppm=args.subformula_ppm,
+        subformula_tolerance_da=args.subformula_da,
         drop_empty_spectra=args.drop_empty_spectra,
         use_instrument_tolerance=args.subformula_inst_tol,
         use_merge_instrument_tolerance=args.merge_inst_tol,

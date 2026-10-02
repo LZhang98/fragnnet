@@ -11,7 +11,7 @@ The W&B `val_recall` and `val_wrecall` metrics use the global 10 ppm tolerance w
 | [cv0 `ggifzj9m`](https://wandb.ai/frag-gnn/frag-gnn/runs/ggifzj9m) | 4,096 | 0.4619 | 0.5419 | 0.6415 | 0.7068 |
 | [cv1 `u46v0k0g`](https://wandb.ai/frag-gnn/frag-gnn/runs/u46v0k0g) | 4,096 | 0.4098 | 0.5399 | 0.6184 | 0.7302 |
 
-The QTOF change is largest: cv0 recall 0.2817 to 0.5139 (1,339 spectra), and cv1 0.3985 to 0.6935 (1,663 spectra). OB uses the same tolerance in both reads, so its recall stays 0.5597 on cv0 and 0.4202 on cv1. Other remains low even at its wider tolerance: 0.1129 on cv0 (73 spectra), 0.1752 on cv1 (156 spectra).
+The QTOF change is largest: cv0 recall 0.2817 to 0.5139 (1,339 spectra), and cv1 0.3985 to 0.6935 (1,663 spectra). OB uses the same tolerance in both reads, so its recall stays 0.5597 on cv0 and 0.4202 on cv1. Other remains low even at its wider tolerance: 0.1129 on cv0 (73 spectra), 0.1752 on cv1 (156 spectra). NA is present too: 116 spectra at 0.7417 recall on cv0 and 210 at 0.7726 on cv1. The literal `NA` label must be preserved when reading the CSV (`keep_default_na=False`); pandas otherwise treats it as missing and omits that group from `groupby` summaries.
 
 The `candidate_mzs_by_cut` mass set and emitted `pred_mzs` give **identical target coverage on every sampled spectrum** at both tolerances, including intensity-weighted coverage. Here candidate coverage is the ceiling from the run's selected fragment/ion mass set, not an exhaustive chemical-formula ceiling. The gap after rescoring is missing mass support under that set; these recall values do not measure intensity ranking among covered masses.
 
@@ -39,3 +39,22 @@ A checkpoint sweep on 512 validation spectra per fold reused the same sampled pr
 | QTOF (375) | 50 ppm / 750 Da | 0.692 | 0.803 | 0.126 | 0.110 |
 
 The OB 20 ppm / 500 Da window adds 0.040 observed weighted recall but also 0.034 shifted-target weighted recall; a broader window does not clearly recover chemically correct support. QTOF 30 ppm / 750 Da adds 0.031 observed versus 0.015 shifted-target weighted recall. This control is too weak to calibrate a training-loss change. On the full processed SPV data, precursor theoretical-mass errors have 95th-percentile absolute values of 6.08 ppm (OB) and 7.55 ppm (QTOF); precursor calibration alone does not justify a broad increase. The 512-spectrum per-fold sweep artifacts are `output/analysis/spectraverse_recall_2026_10_01/spv_tol_decoy_cv{0,1}_512.csv`. No SPV tolerance config was changed. Next: test multiple decoy offsets and trusted formula-assigned fragment peaks by source and adduct before choosing a new loss window.
+
+## Fixed ±0.1 Da diagnostic (2026-10-01)
+
+On the same 512-validation-spectrum samples per fold, a fixed absolute ±0.1 Da window gives selected-candidate and emitted-prediction coverage that is identical spectrum by spectrum. The checkpoint and target preprocessing are unchanged.
+
+| Fold | Instrument-tolerance candidate recall / wRecall | ±0.1 Da candidate recall / wRecall |
+| --- | ---: | ---: |
+| cv0 | 0.551 / 0.716 | 0.822 / 0.889 |
+| cv1 | 0.546 / 0.733 | 0.780 / 0.894 |
+
+The wider window also raises OB recall from 0.586 to 0.884 (cv0) and 0.433 to 0.742 (cv1), and QTOF from 0.494 to 0.712 and 0.691 to 0.825. At m/z 500, ±0.1 Da is ±200 ppm, versus the current OB 10 ppm and QTOF 20 ppm windows. Precursor theoretical-mass errors on all processed SPV data have 95th-percentile absolute values of 6.08 ppm (OB) and 7.55 ppm (QTOF), so this broad recall gain is not evidence that the instruments are miscalibrated by 0.1 Da. A +0.5 Da shifted-target control matches only 0.026/0.032 peak recall, but it is a weak null because it changes mass defect. The ±0.1 Da numbers are a broad mass-proximity ceiling, not calibrated chemical support. Artifacts: `output/analysis/spectraverse_recall_2026_10_01/spv_abs0p1_cv{0,1}_512.csv`. No training tolerance was changed.
+
+## Fixed ±0.05 Da read (2026-10-01)
+
+Using the saved nearest-candidate errors from the same 512 spectra per fold as the ±0.1 Da read, candidate recall / wRecall is 0.7589 / 0.8443 on cv0 and 0.7145 / 0.8463 on cv1. The ±0.1 Da values on exactly these spectra are 0.8218 / 0.8890 and 0.7803 / 0.8944. OB contributes 0.8337 / 0.9117 (cv0) and 0.6721 / 0.8323 (cv1) at ±0.05 Da; QTOF contributes 0.6289 / 0.7244 and 0.7756 / 0.8816. At m/z 500, ±0.05 Da is ±100 ppm, so this is still a broad mass-proximity diagnostic rather than a calibrated training tolerance. Source peak-level artifacts: `output/analysis/spectraverse_recall_2026_10_01/spv_nearest_cv{0,1}_512_peaks.csv`.
+
+## Follow-up training decision (2026-10-01)
+
+The user selected fixed ±0.05 Da for a new SPV MASSter training arm. The ten prepared configs and checks are recorded in the [training plan](../../plans/masster/spectraverse_abs005_training_plan.md). This decision does not make the wider-window matches chemically validated; the historical instrument-tolerance configs and completed runs remain the control. No full training run has started.

@@ -391,6 +391,20 @@ def test_cmf_channel_respects_the_rdbe_rule():
     assert filtered == []
 
 
+def test_subformula_absolute_da_tolerance_is_fixed_across_masses():
+    low_mz = (
+        data_utils.formula_to_mass("CH4")
+        + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+    )
+    peaks = [(low_mz + 0.049, 10.0), (low_mz + 0.051, 5.0)]
+
+    filtered = clean_spectra_utils.filter_subformula_peaks(
+        peaks, "CH4", "[M+H]+", tolerance_ppm=5.0, tolerance_da=0.05
+    )
+
+    assert filtered == [peaks[0]]
+
+
 def test_qtof_instrument_tolerance_uses_0p015_da_low_mass_floor():
     theoretical_mz = (
         data_utils.formula_to_mass("CH4")

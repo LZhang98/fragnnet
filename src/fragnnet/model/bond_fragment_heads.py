@@ -1350,6 +1350,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         precursor_neutral_masses: th.Tensor | None = None,
         candidate_graph_edges: th.Tensor | None = None,
         rule_pathway_features: th.Tensor | None = None,
+        return_pooled_tokens: bool = False,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule.
 
@@ -1364,6 +1365,10 @@ class CandidateIntensityTransformerHead(nn.Module):
         ``rule_pathway_features`` holds each component's 0/1 SMARTS rule indicators, shape
         ``(num_components, rule_pathway_dim)``, required exactly when ``rule_pathway_dim`` is
         positive.
+        ``return_pooled_tokens`` returns ``(outputs, pooled)`` instead of ``outputs``, where
+        ``pooled`` is the mean post-attention token of each spectrum, ``(batch_size, model_dim)``
+        (zeros for a spectrum with no token), for the JEPA auxiliary. Nothing extra is computed
+        when it is off.
         """
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
@@ -1529,6 +1534,9 @@ class CandidateIntensityTransformerHead(nn.Module):
                 ce_features=ce_features,
                 candidate_graph_edges=candidate_graph_edges,
             )
+        pooled_tokens = None
+        if return_pooled_tokens:
+            pooled_tokens = _segment_mean(tokens, component_batch_indices, batch_size)
         component_residuals = self.component_residual_head(tokens).squeeze(1)
         mask_token_sums = tokens.new_zeros((num_masks, tokens.shape[1])).index_add(
             0,
@@ -1559,7 +1567,7 @@ class CandidateIntensityTransformerHead(nn.Module):
             )
             outputs = (*outputs, ion_h_support_logits)
         if self.oos_head is None:
-            return outputs
+            return outputs if pooled_tokens is None else (outputs, pooled_tokens)
 
         token_sums = tokens.new_zeros((batch_size, tokens.shape[1])).index_add(
             0,
@@ -1573,7 +1581,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         # A spectrum can contribute no components, which would divide by zero here; its
         # pooled token is then the zero vector and the head falls back to its bias.
         molecule_tokens = token_sums / token_counts.clamp_min(1.0).unsqueeze(1)
-        return (*outputs, self.oos_head(molecule_tokens).squeeze(1))
+        outputs = (*outputs, self.oos_head(molecule_tokens).squeeze(1))
+        return outputs if pooled_tokens is None else (outputs, pooled_tokens)
 
 
 def _validate_context(
@@ -2362,6 +2371,23 @@ def pool_complement_embeddings(
         reduction=reduction,
         require_nonempty=False,
     )
+
+
+def _segment_mean(
+    values: th.Tensor,
+    segment_indices: th.Tensor,
+    num_segments: int,
+) -> th.Tensor:
+    """Mean of each segment's rows, ``(num_segments, D)``; an empty segment is the zero vector.
+
+    The counts come from an ``index_add`` of ones rather than ``th.bincount``, which would
+    synchronize CUDA, so the pooling adds no host-device synchronization.
+    """
+    sums = values.new_zeros((num_segments, values.shape[1])).index_add(0, segment_indices, values)
+    counts = values.new_zeros(num_segments).index_add(
+        0, segment_indices, values.new_ones(segment_indices.shape[0])
+    )
+    return sums / counts.clamp_min(1.0).unsqueeze(1)
 
 
 def _segment_logsumexp(

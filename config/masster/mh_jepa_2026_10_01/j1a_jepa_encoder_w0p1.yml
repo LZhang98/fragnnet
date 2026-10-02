@@ -1,0 +1,246 @@
+# ARM j1a_jepa_encoder_w0p1 -- i1 plus the JEPA spectrum-embedding auxiliary, encoder source, weight 0.1. 2026-10-01.
+# Plan: docs/plans/masster/masster_jepa_embedding_plan.md (Gate 1).
+#
+# A small MLP (LayerNorm, Linear 512, SiLU, Linear 1024) predicts the frozen DreaMS
+# self-supervised embedding of each spectrum's MEASURED spectrum (1% base-peak floor) from
+# MASSter's own pooled encoder representation; weight * (1 - cosine) joins the training loss.
+# Spectra without a target (fewer than 3 peaks after the floor, ~6.3%) add exactly 0, so the
+# effective weight is about 0.94 x 0.1. Validation logs jepa_loss / jepa_cos /
+# jepa_target_fraction; its loss is unchanged. The predictor is never used at inference.
+#
+# TABLE: data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz, built and audited by preproc_scripts/jepa_targets/ (dreams env,
+# ssl_model.ckpt sha256 4b73da58...; train + val spectra only, so eval_test_split stays False).
+# The cluster stager (scripts/setup_job_cc.py) copies it to the node.
+#
+# CONTROL: i1_inst_ob_obf (i50ig7rf), tail 0.7607 over epochs 54-63.
+# READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against i1 (single-seed delta
+# below +0.005 is unresolved; seed spread 0.0042); floor mean cos_hun_inst_tol on the fa1@63
+# floor (independent selector); train/val jepa_cos gap; wall clock per epoch against i1.
+# Not submitted. Every key below except the W&B names and the JEPA keys is i1's.
+wandb_name: j1a_jepa_encoder_w0p1
+wandb_group: nist20_mh_jepa_2026_10_01
+wandb_tags:
+- no_filters
+- j1a_jepa_encoder_w0p1
+- jepa_encoder
+- jepa_weight_0.1
+- mh_jepa_2026_10_01
+- i1_inst_ob_obf
+- inst_ob_obf
+- nist20_raw_inst_labels
+- mh_ft_memorization_route_2026_09_24
+- nce_fourier
+- masster
+- cuda_candidates
+- fir_h100_mig
+- nist20_mh_ft
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- int_embedder_fourier
+- adduct_embed
+- inst_type_embed
+- m+h
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- loss_batch_64
+- microbatch_512
+- effective_batch_512
+- unmerged
+- nce_only
+- no_cmf
+- exposure_matched_epochs
+seed: 397623
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  # UNMERGED: one row per spectrum, not one per molecule-group. The other merge_* keys below are
+  # inert while this is false; they are kept because they are part of the required key group.
+  # merge_keep_ces is NOT inert: _check_ce_params asserts it is false when merge is off and
+  # nce/ace is on (merge_keep_ces: true crashed flf0ako1 at model setup).
+  # Consequence: NOTHING here is comparable to a merged cosine. The merged/unmerged split is
+  # the confound docs record as "never like-for-like" (1.01 vs 18.55 rows per molecule), and
+  # the unmerged family has its own recorded ceiling near 0.688-0.693.
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - OB
+  - OB_F
+  frag_mode: false
+  frag_modes: []
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+  # --- target cleaning: OFF. Matched control for f1. ---
+  # Same scope, split, seed and architecture; only these switches differ.
+  centroid_peaks: false
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: false
+  centroid_method: common_overlap
+  filter_subformula_peaks: false
+  subformula_ppm: 5.0
+  subformula_use_instrument_tolerance: true
+  filter_above_precursor_peaks: false
+  above_precursor_ppm: 10.0
+  above_precursor_use_instrument_tolerance: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+# n4: sin + cos table instead of the template abs-sines; no NCE pair aliases (see header).
+int_embedder: fourier
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+ce_pair_loss_weight: 0.0
+inst_type_loss_tol:
+  OB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  OB_F:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 64
+max_epochs: 64
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+# Upload the checkpoints to W&B artifacts. Needed here because the acceptance criterion for
+# this pair is a CROSS-EVAL -- scoring the f1 checkpoint against f0's unfiltered target -- so
+# both checkpoints have to outlive their job's scratch directory and be fetchable from
+# somewhere other than the cluster checkout. Requires the run to be online (w=online, which the
+# submitter passes). Retrieve with scripts/wandb_scripts/wandb_download_ckpts.py.
+upload_checkpoints: true
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Train-side auxiliary metrics off: see the header. This keeps peak GPU near 26.8 GiB so the run
+# fits a 3g.40gb slice, at the cost of the train cosine (and therefore the train/val gap).
+compute_train_auxiliary_metrics: false
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+# Campaign override(s) not present in the base file:
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+
+# MONITORING (every Step 1 config, c0 included; not in f0): log val/train
+# candidate_wrecall, the candidate set's intensity ceiling, so acceptance criterion 5
+# (coverage within 0.005 of c0) reads off W&B. Monitoring only; the loss is unchanged.
+masster_candidate_coverage_metrics: true
+
+masster_jepa_loss_weight: 0.1
+masster_jepa_source: encoder
+masster_jepa_target_fp: data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz
+masster_jepa_predictor_hidden_dim: 512
