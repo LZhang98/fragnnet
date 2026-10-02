@@ -38,8 +38,8 @@ spec_params:
     - "[M+Na]+"
   inst_type: True
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -52,13 +52,13 @@ spec_params:
   split_filters:
     train:
       filter_ce_by_inst:
-        OB:   {nce_min: 0, nce_max: 60}
-        OB_F:   {nce_min: 0, nce_max: 60}
+        ORB:   {nce_min: 0, nce_max: 60}
+        ORB_F:   {nce_min: 0, nce_max: 60}
         QTOF: {ace_min: 0, ace_max: 40}
     val:
       filter_ce_by_inst:
-        OB:   {nce_min: 0, nce_max: 60}
-        OB_F:   {nce_min: 0, nce_max: 60}
+        ORB:   {nce_min: 0, nce_max: 60}
+        ORB_F:   {nce_min: 0, nce_max: 60}
         QTOF: {ace_min: 0, ace_max: 40}
     test: {}
 

@@ -1,12 +1,12 @@
 # NIST Orbitrap instruments: two collision-energy scales, and MASSter's Lumos bias
 
-> **Status:** FINDING · **Updated:** 2026-09-29 (§2: Lumos eV rule; Lumos HCD is not ion-trap CID)
+> **Status:** FINDING · **Updated:** 2026-10-01 (§7: `OB` / `OB_F` renamed `ORB` / `ORB_F`)
 > The two NCE "ladders" in NIST20/NIST23 Orbitrap HCD are two instruments, the Elite Orbitrap
 > and the Orbitrap Fusion Lumos. For the same molecule their spectra differ well beyond
 > same-instrument repeat variation. Part of the difference is a mass-dependent energy offset;
 > part remains at the best-matching energy. MASSter `c0` under-fragments Lumos val spectra, and
 > no energy relabel at inference fixes it. **Implemented:** `inst_type` now labels Orbitraps
-> `OB` / `OB_F` and `FT` is retired (§7); NIST20/NIST23 are relabelled locally from their raw
+> `OB` / `OB_F`, renamed `ORB` / `ORB_F` on 2026-10-01, and `FT` is retired (§7); NIST20/NIST23 are relabelled locally from their raw
 > MSP instrument fields, and the template's `ace_max` is 460. **Training (running, §8):** `n4`
 > on the new labels (`i1`) leads `n4` by +0.021 val cosine epoch-matched, and the smooth-energy
 > penalty falls from −0.021 to −0.004 (`i2` − `i1`). On the finished `i1`, full-split Lumos val
@@ -400,6 +400,16 @@ are Lumos, and the rest are Elite or Velos.
 
 ## 7. Instrument labels `OB` / `OB_F` (implemented 2026-09-28)
 
+> **Renamed 2026-10-01: `OB` → `ORB`, `OB_F` → `ORB_F`.** The labels mean the same instruments;
+> this finding keeps the names its measurements were made with. Configs, `spec_df.pkl` files and
+> checkpoint hparams that name `OB` / `OB_F` are now refused, like `FT`.
+> `preproc_scripts/dataset_migration/rename_orbitrap_inst_type.py` migrates a `spec_df.pkl`
+> (only `inst_type` changes) or a checkpoint (only `hyper_parameters` change; embedding rows
+> follow the sorted labels, whose order the rename keeps)
+> ([usage](../../preproc_scripts/README.md#renaming-orbitrap-labels-ob--ob_f--orb--orb_f-2026-10-01)).
+> The local NIST20, NIST23, Spectraverse and MSGYM files are renamed; NIST20 `spec_df.pkl` is
+> now md5 `ce029870badc9e9e05935a4424f44c8d`. Cluster copies and other checkpoints are not.
+
 `inst_type` now says which Orbitrap: `OB_F` is the Orbitrap Fusion family (NIST's Lumos), and
 `OB` is every other Orbitrap (Elite, Velos, and Orbitraps with no model recorded). `FT` is
 retired; FTICR, which is not an Orbitrap, maps to `Other`.
@@ -410,7 +420,7 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
   sample parses identically to the old reader in all three forms).
 - **Existing data.** `preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py`
   relabels a `spec_df.pkl` in place after a byte copy
-  ([usage](../../preproc_scripts/README.md#relabelling-existing-orbitrap-spectra-ft--ob--ob_f-2026-09-28)).
+  ([usage](../../preproc_scripts/README.md#relabelling-existing-orbitrap-spectra-ft--orb--orb_f-2026-09-28)).
   - The label comes from the raw instrument name joined on `dset_spec_id`. `--inst_fp` takes
     `data/df` tables or raw MSPs in priority order, and FT rows without a name become `OB`.
   - NIST23 uses `data/df/nist23_hr_df.csv`, which matches the NIST23 raw zip on all 1,934,643

@@ -49,8 +49,8 @@ spec_params:
     - "[M+Na]+"
   inst_type: True
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -115,8 +115,8 @@ group_sampler: False
 simple_group_sampler: False
 
 inst_type_loss_tol:
-  OB:   {rel: 1.0e-5, min_mz: 200.0}
-  OB_F:   {rel: 1.0e-5, min_mz: 200.0}
+  ORB:   {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F:   {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 # optimization stuff

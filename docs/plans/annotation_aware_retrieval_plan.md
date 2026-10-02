@@ -1,11 +1,11 @@
 # Annotation-aware candidate retrieval
 
-> **Status:** PROPOSED · **Updated:** 2026-09-25
+> **Status:** PROPOSED · **Updated:** 2026-10-01
 > Score MassSpecGym retrieval candidates with what the predicted spectrum carries beyond its
 > thresholded intensities: the full predicted support, the low-intensity tail, and per-peak
 > fragment annotations. No scorer exists and nothing has run. Step 1 needs no annotation
-> columns. Steps 2-3 need fragment annotations, which MASSter now exports too (2026-09-25,
-> uncommitted), so every step can run on the MASSter MSGYM checkpoint `ll04i00m`. Cross-model,
+> columns. Steps 2-3 need fragment annotations, which MASSter now exports too (committed in
+> `4e29da7c`), so every step can run on the MASSter MSGYM checkpoint `ll04i00m`. Cross-model,
 > so it sits at the top of `plans/`.
 
 ## Objective and acceptance criteria
@@ -58,12 +58,14 @@ does:
   [project state](../project-state.md) keeps it there.
 - **Score hits by 2D InChIKey.** Raw SMILES equality finds the true molecule in only 69.8% of the
   9,734 queries. The 2D InChIKey first block finds it in all of a 400-query sample, exactly once
-  each.
+  each. That was a sample. The scorer must assert, over all 1.61M candidate rows, that each query
+  has exactly one candidate sharing the truth's first block. It must fail rather than
+  silently pick one.
 
 **Both models export per-peak annotation.** The FraGNNet export carries a per-peak neutral
 formula plus its adduct delta, `P(n|f)` over about four candidate DAG nodes per formula, and
 each node's atom bitmask ([run_inference guide](../guides/run_inference.md#fragment-annotation)).
-Since 2026-09-25 (working tree, uncommitted), MASSter fills the same columns. It builds them
+Since 2026-09-25 (committed in `4e29da7c`), MASSter fills the same columns. It builds them
 from its output pathways, and the guide's MASSter paragraph lists how they differ. On 128
 MassSpecGym val spectra with `ll04i00m`, every peak's formula plus adduct reproduced its m/z, and
 every fragment decoded to a connected substructure of the molecule. The annotation adds about
@@ -74,6 +76,10 @@ unfiltered export has a median of 924 peaks per spectrum.
 **Anchors.**
 - MASSter: `ll04i00m` at epoch 60 (W&B), the checkpoint in the
   [GLACIER comparison](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+  MASSter model code has changed since that measurement (SMARTS rules, Si fix, NCE-encoder arms,
+  ion-H channel work). The checkpoint's hparams set its behaviour, and the template fills keys
+  added since. Before any retrieval scoring, re-run `ll04i00m` on MSGYM test and match the
+  comparison's 0.5713. If it does not match, find the drift before going on.
 - FraGNNet: a depth-3 MSGYM config exists
   ([ms_gym_benchmark_1_5.yml](../../config/massspecgym/ms_gym_benchmark_1_5.yml)). No trained
   checkpoint or val score for it is recorded in `docs/`, and W&B has not been checked.
@@ -126,7 +132,9 @@ Break exact score ties at random, or report the average rank. Never break them b
 position, which may carry the source ordering's bias.
 
 **Controls.**
-- Spectrum-blind rankings: support size `|S_c|` alone, and heavy-atom count alone.
+- Spectrum-blind rankings: support size `|S_c|` alone, heavy-atom count alone, and candidate list
+  position (the source ordering). The 49.98% PubChem-order figure above comes from the benchmark
+  as a whole. Measure list position on this 9,734-query subset.
 - Score (b) and score (c) computed against a different query that has the same precursor formula.
   This measures how much of each score is a candidate prior rather than a spectrum match.
 
@@ -150,8 +158,12 @@ Tanimoto, because the hypothesis predicts the gain concentrates on novel molecul
 on `ll04i00m`. Each peak's fragments come with atom bitmasks, so the bonds and ring bonds a
 fragment cuts can be read off the molecule. Add two scores:
 - **Explanation cost.** For each query peak, the cheapest fragment of `c` that explains it: bonds
-  cut, ring bonds cut, depth and the size of the H shift. Include the model's node score where
-  the predicted intensity is below the export threshold.
+  cut, ring bonds cut, depth and the size of the H shift. Also use the model's node score. At
+  `--min_intensity -1` no peak falls below a threshold, so the node score is read for every
+  fragment.
+- **Score during inference.** An unfiltered annotated export of the formula val set is about
+  94 GB (see above). Compute the Step 2 scores inside the inference pass, as Step 1 suggests,
+  rather than storing the annotation columns.
 - **Diagnostic-peak weighting.** Weight each query peak by how much the top candidates' predicted
   intensities disagree there. This removes the intensity-error noise that shared losses add
   without adding information.
@@ -188,7 +200,8 @@ alternative intensity allocations for one molecule. This plan ranks molecules. T
 ## Current state
 
 The candidate-set facts above were measured on 2026-09-25 from the val zips. The MASSter
-annotation export exists (2026-09-25, uncommitted). No scorer or retrieval run exists.
+annotation export is committed (`4e29da7c`). No scorer or retrieval run exists, and `ll04i00m` has
+not been re-checked under current code.
 
 ## Open questions
 
@@ -198,6 +211,7 @@ annotation export exists (2026-09-25, uncommitted). No scorer or retrieval run e
 
 ## Next concrete check
 
-Write the scorer and run score (a) on a 200-query formula val sample with `ll04i00m`. Check that
-the truth is found for every query, that ties are handled, and that hit@1 exceeds the
-spectrum-blind controls. Record throughput to size the full run.
+First, re-run `ll04i00m` on MSGYM test and confirm 0.5713 under current code. Then write the
+scorer and run score (a) on a 200-query formula val sample. Check that the truth is found exactly
+once for every query, that ties are handled, and that hit@1 exceeds all three spectrum-blind
+controls. Record throughput to size the full run.

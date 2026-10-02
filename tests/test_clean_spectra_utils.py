@@ -37,7 +37,7 @@ def test_merge_instrument_tolerance_uses_overlapping_per_peak_windows():
     peaks = [(100.0, 1.0), (100.01, 1.0)]
     spec_df = pd.DataFrame(
         {
-            "inst_type": ["OB", "QTOF"],
+            "inst_type": ["ORB", "QTOF"],
             "peaks": [peaks, peaks],
         }
     )
@@ -391,7 +391,7 @@ def test_cmf_channel_respects_the_rdbe_rule():
     assert filtered == []
 
 
-def test_subformula_absolute_da_tolerance_is_fixed_across_masses():
+def test_subformula_absolute_da_tolerance_accepts_inside_and_rejects_outside():
     low_mz = (
         data_utils.formula_to_mass("CH4")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
@@ -514,12 +514,12 @@ def test_select_instrument_types_focuses_on_ft_and_qtof():
     spec_df = pd.DataFrame(
         {
             "spec_id": [0, 1, 2],
-            "inst_type": ["OB", "QTOF", "IT"],
+            "inst_type": ["ORB", "QTOF", "IT"],
             "peaks": [[], [], []],
         }
     )
 
-    selected = clean_spectra_utils.select_instrument_types(spec_df, ["OB", "QTOF"])
+    selected = clean_spectra_utils.select_instrument_types(spec_df, ["ORB", "QTOF"])
 
     assert selected["spec_id"].tolist() == [0, 1]
 
@@ -830,7 +830,7 @@ def test_above_precursor_cleanup_runs_per_instrument_and_reports_retention():
         {
             "mol_id": [0, 0],
             "prec_type": ["[M]+", "[M]+"],
-            "inst_type": ["OB", "QTOF"],
+            "inst_type": ["ORB", "QTOF"],
             "prec_mz": [400.0, 400.0],
             # Same peaks for both: one below, the precursor, and one a neutron above it.
             "peaks": [
@@ -888,7 +888,7 @@ def test_above_precursor_filter_runs_before_subformula_filtering():
         {
             "mol_id": [0],
             "prec_type": ["[M]+"],
-            "inst_type": ["OB"],
+            "inst_type": ["ORB"],
             "prec_mz": [15.0],
             "peaks": [[(12.0, 3.0), (16.0313, 1.0)]],
         }

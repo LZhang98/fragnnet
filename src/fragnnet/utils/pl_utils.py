@@ -8,6 +8,8 @@ from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.utilities import rank_zero_only
 
+from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
+
 # MASSter was named MASShatter until 2026-09-25. Configs, checkpoints, W&B runs and sweeps from
 # before the rename declare `model_type: mass_shatter` and `mass_shatter_*` keys.
 LEGACY_MASSTER_MODEL_TYPE = "mass_shatter"
@@ -460,8 +462,19 @@ def get_pl_hparams(ckpt: dict) -> dict:
 
     Returns:
         Deep copy of hyperparameters dictionary.
+
+    Raises:
+        ValueError: If the hyperparameters name a retired instrument type.
     """
     hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+    # Embedding indices follow the sorted label order, which the OB -> ORB rename keeps, but a
+    # checkpoint keyed by OB filters out and mis-tolerances every relabelled Orbitrap spectrum.
+    retired = find_retired_inst_type_refs(hyper_parameters)
+    if retired:
+        raise ValueError(
+            f"checkpoint hparams name a retired instrument type at {retired}. "
+            f"{RETIRED_INST_TYPE_HELP}"
+        )
     migrate_legacy_masster_name(hyper_parameters)
     migrate_legacy_hparams(hyper_parameters)
     # Old checkpoints retain first-replicate CE context unless explicitly migrated.

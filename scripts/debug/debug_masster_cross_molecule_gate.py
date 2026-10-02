@@ -195,7 +195,7 @@ def main() -> None:
     spectra["prec_mz"] = pd.to_numeric(spectra.prec_mz)
     measured_single = spectra.ce_type.eq("single") & spectra.nce.notna() & (spectra.nce >= 0)
     spectra = spectra[
-        measured_single & spectra.prec_type.eq("[M+H]+") & spectra.inst_type.isin(["OB", "OB_F"])
+        measured_single & spectra.prec_type.eq("[M+H]+") & spectra.inst_type.isin(["ORB", "ORB_F"])
     ].copy()
     if not len(spectra):
         raise ValueError("no eligible training spectra")

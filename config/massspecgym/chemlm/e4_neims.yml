@@ -44,7 +44,7 @@ spec_params:
   - '[M+H]+'
   inst_type: true
   inst_types:
-  - OB
+  - ORB
   - QTOF
   preprocess: true
 mol_params:

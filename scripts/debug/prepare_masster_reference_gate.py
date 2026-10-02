@@ -71,7 +71,7 @@ def main() -> None:
     spec["prec_mz"] = pd.to_numeric(spec.prec_mz)
     spec = spec[
         spec.prec_type.eq("[M+H]+")
-        & spec.inst_type.isin(["OB", "OB_F"])
+        & spec.inst_type.isin(["ORB", "ORB_F"])
         & spec.ce_type.eq("single")
         & spec.nce.notna()
         & spec.nce.ge(0)

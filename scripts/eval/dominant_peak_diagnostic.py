@@ -68,8 +68,8 @@ log = logging.getLogger(__name__)
 # Per-instrument m/z tolerance, matching INST_TYPE_LOSS_TOL in dag_oracle_scores.py and
 # inst_type_loss_tol in config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml.
 INST_TYPE_LOSS_TOL = {
-    "OB": (1.0e-5, 200.0),  # 10 ppm, floor 200 Da
-    "OB_F": (1.0e-5, 200.0),  # 10 ppm, floor 200 Da
+    "ORB": (1.0e-5, 200.0),  # 10 ppm, floor 200 Da
+    "ORB_F": (1.0e-5, 200.0),  # 10 ppm, floor 200 Da
     "QTOF": (2.0e-5, 750.0),  # 20 ppm, floor 750 Da
 }
 DEFAULT_TOL = (1.0e-5, 200.0)
@@ -541,8 +541,8 @@ def fig_ce_and_class(
     for ax, (inst, col, unit, edges) in zip(
         (axes[0, 0], axes[0, 1]),
         (
-            ("OB", "nce", "NCE (%)", [0, 20, 40, 60, 80, 100, 120, 200]),
-            ("OB_F", "nce", "NCE (%)", [0, 20, 40, 60, 80, 100, 120, 200]),
+            ("ORB", "nce", "NCE (%)", [0, 20, 40, 60, 80, 100, 120, 200]),
+            ("ORB_F", "nce", "NCE (%)", [0, 20, 40, 60, 80, 100, 120, 200]),
             ("QTOF", "ace", "ACE (eV)", [0, 10, 20, 30, 40, 50, 100]),
         ),
     ):

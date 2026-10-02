@@ -69,7 +69,7 @@ def get_args() -> argparse.Namespace:
         default=0.50,
         help="Minimum best-different-CE minus current metric gap for the trend_drop flag.",
     )
-    parser.add_argument("--inst_types", nargs="+", default=["OB", "OB_F", "QTOF"])
+    parser.add_argument("--inst_types", nargs="+", default=["ORB", "ORB_F", "QTOF"])
     parser.add_argument(
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )
@@ -94,7 +94,7 @@ def add_ce_columns(df: pd.DataFrame) -> pd.DataFrame:
     Other instruments use ACE first, then fall back to NCE.
     """
     df = df.copy()
-    use_nce = df["inst_type"].isin(["OB", "OB_F"]) & df["nce"].notna()
+    use_nce = df["inst_type"].isin(["ORB", "ORB_F"]) & df["nce"].notna()
     df["ce_value"] = df["ace"].where(df["ace"].notna(), df["nce"])
     df.loc[use_nce, "ce_value"] = df.loc[use_nce, "nce"]
     df["ce_source"] = np.where(

@@ -89,8 +89,8 @@ spec_params:
   - '[M+Cl]-'
   inst_type: true
   inst_types:
-  - OB
-  - OB_F
+  - ORB
+  - ORB_F
   - QTOF
   frag_mode: true
   frag_modes:
@@ -166,10 +166,10 @@ primary_loss_weight: 1.0
 spectral_leak_loss_weight: 0.3
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
-  OB:
+  ORB:
     rel: 1.0e-05
     min_mz: 200.0
-  OB_F:
+  ORB_F:
     rel: 1.0e-05
     min_mz: 200.0
   QTOF:

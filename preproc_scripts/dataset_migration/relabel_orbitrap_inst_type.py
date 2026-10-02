@@ -1,10 +1,10 @@
-"""Relabel the retired "FT" instrument type of an existing spec_df as "OB" / "OB_F".
+"""Relabel the retired "FT" instrument type of an existing spec_df as "ORB" / "ORB_F".
 
-Orbitraps are "OB_F" for the Orbitrap Fusion family and "OB" otherwise (Elite, Velos, unnamed);
+Orbitraps are "ORB_F" for the Orbitrap Fusion family and "ORB" otherwise (Elite, Velos, unnamed);
 they fragment differently at the same NCE, see
 docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md. The label comes from the raw
-instrument name, joined on ``dset_spec_id``: "Fusion" in the name means OB_F, as in
-``parse_inst_info``. FT rows without a name are unnamed Orbitraps, OB.
+instrument name, joined on ``dset_spec_id``: "Fusion" in the name means ORB_F, as in
+``parse_inst_info``. FT rows without a name are unnamed Orbitraps, ORB.
 
 ``--inst_fp`` takes the name sources in priority order; for each ``dset_spec_id`` the first
 source that names it wins. A source is either
@@ -97,7 +97,7 @@ def read_instruments(fp: str, msp_id_key: str = "NIST#") -> pd.Series:
 def relabel_inst_type(
     spec_df: pd.DataFrame, inst_by_dset_spec_id: pd.Series | None = None
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """Label ``inst_type == "FT"`` rows OB / OB_F and split ``group_id`` by instrument.
+    """Label ``inst_type == "FT"`` rows ORB / ORB_F and split ``group_id`` by instrument.
 
     Args:
         spec_df: Processed spectra with ``inst_type``, ``dset_spec_id`` and ``group_id``.
@@ -115,12 +115,12 @@ def relabel_inst_type(
     if inst_by_dset_spec_id is not None:
         inst = spec_df["dset_spec_id"].astype(str).map(inst_by_dset_spec_id)
         named = ft & inst.notna()
-        label[named] = np.where(inst[named].str.contains("Fusion"), "OB_F", "OB")
+        label[named] = np.where(inst[named].str.contains("Fusion"), "ORB_F", "ORB")
         source[named] = "inst"
 
     # 2. Every other FT row is an unnamed Orbitrap.
     rest = ft & label.isna()
-    label[rest] = "OB"
+    label[rest] = "ORB"
     source[rest] = "default"
     inst_type = spec_df["inst_type"].where(~ft, label)
 

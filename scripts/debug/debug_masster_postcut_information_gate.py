@@ -910,7 +910,7 @@ def extract(args: argparse.Namespace) -> None:
                 saved["context"].append(
                     [
                         float(np.mean(row.nce)) / 100.0,
-                        float(row.inst_type == "OB_F"),
+                        float(row.inst_type == "ORB_F"),
                         float(row.prec_mz) / 1000.0,
                     ]
                 )

@@ -29,7 +29,7 @@ def test_sibling_detection_does_not_compare_ace_with_nce() -> None:
         {
             "mol_id": [1, 1, 1],
             "prec_type": ["[M+H]+"] * 3,
-            "inst_type": ["OB"] * 3,
+            "inst_type": ["ORB"] * 3,
             "frag_mode": ["HCD"] * 3,
             "ace": [10.0, 20.0, 30.0],
             "nce": [20.0, 40.0, np.nan],
@@ -55,7 +55,7 @@ def test_sibling_detection_preserves_rows_when_rounded_ce_bins_collide() -> None
             "spec_id": [1, 2],
             "mol_id": [1, 1],
             "prec_type": ["[M+H]+"] * 2,
-            "inst_type": ["OB"] * 2,
+            "inst_type": ["ORB"] * 2,
             "frag_mode": ["HCD"] * 2,
             "ace": [np.nan, np.nan],
             "nce": [10.00000011, 10.00000019],
@@ -80,7 +80,7 @@ def test_audit_only_reviews_same_ce_contradictions_or_two_sided_dips() -> None:
             "spec_id": [1, 2, 3, 4, 5],
             "mol_id": [1] * 5,
             "prec_type": ["[M+H]+"] * 5,
-            "inst_type": ["OB"] * 5,
+            "inst_type": ["ORB"] * 5,
             "frag_mode": ["HCD"] * 5,
             "ace": [np.nan] * 5,
             "nce": [10.0, 20.0, 20.0, 30.0, 40.0],
@@ -111,7 +111,7 @@ def test_sibling_detection_ignores_missing_metrics_without_warning() -> None:
         {
             "mol_id": [1, 1],
             "prec_type": ["[M+H]+"] * 2,
-            "inst_type": ["OB"] * 2,
+            "inst_type": ["ORB"] * 2,
             "frag_mode": ["HCD"] * 2,
             "ace": [np.nan, np.nan],
             "nce": [10.0, 20.0],
@@ -133,7 +133,7 @@ def test_isotonic_fit_separates_ce_sources_and_skips_missing_ce() -> None:
         {
             "mol_id": [1] * 7,
             "prec_type": ["[M+H]+"] * 7,
-            "inst_type": ["OB"] * 7,
+            "inst_type": ["ORB"] * 7,
             "frag_mode": ["HCD"] * 7,
             "ce_source": ["ace"] * 3 + ["nce"] * 3 + ["none"],
             "ce_value": [10.0, 20.0, 30.0, 10.0, 20.0, 30.0, np.nan],
@@ -175,7 +175,7 @@ def test_add_peak_tracks_labels_only_cross_ce_matches() -> None:
     group = pd.DataFrame(
         {
             "spec_id": [1, 2],
-            "inst_type": ["OB", "OB"],
+            "inst_type": ["ORB", "ORB"],
             "ce_key": ["nce=10.0", "nce=20.0"],
             "ce_value": [10.0, 20.0],
             "peaks": [
@@ -218,7 +218,7 @@ def test_add_peak_tracks_uses_absolute_0p01_da_tolerance() -> None:
     group = pd.DataFrame(
         {
             "spec_id": [1, 2, 3],
-            "inst_type": ["OB"] * 3,
+            "inst_type": ["ORB"] * 3,
             "ce_key": ["nce=10.0", "nce=20.0", "nce=30.0"],
             "ce_value": [10.0, 20.0, 30.0],
             "peaks": [[(1000.0, 0.2)], [(1000.009, 0.4)], [(1000.02, 0.6)]],

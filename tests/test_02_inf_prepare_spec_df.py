@@ -47,7 +47,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -65,7 +65,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+", "[M-H]-"],
             qtof_ces=[],
             ft_ces=["25.0NCE", "35.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -81,7 +81,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -118,7 +118,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE", "35.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -158,7 +158,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -177,7 +177,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+", "[M-H]-"],
             qtof_ces=[],
             ft_ces=["25.0NCE", "35.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=True,
         )
@@ -200,7 +200,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE", "25.0%", "30.0eV"],  # Different formats
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -255,7 +255,7 @@ class Test02InfPrepareSpecDf:
             prec_types=["[M+H]+", "[M-H]-"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )

@@ -700,11 +700,11 @@ def add_units(rows: pd.DataFrame) -> pd.DataFrame:
 def strata(rows: pd.DataFrame) -> dict[str, pd.Series]:
     """Return the boolean row mask of every reported stratum.
 
-    The headline is NIST20 (``nist20_hr``) OB/OB_F spectra whose molecule has a
+    The headline is NIST20 (``nist20_hr``) ORB/ORB_F spectra whose molecule has a
     ``nist20_ma_mi_inchikey`` assignment, train, val and test pooled.
     """
     nist = rows["dset"] == "nist20_hr"
-    obs = rows["inst"].isin(["OB", "OB_F"])
+    obs = rows["inst"].isin(["ORB", "ORB_F"])
     assigned = rows["split"].isin(["train", "val", "test"])
     headline = nist & obs & assigned
     masks = {"headline_nist20_ob_train_val_test": headline}
@@ -715,7 +715,7 @@ def strata(rows: pd.DataFrame) -> dict[str, pd.Series]:
     masks["nist20_qtof_unassigned"] = nist & (rows["inst"] == "QTOF") & ~assigned
     mona = rows["dset"] == "mona23"
     masks["mona23_all_tolerance_instruments"] = mona
-    for inst in ("OB", "OB_F", "QTOF"):
+    for inst in ("ORB", "ORB_F", "QTOF"):
         masks[f"mona23_{inst}"] = mona & (rows["inst"] == inst)
     return masks
 
@@ -1093,7 +1093,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--spec", type=Path, default=OUT_DEFAULT / "mh_spec.pkl")
     parser.add_argument("--split_map", type=Path, default=OUT_DEFAULT / "split_map.csv")
     parser.add_argument("--mol_df", type=Path, default=Path("data/proc/nist20/mol_df.pkl"))
-    parser.add_argument("--inst_types", nargs="+", default=["OB", "OB_F", "QTOF"])
+    parser.add_argument("--inst_types", nargs="+", default=["ORB", "ORB_F", "QTOF"])
     parser.add_argument("--workers", type=int, default=5)
     parser.add_argument("--max_molecules", type=int, default=None)
     parser.add_argument("--reach_cap", type=int, default=200_000)

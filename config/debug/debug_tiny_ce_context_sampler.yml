@@ -33,8 +33,8 @@ spec_params:
     - "[M+Na]+"
   inst_type: true
   inst_types:
-    - OB
-    - OB_F
+    - ORB
+    - ORB_F
     - QTOF
   frag_mode: true
   frag_modes:
@@ -83,8 +83,8 @@ frag_mode_insert_location: mol
 frag_mode_insert_size: 8
 
 inst_type_loss_tol:
-  OB: {rel: 1.0e-5, min_mz: 200.0}
-  OB_F: {rel: 1.0e-5, min_mz: 200.0}
+  ORB: {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 mask_null_formula: false
@@ -110,8 +110,8 @@ dynamic_batch_sampler_mode: frag_edge
 dynamic_batch_sampler_max: 20000
 ce_context_spectra_per_context: 5
 ce_context_ce_key_by_inst:
-  OB: nce
-  OB_F: nce
+  ORB: nce
+  ORB_F: nce
   QTOF: ace
 dag_size_curriculum: false
 ce_pair_loss_weight: 0.0

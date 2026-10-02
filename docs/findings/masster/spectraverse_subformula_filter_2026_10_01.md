@@ -1,6 +1,6 @@
 # Spectraverse subformula filter tolerance screen
 
-> **Status:** FINDING · **Updated:** 2026-10-01 · Filter arm stopped after target-retention screen; no training launched.
+> **Status:** FINDING · **Updated:** 2026-10-01 · Fixed 0.05 Da SPV artifact generated; no training launched.
 
 ## Decision
 
@@ -22,3 +22,20 @@ The sodium and potassium losses dominate the concern. Among 10×-window misses o
 The full census used `data/proc/spectraverse/spec_df.pkl` and `mol_df.pkl`, with the existing `filter_subformula_peaks` chemistry at the configured instrument windows: OB 10 ppm / 200 Da, QTOF 20 ppm / 750 Da, and the SPV loss settings of 20 ppm / 500 Da for Other and NA. Three spectra with an unsupported Sn formula were left unfiltered and counted. `drop_empty_spectra=True` removed empty spectra after filtering. Exact stage and per-adduct statistics, plus retained train/validation/test counts for all ten fixed CV splits, are in `output/analysis/spectraverse_subformula_2026_10_01/census.json` (ignored artifact store).
 
 The tolerance sweep reused the 8,192 validation spectrum IDs in `output/analysis/spectraverse_recall_2026_10_01/`. For each measured peak, it found the closest mass from `_subformula_masses` and compared that distance with 1×, 1.5×, 2×, 3×, 5× and 10× the instrument window. Per-spectrum outcomes are in `output/analysis/spectraverse_subformula_2026_10_01/tolerance_sweep_8192.csv`. The sweep used the same candidate chemistry as the production filter and reproduces the 1× retention on that sample. No target spectra, split files, or model checkpoints were modified. The study does not determine whether peaks rejected at wide windows are contamination, adduct mislabels, isotope peaks, or real fragments absent from the candidate chemistry.
+
+## Follow-up: 20 ppm centroiding and ±0.05 Da subformula filter
+
+A user-requested full SPV data pass used 20 ppm naive-centroid merging followed by a fixed
+±0.05 Da precursor-bounded subformula match. The output is
+`data/proc/spectraverse/spec_df_centroid20ppm_subformula005da.pkl`; stage statistics are in
+`output/analysis/spectraverse_centroid20ppm_subformula005da_stats.json`. Both are ignored
+local artifacts. The source pickle and existing training configs were unchanged. The three
+spectra with unsupported Sn formulas were excluded, leaving 488,794 processed spectra.
+Empty spectra were retained.
+
+Centroiding reduced 40,242,565 peaks to 38,854,682 without changing total intensity.
+The subformula filter retained 28,204,599 peaks (72.59% of centroided peaks) and 83.73%
+of centroided intensity. It left 5,789 spectra empty and retained the centroided base
+peak in 450,309 spectra. These counts describe the processed target data, not model
+performance or verified chemical assignments. The earlier concern about Na/K adduct
+chemistry remains unresolved; no training run was launched.

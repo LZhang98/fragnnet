@@ -1,5 +1,5 @@
 #!/bin/bash
-# Generate (but do not submit) the Fir jobs for the memorization-route arms on the OB / OB_F
+# Generate (but do not submit) the Fir jobs for the memorization-route arms on the ORB / ORB_F
 # instrument labels (data/proc/nist20/spec_df.pkl relabelled 2026-09-28; see i1's header).
 #
 # The FT-label arms of 2026-09-24 to 2026-09-27 (c0, r0-r2, k1, m1/m2, gm1-gm6, k1_ema, the seed-811237
@@ -10,9 +10,9 @@
 # docs/findings/masster/masster_memorization_attempts_audit_2026_09_27.md. The route arms among them
 # are rerun below (stage rerun).
 #
-# Added 2026-09-28, after i1_inst_ob_obf (i50ig7rf, n4 on the OB / OB_F instrument labels) led n4
+# Added 2026-09-28, after i1_inst_ob_obf (i50ig7rf, n4 on the ORB / ORB_F instrument labels) led n4
 # by +0.021 mid-run: the replicated levers stacked on it, then the merged screen's pre-norm. These
-# need the relabelled data/proc/nist20/spec_df.pkl on the cluster (md5 bdc009bb..., see i1's header):
+# need the relabelled data/proc/nist20/spec_df.pkl on the cluster (md5 ce029870..., see i1's header):
 #   i3   i1 + k1 dropout + ema_decay 0.999  (control: i1, i50ig7rf)
 #   i4   i3 + intensity pre-norm             (control: i3, same stage)
 # Added 2026-09-29: full candidate attention on i1, which has only run merged (a2_full_attention
@@ -36,7 +36,7 @@
 # Added 2026-09-29: attention masked to the candidate graph (direct containment and complements;
 # the precursor receives but never sends), the chemistry-defined counterpart of the window ladder:
 #   cg1   fa1 + candidate-graph attention                              (control: fa1, 0vn8m2gr)
-# Added 2026-09-29: the FT-label route arms rerun on OB/OB_F, where the identity routes no longer
+# Added 2026-09-29: the FT-label route arms rerun on ORB/ORB_F, where the identity routes no longer
 # stand in for the instrument (i1 memorization read). Each is i1 (or fa1) plus the FT arm's keys:
 #   r2_ob  i1 without global attention (mol_gnn_type: GINE)            (control: i1, i50ig7rf)
 #   r1_ob  i1 + boundary block from a local encoder                    (control: i1, i50ig7rf)
@@ -138,7 +138,7 @@ declare -A CONFIG_BY_ARM=(
     [ce2]=ce2_context_token_ob_obf.yml
     [so1]=so1_smarts_o_transfer_ob_obf.yml
 )
-# cg1, the window ladder, the pos arms, the OB/OB_F reruns and the ce arms keep their checkpoints
+# cg1, the window ladder, the pos arms, the ORB/ORB_F reruns and the ce arms keep their checkpoints
 # on Fir for now (user, 2026-09-29); the seed replicate fa1_s2 is read on W&B only.
 declare -A NO_CKPT_UPLOAD=([cg1]=1 [mw30]=1 [mw10]=1 [mlp1]=1
     [mznl1]=1 [nlpe1]=1 [r2_ob]=1 [r1_ob]=1 [r0_ob]=1 [nl1_ob]=1 [nl2_ob]=1 [sd1_ob]=1 [fa1_s2]=1
@@ -236,7 +236,7 @@ for arm in "${ARMS[@]}"; do
 done
 echo
 echo "stack (i3, i4): i3's control is i1 (i50ig7rf); i4's is i3, in the same stage. Both need the"
-echo "  relabelled OB / OB_F spec_df.pkl on the cluster (md5 bdc009bbeaf6a38d126326d127630cad)."
+echo "  relabelled ORB / ORB_F spec_df.pkl on the cluster (md5 ce029870badc9e9e05935a4424f44c8d)."
 echo "attn (fa1, mz1): fa1's control is i1 (i50ig7rf); mz1's is fa1, in the same stage. Both need"
 echo "  the same relabelled spec_df.pkl as i1."
 echo "i5: its control i1 (i50ig7rf) has run. It needs the relabelled spec_df.pkl and a checkout with"

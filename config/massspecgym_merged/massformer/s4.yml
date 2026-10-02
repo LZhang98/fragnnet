@@ -16,8 +16,8 @@ spec_params:
   preprocess: True
   inst_type: True
   inst_types:
-  - "OB"
-  - "OB_F"
+  - "ORB"
+  - "ORB_F"
   - "QTOF"
 mol_params:
   pyg: False

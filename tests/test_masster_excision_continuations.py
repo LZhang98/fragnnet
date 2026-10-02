@@ -166,8 +166,8 @@ def test_bootstrap_uses_molecules_not_spectra():
 def test_checkpoint_label_alias_preserves_width():
     config = {"spec_params": {"inst_types": ["FT"]}, "tolerance": {"FT": {"rel": 1e-5}}}
     aliased = _alias_ft(config)
-    assert aliased["spec_params"]["inst_types"] == ["OB"]
-    assert "OB" in aliased["tolerance"]
+    assert aliased["spec_params"]["inst_types"] == ["ORB"]
+    assert "ORB" in aliased["tolerance"]
     assert config["spec_params"]["inst_types"] == ["FT"]
 
 

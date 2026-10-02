@@ -131,7 +131,7 @@ EXISTING = [
     (rule, _MASSTER_PRECURSOR_TYPES.get(rule.name, BOTH))
     for rule in (*MASSTER_FRAG_RULES, *MASSTER_NL_RULES)
 ]
-TOLERANCE = {"FT": (1e-5, 200.0), "OB": (1e-5, 200.0), "OB_F": (1e-5, 200.0), "QTOF": (2e-5, 750.0)}
+TOLERANCE = {"FT": (1e-5, 200.0), "ORB": (1e-5, 200.0), "ORB_F": (1e-5, 200.0), "QTOF": (2e-5, 750.0)}
 
 
 def edge_tuple(mol) -> tuple[tuple[int, ...], ...]:

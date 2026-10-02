@@ -1,11 +1,13 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
 > **Status:** ACTIVE · **Updated:** 2026-10-01
+> **2026-10-01: Orbitrap labels renamed `OB` → `ORB`, `OB_F` → `ORB_F`.** This plan uses the new
+> names throughout, including for runs made before the rename; job and config names keep `ob_obf`.
 > **2026-10-01: within-peak isomer split gate complete.** [Checkpoint and cut-class reads](../../findings/masster/masster_isomer_split_step0_2026_10_01.md) do not support building the proposed bond-split regularizer. Confident close-total splits mostly agree across `i1`/`fa1`; a cut-class prior adds no held-out target-intensity signal. No training arm was built.
 > **2026-09-30: `f0`/`f1` results retired (user decision).** Step 0's route map and the earlier
 > route probe ran on them; on `i1` the route map is the
 > [memorization read](#memorization-read-on-i1-2026-09-28).
-> **2026-09-30: [mid-run read of `sd1` on OB/OB_F](#mid-run-read-of-sd1-at-epoch-25-2026-09-30-utc-no-gain-from-masking-the-set-keys)
+> **2026-09-30: [mid-run read of `sd1` on ORB/ORB_F](#mid-run-read-of-sd1-at-epoch-25-2026-09-30-utc-no-gain-from-masking-the-set-keys)
 > at epoch 25.** Masking the set transformer's keys gives no gain over `i1`: −0.0011 over epochs
 > 16-25, inside the `fa1_s2` seed gap (−0.0027), with train and val loss both worse. No finished
 > pair on this lineage drifted enough late to reach +0.005.
@@ -19,7 +21,7 @@
 > and `nlpe1` (loss alone) −0.0152 against `fa1` over epochs 22-31. Both are rejected, and mass as a
 > token position is closed. `fa1_s2` runs 0.003-0.005 below `fa1`, so `fa1`'s own +0.0044 needs its
 > tail.
-> **2026-09-29: FT-label configs removed; route arms rerun on OB/OB_F.** The 33 FT-label configs of
+> **2026-09-29: FT-label configs removed; route arms rerun on ORB/ORB_F.** The 33 FT-label configs of
 > this directory (`c0`, `r0`-`r2`, `k1`, `m1`/`m2`, `gm1`-`gm6`, `k1_ema`, `c0_s2`/`k1_s2`/`u2_s2`,
 > `s1`, `s1_k1_ema`, `w1`, `n1`-`n4`, `nl1`-`nl3`, `sp0`/`sp1`, `am1`/`de1`, `sm1`/`sd1`) are in Git at
 > `8c52c6d3`; on FT labels the identity routes stood in for the missing instrument. `r2`, `r1`, `r0`,
@@ -1938,7 +1940,7 @@ same delta of `val_candidate_wrecall`. The seed spread is 0.0042.
 
 ## Stacking on the instrument input: `i3` and `i4` (built 2026-09-28, not submitted)
 
-`i1_inst_ob_obf` (`i50ig7rf`, `n4` on the `OB` / `OB_F` labels) led `n4` by +0.021 mid-run
+`i1_inst_ob_obf` (`i50ig7rf`, `n4` on the `ORB` / `ORB_F` labels) led `n4` by +0.021 mid-run
 ([instrument finding §8](../../findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#8-training-with-the-instrument-input-i1-and-i2-running-read-2026-09-28)).
 These arms stack on it the levers that replicated on the `FT` labels, then the one architecture
 key that passed the merged screen.
@@ -2055,9 +2057,9 @@ Full attention has run only on the merged lineage. This pair runs both on Fir, o
 
 - **Why a loader switch.** By default the loader fills a missing eV from NCE as
   NCE × m/z / 500, the Elite convention.
-  - On this split every `OB` train spectrum records eV, a median 0.45 eV below the conversion.
-  - 67% of `OB_F` train spectra (28,766 of 42,712) record none.
-  - The `OB_F` spectra that do record eV sit a median 12.6 eV above the conversion.
+  - On this split every `ORB` train spectrum records eV, a median 0.45 eV below the conversion.
+  - 67% of `ORB_F` train spectra (28,766 of 42,712) record none.
+  - The `ORB_F` spectra that do record eV sit a median 12.6 eV above the conversion.
   - Filled, two-thirds of Lumos spectra would get an eV about 12 eV below recorded Lumos eV at the
     same energy, and the model could not tell them apart. The
     [instrument finding](../../findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#implications)
@@ -2070,14 +2072,14 @@ Full attention has run only on the merged lineage. This pair runs both on Fir, o
   - `ace_max` stays at `i1`'s 300: no recorded `[M+H]+` train eV exceeds 275.
 - **Checks.**
   - Through `load_config`, `i5` differs from `i1` by the two `spec_params` keys and W&B naming.
-  - On the real train split with the switch off, exactly the 28,766 `OB_F` spectra without eV
-    read −1, no `OB` spectrum does, and every recorded eV is unchanged.
+  - On the real train split with the switch off, exactly the 28,766 `ORB_F` spectra without eV
+    read −1, no `ORB` spectrum does, and every recorded eV is unchanged.
   - Four new tests in `tests/test_split_filters.py`; the suite passes on CPU.
   - Not run: a GPU smoke. Another session's local `i1` training held the GPU. The same dual-CE
     context trained in a 2-epoch smoke of `n4` + eV (0.076 → 0.232).
 - **Read.**
   - The tail against `i1`, at +0.005 on one seed; coverage within 0.005.
-  - Then `OB_F` val cosine and precursor-fraction bias, split by recorded against missing eV
+  - Then `ORB_F` val cosine and precursor-fraction bias, split by recorded against missing eV
     (`collect_masster_preds.py`, then `ladder_bias.py` and `nist20_raw_labels.py` with tag `i5`).
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh i5`.
   - The cluster needs the relabelled `spec_df.pkl`, as for `i1`.
@@ -2124,7 +2126,7 @@ seed spread is 0.0042.
   - Against `i1` it is +0.0026, all of it from full attention.
 - Coverage moves by at most 0.0004, so none of this is candidate-set coverage.
 - **Also finished, unread until now: `i2_qet_ob_obf` (`jshvk4gv`)**, `n1`'s `qet` energy input on
-  the `OB` / `OB_F` labels. Its tail is 0.7592, −0.0015 against `i1`, inside the seed spread; it
+  the `ORB` / `ORB_F` labels. Its tail is 0.7592, −0.0015 against `i1`, inside the seed spread; it
   is above `i1` in 10 of 64 epochs, with train and val loss unchanged (±0.0002). The mid-run −0.004
   (epochs 10-14) narrowed to that: the smooth energy input costs little once the instrument is an
   input, and gains nothing.
@@ -2305,7 +2307,7 @@ sets.
 - One seed each, mid-run. `fa1` may be a lucky seed (`fa1_s2` trails it by about 0.004), which
   would shrink every "− `fa1`" column but not the ordering.
 
-## Route arms rerun on OB/OB_F (stage `rerun`, submitted 2026-09-30 03:06 UTC)
+## Route arms rerun on ORB/ORB_F (stage `rerun`, submitted 2026-09-30 03:06 UTC)
 
 `r0`, `r1`, `r2`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf`, plus `fa1_s2`, the second
 `fa1` seed. All seven are running on Fir. Control for the route arms: `i1` (`i50ig7rf`, tail
@@ -2331,7 +2333,7 @@ seed gap.
   epochs from epoch 0 (lower is better). So the mask is live, and it does not trade train fit for
   val. This matches the window ladder above: restricting what the allocator reads underfits.
 - **A +0.005 tail would need a late gain this lineage has never shown.** It needs +0.0061 of
-  drift from epochs 16-25 to 54-63. Over 11 finished pairs (`fa1`, `mz1`, `i2`-`i4` on OB/OB_F;
+  drift from epochs 16-25 to 54-63. Over 11 finished pairs (`fa1`, `mz1`, `i2`-`i4` on ORB/ORB_F;
   `sd1`, `sm1`, `k1`, `k1_ema`, `m2`, `gm1` against `c0` on FT) that drift ranges from −0.0028 to
   +0.0053, mean +0.0008. The largest belongs to `sm1`, a null arm. On FT, `sd1` went from +0.0017
   to +0.0043, itself under the rule.

@@ -4,6 +4,17 @@
 
 ## Current handoff
 
+**Orbitrap labels renamed `OB` → `ORB`, `OB_F` → `ORB_F` (2026-10-01), uncommitted.** Same instruments, same embedding rows (the sorted order is kept). Configs, `spec_df.pkl` files and checkpoint hparams that name `OB` / `OB_F` are refused, like `FT`. Code, tests, 579 configs and the living docs are renamed; dated findings keep the labels they were measured with. The local NIST20, NIST23, Spectraverse (both files) and MSGYM `spec_df.pkl` are renamed (NIST20 md5 now `ce029870badc9e9e05935a4424f44c8d`, which the Fir submitters check). Next: replace the cluster copies with the local files (or run `preproc_scripts/dataset_migration/rename_orbitrap_inst_type.py --spec_df_fp` there), and patch each `OB`-era checkpoint before inference with `--ckpt_fp` (`i1`, `fa1`, `i3` and the other `*_ob_obf` runs). A W&B resume of an `OB`-era run may take `OB` back from W&B's saved config (`merge_wandb_config`) and then stop at the dataset guard, so let in-flight `OB`-era jobs finish on the current cluster checkout before syncing this code. [Rename note](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#7-instrument-labels-ob--ob_f-implemented-2026-09-28).
+
+**MASSter JEPA embedding auxiliary (2026-10-01), Step 1 built, not submitted.** An `i1` auxiliary term predicts a frozen DreaMS embedding of each measured spectrum (1% base-peak floor, the Gate 0 representation the user accepted). Built:
+- an audited train+val target table `data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz` (196,521 targets; local only, needs copying to Fir);
+- default-off `masster_jepa_*` code with tests;
+- arm configs `j1a`/`j1b`/`j2` in `config/masster/mh_jepa_2026_10_01/`, smoke-tested on real CUDA data.
+
+Gate 0 shows DreaMS sees `i1`'s errors, not that the target adds information beyond the peak loss; Gate 1 tests that. [Plan and Step 1 result](plans/masster/masster_jepa_embedding_plan.md#step-1-result-2026-10-01). Next: on the user's go-ahead, copy the table to Fir and submit the three arms against `i1`.
+
+**PCDL + NIST23 + Enveda-180 combined split (2026-10-01), prepared.** A global seed-42 80/10/10 InChIKey split covers all three processed sources with zero cross-part molecule overlap. The split is a per-source manifest; the current runner cannot yet load it as one dataset. [Plan and counts](plans/combined_pcdl_nist23_enveda_180_dataset.md). Next: implement bounded-memory multi-source loading and model-specific filters.
+
 **Spectraverse subformula filter screen (2026-10-01), stopped.** On all 488,797 spectra, instrument-tolerance filtering removes 26.2% of intensity, 15.2% of original base peaks, and empties 15,074 spectra. Widening to 2× recovers only 2.2 base-peak points on an 8,192-spectrum held-out sample; 10× still misses 7.5%. Na/K adducts are hardest hit. Temporary filtered configs were withdrawn; no run launched. [Finding and artifacts](findings/masster/spectraverse_subformula_filter_2026_10_01.md). Next: inspect Na/K peak chemistry and adduct labels before another filter arm.
 
 **EI performance audit (2026-10-01), complete.** Full-test Stein is 0.886845; the RASSP-filtered subset scores 0.899167. A 512-spectrum validation support oracle scores 0.99615 versus the model's 0.88703, locating the observed gap mainly in intensity allocation. Simple output power and mass tilts did not help. Next: establish a matched RASSP evaluation and read the prepared e2/e3/e4 intensity arms on both cosine and Stein; no new training has run. [Finding and priorities](findings/masster/masster_ei_performance_audit_2026_10_01.md).
@@ -180,11 +191,11 @@ configs were never submitted. Open to the user: D2 (template-subset target, G0 s
 0.022). [Finding](findings/masster/masster_smarts_pathway_gates_2026_09_30.md),
 [plan](plans/masster/masster_smarts_pathway_plan.md).
 
-**Memorization-route arms rerun on OB/OB_F (2026-09-29); stage `rerun` running on Fir since
+**Memorization-route arms rerun on ORB/ORB_F (2026-09-29); stage `rerun` running on Fir since
 2026-09-30 03:06 UTC.** `r2`, `r1`, `r0`, `nl1`, `nl2` and `sd1` rebuilt on `i1` as `*_ob_obf` (the
 FT arm's keys only; upload off), plus `fa1_s2` as the second `fa1` seed. `cg1`, `mw30`, `mw10` and
 `mlp1` are also running. The 33 FT-label configs of the directory are removed (Git `8c52c6d3`); the
-submitter keeps only OB/OB_F stages. Mid-run, at epoch 25, the set-key mask `sd1` (`f3fu90zn`) is
+submitter keeps only ORB/ORB_F stages. Mid-run, at epoch 25, the set-key mask `sd1` (`f3fu90zn`) is
 −0.0011 against `i1`, inside the seed gap, with train and val loss both worse: not a pass.
 [Plan](plans/masster/masster_memorization_route_plan.md) ·
 [`sd1` read](plans/masster/masster_memorization_route_plan.md#mid-run-read-of-sd1-at-epoch-25-2026-09-30-utc-no-gain-from-masking-the-set-keys).
@@ -207,7 +218,7 @@ unseen tuning molecules only; the locked confirm read is reused selection data, 
 canonical-test read (user-approved) is added. Deviation: penalty strengths are offset-free
 (1%/10% of `L_uniform - L0`), since the Gaussian CE is negative. Stopped at A1 epoch 17 before
 any lock: raw tuning reads show the penalty acting like a temperature and the local term adding
-<= +0.001; no gate read exists. Cache arrays deleted (regenerable). Next: OB/OB_F reruns of the route-removal arms.
+<= +0.001; no gate read exists. Cache arrays deleted (regenerable). Next: ORB/ORB_F reruns of the route-removal arms.
 [Plan](plans/masster/masster_local_context_allocation_plan.md#implementation-and-execution-state-2026-09-29).
 
 **Exact structural alignment audit (2026-09-29); complete, insufficient measured coverage.**
@@ -437,11 +448,11 @@ O transfer in deprotonated N-phenylbenzamides; full product mapping and the exis
 gate come next. The hydroxamic NH rule already exists (weak §7 gate), correcting the older
 §6 rejection. [Literature note](notes/masster_excision_literature_2026_09_28.md).
 
-**NIST Orbitrap instruments: two CE scales, a MASSter Lumos bias, and new `OB` / `OB_F`
+**NIST Orbitrap instruments: two CE scales, a MASSter Lumos bias, and new `ORB` / `ORB_F`
 labels (2026-09-28); uncommitted. `i1` and `i2` are training on the relabelled NIST20.**
 
 - **Mid-run read (2026-09-28), one seed each, both running.**
-  - `i1_inst_ob_obf` (`i50ig7rf`) is `n4` unchanged on `OB` / `OB_F`. It leads `n4` at every
+  - `i1_inst_ob_obf` (`i50ig7rf`) is `n4` unchanged on `ORB` / `ORB_F`. It leads `n4` at every
     epoch: +0.021 val cosine over epochs 10-21, 5x the seed spread, at equal time per epoch.
     That is more than closing the Lumos gap alone would give (about +0.015).
   - `i2_qet_ob_obf` (`jshvk4gv`) is `n1` on the same data. The smooth-energy penalty
@@ -473,14 +484,15 @@ labels (2026-09-28); uncommitted. `i1` and `i2` are training on the relabelled N
   raw instrument labels), precursor bias +0.092, none on train. Relabelling the input at
   inference fails.
 - **Implemented.**
-  - `inst_type` is `OB` (Elite, Velos, unnamed Orbitraps) or `OB_F` (Orbitrap Fusion), via
+  - `inst_type` is `ORB` (Elite, Velos, unnamed Orbitraps) or `ORB_F` (Orbitrap Fusion), via
     `parse_inst_info` and `preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py`.
   - Local NIST23 and NIST20 are relabelled from their raw MSP instrument fields (backups kept).
     NIST20's first, inferred relabel was 0.69% wrong and was replaced. Local Spectraverse and
-    MSGYM name no Orbitrap model and are all `OB`; their configs no longer list `OB_F`. `FT` is
+    MSGYM name no Orbitrap model and are all `ORB`; their configs no longer list `ORB_F`. `FT` is
     refused in configs and data.
   - `01_prepare_df.py` and the migration read `.msp`, `.msp.gz` or `.zip` directly.
   - 572 configs, the code tables and 18 eval scripts are migrated.
+  - Renamed `ORB` / `ORB_F` on 2026-10-01 (the current handoff above).
   - 22 migration tests; the full suite passes. A 2-epoch smoke of `n4` exits 0.
 - **Next:**
   - Run the migration on the cluster copies (NIST20 needs `data/raw/nist_20/nist_20_hr_msms.zip`
@@ -1082,7 +1094,7 @@ peaked at 23.3 GB RSS plus swap on this workstation. Next: decide whether Enveda
 NIST/MSGYM or alone, then write the first config.
 [Finding](findings/enveda_180_dataset_2026_09_25.md).
 
-**MASSter exports per-peak fragment annotation (2026-09-25); uncommitted.** It uses the same
+**MASSter exports per-peak fragment annotation (2026-09-25); committed in `4e29da7c`.** It uses the same
 columns and flags as FraGNNet (`--return_formula_str`, `--return_cc_hash`): a neutral formula
 plus adduct per peak, P(n|f), and an atom bitmask per fragment.
 
@@ -2163,8 +2175,9 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   (2026-09-25), documentation only. It asks whether support, the low-intensity tail and fragment
   annotations rank MassSpecGym candidates better than cosine. Step 1 runs on `ll04i00m` over the
   9,734 `[M+H]+` val queries with a CE (the `ms_gym_benchmark_1_5` val split), needs no annotation
-  columns, and gates the rest. No MSGYM retrieval scorer exists yet. Next: write it and run cosine
-  on a 200-query sample.
+  columns, and gates the rest. No MSGYM retrieval scorer exists yet. Next: re-confirm `ll04i00m`'s
+  0.5713 MSGYM test cosine under current code, then write the scorer and run cosine on a
+  200-query sample.
 - [Energy-based spectrum reranking](plans/energy_based_spectrum_reranking_plan.md) is a proposed
   shared design of record with a FraGNNet anchor (2026-09-13). Next: reconcile the prior correction
   null, verify export with `--min_intensity -1`, and require oracle excess over matched random pools

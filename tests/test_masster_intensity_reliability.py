@@ -15,7 +15,7 @@ def test_census_flags_identical_copies_without_claiming_independence():
     ):
         rows.append(
             {"spec_id": spec_id, "mol_id": mol_id, "peaks": peaks,
-                 "prec_type": "[M+H]+", "inst_type": "OB",
+                 "prec_type": "[M+H]+", "inst_type": "ORB",
                  "frag_mode": "HCD", "dset": "nist20_hr",
                  "dset_spec_id": str(spec_id), "col_gas": "N2",
                  "res": 2, "ce_type": "single", "ace": 20.0,
@@ -35,7 +35,7 @@ def test_census_flags_identical_copies_without_claiming_independence():
 def test_census_rejects_primary_molecule_leakage():
     spectra = pd.DataFrame(
         [{"spec_id": i, "mol_id": 1, "peaks": [], "prec_type": "[M+H]+",
-             "inst_type": "OB", "frag_mode": "HCD", "dset": "nist20_hr",
+             "inst_type": "ORB", "frag_mode": "HCD", "dset": "nist20_hr",
              "dset_spec_id": str(i), "col_gas": "N2", "res": 2,
              "ce_type": "single", "ace": 20.0, "nce": float("nan")} for i in (1, 2)]
     )

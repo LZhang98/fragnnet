@@ -91,7 +91,7 @@ def test_end_to_end_uses_train_only_and_disjoint_identity_pools(tmp_path):
                 "spec_id": i,
                 "mol_id": i,
                 "prec_type": "[M+H]+",
-                "inst_type": "OB",
+                "inst_type": "ORB",
                 "frag_mode": "HCD",
                 "nce": 30.0,
                 "ce_type": "single",

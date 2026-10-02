@@ -890,13 +890,55 @@ def parse_nce_str(ce_str: str) -> float:
 #   r"[\d]+[.]?[\d]*-[\d]+[.]?[\d]*": lambda x: (float(x.split("-")[0]),float(x.split("-")[1])),
 
 
+# Retired instrument-type labels. "FT" was split into the two Orbitrap labels on 2026-09-28, and
+# those were renamed from "OB" / "OB_F" to "ORB" / "ORB_F" on 2026-10-01. Relabelled data has
+# none of them, so a config table or list still keyed by one would silently stop applying to
+# Orbitrap spectra; configs, checkpoints and spec_dfs that name one are refused.
+RETIRED_INST_TYPES = ("FT", "OB", "OB_F")
+RETIRED_INST_TYPE_HELP = (
+    "Orbitraps are 'ORB' (Elite, Velos, unnamed) and 'ORB_F' (Orbitrap Fusion). 'OB' / 'OB_F' "
+    "were renamed on 2026-10-01: migrate a spec_df.pkl or checkpoint with "
+    "preproc_scripts/dataset_migration/rename_orbitrap_inst_type.py. 'FT' was split on "
+    "2026-09-28: relabel a spec_df.pkl with "
+    "preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py. See "
+    "docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md."
+)
+
+
+def find_retired_inst_type_refs(node: object, path: str = "") -> list[str]:
+    """Return the paths at which a config names a retired instrument type.
+
+    Args:
+        node: A resolved config or checkpoint hparams, or any part of one.
+        path: Dotted path of ``node`` inside the config.
+
+    Returns:
+        Paths of every dict key, list item or string value in ``RETIRED_INST_TYPES``.
+    """
+    if isinstance(node, str):
+        return [path] if node in RETIRED_INST_TYPES else []
+    found = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child = f"{path}.{key}" if path else str(key)
+            if key in RETIRED_INST_TYPES:
+                found.append(child)
+            found += find_retired_inst_type_refs(value, child)
+    elif isinstance(node, list):
+        for idx, value in enumerate(node):
+            found += find_retired_inst_type_refs(value, f"{path}[{idx}]")
+    return found
+
+
 def parse_inst_info(df: pd.Series) -> tuple[str, str]:
     # Orbitraps are labelled by instrument model: the Orbitrap Fusion family (NIST's "Orbitrap
-    # Fusion Lumos") is "OB_F"; every other Orbitrap, named (Elite, Velos) or not, is "OB". The
+    # Fusion Lumos") is "ORB_F"; every other Orbitrap, named (Elite, Velos) or not, is "ORB". The
     # two fragment differently at the same NCE, see
     # docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md. "FT" is retired.
 
     inst_type_str = df["inst_type"]
+    if inst_type_str in ("OB", "OB_F"):
+        raise ValueError(f"inst_type {inst_type_str!r} is retired. {RETIRED_INST_TYPE_HELP}")
     inst_str = df.get("inst", np.nan)
     frag_mode_str = df.get("frag_mode", np.nan)
     col_energy_str = df.get("col_energy", np.nan)
@@ -908,7 +950,7 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
         return "EI", "EI"
     if none_or_nan(inst_type_str):
         # resort to instrument
-        inst_map = {"Maxis II HD Q-TOF Bruker": "QTOF", "qToF": "QTOF", "Orbitrap": "OB"}
+        inst_map = {"Maxis II HD Q-TOF Bruker": "QTOF", "qToF": "QTOF", "Orbitrap": "ORB"}
         if none_or_nan(inst_str):
             inst_type = np.nan
         elif inst_str in inst_map:
@@ -918,26 +960,26 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
     else:
         inst_type_map = {
             "QTOF": "QTOF",
-            "FT": "OB",
-            "OB": "OB",
-            "OB_F": "OB_F",
+            "FT": "ORB",
+            "ORB": "ORB",
+            "ORB_F": "ORB_F",
             "Q-TOF": "QTOF",
-            "HCD": "OB",
+            "HCD": "ORB",
             "QqQ": "QQQ",
             "QqQ/triple quadrupole": "QQQ",
             "IT/ion trap": "IT",
-            "IT-FT/ion trap with FTMS": "OB",
+            "IT-FT/ion trap with FTMS": "ORB",
             "Q-ToF (LCMS)": "QTOF",
             "Bruker Q-ToF (LCMS)": "QTOF",
             "ESI-QTOF": "QTOF",
-            "ESI-QFT": "OB",
-            "ESI-ITFT": "OB",
+            "ESI-QFT": "ORB",
+            "ESI-ITFT": "ORB",
             "Linear Ion Trap": "IT",
             "LC-ESI-QTOF": "QTOF",
-            "LC-ESI-QFT": "OB",
+            "LC-ESI-QFT": "ORB",
             "LC-ESI-QQQ": "QQQ",
             "LC-Q-TOF/MS": "QTOF",
-            "LC-ESI-ITFT": "OB",
+            "LC-ESI-ITFT": "ORB",
             "LC-ESI-IT": "IT",
             "LC-QTOF": "QTOF",
             "qToF": "QTOF",
@@ -946,17 +988,17 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
             # "Bruker Q-ToF (LCMS)": "QTOF",
             "Unknown (LCMS)": "Other",
             "Ion Trap (LCMS)": "IT",
-            "Orbitrap (LCMS)": "OB",
+            "Orbitrap (LCMS)": "ORB",
             "FTICR (LCMS)": "Other",
-            "ITFT": "OB",
-            "Orbitrap": "OB",
-            "QFT": "OB",
-            "orbitrap": "OB",
+            "ITFT": "ORB",
+            "Orbitrap": "ORB",
+            "QFT": "ORB",
+            "orbitrap": "ORB",
             "qtof": "QTOF",
         }
         inst_type = inst_type_map.get(inst_type_str, "Other")
-    if inst_type == "OB" and isinstance(inst_str, str) and "Fusion" in inst_str:
-        inst_type = "OB_F"
+    if inst_type == "ORB" and isinstance(inst_str, str) and "Fusion" in inst_str:
+        inst_type = "ORB_F"
     # fragmentation mode
     if inst_type_str == "HCD" or (isinstance(col_energy_str, str) and "HCD" in col_energy_str):
         frag_mode = "HCD"

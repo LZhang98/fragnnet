@@ -1493,10 +1493,10 @@ def decide_operators(
 def _alias_ft(value):
     """Rename the historical single label without changing the learned embedding width."""
     if isinstance(value, dict):
-        return {("OB" if k == "FT" else k): _alias_ft(v) for k, v in value.items()}
+        return {("ORB" if k == "FT" else k): _alias_ft(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_alias_ft(v) for v in value]
-    return "OB" if isinstance(value, str) and value == "FT" else value
+    return "ORB" if isinstance(value, str) and value == "FT" else value
 
 
 def _identity(path: str) -> dict:
@@ -1894,7 +1894,7 @@ def run_checkpoint(args: argparse.Namespace) -> None:
     model = init_model_from_ckpt(args.checkpoint, config, device)
     precursor_index = list(model.precursor_types).index(args.precursor_type)
     dataset_config = copy.deepcopy(config)
-    dataset_config["spec_params"]["inst_types"] = ["OB", "OB_F"]
+    dataset_config["spec_params"]["inst_types"] = ["ORB", "ORB_F"]
     dataset = get_dataset_cls(config["model_type"])(split=args.split, **dataset_config)
     specs = dataset.spec_df.reset_index(drop=True)
     molecules = pd.read_pickle(config["mol_fp"]).set_index("mol_id")["mol"]
@@ -1939,7 +1939,7 @@ def run_checkpoint(args: argparse.Namespace) -> None:
                 if p.is_file()
             ],
             "config": config,
-            "label_alias": "FT -> OB; both observed OB/OB_F input indices set to zero",
+            "label_alias": "FT -> ORB; both observed ORB/ORB_F input indices set to zero",
         }
     )
     _write_provenance(output, provenance)
@@ -2164,7 +2164,7 @@ def main(argv: list[str] | None = None) -> None:
         "--split-map", default="output/smarts_pathway_gates_2026_09_29/split_map.csv"
     )
     parser.add_argument("--mol-df", default="data/proc/nist20/mol_df.pkl")
-    parser.add_argument("--inst-types", default="OB,OB_F")
+    parser.add_argument("--inst-types", default="ORB,ORB_F")
     parser.add_argument("--select", choices=("bearing", "random"), default="random")
     parser.add_argument("--motifs", default="none", help="none, all or comma-separated motif names")
     parser.add_argument("--operators", default="bridge", help="comma-separated: bridge, graft")

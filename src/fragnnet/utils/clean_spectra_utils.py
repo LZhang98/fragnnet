@@ -33,8 +33,8 @@ PRECURSOR_TYPE_ALIASES = {
 RDBE_COEFFICIENTS = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
 
 INSTRUMENT_TOLERANCES = {
-    "OB": {"relative": 1.0e-5, "min_mz": 200.0},
-    "OB_F": {"relative": 1.0e-5, "min_mz": 200.0},
+    "ORB": {"relative": 1.0e-5, "min_mz": 200.0},
+    "ORB_F": {"relative": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"relative": 2.0e-5, "min_mz": 750.0},
 }
 MERGE_METHODS = ("common_overlap", "naive_centroid")
@@ -892,7 +892,10 @@ def clean_spectra_with_stats(
         else:
             filtered_peaks = (
                 filter_subformula_peaks(
-                    peaks, formula, precursor_type, subformula_ppm,
+                    peaks,
+                    formula,
+                    precursor_type,
+                    subformula_ppm,
                     tolerance_da=subformula_tolerance_da,
                 )
                 for peaks, formula, precursor_type in zip(
@@ -991,7 +994,12 @@ def parse_args() -> argparse.Namespace:
         help="Keep only peaks matching precursor-compatible molecular subformulas",
     )
     parser.add_argument("--subformula-ppm", type=float, default=5.0)
-    parser.add_argument("--subformula-da", type=float, default=None)
+    parser.add_argument(
+        "--subformula-da",
+        type=float,
+        default=None,
+        help="Fixed absolute subformula matching tolerance in Da; overrides --subformula-ppm",
+    )
     parser.add_argument(
         "--subformula-inst-tol",
         action="store_true",

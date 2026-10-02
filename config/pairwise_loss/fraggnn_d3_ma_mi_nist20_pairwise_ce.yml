@@ -51,8 +51,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - 'IT'
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]

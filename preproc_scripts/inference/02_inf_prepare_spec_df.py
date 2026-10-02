@@ -5,7 +5,7 @@ This script takes a mol_df and configuration of experimental conditions (precurs
 collision energies, instrument types) and creates a spec_df file with spectrum metadata.
 
 Usage:
-    python 02_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types OB --output_dir output/
+    python 02_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types ORB --output_dir output/
     python 02_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 20.0eV --inst_types "QTOF" --merged_spectra true --output_dir output/
 """
 
@@ -185,7 +185,7 @@ def validate_inputs(prec_types: list, qtof_ces: list, ft_ces: list, inst_types: 
 
     # Log CE unit expectations for each instrument type
     for inst_type in inst_types:
-        if inst_type in ("OB", "OB_F"):
+        if inst_type in ("ORB", "ORB_F"):
             logger.info(f"Instrument type '{inst_type}' will use NCE (%) values: {ft_ces}")
             if len(ft_ces) == 0:
                 raise ValueError(
@@ -263,7 +263,7 @@ def get_config(
     for prec_type in prec_types:
         for inst_type in inst_types:
             # Choose appropriate collision energy values based on instrument type
-            if inst_type in ("OB", "OB_F"):
+            if inst_type in ("ORB", "ORB_F"):
                 energy_values = ft_ces_values
             elif inst_type == "QTOF":
                 energy_values = qt_ces_values
@@ -307,10 +307,10 @@ if __name__ == "__main__":
         epilog="""
         Examples:
             # Single condition (FT Orbitrap with NCE)
-            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types OB --output_dir output/
+            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types ORB --output_dir output/
 
             # Multiple conditions
-            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" "[M-H]-" --ft_ces 15.0NCE 25.0NCE 35.0NCE --inst_types OB QTOF --output_dir output/
+            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" "[M-H]-" --ft_ces 15.0NCE 25.0NCE 35.0NCE --inst_types ORB QTOF --output_dir output/
 
             # Merged spectra (one entry per molecule + condition type)
             python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 20.0eV --inst_types "QTOF" --merged_spectra true --output_dir output/
@@ -354,8 +354,8 @@ if __name__ == "__main__":
         "--inst_types",
         nargs="+",
         required=True,
-        choices=["OB", "OB_F", "QTOF", "IT", "Q", "TOF", "QQQ"],  # to do update this list if needed
-        help="List of instrument types (e.g., OB OB_F QTOF IT); OB/OB_F use --ft_ces",
+        choices=["ORB", "ORB_F", "QTOF", "IT", "Q", "TOF", "QQQ"],  # to do update this list if needed
+        help="List of instrument types (e.g., ORB ORB_F QTOF IT); ORB/ORB_F use --ft_ces",
     )
     parser.add_argument(
         "--output_dir",

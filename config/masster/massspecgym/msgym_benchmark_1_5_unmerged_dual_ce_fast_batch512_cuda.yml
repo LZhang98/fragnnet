@@ -114,7 +114,7 @@ spec_params:
   - '[M+H]+'
   inst_type: true
   inst_types:
-  - OB
+  - ORB
   - QTOF
   frag_mode: true
   frag_modes:
@@ -186,7 +186,7 @@ loss_batch_size: 64
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
-  OB:
+  ORB:
     rel: 1.0e-05
     min_mz: 200.0
   QTOF:

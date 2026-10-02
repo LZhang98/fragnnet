@@ -418,5 +418,5 @@ approved the untouched read and the cache clean-up on 2026-09-29.
   Resuming needs `run_extract.sh` again (about 45 min), then `fit` per producer, the untouched
   extraction and `report` (`run_fits_after_a1.sh`, `run_untouched_and_reports.sh`).
 
-Next: the user is redirecting to OB/OB_F reruns of the route-removal arms (complement pool,
+Next: the user is redirecting to ORB/ORB_F reruns of the route-removal arms (complement pool,
 masked set attention); resume or close this probe after that decision.

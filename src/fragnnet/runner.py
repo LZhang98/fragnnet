@@ -31,6 +31,7 @@ from fragnnet.dataset.data_sampler import (
     validate_bond_size_curriculum,
     validate_dag_size_curriculum,
 )
+from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
 from fragnnet.utils.pl_utils import (
@@ -256,42 +257,14 @@ def load_config(
             # here is not safe way to load, but I'll skip this issue now
             section[key_path[-1]] = yaml.safe_load(value)
 
-    # 3. Refuse the retired "FT" instrument type: relabelled data has no FT rows, so a table or
-    # list still keyed by FT would silently stop applying to Orbitrap spectra.
+    # 3. Refuse retired instrument types ("FT", "OB", "OB_F"): relabelled data has none, so a
+    # table or list still keyed by one would silently stop applying to Orbitrap spectra.
     retired = find_retired_inst_type_refs(config_d)
     if retired:
         raise ValueError(
-            f"config names the retired instrument type 'FT' at {retired}. Orbitraps are 'OB' "
-            "(Elite, Velos, unnamed) or 'OB_F' (Orbitrap Fusion) since 2026-09-28; see "
-            "docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md."
+            f"config names a retired instrument type at {retired}. {RETIRED_INST_TYPE_HELP}"
         )
     return config_d
-
-
-def find_retired_inst_type_refs(node: object, path: str = "") -> list[str]:
-    """Return the config paths that name the retired ``"FT"`` instrument type.
-
-    Args:
-        node: A resolved config, or any part of one.
-        path: Dotted path of ``node`` inside the config.
-
-    Returns:
-        Paths of every dict key or list item equal to ``"FT"``.
-    """
-    found = []
-    if isinstance(node, dict):
-        for key, value in node.items():
-            child = f"{path}.{key}" if path else str(key)
-            if key == "FT":
-                found.append(child)
-            found += find_retired_inst_type_refs(value, child)
-    elif isinstance(node, list):
-        for idx, value in enumerate(node):
-            if value == "FT":
-                found.append(f"{path}[{idx}]")
-            else:
-                found += find_retired_inst_type_refs(value, f"{path}[{idx}]")
-    return found
 
 
 def init_dataset(config_d: dict, splits: Sequence[str] = ("train", "val")) -> tuple:

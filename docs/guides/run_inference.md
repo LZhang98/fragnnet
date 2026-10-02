@@ -1,6 +1,6 @@
 # FraGNNet Inference
 
-> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-09-25
+> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-10-01
 >
 > How to run inference end to end.
 
@@ -180,7 +180,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
 - `--prec_types`: Precursor types. Choices: `[M+H]+`, `[M-H]-` (required)
 - `--qtof_ces`: Collision energies in eV for QToF instruments (e.g., `10.0eV 20.0eV`)
 - `--ft_ces`: Normalized collision energies for Orbitrap (e.g., `15.0NCE 25.0% 30.0eV`)
-- `--inst_types`: Instrument types (required). The current preparation logic supports `OB` (Orbitrap Elite, Velos or unnamed), `OB_F` (Orbitrap Fusion) and `QTOF`; other parser choices are not implemented. `FT` was retired on 2026-09-28.
+- `--inst_types`: Instrument types (required). The current preparation logic supports `ORB` (Orbitrap Elite, Velos or unnamed), `ORB_F` (Orbitrap Fusion) and `QTOF`; other parser choices are not implemented. `FT` was retired on 2026-09-28, and `OB` / `OB_F` were renamed `ORB` / `ORB_F` on 2026-10-01.
 
 **Output Options**:
 - `--output_dir`: Output directory for `spec_df.pkl.gz` and `spec_df_config.json`
@@ -194,7 +194,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 25.0NCE \
-  --inst_types OB \
+  --inst_types ORB \
   --output_dir output/
 ```
 
@@ -204,7 +204,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" "[M-H]-" \
   --ft_ces 15.0NCE 25.0NCE 35.0NCE \
-  --inst_types OB QTOF \
+  --inst_types ORB QTOF \
   --output_dir output/
 ```
 
@@ -235,7 +235,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path output/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 15.0% 25.0% 35.0% \
-  --inst_types OB \
+  --inst_types ORB \
   --output_dir output/
 ```
 
@@ -245,7 +245,7 @@ Different instrument types use different collision energy units:
 
 | Instrument Type | Unit | Field Used | Description |
 |-----------------|------|------------|-------------|
-| OB, OB_F (Orbitrap) | NCE (%) | `nce` | Normalized Collision Energy |
+| ORB, ORB_F (Orbitrap) | NCE (%) | `nce` | Normalized Collision Energy |
 | QTOF            | eV      | `ace` | Absolute Collision Energy |
 
 Although the CLI parser also lists `IT`, `Q`, `TOF`, and `QQQ`, collision-energy combination
@@ -289,7 +289,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --prec_types "[M+H]+" "[M-H]-" \
   --ft_ces 15.0NCE 25.0NCE 35.0NCE \
   --qtof_ces 20.0eV 30.0eV \
-  --inst_types OB QTOF \
+  --inst_types ORB QTOF \
   --output_dir data/inference
 ```
 
@@ -308,7 +308,7 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
   --mol_df_path data/inference/mol_df.pkl.gz \
   --prec_types "[M+H]+" \
   --ft_ces 10eV 20eV 30eV \
-  --inst_types OB \
+  --inst_types ORB \
   --output_dir data/inference
 ```
 
@@ -421,8 +421,8 @@ All indices are rebased per spectrum, so every lookup below is local:
 Peak `k`'s formula is `pred_formula_strs[frag_formula_peak_idxs[k]]`. Its fragment is the
 `argmax` of `pred_formula_node_probs` over the joint rows carrying that formula — which is
 why the annotation needs P(n|f): one formula is generally explained by several DAG nodes
-(4 on average, see below). Resolve the cc bitmask to a SMILES against the parent molecule
-downstream.
+(4 on average, see below). To resolve the cc bitmask to a SMILES against the parent molecule,
+use [`export_annotated_mgf.py`](#4-scriptsmiscexport_annotated_mgfpy).
 
 **The formula string is the neutral fragment, not the ion.** `pred_formula_adducts` carries
 the precursor delta that turns it into the observed ion, so a peak reads as
@@ -589,12 +589,59 @@ the spec_ids already present in its own output dir. Output goes to
 `${OUT_DP}/shard_<task>/`, where `OUT_DP` carries the model tag (the W&B run id, or the
 checkpoint basename) so two models never share a directory and resume across them.
 
+### 4. `scripts/misc/export_annotated_mgf.py`
+
+Post-processing step: turns one or more `run_inference.py` output directories into an MGF whose
+peaks carry their fragment, plus a plain MGF and a fragment table. It needs the annotation
+columns (`--return_formula_str True --return_cc_hash True`, with `pred_formula_node_probs` in
+`--output_subset` or `--output_everything True`) and the same `mol_df` / `spec_df` given to
+inference.
+
+```bash
+python scripts/misc/export_annotated_mgf.py \
+  --pred_dp output/run/pred_cv0 output/run/pred_cv1 \
+  --mol_fp output/run/mol_df.pkl.gz --spec_fp output/run/spec_df.pkl.gz \
+  --output_fp output/run/predictions.mgf [--min_rel_intensity 0.01]
+```
+
+Each kept peak is annotated with the argmax-P(n|f) fragment of its formula row:
+
+```
+137.0597 1000.0 "[CH2]c1ccc(O)c(OC)c1"
+144.0478 174.7 "CC1=C(CCO)SC=[N+]1 +H"
+```
+
+- **SMILES**: the precursor's own atoms with their parent hydrogen counts and formal charges;
+  atoms at a cut bond are radicals, and a ring that loses an atom is written in Kekulé form.
+- **Delta**: ion formula (`pred_formula_strs` + `pred_formula_adducts`) minus the fragment's
+  atoms, in the signed adduct notation (`+H`, `-H2`, `+Na`, `-H+Na`; empty for none). It folds
+  the hydrogen shift and the precursor adduct together, so an empty-adduct (folded) row reads
+  correctly. The ion has the precursor's charge.
+- **Validation**: the delta's heavy atoms must equal the precursor's CRF or CMF delta, or the
+  script raises. On SPV checkpoint `ggifzj9m`, SMILES + delta reproduced every predicted m/z to
+  the 4-decimal rounding (5e-5 Da): 747 `[M]+` thiazolium rows and 31,448 `[M+H]+` /
+  `[M+Na]+` / `[M-H]-` rows at `--min_intensity 0`, including CMF and folded rows.
+- **Several `--pred_dp`** (for example fold checkpoints) are averaged: each spectrum is
+  sum-normalized per directory, peaks are matched by 4-decimal m/z, and fragment shares use the
+  same weights. Intensities are rescaled to base peak 1000; peaks under `--min_rel_intensity`
+  of the base peak (default 1%) are dropped.
+- **Header**: `TITLE` (`<input_mol_id>_<prec_type>_<inst>_<CE>`), `SPECTRUM_ID`, `PEPMASS`,
+  `CHARGE`, `ION`, `IONMODE`, `SMILES`, `FORMULA`, `INSTRUMENT_TYPE`, `FRAGMENTATION_MODE` (`HCD`
+  for ORB/ORB_F, `CID` for QTOF, else the spec_df `frag_mode`), `COLLISION_ENERGY` with its unit
+  (`% NCE` on Orbitraps, `eV` elsewhere, converted with the dataset's NCE/eV rule when only the
+  other is given) and `SOURCE`.
+
+Outputs: `<name>.mgf` (annotated), `<name>_plain.mgf` (two-column peak lines; pyteomics and
+matchms read a third peak column as a charge and reject the annotated file) and
+`<name>_annotations.csv` (every contributing fragment of every kept peak, with `share` and
+`fragment_rank`; rank 0 is the MGF label).
+
 ## Workflow Overview
 
 1. **Prepare Molecules**: Use `01_inf_prepare_mol_df.py` to create the molecule dataframe from SMILES.
 2. **Prepare Spectra**: Use `02_inf_prepare_spec_df.py` to create the spectrum dataframe with experimental conditions.
 3. **Run Inference**: Use `scripts/run_inference.py` to generate fragment DAGs if needed and save predictions.
-4. **Analyze Results**: Process the prediction outputs for your analysis.
+4. **Export**: Use `scripts/misc/export_annotated_mgf.py` for an MGF with per-peak fragment SMILES, or process the prediction outputs for your analysis.
 
 ## Important Notes
 
@@ -625,7 +672,7 @@ checkpoint basename) so two models never share a directory and resume across the
 
 ### Collision Energies
 
-- Orbitrap (`OB`, `OB_F`): Use NCE (%) values
+- Orbitrap (`ORB`, `ORB_F`): Use NCE (%) values
 - QTOF/Q/TOF/QQQ: Use eV values
 - Each instrument type uses appropriate energy values automatically
 

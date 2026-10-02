@@ -50,12 +50,12 @@
 # epoch against i1.
 #
 # Base config follows: i1_inst_ob_obf.yml.
-# ARM i1_inst_ob_obf -- unmerged [M+H]+, n4 on the OB / OB_F instrument labels, 2026-09-28.
+# ARM i1_inst_ob_obf -- unmerged [M+H]+, n4 on the ORB / ORB_F instrument labels, 2026-09-28.
 # n4_nce_fourier.yml unchanged except W&B naming. The difference is the data: data/proc/nist20/
-# spec_df.pkl relabelled FT -> OB / OB_F from the raw NIST20 MSP Instrument field (Elite and
-# Velos -> OB, Orbitrap Fusion Lumos -> OB_F). inst_types [OB, OB_F] and inst_type: true were
+# spec_df.pkl relabelled FT -> ORB / ORB_F from the raw NIST20 MSP Instrument field (Elite and
+# Velos -> ORB, Orbitrap Fusion Lumos -> ORB_F). inst_types [ORB, ORB_F] and inst_type: true were
 # already in n4, but every row was FT, so n4's instrument embedding had one class and carried
-# nothing. Here it has two (OB = 0, OB_F = 1).
+# nothing. Here it has two (ORB = 0, ORB_F = 1).
 #
 # QUESTION. Does an instrument input remove c0's Lumos under-fragmentation? c0 val, [M+H]+, raw
 # labels: Elite cosine 0.7450 / precursor-fraction bias -0.0008 (36,864 spectra); Lumos 0.6880 /
@@ -66,8 +66,9 @@
 #
 # DATA IDENTITY: spec_df.pkl is the only NIST20 spec_df; no FT copy is kept. It is the local
 # file after the 2026-09-28 relabel (preproc_scripts/README.md, "Relabelling existing Orbitrap
-# spectra"), uploaded over each cluster copy, md5 bdc009bbeaf6a38d126326d127630cad: OB 778,672
-# (712,969 by instrument field + 65,703 unnamed MoNA), OB_F 251,326, 212,366 groups. It pairs
+# spectra"), uploaded over each cluster copy, md5 bdc009bbeaf6a38d126326d127630cad; renamed to
+# ORB / ORB_F on 2026-10-01, md5 ce029870badc9e9e05935a4424f44c8d: ORB 778,672
+# (712,969 by instrument field + 65,703 unnamed MoNA), ORB_F 251,326, 212,366 groups. It pairs
 # with mol_df.pkl md5 be4b5794040e68f661e6ff165dacb3b0 and data/split/nist20_inchikey
 # (train_ids.csv d8a07ccfcb7e4d80128b441bef7daca9, val_ids.csv 7c870661872e1a2c0ef80a25d2ff44da).
 # group_id is not read here (merge, group_sampler off); splits select by spec_id.
@@ -211,8 +212,8 @@ spec_params:
   - '[M+H]+'
   inst_type: true
   inst_types:
-  - OB
-  - OB_F
+  - ORB
+  - ORB_F
   frag_mode: false
   frag_modes: []
   preprocess: true
@@ -298,10 +299,10 @@ loss_batch_size: 64
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
-  OB:
+  ORB:
     rel: 1.0e-05
     min_mz: 200.0
-  OB_F:
+  ORB_F:
     rel: 1.0e-05
     min_mz: 200.0
   QTOF:

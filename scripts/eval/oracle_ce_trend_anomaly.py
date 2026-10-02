@@ -86,7 +86,7 @@ def get_args() -> argparse.Namespace:
         default=3,
         help="Minimum distinct CE values in a group to fit a trend.",
     )
-    parser.add_argument("--inst_types", nargs="+", default=["OB", "OB_F", "QTOF"])
+    parser.add_argument("--inst_types", nargs="+", default=["ORB", "ORB_F", "QTOF"])
     parser.add_argument(
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )

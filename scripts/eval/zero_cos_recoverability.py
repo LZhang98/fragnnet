@@ -68,7 +68,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--mol_fp", default="data/proc/nist20/mol_df.pkl")
     parser.add_argument("--classyfire_fp", default="data/classyfire/nist20_mol_classyfire.pkl")
     parser.add_argument("--out_dp", required=True)
-    parser.add_argument("--inst_types", nargs="+", default=["OB", "OB_F", "QTOF"])
+    parser.add_argument("--inst_types", nargs="+", default=["ORB", "ORB_F", "QTOF"])
     parser.add_argument(
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )

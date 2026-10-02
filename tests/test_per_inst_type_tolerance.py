@@ -604,10 +604,10 @@ class TestInstTolMapConstruction:
         return tols, min_mzs
 
     def test_ft_qtof_it_standard_mapping(self):
-        """sorted(["OB","QTOF","IT"]) = ["OB","IT","QTOF"] → FT=0, IT=1, QTOF=2."""
+        """sorted(["ORB","QTOF","IT"]) = ["ORB","IT","QTOF"] → FT=0, IT=1, QTOF=2."""
         tols, min_mzs = self._build_lookup(
-            ["OB", "QTOF", "IT"],
-            {"OB": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}},
+            ["ORB", "QTOF", "IT"],
+            {"ORB": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}},
         )
         assert len(tols) == 3
         assert (tols[0], min_mzs[0]) == (1e-5, 200.0), "FT idx=0"
@@ -617,7 +617,7 @@ class TestInstTolMapConstruction:
     def test_unmapped_instrument_uses_global(self):
         """An instrument not in inst_type_loss_tol inherits the global tolerance."""
         tols, min_mzs = self._build_lookup(
-            ["OB", "QTOF", "IT"],
+            ["ORB", "QTOF", "IT"],
             {"QTOF": {"rel": 2e-5, "min_mz": 750.0}},
             global_tol=1e-5,
             global_min_mz=300.0,
@@ -628,23 +628,23 @@ class TestInstTolMapConstruction:
 
     def test_sort_order_is_alphabetical(self):
         """Input order of inst_types is irrelevant; indices follow alphabetical sort."""
-        # unsorted input: QTOF, OB, IT — sorted: IT=0, OB=1, QTOF=2
+        # unsorted input: QTOF, ORB, IT — sorted: IT=0, ORB=1, QTOF=2
         tols, min_mzs = self._build_lookup(
-            ["QTOF", "OB", "IT"],
+            ["QTOF", "ORB", "IT"],
             {
-                "OB": {"rel": 1e-5, "min_mz": 200.0},
+                "ORB": {"rel": 1e-5, "min_mz": 200.0},
                 "IT": {"rel": 3e-5, "min_mz": 100.0},
                 "QTOF": {"rel": 2e-5, "min_mz": 750.0},
             },
         )
         assert (tols[0], min_mzs[0]) == (3e-5, 100.0), "IT = idx 0 (first alphabetically)"
-        assert (tols[1], min_mzs[1]) == (1e-5, 200.0), "OB = idx 1"
+        assert (tols[1], min_mzs[1]) == (1e-5, 200.0), "ORB = idx 1"
         assert (tols[2], min_mzs[2]) == (2e-5, 750.0), "QTOF = idx 2"
 
     def test_all_unmapped_uses_global_everywhere(self):
         """When inst_type_loss_tol is empty, all entries get the global tolerance."""
         tols, min_mzs = self._build_lookup(
-            ["OB", "QTOF", "IT"],
+            ["ORB", "QTOF", "IT"],
             {},  # empty — simulates null config
             global_tol=5e-6,
             global_min_mz=150.0,
@@ -824,7 +824,7 @@ class TestInstTolScoresRequireConfig:
     default, so the broken combination is the one you get by not thinking about it.
     """
 
-    TOL = {"OB": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}}
+    TOL = {"ORB": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}}
 
     @staticmethod
     def _model(auxiliary_scores, inst_type_loss_tol):
@@ -866,11 +866,11 @@ def test_recall_and_weighted_recall_use_instrument_tolerance():
         sparse_cosine_similarity=True,
         auxiliary_scores=["recall", "wrecall", "precision"],
         inst_type_loss_tol={
-            "OB": {"rel": 1e-5, "min_mz": 200.0},
+            "ORB": {"rel": 1e-5, "min_mz": 200.0},
             "QTOF": {"rel": 2e-5, "min_mz": 750.0},
         },
     )
-    config["spec_params"] = {**config["spec_params"], "inst_types": ["OB", "QTOF"]}
+    config["spec_params"] = {**config["spec_params"], "inst_types": ["ORB", "QTOF"]}
     model = FraGNNetPL(**config)
     assert "spec_inst_type" in model.batch_metric_args
     metrics = model.metric_fn(

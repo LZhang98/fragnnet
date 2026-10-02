@@ -63,7 +63,7 @@ def test_metric_matches_production_with_native_dtypes_and_uncovered_truth():
 def test_reference_shuffle_preserves_values_and_masks_and_structure_ignores_labels():
     data = frame()
     row = pd.Series(
-        {"tanimoto": 0.3, "query_prec_mz": 60, "donor_prec_mz": 63, "nce": 60, "inst_type": "OB"}
+        {"tanimoto": 0.3, "query_prec_mz": 60, "donor_prec_mz": 63, "nce": 60, "inst_type": "ORB"}
     )
     st, labels, shuffled, mask = reference_features(data, data, row, "ion", 1e-6, 42)
     assert mask.tolist() == [1, 1, 1, 0]

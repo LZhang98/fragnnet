@@ -14,7 +14,7 @@ def fixture_data():
                 "spec_id": m * 100 + n,
                 "mol_id": m,
                 "nce": float(n),
-                "inst_type": "OB",
+                "inst_type": "ORB",
                 "prec_type": "[M+H]+",
                 "frag_mode": "HCD",
                 "ce_type": "single",
@@ -57,7 +57,7 @@ def test_tie_break_replicates_and_acquisition_exclusion():
     pairs, _ = select_banded_pairs(spectra, anchor, [[10, 40]])
     assert pairs.nce.eq(20).all()  # 20 and 30 are equidistant from 25.
     assert 999 not in pairs.donor_spec.values
-    spectra.loc[spectra.spec_id == 310, "inst_type"] = "OB_F"
+    spectra.loc[spectra.spec_id == 310, "inst_type"] = "ORB_F"
     with pytest.raises(ValueError, match="acquisition"):
         select_banded_pairs(spectra, anchor, [[0, 20]])
 

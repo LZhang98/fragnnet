@@ -12,7 +12,7 @@ worst-predicted floor. The model predicts a fixed embedding of the measured spec
 molecule and context representation. The term is added to the `i1` loss, the predictor is dropped
 at inference, and weight 0 must reproduce `i1` exactly.
 
-- **Base and control.** `i1_inst_ob_obf` (`i50ig7rf`, NIST20 `[M+H]+`, `OB`/`OB_F`, 64 epochs,
+- **Base and control.** `i1_inst_ob_obf` (`i50ig7rf`, NIST20 `[M+H]+`, `ORB`/`ORB_F`, 64 epochs,
   tail 0.7607), config `config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml`.
 - **Primary read.** Tail mean of `val_cos_sim_0.01_epoch/mean` over epochs 54-63, against `i1`.
   The seed spread is 0.0042, so a single-seed delta below +0.005 is unresolved
@@ -71,7 +71,7 @@ points follow the deficit: the shared encoder, and the allocator where 64% of th
    pretrained weights only. Check whether any fine-tuned DreaMS head saw NIST20 labels; if one did,
    it is excluded. Verify DreaMS's peak cap, precursor input and ion-mode coverage; `i1` is
    `[M+H]+` only.
-2. **Embed.** Write `.mgf` files and embed: all NIST20 `OB`/`OB_F` `[M+H]+` measured spectra, plus
+2. **Embed.** Write `.mgf` files and embed: all NIST20 `ORB`/`ORB_F` `[M+H]+` measured spectra, plus
    `i1`@59 predicted val spectra (export with inference if no full-val export exists; check the
    workstation for other training runs first). Store a side table keyed by
    `spec_id` under `data/proc/nist20/`, not a new `spec_df`: one `spec_df` per dataset.
@@ -122,7 +122,7 @@ p is a one-sided Mann-Whitney test.
 - **Scale.** Replicates are 0.024 apart, `i1`'s predictions 0.17 (1% floor), different molecules
   0.85. DreaMS separates NIST20 Orbitrap molecules cleanly, so there is no domain-shift failure
   and `j3`'s trigger does not fire.
-- **Instrument.** The same on `OB` and `OB_F` (ρ −0.769 and −0.755, 1% floor).
+- **Instrument.** The same on `ORB` and `ORB_F` (ρ −0.769 and −0.755, 1% floor).
 - **Floor noise.** Replicates of floor molecules are twice as far apart as overall (0.045, 26
   pairs). That is still a tenth of the floor's prediction distance, so in DreaMS space the floor
   errors are not replicate noise.
@@ -326,8 +326,9 @@ Gate 1 approved by the user (2026-10-01) and prepared, not yet submitted.
 
 - **Launcher.** `scripts/manual_slurm/fir/submit_masster_jepa.sh gate1` only generates scripts.
   It checks that each config matches `i1` and that the Fir checkout has the JEPA code, the table
-  at md5 `576c115361781cf3f8b37df1d96fbad8`, the OB / OB_F `spec_df.pkl`
-  (`bdc009bbeaf6a38d126326d127630cad`) and the wheels.
+  at md5 `576c115361781cf3f8b37df1d96fbad8`, the ORB / ORB_F `spec_df.pkl`
+  (`ce029870badc9e9e05935a4424f44c8d`, the 2026-10-01 rename of `bdc009bb…`; same peaks, so
+  the table still matches) and the wheels.
 - **Jobs.** `msh_jepa_j1a_encoder_w0p1`, `msh_jepa_j1b_encoder_w1` and `msh_jepa_j2_allocator_w1`
   on `fir:h100-3g.40gb` for 5:00:00.
 - **Blocker.** Fir needs MFA, so the agent cannot copy or submit non-interactively.

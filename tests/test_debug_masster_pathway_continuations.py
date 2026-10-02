@@ -620,7 +620,7 @@ def _tiny_run_files(tmp_path):
             "spec_id": 10 * m + k,
             "mol_id": m,
             "prec_type": "[M-H]-",
-            "inst_type": "OB",
+            "inst_type": "ORB",
             "dset": "nist20_hr",
             "peaks": peaks,
         }
@@ -665,7 +665,7 @@ def test_model_free_run_selects_bearing_molecules_and_freezes_families(tmp_path)
     ec.main(_tiny_args(tmp_path, "train", "train.pkl"))
     frame = pd.read_pickle(tmp_path / "train.pkl")
     universe = pd.read_csv(tmp_path / "train.universe.csv")
-    # Molecule 3 has no motif; the QTOF spectrum is outside the OB/OB_F stratum.
+    # Molecule 3 has no motif; the QTOF spectrum is outside the ORB/ORB_F stratum.
     assert set(frame.mol_id) == {1}
     assert universe.set_index("mol_id").bearing.to_dict() == {1: True, 3: False}
     assert universe.set_index("mol_id").n_spectra.to_dict() == {1: 3, 3: 3}

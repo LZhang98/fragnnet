@@ -44,8 +44,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -121,8 +121,8 @@ ce_pair_loss_weight: 0.0
 # Use acquisition-aware peak matching for the loss and candidate-support metrics.
 # Unlisted instrument types retain the global 10 ppm / 0.002 Da-floor fallback.
 inst_type_loss_tol:
-  OB: {rel: 1.0e-5, min_mz: 200.0}
-  OB_F: {rel: 1.0e-5, min_mz: 200.0}
+  ORB: {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 # 4. Match the merged run's physical and effective batch sizes.

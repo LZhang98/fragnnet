@@ -40,10 +40,10 @@ from fragnnet.utils.frag_utils import get_node_feats, th_long_to_mask
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
 INST_TOL: dict[str, dict] = {
-    "OB": {"rel": 1e-5, "min_mz": 200.0},  # 10 ppm, floor 0.002 Da
-    "OB_F": {"rel": 1e-5, "min_mz": 200.0},
+    "ORB": {"rel": 1e-5, "min_mz": 200.0},  # 10 ppm, floor 0.002 Da
+    "ORB_F": {"rel": 1e-5, "min_mz": 200.0},
     "QTOF": {"rel": 2e-5, "min_mz": 750.0},  # 20 ppm, floor 0.015 Da
-    "IT": {"rel": 1e-5, "min_mz": 200.0},  # same as OB
+    "IT": {"rel": 1e-5, "min_mz": 200.0},  # same as ORB
 }
 
 
@@ -168,7 +168,7 @@ def process_b_idx(
     mol_smiles = data["mol_smiles"][b_idx]
     b_prec_type = spec_prec_type_str[b_idx]
     b_inst_idx = spec_inst_type[b_idx].item()
-    b_inst_type = idx_to_inst_type.get(b_inst_idx, "OB")
+    b_inst_type = idx_to_inst_type.get(b_inst_idx, "ORB")
     b_mol = mol_from_smiles(mol_smiles)
 
     frag_pyg = data["frag_pyg"][b_idx]

@@ -44,8 +44,8 @@
 # 5. min_epochs/max_epochs 20/20. 1,212 steps/epoch at batch 512, so 24,240 steps, matching the
 #    MSGYM arm's 24,832. MSGYM ran 0.51 s/step on an H100 (1imawkx1, 98.9 s/epoch), so about
 #    10-11 min/epoch here plus validation: roughly 4 h, unmeasured. lr_total_steps 24,240.
-# 6. inst_types keep OB/OB_F next to QTOF and frag_modes keep HCD next to CID, as in the MSGYM
-#    arm, so the checkpoint can later score mixed data; the OB/OB_F/HCD rows stay untrained.
+# 6. inst_types keep ORB/ORB_F next to QTOF and frag_modes keep HCD next to CID, as in the MSGYM
+#    arm, so the checkpoint can later score mixed data; the ORB/ORB_F/HCD rows stay untrained.
 # 7. upload_checkpoints true (MSGYM arm: false), so the baseline checkpoint is kept on W&B.
 #
 # READ: val_cos_sim_0.01 tail mean (epochs 16-19) and best, per polarity. No seed replicate
@@ -107,8 +107,8 @@ spec_params:
   - '[M-H]-'
   inst_type: true
   inst_types:
-  - OB
-  - OB_F
+  - ORB
+  - ORB_F
   - QTOF
   frag_mode: true
   frag_modes:
@@ -189,10 +189,10 @@ loss_batch_size: 64
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
-  OB:
+  ORB:
     rel: 1.0e-05
     min_mz: 200.0
-  OB_F:
+  ORB_F:
     rel: 1.0e-05
     min_mz: 200.0
   QTOF:

@@ -30,14 +30,14 @@ H_TRANSFER = 4     # h_delta = 0, ±1, ±2, ±3, ±4
 # Per-instrument-type tolerance: rel (ppm as fraction) + min_mz floor
 # tol(mz) = rel * max(mz, min_mz)
 INST_TOL: dict[str, dict] = {
-    "OB":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
-    "OB_F":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
+    "ORB":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
+    "ORB_F":   {"rel": 1e-5, "min_mz": 200.0},   # 10 ppm, floor 0.002 Da
     "QTOF": {"rel": 2e-5, "min_mz": 750.0},   # 20 ppm, floor 0.015 Da
     "IT":   {"rel": 1e-5, "min_mz": 200.0},   # same as global default
 }
 
 PREC_TYPES = {"[M+H]+", "[M-H]-", "[M+Na]+", "[M+K]+", "[M+NH4]+", "[M+Cl]-"}
-INST_TYPES  = {"OB", "OB_F", "QTOF", "IT"}
+INST_TYPES  = {"ORB", "ORB_F", "QTOF", "IT"}
 FRAG_MODES  = {"CID", "HCD"}
 
 SAMPLE_N    = 2000

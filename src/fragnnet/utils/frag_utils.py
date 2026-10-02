@@ -782,12 +782,12 @@ def compute_frag_peak_stats(
         allowed_h_transfer (_type_): _description_
         tolerance (float, optional): _description_. Defaults to 0.01.
         is_ppm (bool, optional): _description_. Defaults to False.
-        inst_type (str, optional): Instrument type for this spectrum (e.g. "OB", "QTOF").
+        inst_type (str, optional): Instrument type for this spectrum (e.g. "ORB", "QTOF").
             Used to look up a per-instrument tolerance in ``inst_type_tol``. Ignored if
             ``inst_type_tol`` is None or does not contain this key. Defaults to None.
         inst_type_tol (dict, optional): Per-instrument tolerance overrides, same convention
             as the ``inst_type_loss_tol`` training config (e.g.
-            ``{"OB": {"rel": 1.0e-5, "min_mz": 200.0}, "QTOF": {"rel": 2.0e-5, "min_mz": 750.0}}``).
+            ``{"ORB": {"rel": 1.0e-5, "min_mz": 200.0}, "QTOF": {"rel": 2.0e-5, "min_mz": 750.0}}``).
             When ``inst_type`` is present in this dict, the effective m/z tolerance for each
             peak is ``rel * max(peak_mz, min_mz)``, overriding ``tolerance``/``is_ppm`` for
             that spectrum. Defaults to None (falls back to the global ``tolerance``/``is_ppm``

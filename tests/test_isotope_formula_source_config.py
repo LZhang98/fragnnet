@@ -41,14 +41,14 @@ def test_default_source_is_none():
     """The feature ships off, and off means the m/z-scaled proxy, not a DAG read."""
     dataset = _dataset()
 
-    assert dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "OB") is None
+    assert dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "ORB") is None
 
 
 def test_subformula_source_needs_no_dag():
     """The point of the source: a composition for every model, with no per-molecule artifact."""
     dataset = _dataset(remove_isotope_formula_source="subformula")
 
-    source = dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "OB")
+    source = dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "ORB")
 
     assert source is not None
     assert {"C": 7, "H": 5, "O": 2} in source(121.02841)
@@ -58,11 +58,11 @@ def test_subformula_window_defaults_to_instrument_tolerance():
     """Blank tolerance means FT's 4 mDa here; QTOF's wider window admits more candidates."""
     dataset = _dataset(remove_isotope_formula_source="subformula")
 
-    ft_source = dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "OB")
+    ft_source = dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "ORB")
     explicit_source = _dataset(
         remove_isotope_formula_source="subformula",
         remove_isotope_subformula_mz_tol=0.05,
-    )._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "OB")
+    )._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "ORB")
 
     assert len(explicit_source(121.02841)) > len(ft_source(121.02841))
 
@@ -71,19 +71,19 @@ def test_subformula_source_falls_back_when_the_adduct_is_unsupported():
     """An adduct the budgets do not cover costs the composition, not the spectrum."""
     dataset = _dataset(remove_isotope_formula_source="subformula")
 
-    assert dataset._get_isotope_formula_source(1, "C9H8O4", "[M+Xx]+", "OB") is None
+    assert dataset._get_isotope_formula_source(1, "C9H8O4", "[M+Xx]+", "ORB") is None
 
 
 def test_subformula_source_needs_a_formula():
     dataset = _dataset(remove_isotope_formula_source="subformula")
 
-    assert dataset._get_isotope_formula_source(1, None, "[M+H]+", "OB") is None
+    assert dataset._get_isotope_formula_source(1, None, "[M+H]+", "ORB") is None
 
 
 def test_dag_source_without_a_dag_directory_is_none():
     dataset = _dataset(remove_isotope_formula_source="dag")
 
-    assert dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "OB") is None
+    assert dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "ORB") is None
 
 
 def test_dag_source_reads_the_cached_dag_arrays():
@@ -93,7 +93,7 @@ def test_dag_source_reads_the_cached_dag_arrays():
         np.array(["C7H5O2"], dtype=object),
     )
 
-    source = dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "OB")
+    source = dataset._get_isotope_formula_source(1, "C9H8O4", "[M+H]+", "ORB")
 
     assert source(121.02841) == [{"C": 7, "H": 5, "O": 2}]
 
@@ -166,7 +166,7 @@ def test_subformula_source_removes_an_isotope_peak_end_to_end():
             "group_id": 1,
             "mol_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "OB",
+            "inst_type": "ORB",
             "prec_mz": 143.179,
         }
     )
@@ -277,7 +277,7 @@ def test_protect_known_mono_keeps_a_peak_the_subformula_source_explains():
             "group_id": 1,
             "mol_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "OB",
+            "inst_type": "ORB",
             "prec_mz": 143.179,
         }
     )
@@ -344,7 +344,7 @@ def test_the_dataset_hands_the_detector_its_configured_rule_and_protection(monke
             "group_id": 1,
             "mol_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "OB",
+            "inst_type": "ORB",
             "prec_mz": 143.179,
         }
     )

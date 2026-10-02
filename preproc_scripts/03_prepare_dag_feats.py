@@ -19,8 +19,8 @@ from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 # not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
 # --inst_type_loss_tol (JSON).
 DEFAULT_INST_TYPE_LOSS_TOL = {
-    "OB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
-    "OB_F": {"rel": 1.0e-5, "min_mz": 200.0},
+    "ORB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "ORB_F": {"rel": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da (covers truncation artifact)
 }
 
@@ -186,7 +186,7 @@ def main(args):
 
         In addition to each fixed tolerance in ``tolerances``, an ``inst_tol`` variant is
         emitted that uses the per-instrument m/z tolerance in ``args.inst_type_loss_tol``
-        (default: OB/OB_F 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
+        (default: ORB/ORB_F 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
         to 10 ppm).
         This mirrors the ``cos_hun_inst_tol_opt`` convention in
         ``scripts/eval/dag_oracle_scores.py`` so recall/wrecall use the same matching logic.
@@ -240,7 +240,7 @@ def main(args):
 
         # Per-instrument tolerance variant (inst_tol). The base tolerance=10/is_ppm=True is
         # the 10 ppm fallback for instrument types absent from args.inst_type_loss_tol; for
-        # OB/OB_F/QTOF it is overridden per-peak by inst_type_tol.
+        # ORB/ORB_F/QTOF it is overridden per-peak by inst_type_tol.
         for h_transfer in range(1, max_h_transfer + 1):
             cols += [
                 f"recall_inst_tol_h{h_transfer}",
@@ -676,9 +676,9 @@ if __name__ == "__main__":
         default=DEFAULT_INST_TYPE_LOSS_TOL,
         help=(
             "JSON mapping of instrument type to per-instrument m/z tolerance for the "
-            'inst_tol stats variant, e.g. \'{"OB": {"rel": 1e-5, "min_mz": 200.0}}\'. '
+            'inst_tol stats variant, e.g. \'{"ORB": {"rel": 1e-5, "min_mz": 200.0}}\'. '
             "Instrument types absent from the mapping fall back to a 10 ppm relative "
-            "tolerance. Default matches the training configs (OB/OB_F 10 ppm/200 Da, "
+            "tolerance. Default matches the training configs (ORB/ORB_F 10 ppm/200 Da, "
             "QTOF 20 ppm/750 Da)."
         ),
     )

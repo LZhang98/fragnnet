@@ -62,7 +62,7 @@ split_dp: data/split/nist20_ma_mi_inchikey
 spec_params:
   filter_subformula_peaks: True
   prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
-  inst_types: [OB, OB_F, QTOF]
+  inst_types: [ORB, ORB_F, QTOF]
   merge: True
   nce: True
   merge_keep_ces: True
@@ -201,6 +201,6 @@ eval_mz_bin_res:
 # Per-instrument loss tolerance. QTOF floors at 0.015 Da to cover NIST23 floor-truncated
 # m/z; FT stays at 10 ppm. FT-only configs are numerically unaffected.
 inst_type_loss_tol:
-  OB: {rel: 1.0e-5, min_mz: 200.0}
-  OB_F: {rel: 1.0e-5, min_mz: 200.0}
+  ORB: {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F: {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}

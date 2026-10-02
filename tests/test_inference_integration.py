@@ -34,7 +34,7 @@ class TestInferenceIntegration:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -54,7 +54,7 @@ class TestInferenceIntegration:
             prec_types=["[M+H]+", "[M-H]-"],
             qtof_ces=["10.0eV"],
             ft_ces=["25.0NCE"],
-            inst_types=["OB", "QTOF"],
+            inst_types=["ORB", "QTOF"],
             output_dir="/tmp/test",
             merged_spectra=True,
         )
@@ -93,7 +93,7 @@ class TestInferenceIntegration:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["OB"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )

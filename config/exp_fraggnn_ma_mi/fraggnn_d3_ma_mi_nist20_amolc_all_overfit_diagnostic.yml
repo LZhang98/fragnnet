@@ -110,8 +110,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True       # condition on instrument type
   inst_types:           # instrument types to include
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
   frag_mode: True       # condition on fragmentation mode
@@ -240,8 +240,8 @@ report_metric_std: True  # also log per-metric std (cheap, useful for train/val 
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
-  OB:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
-  OB_F:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
+  ORB:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
+  ORB_F:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
   QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
 
 # ============================================================================

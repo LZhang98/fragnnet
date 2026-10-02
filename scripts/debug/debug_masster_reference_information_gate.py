@@ -88,7 +88,7 @@ def query_features(frame: pd.DataFrame, row: pd.Series, floor: float) -> np.ndar
             frame.mz / 100,
             np.full(len(frame), row.query_prec_mz / 100),
             np.full(len(frame), row.nce / 100),
-            np.full(len(frame), row.inst_type == "OB_F"),
+            np.full(len(frame), row.inst_type == "ORB_F"),
             np.log1p(frame.structural_alternatives),
             frame.formula_alternatives,
             frame.eligible,

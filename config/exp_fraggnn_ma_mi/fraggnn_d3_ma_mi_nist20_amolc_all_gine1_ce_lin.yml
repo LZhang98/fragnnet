@@ -74,8 +74,8 @@ spec_params:
     - "[M+Na]+"
     - "[M+Cl]-"
   inst_types:
-    - OB
-    - OB_F
+    - ORB
+    - ORB_F
     - QTOF
     - IT
   frag_mode: true
@@ -129,10 +129,10 @@ eval_mz_bin_res:
   - 0.01
 
 inst_type_loss_tol:
-  OB:
+  ORB:
     rel: 1.0e-5
     min_mz: 200.0
-  OB_F:
+  ORB_F:
     rel: 1.0e-5
     min_mz: 200.0
   QTOF:

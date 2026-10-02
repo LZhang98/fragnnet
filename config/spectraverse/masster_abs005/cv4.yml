@@ -12,7 +12,7 @@
 #   prec_type : [M+H]+ 233,103 / [M-H]- 107,867 / [M+Na]+ 69,475 / [M+NH4]+ 34,889 /
 #               [M+HCOOH-H]- 16,136 / [M+K]+ 9,508 / [M+CH3COOH-H]- 8,456 / [M+Cl]- 5,958 /
 #               [M]+ 3,405.
-#   inst_type : OB 290,183 / QTOF 169,380 / Other 16,181 / NA 13,053.
+#   inst_type : ORB 290,183 / QTOF 169,380 / Other 16,181 / NA 13,053.
 #   frag_mode : CID for every row.
 #   ce        : NCE absent on 100% of rows; ACE on 55.9%. ce_type none on 215,785 rows (44%),
 #               including 16,162 of the 16,181 "Other" rows.
@@ -40,7 +40,7 @@
 #    MassSpecGym: derived NCE is p99 206, max 1,097; 0.32% of CE-bearing rows clamp at 300 (1.06%
 #    at 200). ace_max 300: no ACE exceeds it (max 296).
 #
-# 4. Vocabularies: all nine adducts; inst_types OB/QTOF/Other/NA (no IT rows exist).
+# 4. Vocabularies: all nine adducts; inst_types ORB/QTOF/Other/NA (no IT rows exist).
 #    All instruments use the fixed ±0.05 Da loss window in this arm.
 #    frag_modes keeps HCD next to CID, as the MassSpecGym config does.
 #
@@ -151,7 +151,7 @@ spec_params:
   - '[M]+'
   inst_type: true
   inst_types:
-  - OB
+  - ORB
   - QTOF
   - Other
   - NA

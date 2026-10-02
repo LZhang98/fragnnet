@@ -4,6 +4,8 @@
 
 ## Result
 
+**Caveat (2026-10-01):** both checkpoints were trained with the retired `FT` label, and the script builds them from the current OB config. The sorted instrument index therefore fed OB spectra the trained NA embedding. OB rows below were scored with the wrong instrument row; QTOF rows are unaffected. See [the `[M]+` finding](spectraverse_mplus_handling_2026_10_01.md#old-spv-checkpoints-carry-the-retired-ft-label).
+
 The W&B `val_recall` and `val_wrecall` metrics use the global 10 ppm tolerance with a 200 Da floor. The SPV loss uses 10 ppm / 200 Da for OB, 20 ppm / 750 Da for QTOF, and 20 ppm / 500 Da for Other and NA. Thus the logged recall is stricter than the loss for non-OB spectra. The independent scoring implementation was checked against `calculate_match_mzs` on 100 random mass sets at all three tolerances.
 
 | Last checkpoint and validation fold | Sampled spectra | Peak recall, flat 10 ppm | Peak recall, instrument tolerance | Intensity-weighted recall, flat 10 ppm | Intensity-weighted recall, instrument tolerance |

@@ -1,4 +1,4 @@
-# ARM i2_qet_ob_obf -- unmerged [M+H]+, n1 (smooth QET energy input) on the OB / OB_F
+# ARM i2_qet_ob_obf -- unmerged [M+H]+, n1 (smooth QET energy input) on the ORB / ORB_F
 # instrument labels, 2026-09-28. n1_nce_qet.yml unchanged except W&B naming; the data is the
 # relabelled data/proc/nist20/spec_df.pkl, as in i1_inst_ob_obf.yml (see its DATA IDENTITY).
 #
@@ -150,8 +150,8 @@ spec_params:
   - '[M+H]+'
   inst_type: true
   inst_types:
-  - OB
-  - OB_F
+  - ORB
+  - ORB_F
   frag_mode: false
   frag_modes: []
   preprocess: true
@@ -235,10 +235,10 @@ loss_batch_size: 64
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
-  OB:
+  ORB:
     rel: 1.0e-05
     min_mz: 200.0
-  OB_F:
+  ORB_F:
     rel: 1.0e-05
     min_mz: 200.0
   QTOF:

@@ -56,8 +56,8 @@ spec_params:
   merge_equal_ce_weight: False
   merge_ce_aggregation: legacy  # weighted: retain all CE readings with target-matched weights (equal-CE consensus only).
   merge_tolerance_by_inst:
-    OB: {rel: 1.0e-5, min_mz: 200.0}
-    OB_F: {rel: 1.0e-5, min_mz: 200.0}
+    ORB: {rel: 1.0e-5, min_mz: 200.0}
+    ORB_F: {rel: 1.0e-5, min_mz: 200.0}
     QTOF: {rel: 2.0e-5, min_mz: 750.0}
   sparse: True
   prec_type: True
@@ -65,12 +65,12 @@ spec_params:
   prec_types:
     - "[M+H]+"
   inst_type: True
-  # Orbitraps: OB_F = Orbitrap Fusion family (NIST's Lumos); OB = every other Orbitrap (Elite,
+  # Orbitraps: ORB_F = Orbitrap Fusion family (NIST's Lumos); ORB = every other Orbitrap (Elite,
   # Velos, unnamed). "FT" is retired and refused; migrate old data with
   # preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py.
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
   frag_mode: False          # load fragmentation mode (HCD/CID) from spectrum metadata
   frag_modes: []            # known frag modes; unknown falls back to index num_frag_modes
   prec_mz: True
@@ -155,13 +155,13 @@ spec_params:
   # split_filters:
   #  train:
   #    filter_ce_by_inst:
-  #      OB:   {nce_min: 0, nce_max: 60}
-  #      OB_F: {nce_min: 0, nce_max: 60}
+  #      ORB:   {nce_min: 0, nce_max: 60}
+  #      ORB_F: {nce_min: 0, nce_max: 60}
   #      QTOF: {ace_min: 0, ace_max: 40}
   #  val:
   #    filter_ce_by_inst:
-  #      OB:   {nce_min: 0, nce_max: 60}
-  #      OB_F: {nce_min: 0, nce_max: 60}
+  #      ORB:   {nce_min: 0, nce_max: 60}
+  #      ORB_F: {nce_min: 0, nce_max: 60}
   #      QTOF: {ace_min: 0, ace_max: 40}
   split_filters: {}
 mol_params:
@@ -286,8 +286,8 @@ loss_tolerance_min_mz: 200.0
 # The QTOF floor of 0.015 Da covers NIST23 floor-truncated m/z (up to 0.009 Da error).
 # Example:
 # inst_type_loss_tol:
-#   OB:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
-#   OB_F: {rel: 1.0e-5, min_mz: 200.0}
+#   ORB:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
+#   ORB_F: {rel: 1.0e-5, min_mz: 200.0}
 #   QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
 inst_type_loss_tol: # null = use global loss_tolerance_rel/abs for all inst types
 auxiliary_scores:
@@ -358,7 +358,7 @@ ce_pair_min_endpoint_confidence: null
 # Reserved for the replicate audit; non-null values fail until the table is wired.
 ce_pair_min_endpoint_reliability: null
 ce_pair_subset: switches
-ce_pair_eligible_inst_types: [OB, OB_F]
+ce_pair_eligible_inst_types: [ORB, ORB_F]
 ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 # Same-fragment adjacent-eV delta supervision for MASSter. Requires shared
 # proposals, unique-fragment mode, and CE-context batches.
@@ -456,8 +456,8 @@ dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
 ce_context_spectra_per_context: 5
 ce_context_ce_key_by_inst:
-  OB: nce
-  OB_F: nce
+  ORB: nce
+  ORB_F: nce
   QTOF: ace
   IT: nce
 # Curriculum learning: begin at a whole-dataset node-count quantile and linearly
@@ -545,7 +545,7 @@ precursor_pair_nce_min: 0.0
 precursor_pair_nce_max: 20.0
 # Relative to the observed base peak; used when no precursor peak is observed.
 precursor_pair_absent_intensity_floor: 0.01
-precursor_pair_eligible_inst_types: [OB, OB_F]
+precursor_pair_eligible_inst_types: [ORB, ORB_F]
 precursor_pair_eligible_prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
 
 # ==========================================================================

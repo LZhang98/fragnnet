@@ -87,8 +87,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
   frag_mode: True
@@ -100,13 +100,13 @@ spec_params:
   split_filters:
     train:
       filter_ce_by_inst:
-        OB:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
-        OB_F:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
+        ORB:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
+        ORB_F:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
         QTOF: {ace_min: 0, ace_max: 40}    # drop QTOF spectra outside ACE 0-40 eV
     val: 
       filter_ce_by_inst:
-        OB:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
-        OB_F:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
+        ORB:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
+        ORB_F:   {nce_min: 0, nce_max: 60}    # drop FT spectra outside NCE 0-60%
         QTOF: {ace_min: 0, ace_max: 40}    # drop QTOF spectra outside ACE 0-40 eV
     test: {}
 
@@ -219,8 +219,8 @@ eval_mz_bin_res:
   - 0.01
 
 inst_type_loss_tol:
-  OB:   {rel: 1.0e-5, min_mz: 200.0}
-  OB_F:   {rel: 1.0e-5, min_mz: 200.0}
+  ORB:   {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F:   {rel: 1.0e-5, min_mz: 200.0}
   QTOF: {rel: 2.0e-5, min_mz: 750.0}
 
 # ============================================================================

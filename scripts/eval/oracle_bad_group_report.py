@@ -62,7 +62,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--metric", default="cos_hun_inst_tol_opt")
     parser.add_argument("--low_thresh", type=float, default=0.30)
     parser.add_argument("--normal_thresh", type=float, default=0.90)
-    parser.add_argument("--inst_types", nargs="+", default=["OB", "OB_F", "QTOF"])
+    parser.add_argument("--inst_types", nargs="+", default=["ORB", "ORB_F", "QTOF"])
     parser.add_argument(
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )

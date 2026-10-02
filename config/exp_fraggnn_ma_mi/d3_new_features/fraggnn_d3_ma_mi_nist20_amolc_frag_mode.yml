@@ -54,8 +54,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
   frag_mode: True

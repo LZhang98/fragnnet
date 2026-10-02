@@ -1,6 +1,6 @@
 # Fine-tuning FraGNNet
 
-> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-04-21
+> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-10-01
 >
 > How to fine-tune a pretrained checkpoint.
 
@@ -39,7 +39,7 @@ These components are shared across all tasks and learned during pre-training:
 - `mol_pool` - Molecule-level pooling (aggregates atom embeddings → molecule embedding)
 - `ce_embedder` - Collision energy embedding (encodes CE values)
 - `prec_embedder` - Precursor type embedding (encodes [M+H]+, [M-H]-, [M+Na]+, [M+Cl]-)
-- `inst_embedder` - Instrument type embedding (encodes OB, OB_F, QTOF, IT)
+- `inst_embedder` - Instrument type embedding (encodes ORB, ORB_F, QTOF, IT)
 - `formula_embedder` - Chemical formula embeddings (encodes element counts)
 - `depth_embedder` - Fragmentation depth embeddings (encodes depth 0-4)
 - `complement_embedder` - Complement fragment embeddings (encodes H-gain/loss)
@@ -205,8 +205,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:                # Instrument types
-    - "OB"
-    - "OB_F"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
 

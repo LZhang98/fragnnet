@@ -13,6 +13,8 @@ from tqdm import tqdm
 from fragnnet.utils.clean_spectra_utils import clean_spectra
 from fragnnet.utils.data_utils import (
     CHARGE_FACTOR_MAP,
+    RETIRED_INST_TYPE_HELP,
+    RETIRED_INST_TYPES,
     fill_missing_ace,
     fill_missing_nce,
     get_charge,
@@ -152,11 +154,12 @@ class BaseDataset(Dataset):
         mol_df = (
             mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
         )
-        if "inst_type" in spec_df.columns and (spec_df["inst_type"] == "FT").any():
-            raise ValueError(
-                "spec_df uses the retired instrument type 'FT'; relabel it to 'OB'/'OB_F' with "
-                "preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py"
-            )
+        if "inst_type" in spec_df.columns:
+            retired = sorted(set(spec_df["inst_type"]).intersection(RETIRED_INST_TYPES))
+            if retired:
+                raise ValueError(
+                    f"spec_df uses retired instrument types {retired}. {RETIRED_INST_TYPE_HELP}"
+                )
 
         split_dfs = []
         for split in splits:
@@ -925,6 +928,11 @@ class BaseDataset(Dataset):
             - idx_to_inst_type: Dictionary mapping indices to instrument type strings.
             - num_inst_types: Total number of instrument types.
         """
+        retired = sorted(set(self.spec_params["inst_types"]).intersection(RETIRED_INST_TYPES))
+        if retired:
+            raise ValueError(
+                f"spec_params.inst_types names retired types {retired}. {RETIRED_INST_TYPE_HELP}"
+            )
         inst_types = sorted(self.spec_params["inst_types"])
         self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
         self.idx_to_inst_type = dict(enumerate(inst_types))

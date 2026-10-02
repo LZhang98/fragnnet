@@ -53,8 +53,8 @@ from fragnnet.utils.spec_utils import calculate_match_mzs
 # QTOF 20ppm/750Da, else global 10ppm/200Da) so this diagnostic matches the cos_hun_inst_tol
 # variant the decomposition used.
 INST_TYPE_LOSS_TOL = {
-    "OB": {"rel": 1.0e-5, "min_mz": 200.0},
-    "OB_F": {"rel": 1.0e-5, "min_mz": 200.0},
+    "ORB": {"rel": 1.0e-5, "min_mz": 200.0},
+    "ORB_F": {"rel": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},
 }
 TOLERANCE = 1.0e-5

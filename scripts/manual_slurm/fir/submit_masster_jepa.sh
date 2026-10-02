@@ -11,7 +11,7 @@
 # target table data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz (434 MB, md5 below), which must be
 # copied into this checkout first; setup_job_cc.py stages it to the node. They also need a checkout
 # with the masster_jepa_* code (masster_pl.py, masster_model.py, bond_fragment_heads.py,
-# utils/jepa_utils.py and setup_job_cc.py, 2026-10-01) and the relabelled OB / OB_F spec_df.pkl.
+# utils/jepa_utils.py and setup_job_cc.py, 2026-10-01) and the relabelled ORB / ORB_F spec_df.pkl.
 #
 # READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against i1 (tail 0.7607);
 # +0.005 to count on one seed (seed spread 0.0042); the fa1@63 floor (independent selector) on
@@ -31,7 +31,7 @@ JOB_DIR="${REPO_ROOT}/jobs"
 CONFIG_DIR="config/masster/mh_jepa_2026_10_01"
 TABLE="data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz"
 TABLE_MD5="576c115361781cf3f8b37df1d96fbad8"
-SPEC_DF_MD5="bdc009bbeaf6a38d126326d127630cad"
+SPEC_DF_MD5="ce029870badc9e9e05935a4424f44c8d"
 ACCOUNT="rrg-dwishart"
 EMAIL="fw4@ualberta.ca"
 PROFILE="fir:h100-3g.40gb"
@@ -91,7 +91,7 @@ if [[ "$(md5sum "${TABLE}" | cut -d' ' -f1)" != "${TABLE_MD5}" ]]; then
 fi
 # The table's per-batch peak check would fail on another spec_df anyway; failing here is cheaper.
 if [[ "$(md5sum data/proc/nist20/spec_df.pkl | cut -d' ' -f1)" != "${SPEC_DF_MD5}" ]]; then
-    echo "data/proc/nist20/spec_df.pkl is not the relabelled OB / OB_F copy (md5 ${SPEC_DF_MD5})." >&2
+    echo "data/proc/nist20/spec_df.pkl is not the relabelled ORB / ORB_F copy (md5 ${SPEC_DF_MD5})." >&2
     exit 1
 fi
 if [[ ! -d data/split/nist20_inchikey ]]; then

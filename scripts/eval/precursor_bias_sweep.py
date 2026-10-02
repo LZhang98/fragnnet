@@ -134,7 +134,7 @@ def load_spectra(
         ["peaks", "prec_mz", "inst_type", "nce"],
     ].reset_index(drop=True)
     selected = (
-        gt["inst_type"].isin(["OB", "OB_F"])
+        gt["inst_type"].isin(["ORB", "ORB_F"])
         & gt["nce"].ge(nce_min)
         & gt["nce"].lt(nce_max)
     ).to_numpy()

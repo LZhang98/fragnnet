@@ -41,7 +41,7 @@ spec_params:
     - '[M+Cl]-'
   inst_type: True
   inst_types:
-    - "OB"
+    - "ORB"
     - "QTOF"
     - 'IT'
     - "Other"
