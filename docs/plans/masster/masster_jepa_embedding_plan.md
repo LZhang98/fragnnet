@@ -2,8 +2,10 @@
 
 > **Status:** ACTIVE · **Updated:** 2026-10-01 · Gate 0 accepted with the 1% floor (user,
 > 2026-10-01). [Step 1 is built](#step-1-result-2026-10-01): an audited target table, default-off
-> code with tests, and arm configs `j1a`/`j1b`/`j2`, smoke-tested on real data. No training run;
-> Gate 1 needs the user's go-ahead.
+> code with tests, and arm configs `j1a`/`j1b`/`j2`, smoke-tested on real data.
+> **Live W&B read, 2026-10-01:** all three arms are running at epoch 54. The earlier
+> preparation-only status was stale. [Snapshot and run links](masster_memorization_route_plan.md#remaining-single-model-arms-wb-read-2026-10-01): encoder arms are roughly level with matched
+> `i1` epochs; allocator JEPA is behind. Gate 1 awaits the full 54-63 completion read.
 
 ## Objective and acceptance
 

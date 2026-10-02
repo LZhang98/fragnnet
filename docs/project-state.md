@@ -1,8 +1,55 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-01
+> **Status:** REFERENCE · **Updated:** 2026-10-02
 
 ## Current handoff
+
+**MASSter MSGYM config with the `i3` stack (2026-10-02), prepared, not submitted.**
+`config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier.yml`
+is the `1imawkx1` base (already pre-norm, so the model is `i4` on MSGYM) plus `k1`'s two 0.2
+dropouts, `ema_decay: 0.999`, `int_embedder: fourier` and checkpoint upload. It keeps the base's
+128-epoch cosine schedule, so the read against `1imawkx1` (best 0.5754 at epoch 62) changes only
+those keys. The resolved diff against the base is exactly those keys. A local 2-epoch smoke on 512
+spectra per split exits 0; the checkpoint holds EMA state and a `Linear(22, 32)` fourier table on
+both CE channels. No MSGYM seed spread exists. Next: submit, then score the best checkpoint on
+test against `ll04i00m` 0.5713 and GLACIER 0.5455.
+
+**Computed-energetics feasibility (2026-10-02), complete; ranking gate not run.** Top-16/32
+retains only 42%/60% of covered floor base peaks; top-128 retains 92%. A bounded constructor
+preserving parent connectivity/bond orders provides a balanced ion + neutral state for 120
+of 276 covered floor base peaks (43%), versus 67% on matched controls. It misses the audited
+structures with more than two cuts; a bond-order fallback supplies 6 of 64 sampled failures.
+An isolated verified xTB executable ran 226 state/conformer jobs:
+210 converged, median successful job 0.77 s; 18% change a distance-inferred graph after
+relaxation. These are feasibility results, not a spectral correction or an energetics null.
+Next: multiple-cut product states and a complete frozen shortlist before fitting a ranking
+gate. No model/training code, configs, checkpoints, datasets or conda environment changed.
+Ensembling remains last. [Finding and artifacts](findings/masster/masster_energetics_feasibility_2026_10_02.md)
+· [Gate design](plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed).
+
+**Explicit peak-ranking pilot (2026-10-02), CLOSED NULL.** Matched `i1` epoch-59 CPU
+intensity-head continuation with identity-separated tuning/confirmation selects zero ranking
+weight. Weights 0.1/0.3 improve training ranking but lower confirmation cosine by
+0.000221/0.000758 against the ordinary-loss control; coverage is identical. Preserve this null;
+full-data/end-to-end training remains untested. Nineteen focused tests and artifact audits pass.
+No cluster job or canonical test read.
+[Finding and limits](findings/masster/masster_peak_ranking_pilot_2026_10_02.md)
+· [Protocol](plans/masster/masster_peak_ranking_pilot_2026_10_02.md).
+
+**Single-model priority review (2026-10-01), no code changes requested.** First proposed check:
+a bounded computed product-ion energetics information gate on frozen predictions, starting with
+valid ion/neutral states, shortlist retention, calculation cost and detectable effect. Static
+energies/proton affinity are unproven proxies; no calculations, installations or runs launched.
+Cross-molecule episodic training is deferred: its leading extra effect is gradient agreement,
+the premise is unmeasured, and consensus pressure could discount unusual fragmentation. Coverage
+work (existing O-transfer arm status/read and the positive local 4x-budget gate) is a separate
+parallel priority. Full attention on `i3` remains incremental; ensembling stays last.
+The live W&B snapshot already recorded finished route/light-side, set-key and candidate-graph
+arms with no screen pass; JEPA was at epoch 54, encoder arms roughly level with `i1` and allocator
+behind. No fresh remote read in this priority review.
+[Run table](plans/masster/masster_memorization_route_plan.md#remaining-single-model-arms-wb-read-2026-10-01)
+· [Deferred transfer proposal and review](plans/masster/masster_memorization_route_plan.md#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred)
+· [Energetics gate and next check](plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed).
 
 **Frozen cut-to-intensity probe (2026-10-01), CLOSED NULL.** Full fresh CPU inference on all
 52,020 validation spectra; train-only probes with separate calibration and molecule-separated
@@ -16,12 +63,14 @@ cut-supervision proposal needs a distinct mechanism or target rather than this s
 
 **Orbitrap labels renamed `OB` → `ORB`, `OB_F` → `ORB_F` (2026-10-01), uncommitted.** Same instruments, same embedding rows (the sorted order is kept). Configs, `spec_df.pkl` files and checkpoint hparams that name `OB` / `OB_F` are refused, like `FT`. Code, tests, 579 configs and the living docs are renamed; dated findings keep the labels they were measured with. The local NIST20, NIST23, Spectraverse (both files) and MSGYM `spec_df.pkl` are renamed (NIST20 md5 now `ce029870badc9e9e05935a4424f44c8d`, which the Fir submitters check). Next: replace the cluster copies with the local files (or run `preproc_scripts/dataset_migration/rename_orbitrap_inst_type.py --spec_df_fp` there), and patch each `OB`-era checkpoint before inference with `--ckpt_fp` (`i1`, `fa1`, `i3` and the other `*_ob_obf` runs). A W&B resume of an `OB`-era run may take `OB` back from W&B's saved config (`merge_wandb_config`) and then stop at the dataset guard, so let in-flight `OB`-era jobs finish on the current cluster checkout before syncing this code. [Rename note](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#7-instrument-labels-ob--ob_f-implemented-2026-09-28).
 
-**MASSter JEPA embedding auxiliary (2026-10-01), Step 1 built, not submitted.** An `i1` auxiliary term predicts a frozen DreaMS embedding of each measured spectrum (1% base-peak floor, the Gate 0 representation the user accepted). Built:
+**MASSter JEPA embedding auxiliary (2026-10-01), three arms running.** Live W&B snapshot:
+`j1a`/`j1b`/`j2` have reached epoch 54; see the priority refresh above. The earlier submission
+status was stale. An `i1` auxiliary term predicts a frozen DreaMS embedding of each measured spectrum (1% base-peak floor, the Gate 0 representation the user accepted). Built:
 - an audited train+val target table `data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz` (196,521 targets; local only, needs copying to Fir);
 - default-off `masster_jepa_*` code with tests;
 - arm configs `j1a`/`j1b`/`j2` in `config/masster/mh_jepa_2026_10_01/`, smoke-tested on real CUDA data.
 
-Gate 0 shows DreaMS sees `i1`'s errors, not that the target adds information beyond the peak loss; Gate 1 tests that. [Plan and Step 1 result](plans/masster/masster_jepa_embedding_plan.md#step-1-result-2026-10-01). Next: on the user's go-ahead, copy the table to Fir and submit the three arms against `i1`.
+Gate 0 shows DreaMS sees `i1`'s errors, not that the target adds information beyond the peak loss; Gate 1 tests that. [Plan and Step 1 result](plans/masster/masster_jepa_embedding_plan.md#step-1-result-2026-10-01). Next: read the completed 54-63 tail against `i1`; do not expand the arms on the current mid-run evidence.
 
 **PCDL + NIST23 + Enveda-180 combined split (2026-10-01), prepared.** A global seed-42 80/10/10 InChIKey split covers all three processed sources with zero cross-part molecule overlap. The split is a per-source manifest; the current runner cannot yet load it as one dataset. [Plan and counts](plans/combined_pcdl_nist23_enveda_180_dataset.md). Next: implement bounded-memory multi-source loading and model-specific filters.
 

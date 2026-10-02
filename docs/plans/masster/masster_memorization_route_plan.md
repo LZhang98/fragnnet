@@ -1,6 +1,22 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
-> **Status:** ACTIVE · **Updated:** 2026-10-01
+> **Status:** ACTIVE · **Updated:** 2026-10-02
+> **2026-10-02: [energetics feasibility audit completed](../../findings/masster/masster_energetics_feasibility_2026_10_02.md).**
+> Isolated xTB calculations work; small shortlists lose many floor winners. The bounded
+> fixed-bond-order constructor supplies balanced states for 43% of covered floor base peaks.
+> No ranking correction was fitted. Next: multiple-cut product states and a full frozen shortlist.
+> **2026-10-01: [priority review accepted](#computed-product-ion-energetics-information-gate-2026-10-01-proposed).**
+> Next proposed check is a bounded computed-energetics information gate on frozen predictions.
+> Cross-molecule episodic training is [deferred](#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred):
+> its leading effect is gradient agreement, with no measured premise and a risk of suppressing
+> unusual fragmentation. Coverage work is a separate parallel priority; ensembling stays last.
+> The user requests no code changes. No model/training code changed; the later isolated
+> feasibility calculations are recorded above.
+> **2026-10-01: [remaining single-model arms refreshed](#remaining-single-model-arms-wb-read-2026-10-01).**
+> `cg1`, the route-removal/light-side reruns and `sd1` are finished; none passes the screen.
+> JEPA was running at epoch 54 in that snapshot, superseding the preparation-only status.
+> The earlier full-attention-on-`i3` suggestion remains an incremental option. No combination
+> arm was prepared or launched; the priority review above supersedes that suggestion.
 > **2026-10-01: [`ce1`/`ce2` completion read](#ce1ce2-wb-completion-read-2026-10-01-no-single-seed-pass).**
 > Both finished 64 epochs. Their last-ten-epoch gains over `i1` are +0.00033 and +0.00053,
 > below the +0.005 single-seed gate; candidate coverage is unchanged. No promotion or
@@ -2466,3 +2482,242 @@ tail means were independently re-derived from saved histories. Local analysis re
 dataset hashes were not verified; saved configs alone are not complete source provenance.
 No remote run, model, dataset or checkpoint was changed. Documentation links and
 `git diff --check` were checked; no production tests were needed for this read and record update.
+
+### Remaining single-model arms: W&B read (2026-10-01)
+
+Live read of recent named runs, complete unsampled histories. Finished runs below have all 64
+validation epochs; their means are over 54-63. The three JEPA snapshots end at epoch 54 and
+use 45-54, compared with the same `i1` epochs. These are logged 0.01-Da cosines, not freshly
+computed instrument-tolerance scores. No remote run was changed.
+
+| Arm | W&B ID | State / last epoch | Window mean | Delta vs matched `i1` window |
+| --- | --- | --- | ---: | ---: |
+| `r0`, no boundary | [c61kaalu](https://wandb.ai/frag-gnn/frag-gnn/runs/c61kaalu) | finished / 63 | 0.745646 | -0.015087 |
+| `r1`, local cut | [3mzw75rj](https://wandb.ai/frag-gnn/frag-gnn/runs/3mzw75rj) | finished / 63 | 0.754291 | -0.006443 |
+| `r2`, no global attention | [gj3z8mwh](https://wandb.ai/frag-gnn/frag-gnn/runs/gj3z8mwh) | finished / 63 | 0.760034 | -0.000699 |
+| `nl1`, light side | [wexrxhg7](https://wandb.ai/frag-gnn/frag-gnn/runs/wexrxhg7) | finished / 63 | 0.753941 | -0.006792 |
+| `nl2`, light side + GINE | [1r49625m](https://wandb.ai/frag-gnn/frag-gnn/runs/1r49625m) | finished / 63 | 0.727305 | -0.033428 |
+| `sd1`, set-key dropout | [f3fu90zn](https://wandb.ai/frag-gnn/frag-gnn/runs/f3fu90zn) | finished / 63 | 0.759134 | -0.001600 |
+| `cg1`, candidate graph | [c8k6e244](https://wandb.ai/frag-gnn/frag-gnn/runs/c8k6e244) | finished / 63 | 0.761441 | +0.000708 |
+| `fa1_s2` | [2v2e1yod](https://wandb.ai/frag-gnn/frag-gnn/runs/2v2e1yod) | finished / 63 | 0.763288 | +0.002555 |
+| `i3`, dropout + EMA | [xypkkfti](https://wandb.ai/frag-gnn/frag-gnn/runs/xypkkfti) | finished / 63 | 0.770978 | +0.010245 |
+| `i4`, `i3` + pre-norm | [rd9rsdqx](https://wandb.ai/frag-gnn/frag-gnn/runs/rd9rsdqx) | finished / 63 | 0.772901 | +0.012168 |
+| `j1a`, encoder JEPA 0.1 | [q047zga5](https://wandb.ai/frag-gnn/frag-gnn/runs/q047zga5) | running / 54 | 0.759945 | +0.000078 |
+| `j1b`, encoder JEPA 1 | [xodee5pv](https://wandb.ai/frag-gnn/frag-gnn/runs/xodee5pv) | running / 54 | 0.759714 | -0.000153 |
+| `j2`, allocator JEPA 1 | [gzywzk39](https://wandb.ai/frag-gnn/frag-gnn/runs/gzywzk39) | running / 54 | 0.756029 | -0.003838 |
+
+Use the relevant control: `nl2` is -0.032729 versus `r2`, `cg1` is -0.003645 versus `fa1`,
+and `i4` adds +0.001923 beyond `i3`. `fa1_s2` has seed 811237; its comparison to `i1` seed
+397623 is not a matched second-seed treatment effect. Full attention remains a modest lead,
+not a promoted replicated gain. JEPA has no positive late signal in this snapshot; await its
+predeclared completion read before concluding its training screen.
+
+**Earlier incremental proposal, demoted by the priority review below:** test one full-attention
+predictor using `i3`'s boundary/input dropout 0.2 and EMA 0.999. The campaign's `fa1` and
+`fa1_s2` use full attention without those settings; `i3` uses induced attention. Keep dataset,
+support generation, optimizer, exposure and the 64-epoch budget fixed. Screen against a fresh
+same-code `i3` control, then replicate a promising gain with a second paired seed. Retain the
+existing +0.005 tail gate, check instrument-tolerance cosine and independently selected floor,
+and compare the locked checkpoint against the existing `i4` as well. No claim that the separate
+gains add, and no claim that this fixes the extreme ranking floor. Full attention also changes
+allocator capacity, so a gain would establish the recipe, not attention as an isolated mechanism.
+This is a proposal only; no new config, trainer, submission or checkpoint was created.
+
+Artifacts: `output/single_model_priority_read_2026_10_01/` contains 13 raw histories/configs,
+the queried run manifest, `summary.json` and retrieval/analysis timestamps. Comparison histories
+are the saved `i1`/`fa1` records in `output/ce_encoder_wandb_read_2026_10_01/`. Read scope is the
+listed recent run names, not every run in the project. Remote source/dataset hashes were not
+verified. Validation: epoch/window completeness and matched-window arithmetic checked locally;
+documentation links and whitespace checked. No model evaluation or training test was run.
+
+### Transfer-oriented training for covered ranking failures (2026-10-01, deferred)
+
+**Status:** DEFERRED after the user's mechanism/priority review. Research/design review only;
+no trainer, config, diagnostic measurement or training run. The original bounded design is
+retained below for reference. The [computed-energetics gate](#computed-product-ion-energetics-information-gate-2026-10-01-proposed)
+is now the first proposed check; full attention on `i3` remains an incremental option.
+
+**Review resolution.** The train/validation gap establishes a generalization failure, but does
+not establish that encouraging agreement between training chemical groups will repair it.
+For the proposed head subset H, the small-step expansion is
+`J = L_A + beta * L_B - beta * alpha * <grad_H L_A, grad_H L_B> + O(alpha^2)`.
+Thus its leading extra effect is gradient alignment, the same broad hypothesis as the plan's
+low-priority `c1` and [literature note §4](../../notes/memorization_literature_2026_09_24.md#4-suppress-per-example-gradient-directions).
+MLDG, coordinate medians and sign masks are different algorithms; the overlap in premise
+does not make them equivalent. The `alpha = 0` control correctly isolates the extra effect.
+
+The [analogue analysis](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#result-the-floor-departs-from-its-analogues)
+weakens this priority: 19.8% of the floor has a top-20 analogue showing the dominant pattern,
+whereas 44.9% has no similar train molecule showing it. Predictions already resemble analogues
+at 0.758 while targets reach 0.247. Keeping B's own target does not remove the risk that the
+alignment term discounts legitimate rare directions. B also belongs to the global training
+population; repeated episodes do not make it permanently unseen. Existing train ordering is
+already almost fitted. These are reasons to defer, not evidence that gradient conflict causes
+the failure or that every domain-generalization objective must fail.
+
+The independently selected `fa1 - i1@63` floor contrast is +0.014 [-0.022, +0.053], and checkpoint
+floors overlap at Jaccard 0.36-0.46
+([comparison](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#result-i3-on-the-floor-follow-up-2026-09-30)).
+The subtraction direction was corrected in the 2026-10-02 precision audit; it still spans zero.
+A costly pilot on this small, unstable endpoint could remain inconclusive. `i3`, full attention
+and checkpoint averaging have no demonstrated independent-floor recovery. The additive
+[cut probe null](../../findings/masster/masster_cut_intensity_probe_2026_10_01.md) is another
+negative result for an available correction, but does not rule out every transferable feature.
+
+**Technical qualification.** Current `SpectrumPL` rejects manual optimization and the MASSter
+batch sampler requires automatic optimization. A differentiable virtual-update loss could
+in principle return a scalar under automatic optimization, so manual optimization is not a
+mathematical requirement of MLDG. No such path is implemented. Differentiating through the
+inner gradient still requires higher-order derivatives and retained activations; compatibility,
+memory and runtime remain unmeasured. Do not assert a fixed 2-3x cost without pricing it.
+
+**Evidence and hypothesis.** The [worst-spectrum finding](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md)
+puts 88% of floor spectra in the candidates-present population. Train ranking failures are
+almost absent, whereas validation ranking failures are common. Cut-score addition, generic
+post-cut descriptors, the small retained-fragment branch, and candidate-graph restriction did
+not establish a remedy. Another within-spectrum ranking term has weak justification when the
+training ordering is already fitted. The original proposal's hypothesis was that the optimizer should favor
+updates whose benefit transfers across chemical groups. Cross-group gradient conflict has
+not been measured; it is not an established cause of the observed errors.
+
+**Literature scope.** [MLDG](https://arxiv.org/pdf/1710.03463) evaluates a virtual update on one
+training domain using loss from another, then optimizes the combined objective. Its experiments
+are image classification and reinforcement learning, not mass spectra. [Fish](https://arxiv.org/abs/2104.09937)
+offers a first-order approximation to cross-domain gradient matching. Neither establishes a
+MASSter gain. [DomainBed](https://arxiv.org/abs/2007.01434) found carefully implemented ordinary
+training highly competitive, so a matched ordinary-training control is essential. This develops
+the plan's unbuilt gradient-agreement idea, not the reverted `cm1` relationship-target recipe.
+
+**Retained proposed adaptation, deferred.**
+
+1. Construct chemical groups from training structures only, using scaffolds or fingerprint
+   clusters. Random batches are not automatically domains. Check group sizes, molecular novelty
+   and acquisition support before choosing the grouping. Within an episode, A and B contain
+   different identities and chemical groups, with comparable instrument/NCE composition.
+   Canonical validation/test labels never enter optimizer losses or group construction.
+2. Keep `i3`'s model, primary spectral loss, support construction and EMA policy. Take a virtual
+   update on the intensity allocator and boundary reader using A. Evaluate B's measured
+   spectrum loss under that update. B keeps its own measured labels, including genuine
+   fragmentation differences; no neighbour's spectrum or latent fragment identity becomes its target.
+3. Optimize `J = L_A(theta) + beta * L_B(theta'_H, theta_rest)`, where
+   `theta'_H = theta_H - alpha * grad_H L_A` is a temporary head update. Differentiate through
+   that update for the MLDG-style pilot. A detached inner gradient changes the method and must
+   not be presented as the same objective. Inference uses the shared unadapted weights.
+4. Build a feasibility diagnostic before a campaign: price memory/time and characterize
+   cross-group update transfer on training-only samples. A trained-checkpoint assay does not
+   make those identities unseen and cannot establish generalization. Use a fresh bounded
+   training pilot for efficacy. Existing late memorized heads are not the only intended start.
+
+**Controls and implementation constraints.** Compare against the same A/B sampler, exposures,
+loss weighting and outer optimizer with `alpha = 0`: `L_A + beta * L_B`. A random identity-group
+control, matched in acquisition distribution, tests whether chemical grouping matters. Preserve
+all candidate outputs and ambiguity-preserving summed-mass spectral supervision; never select
+one target-compatible structure as ground truth. Preserve the support and stochastic realization
+when comparing original versus virtual head weights. Run precursor encoding/proposal once per
+batch, avoid extra BatchNorm updates and restore all virtual state before the actual optimizer,
+EMA and checkpoint operations. The current `SpectrumPL.training_step` supports automatic
+optimization only; this is not a drop-in optimizer switch. Feasibility and compatibility need
+checking before a production implementation. Report both matched exposure and wall-clock cost.
+
+**Acceptance and stop rule.** The efficacy question is held-out molecule ranking, not train fit
+or gradient alignment. Use instrument-tolerance cosine, covered base-peak hits/top-three mass
+ranking, unfamiliar molecules and a floor selected by a separate checkpoint. Keep the primary
+spectral objective and all-molecule evaluation. A whole-validation gain with no independently
+selected floor benefit does not meet this task's objective. Confirm a promising floor and
+ranking effect with paired seeds and molecule-cluster intervals; predeclare numerical gates for
+the actual pilot population before fitting. Do not convert the existing binned +0.005 tail gate
+into an instrument-tolerance or small-floor effect threshold. Stop this design if it only reduces
+train fit, improves a gradient statistic, or erases genuine rare fragmentation choices.
+
+**Cheap transfer-premise check, deferred.** If this route is reconsidered, first characterize
+head-gradient norms, cosine/sign conflict and sensitivity to grouping on training-only batches,
+matched for acquisition. A fitted-checkpoint assay is a diagnostic, not unseen-molecule efficacy.
+Only a substantive signal would justify a first-order experiment before a meta-gradient pilot.
+[RM3](https://arxiv.org/abs/2003.07422) reuses the current and previous two gradients without an
+extra forward/backward pass, but adds gradient storage and temporal mixing; it is not an exact
+first-order implementation of MLDG. No diagnostic or optimizer change is requested now.
+
+### Computed product-ion energetics information gate (2026-10-01, proposed)
+
+**Status:** ACTIVE, feasibility stage completed 2026-10-02 after the user's instruction to
+proceed. [Results and limits](../../findings/masster/masster_energetics_feasibility_2026_10_02.md):
+226 isolated xTB jobs, 210 converged; bounded product-state construction covers 120 / 276
+covered floor base peaks. No spectral fitting or ranking gate yet. No model/training code,
+config, checkpoint, dataset or conda environment changed. The original gate design follows.
+
+**Objective and premise.** Test whether computed candidate-specific physics supplies incremental
+held-molecule ranking information beyond frozen MASSter scores and existing descriptors. It is
+a plausible way to address wrong-side and wrong-parity choices without relying on analogue
+consensus. A benefit for the 44.9% no-similar-analogue class is a hypothesis, not a measured result.
+The [residual finding's limits](../../findings/masster/masster_i1_residual_structure_2026_09_28.md#limits)
+leave computed proton affinity/BDE untested. The [post-cut gate](../../findings/masster/masster_i1_postcut_information_gate_2026_09_29.md)
+already found little incremental value from generic charge/structural descriptors, so the bar
+is additional information, not another descriptor inventory.
+
+**Scope and counterevidence.** Start by pricing xTB on valid candidate ions and complementary
+neutral products; this is not full fragmentation dynamics or a new architecture. The
+[existing literature review](../../notes/intensity_displacement_literature_2026_09_24.md#5-things-the-literature-argues-against)
+already cautions against proton affinity alone and neutral homolytic-BDE predictors for
+`[M+H]+`. The [CIDMD protonation study](https://pubmed.ncbi.nlm.nih.gov/39329341/) found proton
+affinity a poor predictor of spectral agreement and emphasized protomer-dependent pathways.
+Retain multiple plausible protomers and product states. Static stability and reaction energy
+are proxies; they do not supply activation barriers or a kinetic intensity law.
+
+**Bounded gate design, to finalize before any execution.**
+
+1. **Feasibility and shortlist.** Use the covered floor plus controls matched for instrument,
+   NCE, molecular size, candidate count and novelty, with training molecules to fit the probe.
+   Fix a target-independent top-K channel shortlist from frozen scores/structural criteria;
+   choose K on training-only feasibility evidence. Never insert the measured winner into the
+   shortlist. Report target-mass retention and construction failures against the full eligible
+   population: a null on a shortlist excluding the winner cannot diagnose energetics.
+2. **Valid chemistry.** Construct ion and neutral states with balanced atoms/H, charge and
+   electron parity; retain alternative compatible structures rather than assign a mass one
+   unique ion. A severed precursor graph is not automatically a chemically valid product.
+   Audit optimization-induced rearrangement/dissociation and formula/mass preservation.
+   Record unresolved channels, especially wrong-parity cases, rather than silently excluding them.
+3. **Comparable energies and cost.** Specify geometry/conformer/protomer enumeration, method,
+   convergence, gas-phase conditions and cache identities. xTB accepts explicit charge and
+   unpaired-electron settings ([official documentation](https://xtb-docs.readthedocs.io/en/latest/sp.html#charge-and-multiplicity)).
+   Compare balanced channel energies such as
+   `Delta E = E(product ion) + sum E(neutral products) - E(precursor ion)`.
+   Raw total energies of different elemental compositions cannot rank competing peaks.
+   Label electronic-energy differences as proxies; claiming enthalpic PA/BDE requires the
+   corresponding definitions/corrections. Price time, failed calculations and state multiplicity
+   on a small audit before committing to the floor set; a days-long null is not yet established.
+4. **Incremental test and controls.** Preserve the frozen candidate pool and summed-mass
+   supervision. Fit a simple residual/ranking probe on training molecules, calibrate on separate
+   molecules, then lock the transformation and strength before confirmation. Compare frozen
+   scores, scores plus existing descriptors/context, the same probe plus energies, and
+   within-spectrum shuffled energies. Use fixed molecule-separated tuning/confirmation groups;
+   this validation set was previously researched and is not pristine test data. Canonical test
+   labels remain untouched. Computed features must not depend on measured peak identities.
+5. **Promotion and stopping.** Use instrument-tolerance cosine, covered base-peak/top-three
+   mass ranking, the no-analogue and wrong-side/parity strata, matched controls, and a floor
+   chosen by an independent checkpoint. Retain all-molecule/no-harm accounting and molecule
+   bootstrap intervals. Establish the smallest useful effect, supported sample size and numeric
+   gate before fitting; the present small floor may only resolve large effects. Promote only
+   incremental confirmation evidence beyond descriptors and shuffled controls. Separate a
+   statistical null from inadequate precision or chemistry/shortlist failure. No architecture
+   branch follows from a qualitative energy correlation alone.
+
+**Coverage work as a separate parallel priority.** The
+[O-transfer gate](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#why-the-nitro-and-sulfonyl-groups-fail-follow-up-2026-09-30)
+passed for `substituted_aryl_sulfonamide_o_transfer`; the existing
+[`so1` templates-on config](../../../config/masster/mh_ft_memorization_route_2026_09_24/so1_smarts_o_transfer_ob_obf.yml)
+needs its run state checked before proposing another submission. Read eligible molecules and
+the 151 sulfonyl tail spectra against fixed and independent selectors; coverage evidence alone
+does not establish correct allocation to the new masses. The arm enables all registered
+templates, so attribution to this one rule needs candidate-source accounting. Separately, a
+[4x candidate-budget replay](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#result-uncovered-candidates)
+improved coverage in all nine sampled selection misses (0.23 to 0.71). This is a positive local
+gate, not a demonstrated full-split intensity gain or justification to enlarge every pool.
+No coverage run is launched as part of this review.
+
+**Current state and next concrete check (2026-10-02):** extend the offline product-state audit
+to multiple cuts and alternative bond orders, and obtain a complete frozen shortlist. The
+initial fixed-bond-order state pack and small top-K proposal are inadequate for a full-floor
+ranking test. This is not an energetics null. Predeclare the information-test effect/precision
+gate before fitting a correction. Ensembling remains last. An isolated checksum-verified xTB
+executable is available in the ignored audit directory; the conda environment is unchanged.
+See the finding for measured coverage, cost, quantum validity flags and validation.

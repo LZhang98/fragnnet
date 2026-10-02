@@ -1,6 +1,7 @@
 # `i1`'s worst val predictions: bin-edge artifacts, then a ranking failure of both heads on new molecules
 
-> **Status:** FINDING · **Updated:** 2026-10-01 · Additive cut-probe follow-up linked below.
+> **Status:** FINDING · **Updated:** 2026-10-02 · Additive cut-probe follow-up linked below;
+> `fa1 - i1@63` independent-floor contrast sign corrected from the saved score table.
 > Inference only: `i1_inst_ob_obf` (`i50ig7rf`) at epoch 59, all 52,020 val spectra and the
 > 4,000-molecule train sample (49,205 spectra). Stored predictions from the
 > [residual-structure](masster_i1_residual_structure_2026_09_28.md) and
@@ -565,8 +566,10 @@ selecting the worst spectra of one checkpoint guarantees any other checkpoint lo
   - `i1`@63 is a same-run neighbour of the selector `i1`@59. Their per-spectrum inst-tol cosines
     correlate at 0.900, against 0.861–0.867 between separate runs. So on `i1`@59's worst spectra,
     `i1`@63 regresses less than a separate run does.
-  - On floors chosen by `i3`@63, `fa1` − `i1`@63 is −0.014 [−0.053, +0.022] (floor) and −0.006
-    (tail).
+  - On floors chosen by `i3`@63, `fa1` − `i1`@63 is +0.014 [−0.022, +0.053] (floor) and +0.006
+    (tail). **2026-10-02 correction:** the older prose reversed the subtraction; these values
+    follow the saved score table and the log's `i1@63 - fa1@63` rows. The intervals span zero
+    ([independent precision read](masster_energetics_feasibility_2026_10_02.md#precision-and-record-correction)).
   - `fa1` has no floor- or tail-specific gain that survives an independent selector. Its whole-val
     gain (+0.006) involves no selection and stands
     ([log](../../../output/i1_worst_predictions_2026_09_30/i3/check/06_symmetric_selectors.log)).
