@@ -1,6 +1,6 @@
 # `i1`'s worst val predictions: bin-edge artifacts, then a ranking failure of both heads on new molecules
 
-> **Status:** FINDING · **Updated:** 2026-09-30
+> **Status:** FINDING · **Updated:** 2026-10-01 · Additive cut-probe follow-up linked below.
 > Inference only: `i1_inst_ob_obf` (`i50ig7rf`) at epoch 59, all 52,020 val spectra and the
 > 4,000-molecule train sample (49,205 spectra). Stored predictions from the
 > [residual-structure](masster_i1_residual_structure_2026_09_28.md) and
@@ -643,7 +643,12 @@ test on `i1`@59
   ranking signal where the intensity head fails; it cannot say what joint training would learn. The
   one joint-training run on record lost 0.0126.
 
-## Next steps (not built)
+## Next steps (training arms not built)
+
+**2026-10-01 follow-up:** the proposed frozen cut-to-intensity check is now complete and
+[CLOSED NULL](masster_cut_intensity_probe_2026_10_01.md). Both ambiguity-preserving train-only
+probes select zero correction on separate tuning molecules; no training arm is justified by
+that additive gate. The original options below remain hypotheses, not established remedies.
 
 The floor is a ranking failure of both heads on new molecules. The encoder carries the needed cut
 information (probe), and four things were tested without fixing it: full attention (`fa1`), EMA
@@ -659,7 +664,7 @@ intensity head, because in selection-only mode the bond head only changes which 
 | cross-molecule relationship targets (`cm1`) | a soft auxiliary target saying related training molecules share losses | the census advantage survives for unfamiliar queries (+0.050 fragment, +0.037 loss cosine at Tanimoto ≤ 0.4); about 20% of the floor are transfer failures | about 45% of the floor has no similar molecule showing the pattern, and `i1` already predicts what analogues do (0.76 against the targets' 0.25), so the target may push that part the wrong way; the retrieval-style correction was negative (0.6287 against 0.6385) | built and smoke-tested, then reverted at the user's request before any run; not a measured null |
 | more varied molecules (NIST23) | the same model on ~19,900 more [M+H]+ Orbitrap molecules | the tail rate falls with similarity to train (87 to 13 per 1,000) | the projected tail drop is at most 21–25%, and not specific to the floor; it needs a new preprocessing build | out of scope by an earlier user decision |
 
-- **A cheap check before building the cut-level option:**
+- **The cheap check before building the cut-level option (completed; result linked above):**
   - add the probe's per-bond scores, summed over each fragment's cuts, to the intensity head's
     logits offline, exactly like the bond-head mixing test;
   - if a transferable cut score does not help even when added this way, training it into the model

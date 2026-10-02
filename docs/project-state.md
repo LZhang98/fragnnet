@@ -4,6 +4,16 @@
 
 ## Current handoff
 
+**Frozen cut-to-intensity probe (2026-10-01), CLOSED NULL.** Full fresh CPU inference on all
+52,020 validation spectra; train-only probes with separate calibration and molecule-separated
+tuning/confirmation. Both probes select zero correction. Every tested positive strength lowers
+overall confirmation cosine; even the smallest slightly harms the independent floor. No
+cut-supervision training arm is justified by this additive gate. A fragment-temperature control
+gives a modest gain below the practical threshold. 13 diagnostic and 10 existing comparison
+tests, Ruff and artifact audits pass. [Finding and limits](findings/masster/masster_cut_intensity_probe_2026_10_01.md)
+· [Protocol](plans/masster/masster_cut_intensity_probe.md). Next: preserve this null; any new
+cut-supervision proposal needs a distinct mechanism or target rather than this sum of scores.
+
 **Orbitrap labels renamed `OB` → `ORB`, `OB_F` → `ORB_F` (2026-10-01), uncommitted.** Same instruments, same embedding rows (the sorted order is kept). Configs, `spec_df.pkl` files and checkpoint hparams that name `OB` / `OB_F` are refused, like `FT`. Code, tests, 579 configs and the living docs are renamed; dated findings keep the labels they were measured with. The local NIST20, NIST23, Spectraverse (both files) and MSGYM `spec_df.pkl` are renamed (NIST20 md5 now `ce029870badc9e9e05935a4424f44c8d`, which the Fir submitters check). Next: replace the cluster copies with the local files (or run `preproc_scripts/dataset_migration/rename_orbitrap_inst_type.py --spec_df_fp` there), and patch each `OB`-era checkpoint before inference with `--ckpt_fp` (`i1`, `fa1`, `i3` and the other `*_ob_obf` runs). A W&B resume of an `OB`-era run may take `OB` back from W&B's saved config (`merge_wandb_config`) and then stop at the dataset guard, so let in-flight `OB`-era jobs finish on the current cluster checkout before syncing this code. [Rename note](findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#7-instrument-labels-ob--ob_f-implemented-2026-09-28).
 
 **MASSter JEPA embedding auxiliary (2026-10-01), Step 1 built, not submitted.** An `i1` auxiliary term predicts a frozen DreaMS embedding of each measured spectrum (1% base-peak floor, the Gate 0 representation the user accepted). Built:
@@ -115,23 +125,14 @@ Read-only W&B check: e1 `jeljdikj` and e0 `he3j5y3o`, both with normal max-epoch
 - **Open:** a joint per-molecule table of causes.
 - [Finding](findings/masster/masster_i1_worst_predictions_2026_09_30.md).
 
-**NCE into the MASSter molecule encoder: `ce1`/`ce2` built (2026-09-30); uncommitted, not
-submitted.** Traced on `i1`: every head sees NCE, but only through one 128-d context vector. The
-molecule encoder is CE-blind, so fragment embeddings are the same at every NCE. FraGNNet's
-matched pairs say CE in the encoder helps on unmerged data. CE at the molecule-encoder input
-(`mol`) beats CE at the fragment MLP (`mlp`) in all five unmerged pairs, +0.0022 to +0.0136
-(+0.0136 for the `embed` encoding `i1` uses). Merged data gains nothing.
-
-- `ce1` = `i1` + `masster_context_in_gnn: true`: the context concatenated to each atom's input,
-  as a condition (FraGNNet's `mol` site; no new code).
-- `ce2` = `i1` + `masster_encoder_context_token: true` (new): one context key/value per molecule
-  in every `GINE_GSA` global-attention layer, attended by each atom. It is init-matched to `i1`.
-- Checked: one-key config diffs, parameter and init claims on built models, new encoder/model/PL
-  tests, the full suite (4,744 passed), a real-data GPU smoke of both arms (exit 0), and the
-  submitter's `ce` stage.
-- **Next:** on Fir, `submit_masster_mh_ft_memorization_route.sh ce`. Read each arm against `i1`
-  and each other; then offline, the nested-pair lean and NCE50 error by NCE bin.
-- [Plan section](plans/masster/masster_memorization_route_plan.md#nce-into-the-molecule-encoder-ce1-condition-and-ce2-attended-built-2026-09-30-not-submitted).
+**NCE into the MASSter molecule encoder: `ce1`/`ce2` finished; no single-seed pass
+(live W&B read, 2026-10-01).** Both finished all 64 epochs. The earlier "not submitted"
+entry was stale. The primary tail read fails the promotion gate; coverage is stable. No
+follow-up seed is justified by this screen; `i3` remains the stronger recorded arm. Full histories and
+resolved configs were checked. Instrument-tolerance and independent-floor checkpoint reads
+have not run for these arms. Next: preserve the screen and prioritize a different mechanism;
+do not resubmit `ce1`/`ce2` as untested arms.
+[Numbers, run links and limits](plans/masster/masster_memorization_route_plan.md#ce1ce2-wb-completion-read-2026-10-01-no-single-seed-pass).
 
 **`f0`/`f1` results retired (2026-09-30, user decision); documentation only.** The two runs
 (`3bej6fq7`/`6h67zps9`) trained on the old `FT` labels, where identity routes stood in for the

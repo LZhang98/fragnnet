@@ -1,0 +1,24 @@
+# Frozen-model screen; these keys belong to this standalone diagnostic, not template.yml.
+seed: 397623
+checkpoint: saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt
+custom_fp: config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml
+artifact_root: output/i1_worst_predictions_2026_09_30
+training_peaks: output/base_peak_errors_2026_09_28/i1_e059_train4k.peaks.pkl
+molecules: data/proc/nist20/mol_df.pkl
+output: output/cut_intensity_probe_2026_10_01
+calibration_fraction: 0.2
+tuning_fraction: 0.5
+max_fit_spectra_per_molecule: 3
+probe_kinds: [encoder, handmade]
+gbm_iterations: 100
+gbm_leaf_nodes: 15
+gbm_learning_rate: 0.1
+probability_clip: 0.0001
+probe_strengths: [0.0, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+proposal_strengths: [0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5]
+cut_count_strengths: [0.0, -1.0, -0.5, -0.25, -0.1, -0.05, 0.05, 0.1, 0.25, 0.5, 1.0]
+temperature_strengths: [0.0, -0.5, -0.25, -0.1, 0.1, 0.25, 0.5]
+batch_size: 32
+threads: 4
+bootstrap_repetitions: 2000
+screen_delta: 0.005

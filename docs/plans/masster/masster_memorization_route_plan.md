@@ -1,6 +1,10 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
 > **Status:** ACTIVE · **Updated:** 2026-10-01
+> **2026-10-01: [`ce1`/`ce2` completion read](#ce1ce2-wb-completion-read-2026-10-01-no-single-seed-pass).**
+> Both finished 64 epochs. Their last-ten-epoch gains over `i1` are +0.00033 and +0.00053,
+> below the +0.005 single-seed gate; candidate coverage is unchanged. No promotion or
+> follow-up seed is justified by this screen. The earlier "not submitted" entry was stale.
 > **2026-10-01: Orbitrap labels renamed `OB` → `ORB`, `OB_F` → `ORB_F`.** This plan uses the new
 > names throughout, including for runs made before the rename; job and config names keep `ob_obf`.
 > **2026-10-01: within-peak isomer split gate complete.** [Checkpoint and cut-class reads](../../findings/masster/masster_isomer_split_step0_2026_10_01.md) do not support building the proposed bond-split regularizer. Confident close-total splits mostly agree across `i1`/`fa1`; a cut-class prior adds no held-out target-intensity signal. No training arm was built.
@@ -2346,7 +2350,7 @@ seed gap.
   does not reappear over `i1`. The FT figure was never above the one-seed rule. Stopping `sd1` now
   saves about 2 GPU-hours; letting it finish gives the tail the rule is written for.
 
-## NCE into the molecule encoder: `ce1` (condition) and `ce2` (attended) (built 2026-09-30, not submitted)
+## NCE into the molecule encoder: `ce1` (condition) and `ce2` (attended) (screen completed 2026-10-01)
 
 **The gap, traced on `i1`'s built model.** Every prediction head sees NCE, but only through one
 128-d context vector: [adduct 32 | instrument 32 | NCE fourier table → 32] → MLP → 128.
@@ -2418,3 +2422,47 @@ plus one key, seed 397623, 64 epochs; checkpoints stay on Fir.
   - The submitter's `ce` stage passes `bash -n` and its per-arm checks.
 - **Generate** on Fir with `submit_masster_mh_ft_memorization_route.sh ce` (`ce1` and `ce2`). The
   cluster needs the relabelled `spec_df.pkl` and a checkout with the new key.
+
+### `ce1`/`ce2` W&B completion read (2026-10-01): no single-seed pass
+
+Read live W&B through its authenticated, read-only public API on 2026-10-01. Both arms are
+`finished`, with all 64 validation epochs (0-63) present. The earlier preparation status above
+does not describe their current execution state. The protocol's primary read is the arithmetic
+mean of logged `val_cos_sim_0.01_epoch/mean` at epochs 54-63, not the best checkpoint value.
+
+| Run | W&B ID | Epochs 54-63 cosine | Delta vs `i1` | Best cosine (epoch) | Tail candidate wrecall |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `i1` | [i50ig7rf](https://wandb.ai/frag-gnn/frag-gnn/runs/i50ig7rf) | 0.760733 | — | 0.762178 (59) | 0.940242 |
+| `ce1` | [u7ew4zpg](https://wandb.ai/frag-gnn/frag-gnn/runs/u7ew4zpg) | 0.761059 | +0.000325 | 0.762843 (63) | 0.940093 |
+| `ce2` | [u9auh1b9](https://wandb.ai/frag-gnn/frag-gnn/runs/u9auh1b9) | 0.761262 | +0.000529 | 0.763520 (63) | 0.940285 |
+| `fa1` (comparison) | [0vn8m2gr](https://wandb.ai/frag-gnn/frag-gnn/runs/0vn8m2gr) | 0.765086 | +0.004353 | 0.767429 (63) | 0.940189 |
+| `i3` (comparison) | [xypkkfti](https://wandb.ai/frag-gnn/frag-gnn/runs/xypkkfti) | 0.770978 | +0.010245 | 0.771194 (63) | 0.940570 |
+
+**Decision:** neither CE arm passes the existing +0.005 single-seed screen. `ce2` exceeds
+`ce1` by just 0.000204 on the tail. Both exceed `i1` at five of the ten tail epochs, so the
+best-epoch gains are not a sustained late improvement. Coverage deltas (-0.000150 / +0.000043)
+pass the no-coverage-loss check. Small primary validation-loss improvements
+(-0.008838 / -0.008521) do not translate into a practical cosine gain. Logged total runtimes
+are 3.31 h (`ce1`), 3.26 h (`ce2`) and 3.32 h (`i1`), with no material cost difference.
+
+Resolved W&B configs retain seed 397623, the same split, training recipe and historical
+`OB`/`OB_F` labels. Intended switches are correct. Other arm/control differences are added
+default-off model options and `spec_params.fill_missing_ace: true`, absent from the older
+`i1` config; the latter fills the auxiliary ACE field, while these runs use NCE as the primary
+energy and `ce_insert_type: embed`. Neither changes the intended active CE comparison. The
+`ce1` initialization difference documented above still applies; neither arm has a second seed.
+
+**Limits and next action:** preserve this single-seed screen; do not promote either arm or
+schedule a follow-up seed on these numbers alone. This does not establish equivalence of every
+energy-conditioning design. No checkpoint download, instrument-tolerance rescore, nested-pair
+read or NCE50 read was performed here. The logged metric has the known bin-edge limitations;
+the independent floor and unfamiliar-molecule outcomes remain unmeasured for these arms.
+
+Local artifacts: `output/ce_encoder_wandb_read_2026_10_01/`, containing complete unsampled
+128-row histories, full summaries/configs, epoch CSVs, config diffs, `summary.json`, provenance,
+and `read_runs.py`. All five runs have exactly one validation metric value at each epoch 0-63;
+tail means were independently re-derived from saved histories. Local analysis revision:
+`ab0adfb46f237bb1ab408370b660c7655b046dfa` plus existing working-tree changes. Remote source and
+dataset hashes were not verified; saved configs alone are not complete source provenance.
+No remote run, model, dataset or checkpoint was changed. Documentation links and
+`git diff --check` were checked; no production tests were needed for this read and record update.
