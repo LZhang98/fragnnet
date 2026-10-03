@@ -212,6 +212,44 @@ Paired GLACIER − MASSter hit@1 (95% molecule bootstrap):
     - Random-tie hit@1 with the filter, GLACIER vs MASSter: sqrt 46.74 vs 49.44; Li 45.80 vs
       49.30; JSS 40.51 vs 44.32.
   - Artifacts: `mspred_cands/rerank_insttol_on_mspred_full.{py,log}`, `mspred_cands/tie_check.{py,log}`.
+- **Why GLACIER gains more from instrument tolerance: bin-edge noise, not tolerance** (added
+  2026-10-03). hit@1 in %, random ties, our candidate list, sqrt entropy. The rows step from
+  ms-pred's binned score to the inst-tol one, then sweep the matching rule.
+
+  | scoring | GLACIER | MASSter | GLACIER − MASSter [95% mol. bootstrap] |
+  | --- | ---: | ---: | --- |
+  | ms-pred binned | 49.65 | 48.50 | +1.15 [−0.54, +2.86] |
+  | + precursor cut on both spectra | 49.64 | 48.50 | |
+  | + sqrt after summing linear (prediction) | 49.89 | 48.41 | |
+  | + same for target (b3) | 49.91 | 48.42 | +1.49 [−0.26, +3.26] |
+  | b3, bin edges shifted half a bin | 50.52 | 48.56 | +1.96 [+0.24, +3.65] |
+  | one-to-one ±1 mDa | 49.82 | 47.84 | +1.98 [+0.40, +3.56] |
+  | one-to-one ±2 mDa | 51.18 | 48.55 | +2.63 [+0.94, +4.31] |
+  | one-to-one ±5 mDa | 51.41 | 49.15 | +2.26 [+0.57, +3.99] |
+  | one-to-one ±10 mDa | 51.18 | 49.09 | +2.09 [+0.40, +3.87] |
+  | one-to-one instrument tolerance | 51.32 | 49.03 | +2.29 [+0.56, +4.11] |
+
+  - **Tolerance width is not the cause.** One-to-one matching at 2, 5 or 10 mDa, or at
+    instrument tolerance, gives the same hit@1 within 0.25 points. Instrument tolerance − ±10 mDa:
+    GLACIER +0.14 [−0.13, +0.44], MASSter −0.06.
+  - **The change is from fixed 0.01 Da bins to a window around each peak.** ±10 mDa one-to-one
+    minus b3 is GLACIER +1.27 [+0.69, +1.86] and MASSter +0.66 [+0.15, +1.18].
+  - **The binned score depends on where the bin edges fall, more so for GLACIER.** Shifting the
+    edges by half a bin adds +0.61 [+0.07, +1.17] for GLACIER and +0.14 [−0.44, +0.71] for MASSter.
+    A peak whose measured and predicted m/z straddle an edge earns nothing.
+  - **Not the cause:**
+    - Mass error: GLACIER's and MASSter's predicted m/z have the same median offset from measured
+      peaks, −0.2 ppm on ORB.
+    - Precursor straddles: in 4.5% of queries the measured precursor falls in a different bin
+      from the theoretical one, which zeroes the base peak for every candidate. They contribute
+      only +0.07 points of GLACIER's gain.
+  - **Untested: why GLACIER is more edge-sensitive.**
+  - **The comparison under sqrt entropy is stable across all matching rules.** GLACIER leads by
+    1.5–2.6 points under every rule. ms-pred's binned score, with its fixed edges, is the low
+    end. Whether GLACIER or MASSter leads is decided by the intensity weighting and the 1% filter,
+    not by the matching.
+  - Artifacts: `mspred_cands/{decompose_insttol_gain,decompose_report,flip_check,flip_examples,precursor_straddle,mass_offset_check,matching_sweep,matching_sweep_report}.py`
+    with their logs; per-shard `decompose_insttol.pkl` and `matching_sweep.pkl`.
 - **Their query set is probably the same simulation-challenge set.** Their 99.9% i.i.d. interval
   is about ±1.6 points around 48.5%, which implies roughly 10,000 queries. That matches 9,954
   simulation-challenge queries, not the 17,556 full formula-challenge queries (about ±1.2). This
