@@ -129,6 +129,83 @@ concentrated on novel molecules, as the plan hypothesized.
 Mean within-query Spearman: `cos`–`ll` 0.75, `cost_c`–`pars_c` 0.92, `supp_c`–`cost_c` 0.73,
 `cos`–`cost_c` 0.34.
 
+### Query peaks no subformula explains (added 2026-10-02, post hoc)
+
+Each query peak was put in one class: the precursor; feasible, meaning within tolerance of a
+precursor-bounded, RDBE ≥ 0 subformula ion (production `_subformula_masses`, `[M+H]+`
+budget); an isotopologue, meaning 1 or 2 × 1.003355 above a feasible peak or the precursor;
+or unexplained, meaning everything else. Script: `unexplained_peaks.py`, log:
+`analyze_unexplained.log`.
+
+| class | mean share of query intensity | median | 95th pct | peaks |
+| --- | ---: | ---: | ---: | ---: |
+| precursor | 0.133 | 0.004 | 0.760 | 229 |
+| feasible | 0.848 | 0.979 | 1.000 | 10,399 |
+| isotopologue | 0.001 | 0.000 | 0.006 | 140 |
+| unexplained | 0.017 | 0.005 | 0.056 | 1,550 |
+
+- **How much is unexplained.** 5.2% of queries have more than 5% unexplained intensity, 1.5%
+  more than 20%. QTOF's mean is higher than ORB's (0.044 against 0.016).
+- **On the formula track, unexplained and isotopologue peaks do not affect the ranking.** No
+  candidate puts any predicted intensity on them, so each adds the same `y·log ε` to every
+  candidate of its query. Dropping them from `ll` changes hit@1 in 0 of 400 queries. Cosine is
+  unaffected for the same reason: no candidate has intensity there, and the query norm is
+  shared.
+- **Feasibility is a weak filter for dirt.** A donor formula (another pilot query's formula in
+  the same precursor-mass decile) explains 0.765 of the non-precursor intensity, against 0.969
+  for the true formula. Most contaminant peaks would therefore be classed as feasible, and
+  that class carries all of `ll`'s ranking.
+- **Where dirt can hurt `ll`.** 8.6% of feasible intensity is on peaks the truth's prediction
+  misses (p̂ < 1e-5) but some decoy reaches. On each of these, the truth takes the full ε
+  penalty. In the 150 `ll` misses, the feasible class carries most of the truth-versus-top-decoy
+  deficit in 85% of cases (mean −0.456 nats; precursor −0.024). Whether those peaks are
+  contaminants or model misses is not separated here.
+- **Capping the per-peak penalty hurts.** Raising ε lowers hit@1 from 0.625 (1e-5) to 0.618
+  (1e-4), 0.595 (1e-3) and 0.525 (1e-2). In this data the full penalty helps the ranking more
+  than any protection a cap gives against dirt.
+
+### Mass track, same 400 queries (added 2026-10-02)
+
+The same 400 queries were scored against their MSGYM 1.5 **mass** val candidates: 100,001
+candidates, median 254 per query. Only 17.7% have the query's formula; the median query has 41
+distinct formulas.
+- 893 candidates (0.9%, in 270 queries) cannot be featurized (Na, K, metals, one valence error)
+  and were not predicted. No truth is among them. "opt" ranks them last, which is itself a valid
+  ranking rule because MassSpecGym leaves the score free. "pes" ranks every one of them above
+  the truth, a vacuous bound.
+- Scripts: `build_mass_pilot.py`, `filter_mass_pilot.py`, `mass/run_mass_pilot.sh`,
+  `mass_unexplained.py`, `analyze_mass_pilot.py`; log `analyze_mass_pilot.log`.
+
+| score | hit@1 | hit@5 | hit@20 | top-1 has true formula | Δhit@1 vs `cos` |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `cos` | 0.623 | 0.800 | 0.885 | 0.782 | — |
+| `cos_hun` | 0.640 | 0.812 | 0.885 | 0.800 | +0.018 [+0.000, +0.035] |
+| `cos_sqrt` | 0.755 | 0.877 | 0.930 | 0.875 | +0.133 [+0.092, +0.172] |
+| `ent` | 0.743 | 0.870 | 0.917 | 0.860 | +0.120 [+0.083, +0.160] |
+| **`ll`, ε 1e-5** | **0.828** | **0.950** | **0.983** | **0.950** | **+0.205 [+0.160, +0.250]** |
+| `ll`, ε 1e-3 / 1e-2 | 0.785 / 0.680 | 0.912 / 0.848 | 0.958 / 0.917 | 0.900 / 0.807 | +0.163 / +0.058 |
+| `cfeas` (formula explainability alone) | 0.008 | 0.049 | 0.178 | 0.565 | −0.614 |
+| consensus control `cos` / `ll` | 0.005 / 0.003 | | | | |
+
+- **The mass track is easier than the formula track on these queries.** On the formula track,
+  `cos` scores 0.477 and `ll` 0.625. Most mass decoys have the wrong formula, and the
+  prediction rejects them.
+- **`ll` picks the right formula 95% of the time.** 49 of its 69 misses lose to a same-formula
+  isomer.
+- **Unexplained peaks still do not decide the ranking.** Here "dirt" means a query peak no
+  subformula of the TRUE formula explains: 1.7% of query intensity, as on the formula track.
+  - In 101 of 400 queries some wrong-formula candidate does predict intensity on a dirt peak,
+    gaining at most 0.52 nats.
+  - Removing dirt peaks from `ll` (an oracle diagnostic, which needs the true formula) changes
+    no hit@1, @5 or @20.
+  - In the 20 misses to an other-formula decoy, the whole deficit sits on peaks the true
+    formula can explain (−1.11 nats), none on dirt. The decoy formulas' subformula grids are
+    only slightly denser (median ratio 1.14).
+- **Formula feasibility alone carries no ranking signal.** Wrong formulas explain 0.835 of the
+  non-precursor intensity, against 0.963 for the true one. It cannot separate isomers, and a
+  blend with `ll` chose weight 0 on even molecules.
+- **Capping the per-peak penalty hurts here too** (ε 1e-3: −0.043, 1e-2: −0.148 hit@1).
+
 ### GLACIER's released MSG checkpoint on the same 400 queries (added 2026-10-02)
 
 The same 72,946 candidate spectra (each under its query's CE, instrument and precursor) were run
@@ -189,7 +266,32 @@ Its output is squared to linear intensity. Every candidate got a prediction.
   - Truth must be identified by the source SMILES' key, not the benchmark `mol_df` key.
   - In the 21 such pilot queries the truth's own prediction moved (median |Δcos| 0.034 against
     the benchmark).
-  - Standardizing candidates the way training data is standardized is an untested choice.
+  - **Standardizing the candidates does not matter for ranking** (tested 2026-10-02, below).
+- **Candidate standardization test.** All 72,575 pilot candidate molecules were standardized
+  exactly as `02_prepare_proc.py` does: `mol_from_smiles` → `mol_to_smiles` → re-parse. In current
+  code that is RDKit Normalize, Reionize, a P–O normalization and tautomer canonicalization.
+  Parent-fragment extraction and neutralization are commented out
+  ([data_utils.py:194](../../../src/fragnnet/utils/data_utils.py#L194)), although the docstring
+  still lists them.
+  - **What changed.** 11.2% of candidate SMILES (4.6% of 2D keys; no formula changed), including
+    sulfoxides to `[S+][O-]` and amide/imine tautomers. 40 of 400 truths changed.
+  - **Ties.** In 10 queries a decoy standardizes to the truth's own molecule and then ties
+    with it.
+  - **Ranking.** `ll04i00m` was rerun on the standardized set with the same rows and conditions:
+
+    | score | raw hit@1 / @5 | standardized hit@1 / @5 | Δhit@1 [95% CI] |
+    | --- | --- | --- | --- |
+    | `cos` | 0.477 / 0.760 | 0.482 / 0.752 | +0.005 [−0.007, +0.020] |
+    | `ll` | 0.625 / 0.907 | 0.623 / 0.905 | −0.003 [−0.013, +0.007] |
+    | `cos_sqrt` | 0.588 / 0.848 | 0.583 / 0.848 | −0.005 [−0.018, +0.007] |
+    | `ent` | 0.573 / 0.845 | 0.568 / 0.840 | −0.005 [−0.015, +0.007] |
+
+  - **Changed truths.** On the 40 queries whose truth changed, `ll` hit@1 is 0.625 either way;
+    the truth's mean `cos` moves from 0.548 to 0.552.
+  - **The only systematic effect is the forced ties,** which halve the truth's expected credit in
+    those 10 queries (`ll` hit@1 0.20 → 0.10 there).
+  - **What does need care:** identifying the truth by MSGYM's source key, which the scorer now
+    does.
 - **The retrieval `spec_df` files still say `FT`.** The current loader refuses them. The pilot
   relabelled its own subset; the files in `data/ms2c/msgym/v1_5/*.zip` are unchanged.
 
@@ -216,5 +318,7 @@ All under `output/annotation_retrieval_pilot_2026_10_02/`:
 - `score_pilot.py` (the fixed protocol), `analyze_pilot.py`, `analyze_pilot.log`,
   `scores/part_*.pkl` and `scores/summary_*.csv`.
 - `score_extra.py`, `analyze_extra.py`, `analyze_extra.log` and `scores/extra_*.pkl`.
+- `tautomer/`: `build_std_inputs.py`, `mol_df_std.pkl`, `std_changes.csv`, `pred_std/` (491 MB),
+  `score_std.py`, `compare_std.py`, `compare_std.csv` and `.log`.
 - `glacier/`: `build_labels.py`, `labels_pilot*.tsv`, `preds_k256*/preds.hdf5` and logs,
   `score_glacier_pilot.py`, `scores_k256.pkl`, `compare.py`, `compare_k256.csv` and `.log`.

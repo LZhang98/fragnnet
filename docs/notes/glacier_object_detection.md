@@ -1,6 +1,6 @@
 # GLACIER (Wang, Wang & Coley, MIT — arXiv 2606.29161)
 
-> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-09-27
+> **Status:** NOTE &nbsp;·&nbsp; **Updated:** 2026-10-02
 >
 > Literature notes on "GLACIER: Rethinking Mass Spectrum Prediction as an Object Detection
 > Problem". Read the **bin-width caveat** before quoting any of its NIST'20 numbers.
@@ -66,7 +66,62 @@ ms-pred has no ppm anywhere in its loss or evaluator.
   left blank. Our own reported cosines are 0.01 Da binned (`val_cos_sim_0.01`) or
   instrument-tolerance Hungarian (`cos_hun`). Do not place our numbers next to this column.
 - Contrastive finetuning *lowers* spectral similarity (0.838 -> 0.815) while raising retrieval —
-  consistent with CF trading calibration for discriminability.
+  consistent with CF trading calibration for discriminability. But see the next section: the
+  same pattern also fits a spectrum-independent structure prior.
+
+## Contrastive finetuning as a §5.2 shortcut, not §4 leakage — ARGUMENT, UNMEASURED (2026-10-02)
+
+The "MassSpecGym in the Wild" audit ([`massspecgym_in_the_wild_audit.md`](massspecgym_in_the_wild_audit.md))
+gives the framing. **Do not call GLACIER's CF "data leakage".** In the audit's §4 sense, leakage
+means test structures or close analogs in training. GLACIER answers that charge in Appendix E,
+Table 12: removing every retrieval-candidate structure from the CF negatives leaves NIST'20 random
+top-1 unchanged (0.510 vs 0.505).
+
+**The defensible claim is the §5.2 shortcut, which Table 12 does not test.**
+
+- CF (Appendix E, line 893): the positive is always a *measured* molecule. Negatives are 50%
+  same-formula PubChem structures and 50% single-step graph mutations. Retrieval candidates at
+  test time are also PubChem structures.
+- The audit's §5.2 shows that measured molecules and PubChem decoys come from different
+  distributions. On MassSpecGym, PubChem's default ordering alone reaches 49.98% HR@1.
+- CF trains the model to separate measured-like structures from PubChem-like or mutated ones.
+  A forward model can do this without the spectrum: it predicts diffuse, mismatched spectra for
+  off-distribution structures, so their entropy distance is large. Filtering exact candidates
+  cannot rule this out, because the prior acts on the decoy *distribution*.
+- GLACIER notes the risk in the main text (line 626, citing [11]). It dismisses it only on the
+  basis of Table 12.
+
+**GLACIER's own numbers fit this reading** (Tables 1, 2 and 4):
+
+| | w/o CF | w/ CF | gain |
+|---|---:|---:|---:|
+| NIST'20 random top-1 | 0.390 | 0.525 | **+0.135** |
+| NIST'20 scaffold top-1 | 0.384 | 0.460 | +0.076 |
+| MSG formula top-1 | 48.49 | 49.88 | +1.4 pt |
+| MSG mass top-1 | 69.69 | 69.95 | +0.3 pt |
+| NIST'20 random cosine | 0.838 | 0.802 | -0.036 |
+
+The gain shrinks as the split gets harder (random > scaffold > MSG's MCES split), and spectral
+accuracy drops. GLACIER's own explanation (line 917) is that CF "is more effective for learning
+on in-distribution data". On a random split, test truths have close training analogs, so that
+explanation amounts to a learned "looks like the training molecules" prior. It is not evidence
+of better spectrum reasoning. The harsher CF settings (Tables 8-9, lower delta) widen the random-split
+gain and barely move the scaffold split, which is the same pattern again.
+
+**Scope.** This argument only affects the CF rows. GLACIER without CF still leads every retrieval
+table. Use the argument to justify comparing against the w/o-CF rows, not to dispute GLACIER's
+SOTA claim. It also applies to ICEBERG 2.0, whose CF GLACIER adopted. ICEBERG 2.0's baseline rows
+in GLACIER's Table 2 are with CF.
+
+**The test that turns this into a finding** (the audit's §5.2 recommendation): score each test
+query against its candidate set using the *wrong* spectrum. Swap in a spectrum from a different
+test entry within the same precursor-mass window, then compare HR@1 for the CF and w/o-CF models.
+A CF advantage that survives the swap is a structure prior. Under our model the question is the
+same: what does a fully spectrum-blind ranker (PubChem order, the chiral-atom count, a structure-only
+classifier) reach on the NIST'20 candidate sets? **Blocker:** the only released GLACIER weights
+are the MassSpecGym w/o-CF stage
+([released-ckpt finding](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md)).
+A CF model, and anything on NIST'20, means retraining with `configs/glacier/joint_contr_finetune_*.yaml`.
 
 ## Coverage is top-100, NOT top-20 — RESOLVED 2026-09-20
 

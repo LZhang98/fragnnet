@@ -148,8 +148,9 @@ its predicted m/z support at `--min_intensity -1` and `p̂_c(m)` is its predicte
 within the instrument tolerance. Candidates are predicted at the query's CE, adduct and
 instrument, all of which the manifest carries.
 
-- **(a) Cosine baseline.** `cos_sim_0.01`, the linear cosine MassSpecGym requires. `cos_hun` is a
-  sensitivity check.
+- **(a) Cosine baseline.** `cos_sim_0.01`. MassSpecGym does not prescribe the ranking score, so
+  this is our baseline choice, not a benchmark requirement; a 10 ppm or instrument-tolerance
+  cosine is equally admissible. `cos_hun` is a sensitivity check.
 - **(b) Chance-corrected support explainability.** `E_c = Σ_k y_k² · [m_k ∈ S_c]`, the L2 share
   of the query that `c` can explain at all. It uses the same closed form as the DAG oracle in
   [dag_oracle_scores.py](../../scripts/eval/dag_oracle_scores.py).
@@ -207,7 +208,11 @@ parsimony variant add +3 to +5 hit@1 and +5 to +7 hit@5/20 to linear cosine. The
 −1.1 [−3.4, +1.1] hit@1 to score (c), and parsimony tracks the cost (ρ 0.92). On the formula
 track this step is low priority unless Gate 1 shows (c) losing to (e). Fragment-level ideas
 that the pilot did not test, and that (c) cannot already contain:
-- formula feasibility on the mass track, where candidates differ in formula;
+- ~~formula feasibility on the mass track~~ Tested on the 400 pilot queries (2026-10-02).
+  Feasibility alone scores hit@1 0.008, a blend with `ll` picks weight 0, and peaks the true
+  formula cannot explain change no `ll` ranking on either track. `ll` scores 0.828 against
+  `cos` 0.623 on mass val
+  ([mass-track pilot](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md#mass-track-same-400-queries-added-2026-10-02));
 - substructure voting across candidates;
 - a model-free structural cost, outside the model's selected support.
 
@@ -273,9 +278,56 @@ inference ran at about 150 candidate spectra/s on the local 2070 SUPER.
 1. What minimum useful hit@1 gain should Gate 1 require, and over which baseline: (a) as the
    original gate states, or the best of (e)? The pilot used ε 1e-5 and shifts ±5/±7/±11 Da; Gate 1
    can keep them.
-2. Should candidates be standardized like training data (tautomers), with the truth then
-   identified by the standardized source key? Currently they are not.
+2. ~~Should candidates be standardized like training data?~~ Answered 2026-10-02: it changes
+   no score beyond ±0.005 hit@1 (all intervals include zero), and it makes 10 of 400 truths tie
+   with a tautomer decoy. Keep candidates as given and identify the truth by MSGYM's source key.
+   [Test](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md#pipeline-findings).
 3. Does the goal need the no-CE and `[M+Na]+` queries, which are 50% of the val fold?
+
+## Full formula-track run: frozen protocol (2026-10-02, before any test-fold read)
+
+The user asked for all MassSpecGym 1.5 formula sets. This protocol is fixed before the test
+fold is read.
+
+- **Population.** Formula-track queries that both checkpoints can serve: `[M+H]+` with a CE.
+  - Val: 9,731 queries, the `ms_gym_benchmark_1_5` val split, 1,609,711 candidate rows.
+  - Test: 9,954 queries, exactly the simulation-challenge test set, 1,657,238 rows.
+  - This is the simulation challenge's population. The `[M+Na]+` and no-CE queries in the
+    retrieval zips (val 19,429, test 17,556) belong only to the molecule-retrieval challenge,
+    a different task. MassSpecGym leaves the ranking score free, so every score below,
+    `ll` included, is an admissible leaderboard ranking.
+- **Inputs.** Candidates as given (unstandardized). Each candidate row is the query's benchmark
+  row with the molecule swapped.
+- **Truth.** Every candidate whose 2D key matches MSGYM's source SMILES.
+  - Val: exactly one per query. Test: one for 9,935 queries, two (listed stereoisomers) for 19.
+  - A query counts as a hit if any truth candidate is in the top k (MassSpecGym's 14-character
+    InChIKey rule).
+- **Ties.** Expected hit@k under random tie-breaking, never list position (the truth is
+  candidate 0).
+- **Models.** MASSter `ll04i00m`@60 (`FT`→`ORB` copy) at `--min_peak_int -1`, and GLACIER's
+  released MSG checkpoint, squared, at upstream's retrieval settings (`03_run_retrieval.py` at
+  `318bb7b`: `--batch-size 64 --sparse-k 100`; user decision 2026-10-03). GLACIER's output
+  depends on batch composition: at batch 16 vs 64, 19% of 512 test spectra change (median 2%
+  relative intensity shift, worst cosine 0.95). The first five test shards, run at batch 16 /
+  sparse-k 256, are kept in `glacier_bs16_k256/` and are not used. GLACIER runs on test only and is
+  scored with `cos_sim_0.01` and `cos_sim_sqrt_0.01` (user decisions, 2026-10-02/03); both models'
+  `cos_sim_sqrt_0.01` on test use the eval's own CUDA binning.
+- **Scores.** All four are reported:
+  - (a) `cos_sim_0.01` (our baseline; MassSpecGym does not fix the ranking score), with
+    `cos_hun` as a sensitivity check;
+  - (c) `ll` with ε 1e-5, also without the precursor;
+  - (e) `cos_sqrt`;
+  - (e) `ent`;
+  - `cos_hun_inst_tol` (added at the user's request before any test read), computed offline
+    with the in-model code path. It reproduces the in-model value to 1e-6.
+  - `cos_hun_inst_tol_sqrt`, MASSter on test only (user request, before the test read). It
+    reproduces the in-model value to 8e-5.
+- **Primary comparison.** (c) against (a), fixed by the pilot.
+- **Spectrum-blind control.** `cos` and `ll` against the consensus pseudo-query (top 30 bins of
+  the candidates' mean prediction).
+- **Reporting.** hit@1, @5 and @20 with 95% molecule-bootstrap intervals (2,000 resamples),
+  overall and by instrument. Val is also reported without the 400 pilot molecules.
+- **Out of scope.** No blends or reranker are fitted on test; the mass track comes later.
 
 ## Next concrete check
 

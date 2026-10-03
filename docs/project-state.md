@@ -17,8 +17,11 @@ queries, one per molecule, 72,946 candidate spectra, `ll04i00m`@60.
 - **Controls.** Spectrum-blind controls sit at random (0.018–0.033).
 - **Pipeline facts.** MassSpecGym stores the truth as candidate 0, so never break ties by
   position. Retrieval candidates are not tautomer-standardized like training data, which
-  changes the truth's 2D key for 95 of 2,331 val molecules. The retrieval `spec_df` files still
-  say `FT`.
+  changes the truth's 2D key for 95 of 2,331 val molecules. Identify the truth by MSGYM's source
+  key; standardizing the candidates changes no score (±0.005 hit@1, tested). The retrieval
+  `spec_df` files still say `FT`.
+- **GLACIER** (released MSG checkpoint, same candidates) is level with `ll04i00m` on every
+  score (cosine hit@1 0.465 against 0.477); the likelihood lifts it by the same amount.
 - **Next.** Gate 1 on the remaining formula val queries against sqrt-cosine and entropy (user
   to fix the minimum useful gain and the baseline), then the mass set.
 
