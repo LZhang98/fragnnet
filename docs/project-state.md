@@ -4,6 +4,25 @@
 
 ## Current handoff
 
+**MSGYM 1.5 formula-track retrieval, full val + test (2026-10-03), complete.** Simulation-challenge
+`[M+H]+` queries only (val 9,731, test 9,954; 1.6M candidates each), not leaderboard-comparable.
+- **Scoring rule.** On test, MASSter `ll04i00m` hit@1 is 0.358 with `cos_sim_0.01`, 0.455 with
+  `cos_sim_sqrt_0.01` and 0.485 with the query log-likelihood (+0.127; the same gain on val).
+  Instrument-tolerance matching adds under 1 point.
+- **GLACIER.** The released checkpoint at upstream settings (batch 64, sparse-k 100) is
+  −0.023 [−0.037, −0.009] / −0.027 [−0.043, −0.012] hit@1 below MASSter on cosine / sqrt.
+  - It is level on ms-pred's entropy similarity: 49.65% vs 48.50%, +1.15 [−0.54, +2.86] points.
+  - Entropy is how the GLACIER paper ranks retrieval; its 48.49% reproduces only under entropy.
+  - ms-pred's bootstrap treats spectra as independent, so its intervals are too narrow.
+- **QTOF.** Much harder (test likelihood hit@1 0.208 against 0.538 on ORB). It is a
+  generalization problem, not bad data.
+- **GLACIER batch dependence.** Its output depends on batch size (19% of spectra shift between
+  batch 16 and batch 64).
+- **Next.** A `[M+Na]+` and no-CE policy for full-challenge numbers.
+
+[Finding](findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
+· [Plan](plans/annotation_aware_retrieval_plan.md).
+
 **Annotation-aware retrieval pilot (2026-10-02), complete; not Gate 1.** 400 MSGYM formula-val
 queries, one per molecule, 72,946 candidate spectra, `ll04i00m`@60.
 - **Checkpoint.** Re-checked under current code (test 0.571272 against 0.571277). It runs from
@@ -1378,6 +1397,10 @@ to +0.024); per-peak sqrt at a matched peak count gives +0.002 to +0.006. GLACIE
 3,098 steps per epoch fit training on the simulation train fold only. `ll04i00m` is not our best
 recipe (`1imawkx1` has no checkpoint), so the EMA arm's checkpoint is the next one to score.
 [Finding](findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+The [2026-10-03 instrument audit](findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md#instrument-prediction-audit-2026-10-03)
+finds no established QTOF winner (195 molecules; all paired 95% intervals cross zero).
+Instrument-tolerance matching reverses its tiny sqrt ordering; actual peaks show better
+MASSter coverage but worse QTOF base-peak ranking and more off-target intensity. No model changes.
 
 **MASSter route map (2026-09-24): the encoder's global attention writes the per-molecule
 lookup key; inference only.** Step 0 of the memorization-route plan extended the probe to routes

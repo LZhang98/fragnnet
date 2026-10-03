@@ -18,10 +18,10 @@
   instrument (ORB/ORB_F). The Fourier NCE code is a fixed per-integer table, not a smooth
   function of energy. With the instrument it effectively learns an instrument-specific NCE
   calibration, which the peptide models do explicitly.
-- **MSGYM reference.** `frag_mode` is CID for **100% of rows** (all 118,991 rows, not only
-  train), so that embedding is a constant and the HCD row is untrained. NCE is missing for 100%
-  of raw rows and is derived from ACE and precursor m/z, so the two CE channels are redundant
-  given mass. ORB vs QTOF is also a data-source identity.
+- **MSGYM reference.** `frag_mode` is CID for **100% of rows**, but that "CID" is the parser's
+  fallback for an unknown mode, not data. The embedding is a constant and the HCD row is
+  untrained. The CE units are mixed (29% of Orbitrap `ace` is NCE already converted to eV), and
+  the NCE channel is derived from that column. See §7.
 - **Against the literature.** MASSter's injection point (spectrum-level context concatenated
   per fragment or candidate) matches FraGNNet and FIORA. It is behind GLACIER, the one verified
   model that injects CE into the encoder (node embeddings plus attention bias). No small-molecule
@@ -107,7 +107,7 @@ knowledge.
 | ICEBERG v2 (V) | per-CE spectra; eV = NCE·mz/500; 64-d sinusoid; CE ablation +1.1 pt top-1 | one-hot + multi-hot chemistry flags | none | Generate and Score (exact site U) | U |
 | FraGNNet paper (V) | merged; mean of Fourier embeddings | none (`[M+H]+` filter) | none | concat per fragment node | — |
 | FIORA (V) | continuous eV (0–100) | `[M+H]+`/`[M-H]-` (+`[M]±`) | categorical | concat per edge in the final FC layers; GNN on the neutral graph | partly: per-fragment H-shift ion set |
-| GLACIER (V) | continuous, positional-encoded | one-hot | not stated | **node embeddings + edge attention bias** | U |
+| GLACIER (V, code + released MSG checkpoint) | raw float, no NCE/eV conversion; sinusoid; learned token for missing CE | one-hot | one-hot, fixed (Orbitrap / QTOF / IT-FT / Unknown); `embed_instrument: True` in the checkpoint | concatenated to **every atom's input features** in the Graphormer encoder | U |
 | MassSpecGym task (V) | float CE | `[M+H]+` only | QTOF / Orbitrap | benchmark fields; also exposes precursor m/z | — |
 | Prosit / AlphaPeptDeep (peptides) | scalar NCE (+ instrument one-hot in AlphaPeptDeep) | charge | AlphaPeptDeep only | meta embedding added to the sequence | — |
 | **MASSter `i4`** | per-integer Fourier NCE code | physical + constant embedding | embedding (2 classes) | concat per candidate token; detached into proposal heads; GNN blind | **yes** (ion mass and element deltas) |
@@ -130,7 +130,9 @@ Notes:
    for multiply charged ions. None of these is instrument-calibrated. In peptide work the
    instrument-to-instrument offsets are 1–6 NCE (Lumos vs Q Exactive, for example). Our
    Elite/Lumos result is the small-molecule version of that effect.
-2. **Encoder-level injection has one verified precedent: GLACIER.** MASSter has the switch
+2. **Encoder-level injection has one verified precedent: GLACIER.** It concatenates its CE
+   sinusoid and its adduct and instrument one-hots to every atom's Graphormer input
+   (`ms_pred/glacier/joint_model.py:251-289` at `318bb7b`). MASSter has the switch
    (`masster_context_in_gnn`, plus the zero-init suggestion in the
    [context design audit](masster_context_design_audit.md) §4). No result on the current
    references is recorded.
@@ -183,12 +185,84 @@ Notes:
 - **Before training on non-NIST20 data:** pin `nce_max` per dataset, and decide the
   unknown-instrument policy.
 
+## 7. MSGYM config check (2026-10-03)
+
+Config: [msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier.yml](../../../config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier.yml).
+Raw source: `data/raw/msgym_1_5/MassSpecGym1.5.tsv`. That file has one `collision_energy`
+float column, with no unit and no fragmentation-mode column.
+
+1. **CE units are mixed inside `ace`.**
+   - [`parse_mass_gym_ce_str`](../../../src/fragnnet/utils/data_utils.py) marks a value as NCE
+     only if the string contains `normalized=True`. The MSGYM 1.5 values are bare floats, so
+     **every row is stored as eV**.
+   - The data contradict that for part of the Orbitrap set. 23,884 of the 23,924 non-integer
+     Orbitrap values (29% of 81,313) satisfy `ace·500/prec_mz` = a multiple of 5 within 0.05.
+     They are NCE that an upstream step converted to eV. For those rows the derived NCE
+     channel recovers the true setting exactly (q99 180).
+   - The other 57,389 Orbitrap rows are integers on the 15/20/30/45/60/75/90 ladder. Their
+     unit cannot be determined from the file. Their derived NCE reaches 874, and 4% exceed
+     200, which is implausible for Orbitrap NCE. So at least some of these are probably NCE
+     stored as eV.
+   - 1,018 Orbitrap molecules have rows of both kinds.
+   - The ICEBERG team treats this field as NCE: their missing-CE imputation searches a
+     0–150% NCE grid (MassSpecGym in the Wild, App. A.5,
+     `data/paper/MassSpecGym_in_the_Wild_arxiv_2606.19624.txt:1117`).
+   - QTOF rows are 96% integer eV-like settings. Their derived "NCE" is a formula artifact,
+     not an instrument setting.
+   - Consequence: neither CE channel has one unit across Orbitrap rows. The per-integer
+     Fourier code can still tell the two populations apart: converted rows land on
+     multiples of 5 in the NCE channel, integer rows do not. That makes it a source cue, not
+     an energy.
+2. **`frag_mode` CID is a default, not a label.**
+   [`data_utils.py:1005-1007`](../../../src/fragnnet/utils/data_utils.py) sets CID whenever the
+   mode is missing ("default is CID if we don't know"). The Orbitrap rows are most likely
+   beam-type HCD.
+   - The config header says HCD is kept in `frag_modes` "so a checkpoint stays usable on HCD
+     data". That is not true: the HCD row is never trained, so HCD input reaches a random
+     initialization. The embedding adds a constant bias and nothing else.
+   - Recommended: turn `frag_mode` off for MSGYM, or relabel it as unknown. Changing the
+     embedding changes the context width, so this needs a new run, not a checkpoint patch.
+3. **`ORB` means different things in different datasets.** In NIST20 configs `ORB` means the
+   Elite specifically, with Lumos as `ORB_F`. In MSGYM, `ORB` is every Orbitrap (`Orbitrap`
+   raw label). An embedding row trained on one dataset is not the same instrument in the
+   other. Moving checkpoints between datasets, or pooling them, needs a mapping decision.
+4. **Clamps.** At `nce_max` 300, 0.79% of derived NCE values clamp onto one row. Almost all
+   of these are integer-ladder rows, so the clamp mostly hits the suspect unit population.
+   `ace_max` 300 clips 4 rows.
+5. **The control carries the same issues.** The base config (`1imawkx1`) uses the same
+   metadata keys, so the planned read (this arm against `1imawkx1`) is still like-for-like.
+   Only cross-model comparisons that interpret CE are affected. That includes ICEBERG/GLACIER
+   CE ablations and any NIST20 → MSGYM transfer.
+
+Not determined here: the unit of the integer Orbitrap ladder, which needs MassSpecGym's
+source-library provenance; and whether fixing units changes cosine (no run).
+
+## 8. What we fed GLACIER (2026-10-03)
+
+The released-checkpoint comparisons
+([GLACIER vs `ll04i00m`](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md), the retrieval
+pilot and the formula-retrieval shards) all build an ms-pred labels TSV. For the test set it is
+`output/glacier_msg_eval_2026_09_24/labels_test.tsv`. Columns:
+`spec, ionization, formula, smiles, inchikey, instrument, collision_energies, precursor`.
+
+| Field | Value passed | How GLACIER uses it (`predict_smis_joint.py`, `joint_model.py`) |
+| --- | --- | --- |
+| adduct | `[M+H]+` (all 9,954) | one-hot, concatenated per atom |
+| CE | raw MSGYM `collision_energy`, e.g. `['20']`; 1,063 non-integer strings | `float(s.split()[0])`, no unit conversion; sinusoid concatenated per atom |
+| instrument | raw `Orbitrap` (8,374) / `QTOF` (1,580) | fixed one-hot, positions 0 / 1, concatenated per atom |
+| precursor | precursor m/z in the TSV | the inference dataset sets `precursor: 0.0`; the model forward does not use it (loss only) |
+
+So both models received **the same CE number** for every test spectrum. GLACIER reads it
+unit-agnostically. Our pipeline calls it ACE and also derives an NCE channel from it. The
+comparison is input-matched, and the mixed-unit problem in §7 applies to both models alike.
+
 ## Verification
 
 - Context routing: MM:870-895, 3198-3204, 3263-3265, 3382.
 - Fourier table frozen: `form_embedder.py:140-141`.
-- MSGYM metadata counts: computed directly from `data/proc/ms_gym_benchmark_1_5/spec_df.pkl`
-  (`frag_mode` CID 118,991/118,991; `nce` NaN 100%; `ace` NaN 0%).
+- MSGYM metadata counts and CE unit test: computed directly from
+  `data/proc/ms_gym_benchmark_1_5/spec_df.pkl` (`frag_mode` CID 118,991/118,991; `nce` NaN 100%;
+  `ace` NaN 0%; non-integer `ace` against `ace·500/prec_mz` on the 5-grid).
 - NIST20 split counts: computed by the audit from `data/proc/nist20/spec_df.pkl` plus the split
   ID files. They match the val counts in the instrument CE finding.
 - Literature rows marked V were read from paper or README text; nothing was reimplemented.

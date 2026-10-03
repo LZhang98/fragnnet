@@ -1,6 +1,6 @@
 # Annotation-aware candidate retrieval
 
-> **Status:** ACTIVE · **Updated:** 2026-10-02
+> **Status:** ACTIVE · **Updated:** 2026-10-03
 > Score MassSpecGym retrieval candidates with what the predicted spectrum carries beyond its
 > thresholded intensities: the full predicted support, the low-intensity tail, and per-peak
 > fragment annotations. A 400-query formula-val pilot ran on `ll04i00m` (2026-10-02).
@@ -9,8 +9,13 @@
 > - Support (b): worse than cosine.
 > - Fragment explanation cost and parsimony: add to cosine, add nothing to (c).
 >
-> Next is Gate 1 on the rest of formula val, with sqrt-cosine and entropy similarity as
-> competitors. [Pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
+> **Full formula track done (2026-10-03),** for simulation-challenge `[M+H]+` queries only. On
+> test, MASSter's likelihood scores hit@1 0.485 against 0.358 for `cos_sim_0.01`. GLACIER is
+> −0.023 / −0.027 hit@1 below MASSter on `cos_sim_0.01` / `cos_sim_sqrt_0.01`, and level on
+> ms-pred's entropy, the similarity its paper's retrieval numbers use (49.65% here vs 48.49%
+> reported).
+> [Full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
+> · [pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
 > Cross-model, so it sits at the top of `plans/`.
 
 ## Objective and acceptance criteria
@@ -331,7 +336,14 @@ fold is read.
 
 ## Next concrete check
 
-Run Gate 1 on the formula val queries outside the 400 pilot molecules
+**Superseded 2026-10-03.** The full formula track (val + test) ran under the frozen protocol
+above; see the [full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md).
+Open next steps:
+- a policy for `[M+Na]+` and no-CE queries, needed for leaderboard-comparable numbers;
+- a query-level strongest-decoy peak comparison for the QTOF deficit;
+- the mass track at full scale.
+
+Original next check: run Gate 1 on the formula val queries outside the 400 pilot molecules
 (`data/pilot/pilot_queries.csv`), with scores (a), (c) and (e) and the consensus control.
 Fix the minimum useful gain and the baseline first (open question 1). Only `pred_mzs` and
 `pred_ints` are needed, so the export can drop annotations or be scored inside inference. At

@@ -1,6 +1,6 @@
 # MASSter vs GLACIER's released checkpoint on the MassSpecGym simulation test set
 
-> **Status:** FINDING · **Updated:** 2026-09-24 (corrected: GLACIER outputs sqrt intensity)
+> **Status:** FINDING · **Updated:** 2026-10-03 (instrument prediction audit; GLACIER outputs sqrt intensity)
 > GLACIER predicts sqrt(intensity), so its output is squared before a linear comparison.
 > The test set is the 9,954-spectrum MassSpecGym simulation-challenge test set. On the linear
 > cosine MassSpecGym requires (`cos_sim`), computed with our exact `cos_sim_0.01`, MASSter
@@ -16,8 +16,10 @@
   [ms-pred README](https://github.com/coleygroup/ms-pred/blob/main/README.md) (Dropbox,
   downloaded 2026-09-24). Its internal path is `results/joint_train_msg/split_rnd1/version_5`,
   and it early-stopped on val loss after 24 epochs. It ran through ms-pred's own
-  `src/ms_pred/glacier/predict_smis_joint.py` (`main` at `318bb7b`) with `--sparse-k 256`, the
-  `max_k` in ms-pred's MSG retrieval entries. All 9,954 spectra got a prediction. At
+  `src/ms_pred/glacier/predict_smis_joint.py` (`main` at `318bb7b`) with `--sparse-k 256`. (Correction 2026-10-03: this is not upstream's setting. `max_k` in
+  ms-pred's retrieval entries is the candidate-list size; upstream's `03_run_retrieval.py` uses
+  `--sparse-k 100 --batch-size 64`. GLACIER's output also depends on batch size; see the
+  [full retrieval finding](masster_msgym_formula_retrieval_full_2026_10_03.md#glacier-batch-dependence).) All 9,954 spectra got a prediction. At
   `--sparse-k 1024` it scores slightly lower, so 256 does not truncate it.
 - **Is it the paper's model?** Probably its "w/o CF" row, but not proven. The GLACIER paper,
   Table 4, gives MassSpecGym cosine 0.58 (95% CI 0.57-0.59) without contrastive fine-tuning and
@@ -209,3 +211,79 @@ All under `output/glacier_msg_eval_2026_09_24/` (git-ignored):
   `score_glacier.py`, `score_ours.py`, `score_sqrt_check.py`, `score_mspred_style.py` and
   `score_mspred_native.py`.
 - **Per-spectrum scores:** `analysis/*_test_cos.pkl` and `analysis/sqrt_check_scores.pkl`.
+
+## Instrument prediction audit (2026-10-03)
+
+Rechecked the saved exact-m/z aggregated MASSter export (`ll04i00m` epoch 60, no cutoff)
+against the original GLACIER sparse-k 256 predictions. These are the simulation predictions
+above, not the later retrieval sparse-k 100 run. Both score tables have unique, identical
+spec_id sets and exactly matching molecule, instrument and CE metadata. GLACIER peaks are
+squared before linear-intensity analysis. No inference, training or preprocessing change ran.
+
+### QTOF is not an established GLACIER win
+
+Fresh paired 95% molecule-bootstrap intervals (5,000 resamples, seed 0):
+
+| Instrument | Metric | MASSter | GLACIER | Difference, 95% CI |
+| --- | --- | ---: | ---: | --- |
+| Orbitrap | linear 0.01 Da bins | 0.58925 | 0.55864 | +0.03061 [+0.02099, +0.04013] |
+| Orbitrap | sqrt 0.01 Da bins | 0.61137 | 0.59832 | +0.01305 [+0.00627, +0.01955] |
+| Orbitrap | linear instrument-tolerance Hungarian | 0.60385 | 0.57059 | +0.03326 [+0.02368, +0.04284] |
+| Orbitrap | sqrt instrument-tolerance Hungarian | 0.62715 | 0.61100 | +0.01615 [+0.00927, +0.02273] |
+| QTOF | linear 0.01 Da bins | 0.47598 | 0.47557 | +0.00041 [−0.02779, +0.03131] |
+| QTOF | sqrt 0.01 Da bins | 0.46292 | 0.46452 | −0.00159 [−0.02389, +0.02426] |
+| QTOF | linear instrument-tolerance Hungarian | 0.55101 | 0.53439 | +0.01662 [−0.01288, +0.04765] |
+| QTOF | sqrt instrument-tolerance Hungarian | 0.55135 | 0.53394 | +0.01740 [−0.00593, +0.04313] |
+
+Orbitrap has 8,374 spectra from 2,231 molecules; QTOF has 1,580 from only 195 molecules.
+Every QTOF interval includes zero. QTOF matching uses 20 ppm with a 750 Da floor (at least
+0.015 Da); Orbitrap uses 10 ppm with a 200 Da floor. Thus QTOF's 0.01 Da binned score is
+particularly sensitive to mass offsets and bin boundaries. Switching to instrument-tolerance
+matching lifts linear scores by 0.07503 for MASSter and 0.05882 for GLACIER and reverses the
+small sqrt ordering. This establishes metric sensitivity, not which individual mass offsets
+come from acquisition, rounding or formula assignment. Binned cosine remains the benchmark.
+
+### What the peak lists show
+
+Independent diagnostics on saved target peaks and both actual prediction HDF5 files:
+
+| Instrument | Model | Target intensity covered | Target base peak supported | Predicted base peak matches target base peak | Predicted intensity off target | Median peaks ≥1% of predicted base |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Orbitrap | MASSter | 0.89681 | 0.95080 | 0.42441 | 0.29845 | 17 |
+| Orbitrap | GLACIER | 0.79340 | 0.86745 | 0.41557 | 0.19117 | 7 |
+| QTOF | MASSter | 0.88718 | 0.95000 | 0.38038 | 0.40888 | 27 |
+| QTOF | GLACIER | 0.73872 | 0.86962 | 0.40570 | 0.29392 | 8 |
+
+Support means **any positive predicted peak** inside the target's instrument window; it is not
+a one-to-one assignment, a useful-intensity guarantee or a cosine oracle. Predicted base peaks
+are determined after exact-m/z duplicate aggregation. Off-target intensity is the L1 fraction
+with no target within that window. These CPU diagnostic values do not replace the validated
+CUDA score tables; they do not use 0.01 Da bins. Median target peak counts are 20 (Orbitrap) and
+19 (QTOF).
+
+The evidence points to an allocation tradeoff: MASSter covers more target intensity on both
+instruments, but spreads more predicted intensity onto absent peaks. On QTOF it also ranks the
+observed base peak first less often, despite supporting it more often. That supports a QTOF
+intensity-allocation weakness, rather than deficient candidate coverage. It does not prove an
+architectural cause or that GLACIER is better overall on QTOF.
+
+### Dataset composition and limits
+
+QTOF has 21.2% of rows above stored CE 50, against Orbitrap's 38.1%. MASSter's linear advantage
+in that band is +0.05153 on QTOF and +0.04940 on Orbitrap. Below or at 50, the four QTOF bin
+means favour GLACIER (−0.00937, −0.01663, −0.02623, −0.00885), while Orbitrap's favour MASSter.
+Reweighting both instruments to the whole test set's five stored-CE-bin proportions changes
+QTOF's linear difference to +0.00778 and sqrt to +0.00952; Orbitrap stays +0.03082 and +0.01299.
+This descriptive control is not matched chemistry or calibrated energy. Stored CE has unresolved
+unit/provenance issues; see the [metadata audit](masster_metadata_usage_audit_2026_10_03.md#7-msgym-config-check-2026-10-03).
+
+Only 107 molecules occur on both instruments. Restricting to those molecules gives linear
++0.01757 on Orbitrap (1,488 spectra) and −0.00099 on QTOF (1,010 spectra). This restriction
+still does not match energy, source or numbers of spectra per molecule. Chemistry composition
+alone therefore does not obviously remove the pattern, but instrument causality is unproven.
+
+Artifacts: `output/msgym_instrument_audit_2026_10_03/audit.py`, `metrics.csv`,
+`paired_scores.csv`, `prediction_diagnostics.pkl`, and `audit.log`. Reproduce from the repository
+root using the configured FRAGNNET-GPU interpreter. One checkpoint per model; no training-seed
+uncertainty estimated. The next causal check is matched molecule/energy/source strata and
+QTOF intensity-allocation errors, not an instrument-specific architecture claim.

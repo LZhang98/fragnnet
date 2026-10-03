@@ -322,3 +322,51 @@ All under `output/annotation_retrieval_pilot_2026_10_02/`:
   `score_std.py`, `compare_std.py`, `compare_std.csv` and `.log`.
 - `glacier/`: `build_labels.py`, `labels_pilot*.tsv`, `preds_k256*/preds.hdf5` and logs,
   `score_glacier_pilot.py`, `scores_k256.pkl`, `compare.py`, `compare_k256.csv` and `.log`.
+
+## Retrieval versus forward similarity (2026-10-03, interim full-test read)
+
+> Superseded by the complete 20-shard read: [full formula-track finding](masster_msgym_formula_retrieval_full_2026_10_03.md).
+
+The full-test run now supersedes the 400-query pilot for the available matched population.
+Read `output/msgym_formula_retrieval_2026_10_02/interim_compare.py` against the completed
+GLACIER score/sqrt shards: **19 shards, 9,500 queries, 2,279 molecules, 1,586,527 candidates**;
+8,025 ORB and 1,475 QTOF queries. This is an interim result, not the full 9,954-query comparison.
+GLACIER uses batch 64 / sparse-k 100 here, unlike the pilot and original simulation audit;
+see the [frozen protocol](../../plans/annotation_aware_retrieval_plan.md#full-formula-track-run-frozen-protocol-2026-10-02-before-any-test-fold-read).
+
+| Model / score | Overall hit@1 | ORB hit@1 | QTOF hit@1 |
+| --- | ---: | ---: | ---: |
+| MASSter linear cosine | 0.362 | 0.402 | 0.143 |
+| GLACIER linear cosine | 0.339 | 0.376 | 0.137 |
+| MASSter sqrt cosine (eval CUDA bins) | 0.459 | 0.509 | 0.186 |
+| GLACIER sqrt cosine (eval CUDA bins) | 0.429 | 0.476 | 0.171 |
+| MASSter likelihood | 0.489 | 0.542 | 0.199 |
+
+GLACIER minus MASSter paired overall hit@1: linear −0.023 [−0.037, −0.009], sqrt
+−0.030 [−0.045, −0.013], 95% molecule-bootstrap intervals. MASSter's advantage in forward
+similarity therefore also yields an overall retrieval advantage in this matched interim read.
+There is no established instrument-specific difference from these overall intervals.
+
+To inspect the QTOF deficit, group candidate score rows by query, take the maximum truth score
+(the test can have two equivalent truths) and maximum nontruth score, then average over queries:
+
+| Instrument / model | Mean true-candidate linear cosine | Mean strongest-decoy cosine | Mean truth minus decoy |
+| --- | ---: | ---: | ---: |
+| ORB / MASSter | 0.59306 | 0.58385 | +0.00950 |
+| ORB / GLACIER | 0.55877 | 0.57060 | −0.01115 |
+| QTOF / MASSter | 0.47408 | 0.58364 | −0.10956 |
+| QTOF / GLACIER | 0.45744 | 0.58214 | −0.12470 |
+
+Retrieval requires separating the truth from its strongest competitor, not merely a good
+absolute prediction. QTOF has lower true-candidate similarity without correspondingly lower
+strongest-decoy similarity. Both models therefore lose many more rankings there. Linear
+cosine gives large peaks disproportionate influence; smaller diagnostic peaks matter for
+same-formula isomers, consistent with the observed sqrt/likelihood gains. Broad predicted
+support can match wrong isomers too, but these score means do not establish the causal
+contribution of support size, CE, source composition or candidate chemistry. A query-level
+strongest-decoy peak comparison is the next causal check.
+
+Verification: reran the existing interim comparison with the configured FRAGNNET-GPU interpreter;
+checked margins directly from its loaded MASSter/GLACIER candidate tables. No inference or
+training launched. The simulation-only instrument audit is linked in the
+[forward comparison](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md#instrument-prediction-audit-2026-10-03).
