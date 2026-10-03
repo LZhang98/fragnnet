@@ -302,6 +302,11 @@ def get_ints_transform_func(ints_transform: str) -> Callable[[th.Tensor], th.Ten
         def _func(ints: th.Tensor) -> th.Tensor:
             return th.sqrt(ints)
 
+    elif ints_transform == "pow0.75":
+
+        def _func(ints: th.Tensor) -> th.Tensor:
+            return ints**0.75
+
     elif ints_transform == "none":
 
         def _func(ints: th.Tensor) -> th.Tensor:
@@ -352,6 +357,13 @@ def get_ints_untransform_func(ints_transform: str):
             return x**2
 
         _untransform_fn = _untransform_fn_sqrt
+    elif ints_transform == "pow0.75":
+        max_ints = float(1000.0**0.75)
+
+        def _untransform_fn_pow075(x: th.Tensor) -> th.Tensor:
+            return x ** (4.0 / 3.0)
+
+        _untransform_fn = _untransform_fn_pow075
     elif ints_transform == "none":
         max_ints = 1000.0
 

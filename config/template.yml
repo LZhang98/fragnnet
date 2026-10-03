@@ -323,7 +323,7 @@ eval_bin_remove_prec_peaks: False
 eval_hun_sqrt: False
 eval_hun_remove_prec_peaks: False
 sum_ints: True
-ints_transform: none # none, sqrt, log10, log10t3, loge
+ints_transform: none # none, sqrt, pow0.75, log10, log10t3, loge
 train_batch_size: 16
 eval_batch_size: 16
 accelerator: cpu

@@ -452,3 +452,28 @@ The calibration lifts GLACIER by the same +0.045 hit@1 as MASSter, so the MASSte
 about +0.04 at top1 and narrows to +0.014 at top20. ORB: MASSter 0.586 vs GLACIER 0.545 top1
 (+0.041 [+0.025, +0.057]). QTOF: 0.222 vs 0.195 (+0.027 [−0.019, +0.074], not resolved). Full table:
 `test_masster_vs_glacier.csv`.
+
+### Each model in its own likelihood space (test-tuned diagnostic, added 2026-10-03)
+
+The frozen rule's prediction power (0.75) was tuned on MASSter, and GLACIER predicts √ intensity.
+To bound that asymmetry, both models were swept on **test** (query weight √y fixed; prediction
+power g ∈ {0, 0.1, 0.25, 0.5, 0.75, 1}, tolerance 1×/2×, floor 1e-2…1e-5). Both maxima are
+interior. These are test-tuned bounds, not reportable scores. Scripts: `space_sweep.py`,
+`space_sweep_ext.py`, `space_compare.py`; grids in `test_space_grid.csv`.
+
+| best top1 over tolerance and floor | g 0 | 0.1 | 0.25 | 0.5 | 0.75 | 1.0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MASSter | 0.068 | 0.356 | 0.488 | 0.521 | **0.531** | 0.519 |
+| GLACIER | 0.436 | 0.482 | **0.506** | 0.504 | 0.495 | 0.479 |
+
+GLACIER peaks at g 0.25–0.5 (g 0.5 is its raw √ output), MASSter at 0.75. Support alone (g 0)
+works for GLACIER's 100-peak output and not for MASSter's full ~950-peak support.
+
+| MASSter / GLACIER, Δ [95% CI] | top1 | top2 | top3 | top5 | top10 | top20 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Same frozen rule | 0.528 / 0.490, +0.039 [+0.022, +0.055] | +0.035 | +0.032 | +0.024 | +0.021 | +0.014 |
+| Each at its own test-best | 0.530 / 0.506, +0.025 [+0.007, +0.043] | +0.025 | +0.024 | +0.025 | +0.026 [+0.013, +0.041] | +0.023 [+0.012, +0.037] |
+| MASSter frozen vs GLACIER test-best | 0.528 / 0.506, +0.023 [+0.005, +0.040] | +0.019 | +0.020 | +0.023 | +0.026 | +0.023 |
+
+Scoring GLACIER in its own space removes about a third of the top-1 lead. MASSter stays ahead at
+every cutoff, with every interval above zero, even though the GLACIER setting was chosen on test.

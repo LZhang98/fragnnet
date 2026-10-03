@@ -19,6 +19,22 @@ is the prepared `…_k1_ema999_fourier.yml` control plus `ints_transform: sqrt` 
 - **Next.** Submit the control and this arm together. Read linear `val_cos_sim_0.01`, then MSGYM
   test retrieval with `scripts/eval/score_retrieval_candidates.py` against the control and GLACIER.
 
+**Calibrated-likelihood training arms (2026-10-03), prepared, not submitted.** Four more configs
+next to the sqrt arm put the calibrated retrieval rule (`ll_g0.75_t2_e1e-4_a0.5`) into training:
+`…_k1_ema999_fourier_{pow075,pm1,sqrt_pm1,pow075_pm1}.yml`.
+- **Keys.** `ints_transform: pow0.75` is new (target y^0.75, untransform x^(4/3)).
+  `output_distribution: peak_marginal` with `pm_tolerance_multiple: 1.0` replaces the Gaussian
+  density by the predicted mass within 1x tolerance. Transformed arms set
+  `masster_merge_same_mz_rows: true`. Each resolved diff against the control is only these keys
+  and W&B labels.
+- **Not trained.** The prediction exponent γ (cross-entropy is minimized at q = target weights,
+  so flattening goes on the target) and the 1e-4 floor.
+- **Smoke.** One CPU epoch on 64 spectra exits 0 for `pow075`, `pm1` and `pow075_pm1`. The GPU
+  was busy with another session's sweep.
+- **Read.** Linear `val_cos_sim_0.01`, then retrieval with the scoring rule re-selected on val
+  per checkpoint. A transformed arm's q is p^0.5 or p^0.75 of the exported p, so the frozen rule
+  does not carry over.
+
 [Retrieval finding](findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md).
 
 **MSGYM 1.5 formula-track retrieval, full val + test (2026-10-03), complete.** Simulation-challenge
@@ -40,6 +56,7 @@ is the prepared `…_k1_ema999_fourier.yml` control plus `ints_transform: sqrt` 
 - **GLACIER batch dependence.** Its output depends on batch size (19% of spectra shift between
   batch 16 and batch 64).
 - **Calibrated likelihood (val-selected, one test read):** hit@1 0.528 (+0.043 [+0.035, +0.052]) over the frozen `ll`, same predictions; rule `ll_g0.75_t2_e1e-4_a0.5`.
+- **Same-rule and own-space head-to-head:** GLACIER under the same frozen rule 0.490 (MASSter +0.039 [+0.022, +0.055]); with GLACIER scored in its own test-best space (g 0.25), MASSter still leads +0.023 [+0.005, +0.040] at top1 and at every cutoff to top20.
 - **Next.** A `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val (option 2).
 
 [Finding](findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)

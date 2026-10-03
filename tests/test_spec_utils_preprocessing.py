@@ -56,6 +56,11 @@ class TestGetIntsTransformFunc:
         f = get_ints_transform_func("sqrt")
         assert f(th.tensor([4.0])).item() == pytest.approx(2.0)
 
+    def test_pow075_known_value(self):
+        """16**0.75 == 8.0."""
+        f = get_ints_transform_func("pow0.75")
+        assert f(th.tensor([16.0])).item() == pytest.approx(8.0)
+
     def test_none_is_identity(self):
         """'none' transform returns the input unchanged."""
         f = get_ints_transform_func("none")
@@ -70,7 +75,7 @@ class TestGetIntsTransformFunc:
     def test_all_transforms_monotonically_increasing(self):
         """All valid transforms are monotonically non-decreasing on positive inputs."""
         x = th.tensor([1.0, 10.0, 100.0, 1000.0])
-        for name in ["log10", "log10t3", "loge", "sqrt", "none"]:
+        for name in ["log10", "log10t3", "loge", "sqrt", "pow0.75", "none"]:
             f = get_ints_transform_func(name)
             y = f(x)
             assert (y[1:] >= y[:-1]).all(), f"Transform '{name}' is not monotone"
@@ -88,13 +93,13 @@ class TestGetIntsUntransformFunc:
 
     def test_output_non_negative_all_transforms(self):
         """Untransformed values are always >= 0 for all valid transforms."""
-        for name in ["log10", "log10t3", "loge", "sqrt", "none"]:
+        for name in ["log10", "log10t3", "loge", "sqrt", "pow0.75", "none"]:
             result = self._call(name, [0.5, 1.0, 2.0])
             assert (result >= 0).all(), f"Negative output for '{name}'"
 
     def test_monotonic_order_preserved(self):
         """Higher input → higher untransformed output (monotone increasing)."""
-        for name in ["log10", "log10t3", "loge", "sqrt", "none"]:
+        for name in ["log10", "log10t3", "loge", "sqrt", "pow0.75", "none"]:
             result = self._call(name, [0.1, 0.5, 1.0])
             assert result[0] <= result[1] <= result[2], f"Not monotone for '{name}'"
 
@@ -117,6 +122,13 @@ class TestGetIntsUntransformFunc:
         max_ints_log10 = float(np.log10(1000.0 + 1.0))
         result = self._call("log10", [max_ints_log10])
         assert result.item() == pytest.approx(1000.0, abs=1.0)
+
+    def test_pow075_round_trip(self):
+        """Untransform inverts pow0.75 up to the per-spectrum max-1000 rescaling."""
+        raw = th.tensor([1000.0, 125.0, 8.0])
+        transformed = get_ints_transform_func("pow0.75")(raw)
+        result = self._call("pow0.75", transformed.tolist())
+        assert th.allclose(result, raw, rtol=1e-4)
 
 
 class TestTransformCe:
