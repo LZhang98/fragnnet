@@ -4,6 +4,20 @@
 
 ## Current handoff
 
+**MSGYM screen, 10 arms (2026-10-03), prepared, not submitted.** Each is the
+`…_k1_ema999_fourier.yml` control plus one change, in `config/masster/massspecgym/…_k1_ema999_fourier_<arm>.yml`.
+The goal is the generalization gap (`ll04i00m` train 0.884 vs val 0.584).
+- **Arms.** `s2` (seed replicate, the first MSGYM seed spread), `wd10` (weight decay 0.1),
+  `e64` (64-epoch cosine), `lr5e4`, `b256` (batch 256, steps doubled), `enc256` / `enc512`
+  (`mol_hidden_size`), `mol3` (encoder depth 3), `bond1` (bond head 3 → 1 layers), `itf1`
+  (intensity transformer 2 → 1 layers).
+- **Params.** Control 9.23M; enc256 5.76M, enc512 13.89M, mol3 10.12M, bond1 7.16M, itf1 8.18M.
+  `mol_hidden_size` also sizes the bond, boundary and charge heads, so the enc arms change
+  whole-model width, not only the encoder.
+- **Checks.** Every resolved config differs from the control only in its listed keys, and
+  every model builds on CPU. No training smoke was run; the keys are all standard.
+- **Next.** Submit with the control and read each arm against |control − `s2`|.
+
 **MSGYM sqrt-intensity arm (2026-10-03), prepared, not submitted.**
 `config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier_sqrt.yml`
 is the prepared `…_k1_ema999_fourier.yml` control plus `ints_transform: sqrt` and
