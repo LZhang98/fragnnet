@@ -1,12 +1,17 @@
 # Annotation-aware candidate retrieval
 
-> **Status:** PROPOSED · **Updated:** 2026-10-01
+> **Status:** ACTIVE · **Updated:** 2026-10-02
 > Score MassSpecGym retrieval candidates with what the predicted spectrum carries beyond its
 > thresholded intensities: the full predicted support, the low-intensity tail, and per-peak
-> fragment annotations. No scorer exists and nothing has run. Step 1 needs no annotation
-> columns. Steps 2-3 need fragment annotations, which MASSter now exports too (committed in
-> `4e29da7c`), so every step can run on the MASSter MSGYM checkpoint `ll04i00m`. Cross-model,
-> so it sits at the top of `plans/`.
+> fragment annotations. A 400-query formula-val pilot ran on `ll04i00m` (2026-10-02).
+>
+> - Query log-likelihood (c): +14.8 hit@1 points over cosine; sqrt-cosine recovers most of it.
+> - Support (b): worse than cosine.
+> - Fragment explanation cost and parsimony: add to cosine, add nothing to (c).
+>
+> Next is Gate 1 on the rest of formula val, with sqrt-cosine and entropy similarity as
+> competitors. [Pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
+> Cross-model, so it sits at the top of `plans/`.
 
 ## Objective and acceptance criteria
 
@@ -61,6 +66,17 @@ does:
   each. That was a sample. The scorer must assert, over all 1.61M candidate rows, that each query
   has exactly one candidate sharing the truth's first block. It must fail rather than
   silently pick one.
+- **Take the truth key from MSGYM's source SMILES, not the benchmark `mol_df`** (measured
+  2026-10-02). Training data is tautomer-canonicalized by `02_prepare_proc.py`; the retrieval
+  build is not.
+  - With the benchmark key, 660 of 9,731 val queries (95 molecules) find no truth.
+  - With the source key, all 400 pilot queries find exactly one.
+  - The candidates, truth included, are featurized unstandardized, unlike training data.
+- **The truth is candidate 0.** MassSpecGym's JSON stores it first (3,000 of 3,000 sampled), and
+  the build keeps that order. "List position" is therefore not a spectrum-blind control here,
+  and any first-wins tie-break leaks the answer. The PubChem-order bias needs PubChem CIDs.
+- **The retrieval `spec_df` files still say `FT`,** which the loader refuses. Relabel to `ORB`
+  (MSGYM has one Orbitrap label) when building inference inputs.
 
 **Both models export per-peak annotation.** The FraGNNet export carries a per-peak neutral
 formula plus its adduct delta, `P(n|f)` over about four candidate DAG nodes per formula, and
@@ -78,8 +94,10 @@ unfiltered export has a median of 924 peaks per spectrum.
   [GLACIER comparison](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
   MASSter model code has changed since that measurement (SMARTS rules, Si fix, NCE-encoder arms,
   ion-H channel work). The checkpoint's hparams set its behaviour, and the template fills keys
-  added since. Before any retrieval scoring, re-run `ll04i00m` on MSGYM test and match the
-  comparison's 0.5713. If it does not match, find the drift before going on.
+  added since. **Re-checked 2026-10-02:** MSGYM test mean `cos_sim_0.01` is 0.571272 against
+  0.571277. The checkpoint names the retired `FT`, so it runs from a copy with `FT` renamed to
+  `ORB` (weights untouched, same embedding order); see the
+  [pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md#setup).
 - FraGNNet: a depth-3 MSGYM config exists
   ([ms_gym_benchmark_1_5.yml](../../config/massspecgym/ms_gym_benchmark_1_5.yml)). No trained
   checkpoint or val score for it is recorded in `docs/`, and W&B has not been checked.
@@ -101,6 +119,27 @@ conventional structure-disjoint MassSpecGym split
 ordering gets 49.98% hit@1 on the retrieval challenge
 ([MassSpecGym audit](../notes/massspecgym_in_the_wild_audit.md)). Every number here needs the
 spectrum-blind controls next to it.
+
+**Literature on annotation-based ranking** (web sweep, 2026-10-02; primary-source abstracts and
+methods, not re-derived).
+- In-silico fragmenters score each peak's best explanation independently.
+  - [MetFrag 2.2](https://pmc.ncbi.nlm.nih.gov/articles/PMC4732001/) uses
+    Σ RelMass^1.84 · RelInt^0.59 / Σ BDE^0.47. Fragmentation alone ranks 6% of 473 spectra
+    first; retention time and reference counts supply most of its 71%.
+  - [MetFrag 2.4.5](https://pmc.ncbi.nlm.nih.gov/articles/PMC6612146/) adds learned per-peak and
+    per-loss terms under an explicit independence assumption.
+- Forward models rank by spectral similarity only.
+  - [CFM-ID 3.0](https://pmc.ncbi.nlm.nih.gov/articles/PMC6523630/) mixes spectral similarity
+    with class and reference metadata.
+  - [ICEBERG](https://pmc.ncbi.nlm.nih.gov/articles/PMC12154671/),
+    [FraGNNet](https://arxiv.org/abs/2404.02360), [GLACIER](https://arxiv.org/abs/2606.29161),
+    [MARASON](https://arxiv.org/abs/2502.17874) and
+    [FIORA](https://www.nature.com/articles/s41467-025-57422-4) put no annotation term in the
+    retrieval score.
+  - The nearest use of atom-level fragment consistency is
+    [FRIGID](https://arxiv.org/abs/2604.16648), for generation refinement, not ranking.
+- The sweep found no ranking test of structure-level parsimony and no chance correction of an
+  explanation score.
 
 ## Scores
 
@@ -127,16 +166,24 @@ instrument, all of which the manifest carries.
   - Keep the precursor in this score, because the predicted precursor survival differs between
     candidates.
 - **(d) Blends.** `α·z(a) + (1−α)·z(b or c)`, where `z` standardizes within each query.
+- **(e) Spectrum-level competitors (added 2026-10-02).** `cos_sqrt` (0.01 Da bins, sqrt
+  intensities) and unweighted spectral entropy similarity. In the pilot they recover most of
+  (c)'s gain over (a). Any claim that a support, tail or annotation score adds information must
+  beat these, not only linear cosine.
 
 Break exact score ties at random, or report the average rank. Never break them by candidate list
-position, which may carry the source ordering's bias.
+position: the truth is candidate 0 in MassSpecGym's JSON, so a first-wins tie-break returns the
+answer.
 
 **Controls.**
-- Spectrum-blind rankings: support size `|S_c|` alone, heavy-atom count alone, and candidate list
-  position (the source ordering). The 49.98% PubChem-order figure above comes from the benchmark
-  as a whole. Measure list position on this 9,734-query subset.
-- Score (b) and score (c) computed against a different query that has the same precursor formula.
-  This measures how much of each score is a candidate prior rather than a spectrum match.
+- Spectrum-blind rankings: support size `|S_c|` alone and bond count alone. Heavy-atom count is
+  constant on the formula track. List position is not a control here (truth at index 0); the
+  PubChem-order baseline needs PubChem CIDs.
+- **Consensus pseudo-query** (added 2026-10-02): every score against the top 30 bins of the mean
+  predicted spectrum of the query's own candidates. It is spectrum-blind and covers every query.
+- Every score computed against a different query that has the same precursor formula. This
+  measures how much of each score is a candidate prior rather than a spectrum match. Only 12%
+  of pilot queries have such a partner.
 
 **Report** hit@1, hit@5 and hit@20 with 95% molecule-bootstrap intervals. Show the formula and
 mass sets separately, and FT and QTOF separately. Also bin by the query molecule's nearest-train
@@ -154,7 +201,17 @@ Tanimoto, because the hypothesis predicts the gain concentrates on novel molecul
   during inference avoids storing the export at all.
 - Time it on 200 queries before the full run. Then run the mass set.
 
-**Step 2: fragment-level scores (only if gate 1 passes).** Use the MASSter annotation export
+**Step 2: fragment-level scores (only if gate 1 passes).** *Pilot read (2026-10-02):* the
+explanation cost below (as `2^−(cuts+|ΔH|)`, without the node score) and a shared-cleavage-site
+parsimony variant add +3 to +5 hit@1 and +5 to +7 hit@5/20 to linear cosine. They add
+−1.1 [−3.4, +1.1] hit@1 to score (c), and parsimony tracks the cost (ρ 0.92). On the formula
+track this step is low priority unless Gate 1 shows (c) losing to (e). Fragment-level ideas
+that the pilot did not test, and that (c) cannot already contain:
+- formula feasibility on the mass track, where candidates differ in formula;
+- substructure voting across candidates;
+- a model-free structural cost, outside the model's selected support.
+
+Original design: use the MASSter annotation export
 on `ll04i00m`. Each peak's fragments come with atom bitmasks, so the bonds and ring bonds a
 fragment cuts can be read off the molecule. Add two scores:
 - **Explanation cost.** For each query peak, the cheapest fragment of `c` that explains it: bonds
@@ -199,19 +256,32 @@ alternative intensity allocations for one molecule. This plan ranks molecules. T
 
 ## Current state
 
-The candidate-set facts above were measured on 2026-09-25 from the val zips. The MASSter
-annotation export is committed (`4e29da7c`). No scorer or retrieval run exists, and `ll04i00m` has
-not been re-checked under current code.
+**Pilot complete (2026-10-02):** 400 formula-val queries, one per molecule, 72,946 candidate
+spectra, on `ll04i00m`@60. Scores (a)-(d), the explanation cost, the parsimony variant, (e) and
+the controls were all measured.
+- hit@1: cosine 0.478, (c) 0.625 (+0.148 [+0.100, +0.195]), `cos_sqrt` 0.588, entropy 0.573,
+  (b) 0.187.
+- Every spectrum-blind control is 0.018–0.033 hit@1 (random 0.025).
+
+This is not Gate 1: no minimum useful gain was fixed, and the (e), split-(c) and (c)-based blends
+are post hoc. The scorer is a pilot script, `output/annotation_retrieval_pilot_2026_10_02/score_pilot.py`;
+inference ran at about 150 candidate spectra/s on the local 2070 SUPER.
+[Finding, numbers and artifacts](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
 
 ## Open questions
 
-1. What are the minimum useful hit@1 gain, the ε floor for score (c) and the shift offsets for
-   score (b)? All three must be fixed before the first measurement.
-2. Does the goal need the no-CE and `[M+Na]+` queries, which are 50% of the val fold?
+1. What minimum useful hit@1 gain should Gate 1 require, and over which baseline: (a) as the
+   original gate states, or the best of (e)? The pilot used ε 1e-5 and shifts ±5/±7/±11 Da; Gate 1
+   can keep them.
+2. Should candidates be standardized like training data (tautomers), with the truth then
+   identified by the standardized source key? Currently they are not.
+3. Does the goal need the no-CE and `[M+Na]+` queries, which are 50% of the val fold?
 
 ## Next concrete check
 
-First, re-run `ll04i00m` on MSGYM test and confirm 0.5713 under current code. Then write the
-scorer and run score (a) on a 200-query formula val sample. Check that the truth is found exactly
-once for every query, that ties are handled, and that hit@1 exceeds all three spectrum-blind
-controls. Record throughput to size the full run.
+Run Gate 1 on the formula val queries outside the 400 pilot molecules
+(`data/pilot/pilot_queries.csv`), with scores (a), (c) and (e) and the consensus control.
+Fix the minimum useful gain and the baseline first (open question 1). Only `pred_mzs` and
+`pred_ints` are needed, so the export can drop annotations or be scored inside inference. At
+about 150 spectra/s the 1.61M formula-val candidates take roughly 3 GPU-hours locally. Then run
+the mass set, which is where formula-level annotation evidence is still untested.

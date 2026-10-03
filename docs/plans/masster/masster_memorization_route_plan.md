@@ -1,10 +1,11 @@
 # Closing MASSter's per-molecule allocation lookup on every route
 
 > **Status:** ACTIVE · **Updated:** 2026-10-02
-> **2026-10-02: [energetics feasibility audit completed](../../findings/masster/masster_energetics_feasibility_2026_10_02.md).**
-> Isolated xTB calculations work; small shortlists lose many floor winners. The bounded
-> fixed-bond-order constructor supplies balanced states for 43% of covered floor base peaks.
-> No ranking correction was fitted. Next: multiple-cut product states and a full frozen shortlist.
+> **2026-10-02: [energetics continuation completed](../../findings/masster/masster_energetics_feasibility_2026_10_02.md).**
+> Joint product-state search raises formal floor coverage from 43% to 97%; complete frozen
+> shortlists/channels exist. Only 14/24 harder quantum channels retain a distance-preserved
+> product pair. No ranking correction fitted. Next: bounded state/calculation and missing-feature
+> policy with a train/calibration/independent confirmation protocol before the information gate.
 > **2026-10-01: [priority review accepted](#computed-product-ion-energetics-information-gate-2026-10-01-proposed).**
 > Next proposed check is a bounded computed-energetics information gate on frozen predictions.
 > Cross-molecule episodic training is [deferred](#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred):
@@ -2639,11 +2640,13 @@ first-order implementation of MLDG. No diagnostic or optimizer change is request
 
 ### Computed product-ion energetics information gate (2026-10-01, proposed)
 
-**Status:** ACTIVE, feasibility stage completed 2026-10-02 after the user's instruction to
-proceed. [Results and limits](../../findings/masster/masster_energetics_feasibility_2026_10_02.md):
-226 isolated xTB jobs, 210 converged; bounded product-state construction covers 120 / 276
-covered floor base peaks. No spectral fitting or ranking gate yet. No model/training code,
-config, checkpoint, dataset or conda environment changed. The original gate design follows.
+**Status:** ACTIVE, feasibility and multiple-cut/full-shortlist continuation completed
+2026-10-02 after the user's instructions to proceed. [Results and limits](../../findings/masster/masster_energetics_feasibility_2026_10_02.md):
+joint search plus original states covers 268 / 276 covered floor base peaks; 245 survive
+top-128 selection. Complete frozen shortlists/channels exist. The harder geometry sample has
+297 / 322 converged jobs but only 14 / 24 distance-preserved product pairs. No spectral fitting
+or ranking gate yet. No model/training code, config, original checkpoint/dataset or conda
+environment changed by this audit. The original gate design follows.
 
 **Objective and premise.** Test whether computed candidate-specific physics supplies incremental
 held-molecule ranking information beyond frozen MASSter scores and existing descriptors. It is
@@ -2714,10 +2717,21 @@ improved coverage in all nine sampled selection misses (0.23 to 0.71). This is a
 gate, not a demonstrated full-split intensity gain or justification to enlarge every pool.
 No coverage run is launched as part of this review.
 
-**Current state and next concrete check (2026-10-02):** extend the offline product-state audit
-to multiple cuts and alternative bond orders, and obtain a complete frozen shortlist. The
-initial fixed-bond-order state pack and small top-K proposal are inadequate for a full-floor
-ranking test. This is not an energetics null. Predeclare the information-test effect/precision
-gate before fitting a correction. Ensembling remains last. An isolated checksum-verified xTB
-executable is available in the ignored audit directory; the conda environment is unchanged.
-See the finding for measured coverage, cost, quantum validity flags and validation.
+**Current state and next concrete check (2026-10-02):** the joint-state search and complete
+frozen shortlists are available; formal construction no longer excludes most covered winners.
+Set a bounded, target-independent alternative-state policy and calculation budget before
+constructing energy features on training/calibration and confirmation molecules. The full
+audit shortlist contains 199,903 unique molecular channels, so the small pricing sample does
+not justify treating full enumeration as cheap. Keep unresolved geometries/features in the
+population, with zero correction or explicitly calibrated missing-feature handling; do not
+drop their spectra. Retain all stored latent alternatives even if only a fixed predicted-share
+subset receives calculations. Use the fresh complete-channel production baseline: the older
+exporter's many-to-one decomposition can inflate a support oracle above one.
+
+Predeclare the independent selector, molecule partitions, useful effect and precision gate
+before fitting a correction. Test energies/status flags incrementally beyond existing
+descriptors and shuffled controls. Geometry changes are unvalidated flags, not automatically
+useful physics or evidence of invalid fragmentation. No information-test null or gain exists.
+Ensembling remains last. The isolated checksum-verified xTB executable and source snapshots
+are in ignored audit artifacts; the conda environment is unchanged. See the finding for
+coverage, cost, geometry flags, replay differences and independent validation.

@@ -1,19 +1,28 @@
-# Computed-energetics feasibility: calculations work, product-state coverage is limited
+# Computed-energetics feasibility: formal coverage improves; geometry and information remain unproven
 
 > **Status:** FINDING · **Updated:** 2026-10-02
 > Authorized offline feasibility audit on frozen `i1`@59 artifacts. No model/training code,
 > configs, checkpoints, processed datasets or conda environment changed. An isolated official
-> xTB executable ran a small pricing sample. The ranking information gate has not run; this is
+> xTB executable ran two pricing/geometry samples. The ranking information gate has not run; this is
 > neither an energetics null nor evidence that more measured spectra are necessary.
 
 ## Decision
 
-Do not fit a floor-ranking correction from the present state pack. The small prediction-ranked
-shortlists exclude too many winners, and a simple product-state construction covers fewer than
-half of the covered floor base peaks. This would turn a ranking test into a test of a restricted
-chemistry subset. The next check is target-independent product-state construction for multiple
-cuts, including bond-order changes and alternative ionic states, followed by a complete frozen
-shortlist extraction. Calculation cost is manageable on the audited subset.
+The continuation resolves much of the **formal construction** limitation: a joint search over
+H placement, bond orders, charges and radicals, combined with the original states, covers
+268 / 276 covered floor base peaks (97%). Complete prediction-ranked top-128 shortlists and
+full frozen channel outputs now exist. Together with top-128 selection, 245 / 330 full-floor
+spectra have a formal balanced state, up from 118 / 330. This is a feasibility improvement,
+not an improvement in spectral prediction.
+
+Do not equate formal coverage with valid optimized products. Only 14 / 24 prediction-selected
+multiple-cut channels retain a distance-preserved ion + neutral pair in the second geometry
+audit. Before fitting a spectral correction, settle a bounded, target-independent state/geometry
+policy and its calculation budget. Keep unresolved channels and spectra in evaluation with
+explicit missing-feature accounting; excluding them would bias the gate. The next scientific
+test is incremental information from energies and calculation-status features beyond existing
+descriptors, with separate calibration, independent-selector confirmation and shuffled controls.
+The first audit and its restrictive-constructor results below remain historical evidence.
 
 This completes the feasibility stage of the
 [energetics proposal](../../plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed).
@@ -120,6 +129,102 @@ timeout.
   `E(ion) + sum E(neutrals) - E(precursor ion)`, not raw energies across different compositions.
   These values are not activation barriers, enthalpic proton affinities or a spectral ranking result.
 
+## Continuation: joint states and complete frozen outputs
+
+The user authorized continuation. A scratch-only integer search jointly selects total H
+placement, single/double/triple orders on retained edges, localized formal charges and radicals.
+Its objective minimizes structural edits; it is **not an energy function**. It preserves
+heavy-atom connectivity and isotopes, limits each atom to at most one radical, enforces net
+charge +1 for the connected ion and 0 for each neutral component, and checks electron parity.
+Two searches allow zero or at most two radicals per component. Retain at most two sanitized
+SMILES per product/search, with a two-second limit per solver call. No new bonds, rearrangement,
+stereoisomer enumeration or ground-state spin-coupling assignment is supplied.
+
+Element/charge/valence templates are bounded proposals validated by RDKit, whose
+[allowed-valence rules](https://www.rdkit.org/docs/RDKit_Book.html#valence-calculation-and-allowed-valences)
+are formal constraints rather than evidence of a fragmentation mechanism. Joint enumeration
+avoids the earlier first-32/64 H-layout ordering limitation.
+
+- On the **same 64** previously missed multiple-cut structures used by the bond-order check,
+  the joint search supplies 36 closed-shell balanced proposals and 51 with radical allowance,
+  versus six from the previous fallback. A first exploratory pilot sampled a different 64
+  and found 33/44; the matched-sample replay is the reported comparison.
+- The full fallback audits 927 distinct previously unbalanced molecule/atom-set/H-shift
+  channels: 669 receive a closed-shell pair, 806 receive a pair with radical allowance.
+  Elapsed construction time is 109 s on this subset, including alternative enumeration.
+
+| Population | Original constructor | Original states plus closed-shell fallback | Original states plus radical-allowed fallback |
+| --- | ---: | ---: | ---: |
+| covered floor base peaks | 120 / 276 (43.48%) | 250 / 276 (90.58%) | 268 / 276 (97.10%) |
+| matched-control base peaks | 222 / 330 (67.27%) | 319 / 330 (96.67%) | 329 / 330 (99.70%) |
+
+The middle column retains the original states, some of which contain radicals; it is not a
+claim that all 250 winners have closed-shell products. With top-128 selection, the two unions
+retain 229 and 245 covered floor winners respectively. The latter is 88.77% of the 276 covered
+winners, or 74.24% of all 330 floor spectra. This includes no quantum-validity guarantee.
+
+**Complete frozen shortlist.** Fresh CPU inference on all 660 cohort spectra / 322 molecules
+strictly loads the original checkpoint weights into the same architecture. A spectrum-table
+copy renames historical instrument labels while preserving their embedding order; the original
+checkpoint/data remain untouched. The exporter saves 87,462 peak rows, including diagnostic
+target-selected peaks. The actual prediction shortlist explicitly filters `pred_rank <= 128`:
+**84,368 peaks, 345,746 structure rows, 199,903 unique molecule/atom-set/H-shift/mode channels**.
+No measured winner is inserted. All alternatives remain in the stored shortlist. Restricting
+calculation to the one/two highest predicted-share alternatives would still involve
+52,014/90,001 unique channels; this is a budget estimate, not an adopted chemistry policy.
+
+A second frozen pass stores all **1,238,427 output channels** and target arrays separately
+for scoring. Production one-to-one instrument-tolerance cosine agrees with a direct helper
+on 32 spectra to floating-point precision. Against the earlier full CPU cut-probe read,
+all base-peak hits and all covered best-compatible ranks agree; cosine differs by at most
+0.002489, mean difference -0.00000698. Against the older CUDA export, 17 spectra have changed
+candidate counts, with a maximum count difference of 16. Neither is a bit-identical replay.
+Use this fresh baseline and pack together for any correction comparison.
+
+Every fresh nearest-compatible covered base-peak structure reconciles with the constructed
+state cache: no unknown channels, the same 268/329 formal coverage, and the same 245 floor
+winners retained at top-128.
+
+**Exporter metric limitation.** Its many-to-one target mapping can assign one measured peak
+to two nearby candidate masses. The fresh export reaches an `oracle` of 1.41295: spectrum
+452323 assigns its base intensity to both 145.063449 and 145.064791 Da. Its decomposition
+cannot serve as a bounded support oracle or efficacy metric in this audit. Stored predicted
+ranks/structures remain useful. No production metric or exporter code was changed; the
+complete-channel baseline uses production one-to-one matching. This does not invalidate the
+earlier cut-probe result, which independently verified that matching convention.
+
+**Harder geometry sample.** Choose 12 distinct floor molecules and 12 matched-control
+molecules using only prediction-selected top-128 multiple-cut channels; targets do not select
+channels or states. The search tries 27 channels to obtain 24 balanced proposals, with
+three to eight cuts and predicted ranks 1–118. Keep up to two ion, neutral and precursor
+alternatives and two ETKDG conformers. Reuse the verified spGFN2-xTB executable and settings.
+
+- 322 unique jobs: **297 converge, 25 do not**. Successful median 0.72 s, p90 4.62 s,
+  maximum 10.51 s. Size median 20 atoms including H, maximum 59. Occupied quantum slots
+  total 628.6 s; selection, construction and calculations complete in 196.6 s.
+- 76 / 297 converged jobs (25.59%) change the distance-inferred graph. The heuristic is
+  unchanged; it cannot validate bond orders or distinguish every legitimate rearrangement.
+- 18 / 24 channels retain at least one distance-preserved ion; **14 / 24** retain a full
+  product pair (8 / 12 floor, 6 / 12 controls). Twelve also retain a precursor state.
+- Balanced electronic reaction proxies exist for 21 channels using all converged states,
+  or 12 with the distance-graph filter. No energy was used to fit or score spectral labels.
+  Radical calculations use the inferred high-spin unpaired-electron count; alternative spin
+  coupling and ground-state multiplicity remain untested.
+
+Independent validation checks **5,764 balanced state pairs**, 4,013 heavy-connectivity graph
+isomorphisms, every inferred ion mass against its cached channel (maximum error 5.001e-7 Da),
+all 322 unique quantum records and all 297 optimized atom identities/orders and finite energies.
+Known heterolysis, alkene bond-order change, methyl radical and impossible closed-shell parity
+fixtures pass. Scratch-source Ruff passes; production model/training code and configs have no
+changes from this audit.
+
+Continuation artifacts: `output/energetics_joint_states_2026_10_02/` contains protocol and
+source identities, matched pilot/full states, full shortlist and channel pack, reconciled
+base-peak coverage, production baseline, all geometry jobs, reaction proxies and independent
+validation. Source snapshots are text files in the ignored output directory; executable audit
+programs remain in `/tmp`. The environment, canonical test spectra/labels and original
+checkpoints are untouched. No cluster job, spectral fit or efficacy result exists.
+
 ## Precision and record correction
 
 An independent re-read of the saved score table finds `fa1@63 - i1@63` on the `i3@63`-selected
@@ -154,7 +259,8 @@ software identities, environment, cohort/matching tables, shortlist retention, s
 state audits, all state alternatives, quantum input/output logs, cost/proxy tables, precision
 reference, validation record and scratch-source snapshots. Canonical test spectra/labels were not read.
 
-The next product-state audit must cover multiple-cut winners and their competitors rather than
-only easy single cuts. It also needs a full frozen shortlist and an independent-selector
-confirmation design. Passing formal chemistry, convergence and runtime checks would authorize
-a meaningful information test; none establishes that the energies improve prediction.
+The multiple-cut and complete-shortlist continuation above supplies the next feasibility
+checkpoint. A full information gate still needs a bounded state-calculation policy, explicit
+geometry/missing-state handling, training/calibration molecules and an independent-selector
+confirmation design. Passing formal chemistry, convergence and runtime checks does not
+establish that the energies improve prediction.

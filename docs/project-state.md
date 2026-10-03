@@ -4,6 +4,27 @@
 
 ## Current handoff
 
+**Annotation-aware retrieval pilot (2026-10-02), complete; not Gate 1.** 400 MSGYM formula-val
+queries, one per molecule, 72,946 candidate spectra, `ll04i00m`@60.
+- **Checkpoint.** Re-checked under current code (test 0.571272 against 0.571277). It runs from
+  a copy with the retired `FT` renamed `ORB`.
+- **Scores (hit@1).** The query's log-likelihood under the full prediction gets 0.625 against
+  cosine's 0.478 (+0.148 [+0.100, +0.195]). Most of that is small-peak weighting:
+  sqrt-cosine 0.588, entropy 0.573.
+- **Fragments.** A MetFrag-style explanation cost on the model's own fragment atom sets, and a
+  shared-cleavage-site parsimony variant, add +3 to +5 hit@1 to cosine and nothing to the
+  likelihood (−0.011 [−0.034, +0.011]). Support explainability is worse than cosine.
+- **Controls.** Spectrum-blind controls sit at random (0.018–0.033).
+- **Pipeline facts.** MassSpecGym stores the truth as candidate 0, so never break ties by
+  position. Retrieval candidates are not tautomer-standardized like training data, which
+  changes the truth's 2D key for 95 of 2,331 val molecules. The retrieval `spec_df` files still
+  say `FT`.
+- **Next.** Gate 1 on the remaining formula val queries against sqrt-cosine and entropy (user
+  to fix the minimum useful gain and the baseline), then the mass set.
+
+[Finding](findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md)
+· [Plan](plans/annotation_aware_retrieval_plan.md).
+
 **MASSter MSGYM config with the `i3` stack (2026-10-02), prepared, not submitted.**
 `config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier.yml`
 is the `1imawkx1` base (already pre-norm, so the model is `i4` on MSGYM) plus `k1`'s two 0.2
@@ -14,16 +35,18 @@ spectra per split exits 0; the checkpoint holds EMA state and a `Linear(22, 32)`
 both CE channels. No MSGYM seed spread exists. Next: submit, then score the best checkpoint on
 test against `ll04i00m` 0.5713 and GLACIER 0.5455.
 
-**Computed-energetics feasibility (2026-10-02), complete; ranking gate not run.** Top-16/32
-retains only 42%/60% of covered floor base peaks; top-128 retains 92%. A bounded constructor
-preserving parent connectivity/bond orders provides a balanced ion + neutral state for 120
-of 276 covered floor base peaks (43%), versus 67% on matched controls. It misses the audited
-structures with more than two cuts; a bond-order fallback supplies 6 of 64 sampled failures.
-An isolated verified xTB executable ran 226 state/conformer jobs:
-210 converged, median successful job 0.77 s; 18% change a distance-inferred graph after
-relaxation. These are feasibility results, not a spectral correction or an energetics null.
-Next: multiple-cut product states and a complete frozen shortlist before fitting a ranking
-gate. No model/training code, configs, checkpoints, datasets or conda environment changed.
+**Computed-energetics continuation (2026-10-02), complete; ranking gate not run.** Joint
+H/bond-order/charge/radical search plus the original states raises formal balanced coverage
+from 43% to 97% of covered floor base peaks. Complete prediction-ranked top-128 shortlists
+and full frozen channels exist for all 660 audit spectra; 245 / 330 floor spectra retain
+a formal balanced state at top-128. Harder geometry audit: 297 / 322 xTB jobs converge, but
+only 14 / 24 sampled channels retain a distance-preserved product pair. The exporter can
+duplicate target intensity across nearby masses, inflating its support oracle; any efficacy
+test must use the independently checked production one-to-one baseline. Formal coverage
+and geometry feasibility do not establish spectral improvement. Next: bounded target-independent
+state/calculation policy, geometry/missing-feature accounting and train/calibration/independent
+confirmation protocol before fitting the energy information gate. No model/training code,
+configs, original checkpoints/datasets or conda environment changed by this audit.
 Ensembling remains last. [Finding and artifacts](findings/masster/masster_energetics_feasibility_2026_10_02.md)
 · [Gate design](plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed).
 
