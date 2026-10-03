@@ -39,7 +39,8 @@ is the prepared `…_k1_ema999_fourier.yml` control plus `ints_transform: sqrt` 
   generalization problem, not bad data.
 - **GLACIER batch dependence.** Its output depends on batch size (19% of spectra shift between
   batch 16 and batch 64).
-- **Next.** A `[M+Na]+` and no-CE policy for full-challenge numbers.
+- **Calibrated likelihood (val-selected, one test read):** hit@1 0.528 (+0.043 [+0.035, +0.052]) over the frozen `ll`, same predictions; rule `ll_g0.75_t2_e1e-4_a0.5`.
+- **Next.** A `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val (option 2).
 
 [Finding](findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
 · [Plan](plans/annotation_aware_retrieval_plan.md).

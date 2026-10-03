@@ -12,8 +12,9 @@
 > **Full formula track done (2026-10-03),** for simulation-challenge `[M+H]+` queries only. On
 > test, MASSter's likelihood scores hit@1 0.485 against 0.358 for `cos_sim_0.01`. GLACIER is
 > −0.023 / −0.027 hit@1 below MASSter on `cos_sim_0.01` / `cos_sim_sqrt_0.01`, and level on
-> ms-pred's entropy, the similarity its paper's retrieval numbers use (49.65% here vs 48.49%
-> reported).
+> ms-pred's entropy, the similarity its paper's retrieval numbers use. The released GLACIER
+> checkpoint is the contrastively fine-tuned (CF) model. On ms-pred's own candidate table it
+> reproduces the paper's w/ CF row: 49.67 / 78.20 / 90.80 vs 49.88 / 78.13 / 90.75 hit@1/5/20.
 > [Full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
 > · [pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
 > Cross-model, so it sits at the top of `plans/`.
@@ -349,3 +350,21 @@ Fix the minimum useful gain and the baseline first (open question 1). Only `pred
 `pred_ints` are needed, so the export can drop annotations or be scored inside inference. At
 about 150 spectra/s the 1.61M formula-val candidates take roughly 3 GPU-hours locally. Then run
 the mass set, which is where formula-level annotation evidence is still untested.
+
+## Scoring-rule calibration: frozen before the test read (2026-10-03)
+
+Selected on formula val only (`output/msgym_retrieval_calibration_2026_10_03/`: `calib_features.py`,
+`select_val.py`, `val_selection.csv`). Val molecules were split by md5 parity of the 2D key:
+120 log-likelihood variants and one- and two-term blends were ranked on half A (5,215 queries),
+and the choice was reported on half B (4,516 queries).
+
+- **Frozen rule.** `ll_g0.75_t2_e1e-4_a0.5`: Σ_k w_k log max(p̂_k, 1e-4), where w = √y / Σ√y and
+  p̂_k is the mass of p^0.75 (renormalized) within 2× the instrument tolerance of query peak k.
+- **Val.** Half B: hit@1 0.5689 against 0.5248 for the frozen `ll`, +0.0441 [+0.0304, +0.0581].
+  All val: 0.5529 against 0.5105, +0.0424 [+0.0337, +0.0512].
+- **Blends.** Reverse likelihood, predicted mass explained, cosine-sqrt and entropy each add
+  +0.007–0.008 on A but −0.0003 to +0.002 on B. They are not used.
+- **Knobs on A** (best over the others): γ 0.75 > 0.5 > 1.0 > 1.5; ε 1e-4 > 1e-3 > 1e-5;
+  query weight √y > uniform > linear y; tolerance 2× ≈ 1× (+0.002).
+- **Test read.** One read of this rule and the frozen `ll` on all 9,954 test queries,
+  reported with paired molecule-bootstrap intervals. No other rule is read on test.

@@ -21,7 +21,13 @@
   `--sparse-k 100 --batch-size 64`. GLACIER's output also depends on batch size; see the
   [full retrieval finding](masster_msgym_formula_retrieval_full_2026_10_03.md#glacier-batch-dependence).) All 9,954 spectra got a prediction. At
   `--sparse-k 1024` it scores slightly lower, so 256 does not truncate it.
-- **Is it the paper's model?** Probably its "w/o CF" row, but not proven. The GLACIER paper,
+- **Is it the paper's model?** It is the **w/ CF** model (resolved 2026-10-03; the reasoning below
+  that called it w/o CF is wrong). Its EarlyStopping patience is 3, which `train_contr_joint.py`
+  hardcodes; `train_joint.py` uses 5. The stage-1 hyperparameters it stores are expected, because
+  the CF script restores stage 1 with `load_from_checkpoint` and sets the CF values only as
+  attributes. Ranked by ms-pred's protocol it reproduces the paper's w/ CF retrieval row; see the
+  [full retrieval finding](masster_msgym_formula_retrieval_full_2026_10_03.md#matching-glaciers-reported-retrieval-numbers-added-2026-10-03).
+  Original assessment, superseded: The GLACIER paper,
   Table 4, gives MassSpecGym cosine 0.58 (95% CI 0.57-0.59) without contrastive fine-tuning and
   0.58 with it, and JSS 0.50 / 0.48. The paper does not say whether the released weights are
   the reported models.

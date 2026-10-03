@@ -118,10 +118,12 @@ query against its candidate set using the *wrong* spectrum. Swap in a spectrum f
 test entry within the same precursor-mass window, then compare HR@1 for the CF and w/o-CF models.
 A CF advantage that survives the swap is a structure prior. Under our model the question is the
 same: what does a fully spectrum-blind ranker (PubChem order, the chiral-atom count, a structure-only
-classifier) reach on the NIST'20 candidate sets? **Blocker:** the only released GLACIER weights
-are the MassSpecGym w/o-CF stage
+classifier) reach on the NIST'20 candidate sets? **Blocker (revised 2026-10-03):** the only released GLACIER weights
+are the MassSpecGym **w/ CF** model
 ([released-ckpt finding](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md)).
-A CF model, and anything on NIST'20, means retraining with `configs/glacier/joint_contr_finetune_*.yaml`.
+The swap test can therefore run on the released CF model as is. The w/o-CF comparison arm, and
+anything on NIST'20, still means retraining (`configs/glacier/joint_train_msg.yaml`, then
+`joint_contr_finetune_*.yaml`).
 
 ## Coverage is top-100, NOT top-20 — RESOLVED 2026-09-20
 

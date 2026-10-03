@@ -6,8 +6,10 @@
 > MassSpecGym cosine. GLACIER's released checkpoint is below MASSter on cosine (−0.023 hit@1 on
 > `cos_sim_0.01`, −0.027 on `cos_sim_sqrt_0.01`) but level on ms-pred's binned entropy similarity
 > (+0.012 [−0.005, +0.029]). GLACIER is ahead on entropy at instrument tolerance (+0.023
-> [+0.006, +0.041]). Under ms-pred's own entropy scoring GLACIER reaches 49.65% hit@1, reproducing
-> its paper's 48.49% (w/o CF), so the paper's retrieval numbers are entropy-ranked. GLACIER's
+> [+0.006, +0.041]). The released checkpoint is GLACIER *with* contrastive fine-tuning: it was
+> trained by the CF script (EarlyStopping patience 3). Ranked by ms-pred's entropy over ms-pred's
+> own candidate table, which keeps decoy stereoisomers as separate rows, it gives 49.67 / 78.20 /
+> 90.80 hit@1/5/20. The paper's w/ CF row is 49.88 / 78.13 / 90.75, so the paper ranks by entropy. GLACIER's
 > entropy edge sits in predicted peaks below 1% of base: filtering those reverses the comparison.
 > At instrument tolerance, linear JSS ranks worst for both models and favours MASSter (−0.032).
 > Li-weighted entropy puts the two level (+0.000).
@@ -144,11 +146,72 @@ Paired GLACIER − MASSter hit@1 (95% molecule bootstrap):
 | ms-pred cosine | −4.66 [−6.42, −3.11] |
 | ms-pred entropy | +1.15 [−0.54, +2.86] |
 
-- **The paper's GLACIER number reproduces under entropy only.** It reports formula-challenge
-  Recall@1 48.49 (46.88–50.15) without contrastive fine-tuning, which is what the released
-  checkpoint appears to be, and 49.88 with it. ms-pred's entropy gives 49.65 on our candidates
-  and ms-pred's cosine 40.89. Our lower 33.5 is linear `cos_sim_0.01`, a different metric.
-  Whether their test candidate table and query set exactly match ours is not verified.
+- **The released checkpoint is GLACIER *with* contrastive fine-tuning (CF), and under ms-pred's
+  protocol it reproduces the paper's w/ CF row** (corrected 2026-10-03; earlier text here said w/o CF).
+
+  | GLACIER formula challenge, hit@1 / @5 / @20 (%) | @1 | @5 | @20 |
+  | --- | ---: | ---: | ---: |
+  | paper, w/o CF | 48.49 | 76.56 | 90.60 |
+  | paper, w/ CF | 49.88 | 78.13 | 90.75 |
+  | released ckpt, ms-pred entropy, our candidate list | 49.67 | 82.65 | 94.22 |
+  | released ckpt, ms-pred entropy, **ms-pred's full candidate list** | **49.67** | **78.20** | **90.80** |
+  | MASSter, ms-pred entropy, ms-pred's full candidate list | 48.51 | 76.92 | 91.96 |
+  | MASSter, query log-likelihood, ms-pred's full candidate list | 48.57 | 76.71 | 91.32 |
+
+  Stable ties throughout. ms-pred's cosine gives GLACIER 41.13 on either list. Our lower 33.5 is
+  linear `cos_sim_0.01`, a different metric.
+  - **The candidate sets differ only in stereo duplicates.**
+    - ms-pred's `--full-labels` table (`cands_df_test_formula_256.tsv`, from the README's Dropbox
+      folder) has the same 2D-key set as ours for 99.65% of the 9,954 queries.
+    - It has 187 rows per query against our 166. The extra rows are stereoisomers of decoys,
+      each listed separately.
+    - `retrieval_benchmark.py` ranks every row. Each duplicate gets its 2D key's score and takes
+      its own rank slot.
+    - That cannot change hit@1 but pushes the truth down at @5 and @20 (−4.5 and −3.4 points for
+      GLACIER). Ranking over ms-pred's list with duplicates removed gives our numbers.
+    - The deduplicated `..._no_stereo_clean_tauts.tsv` re-keys tautomers; 4.7% of our truths are
+      absent from it under our keys. It is not what `03_run_retrieval.py` uses.
+  - **The checkpoint came from the CF script.**
+    - Its EarlyStopping state has patience 3. `train_contr_joint.py` hardcodes `patience=3`,
+      `train_joint.py` hardcodes `patience=5`.
+    - Its stage-1 hyperparameters (lr 4e-4, `contr_threshold` 0.5) prove nothing.
+      `train_contr_joint.py` restores the stage-1 model with `load_from_checkpoint` and sets the
+      CF values only as attributes, so a CF checkpoint stores the stage-1 hparams.
+    - It ran 3,098 batches per epoch, i.e. batch 32, not the public CF config's 16. That is
+      consistent with the run directory `joint_train_msg/split_rnd1/version_5` being an internal
+      run.
+  - **Consequence: every GLACIER comparison in this document is against the CF model.** On
+    ms-pred's full protocol MASSter trails it by 1.2 hit@1 points (48.51 vs 49.67; paired
+    interval from the molecule bootstrap above: +1.15 [−0.54, +2.86]). It trails by 1.3 at @5
+    and leads by 1.2 at @20.
+  - Artifacts: `mspred_cands/compare_cands.{py,log}`, `mspred_cands/rerank_on_mspred_full.{py,log}`.
+- **Instrument-tolerance entropy on ms-pred's full candidate table** (stereo duplicates kept,
+  stable ties). The scores are the ones above, re-ranked; hit@1 / @5 / @20 in %:
+
+  | similarity | GLACIER (CF) | MASSter | GLACIER − MASSter @1 [95% mol. bootstrap] | @5 | @20 |
+  | --- | --- | --- | --- | --- | --- |
+  | binned 0.01 Da sqrt entropy (ms-pred) | 49.67 / 78.20 / 90.80 | 48.51 / 76.92 / 91.96 | +1.16 [−0.54, +2.87] | +1.28 [−0.50, +3.16] | −1.17 [−2.86, +0.49] |
+  | **inst-tol sqrt entropy** | **51.40** / **79.04** / 91.91 | 49.07 / 77.41 / **92.06** | **+2.33 [+0.61, +4.15]** | +1.64 [−0.14, +3.58] | −0.15 [−1.55, +1.24] |
+  | inst-tol Li-weighted entropy | 48.88 / 77.36 / 91.47 | 48.82 / 76.66 / 91.72 | +0.06 [−1.56, +1.62] | +0.69 [−0.94, +2.38] | −0.25 [−1.51, +1.06] |
+  | inst-tol JSS (linear) | 41.99 / 72.25 / 88.45 | 45.11 / 74.30 / 90.57 | −3.11 [−4.73, −1.54] | −2.05 [−3.64, −0.37] | −2.12 [−3.60, −0.67] |
+  | MASSter query log-likelihood | — | 48.57 / 76.71 / 91.32 | GLACIER inst-tol sqrt − this: +2.82 [+1.11, +4.65] | +2.33 [+0.42, +4.38] | +0.59 [−0.92, +2.01] |
+
+  - **Instrument tolerance adds 1.7 points of hit@1 to GLACIER** (49.67 → 51.40) and 0.6 to
+    MASSter. On this, its most favourable similarity, the CF model leads at @1, is borderline at
+    @5 and is level at @20.
+  - **The ordering of similarities matches the earlier analysis on our own candidate list.**
+    GLACIER leads only under sqrt, the two are level under Li weighting, and MASSter leads under
+    JSS. Stereo duplicates lower @5/@20 for both models alike.
+  - **Stable ties are biased toward the truth here.** ms-pred lists the truth first in 100% of
+    queries, so a tie always goes to it.
+    - Unfiltered scores: the truth is tied for top in ≤ 8 queries, and stable and random-tie
+      hit@1 differ by ≤ 0.08 points.
+    - With the prediction 1% filter, the truth is tied for top in 186–196 queries for GLACIER and
+      54–64 for MASSter. The stable rule then inflates GLACIER's hit@1 by about 1.6 points, so
+      filtered rows are quoted with random ties only.
+    - Random-tie hit@1 with the filter, GLACIER vs MASSter: sqrt 46.74 vs 49.44; Li 45.80 vs
+      49.30; JSS 40.51 vs 44.32.
+  - Artifacts: `mspred_cands/rerank_insttol_on_mspred_full.{py,log}`, `mspred_cands/tie_check.{py,log}`.
 - **Their query set is probably the same simulation-challenge set.** Their 99.9% i.i.d. interval
   is about ±1.6 points around 48.5%, which implies roughly 10,000 queries. That matches 9,954
   simulation-challenge queries, not the 17,556 full formula-challenge queries (about ±1.2). This
@@ -344,3 +407,48 @@ All under `output/msgym_formula_retrieval_2026_10_02/`:
 - **GLACIER code:** `output/glacier_msg_eval_2026_09_24/ms-pred_318bb7b/`, exact upstream `318bb7b`
   source plus its GLACIER configs and run scripts (`PROVENANCE.txt`). `runner.sh` now uses it
   instead of the `/tmp` copy.
+
+## Calibrated likelihood: val-selected, one test read (added 2026-10-03)
+
+The rule was chosen on val and frozen in the
+[plan](../../plans/annotation_aware_retrieval_plan.md#scoring-rule-calibration-frozen-before-the-test-read-2026-10-03)
+before test was read. Rule: `ll_g0.75_t2_e1e-4_a0.5`, i.e. Σ_k (√y_k / Σ√y) · log max(p̂_k, 1e-4),
+with p̂_k the mass of p^0.75 (renormalized) within 2× the instrument tolerance. The same
+`ll04i00m` predictions; no new inference. The frozen `ll` reproduces 0.4853.
+
+| Test (9,954 queries) | hit@1 | hit@5 | hit@20 |
+| --- | ---: | ---: | ---: |
+| frozen `ll` | 0.4853 | 0.8150 | 0.9477 |
+| **calibrated `ll`** | **0.5284** | **0.8530** | **0.9648** |
+| Δ [95% CI] | +0.0431 [+0.0347, +0.0521] | +0.0380 [+0.0304, +0.0453] | +0.0171 [+0.0115, +0.0230] |
+| Δ ORB (8,374) | +0.0485 [+0.0389, +0.0585] | +0.0396 | +0.0143 |
+| Δ QTOF (1,580) | +0.0146 [−0.0064, +0.0361] | +0.0291 | +0.0316 |
+
+The val held-out half predicted +0.0441; test gives +0.0431. Against GLACIER's best
+spectrum score here (`cos_sim_sqrt_0.01`, 0.428) the gap is now about +0.10 hit@1, and against
+its ms-pred entropy ranking (49.65%), about +3.2 points (not paired). Most of the gain comes from
+softening both sides: the query weights (√y) and the predicted intensities (p^0.75), with a
+higher floor (1e-4). Reverse-likelihood and explained-mass blends did not replicate on val.
+Artifacts: `output/msgym_retrieval_calibration_2026_10_03/` (`val_selection.csv`, `test_read.csv`).
+
+### GLACIER under the same likelihood rules (added 2026-10-03)
+
+GLACIER's saved test predictions (released checkpoint, batch 64, sparse-k 100, squared), scored
+with the same rules by `output/msgym_retrieval_calibration_2026_10_03/glacier_calib.py`; all
+1,657,238 candidates have predictions. Paired by query, molecule bootstrap. The 1× tolerance row
+was read on test at the user's request after the frozen 2× read; it is not a selected rule.
+
+| Test, all 9,954 | top1 | top2 | top3 | top5 | top10 | top20 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MASSter, calibrated ll (2× tol, frozen) | 0.528 | 0.686 | 0.767 | 0.853 | 0.928 | 0.965 |
+| GLACIER, calibrated ll (2× tol, frozen) | 0.490 | 0.650 | 0.735 | 0.829 | 0.906 | 0.951 |
+| Δ [95% CI] | +0.039 [+0.022, +0.055] | +0.035 | +0.032 | +0.024 [+0.009, +0.040] | +0.022 | +0.014 [+0.003, +0.027] |
+| MASSter, calibrated ll (1× tol) | 0.531 | 0.691 | 0.771 | 0.854 | 0.928 | 0.965 |
+| GLACIER, calibrated ll (1× tol) | 0.491 | 0.655 | 0.740 | 0.832 | 0.908 | 0.952 |
+| MASSter, old ll | 0.485 | 0.642 | 0.728 | 0.815 | 0.897 | 0.948 |
+| GLACIER, old ll | 0.444 | 0.611 | 0.700 | 0.793 | 0.885 | 0.936 |
+
+The calibration lifts GLACIER by the same +0.045 hit@1 as MASSter, so the MASSter lead stays
+about +0.04 at top1 and narrows to +0.014 at top20. ORB: MASSter 0.586 vs GLACIER 0.545 top1
+(+0.041 [+0.025, +0.057]). QTOF: 0.222 vs 0.195 (+0.027 [−0.019, +0.074], not resolved). Full table:
+`test_masster_vs_glacier.csv`.
