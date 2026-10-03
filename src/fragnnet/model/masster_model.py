@@ -1141,6 +1141,7 @@ class MassterModel(nn.Module):
         intensity_candidate_graph: bool = False,
         rule_pathway_token: bool = False,
         mass_mode: str = "exact",
+        merge_same_mz_rows: bool = False,
         isotope_envelope: str = "none",
         isotope_max_order: int = 4,
         isotope_min_ratio: float = 1e-3,
@@ -1393,6 +1394,10 @@ class MassterModel(nn.Module):
                 shift and the adduct's rounded mass delta, with no electron mass. Candidate
                 features keep exact masses. Without ``return_annotation`` the prediction rows
                 of one spectrum that share an m/z are merged (probabilities summed).
+            merge_same_mz_rows: Merge rows of one spectrum that share a 4-decimal m/z
+                (probabilities summed) in ``exact`` mode too, unless ``return_annotation``.
+                Exact for the loss (coincident Gaussians) and the metrics; needed when the
+                targets are intensity-transformed, so evaluation untransforms each m/z's sum.
             isotope_envelope: ``none`` emits one row per pathway. ``natural`` (requires
                 ``nominal``) splits each emitted pathway over nominal offsets by the natural
                 isotope pattern of its ion composition (fragment atoms, the channel's
@@ -1718,6 +1723,7 @@ class MassterModel(nn.Module):
                     "isotope_min_ratio must be in [0, 1 / (2 * isotope_max_order + 1))"
                 )
         self.mass_mode = mass_mode
+        self.merge_same_mz_rows = merge_same_mz_rows
         self.isotope_envelope = isotope_envelope
         self.isotope_max_order = isotope_max_order
         self.isotope_min_ratio = isotope_min_ratio
@@ -4441,11 +4447,12 @@ class MassterModel(nn.Module):
                 base_pred_logprobs = base_pred_logprobs[emitted_rows] + isotope_log_shares.to(
                     base_pred_logprobs
                 )
-        if self.mass_mode == "nominal" and not return_annotation:
+        if (self.mass_mode == "nominal" or self.merge_same_mz_rows) and not return_annotation:
             # 7. At nominal mass many pathways land on the same integer of a spectrum. The loss
             # and metrics see only (m/z, probability), so merging those rows is exact, and it
             # divides the loss's target-by-prediction work several-fold. The annotation export
-            # keeps one row per pathway.
+            # keeps one row per pathway. merge_same_mz_rows applies the same merge at exact mass
+            # (4-decimal m/z), so an intensity untransform sees each m/z's summed probability.
             row_mzs, row_batch_idxs = pred_mzs, pred_batch_idxs
             pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
                 row_mzs, pred_logprobs, row_batch_idxs, agg="lse"

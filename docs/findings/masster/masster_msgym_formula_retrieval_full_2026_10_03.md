@@ -4,9 +4,13 @@
 > on the formula track; not leaderboard-comparable. On test, scoring each candidate by the query's
 > log-likelihood under MASSter's full prediction gives hit@1 0.485 against 0.358 for the
 > MassSpecGym cosine. GLACIER's released checkpoint is below MASSter on cosine (−0.023 hit@1 on
-> `cos_sim_0.01`, −0.027 on `cos_sim_sqrt_0.01`) but level on ms-pred's entropy similarity
-> (+0.012 [−0.005, +0.029]). Under ms-pred's own entropy scoring GLACIER reaches 49.65% hit@1,
-> reproducing its paper's 48.49% (w/o CF), so the paper's retrieval numbers are entropy-ranked.
+> `cos_sim_0.01`, −0.027 on `cos_sim_sqrt_0.01`) but level on ms-pred's binned entropy similarity
+> (+0.012 [−0.005, +0.029]). GLACIER is ahead on entropy at instrument tolerance (+0.023
+> [+0.006, +0.041]). Under ms-pred's own entropy scoring GLACIER reaches 49.65% hit@1, reproducing
+> its paper's 48.49% (w/o CF), so the paper's retrieval numbers are entropy-ranked. GLACIER's
+> entropy edge sits in predicted peaks below 1% of base: filtering those reverses the comparison.
+> At instrument tolerance, linear JSS ranks worst for both models and favours MASSter (−0.032).
+> Li-weighted entropy puts the two level (+0.000).
 
 ## Setup
 
@@ -167,6 +171,83 @@ Paired GLACIER − MASSter hit@1 (95% molecule bootstrap):
   is the truth in MassSpecGym's ordering. Here it adds at most +0.24 points, because ties
   involving the truth are rare (7–161 of 9,954 queries depending on the score).
 
+### Entropy variants: binning, instrument tolerance, 1% filter (added 2026-10-03)
+
+- **"ppm"** is ms-pred's entropy formula with one-to-one peak matching at instrument tolerance
+  (ORB 10 ppm / 200, QTOF 20 ppm / 750) instead of 0.01 Da bins. Peaks above precursor m/z +
+  tolerance are removed from both spectra.
+- **"1% filter"** drops predicted peaks below 1% of the base peak (linear intensity) before
+  scoring.
+
+Test, 9,954 queries:
+
+| entropy variant | GLACIER hit@1 / @5 | MASSter hit@1 / @5 | GLACIER − MASSter hit@1 [95% mol. bootstrap] |
+| --- | --- | --- | --- |
+| binned 0.01 Da (ms-pred) | 49.65 / 82.62 | 48.50 / 81.83 | +1.15 [−0.54, +2.86] |
+| binned, 1% filter | 45.04 / 78.77 | 48.64 / 82.00 | −3.60 [−5.10, −2.20] |
+| ppm (instrument tolerance) | **51.32** / 83.49 | 49.03 / 82.11 | **+2.29 [+0.56, +4.11]** |
+| ppm, 1% filter | 46.79 / 79.57 | **49.44** / 82.77 | −2.65 [−4.02, −1.33] |
+
+MASSter's query log-likelihood is 48.53 / 81.50 for reference.
+
+- **Instrument-tolerance matching helps both models:** GLACIER +1.67 [+1.01, +2.37], MASSter
+  +0.53 [+0.03, +1.02]. GLACIER gains more, mostly on ORB.
+- **The 1% filter separates them:** it costs GLACIER 4.53 points [3.50, 5.64] and does not change
+  MASSter (+0.41 [−0.52, +1.42]).
+  - Square-rooting inflates GLACIER's sub-1% predicted peaks, and entropy similarity rewards
+    them; they carry real signal for GLACIER.
+  - MASSter's sub-1% tail carries none.
+  - MASSter trains a linear-intensity Gaussian-density cross-entropy, which down-weights small
+    peaks; GLACIER trains a cosine on sqrt intensities.
+- **Which number to quote.** On GLACIER's own metric (binned, unfiltered) the models are level. On
+  the instrument-tolerance version GLACIER leads by about 2 points. A filtered metric would favour
+  MASSter but is not a standard protocol.
+
+### Intensity weighting at instrument tolerance: sqrt vs linear (JSS) vs Li-weighted
+
+These use the same ppm matching, aggregation and above-precursor cut as the ppm row above. Only
+the intensity transform before sum-normalization changes:
+- **sqrt:** ms-pred's choice.
+- **linear:** entropy similarity on linear intensities is exactly JSS, `1 − JSD/ln 2`.
+- **Li-weighted:** Li et al. 2021. If a spectrum's natural-log entropy S is below 3, raise its
+  intensities to `0.25 + 0.25 S`. Query and prediction are weighted separately.
+
+Test, 9,954 queries, hit@1 / @5 in %, with ORB / QTOF hit@1 after `|`:
+
+| weighting | GLACIER | MASSter | GLACIER − MASSter hit@1 [95% mol. bootstrap] |
+| --- | --- | --- | --- |
+| sqrt (ms-pred) | **51.32** / 83.49 \| 56.6 / 23.6 | 49.03 / 82.11 \| 53.7 / 24.2 | +2.29 [+0.56, +4.11] |
+| sqrt, 1% filter | 46.79 / 79.57 | **49.44** / 82.77 | −2.65 [−4.02, −1.33] |
+| linear (JSS) | 41.92 / 76.81 \| 46.4 / 18.2 | 45.07 / 79.29 \| 49.9 / 19.5 | −3.15 [−4.77, −1.57] |
+| linear, 1% filter | 40.55 / 75.14 | 44.33 / 78.64 | −3.77 [−5.24, −2.31] |
+| Li-weighted | 48.81 / 82.12 \| 54.3 / 19.8 | 48.79 / 81.69 \| 53.9 / 21.8 | +0.02 [−1.58, +1.58] |
+| Li-weighted, 1% filter | 45.85 / 79.69 | 49.30 / 83.03 | −3.45 [−4.93, −1.99] |
+
+Paired changes in hit@1, 95% molecule bootstrap:
+
+| comparison | GLACIER | MASSter |
+| --- | --- | --- |
+| JSS − sqrt | −9.40 [−10.71, −8.16] | −3.96 [−5.05, −2.83] |
+| Li − sqrt | −2.51 [−3.52, −1.60] | −0.24 [−1.45, +1.09] |
+| Li − JSS | +6.89 [+5.78, +7.99] | +3.72 [+2.68, +4.78] |
+| MASSter log-likelihood − this score | — | JSS +3.47 [+2.47, +4.49]; Li −0.25 [−1.31, +0.80]; sqrt −0.49 [−1.85, +0.88] |
+
+- **Flattening the intensities is what helps.** Linear JSS is the worst score for both models.
+  Any flattening (sqrt, or Li's exponent of 0.25–1) recovers 4–9 points. For MASSter, sqrt,
+  Li-weighted and log-likelihood are tied within noise, at about 48.5–49.4.
+- **GLACIER depends on flattening about twice as much as MASSter** (JSS − sqrt: −9.4 vs −4.0).
+  This fits the 1% filter result: GLACIER's ranking signal is in small peaks that only count once
+  intensities are flattened.
+- **The model ranking depends on the weighting.** MASSter leads under JSS (+3.2) and under any
+  1% filter. The two are level under Li weighting (+0.02). GLACIER leads only under ms-pred's
+  unfiltered sqrt, at instrument tolerance.
+- **Li weighting is gentler than sqrt for low-entropy spectra and does nothing for spectra with
+  S ≥ 3.** It costs GLACIER 2.5 points but not MASSter. The cost is concentrated on QTOF (GLACIER
+  23.6 → 19.8).
+- **Artifacts:** `score_weighted_jss.py` (it reproduces `ppm_entropy.pkl` exactly in sqrt mode,
+  checked on 2,463 candidates), `test/shard_*/weighted_jss.pkl`,
+  `compare_insttol_weightings.{py,log}`.
+
 ## QTOF diagnostic (val, MASSter)
 
 | | ORB | QTOF |
@@ -243,8 +324,19 @@ All under `output/msgym_formula_retrieval_2026_10_02/`:
   - `score_insttol.py` → `insttol[_sqrt]_masster_<part>.pkl`;
   - `score_sqrt01.py` → `sqrt01_<model>.pkl`.
 - **Summaries:** `aggregate.py` → `<fold>/summary.csv`; `interim_compare.py`; `check_vs_pilot.py`.
-- **ms-pred-style rescoring:** `score_mspred_style.py` → `test/shard_NN/mspred_style.pkl`;
-  `compare_mspred_style.py`.
+- **ms-pred-style rescoring (exploratory):** `score_mspred_style.py`, `score_mspred_style_f1.py`,
+  `score_ppm_entropy.py` → `test/shard_NN/{mspred_style,mspred_style_f1,ppm_entropy}.pkl`;
+  `compare_mspred_style.py`, `compare_entropy_variants.py`.
+- **In the codebase (2026-10-03):**
+  - `src/fragnnet/utils/retrieval_utils.py`: ms-pred binned cosine/entropy replicas,
+    instrument-tolerance entropy, query log-likelihood, tie-aware hit@k, molecule and ms-pred
+    bootstraps.
+  - `scripts/eval/score_retrieval_candidates.py`: per-candidate scores from a MASSter or ms-pred
+    export.
+  - `scripts/eval/summarize_retrieval.py`: hit@k, both interval styles, paired comparisons.
+  - `tests/test_retrieval_utils.py`.
+  - On test shard 0 the CLI reproduces the exploratory scripts' per-candidate values exactly
+    (max difference 0, 65,406 candidates, both models).
 - **GLACIER results, consolidated:** `glacier_test_results/`.
   - `candidate_scores.pkl.gz`: every candidate, both models' scores.
   - `query_hits.csv`: per-query hit@k.

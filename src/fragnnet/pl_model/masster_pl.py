@@ -966,6 +966,18 @@ class MassterPL(SpectrumPL):
                 "fragment-to-atom decoder was removed on 2026-09-19 after it showed no "
                 "epoch-matched cosine gain at 1.8x the wall clock; set it to 0"
             )
+        if (
+            self.hparams.ints_transform != "none"
+            and self.hparams.masster_mass_mode == "exact"
+            and not self.hparams.masster_merge_same_mz_rows
+        ):
+            # Training learns the transformed intensity of each m/z (pathways summed in the
+            # Gaussian mixture); per-pathway untransform at eval would square each pathway
+            # instead of their sum and under-predict peaks formed by several pathways.
+            raise ValueError(
+                f"ints_transform: {self.hparams.ints_transform} with masster_mass_mode: exact "
+                "requires masster_merge_same_mz_rows: true"
+            )
         node_feature_dim, edge_feature_dim = get_mol_feats_sizes(
             self.hparams.mol_params["pyg_node_feats"],
             self.hparams.mol_params["pyg_edge_feats"],
@@ -1135,6 +1147,7 @@ class MassterPL(SpectrumPL):
             light_side_token=self.hparams.masster_light_side_token,
             rule_pathway_token=self.hparams.masster_rule_pathway_token,
             mass_mode=self.hparams.masster_mass_mode,
+            merge_same_mz_rows=self.hparams.masster_merge_same_mz_rows,
             isotope_envelope=self.hparams.masster_isotope_envelope,
             isotope_max_order=self.hparams.masster_isotope_max_order,
             isotope_min_ratio=self.hparams.masster_isotope_min_ratio,

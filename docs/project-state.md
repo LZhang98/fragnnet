@@ -4,6 +4,23 @@
 
 ## Current handoff
 
+**MSGYM sqrt-intensity arm (2026-10-03), prepared, not submitted.**
+`config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier_sqrt.yml`
+is the prepared `…_k1_ema999_fourier.yml` control plus `ints_transform: sqrt` and
+`masster_merge_same_mz_rows: true`; the resolved diff is only those keys and W&B labels.
+- **Why.** GLACIER's retrieval edge on entropy similarity sits in predicted peaks below 1% of base,
+  which sqrt-intensity training weights and MASSter's linear-intensity density loss does not.
+- **New flag (default off).** `masster_merge_same_mz_rows` merges same-m/z pathway rows at exact
+  mass, so evaluation squares each m/z's summed probability rather than each pathway.
+  `MassterPL` refuses a transformed `ints_transform` at exact mass without it.
+  Tests: `tests/test_masster_merge_same_mz_rows.py`; 250 related tests pass.
+- **Smoke.** A local 2-epoch run on 512 spectra per split (batch overridden to 32 for the 8 GB
+  card) exits 0. Its checkpoint carries both keys, and its export has no duplicate m/z rows.
+- **Next.** Submit the control and this arm together. Read linear `val_cos_sim_0.01`, then MSGYM
+  test retrieval with `scripts/eval/score_retrieval_candidates.py` against the control and GLACIER.
+
+[Retrieval finding](findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md).
+
 **MSGYM 1.5 formula-track retrieval, full val + test (2026-10-03), complete.** Simulation-challenge
 `[M+H]+` queries only (val 9,731, test 9,954; 1.6M candidates each), not leaderboard-comparable.
 - **Scoring rule.** On test, MASSter `ll04i00m` hit@1 is 0.358 with `cos_sim_0.01`, 0.455 with
@@ -11,7 +28,11 @@
   Instrument-tolerance matching adds under 1 point.
 - **GLACIER.** The released checkpoint at upstream settings (batch 64, sparse-k 100) is
   −0.023 [−0.037, −0.009] / −0.027 [−0.043, −0.012] hit@1 below MASSter on cosine / sqrt.
-  - It is level on ms-pred's entropy similarity: 49.65% vs 48.50%, +1.15 [−0.54, +2.86] points.
+  - It is level on ms-pred's binned entropy similarity: 49.65% vs 48.50%, +1.15 [−0.54, +2.86] points.
+  - It is ahead on entropy at instrument tolerance (51.32% vs 49.03%, +2.29 [+0.56, +4.11]).
+  - That edge comes from its sub-1% predicted peaks; a 1% filter reverses it.
+  - Retrieval scoring is now in the codebase: `src/fragnnet/utils/retrieval_utils.py`,
+    `scripts/eval/score_retrieval_candidates.py`, `scripts/eval/summarize_retrieval.py`.
   - Entropy is how the GLACIER paper ranks retrieval; its 48.49% reproduces only under entropy.
   - ms-pred's bootstrap treats spectra as independent, so its intervals are too narrow.
 - **QTOF.** Much harder (test likelihood hit@1 0.208 against 0.538 on ORB). It is a
@@ -119,9 +140,11 @@ Gate 0 shows DreaMS sees `i1`'s errors, not that the target adds information bey
 
 **PCDL + NIST23 + Enveda-180 combined split (2026-10-01), prepared.** A global seed-42 80/10/10 InChIKey split covers all three processed sources with zero cross-part molecule overlap. The split is a per-source manifest; the current runner cannot yet load it as one dataset. [Plan and counts](plans/combined_pcdl_nist23_enveda_180_dataset.md). Next: implement bounded-memory multi-source loading and model-specific filters.
 
-**Spectraverse subformula filter screen (2026-10-01), stopped.** On all 488,797 spectra, instrument-tolerance filtering removes 26.2% of intensity, 15.2% of original base peaks, and empties 15,074 spectra. Widening to 2× recovers only 2.2 base-peak points on an 8,192-spectrum held-out sample; 10× still misses 7.5%. Na/K adducts are hardest hit. Temporary filtered configs were withdrawn; no run launched. [Finding and artifacts](findings/masster/spectraverse_subformula_filter_2026_10_01.md). Next: inspect Na/K peak chemistry and adduct labels before another filter arm.
+**Spectraverse subformula filter screen (2026-10-01), stopped.** On all 488,797 spectra, instrument-tolerance filtering removes 26.2% of intensity, 15.2% of original base peaks, and empties 15,074 spectra. Widening to 2× recovers only 2.2 base-peak points on an 8,192-spectrum held-out sample; 10× still misses 7.5%. Na/K adducts are hardest hit. Temporary filtered configs were withdrawn; no run launched. [Finding and artifacts](findings/masster/spectraverse_subformula_filter_2026_10_01.md). Na/K read (2026-10-03): `[M+K]+` labels are right but 82% of its spectra lack the precursor and bad ones are filled by recurring Ca/siloxane/salt background; `[M+Na]+` failures cluster in a few source blocks ([finding](findings/masster/spectraverse_subformula_filter_2026_10_03_na_k.md)).
 
 **EI performance audit (2026-10-01), complete.** Full-test Stein is 0.886845; the RASSP-filtered subset scores 0.899167. A 512-spectrum validation support oracle scores 0.99615 versus the model's 0.88703, locating the observed gap mainly in intensity allocation. Simple output power and mass tilts did not help. Next: establish a matched RASSP evaluation and read the prepared e2/e3/e4 intensity arms on both cosine and Stein; no new training has run. [Finding and priorities](findings/masster/masster_ei_performance_audit_2026_10_01.md).
+
+**Spectraverse MASSter short-schedule and clean-train arms (2026-10-03), prepared.** Three arms × cv0/cv1: `masster_c0rerun` (fresh control; the old runs predate `fill_missing_ace`), `masster_short18` (18 epochs), `masster_subceil05` (train drops the 11.8–12.5% of spectra with subformula ceiling ≤ 0.5; val/test unchanged). Configs resolve; not submitted. Next: copy `data/split/spectraverse_benchmark_subceil05/` to Fir and launch. [Plan](plans/masster/spectraverse_short_clean_arms_plan.md).
 
 **Spectraverse MASSter oracle cosine ceiling (2026-10-03), complete.** On 2,048 sampled validation spectra (cv0 + cv1, last checkpoints), MASSter `cos_sim_0.01` is 0.458 against an emitted-bin oracle (`opt_cos_sim`) of 0.734, a candidate-at-instrument-tolerance oracle of 0.803 and an all-subformula oracle of 0.855. The largest gap, 0.276, is intensity allocation: the model reaches 62% of its own emitted-bin ceiling. Separately, 14% of spectra have a subformula ceiling ≤ 0.5 (54% of `[M+K]+`, 42% of `[M+Na]+`, 44% of Other), and the model scores 0.04 on them. Isotope rows would add ≤ 0.019 to the ceiling. [Finding](findings/masster/spectraverse_oracle_ceiling_2026_10_03.md). On cv0 training spectra the same checkpoint scores 0.590 (84% of its emitted-bin ceiling), so the gap is mostly generalization; val peaks at epoch 15 and declines. MSGYM (`ll04i00m` ep60) has the same 63% val efficiency but a 0.30 train-to-val gap (0.884 vs 0.584) with a flat val curve, so the shared limit is generalization to unseen molecules. Next: regularization arms (shorter schedule, weight decay, dropout, dropping unexplainable spectra from SPV training), not more candidates.
 

@@ -828,6 +828,12 @@ masster_mass_mode: exact  # ["exact", "nominal"]
 masster_isotope_envelope: none  # ["none", "natural"]
 masster_isotope_max_order: 4  # largest absolute nominal offset of an isotope row
 masster_isotope_min_ratio: 0.001  # isotope rows under this share of their pathway are dropped
+# Merge prediction rows of one spectrum that share a 4-decimal m/z (probabilities summed), as
+# nominal mode always does; the annotation export keeps one row per pathway. Required with an
+# exact-mass MASSter and ints_transform other than none: training learns the transformed
+# intensity of each m/z (pathways summed in the Gaussian mixture), so evaluation must untransform
+# that sum, not each pathway (sqrt: (sum p)^2, not sum p^2). Off keeps historical outputs.
+masster_merge_same_mz_rows: false
 masster_include_cmf: True
 masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; add their assemblies.
