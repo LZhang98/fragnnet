@@ -1,5 +1,9 @@
 # MASSter JEPA spectrum-embedding auxiliary
 
+> **Status:** CLOSED NULL · **Updated:** 2026-10-03 · Gate 1 fails on all three arms
+> ([read](#gate-1-result-2026-10-03)). Encoder JEPA is level with `i1`; allocator JEPA is
+> 0.003 behind. Gate 2 is not run.
+
 > **Status:** ACTIVE · **Updated:** 2026-10-01 · Gate 0 accepted with the 1% floor (user,
 > 2026-10-01). [Step 1 is built](#step-1-result-2026-10-01): an audited target table, default-off
 > code with tests, and arm configs `j1a`/`j1b`/`j2`, smoke-tested on real data.
@@ -316,6 +320,21 @@ Apply the promotion rule above.
   `j3` only.
 - This plan does not authorize installation, inference exports or cluster jobs; each needs the
   user's go-ahead ([session workflow](../../workflow/session.md)).
+
+### Gate 1 result (2026-10-03)
+
+W&B, all four runs finished at epoch 63. Tail mean of `val_cos_sim_0.01_epoch/mean` over
+epochs 54-63 (10 epochs each):
+
+| Arm | Run | Tail | Δ vs `i1` | Best |
+| --- | --- | ---: | ---: | ---: |
+| `i1` control | `i50ig7rf` | 0.7607 | — | 0.7622 |
+| `j1a` encoder, w 0.1 | `q047zga5` | 0.7607 | +0.0000 | 0.7620 |
+| `j1b` encoder, w 1 | `xodee5pv` | 0.7604 | −0.0003 | 0.7629 |
+| `j2` allocator, w 1 | `gzywzk39` | 0.7576 | −0.0031 | 0.7593 |
+
+No arm reaches the +0.005 screen bar, so the plan stops here. The floor (independent-selector
+worst predictions) was not read; with tails this flat it cannot change the verdict.
 
 ## Current state and next check
 

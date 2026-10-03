@@ -1,12 +1,14 @@
 # MASSter isotope envelope
 
-> **Status:** CLOSED NULL · **Updated:** 2026-09-27
+> **Status:** CLOSED NULL · **Updated:** 2026-10-03
 > Closed at gate 0a by its stop rule. On Enveda val, even a perfect monoisotopic model plus the
 > best scalar envelope recovers only 0.0047 cosine in positive mode (95% CI 0.0045-0.0050)
 > against the 0.005 gate, and 0.0010 in negative mode. The natural prior alone recovers nothing
-> in positive mode and costs 0.013 in negative mode. Nothing was built. NIST20 and MSGYM were not
-> measured. The result and what would reopen the plan are under
-> [Stage 0a step 3](#step-3-on-enveda-val-2026-09-27-gate-0a-fails).
+> in positive mode and costs 0.013 in negative mode. Nothing was built. The result and what would
+> reopen the plan are under [Stage 0a step 3](#step-3-on-enveda-val-2026-09-27-gate-0a-fails).
+> On Spectraverse even a perfect envelope recovers at most 0.0042 in positive mode
+> ([SPV step 2](#step-2-on-spectraverse-2026-10-03-ceiling-below-the-gate)). NIST20 and MSGYM
+> were not measured.
 
 ## Objective and acceptance criteria
 
@@ -150,6 +152,42 @@ them.
   - a dataset whose isolation passes the full envelope.
 
   NIST20 FT and MSGYM were not measured.
+
+#### Step 2 on Spectraverse (2026-10-03): ceiling below the gate
+
+Probe: [debug_spectraverse_isotope_probe.py](../../../scripts/debug/debug_spectraverse_isotope_probe.py),
+2 min on 6 workers, all 488,797 spectra of `data/proc/spectraverse/spec_df.pkl` (every fold, not
+val only). The log and per-spectrum table are in
+`output/analysis/spectraverse_isotope_probe_2026_10_03/`. Satellites use the §9.4 rule. The
+cosine is computed peak by peak, not in the val metric's 0.01 Da bins. A halogen M+2 partner
+counts only if its −2 Da partner is more intense.
+
+| Spectra | n | 13C satellite share | 1 − cos, 13C | 1 − cos, 13C + halogen M+2 |
+| --- | ---: | ---: | ---: | ---: |
+| positive, all | 380,930 | 2.0% | 0.0039 | 0.0042 |
+| negative, all | 107,867 | 1.4% | 0.0021 | 0.0022 |
+| QTOF positive | 139,261 | 3.4% | 0.0067 | 0.0074 |
+| ORB positive | 222,635 | 1.3% | 0.0024 | 0.0024 |
+| Other (both modes) | 16,181 | 0.1% | 0.0002 | 0.0002 |
+| QTOF positive, Cl/Br | 5,799 | — | — | 0.0211 |
+
+- **Gate 0a cannot pass on SPV.** A perfect envelope would recover at most 0.0042 in positive
+  mode. That is below the 0.005 gate before any scalar f, and Enveda realized about half its
+  ceiling. Only QTOF positive mode (0.0074) has a ceiling above the gate.
+- **The ORB rows mostly isolate the monoisotopic precursor alone.** Where the precursor holds ≥5%
+  of base peak, M+1 is absent in 85% of ORB `[M+H]+` spectra. ORB Cl/Br spectra pass the halogen
+  M+2 in 0.2% of cases. ORB spectra without the precursor M+1 put 0.16% of intensity on
+  13C-spaced peaks, which is the false-pair floor. The 15% that keep it put 5.9% there, at a
+  median f1 of 0.45.
+- **QTOF passes more of the envelope, and it varies.** M+1 is present in 42% of `[M+H]+`
+  spectra, at a median f1 of 0.85 where present. Halogen M+2 passes in 47% of positive-mode Cl/Br
+  spectra. Across Cl/Br molecule × polarity groups with ≥2 spectra, 3,788 never pass M+2, 28
+  always do and 223 are mixed. So within SPV the halogen M+2 depends on the spectrum, not on
+  the molecule.
+- **`Other` is effectively de-isotoped.** 0.1% satellite share, and the precursor is in only
+  5-8% of its spectra.
+- **Resolution.** ORB separates 13C from a +1 H shift below m/z 600: the trough between them is
+  3-9% of the 13C peak. QTOF does not separate them below m/z 300, where the trough is 58%.
 
 ### Stage 0b: post-hoc envelope on existing checkpoints
 
