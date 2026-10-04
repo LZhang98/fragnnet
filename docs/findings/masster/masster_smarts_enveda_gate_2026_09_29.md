@@ -34,7 +34,7 @@ re-check here, are useful on Enveda-180 (Bruker timsTOF, `QTOF`/`CID`, Enamine m
 
 ## Method
 
-Probe: [`debug_masster_smarts_rule_gate_enveda.py`](../../../scripts/debug/debug_masster_smarts_rule_gate_enveda.py).
+Probe: [`debug_masster_smarts_rule_gate_enveda.py`](../../../scripts/debug/smarts/debug_masster_smarts_rule_gate_enveda.py).
 It reuses the NIST20 gate's helpers from `debug_masster_smarts_rule_gate.py`: the product sets,
 the connected-twin search and MASSter's channel function. So the measure is the
 [per-class gate](../../reference/masster_smarts_rules.md#rules-added-by-the-per-class-gate-2026-09-27):
@@ -125,7 +125,7 @@ the 590,683 `[M+H]+` spectra and 13.8% of the 185,030 `[M-H]-` spectra.
 ## Provenance
 
 - **Command:**
-  `python scripts/debug/debug_masster_smarts_rule_gate_enveda.py --workers 10 --max_molecules 1000`.
+  `python scripts/debug/smarts/debug_masster_smarts_rule_gate_enveda.py --workers 10 --max_molecules 1000`.
   It took 265 s on the workstation.
 - **Outputs:** in `output/smarts_gate_enveda_2026_09_29/`: `census.pkl`, `rule_gate.pkl`,
   `summary.csv`, `run.log`.

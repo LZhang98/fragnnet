@@ -4,8 +4,11 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from scripts.debug.debug_masster_base_peak_tables import MoleculeChemistry
-from scripts.debug.debug_masster_fragment_pairs import compare_peaks, describe_fragment
+from scripts.debug.masster_memorization.debug_masster_base_peak_tables import MoleculeChemistry
+from scripts.debug.masster_memorization.debug_masster_fragment_pairs import (
+    compare_peaks,
+    describe_fragment,
+)
 
 
 def compare(mzs, probs, target_mzs=(100.0, 150.0), target_ints=(0.8, 0.2)):
@@ -86,7 +89,7 @@ def test_audit_detects_a_missing_zero_share_alternative(tmp_path):
 
     import pandas as pd
 
-    from scripts.debug.validate_masster_fragment_pairs import audit
+    from scripts.debug.masster_memorization.validate_masster_fragment_pairs import audit
 
     mz = np.array([100.0, 100.001, 150.0])
     intensity = np.array([0.1, 0.0, 0.9])
@@ -145,7 +148,7 @@ def test_audit_detects_a_missing_zero_share_alternative(tmp_path):
 
 
 def test_rival_is_a_real_alternative_for_hits_and_misses():
-    from scripts.debug.debug_masster_fragment_pairs import strongest_rival
+    from scripts.debug.masster_memorization.debug_masster_fragment_pairs import strongest_rival
 
     mz = np.array([100.0, 100.001, 150.0, 180.0])
     target_mz = np.array([100.0, 150.0])
@@ -161,7 +164,7 @@ def test_rival_is_a_real_alternative_for_hits_and_misses():
 
 
 def test_rival_excludes_whole_rounded_group_when_any_channel_matches_base():
-    from scripts.debug.debug_masster_fragment_pairs import strongest_rival
+    from scripts.debug.masster_memorization.debug_masster_fragment_pairs import strongest_rival
 
     record, mask = strongest_rival(
         np.array([100.00199, 100.00201, 150.0]),

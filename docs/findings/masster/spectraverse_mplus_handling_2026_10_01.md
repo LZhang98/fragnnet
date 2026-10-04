@@ -112,7 +112,7 @@ QTOF 3. The current YAML says OB/QTOF/Other/NA, which sorts to NA 0, OB 1, Other
 these checkpoints with the current config therefore gives OB spectra the trained NA row and NA
 spectra the FT row. The swap is silent: strict loading checks keys and shapes, not what each row
 means.
-[`analyze_spectraverse_recall.py`](../../../scripts/debug/analyze_spectraverse_recall.py) builds
+[`analyze_spectraverse_recall.py`](../../../scripts/debug/spectraverse/analyze_spectraverse_recall.py) builds
 the model this way. The OB rows of the [recall finding](spectraverse_recall_tolerance_2026_10_01.md)
 were therefore scored with the NA embedding. Its QTOF rows are unaffected. The predictions above
 used copies with rows 0 and 1 swapped and hparams relabelled, made by

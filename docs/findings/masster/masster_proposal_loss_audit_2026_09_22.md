@@ -81,7 +81,7 @@ current lineage stands.
 `_proposal_coverage_loss` sums `-w_p · log(coverage_p)` over **covered** peaks only, and
 `coverage_p ≤ 1`, so `L ≥ 0` with equality when every covered peak is covered with probability 1
 **or when no peak is covered at all**. Re-run against the live function
-(`scripts/debug/debug_proposal_coverage_blind_spot.py`, two peaks at 100/200 Da, 0.01 Da
+(`scripts/debug/masster_candidates/debug_proposal_coverage_blind_spot.py`, two peaks at 100/200 Da, 0.01 Da
 tolerance):
 
 | case | candidates | loss | Σ\|∂L/∂logits\| |
@@ -242,7 +242,7 @@ Consolidates, and does not replace:
   — what the objective can and cannot see, and the retracted teacher recommendation.
 
 New work in this document: the live 224-config census (§1), the re-run counterexample and its
-proportionality result (§3, `scripts/debug/debug_proposal_coverage_blind_spot.py`), the
+proportionality result (§3, `scripts/debug/masster_candidates/debug_proposal_coverage_blind_spot.py`), the
 no-ablation finding (§4), and the `candidate_wrecall` regression (§6.3). Documentation and one
 debug script only — no model code, configuration, dataset or training state changed, and no run
 was launched.

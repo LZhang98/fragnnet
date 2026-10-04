@@ -29,7 +29,7 @@
 #
 # CONTROL: i1_inst_ob_obf (i50ig7rf), tail 0.7607 over epochs 54-63.
 # READ: base-peak accuracy, ranking gap and calibrated cosine
-# (scripts/debug/debug_masster_base_peak_errors.py, scripts/debug/debug_masster_base_peak_tables.py),
+# (scripts/debug/masster_memorization/debug_masster_base_peak_errors.py, scripts/debug/masster_memorization/debug_masster_base_peak_tables.py),
 # overall and specifically on nested and sibling pairs for molecules with Tanimoto < 0.6 to
 # train, against i1, with two seeds per arm (397623 and 811237, matching control_s2). Also
 # measured peak GPU memory and wall-clock/epoch against i1.

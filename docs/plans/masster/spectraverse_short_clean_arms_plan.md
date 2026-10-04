@@ -65,4 +65,4 @@ last-5-epoch tail mean. Promotion needs both folds positive. The NIST20 two-run 
 0.0042; SPV has no replicate yet, so treat a gain smaller than that as unresolved. Also log the wall
 clock, since `masster_short18` costs 45% of the control. If `masster_subceil05` wins, check that it holds on the
 held-out Na/K spectra (it must not just abandon them) by rerunning
-`scripts/debug/spectraverse_oracle_ceiling.py` per adduct.
+`scripts/debug/spectraverse/spectraverse_oracle_ceiling.py` per adduct.

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from rdkit import Chem
 
-from scripts.debug.debug_masster_excision_continuations import (
+from scripts.debug.smarts.debug_masster_excision_continuations import (
     Bridge,
     MoleculeCoverage,
     _alias_ft,
@@ -19,7 +19,7 @@ from scripts.debug.debug_masster_excision_continuations import (
     random_disconnected,
     summarize,
 )
-from scripts.debug.debug_masster_smarts_rule_gate import (
+from scripts.debug.smarts.debug_masster_smarts_rule_gate import (
     ChannelScorer,
     _is_connected,
     edge_tuple,
@@ -200,7 +200,7 @@ def test_continuation_peak_is_not_credited_to_whole_product():
 
 
 def test_capped_query_never_counts_as_unique(monkeypatch):
-    import scripts.debug.debug_masster_excision_continuations as probe
+    import scripts.debug.smarts.debug_masster_excision_continuations as probe
 
     mol = Chem.MolFromSmiles("CCOCC")
     cache = MoleculeCoverage(mol, ChannelScorer(), cap=1)

@@ -38,7 +38,7 @@ Relevant boundaries at planning start (the implementation checkpoint records cha
 - [Model](../../../src/fragnnet/model/masster_model.py): unique mode discards duplicate
   occurrence memberships after upload. Differentiable mask probabilities and latent-pathway
   marginalization must remain connected to the live logits.
-- [Training benchmark](../../../scripts/debug/benchmark_masster_training.py): fixed-batch
+- [Training benchmark](../../../scripts/debug/bench/benchmark_masster_training.py): fixed-batch
   forward/backward diagnostic only; production loading, optimizer updates and validation are
   currently excluded. It is not yet the acceptance benchmark for this plan.
 

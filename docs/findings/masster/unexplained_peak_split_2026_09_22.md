@@ -30,7 +30,7 @@ Before building either, the question is how the 11% divides.
 
 ## Method
 
-`scripts/debug/debug_unexplained_peak_split.py`. It resolves a run's own configuration and
+`scripts/debug/masster_candidates/debug_unexplained_peak_split.py`. It resolves a run's own configuration and
 builds the target through `BaseDataset._setup_dfs`, so the probed spectra are exactly the ones
 the run trains against — same cleanup, same `tolerance_consensus` merge, same four-adduct
 FT+QTOF HCD+CID scope. Feasibility reuses production `_subformula_masses`, the same
@@ -248,7 +248,7 @@ number rather than the old bug. The escape population is uniform background.
 ## Reproduce
 
 ```bash
-python scripts/debug/debug_unexplained_peak_split.py \
+python scripts/debug/masster_candidates/debug_unexplained_peak_split.py \
     --custom_fp config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml \
     --split val --measured_wrecall 0.8911 --null_control
 ```

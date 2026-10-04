@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.debug.analyze_masster_pair_contrasts import (
+from scripts.debug.masster_memorization.analyze_masster_pair_contrasts import (
     atom_relation,
     bh_adjust,
     definite_direction,
@@ -85,7 +85,7 @@ def test_multiple_testing_preserves_missing_entries_and_order():
 
 
 def test_group_consensus_retains_low_probability_ambiguity():
-    from scripts.debug.analyze_masster_pair_contrasts import summarize_groups
+    from scripts.debug.masster_memorization.analyze_masster_pair_contrasts import summarize_groups
 
     def channel(atoms, cuts, probability):
         return {

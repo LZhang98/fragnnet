@@ -8,7 +8,7 @@
 
 Keep the three candidate definitions research-only. Do not enable templates or change EI
 metadata on the strength of this screen. The
-[probe](../../../scripts/debug/debug_masster_ei_smarts_screen.py) and its
+[probe](../../../scripts/debug/ei/debug_masster_ei_smarts_screen.py) and its
 [tests](../../../tests/test_debug_masster_ei_smarts_screen.py) are added; production code,
 configs, datasets and existing rule indices are unchanged.
 
@@ -98,7 +98,7 @@ Production would still need a reliable EI metadata path if an EI-only rule were 
   `/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python`.
 - Command: `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python
-  scripts/debug/debug_masster_ei_smarts_screen.py --workers 6`.
+  scripts/debug/ei/debug_masster_ei_smarts_screen.py --workers 6`.
 - Final artifacts: [`output/masster_ei_smarts_2026_10_01/`](../../../output/masster_ei_smarts_2026_10_01/):
   `census.csv`, `rows.csv`, `summary.csv`, `provenance.json`, `starting.diff`, and the
   supplementary `collision_witnesses.json`. Provenance records input/source SHA256,

@@ -10,14 +10,14 @@ from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 
 from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper
-from scripts.debug.debug_masster_reference_information_gate import (
+from scripts.debug.masster_memorization.debug_masster_reference_information_gate import (
     fit_correction,
     metric_cache,
     query_features,
     reference_features,
     scores,
 )
-from scripts.debug.prepare_masster_reference_gate import retrieve_condition
+from scripts.debug.masster_memorization.prepare_masster_reference_gate import retrieve_condition
 
 
 def frame() -> pd.DataFrame:

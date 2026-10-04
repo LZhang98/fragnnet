@@ -1,4 +1,6 @@
-"""The frozen-token allocation probe (``scripts/debug/debug_masster_local_context_allocation.py``).
+"""The frozen-token allocation probe.
+
+Script: ``scripts/debug/masster_memorization/debug_masster_local_context_allocation.py``.
 
 Covers the pure helpers (segment ops, the context penalty, the compact-bin production cosine,
 manifests, config merging, calibration), the two local scorers (zero start, retained/lost
@@ -13,7 +15,7 @@ import pandas as pd
 import pytest
 import torch as th
 
-import scripts.debug.debug_masster_local_context_allocation as PROBE
+import scripts.debug.masster_memorization.debug_masster_local_context_allocation as PROBE
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.utils.spec_utils import cos_sim_helper
 from tests.test_masster_model import _build_batch, _build_model

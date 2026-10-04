@@ -51,9 +51,9 @@ encoding.
 
 ## Step 1 Results (2026-07-03, 191 molecules, seed=42)
 
-Built `scripts/debug/debug_dag_bond_radius_env_stats.py`: reuses the same
+Built `scripts/debug/dag/debug_dag_bond_radius_env_stats.py`: reuses the same
 DAG-traversal / min-depth-route logic as
-`scripts/debug/debug_dag_bond_descriptor_stats.py`, but records the raw
+`scripts/debug/dag/debug_dag_bond_descriptor_stats.py`, but records the raw
 `(a, b)` atom-index bond pairs per route instead of pre-bucketing them, so
 one tar scan can be re-bucketed at multiple radii without re-scanning.
 Reports bucket cardinality and support (route count per bucket), plus
@@ -141,9 +141,9 @@ the single highest-loss hand-mined bucket).
 
 ## Key files
 
-- `scripts/debug/debug_dag_bond_radius_env_stats.py` — Step 1 diagnostic
+- `scripts/debug/dag/debug_dag_bond_radius_env_stats.py` — Step 1 diagnostic
   (radius-N cardinality/support + top single-bucket loss)
-- `scripts/debug/debug_dag_bond_descriptor_stats.py` — radius-0 baseline,
+- `scripts/debug/dag/debug_dag_bond_descriptor_stats.py` — radius-0 baseline,
   reused DAG-traversal logic
 - `src/fragnnet/frag/multi_cut_bfs.pyx` — eventual production integration
   target for either a finer hand-mined table or a learned scorer

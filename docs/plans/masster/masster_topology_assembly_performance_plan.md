@@ -98,7 +98,7 @@ path is removed. Performance harnesses remain under `scripts/debug/`; correctnes
 
 ## Stage 0 — measurement and abort gate
 
-Extend `scripts/debug/benchmark_masster_candidates.py` before changing the kernels:
+Extend `scripts/debug/bench/benchmark_masster_candidates.py` before changing the kernels:
 
 1. Add unique-fragment target and ranked-mask-budget arguments.
 2. Exercise the static graph sidecar, SMARTS on/off, and configurable candidate-group multiplicity.

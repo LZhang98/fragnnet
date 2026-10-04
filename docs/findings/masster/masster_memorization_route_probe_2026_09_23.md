@@ -38,11 +38,11 @@ its run's W&B config except three keys added later, all at inert defaults:
 `masster_fragment_selection: mask_order`, `masster_selected_fragment_target: null` and
 `spec_params.split_filters: {}`.
 
-Probe: `scripts/debug/debug_pooled_embedding_memorization.py` at `a75eb35f`, which adds the
+Probe: `scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py` at `a75eb35f`, which adds the
 `features` and `set` scopes to the original `cc`, `boundary` and `all` scopes:
 
 ```bash
-python scripts/debug/debug_pooled_embedding_memorization.py \
+python scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py \
   --model_ckpt saved_ckpts/f1_mh_ft_all_filters_6h67zps9.ckpt \
   --custom_fp config/masster/mh_ft_clean_2026_09_22/f1_mh_ft_all_filters.yml \
   --eval_batch_size 512 --batch_cutoff 100 --output_fp f1_probe.csv

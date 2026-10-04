@@ -49,7 +49,7 @@
 
 ## Setup
 
-**Probe.** [`debug_masster_dropout_view_disagreement.py`](../../../scripts/debug/debug_masster_dropout_view_disagreement.py),
+**Probe.** [`debug_masster_dropout_view_disagreement.py`](../../../scripts/debug/masster_memorization/debug_masster_dropout_view_disagreement.py),
 with unit tests in `tests/test_debug_masster_dropout_view_disagreement.py`. Each batch runs five
 conditions, paired:
 
@@ -367,7 +367,7 @@ all four weight sets, about 5 minutes each on the RTX 2070 SUPER, into one per-s
 log per set. Then:
 
 ```bash
-python scripts/debug/debug_masster_dropout_view_disagreement.py --summarize \
+python scripts/debug/masster_memorization/debug_masster_dropout_view_disagreement.py --summarize \
   output/masster_dropout_views_2026_09_27/{c0_vcpho5qm_e042,k1_wg0nxymi_e061,k1_ema_j4u25qfd_e050_average,k1_ema_j4u25qfd_e050_training}.pkl
 ```
 

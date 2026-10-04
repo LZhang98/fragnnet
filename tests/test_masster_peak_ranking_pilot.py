@@ -3,7 +3,10 @@
 import pytest
 import torch as th
 
-from scripts.debug.debug_masster_peak_ranking_pilot import peak_ranking_loss, sample_specs
+from scripts.debug.masster_memorization.debug_masster_peak_ranking_pilot import (
+    peak_ranking_loss,
+    sample_specs,
+)
 
 
 def test_mass_aggregation_and_gradient():

@@ -10,7 +10,11 @@ import torch as th
 from fragnnet.model.bond_fragment_heads import CandidateIntensityTransformerHead
 
 SCRIPT_PATH = (
-    Path(__file__).parents[1] / "scripts" / "debug" / "debug_pooled_embedding_memorization.py"
+    Path(__file__).parents[1]
+    / "scripts"
+    / "debug"
+    / "masster_memorization"
+    / "debug_pooled_embedding_memorization.py"
 )
 SPEC = importlib.util.spec_from_file_location("debug_pooled_embedding_memorization", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None

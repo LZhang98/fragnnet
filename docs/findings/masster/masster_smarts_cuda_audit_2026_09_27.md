@@ -108,7 +108,7 @@
 
 ## 3. How often the trained proposal reaches template cuts
 
-Probe: `scripts/debug/debug_masster_smarts_proposal_reach.py` on the `c0` checkpoint
+Probe: `scripts/debug/smarts/debug_masster_smarts_proposal_reach.py` on the `c0` checkpoint
 (`vcpho5qm`), val, in eval mode with SMARTS off, which is `c0`'s own pool. It covers the
 5,061 val spectra whose molecule has an eligible `[M+H]+` template: 6,804 (spectrum,
 template) pairs, with output under `output/smarts_reach_2026_09_27/`.
@@ -280,7 +280,7 @@ candidates came from:
 - AIMe's hydroxamic example.
 
 The ChemFrag triage's only lead, the Wagner–Meerwein migration, still lacks a post-migration
-cut and was not encoded. Probe: `scripts/debug/debug_masster_smarts_rule_gate.py`, whose output is in
+cut and was not encoded. Probe: `scripts/debug/smarts/debug_masster_smarts_rule_gate.py`, whose output is in
 `output/smarts_reach_2026_09_27/rule_gate.pkl`.
 
 **Step 1, census** on standardized molecules, NIST20 spectra of the rule's polarity:

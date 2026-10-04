@@ -11,10 +11,10 @@ import pytest
 import torch as th
 from rdkit import Chem
 
-import scripts.debug.debug_masster_base_peak_tables as TABLES
-import scripts.debug.debug_masster_postcut_information_gate as GATE
+import scripts.debug.masster_memorization.debug_masster_base_peak_tables as TABLES
+import scripts.debug.masster_memorization.debug_masster_postcut_information_gate as GATE
 from fragnnet.frag.masster_templates import MASSTER_RULE_NAMES
-from scripts.debug.debug_masster_smarts_rule_gate import ChannelScorer
+from scripts.debug.smarts.debug_masster_smarts_rule_gate import ChannelScorer
 from tests.test_masster_model import _build_batch, _build_model
 
 

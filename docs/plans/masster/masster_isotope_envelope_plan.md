@@ -75,7 +75,7 @@ On Enveda val (`enveda_180_inchikey_811`), NIST20 FT val and MSGYM val, per pola
 
 1. Split each target into satellite peaks and monoisotopic peaks. A satellite is a peak with a
    more intense partner below it at the 13C or halogen spacing: the §9.4 rule of
-   `scripts/debug/debug_enveda_isotope_probe.py`.
+   `scripts/debug/isotopes/debug_enveda_isotope_probe.py`.
 2. Report cos(target, monoisotopic part). This is the ceiling of a perfect monoisotopic model.
 3. Report cos(target, monoisotopic part + envelope × f). The envelope comes from each peak's
    subformula composition (`subformula_candidates`). Use two settings, f = 1 and f = the
@@ -104,7 +104,7 @@ prediction reaches cos = ‖target without satellites‖ / ‖target‖:
 
 #### Step 3 on Enveda val (2026-09-27): gate 0a fails
 
-Probe: [debug_enveda_isotope_envelope_ceiling.py](../../../scripts/debug/debug_enveda_isotope_envelope_ceiling.py),
+Probe: [debug_enveda_isotope_envelope_ceiling.py](../../../scripts/debug/isotopes/debug_enveda_isotope_envelope_ceiling.py),
 53 s on 10 workers. Per-spectrum dot products are in
 `output/enveda_180_isotope_probe_2026_09_25/envelope_ceiling_val.pkl`, and the log sits beside
 them.
@@ -155,7 +155,7 @@ them.
 
 #### Step 2 on Spectraverse (2026-10-03): ceiling below the gate
 
-Probe: [debug_spectraverse_isotope_probe.py](../../../scripts/debug/debug_spectraverse_isotope_probe.py),
+Probe: [debug_spectraverse_isotope_probe.py](../../../scripts/debug/isotopes/debug_spectraverse_isotope_probe.py),
 2 min on 6 workers, all 488,797 spectra of `data/proc/spectraverse/spec_df.pkl` (every fold, not
 val only). The log and per-spectrum table are in
 `output/analysis/spectraverse_isotope_probe_2026_10_03/`. Satellites use the §9.4 rule. The

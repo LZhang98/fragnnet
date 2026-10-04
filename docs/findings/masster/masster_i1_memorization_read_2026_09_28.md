@@ -47,7 +47,7 @@ memorization instruments are:
 
 ## Method
 
-- **Probe.** [`debug_pooled_embedding_memorization.py`](../../../scripts/debug/debug_pooled_embedding_memorization.py),
+- **Probe.** [`debug_pooled_embedding_memorization.py`](../../../scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py),
   eval mode, 60 batches of 512 per split. Scopes are `setmsg`, `set`, `cc`, `boundary` and
   `gsa`, with modes `molmean` and `shuffle`. These are `c0`'s settings, and they cover 30,720
   train and 30,720 val spectra.

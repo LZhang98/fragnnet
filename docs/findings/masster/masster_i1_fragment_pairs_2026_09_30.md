@@ -125,13 +125,13 @@ a candidate subgraph, not an experimentally identified sequence of bond-breaking
 Use the configured `FRAGNNET-GPU` interpreter. The output directory must be fresh.
 
 ```bash
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/debug_masster_fragment_pairs.py \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/masster_memorization/debug_masster_fragment_pairs.py \
   --checkpoint saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt \
   --custom_fp config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml \
   --spec_fp output/i1_worst_predictions_2026_09_30/subset_spec_df_val_all.pkl \
   --output_dp output/i1_fragment_pairs_2026_09_30/val
 
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/validate_masster_fragment_pairs.py \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/masster_memorization/validate_masster_fragment_pairs.py \
   --output_dp output/i1_fragment_pairs_2026_09_30/val \
   --reference output/ev_ladder_census_2026_09_28/i1_val.pkl
 ```

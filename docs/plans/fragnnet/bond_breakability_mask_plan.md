@@ -38,7 +38,7 @@ problem, not just a compute-cost one.
   out bonds that are never real cleavage sites *before* BFS enumerates,
   rather than scoring the full combinatorial output.
 - **A prototype of this already exists and hasn't been run**:
-  `scripts/debug/debug_dag_boundary_bond_stats.py` classifies boundary cuts
+  `scripts/debug/dag/debug_dag_boundary_bond_stats.py` classifies boundary cuts
   as C-C-only vs. heteroatom-containing and measures matched-formula recall
   lost by skipping C-C cuts at the deepest depth. It aggregates globally
   (no CE split).
@@ -102,7 +102,7 @@ split alone.
 
 ## Step 3 Results (2026-07-03, 2,967 molecules, seed=42)
 
-Built `scripts/debug/debug_dag_bond_descriptor_stats.py`: reconstructs the actual
+Built `scripts/debug/dag/debug_dag_bond_descriptor_stats.py`: reconstructs the actual
 broken bond(s) for every DAG edge by diffing parent/child atom bitmasks (the
 `cc` node feature, decoded via the existing `th_long_to_mask`) against the
 source RDKit mol (`data/proc/nist20/mol_df.pkl`, keyed by `mol_id`), then
@@ -158,7 +158,7 @@ touching a comparable or smaller share of bond-space.
 
 ## Step 4 Results (2026-07-03, 2,903 molecules, seed=42)
 
-Built `scripts/debug/debug_dag_bond_descriptor_node_reduction.py` to measure the
+Built `scripts/debug/dag/debug_dag_bond_descriptor_node_reduction.py` to measure the
 node/edge-count side of the tradeoff for the two candidate policies from step 3,
 applied post-hoc to the same (already fully-enumerated, unmasked) D4 tar: for
 every depth-4 node, check whether at least one of its routes (parent edges /

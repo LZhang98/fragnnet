@@ -1,4 +1,4 @@
-"""Tests for scripts/debug/debug_compare_mbfs_dags.py helpers."""
+"""Tests for scripts/debug/dag/debug_compare_mbfs_dags.py helpers."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from fragnnet.utils import frag_utils
 
 def load_module():
     repo_root = Path(__file__).resolve().parent.parent
-    script_path = repo_root / "scripts" / "debug" / "debug_compare_mbfs_dags.py"
+    script_path = repo_root / "scripts" / "debug" / "dag" / "debug_compare_mbfs_dags.py"
     spec = importlib.util.spec_from_file_location("debug_compare_mbfs_dags", str(script_path))
     if spec is None or spec.loader is None:
         raise FileNotFoundError(f"Unable to load module spec from {script_path}")

@@ -71,7 +71,7 @@ tested query-specific early exit; capped queries remain unresolved and cannot co
 Command (FRAGNNET-GPU interpreter):
 
 ```bash
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/debug_masster_smarts_rule_gate.py continuations \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/smarts/debug_masster_smarts_rule_gate.py continuations \
   --output output/excision_continuations_2026_09_28/train.pkl \
   --molecules 512 --spectra-per-molecule 4 --batch-size 4
 ```
@@ -86,7 +86,7 @@ Related: [literature](../../notes/masster_excision_literature_2026_09_28.md),
 Validation command, after freezing `train.families.json`:
 
 ```bash
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/debug_masster_smarts_rule_gate.py continuations \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/smarts/debug_masster_smarts_rule_gate.py continuations \
   --split val --families output/excision_continuations_2026_09_28/train.families.json \
   --output output/excision_continuations_2026_09_28/val.pkl \
   --molecules 512 --spectra-per-molecule 4 --batch-size 4 --seed 1

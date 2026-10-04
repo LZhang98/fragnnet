@@ -376,7 +376,7 @@ are local; resolve their actual location or recover them before promising a quic
 claim the measurements were reproduced. Promote reused ignored scripts into a tracked analysis
 entry point, `scripts/eval/masster_intensity_reliability.py`, with provenance. Reuse
 mass-tolerance and molecule-bootstrap conventions from
-[`debug_ce_replicate_noise_floors.py`](../../../scripts/debug/debug_ce_replicate_noise_floors.py)
+[`debug_ce_replicate_noise_floors.py`](../../../scripts/debug/fragnnet/debug_ce_replicate_noise_floors.py)
 and peer-comparison logic from
 [`nist_bad_data_review.py`](../../../scripts/eval/nist_bad_data_review.py).
 Use [`intensity_displacement.py`](../../../scripts/eval/intensity_displacement.py) to

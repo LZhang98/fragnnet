@@ -72,7 +72,7 @@ ceiling (0.141). That is either a mass offset or chance proximity; this read can
 
 ## Method and limits
 
-Script: `scripts/debug/spectraverse_oracle_ceiling.py`. Checkpoints: the row-swapped copies
+Script: `scripts/debug/spectraverse/spectraverse_oracle_ceiling.py`. Checkpoints: the row-swapped copies
 `output/thiazolium_pred_2026_10_01/{ggifzj9m,u46v0k0g}_ob.ckpt` of the W&B `last.ckpt`. Their
 `state_dict` holds the EMA weights, and their instrument rows match the current
 NA/ORB/Other/QTOF order; the model is built from the current fold config. Sampling uses seed

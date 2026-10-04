@@ -17,8 +17,8 @@ This coverage gate cannot establish intensity prediction or cosine improvement.
 
 See the [protocol and commands](../../plans/masster/masster_excision_channel_probe.md).
 The diagnostic entry point is
-[`debug_masster_smarts_rule_gate.py continuations`](../../../scripts/debug/debug_masster_smarts_rule_gate.py),
-implemented in [the continuation probe](../../../scripts/debug/debug_masster_excision_continuations.py).
+[`debug_masster_smarts_rule_gate.py continuations`](../../../scripts/debug/smarts/debug_masster_smarts_rule_gate.py),
+implemented in [the continuation probe](../../../scripts/debug/smarts/debug_masster_excision_continuations.py).
 
 - c0 checkpoint `c0_control_vcpho5qm.ckpt`, epoch 42, strict loading, `[M+H]+` only.
   Historical FT embedding reused for current OB and OB_F inputs; dataset files unchanged.

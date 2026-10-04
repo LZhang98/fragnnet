@@ -15,7 +15,7 @@ Three evidence sources:
    run 2026-09-19: **226 runs**, 192 merged and 34 unmerged. This supersedes the 197-run
    population in the [unmerged overfitting audit](masster_unmerged_overfitting_2026_09_16.md).
 3. Ten mechanism probes, reproducible with
-   `scripts/debug/probe_masster_regularization.py` (add `--wandb` for the run census).
+   `scripts/debug/masster_memorization/probe_masster_regularization.py` (add `--wandb` for the run census).
 
 **What the probes do and do not establish.** Each probe builds a randomly initialized,
 production-shaped module (GINE_GSA 384x2, head 512, bond head 3 layers, intensity transformer

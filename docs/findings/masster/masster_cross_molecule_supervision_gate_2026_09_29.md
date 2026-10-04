@@ -21,7 +21,7 @@ relationships between measured spectra, rather than descriptors to correct one c
 ## Frozen design and coverage
 
 See the [plan](../../plans/masster/masster_cross_molecule_supervision_gate.md),
-[script](../../../scripts/debug/debug_masster_cross_molecule_gate.py), and standalone
+[script](../../../scripts/debug/masster_memorization/debug_masster_cross_molecule_gate.py), and standalone
 [analysis configuration](../../../config/analysis/masster_cross_molecule_gate.yaml).
 
 - Existing `nist20_inchikey` training IDs: 157,678 spectra, 12,668 molecular identities.
@@ -122,7 +122,7 @@ especially unfamiliar molecules, and confirm a promising effect with a second se
 
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_masster_cross_molecule_gate.py \
+  scripts/debug/masster_memorization/debug_masster_cross_molecule_gate.py \
   --config config/analysis/masster_cross_molecule_gate.yaml \
   --output output/cross_molecule_gate_2026_09_29/checked
 ```

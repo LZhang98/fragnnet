@@ -155,13 +155,13 @@ The previous attribute-reweighting null is not overturned by an error associatio
   correction fit or untouched-test evaluation was performed.
 
 ```bash
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/debug_masster_fragment_pairs.py \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/masster_memorization/debug_masster_fragment_pairs.py \
   --checkpoint saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt \
   --custom_fp config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml \
   --spec_fp output/i1_worst_predictions_2026_09_30/subset_spec_df_val_all.pkl \
   --output_dp output/i1_pair_contrasts_2026_09_30/val --batch_size 128 --include_rival
 
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/analyze_masster_pair_contrasts.py \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/masster_memorization/analyze_masster_pair_contrasts.py \
   --source output/i1_pair_contrasts_2026_09_30/val \
   --metadata output/i1_worst_predictions_2026_09_30/val_summary.pkl \
   --reference_pairs output/i1_fragment_pairs_2026_09_30/val/pairs.pkl \

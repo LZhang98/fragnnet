@@ -88,7 +88,7 @@ contexts, so the conclusion is not an artifact of an under-powered null.
 ## Reproduce
 
 ```bash
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/probe_cross_adduct_headroom.py
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/masster_candidates/probe_cross_adduct_headroom.py
 ```
 
 Requires `data/proc/nist20/spec_df.pkl`. Runs on CPU in a few minutes; no model or checkpoint.

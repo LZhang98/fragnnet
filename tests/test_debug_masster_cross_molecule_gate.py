@@ -11,7 +11,7 @@ import yaml
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
 
-from scripts.debug.debug_masster_cross_molecule_gate import (
+from scripts.debug.masster_memorization.debug_masster_cross_molecule_gate import (
     compare_profiles,
     fragment_profile,
     summarize,
@@ -126,7 +126,7 @@ def test_end_to_end_uses_train_only_and_disjoint_identity_pools(tmp_path):
     subprocess.run(
         [
             sys.executable,
-            "scripts/debug/debug_masster_cross_molecule_gate.py",
+            "scripts/debug/masster_memorization/debug_masster_cross_molecule_gate.py",
             "--config",
             str(tmp_path / "config.yml"),
             "--output",

@@ -141,7 +141,7 @@ is needed.
 
 ## Superseded (2026-07-04) — priority ranking underperforms random tie-break
 
-A from-scratch simulation (`scripts/debug/debug_fanout_cap_recall_eval.py`,
+A from-scratch simulation (`scripts/debug/dag/debug_fanout_cap_recall_eval.py`,
 built because the `debug_dag_fanout_cap_node_reduction.py` script cited above
 does not exist anywhere in this repo or its git history — the K=8 numbers in
 this doc's Step 1 Results could not be reproduced or verified) tested this
@@ -177,7 +177,7 @@ autoregressive generation mechanism.
 ## Key files
 
 - `scripts/debug/debug_dag_fanout_cap_node_reduction.py` — Step 1 diagnostic
-- `scripts/debug/debug_dag_bond_descriptor_stats.py` — reused
+- `scripts/debug/dag/debug_dag_bond_descriptor_stats.py` — reused
   `decode_cc`/`boundary_buckets`
 - `src/fragnnet/frag/multi_cut_bfs.pyx` — eventual production integration
   target (lines ~390/396 for how static arrays are threaded in today via

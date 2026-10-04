@@ -12,7 +12,7 @@ import torch as th
 from torch.utils.data import DataLoader, TensorDataset
 
 SCRIPT = (
-    Path(__file__).resolve().parents[1] / "scripts/debug/benchmark_masster_full_training.py"
+    Path(__file__).resolve().parents[1] / "scripts/debug/bench/benchmark_masster_full_training.py"
 )
 spec = importlib.util.spec_from_file_location("full_training_benchmark", SCRIPT)
 benchmark = importlib.util.module_from_spec(spec)

@@ -3,7 +3,7 @@
 Per spectrum, the subformula ceiling is sqrt(sum of squared intensity of peaks within the
 instrument tolerance of a precursor-bounded subformula ion / sum of all squared intensity),
 the peak-level form of the ``sub_inst`` oracle in
-``scripts/debug/spectraverse_oracle_ceiling.py`` (that one bins at 0.01 Da after model
+``scripts/debug/spectraverse/spectraverse_oracle_ceiling.py`` (that one bins at 0.01 Da after model
 preprocessing). Train spectra with a ceiling at or below ``--min-ceiling`` are removed;
 val and test ids are copied unchanged, so held-out scores stay comparable with the source
 split. See docs/findings/masster/spectraverse_oracle_ceiling_2026_10_03.md.

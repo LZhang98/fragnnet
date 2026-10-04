@@ -261,7 +261,7 @@ the boundary block.
 
 ### 7.1c The probe exists, and its toy-scale validation already points at the boundary block
 
-`scripts/debug/debug_pooled_embedding_memorization.py`. It evaluates one fixed checkpoint on
+`scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py`. It evaluates one fixed checkpoint on
 a train slice and a validation slice while corrupting the pooled blocks on their way into the
 intensity head, patching `CandidateIntensityTransformerHead.forward` so nothing upstream
 (candidate generation, proposal scoring, the scalar features) moves. Three scopes — `cc`

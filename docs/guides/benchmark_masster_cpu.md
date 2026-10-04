@@ -30,7 +30,7 @@ for file in masster_core.pyx masster_candidates.py; do
   git show "$FRAGNNET_BASE:src/fragnnet/frag/$file" \
     > "$FRAGNNET_RUN_ROOT/baseline/src/fragnnet/frag/$file"
 done
-cp scripts/debug/benchmark_masster_full_training.py \
+cp scripts/debug/bench/benchmark_masster_full_training.py \
   "$FRAGNNET_RUN_ROOT/baseline/scripts/debug/"
 printf '%s\n' "$FRAGNNET_BASE" > "$FRAGNNET_RUN_ROOT/baseline/source_revision.txt"
 printf '' | sha256sum | cut -d' ' -f1 > "$FRAGNNET_RUN_ROOT/baseline/source_diff_sha256.txt"
@@ -66,7 +66,7 @@ for batch in 128 256 512; do
   config="${config}.yml"
   job="msh_cpu_${FRAGNNET_VARIANT}_b${batch}"
   python scripts/setup_job_cc.py \
-    --frag_gnn_dp "$PWD" --python_script_fp scripts/debug/benchmark_masster_full_training.py \
+    --frag_gnn_dp "$PWD" --python_script_fp scripts/debug/bench/benchmark_masster_full_training.py \
     --job_name "$job" --script_dp "$FRAGNNET_RUN_ROOT/slurm" --job_dp "$FRAGNNET_RUN_ROOT/jobs" \
     --gpu_profile vulcan:l40s --cc_account "$FRAGNNET_ACCOUNT" --cc_email "$FRAGNNET_EMAIL" \
     --time 3:00:00 --no_submit=True \
@@ -178,7 +178,7 @@ for backend in cpu cuda_topology cuda_full; do
     config="${config}.yml"
     job="msh_backend_${backend}_b${batch}"
     python scripts/setup_job_cc.py \
-      --frag_gnn_dp "$PWD" --python_script_fp scripts/debug/benchmark_masster_full_training.py \
+      --frag_gnn_dp "$PWD" --python_script_fp scripts/debug/bench/benchmark_masster_full_training.py \
       --job_name "$job" --script_dp "$FRAGNNET_RUN_ROOT/slurm" --job_dp "$FRAGNNET_RUN_ROOT/jobs" \
       --gpu_profile vulcan:l40s --cc_account "$FRAGNNET_ACCOUNT" --cc_email "$FRAGNNET_EMAIL" \
       --time 3:00:00 --no_submit=True \

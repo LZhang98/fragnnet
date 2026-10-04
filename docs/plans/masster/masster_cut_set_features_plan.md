@@ -64,7 +64,7 @@ relationship *between* the cut bonds is gone by construction.
 
 ## Measurement: the destroyed distinction is the common case
 
-`scripts/debug/debug_cut_set_topology.py`, 200 molecules, 85,819 depth-3 DAG fragments with
+`scripts/debug/masster_candidates/debug_cut_set_topology.py`, 200 molecules, 85,819 depth-3 DAG fragments with
 boundary bonds:
 
 | | share |

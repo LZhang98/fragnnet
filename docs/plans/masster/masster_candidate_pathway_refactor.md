@@ -242,7 +242,7 @@ demonstrates parallel speedup without regressing `M > 1` selection materially.
 ## Measurements this rests on
 
 All on 128 molecules × 30 atoms, `max_masks=256`, `max_enumerated_masks=1024`, CPU, 6 physical
-cores. Reproduce with `scripts/debug/benchmark_masster_candidates.py`.
+cores. Reproduce with `scripts/debug/bench/benchmark_masster_candidates.py`.
 
 | Path | When | mask_selection | State |
 |------|------|----------------|-------|

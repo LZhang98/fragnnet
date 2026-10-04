@@ -83,5 +83,5 @@ last-5-epoch tail mean. Promotion needs both folds positive; the NIST20 seed spr
 Compare by wall clock as well as by step. This arm changes two things (merge and the MS-DIAL
 drop), so a win does not say which one helped. If it wins, the follow-ups are merge-only with
 MS-DIAL kept, and the MS-DIAL drop without merging. Also rescore per source with
-`scripts/debug/spectraverse_oracle_ceiling.py` joined to `spec_source.csv`, to check that the
+`scripts/debug/spectraverse/spectraverse_oracle_ceiling.py` joined to `spec_source.csv`, to check that the
 arm does not simply give up on MS-DIAL validation spectra.

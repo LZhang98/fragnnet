@@ -78,11 +78,11 @@ Re-run from the repository root with the configured interpreter, in order:
 ```bash
 MPLCONFIGDIR=output/cut_intensity_probe_2026_10_01/mpl OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 \
   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_masster_cut_intensity_probe.py --stage fit
+  scripts/debug/masster_memorization/debug_masster_cut_intensity_probe.py --stage fit
 MPLCONFIGDIR=output/cut_intensity_probe_2026_10_01/mpl OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 \
   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_masster_cut_intensity_probe.py --stage score --device cpu
+  scripts/debug/masster_memorization/debug_masster_cut_intensity_probe.py --stage score --device cpu
 MPLCONFIGDIR=output/cut_intensity_probe_2026_10_01/mpl OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 \
   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_masster_cut_intensity_probe.py --stage report
+  scripts/debug/masster_memorization/debug_masster_cut_intensity_probe.py --stage report
 ```

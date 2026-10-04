@@ -25,7 +25,7 @@ descriptor features. This asks the complementary question: not "what could we co
 
 ## The headline: our coverage includes credit for the wrong molecule
 
-`scripts/debug/debug_annotation_vs_dag_identity.py`. Peak coverage is normally measured by m/z
+`scripts/debug/dag/debug_annotation_vs_dag_identity.py`. Peak coverage is normally measured by m/z
 matching, which cannot separate a correct assignment from a coincidental one. NIST's annotation
 can. For 400 molecules / 192,463 annotated monoisotopic `[M+H]+` peaks, at 10 ppm:
 

@@ -179,10 +179,10 @@ molecules (537 spectra).
 - Slices: `mh_spec.pkl`, `split_map.csv`, `spec_split.csv`.
 
 **Code** (all under `scripts/debug/`, CPU except the G1 extract):
-- [`debug_masster_smarts_g0_ceiling.py`](../../../scripts/debug/debug_masster_smarts_g0_ceiling.py) (new).
-- [`debug_masster_postcut_information_gate.py`](../../../scripts/debug/debug_masster_postcut_information_gate.py):
+- [`debug_masster_smarts_g0_ceiling.py`](../../../scripts/debug/smarts/debug_masster_smarts_g0_ceiling.py) (new).
+- [`debug_masster_postcut_information_gate.py`](../../../scripts/debug/masster_memorization/debug_masster_postcut_information_gate.py):
   rule columns, `--template_bearing_only`, the rule families and a `ceiling` step.
-- [`debug_masster_excision_continuations.py`](../../../scripts/debug/debug_masster_excision_continuations.py):
+- [`debug_masster_excision_continuations.py`](../../../scripts/debug/smarts/debug_masster_excision_continuations.py):
   polarity plumbing, model-free stand-in pool, motif restriction, graft, confirmation step and
   the ceiling unit.
 

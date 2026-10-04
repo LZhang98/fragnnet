@@ -114,9 +114,9 @@ exactly why coverage alone was not a sufficient acceptance criterion.
 - Frozen checkpoint: `saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt`.
   CPU inference: 703 unique spectra, 234.0 seconds; maximum formula/mass error 9.13e-11 Da.
   CPU correction fitting: about 20 seconds. No cluster job or main-model optimization.
-- Sources: [selector](../../../scripts/debug/prepare_masster_reference_gate.py),
-  [annotated extraction](../../../scripts/debug/debug_masster_candidate_correspondence.py),
-  [correction](../../../scripts/debug/debug_masster_reference_information_gate.py),
+- Sources: [selector](../../../scripts/debug/masster_memorization/prepare_masster_reference_gate.py),
+  [annotated extraction](../../../scripts/debug/masster_memorization/debug_masster_candidate_correspondence.py),
+  [correction](../../../scripts/debug/masster_memorization/debug_masster_reference_information_gate.py),
   [config](../../../config/analysis/masster_reference_information_gate.yaml).
 - Artifacts: `output/reference_information_gate_2026_09_29/` contains the cohort/pair manifests,
   selection provenance, extraction cache/provenance, `audit.json`, and `correction/` with outer

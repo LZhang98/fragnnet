@@ -51,7 +51,7 @@ charge-related features or something else.
 ## Method
 
 - **Stage 1, GPU:**
-  [`debug_masster_base_peak_errors.py`](../../../scripts/debug/debug_masster_base_peak_errors.py).
+  [`debug_masster_base_peak_errors.py`](../../../scripts/debug/masster_memorization/debug_masster_base_peak_errors.py).
   - One annotated forward per batch in eval mode (`return_explainability_tensors`). Each output
     channel carries its m/z, probability, fragment, H shift and ion mode, plus the fragment's atom
     memberships.
@@ -71,7 +71,7 @@ charge-related features or something else.
     99.8% of predicted mass (median 99.97%).
   - About 5 min per split.
 - **Stage 2, CPU:**
-  [`debug_masster_base_peak_tables.py`](../../../scripts/debug/debug_masster_base_peak_tables.py).
+  [`debug_masster_base_peak_tables.py`](../../../scripts/debug/masster_memorization/debug_masster_base_peak_tables.py).
   Each structure is annotated with:
   - its neutral loss;
   - its cut bonds, in 19 functional classes plus element fallbacks, and whether each is a ring

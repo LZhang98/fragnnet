@@ -62,7 +62,7 @@ consistent. Formula matches must not be promoted to claims of shared structure o
 
 ## Artifacts and implementation
 
-- [Audit script](../../../scripts/debug/debug_masster_candidate_correspondence.py),
+- [Audit script](../../../scripts/debug/masster_memorization/debug_masster_candidate_correspondence.py),
   [initial config](../../../config/analysis/masster_candidate_correspondence.yaml), and
   [higher-NCE config](../../../config/analysis/masster_candidate_correspondence_high_nce.yaml).
 - `output/candidate_correspondence_2026_09_29/`: selected pairs, cached candidate groups,
@@ -144,7 +144,7 @@ coverage and the fixed common cohort, with instrument-specific results retained.
 isolates reference identity across bands but does not make NCE physically interchangeable
 between instruments. Sparse common-cohort estimates are descriptive.
 
-[Selector/summarizer](../../../scripts/debug/debug_masster_correspondence_nce.py),
+[Selector/summarizer](../../../scripts/debug/masster_memorization/debug_masster_correspondence_nce.py),
 [config](../../../config/analysis/masster_candidate_correspondence_nce.yaml), artifacts
 `output/candidate_correspondence_2026_09_29/nce_bands/`. 842 spectrum pairs / 1,250 unique spectra.
 Twelve focused tests and Ruff passed. Annotated CPU inference completed in 392.8 seconds;

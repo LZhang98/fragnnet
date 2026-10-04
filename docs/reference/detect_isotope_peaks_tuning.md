@@ -7,8 +7,8 @@
 **Date:** 2026-04-20
 **Scripts:**
 
-- `scripts/debug/debug_prec_iso_leakage_pyopenms.py`
-- `scripts/debug/debug_dag_iso_peak_detection.py`
+- `scripts/debug/isotopes/debug_prec_iso_leakage_pyopenms.py`
+- `scripts/debug/isotopes/debug_dag_iso_peak_detection.py`
 
 This is the canonical note for isotope-derived peak cleanup in monoisotopic
 training targets.  It merges the original tuning note with the DAG isotope peak
@@ -342,7 +342,7 @@ Command:
 
 ```bash
 conda run --no-capture-output -n FRAGNNET-GPU \
-  python scripts/debug/debug_dag_iso_peak_detection.py \
+  python scripts/debug/isotopes/debug_dag_iso_peak_detection.py \
   --proc-dp data/proc/nist20 \
   --frag-dp data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags \
   --n-samples 500 \
@@ -482,7 +482,7 @@ from `0.675` to `0.716`.
   `src/fragnnet/utils/spec_utils.py`.
 - DAG M+0 lookup uses `formula_peak_mzs[:, 0]`; `idx_to_formula` keys align
   with the row indices of this array.
-- The `DagInfo` helper class in `scripts/debug/debug_dag_iso_peak_detection.py`
+- The `DagInfo` helper class in `scripts/debug/isotopes/debug_dag_iso_peak_detection.py`
   wraps the DAG lookups used in the experiment.
 - The precursor residual estimator now has an explicit above-precursor `M2/M1`
   envelope check before using M+2 evidence for hard removal.

@@ -14,7 +14,7 @@
 # READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against fa1 (0.0042 seed
 # spread; +0.005 to count on one seed); val_candidate_wrecall within 0.005 of fa1; minutes per
 # epoch. Then, offline on the best checkpoint, the base-peak probes
-# (scripts/debug/debug_masster_base_peak_errors.py and debug_masster_base_peak_tables.py): the
+# (scripts/debug/masster_memorization/debug_masster_base_peak_errors.py and debug_masster_base_peak_tables.py): the
 # train/val deficit on nested and overlapping pairs at novelty < 0.6, against fa1 and i1.
 # The three window arms (mw30, mw10, mlp1) are one ladder: 30 Da keeps the common neutral losses
 # (H2O, NH3, CO, C2H4) inside one hop, 10 Da excludes every common loss, and no attention is the

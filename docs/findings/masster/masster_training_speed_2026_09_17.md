@@ -96,7 +96,7 @@ RTX 2070 SUPER (8 GB), not the run's L40S.
 The recorded run config matches the current resolved control except for the local template's
 additional empty `spec_params.split_filters` mapping; no active filter differs.
 
-The final [benchmark](../../../scripts/debug/benchmark_masster_training.py) loads a seeded
+The final [benchmark](../../../scripts/debug/bench/benchmark_masster_training.py) loads a seeded
 1,024-spectrum sample of the same NIST20 MA/MI training split, prepares four fixed batches of
 128, and repeats each configuration from identical seeded initialization and dropout seeds.
 It uses two PyTorch CPU threads, FP32, four warmup batches and twelve measured batches. CUDA is
@@ -140,7 +140,7 @@ From the repository root, with the configured environment:
 
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/benchmark_masster_training.py \
+  scripts/debug/bench/benchmark_masster_training.py \
   --config config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_dual_ce_proposal_selection_only_inst_tol.yml \
   --output /tmp/masshatter_monitoring_benchmark.json
 ```
@@ -190,10 +190,10 @@ Artifacts: `/tmp/msh_batch128_control.json` and `/tmp/msh_batch256.json`. Reprod
 L40S from the repository root, with that job's Python environment:
 
 ```bash
-python scripts/debug/benchmark_masster_training.py \
+python scripts/debug/bench/benchmark_masster_training.py \
   --config config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast.yml \
   --batches 4 --warmup 4 --steps 8 --output /tmp/msh_batch128_control.json
-python scripts/debug/benchmark_masster_training.py \
+python scripts/debug/bench/benchmark_masster_training.py \
   --config config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch256.yml \
   --batches 2 --warmup 2 --steps 4 --output /tmp/msh_batch256.json
 ```
@@ -275,7 +275,7 @@ raw unique-array views are compacted; private local buffers are consumed on thei
 to avoid duplicate remapping allocations. CPU remains the default. Kernel source was rebuilt
 before validation; no scheduler job or W&B training run was created.
 
-The new [full-training harness](../../../scripts/debug/benchmark_masster_full_training.py)
+The new [full-training harness](../../../scripts/debug/bench/benchmark_masster_full_training.py)
 includes production data loading, device transfer, loss/backward, accumulation, gradient clipping,
 AdamW updates and step scheduling when configured. It excludes W&B/Lightning logging, validation
 and checkpoints. [L40S instructions](../../guides/benchmark_masster_cpu.md) freeze code and rebuild

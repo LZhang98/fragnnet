@@ -8,7 +8,7 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.frag.masster_templates import _is_connected, formed_bond_count
-from scripts.debug.debug_masster_ei_smarts_screen import (
+from scripts.debug.ei.debug_masster_ei_smarts_screen import (
     ChannelCalculator,
     atom_composition,
     channel_support,
@@ -18,7 +18,7 @@ from scripts.debug.debug_masster_ei_smarts_screen import (
     rule_products,
     summarize,
 )
-from scripts.debug.debug_masster_smarts_rule_gate import edge_tuple
+from scripts.debug.smarts.debug_masster_smarts_rule_gate import edge_tuple
 
 FIXTURES = [
     (

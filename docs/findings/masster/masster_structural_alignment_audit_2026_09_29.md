@@ -76,7 +76,7 @@ numbering, ion modes, H shifts and group membership. Graph atomic numbers, paren
 counts and chemical-bond endpoints are checked against source RDKit molecules before signatures
 are constructed. The original frozen prediction/target group aggregation is retained.
 
-The [audit](../../../scripts/debug/debug_masster_structural_alignment.py) uses three nested rules:
+The [audit](../../../scripts/debug/masster_memorization/debug_masster_structural_alignment.py) uses three nested rules:
 
 1. Existing unique eligible ion-formula correspondence, with precursor and unresolved mass
    groups excluded as in the original audit.
@@ -123,7 +123,7 @@ none of these cosine numbers is a validation prediction improvement.
 Sources and artifacts:
 
 - [Audit config](../../../config/analysis/masster_structural_alignment_audit.yaml),
-  [extractor](../../../scripts/debug/debug_masster_candidate_correspondence.py),
+  [extractor](../../../scripts/debug/masster_memorization/debug_masster_candidate_correspondence.py),
   [tests](../../../tests/test_debug_masster_structural_alignment.py).
 - `output/structural_alignment_audit_2026_09_29/`: frozen pair manifest/selection hashes;
   annotated extraction cache; all structural signature sets and signature catalog;

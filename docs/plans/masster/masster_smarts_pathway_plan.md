@@ -90,7 +90,7 @@ are pre-Phase-0.
   - No candidate feature or intensity token carries a rule.
   - The exported "pathway" is (fragment, ion mode, H shift).
 - **Nothing applies a rule to a fragment.** The only fragment-of-fragment logic is the offline
-  [continuation probe](../../../scripts/debug/debug_masster_excision_continuations.py).
+  [continuation probe](../../../scripts/debug/smarts/debug_masster_excision_continuations.py).
 - **The valence bound is optimistic for formed bonds.** It is `slots + cut_count`, with no −2
   for the new bond ([masster_model.py:2116](../../../src/fragnnet/model/masster_model.py#L2116)).
   The gate probes subtract it (`reconnect=True`).
@@ -214,12 +214,12 @@ export tests in `test_inference_masster_annotation.py`, `test_export_schema.py` 
 decomposition's `oracle` term (`‖T_covered‖ / ‖T‖`) on the whole split when the new products'
 channels are added. No prediction on those candidates can gain more cosine than that. The
 existing gates report pp of linear intensity, so the conversion is a small addition to
-[`debug_masster_smarts_rule_gate.py`](../../../scripts/debug/debug_masster_smarts_rule_gate.py).
+[`debug_masster_smarts_rule_gate.py`](../../../scripts/debug/smarts/debug_masster_smarts_rule_gate.py).
 
 **G0: `[M-H]-` census and coverage ceiling.** This decides `t1i` on `[M-H]-`.
 - Measure:
   - the share of `[M-H]-` spectra and molecules with an eligible template, per rule, with
-    [`debug_smarts_rule_census.py`](../../../scripts/debug/debug_smarts_rule_census.py);
+    [`debug_smarts_rule_census.py`](../../../scripts/debug/smarts/debug_smarts_rule_census.py);
   - the whole-split coverage ceiling of the eligible template products, using the per-class
     gate's unique-coverage rule.
 - It needs only the `[M-H]-` rows, so it can run before D1.
@@ -228,7 +228,7 @@ existing gates report pp of linear intensity, so the conversion is a small addit
 
 **G1: rule provenance as a cross-fitted correction.** This decides Track A.
 - Method: the [post-cut gate](../../findings/masster/masster_i1_postcut_information_gate_2026_09_29.md)
-  pipeline ([`debug_masster_postcut_information_gate.py`](../../../scripts/debug/debug_masster_postcut_information_gate.py)),
+  pipeline ([`debug_masster_postcut_information_gate.py`](../../../scripts/debug/masster_memorization/debug_masster_postcut_information_gate.py)),
   with a rule-provenance family in place of the post-cut descriptors.
   - `extract`: add columns per candidate peak marking whether its m/z is the channel of an
     eligible template product (within ±4 H), and which rule. A template product's disconnected
@@ -274,7 +274,7 @@ operators.
   registered transfer products, graft gets no credit for them. Each operator is scored against
   a random disconnected null, excluding same-formula connected twins (±4 H), using
   `reachable_h` and `ChannelScorer` from
-  [`debug_masster_smarts_rule_gate.py`](../../../scripts/debug/debug_masster_smarts_rule_gate.py).
+  [`debug_masster_smarts_rule_gate.py`](../../../scripts/debug/smarts/debug_masster_smarts_rule_gate.py).
 - **Model operator** if its whole val union beats the null (CI lower > 0) within G2's load cap.
 - **Otherwise** it stays a discovery probe, and its confirmed families enter the registry
   through the per-class gate.

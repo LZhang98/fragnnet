@@ -64,7 +64,7 @@ window as a limitation: this first screen will miss some larger structural chang
 
 Cache each unique spectrum's annotated `i1` output once. Existing `return_annotation` in
 [MassterModel](../../../src/fragnnet/model/masster_model.py) exposes fragment membership and
-pathway ion/H identities. The [post-cut probe](../../../scripts/debug/debug_masster_postcut_information_gate.py)
+pathway ion/H identities. The [post-cut probe](../../../scripts/debug/masster_memorization/debug_masster_postcut_information_gate.py)
 already merges channels into candidate peaks and maps measured targets, but its saved
 probability-weighted descriptor averages are not a correspondence ground truth. New group and
 mapping tables are needed. No new GNN or DFT is needed for this gate.
@@ -174,7 +174,7 @@ new chemical alignment evidence and a fresh gate; the bounded null is preserved 
 
 The first implementation deliberately tests observable chemical compositions rather than
 structural graph equivalence. The earlier structural matching rules remain possible extensions.
-The [audit script](../../../scripts/debug/debug_masster_candidate_correspondence.py) and
+The [audit script](../../../scripts/debug/masster_memorization/debug_masster_candidate_correspondence.py) and
 [standalone config](../../../config/analysis/masster_candidate_correspondence.yaml) use:
 
 - Frozen i1 epoch 59, CPU annotated inference, existing training-only census. Select 60 query
@@ -219,7 +219,7 @@ the value nearest its midpoint (lower NCE breaks ties); lowest spectrum ID resol
 conditions. Select from the full training metadata rather than the original census's three
 conditions per query. No peak intensity enters selection and no CE interpolation is used.
 
-[Selector/summarizer](../../../scripts/debug/debug_masster_correspondence_nce.py),
+[Selector/summarizer](../../../scripts/debug/masster_memorization/debug_masster_correspondence_nce.py),
 [config](../../../config/analysis/masster_candidate_correspondence_nce.yaml). The existing
 candidate audit accepts a preselected pair CSV and validates training IDs and exact acquisition
 matching before annotated inference. Formula matching and the >=1% reliability cutoff are
@@ -277,7 +277,7 @@ transfer. Cross-fitted validation corrections are diagnostic; they are neither u
 results nor evidence that a training-only auxiliary loss works. No hyperparameter search or new
 MASSter training run is part of this gate.
 
-Sources: [selector](../../../scripts/debug/prepare_masster_reference_gate.py),
+Sources: [selector](../../../scripts/debug/masster_memorization/prepare_masster_reference_gate.py),
 [config](../../../config/analysis/masster_reference_information_gate.yaml).
 Artifacts: `output/reference_information_gate_2026_09_29/`.
 

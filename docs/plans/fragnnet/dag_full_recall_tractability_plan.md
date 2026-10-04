@@ -44,7 +44,7 @@ start:
 
 ### Step 1 — Scale check (DONE 2026-07-04)
 
-Reran `scripts/debug/debug_dag_bond_radius_env_stats.py` at `--radii 1,2` on
+Reran `scripts/debug/dag/debug_dag_bond_radius_env_stats.py` at `--radii 1,2` on
 the full corpus (2,868 molecules analyzed, 979,169 formulas first-matched at
 depth 4). **Confirms** the 191-molecule finding at production scale: radius-2
 cardinality explodes (2,042→14,839 buckets) but support does not collapse
@@ -57,7 +57,7 @@ fallback.
 
 ### Step 2 — Learned scorer prototype (first pass DONE 2026-07-04)
 
-Built `scripts/debug/debug_learned_bond_scorer_prototype.py`: logistic
+Built `scripts/debug/dag/debug_learned_bond_scorer_prototype.py`: logistic
 regression over `FeatureHasher`-hashed radius-1/2 environment strings
 (reusing `bond_env_bucket`/`analyze_dag` from the radius-env diagnostic),
 predicting whether a bond is **critical** for some depth-4 matched formula —
@@ -96,7 +96,7 @@ baseline in Step 3.
 
 ### Step 3 — Validate against existing baselines (DONE 2026-07-04, negative result)
 
-Built `scripts/debug/debug_fanout_cap_recall_eval.py` from scratch (the
+Built `scripts/debug/dag/debug_fanout_cap_recall_eval.py` from scratch (the
 `debug_dag_fanout_cap_node_reduction.py` script `dag_fanout_cap_plan.md`
 cites for its K=8 baseline does not exist anywhere in this repo or its git
 history — those numbers could not be reproduced or verified; this is an
@@ -159,7 +159,7 @@ type/pipeline (`iceberg_gen`), not integrated into FraGNNet's DAG generation.
 
 ### Step 4 — Cheap mechanism test before building a model (DONE 2026-07-04, negative — hypothesis rejected)
 
-Built `scripts/debug/debug_global_cutoff_recall_eval.py`: reused the *same*
+Built `scripts/debug/dag/debug_global_cutoff_recall_eval.py`: reused the *same*
 two priority signals as Step 3 (hand-mined `BUCKET_LOSS_RANK`, learned
 logistic-regression scorer), unchanged, but scored each depth-4 node by
 `max(priority over all its incoming edges)` and ranked **globally** across
@@ -288,7 +288,7 @@ some residual gap, tried removing the aggregation step entirely: score
 depth-4 **nodes** directly from features intrinsic to the fragment itself
 (element counts, size, aromaticity, ring-atom count, boundary-bond count),
 with no bond/route/aggregation step at all — one score per node by
-construction. Built `scripts/debug/debug_node_level_scorer_prototype.py`,
+construction. Built `scripts/debug/dag/debug_node_level_scorer_prototype.py`,
 same recall label, same 400-molecule sample/split.
 
 **Result: this performed about as badly as the worst prior variant (max),
@@ -357,16 +357,16 @@ enumeration becomes necessary after all:
 
 ## Key files
 
-- `scripts/debug/debug_dag_bond_radius_env_stats.py` — step 1 scale-check
+- `scripts/debug/dag/debug_dag_bond_radius_env_stats.py` — step 1 scale-check
   target.
-- `scripts/debug/debug_learned_bond_scorer_prototype.py` — step 2 learned
+- `scripts/debug/dag/debug_learned_bond_scorer_prototype.py` — step 2 learned
   scorer prototype.
-- `scripts/debug/debug_fanout_cap_recall_eval.py` — step 3 mechanism
+- `scripts/debug/dag/debug_fanout_cap_recall_eval.py` — step 3 mechanism
   evaluation (hand-mined vs. learned vs. naive per-parent cap).
-- `scripts/debug/debug_global_cutoff_recall_eval.py` — step 4 mechanism
+- `scripts/debug/dag/debug_global_cutoff_recall_eval.py` — step 4 mechanism
   evaluation and its follow-up ablations: max / single-random-route /
   average-over-routes, all with the same underlying priority signals.
-- `scripts/debug/debug_node_level_scorer_prototype.py` — node-intrinsic
+- `scripts/debug/dag/debug_node_level_scorer_prototype.py` — node-intrinsic
   (element/size/ring/aromatic/boundary) scorer; negative result, features
   too coarse relative to the bond-level radius-1/2 environment encoding.
 - `src/fragnnet/iceberg/pl_model.py` — `predict_mol` (~line 179-410) is the

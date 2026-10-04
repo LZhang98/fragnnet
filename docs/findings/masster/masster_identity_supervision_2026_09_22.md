@@ -34,7 +34,7 @@ There is no term anywhere that reads fragment identity.
 
 ## The two degeneracies are very different sizes
 
-`scripts/debug/debug_masster_identity_degeneracy.py`, 300 molecules, 114,458 annotated
+`scripts/debug/masster_candidates/debug_masster_identity_degeneracy.py`, 300 molecules, 114,458 annotated
 monoisotopic `[M+H]+` peaks, 10 ppm:
 
 | degeneracy | size | resolvable by a formula label? |

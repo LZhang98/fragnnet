@@ -213,7 +213,7 @@ Replace the flat P(n) with a flow:
    all-edges picture safe.
 4. Multi-parent: incoming flux to a node = `logsumexp` over its in-edges ("evidence combines" for
    different parents, competition only among siblings). **This is load-bearing:** the DAG is ~98%
-   multi-parent (median in-degree 3, mean 8; `scripts/debug/debug_dag_indegree_stats.py`), so branching
+   multi-parent (median in-degree 3, mean 8; `scripts/debug/dag/debug_dag_indegree_stats.py`), so branching
    is irreducibly per-edge and a per-node projection of it loses the parent-conditional structure —
    the flow's per-edge `β` + this in-edge aggregation is the *only* place that structure survives.
 5. **`P(n)` (from `F_sink`) feeds the existing formula→spectrum pipeline unchanged.** OOS handling —

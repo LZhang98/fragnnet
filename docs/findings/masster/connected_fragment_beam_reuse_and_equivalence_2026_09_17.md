@@ -411,7 +411,7 @@ revision.
 ## Reproducing this analysis
 
 All measurements come from
-[scripts/debug/analyze_proposal_fragment_coverage.py](../../../scripts/debug/analyze_proposal_fragment_coverage.py),
+[scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py](../../../scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py),
 run from the repository root with the configured `FRAGNNET-GPU` interpreter. Candidate
 construction only: no checkpoint, training or spectra are involved.
 
@@ -420,24 +420,24 @@ FRAGNNET_PYTHON=/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python
 
 # Emitted size, ring and complement-asymmetry distributions across the logit sweep,
 # and the boundary-cut / budget controls. 32-molecule batch.
-"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+"$FRAGNNET_PYTHON" scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py \
   --mode distributions --batch-size 32 --subsample-size 256 --output /tmp/beam_distributions.json
-"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+"$FRAGNNET_PYTHON" scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py \
   --mode controls --batch-size 32 --subsample-size 256 --output /tmp/beam_controls.json
 
 # Captured mask-probability mass, top-K recall and the size-band decomposition.
 # 16-molecule batch; add --coverage-budgets 256 512 1024 2048 for the saturation table.
-"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+"$FRAGNNET_PYTHON" scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py \
   --mode coverage --batch-size 16 --subsample-size 128 --output /tmp/beam_coverage.json
 
 # Pre-fix versus post-fix emitted sets. Extract the historical revision first.
 git show dca3d0f9:src/fragnnet/frag/masster_fast_gnn.py > /tmp/prefix_beam.py
-"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+"$FRAGNNET_PYTHON" scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py \
   --mode implementations --beam-implementation /tmp/prefix_beam.py \
   --output /tmp/beam_implementations.json
 
 # The same coverage scan on TRAINED bond logits, which needs no matching intensity head.
-"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+"$FRAGNNET_PYTHON" scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py \
   --mode coverage --checkpoint wandb/run-20260815_150218-zlv0bli8/files/ckpt/last.ckpt \
   --batch-size 16 --subsample-size 128 --coverage-budgets 256 1024 \
   --output /tmp/beam_coverage_trained.json
@@ -445,7 +445,7 @@ git show dca3d0f9:src/fragnnet/frag/masster_fast_gnn.py > /tmp/prefix_beam.py
 # The installed beam against the original prototype, which ranks by mask log probability.
 # The prototype imports packages absent here; the loader stubs them, since its search is
 # pure tensor code. Drop --checkpoint to use synthetic logits instead.
-"$FRAGNNET_PYTHON" scripts/debug/analyze_proposal_fragment_coverage.py \
+"$FRAGNNET_PYTHON" scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py \
   --mode implementations --beam-implementation others/fast_gnn.py \
   --checkpoint wandb/run-20260815_150218-zlv0bli8/files/ckpt/last.ckpt \
   --batch-size 16 --subsample-size 128 --output /tmp/beam_vs_prototype.json
@@ -489,7 +489,7 @@ directly comparable across sections.
 - One batch, one molecule-size distribution, candidate construction only. No training, no
   spectral accuracy and no timing conclusions are drawn here.
 - Measurements are reproduced by
-  [scripts/debug/analyze_proposal_fragment_coverage.py](../../../scripts/debug/analyze_proposal_fragment_coverage.py);
+  [scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py](../../../scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py);
   see the reproduction commands above. The script loads one batch through
   `init_dataset`/`init_dataloader`, generates logits, calls `build_fast_gnn_candidates` and
   `build_masster_candidates` on the same tensors, and summarizes
@@ -710,5 +710,5 @@ is a cheaper route to nearly the same objective or a more expensive one.
   them enumerate.
 - The ring-gap magnitudes in the algebra section are worked examples at assumed `p_e`. Checks 1
   and 2 above remain wholly or partly unrun.
-- New code added for this document: `scripts/debug/analyze_proposal_fragment_coverage.py`. No
+- New code added for this document: `scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py`. No
   production code, model, config or test was modified.

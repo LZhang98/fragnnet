@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.debug.debug_masster_correspondence_nce import select_banded_pairs, summarize_bands
+from scripts.debug.masster_memorization.debug_masster_correspondence_nce import (
+    select_banded_pairs,
+    summarize_bands,
+)
 
 
 def fixture_data():

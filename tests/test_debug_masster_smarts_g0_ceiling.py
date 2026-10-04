@@ -8,7 +8,7 @@ import pytest
 import torch as th
 from rdkit import Chem
 
-import scripts.debug.debug_masster_smarts_g0_ceiling as G0
+import scripts.debug.smarts.debug_masster_smarts_g0_ceiling as G0
 from fragnnet.frag.masster_templates import (
     build_masster_templates,
     filter_masster_templates,

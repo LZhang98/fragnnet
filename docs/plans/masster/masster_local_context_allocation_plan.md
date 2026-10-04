@@ -351,7 +351,7 @@ numeric lambdas, seeds, runtime/memory, and commands before any fit. Use the con
 Stage 1 is implemented as a debug probe; the model code is unchanged (no config keys). The user
 approved the untouched read and the cache clean-up on 2026-09-29.
 
-- **Code.** [`debug_masster_local_context_allocation.py`](../../../scripts/debug/debug_masster_local_context_allocation.py)
+- **Code.** [`debug_masster_local_context_allocation.py`](../../../scripts/debug/masster_memorization/debug_masster_local_context_allocation.py)
   with subcommands `manifests`, `extract`, `fit` and `report`;
   [tests](../../../tests/test_debug_masster_local_context_allocation.py) (14) cover the segment
   ops, penalty offset invariance, compact-bin cosine against `cos_sim_helper`, manifests,

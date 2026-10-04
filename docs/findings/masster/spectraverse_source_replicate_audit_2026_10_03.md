@@ -50,7 +50,7 @@ in-source fragments, or merged acquisitions) has not been checked.
 
 ![Unexplainable spectra by source, and the ppm sweep](../../figures/spectraverse_source_quality_2026_10_04.png)
 
-Figure: `scripts/debug/spectraverse_source_quality_plot.py`. Panel (a) uses all spectra; panel (b) uses
+Figure: `scripts/debug/spectraverse/spectraverse_source_quality_plot.py`. Panel (a) uses all spectra; panel (b) uses
 the sampled sweep below.
 
 **Explained signal (figure, 2026-10-04).** A peak is *explained* when it lies within tolerance
@@ -232,7 +232,7 @@ groups it cuts hard are flat noise with thousands of peaks.
 - **`spec_df.pkl` matches it** on all 488,797 records: order, precursor m/z, adduct and peak count.
 - **Our folds are the MGF's own `FOLD` field.** `data/split/spectraverse_benchmark/cv{k}` uses
   test = `FOLD` k+1 and val = the fold before it (cv0: test 1, val 10), and train is the other
-  eight. All ten checked with `scripts/debug/spectraverse_data_check.py`, which also
+  eight. All ten checked with `scripts/debug/spectraverse/spectraverse_data_check.py`, which also
   checks the md5 and the record-by-record match.
 - **`FOLD` is the benchmark's MCES split.** It is disjoint by 2D InChIKey (0 of 44,234
   skeletons span folds) but not by formula (4,481 formulas do), and it keeps close analogs

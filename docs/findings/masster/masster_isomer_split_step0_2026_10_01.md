@@ -69,8 +69,8 @@ changes future extractor tables relative to the older nearest-only base-peak art
 
 ## Reproduction and validation
 
-The extractor is [`debug_masster_base_peak_errors.py`](../../../scripts/debug/debug_masster_base_peak_errors.py)
-and the CPU read is [`analyze_masster_isomer_split.py`](../../../scripts/debug/analyze_masster_isomer_split.py).
+The extractor is [`debug_masster_base_peak_errors.py`](../../../scripts/debug/masster_memorization/debug_masster_base_peak_errors.py)
+and the CPU read is [`analyze_masster_isomer_split.py`](../../../scripts/debug/masster_memorization/analyze_masster_isomer_split.py).
 The ignored local artifacts, including checkpoint/source hashes and full arguments in each
 `.provenance.json`, are under `output/isomer_split_step0_2026_09_30/`; the summary is `read.json`
 and the matched-peak table is `read.matched.pkl`. The checkpoint exports took about two minutes

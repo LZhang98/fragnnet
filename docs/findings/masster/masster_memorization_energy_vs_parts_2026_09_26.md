@@ -63,7 +63,7 @@ Scripts and outputs: `output/memorization_parts_ev_2026_09_26/` (local, Git-igno
 
 ### Energy: the `ctx` scope of the route-map probe
 
-`scripts/debug/debug_pooled_embedding_memorization.py` gains a `ctx` scope and a
+`scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py` gains a `ctx` scope and a
 `--per_spectrum_fp` dump. Tests: `tests/test_debug_pooled_embedding_memorization.py`, 20 pass.
 
 - **What moves.** Only the context rows the intensity head reads. The proposal keeps the exact

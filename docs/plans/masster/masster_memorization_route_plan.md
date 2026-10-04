@@ -393,7 +393,7 @@ identity where it enters (K1), or to cap what the token can carry.
 Run locally on `6h67zps9` and `3bej6fq7`. Each probe run takes about 45 min per checkpoint.
 
 1. **Encoder scope (K1).** Add per-layer substitutions of `gsa_out` to
-   `scripts/debug/debug_pooled_embedding_memorization.py`:
+   `scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py`:
    - `popmean`, the batch-population mean, which removes identity;
    - `xmol`, another molecule's mean, which swaps identity;
    - `zero`.
@@ -1751,7 +1751,7 @@ measured on this lineage.
     - then the probe. For `cg1` the set message's asymmetry must shrink with neither `gsa` nor the
       boundary block growing.
   - The probe's `setmsg` hook reads `candidate_attention`'s output, which the full layer has too
-    ([hook](../../../scripts/debug/debug_pooled_embedding_memorization.py#L636-L667)). It is
+    ([hook](../../../scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py#L636-L667)). It is
     untested there.
   - Compare by wall-clock as well as by epoch.
   - **If `cg1` reroutes,** try the training-only form, the audit's working pattern: graph-only

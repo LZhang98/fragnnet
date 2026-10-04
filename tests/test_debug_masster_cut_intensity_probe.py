@@ -10,7 +10,7 @@ from fragnnet.utils.spec_utils import (
     calculate_match_mzs,
     round_aggregate_peaks,
 )
-from scripts.debug.debug_masster_cut_intensity_probe import (
+from scripts.debug.masster_memorization.debug_masster_cut_intensity_probe import (
     bond_features,
     bootstrap_delta,
     choose_arm,

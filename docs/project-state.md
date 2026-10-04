@@ -4,6 +4,12 @@
 
 ## Current handoff
 
+**`scripts/debug/` grouped into topic folders (2026-10-04).** `dag/`, `fragnnet/`, `isotopes/`,
+`bench/`, `masster_candidates/`, `masster_memorization/`, `smarts/`, `ei/`, `spectraverse/`; put
+new probes in the matching folder. Path references in docs, configs and tests were rewritten
+(`scripts.debug.<group>.<name>` for imports). 25 uncited one-off scripts (early DAG dedup/trim
+follow-ups, finished benchmarks, Mar-Apr isotope checks) were deleted; recover them from git history.
+
 **MSGYM retrieval as one in-repo command (2026-10-04), built, not run on a cluster.**
 [`scripts/ms2c/run_msgym_retrieval.py`](../scripts/ms2c/run_msgym_retrieval.py) runs prepare → infer →
 score → summarize for a MASSter checkpoint, resumable per shard. The Fir/Vulcan generator is
@@ -383,7 +389,7 @@ on Fir when the user decides.
 [Section](plans/masster/masster_memorization_route_plan.md#candidate-graph-attention-cg1-on-fa1-built-2026-09-29-not-submitted).
 
 **Local scoring with a constrained context correction (2026-09-29); Stage 1 stopped by the user.**
-Frozen-token probe built (`scripts/debug/debug_masster_local_context_allocation.py`, 14 tests) on
+Frozen-token probe built (`scripts/debug/masster_memorization/debug_masster_local_context_allocation.py`, 14 tests) on
 three producers: two local `i1` anchors and the full-data `i1` (user decision: `i1`, not `i4`, for
 the token check and 3A; ordinary `i3`/`i4` for 3B). Caches reproduce each checkpoint's logged
 selection cosine (A1 0.66750, A2 0.67015, F 0.76219). Fits run locally in lockstep and select on
@@ -521,7 +527,7 @@ carry information `i1` does not use?
   - the eight step-1 attributes: +0.0002 to +0.0008.
 - **Reading.** Nothing is specific to connectivity or charge. This lowers the prior for step 3's
   branch, and the local screen is the direct test.
-- **New probe:** `scripts/debug/debug_masster_postcut_information_gate.py`, 8 tests.
+- **New probe:** `scripts/debug/masster_memorization/debug_masster_postcut_information_gate.py`, 8 tests.
 - [Finding](findings/masster/masster_i1_postcut_information_gate_2026_09_29.md).
 
 **Wrong base-peak table on `i1` (2026-09-28); step 1 of the user's three-step plan, inference
@@ -548,7 +554,7 @@ molecules.
   - A post-cut connectivity branch targets the failing decision types, but it tests inductive
     bias for transfer, not an input the model lacks. Gate it on nested and sibling pairs at
     novelty < 0.6, against `i1`.
-- **New probes:** `scripts/debug/debug_masster_base_peak_errors.py` and
+- **New probes:** `scripts/debug/masster_memorization/debug_masster_base_peak_errors.py` and
   `debug_masster_base_peak_tables.py`, with 26 tests. They give base-peak hit rate, ranking gap,
   cross-fitted `P^γ` cosine and the pair tables for any MASSter checkpoint, in about 8 min.
 - **Next: user decision on step 3.**
@@ -708,7 +714,7 @@ inference only, uncommitted, no arm built.** This is the first gate of the
   - The logged 0.01-Da cosine is edge-sensitive for two-decimal targets.
   - `P^0.75` costs train cosine: it is a hedge, not split-independent (ranking decomposition
     corrected in place).
-- **New:** `scripts/debug/debug_masster_dropout_view_disagreement.py` and its 9 tests
+- **New:** `scripts/debug/masster_memorization/debug_masster_dropout_view_disagreement.py` and its 9 tests
   (`--head_views N` added for the follow-up). Records updated: the literature note (§1, §2, §3,
   §6), the index and the ranking decomposition.
 - [Finding](findings/masster/masster_dropout_view_disagreement_2026_09_27.md).
@@ -755,7 +761,7 @@ uncommitted, arm `t1` not submitted.**
   - Most other list entries have no NIST20 support.
   - Existing CO/CO2/HCN/C2H2 rules score exactly zero: a same-formula cut fragment always
     exists.
-  - Probe: `scripts/debug/debug_masster_smarts_rule_gate.py`. Suite: 4,634 pass.
+  - Probe: `scripts/debug/smarts/debug_masster_smarts_rule_gate.py`. Suite: 4,634 pass.
 - **AIMe's worked examples.** MASSter's plain cuts reach 14 of the 15 annotated fragments.
   The miss, a hydroxamic-acid NH excision, was initially rejected; the later §7 gate
   admitted it with weak evidence. The 14/15 count concerns masses, not product connectivity.
@@ -810,7 +816,7 @@ uncommitted.**
   - The natural-abundance prior, which is FraGNNet's `num_isotopes > 1`, recovers nothing in
     positive mode and costs 0.013 in negative. So FraGNNet on Enveda keeps `num_isotopes: 1`.
   - The rest of the ceiling is the per-molecule halogen M+2 switch, which no scalar reaches.
-  - Probe: `scripts/debug/debug_enveda_isotope_envelope_ceiling.py`.
+  - Probe: `scripts/debug/isotopes/debug_enveda_isotope_envelope_ceiling.py`.
   - [Plan](plans/masster/masster_isotope_envelope_plan.md#step-3-on-enveda-val-2026-09-27-gate-0a-fails).
 - **Baseline config.** It is now
   `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`:
@@ -1150,7 +1156,7 @@ molecules (scripts in `output/qet_projection_2026_09_26/`).
 [Finding](findings/masster/masster_qet_projection_candidate_union_2026_09_26.md).
 
 **Enveda isotope probe (2026-09-25); read-only, uncommitted script.**
-`scripts/debug/debug_enveda_isotope_probe.py` ran on 60,000 records of each export.
+`scripts/debug/isotopes/debug_enveda_isotope_probe.py` ran on 60,000 records of each export.
 
 - 13C satellites hold 7.7% of positive-mode training-target intensity and 3.9% of negative-mode.
   Halogen M+2 partners hold another 6.2% on Cl/Br molecules. Every config predicts monoisotopic
@@ -2102,7 +2108,7 @@ derives it from `masster_proposal_anchored`, which is already `true` in `c4a_bas
 
 **Then the premise was remeasured on the right population, and it moved the design.**
 [Candidate cut descriptors](findings/masster/masster_candidate_cut_descriptors_2026_09_22.md),
-`scripts/debug/debug_candidate_cut_descriptors.py`, 400 molecules / 73,045 of MASSter's OWN
+`scripts/debug/masster_candidates/debug_candidate_cut_descriptors.py`, 400 molecules / 73,045 of MASSter's OWN
 candidates rather than the depth-3 DAG the plan measured: **86.9%** are cut at >= 2 bonds (the DAG
 said 96.8%) and the relational shares are about twice the DAG's -- **73.6%** of all candidates have
 two cuts sharing a ring, **68.4%** two cuts sharing an atom. Within-molecule candidates per
@@ -2263,7 +2269,7 @@ all currently off for MASSter: the `predict_oos` head is implemented in
 `bond_fragment_heads.py:678` but hard-coded off at `masster_model.py:1508` and force-disabled
 in `MassterPL`; `filter_subformula_peaks` is a hard per-peak version of this probe's test and
 has never run on this base (0 of 58 runs). New probe:
-`scripts/debug/debug_unexplained_peak_split.py`. Validation: Ruff clean; probe run end to end on
+`scripts/debug/masster_candidates/debug_unexplained_peak_split.py`. Validation: Ruff clean; probe run end to end on
 the full split plus a 400-spectrum smoke run; no model code changed, no training launched.
 
 MASSter overfit read-out (2026-09-22). Read-only W&B review of the 25 runs of 2026-09-21/22;
@@ -2472,7 +2478,7 @@ CMF plan records the required oracle-coverage rebaseline and matched-control tra
   costs no cosine (-0.0018, inside the replicate floor) while running 1.8x faster per epoch, and
   `config/template.yml` already defaults it to 0, so the recommended normalization arm
   needs no config change. The decoder code path remains for checkpoint compatibility.
-  Probes: `scripts/debug/probe_masster_regularization.py`. Audit only; no training run,
+  Probes: `scripts/debug/masster_memorization/probe_masster_regularization.py`. Audit only; no training run,
   no model-code change.
 - [Cross-adduct loss headroom](findings/cross_adduct_loss_headroom_2026_09_17.md) is a NEW, GREEN
   data-side gate (2026-09-17) for grouping MS/MS by adduct and adding a paired loss. 46.5% of
@@ -3060,6 +3066,6 @@ fragments remain missing. The pre-fix and post-fix beams emit identical fragment
 configurations, differing by one or two fragments in 4,001 elsewhere, so the 447 ms complement
 pass buys determinism rather than materially different candidates. All measurements are
 reproducible through
-[scripts/debug/analyze_proposal_fragment_coverage.py](../scripts/debug/analyze_proposal_fragment_coverage.py).
+[scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py](../scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py).
 Next: a decision on whether to stop the connected-fragment line; the four prepared arms should
 not be trained as configured in any case.

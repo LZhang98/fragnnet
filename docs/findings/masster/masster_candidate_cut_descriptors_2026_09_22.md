@@ -9,7 +9,7 @@
 > flag ambiguous for **48.9%** of candidates. Adjacency is the missing relation, it needs no ring
 > identity, and therefore no new graph field and no cache regeneration.
 
-`scripts/debug/debug_candidate_cut_descriptors.py`. 400 NIST20 molecules, **73,045** candidates.
+`scripts/debug/masster_candidates/debug_candidate_cut_descriptors.py`. 400 NIST20 molecules, **73,045** candidates.
 
 ## The premise, on the right population
 

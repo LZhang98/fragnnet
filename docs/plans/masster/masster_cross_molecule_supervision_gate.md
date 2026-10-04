@@ -62,7 +62,7 @@ No pass means no trainer implementation from this premise; retain the negative e
 
 ## State and validation
 
-Completed the [probe](../../../scripts/debug/debug_masster_cross_molecule_gate.py) and five
+Completed the [probe](../../../scripts/debug/masster_memorization/debug_masster_cross_molecule_gate.py) and five
 focused tests. CPU census and artifact audit passed; Ruff passed. Canonical results and limitations
 are in the [finding](../../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md).
 The final artifact directory is `output/cross_molecule_gate_2026_09_29/checked/`.

@@ -113,7 +113,7 @@ Final local validation:
 Reproduce the smoke from the repository root with the configured interpreter:
 
 ```bash
-/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/benchmark_masster_training.py \
+/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python scripts/debug/bench/benchmark_masster_training.py \
   --config config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml \
   --device cuda --subsample-size 128 --batch-size 16 --batches 1 --warmup 1 --steps 2 \
   --output /tmp/masshatter_fast_gnn_smoke.json

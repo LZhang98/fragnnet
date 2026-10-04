@@ -173,7 +173,7 @@ Enveda-180. Evidence is in
 - **Enveda-180 check (2026-09-29): none finds support.** Five match no Enveda-180 molecule
   (the library has no ketones). Methyl benzoate and diarylvinyl match but score 0.00
   ([finding](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md)). The probe,
-  `scripts/debug/debug_masster_smarts_rule_gate_enveda.py`, scores these rules from copies of
+  `scripts/debug/smarts/debug_masster_smarts_rule_gate_enveda.py`, scores these rules from copies of
   their definitions, so re-checking them on another dataset needs no uncommenting.
 
 | Rule | Index | Transformation | Guard when enabled | Why disabled |

@@ -24,7 +24,7 @@ pair as the
 [memorization probe](masster_memorization_route_probe_2026_09_23.md): unmerged `[M+H]+`/FT,
 `data/split/nist20_inchikey`, seed 397623, best checkpoints from W&B in `saved_ckpts/`.
 
-The probe is `scripts/debug/debug_pooled_embedding_memorization.py`, extended with new scopes.
+The probe is `scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py`, extended with new scopes.
 Tests: `tests/test_debug_pooled_embedding_memorization.py`, 16 pass. All 17 conditions run on the
 same batches, so every contrast is paired:
 

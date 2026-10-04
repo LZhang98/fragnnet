@@ -10,7 +10,11 @@ import torch as th
 from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper
 
 SCRIPT_PATH = (
-    Path(__file__).parents[1] / "scripts" / "debug" / "debug_masster_dropout_view_disagreement.py"
+    Path(__file__).parents[1]
+    / "scripts"
+    / "debug"
+    / "masster_memorization"
+    / "debug_masster_dropout_view_disagreement.py"
 )
 SPEC = importlib.util.spec_from_file_location(
     "debug_masster_dropout_view_disagreement", SCRIPT_PATH

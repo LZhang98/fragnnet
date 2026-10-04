@@ -115,7 +115,7 @@ diagnostic of model suppression, not a target eligibility rule.
 
 ## Step 0 — model-free replicate noise floors
 
-Run [`debug_ce_replicate_noise_floors.py`](../../../scripts/debug/debug_ce_replicate_noise_floors.py)
+Run [`debug_ce_replicate_noise_floors.py`](../../../scripts/debug/fragnnet/debug_ce_replicate_noise_floors.py)
 before building targets. Report coverage before either statistic, separately by instrument and
 adduct:
 

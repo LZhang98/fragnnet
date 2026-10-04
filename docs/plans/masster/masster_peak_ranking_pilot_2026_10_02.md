@@ -48,7 +48,7 @@ the JEPA plan and memorization-route plan. Preserve them. The project-state stat
 Orbitrap rename is uncommitted is stale relative to the inspected code status.
 
 Parameters: [analysis YAML](../../../config/analysis/masster_peak_ranking_pilot.yaml).
-Entrypoint: [pilot script](../../../scripts/debug/debug_masster_peak_ranking_pilot.py).
+Entrypoint: [pilot script](../../../scripts/debug/masster_memorization/debug_masster_peak_ranking_pilot.py).
 Outputs: `output/peak_ranking_pilot_2026_10_02/`, including sampled manifest, strict input/source
 identities, resolved config, Git revision/diff identity, loss history, final head weights,
 per-spectrum scores, locked selection, confidence intervals and energy/instrument slices.
@@ -56,7 +56,7 @@ per-spectrum scores, locked selection, confidence intervals and energy/instrumen
 ```bash
 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 \
   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_masster_peak_ranking_pilot.py
+  scripts/debug/masster_memorization/debug_masster_peak_ranking_pilot.py
 ```
 
 ## Results and next check

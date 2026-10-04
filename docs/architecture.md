@@ -45,7 +45,8 @@
   [pyproject.toml](../pyproject.toml). See the [session workflow](workflow/session.md) for checks.
 - Data and artifacts: `data/`, `wandb/`, `output/`, `ckpts/`, and `saved_ckpts/` are ignored
   stores, not portable evidence by themselves. Record the actual run-specific paths and input
-  identities. Do not move raw data, logs, or checkpoints into documentation.
+  identities. Do not move raw data, logs, or checkpoints into documentation. Layout, naming
+  and citation rules for these stores: [artifact storage rules](rules/artifacts.md).
 
 This is a map of stable boundaries, not a full file inventory. Update it when entry points
 or interfaces change; retain detailed explanations in the existing reference documents.

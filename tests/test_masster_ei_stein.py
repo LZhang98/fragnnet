@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from scripts.debug.analyze_masster_ei_checkpoint import _spectrum_rows, _stein_similarity
+from scripts.debug.ei.analyze_masster_ei_checkpoint import _spectrum_rows, _stein_similarity
 
 
 def test_stein_mass_weight_and_alignment() -> None:

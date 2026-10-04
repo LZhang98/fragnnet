@@ -8,6 +8,7 @@ Before planning or editing:
 1. Always read and follow [engineering rules](docs/rules/engineering.md).
    For Python changes, also read [Python and ML rules](docs/rules/python.md).
    For documentation changes, also read [documentation rules](docs/rules/documentation.md).
+   Before writing or citing checkpoints or run outputs, read [artifact storage rules](docs/rules/artifacts.md).
 2. Read [current project state](docs/project-state.md), then the relevant linked plan.
 3. Read the [architecture map](docs/architecture.md) and relevant detailed references.
 4. Follow the [session workflow](docs/workflow/session.md), including validation and handoff.

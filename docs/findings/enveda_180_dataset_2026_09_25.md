@@ -192,7 +192,7 @@ Measured on the 25 Enveda `[M+Br]-` spectra:
 
 ## 9. Isotopes (2026-09-25)
 
-The probe is [debug_enveda_isotope_probe.py](../../scripts/debug/debug_enveda_isotope_probe.py). It
+The probe is [debug_enveda_isotope_probe.py](../../scripts/debug/isotopes/debug_enveda_isotope_probe.py). It
 reads the first 60,000 records of each export and runs in 24 s. The log is
 `output/enveda_180_isotope_probe_2026_09_25/probe.log`. Tests 1-3 read the raw export, because the
 filtered file's 1% floor removes most isotope peaks. Test 4 reads the filtered export, which is

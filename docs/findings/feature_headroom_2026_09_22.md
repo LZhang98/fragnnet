@@ -28,7 +28,7 @@ width and overfitting surface.
 
 ## Method
 
-`scripts/debug/debug_feature_headroom_probe.py`. For each candidate descriptor, predict it from
+`scripts/debug/masster_candidates/debug_feature_headroom_probe.py`. For each candidate descriptor, predict it from
 the current atom/bond feature set (the 2026-09-22 parity set: 73-dim atom, 16-dim bond) plus 1-
 and 2-hop neighbourhood means — the information a message-passing encoder holds after two rounds.
 Random forest for categorical targets, gradient boosting for continuous, held-out split **grouped
@@ -133,7 +133,7 @@ bond-environment feature, so adding more of the same class would have deepened i
 
 ### Test: charge retention, the most mechanism-loaded choice the model makes
 
-`scripts/debug/debug_charge_retention_shortcut.py`. For a cleavage that produced an observed
+`scripts/debug/fragnnet/debug_charge_retention_shortcut.py`. For a cleavage that produced an observed
 ion, which half keeps the charge? Built from NIST's own peak annotations, no model in the loop:
 for each annotated product of an `[M+H]+` spectrum the complementary ion is computed exactly
 from the formulas and looked up in the same spectrum, scoring **zero when absent** so outright

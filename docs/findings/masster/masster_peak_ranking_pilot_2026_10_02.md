@@ -91,5 +91,5 @@ config and provenance, sampled dataset copies, training history, final head weig
 selection, summary, descriptive arm contrasts, molecule-weighted and energy/instrument/novelty
 slices, audit results, audit scripts and run log. Parameters are in the
 [analysis YAML](../../../config/analysis/masster_peak_ranking_pilot.yaml); the
-[diagnostic runner](../../../scripts/debug/debug_masster_peak_ranking_pilot.py) refuses to overwrite
+[diagnostic runner](../../../scripts/debug/masster_memorization/debug_masster_peak_ranking_pilot.py) refuses to overwrite
 an existing output directory. Use a new output path in a copied analysis YAML for a fresh run.

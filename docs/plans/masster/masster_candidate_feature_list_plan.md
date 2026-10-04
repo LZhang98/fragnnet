@@ -298,7 +298,7 @@ nothing is added to `migrate_legacy_hparams`. A stale config then fails
 | `bond_fragment_heads.py` | ~4 | constructor, `input_dim`, forward kwargs, validation |
 | `tests/test_masster_model.py` | 1 factory + 10 uses | `candidate_features: Sequence[str] = ()` |
 | `tests/test_masster_candidate_features.py` | 22 uses | same |
-| `scripts/debug/debug_candidate_cut_descriptors.py` | 2 uses | same |
+| `scripts/debug/masster_candidates/debug_candidate_cut_descriptors.py` | 2 uses | same |
 
 `masster_candidate_atom_dropout` (4 configs) and `masster_boundary_bond_encoder`
 (17 configs) are untouched.

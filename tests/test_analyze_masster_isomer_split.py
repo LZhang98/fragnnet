@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from scripts.debug.analyze_masster_isomer_split import (
+from scripts.debug.masster_memorization.analyze_masster_isomer_split import (
     collapse_structures,
     compare_splits,
     cut_preference_read,

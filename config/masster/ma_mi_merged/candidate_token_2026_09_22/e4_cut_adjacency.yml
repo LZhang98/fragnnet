@@ -7,7 +7,7 @@
 # at n=1.
 #
 # Measured on MASSter's OWN candidates, 200 molecules, uniform bond logits
-# (scripts/debug/debug_candidate_cut_descriptors.py; the plan's earlier numbers came from the
+# (scripts/debug/masster_candidates/debug_candidate_cut_descriptors.py; the plan's earlier numbers came from the
 # depth-3 BFS DAG and are superseded):
 #   87.3% of candidates are cut at >= 2 bonds (DAG said 96.8%)
 #   of those, 82.7% have two cuts sharing a ring and 80.0% two cuts sharing an ATOM

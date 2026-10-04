@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 from rdkit import Chem
 
-import scripts.debug.debug_masster_base_peak_errors as PROBE
-import scripts.debug.debug_masster_base_peak_tables as TABLES
+import scripts.debug.masster_memorization.debug_masster_base_peak_errors as PROBE
+import scripts.debug.masster_memorization.debug_masster_base_peak_tables as TABLES
 
 
 def test_merge_channels_sums_same_mz() -> None:

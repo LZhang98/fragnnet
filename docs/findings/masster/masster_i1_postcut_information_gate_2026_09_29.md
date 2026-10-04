@@ -39,7 +39,7 @@ description adds nothing the model does not already use.
 
 ## Method
 
-[`debug_masster_postcut_information_gate.py`](../../../scripts/debug/debug_masster_postcut_information_gate.py)
+[`debug_masster_postcut_information_gate.py`](../../../scripts/debug/masster_memorization/debug_masster_postcut_information_gate.py)
 has two subcommands.
 
 - **`extract`** runs the annotated eval-mode forward of the

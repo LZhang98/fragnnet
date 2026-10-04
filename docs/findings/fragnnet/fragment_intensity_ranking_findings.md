@@ -445,22 +445,22 @@ Then run:
 
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_cut_pair_large_stats.py
+  scripts/debug/fragnnet/debug_cut_pair_large_stats.py
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_cut_pair_oracle_controls.py
+  scripts/debug/fragnnet/debug_cut_pair_oracle_controls.py
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_cut_pair_overlap_dag_oracle.py
+  scripts/debug/fragnnet/debug_cut_pair_overlap_dag_oracle.py
 ```
 
 The base-peak CE supplement is saved as
-`scripts/debug/base_peak_ce_supplement.py`. It consumes `per_spectrum.csv`, `ce_levels.csv`, and
+`scripts/debug/fragnnet/base_peak_ce_supplement.py`. It consumes `per_spectrum.csv`, `ce_levels.csv`, and
 `cross_ce_pairs.csv` from the larger base-peak analysis directory.
 
 Test the static-fragment-weight hypothesis with:
 
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_ce_static_fragment_weights.py
+  scripts/debug/fragnnet/debug_ce_static_fragment_weights.py
 ```
 
 It writes context-, CE-level-, and adjacent-transition results plus molecule-cluster intervals to
@@ -471,7 +471,7 @@ Measure the model-free replicate floors with:
 
 ```bash
 /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python \
-  scripts/debug/debug_ce_replicate_noise_floors.py
+  scripts/debug/fragnnet/debug_ce_replicate_noise_floors.py
 ```
 
 It writes same-CE pair rows, double-replicated adjacent-transition rows, the model comparison joined

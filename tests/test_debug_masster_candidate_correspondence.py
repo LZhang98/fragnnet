@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 import torch as th
 
-from scripts.debug.debug_masster_candidate_correspondence import (
+from scripts.debug.masster_memorization.debug_masster_candidate_correspondence import (
     candidate_groups,
     match_groups,
     reconstruct_formulas,

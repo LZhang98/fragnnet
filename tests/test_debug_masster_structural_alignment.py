@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from rdkit import Chem
 
-from scripts.debug.debug_masster_structural_alignment import (
+from scripts.debug.masster_memorization.debug_masster_structural_alignment import (
     annotate_groups,
     pair_audit,
     strict_edges,

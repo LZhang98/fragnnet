@@ -82,7 +82,7 @@ There is no outlier or consensus filter between replicates.
 
 All three Zenodo MGFs are downloaded and md5-verified, under
 `data/raw/spectraverse/spectraverse-<v>/`. They are compared by
-`scripts/debug/spectraverse_version_compare.py`, log
+`scripts/debug/spectraverse/spectraverse_version_compare.py`, log
 `output/analysis/spectraverse_source_audit_2026_10_03/version_compare.log`.
 
 | Release | Published | Spectra | `SOURCE` / `FOLD` | Exact twins | Groups ≥ 3 with a twin: reorderable / order fixed |
@@ -135,7 +135,7 @@ All three Zenodo MGFs are downloaded and md5-verified, under
   Our [merged-train arm](../plans/masster/spectraverse_merged_train_plan.md) merges train only
   and scores per spectrum, so its evaluation is unaffected.
 
-Check script (in repo): `scripts/debug/spectraverse_data_check.py` covers the md5, the spec_df
+Check script (in repo): `scripts/debug/spectraverse/spectraverse_data_check.py` covers the md5, the spec_df
 record match, the folds, byte-identical twins and near-duplicate pairs. Pass
 `--spectral-entropy-dir <SpectralEntropy checkout>` to also replay the upstream cosine.
 Other artifacts (ignored) are in `output/analysis/spectraverse_source_audit_2026_10_03/`:

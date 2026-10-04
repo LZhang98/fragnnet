@@ -43,7 +43,7 @@ without a DAG. Turning it on again is a separate decision that needs the Step 4 
 |-----|------|---------------------|
 | Exact fragment composition at an M+0 peak, for `_expected_mk_ratio` | `_find_dag_formula` → `_fragment_expected_ratio` ([isotope_utils.py:415-465](../../src/fragnnet/utils/isotope_utils.py#L415)) | Candidate set from a mass-window subformula decomposition; point estimate when the candidates agree, interval when they do not (Step 3) |
 | `protect_dag_mono`: never flag a peak that is itself a DAG M+0 node | `protect_known_mono` ([isotope_utils.py](../../src/fragnnet/utils/isotope_utils.py)) | Not a drop-in - but **measured the opposite way round from the guess below**: DAG protection destroys recall, subformula protection is the highest-precision arm. See Results |
-| `dag_filter`: require the parent M+0 to exist in the DAG (debug-script arm only) | [debug_dag_iso_peak_detection.py](../../scripts/debug/debug_dag_iso_peak_detection.py) | Require the parent M+0 to be subformula-feasible — strictly weaker, cheap, safe |
+| `dag_filter`: require the parent M+0 to exist in the DAG (debug-script arm only) | [debug_dag_iso_peak_detection.py](../../scripts/debug/isotopes/debug_dag_iso_peak_detection.py) | Require the parent M+0 to be subformula-feasible — strictly weaker, cheap, safe |
 
 The fallback when no DAG formula is found is the precursor composition mass-scaled by
 `neutral_frag / prec_neutral_mass` ([isotope_utils.py:462-465](../../src/fragnnet/utils/isotope_utils.py#L462)).
@@ -103,7 +103,7 @@ apart for peptide-sized precursors — the grid there explains half of all m/z, 
 
 ### Step 1: the subformula grid is discriminating for ordinary molecules
 
-`scripts/debug/debug_subformula_grid_density.py`, 2,915 NIST20 molecules, `[M+H]+`, FT 4 mDa.
+`scripts/debug/fragnnet/debug_subformula_grid_density.py`, 2,915 NIST20 molecules, `[M+H]+`, FT 4 mDa.
 Coverage is the share of random m/z that *some* subformula ion explains - the lower, the more
 an explanation is worth:
 
@@ -123,7 +123,7 @@ comfortably on the second. Above ~700 Da a subformula explanation stops being ev
 
 ### Steps 0 and 4: measured against NIST `ann_isotopes`
 
-`scripts/debug/debug_dag_iso_peak_detection.py --frag-dp data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags
+`scripts/debug/isotopes/debug_dag_iso_peak_detection.py --frag-dp data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags
 --n-samples 1500`. 1,500 FT spectra that carry at least one annotated isotope peak, 7,698
 ground-truth isotope peaks, 68,128 peak decisions. Every arm sees the same spectra.
 
@@ -261,7 +261,7 @@ Add `subformula_candidates(mz, formula, precursor_type, tol) -> list[dict[str, i
 ### Step 4 — evaluate against `ann_isotopes` (done, gate passed)
 
 Add `subformula_native`, `subformula_protect` and `subformula_formula` arms to
-[`scripts/debug/debug_dag_iso_peak_detection.py`](../../scripts/debug/debug_dag_iso_peak_detection.py),
+[`scripts/debug/isotopes/debug_dag_iso_peak_detection.py`](../../scripts/debug/isotopes/debug_dag_iso_peak_detection.py),
 which already runs the DAG arms against `ann_df` on FT NIST20. Same sample, same protocol as the
 recorded operating point (prec 0.700 / rec 0.733 / F1 0.716 at `min_coiso_fraction=0.05`; see
 [detect_isotope_peaks_tuning.md](../reference/detect_isotope_peaks_tuning.md)).

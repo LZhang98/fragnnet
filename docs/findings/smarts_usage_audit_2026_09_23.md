@@ -2,7 +2,7 @@
 
 > **Status:** FINDING · **Updated:** 2026-09-23 · Read-only audit of every SMARTS path, from
 > rule definition to model input, plus a model-free census on NIST20. No code, config, DAG or
-> data changed; nothing trained. Probe: `scripts/debug/debug_smarts_rule_census.py`.
+> data changed; nothing trained. Probe: `scripts/debug/smarts/debug_smarts_rule_census.py`.
 
 ## Answer
 
