@@ -32,6 +32,10 @@ if __name__ == "__main__":
         help="optional postfix to add to job name in W&B (e.g. for sweep vs. single run)",
     )
     parser.add_argument("-s", "--sweep_key", type=str, required=True)
+    parser.add_argument(
+        "--schedule_train_size", type=int, default=None,
+        help="Filtered train spectra; match cosine steps to each sampled batch size",
+    )
     args = parser.parse_args()
 
     logger.info(f"Starting wandb sweep script with args: {args}")
@@ -43,7 +47,10 @@ if __name__ == "__main__":
             config_d = load_config(args.template_fp, args.custom_fp, None)
             wandb_name = f"{config_d['wandb_name']}_{args.job_name_postfix}"
             override = [f"wandb_name={wandb_name}"]
-        run_training(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, override)
+        run_training(
+            args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, override,
+            schedule_train_size=args.schedule_train_size,
+        )
 
     # Only load config if needed for agent (avoid wandb calls in job mode)
     if args.job_id or os.path.exists(os.path.join("job_id", f"{args.job_id}.id")):

@@ -515,3 +515,84 @@ works for GLACIER's 100-peak output and not for MASSter's full ~950-peak support
 
 Scoring GLACIER in its own space removes about a third of the top-1 lead. MASSter stays ahead at
 every cutoff, with every interval above zero, even though the GLACIER setting was chosen on test.
+
+### 1% filter on predictions (test diagnostic, added 2026-10-03)
+
+Predicted peaks below 1% of each candidate's base peak (linear intensity; GLACIER squared) were
+dropped and the rest renormalized. Then the same likelihood sweep was run (query weight √y;
+g ∈ {0, 0.25, 0.5, 0.75, 1}; tolerance 1×/2×; floor 1e-2…1e-5). Scripts: `space_sweep_f1.py`,
+`f1_compare.py`; outputs `test_f1_grid.csv`, `test_f1_compare.csv`. Both filtered maxima are
+interior (floor 1e-3, 1× tolerance).
+
+| A / B, Δ [95% CI] | top1 | top2 | top3 | top5 | top10 | top20 |
+| --- | --- | --- | --- | --- | --- | --- |
+| MASSter: 1% vs unfiltered, frozen rule | 0.488 / 0.528, −0.041 [−0.050, −0.030] | −0.037 | −0.034 | −0.029 | −0.020 | −0.008 |
+| MASSter 1% vs GLACIER 1%, frozen rule | 0.488 / 0.443, +0.045 [+0.030, +0.060] | +0.042 | +0.041 | +0.041 | +0.031 | +0.023 |
+| MASSter 1% vs GLACIER 1%, each at own test-best | 0.501 / 0.458, +0.043 [+0.028, +0.057] | +0.041 | +0.041 | +0.040 | +0.030 | +0.020 |
+| MASSter 1% (frozen) vs GLACIER unfiltered (own best) | 0.488 / 0.506, −0.018 [−0.034, −0.001] | −0.018 | −0.014 | −0.006 | +0.006 | +0.015 |
+
+- The sub-1% tail carries retrieval signal: filtering costs MASSter 0.041 top1 and GLACIER
+  0.048 (0.506 → 0.458, each at its best).
+- With both filtered, MASSter leads by +0.043–0.045 top1, more than the unfiltered lead (+0.025
+  at each model's best).
+- Filtering only MASSter hands GLACIER the top1 lead. Any comparison must filter both or
+  neither.
+
+### MASSter-only output filter (added 2026-10-03)
+
+Only MASSter is filtered: predicted peaks below a fraction of each candidate's base peak are dropped,
+then the frozen calibrated rule is applied. GLACIER stays unfiltered at its native top-100 output
+(user decision). The threshold is read on val first. Scripts: `thresh_sweep.py`, `thr_compare.py`;
+outputs `{val,test}_thr_compare.csv` and `test_thr_vs_glacier.csv`.
+
+| filter (× base) | median peaks | val top1 (Δ vs none) | test top1 (Δ vs none) | test top5 | test top20 | test top1 vs GLACIER own-best 0.506 |
+| --- | ---: | --- | --- | ---: | ---: | --- |
+| 1% | 15 | 0.502 (−0.051) | 0.488 (−0.041) | 0.824 | 0.957 | −0.018 [−0.034, −0.001] |
+| 0.5% | 22 | 0.515 (−0.038) | 0.497 (−0.032) | 0.833 | 0.960 | −0.009 [−0.026, +0.008] |
+| 0.1% | 53 | 0.539 (−0.014) | 0.519 (−0.009) | 0.843 | 0.963 | +0.013 [−0.004, +0.031] |
+| 0.05% | 76 | 0.543 (−0.010) | 0.524 (−0.004) | 0.844 | 0.963 | +0.018 [+0.001, +0.036] |
+| **0.01%** | **172** | **0.550 (−0.003 [−0.006, +0.000])** | **0.527 (−0.002 [−0.005, +0.001])** | **0.850** | **0.965** | **+0.021 [+0.004, +0.038]** |
+| 0.001% | 407 | 0.553 (−0.000) | 0.529 (+0.001) | 0.852 | 0.965 | +0.023 [+0.005, +0.041] |
+| none | 939 | 0.553 | 0.528 | 0.853 | 0.965 | +0.023 [+0.005, +0.040] |
+
+On val, 0.01% is the coarsest filter whose loss is inside noise. It keeps a median 172 peaks,
+5.5× fewer than unfiltered. 0.05% (median 76, about GLACIER's 100-peak budget) still beats
+unfiltered GLACIER at its test-best setting at top1. The 1% filter is not competitive.
+
+### MASSter calibrated vs GLACIER on ms-pred's own ranking (added 2026-10-03)
+
+GLACIER is unfiltered and ranked by ms-pred entropy (its published protocol; saved
+`mspred_style.pkl`), on our candidate list. It reproduces 49.67 / 82.65 / 94.22. MASSter uses the
+frozen calibrated rule with its own output filter. Script: `mspred_glacier_compare.py`; output
+`test_vs_glacier_mspred.csv`. Stable (ms-pred) and random tie-breaking agree to 0.001.
+
+| test, 9,954 | top1 | top2 | top3 | top5 | top10 | top20 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| GLACIER, ms-pred entropy | 0.497 | 0.659 | 0.744 | 0.827 | 0.899 | 0.942 |
+| MASSter, calibrated, no filter | 0.528 | 0.686 | 0.767 | 0.853 | 0.928 | 0.965 |
+| Δ [95% CI] | +0.032 [+0.015, +0.050] | +0.027 | +0.023 | +0.026 [+0.009, +0.046] | +0.029 | +0.023 [+0.010, +0.036] |
+| MASSter, filter 0.01% (median 172 peaks), Δ | +0.030 [+0.013, +0.048] | +0.023 | +0.021 | +0.024 | +0.028 | +0.022 |
+| MASSter, filter 0.05% (76), Δ | +0.027 [+0.010, +0.045] | +0.020 | +0.017 | +0.017 | +0.026 | +0.021 |
+| MASSter, filter 0.1% (53), Δ | +0.022 [+0.005, +0.041] | +0.016 | +0.012 | +0.016 | +0.027 | +0.021 |
+| MASSter, filter 1% (15), Δ | −0.009 [−0.025, +0.008] | −0.011 | −0.011 | −0.003 | +0.009 | +0.014 |
+
+Deltas are against stable ties. Against GLACIER's own published ranking, MASSter leads at every
+cutoff down to a 0.1% filter.
+
+### MASSter capped at 100 peaks, GLACIER's budget (added 2026-10-03)
+
+The MASSter-only filters are top-100 peaks, ≥ 0.025% of base, and both together. The frozen
+calibrated rule scores MASSter; GLACIER is unfiltered with ms-pred entropy and stable ties.
+Script: `topk_sweep.py`, `topk_compare.py`; outputs `{val,test}_topk_compare.csv`.
+
+| MASSter filter | median / max peaks (test) | val top1 Δ vs none | test top1 | test top5 | test top20 | test top1 vs GLACIER ms-pred 0.497 |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| none | 927 / 1,924 | — | 0.528 | 0.853 | 0.965 | +0.032 [+0.015, +0.050] |
+| **top 100** | **100 / 100** | **−0.000 [−0.005, +0.005]** | **0.527** | **0.848** | **0.966** | **+0.030 [+0.013, +0.048]** |
+| ≥ 0.025% | 114 / 1,365 | −0.008 [−0.012, −0.004] | 0.527 | 0.847 | 0.964 | +0.031 [+0.014, +0.049] |
+| top 100 and ≥ 0.025% | 100 / 100 | −0.005 [−0.011, +0.000] | 0.525 | 0.844 | 0.965 | +0.029 [+0.011, +0.046] |
+
+At the same 100-peak budget as GLACIER, MASSter loses nothing measurable on val (−0.0002) or test
+(−0.0016 top1). It leads GLACIER's published ranking at every cutoff (top1 +0.030, top2 +0.023,
+top3 +0.023, top5 +0.022 [+0.002, +0.041], top10 +0.027, top20 +0.023). Adding the 0.025% floor
+to the top-100 cap only removes peaks and costs a little. Top-100 alone is the simpler match.

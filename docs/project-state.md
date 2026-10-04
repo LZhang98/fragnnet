@@ -4,6 +4,22 @@
 
 ## Current handoff
 
+**MSGYM retrieval as one in-repo command (2026-10-04), built, not run on a cluster.**
+[`scripts/ms2c/run_msgym_retrieval.py`](../scripts/ms2c/run_msgym_retrieval.py) runs prepare → infer →
+score → summarize for a MASSter checkpoint, resumable per shard. The Fir/Vulcan generator is
+`scripts/manual_slurm/prepare_msgym_retrieval.sh`. The scoring CLI gained `loglik_cal` and
+in-model score passthrough. Local check on formula val: prepare matches the 2026-10-03 shards
+exactly, and scoring reproduces its values. Next: submit a test-fold job for a new checkpoint
+after re-selecting `loglik_cal` on val. [Guide and audit](guides/run_msgym_retrieval.md).
+
+**MSGYM W&B validation-loss sweep, 48 trials (2026-10-03), created, not submitted.**
+[Plan](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) records
+[sweep tiwhun9q](https://wandb.ai/frag-gnn/frag-gnn/sweeps/tiwhun9q), the Fir H100 3g.40gb
+launcher, batch256/512 and dropout/depth/LR/weight-decay ranges. Rank best primary validation
+loss; checkpoint on epoch primary loss (min); keep linear Gaussian CE and U256/E4096 fixed.
+The opt-in agent schedule adjusts cosine/warmup steps after sampled batching. Local checks pass;
+worst-case Fir memory and submission await login/checkout details. No training launched.
+
 **MSGYM screen, 10 arms (2026-10-03), prepared, not submitted.** Each is the
 `…_k1_ema999_fourier.yml` control plus one change, in `config/masster/massspecgym/…_k1_ema999_fourier_<arm>.yml`.
 The goal is the generalization gap (`ll04i00m` train 0.884 vs val 0.584).
@@ -70,6 +86,7 @@ next to the sqrt arm put the calibrated retrieval rule (`ll_g0.75_t2_e1e-4_a0.5`
 - **GLACIER batch dependence.** Its output depends on batch size (19% of spectra shift between
   batch 16 and batch 64).
 - **Calibrated likelihood (val-selected, one test read):** hit@1 0.528 (+0.043 [+0.035, +0.052]) over the frozen `ll`, same predictions; rule `ll_g0.75_t2_e1e-4_a0.5`.
+- **MASSter output filter (val-chosen 0.01% of base):** median 172 peaks, test top1 0.527 (−0.002 vs unfiltered); still +0.021 [+0.004, +0.038] over unfiltered GLACIER at its own test-best. A 1% filter costs 0.04.
 - **Same-rule and own-space head-to-head:** GLACIER under the same frozen rule 0.490 (MASSter +0.039 [+0.022, +0.055]); with GLACIER scored in its own test-best space (g 0.25), MASSter still leads +0.023 [+0.005, +0.040] at top1 and at every cutoff to top20.
 - **Next.** A `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val (option 2).
 
@@ -175,6 +192,10 @@ Gate 0 shows DreaMS sees `i1`'s errors, not that the target adds information bey
 **Spectraverse subformula filter screen (2026-10-01), stopped.** On all 488,797 spectra, instrument-tolerance filtering removes 26.2% of intensity, 15.2% of original base peaks, and empties 15,074 spectra. Widening to 2× recovers only 2.2 base-peak points on an 8,192-spectrum held-out sample; 10× still misses 7.5%. Na/K adducts are hardest hit. Temporary filtered configs were withdrawn; no run launched. [Finding and artifacts](findings/masster/spectraverse_subformula_filter_2026_10_01.md). Na/K read (2026-10-03): `[M+K]+` labels are right but 82% of its spectra lack the precursor and bad ones are filled by recurring Ca/siloxane/salt background; `[M+Na]+` failures cluster in a few source blocks ([finding](findings/masster/spectraverse_subformula_filter_2026_10_03_na_k.md)).
 
 **EI performance audit (2026-10-01), complete.** Full-test Stein is 0.886845; the RASSP-filtered subset scores 0.899167. A 512-spectrum validation support oracle scores 0.99615 versus the model's 0.88703, locating the observed gap mainly in intensity allocation. Simple output power and mass tilts did not help. Next: establish a matched RASSP evaluation and read the prepared e2/e3/e4 intensity arms on both cosine and Stein; no new training has run. [Finding and priorities](findings/masster/masster_ei_performance_audit_2026_10_01.md).
+
+**Spectraverse MASSter dedup arm (2026-10-04), prepared.** The curation paper's near-duplicate rule (cosine > 0.99) does not hold in v1.0.2. Applied with the repo's 5 ppm `cos_hun` within each (molecule, adduct), with instrument and CE required to match (a missing value matches anything, and the spectrum with missing values is dropped; user decisions), it drops 106,019 spectra (21.7%). Arm `masster_dedup` (cv0/cv1) trains on the deduplicated split (cv0 387,399 → 306,087), val/test unchanged, no merge, MS-DIAL kept. Configs resolve; 16 tests pass; not submitted. Next: copy `data/split/spectraverse_benchmark_dedup/` to Fir and launch with the other SPV arms. [Plan](plans/masster/spectraverse_dedup_plan.md).
+
+**Spectraverse MASSter merged-train arm (2026-10-03), prepared.** New `spec_params.merge_train_only` merges only the train split (tolerance consensus per molecule/adduct/instrument group); val/test stay per-spectrum. Arm `masster_merged_nomsdial` (cv0/cv1) also drops MS-DIAL from train: 70,368 / 71,435 groups, 220 epochs (step-matched to the control), train top-512 target cap. Tests and a real-data CUDA smoke pass; not submitted. Next: copy `data/split/spectraverse_benchmark_nomsdial/` to Fir and launch next to the arms below. Motivation: MS-DIAL is 46% of the unexplainable block and 33% of spectra are near-duplicates ([source audit](findings/masster/spectraverse_source_replicate_audit_2026_10_03.md)). [Plan](plans/masster/spectraverse_merged_train_plan.md).
 
 **Spectraverse MASSter short-schedule and clean-train arms (2026-10-03), prepared.** Three arms × cv0/cv1: `masster_c0rerun` (fresh control; the old runs predate `fill_missing_ace`), `masster_short18` (18 epochs), `masster_subceil05` (train drops the 11.8–12.5% of spectra with subformula ceiling ≤ 0.5; val/test unchanged). Configs resolve; not submitted. Next: copy `data/split/spectraverse_benchmark_subceil05/` to Fir and launch. [Plan](plans/masster/spectraverse_short_clean_arms_plan.md).
 

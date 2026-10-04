@@ -1201,9 +1201,13 @@ class MassterPL(SpectrumPL):
         # 2. What the term cannot work with.
         if target_fp is None:
             raise ValueError("masster_jepa_loss_weight > 0 requires masster_jepa_target_fp")
-        if self.hparams.spec_params["merge"] or not self.hparams.spec_params["unique_id"]:
+        spec_params = self.hparams.spec_params
+        if spec_params["merge"] or spec_params["merge_train_only"] or not spec_params["unique_id"]:
             # The target is looked up by spec_unique_id, which is group_id once spectra merge.
-            raise ValueError("masster_jepa_loss_weight needs merge: false and unique_id: true")
+            raise ValueError(
+                "masster_jepa_loss_weight needs merge: false, merge_train_only: false "
+                "and unique_id: true"
+            )
         if self.hparams.masster_proposal_only_until_epoch is not None:
             # The proposal-only phase replaces the loss, which would silently drop the term.
             raise ValueError(

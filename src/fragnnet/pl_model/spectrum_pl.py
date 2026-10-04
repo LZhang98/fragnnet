@@ -372,6 +372,9 @@ class SpectrumPL(L.LightningModule):
         # setup metrics
         self.metric_min_max = {"loss": "min"}
         self.metric_bests = ["loss"]
+        if "primary_loss" in self.metric_names:
+            self.metric_min_max["primary_loss"] = "min"
+            self.metric_bests.append("primary_loss")
         for k in self.metric_names:
             if k not in self.metric_min_max:
                 self.metric_min_max[k] = None

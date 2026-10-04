@@ -71,6 +71,10 @@ ms-pred has no ppm anywhere in its loss or evaluator.
 
 ## Contrastive finetuning as a §5.2 shortcut, not §4 leakage — ARGUMENT, UNMEASURED (2026-10-02)
 
+> **Measured on MassSpecGym 2026-10-03, NULL there:** the released CF checkpoint shows no structure
+> prior beyond MASSter under a wrong spectrum ([swap test](../findings/masster/glacier_cf_swap_test_2026_10_03.md)).
+> The NIST'20 random-split case below remains an argument.
+
 The "MassSpecGym in the Wild" audit ([`massspecgym_in_the_wild_audit.md`](massspecgym_in_the_wild_audit.md))
 gives the framing. **Do not call GLACIER's CF "data leakage".** In the audit's §4 sense, leakage
 means test structures or close analogs in training. GLACIER answers that charge in Appendix E,
@@ -124,6 +128,9 @@ are the MassSpecGym **w/ CF** model
 The swap test can therefore run on the released CF model as is. The w/o-CF comparison arm, and
 anything on NIST'20, still means retraining (`configs/glacier/joint_train_msg.yaml`, then
 `joint_contr_finetune_*.yaml`).
+Run on MassSpecGym 2026-10-03 (NULL, see the banner above). A NIST'20 checkpoint would need
+ms-pred's MAGMa labelling pipeline run on NIST'20 first (judged not worth it, user, 2026-10-03),
+so the NIST'20 case stays an argument.
 
 ## Coverage is top-100, NOT top-20 — RESOLVED 2026-09-20
 

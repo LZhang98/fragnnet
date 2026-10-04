@@ -1,5 +1,6 @@
 import glob
 import logging
+import math
 import os
 import tempfile
 from collections.abc import Sequence
@@ -712,7 +713,7 @@ def validate_sampler_config(config_d: dict) -> None:
                 "precursor_pair_loss_weight > 0 requires spec_params.nce or "
                 "spec_params.ace so NCE metadata is loaded"
             )
-        if spec_params["merge"]:
+        if spec_params["merge"] or spec_params["merge_train_only"]:
             raise ValueError("precursor_pair_loss_weight > 0 requires unmerged spectra")
         nce_min = config_d["precursor_pair_nce_min"]
         nce_max = config_d["precursor_pair_nce_max"]
@@ -909,8 +910,35 @@ def merge_wandb_config(config_d: dict, saved_run_config: dict) -> None:
             config_d[key] = saved_run_config[key]
 
 
+def match_sweep_schedule(config_d: dict, train_size: int) -> None:
+    """Match a simple-loader cosine schedule to the sampled batch size, in place.
+
+    Preserve the base config's warmup fraction and planned epoch count. ``train_size``
+    must count spectra after training filters, with no dropped final batch.
+    """
+    if train_size <= 0:
+        raise ValueError("train_size must be positive")
+    if not config_d["lr_schedule"] or config_d["lr_schedule_type"] != "cosine":
+        raise ValueError("Sweep schedule matching requires a cosine schedule")
+    sampler_keys = (
+        "masster_batch_sampler", "dynamic_batch_sampler", "group_sampler",
+        "simple_group_sampler", "dual_group_dynamic_batch_sampler",
+        "formula_prec_type_group_sampler",
+    )
+    if any(config_d[key] for key in sampler_keys):
+        raise ValueError("Sweep schedule matching requires a simple spectrum loader")
+    if config_d["drop_last"]:
+        raise ValueError("Sweep schedule matching requires drop_last=False")
+    warmup_fraction = config_d["lr_warmup_steps"] / config_d["lr_total_steps"]
+    batches = math.ceil(train_size / config_d["train_batch_size"])
+    steps = math.ceil(batches / config_d["accumulate_grad_batches"]) * config_d["max_epochs"]
+    config_d["lr_total_steps"] = steps
+    config_d["lr_warmup_steps"] = round(warmup_fraction * steps)
+
+
 def run_training(
-    template_path: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
+    template_path: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None,
+    *, schedule_train_size: int | None = None,
 ) -> L.LightningModule:
     """
     Main entry point for running a training/validation/testing job.
@@ -920,6 +948,7 @@ def run_training(
         wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
         job_id (str): Unique job identifier for checkpointing and wandb.
         override (list | None): List of key-value pairs to override in the config.
+        schedule_train_size: Filtered training spectrum count for opt-in sweep schedule matching.
     Returns:
                     model: The trained model (LightningModule).
     """
@@ -999,10 +1028,18 @@ def run_training(
         migrate_legacy_masster_name(saved_run_config)
         migrate_masster_proposal_method(saved_run_config)
         merge_wandb_config(config_d, saved_run_config)
+        if schedule_train_size is not None:
+            match_sweep_schedule(config_d, schedule_train_size)
+            wandb.config.update(
+                {key: config_d[key] for key in ("lr_total_steps", "lr_warmup_steps")},
+                allow_val_change=True,
+            )
         loggers.append(wandb_logger)
     else:
         is_resume = False
         job_id_fp = None
+        if schedule_train_size is not None:
+            match_sweep_schedule(config_d, schedule_train_size)
 
     # CUDA and TF32 setup
     if config_d["use_tensor_float32"] and config_d["accelerator"] == "gpu":
@@ -1181,6 +1218,10 @@ def run_training(
 
     # setup dataloaders
     logging.info("setup dataloader")
+    if schedule_train_size is not None and len(train_ds) != schedule_train_size:
+        raise ValueError(
+            f"Sweep schedule expected {schedule_train_size} train spectra, got {len(train_ds)}"
+        )
     train_dl = init_dataloader(train_ds, config_d)
     val_dl = init_dataloader(val_ds, config_d)
 

@@ -93,6 +93,16 @@ class BaseDataset(Dataset):
             spec_params: Dictionary of spectral processing parameters.
             enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
         """
+        if spec_params["merge_train_only"]:
+            if spec_params["merge"]:
+                raise ValueError("merge_train_only requires merge: False")
+            if split == "train":
+                # Merged rows need their CE ladder; unmerged rows always carry a CE list.
+                spec_params = {
+                    **spec_params,
+                    "merge": True,
+                    "merge_keep_ces": spec_params["nce"] or spec_params["ace"],
+                }
         self.split = split
         self.subsample_params = subsample_params
         self.spec_params = spec_params

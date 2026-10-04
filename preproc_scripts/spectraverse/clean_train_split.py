@@ -33,22 +33,35 @@ TOL = {
 }
 
 
-def _ceiling(args):
-    peaks, formula, prec_type, inst = args
+def subformula_hits(peaks, formula, prec_type, inst):
+    """Intensities and a per-peak mask: within ``TOL[inst]`` of a subformula ion.
+
+    Returns ``None`` when the formula is unsupported, and an all-False mask when there are no
+    candidate masses.
+    """
     mzs = np.array([p[0] for p in peaks], dtype=np.float64)
     ints = np.array([p[1] for p in peaks], dtype=np.float64)
     try:
         masses = _subformula_masses(formula, prec_type)
     except ValueError:
-        return np.nan
-    if not len(masses) or not (ints > 0).any():
-        return 0.0
+        return None
+    if not len(masses):
+        return ints, np.zeros(len(mzs), dtype=bool)
     rel, min_mz = TOL[inst]
     right = np.searchsorted(masses, mzs)
     left = np.maximum(right - 1, 0)
     right = np.minimum(right, len(masses) - 1)
     dist = np.minimum(np.abs(masses[left] - mzs), np.abs(masses[right] - mzs))
-    hit = dist <= rel * np.maximum(mzs, min_mz)
+    return ints, dist <= rel * np.maximum(mzs, min_mz)
+
+
+def _ceiling(args):
+    hits = subformula_hits(*args)
+    if hits is None:
+        return np.nan
+    ints, hit = hits
+    if not (ints > 0).any():
+        return 0.0
     return float(np.sqrt((ints[hit] ** 2).sum() / (ints**2).sum()))
 
 

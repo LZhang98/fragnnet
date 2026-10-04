@@ -47,6 +47,9 @@ subsample_params:
 spec_params:
   merge: True
   merge_keep_ces: False
+  # Merge only the train split (needs merge: False); val/test stay one row per spectrum.
+  # The merged train rows keep their CE ladder whenever nce or ace is on.
+  merge_train_only: False
   # exact_sum preserves the historical exact-m/z union. tolerance_consensus
   # normalizes source spectra, clusters peaks at instrument tolerance, averages
   # replicates, and can give distinct CE schedules equal weight.

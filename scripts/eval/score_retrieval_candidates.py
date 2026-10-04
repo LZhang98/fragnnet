@@ -19,6 +19,13 @@ Scores (``--scores``), all higher-is-better, written per candidate:
   tolerance; peaks above precursor m/z + tolerance removed from both spectra.
 * ``loglik``: query log-likelihood under the full prediction at instrument tolerance
   (MASSter exports only; a top-k sparse ms-pred output would floor most of the query).
+* ``loglik_cal``: the calibrated log-likelihood ``sum_k w_k log max(p_hat(m_k), eps)`` with
+  prediction ``p^gamma`` renormalized, the instrument tolerance times ``tol_mult`` and query
+  weights ``w = y^alpha`` renormalized (``--cal_*``; defaults are the rule val-selected for
+  ``ll04i00m``, ``ll_g0.75_t2_e1e-4_a0.5``; re-select it on val for another checkpoint).
+  MASSter exports only.
+``--inmodel_scores`` copies per-spectrum metrics the MASSter export already holds (e.g.
+``cos_sim_0.01``, ``cos_sim_sqrt_0.01``, ``cos_hun``) into the output.
 ``--min_rel_intensity`` (e.g. 0.01) drops prediction peaks below that fraction of the base peak
 before ``mspred_*`` and ``ent_inst_tol`` (not ``loglik``).
 
@@ -51,7 +58,7 @@ from fragnnet.utils.retrieval_utils import (
 )
 
 logger = logging.getLogger(__name__)
-SCORES = ("mspred_cos", "mspred_ent", "ent_inst_tol", "loglik")
+SCORES = ("mspred_cos", "mspred_ent", "ent_inst_tol", "loglik", "loglik_cal")
 
 
 def parse_inst_tol(items: list[str]) -> dict[str, tuple[float, float]]:
@@ -104,13 +111,25 @@ def main() -> None:
     parser.add_argument("--inst_tol", nargs="+", default=["ORB:1e-5:200", "QTOF:2e-5:750"])
     parser.add_argument("--min_rel_intensity", type=float, default=None)
     parser.add_argument("--loglik_eps", type=float, default=1e-5)
+    parser.add_argument("--cal_gamma", type=float, default=0.75)
+    parser.add_argument("--cal_tol_mult", type=float, default=2.0)
+    parser.add_argument("--cal_eps", type=float, default=1e-4)
+    parser.add_argument("--cal_alpha", type=float, default=0.5)
+    parser.add_argument(
+        "--inmodel_scores",
+        nargs="*",
+        default=[],
+        help="per-spectrum metric datasets of a MASSter export to copy, e.g. cos_sim_0.01",
+    )
     parser.add_argument("--device", default="cuda" if th.cuda.is_available() else "cpu")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    if "loglik" in args.scores and args.pred_format != "masster":
+    if {"loglik", "loglik_cal"} & set(args.scores) and args.pred_format != "masster":
         raise ValueError("loglik needs a full MASSter export; ms-pred outputs are top-k sparse")
+    if args.inmodel_scores and args.pred_format != "masster":
+        raise ValueError("--inmodel_scores reads a MASSter export")
     tol_table = parse_inst_tol(args.inst_tol)
     cand = pd.read_csv(args.candidates)
     spec = pd.read_pickle(args.query_spec_df).set_index("spec_id")
@@ -171,11 +190,36 @@ def main() -> None:
                 res[u]["loglik"] = query_log_likelihood(
                     q_mz, y, mz[order], lin[order] / lin.sum(), rel, min_mz, eps=args.loglik_eps
                 )
+
+        # 4. Calibrated log-likelihood: flattened prediction, wider window, flattened weights.
+        if "loglik_cal" in args.scores:
+            w = q_int**args.cal_alpha
+            w = w / w.sum()
+            for u in uids:
+                mz, lin = preds[u]
+                order = np.argsort(mz)
+                p = lin[order] / lin.sum()
+                p = p**args.cal_gamma
+                res[u]["loglik_cal"] = query_log_likelihood(
+                    q_mz,
+                    w,
+                    mz[order],
+                    p / p.sum(),
+                    rel * args.cal_tol_mult,
+                    min_mz,
+                    eps=args.cal_eps,
+                )
         rows += list(res.values())
 
     out = cand[["cand_uid", "query_spec_id", "is_truth"]].merge(
         pd.DataFrame(rows), on="cand_uid", how="left"
     )
+    if args.inmodel_scores:
+        with h5py.File(args.pred_fp, "r") as f:
+            inmodel = pd.DataFrame(
+                {"cand_uid": f["spec_id"][:], **{k: f[k][:] for k in args.inmodel_scores}}
+            )
+        out = out.merge(inmodel, on="cand_uid", how="left", validate="1:1")
     missing = out[list(args.scores)].isna().any(axis=1).sum()
     logger.info("writing %s (%d rows, %d with a missing score)", args.out, len(out), missing)
     out.to_pickle(args.out)
