@@ -1206,33 +1206,6 @@ masster_share_proposal_across_ev: False
 masster_batch_sampler: False
 # Maximum summed directed molecular edges per MASSter CE-context batch.
 masster_batch_sampler_max: null
-# JEPA spectrum-embedding auxiliary (arms j1a, j1b, j2;
-# docs/plans/masster/masster_jepa_embedding_plan.md).
-# A small MLP predicts a frozen 1,024-d DreaMS embedding of each spectrum's MEASURED spectrum from
-# MASSter's own pooled representation, and weight * (1 - cosine) is added to the loss in training.
-# 0 disables the whole feature: no predictor is built, no side table is opened, no batch or output
-# key is added and the state_dict, the RNG streams and the loss are bit-identical to a run without
-# it. > 0 requires masster_jepa_target_fp, unmerged spectra (spec_params.merge: false and
-# unique_id: true), masster_proposal_only_until_epoch: null and eval_test_split: False. Spectra
-# without a target (fewer than 3 peaks after the 1% floor) add exactly 0, so the weight acts as
-# weight * (fraction of spectra with a target). Validation logs jepa_loss, jepa_cos and
-# jepa_target_fraction but its loss is unchanged; the masked mean cosine is
-# mean(jepa_cos) / mean(jepa_target_fraction).
-masster_jepa_loss_weight: 0.0
-# Pooled input of the predictor. encoder: mean precursor_encoder atom embedding of each spectrum's
-# molecule concatenated with its context vector, mol_hidden_size + masster_context_dim wide (the
-# gradient reaches precursor_encoder and context_encoder). allocator: mean post-attention candidate
-# token of the intensity transformer per spectrum, masster_intensity_transformer_dim wide; requires
-# masster_unique_fragment_mode. Checked even at weight 0, otherwise inert there.
-masster_jepa_source: encoder
-# Side-table .npz of target embeddings keyed by spec_id, one row per train and val spectrum (layout
-# in src/fragnnet/utils/jepa_utils.py). Opened once per process on the first Lightning batch, never
-# at construction or in inference. Every batch spectrum must be in it with the same raw peaks it
-# was built from, or the first batch raises. null at weight 0 (a path there only logs a warning).
-masster_jepa_target_fp: null
-# Hidden width of the predictor (LayerNorm, Linear, SiLU, Linear to 1,024). Checked even at
-# weight 0, otherwise inert there.
-masster_jepa_predictor_hidden_dim: 512
 
 # ==========================================================================
 # ICEBERG only

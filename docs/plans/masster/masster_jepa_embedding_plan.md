@@ -1,8 +1,14 @@
 # MASSter JEPA spectrum-embedding auxiliary
 
-> **Status:** CLOSED NULL · **Updated:** 2026-10-03 · Gate 1 fails on all three arms
+> **Status:** CLOSED NULL · **Updated:** 2026-10-04 · Gate 1 fails on all three arms
 > ([read](#gate-1-result-2026-10-03)). Encoder JEPA is level with `i1`; allocator JEPA is
 > 0.003 behind. Gate 2 is not run.
+> **Code and data removed 2026-10-04** (user): `jepa_utils.py`, the JEPA keys and model hooks,
+> the `mh_jepa_2026_10_01` configs, `preproc_scripts/jepa_targets/`, `submit_masster_jepa.sh`,
+> the target table `data/proc/nist20/jepa_dreams_ssl_1pct_floor.npz` and
+> `output/dreams_gate0_2026_10_01/`. The code is last at `a9cbc983`; the table and Gate 0
+> outputs are gone and would have to be rebuilt. Checkpoints of `j1a`/`j1b`/`j2` no longer load
+> strictly (their `jepa_predictor` weights have no module).
 
 > **Status:** ACTIVE · **Updated:** 2026-10-01 · Gate 0 accepted with the 1% floor (user,
 > 2026-10-01). [Step 1 is built](#step-1-result-2026-10-01): an audited target table, default-off

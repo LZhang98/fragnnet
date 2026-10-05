@@ -1,8 +1,15 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-02
+> **Status:** REFERENCE · **Updated:** 2026-10-04
 
 ## Current handoff
+
+**JEPA / DreaMS removed (2026-10-04, user), working tree, uncommitted.** The closed-null JEPA
+auxiliary is gone from code, template, configs, preprocessing, submit script and tests, with
+its DreaMS target table and `output/dreams_gate0_2026_10_01/`. Default MASSter models are
+unchanged; `j1a`/`j1b`/`j2` checkpoints no longer load strictly. The broader null-feature
+removal was proposed and then withdrawn by the user: only JEPA goes.
+[Plan banner](plans/masster/masster_jepa_embedding_plan.md).
 
 **`scripts/debug/` grouped into topic folders (2026-10-04).** `dag/`, `fragnnet/`, `isotopes/`,
 `bench/`, `masster_candidates/`, `masster_memorization/`, `smarts/`, `ei/`, `spectraverse/`; put

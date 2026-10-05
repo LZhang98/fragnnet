@@ -504,7 +504,6 @@ def main(args):
         "finetune",
         "finetune_pretrained_ckpt",
         "chemlm_ckpt_dp",
-        "masster_jepa_target_fp",
     ]
     config_d["config_template"] = config_template_fp
     if custom_config_fp is not None:
@@ -544,15 +543,6 @@ def main(args):
         data_keyword.append("mces_fp")
     elif config_d["model_type"] == "chemlm":
         data_keyword.append("chemlm_ckpt_dp")
-    if config_d["model_type"] == "masster" and config_d.get("masster_jepa_target_fp") not in (
-        None,
-        "null",
-        "None",
-        "~",
-        "",
-    ):
-        # The JEPA side table is read from the working directory, so the node needs its own copy.
-        data_keyword.append("masster_jepa_target_fp")
     if config_d.get("model_ckpt") and not os.path.isabs(config_d["model_ckpt"]):
         data_keyword.append("model_ckpt")
     # copy fp if pretraining

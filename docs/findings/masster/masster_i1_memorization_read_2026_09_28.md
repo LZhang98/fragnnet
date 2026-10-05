@@ -81,7 +81,7 @@ memorization instruments are:
   - Uncertainties are clustered by molecule.
 - **Not run: `n4`, `i1`'s same-code control; the scope was `i1`.** It was trained on `FT` labels,
   but it can still run on the relabelled data. The dropout-view probe's
-  `output/masster_dropout_views_mc_2026_09_28/patch_inst_embedding.py` copies a one-class
+  `scripts/debug/masster_memorization/patch_inst_embedding.py` copies a one-class
   checkpoint's instrument row into two equal rows, which keeps its `FT` predictions. So `i1` −
   `c0` includes `n4`'s `fourier` CE table (`n4` − `c0` = +0.0053 at the tail).
 

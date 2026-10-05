@@ -81,6 +81,23 @@ resolved config. Cite the copy, not `ckpts/`.
   under `scripts/` (usually `scripts/debug/`), where Git tracks it. It does not go inside
   `output/`, because `output/` is unversioned. Shell wrappers and logs may stay with the data.
 - **No checkpoints in `output/`.** Use §2.2.
+- **No third-party code in `output/`.** Clone external repos (DreaMS, ms-pred) outside the
+  artifact stores, and never `pip install -e` from `output/`. An editable install pins
+  the folder, and deleting the folder breaks the conda env. (The `dreams` env was
+  installed this way from `output/dreams_gate0_2026_10_01/DreaMS/`. Both were removed
+  on 2026-10-04.)
+- **No scratch in `output/`:** no `tmp/`, `pymp-*`, `__pycache__`, pytest temp folders,
+  or copies of the source tree ("stage snapshots"). Use the scratchpad. To keep the code
+  state of a run, record its git revision and diff (see the session workflow).
+- **Smoke runs are disposable.** No doc should cite a smoke folder. Once the real run has
+  landed, the smoke folder is the first thing to propose for deletion.
+- **Full prediction dumps are caches, not evidence.** A finding rests on its scored tables
+  and summaries. A per-spectrum or per-candidate prediction dump (`predictions_*.hdf5`,
+  `*_val.pkl`, `.npz` over 1 GB) can be regenerated from a checkpoint. Put it in
+  `cache/`. If a doc really depends on the dump itself, cite the file by name.
+- **Name dumps by run, epoch and split** (`i1_i50ig7rf_e059_val.pkl`). Generic names like
+  `predictions_test.hdf5` or `spec_df.pkl` match hundreds of lines in a grep, so a
+  citation check on them proves nothing.
 - **Size.** Before a job writes more than 5 GB, tell the user. Keep large regenerable
   intermediates in a subdirectory named `cache/` so they can be deleted without reading
   the whole tree. To save space, compress. Never downcast values.
@@ -101,5 +118,13 @@ resolved config. Cite the copy, not `ckpts/`.
   explicit confirmation for that specific path. This includes "obvious" scratch, because
   another session may be training (see `ps`/`nvidia-smi`).
 - A path that any doc, script or config cites is never deleted. Moving it follows §4.
-- When you propose a cleanup, list each path with its size and how many places cite it,
-  and let the user pick.
+- When you propose a cleanup, list each path with its size, how many places cite it
+  (`grep -rl "output/<dir>" docs scripts config tests src`), and its last write date.
+  Let the user pick. For each top-level folder, cite the folder. For big files inside a
+  cited folder, cite each file by name.
+- Before deleting a folder, check that no conda env has an editable install pointing at it:
+  `grep -rl "<path>" ~/miniconda3/envs/*/lib/python*/site-packages/{__editable__*,*.pth,*.dist-info/direct_url.json}`.
+  Also check that no process has files open in it (`lsof +D <path>`).
+- Agent shells may block bulk `rm -rf` even after the user approves. In that case, write
+  the approved list as a script in the scratchpad and let the user run it. Do not try to
+  get around the block.

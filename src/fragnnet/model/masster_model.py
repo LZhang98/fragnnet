@@ -65,7 +65,6 @@ from fragnnet.model.bond_fragment_heads import (
     EndpointBondBreakHead,
     IonModeProposalHead,
     _segment_logsumexp,
-    _segment_mean,
     _validate_tensor_condition,
     boundary_bond_endpoint_orientation,
     candidate_graph_edges,
@@ -3094,7 +3093,6 @@ class MassterModel(nn.Module):
         proposal_group_ids: th.Tensor | None = None,
         memorization_sink_indices: th.Tensor | None = None,
         return_annotation: bool = False,
-        jepa_source: Literal["encoder", "allocator"] | None = None,
     ) -> dict[str, th.Tensor]:
         """Generate a sparse monoisotopic spectrum for every precursor.
 
@@ -3123,15 +3121,6 @@ class MassterModel(nn.Module):
                 ``memorization_sink_dropout`` zeroes each spectrum's row with that probability.
             return_annotation: Also return what each output pathway is, for the per-peak
                 annotation export. Inference only; nothing in training reads it.
-            jepa_source: Also return one pooled representation per spectrum as
-                ``"jepa_pooled"``, for the JEPA auxiliary loss. ``"encoder"`` is the mean
-                ``precursor_encoder`` atom embedding of the spectrum's graph concatenated with
-                its context, ``(batch_size, precursor_hidden_dim + context_dim)``. ``"allocator"``
-                is the mean post-attention candidate token of the intensity transformer,
-                ``(batch_size, intensity_transformer_dim)``, over every kept candidate
-                (including any dropped later as chemically invalid); it needs unique-fragment
-                mode. ``None`` computes nothing and leaves every output unchanged. Neither
-                pooled vector is detached.
 
         Returns:
             Dictionary with the sparse prediction contract plus diagnostics:
@@ -3152,16 +3141,8 @@ class MassterModel(nn.Module):
 
         Raises:
             ValueError: If ``mol_pyg`` lacks the MASSter chemistry fields or
-                SMARTS is enabled without matched templates, or ``jepa_source`` is unknown or
-                ``"allocator"`` outside unique-fragment mode.
+                SMARTS is enabled without matched templates.
         """
-        if jepa_source not in (None, "encoder", "allocator"):
-            raise ValueError(
-                f"jepa_source must be None, 'encoder' or 'allocator', got {jepa_source!r}"
-            )
-        if jepa_source == "allocator" and not self.unique_fragment_mode:
-            raise ValueError("jepa_source='allocator' requires unique-fragment mode")
-        jepa_pooled = None
         required_graph_fields = (
             "chemical_bond_index",
             "chemical_bond_attr",
@@ -3869,10 +3850,7 @@ class MassterModel(nn.Module):
                     if self.intensity_head.candidate_graph
                     else None
                 ),
-                **({"return_pooled_tokens": True} if jepa_source == "allocator" else {}),
             )
-            if jepa_source == "allocator":
-                intensity_outputs, jepa_pooled = intensity_outputs
             _, fragment_residuals, ion_h_logits = intensity_outputs[:3]
             escape_logits = intensity_outputs[-1] if self.intensity_escape else None
             ion_h_support_logits = (
@@ -4574,13 +4552,6 @@ class MassterModel(nn.Module):
                 }
             )
         output.update(pool_proposal_outputs)
-        if jepa_source == "encoder":
-            # One graph per spectrum, so the graph mean is the spectrum's mean atom embedding.
-            jepa_pooled = th.cat(
-                (_segment_mean(atom_embeddings, mol_pyg.batch, batch_size), context), dim=1
-            )
-        if jepa_pooled is not None:
-            output["jepa_pooled"] = jepa_pooled
         if return_annotation:
             pathway_rows = {
                 "pred_pathway_fragment_idxs": fragment_channel_indices.flatten()[
